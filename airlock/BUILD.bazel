@@ -178,6 +178,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":models",
+        ":oidc_auth",
         ":predicates",
         ":proxy_server",
         ":storage",
@@ -186,6 +187,7 @@ py_library(
         "//mcp_utils",
         "//util:net",
         "@pypi//anyio",
+        "@pypi//cryptography",
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//pydantic",

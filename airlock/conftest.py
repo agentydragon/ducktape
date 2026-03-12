@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import threading
 import time
 from collections.abc import AsyncGenerator, Callable, Mapping
@@ -12,17 +13,21 @@ from pathlib import Path
 import anyio
 import pytest
 import uvicorn
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_pem_public_key
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
 from fastmcp.mcp_config import MCPServerTypes, RemoteMCPServer
-from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
+from fastmcp.server.auth.providers.jwt import RSAKeyPair
 from mcp import types as mcp_types
 from pydantic import AnyUrl
 from starlette.applications import Starlette
-from starlette.routing import Mount
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.routing import Mount, Route
 
 from airlock.models import Action, ActionKey, ActionStatus, WaitMode
+from airlock.oidc_auth import DualVerifierOIDCProxy
 from airlock.predicates import NeedsHumanDecision, PredicateFn
 from airlock.proxy_server import _DEFAULT_WAIT_MODE, DECIDE_SCOPE, PROPOSE_SCOPE, READ_SCOPE, AirlockServer
 from airlock.storage import ActionStorage
@@ -44,6 +49,57 @@ def pytest_configure(config: pytest.Config) -> None:
     # config.override_ini is only available from pytest 9.1+; for 9.0.x we write
     # directly to _inicache, which getini() consults on every subsequent call.
     config._inicache["asyncio_default_fixture_loop_scope"] = "function"
+
+
+# ── Mock OIDC provider ────────────────────────────────────────────────────────
+
+
+def _rsa_public_key_to_jwks(public_key_pem: str) -> dict:
+    """Convert an RSA public key PEM to a JWKS document."""
+    pub_key = load_pem_public_key(public_key_pem.encode())
+    pub_numbers = pub_key.public_numbers()  # type: ignore[union-attr]
+
+    def _int_to_base64url(n: int) -> str:
+        byte_length = (n.bit_length() + 7) // 8
+        return base64.urlsafe_b64encode(n.to_bytes(byte_length, "big")).rstrip(b"=").decode()
+
+    return {
+        "keys": [
+            {
+                "kty": "RSA",
+                "use": "sig",
+                "alg": "RS256",
+                "kid": "test-key",
+                "n": _int_to_base64url(pub_numbers.n),
+                "e": _int_to_base64url(pub_numbers.e),
+            }
+        ]
+    }
+
+
+def _mock_oidc_app(issuer_url: str, jwks: dict) -> Starlette:
+    """Starlette app serving OIDC discovery + JWKS endpoints."""
+    discovery = {
+        "issuer": issuer_url,
+        "authorization_endpoint": f"{issuer_url}/authorize",
+        "token_endpoint": f"{issuer_url}/token",
+        "jwks_uri": f"{issuer_url}/jwks",
+        "response_types_supported": ["code"],
+        "subject_types_supported": ["public"],
+        "id_token_signing_alg_values_supported": ["RS256"],
+    }
+    discovery_response = JSONResponse(discovery)
+    jwks_response = JSONResponse(jwks)
+
+    async def well_known(request: Request) -> JSONResponse:
+        return discovery_response
+
+    async def jwks_endpoint(request: Request) -> JSONResponse:
+        return jwks_response
+
+    return Starlette(
+        routes=[Route("/.well-known/openid-configuration", endpoint=well_known), Route("/jwks", endpoint=jwks_endpoint)]
+    )
 
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
@@ -168,13 +224,13 @@ def rsa_key_pair():
 
 
 @pytest.fixture
-def agent_jwt(rsa_key_pair):
-    return rsa_key_pair.create_token(subject="agent", scopes=[PROPOSE_SCOPE, READ_SCOPE])
+def agent_jwt(rsa_key_pair, mock_oidc_issuer):
+    return rsa_key_pair.create_token(subject="agent", issuer=mock_oidc_issuer, scopes=[PROPOSE_SCOPE, READ_SCOPE])
 
 
 @pytest.fixture
-def operator_jwt(rsa_key_pair):
-    return rsa_key_pair.create_token(subject="operator", scopes=[DECIDE_SCOPE, READ_SCOPE])
+def operator_jwt(rsa_key_pair, mock_oidc_issuer):
+    return rsa_key_pair.create_token(subject="operator", issuer=mock_oidc_issuer, scopes=[DECIDE_SCOPE, READ_SCOPE])
 
 
 @pytest.fixture
@@ -205,15 +261,26 @@ def echo_backend() -> EchoBackend:
     return EchoBackend()
 
 
+@pytest.fixture
+async def mock_oidc_issuer(rsa_key_pair: RSAKeyPair) -> AsyncGenerator[str]:
+    """Start a mock OIDC provider and yield its issuer URL."""
+    port = pick_free_port()
+    issuer_url = f"http://localhost:{port}"
+    jwks = _rsa_public_key_to_jwks(rsa_key_pair.public_key)
+    app = _mock_oidc_app(issuer_url, jwks)
+    async with serve_app(app, port=port):
+        yield issuer_url
+
+
 GateServerFactory = Callable[..., AirlockServer]
 
 
 @pytest.fixture
-def make_gate_server(rsa_key_pair: RSAKeyPair, tmp_path: Path) -> GateServerFactory:
-    """Fixture factory: creates an AirlockServer with RSA key pair auth.
+def make_gate_server(rsa_key_pair: RSAKeyPair, tmp_path: Path, mock_oidc_issuer: str) -> GateServerFactory:
+    """Fixture factory: creates an AirlockServer with DualVerifierOIDCProxy auth.
 
-    Uses JWTVerifier directly (a component of the production DualVerifierOIDCProxy)
-    to avoid needing a real OIDC provider in tests.
+    Uses the production auth path (DualVerifierOIDCProxy) backed by a mock OIDC
+    provider serving the test RSA key pair's JWKS.
     ``predicate`` defaults to NeedsHumanDecision for all tools.
     """
 
@@ -223,13 +290,22 @@ def make_gate_server(rsa_key_pair: RSAKeyPair, tmp_path: Path) -> GateServerFact
         predicate: PredicateFn | None = None,
         default_wait_mode: WaitMode = _DEFAULT_WAIT_MODE,
     ) -> AirlockServer:
+        config_url = f"{mock_oidc_issuer}/.well-known/openid-configuration"
+        auth = DualVerifierOIDCProxy(
+            config_url=config_url,
+            client_id="test-client",
+            client_secret="test-secret",
+            base_url="http://localhost/mcp",
+            issuer_url="http://localhost",
+            require_authorization_consent=False,
+        )
         return AirlockServer(
             backends=dict(backends),
             db_path=tmp_path / "gate.db",
             predicate=predicate or (lambda ns, tool, args: NeedsHumanDecision()),
-            public_base_url="http://test",
+            public_base_url="http://localhost",
             default_wait_mode=default_wait_mode,
-            auth=JWTVerifier(public_key=rsa_key_pair.public_key),
+            auth=auth,
         )
 
     return _factory
