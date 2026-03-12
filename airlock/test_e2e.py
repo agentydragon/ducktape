@@ -1,8 +1,8 @@
 """E2E tests for the Airlock over real HTTP transport.
 
-Each test spins up a uvicorn server with JWT authentication, using agent and
-operator MCP clients with proper Bearer tokens. This exercises the full auth
-and transport stack end-to-end.
+Each test spins up a uvicorn server with auth, using agent and operator MCP
+clients with proper Bearer tokens. This exercises the full transport stack
+end-to-end.
 """
 
 from __future__ import annotations

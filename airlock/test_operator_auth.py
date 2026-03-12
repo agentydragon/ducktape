@@ -3,9 +3,6 @@
 Verifies that an agent JWT (scopes: propose, read) cannot see operator-only
 tools, while an operator JWT (scopes: decide, read) can. Uses a real HTTP
 server to ensure FastMCP's auth enforcement works end-to-end.
-
-Both roles authenticate via ``Authorization: Bearer`` JWTs verified against
-the same JWKS endpoint by ``JWTVerifier``.
 """
 
 from __future__ import annotations

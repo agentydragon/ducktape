@@ -2,7 +2,7 @@
 
 /healthz          — liveness probe (no auth)
 /auth/config      — OIDC configuration for the SPA (no auth)
-/mcp              — MCP endpoint (OIDCProxy or JWTVerifier handles auth)
+/mcp              — MCP endpoint (DualVerifierOIDCProxy handles auth)
 /static/frontend  — bundled Svelte SPA assets
 /                 — SPA shell
 """
@@ -15,9 +15,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import httpx
 import uvicorn
-from fastmcp.server.auth.providers.jwt import JWTVerifier
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
@@ -34,40 +32,24 @@ logger = logging.getLogger(__name__)
 _FRONTEND_DIST_DIR = Path(__file__).parent / "frontend" / "dist"
 
 
-def _fetch_oidc_discovery(issuer: str) -> dict[str, Any]:
-    """Fetch the OpenID Connect discovery document from the issuer."""
-    url = f"{issuer.rstrip('/')}/.well-known/openid-configuration"
-    resp = httpx.get(url, timeout=10.0)
-    resp.raise_for_status()
-    result: dict[str, Any] = resp.json()
-    return result
+def _build_auth(settings: Settings) -> DualVerifierOIDCProxy:
+    """Build the OIDCProxy auth provider.
 
-
-def _build_auth(settings: Settings) -> DualVerifierOIDCProxy | JWTVerifier:
-    """Build the auth provider based on whether oidc_client_secret is configured.
-
-    With oidc_client_secret + oidc_upstream_issuer + oidc_upstream_client_id:
     OIDCProxy handles DCR and OAuth flows (for Claude.ai web) while also accepting
     direct Authentik JWTs (for the OpenClaw auth proxy sidecar).
-
-    Without: plain JWTVerifier (legacy behavior, JWKS-only validation).
     """
-    if settings.oidc_client_secret is not None:
-        upstream_issuer = settings.oidc_upstream_issuer or settings.oidc_issuer
-        upstream_client_id = settings.oidc_upstream_client_id or settings.oidc_client_id
-        config_url = f"{upstream_issuer.rstrip('/')}/.well-known/openid-configuration"
-        logger.info("Using DualVerifierOIDCProxy (DCR-capable) with upstream %s", upstream_issuer)
-        return DualVerifierOIDCProxy(
-            config_url=config_url,
-            client_id=upstream_client_id,
-            client_secret=settings.oidc_client_secret,
-            base_url=f"{settings.public_base_url}/mcp",
-            issuer_url=settings.public_base_url,
-            require_authorization_consent=False,
-        )
-    discovery = _fetch_oidc_discovery(settings.oidc_issuer)
-    logger.info("Using JWTVerifier (no DCR) with JWKS from %s", discovery["jwks_uri"])
-    return JWTVerifier(jwks_uri=discovery["jwks_uri"])
+    upstream_issuer = settings.oidc_upstream_issuer or settings.oidc_issuer
+    upstream_client_id = settings.oidc_upstream_client_id or settings.oidc_client_id
+    config_url = f"{upstream_issuer.rstrip('/')}/.well-known/openid-configuration"
+    logger.info("Using DualVerifierOIDCProxy (DCR-capable) with upstream %s", upstream_issuer)
+    return DualVerifierOIDCProxy(
+        config_url=config_url,
+        client_id=upstream_client_id,
+        client_secret=settings.oidc_client_secret,
+        base_url=f"{settings.public_base_url}/mcp",
+        issuer_url=settings.public_base_url,
+        require_authorization_consent=False,
+    )
 
 
 class _MCPPathNorm:

@@ -115,8 +115,6 @@ py_library(
         ":oidc_auth",
         ":predicates",
         ":proxy_server",
-        "@pypi//fastmcp",
-        "@pypi//httpx",
         "@pypi//starlette",
         "@pypi//uvicorn",
     ],

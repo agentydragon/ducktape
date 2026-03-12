@@ -47,7 +47,7 @@ class Settings(BaseModel):
     )
     oidc_issuer: str
     oidc_client_id: str
-    oidc_client_secret: str | None = None
+    oidc_client_secret: str
     oidc_upstream_issuer: str | None = None
     oidc_upstream_client_id: str | None = None
     default_wait_mode: WaitMode = YieldAfterMs(timeout_ms=0)

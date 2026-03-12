@@ -210,8 +210,10 @@ GateServerFactory = Callable[..., AirlockServer]
 
 @pytest.fixture
 def make_gate_server(rsa_key_pair: RSAKeyPair, tmp_path: Path) -> GateServerFactory:
-    """Fixture factory: creates a JWTVerifier-protected AirlockServer.
+    """Fixture factory: creates an AirlockServer with RSA key pair auth.
 
+    Uses JWTVerifier directly (a component of the production DualVerifierOIDCProxy)
+    to avoid needing a real OIDC provider in tests.
     ``predicate`` defaults to NeedsHumanDecision for all tools.
     """
 
