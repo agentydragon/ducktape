@@ -14,7 +14,10 @@ from airlock.operator_api import create_operator_api
 
 def main() -> None:
     # Dummy coordinator — schema export only needs route definitions, not runtime state.
-    app = create_operator_api(coordinator=ActionCoordinator(), oidc_issuer="https://example.com")
+    app = create_operator_api(
+        coordinator=ActionCoordinator(backends={}, predicate=lambda ns, tool, args: None),  # type: ignore[arg-type]
+        oidc_issuer="https://example.com",
+    )
     schema = app.openapi()
     print(json.dumps(schema, indent=2))
 

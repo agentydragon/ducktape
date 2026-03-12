@@ -1,8 +1,8 @@
-"""Central coordinator for airlock: storage, pending decisions, and event bus.
+"""Central coordinator for airlock: backends, storage, execution, and event bus.
 
-Owns the SQLite-backed storage for action records and event log, the in-memory
-pending decision futures, and a generic event bus that both the MCP server face
-and the operator REST API subscribe to.
+Owns the full action lifecycle: backend MCP client connections, SQLite-backed
+storage, predicate evaluation, pending decision futures, action execution, and
+a generic event bus.
 
 Schema:
   actions(session_key TEXT, action_seq INT, ...)  — composite PK
@@ -16,11 +16,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable, Mapping
+from contextlib import AsyncExitStack
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
+from fastmcp import FastMCP
+from fastmcp.client import Client
+from fastmcp.mcp_config import MCPServerTypes
+from mcp import types as mcp_types
 from pydantic import TypeAdapter
 from sqlalchemy import Index, Integer, String, Text, func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
@@ -32,14 +38,24 @@ from airlock.models import (
     ActionReceivedDetail,
     ActionState,
     ActionStatus,
+    ApproveDecision,
+    DeniedDetail,
+    DenyDecision,
+    DoneState,
+    ExecutingState,
+    ExecutionFinishedDetail,
+    ExecutionStartedDetail,
     LogEntry,
     LogEventDetail,
     OperatorDecision,
     PendingState,
+    RejectedState,
     ToolCall,
     WithdrawnDetail,
     WithdrawnState,
 )
+from airlock.predicates import Approved, Denied, NeedsHumanDecision, PredicateFn, call_predicate
+from mcp_infra.prefix import MCPMountPrefix
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +78,17 @@ class ActionUpdatedEvent:
 
 CoordinatorEvent = ActionCreatedEvent | ActionUpdatedEvent
 CoordinatorListener = Callable[[CoordinatorEvent], Awaitable[None]]
+
+
+# ── Backend info ─────────────────────────────────────────────────────────────
+
+
+@dataclass
+class BackendInfo:
+    """Information gathered from connected backends, for the MCP server to register tools."""
+
+    instructions: dict[str, str | None] = field(default_factory=dict)
+    tools: dict[MCPMountPrefix, list[mcp_types.Tool]] = field(default_factory=dict)
 
 
 # ── ORM models ────────────────────────────────────────────────────────────────
@@ -128,21 +155,56 @@ class _LogEntryRow(_Base):
 
 
 class ActionCoordinator:
-    """Central coordinator: storage, pending decisions, and event bus.
+    """Central coordinator owning the full action lifecycle.
 
-    Both the MCP server face and the operator REST API operate on the same
-    coordinator instance. State mutations emit events that listeners translate
-    into their own notification mechanisms (MCP resource-updated, SSE).
+    Manages backend MCP client connections, SQLite-backed storage, predicate
+    evaluation, pending decision futures, action execution, and a generic
+    event bus. Both the MCP server face and the operator REST API operate on
+    the same coordinator instance.
+
+    Use as an async context manager:
+        async with ActionCoordinator(...) as coordinator:
+            ...
     """
 
-    def __init__(self, db_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        db_path: Path | None = None,
+        *,
+        backends: Mapping[MCPMountPrefix, MCPServerTypes | FastMCP],
+        predicate: PredicateFn,
+    ) -> None:
         self._db_path = db_path
+        self._backend_specs = backends
+        self._predicate = predicate
         self._engine: AsyncEngine | None = None
         self._session_factory: async_sessionmaker[AsyncSession] | None = None
         self._pending: dict[ActionKey, asyncio.Future[OperatorDecision]] = {}
         self._listeners: list[CoordinatorListener] = []
+        self._backend_clients: dict[MCPMountPrefix, Client] = {}
+        self._backend_info = BackendInfo()
+        self._background_tasks: set[asyncio.Task[Any]] = set()
+        self._stack: AsyncExitStack | None = None
 
-    async def initialize(self) -> None:
+    # ── Async context manager ─────────────────────────────────────────────────
+
+    async def __aenter__(self) -> ActionCoordinator:
+        await self._init_db()
+        self._stack = AsyncExitStack()
+        await self._stack.__aenter__()
+        await self._connect_backends()
+        await self._rehydrate_pending_actions()
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        await self._drain_background_tasks()
+        if self._stack is not None:
+            await self._stack.aclose()
+            self._stack = None
+        self._backend_clients.clear()
+        await self._close_db()
+
+    async def _init_db(self) -> None:
         """Open the database, create schema if needed."""
         if self._db_path is None:
             raise RuntimeError("cannot initialize coordinator without a db_path")
@@ -151,7 +213,7 @@ class ActionCoordinator:
             await conn.run_sync(_Base.metadata.create_all)
         self._session_factory = async_sessionmaker(self._engine, expire_on_commit=False)
 
-    async def close(self) -> None:
+    async def _close_db(self) -> None:
         """Dispose of the underlying engine, releasing all connections."""
         if self._engine is not None:
             await self._engine.dispose()
@@ -159,8 +221,32 @@ class ActionCoordinator:
     @property
     def _sessions(self) -> async_sessionmaker[AsyncSession]:
         if self._session_factory is None:
-            raise RuntimeError("coordinator not initialised — call initialize() first")
+            raise RuntimeError("coordinator not initialised — use as async context manager")
         return self._session_factory
+
+    @property
+    def backend_info(self) -> BackendInfo:
+        """Backend instructions and tools, populated after __aenter__."""
+        return self._backend_info
+
+    # ── Backend connections ───────────────────────────────────────────────────
+
+    async def _connect_backends(self) -> None:
+        """Connect to all backend servers and populate backend_info."""
+        assert self._stack is not None
+        info = BackendInfo()
+        for namespace, spec in self._backend_specs.items():
+            client = Client(spec) if isinstance(spec, FastMCP) else Client(spec.to_transport())  # type: ignore[arg-type]
+            logger.info("[_connect_backends] connecting to %s: %s", namespace, spec)
+            await self._stack.enter_async_context(client)
+            logger.info("[_connect_backends] %s connected", namespace)
+            self._backend_clients[namespace] = client
+
+            init = client.initialize_result
+            info.instructions[namespace] = init.instructions if init else None
+            info.tools[namespace] = await client.list_tools()
+
+        self._backend_info = info
 
     # ── Event bus ─────────────────────────────────────────────────────────────
 
@@ -171,19 +257,58 @@ class ActionCoordinator:
         for listener in self._listeners:
             await listener(event)
 
-    # ── Pending decisions ──────────────────────────────────────────────────────
+    # ── Background tasks ──────────────────────────────────────────────────────
 
-    def register_pending(self, key: ActionKey) -> asyncio.Future[OperatorDecision]:
+    def _spawn(self, coro: Any) -> asyncio.Task[Any]:
+        """Schedule a coroutine as a background task, keeping a reference to prevent GC."""
+        task = asyncio.create_task(coro)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+        return task
+
+    async def _drain_background_tasks(self) -> None:
+        if self._background_tasks:
+            logger.info("draining %d background task(s)", len(self._background_tasks))
+            await asyncio.gather(*self._background_tasks, return_exceptions=True)
+
+    # ── Public action lifecycle API ──────────────────────────────────────────
+
+    async def propose_action(
+        self, *, session_key: str, call: ToolCall, justification: str, client_id: str | None, subject: str | None
+    ) -> tuple[Action, asyncio.Task[None]]:
+        """Create a new action and spawn its lifecycle pipeline.
+
+        Returns (action, pipeline_task). The caller can optionally await the
+        task to block until the action reaches a terminal state (for wait mode).
+        """
+        action = await self.create_action(
+            session_key=session_key, call=call, justification=justification, client_id=client_id, subject=subject
+        )
+        namespace = MCPMountPrefix(call.server_namespace)
+        task = self._spawn(self._run_action_pipeline(action.key, namespace, call.tool_name, call.arguments))
+        return action, task
+
+    async def approve_action(self, key: ActionKey) -> None:
+        """Approve a pending action. Raises ValueError if not decidable."""
+        await self._decide(key, ApproveDecision())
+
+    async def reject_action(self, key: ActionKey, reason: str | None = None) -> None:
+        """Reject a pending action. Raises ValueError if not decidable."""
+        await self._decide(key, DenyDecision(reason=reason))
+
+    # ── Pending decisions (internal) ─────────────────────────────────────────
+
+    def _register_pending(self, key: ActionKey) -> asyncio.Future[OperatorDecision]:
         """Create and register a future for a pending human decision."""
         fut: asyncio.Future[OperatorDecision] = asyncio.get_running_loop().create_future()
         self._pending[key] = fut
         return fut
 
-    def remove_pending(self, key: ActionKey) -> asyncio.Future[OperatorDecision] | None:
+    def _remove_pending(self, key: ActionKey) -> asyncio.Future[OperatorDecision] | None:
         """Remove and return the pending future, if any."""
         return self._pending.pop(key, None)
 
-    async def decide(self, key: ActionKey, decision: OperatorDecision) -> None:
+    async def _decide(self, key: ActionKey, decision: OperatorDecision) -> None:
         """Resolve a pending decision. Raises ValueError if not decidable."""
         action = await self.get_action(key)
         if action is None:
@@ -194,6 +319,64 @@ class ActionCoordinator:
         if fut is None or fut.done():
             raise ValueError(f"Action {key} is not awaiting a human decision")
         fut.set_result(decision)
+
+    # ── Action pipeline (internal) ───────────────────────────────────────────
+
+    async def _run_action_pipeline(
+        self, key: ActionKey, namespace: MCPMountPrefix, tool_name: str, arguments: dict[str, object]
+    ) -> None:
+        """Walk one action through its full lifecycle: predicate → decision → execution."""
+        match call_predicate(self._predicate, namespace, tool_name, arguments):
+            case Approved():
+                await self._apply_decision(key, namespace, tool_name, arguments, ApproveDecision())
+            case Denied(reason=reason):
+                await self._apply_decision(
+                    key, namespace, tool_name, arguments, DenyDecision(reason=reason or "automatically denied")
+                )
+            case NeedsHumanDecision():
+                logger.info("queued action %s server=%s tool=%s", key, namespace, tool_name)
+                await self._await_human_decision(key, namespace, tool_name, arguments)
+
+    async def _await_human_decision(
+        self, key: ActionKey, namespace: MCPMountPrefix, tool_name: str, arguments: dict[str, object]
+    ) -> None:
+        """Park until a human decision arrives, then apply it."""
+        fut = self._register_pending(key)
+        try:
+            decision = await fut
+        except asyncio.CancelledError:
+            return  # withdrawn externally; state already updated by withdraw()
+        finally:
+            self._remove_pending(key)
+        await self._apply_decision(key, namespace, tool_name, arguments, decision)
+
+    async def _apply_decision(
+        self,
+        key: ActionKey,
+        namespace: MCPMountPrefix,
+        tool_name: str,
+        arguments: dict[str, object],
+        decision: OperatorDecision,
+    ) -> None:
+        """Apply a decision: transition state and execute backend if approved."""
+        match decision:
+            case ApproveDecision():
+                started_at = datetime.now(tz=UTC)
+                await self.update_and_log(key, ExecutingState(), ExecutionStartedDetail(started_at=started_at))
+                client = self._backend_clients.get(namespace)
+                if client is None:
+                    raise RuntimeError(f"backend client not connected for namespace: {namespace!r}")
+                outcome = await client.call_tool_mcp(tool_name, arguments)
+                await self.update_and_log(key, DoneState(outcome=outcome), ExecutionFinishedDetail(outcome=outcome))
+            case DenyDecision(reason=reason):
+                await self.update_and_log(key, RejectedState(reason=reason), DeniedDetail(reason=reason))
+
+    async def _rehydrate_pending_actions(self) -> None:
+        """Recreate in-memory decision futures for PENDING actions that survived a restart."""
+        pending = await self.list_actions(ActionStatus.PENDING)
+        for action in pending:
+            namespace = MCPMountPrefix(action.call.server_namespace)
+            self._spawn(self._await_human_decision(action.key, namespace, action.call.tool_name, action.call.arguments))
 
     # ── Action CRUD ──────────────────────────────────────────────────────────
 
@@ -262,7 +445,7 @@ class ActionCoordinator:
         if not isinstance(action.state, PendingState):
             raise ValueError(f"Action {key} is not pending ({action.state.status=})")
         result = await self.update_and_log(key, WithdrawnState(), WithdrawnDetail())
-        fut = self.remove_pending(key)
+        fut = self._remove_pending(key)
         if fut is not None and not fut.done():
             fut.cancel()
         return result

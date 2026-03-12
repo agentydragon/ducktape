@@ -63,7 +63,11 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":models",
+        ":predicates",
+        "//mcp_infra:prefix",
         "@pypi//aiosqlite",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
@@ -115,7 +119,6 @@ py_library(
     deps = [
         ":coordinator",
         ":models",
-        ":predicates",
         "//mcp_infra:naming",
         "//mcp_infra:prefix",
         "//mcp_infra:urls",
@@ -318,7 +321,6 @@ py_test(
     deps = [
         ":conftest",
         ":models",
-        "//mcp_infra:resource_utils",
         "@pypi//anyio",
         "@pypi//fastmcp",
         "@pypi//pytest_bazel",

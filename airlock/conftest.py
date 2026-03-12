@@ -14,6 +14,7 @@ import anyio
 import httpx
 import pytest
 import uvicorn
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicNumbers
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_pem_public_key
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -59,7 +60,8 @@ def pytest_configure(config: pytest.Config) -> None:
 def _rsa_public_key_to_jwks(public_key_pem: str) -> dict:
     """Convert an RSA public key PEM to a JWKS document."""
     pub_key = load_pem_public_key(public_key_pem.encode())
-    pub_numbers = pub_key.public_numbers()  # type: ignore[union-attr]
+    rsa_numbers = pub_key.public_numbers()  # type: ignore[union-attr]
+    assert isinstance(rsa_numbers, RSAPublicNumbers)
 
     def _int_to_base64url(n: int) -> str:
         byte_length = (n.bit_length() + 7) // 8
@@ -72,8 +74,8 @@ def _rsa_public_key_to_jwks(public_key_pem: str) -> dict:
                 "use": "sig",
                 "alg": "RS256",
                 "kid": "test-key",
-                "n": _int_to_base64url(pub_numbers.n),
-                "e": _int_to_base64url(pub_numbers.e),
+                "n": _int_to_base64url(rsa_numbers.n),
+                "e": _int_to_base64url(rsa_numbers.e),
             }
         ]
     }
@@ -265,13 +267,12 @@ def operator_jwt(rsa_key_pair, mock_oidc_issuer):
 
 @pytest.fixture
 async def coordinator(tmp_path: Path) -> AsyncGenerator[ActionCoordinator]:
-    """Temporary coordinator with in-memory SQLite for tests."""
-    coord = ActionCoordinator(db_path=tmp_path / "test.db")
-    await coord.initialize()
-    try:
+    """Temporary coordinator with no backends for pure storage tests."""
+    coord = ActionCoordinator(
+        db_path=tmp_path / "test.db", backends={}, predicate=lambda ns, tool, args: NeedsHumanDecision()
+    )
+    async with coord:
         yield coord
-    finally:
-        await coord.close()
 
 
 class EchoBackend:
@@ -331,14 +332,13 @@ def make_gate_app(rsa_key_pair: RSAKeyPair, tmp_path: Path, mock_oidc_issuer: st
             issuer_url="http://localhost",
             require_authorization_consent=False,
         )
-        coordinator = ActionCoordinator(db_path=tmp_path / "gate.db")
-        gate = AirlockServer(
+        coordinator = ActionCoordinator(
+            db_path=tmp_path / "gate.db",
             backends=dict(backends),
             predicate=predicate or (lambda ns, tool, args: NeedsHumanDecision()),
-            public_base_url="http://localhost",
-            default_wait_mode=default_wait_mode,
-            coordinator=coordinator,
-            auth=auth,
+        )
+        gate = AirlockServer(
+            public_base_url="http://localhost", default_wait_mode=default_wait_mode, coordinator=coordinator, auth=auth
         )
         mcp_app = gate.http_app(path="/")
         operator_app = create_operator_api(coordinator=coordinator, oidc_issuer=mock_oidc_issuer)
@@ -347,12 +347,8 @@ def make_gate_app(rsa_key_pair: RSAKeyPair, tmp_path: Path, mock_oidc_issuer: st
 
         @asynccontextmanager
         async def _lifespan(app):
-            await coordinator.initialize()
-            try:
-                async with mcp_lifespan(app):
-                    yield
-            finally:
-                await coordinator.close()
+            async with coordinator, mcp_lifespan(app):
+                yield
 
         return Starlette(routes=[Mount("/mcp", app=mcp_app), Mount("/api", app=operator_app)], lifespan=_lifespan)
 

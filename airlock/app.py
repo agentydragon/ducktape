@@ -79,10 +79,8 @@ def create_app(settings: Settings, *, include_static: bool = True) -> Any:
 
     auth = _build_auth(settings)
     predicate = load_predicate(settings.predicate_path)
-    coordinator = ActionCoordinator(db_path=settings.db_path)
+    coordinator = ActionCoordinator(db_path=settings.db_path, backends=settings.backends, predicate=predicate)
     gate = AirlockServer(
-        backends=settings.backends,
-        predicate=predicate,
         public_base_url=settings.public_base_url,
         default_wait_mode=settings.default_wait_mode,
         coordinator=coordinator,
@@ -123,17 +121,14 @@ def create_app(settings: Settings, *, include_static: bool = True) -> Any:
             Route("/{rest:path}", endpoint=index),
         ]
 
-    # Combined lifespan: coordinator storage init/close wraps MCP server lifespan.
+    # Coordinator context manager handles DB + backends + rehydration.
+    # MCP lifespan registers tools/resources from connected backends.
     mcp_lifespan = mcp_app.router.lifespan_context
 
     @asynccontextmanager
     async def _lifespan(app: Starlette) -> AsyncGenerator[None]:
-        await coordinator.initialize()
-        try:
-            async with mcp_lifespan(app):
-                yield
-        finally:
-            await coordinator.close()
+        async with coordinator, mcp_lifespan(app):
+            yield
 
     return _MCPPathNorm(Starlette(routes=routes, lifespan=_lifespan))
 

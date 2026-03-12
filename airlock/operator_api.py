@@ -26,7 +26,7 @@ from fastmcp.server.auth.providers.jwt import JWTVerifier
 from pydantic import BaseModel
 
 from airlock.coordinator import ActionCoordinator, ActionCreatedEvent, CoordinatorEvent
-from airlock.models import Action, ActionKey, ActionStatus, ApproveDecision, DenyDecision
+from airlock.models import Action, ActionKey, ActionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -119,17 +119,15 @@ def create_operator_api(*, coordinator: ActionCoordinator, oidc_issuer: str) -> 
     async def approve_action(session_key: str, action_seq: int) -> None:
         key = ActionKey(session_key=session_key, action_seq=action_seq)
         try:
-            await coordinator.decide(key, ApproveDecision())
+            await coordinator.approve_action(key)
         except ValueError as e:
-            # decide() raises ValueError for: not found, not pending, or not
-            # awaiting human decision — all state conflicts from the caller's POV.
             raise HTTPException(status_code=409, detail=str(e)) from e
 
     @app.post("/actions/{session_key}/{action_seq}/reject", status_code=204)
     async def reject_action(session_key: str, action_seq: int, body: RejectBody) -> None:
         key = ActionKey(session_key=session_key, action_seq=action_seq)
         try:
-            await coordinator.decide(key, DenyDecision(reason=body.reason))
+            await coordinator.reject_action(key, reason=body.reason)
         except ValueError as e:
             raise HTTPException(status_code=409, detail=str(e)) from e
 

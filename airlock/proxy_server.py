@@ -1,12 +1,12 @@
-"""Core airlock FastMCP server.
+"""MCP presentation layer for airlock.
 
-Wraps multiple backend MCP servers (connected via MCPServerTypes transport or
-in-process FastMCP) with an approval layer. For each backend tool T in server S,
-exposes a wrapped version named ``{s}_{t}`` that:
+Thin wrapper over ActionCoordinator that exposes backend tools via MCP with
+an approval envelope. For each backend tool T in server S, exposes a wrapped
+version named ``{s}_{t}`` that:
   - Adds required `justification: str` and `session_key: str` fields
-  - On call: checks predicate, stores pending action, returns ActionKey
-  - On operator approval: forwards original args to correct backend, updates state
-  - Appends to per-session append-only event log and notifies subscribed sessions
+  - On call: delegates to coordinator.propose_action() which handles the full
+    lifecycle (predicate, decision, execution)
+  - Translates coordinator events into MCP resource-updated notifications
 
 Resources:
   resource://sessions/{session_key}/actions/{action_seq}  — action state
@@ -20,16 +20,13 @@ import asyncio
 import copy
 import logging
 from collections import defaultdict
-from collections.abc import AsyncGenerator, Coroutine, Mapping
-from contextlib import AsyncExitStack, asynccontextmanager
-from datetime import UTC, datetime
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 import anyio
 from fastmcp import FastMCP
-from fastmcp.client import Client
-from fastmcp.mcp_config import MCPServerTypes
 from fastmcp.server.auth import require_scopes
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.tools.tool import FunctionTool
@@ -40,25 +37,7 @@ from pydantic import TypeAdapter
 from pydantic.networks import AnyUrl
 
 from airlock.coordinator import ActionCoordinator, ActionCreatedEvent, CoordinatorEvent
-from airlock.models import (
-    Action,
-    ActionKey,
-    ActionStatus,
-    ApproveDecision,
-    BlockingWait,
-    DeniedDetail,
-    DenyDecision,
-    DoneState,
-    ExecutingState,
-    ExecutionFinishedDetail,
-    ExecutionStartedDetail,
-    OperatorDecision,
-    RejectedState,
-    ToolCall,
-    WaitMode,
-    YieldAfterMs,
-)
-from airlock.predicates import Approved, Denied, NeedsHumanDecision, PredicateFn, call_predicate
+from airlock.models import Action, ActionKey, ActionStatus, BlockingWait, ToolCall, WaitMode, YieldAfterMs
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
@@ -115,26 +94,19 @@ def _wait_mode_to_timeout(wait_mode: WaitMode) -> float:
 
 
 class AirlockServer(EnhancedFastMCP):
-    """MCP server that wraps multiple backend MCP servers with an approval layer."""
+    """MCP server that wraps backend tools with an approval layer.
+
+    This is a thin presentation layer. The ActionCoordinator owns the full
+    action lifecycle (backends, predicate, execution, storage, events).
+    """
 
     def __init__(
-        self,
-        *,
-        backends: Mapping[MCPMountPrefix, MCPServerTypes | FastMCP],
-        predicate: PredicateFn,
-        public_base_url: str,
-        coordinator: ActionCoordinator,
-        default_wait_mode: WaitMode,
-        **kwargs: Any,
+        self, *, coordinator: ActionCoordinator, public_base_url: str, default_wait_mode: WaitMode, **kwargs: Any
     ) -> None:
         super().__init__("Airlock", lifespan=self._lifespan, instructions="Airlock — initialising…", **kwargs)
-        self._backend_specs = backends
-        self._predicate = predicate
         self._public_base_url = public_base_url
         self._default_wait_mode = default_wait_mode
         self.coordinator = coordinator
-        self._backend_clients: dict[MCPMountPrefix, Client] = {}
-        self._background_tasks: set[asyncio.Task[Any]] = set()
         self._subscriptions: defaultdict[ServerSession, set[str]] = defaultdict(set)
 
     # ── Lifespan ──────────────────────────────────────────────────────────────
@@ -143,26 +115,21 @@ class AirlockServer(EnhancedFastMCP):
     async def _lifespan(self, app: FastMCP) -> AsyncGenerator[None]:
         self.coordinator.add_listener(self._on_coordinator_event)
 
-        # Manual stack management so cleanup runs inside the shielded scope below.
-        stack = AsyncExitStack()
-        await stack.__aenter__()
-        try:
-            await self._connect_backends(stack)
-            await self._rehydrate_pending_actions()
-            self._register_resources()
-            self._register_tools()
-            yield
-        finally:
-            # Shield cleanup from FastMCP memory transport's cancel scope.
-            # FastMCPTransport.connect_session() calls tg.cancel_scope.cancel()
-            # on client disconnect, which would cancel our async cleanup
-            # (backend client close), leaving orphaned resources.
-            with anyio.CancelScope(shield=True):
-                if self._background_tasks:
-                    logger.info("[_lifespan] draining %d background task(s)", len(self._background_tasks))
-                    await asyncio.gather(*self._background_tasks, return_exceptions=True)
-                await stack.aclose()
-                self._backend_clients.clear()
+        # Coordinator is already entered (backends connected, pending actions
+        # rehydrated) by the Starlette lifespan. Register tools/resources from
+        # the connected backends.
+        info = self.coordinator.backend_info
+        for namespace, tools in info.tools.items():
+            for tool in tools:
+                self._register_wrapped_tool(namespace, tool)
+
+        self.instructions = Template(filename=str(_INSTRUCTIONS_TEMPLATE)).render(
+            backend_instructions=info.instructions, public_base_url=self._public_base_url
+        )
+
+        self._register_resources()
+        self._register_tools()
+        yield
 
     async def _on_coordinator_event(self, event: CoordinatorEvent) -> None:
         """Translate coordinator events into MCP resource-updated notifications."""
@@ -171,38 +138,6 @@ class AirlockServer(EnhancedFastMCP):
         await self._notify_subscribers(f"resource://sessions/{key.session_key}/log_hwm")
         if isinstance(event, ActionCreatedEvent):
             await self.broadcast_resource_list_changed()
-
-    async def _rehydrate_pending_actions(self) -> None:
-        """Recreate in-memory decision futures for PENDING actions that survived a server restart.
-
-        Without this, decide() would fail for any PENDING action from a prior run because
-        _pending_decisions only lives in memory and is empty on startup.
-        """
-        pending = await self.coordinator.list_actions(ActionStatus.PENDING)
-        for action in pending:
-            namespace = MCPMountPrefix(action.call.server_namespace)
-            self._spawn(self._await_human_decision(action.key, namespace, action.call.tool_name, action.call.arguments))
-
-    async def _connect_backends(self, stack: AsyncExitStack) -> None:
-        """Connect to all backend servers, register wrapped tools, and render instructions."""
-        backend_instructions: dict[str, str | None] = {}
-        for namespace, spec in self._backend_specs.items():
-            client = Client(spec) if isinstance(spec, FastMCP) else Client(spec.to_transport())  # type: ignore[arg-type]
-
-            logger.info("[_connect_backends] connecting to %s: %s", namespace, spec)
-            await stack.enter_async_context(client)
-            logger.info("[_connect_backends] %s connected", namespace)
-            self._backend_clients[namespace] = client
-
-            init = client.initialize_result
-            backend_instructions[namespace] = init.instructions if init else None
-
-            for tool in await client.list_tools():
-                self._register_wrapped_tool(namespace, tool)
-
-        self.instructions = Template(filename=str(_INSTRUCTIONS_TEMPLATE)).render(
-            backend_instructions=backend_instructions, public_base_url=self._public_base_url
-        )
 
     def _register_resources(self) -> None:
         """Register resource templates and subscription tracking handlers."""
@@ -278,21 +213,18 @@ class AirlockServer(EnhancedFastMCP):
                 subject = token.claims.get("sub")
 
             call = ToolCall(server_namespace=namespace, tool_name=tool_name, arguments=input)
-            action = await self.coordinator.create_action(
+            action, pipeline_task = await self.coordinator.propose_action(
                 session_key=session_key, call=call, justification=justification, client_id=client_id, subject=subject
             )
-            key = action.key
 
             effective = wait_mode if wait_mode is not None else self._default_wait_mode
             effective_timeout = _wait_mode_to_timeout(effective)
 
-            pipeline = self._spawn(self._run_action_pipeline(key, namespace, tool_name, input))
-
             if effective_timeout > 0:
                 with anyio.move_on_after(effective_timeout):
-                    await asyncio.shield(pipeline)
+                    await asyncio.shield(pipeline_task)
 
-            result = await self.coordinator.get_action(key)
+            result = await self.coordinator.get_action(action.key)
             assert result is not None
             return result
 
@@ -304,61 +236,6 @@ class AirlockServer(EnhancedFastMCP):
             auth=require_scopes(PROPOSE_SCOPE),
         )
         FastMCP.add_tool(self, tool)
-
-    # ── Action pipeline ───────────────────────────────────────────────────────
-
-    async def _run_action_pipeline(
-        self, key: ActionKey, namespace: MCPMountPrefix, tool_name: str, input: dict[str, object]
-    ) -> None:
-        """Walk one action through its full lifecycle: predicate → decision → execution."""
-        match call_predicate(self._predicate, namespace, tool_name, input):
-            case Approved():
-                await self._apply_decision(key, namespace, tool_name, input, ApproveDecision())
-            case Denied(reason=reason):
-                await self._apply_decision(
-                    key, namespace, tool_name, input, DenyDecision(reason=reason or "automatically denied")
-                )
-            case NeedsHumanDecision():
-                logger.info("queued action %s server=%s tool=%s", key, namespace, tool_name)
-                await self._await_human_decision(key, namespace, tool_name, input)
-
-    async def _await_human_decision(
-        self, key: ActionKey, namespace: MCPMountPrefix, tool_name: str, input: dict[str, object]
-    ) -> None:
-        """Park until a human decision arrives via decide(), then apply it."""
-        fut = self.coordinator.register_pending(key)
-        try:
-            decision = await fut
-        except asyncio.CancelledError:
-            return  # withdrawn externally; state already updated by withdraw()
-        finally:
-            self.coordinator.remove_pending(key)
-        await self._apply_decision(key, namespace, tool_name, input, decision)
-
-    async def _apply_decision(
-        self,
-        key: ActionKey,
-        namespace: MCPMountPrefix,
-        tool_name: str,
-        input: dict[str, object],
-        decision: OperatorDecision,
-    ) -> None:
-        """Apply a decision: transition state and execute backend if approved."""
-        match decision:
-            case ApproveDecision():
-                started_at = datetime.now(tz=UTC)
-                await self.coordinator.update_and_log(
-                    key, ExecutingState(), ExecutionStartedDetail(started_at=started_at)
-                )
-                client = self._backend_clients.get(namespace)
-                if client is None:
-                    raise RuntimeError(f"backend client not connected for namespace: {namespace!r}")
-                outcome = await client.call_tool_mcp(tool_name, input)
-                await self.coordinator.update_and_log(
-                    key, DoneState(outcome=outcome), ExecutionFinishedDetail(outcome=outcome)
-                )
-            case DenyDecision(reason=reason):
-                await self.coordinator.update_and_log(key, RejectedState(reason=reason), DeniedDetail(reason=reason))
 
     # ── MCP resource notifications ────────────────────────────────────────────
 
@@ -375,10 +252,3 @@ class AirlockServer(EnhancedFastMCP):
                     dead.append(session)
         for session in dead:
             del self._subscriptions[session]
-
-    def _spawn(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
-        """Schedule a coroutine as a background task, keeping a reference to prevent GC."""
-        task = asyncio.create_task(coro)
-        self._background_tasks.add(task)
-        task.add_done_callback(self._background_tasks.discard)
-        return task
