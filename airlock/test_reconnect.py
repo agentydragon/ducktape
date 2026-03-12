@@ -26,17 +26,8 @@ from airlock.conftest import (
     agent_transport,
     serve_app,
 )
-from airlock.models import ActionKey, ActionStatus
-
-
-async def _wait_for_status(client: OperatorClient, key: ActionKey, status: ActionStatus) -> None:
-    """Poll the operator REST API until the action reaches the expected status."""
-    with anyio.fail_after(10.0):
-        while True:
-            action = await client.get_action(key)
-            if action.state.status == status:
-                return
-            await anyio.sleep(0.1)
+from airlock.models import Action, ActionStatus
+from mcp_infra.resource_utils import read_text_json_typed
 
 
 async def test_client_reconnects_after_server_restart(
@@ -73,9 +64,8 @@ async def test_client_reconnects_after_server_restart(
             a2 = await agent.call_echo("after-restart", session_key=session_key)
             assert a2.key.action_seq > a1.key.action_seq
 
-        # Approve via operator REST API and wait for execution to complete
+        # Approve via operator REST API and verify execution
         await operator_client.approve(a2.key)
-        await _wait_for_status(operator_client, a2.key, ActionStatus.DONE)
 
         assert "after-restart" in echo_backend.calls
 
@@ -102,9 +92,8 @@ async def test_pending_action_survives_server_restart(
     app2 = make_gate_app({TEST_NS: echo_backend.server})
     async with serve_app(app2, port=free_port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
         await operator_client.approve(created.key)
-        # Wait for the async execution pipeline to complete
-        with anyio.fail_after(10.0):
-            action = await agent.wait_for(created.key, ActionStatus.DONE)
+        action_uri = f"resource://sessions/{created.key.session_key}/actions/{created.key.action_seq}"
+        action: Action = await read_text_json_typed(agent, action_uri, Action)
         assert action.state.status == ActionStatus.DONE
 
     assert "survive" in echo_backend.calls

@@ -13,16 +13,6 @@ bazel_dep(name = "protobuf", version = "33.4")
 bazel_dep(name = "rules_shell", version = "0.6.1")  # Required by buildifier_prebuilt
 bazel_dep(name = "buildifier_prebuilt", version = "8.2.1.2")
 bazel_dep(name = "aspect_rules_lint", version = "2.0.0")
-
-# Stub out rules_diff (transitive dep of aspect_rules_lint) to avoid downloading
-# ~750 MB from gitlab.arm.com (rules_diff → ape → Zig SDK), which is frequently
-# unavailable (503). The stub provides a shell wrapper around system diff.
-# See https://github.com/aspect-build/rules_lint/issues/797
-local_path_override(
-    module_name = "rules_diff",
-    path = "tools/stubs/rules_diff",
-)
-
 bazel_dep(name = "rules_multirun", version = "0.13.0")  # Required by format_multirun
 bazel_dep(name = "rules_multitool", version = "1.11.1")
 bazel_dep(name = "rules_mypy", version = "0.40.0")

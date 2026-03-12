@@ -318,6 +318,7 @@ py_test(
     deps = [
         ":conftest",
         ":models",
+        "//mcp_infra:resource_utils",
         "@pypi//anyio",
         "@pypi//fastmcp",
         "@pypi//pytest_bazel",
