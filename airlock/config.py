@@ -45,11 +45,22 @@ class Settings(BaseModel):
             "decide(server_namespace, tool_name, arguments) → Approved|Denied|NeedsHumanDecision."
         )
     )
-    oidc_issuer: str
-    oidc_client_id: str
-    oidc_client_secret: str
-    oidc_upstream_issuer: str | None = None
-    oidc_upstream_client_id: str | None = None
+    # -- Operator SPA OIDC (public client, Authorization Code + PKCE against Authentik) --
+    oidc_issuer: str = Field(description="OIDC issuer URL for the operator SPA.")
+    oidc_client_id: str = Field(description="Public client ID for the operator SPA (no secret).")
+
+    # -- OIDCProxy upstream (confidential client for proxying DCR/OAuth flows) --
+    oidc_client_secret: str = Field(description="Client secret for the OIDCProxy upstream confidential client.")
+    oidc_upstream_issuer: str | None = Field(
+        default=None,
+        description="OIDC issuer for the upstream confidential client. "
+        "Defaults to oidc_issuer when the same Authentik application serves both roles.",
+    )
+    oidc_upstream_client_id: str | None = Field(
+        default=None,
+        description="Client ID for the upstream confidential client. "
+        "Defaults to oidc_client_id when the same application serves both roles.",
+    )
     default_wait_mode: WaitMode = YieldAfterMs(timeout_ms=0)
     host: str = "0.0.0.0"
     port: int
