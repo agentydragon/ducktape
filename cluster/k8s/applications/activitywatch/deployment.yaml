@@ -28,7 +28,7 @@ spec:
         - name: harbor-pull-robot
       containers:
         - name: aw-server
-          image: registry.allegedly.works/ducktape/aw-server:devel-20260312035417-cc8aaf3 # {"$imagepolicy": "flux-system:activitywatch"}
+          image: registry.allegedly.works/ducktape/aw-server:devel-20260312072708-48ee228 # {"$imagepolicy": "flux-system:activitywatch"}
           ports:
             - containerPort: 5600
               name: http

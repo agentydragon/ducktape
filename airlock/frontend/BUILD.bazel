@@ -1,7 +1,7 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/js:json_schema.bzl", "js_json_schema")
-load(":defs.bzl", "visual_test")
+load(":defs.bzl", "visual_test_matrix")
 
 npm_link_all_packages(name = "node_modules")
 
@@ -150,37 +150,11 @@ filegroup(
     srcs = ["tests/harness/index.html"],
 )
 
-# ── Visual tests ──────────────────────────────────────────────────────────────
+# ── Visual tests (page x viewport x theme matrix) ────────────────────────────
 
-# ListPage: full list view with pending + recently-resolved actions
-visual_test(
-    name = "visual_ListPage",
-    srcs = ["tests/visual_test_ListPage.mjs"],
-)
-
-# DetailPage: action detail showing the approve/reject workflow
-visual_test(
-    name = "visual_DetailPage",
-    srcs = ["tests/visual_test_DetailPage.mjs"],
-)
-
-# Mobile (375px) variants — verify responsive breakpoints
-visual_test(
-    name = "visual_ListPage_mobile",
-    srcs = ["tests/visual_test_ListPage_mobile.mjs"],
-)
-
-visual_test(
-    name = "visual_DetailPage_mobile",
-    srcs = ["tests/visual_test_DetailPage_mobile.mjs"],
-)
-
-test_suite(
-    name = "visual_tests",
-    tests = [
-        ":visual_DetailPage",
-        ":visual_DetailPage_mobile",
-        ":visual_ListPage",
-        ":visual_ListPage_mobile",
+visual_test_matrix(
+    pages = [
+        "ListPage",
+        "DetailPage",
     ],
 )

@@ -297,17 +297,17 @@ async def _setup_web(
                 mkcert_setup.append_mkcert_ca_to_bundle(mkcert_result.ca_root, combined_ca)
             return mkcert_result
 
+    @tracer.start_as_current_span("install_precommit", context=root_ctx)
     async def traced_precommit():
-        with tracer.start_as_current_span("install_precommit", context=root_ctx):
-            return await run_in_thread(precommit_setup.install_precommit, project_dir, settings.session_dir)
+        return await run_in_thread(precommit_setup.install_precommit, project_dir, settings.session_dir)
 
+    @tracer.start_as_current_span("install_nix", context=root_ctx)
     async def traced_nix():
-        with tracer.start_as_current_span("install_nix", context=root_ctx):
-            return await run_in_thread(nix_setup.install_nix, settings)
+        return await run_in_thread(nix_setup.install_nix, settings)
 
+    @tracer.start_as_current_span("install_cli_tools", context=root_ctx)
     async def traced_cli_tools():
-        with tracer.start_as_current_span("install_cli_tools", context=root_ctx):
-            return await run_in_thread(cli_tools_setup.install_cli_tools, settings.get_wrapper_dir())
+        return await run_in_thread(cli_tools_setup.install_cli_tools, settings.get_wrapper_dir())
 
     results = await asyncio.gather(
         proxy_task,
@@ -479,8 +479,7 @@ async def run_session(hook_input: HookInput, settings: HookSettings, env_file_pa
     logger.info("Session directory: %s", settings.session_dir)
 
     # Load hook config (general config file, not gated on k8s_token).
-    config_path = project_dir / k8s_secrets_setup.HOOKS_DOTDIR / "config.yaml"
-    hook_config = k8s_secrets_setup.load_config(config_path) if config_path.exists() else None
+    hook_config = k8s_secrets_setup.load_repo_config(project_dir)
 
     # K8s secrets are read after platform setup (proxy must be up for web mode TLS).
     secrets: k8s_secrets_setup.K8sSecretsResult | None = None

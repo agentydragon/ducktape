@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uvx --from https://github.com/agentydragon/ducktape/releases/download/ducktape-ef05c308/ducktape-0.1.0-py3-none-any.whl claude-hook"
+            "command": "uvx --from https://github.com/agentydragon/ducktape/releases/download/ducktape-f1ffa79b/ducktape-0.1.0-py3-none-any.whl claude-hook"
           }
         ]
       }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uvx --from https://github.com/agentydragon/ducktape/releases/download/ducktape-ef05c308/ducktape-0.1.0-py3-none-any.whl claude-hook"
+            "command": "uvx --from https://github.com/agentydragon/ducktape/releases/download/ducktape-f1ffa79b/ducktape-0.1.0-py3-none-any.whl claude-hook"
           }
         ]
       }
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uvx --from https://github.com/agentydragon/ducktape/releases/download/ducktape-ef05c308/ducktape-0.1.0-py3-none-any.whl claude-hook"
+            "command": "uvx --from https://github.com/agentydragon/ducktape/releases/download/ducktape-f1ffa79b/ducktape-0.1.0-py3-none-any.whl claude-hook"
           }
         ]
       }

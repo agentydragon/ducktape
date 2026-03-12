@@ -42,3 +42,53 @@ def visual_test(name, srcs, deps = [], baseline = None, size = "small"):
         env = env,
         no_copy_to_bin = _VISUAL_BASE_DATA,
     )
+
+_VIEWPORTS = {
+    "desktop": {"w": "1200", "h": "800"},
+    "mobile": {"w": "375", "h": "812"},
+}
+
+_THEMES = ["light", "dark"]
+
+def visual_test_matrix(pages, viewports = ["desktop", "mobile"], themes = _THEMES, deps = []):
+    """Generate visual regression tests for all page x viewport x theme combinations.
+
+    Args:
+        pages: List of harness page names (e.g., ["ListPage", "DetailPage"]).
+        viewports: List of viewport names from _VIEWPORTS (default: desktop + mobile).
+        themes: List of color schemes (default: light + dark).
+        deps: Additional data deps shared by all tests.
+    """
+    runner = "tests/visual_test_runner.mjs"
+    baseline_data = native.glob(["baselines/*.png"])
+
+    for page in pages:
+        for viewport in viewports:
+            vp = _VIEWPORTS[viewport]
+            for theme in themes:
+                suffix_parts = []
+                if viewport != "desktop":
+                    suffix_parts.append(viewport)
+                if theme != "light":
+                    suffix_parts.append(theme)
+
+                suffix = ("_" + "_".join(suffix_parts)) if suffix_parts else ""
+                baseline_name = page + suffix
+                target_name = "visual_" + baseline_name
+
+                env = dict(_VISUAL_ENV)
+                env["BASELINE_WORKSPACE_PATH"] = native.package_name() + "/baselines"
+                env["VISUAL_TEST_PAGE"] = page
+                env["VISUAL_TEST_BASELINE"] = baseline_name
+                env["VISUAL_TEST_COLOR_SCHEME"] = theme
+                env["VISUAL_TEST_VIEWPORT_W"] = vp["w"]
+                env["VISUAL_TEST_VIEWPORT_H"] = vp["h"]
+
+                js_test(
+                    name = target_name,
+                    size = "small",
+                    entry_point = runner,
+                    data = _VISUAL_BASE_DATA + deps + baseline_data,
+                    env = env,
+                    no_copy_to_bin = _VISUAL_BASE_DATA,
+                )

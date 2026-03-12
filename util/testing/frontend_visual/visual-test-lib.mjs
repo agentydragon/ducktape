@@ -113,8 +113,9 @@ function compareBaseline(name, screenshot, outputDir, baselineDir, updateWriteDi
  *
  * @param {string} scenarioName - Harness page name (e.g. "ListPage").
  * @param {string|null} callerUrl - import.meta.url of the calling test file (for baseline dir resolution).
- * @param {{ viewport?: { width: number, height: number }, baselineName?: string }} [options] - Optional overrides.
+ * @param {{ viewport?: { width: number, height: number }, baselineName?: string, colorScheme?: 'light' | 'dark' }} [options] - Optional overrides.
  *   baselineName overrides the filename stem for the baseline PNG (defaults to scenarioName).
+ *   colorScheme sets the `prefers-color-scheme` media feature (defaults to 'light').
  */
 export async function main(scenarioName, callerUrl = null, options = {}) {
   const baselineName = options.baselineName || scenarioName;
@@ -208,8 +209,9 @@ export async function main(scenarioName, callerUrl = null, options = {}) {
     const page = await browser.newPage();
     const viewport = { width: 1200, height: 800, deviceScaleFactor: 1, ...options.viewport };
     await page.setViewport(viewport);
+    const colorScheme = options.colorScheme || "light";
     await page.emulateMediaFeatures([
-      { name: "prefers-color-scheme", value: "light" },
+      { name: "prefers-color-scheme", value: colorScheme },
       { name: "prefers-reduced-motion", value: "reduce" },
     ]);
 

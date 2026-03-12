@@ -25,13 +25,13 @@ spec:
         - name: harbor-pull-robot
       containers:
         - name: props
-          image: registry.allegedly.works/ducktape/props-backend:devel-20260312034810-cc8aaf3 # {"$imagepolicy": "flux-system:props-backend"}
+          image: registry.allegedly.works/ducktape/props-backend:devel-20260312072104-48ee228 # {"$imagepolicy": "flux-system:props-backend"}
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
           env:
             - name: PROPS_IMAGE_TAG
-              value: devel-20260312034810-cc8aaf3 # {"$imagepolicy": "flux-system:props-backend:tag"}
+              value: devel-20260312072104-48ee228 # {"$imagepolicy": "flux-system:props-backend:tag"}
             - name: PROPS_CONFIG_FILE
               value: /etc/props/config.toml
             - name: PGHOST

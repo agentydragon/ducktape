@@ -70,6 +70,12 @@ def load_config(config_path: Path) -> HookConfig:
     return HookConfig.model_validate(raw)
 
 
+def load_repo_config(root: Path) -> HookConfig | None:
+    """Load hook config from repo root, or None if not found."""
+    config_path = root / HOOKS_DOTDIR / "config.yaml"
+    return load_config(config_path) if config_path.exists() else None
+
+
 def _build_kubeconfig(token: str, server: str, service_account: str, namespace: str, ca_path: Path | None) -> dict:
     """Build kubeconfig dict for kubectl CLI use."""
     cluster_config: dict[str, str] = {"server": server}
@@ -104,8 +110,6 @@ def setup_k8s_secrets(
     result = K8sSecretsResult()
     k8s_cfg = config.k8s
     secrets_cfg = config.k8s_secrets
-    # Tracks the source mapping for each env var to produce informative duplicate errors.
-    env_var_sources: dict[str, str] = {}
 
     # Configure k8s client
     client_config = Configuration()
@@ -134,17 +138,9 @@ def setup_k8s_secrets(
             if data_key not in secret.data:
                 logger.warning("Key %r not found in secret %s/%s", data_key, secrets_cfg.namespace, entry.name)
                 continue
-            if env_var in result.env_vars:
-                raise ValueError(
-                    f"Duplicate env var {env_var!r}: already set by "
-                    f"{env_var_sources[env_var]}, now also requested by "
-                    f"{secrets_cfg.namespace}/{entry.name}[{data_key}]"
-                )
-            source = f"{secrets_cfg.namespace}/{entry.name}[{data_key}]"
             value = base64.b64decode(secret.data[data_key]).decode()
             result.env_vars[env_var] = value
-            env_var_sources[env_var] = source
-            logger.info("Mapped %s -> %s", source, env_var)
+            logger.info("Mapped %s/%s[%s] -> %s", secrets_cfg.namespace, entry.name, data_key, env_var)
 
     # Write kubeconfig
     kubeconfig = _build_kubeconfig(token, k8s_cfg.server, k8s_cfg.service_account, k8s_cfg.namespace, combined_ca_path)

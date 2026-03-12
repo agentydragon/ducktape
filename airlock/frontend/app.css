@@ -1,23 +1,301 @@
 @import "tailwindcss";
 
-/* Status pill colors — kept as classes because status names are data-driven */
+/*
+ * Solarized color palette (Ethan Schoonover)
+ * https://ethanschoonover.com/solarized/
+ *
+ * We define semantic tokens that map to Solarized values, switching
+ * automatically via prefers-color-scheme. Components use these tokens
+ * through Tailwind's @theme custom properties.
+ */
+
+/* ── Solarized palette as raw values ────────────────────────────── */
+:root {
+  /* Base tones */
+  --sol-base03: #002b36;
+  --sol-base02: #073642;
+  --sol-base01: #586e75;
+  --sol-base00: #657b83;
+  --sol-base0: #839496;
+  --sol-base1: #93a1a1;
+  --sol-base2: #eee8d5;
+  --sol-base3: #fdf6e3;
+
+  /* Accent colors */
+  --sol-yellow: #b58900;
+  --sol-orange: #cb4b16;
+  --sol-red: #dc322f;
+  --sol-magenta: #d33682;
+  --sol-violet: #6c71c4;
+  --sol-blue: #268bd2;
+  --sol-cyan: #2aa198;
+  --sol-green: #859900;
+}
+
+/* ── Light theme (Solarized Light) ──────────────────────────────── */
+@media (prefers-color-scheme: light) {
+  :root {
+    /* Backgrounds */
+    --color-bg: var(--sol-base3);
+    --color-bg-card: #fff;
+    --color-bg-elevated: var(--sol-base2);
+    --color-bg-code: var(--sol-base2);
+    --color-bg-header: var(--sol-base02);
+
+    /* Text */
+    --color-text: var(--sol-base00);
+    --color-text-heading: var(--sol-base01);
+    --color-text-muted: var(--sol-base1);
+    --color-text-faint: var(--sol-base1);
+    --color-text-inverse: var(--sol-base3);
+    --color-text-code: var(--sol-base01);
+
+    /* Borders */
+    --color-border: var(--sol-base2);
+    --color-border-subtle: #e8e1c8;
+    --color-divide: var(--sol-base2);
+
+    /* Interactive */
+    --color-link: var(--sol-blue);
+    --color-link-hover: var(--sol-cyan);
+    --color-hover-row: var(--sol-base2);
+    --color-focus-ring: var(--sol-blue);
+
+    /* Header */
+    --color-header-text: var(--sol-base3);
+    --color-header-text-dim: var(--sol-base1);
+    --color-header-link: var(--sol-base2);
+
+    /* Status pills */
+    --color-status-pending-bg: #fef3c7;
+    --color-status-pending-text: var(--sol-yellow);
+    --color-status-exec-bg: #dbeafe;
+    --color-status-exec-text: var(--sol-blue);
+    --color-status-done-bg: #dcfce7;
+    --color-status-done-text: #166534;
+    --color-status-reject-bg: #fee2e2;
+    --color-status-reject-text: var(--sol-red);
+    --color-status-withdrawn-bg: var(--sol-base2);
+    --color-status-withdrawn-text: var(--sol-base1);
+
+    /* Buttons */
+    --color-btn-approve: var(--sol-green);
+    --color-btn-approve-hover: #6d7d00;
+    --color-btn-reject: var(--sol-red);
+    --color-btn-reject-hover: #b7231f;
+    --color-btn-disabled-approve: #c5cc80;
+    --color-btn-disabled-reject: #e8918f;
+
+    /* Badge */
+    --color-badge-bg: var(--sol-red);
+    --color-badge-text: var(--sol-base3);
+
+    /* Form */
+    --color-input-border: var(--sol-base1);
+    --color-input-bg: #fff;
+
+    /* Outcome */
+    --color-success: #166534;
+    --color-error: var(--sol-red);
+  }
+}
+
+/* ── Dark theme (Solarized Dark) ────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Backgrounds */
+    --color-bg: var(--sol-base03);
+    --color-bg-card: var(--sol-base02);
+    --color-bg-elevated: var(--sol-base02);
+    --color-bg-code: var(--sol-base03);
+    --color-bg-header: var(--sol-base02);
+
+    /* Text */
+    --color-text: var(--sol-base0);
+    --color-text-heading: var(--sol-base1);
+    --color-text-muted: var(--sol-base01);
+    --color-text-faint: var(--sol-base01);
+    --color-text-inverse: var(--sol-base03);
+    --color-text-code: var(--sol-base0);
+
+    /* Borders */
+    --color-border: var(--sol-base01);
+    --color-border-subtle: var(--sol-base02);
+    --color-divide: var(--sol-base02);
+
+    /* Interactive */
+    --color-link: var(--sol-blue);
+    --color-link-hover: var(--sol-cyan);
+    --color-hover-row: var(--sol-base02);
+    --color-focus-ring: var(--sol-blue);
+
+    /* Header */
+    --color-header-text: var(--sol-base1);
+    --color-header-text-dim: var(--sol-base01);
+    --color-header-link: var(--sol-base0);
+
+    /* Status pills */
+    --color-status-pending-bg: #422006;
+    --color-status-pending-text: var(--sol-yellow);
+    --color-status-exec-bg: #1e3a5f;
+    --color-status-exec-text: var(--sol-blue);
+    --color-status-done-bg: #14532d;
+    --color-status-done-text: var(--sol-green);
+    --color-status-reject-bg: #450a0a;
+    --color-status-reject-text: var(--sol-red);
+    --color-status-withdrawn-bg: var(--sol-base02);
+    --color-status-withdrawn-text: var(--sol-base01);
+
+    /* Buttons */
+    --color-btn-approve: var(--sol-green);
+    --color-btn-approve-hover: #a3b714;
+    --color-btn-reject: var(--sol-red);
+    --color-btn-reject-hover: #ef5350;
+    --color-btn-disabled-approve: #3d4a00;
+    --color-btn-disabled-reject: #5c1414;
+
+    /* Badge */
+    --color-badge-bg: var(--sol-red);
+    --color-badge-text: var(--sol-base3);
+
+    /* Form */
+    --color-input-border: var(--sol-base01);
+    --color-input-bg: var(--sol-base03);
+
+    /* Outcome */
+    --color-success: var(--sol-green);
+    --color-error: var(--sol-red);
+  }
+}
+
+/* ── Shared component classes ───────────────────────────────────── */
 @layer components {
+  /* Header bar */
+  .app-header {
+    background-color: var(--color-bg-header);
+  }
+  .app-header-title {
+    color: var(--color-header-text);
+  }
+  .app-header-link {
+    color: var(--color-header-link);
+  }
+  .app-header-link:hover {
+    color: var(--color-header-text);
+    text-decoration: underline;
+  }
+
+  /* Cards and elevated surfaces */
+  .card {
+    background-color: var(--color-bg-card);
+  }
+
+  /* Section headings */
+  .section-heading {
+    color: var(--color-text-muted);
+  }
+
+  /* Inline code tags */
+  .code-tag {
+    background-color: var(--color-bg-code);
+    color: var(--color-text-code);
+  }
+
+  /* Pre/code blocks */
+  .pre-block {
+    background-color: var(--color-bg-elevated);
+    color: var(--color-text-code);
+  }
+
+  /* Links */
+  .theme-link {
+    color: var(--color-link);
+  }
+  .theme-link:hover {
+    color: var(--color-link-hover);
+    text-decoration: underline;
+  }
+
+  /* Table structure */
+  .thead-row {
+    background-color: var(--color-bg-elevated);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .th-cell {
+    color: var(--color-text-muted);
+  }
+  .tbody {
+    background-color: var(--color-bg-card);
+  }
+  .tbody > tr + tr {
+    border-top: 1px solid var(--color-divide);
+  }
+  .data-row:hover {
+    background-color: var(--color-hover-row);
+  }
+
+  /* Badge (e.g. pending count) */
+  .badge {
+    background-color: var(--color-badge-bg);
+    color: var(--color-badge-text);
+  }
+
+  /* Buttons */
+  .btn-approve {
+    background-color: var(--color-btn-approve);
+    color: var(--color-badge-text);
+  }
+  .btn-approve:hover {
+    background-color: var(--color-btn-approve-hover);
+  }
+  .btn-approve:disabled {
+    background-color: var(--color-btn-disabled-approve);
+  }
+  .btn-reject {
+    background-color: var(--color-btn-reject);
+    color: var(--color-badge-text);
+  }
+  .btn-reject:hover {
+    background-color: var(--color-btn-reject-hover);
+  }
+  .btn-reject:disabled {
+    background-color: var(--color-btn-disabled-reject);
+  }
+
+  /* Form inputs */
+  .input-field {
+    border: 1px solid var(--color-input-border);
+    background-color: var(--color-input-bg);
+    color: var(--color-text);
+  }
+  .input-field:focus {
+    border-color: var(--color-focus-ring);
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: -1px;
+  }
+
+  /* Status pills */
   .status-pill {
     @apply inline-block rounded-full px-2.5 py-0.5 text-xs font-bold;
   }
   .status-pill-pending {
-    @apply bg-amber-100 text-amber-800;
+    background-color: var(--color-status-pending-bg);
+    color: var(--color-status-pending-text);
   }
   .status-pill-executing {
-    @apply bg-blue-100 text-blue-800;
+    background-color: var(--color-status-exec-bg);
+    color: var(--color-status-exec-text);
   }
   .status-pill-done {
-    @apply bg-green-100 text-green-800;
+    background-color: var(--color-status-done-bg);
+    color: var(--color-status-done-text);
   }
   .status-pill-rejected {
-    @apply bg-red-100 text-red-800;
+    background-color: var(--color-status-reject-bg);
+    color: var(--color-status-reject-text);
   }
   .status-pill-withdrawn {
-    @apply bg-gray-100 text-gray-600;
+    background-color: var(--color-status-withdrawn-bg);
+    color: var(--color-status-withdrawn-text);
   }
 }

@@ -55,23 +55,27 @@
 </script>
 
 {#snippet defaultHeader()}
-  <header class="bg-blue-800 px-4 py-3 sm:px-6 flex items-center gap-3">
-    <h1 class="text-white text-lg font-semibold m-0">Airlock</h1>
+  <header class="app-header px-4 py-3 sm:px-6 flex items-center gap-3">
+    <h1 class="app-header-title text-lg font-semibold m-0">Airlock</h1>
   </header>
 {/snippet}
 
 {#if loading}
   {@render defaultHeader()}
-  <main class="max-w-4xl mx-auto px-4 py-6"><p class="text-gray-500">Loading…</p></main>
+  <main class="max-w-4xl mx-auto px-4 py-6"><p class="section-heading">Loading…</p></main>
 {:else if error}
   {@render defaultHeader()}
-  <main class="max-w-4xl mx-auto px-4 py-6"><p class="text-red-600 font-medium">Failed to load: {error}</p></main>
+  <main class="max-w-4xl mx-auto px-4 py-6">
+    <p class="font-medium" style="color: var(--color-error);">Failed to load: {error}</p>
+  </main>
 {:else if sessionKey !== null && actionSeq !== null}
   {#if action}
     <ActionDetail {action} />
   {:else}
     {@render defaultHeader()}
-    <main class="max-w-4xl mx-auto px-4 py-6"><p class="text-red-600 font-medium">Action not found.</p></main>
+    <main class="max-w-4xl mx-auto px-4 py-6">
+      <p class="font-medium" style="color: var(--color-error);">Action not found.</p>
+    </main>
   {/if}
 {:else}
   <ActionList {pending} {recent} />
