@@ -70,6 +70,12 @@ def load_config(config_path: Path) -> HookConfig:
     return HookConfig.model_validate(raw)
 
 
+def load_repo_config(root: Path) -> HookConfig | None:
+    """Load hook config from repo root, or None if not found."""
+    config_path = root / HOOKS_DOTDIR / "config.yaml"
+    return load_config(config_path) if config_path.exists() else None
+
+
 def _build_kubeconfig(token: str, server: str, service_account: str, namespace: str, ca_path: Path | None) -> dict:
     """Build kubeconfig dict for kubectl CLI use."""
     cluster_config: dict[str, str] = {"server": server}
