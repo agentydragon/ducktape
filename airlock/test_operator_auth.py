@@ -48,10 +48,12 @@ async def test_operator_rest_api_requires_auth(gate_http):
 
 
 async def test_operator_rest_api_rejects_agent_jwt(gate_http, agent_jwt):
-    """REST API returns 403 for a JWT with propose scope but no decide scope."""
+    """REST API rejects a JWT with propose scope but no decide scope."""
     async with httpx.AsyncClient() as client:
         resp = await client.get(f"{gate_http}/api/actions", headers={"Authorization": f"Bearer {agent_jwt}"})
-    assert resp.status_code == 403
+    # JWTVerifier with required_scopes rejects tokens missing the decide scope
+    # at the verification level (401), not as a post-verification authz check (403).
+    assert resp.status_code == 401
 
 
 async def test_operator_rest_api_accepts_operator_jwt(gate_http, operator_jwt):

@@ -14,6 +14,7 @@ import anyio
 import httpx
 import pytest
 import uvicorn
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicNumbers
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_pem_public_key
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -59,7 +60,8 @@ def pytest_configure(config: pytest.Config) -> None:
 def _rsa_public_key_to_jwks(public_key_pem: str) -> dict:
     """Convert an RSA public key PEM to a JWKS document."""
     pub_key = load_pem_public_key(public_key_pem.encode())
-    pub_numbers = pub_key.public_numbers()  # type: ignore[union-attr]
+    rsa_numbers = pub_key.public_numbers()  # type: ignore[union-attr]
+    assert isinstance(rsa_numbers, RSAPublicNumbers)
 
     def _int_to_base64url(n: int) -> str:
         byte_length = (n.bit_length() + 7) // 8
@@ -72,8 +74,8 @@ def _rsa_public_key_to_jwks(public_key_pem: str) -> dict:
                 "use": "sig",
                 "alg": "RS256",
                 "kid": "test-key",
-                "n": _int_to_base64url(pub_numbers.n),
-                "e": _int_to_base64url(pub_numbers.e),
+                "n": _int_to_base64url(rsa_numbers.n),
+                "e": _int_to_base64url(rsa_numbers.e),
             }
         ]
     }
