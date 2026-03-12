@@ -1,0 +1,13 @@
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: buildbuddy-api-key
+  namespace: openclaw-sandbox
+spec:
+  encryptedData:
+    api-key: AgAw5PZ2XEN5rLHjKeAZQGDUKJ3GM+g5CDz6bI99Wl1FR3zGtzxre2IZU1a514eSQv03nZq+NcAmM1UqUki+3qJaNoqepJEpK9iO9/B8s2CGhpIKZSOYWs6bs+JXJni7iG680EmKHX1RmYHUyh1+980NNPxo75bDkbwHKLFCLs3X2UHAC/v5CmKmUY+RJoaV+lN/iPntaQcy5Rl0fbk03mOb7FmMhLlMliC2t9J18EdIIMs2GRoBkH58MZsTqFGRa2bqmn2y+oZhNv9Nri3S8qfHCspJ+Byouigrs4Dwj6DFgerI7iYCuxDFvMKwop4OAvJodsr7ZJGyUUKHWg3W/kUwNG6h2TDBjGpkxGMrMtmNwqsITzEdZXpgq8h+xPntq5sA+/rLOzxtNNed4kk+5jOsLCHr7wd44Ysbb/oBYczzILBizwddSNtvtTTo2Wyz7ik1vfNC1wlrLLEIKI7oiPpr1NCYsBc690/XVBs7gLywYwuQ/ez1vrlM8Lh1tVo5OaRqttaN0hwe9YrFzNV2I8XclAhPG5SMgRj9l+/O8Ts8zeRYq35NGQjzouTSSyDdn2tOoyFJYR4VRx7QEXnJY04JhqNinVetICp3y/G337kGagtHhDzyXiaw0ejfz65hYr5Q0e2MUSCsPZoYpMKgxxNxYfIud9Kmk+C3n5RuQJE4BKBTqnd/zTzasMLpgqTiJUraiboxC454MYI9HEJlZ3pvHNuWug==
+  template:
+    metadata:
+      name: buildbuddy-api-key
+      namespace: openclaw-sandbox
+    type: Opaque

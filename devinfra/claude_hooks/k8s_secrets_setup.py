@@ -23,6 +23,8 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
+HOOKS_DOTDIR = ".claude_hooks"
+
 
 class K8sSecretMapping(BaseModel):
     """Maps a single k8s Secret's data keys to env var names."""

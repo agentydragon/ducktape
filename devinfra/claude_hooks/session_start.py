@@ -52,9 +52,8 @@ logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 
-# Per-repo config directory, resolved from CLAUDE_PROJECT_DIR at runtime.
-# Secrets and repo-specific templates live here, NOT in the wheel.
-_HOOKS_DOTDIR = ".claude_hooks"
+# Re-export for local use. Canonical definition in k8s_secrets_setup.
+_HOOKS_DOTDIR = k8s_secrets_setup.HOOKS_DOTDIR
 
 
 # ============================================================================
@@ -188,7 +187,6 @@ async def _setup_web(
     project_dir: Path,
     tracer: trace.Tracer,
     root_ctx: trace.Context,
-    secrets: k8s_secrets_setup.K8sSecretsResult | None,
     hook_config: k8s_secrets_setup.HookConfig | None,
 ) -> PlatformSetup:
     """Web mode: supervisor, proxy, containers, secrets, parallel installs.
@@ -197,6 +195,8 @@ async def _setup_web(
     shared downstream steps.
     """
     logger.info("Setting up dev environment...")
+
+    secrets: k8s_secrets_setup.K8sSecretsResult | None = None
 
     async def traced_supervisor_start():
         with tracer.start_as_current_span("supervisor_start", context=root_ctx):
@@ -389,7 +389,7 @@ async def _setup_web(
         raise RuntimeError("Combined CA bundle not found - proxy setup incomplete")
 
     # Read k8s secrets now that combined CA is available for TLS.
-    if not secrets and settings.k8s_token and hook_config:
+    if settings.k8s_token and hook_config:
         with tracer.start_as_current_span("setup_k8s_secrets", context=root_ctx):
             secrets = k8s_secrets_setup.setup_k8s_secrets(
                 token=settings.k8s_token,
@@ -493,7 +493,7 @@ async def run_session(hook_input: HookInput, settings: HookSettings, env_file_pa
 
     # Platform-specific setup
     if web_mode:
-        setup = await _setup_web(settings, project_dir, tracer, root_ctx, secrets, hook_config)
+        setup = await _setup_web(settings, project_dir, tracer, root_ctx, hook_config)
     else:
         # CLI mode: read k8s secrets (no proxy needed, combined_ca_path=None).
         if settings.k8s_token and hook_config:

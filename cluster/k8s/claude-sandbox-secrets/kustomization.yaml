@@ -3,4 +3,3 @@ kind: Kustomization
 resources:
   - externalsecret.yaml
   - github-token-sealed.yaml
-  - buildbuddy-api-key-sealed.yaml

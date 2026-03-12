@@ -45,7 +45,7 @@ Hook environments installing in background (pid ${precommit.pid}). First `git co
 ## Secrets
 ${len(secrets.env_vars)} env var(s) loaded from k8s cluster secrets.
 % if secrets.kubeconfig_path:
-`kubectl`: configured for `claude-sandbox` namespace (full admin), read-only in `props`.
+`kubectl`: configured for `claude-sandbox` namespace (full admin), read-only in `props`. RBAC defined in `cluster/k8s/claude-rbac/` and `cluster/k8s/agent-shared-rbac/`.
 % endif
 % endif
 % if buildbuddy_configured:
