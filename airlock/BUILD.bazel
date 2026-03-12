@@ -37,6 +37,52 @@ py_binary(
 )
 
 py_library(
+    name = "export_openapi_schema",
+    srcs = ["export_openapi_schema.py"],
+    imports = [".."],
+    deps = [
+        ":coordinator",
+        ":operator_api",
+    ],
+)
+
+py_binary(
+    name = "export_openapi_schema_bin",
+    imports = [".."],
+    main_module = "airlock.export_openapi_schema",
+    visibility = [
+        "//airlock:__subpackages__",
+    ],
+    deps = [":export_openapi_schema"],
+)
+
+py_library(
+    name = "coordinator",
+    srcs = ["coordinator.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":models",
+        ":storage",
+    ],
+)
+
+py_library(
+    name = "operator_api",
+    srcs = ["operator_api.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":coordinator",
+        ":models",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "storage",
     srcs = ["storage.py"],
     imports = [".."],
@@ -78,6 +124,7 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
+        ":coordinator",
         ":models",
         ":predicates",
         ":storage",
@@ -112,7 +159,9 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":config",
+        ":coordinator",
         ":oidc_auth",
+        ":operator_api",
         ":predicates",
         ":proxy_server",
         "@pypi//starlette",
@@ -177,8 +226,10 @@ py_library(
     imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":coordinator",
         ":models",
         ":oidc_auth",
+        ":operator_api",
         ":predicates",
         ":proxy_server",
         ":storage",
@@ -189,6 +240,7 @@ py_library(
         "@pypi//anyio",
         "@pypi//cryptography",
         "@pypi//fastmcp",
+        "@pypi//httpx",
         "@pypi//mcp",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -252,6 +304,7 @@ py_test(
     deps = [
         ":conftest",
         "@pypi//fastmcp",
+        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",

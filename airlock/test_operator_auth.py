@@ -1,18 +1,20 @@
-"""Tests for MCP tool visibility with different auth credentials.
+"""Tests for auth enforcement across MCP and operator REST endpoints.
 
-Verifies that an agent JWT (scopes: propose, read) cannot see operator-only
-tools, while an operator JWT (scopes: decide, read) can. Uses a real HTTP
-server to ensure FastMCP's auth enforcement works end-to-end.
+Verifies that:
+- Agent JWT sees only agent tools (propose/read), not operator tools
+- Operator REST API requires decide scope
+- Requests without auth or with wrong scope are rejected
 """
 
 from __future__ import annotations
 
+import httpx
 import pytest
 import pytest_bazel
 from fastmcp import FastMCP
 from fastmcp.client import Client
 
-from airlock.conftest import TEST_NS, GateAppFactory, agent_transport, operator_transport, serve_app
+from airlock.conftest import TEST_NS, GateAppFactory, OperatorClient, agent_transport, serve_app
 
 
 @pytest.fixture
@@ -30,7 +32,7 @@ async def gate_http(make_gate_app: GateAppFactory, free_port: int):
 
 
 async def test_agent_cannot_see_operator_tools(gate_http, agent_jwt):
-    """Agent JWT must not see approve_action/reject_action."""
+    """Agent JWT sees only agent-scoped MCP tools (no operator tools on MCP)."""
     async with Client(agent_transport(gate_http, agent_jwt)) as client:
         tools = await client.list_tools()
     tool_names = {t.name for t in tools}
@@ -38,13 +40,35 @@ async def test_agent_cannot_see_operator_tools(gate_http, agent_jwt):
     assert {"approve_action", "reject_action"}.isdisjoint(tool_names)
 
 
-async def test_operator_jwt_sees_operator_tools(gate_http, operator_jwt):
-    """Operator JWT must expose operator MCP tools."""
-    async with Client(operator_transport(gate_http, operator_jwt)) as client:
-        tools = await client.list_tools()
-    tool_names = {t.name for t in tools}
-    assert {"approve_action", "reject_action", "list_actions"} <= tool_names
-    assert {"test_echo", "withdraw_action"}.isdisjoint(tool_names)
+async def test_operator_rest_api_requires_auth(gate_http):
+    """REST API returns 401 without a Bearer token."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"{gate_http}/api/actions")
+    assert resp.status_code == 401
+
+
+async def test_operator_rest_api_rejects_agent_jwt(gate_http, agent_jwt):
+    """REST API returns 403 for a JWT with propose scope but no decide scope."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"{gate_http}/api/actions", headers={"Authorization": f"Bearer {agent_jwt}"})
+    assert resp.status_code == 403
+
+
+async def test_operator_rest_api_accepts_operator_jwt(gate_http, operator_jwt):
+    """REST API accepts a JWT with decide scope and returns actions."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"{gate_http}/api/actions", headers={"Authorization": f"Bearer {operator_jwt}"})
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+async def test_operator_rest_list_actions(gate_http, agent_jwt, operator_client: OperatorClient):
+    """Operator can list pending actions created by an agent via REST API."""
+    async with Client(agent_transport(gate_http, agent_jwt)) as agent:
+        await agent.call_tool("test_echo", {"input": {"text": "hi"}, "justification": "test", "session_key": "s1"})
+
+    actions = await operator_client.list_actions()
+    assert len(actions) >= 1
 
 
 if __name__ == "__main__":

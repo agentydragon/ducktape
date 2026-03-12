@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { getMcpClient } from "./mcp.ts";
+  import { getApiClient } from "./api.ts";
   import ActionList from "./ActionList.svelte";
   import ActionDetail from "./ActionDetail.svelte";
   import type { Action } from "./types.ts";
@@ -16,24 +16,20 @@
   let error = $state<string | null>(null);
 
   async function loadList(): Promise<void> {
-    const mcp = await getMcpClient();
-    [pending, recent] = await Promise.all([mcp.listActions("pending"), mcp.listActions(undefined, 20)]);
+    const api = await getApiClient();
+    [pending, recent] = await Promise.all([api.listActions("pending"), api.listActions(undefined, 20)]);
   }
 
   onMount(async () => {
     if (sessionKey !== null && actionSeq !== null) {
       try {
-        const mcp = await getMcpClient();
-        const uri = `resource://sessions/${sessionKey}/actions/${actionSeq}`;
-        await mcp.subscribeAction<Action>(uri, (a) => {
+        const api = await getApiClient();
+        action = await api.getAction({ session_key: sessionKey, action_seq: actionSeq });
+        loading = false;
+        // Subscribe to live updates for this action
+        api.subscribeAction({ session_key: sessionKey, action_seq: actionSeq }, (a) => {
           action = a;
-          loading = false;
-          error = null;
         });
-        if (loading) {
-          error = "Failed to read action resource";
-          loading = false;
-        }
       } catch (err) {
         error = String(err);
         loading = false;
@@ -46,8 +42,8 @@
       } finally {
         loading = false;
       }
-      const mcp = await getMcpClient();
-      mcp.onListChanged(() => {
+      const api = await getApiClient();
+      api.onListChanged(() => {
         loadList();
       });
     }

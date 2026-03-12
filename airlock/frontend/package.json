@@ -3,7 +3,6 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.23.0",
     "oidc-client-ts": "^3.1.0",
     "openapi-fetch": "^0.15.0",
     "svelte": "^5.38.1"

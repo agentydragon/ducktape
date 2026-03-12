@@ -36,5 +36,4 @@ configMapGenerator:
       - blueprints/openclaw-agent-oauth2.yaml
       - blueprints/airlock-sso.yaml
       - blueprints/airlock-upstream-oauth2.yaml
-      - blueprints/claude-code-airlock-oauth2.yaml
     namespace: authentik

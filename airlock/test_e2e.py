@@ -1,8 +1,8 @@
 """E2E tests for the Airlock over real HTTP transport.
 
-Each test spins up a uvicorn server with auth, using agent and operator MCP
-clients with proper Bearer tokens. This exercises the full transport stack
-end-to-end.
+Each test spins up a uvicorn server with auth, using agent MCP clients and
+operator REST clients with proper Bearer tokens. This exercises the full
+transport stack end-to-end.
 """
 
 from __future__ import annotations
@@ -13,15 +13,7 @@ import pytest_bazel
 from fastmcp import FastMCP
 from starlette.applications import Starlette
 
-from airlock.conftest import (
-    TEST_NS,
-    EchoBackend,
-    GateAppFactory,
-    GateClient,
-    GateServerFactory,
-    gate_http_app,
-    serve_app,
-)
+from airlock.conftest import TEST_NS, EchoBackend, GateAppFactory, GateClient, OperatorClient, serve_app
 from airlock.models import Action, ActionKey, ActionStatus, RejectedState, YieldAfterMs
 from airlock.predicates import Approved, Denied
 from mcp_infra.prefix import MCPMountPrefix
@@ -48,18 +40,14 @@ async def test_approve_executes_backend_tool(
     echo_gate_app: Starlette,
     free_port: int,
     agent_client_transport: object,
-    operator_client_transport: object,
+    operator_client: OperatorClient,
     echo_backend: EchoBackend,
     session_key: str,
 ):
-    """Happy path: tool call queued -> operator approves -> backend runs -> action done."""
-    async with (
-        serve_app(echo_gate_app, port=free_port),
-        GateClient(agent_client_transport) as agent,
-        GateClient(operator_client_transport) as operator,
-    ):
+    """Happy path: tool call queued -> operator approves via REST -> backend runs -> action done."""
+    async with serve_app(echo_gate_app, port=free_port), GateClient(agent_client_transport) as agent:
         action = await agent.call_echo("hello", session_key=session_key)
-        await operator.approve(action.key)
+        await operator_client.approve(action.key)
         with anyio.fail_after(5.0):
             await agent.wait_for(action.key, ActionStatus.DONE)
 
@@ -70,18 +58,14 @@ async def test_reject_leaves_action_rejected_and_skips_backend(
     echo_gate_app: Starlette,
     free_port: int,
     agent_client_transport: object,
-    operator_client_transport: object,
+    operator_client: OperatorClient,
     echo_backend: EchoBackend,
     session_key: str,
 ):
-    """Reject path: tool call queued -> operator rejects -> rejected state, backend not called."""
-    async with (
-        serve_app(echo_gate_app, port=free_port),
-        GateClient(agent_client_transport) as agent,
-        GateClient(operator_client_transport) as operator,
-    ):
+    """Reject path: tool call queued -> operator rejects via REST -> rejected state, backend not called."""
+    async with serve_app(echo_gate_app, port=free_port), GateClient(agent_client_transport) as agent:
         action = await agent.call_echo("no-run", session_key=session_key)
-        await operator.reject(action.key, reason="test rejection")
+        await operator_client.reject(action.key, reason="test rejection")
         with anyio.fail_after(5.0):
             await agent.wait_for(action.key, ActionStatus.REJECTED)
 
@@ -170,21 +154,17 @@ async def test_log_hwm_increments_on_state_changes(
     echo_gate_app: Starlette,
     free_port: int,
     agent_client_transport: object,
-    operator_client_transport: object,
+    operator_client: OperatorClient,
     session_key: str,
 ):
     """The session log HWM increases as actions are received and decided."""
-    async with (
-        serve_app(echo_gate_app, port=free_port),
-        GateClient(agent_client_transport) as agent,
-        GateClient(operator_client_transport) as operator,
-    ):
+    async with serve_app(echo_gate_app, port=free_port), GateClient(agent_client_transport) as agent:
         action = await agent.call_echo("log-test", justification="t", session_key=session_key)
 
         hwm_after_create = int(await read_text(agent, f"resource://sessions/{session_key}/log_hwm"))
         assert hwm_after_create >= 1
 
-        await operator.approve(action.key)
+        await operator_client.approve(action.key)
         with anyio.fail_after(5.0):
             await agent.wait_for(action.key, ActionStatus.DONE)
 
@@ -224,7 +204,7 @@ def _auto_approve(ns: str, tool: str, args: dict) -> Approved:
     ],
 )
 async def test_wait_mode_resolution(
-    make_gate_server: GateServerFactory,
+    make_gate_app: GateAppFactory,
     free_port: int,
     agent_client_transport: object,
     echo_backend: EchoBackend,
@@ -234,8 +214,7 @@ async def test_wait_mode_resolution(
     expected_status: ActionStatus,
 ):
     """Various wait_mode / server-default combinations resolve to expected status."""
-    gate = make_gate_server({TEST_NS: echo_backend.server}, **server_kwargs)
-    app = gate_http_app(gate)
+    app = make_gate_app({TEST_NS: echo_backend.server}, **server_kwargs)
 
     async with serve_app(app, port=free_port), GateClient(agent_client_transport) as agent:
         with anyio.fail_after(10.0):
@@ -245,19 +224,18 @@ async def test_wait_mode_resolution(
 
 
 async def test_auto_deny_with_timeout_returns_rejected(
-    make_gate_server: GateServerFactory,
+    make_gate_app: GateAppFactory,
     free_port: int,
     agent_client_transport: object,
     echo_backend: EchoBackend,
     session_key: str,
 ):
     """Auto-deny predicate + server timeout -> rejected with reason."""
-    gate = make_gate_server(
+    app = make_gate_app(
         {TEST_NS: echo_backend.server},
         predicate=lambda ns, tool, args: Denied(reason="nope"),
         default_wait_mode=YieldAfterMs(timeout_ms=5000),
     )
-    app = gate_http_app(gate)
 
     async with serve_app(app, port=free_port), GateClient(agent_client_transport) as agent:
         action = await agent.call_echo("deny-me", session_key=session_key)
@@ -272,17 +250,16 @@ async def test_auto_deny_with_timeout_returns_rejected(
 
 
 async def test_yield_zero_overrides_large_server_default(
-    make_gate_server: GateServerFactory,
+    make_gate_app: GateAppFactory,
     free_port: int,
     agent_client_transport: object,
     echo_backend: EchoBackend,
     session_key: str,
 ):
     """yield_after_ms=0 returns immediately despite a 30s server default."""
-    gate = make_gate_server(
+    app = make_gate_app(
         {TEST_NS: echo_backend.server}, predicate=_auto_approve, default_wait_mode=YieldAfterMs(timeout_ms=30000)
     )
-    app = gate_http_app(gate)
 
     async with serve_app(app, port=free_port), GateClient(agent_client_transport) as agent:
         with anyio.fail_after(5.0):
@@ -295,17 +272,16 @@ async def test_yield_zero_overrides_large_server_default(
 
 
 async def test_blocking_overrides_tiny_server_default(
-    make_gate_server: GateServerFactory,
+    make_gate_app: GateAppFactory,
     free_port: int,
     agent_client_transport: object,
     echo_backend: EchoBackend,
     session_key: str,
 ):
     """blocking wait_mode overrides a 10ms server default — waits for completion."""
-    gate = make_gate_server(
+    app = make_gate_app(
         {TEST_NS: echo_backend.server}, predicate=_auto_approve, default_wait_mode=YieldAfterMs(timeout_ms=10)
     )
-    app = gate_http_app(gate)
 
     async with serve_app(app, port=free_port), GateClient(agent_client_transport) as agent:
         with anyio.fail_after(10.0):
@@ -319,22 +295,17 @@ async def test_blocking_overrides_tiny_server_default(
 
 
 async def test_blocking_waits_for_operator_approval(
-    make_gate_server: GateServerFactory,
+    make_gate_app: GateAppFactory,
     free_port: int,
     agent_client_transport: object,
-    operator_client_transport: object,
+    operator_client: OperatorClient,
     echo_backend: EchoBackend,
     session_key: str,
 ):
-    """blocking wait_mode with NeedsHumanDecision blocks until operator approves."""
-    gate = make_gate_server({TEST_NS: echo_backend.server})
-    app = gate_http_app(gate)
+    """blocking wait_mode with NeedsHumanDecision blocks until operator approves via REST."""
+    app = make_gate_app({TEST_NS: echo_backend.server})
 
-    async with (
-        serve_app(app, port=free_port),
-        GateClient(agent_client_transport) as agent,
-        GateClient(operator_client_transport) as operator,
-    ):
+    async with serve_app(app, port=free_port), GateClient(agent_client_transport) as agent:
         async with anyio.create_task_group() as tg:
             action_holder: list[Action] = []
 
@@ -346,7 +317,7 @@ async def test_blocking_waits_for_operator_approval(
 
             await anyio.sleep(0.5)
             key = ActionKey(session_key=session_key, action_seq=1)
-            await operator.approve(key)
+            await operator_client.approve(key)
 
         assert len(action_holder) == 1
         assert action_holder[0].state.status == ActionStatus.DONE

@@ -114,6 +114,8 @@ class Action(BaseModel):
     call: ToolCall
     justification: str
     state: ActionState
+    client_id: str | None = None
+    subject: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 

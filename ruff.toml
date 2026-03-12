@@ -144,6 +144,7 @@ split-on-trailing-comma = false
 "x/gatelet/tasks.py" = ["INP001"]  # Task script doesn't need __init__.py
 "x/rspcache/admin_app.py" = ["B008"]  # FastAPI dependency injection pattern
 "x/gatelet/server/**/*.py" = ["B008"]  # FastAPI dependency injection pattern
+"airlock/operator_api.py" = ["B008"]  # FastAPI dependency injection pattern
 # AST visitor methods must use visit_<NodeType> naming (framework requirement)
 # Python's ast.NodeVisitor dispatches by method name: visit_Import, visit_Name, etc.
 "py_detectors/det_*.py" = ["N802"]

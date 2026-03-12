@@ -30,7 +30,6 @@ entries:
         - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
         - !Find [authentik_providers_oauth2.scopemapping, [name, "airlock: propose"]]
         - !Find [authentik_providers_oauth2.scopemapping, [name, "airlock: read"]]
-        - !Find [authentik_providers_oauth2.scopemapping, [name, "airlock: decide"]]
       # OIDCProxy handles redirect URIs dynamically via DCR — the upstream
       # provider just needs to accept the OIDCProxy's own callback URL.
       redirect_uris:

@@ -22,8 +22,8 @@ from airlock.conftest import (
     EchoBackend,
     GateAppFactory,
     GateClient,
+    OperatorClient,
     agent_transport,
-    operator_transport,
     serve_app,
 )
 from airlock.models import Action, ActionStatus
@@ -35,7 +35,7 @@ async def test_client_reconnects_after_server_restart(
     free_port: int,
     base_url: str,
     agent_jwt: str,
-    operator_jwt: str,
+    operator_client: OperatorClient,
     echo_backend: EchoBackend,
     session_key: str,
 ):
@@ -64,9 +64,8 @@ async def test_client_reconnects_after_server_restart(
             a2 = await agent.call_echo("after-restart", session_key=session_key)
             assert a2.key.action_seq > a1.key.action_seq
 
-        # Approve via operator and verify execution
-        async with GateClient(operator_transport(base_url, operator_jwt)) as operator:
-            await operator.approve(a2.key)
+        # Approve via operator REST API and verify execution
+        await operator_client.approve(a2.key)
 
         assert "after-restart" in echo_backend.calls
 
@@ -76,7 +75,7 @@ async def test_pending_action_survives_server_restart(
     free_port: int,
     base_url: str,
     agent_jwt: str,
-    operator_jwt: str,
+    operator_client: OperatorClient,
     echo_backend: EchoBackend,
     session_key: str,
 ):
@@ -91,12 +90,8 @@ async def test_pending_action_survives_server_restart(
 
     # ── Phase 2: restart, approve, verify catch-up ───────────────────────
     app2 = make_gate_app({TEST_NS: echo_backend.server})
-    async with (
-        serve_app(app2, port=free_port),
-        GateClient(operator_transport(base_url, operator_jwt)) as operator,
-        GateClient(agent_transport(base_url, agent_jwt)) as agent,
-    ):
-        await operator.approve(created.key)
+    async with serve_app(app2, port=free_port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
+        await operator_client.approve(created.key)
         action_uri = f"resource://sessions/{created.key.session_key}/actions/{created.key.action_seq}"
         action: Action = await read_text_json_typed(agent, action_uri, Action)
         assert action.state.status == ActionStatus.DONE
@@ -109,7 +104,7 @@ async def test_resubscribe_receives_notifications_after_restart(
     free_port: int,
     base_url: str,
     agent_jwt: str,
-    operator_jwt: str,
+    operator_client: OperatorClient,
     echo_backend: EchoBackend,
     session_key: str,
 ):
@@ -126,9 +121,8 @@ async def test_resubscribe_receives_notifications_after_restart(
     app2 = make_gate_app({TEST_NS: echo_backend.server})
     async with serve_app(app2, port=free_port):
         async with GateClient(agent_transport(base_url, agent_jwt)) as agent:
-            # Approve via operator
-            async with GateClient(operator_transport(base_url, operator_jwt)) as operator:
-                await operator.approve(created.key)
+            # Approve via operator REST API
+            await operator_client.approve(created.key)
 
             # Wait for the ResourceUpdated notification on the new connection
             with anyio.fail_after(10.0):

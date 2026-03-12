@@ -2,7 +2,8 @@
 
 /healthz          — liveness probe (no auth)
 /auth/config      — OIDC configuration for the SPA (no auth)
-/mcp              — MCP endpoint (DualVerifierOIDCProxy handles auth)
+/mcp              — MCP endpoint (DualVerifierOIDCProxy handles auth, agents only)
+/api              — REST API (operator JWT auth, decide scope)
 /static/frontend  — bundled Svelte SPA assets
 /                 — SPA shell
 """
@@ -23,7 +24,9 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from airlock.config import Settings
+from airlock.coordinator import ActionCoordinator
 from airlock.oidc_auth import DualVerifierOIDCProxy
+from airlock.operator_api import create_operator_api
 from airlock.predicates import load_predicate
 from airlock.proxy_server import AirlockServer
 
@@ -38,13 +41,11 @@ def _build_auth(settings: Settings) -> DualVerifierOIDCProxy:
     OIDCProxy handles DCR and OAuth flows (for Claude.ai web) while also accepting
     direct Authentik JWTs (for the OpenClaw auth proxy sidecar).
     """
-    upstream_issuer = settings.oidc_upstream_issuer or settings.oidc_issuer
-    upstream_client_id = settings.oidc_upstream_client_id or settings.oidc_client_id
-    config_url = f"{upstream_issuer.rstrip('/')}/.well-known/openid-configuration"
-    logger.info("Using DualVerifierOIDCProxy (DCR-capable) with upstream %s", upstream_issuer)
+    config_url = f"{settings.oidc_upstream_issuer.rstrip('/')}/.well-known/openid-configuration"
+    logger.info("Using DualVerifierOIDCProxy (DCR-capable) with upstream %s", settings.oidc_upstream_issuer)
     return DualVerifierOIDCProxy(
         config_url=config_url,
-        client_id=upstream_client_id,
+        client_id=settings.oidc_upstream_client_id,
         client_secret=settings.oidc_client_secret,
         base_url=f"{settings.public_base_url}/mcp",
         issuer_url=settings.public_base_url,
@@ -73,17 +74,21 @@ class _MCPPathNorm:
 
 def create_app(settings: Settings, *, include_static: bool = True) -> Any:
     """Build the Starlette app serving UI and MCP on a single port."""
+
     auth = _build_auth(settings)
     predicate = load_predicate(settings.predicate_path)
+    coordinator = ActionCoordinator()
     gate = AirlockServer(
         backends=settings.backends,
         db_path=settings.db_path,
         predicate=predicate,
         public_base_url=settings.public_base_url,
         default_wait_mode=settings.default_wait_mode,
+        coordinator=coordinator,
         auth=auth,
     )
     mcp_app = gate.http_app(path="/")
+    operator_app = create_operator_api(coordinator=coordinator, oidc_issuer=settings.oidc_issuer)
 
     auth_config_response = JSONResponse(
         {
@@ -103,6 +108,7 @@ def create_app(settings: Settings, *, include_static: bool = True) -> Any:
         Route("/healthz", endpoint=healthz),
         Route("/auth/config", endpoint=auth_config),
         Mount("/mcp", app=mcp_app),
+        Mount("/api", app=operator_app),
     ]
 
     if include_static:

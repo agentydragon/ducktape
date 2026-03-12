@@ -14,11 +14,10 @@ js_library(
 )
 
 js_library(
-    name = "mcp",
-    srcs = ["mcp.ts"],
+    name = "api",
+    srcs = ["api.ts"],
     deps = [
         ":auth",
-        ":node_modules",
         ":types",
     ],
 )
@@ -40,7 +39,7 @@ js_library(
     name = "ActionDetail",
     srcs = ["ActionDetail.svelte"],
     deps = [
-        ":mcp",
+        ":api",
         ":types",
     ],
 )
@@ -51,7 +50,7 @@ js_library(
     deps = [
         ":ActionDetail",
         ":ActionList",
-        ":mcp",
+        ":api",
         ":types",
     ],
 )
