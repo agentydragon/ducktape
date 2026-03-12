@@ -12,9 +12,9 @@ import logging
 import os
 from pathlib import Path
 
-import yaml
 from kubernetes import client, config
 
+from devinfra.claude_hooks.k8s_secrets_setup import load_config
 from util.bazel.workspace import get_build_workspace_directory
 
 logging.basicConfig(format="[%(asctime)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.INFO)
@@ -28,11 +28,11 @@ def generate(root: Path) -> None:
     if not config_path.exists():
         raise SystemExit(f"Config file not found: {config_path}")
 
-    raw = yaml.safe_load(config_path.read_text())
-    k8s_cfg = raw["k8s"]
-    server = k8s_cfg["server"]
-    service_account = k8s_cfg["service_account"]
-    sa_namespace = k8s_cfg.get("sa_namespace", "default")
+    hook_config = load_config(config_path)
+    k8s_cfg = hook_config.k8s
+    server = k8s_cfg.server
+    service_account = k8s_cfg.service_account
+    sa_namespace = k8s_cfg.sa_namespace
 
     kubeconfig_path = os.environ.get("KUBECONFIG")
     if not kubeconfig_path:

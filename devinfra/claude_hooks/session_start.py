@@ -189,6 +189,7 @@ async def _setup_web(
     tracer: trace.Tracer,
     root_ctx: trace.Context,
     secrets: k8s_secrets_setup.K8sSecretsResult | None,
+    hook_config: k8s_secrets_setup.HookConfig | None,
 ) -> PlatformSetup:
     """Web mode: supervisor, proxy, containers, secrets, parallel installs.
 
@@ -388,17 +389,14 @@ async def _setup_web(
         raise RuntimeError("Combined CA bundle not found - proxy setup incomplete")
 
     # Read k8s secrets now that combined CA is available for TLS.
-    if not secrets and settings.k8s_token:
-        config_path = project_dir / _HOOKS_DOTDIR / "config.yaml"
-        if config_path.exists():
-            with tracer.start_as_current_span("setup_k8s_secrets", context=root_ctx):
-                hook_config = k8s_secrets_setup.load_config(config_path)
-                secrets = k8s_secrets_setup.setup_k8s_secrets(
-                    token=settings.k8s_token,
-                    session_dir=settings.session_dir,
-                    combined_ca_path=combined_ca,
-                    config=hook_config,
-                )
+    if not secrets and settings.k8s_token and hook_config:
+        with tracer.start_as_current_span("setup_k8s_secrets", context=root_ctx):
+            secrets = k8s_secrets_setup.setup_k8s_secrets(
+                token=settings.k8s_token,
+                session_dir=settings.session_dir,
+                combined_ca_path=combined_ca,
+                config=hook_config,
+            )
 
     # Ensure 'fork' git remote when GITHUB_TOKEN is available.
     fork_result: fork_remote_setup.ForkRemoteSetup | None = None
@@ -486,26 +484,22 @@ async def run_session(hook_input: HookInput, settings: HookSettings, env_file_pa
     logger.info("CLAUDE_PROJECT_DIR: %s", project_dir)
     logger.info("Session directory: %s", settings.session_dir)
 
-    # Load k8s secrets from cluster (replaces age-encrypted secrets).
-    # Returns None when k8s_token is unset or config file doesn't exist.
-    secrets: k8s_secrets_setup.K8sSecretsResult | None = None
+    # Load hook config (general config file, not gated on k8s_token).
     config_path = project_dir / _HOOKS_DOTDIR / "config.yaml"
-    if settings.k8s_token and config_path.exists():
-        hook_config = k8s_secrets_setup.load_config(config_path)
-        # In web mode, we need the combined CA (available after proxy setup).
-        # Defer actual k8s secret reading to after proxy is up.
-        # In CLI mode, read secrets immediately (no proxy).
-        if not web_mode:
-            secrets = k8s_secrets_setup.setup_k8s_secrets(
-                token=settings.k8s_token, session_dir=settings.session_dir, combined_ca_path=None, config=hook_config
-            )
-    else:
-        hook_config = None
+    hook_config = k8s_secrets_setup.load_config(config_path) if config_path.exists() else None
+
+    # K8s secrets are read after platform setup (proxy must be up for web mode TLS).
+    secrets: k8s_secrets_setup.K8sSecretsResult | None = None
 
     # Platform-specific setup
     if web_mode:
-        setup = await _setup_web(settings, project_dir, tracer, root_ctx, secrets)
+        setup = await _setup_web(settings, project_dir, tracer, root_ctx, secrets, hook_config)
     else:
+        # CLI mode: read k8s secrets (no proxy needed, combined_ca_path=None).
+        if settings.k8s_token and hook_config:
+            secrets = k8s_secrets_setup.setup_k8s_secrets(
+                token=settings.k8s_token, session_dir=settings.session_dir, combined_ca_path=None, config=hook_config
+            )
         setup = PlatformSetup(
             buildbuddy_configured=buildbuddy_setup.is_buildbuddy_configured(),
             with_direnv=True,
