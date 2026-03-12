@@ -47,6 +47,9 @@ class Settings(BaseModel):
     )
     oidc_issuer: str
     oidc_client_id: str
+    oidc_client_secret: str | None = None
+    oidc_upstream_issuer: str | None = None
+    oidc_upstream_client_id: str | None = None
     default_wait_mode: WaitMode = YieldAfterMs(timeout_ms=0)
     host: str = "0.0.0.0"
     port: int
@@ -60,6 +63,9 @@ class Settings(BaseModel):
     def load(cls) -> Settings:
         config_path = Path(os.environ.get("CONFIG_PATH", "/etc/airlock/config.yaml"))
         data = yaml.safe_load(config_path.read_text())
+        oidc_client_secret = os.environ.get("OIDC_CLIENT_SECRET")
+        if oidc_client_secret:
+            data["oidc_client_secret"] = oidc_client_secret
         settings = cls.model_validate(data)
         exec_token = os.environ.get("EXEC_BACKEND_TOKEN")
         if exec_token:

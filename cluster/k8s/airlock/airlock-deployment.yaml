@@ -40,6 +40,11 @@ spec:
                 secretKeyRef:
                   name: exec-backend-token
                   key: password
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: airlock-secrets
+                  key: oidc-client-secret
           volumeMounts:
             - name: data
               mountPath: /data

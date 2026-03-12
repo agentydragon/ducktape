@@ -127,6 +127,16 @@ resource "random_password" "openclaw_agent_client_secret" {
   }
 }
 
+resource "random_password" "airlock_upstream_client_secret" {
+  length  = 32
+  special = false
+  keepers = { rotation_version = var.rotation_version }
+
+  lifecycle {
+    ignore_changes = [length, special]
+  }
+}
+
 # --- Vault Storage: Basic Credentials ---
 
 resource "vault_kv_secret_v2" "gitea_oidc" {
@@ -226,6 +236,16 @@ resource "vault_kv_secret_v2" "openclaw_agent_oidc" {
   data_json = jsonencode({
     client_id     = "openclaw-agent"
     client_secret = random_password.openclaw_agent_client_secret.result
+  })
+}
+
+resource "vault_kv_secret_v2" "airlock_upstream_oidc" {
+  mount = "kv"
+  name  = "sso/airlock-upstream"
+
+  data_json = jsonencode({
+    client_id     = "airlock-upstream"
+    client_secret = random_password.airlock_upstream_client_secret.result
   })
 }
 

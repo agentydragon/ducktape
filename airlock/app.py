@@ -2,7 +2,7 @@
 
 /healthz          — liveness probe (no auth)
 /auth/config      — OIDC configuration for the SPA (no auth)
-/mcp              — MCP endpoint (JWTVerifier handles auth via JWKS)
+/mcp              — MCP endpoint (OIDCProxy or JWTVerifier handles auth)
 /static/frontend  — bundled Svelte SPA assets
 /                 — SPA shell
 """
@@ -25,6 +25,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from airlock.config import Settings
+from airlock.oidc_auth import DualVerifierOIDCProxy
 from airlock.predicates import load_predicate
 from airlock.proxy_server import AirlockServer
 
@@ -40,6 +41,33 @@ def _fetch_oidc_discovery(issuer: str) -> dict[str, Any]:
     resp.raise_for_status()
     result: dict[str, Any] = resp.json()
     return result
+
+
+def _build_auth(settings: Settings) -> DualVerifierOIDCProxy | JWTVerifier:
+    """Build the auth provider based on whether oidc_client_secret is configured.
+
+    With oidc_client_secret + oidc_upstream_issuer + oidc_upstream_client_id:
+    OIDCProxy handles DCR and OAuth flows (for Claude.ai web) while also accepting
+    direct Authentik JWTs (for the OpenClaw auth proxy sidecar).
+
+    Without: plain JWTVerifier (legacy behavior, JWKS-only validation).
+    """
+    if settings.oidc_client_secret is not None:
+        upstream_issuer = settings.oidc_upstream_issuer or settings.oidc_issuer
+        upstream_client_id = settings.oidc_upstream_client_id or settings.oidc_client_id
+        config_url = f"{upstream_issuer.rstrip('/')}/.well-known/openid-configuration"
+        logger.info("Using DualVerifierOIDCProxy (DCR-capable) with upstream %s", upstream_issuer)
+        return DualVerifierOIDCProxy(
+            config_url=config_url,
+            client_id=upstream_client_id,
+            client_secret=settings.oidc_client_secret,
+            base_url=f"{settings.public_base_url}/mcp",
+            issuer_url=settings.public_base_url,
+            require_authorization_consent=False,
+        )
+    discovery = _fetch_oidc_discovery(settings.oidc_issuer)
+    logger.info("Using JWTVerifier (no DCR) with JWKS from %s", discovery["jwks_uri"])
+    return JWTVerifier(jwks_uri=discovery["jwks_uri"])
 
 
 class _MCPPathNorm:
@@ -63,7 +91,7 @@ class _MCPPathNorm:
 
 def create_app(settings: Settings, *, include_static: bool = True) -> Any:
     """Build the Starlette app serving UI and MCP on a single port."""
-    discovery = _fetch_oidc_discovery(settings.oidc_issuer)
+    auth = _build_auth(settings)
     predicate = load_predicate(settings.predicate_path)
     gate = AirlockServer(
         backends=settings.backends,
@@ -71,7 +99,7 @@ def create_app(settings: Settings, *, include_static: bool = True) -> Any:
         predicate=predicate,
         public_base_url=settings.public_base_url,
         default_wait_mode=settings.default_wait_mode,
-        auth=JWTVerifier(jwks_uri=discovery["jwks_uri"]),
+        auth=auth,
     )
     mcp_app = gate.http_app(path="/")
 
