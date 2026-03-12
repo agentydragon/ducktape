@@ -15,7 +15,7 @@ from pathlib import Path
 from kubernetes import client, config
 
 from devinfra.claude_hooks.k8s_secrets_setup import load_repo_config
-`from util.bazel.workspace import get_build_workspace_directory
+from util.bazel.workspace import get_build_workspace_directory
 
 logging.basicConfig(format="[%(asctime)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.INFO)
 log = logging.getLogger(__name__)
