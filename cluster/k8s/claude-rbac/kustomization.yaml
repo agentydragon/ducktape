@@ -9,7 +9,6 @@ resources:
   - role-sandbox.yaml
   - rolebinding-sandbox.yaml
   - role-props-reader.yaml
-  - clusterrole-flux-kustomization-reader.yaml
   - rolebinding-ollama-consumer.yaml
   - role-gatus-reader.yaml
   - clusterrole-cluster-diagnostics-reader.yaml

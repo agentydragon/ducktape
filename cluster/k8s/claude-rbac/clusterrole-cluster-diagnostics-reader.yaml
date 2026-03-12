@@ -94,6 +94,10 @@ rules:
     resources:
       - helmreleases
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["kustomize.toolkit.fluxcd.io"]
+    resources:
+      - kustomizations
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["metrics.k8s.io"]
     resources:
       - pods
