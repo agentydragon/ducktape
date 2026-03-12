@@ -570,4 +570,16 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_k8s_secrets_setup",
+    srcs = ["test_k8s_secrets_setup.py"],
+    imports = ["../.."],
+    deps = [
+        ":conftest",
+        ":k8s_secrets_setup",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # === Linting ===
