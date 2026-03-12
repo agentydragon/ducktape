@@ -1,12 +1,16 @@
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
-  name: cluster-diagnostics-reader
+  name: agent-gatus-reader
+  namespace: gatus
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cluster-diagnostics-reader
+  kind: Role
+  name: gatus-reader
 subjects:
   - kind: ServiceAccount
     name: claude-code-web
     namespace: default
+  - kind: ServiceAccount
+    name: openclaw
+    namespace: openclaw-gateway

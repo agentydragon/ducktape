@@ -3,12 +3,8 @@ kind: Kustomization
 resources:
   - node-data-pvc.yaml
   - openclawinstance.yaml
-  - clusterrolebinding-flux-reader.yaml
-  - clusterrolebinding-diagnostics-reader.yaml
   - rolebinding-ollama-consumer.yaml
-  - rolebinding-props-reader.yaml
   - networkpolicy-authentik.yaml
   - networkpolicy-node-ingress.yaml
   - cnp-kube-api-egress.yaml
-  - rolebinding-gatus-reader.yaml
   - role-openclaw-reader.yaml
