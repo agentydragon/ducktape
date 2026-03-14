@@ -16,3 +16,4 @@ resources:
   - rolebinding-openclaw-reader.yaml
   - role-harbor-reader.yaml
   - rolebinding-harbor-reader.yaml
+  - role-logs-configmaps-reader.yaml

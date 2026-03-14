@@ -1,0 +1,47 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: logs-configmaps-reader
+  namespace: monitoring
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods/log
+      - configmaps
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: logs-configmaps-reader
+  namespace: kube-system
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods/log
+      - configmaps
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: logs-configmaps-reader
+  namespace: longhorn-system
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods/log
+      - configmaps
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: logs-configmaps-reader
+  namespace: flux-system
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods/log
+      - configmaps
+    verbs: ["get", "list", "watch"]

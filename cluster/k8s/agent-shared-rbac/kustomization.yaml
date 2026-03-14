@@ -5,3 +5,4 @@ resources:
 
   - rolebinding-gatus-reader.yaml
   - rolebinding-props-reader.yaml
+  - rolebinding-logs-configmaps-reader.yaml
