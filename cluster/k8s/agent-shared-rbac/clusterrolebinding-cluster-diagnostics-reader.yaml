@@ -13,3 +13,6 @@ subjects:
   - kind: ServiceAccount
     name: openclaw
     namespace: openclaw-gateway
+  - kind: ServiceAccount
+    name: default
+    namespace: openclaw-sandbox
