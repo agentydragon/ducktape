@@ -5,6 +5,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
@@ -88,6 +90,9 @@ func main() {
 	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventNetwork, Message: fmt.Sprintf("router ready, internet=%s, lan=%s", internetIP, lanIP)})
 	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: "router running"})
 
-	// Sleep forever (router stays up until killed).
-	select {}
+	// Block until killed. Using signal.Notify avoids Go's deadlock
+	// detector, which would panic on select{} with no other goroutines.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	<-sigCh
 }

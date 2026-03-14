@@ -220,6 +220,8 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 				ctrl.lastPublicIP = publicIP
 				logger.Debug("published local affiliate",
 					zap.Int("other_endpoints", len(otherEndpoints)),
+					zap.Int("kubespan_endpoints", len(localAffiliate.TypedSpec().KubeSpan.Endpoints)),
+					zap.Int("addresses", len(localAffiliate.TypedSpec().Addresses)),
 				)
 			}
 		}
@@ -234,6 +236,12 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 		r.StartTrackingOutputs()
 
 		for pubKey, affSpec := range affiliates {
+			logger.Debug("affiliate from discovery",
+				zap.String("pubkey", pubKey),
+				zap.String("hostname", affSpec.Hostname),
+				zap.Int("endpoints", len(affSpec.KubeSpan.Endpoints)),
+				zap.Int("addresses", len(affSpec.Addresses)),
+			)
 			if err := safe.WriterModify(ctx, r,
 				cluster.NewAffiliate(cluster.NamespaceName, resource.ID(pubKey)),
 				func(res *cluster.Affiliate) error {

@@ -377,6 +377,7 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 				zap.String("public_key", pubKey),
 				zap.Stringer("address", peerSpec.Address),
 				zap.Int("allowed_ips", len(peerSpec.AllowedIPs)),
+				zap.Int("endpoints", len(peerSpec.Endpoints)),
 			)
 		}
 

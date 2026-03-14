@@ -47,7 +47,7 @@ func runTopology(t *testing.T, topology string) {
 
 	t.Log("booting discovery VM...")
 	vmDisc := h.BootVM(t, "vm-disc", vmlinuz, initramfsDisc,
-		fmt.Sprintf("mode=discovery role=discovery discovery_ip=%s/24", discIP),
+		fmt.Sprintf("mode=discovery role=discovery discovery_ip=%s/24 topology=%s", discIP, topology),
 		h.McastNIC("net0", mcastAddr, "52:54:00:ff:00:01")...)
 
 	t.Log("booting VM-B...")

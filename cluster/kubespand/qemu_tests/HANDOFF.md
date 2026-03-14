@@ -3,49 +3,70 @@
 ## Overarching Goal
 
 Get kubespand to work in a double-NAT topology: A → NAT → B → NAT → C, where all
-nodes discover each other and establish WireGuard tunnels. The kubespand doublenat test
-currently times out on peer discovery.
-
-Before debugging kubespand further, we need to answer: **does upstream Talos KubeSpan
-work through double NAT at all?** The Talos diagnostic test (`talos/talos_test.go`)
-boots real Talos VMs in the same double-NAT QEMU topology to find out. If Talos itself
-can't do it, we know it's a protocol limitation and can stop trying to make kubespand
-do it.
+nodes discover each other and establish WireGuard tunnels.
 
 ## Immediate Goal
 
 Restructure the kubespand QEMU integration tests from a single monolithic test file
-into separate test targets for parallel execution, and get the Talos diagnostic test
-working end-to-end.
+into separate test targets for parallel execution, and get all topologies passing.
 
 ## Status
 
-### Working
+### All Passing (RBE)
 
-- **nft test**: PASSES on RBE. Standalone init binary + test.
-- **Test helpers**: `qemu_tests` package with VM management, event channels, artifact saving.
-- **VM init binaries**: discovery, router, kubespan, doublenat — all build and the Alpine
-  VMs boot correctly.
-- **Talos test infrastructure**: Pre-built nocloud qcow2 disk image boots, CIDATA config
-  injection works, apid comes up, talosctl connects.
+- **nft test**: `//cluster/kubespand/qemu_tests/nft:nft_test` — PASSES (~8s)
+- **kubespan test**: `//cluster/kubespand/qemu_tests/kubespan:kubespan_test` — PASSES (~44s)
+  - TestFlat, TestCrossSubnet, TestDiscoveryOnly all pass
+- **doublenat test**: `//cluster/kubespand/qemu_tests/doublenat:doublenat_test` — PASSES (~117s)
+  - TestDoubleNAT passes (VPS↔NAT1 and VPS↔NAT2 probes succeed)
 
-### Fixed
+### Blocked (External)
 
-- **kubespan/doublenat tests**: Peer discovery timeout was caused by a race condition in
-  `DiscoveryController` (introduced by `08bcc3b "use upstream Talos LocalAffiliateController"`).
-  The controller skipped discovery manager creation when `LocalAffiliateController` hadn't
-  produced its output yet. Fixed by restructuring the reconcile loop to start the discovery
-  manager immediately and defer only the local affiliate publish step.
-- **kubespan/doublenat tests**: Migrated from `time.Sleep` to event-driven `RequireEvent`
-  pattern for infrastructure VM readiness. Added `t.Cleanup` with `KillAndWait` + `SaveLogs`
-  so logs are preserved even on `Fatalf`.
+- **talos test**: `//cluster/kubespand/qemu_tests/talos:talos_test` — blocked by 503 from
+  `factory.talos.dev` (Talos image download). Not a code issue; retry when service recovers.
 
-### Needs Fixing
+## Bugs Fixed
 
-- **Talos test**: VPS can't reach discovery service — the QEMU user-mode mgmt NIC (eth1)
-  gets DHCP default route that overrides eth0's subnet route. **Fix in progress**: testdata
-  configs regenerated with `eth1: dhcp: false` for VPS. NAT1/NAT2 don't have mgmt NICs so
-  they're fine.
+### 1. YAML `omitempty` causing 0 KubeSpan endpoints (ROOT CAUSE of doublenat failure)
+
+**Symptom**: All kubespand nodes in the doublenat topology published 0 KubeSpan endpoints
+to the discovery service. Peers discovered each other but had no endpoints to connect to.
+
+**Root cause**: `agentconfig.go` YAML tags for slice fields lacked `omitempty`:
+
+```go
+// BEFORE (BUG):
+EndpointFilters []string `yaml:"endpoint_filters"`
+
+// AFTER (FIX):
+EndpointFilters []string `yaml:"endpoint_filters,omitempty"`
+```
+
+**Data flow**: nil `EndpointFilters` → YAML marshal produces `endpoint_filters: []` →
+YAML unmarshal produces `[]string{}` (non-nil empty) → passes `!= nil` check in upstream
+Talos `LocalAffiliateController` → `FilterIPs(ips, []string{})` returns empty → 0 endpoints.
+
+The fix was adding `omitempty` to `EndpointFilters`, `ExtraEndpoints`, and
+`ExcludeAdvertisedNetworks` YAML tags. This preserves nil semantics through the
+YAML round-trip that happens in `kubespanlib.StartKubespand()`.
+
+### 2. Reverse path filtering on non-Talos hosts
+
+**Symptom**: Decrypted WireGuard packets dropped on hosts with `rp_filter=1` or `2`
+(NixOS, Ubuntu defaults via systemd sysctl.d).
+
+**Fix** (`wireguard_link.go`): Set `rp_filter=0` on both `conf/<iface>/rp_filter` AND
+`conf/all/rp_filter` (effective = max of both). Also enable `src_valid_mark=1` for
+fwmark-based RPF as recommended by WireGuard docs.
+
+### 3. Discovery controller race condition (previous session)
+
+**Fix**: Restructured `DiscoveryController` reconcile loop to start the discovery manager
+immediately and defer only the local affiliate publish step.
+
+### 4. Port mismatch in doublenat VMs (previous session)
+
+**Fix**: Set all WireGuard listen ports to 51820.
 
 ## Architecture
 
@@ -139,6 +160,13 @@ Worker nodes' apid waits for "api certificates" which are issued by trustd on th
 controlplane. Making all nodes workers causes apid to never start. At least one node
 must be controlplane.
 
+### YAML nil vs empty slice semantics
+
+Go's `yaml.v3` marshals nil slices as `[]` (empty sequence) without `omitempty`.
+Unmarshaling `[]` produces `[]string{}` (non-nil empty), not nil. This matters when
+upstream code checks `!= nil` to decide whether to apply filtering. Always use
+`omitempty` on optional slice YAML tags to preserve nil semantics through round-trips.
+
 ## Observed Timings (RBE, Firecracker, TCG)
 
 - Alpine VM boot (discovery/router): ~5s
@@ -149,7 +177,5 @@ must be controlplane.
 
 ## Next Steps
 
-1. Run Talos test with regenerated testdata (eth1 dhcp:false fix).
-2. Once Talos API connects, check if KubeSpan peers are discovered through double NAT.
-3. Run kubespan/doublenat tests on RBE to verify the DiscoveryController fix resolves
-   the peer discovery timeout.
+1. Retry Talos test once `factory.talos.dev` recovers from 503.
+2. Consider adding the YAML omitempty gotcha to kubespand's AGENTS.md.

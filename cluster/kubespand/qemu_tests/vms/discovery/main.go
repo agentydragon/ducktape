@@ -36,6 +36,13 @@ func main() {
 	initlib.MustRun("ip", "link", "set", "eth0", "up")
 	initlib.MustRun("ip", "addr", "add", discoveryIP, "dev", "eth0")
 
+	// In cross_subnet topology, the discovery VM needs routes to all
+	// peer subnets (e.g. 10.2.0.0/24) so it can respond to gRPC
+	// connections from VMs on different subnets sharing the same L2.
+	if params["topology"] == "cross_subnet" {
+		initlib.MustRun("ip", "route", "add", "10.0.0.0/8", "dev", "eth0")
+	}
+
 	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventNetwork, Message: fmt.Sprintf("network ready, ip=%s", discoveryIP)})
 
 	// Start discovery service.
@@ -61,6 +68,11 @@ func main() {
 
 	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: "discovery-service running"})
 
-	// Sleep forever (discovery service stays up until killed).
-	select {}
+	// Block until the discovery service exits (or the VM is killed).
+	// Using discCmd.Wait() instead of select{} avoids Go's deadlock
+	// detector, which would panic because no other goroutines are running.
+	if err := discCmd.Wait(); err != nil {
+		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "discovery-service exited", Error: err.Error()})
+	}
+	initlib.Poweroff()
 }

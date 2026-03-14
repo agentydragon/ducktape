@@ -74,13 +74,13 @@ type KubespanConfig struct {
 	// IdentityFile is the path to persist the WireGuard keypair.
 	IdentityFile string `yaml:"identity_file"`
 	// EndpointFilters control which discovered peer endpoints are accepted.
-	EndpointFilters []string `yaml:"endpoint_filters"`
+	EndpointFilters []string `yaml:"endpoint_filters,omitempty"`
 	// ExtraEndpoints are additional endpoints to announce via the discovery service.
-	ExtraEndpoints []netip.AddrPort `yaml:"extra_endpoints"`
+	ExtraEndpoints []netip.AddrPort `yaml:"extra_endpoints,omitempty"`
 	// HarvestExtraEndpoints enables endpoint harvesting for re-announcement.
 	HarvestExtraEndpoints bool `yaml:"harvest_extra_endpoints"`
 	// ExcludeAdvertisedNetworks are prefixes to exclude from advertised networks.
-	ExcludeAdvertisedNetworks []netip.Prefix `yaml:"exclude_advertised_networks"`
+	ExcludeAdvertisedNetworks []netip.Prefix `yaml:"exclude_advertised_networks,omitempty"`
 }
 
 // DiscoveryConfig holds discovery service settings.
