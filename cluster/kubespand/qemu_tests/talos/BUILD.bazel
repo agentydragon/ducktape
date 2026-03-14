@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "talos_test",
+    timeout = "eternal",
+    srcs = ["talos_test.go"],
+    data = [
+        "//cluster/kubespand/qemu_tests:vmlinuz",
+        "//cluster/kubespand/qemu_tests/vms/discovery:initramfs",
+        "//cluster/kubespand/qemu_tests/vms/router:initramfs",
+        "@talos_nocloud_amd64//file",
+        "@talosctl_amd64//file",
+    ] + glob(["testdata/**"]),
+    tags = ["requires_qemu"],
+    deps = [
+        "//cluster/kubespand/qemu_tests",
+        "@io_bazel_rules_go//go/runfiles",
+    ],
+)

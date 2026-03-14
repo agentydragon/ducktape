@@ -1,0 +1,18 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "doublenat_test",
+    timeout = "eternal",
+    srcs = ["doublenat_test.go"],
+    data = [
+        "//cluster/kubespand/qemu_tests:vmlinuz",
+        "//cluster/kubespand/qemu_tests/vms/discovery:initramfs",
+        "//cluster/kubespand/qemu_tests/vms/doublenat:initramfs",
+        "//cluster/kubespand/qemu_tests/vms/router:initramfs",
+    ],
+    tags = ["requires_qemu"],
+    deps = [
+        "//cluster/kubespand/qemu_tests",
+        "@io_bazel_rules_go//go/runfiles",
+    ],
+)

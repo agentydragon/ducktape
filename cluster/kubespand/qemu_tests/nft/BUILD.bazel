@@ -1,0 +1,67 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+# ─ NFT smoke init binary (runs inside QEMU VM as PID 1) ─────────────────────
+go_library(
+    name = "init_lib",
+    testonly = True,
+    srcs = [
+        "init.go",
+        "nft_exprs.go",
+        "nft_smoke.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/nft/init",
+    deps = [
+        "//cluster/kubespand/qemu_tests",
+        "//cluster/kubespand/qemu_tests/vms/initlib",
+        "@com_github_google_nftables//:nftables",
+        "@com_github_google_nftables//binaryutil",
+        "@com_github_google_nftables//expr",
+        "@org_golang_x_sys//unix",
+    ],
+)
+
+go_binary(
+    name = "init",
+    testonly = True,
+    embed = [":init_lib"],
+    goarch = "amd64",
+    goos = "linux",
+    static = "on",
+)
+
+# ─ NFT smoke initramfs ───────────────────────────────────────────────────────
+genrule(
+    name = "initramfs",
+    testonly = True,
+    srcs = [
+        "@alpine_minirootfs_x86_64//file",
+        ":init",
+        "//cluster/kubespand/qemu_tests:modules_tree",
+    ],
+    outs = ["initramfs.cpio.gz"],
+    cmd = """
+        set -e
+        D=$$(mktemp -d)
+        tar -xzf $(location @alpine_minirootfs_x86_64//file) -C $$D
+        cp $(location :init) $$D/init && chmod +x $$D/init
+        tar -xf $(location //cluster/kubespand/qemu_tests:modules_tree) -C $$D
+        (cd $$D && find . -print0 | cpio --null -o -H newc 2>/dev/null) | gzip -9 > $@
+        rm -rf $$D
+    """,
+)
+
+# ─ Test ──────────────────────────────────────────────────────────────────────
+go_test(
+    name = "nft_test",
+    timeout = "long",
+    srcs = ["nft_test.go"],
+    data = [
+        ":initramfs",
+        "//cluster/kubespand/qemu_tests:vmlinuz",
+    ],
+    tags = ["requires_qemu"],
+    deps = [
+        "//cluster/kubespand/qemu_tests",
+        "@io_bazel_rules_go//go/runfiles",
+    ],
+)

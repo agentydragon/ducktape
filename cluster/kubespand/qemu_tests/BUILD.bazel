@@ -1,0 +1,43 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "qemu_tests",
+    testonly = True,
+    srcs = [
+        "events.go",
+        "helpers.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests",
+    visibility = ["//cluster/kubespand:__subpackages__"],
+    deps = [
+        "@io_bazel_rules_go//go/runfiles",
+    ],
+)
+
+# ─ Extract vmlinuz from Alpine linux-virt .apk ──────────────────────────────
+genrule(
+    name = "vmlinuz",
+    srcs = ["@alpine_linux_virt//file"],
+    outs = ["vmlinuz-virt"],
+    cmd = "tar -xzf $< -O boot/vmlinuz-virt > $@",
+    visibility = ["//cluster/kubespand:__subpackages__"],
+)
+
+# ─ Extract full kernel modules tree for modprobe ─────────────────────────────
+genrule(
+    name = "modules_tree",
+    srcs = ["@alpine_linux_virt//file"],
+    outs = ["modules_tree.tar"],
+    cmd = """
+        set -e
+        TMPDIR=$$(mktemp -d)
+        tar -xzf $< -C $$TMPDIR lib/modules/
+        find $$TMPDIR/lib/modules/ -name '*.ko.gz' -exec gunzip {} \\;
+        find $$TMPDIR/lib/modules/ -name 'modules.dep' -exec sed -i 's/\\.ko\\.gz/.ko/g' {} \\;
+        find $$TMPDIR/lib/modules/ -name 'modules.alias' -exec sed -i 's/\\.ko\\.gz/.ko/g' {} \\;
+        find $$TMPDIR/lib/modules/ -name '*.bin' -delete
+        tar -cf $@ -C $$TMPDIR lib/modules/
+        rm -rf $$TMPDIR
+    """,
+    visibility = ["//cluster/kubespand:__subpackages__"],
+)

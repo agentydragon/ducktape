@@ -1,0 +1,47 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "doublenat_lib",
+    testonly = True,
+    srcs = ["main.go"],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/doublenat",
+    deps = [
+        "//cluster/kubespand/qemu_tests",
+        "//cluster/kubespand/qemu_tests/vms/initlib",
+        "//cluster/kubespand/qemu_tests/vms/kubespanlib",
+    ],
+)
+
+go_binary(
+    name = "doublenat",
+    testonly = True,
+    embed = [":doublenat_lib"],
+    goarch = "amd64",
+    goos = "linux",
+    static = "on",
+    visibility = ["//cluster/kubespand:__subpackages__"],
+)
+
+genrule(
+    name = "initramfs",
+    testonly = True,
+    srcs = [
+        "@alpine_minirootfs_x86_64//file",
+        "//cluster/kubespand",
+        ":doublenat",
+        "//cluster/kubespand/qemu_tests:modules_tree",
+    ],
+    outs = ["initramfs.cpio.gz"],
+    cmd = """
+        set -e
+        D=$$(mktemp -d)
+        tar -xzf $(location @alpine_minirootfs_x86_64//file) -C $$D
+        mkdir -p $$D/var/lib/kubespan $$D/etc/kubespan
+        cp $(location :doublenat) $$D/init && chmod +x $$D/init
+        cp $(location //cluster/kubespand:kubespand) $$D/kubespand && chmod +x $$D/kubespand
+        tar -xf $(location //cluster/kubespand/qemu_tests:modules_tree) -C $$D
+        (cd $$D && find . -print0 | cpio --null -o -H newc 2>/dev/null) | gzip -9 > $@
+        rm -rf $$D
+    """,
+    visibility = ["//cluster/kubespand:__subpackages__"],
+)

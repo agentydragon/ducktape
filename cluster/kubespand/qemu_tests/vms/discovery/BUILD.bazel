@@ -1,0 +1,58 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "discovery_lib",
+    testonly = True,
+    srcs = ["main.go"],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/discovery",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//cluster/kubespand/qemu_tests",
+        "//cluster/kubespand/qemu_tests/vms/initlib",
+    ],
+)
+
+go_binary(
+    name = "discovery",
+    testonly = True,
+    embed = [":discovery_lib"],
+    goarch = "amd64",
+    goos = "linux",
+    static = "on",
+    visibility = ["//cluster/kubespand:__subpackages__"],
+)
+
+genrule(
+    name = "initramfs",
+    testonly = True,
+    srcs = [
+        "@alpine_minirootfs_x86_64//file",
+        "@discovery_service_binary//file",
+        ":discovery",
+        "//cluster/kubespand/qemu_tests:modules_tree",
+    ],
+    outs = ["initramfs.cpio.gz"],
+    cmd = """
+        set -e
+        INITRAMFS_DIR=$$(mktemp -d)
+
+        # Extract Alpine minirootfs as base (provides filesystem layout + busybox symlinks).
+        tar -xzf $(location @alpine_minirootfs_x86_64//file) -C $$INITRAMFS_DIR
+
+        # Install init binary (Go).
+        cp $(location :discovery) $$INITRAMFS_DIR/init
+        chmod +x $$INITRAMFS_DIR/init
+
+        # Install discovery service.
+        cp $(location @discovery_service_binary//file) $$INITRAMFS_DIR/discovery-service
+        chmod +x $$INITRAMFS_DIR/discovery-service
+
+        # Install kernel modules (virtio_net needed for networking).
+        tar -xf $(location //cluster/kubespand/qemu_tests:modules_tree) -C $$INITRAMFS_DIR
+
+        # Build cpio archive.
+        (cd $$INITRAMFS_DIR && find . -print0 | cpio --null -o -H newc 2>/dev/null) | gzip -9 > $@
+        rm -rf $$INITRAMFS_DIR
+    """,
+    visibility = ["//cluster/kubespand:__subpackages__"],
+)

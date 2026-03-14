@@ -614,22 +614,18 @@ http_archive(
 )
 
 # ─ Talos KubeSpan diagnostic test artifacts ───────────────────────────────────
-# Real Talos kernel + initramfs + talosctl for verifying upstream KubeSpan
-# through double NAT. Version matches cluster (variables.tf talos_version).
+# Real Talos artifacts for verifying upstream KubeSpan through double NAT.
+# Version matches cluster (variables.tf talos_version).
 _TALOS_VERSION = "v1.12.3"
 
-http_file(
-    name = "talos_vmlinuz_amd64",
-    downloaded_file_path = "vmlinuz-amd64",
-    sha256 = "a48a3252a8b9b12f96e0af5b54d8793187a2becda98e1a57c798f3bed73c9a42",
-    urls = ["https://github.com/siderolabs/talos/releases/download/" + _TALOS_VERSION + "/vmlinuz-amd64"],
-)
+# Default schematic ID (no extensions) for Image Factory.
+_TALOS_SCHEMATIC = "376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba"
 
 http_file(
-    name = "talos_initramfs_amd64",
-    downloaded_file_path = "initramfs-amd64.xz",
-    sha256 = "2e17e104c983b07142397507e4b910f0607c197053f7a59da39f47428c0599bd",
-    urls = ["https://github.com/siderolabs/talos/releases/download/" + _TALOS_VERSION + "/initramfs-amd64.xz"],
+    name = "talos_nocloud_amd64",
+    downloaded_file_path = "nocloud-amd64.qcow2.xz",
+    sha256 = "a4934fa742fc1cc1df95543dba574bbf71cb16af3d06c06b07a4e67d02aeb573",
+    urls = ["https://factory.talos.dev/image/" + _TALOS_SCHEMATIC + "/" + _TALOS_VERSION + "/nocloud-amd64.qcow2.xz"],
 )
 
 http_file(

@@ -1,7 +1,6 @@
-// Package qemu defines the structured event protocol between QEMU VMs
-// and the Go test orchestrator. VMs emit JSON Lines to stdout; the
-// orchestrator parses each line into an Event.
-package qemu
+// Package qemu_tests provides the shared event protocol and test helpers
+// for QEMU-based integration tests.
+package qemu_tests
 
 // EventType identifies the phase or action being reported by a VM.
 type EventType string

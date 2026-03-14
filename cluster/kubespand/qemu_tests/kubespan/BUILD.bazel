@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "kubespan_test",
+    timeout = "eternal",
+    srcs = ["kubespan_test.go"],
+    data = [
+        "//cluster/kubespand/qemu_tests:vmlinuz",
+        "//cluster/kubespand/qemu_tests/vms/discovery:initramfs",
+        "//cluster/kubespand/qemu_tests/vms/kubespan:initramfs",
+    ],
+    tags = ["requires_qemu"],
+    deps = [
+        "//cluster/kubespand/qemu_tests",
+        "@io_bazel_rules_go//go/runfiles",
+    ],
+)
