@@ -102,10 +102,6 @@ func (dm *Manager) Run(ctx context.Context) error {
 // upstream LocalAffiliateController.
 // otherEndpoints are harvested endpoints from EndpointController for re-announcement.
 //
-// Upstream delta (8): Talos serializes kubespan.Config.ExcludeAdvertisedNetworks
-// into clientpb.KubeSpan.ExcludeAdvertisedAddresses. That field was added in
-// discovery-api v0.1.7; we pin v0.1.6. Bump the dep to align.
-//
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (pbAffiliate, pbEndpoints)
 func (dm *Manager) PublishAffiliate(spec *cluster.AffiliateSpec, otherEndpoints []discoveryclient.Endpoint) error {
 	affiliate := &discoveryclient.Affiliate{
@@ -123,11 +119,10 @@ func (dm *Manager) PublishAffiliate(spec *cluster.AffiliateSpec, otherEndpoints 
 	if spec.KubeSpan.PublicKey != "" {
 		addrBytes, _ := spec.KubeSpan.Address.MarshalBinary()
 		affiliate.Affiliate.Kubespan = &clientpb.KubeSpan{
-			PublicKey:           spec.KubeSpan.PublicKey,
-			Address:             addrBytes,
-			AdditionalAddresses: prefixesToPB(spec.KubeSpan.AdditionalAddresses),
-			// TODO(delta 8): Add ExcludeAdvertisedAddresses once discovery-api
-			// is bumped from v0.1.6 to v0.1.7+.
+			PublicKey:                  spec.KubeSpan.PublicKey,
+			Address:                    addrBytes,
+			AdditionalAddresses:        prefixesToPB(spec.KubeSpan.AdditionalAddresses),
+			ExcludeAdvertisedAddresses: prefixesToPB(spec.KubeSpan.ExcludeAdvertisedNetworks),
 		}
 		affiliate.Endpoints = addrPortsToPB(spec.KubeSpan.Endpoints)
 	}
@@ -190,6 +185,14 @@ func (dm *Manager) GetAffiliates() map[string]cluster.AffiliateSpec {
 			var ip netip.Addr
 			if err := ip.UnmarshalBinary(ap.Ip); err == nil {
 				spec.KubeSpan.AdditionalAddresses = append(spec.KubeSpan.AdditionalAddresses, netip.PrefixFrom(ip, int(ap.Bits)))
+			}
+		}
+
+		// Parse excluded advertised addresses.
+		for _, ap := range ks.ExcludeAdvertisedAddresses {
+			var ip netip.Addr
+			if err := ip.UnmarshalBinary(ap.Ip); err == nil {
+				spec.KubeSpan.ExcludeAdvertisedNetworks = append(spec.KubeSpan.ExcludeAdvertisedNetworks, netip.PrefixFrom(ip, int(ap.Bits)))
 			}
 		}
 

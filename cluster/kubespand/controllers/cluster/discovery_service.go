@@ -35,13 +35,8 @@ type DiscoveryController struct {
 	dm       *discovery.Manager
 	cancelDM context.CancelFunc
 
-	// Upstream delta: no discoveryConfigVersion tracking was present before.
-	// Now aligned: force reconnect when cluster.Config version changes.
 	discoveryConfigVersion resource.Version
-
-	// Upstream delta: no dynamic input registration was present before.
-	// Now aligned: watch only the specific local affiliate, not all affiliates.
-	localAffiliateID resource.ID
+	localAffiliateID       resource.ID
 
 	// Track previous publish data to avoid re-publishing unchanged data.
 	// Upstream uses proto.Equal on the full protobuf messages; we compare the
@@ -59,7 +54,7 @@ func (ctrl *DiscoveryController) Name() string {
 
 // Inputs implements controller.Controller.
 // cluster.Affiliate is NOT listed here — it is added dynamically via
-// UpdateInputs once the local affiliate ID is known (delta 4 alignment).
+// UpdateInputs once the local affiliate ID is known.
 func (ctrl *DiscoveryController) Inputs() []controller.Input {
 	return []controller.Input{
 		safe.Input[*kubespan.Config](controller.InputWeak),
@@ -67,14 +62,13 @@ func (ctrl *DiscoveryController) Inputs() []controller.Input {
 		safe.Input[*kubespan.Endpoint](controller.InputWeak),
 		safe.Input[*cluster.Config](controller.InputWeak),
 		safe.Input[*cluster.Identity](controller.InputWeak),
-		// Upstream delta (2): Talos watches runtime.MachineResetSignal to
-		// delete the local affiliate on machine reset. kubespand has no
-		// machine reset concept; cleanup happens only via stopDiscovery on
-		// shutdown.
+		// Talos watches runtime.MachineResetSignal to delete the local
+		// affiliate on machine reset. kubespand has no machine reset concept;
+		// cleanup happens only via stopDiscovery on shutdown.
 		//
-		// Upstream delta (6): Talos checks RegistryServiceEnabled and cleans
-		// up when discovery is disabled. kubespand assumes discovery is always
-		// enabled if cluster.Config exists.
+		// Talos checks RegistryServiceEnabled and cleans up when discovery is
+		// disabled. kubespand assumes discovery is always enabled if
+		// cluster.Config exists.
 	}
 }
 
@@ -115,7 +109,7 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 		}
 		clusterSpec := clusterCfg.TypedSpec()
 
-		// Force reconnect when discovery config changes (delta 3 alignment).
+		// Force reconnect when discovery config changes.
 		if !clusterCfg.Metadata().Version().Equal(ctrl.discoveryConfigVersion) {
 			ctrl.stopDiscovery()
 		}
@@ -131,9 +125,9 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 		localNodeID := clusterID.TypedSpec().NodeID
 
 		// Dynamically register the specific local affiliate as an input so
-		// COSI only triggers reconciles for that ID, not all affiliates
-		// (delta 4 alignment). This avoids a feedback loop where writing
-		// remote affiliates triggers self-reconciliation.
+		// COSI only triggers reconciles for that ID, not all affiliates.
+		// This avoids a feedback loop where writing remote affiliates
+		// triggers self-reconciliation.
 		if ctrl.localAffiliateID != resource.ID(localNodeID) {
 			ctrl.localAffiliateID = resource.ID(localNodeID)
 
@@ -160,15 +154,17 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 			return fmt.Errorf("getting kubespan identity: %w", err)
 		}
 
+		// Read the local affiliate produced by upstream LocalAffiliateController.
+		localAffiliate, err := safe.ReaderGetByID[*cluster.Affiliate](ctx, r, localNodeID)
+		if err != nil {
+			if state.IsNotFoundError(err) {
+				continue
+			}
+
+			return fmt.Errorf("getting local affiliate: %w", err)
+		}
+
 		// Create discovery manager if not yet running.
-		//
-		// Upstream delta (intentional): Talos creates the client AFTER
-		// reading the local affiliate. We create it BEFORE so that peer
-		// discovery and public IP detection start immediately, even if
-		// LocalAffiliateController hasn't produced its output yet. This
-		// avoids a startup race where the longer kubespand controller
-		// chain (Config → Identity → NodeMetadata → LocalAffiliate)
-		// delays client creation.
 		if ctrl.dm == nil {
 			dm, createErr := discovery.NewManager(clusterSpec, ksID.TypedSpec().PublicKey, logger)
 			if createErr != nil {
@@ -205,24 +201,10 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 		// LocalAffiliateController for endpoint construction).
 		ctrl.writePublicIPStatus(ctx, r, logger)
 
-		// Read the local affiliate produced by upstream LocalAffiliateController.
-		// If it hasn't been produced yet, continue — the discovery manager is
-		// already running and will trigger a re-reconcile when peers arrive
-		// (delta 1 alignment with upstream's continue pattern).
-		localAffiliate, err := safe.ReaderGetByID[*cluster.Affiliate](ctx, r, localNodeID)
-		if err != nil {
-			if state.IsNotFoundError(err) {
-				continue
-			}
-
-			return fmt.Errorf("getting local affiliate: %w", err)
-		}
-
 		// Build otherEndpoints from harvested Endpoint resources for re-announcement.
 		otherEndpoints := ctrl.buildOtherEndpoints(ctx, r)
 
-		// Publish local affiliate to discovery service when data changes
-		// (delta 7 alignment: compare actual data, not just counts/lengths).
+		// Publish local affiliate to discovery service when data changes.
 		localVersion := localAffiliate.Metadata().Version().String()
 		publicIP := ctrl.dm.GetPublicIP()
 
@@ -243,10 +225,10 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 		}
 
 		// Reconcile cluster.Affiliate resources from discovered peers.
-		// Upstream delta (5): Talos writes to cluster.RawNamespaceName with
-		// "service/" ID prefix, then AffiliateMergeController merges into
-		// cluster.NamespaceName. kubespand writes directly to
-		// cluster.NamespaceName (single discovery source, no merge needed).
+		// Talos writes to cluster.RawNamespaceName with "service/" ID prefix,
+		// then AffiliateMergeController merges into cluster.NamespaceName.
+		// kubespand writes directly to cluster.NamespaceName (single discovery
+		// source, no merge needed).
 		affiliates := ctrl.dm.GetAffiliates()
 
 		r.StartTrackingOutputs()

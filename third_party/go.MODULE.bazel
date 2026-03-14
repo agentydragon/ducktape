@@ -378,8 +378,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "github.com/siderolabs/discovery-api",
-    sum = "h1:/LhsF1ytqFEfWwV0UKfUgn90k9fk5+rhYMJ9yeUB2yc=",
-    version = "v0.1.6",
+    sum = "h1:Hq/Si0fFQICvdT+P/I81fRf9t5I+J6vaJNBvgehv8GE=",
+    version = "v0.1.8",
 )
 go_deps.module(
     path = "github.com/siderolabs/discovery-client",
