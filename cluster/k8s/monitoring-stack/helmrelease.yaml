@@ -233,11 +233,6 @@ spec:
             cpu: 1000m
             memory: 2Gi
 
-        # Move Prometheus off VPS control-plane nodes to wyrm2, which has
-        # ~57Gi free. VPS CP nodes are memory-constrained (~7Gi each).
-        nodeSelector:
-          kubernetes.io/hostname: wyrm2
-
         # Scrape interval
         scrapeInterval: 30s
         evaluationInterval: 30s
