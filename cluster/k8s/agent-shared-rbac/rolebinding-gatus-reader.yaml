@@ -12,5 +12,5 @@ subjects:
     name: claude-code-web
     namespace: default
   - kind: ServiceAccount
-    name: openclaw
-    namespace: openclaw-gateway
+    name: default
+    namespace: openclaw-sandbox

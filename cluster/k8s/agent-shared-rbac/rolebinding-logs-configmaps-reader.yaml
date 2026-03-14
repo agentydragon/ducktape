@@ -12,9 +12,6 @@ subjects:
     name: claude-code-web
     namespace: default
   - kind: ServiceAccount
-    name: openclaw
-    namespace: openclaw-gateway
-  - kind: ServiceAccount
     name: default
     namespace: openclaw-sandbox
 ---
@@ -31,9 +28,6 @@ subjects:
   - kind: ServiceAccount
     name: claude-code-web
     namespace: default
-  - kind: ServiceAccount
-    name: openclaw
-    namespace: openclaw-gateway
   - kind: ServiceAccount
     name: default
     namespace: openclaw-sandbox
@@ -52,9 +46,6 @@ subjects:
     name: claude-code-web
     namespace: default
   - kind: ServiceAccount
-    name: openclaw
-    namespace: openclaw-gateway
-  - kind: ServiceAccount
     name: default
     namespace: openclaw-sandbox
 ---
@@ -71,9 +62,6 @@ subjects:
   - kind: ServiceAccount
     name: claude-code-web
     namespace: default
-  - kind: ServiceAccount
-    name: openclaw
-    namespace: openclaw-gateway
   - kind: ServiceAccount
     name: default
     namespace: openclaw-sandbox
