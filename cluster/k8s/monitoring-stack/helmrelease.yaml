@@ -228,10 +228,10 @@ spec:
         resources:
           requests:
             cpu: 200m
-            memory: 1.5Gi
+            memory: 1Gi
           limits:
             cpu: 1000m
-            memory: 3Gi
+            memory: 2Gi
 
         # Move Prometheus off VPS control-plane nodes to wyrm2, which has
         # ~57Gi free. VPS CP nodes are memory-constrained (~7Gi each).
