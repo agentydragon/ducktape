@@ -103,7 +103,7 @@ type KubernetesConfig struct {
 	// NodeName is the Kubernetes node name for this machine.
 	NodeName string `yaml:"node_name"`
 	// ServiceCIDRs are Kubernetes service network ranges to advertise.
-	ServiceCIDRs []netip.Prefix `yaml:"service_cidrs"`
+	ServiceCIDRs []netip.Prefix `yaml:"service_cidrs,omitempty"`
 }
 
 // Load reads and validates a YAML config file.
