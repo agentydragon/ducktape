@@ -160,10 +160,31 @@ Verified at:
   `/32` or `/128` `AddressSpec` on the kubespan interface. **This does not exist
   in upstream Talos.**
 
-### Why Talos doesn't need the /32 fix
+### How Talos handles reply-packet routing instead
 
-Talos avoids the "Invalid cross-device link" problem because it does not set
-`rp_filter` on any interface. Verified at:
+Talos's `PeerSpecController` (`internal/app/machined/pkg/controllers/kubespan/peer_spec.go:116-118`)
+adds each peer's physical node IPs (`spec.Addresses`) to that peer's WireGuard
+AllowedIPs set:
+
+```go
+for _, ip := range spec.Addresses {
+    builder.Add(ip)
+}
+```
+
+This means WireGuard's cryptokey routing accepts reply packets arriving on the
+kubespan interface with the peer's physical IP as the source. The kernel's
+network stack sees these as valid WireGuard-validated packets, bypassing the
+need for the `/32` address workaround.
+
+kubespand uses the upstream `PeerSpecController` (via `@talos_internal`), so
+this mechanism should already be present. The NixOS worker issue was likely
+caused by a different factor (see `rp_filter` below).
+
+### Why Talos doesn't need the /32 fix (rp_filter)
+
+Talos also avoids `rp_filter` issues because it does not set `rp_filter` on
+any interface. Verified at:
 
 - **Talos kernel param defaults**
   (`internal/app/machined/pkg/controllers/runtime/kernel_param_defaults.go:77-91`):
@@ -242,6 +263,7 @@ Option 1 is the closest to upstream Talos behavior and the least invasive.
 | `qemu_tests/vms/kubespanlib/kubespanlib.go:45-47` | QEMU VMs set `rp_filter=2`                                          |
 | `qemu_tests/vms/kubespanlib/kubespanlib.go:67`    | `ForceRouting: true` in test config                                 |
 | Upstream `kubespan/manager.go:461-480`            | Only writes ULA address, no node IPs                                |
+| Upstream `kubespan/peer_spec.go:116-118`          | Adds peer physical IPs to WireGuard AllowedIPs                      |
 | Upstream `kubespan/routing_rules.go:50-78`        | ip rules: fwmark → table 180, priority ~32500                       |
 | Upstream `runtime/kernel_param_defaults.go:77-91` | Talos sysctls: no `rp_filter` set                                   |
 | Commit `731dd1c`                                  | Initial kubespand code (includes the `/32` fix from the start)      |
