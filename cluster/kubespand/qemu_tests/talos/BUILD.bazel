@@ -1,14 +1,37 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
+# Build Talos nocloud disk image using the official imager container.
+# Requires Docker and --privileged (loop devices for partitioning).
+# v1.13+ supports rootless — can drop --privileged when upgrading.
+genrule(
+    name = "talos_nocloud_image",
+    outs = ["nocloud-amd64.raw"],
+    cmd = """
+        set -euo pipefail
+        TMPDIR=$$(mktemp -d)
+        trap 'rm -rf $$TMPDIR' EXIT
+        docker run --rm --privileged --network=host \
+            -v $$TMPDIR:/out \
+            ghcr.io/siderolabs/imager:v1.12.3 \
+            nocloud --arch amd64
+        cp $$TMPDIR/nocloud-amd64.raw $@
+    """,
+    tags = [
+        "no-sandbox",
+        "requires-docker",
+    ],
+    visibility = ["//cluster/kubespand/qemu_tests:__subpackages__"],
+)
+
 go_test(
     name = "talos_test",
     timeout = "eternal",
     srcs = ["talos_test.go"],
     data = [
+        ":talos_nocloud_image",
         "//cluster/kubespand/qemu_tests:vmlinuz",
         "//cluster/kubespand/qemu_tests/vms/discovery:initramfs",
         "//cluster/kubespand/qemu_tests/vms/router:initramfs",
-        "@talos_nocloud_amd64//file",
         "@talosctl_amd64//file",
     ] + glob(["testdata/**"]),
     tags = ["requires_qemu"],

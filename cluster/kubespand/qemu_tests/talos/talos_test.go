@@ -14,29 +14,13 @@ import (
 )
 
 func TestTalosKubeSpanDoubleNAT(t *testing.T) {
-	talosQcow2XZ := h.RunfilePath(t, h.TalosNocloudQcow2Path)
+	talosBaseImage := h.RunfilePath(t, h.TalosNocloudImagePath)
 	alpineVmlinuz := h.RunfilePath(t, h.VmlinuzPath)
 	alpineInitramfsDisc := h.RunfilePath(t, h.DiscoveryInitramfs)
 	alpineInitramfsRouter := h.RunfilePath(t, h.RouterInitramfs)
 
 	out := h.OutputDir(t)
 	tmpDir := t.TempDir()
-
-	// Decompress Talos nocloud qcow2 base image.
-	talosBaseQcow2 := filepath.Join(tmpDir, "nocloud-amd64.qcow2")
-	xzCmd := exec.Command("xz", "-dk", "--stdout", talosQcow2XZ)
-	baseFile, err := os.Create(talosBaseQcow2)
-	if err != nil {
-		t.Fatalf("create base qcow2: %v", err)
-	}
-	xzCmd.Stdout = baseFile
-	xzCmd.Stderr = os.Stderr
-	if err := xzCmd.Run(); err != nil {
-		baseFile.Close()
-		t.Fatalf("decompress talos qcow2: %v", err)
-	}
-	baseFile.Close()
-	t.Logf("decompressed talos base image: %s", talosBaseQcow2)
 
 	// Load pre-generated Talos machine configs (committed as testdata).
 	// VPS is controlplane (trustd issues API certs for workers).
@@ -72,11 +56,11 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 			h.McastNIC("net1", mcastLan2, "52:54:00:c2:00:02")...)...)
 
 	talosAPIPort := h.RandomPort()
-	vmVPS := bootTalosVM(t, "talos-vps", talosBaseQcow2, vpsCI,
+	vmVPS := bootTalosVM(t, "talos-vps", talosBaseImage, vpsCI,
 		talosAPIPort, h.McastNIC("net0", mcastInternet, "52:54:00:a0:00:01"))
-	vmNAT1 := bootTalosVM(t, "talos-nat1", talosBaseQcow2, nat1CI,
+	vmNAT1 := bootTalosVM(t, "talos-nat1", talosBaseImage, nat1CI,
 		0, h.McastNIC("net0", mcastLan1, "52:54:00:a0:00:02"))
-	vmNAT2 := bootTalosVM(t, "talos-nat2", talosBaseQcow2, nat2CI,
+	vmNAT2 := bootTalosVM(t, "talos-nat2", talosBaseImage, nat2CI,
 		0, h.McastNIC("net0", mcastLan2, "52:54:00:a0:00:03"))
 
 	// Wait for infrastructure to be ready (fail fast if any crashes).
@@ -145,23 +129,23 @@ func createCIDATA(t *testing.T, tmpDir, name string, machineConfig []byte) strin
 	return imgPath
 }
 
-// bootTalosVM starts a Talos QEMU VM from a qcow2 disk image with CIDATA config.
-// Creates a COW overlay so each VM has its own writable copy.
-func bootTalosVM(t *testing.T, name, baseQcow2, cidataPath string, mgmtPort int, netArgs []string) *h.VM {
+// bootTalosVM starts a Talos QEMU VM from a raw disk image with CIDATA config.
+// Creates a copy so each VM has its own writable disk.
+func bootTalosVM(t *testing.T, name, baseImage, cidataPath string, mgmtPort int, netArgs []string) *h.VM {
 	t.Helper()
 
 	// Copy base image — each VM needs its own writable copy.
-	disk := filepath.Join(filepath.Dir(cidataPath), name+".qcow2")
-	src, err := os.ReadFile(baseQcow2)
+	disk := filepath.Join(filepath.Dir(cidataPath), name+".raw")
+	src, err := os.ReadFile(baseImage)
 	if err != nil {
-		t.Fatalf("read base qcow2: %v", err)
+		t.Fatalf("read base image: %v", err)
 	}
 	if err := os.WriteFile(disk, src, 0o644); err != nil {
 		t.Fatalf("write vm disk: %v", err)
 	}
 
 	args := []string{
-		"-drive", fmt.Sprintf("file=%s,if=virtio,format=qcow2", disk),
+		"-drive", fmt.Sprintf("file=%s,if=virtio,format=raw", disk),
 		"-drive", fmt.Sprintf("file=%s,if=virtio,format=raw,readonly=on", cidataPath),
 		"-nographic",
 		"-m", "1536",
