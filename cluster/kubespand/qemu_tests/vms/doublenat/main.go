@@ -33,13 +33,6 @@ func main() {
 	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventBoot, Message: fmt.Sprintf("doublenat mode, role=%s", initlib.Role)})
 
 	var linkIP, defaultGW string
-	var listenPort int
-
-	// All nodes use the default KubeSpan port (51820). Each VM is on its own
-	// subnet behind its own NAT router, so there are no port conflicts.
-	// The upstream Talos LocalAffiliateController hardcodes KubeSpanDefaultPort
-	// when constructing endpoint addresses, so the listen port must match.
-	listenPort = 51820
 
 	switch initlib.Role {
 	case "vps":
@@ -73,7 +66,6 @@ func main() {
 		ClusterID:     clusterID,
 		SharedSecret:  sharedSecret,
 		DiscoveryAddr: discovery,
-		ListenPort:    listenPort,
 	})
 
 	const probePort = 9999
@@ -88,15 +80,8 @@ func main() {
 		peerAddrs := kubespanlib.WaitForPeers(kubespandCmd, 2)
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDiscovery, Message: fmt.Sprintf("discovered %d peers", len(peerAddrs))})
 
-		// Dump routing diagnostics before probing.
-		initlib.Run("ip", "addr", "show")
-		initlib.Run("ip", "rule", "show")
-		initlib.Run("ip", "route", "show", "table", "180")
+		kubespanlib.DumpDiagnostics()
 		initlib.Run("ip", "route", "show", "table", "main")
-		initlib.Run("wg", "show", "kubespan")
-		initlib.Run("nft", "list", "ruleset")
-		initlib.Run("cat", "/proc/sys/net/ipv4/conf/all/rp_filter")
-		initlib.Run("cat", "/proc/sys/net/ipv4/conf/kubespan/rp_filter")
 
 		kubespanlib.RunDoubleNATProbes(peerAddrs, probePort)
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: "probes completed"})

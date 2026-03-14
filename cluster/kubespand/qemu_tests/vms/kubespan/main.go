@@ -111,16 +111,9 @@ func main() {
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: fmt.Sprintf("role=b listening on tcp/%d, waiting (180s max)", probePort)})
 		time.Sleep(180 * time.Second)
 	} else {
-		// Dump routing diagnostics before probing.
-		initlib.Run("ip", "addr", "show")
-		initlib.Run("ip", "rule", "show")
-		initlib.Run("ip", "route", "show", "table", "180")
+		kubespanlib.DumpDiagnostics()
 		initlib.Run("ip", "route", "get", peerBridgeIP)
 		initlib.Run("ip", "route", "get", peerBridgeIP, "mark", "0x40")
-		initlib.Run("wg", "show", "kubespan")
-		initlib.Run("nft", "list", "ruleset")
-		initlib.Run("cat", "/proc/sys/net/ipv4/conf/all/rp_filter")
-		initlib.Run("cat", "/proc/sys/net/ipv4/conf/kubespan/rp_filter")
 		kubespanlib.RunProbes(peerAddr, peerBridgeIP, probePort)
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: "probes completed"})
 	}

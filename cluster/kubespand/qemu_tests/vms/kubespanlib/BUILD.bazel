@@ -13,6 +13,7 @@ go_library(
         "//cluster/kubespand/agentconfig",
         "//cluster/kubespand/qemu_tests",
         "//cluster/kubespand/qemu_tests/vms/initlib",
+        "@com_github_siderolabs_talos_pkg_machinery//constants",
         "@in_gopkg_yaml_v3//:yaml_v3",
         "@org_golang_x_net//icmp",
         "@org_golang_x_net//ipv4",
