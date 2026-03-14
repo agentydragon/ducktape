@@ -16,6 +16,7 @@ package networkctrl
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/safe"
@@ -127,6 +128,18 @@ func (ctrl *WireguardLinkController) ensureInterface(spec *network.LinkSpecSpec,
 			return fmt.Errorf("finding created %s: %w", spec.Name, err)
 		}
 		logger.Info("WireGuard interface created", zap.String("name", spec.Name))
+
+		// Disable rp_filter on the kubespan interface. Upstream Talos leaves
+		// rp_filter at the kernel default (0), but non-Talos hosts (NixOS,
+		// Ubuntu, etc.) set rp_filter=1 or 2 via systemd sysctl.d. With
+		// rp_filter enabled, the kernel drops TCP reply packets arriving on
+		// kubespan when the reverse route goes through the physical interface
+		// (EXDEV "Invalid cross-device link"). Setting rp_filter=0 on the
+		// kubespan interface matches upstream Talos behavior.
+		rpFilterPath := fmt.Sprintf("/proc/sys/net/ipv4/conf/%s/rp_filter", spec.Name)
+		if err := os.WriteFile(rpFilterPath, []byte("0"), 0o644); err != nil {
+			logger.Warn("failed to disable rp_filter on interface", zap.String("name", spec.Name), zap.Error(err))
+		}
 	}
 
 	// Set MTU if different.
