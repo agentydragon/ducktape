@@ -14,13 +14,29 @@ import (
 )
 
 func TestTalosKubeSpanDoubleNAT(t *testing.T) {
-	talosBaseImage := h.RunfilePath(t, h.TalosNocloudImagePath)
+	talosImageXZ := h.RunfilePath(t, h.TalosNocloudImagePath)
 	alpineVmlinuz := h.RunfilePath(t, h.VmlinuzPath)
 	alpineInitramfsDisc := h.RunfilePath(t, h.DiscoveryInitramfs)
 	alpineInitramfsRouter := h.RunfilePath(t, h.RouterInitramfs)
 
 	out := h.OutputDir(t)
 	tmpDir := t.TempDir()
+
+	// Decompress Talos nocloud raw disk image.
+	talosBaseImage := filepath.Join(tmpDir, "nocloud-amd64.raw")
+	xzCmd := exec.Command("xz", "-dk", "--stdout", talosImageXZ)
+	baseFile, err := os.Create(talosBaseImage)
+	if err != nil {
+		t.Fatalf("create base image: %v", err)
+	}
+	xzCmd.Stdout = baseFile
+	xzCmd.Stderr = os.Stderr
+	if err := xzCmd.Run(); err != nil {
+		baseFile.Close()
+		t.Fatalf("decompress talos image: %v", err)
+	}
+	baseFile.Close()
+	t.Logf("decompressed talos base image: %s", talosBaseImage)
 
 	// Load pre-generated Talos machine configs (committed as testdata).
 	// VPS is controlplane (trustd issues API certs for workers).
