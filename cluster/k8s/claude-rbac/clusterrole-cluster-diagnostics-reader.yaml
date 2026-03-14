@@ -107,6 +107,23 @@ rules:
       - pods
       - nodes
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["monitoring.coreos.com"]
+    resources:
+      - prometheuses
+      - alertmanagers
+      - servicemonitors
+      - podmonitors
+      - prometheusrules
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["longhorn.io"]
+    resources:
+      - volumes
+      - replicas
+      - engines
+      - nodes
+      - instancemanagers
+      - settings
+    verbs: ["get", "list", "watch"]
 # TODO: configmaps — decide scope: cluster-wide (risk: may contain connection strings/secrets)
 #   vs. namespaced Roles for specific namespaces (e.g. kube-system, flux-system) vs. skip.
 # TODO: pods/log — most useful for diagnostics but logs routinely contain printed secrets/tokens.
