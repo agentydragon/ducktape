@@ -2,7 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
 go_test(
     name = "kubespan_test",
-    timeout = "eternal",
+    timeout = "long",
     srcs = ["kubespan_test.go"],
     data = [
         "//cluster/kubespand/qemu_tests:vmlinuz",
