@@ -100,12 +100,14 @@ func (dm *Manager) Run(ctx context.Context) error {
 // PublishAffiliate announces the local affiliate to the discovery service.
 // The affiliate is serialized from the cluster.AffiliateSpec produced by the
 // upstream LocalAffiliateController.
-// excludeNetworks are prefixes to exclude from advertised networks (delta 8
-// alignment: upstream reads from kubespan.Config.ExcludeAdvertisedNetworks).
 // otherEndpoints are harvested endpoints from EndpointController for re-announcement.
 //
+// Upstream delta (8): Talos serializes kubespan.Config.ExcludeAdvertisedNetworks
+// into clientpb.KubeSpan.ExcludeAdvertisedAddresses. That field was added in
+// discovery-api v0.1.7; we pin v0.1.6. Bump the dep to align.
+//
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (pbAffiliate, pbEndpoints)
-func (dm *Manager) PublishAffiliate(spec *cluster.AffiliateSpec, excludeNetworks []netip.Prefix, otherEndpoints []discoveryclient.Endpoint) error {
+func (dm *Manager) PublishAffiliate(spec *cluster.AffiliateSpec, otherEndpoints []discoveryclient.Endpoint) error {
 	affiliate := &discoveryclient.Affiliate{
 		Affiliate: &clientpb.Affiliate{
 			NodeId:          spec.NodeID,
@@ -121,10 +123,11 @@ func (dm *Manager) PublishAffiliate(spec *cluster.AffiliateSpec, excludeNetworks
 	if spec.KubeSpan.PublicKey != "" {
 		addrBytes, _ := spec.KubeSpan.Address.MarshalBinary()
 		affiliate.Affiliate.Kubespan = &clientpb.KubeSpan{
-			PublicKey:                  spec.KubeSpan.PublicKey,
-			Address:                    addrBytes,
-			AdditionalAddresses:        prefixesToPB(spec.KubeSpan.AdditionalAddresses),
-			ExcludeAdvertisedAddresses: prefixesToPB(excludeNetworks),
+			PublicKey:           spec.KubeSpan.PublicKey,
+			Address:             addrBytes,
+			AdditionalAddresses: prefixesToPB(spec.KubeSpan.AdditionalAddresses),
+			// TODO(delta 8): Add ExcludeAdvertisedAddresses once discovery-api
+			// is bumped from v0.1.6 to v0.1.7+.
 		}
 		affiliate.Endpoints = addrPortsToPB(spec.KubeSpan.Endpoints)
 	}

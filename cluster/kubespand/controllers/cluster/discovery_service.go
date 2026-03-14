@@ -151,15 +151,6 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 			ctrl.stopDiscovery()
 		}
 
-		ksCfg, err := safe.ReaderGetByID[*kubespan.Config](ctx, r, kubespan.ConfigID)
-		if err != nil {
-			if state.IsNotFoundError(err) {
-				continue
-			}
-
-			return fmt.Errorf("getting kubespan config: %w", err)
-		}
-
 		ksID, err := safe.ReaderGetByID[*kubespan.Identity](ctx, r, kubespan.LocalIdentity)
 		if err != nil {
 			if state.IsNotFoundError(err) {
@@ -239,7 +230,7 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 			!equalOtherEndpoints(otherEndpoints, ctrl.lastOtherEndpoints) ||
 			!bytes.Equal(publicIP, ctrl.lastPublicIP) {
 
-			if pubErr := ctrl.dm.PublishAffiliate(localAffiliate.TypedSpec(), ksCfg.TypedSpec().ExcludeAdvertisedNetworks, otherEndpoints); pubErr != nil {
+			if pubErr := ctrl.dm.PublishAffiliate(localAffiliate.TypedSpec(), otherEndpoints); pubErr != nil {
 				logger.Error("publishing local affiliate", zap.Error(pubErr))
 			} else {
 				ctrl.lastLocalVersion = localVersion

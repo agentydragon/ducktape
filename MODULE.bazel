@@ -47,6 +47,16 @@ single_version_override(
     ],
 )
 
+# Workaround: gitlab.arm.com (hosting rules_diff, ape, toolchain_utils,
+# download_utils) returns 503 errors, blocking all Bazel builds. rules_diff is
+# a transitive dep of aspect_rules_lint that provides a hermetic diff binary via
+# cosmopolitan libc. This local override replaces it with a shim that uses the
+# system diff binary instead.
+local_path_override(
+    module_name = "rules_diff",
+    path = "third_party/rules_diff",
+)
+
 tf = use_extension("@rules_tf//tf:extensions.bzl", "tf_repositories")
 tf.download(
     # Pre-fetch provider plugins at Bazel fetch time so that tf_module validate

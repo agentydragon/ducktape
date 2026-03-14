@@ -1,0 +1,13 @@
+# Provides the :resolved target that aspect_rules_lint expects at
+# @rules_diff//diff/toolchain/diff:resolved.
+#
+# The upstream rules_diff uses toolchain_utils to resolve a hermetic
+# cosmopolitan diff binary. We point at the system diff instead.
+
+genrule(
+    name = "resolved",
+    outs = ["diff"],
+    cmd = "ln -s /usr/bin/diff $@",
+    executable = True,
+    visibility = ["//visibility:public"],
+)

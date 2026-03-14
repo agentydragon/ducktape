@@ -1,0 +1,15 @@
+# Local override for rules_diff to work around gitlab.arm.com 503 outage.
+#
+# rules_diff (https://gitlab.arm.com/bazel/rules_diff) provides a hermetic
+# diff binary via cosmopolitan libc (the "ape" module). It's a transitive dep
+# of aspect_rules_lint. All its artifacts are hosted on gitlab.arm.com, which
+# periodically returns 503 errors, blocking all Bazel builds.
+#
+# This local override replaces the hermetic diff with the system diff binary.
+# aspect_rules_lint uses @rules_diff//diff/toolchain/diff:resolved to locate
+# the diff binary for lint fix mode.
+module(
+    name = "rules_diff",
+    version = "1.0.0-local",
+    compatibility_level = 1,
+)
