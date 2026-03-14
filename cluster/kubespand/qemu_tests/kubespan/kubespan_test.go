@@ -58,14 +58,8 @@ func runTopology(t *testing.T, topology string) {
 	vmA := h.BootVM(t, "vm-a", vmlinuz, initramfs, kernelBase+" role=a",
 		h.McastNIC("net0", mcastAddr, "52:54:00:a0:00:01")...)
 
-	// Ensure logs are always saved, even on Fatalf.
 	allVMs := []*h.VM{vmA, vmB, vmDisc}
-	t.Cleanup(func() {
-		h.KillAndWait(allVMs...)
-		for _, vm := range allVMs {
-			vm.SaveLogs(t, out)
-		}
-	})
+	h.CleanupVMs(t, allVMs, out)
 
 	// Wait for discovery to be ready before expecting peer connections.
 	h.RequireEvent(t, vmDisc, h.EventDone, 30*time.Second)

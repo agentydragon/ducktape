@@ -66,12 +66,7 @@ func TestDoubleNAT(t *testing.T) {
 		h.McastNIC("net0", mcastLanB, "52:54:00:e0:00:01")...)
 
 	allVMs = append(allVMs, vmNAT1, vmNAT2)
-	t.Cleanup(func() {
-		h.KillAndWait(allVMs...)
-		for _, vm := range allVMs {
-			vm.SaveLogs(t, out)
-		}
-	})
+	h.CleanupVMs(t, allVMs, out)
 
 	h.WaitVMDone(t, vmNAT2, 300*time.Second)
 

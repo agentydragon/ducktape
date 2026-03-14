@@ -264,6 +264,17 @@ func RequireAllEvents(t *testing.T, vms []*VM, typ EventType, timeout time.Durat
 	}
 }
 
+// CleanupVMs registers a t.Cleanup that kills all VMs and saves their logs.
+func CleanupVMs(t *testing.T, vms []*VM, outDir string) {
+	t.Helper()
+	t.Cleanup(func() {
+		KillAndWait(vms...)
+		for _, vm := range vms {
+			vm.SaveLogs(t, outDir)
+		}
+	})
+}
+
 // WaitVMDone waits for a VM to finish with a timeout.
 func WaitVMDone(t *testing.T, v *VM, timeout time.Duration) bool {
 	t.Helper()

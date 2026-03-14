@@ -100,10 +100,12 @@ func (dm *Manager) Run(ctx context.Context) error {
 // PublishAffiliate announces the local affiliate to the discovery service.
 // The affiliate is serialized from the cluster.AffiliateSpec produced by the
 // upstream LocalAffiliateController.
+// excludeNetworks are prefixes to exclude from advertised networks (delta 8
+// alignment: upstream reads from kubespan.Config.ExcludeAdvertisedNetworks).
 // otherEndpoints are harvested endpoints from EndpointController for re-announcement.
 //
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (pbAffiliate, pbEndpoints)
-func (dm *Manager) PublishAffiliate(spec *cluster.AffiliateSpec, otherEndpoints []discoveryclient.Endpoint) error {
+func (dm *Manager) PublishAffiliate(spec *cluster.AffiliateSpec, excludeNetworks []netip.Prefix, otherEndpoints []discoveryclient.Endpoint) error {
 	affiliate := &discoveryclient.Affiliate{
 		Affiliate: &clientpb.Affiliate{
 			NodeId:          spec.NodeID,
@@ -119,9 +121,10 @@ func (dm *Manager) PublishAffiliate(spec *cluster.AffiliateSpec, otherEndpoints 
 	if spec.KubeSpan.PublicKey != "" {
 		addrBytes, _ := spec.KubeSpan.Address.MarshalBinary()
 		affiliate.Affiliate.Kubespan = &clientpb.KubeSpan{
-			PublicKey:           spec.KubeSpan.PublicKey,
-			Address:             addrBytes,
-			AdditionalAddresses: prefixesToPB(spec.KubeSpan.AdditionalAddresses),
+			PublicKey:                  spec.KubeSpan.PublicKey,
+			Address:                    addrBytes,
+			AdditionalAddresses:        prefixesToPB(spec.KubeSpan.AdditionalAddresses),
+			ExcludeAdvertisedAddresses: prefixesToPB(excludeNetworks),
 		}
 		affiliate.Endpoints = addrPortsToPB(spec.KubeSpan.Endpoints)
 	}

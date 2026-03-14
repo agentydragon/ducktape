@@ -82,14 +82,8 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 	// Wait for infrastructure to be ready (fail fast if any crashes).
 	h.RequireAllEvents(t, []*h.VM{vmDiscovery, vmRouter1, vmRouter2}, h.EventDone, 30*time.Second)
 
-	// Ensure VM logs are always saved, even on Fatalf.
 	allVMs := []*h.VM{vmVPS, vmNAT1, vmNAT2, vmRouter1, vmRouter2, vmDiscovery}
-	t.Cleanup(func() {
-		h.KillAndWait(allVMs...)
-		for _, vm := range allVMs {
-			vm.SaveLogs(t, out)
-		}
-	})
+	h.CleanupVMs(t, allVMs, out)
 
 	// 7. Wait for Talos API, then poll KubeSpan status.
 	tc := &talosctl{

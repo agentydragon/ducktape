@@ -17,6 +17,7 @@ go_library(
         "@com_github_cosi_project_runtime//pkg/state",
         "@com_github_siderolabs_discovery_api//api/v1alpha1/client/pb",
         "@com_github_siderolabs_discovery_client//pkg/client",
+        "@com_github_siderolabs_gen//optional",
         "@com_github_siderolabs_talos_pkg_machinery//resources/cluster",
         "@com_github_siderolabs_talos_pkg_machinery//resources/k8s",
         "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
