@@ -47,21 +47,13 @@ spec:
         - key: node-role.kubernetes.io/control-plane
           operator: Exists
           effect: NoSchedule
-      # Hard anti-affinity: one admission controller per control-plane node.
+      # Soft anti-affinity: prefer spreading replicas across control-plane nodes.
       # Replaces topologySpreadConstraints whose labelSelector didn't match
       # (pods have instance=kyverno-kyverno, not instance=kyverno), causing
       # all 3 replicas to stack on talos-vps-cp-1.
+      # The chart default uses preferredDuringScheduling with the correct labels.
       antiAffinity:
         enabled: true
-      podAntiAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchExpressions:
-                - key: app.kubernetes.io/component
-                  operator: In
-                  values:
-                    - admission-controller
-            topologyKey: kubernetes.io/hostname
       resources:
         limits:
           cpu: 500m
