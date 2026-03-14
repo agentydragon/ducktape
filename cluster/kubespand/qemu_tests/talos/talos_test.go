@@ -80,9 +80,7 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 		0, h.McastNIC("net0", mcastLan2, "52:54:00:a0:00:03"))
 
 	// Wait for infrastructure to be ready (fail fast if any crashes).
-	h.RequireEvent(t, vmDiscovery, h.EventDone, 30*time.Second)
-	h.RequireEvent(t, vmRouter1, h.EventDone, 30*time.Second)
-	h.RequireEvent(t, vmRouter2, h.EventDone, 30*time.Second)
+	h.RequireAllEvents(t, []*h.VM{vmDiscovery, vmRouter1, vmRouter2}, h.EventDone, 30*time.Second)
 
 	// Ensure VM logs are always saved, even on Fatalf.
 	allVMs := []*h.VM{vmVPS, vmNAT1, vmNAT2, vmRouter1, vmRouter2, vmDiscovery}

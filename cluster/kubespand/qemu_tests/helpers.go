@@ -233,6 +233,37 @@ func RequireEvent(t *testing.T, v *VM, typ EventType, timeout time.Duration) Eve
 	return evt
 }
 
+// RequireAllEvents waits for multiple VMs to emit the given event type in
+// parallel, with a single shared deadline. Fails the test if any VM doesn't
+// produce the event within the timeout.
+func RequireAllEvents(t *testing.T, vms []*VM, typ EventType, timeout time.Duration) {
+	t.Helper()
+
+	type result struct {
+		vm  *VM
+		evt Event
+		ok  bool
+	}
+
+	ch := make(chan result, len(vms))
+	for _, vm := range vms {
+		go func(v *VM) {
+			evt, ok := v.WaitForEvent(typ, timeout)
+			ch <- result{vm: v, evt: evt, ok: ok}
+		}(vm)
+	}
+
+	for range vms {
+		res := <-ch
+		if !res.ok {
+			if res.evt.Type == EventError {
+				t.Fatalf("[%s] error while waiting for %s: %s", res.vm.Name, typ, res.evt.Message)
+			}
+			t.Fatalf("[%s] timed out waiting for %s event (%v)", res.vm.Name, typ, timeout)
+		}
+	}
+}
+
 // WaitVMDone waits for a VM to finish with a timeout.
 func WaitVMDone(t *testing.T, v *VM, timeout time.Duration) bool {
 	t.Helper()

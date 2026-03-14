@@ -55,9 +55,7 @@ func TestDoubleNAT(t *testing.T) {
 	allVMs := []*h.VM{vmVPS, vmRouterA, vmRouterB, vmDiscovery}
 
 	// Wait for infrastructure VMs to be ready before booting kubespand nodes.
-	h.RequireEvent(t, vmDiscovery, h.EventDone, 30*time.Second)
-	h.RequireEvent(t, vmRouterA, h.EventDone, 30*time.Second)
-	h.RequireEvent(t, vmRouterB, h.EventDone, 30*time.Second)
+	h.RequireAllEvents(t, []*h.VM{vmDiscovery, vmRouterA, vmRouterB}, h.EventDone, 30*time.Second)
 
 	t.Log("booting NAT1...")
 	vmNAT1 := h.BootVM(t, "vm-nat1", vmlinuz, initramfs, kubespanBase+" role=nat1",
