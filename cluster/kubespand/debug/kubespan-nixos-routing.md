@@ -94,7 +94,7 @@ BUT: this doesn't explain why conntrack entries show SYN_RECV (which
 means SYN-ACK was sent back). If Hetzner dropped the TCP SYN, there
 would be no SYN-ACK at all.
 
-## QEMU test results
+## QEMU test results (before the /32 fix)
 
 All 4 probes pass in the QEMU environment:
 
@@ -105,7 +105,7 @@ All 4 probes pass in the QEMU environment:
 
 The QEMU VMs have no iptables, no Cilium, no conntrack complexity.
 
-## Root cause found
+## Root cause found (NixOS worker)
 
 **kubespand does not add the node's own IP to the kubespan interface.**
 
@@ -119,19 +119,16 @@ routing validation than TCP's socket lookup path.
 **Fix:** `sudo ip addr add 10.0.243.53/32 dev kubespan` — after this, ALL traffic
 works (ICMP, TCP, all peers, API server accessible).
 
-**Talos equivalent:** Talos's KubeSpan manager writes an `AddressSpec` COSI resource
-that adds the node's routed addresses to the kubespan/wg-kubespan interface.
-kubespand skips this because it uses direct netlink instead of COSI.
+## Fix implemented (commit 731dd1c)
 
-## Fix implemented
+In `controllers/kubespan/manager.go:277-306`, after writing the ULA address,
+kubespand now adds the node's non-ULA routed addresses (from
+`discovery.RoutedNodeAddresses()` at `discovery/discovery.go:235`) to the
+kubespan interface as secondary `/32` or `/128` addresses. This ensures the
+kernel accepts reply packets arriving on kubespan.
 
-In `controller_manager.go`, after creating the WireGuard interface and adding the ULA
-address, kubespand now adds the node's non-ULA routed addresses (from
-`discovery.RoutedNodeAddresses()`) to the kubespan interface as secondary `/32` or
-`/128` addresses. This ensures the kernel accepts reply packets arriving on kubespan.
-
-The QEMU test now enables `ip_forward=1` and `rp_filter=2` (matching real NixOS
-environment) and verifies both ICMP and TCP probes to peer eth1 IPs through KubeSpan.
+The QEMU test enables `ip_forward=1` and `rp_filter=2` (matching real NixOS
+environment) in `qemu_tests/vms/kubespanlib/kubespanlib.go:45-47`.
 
 ## Phase 5: Verification after manual fix
 
@@ -141,3 +138,112 @@ After `ip addr add 10.0.243.53/32 dev kubespan`:
 - TCP to VPS:6443: ✓ (CONNECTED)
 - API healthz via HAProxy: ✓ (returns 401 = auth needed, but TCP works)
 - HAProxy backends: UP (2/3, cp3 doesn't exist)
+
+## Upstream Talos comparison (2026-03-14 analysis)
+
+### Talos does NOT add node IPs to the kubespan interface
+
+**The claim in the original "Fix implemented" section that "Talos's KubeSpan
+manager writes an AddressSpec that adds the node's routed addresses to the
+kubespan interface" is incorrect.**
+
+Verified at:
+
+- **Upstream Talos** `internal/app/machined/pkg/controllers/kubespan/manager.go:461-480`:
+  writes a single `AddressSpec` for the ULA IPv6 address
+  (`localSpec.Address` with `Family: FamilyInet6`). No loop over node addresses.
+  No equivalent of kubespand's `RoutedNodeAddresses()`.
+- **kubespand** `controllers/kubespan/manager.go:256-275`: matches upstream
+  (writes ULA address).
+- **kubespand** `controllers/kubespan/manager.go:277-306`: kubespand-specific
+  code — loops over `discovery.RoutedNodeAddresses()` and writes each as a
+  `/32` or `/128` `AddressSpec` on the kubespan interface. **This does not exist
+  in upstream Talos.**
+
+### Why Talos doesn't need the /32 fix
+
+Talos avoids the "Invalid cross-device link" problem because it does not set
+`rp_filter` on any interface. Verified at:
+
+- **Talos kernel param defaults**
+  (`internal/app/machined/pkg/controllers/runtime/kernel_param_defaults.go:77-91`):
+  sets `ip_forward=1`, `icmp_ignore_bogus_error_responses=1`,
+  `icmp_echo_ignore_broadcasts=1`. Does NOT set `rp_filter`.
+- **GitHub code search** for `rp_filter` in `siderolabs/talos`: 0 results.
+- **Linux kernel default** for `rp_filter` is 0 (disabled). Since Talos is a
+  minimal OS that doesn't run systemd's `sysctl.d` overrides, the kernel
+  default applies.
+
+On NixOS (and most other distros), systemd sets `rp_filter=2` (loose mode) or
+`rp_filter=1` (strict mode) via `/usr/lib/sysctl.d/`. When a TCP SYN-ACK reply
+arrives on the kubespan interface with `dst=<node-eth0-IP>`, the kernel performs
+a reverse path check: "would I route a packet to the source of this reply through
+kubespan?" If the source is a remote peer whose route goes through eth0 (the
+physical interface), `rp_filter >= 1` drops the packet. Adding the node's IP as
+`/32` on kubespan makes the kernel see the address as local on that interface,
+bypassing the cross-device check.
+
+### The /32 fix breaks QEMU tests
+
+Adding the node's eth0 IP to the kubespan interface causes a routing problem in
+QEMU test environments where the discovery service is on the same L2 subnet as
+the VMs. The failure sequence (from `kubespan_test` RBE run, BuildBuddy invocation
+`3ff54921-a16e-45b9-a421-d2f1225fbea7`):
+
+1. VM eth0 gets `192.168.50.1/24` (`kubespanlib.go:43`)
+2. kubespand starts, installs ip rules + nftables chains
+3. kubespand assigns `192.168.50.1/32` to kubespan
+   (`manager.go:282-283`, via `RoutedNodeAddresses()`)
+4. kubespand assigns ULA IPv6 to kubespan, creates default routes in table 180
+5. All discovery service connections to `192.168.50.254:3000` fail with
+   `EHOSTUNREACH` ("no route to host")
+6. After 180s, the test times out
+
+The error from `vm-a.log`:
+
+```text
+hello failed: "rpc error: code = Unavailable desc = connection error:
+  desc = \"transport: Error while dialing: dial tcp 192.168.50.254:3000:
+  connect: no route to host\""
+```
+
+The `doublenat_test` shows a related symptom — `RouteSpecController` fails with
+"network is down" when adding routes to the kubespan interface before it's fully
+initialized.
+
+### Correct fix approach
+
+The `/32` on kubespan is only needed on non-Talos hosts (NixOS, etc.) where
+`rp_filter >= 1`. Options:
+
+1. **Remove the `RoutedNodeAddresses()` loop** and instead set `rp_filter=0`
+   on the kubespan interface specifically:
+   `echo 0 > /proc/sys/net/ipv4/conf/kubespan/rp_filter`
+   This matches what Talos effectively has (kernel default `rp_filter=0`) and
+   avoids the routing side effects of adding extra IPs to kubespan.
+
+2. **Add an ip rule exemption** for locally-sourced traffic:
+   `ip rule add from <eth0-ip> lookup main priority 32000`
+   This ensures traffic sourced from the node's physical IP always consults the
+   main routing table first (before the fwmark rule at priority 32500).
+
+3. **Set `accept_local=1`** on the kubespan interface to allow the kernel to
+   accept packets with a local source address arriving on a different interface.
+
+Option 1 is the closest to upstream Talos behavior and the least invasive.
+
+### Code references
+
+| Location                                          | Description                                                         |
+| ------------------------------------------------- | ------------------------------------------------------------------- |
+| `controllers/kubespan/manager.go:256-275`         | ULA address on kubespan (matches upstream)                          |
+| `controllers/kubespan/manager.go:277-306`         | Node IPs on kubespan (kubespand-only, causes QEMU test failure)     |
+| `discovery/discovery.go:235-270`                  | `RoutedNodeAddresses()` — enumerates non-loopback, non-kubespan IPs |
+| `qemu_tests/vms/kubespanlib/kubespanlib.go:45-47` | QEMU VMs set `rp_filter=2`                                          |
+| `qemu_tests/vms/kubespanlib/kubespanlib.go:67`    | `ForceRouting: true` in test config                                 |
+| Upstream `kubespan/manager.go:461-480`            | Only writes ULA address, no node IPs                                |
+| Upstream `kubespan/routing_rules.go:50-78`        | ip rules: fwmark → table 180, priority ~32500                       |
+| Upstream `runtime/kernel_param_defaults.go:77-91` | Talos sysctls: no `rp_filter` set                                   |
+| Commit `731dd1c`                                  | Initial kubespand code (includes the `/32` fix from the start)      |
+| Commit `cdb6b76`                                  | "announce local IPs and filter endpoints for NAT traversal"         |
+| Commit `6a9bf4f`                                  | DiscoveryController reconcile loop fix                              |
