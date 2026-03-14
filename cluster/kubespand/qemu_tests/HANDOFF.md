@@ -29,11 +29,19 @@ working end-to-end.
 - **Talos test infrastructure**: Pre-built nocloud qcow2 disk image boots, CIDATA config
   injection works, apid comes up, talosctl connects.
 
+### Fixed
+
+- **kubespan/doublenat tests**: Peer discovery timeout was caused by a race condition in
+  `DiscoveryController` (introduced by `08bcc3b "use upstream Talos LocalAffiliateController"`).
+  The controller skipped discovery manager creation when `LocalAffiliateController` hadn't
+  produced its output yet. Fixed by restructuring the reconcile loop to start the discovery
+  manager immediately and defer only the local affiliate publish step.
+- **kubespan/doublenat tests**: Migrated from `time.Sleep` to event-driven `RequireEvent`
+  pattern for infrastructure VM readiness. Added `t.Cleanup` with `KillAndWait` + `SaveLogs`
+  so logs are preserved even on `Fatalf`.
+
 ### Needs Fixing
 
-- **kubespan/doublenat tests**: Fail with peer discovery timeout. Likely regression from
-  a parallel kubespand refactor (`0d7e42128 "use upstream Talos LocalAffiliateController"`).
-  These tests passed before the restructure.
 - **Talos test**: VPS can't reach discovery service — the QEMU user-mode mgmt NIC (eth1)
   gets DHCP default route that overrides eth0's subnet route. **Fix in progress**: testdata
   configs regenerated with `eth1: dhcp: false` for VPS. NAT1/NAT2 don't have mgmt NICs so
@@ -143,7 +151,5 @@ must be controlplane.
 
 1. Run Talos test with regenerated testdata (eth1 dhcp:false fix).
 2. Once Talos API connects, check if KubeSpan peers are discovered through double NAT.
-3. Debug kubespan/doublenat test failures (kubespand regression from parallel refactor).
-4. Apply `WaitForEvent`/`RequireEvent` pattern to kubespan and doublenat tests (currently
-   still using `time.Sleep`).
-5. Commit and push to devel once all tests pass or are known-fail for the right reason.
+3. Run kubespan/doublenat tests on RBE to verify the DiscoveryController fix resolves
+   the peer discovery timeout.

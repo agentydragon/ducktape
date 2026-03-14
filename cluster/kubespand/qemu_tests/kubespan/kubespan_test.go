@@ -49,24 +49,28 @@ func runTopology(t *testing.T, topology string) {
 	vmDisc := h.BootVM(t, "vm-disc", vmlinuz, initramfsDisc,
 		fmt.Sprintf("mode=discovery role=discovery discovery_ip=%s/24", discIP),
 		h.McastNIC("net0", mcastAddr, "52:54:00:ff:00:01")...)
-	time.Sleep(3 * time.Second)
 
 	t.Log("booting VM-B...")
 	vmB := h.BootVM(t, "vm-b", vmlinuz, initramfs, kernelBase+" role=b",
 		h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01")...)
-	time.Sleep(time.Second)
 
 	t.Log("booting VM-A...")
 	vmA := h.BootVM(t, "vm-a", vmlinuz, initramfs, kernelBase+" role=a",
 		h.McastNIC("net0", mcastAddr, "52:54:00:a0:00:01")...)
 
+	// Ensure logs are always saved, even on Fatalf.
+	allVMs := []*h.VM{vmA, vmB, vmDisc}
+	t.Cleanup(func() {
+		h.KillAndWait(allVMs...)
+		for _, vm := range allVMs {
+			vm.SaveLogs(t, out)
+		}
+	})
+
+	// Wait for discovery to be ready before expecting peer connections.
+	h.RequireEvent(t, vmDisc, h.EventDone, 30*time.Second)
+
 	h.WaitVMDone(t, vmA, 300*time.Second)
-
-	h.KillAndWait(vmB, vmDisc)
-
-	vmA.SaveLogs(t, out)
-	vmB.SaveLogs(t, out)
-	vmDisc.SaveLogs(t, out)
 
 	summary := map[string]interface{}{
 		"topology":       topology,

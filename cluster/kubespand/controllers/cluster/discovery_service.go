@@ -107,20 +107,10 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 			return fmt.Errorf("getting kubespan identity: %w", err)
 		}
 
-		// Read the local affiliate produced by upstream LocalAffiliateController.
-		localAffiliate, err := safe.ReaderGetByID[*cluster.Affiliate](ctx, r, localNodeID)
-		if err != nil {
-			if state.IsNotFoundError(err) {
-				// LocalAffiliateController hasn't produced it yet.
-				continue
-			}
-			return fmt.Errorf("getting local affiliate: %w", err)
-		}
-
-		// Build otherEndpoints from harvested Endpoint resources for re-announcement.
-		otherEndpoints := ctrl.buildOtherEndpoints(ctx, r)
-
-		// Create discovery manager if not yet running.
+		// Create discovery manager if not yet running. This must happen before
+		// reading the local affiliate so that peer discovery and public IP
+		// detection start immediately, even if LocalAffiliateController hasn't
+		// produced its output yet.
 		if ctrl.dm == nil {
 			dm, createErr := discovery.NewManager(clusterSpec, ksID.TypedSpec().PublicKey, logger)
 			if createErr != nil {
@@ -156,22 +146,35 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 		// LocalAffiliateController for endpoint construction).
 		ctrl.writePublicIPStatus(ctx, r, logger)
 
-		// Publish local affiliate to discovery service when data changes.
-		localVersion := localAffiliate.Metadata().Version().String()
-		pubIPLen := len(ctrl.dm.GetPublicIP())
-		if localVersion != ctrl.lastLocalVersion ||
-			len(otherEndpoints) != ctrl.lastEndpointCount ||
-			pubIPLen != ctrl.lastPubIPLen {
+		// Read the local affiliate produced by upstream LocalAffiliateController.
+		// If it hasn't been produced yet, skip publishing but still reconcile
+		// remote affiliates below so peer discovery proceeds.
+		localAffiliate, err := safe.ReaderGetByID[*cluster.Affiliate](ctx, r, localNodeID)
+		if err != nil && !state.IsNotFoundError(err) {
+			return fmt.Errorf("getting local affiliate: %w", err)
+		}
 
-			if pubErr := ctrl.dm.PublishAffiliate(localAffiliate.TypedSpec(), otherEndpoints); pubErr != nil {
-				logger.Error("publishing local affiliate", zap.Error(pubErr))
-			} else {
-				ctrl.lastLocalVersion = localVersion
-				ctrl.lastEndpointCount = len(otherEndpoints)
-				ctrl.lastPubIPLen = pubIPLen
-				logger.Debug("published local affiliate",
-					zap.Int("other_endpoints", len(otherEndpoints)),
-				)
+		if localAffiliate != nil {
+			// Build otherEndpoints from harvested Endpoint resources for re-announcement.
+			otherEndpoints := ctrl.buildOtherEndpoints(ctx, r)
+
+			// Publish local affiliate to discovery service when data changes.
+			localVersion := localAffiliate.Metadata().Version().String()
+			pubIPLen := len(ctrl.dm.GetPublicIP())
+			if localVersion != ctrl.lastLocalVersion ||
+				len(otherEndpoints) != ctrl.lastEndpointCount ||
+				pubIPLen != ctrl.lastPubIPLen {
+
+				if pubErr := ctrl.dm.PublishAffiliate(localAffiliate.TypedSpec(), otherEndpoints); pubErr != nil {
+					logger.Error("publishing local affiliate", zap.Error(pubErr))
+				} else {
+					ctrl.lastLocalVersion = localVersion
+					ctrl.lastEndpointCount = len(otherEndpoints)
+					ctrl.lastPubIPLen = pubIPLen
+					logger.Debug("published local affiliate",
+						zap.Int("other_endpoints", len(otherEndpoints)),
+					)
+				}
 			}
 		}
 

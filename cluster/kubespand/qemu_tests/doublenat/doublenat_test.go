@@ -35,7 +35,6 @@ func TestDoubleNAT(t *testing.T) {
 	vmDiscovery := h.BootVM(t, "vm-disc", vmlinuz, initramfsDisc,
 		"mode=discovery role=discovery discovery_ip=192.168.50.254/24",
 		h.McastNIC("net0", mcastInternet, "52:54:00:ff:00:01")...)
-	time.Sleep(3 * time.Second)
 
 	t.Log("booting VPS...")
 	vmVPS := h.BootVM(t, "vm-vps", vmlinuz, initramfs, kubespanBase+" role=vps",
@@ -51,27 +50,32 @@ func TestDoubleNAT(t *testing.T) {
 		"mode=router role=router-b internet_ip=192.168.50.3/24 lan_ip=192.168.70.1/24",
 		append(h.McastNIC("net0", mcastInternet, "52:54:00:c2:00:01"),
 			h.McastNIC("net1", mcastLanB, "52:54:00:c2:00:02")...)...)
-	time.Sleep(time.Second)
+
+	// Ensure logs are always saved, even on Fatalf.
+	allVMs := []*h.VM{vmVPS, vmRouterA, vmRouterB, vmDiscovery}
+
+	// Wait for infrastructure VMs to be ready before booting kubespand nodes.
+	h.RequireEvent(t, vmDiscovery, h.EventDone, 30*time.Second)
+	h.RequireEvent(t, vmRouterA, h.EventDone, 30*time.Second)
+	h.RequireEvent(t, vmRouterB, h.EventDone, 30*time.Second)
 
 	t.Log("booting NAT1...")
 	vmNAT1 := h.BootVM(t, "vm-nat1", vmlinuz, initramfs, kubespanBase+" role=nat1",
 		h.McastNIC("net0", mcastLanA, "52:54:00:d0:00:01")...)
-	time.Sleep(time.Second)
 
 	t.Log("booting NAT2...")
 	vmNAT2 := h.BootVM(t, "vm-nat2", vmlinuz, initramfs, kubespanBase+" role=nat2",
 		h.McastNIC("net0", mcastLanB, "52:54:00:e0:00:01")...)
 
+	allVMs = append(allVMs, vmNAT1, vmNAT2)
+	t.Cleanup(func() {
+		h.KillAndWait(allVMs...)
+		for _, vm := range allVMs {
+			vm.SaveLogs(t, out)
+		}
+	})
+
 	h.WaitVMDone(t, vmNAT2, 300*time.Second)
-
-	h.KillAndWait(vmVPS, vmRouterA, vmRouterB, vmNAT1, vmDiscovery)
-
-	vmDiscovery.SaveLogs(t, out)
-	vmVPS.SaveLogs(t, out)
-	vmRouterA.SaveLogs(t, out)
-	vmRouterB.SaveLogs(t, out)
-	vmNAT1.SaveLogs(t, out)
-	vmNAT2.SaveLogs(t, out)
 
 	summary := map[string]interface{}{
 		"topology":            "double_nat",
