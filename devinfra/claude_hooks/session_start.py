@@ -370,6 +370,7 @@ async def _setup_web(
         raise RuntimeError("Combined CA bundle not found - proxy setup incomplete")
 
     # Read k8s secrets now that combined CA is available for TLS.
+    # Route through the auth proxy so the upstream egress proxy gets credentials.
     secrets: k8s_secrets_setup.K8sSecretsResult | None = None
     if settings.k8s_token and hook_config:
         with tracer.start_as_current_span("setup_k8s_secrets", context=root_ctx):
@@ -378,6 +379,7 @@ async def _setup_web(
                 session_dir=settings.session_dir,
                 combined_ca_path=combined_ca,
                 config=hook_config,
+                proxy=f"http://localhost:{settings.get_auth_proxy_port()}",
             )
 
     # Configure BuildBuddy now that k8s secrets (with API key) are available.

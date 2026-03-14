@@ -99,13 +99,20 @@ def _build_kubeconfig(token: str, server: str, service_account: str, namespace: 
 
 
 def setup_k8s_secrets(
-    token: str, session_dir: Path, combined_ca_path: Path | None, config: HookConfig
+    token: str,
+    session_dir: Path,
+    combined_ca_path: Path | None,
+    config: HookConfig,
+    proxy: str | None = None,
 ) -> K8sSecretsResult:
     """Read secrets from k8s and write kubeconfig.
 
     Uses the kubernetes Python client with a Bearer token to read secrets
     from the configured namespace, maps data keys to env var names, and
     writes a kubeconfig file for kubectl CLI use.
+
+    In web mode, pass proxy="http://localhost:<port>" to route through the
+    auth proxy, which adds Proxy-Authorization for the upstream egress proxy.
     """
     result = K8sSecretsResult()
     k8s_cfg = config.k8s
@@ -119,6 +126,8 @@ def setup_k8s_secrets(
         client_config.ssl_ca_cert = str(combined_ca_path)
     else:
         client_config.verify_ssl = True
+    if proxy:
+        client_config.proxy = proxy
 
     api = CoreV1Api(k8s_client.ApiClient(client_config))
 
