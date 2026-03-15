@@ -127,11 +127,17 @@ func WaitForPeers(kubespandCmd *exec.Cmd, n int) []string {
 }
 
 // DumpDiagnostics logs routing, WireGuard, nftables, and rp_filter state
-// for debugging connectivity issues. Called before probing peers.
-func DumpDiagnostics() {
+// for debugging connectivity issues. For each peerIP, it also dumps route
+// lookups with and without the KubeSpan fwmark.
+func DumpDiagnostics(peerIPs ...string) {
 	initlib.Run("ip", "addr", "show")
 	initlib.Run("ip", "rule", "show")
+	initlib.Run("ip", "route", "show", "table", "main")
 	initlib.Run("ip", "route", "show", "table", "180")
+	for _, ip := range peerIPs {
+		initlib.Run("ip", "route", "get", ip)
+		initlib.Run("ip", "route", "get", ip, "mark", "0x40")
+	}
 	initlib.Run("wg", "show", "kubespan")
 	initlib.Run("nft", "list", "ruleset")
 	initlib.Run("cat", "/proc/sys/net/ipv4/conf/all/rp_filter")

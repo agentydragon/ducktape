@@ -81,7 +81,6 @@ func main() {
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDiscovery, Message: fmt.Sprintf("discovered %d peers", len(peerAddrs))})
 
 		kubespanlib.DumpDiagnostics()
-		initlib.Run("ip", "route", "show", "table", "main")
 
 		kubespanlib.RunDoubleNATProbes(peerAddrs, probePort)
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: "probes completed"})
