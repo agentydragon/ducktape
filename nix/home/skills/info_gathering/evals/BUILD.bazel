@@ -6,8 +6,9 @@ py_library(
     imports = ["../../../../.."],
     visibility = ["//nix/home/skills/info_gathering/evals:__subpackages__"],
     deps = [
+        "//openai_utils:json_schema",
         "//util/bazel:runfiles",
-        "@pypi//anthropic",
+        "@pypi//litellm",
         "@pypi//pydantic",
     ],
 )

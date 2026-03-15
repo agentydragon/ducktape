@@ -7,7 +7,7 @@ py_library(
     deps = [
         "//nix/home/skills/info_gathering/evals:harness",
         "//util/bazel:runfiles",
-        "@pypi//anthropic",
+        "@pypi//litellm",
         "@pypi//pydantic",
     ],
 )
@@ -30,7 +30,7 @@ py_test(
     deps = [
         ":twenty_questions",
         "//nix/home/skills/info_gathering/evals:harness",
-        "@pypi//anthropic",
+        "@pypi//litellm",
         "@pypi//pytest_bazel",
     ],
 )
