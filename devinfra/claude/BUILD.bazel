@@ -341,6 +341,7 @@ py_library(
 
 py_binary(
     name = "hook_dispatch",
+    data = [":bazel_wrapper"],
     imports = ["../.."],
     main_module = "devinfra.claude.hook_dispatch",
     visibility = ["//visibility:public"],

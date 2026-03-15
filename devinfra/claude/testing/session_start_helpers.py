@@ -190,7 +190,7 @@ async def run_session_start_hook(
 
     use_wheel = os.environ.get(settings.ENV_USE_WHEEL) == "1"
 
-    cmd: str | Path = "claude-hook" if use_wheel else get_required_path(shell_helpers.SESSION_START)
+    cmd: str | Path = "claude-hook" if use_wheel else get_required_path(shell_helpers.HOOK_DISPATCH)
 
     env = dict(os.environ)
     if use_wheel:
