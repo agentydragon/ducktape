@@ -113,7 +113,7 @@ type zapLogEntry struct {
 // WaitForPeers waits for n peers to be discovered in kubespand's JSONL log
 // by tailing the log file reactively.
 func WaitForPeers(kubespandCmd *exec.Cmd, n int) []string {
-	const timeout = 180 * time.Second
+	const timeout = 60 * time.Second
 	deadline := time.Now().Add(timeout)
 
 	f, err := os.Open("/tmp/kubespand.log")
@@ -155,7 +155,7 @@ func WaitForPeers(kubespandCmd *exec.Cmd, n int) []string {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: fmt.Sprintf("timed out waiting for %d peers (180s)", n), Error: "peer discovery timeout"})
+	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: fmt.Sprintf("timed out waiting for %d peers (%s)", n, timeout), Error: "peer discovery timeout"})
 	initlib.DumpLog("/tmp/kubespand.log")
 	kubespandCmd.Process.Kill()
 	initlib.Poweroff()
