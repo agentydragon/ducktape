@@ -236,6 +236,79 @@ func WaitForPeers(kubespandCmd *exec.Cmd, n int) []string {
 	return nil
 }
 
+// WaitForPeerUp polls kubespand's COSI API for PeerStatus resources until
+// minPeers peers report state "up" (WireGuard handshake completed).
+// This should be called after WaitForPeer to ensure the handshake is done
+// before running data-plane probes and before the test host polls PeerStatus.
+func WaitForPeerUp(kubespandCmd *exec.Cmd, minPeers int) {
+	const timeout = 180 * time.Second
+	deadline := time.Now().Add(timeout)
+	socketPath := constants.MachineSocketPath
+
+	var cosiState state.State
+	var conn *grpc.ClientConn
+	lastLog := time.Now()
+
+	for time.Now().Before(deadline) {
+		if kubespandCmd.ProcessState != nil {
+			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "kubespand exited during WaitForPeerUp"})
+			initlib.DumpLog("/tmp/kubespand.log")
+			initlib.Poweroff()
+		}
+
+		if cosiState == nil {
+			var err error
+			cosiState, conn, err = NewCOSIClient(socketPath)
+			if err != nil {
+				time.Sleep(500 * time.Millisecond)
+				continue
+			}
+			defer conn.Close()
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		list, err := safe.StateListAll[*kubespan.PeerStatus](ctx, cosiState)
+		cancel()
+
+		if err != nil {
+			if time.Since(lastLog) > 15*time.Second {
+				fmt.Fprintf(os.Stderr, "[WaitForPeerUp] COSI error: %v\n", err)
+				lastLog = time.Now()
+			}
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		upCount := 0
+		totalPeers := 0
+		for it := list.Iterator(); it.Next(); {
+			totalPeers++
+			if it.Value().TypedSpec().State == kubespan.PeerStateUp {
+				upCount++
+			}
+		}
+
+		if upCount >= minPeers {
+			fmt.Fprintf(os.Stderr, "[WaitForPeerUp] SUCCESS: %d/%d peers up (%d total)\n", upCount, minPeers, totalPeers)
+			return
+		}
+
+		if time.Since(lastLog) > 15*time.Second {
+			remaining := time.Until(deadline).Round(time.Second)
+			fmt.Fprintf(os.Stderr, "[WaitForPeerUp] %d/%d peers up (%d total), %s remaining\n", upCount, minPeers, totalPeers, remaining)
+			lastLog = time.Now()
+		}
+
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	DumpDiagnostics()
+	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: fmt.Sprintf("timed out waiting for %d peers up (%s)", minPeers, timeout), Error: "WaitForPeerUp timeout"})
+	initlib.DumpLog("/tmp/kubespand.log")
+	kubespandCmd.Process.Kill()
+	initlib.Poweroff()
+}
+
 // dumpLogTail prints the last n lines of a log file to stderr.
 func dumpLogTail(path string, n int) {
 	data, err := os.ReadFile(path)

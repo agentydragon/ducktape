@@ -149,9 +149,16 @@ func main() {
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: fmt.Sprintf("role=b listening on tcp/%d, waiting (180s max)", probePort)})
 		time.Sleep(180 * time.Second)
 	} else {
+		// Wait for WireGuard handshake to complete (PeerStatus "up") before
+		// running probes. This also keeps kubespand alive long enough for the
+		// test host to observe "up" via the TCP COSI API.
+		kubespanlib.WaitForPeerUp(kubespandCmd, 1)
 		kubespanlib.DumpDiagnostics(peerBridgeIP)
 		kubespanlib.RunProbes(peerAddr, peerBridgeIP, probePort)
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: "probes completed"})
+		// Keep kubespand alive briefly so the test host's PeerStatus poll
+		// (1s interval) can observe the "up" state before we exit.
+		time.Sleep(30 * time.Second)
 	}
 
 	kubespandCmd.Process.Kill()

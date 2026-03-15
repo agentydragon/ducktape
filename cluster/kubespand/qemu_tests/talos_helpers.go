@@ -26,14 +26,6 @@ type KubespanPeerResult struct {
 	Endpoint string             `json:"endpoint"`
 }
 
-// MgmtNIC returns QEMU args for a user-mode management NIC with TCP port forwarding to port 50000.
-func MgmtNIC(hostPort int) []string {
-	return []string{
-		"-netdev", fmt.Sprintf("user,id=mgmt,hostfwd=tcp::%d-:50000", hostPort),
-		"-device", "virtio-net-pci,netdev=mgmt,mac=52:54:00:ab:00:01",
-	}
-}
-
 // pollUntil calls fn every second until it returns true or the deadline passes.
 // Returns true if fn returned true, false on timeout.
 func pollUntil(deadline time.Time, fn func() bool) bool {
@@ -66,7 +58,7 @@ func BootTalosVM(t *testing.T, name, baseImage, cidataPath string, mgmtPort int,
 	args = append(args, netArgs...)
 
 	if mgmtPort > 0 {
-		args = append(args, MgmtNIC(mgmtPort)...)
+		args = append(args, MgmtNIC(mgmtPort, 50000, "52:54:00:ab:00:01")...)
 	}
 
 	return StartVM(t, name, exec.Command("qemu-system-x86_64", args...), false)

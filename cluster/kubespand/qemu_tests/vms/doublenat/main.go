@@ -87,10 +87,15 @@ func main() {
 		peerAddrs := kubespanlib.WaitForPeers(kubespandCmd, 2)
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDiscovery, Message: fmt.Sprintf("discovered %d peers", len(peerAddrs))})
 
+		// Wait for at least 1 peer handshake before probes (VPS is directly
+		// reachable; NAT1 may stay down due to endpoint-dependent filtering).
+		kubespanlib.WaitForPeerUp(kubespandCmd, 1)
 		kubespanlib.DumpDiagnostics()
 
 		kubespanlib.RunDoubleNATProbes(peerAddrs, probePort)
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: "probes completed"})
+		// Keep kubespand alive for test host PeerStatus observation.
+		time.Sleep(30 * time.Second)
 	}
 
 	kubespandCmd.Process.Kill()
