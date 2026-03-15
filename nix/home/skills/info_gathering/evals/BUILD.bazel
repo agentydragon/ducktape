@@ -1,0 +1,13 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "harness",
+    srcs = ["harness.py"],
+    imports = ["../../../../.."],
+    visibility = ["//nix/home/skills/info_gathering/evals:__subpackages__"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//anthropic",
+        "@pypi//pydantic",
+    ],
+)

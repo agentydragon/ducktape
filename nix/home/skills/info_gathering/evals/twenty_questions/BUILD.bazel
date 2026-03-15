@@ -1,0 +1,36 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "twenty_questions",
+    srcs = ["twenty_questions.py"],
+    imports = ["../../../../../.."],
+    deps = [
+        "//nix/home/skills/info_gathering/evals:harness",
+        "//util/bazel:runfiles",
+        "@pypi//anthropic",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "twenty_questions_bin",
+    data = [
+        "sim.txt",
+        "//nix/home/skills/info_gathering:SKILL.md",
+    ],
+    imports = ["../../../../../.."],
+    main_module = "nix.home.skills.info_gathering.evals.twenty_questions.twenty_questions",
+    deps = [":twenty_questions"],
+)
+
+py_test(
+    name = "test_twenty_questions",
+    srcs = ["test_twenty_questions.py"],
+    imports = ["../../../../../.."],
+    deps = [
+        ":twenty_questions",
+        "//nix/home/skills/info_gathering/evals:harness",
+        "@pypi//anthropic",
+        "@pypi//pytest_bazel",
+    ],
+)

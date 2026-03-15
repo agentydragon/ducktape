@@ -1,0 +1,23 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "apartments",
+    srcs = ["apartments.py"],
+    imports = ["../../../../../.."],
+    deps = [
+        "//nix/home/skills/info_gathering/evals:harness",
+        "//util/bazel:runfiles",
+    ],
+)
+
+py_binary(
+    name = "apartments_bin",
+    data = [
+        "first_message.txt",
+        "sim.txt",
+        "//nix/home/skills/info_gathering:SKILL.md",
+    ],
+    imports = ["../../../../../.."],
+    main_module = "nix.home.skills.info_gathering.evals.apartments.apartments",
+    deps = [":apartments"],
+)
