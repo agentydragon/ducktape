@@ -10,14 +10,17 @@ import (
 )
 
 func TestFlat(t *testing.T) {
+	t.Parallel()
 	runTopology(t, "flat")
 }
 
 func TestCrossSubnet(t *testing.T) {
+	t.Parallel()
 	runTopology(t, "cross_subnet")
 }
 
 func TestDiscoveryOnly(t *testing.T) {
+	t.Parallel()
 	runTopology(t, "discovery_only")
 }
 
