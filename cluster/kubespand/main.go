@@ -16,6 +16,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
+	"github.com/agentydragon/ducktape/cluster/kubespand/api"
 	clusterctrl "github.com/agentydragon/ducktape/cluster/kubespand/controllers/cluster"
 	k8sctrl "github.com/agentydragon/ducktape/cluster/kubespand/controllers/k8s"
 	kubespanctrl "github.com/agentydragon/ducktape/cluster/kubespand/controllers/kubespan"
@@ -157,6 +158,13 @@ func run(configPath string, logger *zap.Logger) error {
 
 	logger.Info("starting COSI runtime")
 
+	// Start the API server (COSI state on Unix socket).
+	apiServer := api.NewServer(st, cfg.Api.SocketPath, logger)
+	apiErrCh := make(chan error, 1)
+	go func() {
+		apiErrCh <- apiServer.Run(ctx)
+	}()
+
 	// Start the COSI runtime in a goroutine.
 	runtimeErrCh := make(chan error, 1)
 	go func() {
@@ -169,11 +177,16 @@ func run(configPath string, logger *zap.Logger) error {
 		runtimeErrCh <- err
 	}()
 
-	// Run until context cancelled.
+	// Run until context cancelled or a subsystem fails.
 	select {
 	case err := <-runtimeErrCh:
 		if err != nil {
 			return fmt.Errorf("controller runtime: %w", err)
+		}
+		return nil
+	case err := <-apiErrCh:
+		if err != nil {
+			return fmt.Errorf("API server: %w", err)
 		}
 		return nil
 	case <-ctx.Done():

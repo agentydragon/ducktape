@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//cluster/kubespand/agentconfig",
+        "//cluster/kubespand/api",
         "//cluster/kubespand/controllers/cluster:clusterctrl",
         "//cluster/kubespand/controllers/k8s:k8sctrl",
         "//cluster/kubespand/controllers/kubespan:kubespanctrl",

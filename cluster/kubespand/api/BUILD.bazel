@@ -1,0 +1,39 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "api",
+    srcs = [
+        "readonly.go",
+        "server.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespand/api",
+    visibility = ["//cluster/kubespand:__subpackages__"],
+    deps = [
+        "@com_github_cosi_project_runtime//api/v1alpha1",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_cosi_project_runtime//pkg/state/protobuf/server",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_uber_go_zap//:zap",
+    ],
+)
+
+go_test(
+    name = "api_test",
+    srcs = ["server_test.go"],
+    deps = [
+        ":api",
+        "@com_github_cosi_project_runtime//api/v1alpha1",
+        "@com_github_cosi_project_runtime//pkg/resource",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_cosi_project_runtime//pkg/state/impl/inmem",
+        "@com_github_cosi_project_runtime//pkg/state/impl/namespaced",
+        "@com_github_cosi_project_runtime//pkg/state/protobuf/client",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_grpc//test/bufconn",
+    ],
+)

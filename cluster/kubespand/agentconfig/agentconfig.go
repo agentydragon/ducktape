@@ -33,6 +33,14 @@ type AgentConfig struct {
 	Discovery  DiscoveryConfig  `yaml:"discovery"`
 	Kubernetes KubernetesConfig `yaml:"kubernetes"`
 	KubePrism  KubePrismConfig  `yaml:"kubeprism"`
+	Api        ApiConfig        `yaml:"api"`
+}
+
+// ApiConfig holds COSI state API server settings.
+type ApiConfig struct {
+	// SocketPath is the Unix socket path for the COSI state gRPC server.
+	// Default: /var/run/kubespand/kubespand.sock
+	SocketPath string `yaml:"socket_path"`
 }
 
 // KubePrismConfig holds KubePrism local API server load balancer settings.
@@ -127,6 +135,9 @@ func Load(path string) (*AgentConfig, error) {
 		KubePrism: KubePrismConfig{
 			Host: "127.0.0.1",
 			Port: constants.DefaultKubePrismPort,
+		},
+		Api: ApiConfig{
+			SocketPath: "/var/run/kubespand/kubespand.sock",
 		},
 	}
 
