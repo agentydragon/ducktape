@@ -10,11 +10,14 @@ import (
 )
 
 func TestDoubleNAT(t *testing.T) {
+	sw := h.NewStopwatch(t)
+
 	vmlinuz := h.RunfilePath(t, h.VmlinuzPath)
 	initramfs := h.RunfilePath(t, h.DoublenatInitramfs)
 	initramfsDisc := h.RunfilePath(t, h.DiscoveryInitramfs)
 	initramfsRouter := h.RunfilePath(t, h.RouterInitramfs)
 	out := h.OutputDir(t)
+	sw.Lap("resolve runfiles")
 
 	clusterID := h.RandomBase64(32)
 	sharedSecret := h.RandomBase64(32)
@@ -31,44 +34,45 @@ func TestDoubleNAT(t *testing.T) {
 	kubespanBase := fmt.Sprintf("mode=kubespan cluster_id=%s shared_secret=%s discovery=%s topology=double_nat",
 		clusterID, sharedSecret, discAddr)
 
-	t.Log("booting Discovery...")
 	vmDiscovery := h.BootVM(t, "vm-disc", vmlinuz, initramfsDisc,
 		"mode=discovery role=discovery discovery_ip=192.168.50.254/24",
 		h.McastNIC("net0", mcastInternet, "52:54:00:ff:00:01")...)
+	sw.Lap("boot discovery VM")
 
-	t.Log("booting VPS...")
 	vmVPS := h.BootVM(t, "vm-vps", vmlinuz, initramfs, kubespanBase+" role=vps",
 		h.McastNIC("net0", mcastInternet, "52:54:00:c0:00:01")...)
+	sw.Lap("boot VPS VM")
 
-	t.Log("booting Router-A...")
 	vmRouterA := h.BootVM(t, "vm-router-a", vmlinuz, initramfsRouter,
 		"mode=router role=router-a internet_ip=192.168.50.1/24 lan_ip=192.168.60.1/24",
 		append(h.McastNIC("net0", mcastInternet, "52:54:00:c1:00:01"),
 			h.McastNIC("net1", mcastLanA, "52:54:00:c1:00:02")...)...)
-	t.Log("booting Router-B...")
+	sw.Lap("boot Router-A VM")
+
 	vmRouterB := h.BootVM(t, "vm-router-b", vmlinuz, initramfsRouter,
 		"mode=router role=router-b internet_ip=192.168.50.3/24 lan_ip=192.168.70.1/24",
 		append(h.McastNIC("net0", mcastInternet, "52:54:00:c2:00:01"),
 			h.McastNIC("net1", mcastLanB, "52:54:00:c2:00:02")...)...)
+	sw.Lap("boot Router-B VM")
 
-	// Ensure logs are always saved, even on Fatalf.
 	allVMs := []*h.VM{vmVPS, vmRouterA, vmRouterB, vmDiscovery}
 
-	// Wait for infrastructure VMs to be ready before booting kubespand nodes.
 	h.RequireAllEvents(t, []*h.VM{vmDiscovery, vmRouterA, vmRouterB}, h.EventDone, 30*time.Second)
+	sw.Lap("infrastructure VMs ready")
 
-	t.Log("booting NAT1...")
 	vmNAT1 := h.BootVM(t, "vm-nat1", vmlinuz, initramfs, kubespanBase+" role=nat1",
 		h.McastNIC("net0", mcastLanA, "52:54:00:d0:00:01")...)
+	sw.Lap("boot NAT1 VM")
 
-	t.Log("booting NAT2...")
 	vmNAT2 := h.BootVM(t, "vm-nat2", vmlinuz, initramfs, kubespanBase+" role=nat2",
 		h.McastNIC("net0", mcastLanB, "52:54:00:e0:00:01")...)
+	sw.Lap("boot NAT2 VM")
 
 	allVMs = append(allVMs, vmNAT1, vmNAT2)
 	h.CleanupVMs(t, allVMs, out)
 
 	h.WaitVMDone(t, vmNAT2, 300*time.Second)
+	sw.Lap("NAT2 done (peer discovery + probes)")
 
 	summary := map[string]interface{}{
 		"topology":            "double_nat",
@@ -87,4 +91,7 @@ func TestDoubleNAT(t *testing.T) {
 	h.SaveArtifact(t, out, "test-summary.json", string(summaryJSON))
 
 	h.AssertProbes(t, vmNAT2.GetEvents(), "double_nat")
+	sw.Lap("assertions")
+
+	sw.Summary(out)
 }

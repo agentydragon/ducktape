@@ -328,6 +328,80 @@ func RunCmd(t *testing.T, name string, args ...string) {
 	}
 }
 
+// Stopwatch tracks elapsed time between labeled phases for test profiling.
+type Stopwatch struct {
+	t      *testing.T
+	start  time.Time
+	last   time.Time
+	phases []Phase
+}
+
+// Phase records the name and duration of a test phase.
+type Phase struct {
+	Name     string        `json:"name"`
+	Duration time.Duration `json:"duration"`
+	Elapsed  time.Duration `json:"elapsed"`
+}
+
+// NewStopwatch creates a stopwatch and logs the start time.
+func NewStopwatch(t *testing.T) *Stopwatch {
+	t.Helper()
+	now := time.Now()
+	return &Stopwatch{t: t, start: now, last: now}
+}
+
+// Lap records a named phase and logs the time since the last lap.
+func (s *Stopwatch) Lap(name string) {
+	s.t.Helper()
+	now := time.Now()
+	dur := now.Sub(s.last)
+	elapsed := now.Sub(s.start)
+	s.phases = append(s.phases, Phase{Name: name, Duration: dur, Elapsed: elapsed})
+	s.t.Logf("[stopwatch] %s: %s (total %s)", name, dur.Round(time.Millisecond), elapsed.Round(time.Millisecond))
+	s.last = now
+}
+
+// Summary logs all phases and total time, and saves a JSON artifact.
+func (s *Stopwatch) Summary(outDir string) {
+	s.t.Helper()
+	total := time.Since(s.start)
+	s.t.Logf("[stopwatch] === TIMING SUMMARY ===")
+	for _, p := range s.phases {
+		pct := float64(p.Duration) / float64(total) * 100
+		s.t.Logf("[stopwatch]   %-40s %10s  (%4.1f%%)", p.Name, p.Duration.Round(time.Millisecond), pct)
+	}
+	s.t.Logf("[stopwatch]   %-40s %10s", "TOTAL", total.Round(time.Millisecond))
+
+	if outDir != "" {
+		type summaryJSON struct {
+			Phases []struct {
+				Name       string  `json:"name"`
+				DurationMs int64   `json:"duration_ms"`
+				ElapsedMs  int64   `json:"elapsed_ms"`
+				Pct        float64 `json:"pct"`
+			} `json:"phases"`
+			TotalMs int64 `json:"total_ms"`
+		}
+		var sj summaryJSON
+		for _, p := range s.phases {
+			sj.Phases = append(sj.Phases, struct {
+				Name       string  `json:"name"`
+				DurationMs int64   `json:"duration_ms"`
+				ElapsedMs  int64   `json:"elapsed_ms"`
+				Pct        float64 `json:"pct"`
+			}{
+				Name:       p.Name,
+				DurationMs: p.Duration.Milliseconds(),
+				ElapsedMs:  p.Elapsed.Milliseconds(),
+				Pct:        float64(p.Duration) / float64(total) * 100,
+			})
+		}
+		sj.TotalMs = total.Milliseconds()
+		data, _ := json.MarshalIndent(sj, "", "  ")
+		SaveArtifact(s.t, outDir, "timing.json", string(data))
+	}
+}
+
 func probeOK(probes map[string]*bool, name string) bool {
 	s, ok := probes[name]
 	return ok && *s

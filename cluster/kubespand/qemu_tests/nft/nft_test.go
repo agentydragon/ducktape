@@ -9,18 +9,25 @@ import (
 )
 
 func TestNftSmoke(t *testing.T) {
+	sw := h.NewStopwatch(t)
+
 	vmlinuz := h.RunfilePath(t, h.VmlinuzPath)
 	initramfs := h.RunfilePath(t, h.NftInitramfs)
 	out := h.OutputDir(t)
+	sw.Lap("resolve runfiles")
 
 	levels := "1,2,3,4,5,6"
 	v := h.BootVM(t, "nft-smoke", vmlinuz, initramfs,
 		fmt.Sprintf("mode=nft_smoke levels=%s", levels))
+	sw.Lap("boot VM")
 
 	if !h.WaitVMDone(t, v, 120*time.Second) {
 		v.SaveLogs(t, out)
+		sw.Lap("VM timeout")
+		sw.Summary(out)
 		t.FailNow()
 	}
+	sw.Lap("VM done")
 
 	v.SaveLogs(t, out)
 
@@ -43,4 +50,7 @@ func TestNftSmoke(t *testing.T) {
 	if !foundDone {
 		t.Error("no done event received from VM")
 	}
+	sw.Lap("assertions")
+
+	sw.Summary(out)
 }

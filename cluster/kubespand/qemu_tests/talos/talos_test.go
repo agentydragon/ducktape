@@ -21,31 +21,30 @@ import (
 )
 
 func TestTalosKubeSpanDoubleNAT(t *testing.T) {
+	sw := h.NewStopwatch(t)
+
 	talosImageZst := h.RunfilePath(t, h.TalosNocloudImagePath)
 	alpineVmlinuz := h.RunfilePath(t, h.VmlinuzPath)
 	alpineInitramfsDisc := h.RunfilePath(t, h.DiscoveryInitramfs)
 	alpineInitramfsRouter := h.RunfilePath(t, h.RouterInitramfs)
+	sw.Lap("resolve runfiles")
 
 	out := h.OutputDir(t)
 	tmpDir := t.TempDir()
 
-	// Decompress Talos nocloud raw disk image (zstd-compressed).
 	talosBaseImage := filepath.Join(tmpDir, "nocloud-amd64.raw")
 	decompressZstd(t, talosImageZst, talosBaseImage)
-	t.Logf("decompressed talos base image: %s", talosBaseImage)
+	sw.Lap("decompress talos image")
 
-	// Load pre-generated Talos machine configs (committed as testdata).
-	// VPS is controlplane (trustd issues API certs for workers).
 	vpsConfig := readRunfile(t, h.TalosVPSConfig)
 	nat1Config := readRunfile(t, h.TalosNAT1Config)
 	nat2Config := readRunfile(t, h.TalosNAT2Config)
 
-	// Create CIDATA volumes.
 	vpsCI := createCIDATA(t, tmpDir, "vps", vpsConfig)
 	nat1CI := createCIDATA(t, tmpDir, "nat1", nat1Config)
 	nat2CI := createCIDATA(t, tmpDir, "nat2", nat2Config)
+	sw.Lap("create CIDATA volumes")
 
-	// 3 multicast bridges.
 	mcastPortInternet := h.RandomPort()
 	mcastPortLan1 := h.RandomPort()
 	mcastPortLan2 := h.RandomPort()
@@ -53,8 +52,6 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 	mcastLan1 := fmt.Sprintf("230.0.0.1:%d", mcastPortLan1)
 	mcastLan2 := fmt.Sprintf("230.0.0.1:%d", mcastPortLan2)
 
-	// Boot all VMs concurrently. Infrastructure VMs (discovery, routers)
-	// signal readiness via events; Talos VMs boot in parallel.
 	vmDiscovery := h.BootVM(t, "talos-disc", alpineVmlinuz, alpineInitramfsDisc,
 		"mode=discovery role=discovery discovery_ip=192.168.50.254/24",
 		h.McastNIC("net0", mcastInternet, "52:54:00:ff:00:01")...)
@@ -66,6 +63,7 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 		"mode=router role=router-2 internet_ip=192.168.50.3/24 lan_ip=192.168.70.1/24",
 		append(h.McastNIC("net0", mcastInternet, "52:54:00:c2:00:01"),
 			h.McastNIC("net1", mcastLan2, "52:54:00:c2:00:02")...)...)
+	sw.Lap("boot infrastructure VMs (discovery + routers)")
 
 	talosAPIPort := h.RandomPort()
 	vmVPS := bootTalosVM(t, "talos-vps", talosBaseImage, vpsCI,
@@ -74,9 +72,10 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 		0, h.McastNIC("net0", mcastLan1, "52:54:00:a0:00:02"))
 	vmNAT2 := bootTalosVM(t, "talos-nat2", talosBaseImage, nat2CI,
 		0, h.McastNIC("net0", mcastLan2, "52:54:00:a0:00:03"))
+	sw.Lap("boot Talos VMs")
 
-	// Wait for infrastructure to be ready (fail fast if any crashes).
 	h.RequireAllEvents(t, []*h.VM{vmDiscovery, vmRouter1, vmRouter2}, h.EventDone, 30*time.Second)
+	sw.Lap("infrastructure VMs ready")
 
 	allVMs := []*h.VM{vmVPS, vmNAT1, vmNAT2, vmRouter1, vmRouter2, vmDiscovery}
 	h.CleanupVMs(t, allVMs, out)
@@ -89,9 +88,12 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 
 	// Observed on RBE (Firecracker, TCG): apid healthy ~64s after VM start.
 	waitForTalosAPI(t, talosClient, nodeIP, 120*time.Second)
+	sw.Lap("Talos API ready")
+
 	// Observed: KubeSpan nftables rules applied ~35s after VM start.
 	// Peer discovery depends on discovery service + WireGuard handshake.
 	peers, err := pollKubeSpanStatus(t, talosClient, nodeIP, 120*time.Second)
+	sw.Lap("KubeSpan status poll")
 
 	statusJSON, _ := json.MarshalIndent(peers, "", "  ")
 	h.SaveArtifact(t, out, "kubespan-status.json", string(statusJSON))
@@ -107,6 +109,9 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 	if len(peers) < 2 {
 		t.Errorf("expected 2 KubeSpan peers, got %d", len(peers))
 	}
+	sw.Lap("assertions")
+
+	sw.Summary(out)
 }
 
 func readRunfile(t *testing.T, path string) []byte {
@@ -160,10 +165,6 @@ func bootTalosVM(t *testing.T, name, baseImage, cidataPath string, mgmtPort int,
 	args = append(args, netArgs...)
 
 	if mgmtPort > 0 {
-		// Extra user-mode NIC for talosctl access from the host.
-		// Forwards host localhost:mgmtPort → VM port 50000 (Talos apid).
-		// The mcast NICs carry inter-VM traffic only (no host access).
-		// machine.certSANs must include 127.0.0.1 for the TLS handshake to succeed.
 		args = append(args,
 			"-netdev", fmt.Sprintf("user,id=mgmt,hostfwd=tcp::%d-:50000", mgmtPort),
 			"-device", "virtio-net-pci,netdev=mgmt,mac=52:54:00:ab:00:01",
@@ -218,7 +219,7 @@ func waitForTalosAPI(t *testing.T, c *client.Client, nodeIP string, timeout time
 			return
 		}
 		t.Logf("waiting for talos API: %v", err)
-		time.Sleep(10 * time.Second)
+		time.Sleep(1 * time.Second)
 	}
 	t.Fatalf("talos API not reachable after %v", timeout)
 }
@@ -236,7 +237,7 @@ func pollKubeSpanStatus(t *testing.T, c *client.Client, nodeIP string, timeout t
 		if err != nil {
 			lastErr = err.Error()
 			t.Logf("COSI poll (waiting): %s", lastErr)
-			time.Sleep(10 * time.Second)
+			time.Sleep(1 * time.Second)
 			continue
 		}
 
@@ -262,7 +263,7 @@ func pollKubeSpanStatus(t *testing.T, c *client.Client, nodeIP string, timeout t
 			return peers, nil
 		}
 
-		time.Sleep(10 * time.Second)
+		time.Sleep(1 * time.Second)
 	}
 
 	return nil, fmt.Errorf("timeout after %v, last error: %s", timeout, lastErr)
