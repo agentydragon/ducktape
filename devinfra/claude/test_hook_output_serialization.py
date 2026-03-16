@@ -9,7 +9,9 @@ failures like:
       - stopReason: Expected string, received null
       - systemMessage: Expected string, received null
 
-The fix is to use exclude_none=True when serializing.
+The fix is to use exclude_none=True when serializing. We can't use
+exclude_unset because it would also drop Literal defaults like hookEventName
+that Zod requires as discriminators.
 """
 
 import json
@@ -20,8 +22,8 @@ from devinfra.claude.claude_api.hooks.session_start import SessionStartHookSpeci
 
 
 def test_exclude_none_omits_null_fields() -> None:
-    """Without exclude_none, stopReason and systemMessage serialize as null,
-    which Zod .optional() rejects. With exclude_none, they're absent."""
+    """Fields with None values are omitted, avoiding null values that Zod
+    .optional() rejects. Literal defaults like hookEventName are preserved."""
     output = SessionStartOutput(
         hook_specific_output=SessionStartHookSpecificOutput(additional_context="# Session hook context")
     )
@@ -30,8 +32,11 @@ def test_exclude_none_omits_null_fields() -> None:
     # None fields must be absent, not null — Zod .optional() rejects null
     assert "stopReason" not in parsed
     assert "systemMessage" not in parsed
-    # Non-None fields preserved
+    # Non-None defaults are preserved
     assert parsed["continue"] is True
+    assert parsed["suppressOutput"] is False
+    # Literal defaults required by Zod as discriminators are preserved
+    assert parsed["hookSpecificOutput"]["hookEventName"] == "SessionStart"
     assert parsed["hookSpecificOutput"]["additionalContext"] == "# Session hook context"
 
 
