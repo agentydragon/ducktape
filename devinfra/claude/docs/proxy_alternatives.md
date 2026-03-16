@@ -14,27 +14,22 @@ The current implementation runs an auth proxy on `localhost:18081` that:
 
 ## Why Native Java/Bazel Proxy Auth Fails
 
-Testing revealed the upstream proxy has non-standard behavior:
+The upstream proxy returns RFC-compliant proxy auth challenges (verified 2026-03-16):
 
 ```
 $ CONNECT bcr.bazel.build:443 (no auth)
-→ HTTP/1.1 401 Unauthorized
-  www-authenticate: Bearer realm=""
+→ HTTP/1.1 407 Proxy Authentication Required
+  proxy-authenticate: Basic realm="proxy"
+  server: envoy
+
+$ CONNECT bcr.bazel.build:443 (with Proxy-Authorization: Basic <creds>)
+→ HTTP/1.1 200 OK
 ```
 
-Problems:
+Despite correct 407 + `Proxy-Authenticate: Basic`, Java/Bazel native auth still fails for two reasons:
 
-1. **Wrong status code**: Returns `401` instead of `407 Proxy Authentication Required`
-2. **Wrong header**: Uses `www-authenticate` instead of `Proxy-Authenticate`
-3. **Wrong scheme**: Advertises `Bearer` (but actually accepts `Basic`)
-
-Java's `Authenticator` (which Bazel uses via `ProxyHelper.java:185-191`) only triggers on `407` + `Proxy-Authenticate`. Since the proxy returns `401` + `www-authenticate`, the Authenticator is never called.
-
-**Proof**: Direct Basic auth to upstream works fine:
-
-```java
-// Sending Proxy-Authorization: Basic <creds> directly → HTTP/1.1 200 OK
-```
+1. **Java doesn't read `HTTPS_PROXY` env vars**: Java uses system properties (`-Dhttps.proxyHost`/`-Dhttps.proxyPort`), so Bazel never points its CONNECT at the right proxy host
+2. **Basic auth disabled for HTTPS tunneling**: Since Java 8u111, `jdk.http.auth.tunneling.disabledSchemes=Basic` blocks Basic auth for CONNECT tunneling even with a valid 407 challenge
 
 ## Alternative Approaches Evaluated
 
@@ -52,7 +47,7 @@ Java's `Authenticator` (which Bazel uses via `ProxyHelper.java:185-191`) only tr
 
 - `http.proxyUser`/`http.proxyPassword` are Apache HTTP client properties, not standard Java
 - Java's `HttpURLConnection` uses `Authenticator.setDefault()` which Bazel does set
-- But Authenticator only triggers on `407 Proxy-Authenticate`, which this proxy doesn't send
+- Authenticator triggers on `407 Proxy-Authenticate` (which the proxy now correctly sends), but Basic auth for HTTPS tunneling is disabled by default since Java 8u111
 
 **Source**: Bazel's `ProxyHelper.java` uses `Authenticator.setDefault()` at lines 185-191.
 
@@ -120,7 +115,7 @@ Not for HTTPS proxy tunneling.
 
 **Pros**:
 
-- Works with non-standard proxy behavior
+- Works around Java's env var and Basic auth tunneling limitations
 - Handles credential refresh (JWT rotation)
 - Minimal footprint (~200 lines Python)
 - No Bazel patching required
@@ -159,9 +154,9 @@ Instead of separate proxy + wrapper, single binary that:
 
 The auth proxy approach is the **least complex viable solution** given:
 
-1. Non-standard proxy authentication behavior (401 + www-authenticate + Bearer)
-2. Java/Bazel's expectation of RFC-compliant proxy auth (407 + Proxy-Authenticate)
-3. Need for preemptive authentication
+1. Java doesn't read `HTTPS_PROXY` env vars (uses JVM system properties instead)
+2. Basic auth for HTTPS tunneling disabled by default since Java 8u111
+3. Need for preemptive authentication (credential hot-reload for JWT rotation)
 
 The only alternatives that could work require:
 

@@ -4,8 +4,9 @@ Accepts unauthenticated CONNECT requests from clients (Bazel) and forwards them
 to an upstream proxy with Basic authentication added. Does NOT do TLS interception -
 just tunnels the encrypted traffic through.
 
-This is needed because Anthropic's proxy returns non-standard 401 responses
-instead of 407, which breaks Java/Bazel's built-in proxy authentication.
+This is needed because Java doesn't read HTTPS_PROXY env vars (uses JVM system
+properties instead) and disables Basic auth for HTTPS tunneling by default since
+Java 8u111, so Bazel cannot authenticate to the upstream proxy natively.
 
 Reads upstream proxy URL from a file on each connection, enabling credential
 hot-reload without restarting the proxy.

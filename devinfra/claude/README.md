@@ -59,15 +59,15 @@ The hook runs at the start of each Claude Code web session and:
 
 1. Starts supervisord for process management
 2. Registers proxy with supervisor at `127.0.0.1:18081`
-3. Extracts the TLS inspection CA from the proxy via Python 3.13+ ssl APIs
+3. Loads the TLS inspection CA from the pre-installed filesystem path (`/usr/local/share/ca-certificates/swp-ca-production.crt`)
 4. Creates a Java truststore with the CA using keytool
 5. Creates combined CA bundle (system CAs + proxy CA)
-6. Writes bazelrc to `~/.cache/claude-hooks/auth-proxy/bazelrc`
+6. Writes bazelrc to `<session_dir>/auth-proxy/bazelrc`
 
 ### Bazel Setup (via `bazelisk_setup.py`)
 
 7. Downloads and installs Bazelisk
-8. Creates wrapper script at `~/.cache/claude-hooks/auth-proxy/bin/bazel`
+8. Creates wrapper script at `<session_dir>/bin/bazel`
 
 ### Git Hooks
 
@@ -100,8 +100,7 @@ An auth proxy that adds authentication headers for upstream TLS-inspecting proxi
 1. **TLS Inspection**: The proxy does TLS inspection with a custom Anthropic CA certificate
 2. **JWT Authentication**: Proxy credentials include a JWT token for authentication (see [network docs](https://docs.anthropic.com/en/docs/claude-code/security#network-access))
 3. **Java doesn't read env vars**: Standard Java networking uses system properties (`https.proxyHost`), not `HTTPS_PROXY` environment variables
-4. **HTTP 401 vs 407**: Java's `Authenticator` class only triggers on HTTP 407 (Proxy Authentication Required), but Claude Code's proxy returns 401 (Unauthorized)
-5. **Basic auth disabled by default**: Since [Java 8u111](https://confluence.atlassian.com/kb/basic-authentication-fails-for-outgoing-proxy-in-java-8u111-909643110.html), Basic authentication for HTTPS tunneling is disabled via `jdk.http.auth.tunneling.disabledSchemes=Basic`
+4. **Basic auth disabled by default**: Since [Java 8u111](https://confluence.atlassian.com/kb/basic-authentication-fails-for-outgoing-proxy-in-java-8u111-909643110.html), Basic authentication for HTTPS tunneling is disabled via `jdk.http.auth.tunneling.disabledSchemes=Basic`
 
 ### The Solution
 
@@ -127,13 +126,15 @@ All settings use [pydantic-settings](https://docs.pydantic.dev/latest/concepts/p
 
 | Environment Variable                     | Default                             | Description                 |
 | ---------------------------------------- | ----------------------------------- | --------------------------- |
-| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_DIR`   | `~/.config/claude-hooks/supervisor` | Supervisor config directory |
+| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_DIR`   | `<session_dir>/supervisor`          | Supervisor config directory |
 | `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT`  | `19001`                             | Supervisor TCP port         |
-| `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_DIR`   | `~/.cache/claude-hooks/auth-proxy`  | Proxy cache directory       |
+| `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_DIR`   | `<session_dir>/auth-proxy`          | Proxy cache directory       |
 | `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_PORT`  | `18081`                             | Auth proxy port             |
 | `DUCKTAPE_CLAUDE_HOOKS_INSTALL_BAZELISK` | `true`                              | Install bazelisk            |
 | `DUCKTAPE_CLAUDE_HOOKS_INSTALL_NIX`      | `false`                             | Install nix package manager |
-| `DUCKTAPE_CLAUDE_HOOKS_INSTALL_PODMAN`   | `true`                              | Install podman runtime      |
+| `DUCKTAPE_CLAUDE_HOOKS_CONTAINER_RUNTIME`| `docker`                            | Container runtime (`podman`, `docker`, or `none`) |
+
+`<session_dir>` = `~/.claude/session-env/<session_id>/` — a per-session directory managed by Claude Code.
 
 See `settings.py` for the full configuration schema.
 
@@ -244,7 +245,8 @@ After session start:
 
 ```bash
 # Verify supervisor is running the proxy
-python -m supervisor.supervisorctl -c ~/.config/claude-hooks/supervisor/supervisord.conf status
+# SESSION_DIR is exported as DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR by the env file
+python -m supervisor.supervisorctl -c "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/supervisor/supervisord.conf" status
 
 # Proxy should be accessible
 curl -s --max-time 5 -x http://127.0.0.1:18081 https://bcr.bazel.build/ | head -1
@@ -253,13 +255,15 @@ curl -s --max-time 5 -x http://127.0.0.1:18081 https://bcr.bazel.build/ | head -
 bazel info
 
 # Check proxy logs
-tail -20 ~/.config/claude-hooks/supervisor/auth-proxy.log
-tail -20 ~/.config/claude-hooks/supervisor/auth-proxy.err.log
+tail -20 "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/supervisor/auth-proxy.log"
+tail -20 "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/supervisor/auth-proxy.err.log"
 ```
 
 ## Files
 
-Supervisor files (in `~/.config/claude-hooks/supervisor/`):
+All session-scoped files live under `<session_dir>` = `~/.claude/session-env/<session_id>/`.
+
+Supervisor files (in `<session_dir>/supervisor/`):
 
 - `supervisord.conf` - Supervisor main configuration
 - `supervisord.{log,pid}` - Supervisor daemon state
@@ -268,13 +272,17 @@ Supervisor files (in `~/.config/claude-hooks/supervisor/`):
 
 Note: Supervisor listens on TCP `127.0.0.1:19001` (no Unix socket file).
 
-Setup files (in `~/.cache/claude-hooks/auth-proxy/`, created by `proxy_setup.py`):
+Auth proxy files (in `<session_dir>/auth-proxy/`, created by `proxy_setup.py`):
 
 - `upstream_proxy` - Upstream proxy credentials (read on each connection)
-- `anthropic_ca.pem` - Extracted TLS inspection CA
+- `anthropic_ca.pem` - Loaded TLS inspection CA
 - `combined_ca.pem` - System CAs + Anthropic CA bundle
 - `cacerts.jks` - Java truststore with CA
-- `bazelrc` - Auth proxy configuration (loaded via BAZEL_SYSTEM_BAZELRC_PATH)
+
+Global (non-session-scoped) files in `~/.cache/claude-hooks/`:
+
+- `bazelisk` - Bazelisk binary
+- `mkcert` - mkcert binary
 
 ## Known Limitations
 
