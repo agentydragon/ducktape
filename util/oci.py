@@ -1,4 +1,4 @@
-"""Container image utilities: load, push, and manage OCI images in tests.
+"""Container image utilities: load, push, and manage OCI images.
 
 Combines Docker image loading (via load.sh scripts and tarballs) and OCI push
 utilities (via crane) previously spread across test_util.docker, test_util.oci,
@@ -131,7 +131,7 @@ def _docker_load(tarball_path: Path, tarball_rlocation: str) -> None:
 
 
 def load_bazel_image(load_script_path: str, image_tag: str) -> str:
-    """Load an OCI image from a Bazel oci_load target.
+    """Load an OCI image from a Bazel oci_load target via the generated load.sh script.
 
     Args:
         load_script_path: Relative path to the load.sh script (e.g., "third_party/debian_slim/load.sh")
@@ -142,6 +142,10 @@ def load_bazel_image(load_script_path: str, image_tag: str) -> str:
 
     Raises:
         RuntimeError: If loading the image fails.
+
+    Note: The generated load.sh uses bash process substitution (<(...)) which requires
+    /dev/fd/ support. Prefer load_image() with an oci_load tarball output_group instead
+    when running in environments that lack /dev/fd/ (e.g. gVisor).
     """
     load_script = runfiles.get_required_path(f"_main/{load_script_path}")
 
