@@ -16,7 +16,9 @@ from __future__ import annotations
 import subprocess
 import sys
 import time
+from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import TypeVar
 
 import pygit2
 
@@ -41,26 +43,35 @@ def _assert_index_clean(repo: pygit2.Repository) -> None:
         raise RuntimeError(f"git index is not clean ({len(staged)} staged files). Commit or stash first.")
 
 
-def _bench_query(workspace: BazelWorkspace, expr: str) -> None:
-    """Run a query from cold start, print timing and result count."""
-    workspace.shutdown()
+_T = TypeVar("_T", bound=Sequence)
+
+
+def _timed_run(label: str, fn: Callable[[], _T]) -> _T | None:
+    """Run *fn*, print elapsed time with *label*, and handle subprocess errors."""
     t0 = time.monotonic()
     try:
-        results = workspace.query(expr, timeout=_QUERY_TIMEOUT)
+        result = fn()
     except subprocess.CalledProcessError as e:
         elapsed = time.monotonic() - t0
-        print(f"  {expr + ':':.<40s} {elapsed:6.2f}s  FAILED (exit {e.returncode})")
+        print(f"  {label + ':':.<40s} {elapsed:6.2f}s  FAILED (exit {e.returncode})")
         if e.stdout:
             print(f"    stdout: {e.stdout.strip()[:200]}")
         if e.stderr:
             print(f"    stderr: {e.stderr.strip()[:200]}")
-        return
+        return None
     except subprocess.TimeoutExpired:
         elapsed = time.monotonic() - t0
-        print(f"  {expr + ':':.<40s} {elapsed:6.2f}s  TIMEOUT")
-        return
+        print(f"  {label + ':':.<40s} {elapsed:6.2f}s  TIMEOUT")
+        return None
     elapsed = time.monotonic() - t0
-    print(f"  {expr + ':':.<40s} {elapsed:6.2f}s  ({len(results)} targets)")
+    print(f"  {label + ':':.<40s} {elapsed:6.2f}s  ({len(result)} targets)")
+    return result
+
+
+def _bench_query(workspace: BazelWorkspace, expr: str) -> None:
+    """Run a query from cold start, print timing and result count."""
+    workspace.shutdown()
+    _timed_run(expr, lambda: workspace.query(expr, timeout=_QUERY_TIMEOUT))
 
 
 def main() -> int:
@@ -85,22 +96,10 @@ def main() -> int:
         target_path.write_text(target_path.read_text() + _SENTINEL)
         workspace.shutdown()
 
-        t0 = time.monotonic()
-        try:
-            targets = find_affected_tests(workspace, [label], timeout=_QUERY_TIMEOUT)
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-            elapsed = time.monotonic() - t0
-            detail = f"exit {e.returncode}" if isinstance(e, subprocess.CalledProcessError) else "TIMEOUT"
-            print(f"  find_affected_tests:{'':.<19s} {elapsed:6.2f}s  FAILED ({detail})")
-            if isinstance(e, subprocess.CalledProcessError):
-                if e.stdout:
-                    print(f"    stdout: {e.stdout.strip()[:200]}")
-                if e.stderr:
-                    print(f"    stderr: {e.stderr.strip()[:200]}")
-            targets = []
-        else:
-            elapsed = time.monotonic() - t0
-            print(f"  find_affected_tests:{'':.<19s} {elapsed:6.2f}s  ({len(targets)} targets)")
+        targets = _timed_run(
+            "find_affected_tests",
+            lambda: find_affected_tests(workspace, [label], timeout=_QUERY_TIMEOUT),
+        ) or []
 
         for t in sorted(str(lbl) for lbl in targets):
             print(f"    {t}")
