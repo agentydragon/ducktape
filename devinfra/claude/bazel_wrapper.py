@@ -25,7 +25,7 @@ from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.env_file import ENV_AUTH_PROXY_URL, ENV_BAZELISK_PATH, ENV_SESSION_BAZELRC
 from devinfra.claude.errors import AuthProxyError
 from devinfra.claude.settings import HookSettings
-from devinfra.claude.supervisor.client import SupervisorClient, try_connect
+from devinfra.claude.supervisor.client import try_connect
 from devinfra.claude.supervisor.setup import start as supervisor_start
 from util.env import get_required_env, get_required_existing_path
 
@@ -122,11 +122,12 @@ def _resolve_real_binary() -> str:
 
 async def _ensure_proxy_with_supervisor_restart(settings: HookSettings) -> None:
     """Ensure proxy is running, restarting supervisor if it's dead."""
-    if await try_connect(settings) is None:
+    client = await try_connect(settings)
+    if client is None:
         logger.warning("Supervisor is not reachable, restarting...")
-        await supervisor_start(settings)
+        client = (await supervisor_start(settings)).client
 
-    await proxy_setup.ensure_proxy_running(settings, SupervisorClient(settings))
+    await proxy_setup.ensure_proxy_running(settings, client)
 
 
 async def _async_main(settings: HookSettings) -> None:
