@@ -16,65 +16,38 @@ If a component is macOS-only, document it explicitly. Do not silently assume mac
 ## Recovering from a Broken Session Start Hook (Claude Code Web)
 
 When running in Claude Code Web (`CLAUDE_CODE_REMOTE_ENVIRONMENT_TYPE` is set), the
-session start hook at <devinfra/claude/README.md> sets up Bazel, TLS CA, and other
-tooling. If the hook fails or was never run, you'll see errors like:
+session start hook sets up Bazel, TLS CA, k8s secrets, BuildBuddy RBE, and other tooling.
+If the hook fails or was never run, you'll see errors like certificate failures,
+`bazel: command not found`, `Unable to resolve host remote.buildbuddy.io`, or missing
+env files.
 
-- **Certificate errors**: `SSL: CERTIFICATE_VERIFY_FAILED`, `unable to get local issuer certificate`,
-  `x509: certificate signed by unknown authority` — the TLS inspection CA wasn't extracted
-- **`bazel: command not found`** — Bazelisk wasn't installed
-- **Bazel `FAILED: no such package '@...'`** or `Unable to fetch` — the session bazelrc
-  wasn't written, so Bazel's JVM proxy auth flags are missing
-- **`source /tmp/claude_env: No such file`** — the environment file wasn't generated
-- **Bazel `UNAVAILABLE: Unable to resolve host remote.buildbuddy.io`** — BuildBuddy
-  API key not configured (k8s secrets step was skipped)
+**Recovery: read the implementation and replicate it manually.**
 
-**Recovery steps — follow the session start hook process:**
+1. Read <devinfra/claude/session_start.py> — this is the entry point. Read `_setup_web()`
+   carefully to understand the full setup sequence and every step it performs.
+2. Read <devinfra/claude/README.md> for architecture context (proxy, TLS, Bazel auth).
+3. Read `.claude_hooks/config.yaml` for k8s server, namespace, and secret mappings.
+4. Read <devinfra/claude/config/bazelrc.mako> for the session bazelrc template.
+5. Read <devinfra/setup_buildbuddy.sh> for BuildBuddy configuration.
 
-The session start hook (`devinfra/claude/session_start.py`) performs these steps in order.
-When recovering manually, follow the same sequence:
+**Follow the hook's process closely.** Do not skip steps or improvise shortcuts. Every
+step exists for a reason. In particular:
 
-1. **Check the session start log first:**
-   `tail -100 ~/.claude/session-env/<session_id>/session-start.log`
-   Source the env file if it exists: `source /tmp/claude_env` (or `CLAUDE_ENV_FILE` value)
+- **Do not skip k8s secrets setup** — this fetches the BuildBuddy API key
+  (`DUCKTAPE_CLAUDE_HOOKS_K8S_TOKEN` env var has the SA token, config is in
+  `.claude_hooks/config.yaml`). Without BuildBuddy, RBE is unavailable and most
+  tests cannot run remotely.
+- **Do not skip BuildBuddy setup** — run `devinfra/setup_buildbuddy.sh` with the
+  fetched API key. Without this, Bazel has no remote cache or execution.
 
-2. **TLS CA setup** — Extract the Anthropic egress proxy CA and create trust stores:
-   - CA cert lives at `/usr/local/share/ca-certificates/swp-ca-production.crt`
-   - Create combined CA bundle (system CAs + Anthropic CA)
-   - Create Java truststore: copy system `cacerts` from `$JAVA_HOME/lib/security/cacerts`,
-     then add the Anthropic CA via `keytool -importcert`
-   - Set `SSL_CERT_FILE` to the combined CA bundle path
-
-3. **Install Bazelisk** — Download bazelisk binary to PATH:
-   `curl -fsSL https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 -o /usr/local/bin/bazel && chmod +x /usr/local/bin/bazel`
-
-4. **Fetch K8s secrets** (CRITICAL — provides BuildBuddy API key and other credentials):
-   - The SA token is in `DUCKTAPE_CLAUDE_HOOKS_K8S_TOKEN` env var
-   - Config is in `.claude_hooks/config.yaml` (k8s server, namespace, secret mappings)
-   - Fetch secrets via curl (the Python k8s client may fail with proxy auth issues):
-     ```bash
-     curl -s --cacert "$COMBINED_CA" \
-       -H "Authorization: Bearer $DUCKTAPE_CLAUDE_HOOKS_K8S_TOKEN" \
-       "https://api.allegedly.works:16443/api/v1/namespaces/claude-sandbox/secrets/<secret-name>"
-     ```
-   - Key secrets: `buildbuddy-api-key` (data key: `api-key`), `github-token` (data key: `token`)
-
-5. **Configure BuildBuddy** (CRITICAL — enables RBE for remote test execution):
-   - Run `BUILDBUDDY_API_KEY=<key> bash devinfra/setup_buildbuddy.sh`
-   - This writes `~/.config/bazel/buildbuddy.bazelrc` with the API key and `--config=rbe`
-   - Ensures `~/.bazelrc` has `try-import` for the buildbuddy bazelrc
-
-6. **Write session bazelrc** — See `devinfra/claude/config/bazelrc.mako` for the template.
-   Key settings for web mode: JVM proxy auth flags (`-Djdk.http.auth.tunneling.disabledSchemes=`),
-   truststore path, `--repo_env` for `HTTPS_PROXY`/`SSL_CERT_FILE`/`GIT_SSL_CAINFO`,
-   and `try-import` for the buildbuddy bazelrc.
-
-7. **Verify:** `bazel info` (should connect to BCR through the proxy)
-
-**Notify the user** if you suspect the session start hook failed — they may need to
-re-run it or debug the hook configuration. Do not silently work around the problem.
+Check the session start log first if it exists:
+`tail -100 ~/.claude/session-env/<session_id>/session-start.log`
 
 **Do NOT** fight certificate or proxy errors by setting `--noverify`, `SSL_VERIFY=false`, or
 similar bypasses. The root cause is always a missing or broken session start hook setup.
+
+**Notify the user** if you suspect the session start hook failed — they may need to
+re-run it or debug the hook configuration. Do not silently work around the problem.
 
 **Known limitation:** Bazel's gRPC remote execution client cannot authenticate with
 Anthropic's egress proxy (gRPC doesn't support authenticated HTTP CONNECT proxies).
