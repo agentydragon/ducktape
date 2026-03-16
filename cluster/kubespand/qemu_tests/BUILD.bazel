@@ -12,6 +12,7 @@ go_library(
     visibility = ["//cluster/kubespand:__subpackages__"],
     deps = [
         "@com_github_cosi_project_runtime//api/v1alpha1",
+        "@com_github_cosi_project_runtime//pkg/controller/generic",
         "@com_github_cosi_project_runtime//pkg/safe",
         "@com_github_cosi_project_runtime//pkg/state",
         "@com_github_cosi_project_runtime//pkg/state/protobuf/client",

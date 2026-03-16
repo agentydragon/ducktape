@@ -12,7 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cosi-project/runtime/pkg/controller/generic"
 	"github.com/cosi-project/runtime/pkg/safe"
+	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/siderolabs/talos/pkg/machinery/client"
 	clientconfig "github.com/siderolabs/talos/pkg/machinery/client/config"
 	"github.com/siderolabs/talos/pkg/machinery/resources/cluster"
@@ -188,114 +190,33 @@ func PollKubeSpanStatus(t *testing.T, c *client.Client, nodeIP string, timeout t
 	return nil, fmt.Errorf("timeout after %v, last error: %s", timeout, lastErr)
 }
 
+// dumpCOSIList lists all resources of type T and logs each one with %+v.
+func dumpCOSIList[T generic.ResourceWithRD](t *testing.T, ctx context.Context, st state.State, label string) {
+	t.Helper()
+	list, err := safe.StateListAll[T](ctx, st)
+	if err != nil {
+		t.Logf("  %s: error: %v", label, err)
+		return
+	}
+	t.Logf("  %s: %d total", label, list.Len())
+	for it := list.Iterator(); it.Next(); {
+		r := it.Value()
+		t.Logf("    [%s] %+v", r.Metadata().ID(), r.Spec())
+	}
+}
+
 // DumpKubeSpanDiagnostics queries COSI resources from a Talos node via the Talos
 // API and logs them for debugging WireGuard handshake issues.
-// Queries: kubespan.Identity, kubespan.Config, kubespan.PeerSpec, kubespan.PeerStatus,
-// and cluster.Affiliate.
 func DumpKubeSpanDiagnostics(t *testing.T, c *client.Client, nodeIP string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(client.WithNode(context.Background(), nodeIP), 15*time.Second)
 	defer cancel()
 
 	t.Log("=== KubeSpan Diagnostics ===")
-
-	// Local identity.
-	if id, err := safe.StateGetByID[*kubespan.Identity](ctx, c.COSI, kubespan.LocalIdentity); err == nil {
-		spec := id.TypedSpec()
-		t.Logf("  Identity: pubkey=%s addr=%s subnet=%s", spec.PublicKey, spec.Address, spec.Subnet)
-	} else {
-		t.Logf("  Identity: error: %v", err)
-	}
-
-	// KubeSpan config.
-	if cfg, err := safe.StateGetByID[*kubespan.Config](ctx, c.COSI, kubespan.ConfigID); err == nil {
-		spec := cfg.TypedSpec()
-		t.Logf("  Config: enabled=%v clusterID=%s forceRouting=%v mtu=%d filters=%v harvestExtra=%v",
-			spec.Enabled, truncate(spec.ClusterID, 16), spec.ForceRouting, spec.MTU,
-			spec.EndpointFilters, spec.HarvestExtraEndpoints)
-	} else {
-		t.Logf("  Config: error: %v", err)
-	}
-
-	// Affiliates (what the discovery service returned).
-	if affiliates, err := safe.StateListAll[*cluster.Affiliate](ctx, c.COSI); err == nil {
-		t.Logf("  Affiliates: %d total", affiliates.Len())
-		for it := affiliates.Iterator(); it.Next(); {
-			a := it.Value()
-			spec := a.TypedSpec()
-			var endpointStrs []string
-			for _, ep := range spec.KubeSpan.Endpoints {
-				endpointStrs = append(endpointStrs, ep.String())
-			}
-			t.Logf("    [%s] nodeID=%s hostname=%q type=%s addrs=%v ks_pubkey=%s ks_addr=%s ks_endpoints=[%s] ks_addl_addrs=%v",
-				a.Metadata().ID(),
-				truncate(spec.NodeID, 16),
-				spec.Hostname,
-				spec.MachineType,
-				spec.Addresses,
-				truncate(spec.KubeSpan.PublicKey, 16),
-				spec.KubeSpan.Address,
-				strings.Join(endpointStrs, ", "),
-				spec.KubeSpan.AdditionalAddresses,
-			)
-		}
-	} else {
-		t.Logf("  Affiliates: error: %v", err)
-	}
-
-	// PeerSpecs (what the PeerSpecController produced from affiliates).
-	if peers, err := safe.StateListAll[*kubespan.PeerSpec](ctx, c.COSI); err == nil {
-		t.Logf("  PeerSpecs: %d total", peers.Len())
-		for it := peers.Iterator(); it.Next(); {
-			p := it.Value()
-			spec := p.TypedSpec()
-			var endpointStrs []string
-			for _, ep := range spec.Endpoints {
-				endpointStrs = append(endpointStrs, ep.String())
-			}
-			var allowedStrs []string
-			for _, aip := range spec.AllowedIPs {
-				allowedStrs = append(allowedStrs, aip.String())
-			}
-			t.Logf("    [%s] label=%q addr=%s endpoints=[%s] allowedIPs=[%s]",
-				p.Metadata().ID(),
-				spec.Label,
-				spec.Address,
-				strings.Join(endpointStrs, ", "),
-				strings.Join(allowedStrs, ", "),
-			)
-		}
-	} else {
-		t.Logf("  PeerSpecs: error: %v", err)
-	}
-
-	// PeerStatuses (current WG handshake state).
-	if statuses, err := safe.StateListAll[*kubespan.PeerStatus](ctx, c.COSI); err == nil {
-		t.Logf("  PeerStatuses: %d total", statuses.Len())
-		for it := statuses.Iterator(); it.Next(); {
-			s := it.Value()
-			spec := s.TypedSpec()
-			t.Logf("    [%s] label=%q state=%s endpoint=%s lastHandshake=%s rx=%d tx=%d lastUsed=%s",
-				s.Metadata().ID(),
-				spec.Label,
-				spec.State,
-				spec.Endpoint,
-				spec.LastHandshakeTime.Format(time.RFC3339),
-				spec.ReceiveBytes,
-				spec.TransmitBytes,
-				spec.LastUsedEndpoint,
-			)
-		}
-	} else {
-		t.Logf("  PeerStatuses: error: %v", err)
-	}
-
+	dumpCOSIList[*kubespan.Identity](t, ctx, c.COSI, "Identity")
+	dumpCOSIList[*kubespan.Config](t, ctx, c.COSI, "Config")
+	dumpCOSIList[*cluster.Affiliate](t, ctx, c.COSI, "Affiliates")
+	dumpCOSIList[*kubespan.PeerSpec](t, ctx, c.COSI, "PeerSpecs")
+	dumpCOSIList[*kubespan.PeerStatus](t, ctx, c.COSI, "PeerStatuses")
 	t.Log("=== End KubeSpan Diagnostics ===")
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "..."
 }

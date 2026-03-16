@@ -235,11 +235,7 @@ func WaitForPeers(kubespandCmd *exec.Cmd, n int) []string {
 	}
 
 	// On timeout, dump full diagnostics.
-	DumpDiagnostics()
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: fmt.Sprintf("timed out waiting for %d peers (%s)", n, timeout), Error: "peer discovery timeout"})
-	initlib.DumpLog("/tmp/kubespand.log")
-	kubespandCmd.Process.Kill()
-	initlib.Poweroff()
+	fatalKubespandTimeout(kubespandCmd, fmt.Sprintf("timed out waiting for %d peers (%s)", n, timeout))
 	return nil
 }
 
@@ -309,8 +305,14 @@ func WaitForPeerUp(kubespandCmd *exec.Cmd, minPeers int) {
 		time.Sleep(500 * time.Millisecond)
 	}
 
+	fatalKubespandTimeout(kubespandCmd, fmt.Sprintf("timed out waiting for %d peers up (%s)", minPeers, timeout))
+}
+
+// fatalKubespandTimeout dumps diagnostics, emits an error event, and powers off.
+// Used by WaitForPeers and WaitForPeerUp on timeout.
+func fatalKubespandTimeout(kubespandCmd *exec.Cmd, msg string) {
 	DumpDiagnostics()
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: fmt.Sprintf("timed out waiting for %d peers up (%s)", minPeers, timeout), Error: "WaitForPeerUp timeout"})
+	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: msg, Error: "timeout"})
 	initlib.DumpLog("/tmp/kubespand.log")
 	kubespandCmd.Process.Kill()
 	initlib.Poweroff()
