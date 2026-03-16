@@ -15,6 +15,11 @@ _TOPOLOGY_TAGS = [
     "requires_qemu",
 ]
 
+_TOPOLOGY_DEPS = [
+    "//cluster/kubespand/qemu_tests",
+    "@io_bazel_rules_go//go/runfiles",
+]
+
 # Each topology test gets its own RBE worker (4 VMs each: discovery + CP + VM-A + VM-B).
 go_test(
     name = "flat_test",
@@ -25,11 +30,7 @@ go_test(
     ],
     data = _TOPOLOGY_DATA,
     tags = _TOPOLOGY_TAGS,
-    deps = [
-        "//cluster/kubespand/qemu_tests",
-        "@in_gopkg_yaml_v3//:yaml_v3",
-        "@io_bazel_rules_go//go/runfiles",
-    ],
+    deps = _TOPOLOGY_DEPS,
 )
 
 go_test(
@@ -41,27 +42,7 @@ go_test(
     ],
     data = _TOPOLOGY_DATA,
     tags = _TOPOLOGY_TAGS,
-    deps = [
-        "//cluster/kubespand/qemu_tests",
-        "@in_gopkg_yaml_v3//:yaml_v3",
-        "@io_bazel_rules_go//go/runfiles",
-    ],
-)
-
-go_test(
-    name = "discovery_only_test",
-    timeout = "long",
-    srcs = [
-        "discovery_only_test.go",
-        "topology_test_helper.go",
-    ],
-    data = _TOPOLOGY_DATA,
-    tags = _TOPOLOGY_TAGS,
-    deps = [
-        "//cluster/kubespand/qemu_tests",
-        "@in_gopkg_yaml_v3//:yaml_v3",
-        "@io_bazel_rules_go//go/runfiles",
-    ],
+    deps = _TOPOLOGY_DEPS,
 )
 
 # Trustd CSR flow test: boots 3 VMs (discovery + Talos CP + kubespand).
@@ -81,9 +62,5 @@ go_test(
         "cpu:4",
         "requires_qemu",
     ],
-    deps = [
-        "//cluster/kubespand/qemu_tests",
-        "@in_gopkg_yaml_v3//:yaml_v3",
-        "@io_bazel_rules_go//go/runfiles",
-    ],
+    deps = _TOPOLOGY_DEPS,
 )

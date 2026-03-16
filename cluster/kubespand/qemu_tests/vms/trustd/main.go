@@ -31,8 +31,8 @@ func main() {
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: err.Error()})
 		initlib.Poweroff()
 	}
-	// Idle forever — test observes via Talos API from outside.
-	select {}
+	// Idle until the test host kills the VM.
+	initlib.Idle()
 }
 
 func run() error {
@@ -60,10 +60,8 @@ func run() error {
 	// eth0: L2 segment (mcast NIC) for KubeSpan mesh.
 	kubespanlib.ConfigureNetwork("192.168.50.1", "24")
 
-	// eth1: mgmt NIC (QEMU user-mode) for port forwarding to the test host.
-	initlib.WaitForInterface("eth1")
-	initlib.MustRun("ip", "link", "set", "eth1", "up")
-	initlib.MustRun("ip", "addr", "add", "10.0.2.15/24", "dev", "eth1")
+	// mgmt NIC (QEMU user-mode) for port forwarding to the test host.
+	initlib.ConfigureMgmtNIC(true)
 
 	cfg := kubespanlib.KubespandConfig{
 		ClusterID:       clusterID,

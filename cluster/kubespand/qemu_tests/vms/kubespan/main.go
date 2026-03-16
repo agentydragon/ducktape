@@ -1,5 +1,5 @@
 // Binary kubespan is the PID-1 init for KubeSpan test VMs.
-// Handles flat, cross_subnet, and discovery_only topologies.
+// Handles flat and cross_subnet topologies.
 // Optionally enables trustd CSR flow when ca_crt + token are provided;
 // kubespand manages the apid subprocess internally.
 package main
@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
-	"time"
 
 	qemu_tests "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 	"github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/initlib"
@@ -46,7 +45,7 @@ func main() {
 	var listenPort int
 
 	switch topology {
-	case "flat", "discovery_only":
+	case "flat":
 		switch initlib.Role {
 		case "a":
 			linkIP = "192.168.50.1"
@@ -93,12 +92,9 @@ func main() {
 		os.WriteFile("/proc/sys/net/ipv4/conf/default/rp_filter", []byte("0"), 0o644)
 	}
 
-	// eth1: mgmt NIC (QEMU user-mode) for port forwarding apid to the test host.
+	// mgmt NIC (QEMU user-mode) for port forwarding to the test host.
 	// Optional — only present when the test adds a hostfwd NIC.
-	if initlib.HasInterface("eth1", 2*time.Second) {
-		initlib.MustRun("ip", "link", "set", "eth1", "up")
-		initlib.MustRun("ip", "addr", "add", "10.0.2.15/24", "dev", "eth1")
-	}
+	initlib.ConfigureMgmtNIC(false)
 
 	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventNetwork, Message: fmt.Sprintf("link=%s/24, topology=%s", linkIP, topology)})
 
@@ -135,21 +131,16 @@ func main() {
 	if initlib.Role == "b" {
 		cancel := kubespanlib.ServeTCP(probePort)
 		defer cancel()
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: fmt.Sprintf("role=b listening on tcp/%d, waiting (180s max)", probePort)})
-		time.Sleep(180 * time.Second)
+		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: fmt.Sprintf("role=b listening on tcp/%d", probePort)})
 	} else {
 		// Wait for WireGuard handshake to complete (PeerStatus "up") before
-		// running probes. This also keeps kubespand alive long enough for the
-		// test host to observe "up" via the TCP COSI API.
+		// running probes.
 		kubespanlib.WaitForPeerUp(kubespandCmd, 1)
 		kubespanlib.DumpDiagnostics(peerBridgeIP)
 		kubespanlib.RunProbes(peerAddr, peerBridgeIP, probePort)
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: "probes completed"})
-		// Keep kubespand alive briefly so the test host's PeerStatus poll
-		// (1s interval) can observe the "up" state before we exit.
-		time.Sleep(30 * time.Second)
 	}
 
-	kubespandCmd.Process.Kill()
-	initlib.Poweroff()
+	// Idle until the test host kills the VM.
+	initlib.Idle()
 }

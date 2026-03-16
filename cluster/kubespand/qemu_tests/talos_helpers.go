@@ -17,9 +17,21 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/siderolabs/talos/pkg/machinery/client"
 	clientconfig "github.com/siderolabs/talos/pkg/machinery/client/config"
+	v1alpha1 "github.com/siderolabs/talos/pkg/machinery/config/types/v1alpha1"
 	"github.com/siderolabs/talos/pkg/machinery/resources/cluster"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
+	"gopkg.in/yaml.v3"
 )
+
+// ParseTalosConfig parses a Talos machine config YAML into the upstream v1alpha1.Config type.
+func ParseTalosConfig(t *testing.T, data []byte) *v1alpha1.Config {
+	t.Helper()
+	var cfg v1alpha1.Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("parse talos config: %v", err)
+	}
+	return &cfg
+}
 
 // KubespanPeerResult holds the result of a KubeSpan peer status query.
 type KubespanPeerResult struct {

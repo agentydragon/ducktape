@@ -10,6 +10,7 @@ import (
 )
 
 func TestDoubleNAT(t *testing.T) {
+	t.Parallel()
 	sw := h.NewStopwatch(t)
 
 	vmlinuz := h.RunfilePath(t, h.VmlinuzPath)
@@ -84,7 +85,7 @@ func TestDoubleNAT(t *testing.T) {
 	}
 	sw.Lap("NAT2 peers up (host-side PeerStatus)")
 
-	h.WaitVMDone(t, vmNAT2, 300*time.Second)
+	h.RequireEvent(t, vmNAT2, h.EventDone, 300*time.Second)
 	sw.Lap("NAT2 done (probes)")
 
 	summary := map[string]interface{}{

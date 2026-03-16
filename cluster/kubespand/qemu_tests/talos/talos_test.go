@@ -12,6 +12,7 @@ import (
 )
 
 func TestTalosKubeSpanDoubleNAT(t *testing.T) {
+	t.Parallel()
 	sw := h.NewStopwatch(t)
 
 	talosBaseImage := h.RunfilePath(t, h.TalosNocloudImagePath)

@@ -43,12 +43,9 @@ func main() {
 		initlib.MustRun("ip", "route", "add", "10.0.0.0/8", "dev", "eth0")
 	}
 
-	// eth1: mgmt NIC (QEMU user-mode) for port forwarding to the test host.
+	// mgmt NIC (QEMU user-mode) for port forwarding to the test host.
 	// Optional — only present when the test adds a hostfwd NIC.
-	if initlib.HasInterface("eth1", 2*time.Second) {
-		initlib.MustRun("ip", "link", "set", "eth1", "up")
-		initlib.MustRun("ip", "addr", "add", "10.0.2.15/24", "dev", "eth1")
-	}
+	initlib.ConfigureMgmtNIC(false)
 
 	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventNetwork, Message: fmt.Sprintf("network ready, ip=%s", discoveryIP)})
 

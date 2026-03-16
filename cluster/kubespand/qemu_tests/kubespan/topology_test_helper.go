@@ -6,24 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/yaml.v3"
-
 	h "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 )
-
-// talosConfig holds the subset of Talos machine config needed to extract
-type talosConfig struct {
-	Machine struct {
-		Token string `yaml:"token"`
-		CA    struct {
-			Crt string `yaml:"crt"`
-		} `yaml:"ca"`
-	} `yaml:"machine"`
-	Cluster struct {
-		ID     string `yaml:"id"`
-		Secret string `yaml:"secret"`
-	} `yaml:"cluster"`
-}
 
 func runTopology(t *testing.T, topology string) {
 	sw := h.NewStopwatch(t)
@@ -39,11 +23,11 @@ func runTopology(t *testing.T, topology string) {
 	mcastAddr := fmt.Sprintf("230.0.0.1:%d", mcastPort)
 
 	// Choose CP config and IP based on topology.
-	// flat/discovery_only: CP at 192.168.50.253 on the shared flat segment.
+	// flat: CP at 192.168.50.253 on the shared flat segment.
 	// cross_subnet: CP at 10.0.0.253/8 ("public internet" reachable from both subnets).
 	var cpConfigPath, cpIP string
 	switch topology {
-	case "flat", "discovery_only":
+	case "flat":
 		cpConfigPath = h.KubespanCPConfig
 		cpIP = "192.168.50.253"
 	case "cross_subnet":
@@ -53,17 +37,14 @@ func runTopology(t *testing.T, topology string) {
 
 	// Use CP config credentials so all participants share the same
 	// cluster ID/secret and discover each other.
-	var cpCfg talosConfig
 	cpConfigData := h.ReadRunfile(t, cpConfigPath)
-	if err := yaml.Unmarshal(cpConfigData, &cpCfg); err != nil {
-		t.Fatalf("parse cp config: %v", err)
-	}
-	clusterID := cpCfg.Cluster.ID
-	sharedSecret := cpCfg.Cluster.Secret
+	cpCfg := h.ParseTalosConfig(t, cpConfigData)
+	clusterID := cpCfg.ClusterConfig.ClusterID
+	sharedSecret := cpCfg.ClusterConfig.ClusterSecret
 
 	var discIP string
 	switch topology {
-	case "flat", "discovery_only":
+	case "flat":
 		discIP = "192.168.50.254"
 	case "cross_subnet":
 		discIP = "10.1.0.254"
@@ -117,14 +98,12 @@ func runTopology(t *testing.T, topology string) {
 	}
 	sw.Lap("VM-A peers up (host-side PeerStatus)")
 
-	// VM-A runs probes and exits (still validated via events).
-	h.WaitVMDone(t, vmA, 300*time.Second)
+	// Wait for VM-A to signal probes completed.
+	h.RequireEvent(t, vmA, h.EventDone, 300*time.Second)
 	sw.Lap("VM-A done (probes)")
 
 	// Observe KubeSpan peer status from the Talos CP's API.
 	// CP participates in the same mesh and sees kubespand VMs as peers.
-	// VM-B stays alive for 180s; VM-A's peer state remains "up" for ~275s
-	// after shutdown (WireGuard PeerDownInterval).
 	talosClient := h.NewTalosClient(t, h.RunfilePath(t, h.TalosConfig), fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
 	defer talosClient.Close()
 	h.WaitForTalosAPI(t, talosClient, cpIP, 180*time.Second)

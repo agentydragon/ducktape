@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
 	"syscall"
 	"time"
@@ -108,6 +109,28 @@ func DumpLog(path string) {
 		return
 	}
 	os.Stderr.Write(data)
+}
+
+// ConfigureMgmtNIC brings up the QEMU user-mode management NIC (eth1) with
+// the standard 10.0.2.15/24 address. If required is true, the function waits
+// indefinitely for the interface; if false, it returns silently if eth1 doesn't
+// appear within 2 seconds.
+func ConfigureMgmtNIC(required bool) {
+	if required {
+		WaitForInterface("eth1")
+	} else if !HasInterface("eth1", 2*time.Second) {
+		return
+	}
+	MustRun("ip", "link", "set", "eth1", "up")
+	MustRun("ip", "addr", "add", "10.0.2.15/24", "dev", "eth1")
+}
+
+// Idle blocks the process forever. VM init binaries call this after completing
+// their work — the test host kills the VM when it's done observing.
+func Idle() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	<-sigCh
 }
 
 // InitBasic performs common init setup: mount filesystems, set PATH, suppress dmesg.

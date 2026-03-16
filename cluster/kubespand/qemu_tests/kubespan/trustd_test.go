@@ -1,12 +1,11 @@
 package kubespan_test
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
-
-	"gopkg.in/yaml.v3"
 
 	h "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 )
@@ -32,10 +31,7 @@ func TestTrustdCSRFlow(t *testing.T) {
 
 	// Parse Talos CP config to extract credentials for kubespand.
 	vpsConfigData := h.ReadRunfile(t, h.TalosVPSConfig)
-	var cfg trustdTalosConfig
-	if err := yaml.Unmarshal(vpsConfigData, &cfg); err != nil {
-		t.Fatalf("parse talos config: %v", err)
-	}
+	cfg := h.ParseTalosConfig(t, vpsConfigData)
 	sw.Lap("parse talos config")
 
 	// Create CIDATA for the Talos CP VM.
@@ -60,9 +56,10 @@ func TestTrustdCSRFlow(t *testing.T) {
 	// kubespand VM with CA cert + token for the trustd CSR flow.
 	// mgmt NIC forwards apid port 50000 so the test can observe from outside.
 	kubespandAPIPort := h.RandomPort()
+	caCrtB64 := base64.StdEncoding.EncodeToString(cfg.MachineConfig.MachineCA.Crt)
 	kernelArgs := fmt.Sprintf(
 		"cluster_id=%s shared_secret=%s discovery=192.168.50.254:3000 ca_crt=%s token=%s cluster_endpoint=https://192.168.50.2:6443",
-		cfg.Cluster.ID, cfg.Cluster.Secret, cfg.Machine.CA.Crt, cfg.Machine.Token,
+		cfg.ClusterConfig.ClusterID, cfg.ClusterConfig.ClusterSecret, caCrtB64, cfg.MachineConfig.MachineToken,
 	)
 	mgmtNIC := []string{
 		"-netdev", fmt.Sprintf("user,id=mgmt,hostfwd=tcp::%d-:50000", kubespandAPIPort),
@@ -139,18 +136,4 @@ func TestTrustdCSRFlow(t *testing.T) {
 	sw.Lap("kubespand apid ready (trustd CSR flow succeeded)")
 
 	sw.Summary(out)
-}
-
-// trustdTalosConfig holds the subset of Talos machine config needed by TestTrustdCSRFlow.
-type trustdTalosConfig struct {
-	Machine struct {
-		Token string `yaml:"token"`
-		CA    struct {
-			Crt string `yaml:"crt"`
-		} `yaml:"ca"`
-	} `yaml:"machine"`
-	Cluster struct {
-		ID     string `yaml:"id"`
-		Secret string `yaml:"secret"`
-	} `yaml:"cluster"`
 }
