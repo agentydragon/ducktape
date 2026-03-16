@@ -119,23 +119,19 @@ class BazelLabel:
 
 
 def run_query(
-    expr: str, *, cwd: Path | None = None, persist_dir: Path | None = None, keep_going: bool = False
+    expr: str,
+    *,
+    cwd: Path | None = None,
+    persist_dir: Path | None = None,
+    keep_going: bool = False,
+    timeout: int | None = None,
+    universe_scope: str | None = None,
 ) -> list[BazelLabel]:
     """Run a ``bazel query`` and return the parsed labels.
 
     ``--output=label`` ensures every output line is a parseable label.
     The expression is passed via ``--query_file`` to avoid
     ``E2BIG`` / "Argument list too long" errors on large queries.
-
-    Args:
-        expr:        Bazel query expression.
-        cwd:         Working directory for the subprocess.  ``None`` means
-                     inherit the current working directory.
-        persist_dir: When set, save ``query``, ``stdout``, ``stderr`` and
-                     ``exit_code`` files there for CI artifact capture.
-                     The directory must already exist; no subdir is created.
-        keep_going:  Pass ``--keep_going`` and accept exit code 3 (partial
-                     results due to errors in transitive closure).
 
     Raises :class:`subprocess.CalledProcessError` if the query exits non-zero
     (or non-3 when *keep_going*), with ``.stderr`` containing the captured
@@ -144,13 +140,15 @@ def run_query(
     cmd = ["bazel", "query", "--output=label"]
     if keep_going:
         cmd.append("--keep_going")
+    if universe_scope is not None:
+        cmd.append(f"--universe_scope={universe_scope}")
     with tempfile.NamedTemporaryFile(mode="w", suffix=".bazelquery") as query_file:
         query_file.write(expr)
         query_file.flush()
         if persist_dir is not None:
             (persist_dir / "query").write_text(expr)
         cmd.append(f"--query_file={query_file.name}")
-        result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, check=False)
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, check=False, timeout=timeout)
     if persist_dir is not None:
         (persist_dir / "stdout").write_text(result.stdout)
         (persist_dir / "stderr").write_text(result.stderr)

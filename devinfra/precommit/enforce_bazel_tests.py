@@ -21,10 +21,11 @@ import fnmatch
 import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 import pygit2
+
+from util.bazel.query import BazelLabel, run_query
 
 # Infrastructure files that affect too many targets — CI catches these.
 _INFRA_PATTERNS = (
@@ -96,32 +97,6 @@ def _file_to_label(filepath: str, repo_root: Path) -> str | None:
     return f"//{pkg_str}:{rel}"
 
 
-def _run_bazel_query(
-    expr: str, *, cwd: Path, timeout: int | None = None, universe_scope: str | None = None
-) -> list[str]:
-    """Run bazel query and return target labels.
-
-    Uses --query_file to avoid E2BIG on large queries. Pattern from
-    util/bazel/query.py (inlined here so the script is self-contained
-    for pre-commit's virtualenv).
-
-    TODO: Uninline this once util.bazel.query is pip-installable or the hook
-    runs via Bazel (language: system).
-    """
-    cmd = ["bazel", "query", "--output=label"]
-    if universe_scope is not None:
-        cmd.append(f"--universe_scope={universe_scope}")
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".bazelquery", delete=False) as f:
-        f.write(expr)
-        f.flush()
-        cmd.append(f"--query_file={f.name}")
-        result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, check=False, timeout=timeout)
-    Path(f.name).unlink()
-    if result.returncode != 0:
-        raise subprocess.CalledProcessError(result.returncode, "bazel query", result.stdout, result.stderr)
-    return [line for line in result.stdout.splitlines() if line]
-
-
 def _build_universe(repo_root: Path) -> list[str]:
     """Find top-level Bazel package dirs, excluding broken packages.
 
@@ -163,9 +138,7 @@ def main() -> int:
         label = _file_to_label(f, repo_root)
         if label is not None:
             candidates.append(label)
-            # Extract package from label (//pkg:file -> pkg)
-            pkg = label.split(":")[0].removeprefix("//")
-            packages.add(pkg)
+            packages.add(str(BazelLabel.parse(label).package))
 
     if not candidates:
         return 0
@@ -179,7 +152,7 @@ def main() -> int:
     validate_expr = f'kind("source file", {pkg_union})'
 
     try:
-        known_sources = set(_run_bazel_query(validate_expr, cwd=repo_root, timeout=timeout))
+        known_sources = {str(label) for label in run_query(validate_expr, cwd=repo_root, timeout=timeout)}
     except subprocess.TimeoutExpired:
         print(f"{_PREFIX}: bazel query (validate) timed out after {timeout}s", file=sys.stderr)
         return 1
@@ -216,7 +189,9 @@ def main() -> int:
     rdeps_expr = f'kind(".*_test", rdeps({universe_expr}, set({labels_set})))'
 
     try:
-        targets = _run_bazel_query(rdeps_expr, cwd=repo_root, timeout=timeout, universe_scope=universe_scope)
+        targets = [
+            str(label) for label in run_query(rdeps_expr, cwd=repo_root, timeout=timeout, universe_scope=universe_scope)
+        ]
     except subprocess.TimeoutExpired:
         print(f"{_PREFIX}: bazel query (rdeps) timed out after {timeout}s", file=sys.stderr)
         return 1
@@ -236,27 +211,13 @@ def main() -> int:
 
     run_tests = os.environ.get("DUCKTAPE_PRECOMMIT_RUN_TESTS", "") == "1"
 
-    if not run_tests:
+    if run_tests:
+        print(f"{_PREFIX}: running tests (DUCKTAPE_PRECOMMIT_RUN_TESTS=1)...")
+        cmd = ["bazel", "test", *targets]
+    else:
         # Fast path: just check if tests are cached and passing.
-        # Output flows directly to terminal so the user sees per-target results.
         cmd = ["bazel", "test", "--check_tests_up_to_date", *targets]
-        try:
-            result = subprocess.run(cmd, check=False, cwd=repo_root, timeout=timeout)
-        except subprocess.TimeoutExpired:
-            print(f"{_PREFIX}: bazel test timed out after {timeout}s", file=sys.stderr)
-            return 1
 
-        if result.returncode == 0:
-            return 0
-
-        print(f"{_PREFIX}: affected tests are not up-to-date or failing.", file=sys.stderr)
-        print(f"Run: bazel test {' '.join(targets)}", file=sys.stderr)
-        print("Or set DUCKTAPE_PRECOMMIT_RUN_TESTS=1 to run tests automatically.", file=sys.stderr)
-        return 1
-
-    # Run tests for real.
-    print(f"{_PREFIX}: running tests (DUCKTAPE_PRECOMMIT_RUN_TESTS=1)...")
-    cmd = ["bazel", "test", *targets]
     try:
         result = subprocess.run(cmd, check=False, cwd=repo_root, timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -266,7 +227,12 @@ def main() -> int:
     if result.returncode == 0:
         return 0
 
-    print(f"{_PREFIX}: tests failed.", file=sys.stderr)
+    if run_tests:
+        print(f"{_PREFIX}: tests failed.", file=sys.stderr)
+    else:
+        print(f"{_PREFIX}: affected tests are not up-to-date or failing.", file=sys.stderr)
+        print(f"Run: bazel test {' '.join(targets)}", file=sys.stderr)
+        print("Or set DUCKTAPE_PRECOMMIT_RUN_TESTS=1 to run tests automatically.", file=sys.stderr)
     return 1
 
 

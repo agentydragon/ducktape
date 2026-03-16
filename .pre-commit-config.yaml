@@ -274,16 +274,18 @@ repos:
   # terraform modules via :validate and :lint targets with hermetic providers.
   # See MODULE.bazel tf.download(mirror={...}) for provider configuration.
 
-  - repo: local
-    hooks:
-      - id: enforce-bazel-tests
-        name: enforce bazel test cache
-        entry: devinfra/precommit/enforce_bazel_tests.py
-        language: python
-        additional_dependencies: [pygit2]
-        pass_filenames: false
-        always_run: true
-        stages: [pre-commit]
+  # TODO: Re-enable once enforce_bazel_tests runs via Bazel (language: system)
+  # instead of language: python, so it can import util.bazel.query.
+  # - repo: local
+  #   hooks:
+  #     - id: enforce-bazel-tests
+  #       name: enforce bazel test cache
+  #       entry: devinfra/precommit/enforce_bazel_tests.py
+  #       language: python
+  #       additional_dependencies: [pygit2]
+  #       pass_filenames: false
+  #       always_run: true
+  #       stages: [pre-commit]
 
   # NOTE: The following custom validations are in bazel-precommit:
   # - pytest-main check (ensures test files have pytest_bazel.main() entry points)
