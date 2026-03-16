@@ -616,6 +616,30 @@ py_test(
 )
 
 py_test(
+    name = "test_schema_equivalence",
+    srcs = ["test_schema_equivalence.py"],
+    data = [
+        "//devinfra/claude/claude_api/hooks/schemas/2.1.76:hook_output_schema",
+    ],
+    imports = ["../.."],
+    deps = [
+        ":conftest",
+        "//devinfra/claude/claude_api/hooks:config_change",
+        "//devinfra/claude/claude_api/hooks:elicitation",
+        "//devinfra/claude/claude_api/hooks:permission_request",
+        "//devinfra/claude/claude_api/hooks:post_tool_use",
+        "//devinfra/claude/claude_api/hooks:pre_tool_use",
+        "//devinfra/claude/claude_api/hooks:session_start",
+        "//devinfra/claude/claude_api/hooks:stop",
+        "//devinfra/claude/claude_api/hooks:user_prompt_submit",
+        "//util/bazel:runfiles",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_k8s_secrets_setup",
     srcs = ["test_k8s_secrets_setup.py"],
     imports = ["../.."],

@@ -5,6 +5,57 @@
 // IMPORTANT: All .optional() fields accept undefined (absent) but NOT null.
 // Python hooks must use exclude_none=True when serializing output.
 
+import { z } from "zod";
+
+// --- PermissionSuggestion (TQH in binary) ---
+// A discriminated union of permission modification actions.
+// Helper schemas: nuA (rule), luA (behavior), T2H (destination), DHH (permission mode)
+
+const PermissionRule = z.object({
+  toolName: z.string(),
+  ruleContent: z.string().optional(),
+});
+
+const PermissionBehavior = z.enum(["allow", "deny", "ask"]);
+
+const PermissionDestination = z.enum(["userSettings", "projectSettings", "localSettings", "session", "cliArg"]);
+
+const PermissionSuggestion = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("addRules"),
+    rules: z.array(PermissionRule),
+    behavior: PermissionBehavior,
+    destination: PermissionDestination,
+  }),
+  z.object({
+    type: z.literal("replaceRules"),
+    rules: z.array(PermissionRule),
+    behavior: PermissionBehavior,
+    destination: PermissionDestination,
+  }),
+  z.object({
+    type: z.literal("removeRules"),
+    rules: z.array(PermissionRule),
+    behavior: PermissionBehavior,
+    destination: PermissionDestination,
+  }),
+  z.object({
+    type: z.literal("setMode"),
+    mode: z.enum(["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk"]),
+    destination: PermissionDestination,
+  }),
+  z.object({
+    type: z.literal("addDirectories"),
+    directories: z.array(z.string()),
+    destination: PermissionDestination,
+  }),
+  z.object({
+    type: z.literal("removeDirectories"),
+    directories: z.array(z.string()),
+    destination: PermissionDestination,
+  }),
+]);
+
 // ============================================================
 // Hook Input Schemas
 // ============================================================
@@ -359,3 +410,5 @@ const asyncHookOutput = z.object({
 });
 
 const hookOutputSchema = z.union([asyncHookOutput, hookOutput]);
+
+export { hookOutput, asyncHookOutput, hookOutputSchema, AnyHookInput };

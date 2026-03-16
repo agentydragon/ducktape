@@ -1,0 +1,431 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "continue": {
+      "type": "boolean",
+      "description": "Whether Claude should continue after hook (default: true)"
+    },
+    "suppressOutput": {
+      "type": "boolean",
+      "description": "Hide stdout from transcript (default: false)"
+    },
+    "stopReason": {
+      "type": "string",
+      "description": "Message shown when continue is false"
+    },
+    "decision": {
+      "type": "string",
+      "enum": ["approve", "block"]
+    },
+    "reason": {
+      "type": "string",
+      "description": "Explanation for the decision"
+    },
+    "systemMessage": {
+      "type": "string",
+      "description": "Warning message shown to the user"
+    },
+    "hookSpecificOutput": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "hookEventName": {
+              "type": "string",
+              "const": "PreToolUse"
+            },
+            "permissionDecision": {
+              "type": "string",
+              "enum": ["allow", "deny", "ask"]
+            },
+            "permissionDecisionReason": {
+              "type": "string"
+            },
+            "updatedInput": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            "additionalContext": {
+              "type": "string"
+            }
+          },
+          "required": ["hookEventName"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "hookEventName": {
+              "type": "string",
+              "const": "UserPromptSubmit"
+            },
+            "additionalContext": {
+              "type": "string"
+            }
+          },
+          "required": ["hookEventName"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "hookEventName": {
+              "type": "string",
+              "const": "SessionStart"
+            },
+            "additionalContext": {
+              "type": "string"
+            }
+          },
+          "required": ["hookEventName"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "hookEventName": {
+              "type": "string",
+              "const": "Setup"
+            },
+            "additionalContext": {
+              "type": "string"
+            }
+          },
+          "required": ["hookEventName"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "hookEventName": {
+              "type": "string",
+              "const": "SubagentStart"
+            },
+            "additionalContext": {
+              "type": "string"
+            }
+          },
+          "required": ["hookEventName"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "hookEventName": {
+              "type": "string",
+              "const": "PostToolUse"
+            },
+            "additionalContext": {
+              "type": "string"
+            },
+            "updatedMCPToolOutput": {
+              "description": "Updates the output for MCP tools"
+            }
+          },
+          "required": ["hookEventName"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "hookEventName": {
+              "type": "string",
+              "const": "PostToolUseFailure"
+            },
+            "additionalContext": {
+              "type": "string"
+            }
+          },
+          "required": ["hookEventName"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "hookEventName": {
+              "type": "string",
+              "const": "Notification"
+            },
+            "additionalContext": {
+              "type": "string"
+            }
+          },
+          "required": ["hookEventName"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "hookEventName": {
+              "type": "string",
+              "const": "PermissionRequest"
+            },
+            "decision": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "behavior": {
+                      "type": "string",
+                      "const": "allow"
+                    },
+                    "updatedInput": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    },
+                    "updatedPermissions": {
+                      "type": "array",
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "const": "addRules"
+                              },
+                              "rules": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "toolName": {
+                                      "type": "string"
+                                    },
+                                    "ruleContent": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": ["toolName"],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "behavior": {
+                                "type": "string",
+                                "enum": ["allow", "deny", "ask"]
+                              },
+                              "destination": {
+                                "type": "string",
+                                "enum": ["userSettings", "projectSettings", "localSettings", "session", "cliArg"]
+                              }
+                            },
+                            "required": ["type", "rules", "behavior", "destination"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "const": "replaceRules"
+                              },
+                              "rules": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "toolName": {
+                                      "type": "string"
+                                    },
+                                    "ruleContent": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": ["toolName"],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "behavior": {
+                                "type": "string",
+                                "enum": ["allow", "deny", "ask"]
+                              },
+                              "destination": {
+                                "type": "string",
+                                "enum": ["userSettings", "projectSettings", "localSettings", "session", "cliArg"]
+                              }
+                            },
+                            "required": ["type", "rules", "behavior", "destination"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "const": "removeRules"
+                              },
+                              "rules": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "toolName": {
+                                      "type": "string"
+                                    },
+                                    "ruleContent": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": ["toolName"],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "behavior": {
+                                "type": "string",
+                                "enum": ["allow", "deny", "ask"]
+                              },
+                              "destination": {
+                                "type": "string",
+                                "enum": ["userSettings", "projectSettings", "localSettings", "session", "cliArg"]
+                              }
+                            },
+                            "required": ["type", "rules", "behavior", "destination"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "const": "setMode"
+                              },
+                              "mode": {
+                                "type": "string",
+                                "enum": ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk"]
+                              },
+                              "destination": {
+                                "type": "string",
+                                "enum": ["userSettings", "projectSettings", "localSettings", "session", "cliArg"]
+                              }
+                            },
+                            "required": ["type", "mode", "destination"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "const": "addDirectories"
+                              },
+                              "directories": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "destination": {
+                                "type": "string",
+                                "enum": ["userSettings", "projectSettings", "localSettings", "session", "cliArg"]
+                              }
+                            },
+                            "required": ["type", "directories", "destination"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "const": "removeDirectories"
+                              },
+                              "directories": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "destination": {
+                                "type": "string",
+                                "enum": ["userSettings", "projectSettings", "localSettings", "session", "cliArg"]
+                              }
+                            },
+                            "required": ["type", "directories", "destination"],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "required": ["behavior"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "behavior": {
+                      "type": "string",
+                      "const": "deny"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "interrupt": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": ["behavior"],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": ["hookEventName", "decision"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "hookEventName": {
+              "type": "string",
+              "const": "Elicitation"
+            },
+            "action": {
+              "type": "string",
+              "enum": ["accept", "decline", "cancel"]
+            },
+            "content": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "required": ["hookEventName"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "hookEventName": {
+              "type": "string",
+              "const": "ElicitationResult"
+            },
+            "action": {
+              "type": "string",
+              "enum": ["accept", "decline", "cancel"]
+            },
+            "content": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "required": ["hookEventName"],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}
