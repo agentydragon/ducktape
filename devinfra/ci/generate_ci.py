@@ -460,7 +460,7 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
                 f"releases/download/${{{{ needs.{job_name}.outputs.tag }}}}/{file_pattern}|' flake.nix\n"
             )
             if target.flake_input:
-                lock_lines += f"  nix flake lock --update-input {target.flake_input}\n"
+                lock_lines += f"  nix flake lock --update-input {target.flake_input} .\n"
         flake_updates.append(
             f'if [ "${{{{ needs.{job_name}.outputs.released }}}}" = "true" ]; then\n{sed_lines}{lock_lines}fi'
         )
