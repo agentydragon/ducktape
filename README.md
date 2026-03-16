@@ -146,7 +146,7 @@ Most configuration has migrated to Nix home-manager - see `nix/home/home.nix`.
 
 ### Deployment
 
-- **Nix config**: `home-manager switch --flake ~/code/ducktape/nix#<hostname>`
+- **Nix config**: `home-manager switch --flake ~/code/ducktape#<hostname>`
 - **Remaining dotfiles**: Via rcm (managed by Ansible role `cli/tasks/dotfiles.yml`)
 
 See `dotfiles/docs/shell_configuration.md` for detailed loading order and migration status.

@@ -1,6 +1,6 @@
 # Agentydragon host-specific home-manager configuration
 #
-# To apply: cd ~/code/ducktape/nix/home && home-manager switch --flake .#agentydragon --impure
+# To apply: home-manager switch --flake ~/code/ducktape#agentydragon --impure
 # (--impure needed for nixGL on non-NixOS systems)
 {
   config,

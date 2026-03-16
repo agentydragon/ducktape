@@ -136,7 +136,7 @@ Neither flag can be scoped per-platform. `--action_env` applies to all actions (
 | ------------------------------------- | ----------------------------------------- |
 | `nix/home/modules/nixos-bazel.nix`    | Home-manager module for user `~/.bazelrc` |
 | `nix/nixos/modules/bazel-dev.nix`     | NixOS module: nix-ld + dev packages       |
-| `nix/flake.nix` (bazel-test config)   | NixOS container config in flake           |
+| `flake.nix` (bazel-test config)       | NixOS container config in flake           |
 | `devinfra/nixos_bazel_test/image.nix` | Docker image from NixOS system config     |
 | `devinfra/nixos_bazel_test/run.sh`    | Build + run script                        |
 | `debug/nixos_bazel_bash/README.md`    | Original investigation notes              |

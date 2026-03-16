@@ -20,7 +20,7 @@
 #   4. Credentials stored in ~/.gmail-mcp/credentials.json
 #
 # UPDATING:
-#   cd nix/home && nix run nixpkgs#nix-update -- --flake gmail-mcp \
+#   nix run nixpkgs#nix-update -- --flake gmail-mcp \
 #     --version branch=main --url https://github.com/GongRzhe/Gmail-MCP-Server
 #   If npmDepsHash changes, build will fail with correct hash - update manually.
 { pkgs, lib }:

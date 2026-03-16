@@ -8,7 +8,7 @@ Ansible handles system-level setup (apt packages, services, udev rules).
 ### Deployment
 
 ```bash
-home-manager switch --flake ~/code/ducktape/nix#<hostname>
+home-manager switch --flake ~/code/ducktape#<hostname>
 ```
 
 ### Per-Host Status

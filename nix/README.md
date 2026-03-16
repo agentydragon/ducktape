@@ -1,12 +1,11 @@
 # Nix Configuration
 
-Single flake for both NixOS system and home-manager user configuration.
+NixOS and home-manager configurations. The flake is at the repo root (`flake.nix`).
 
 ## Directory Structure
 
 ```
 nix/
-├── flake.nix      # Combined NixOS + home-manager flake
 ├── nixos/         # NixOS system configurations
 │   ├── modules/   # Shared NixOS modules
 │   └── hosts/     # Per-host system config
@@ -19,16 +18,16 @@ nix/
 
 ## Usage
 
-All commands run from `~/code/ducktape/nix/`.
+All commands run from `~/code/ducktape/`.
 
 ### NixOS Machines (rugged, wyrm2)
 
 ```bash
 # System configuration (requires sudo)
-sudo nixos-rebuild switch --flake ~/code/ducktape/nix#<hostname>
+sudo nixos-rebuild switch --flake ~/code/ducktape#<hostname>
 
 # User configuration
-home-manager switch --flake ~/code/ducktape/nix#<hostname> --impure
+home-manager switch --flake ~/code/ducktape#<hostname> --impure
 ```
 
 ### Non-NixOS Machines (agentydragon, gpd, vps)
@@ -36,7 +35,7 @@ home-manager switch --flake ~/code/ducktape/nix#<hostname> --impure
 Only home-manager (user config):
 
 ```bash
-home-manager switch --flake ~/code/ducktape/nix#<hostname> --impure
+home-manager switch --flake ~/code/ducktape#<hostname> --impure
 ```
 
 Note: `--impure` is required for nixGL (GPU driver detection).
@@ -64,12 +63,12 @@ Note: `--impure` is required for nixGL (GPU driver detection).
 
 ```bash
 # Test build without applying
-sudo nixos-rebuild build --flake ~/code/ducktape/nix#<hostname>
-home-manager build --flake ~/code/ducktape/nix#<hostname> --impure
+sudo nixos-rebuild build --flake ~/code/ducktape#<hostname>
+home-manager build --flake ~/code/ducktape#<hostname> --impure
 
 # Build from GitHub directly (no local checkout needed)
-sudo nixos-rebuild switch --flake github:agentydragon/ducktape?dir=nix&ref=devel#<hostname>
-home-manager switch --flake github:agentydragon/ducktape?dir=nix&ref=devel#<hostname> --impure
+sudo nixos-rebuild switch --flake github:agentydragon/ducktape?ref=devel#<hostname>
+home-manager switch --flake github:agentydragon/ducktape?ref=devel#<hostname> --impure
 
 # List home-manager generations
 home-manager generations

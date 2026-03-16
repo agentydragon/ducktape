@@ -1,12 +1,221 @@
 {
   "nodes": {
+    "base16-schemes": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1696158499,
+        "narHash": "sha256-5yIHgDTPjoX/3oDEfLSQ0eJZdFL1SaCfb9d6M0RmOTM=",
+        "owner": "tinted-theming",
+        "repo": "base16-schemes",
+        "rev": "a9112eaae86d9dd8ee6bb9445b664fba2f94037a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "tinted-theming",
+        "repo": "base16-schemes",
+        "type": "github"
+      }
+    },
+    "claude-code-router": {
+      "inputs": {
+        "nixpkgs": "nixpkgs"
+      },
+      "locked": {
+        "lastModified": 1761882198,
+        "narHash": "sha256-/9C7PGOeMFdgtBMyVv1KGB39d17kJSb91kWs5h+dBXs=",
+        "owner": "agentydragon",
+        "repo": "claude-code-router",
+        "rev": "2b7c2ca764f74fd80a6c8b85495df7793282758d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "agentydragon",
+        "repo": "claude-code-router",
+        "rev": "2b7c2ca764f74fd80a6c8b85495df7793282758d",
+        "type": "github"
+      }
+    },
+    "claude-plugins-official": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1772586532,
+        "narHash": "sha256-0iZO5ZS0BO0LKkCDxwk+H07w/re7+w84X17h3GH23eM=",
+        "owner": "anthropics",
+        "repo": "claude-plugins-official",
+        "rev": "205b6e0b30366a969412d9aab7b99bea99d58db1",
+        "type": "github"
+      },
+      "original": {
+        "owner": "anthropics",
+        "repo": "claude-plugins-official",
+        "type": "github"
+      }
+    },
+    "ducktape-wheel": {
+      "flake": false,
+      "locked": {
+        "narHash": "sha256-cE1y7x6BAbnjVdZ85ePiS9AkkYLOGrYPKhyYzAfqd30=",
+        "type": "file",
+        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-075d071d/ducktape-0.1.0-py3-none-any.whl"
+      },
+      "original": {
+        "type": "file",
+        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-075d071d/ducktape-0.1.0-py3-none-any.whl"
+      }
+    },
+    "flake-utils": {
+      "inputs": {
+        "systems": "systems"
+      },
+      "locked": {
+        "lastModified": 1731533236,
+        "narHash": "sha256-l0KFg5HjrsfsO/JpG+r7fRrqm12kzFHyUHqHCVpMMbI=",
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "rev": "11707dc2f618dd54ca8739b309ec4fc024de578b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "type": "github"
+      }
+    },
+    "gterm-theme-wheel": {
+      "flake": false,
+      "locked": {
+        "narHash": "sha256-ZAR+yEeTX8wGcthDdrfQi7wXfjMXUxoMINhDeGlmcpY=",
+        "type": "file",
+        "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-c76ef0a2/gterm_theme-0.1.0-py3-none-any.whl"
+      },
+      "original": {
+        "type": "file",
+        "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-c76ef0a2/gterm_theme-0.1.0-py3-none-any.whl"
+      }
+    },
+    "headscale-cleanup-wheel": {
+      "flake": false,
+      "locked": {
+        "narHash": "sha256-7sz/zTDVjHC6cbB6m4wvp9UtDfNZiXQmpzyOd688VFU=",
+        "type": "file",
+        "url": "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-c76ef0a2/headscale_cleanup-0.1.0-py3-none-any.whl"
+      },
+      "original": {
+        "type": "file",
+        "url": "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-c76ef0a2/headscale_cleanup-0.1.0-py3-none-any.whl"
+      }
+    },
+    "home-manager": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1772633058,
+        "narHash": "sha256-SO7JapRy2HPhgmqiLbfnW1kMx5rakPMKZ9z3wtRLQjI=",
+        "owner": "nix-community",
+        "repo": "home-manager",
+        "rev": "080657a04188aca25f8a6c70a0fb2ea7e37f1865",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-community",
+        "ref": "release-25.11",
+        "repo": "home-manager",
+        "type": "github"
+      }
+    },
+    "kubespand-bin": {
+      "flake": false,
+      "locked": {
+        "narHash": "sha256-AiAofqepIFDfw8C3Wt0rUbB2VchQT/qGWYxRbLzhAbo=",
+        "type": "file",
+        "url": "https://github.com/agentydragon/ducktape/releases/download/kubespand-be787f26/kubespand"
+      },
+      "original": {
+        "type": "file",
+        "url": "https://github.com/agentydragon/ducktape/releases/download/kubespand-be787f26/kubespand"
+      }
+    },
+    "nix-colors": {
+      "inputs": {
+        "base16-schemes": "base16-schemes",
+        "nixpkgs-lib": "nixpkgs-lib"
+      },
+      "locked": {
+        "lastModified": 1707825078,
+        "narHash": "sha256-hTfge2J2W+42SZ7VHXkf4kjU+qzFqPeC9k66jAUBMHk=",
+        "owner": "Misterio77",
+        "repo": "nix-colors",
+        "rev": "b01f024090d2c4fc3152cd0cf12027a7b8453ba1",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Misterio77",
+        "repo": "nix-colors",
+        "type": "github"
+      }
+    },
+    "nixGL": {
+      "inputs": {
+        "flake-utils": "flake-utils",
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1762090880,
+        "narHash": "sha256-fbRQzIGPkjZa83MowjbD2ALaJf9y6KMDdJBQMKFeY/8=",
+        "owner": "guibou",
+        "repo": "nixGL",
+        "rev": "b6105297e6f0cd041670c3e8628394d4ee247ed5",
+        "type": "github"
+      },
+      "original": {
+        "owner": "guibou",
+        "ref": "main",
+        "repo": "nixGL",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1766070988,
-        "narHash": "sha256-G/WVghka6c4bAzMhTwT2vjLccg/awmHkdKSd2JrycLc=",
+        "lastModified": 1761875112,
+        "narHash": "sha256-f/PZh1TaPWer5VVfcH3q6N5g0/qBmPYGcWcqJrCkeK4=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "c6245e83d836d0433170a16eb185cefe0572f8b8",
+        "rev": "cd7c6b09fc470be8a780bb2d966146e69cf1a1ec",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs-lib": {
+      "locked": {
+        "lastModified": 1697935651,
+        "narHash": "sha256-qOfWjQ2JQSQL15KLh6D7xQhx0qgZlYZTYlcEiRuAMMw=",
+        "owner": "nix-community",
+        "repo": "nixpkgs.lib",
+        "rev": "e1e11fdbb01113d85c7f41cada9d2847660e3902",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-community",
+        "repo": "nixpkgs.lib",
+        "type": "github"
+      }
+    },
+    "nixpkgs-unstable": {
+      "locked": {
+        "lastModified": 1772624091,
+        "narHash": "sha256-QKyJ0QGWBn6r0invrMAK8dmJoBYWoOWy7lN+UHzW1jc=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "80bdc1e5ce51f56b19791b52b2901187931f5353",
         "type": "github"
       },
       "original": {
@@ -16,9 +225,88 @@
         "type": "github"
       }
     },
+    "nixpkgs_2": {
+      "locked": {
+        "lastModified": 1772598333,
+        "narHash": "sha256-YaHht/C35INEX3DeJQNWjNaTcPjYmBwwjFJ2jdtr+5U=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "fabb8c9deee281e50b1065002c9828f2cf7b2239",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-25.11",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
-        "nixpkgs": "nixpkgs"
+        "claude-code-router": "claude-code-router",
+        "claude-plugins-official": "claude-plugins-official",
+        "ducktape-wheel": "ducktape-wheel",
+        "gterm-theme-wheel": "gterm-theme-wheel",
+        "headscale-cleanup-wheel": "headscale-cleanup-wheel",
+        "home-manager": "home-manager",
+        "kubespand-bin": "kubespand-bin",
+        "nix-colors": "nix-colors",
+        "nixGL": "nixGL",
+        "nixpkgs": "nixpkgs_2",
+        "nixpkgs-unstable": "nixpkgs-unstable",
+        "siderolabs-docs": "siderolabs-docs",
+        "sops-nix": "sops-nix"
+      }
+    },
+    "siderolabs-docs": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1773400816,
+        "narHash": "sha256-zTfpZ6Itv04SM/LMstVl0GuCa+ZxPhO4YWTqcBTsO0Y=",
+        "owner": "siderolabs",
+        "repo": "docs",
+        "rev": "0a7ded3beccf0ede980ed50409c05969d799e04d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "siderolabs",
+        "repo": "docs",
+        "type": "github"
+      }
+    },
+    "sops-nix": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1773096132,
+        "narHash": "sha256-M3zEnq9OElB7zqc+mjgPlByPm1O5t2fbUrH3t/Hm5Ag=",
+        "owner": "Mic92",
+        "repo": "sops-nix",
+        "rev": "d1ff3b1034d5bab5d7d8086a7803c5a5968cd784",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Mic92",
+        "repo": "sops-nix",
+        "type": "github"
+      }
+    },
+    "systems": {
+      "locked": {
+        "lastModified": 1681028828,
+        "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",
+        "owner": "nix-systems",
+        "repo": "default",
+        "rev": "da67096a3b9bf56a91d16901293e51ba5b49a27e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-systems",
+        "repo": "default",
+        "type": "github"
       }
     }
   },

@@ -123,7 +123,7 @@ resource "null_resource" "nixos_image_build" {
       set -e
       echo "Building k8s-worker-test NixOS qcow2 image..."
       cd "${local.repo_root}"
-      nix build ./nix#k8s-worker-test-image -o k8s-worker-test-image
+      nix build .#k8s-worker-test-image -o k8s-worker-test-image
       echo "Image ready at $(readlink -f k8s-worker-test-image)/*.qcow2"
     EOT
   }

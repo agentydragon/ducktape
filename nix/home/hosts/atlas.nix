@@ -1,7 +1,7 @@
 # Atlas host-specific home-manager configuration
 # Proxmox VE host with desktop environment
 #
-# To apply: cd ~/code/ducktape/nix/home && home-manager switch --flake .#atlas --impure
+# To apply: home-manager switch --flake ~/code/ducktape#atlas --impure
 # (--impure needed for nixGL on non-NixOS systems)
 {
   config,

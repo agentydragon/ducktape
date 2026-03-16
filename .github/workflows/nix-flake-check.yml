@@ -23,7 +23,6 @@ jobs:
 
       - name: Evaluate NixOS configurations
         run: |
-          cd nix
           # Auto-discover all hosts from flake using nix eval (more reliable than flake show)
           for host in $(nix eval --json .#nixosConfigurations --apply builtins.attrNames | jq -r '.[]'); do
             echo "Checking nixosConfigurations.$host..."
@@ -32,7 +31,6 @@ jobs:
 
       - name: Evaluate home-manager configurations
         run: |
-          cd nix
           # Auto-discover all hosts from flake (--impure needed for nixGL)
           # Use nix eval instead of flake show (flake show doesn't enumerate impure configs properly)
           for host in $(nix eval --impure --json .#homeConfigurations --apply builtins.attrNames | jq -r '.[]'); do

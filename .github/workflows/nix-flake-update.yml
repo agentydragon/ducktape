@@ -32,9 +32,9 @@ jobs:
 
           BRANCH="${{ github.ref_name }}"
 
-          nix flake update --flake ./nix
+          nix flake update
 
-          git add nix/flake.lock
+          git add flake.lock
 
           if git diff --cached --quiet; then
             echo "No flake input changes"

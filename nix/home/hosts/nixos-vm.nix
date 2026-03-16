@@ -1,6 +1,6 @@
 # NixOS VM host-specific home-manager configuration (simplified)
 #
-# To apply: cd ~/code/ducktape/nix/home && home-manager switch --flake .#nixos-vm
+# To apply: home-manager switch --flake ~/code/ducktape#nixos-vm
 # (no --impure needed on NixOS)
 #
 # Note: enableGui=true, enableKube=false, enableHeavyPackages=false set in flake.nix

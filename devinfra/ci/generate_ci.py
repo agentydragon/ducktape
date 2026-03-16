@@ -457,10 +457,10 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
                 file_pattern = config.wheel_name
             sed_lines += (
                 f"  sed -i 's|releases/download/{name}-[^/]*/{file_pattern}|"
-                f"releases/download/${{{{ needs.{job_name}.outputs.tag }}}}/{file_pattern}|' nix/flake.nix\n"
+                f"releases/download/${{{{ needs.{job_name}.outputs.tag }}}}/{file_pattern}|' flake.nix\n"
             )
             if target.flake_input:
-                lock_lines += f"  nix flake lock --update-input {target.flake_input} ./nix\n"
+                lock_lines += f"  nix flake lock --update-input {target.flake_input}\n"
         flake_updates.append(
             f'if [ "${{{{ needs.{job_name}.outputs.released }}}}" = "true" ]; then\n{sed_lines}{lock_lines}fi'
         )
@@ -485,7 +485,7 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
         '\n\ngit config user.name "github-actions[bot]"\n'
         'git config user.email "41898282+github-actions[bot]@users.noreply.github.com"\n'
         "\n"
-        "git add nix/flake.nix nix/flake.lock .claude/settings.json\n"
+        "git add flake.nix flake.lock .claude/settings.json\n"
         "\n"
         "if git diff --cached --quiet; then\n"
         '  echo "No downstream changes"\n'

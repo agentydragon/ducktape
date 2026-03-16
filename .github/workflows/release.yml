@@ -452,22 +452,22 @@ jobs:
       - name: Update references and push
         run: |-
           if [ "${{ needs.release-kubespand.outputs.released }}" = "true" ]; then
-            sed -i 's|releases/download/kubespand-[^/]*/kubespand|releases/download/${{ needs.release-kubespand.outputs.tag }}/kubespand|' nix/flake.nix
-            sed -i 's|releases/download/kubespand-[^/]*/apid|releases/download/${{ needs.release-kubespand.outputs.tag }}/apid|' nix/flake.nix
-            nix flake lock --update-input kubespand-bin ./nix
-            nix flake lock --update-input apid-bin ./nix
+            sed -i 's|releases/download/kubespand-[^/]*/kubespand|releases/download/${{ needs.release-kubespand.outputs.tag }}/kubespand|' flake.nix
+            sed -i 's|releases/download/kubespand-[^/]*/apid|releases/download/${{ needs.release-kubespand.outputs.tag }}/apid|' flake.nix
+            nix flake lock --update-input kubespand-bin .
+            nix flake lock --update-input apid-bin .
           fi
           if [ "${{ needs.release-ducktape.outputs.released }}" = "true" ]; then
-            sed -i 's|releases/download/ducktape-[^/]*/ducktape|releases/download/${{ needs.release-ducktape.outputs.tag }}/ducktape|' nix/flake.nix
-            nix flake lock --update-input ducktape-wheel ./nix
+            sed -i 's|releases/download/ducktape-[^/]*/ducktape|releases/download/${{ needs.release-ducktape.outputs.tag }}/ducktape|' flake.nix
+            nix flake lock --update-input ducktape-wheel .
           fi
           if [ "${{ needs.release-headscale_cleanup.outputs.released }}" = "true" ]; then
-            sed -i 's|releases/download/headscale-cleanup-[^/]*/headscale_cleanup|releases/download/${{ needs.release-headscale_cleanup.outputs.tag }}/headscale_cleanup|' nix/flake.nix
-            nix flake lock --update-input headscale-cleanup-wheel ./nix
+            sed -i 's|releases/download/headscale-cleanup-[^/]*/headscale_cleanup|releases/download/${{ needs.release-headscale_cleanup.outputs.tag }}/headscale_cleanup|' flake.nix
+            nix flake lock --update-input headscale-cleanup-wheel .
           fi
           if [ "${{ needs.release-gterm_theme.outputs.released }}" = "true" ]; then
-            sed -i 's|releases/download/gterm-theme-[^/]*/gterm_theme|releases/download/${{ needs.release-gterm_theme.outputs.tag }}/gterm_theme|' nix/flake.nix
-            nix flake lock --update-input gterm-theme-wheel ./nix
+            sed -i 's|releases/download/gterm-theme-[^/]*/gterm_theme|releases/download/${{ needs.release-gterm_theme.outputs.tag }}/gterm_theme|' flake.nix
+            nix flake lock --update-input gterm-theme-wheel .
           fi
 
           if [ "${{ needs.release-ducktape.outputs.released }}" = "true" ]; then
@@ -477,7 +477,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add nix/flake.nix nix/flake.lock .claude/settings.json
+          git add flake.nix flake.lock .claude/settings.json
 
           if git diff --cached --quiet; then
             echo "No downstream changes"

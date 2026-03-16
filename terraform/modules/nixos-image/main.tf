@@ -46,7 +46,7 @@ resource "null_resource" "build" {
       set -e
       echo "Building ${var.flake_target} NixOS qcow2 image..."
       cd "${var.repo_root}"
-      nix build ./nix#${var.flake_target}-image -o /tmp/${var.flake_target}-image
+      nix build .#${var.flake_target}-image -o /tmp/${var.flake_target}-image
     EOT
   }
 

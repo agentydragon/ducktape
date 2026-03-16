@@ -1,6 +1,6 @@
 # VPS host-specific home-manager configuration
 #
-# To apply: cd ~/code/ducktape/nix/home && home-manager switch --flake .#vps
+# To apply: home-manager switch --flake ~/code/ducktape#vps
 # (no --impure needed, no GUI/nixGL on server)
 #
 # Note: enableGui=false, enableKube=false set in flake.nix

@@ -41,6 +41,6 @@ output "instructions" {
     whatever NixOS config was baked into the qcow2 image. To apply
     NixOS config changes to a running VM, SSH in and run:
 
-      sudo nixos-rebuild switch --flake github:agentydragon/ducktape?dir=nix&ref=devel#wyrm2
+      sudo nixos-rebuild switch --flake github:agentydragon/ducktape?ref=devel#wyrm2
   EOT
 }

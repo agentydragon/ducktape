@@ -20,7 +20,7 @@ is managed via `pct` on atlas instead.
 
 ```bash
 cd ~/code/ducktape
-nix build ./nix#lxc-k8s-test-lxc -o /tmp/lxc-k8s-test-lxc
+nix build .#lxc-k8s-test-lxc -o /tmp/lxc-k8s-test-lxc
 ssh root@atlas "mkdir -p /var/lib/vz/template/cache"
 scp /tmp/lxc-k8s-test-lxc/tarball/*.tar.xz \
   root@atlas:/var/lib/vz/template/cache/lxc-k8s-test.tar.xz
@@ -59,7 +59,7 @@ To deploy NixOS config changes, rebuild the tarball and recreate the container:
 
 ```bash
 # Rebuild
-nix build ./nix#lxc-k8s-test-lxc -o /tmp/lxc-k8s-test-lxc
+nix build .#lxc-k8s-test-lxc -o /tmp/lxc-k8s-test-lxc
 scp /tmp/lxc-k8s-test-lxc/tarball/*.tar.xz \
   root@atlas:/var/lib/vz/template/cache/lxc-k8s-test.tar.xz
 

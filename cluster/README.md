@@ -139,7 +139,7 @@ Watchers run locally, heartbeat to cluster via Headscale mesh. Config managed by
 Nix home-manager (`nix/home/services/activitywatch.nix`).
 
 1. Enroll device: `sudo tailscale up --login-server=https://headscale.allegedly.works`
-2. Apply config: `home-manager switch --flake ~/code/ducktape/nix#<hostname>`
+2. Apply config: `home-manager switch --flake ~/code/ducktape#<hostname>`
 3. Start: `aw-qt` (runs `aw-watcher-afk`, `aw-watcher-window`)
 4. Verify: `curl http://activitywatch.tailnet.allegedly.works:5600/api/0/info`
 

@@ -21,7 +21,7 @@ build_image() {
 
   if command -v nix &>/dev/null; then
     echo "Using nix build (flake)..."
-    nix build "path:$REPO_ROOT/nix#bazel-test-docker" -o "$SCRIPT_DIR/result"
+    nix build "path:$REPO_ROOT#bazel-test-docker" -o "$SCRIPT_DIR/result"
     # system.build.tarball produces result/tarball/*.tar.xz
     tarball="$(echo "$SCRIPT_DIR"/result/tarball/*.tar.xz)"
   else
@@ -60,7 +60,7 @@ build_image() {
         export NIX_SSL_CERT_FILE=/tmp/host-ca-bundle.crt
       fi
 
-      nix build "path:/repo/nix#bazel-test-docker" -o /tmp/result
+      nix build "path:/repo#bazel-test-docker" -o /tmp/result
       # Copy the tarball out — the nix store symlink would not survive container exit
       cp -L /tmp/result/tarball/*.tar.xz /out/nixos-system.tar.xz
     '

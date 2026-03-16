@@ -583,7 +583,7 @@ Readable via `/sys/firmware/efi/efivars/` after enabling "Publish HII Resources"
 
 1. ~~**Apply wyrm2 NixOS config with `nvidia-drm.modeset=0`**~~ **Done** (2026-03-11).
    - `cd ~/code/ducktape && git pull` on wyrm2 (as agentydragon)
-   - `sudo nixos-rebuild switch --flake ~/code/ducktape/nix#wyrm2`
+   - `sudo nixos-rebuild switch --flake ~/code/ducktape#wyrm2`
 
 2. ~~**Reduce wyrm2 memory allocation**~~ **Done** (2026-03-11). Reduced from 112 GiB to 96 GiB (`memory: 98304`) in both Proxmox (`qm set`) and Terraform. Ballooning is incompatible with VFIO (passthrough requires pinned memory). Takes effect on next wyrm2 restart. Leaves 24 GiB for host+ARC instead of 8 GiB.
 

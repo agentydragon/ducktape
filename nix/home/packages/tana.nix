@@ -2,7 +2,7 @@
 # Installed from .deb via GitHub Releases (tanainc/tana-desktop-releases)
 #
 # To update:
-#   cd nix/home && nix run nixpkgs#nix-update -- --flake tana
+#   nix run nixpkgs#nix-update -- --flake tana
 {
   lib,
   pkgs,
