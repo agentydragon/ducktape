@@ -9,9 +9,11 @@ Any delta is a test failure — there is no allowlist. Fix the Pydantic model
 or explicitly acknowledge the delta.
 """
 
+import difflib
 import json
 from typing import Any
 
+import pytest
 import pytest_bazel
 from pydantic import TypeAdapter
 
@@ -31,35 +33,30 @@ from devinfra.claude.claude_api.hooks.user_prompt_submit import UserPromptSubmit
 from util.bazel.runfiles import get_required_path
 from util.json_schema import inline_refs
 
+# (model_name, model_class, event_name_or_None)
+# Models with hookSpecificOutput have event_name; common-only models have None.
+_ALL_OUTPUT_MODELS: list[tuple[str, type, str | None]] = [
+    ("SessionStart", SessionStartOutput, "SessionStart"),
+    ("Setup", SetupOutput, "Setup"),
+    ("PreToolUse", PreToolUseOutput, "PreToolUse"),
+    ("PostToolUse", PostToolUseOutput, "PostToolUse"),
+    ("PostToolUseFailure", PostToolUseFailureOutput, "PostToolUseFailure"),
+    ("UserPromptSubmit", UserPromptSubmitOutput, "UserPromptSubmit"),
+    ("Notification", NotificationOutput, "Notification"),
+    ("PermissionRequest", PermissionRequestOutput, "PermissionRequest"),
+    ("Elicitation", ElicitationOutput, "Elicitation"),
+    ("ElicitationResult", ElicitationResultOutput, "ElicitationResult"),
+    ("SubagentStart", SubagentStartOutput, "SubagentStart"),
+    ("Stop", StopOutput, None),
+    ("SubagentStop", SubagentStopOutput, None),
+    ("ConfigChange", ConfigChangeOutput, None),
+]
+
 
 def _load_zod_json_schema() -> dict[str, Any]:
     """Load the Zod-derived JSON Schema for hookOutput from runfiles."""
     path = get_required_path("_main/devinfra/claude/claude_api/hooks/schemas/2.1.76/hook_output.json")
     return json.loads(path.read_text())  # type: ignore[no-any-return]
-
-
-# Map from Zod hookEventName to Pydantic output model class.
-# Models with hookSpecificOutput in Zod:
-_HOOK_OUTPUT_MODELS: dict[str, type] = {
-    "SessionStart": SessionStartOutput,
-    "Setup": SetupOutput,
-    "PreToolUse": PreToolUseOutput,
-    "PostToolUse": PostToolUseOutput,
-    "PostToolUseFailure": PostToolUseFailureOutput,
-    "UserPromptSubmit": UserPromptSubmitOutput,
-    "Notification": NotificationOutput,
-    "PermissionRequest": PermissionRequestOutput,
-    "Elicitation": ElicitationOutput,
-    "ElicitationResult": ElicitationResultOutput,
-    "SubagentStart": SubagentStartOutput,
-}
-
-# Models that share the same common fields but have no hookSpecificOutput in Zod:
-_COMMON_ONLY_MODELS: dict[str, type] = {
-    "Stop": StopOutput,
-    "SubagentStop": SubagentStopOutput,
-    "ConfigChange": ConfigChangeOutput,
-}
 
 
 def _compose_zod_model_schema(zod_schema: dict[str, Any], event_name: str | None) -> dict[str, Any]:
@@ -100,87 +97,18 @@ def _compose_zod_model_schema(zod_schema: dict[str, Any], event_name: str | None
     return result
 
 
-def _compare_schemas(zod_schema: dict[str, Any], pydantic_schema: dict[str, Any], label: str) -> list[str]:
-    """Compare two object schemas property-by-property. Returns list of delta descriptions."""
-    deltas: list[str] = []
-    zod_props = zod_schema.get("properties", {})
-    zod_required = set(zod_schema.get("required", []))
-
-    pydantic_full = inline_refs(pydantic_schema)
-    pydantic_props = pydantic_full.get("properties", {})
-    pydantic_required = set(pydantic_full.get("required", []))
-
-    for field_name, zod_field in zod_props.items():
-        if field_name not in pydantic_props:
-            deltas.append(f"[{label}] Missing field '{field_name}' in Pydantic model")
-            continue
-
-        pydantic_field = pydantic_props[field_name]
-        if _normalize(zod_field) != _normalize(pydantic_field):
-            deltas.append(
-                f"[{label}] Field '{field_name}' differs:\n"
-                f"  Zod:     {json.dumps(zod_field, sort_keys=True)}\n"
-                f"  Pydantic: {json.dumps(pydantic_field, sort_keys=True)}"
-            )
-
-        zod_req = field_name in zod_required
-        pyd_req = field_name in pydantic_required
-        if zod_req != pyd_req:
-            deltas.append(
-                f"[{label}] Field '{field_name}' required mismatch: "
-                f"Zod={'required' if zod_req else 'optional'}, "
-                f"Pydantic={'required' if pyd_req else 'optional'}"
-            )
-
-    for field_name in pydantic_props:
-        if field_name not in zod_props:
-            deltas.append(f"[{label}] Extra field '{field_name}' in Pydantic model not in Zod")
-
-    return deltas
-
-
-def test_zod_json_schema_loads() -> None:
-    """Smoke test: the generated JSON Schema file loads and has expected structure."""
-    schema = _load_zod_json_schema()
-    assert "properties" in schema, f"Expected 'properties' in schema, got keys: {list(schema.keys())}"
-    props = schema["properties"]
-    assert "continue" in props, f"Expected 'continue' field, got: {list(props.keys())}"
-    assert "hookSpecificOutput" in props, f"Expected 'hookSpecificOutput' field, got: {list(props.keys())}"
-
-
-def test_output_models_match_zod() -> None:
-    """Verify each Pydantic output model matches the Zod hookOutput schema."""
-    zod_schema = _load_zod_json_schema()
-    deltas: list[str] = []
-
-    # Models with hookSpecificOutput variants
-    for event_name, model_class in sorted(_HOOK_OUTPUT_MODELS.items()):
-        zod_composed = _compose_zod_model_schema(zod_schema, event_name)
-        pydantic_schema = TypeAdapter(model_class).json_schema(mode="serialization")
-        deltas.extend(_compare_schemas(zod_composed, pydantic_schema, event_name))
-
-    # Common-only models (no hookSpecificOutput)
-    for event_name, model_class in sorted(_COMMON_ONLY_MODELS.items()):
-        zod_composed = _compose_zod_model_schema(zod_schema, None)
-        pydantic_schema = TypeAdapter(model_class).json_schema(mode="serialization")
-        deltas.extend(_compare_schemas(zod_composed, pydantic_schema, event_name))
-
-    if deltas:
-        raise AssertionError(f"Schema equivalence check found {len(deltas)} delta(s):\n\n" + "\n\n".join(deltas))
-
-
 def _normalize(schema: dict[str, Any]) -> dict[str, Any]:
     """Normalize a JSON Schema field for comparison.
 
     Strips metadata and structural differences that don't affect wire compatibility:
-    - Strip metadata keys: title, description, default, discriminator
-    - Collapse nullable anyOf: {"anyOf": [T, {"type": "null"}]} → T
-    - Normalize Record<string, unknown>: additionalProperties:{} ≡ true
-    - Unify oneOf → anyOf (Pydantic uses oneOf for discriminated unions, Zod uses anyOf)
+    - Strip metadata keys: title, description, default, discriminator, $defs
+    - Collapse nullable anyOf: {"anyOf": [T, {"type": "null"}]} -> T
+    - Normalize Record<string, unknown>: additionalProperties:{} = true
+    - Unify oneOf -> anyOf (Pydantic uses oneOf for discriminated unions, Zod uses anyOf)
     - Normalize required: remove const-defaulted fields (always have a fixed value)
     - Recurse into nested structures (properties, items, anyOf/oneOf variants)
     """
-    _strip_keys = {"title", "description", "default", "discriminator"}
+    _strip_keys = {"title", "description", "default", "discriminator", "$defs"}
     out = {k: v for k, v in schema.items() if k not in _strip_keys}
     # Zod emits {"additionalProperties": {}, "propertyNames": {"type": "string"}} for
     # Record<string, unknown>; Pydantic emits {"additionalProperties": true}. These are
@@ -217,6 +145,66 @@ def _normalize(schema: dict[str, Any]) -> dict[str, Any]:
     if "items" in out and isinstance(out["items"], dict):
         out["items"] = _normalize(out["items"])
     return out
+
+
+@pytest.fixture(scope="module")
+def zod_schema() -> dict[str, Any]:
+    """Load the Zod JSON Schema once per test module."""
+    return _load_zod_json_schema()
+
+
+def test_zod_json_schema_loads(zod_schema: dict[str, Any]) -> None:
+    """Smoke test: the generated JSON Schema file loads and has expected structure."""
+    assert "properties" in zod_schema, f"Expected 'properties' in schema, got keys: {list(zod_schema.keys())}"
+    props = zod_schema["properties"]
+    assert "continue" in props, f"Expected 'continue' field, got: {list(props.keys())}"
+    assert "hookSpecificOutput" in props, f"Expected 'hookSpecificOutput' field, got: {list(props.keys())}"
+
+
+@pytest.mark.parametrize(
+    ("model_name", "model_class", "event_name"),
+    [(name, cls, ev) for name, cls, ev in _ALL_OUTPUT_MODELS],
+    ids=[name for name, _, _ in _ALL_OUTPUT_MODELS],
+)
+def test_output_model_matches_zod(
+    zod_schema: dict[str, Any], model_name: str, model_class: type, event_name: str | None
+) -> None:
+    """Verify a single Pydantic output model matches the Zod hookOutput schema."""
+    zod_composed = _compose_zod_model_schema(zod_schema, event_name)
+    pydantic_schema = TypeAdapter(model_class).json_schema(mode="serialization")
+
+    zod_normalized = _normalize(zod_composed)
+    pydantic_normalized = _normalize(inline_refs(pydantic_schema))
+
+    if zod_normalized != pydantic_normalized:
+        zod_text = json.dumps(zod_normalized, indent=2, sort_keys=True)
+        pyd_text = json.dumps(pydantic_normalized, indent=2, sort_keys=True)
+        diff = "\n".join(
+            difflib.unified_diff(
+                zod_text.splitlines(),
+                pyd_text.splitlines(),
+                fromfile=f"Zod ({model_name})",
+                tofile=f"Pydantic ({model_name})",
+                lineterm="",
+                n=3,
+            )
+        )
+        pytest.fail(f"Schema mismatch for {model_name}:\n{diff}")
+
+
+def test_all_zod_variants_covered(zod_schema: dict[str, Any]) -> None:
+    """Every Zod hookSpecificOutput variant must have a Pydantic model in _ALL_OUTPUT_MODELS."""
+    hso = zod_schema["properties"]["hookSpecificOutput"]
+    zod_event_names: set[str] = set()
+    for variant in hso.get("anyOf", hso.get("oneOf", [])):
+        hen = variant.get("properties", {}).get("hookEventName", {})
+        name = hen.get("const")
+        if name:
+            zod_event_names.add(name)
+
+    tested_event_names = {ev for _, _, ev in _ALL_OUTPUT_MODELS if ev is not None}
+    missing = zod_event_names - tested_event_names
+    assert not missing, f"Zod variants without Pydantic models: {missing}"
 
 
 if __name__ == "__main__":
