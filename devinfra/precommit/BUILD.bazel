@@ -15,6 +15,20 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//devinfra/testing:defs.bzl", "py_test")
 
 py_library(
+    name = "bench_affected_targets_lib",
+    srcs = ["bench_affected_targets.py"],
+    imports = ["../.."],
+    deps = ["//util/bazel:query"],
+)
+
+py_binary(
+    name = "bench_affected_targets",
+    imports = ["../.."],
+    main_module = "devinfra.precommit.bench_affected_targets",
+    deps = [":bench_affected_targets_lib"],
+)
+
+py_library(
     name = "check_filename_conventions",
     srcs = ["check_filename_conventions.py"],
     imports = ["../.."],
