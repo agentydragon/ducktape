@@ -24,7 +24,7 @@ def _build_result(kustomization_path: Path, build_output_file: Path) -> Kustomiz
 
 
 @pytest.mark.parametrize(
-    ("kustomization_path", "testdata_dir"),
+    ("kustomization_path", "testdata_name"),
     [
         (Path("/k8s/test-app/kustomization.yaml"), "helmrelease_only"),
         (Path("/k8s/test-app/kustomization.yaml"), "crd_only"),
@@ -35,13 +35,12 @@ def _build_result(kustomization_path: Path, build_output_file: Path) -> Kustomiz
     ],
     ids=["helmrelease_only", "crd_only", "operator_with_crd", "cert_manager_nested", "vault_nested", "overlay_skipped"],
 )
-def test_valid_cases(kustomization_path: Path, testdata_dir: str) -> None:
-    build_output = _TESTDATA / testdata_dir / "build_output.yaml"
-    check_crd_layering(_build_result(kustomization_path, build_output))
+def test_valid_cases(kustomization_path: Path, testdata_name: str) -> None:
+    check_crd_layering(_build_result(kustomization_path, _TESTDATA / f"{testdata_name}.yaml"))
 
 
 def test_detects_crd_layering_violation() -> None:
-    build_output = _TESTDATA / "mixed_helmrelease_and_crd" / "build_output.yaml"
+    build_output = _TESTDATA / "mixed_helmrelease_and_crd.yaml"
     with pytest.raises(CrdLayeringViolationError, match="ExternalSecret"):
         check_crd_layering(_build_result(Path("/k8s/test-app/kustomization.yaml"), build_output))
 
