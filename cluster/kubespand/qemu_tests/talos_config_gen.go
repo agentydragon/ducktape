@@ -124,51 +124,11 @@ func (s *TestTalosSecrets) ControlPlaneConfig(opts TalosNodeConfig) []byte {
 	cfg.ClusterConfig.EtcdConfig = &v1alpha1.EtcdConfig{
 		RootCA: s.EtcdCA,
 	}
-	// CP-specific cluster fields.
-	cfg.ClusterConfig.APIServerConfig = &v1alpha1.APIServerConfig{
-		ContainerImage:                 "registry.k8s.io/kube-apiserver:v1.34.1",
-		CertSANs:                       opts.CertSANs,
-		DisablePodSecurityPolicyConfig: boolPtr(true),
-		AuditPolicyConfig: v1alpha1.Unstructured{
-			Object: map[string]interface{}{
-				"apiVersion": "audit.k8s.io/v1",
-				"kind":       "Policy",
-				"rules":      []interface{}{map[string]interface{}{"level": "Metadata"}},
-			},
-		},
-		AdmissionControlConfig: v1alpha1.AdmissionPluginConfigList{
-			{
-				PluginName: "PodSecurity",
-				PluginConfiguration: v1alpha1.Unstructured{
-					Object: map[string]interface{}{
-						"apiVersion": "pod-security.admission.config.k8s.io/v1alpha1",
-						"kind":       "PodSecurityConfiguration",
-						"defaults": map[string]interface{}{
-							"audit": "restricted", "audit-version": "latest",
-							"enforce": "baseline", "enforce-version": "latest",
-							"warn": "restricted", "warn-version": "latest",
-						},
-						"exemptions": map[string]interface{}{
-							"namespaces":     []interface{}{"kube-system"},
-							"runtimeClasses": []interface{}{},
-							"usernames":      []interface{}{},
-						},
-					},
-				},
-			},
-		},
-	}
-	cfg.ClusterConfig.ControllerManagerConfig = &v1alpha1.ControllerManagerConfig{
-		ContainerImage: "registry.k8s.io/kube-controller-manager:v1.34.1",
-	}
-	cfg.ClusterConfig.ProxyConfig = &v1alpha1.ProxyConfig{
-		ContainerImage: "registry.k8s.io/kube-proxy:v1.34.1",
-	}
-	cfg.ClusterConfig.SchedulerConfig = &v1alpha1.SchedulerConfig{
-		ContainerImage: "registry.k8s.io/kube-scheduler:v1.34.1",
-	}
-	cfg.MachineConfig.MachineNodeLabels = map[string]string{
-		"node.kubernetes.io/exclude-from-external-load-balancers": "",
+	// API server cert SANs (needed for Talos API trust, not K8s workloads).
+	if len(opts.CertSANs) > 0 {
+		cfg.ClusterConfig.APIServerConfig = &v1alpha1.APIServerConfig{
+			CertSANs: opts.CertSANs,
+		}
 	}
 
 	return marshalConfig(cfg)
@@ -253,20 +213,14 @@ func (s *TestTalosSecrets) baseConfig(machineType string, opts TalosNodeConfig) 
 			MachineToken:    s.MachineToken,
 			MachineCA:       s.MachineCA,
 			MachineCertSANs: []string{"127.0.0.1"},
-			MachineKubelet: &v1alpha1.KubeletConfig{
-				KubeletImage: "ghcr.io/siderolabs/kubelet:v1.34.1",
-				KubeletDefaultRuntimeSeccompProfileEnabled: boolPtr(true),
-				KubeletDisableManifestsDirectory:           boolPtr(true),
-			},
+			MachineKubelet:  &v1alpha1.KubeletConfig{},
 			MachineNetwork: &v1alpha1.NetworkConfig{
 				NetworkInterfaces: []*v1alpha1.Device{eth0, eth1},
 				NetworkKubeSpan:   kubeSpan,
 			},
 			MachineInstall: &v1alpha1.InstallConfig{
-				InstallDisk:  "/dev/sda",
-				InstallImage: "ghcr.io/siderolabs/installer:v1.13.0-alpha.2",
+				InstallDisk: "/dev/sda",
 			},
-			MachineRegistries: v1alpha1.RegistriesConfig{},
 			MachineFeatures: &v1alpha1.FeaturesConfig{
 				RBAC:                 &trueVal,
 				StableHostname:       &trueVal,
@@ -310,8 +264,6 @@ func (s *TestTalosSecrets) baseConfig(machineType string, opts TalosNodeConfig) 
 					},
 				},
 			},
-			ExtraManifests:         []string{},
-			ClusterInlineManifests: v1alpha1.ClusterInlineManifests{},
 		},
 	}
 
