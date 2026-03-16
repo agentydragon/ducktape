@@ -7,12 +7,8 @@ import litellm
 import pytest_bazel
 
 from agent_core.direct_provider import DirectToolProvider
-from nix.home.skills.info_gathering.evals.harness import LLMClient
-from nix.home.skills.info_gathering.evals.twenty_questions.twenty_questions import (
-    Correct,
-    Timeout,
-    run_twenty_questions,
-)
+from skills.info_gathering.evals.harness import LLMClient
+from skills.info_gathering.evals.twenty_questions.twenty_questions import Correct, Timeout, run_twenty_questions
 
 
 def _text_response(text: str) -> litellm.ModelResponse:
@@ -54,7 +50,7 @@ def _tool_response(tool_name: str, tool_input: dict, tool_id: str) -> litellm.Mo
 TEST_CLIENT = LLMClient(model="test-model")
 
 
-@patch("nix.home.skills.info_gathering.evals.harness.litellm.acompletion")
+@patch("skills.info_gathering.evals.harness.litellm.acompletion")
 async def test_timeout(mock_acompletion, tmp_path):
     """3-turn game with no correct guess -> Timeout, score=0."""
     mock_acompletion.side_effect = [
@@ -83,7 +79,7 @@ async def test_timeout(mock_acompletion, tmp_path):
     assert mock_acompletion.call_count == 6
 
 
-@patch("nix.home.skills.info_gathering.evals.harness.litellm.acompletion")
+@patch("skills.info_gathering.evals.harness.litellm.acompletion")
 async def test_success_on_turn_2(mock_acompletion, tmp_path):
     """Agent guesses correctly on turn 2 -> Correct(turns=2)."""
     mock_acompletion.side_effect = [
@@ -110,7 +106,7 @@ async def test_success_on_turn_2(mock_acompletion, tmp_path):
     assert mock_acompletion.call_count == 4
 
 
-@patch("nix.home.skills.info_gathering.evals.harness.litellm.acompletion")
+@patch("skills.info_gathering.evals.harness.litellm.acompletion")
 async def test_success_on_turn_1(mock_acompletion, tmp_path):
     """Agent guesses correctly on turn 1 -> Correct(turns=1)."""
     mock_acompletion.side_effect = [

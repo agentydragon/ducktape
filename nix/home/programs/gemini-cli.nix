@@ -122,6 +122,7 @@ in
     home.file = import ../skills/skills.nix {
       inherit lib siderolabs-docs;
       prefix = ".gemini";
+      repoRoot = ../../..;
     };
   };
 }

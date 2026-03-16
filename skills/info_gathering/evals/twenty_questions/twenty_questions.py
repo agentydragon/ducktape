@@ -1,8 +1,8 @@
 """Twenty Questions eval variants.
 
 Usage:
-  bazel run //nix/home/skills/info_gathering/evals/twenty_questions:twenty_questions_bin -- --variant states
-  bazel run //nix/home/skills/info_gathering/evals/twenty_questions:twenty_questions_bin -- --variant states --model openai/gpt-oss:20b --base-url https://ollama-api.allegedly.works --thinking-budget 0
+  bazel run //skills/info_gathering/evals/twenty_questions:twenty_questions_bin -- --variant states
+  bazel run //skills/info_gathering/evals/twenty_questions:twenty_questions_bin -- --variant states --model openai/gpt-oss:20b --base-url https://ollama-api.allegedly.works --thinking-budget 0
 """
 
 import argparse
@@ -16,8 +16,8 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 from agent_core.tool_provider import ToolProvider
-from nix.home.skills.info_gathering.evals.docker_scratch import load_scratch_image, scratch_container
-from nix.home.skills.info_gathering.evals.harness import (
+from skills.info_gathering.evals.docker_scratch import load_scratch_image, scratch_container
+from skills.info_gathering.evals.harness import (
     LLMClient,
     LogEntry,
     RunSummary,
@@ -33,12 +33,12 @@ from nix.home.skills.info_gathering.evals.harness import (
     save_results,
     tool_def,
 )
-from nix.home.skills.info_gathering.evals.litellm_tool_provider import ToolParam, tool_params_from_provider
+from skills.info_gathering.evals.litellm_tool_provider import ToolParam, tool_params_from_provider
 from util.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
 
-_SIM_RLOCATION = "_main/nix/home/skills/info_gathering/evals/twenty_questions/sim.txt"
+_SIM_RLOCATION = "_main/skills/info_gathering/evals/twenty_questions/sim.txt"
 
 _SCRATCH_SYSTEM_NOTE = """\
 You have access to an `exec` tool — a private Docker container for scratch computation. \

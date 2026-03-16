@@ -14,18 +14,18 @@ Tests convergence of the info-gathering skill on a fixed domain.
 ```bash
 # Haiku with thinking (default, requires ANTHROPIC_API_KEY)
 ANTHROPIC_API_KEY=sk-ant-... \
-bazel run //nix/home/skills/info_gathering/evals/twenty_questions:twenty_questions_bin -- \
+bazel run //skills/info_gathering/evals/twenty_questions:twenty_questions_bin -- \
   --variant states
 
 # Haiku without thinking (faster/cheaper)
 ANTHROPIC_API_KEY=sk-ant-... \
-bazel run //nix/home/skills/info_gathering/evals/twenty_questions:twenty_questions_bin -- \
+bazel run //skills/info_gathering/evals/twenty_questions:twenty_questions_bin -- \
   --variant states --thinking-budget 0
 
 # Cluster Ollama (no API key required from env; retrieve from k8s secret)
 OLLAMA_KEY=$(kubectl get secret ollama-api-key -n claude-sandbox \
   -o jsonpath='{.data.api-key}' | base64 -d) \
-bazel run //nix/home/skills/info_gathering/evals/twenty_questions:twenty_questions_bin -- \
+bazel run //skills/info_gathering/evals/twenty_questions:twenty_questions_bin -- \
   --variant states \
   --model openai/gpt-oss-20b-128k \
   --base-url https://ollama.allegedly.works/v1 \

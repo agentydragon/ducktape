@@ -287,6 +287,7 @@ let
   skillFiles = import ../skills/skills.nix {
     inherit lib siderolabs-docs;
     prefix = ".claude";
+    repoRoot = ../../..;
   };
 
   # Parse "name@marketplace" plugin specs into { name, marketplace } attrsets

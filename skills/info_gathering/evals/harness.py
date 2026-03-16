@@ -23,12 +23,8 @@ from litellm.types.utils import Usage
 from pydantic import BaseModel
 
 from agent_core.tool_provider import ToolProvider
-from nix.home.skills.info_gathering.evals.litellm_tool_provider import (
-    ToolParam,
-    tool_params_from_provider,
-    tool_result_content,
-)
 from openai_utils.json_schema import openai_json_schema
+from skills.info_gathering.evals.litellm_tool_provider import ToolParam, tool_params_from_provider, tool_result_content
 from util.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
@@ -263,7 +259,7 @@ def save_results(*, name: str, log_entries: list[LogEntry], summary: RunSummary,
 DEFAULT_MODEL = "anthropic/claude-haiku-4-5-20251001"
 DEFAULT_THINKING = 5000
 
-_SKILL_RLOCATION = "_main/nix/home/skills/info_gathering/SKILL.md"
+_SKILL_RLOCATION = "_main/skills/info_gathering/SKILL.md"
 
 
 def load_skill() -> str:
