@@ -119,6 +119,22 @@ py_binary(
     deps = [":kustomize_build_all_lib"],
 )
 
+genrule(
+    name = "kustomize_build_results",
+    srcs = ["//cluster/k8s:all_kustomize_inputs"],
+    outs = ["kustomize_build_results.json"],
+    cmd = "$(location :kustomize_build_all) cluster/k8s $@",
+    tools = [":kustomize_build_all"],
+)
+
+genrule(
+    name = "flux_build_results",
+    srcs = ["//cluster/k8s:all_kustomize_inputs"],
+    outs = ["flux_build_results.yaml"],
+    cmd = "$(location @multitool//tools/flux) build kustomization flux-system --path cluster/k8s --kustomization-file cluster/k8s/flux-system/gotk-sync.yaml --dry-run --verbose > $@",
+    tools = ["@multitool//tools/flux"],
+)
+
 py_test(
     name = "test_k8s",
     srcs = ["test_k8s.py"],
@@ -139,6 +155,18 @@ py_test(
         ":dependencies",
         ":flux",
         "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_check_runner",
+    srcs = ["test_check_runner.py"],
+    imports = ["../.."],
+    deps = [
+        ":k8s",
+        ":kustomize",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -3,6 +3,7 @@
 # using providers pre-fetched at Bazel fetch time via the mirror dict in MODULE.bazel.
 
 load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
+load("//devinfra/testing:defs.bzl", "py_test")
 
 exports_files(["cilium-values.yaml"])
 
@@ -25,6 +26,28 @@ tf_providers_versions(
 
 # Terraform module linting (tflint) and validation (tofu validate), both hermetic.
 # Providers are served from the Bazel-cached mirror (see MODULE.bazel tf.download).
+py_test(
+    name = "test_helm_templates",
+    srcs = ["test_helm_templates.py"],
+    data = [
+        "cilium-values.yaml",
+        "@multitool//tools/helm",
+    ],
+    # TODO: Verify dockerNetwork is actually needed. The test calls `helm repo add`
+    # and `helm template` which need internet access. On RBE, workers have no network
+    # by default; dockerNetwork=bridge gives them access. Couldn't test empirically
+    # due to gitlab.arm.com outage — try removing and running on RBE to confirm.
+    exec_properties = {"dockerNetwork": "bridge"},
+    imports = ["../../../.."],
+    tags = ["requires-network"],
+    deps = [
+        "//cluster/validation:helm_templates",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 tf_module(
     name = "infrastructure",
     providers = [

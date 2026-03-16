@@ -275,6 +275,19 @@ repos:
   # terraform modules via :validate and :lint targets with hermetic providers.
   # See MODULE.bazel tf.download(mirror={...}) for provider configuration.
 
+  # TODO: Finish or remove enforce_bazel_tests (experimental, now in x/enforce_bazel_tests/).
+  # Needs language: system to import shared modules. See x/enforce_bazel_tests/ENFORCE_BAZEL_TESTS.md.
+  # - repo: local
+  #   hooks:
+  #     - id: enforce-bazel-tests
+  #       name: enforce bazel test cache
+  #       entry: x/enforce_bazel_tests/enforce_bazel_tests.py
+  #       language: python
+  #       additional_dependencies: [pygit2]
+  #       pass_filenames: false
+  #       always_run: true
+  #       stages: [pre-commit]
+
   # NOTE: The following custom validations are in bazel-precommit:
   # - pytest-main check (ensures test files have pytest_bazel.main() entry points)
   # - terraform-version-centralization (checks terraform modules don't define provider versions)
