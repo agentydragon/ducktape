@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pygit2
 
-from util.bazel.query import BazelLabel, run_query
+from util.bazel.query import file_to_label, run_query
 
 # Infrastructure files that affect too many targets — CI catches these.
 _INFRA_PATTERNS = (
@@ -74,29 +74,6 @@ def _get_staged_files(repo: pygit2.Repository) -> list[str]:
     return [entry.path for entry in repo.index]
 
 
-def _find_bazel_package(filepath: Path, repo_root: Path) -> Path | None:
-    """Find the Bazel package containing a file by walking up to find BUILD."""
-    current = repo_root / filepath.parent
-    while current >= repo_root:
-        if (current / "BUILD.bazel").exists() or (current / "BUILD").exists():
-            return current.relative_to(repo_root)
-        if current == repo_root:
-            break
-        current = current.parent
-    return None
-
-
-def _file_to_label(filepath: str, repo_root: Path) -> str | None:
-    """Convert a repo-relative filepath to a Bazel source file label."""
-    path = Path(filepath)
-    pkg = _find_bazel_package(path, repo_root)
-    if pkg is None:
-        return None
-    pkg_str = "" if pkg == Path() else str(pkg)
-    rel = path.relative_to(pkg) if pkg != Path() else path
-    return f"//{pkg_str}:{rel}"
-
-
 def _build_universe(repo_root: Path) -> list[str]:
     """Find top-level Bazel package dirs, excluding broken packages.
 
@@ -133,12 +110,12 @@ def main() -> int:
 
     # Convert staged files to candidate Bazel source file labels.
     candidates: list[str] = []
-    packages: set[str] = set()
+    packages: set[Path] = set()
     for f in staged:
-        label = _file_to_label(f, repo_root)
+        label = file_to_label(f, repo_root)
         if label is not None:
-            candidates.append(label)
-            packages.add(str(BazelLabel.parse(label).package))
+            candidates.append(str(label))
+            packages.add(label.package)
 
     if not candidates:
         return 0
@@ -148,7 +125,7 @@ def main() -> int:
     # Step 1: Validate labels — query Bazel for source files in affected packages.
     # Not all files in a Bazel package are source targets (e.g. .pre-commit-config.yaml
     # in the root package isn't in any BUILD srcs).
-    pkg_union = " + ".join(f"//{pkg}:*" for pkg in sorted(packages))
+    pkg_union = " + ".join(f"//{pkg}:*" for pkg in sorted(str(p) if p != Path() else "" for p in packages))
     validate_expr = f'kind("source file", {pkg_union})'
 
     try:

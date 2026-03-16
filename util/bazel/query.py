@@ -118,6 +118,28 @@ class BazelLabel:
         return self.package
 
 
+def find_bazel_package(filepath: Path, repo_root: Path) -> Path | None:
+    """Find the Bazel package containing a file by walking up to find BUILD."""
+    current = repo_root / filepath.parent
+    while current >= repo_root:
+        if (current / "BUILD.bazel").exists() or (current / "BUILD").exists():
+            return current.relative_to(repo_root)
+        if current == repo_root:
+            break
+        current = current.parent
+    return None
+
+
+def file_to_label(filepath: str, repo_root: Path) -> BazelLabel | None:
+    """Convert a repo-relative filepath to a Bazel source file label."""
+    path = Path(filepath)
+    pkg = find_bazel_package(path, repo_root)
+    if pkg is None:
+        return None
+    rel = path.relative_to(pkg) if pkg != Path() else path
+    return BazelLabel(repo="", package=pkg, name=str(rel))
+
+
 def run_query(
     expr: str,
     *,
