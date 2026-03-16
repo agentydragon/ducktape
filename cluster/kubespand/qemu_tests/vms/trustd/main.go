@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"net"
 	"os/exec"
 	"time"
@@ -88,11 +89,11 @@ func run() error {
 			time.Sleep(5 * time.Second)
 			conn, err := net.DialTimeout("tcp", "127.0.0.1:50000", 2*time.Second)
 			if err != nil {
-				initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: fmt.Sprintf("apid TLS port probe: %v", err)})
+				log.Printf("apid TLS port probe: %v", err)
 				continue
 			}
 			conn.Close()
-			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: "apid TLS port 50000 is listening!"})
+			log.Printf("apid TLS port 50000 is listening!")
 			return
 		}
 	}()
@@ -131,10 +132,7 @@ func monitorLoop(kubespandCmd *exec.Cmd) {
 			cosiState, _, err = kubespanlib.NewCOSIClient("/system/run/machined/machine.sock")
 			if err != nil {
 				if i%6 == 0 { // every 30s
-					initlib.EmitEvent(qemu_tests.Event{
-						Type:    qemu_tests.EventKubespand,
-						Message: fmt.Sprintf("waiting for COSI socket: %v", err),
-					})
+					log.Printf("waiting for COSI socket: %v", err)
 				}
 				continue
 			}
@@ -161,18 +159,18 @@ func monitorLoop(kubespandCmd *exec.Cmd) {
 
 		cancel()
 
-		// Emit events on state changes.
+		// Log state changes.
 		if hasOSRoot && !lastOSRoot {
-			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: "secrets.OSRoot created"})
+			log.Printf("secrets.OSRoot created")
 		}
 		if hasCertSAN && !lastCertSAN {
-			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: "secrets.CertSAN created"})
+			log.Printf("secrets.CertSAN created")
 		}
 		if hasAPI && !lastAPI {
-			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: "secrets.API created (trustd CSR flow complete!)"})
+			log.Printf("secrets.API created (trustd CSR flow complete!)")
 		}
 		if hasPeer && !lastPeerSeen {
-			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDiscovery, Message: "first peer discovered:" + peerSummary})
+			log.Printf("first peer discovered:%s", peerSummary)
 		}
 
 		lastOSRoot = hasOSRoot
@@ -182,22 +180,16 @@ func monitorLoop(kubespandCmd *exec.Cmd) {
 
 		// Periodic status dump every 30s.
 		if i%6 == 0 {
-			initlib.EmitEvent(qemu_tests.Event{
-				Type: qemu_tests.EventKubespand,
-				Message: fmt.Sprintf("CSR flow status: OSRoot=%v CertSAN=%v API=%v peers=%v%s",
-					hasOSRoot, hasCertSAN, hasAPI, hasPeer, peerSummary),
-			})
+			log.Printf("CSR flow status: OSRoot=%v CertSAN=%v API=%v peers=%v%s",
+				hasOSRoot, hasCertSAN, hasAPI, hasPeer, peerSummary)
 		}
 
 		// At 60s, 120s, 180s: dump detailed diagnostics.
 		elapsed := time.Duration(i+1) * 5 * time.Second
 		if elapsed == 60*time.Second || elapsed == 120*time.Second || elapsed == 180*time.Second {
-			initlib.EmitEvent(qemu_tests.Event{
-				Type:    qemu_tests.EventKubespand,
-				Message: fmt.Sprintf("=== DIAGNOSTICS DUMP at %s ===", elapsed),
-			})
+			log.Printf("=== DIAGNOSTICS DUMP at %s ===", elapsed)
 			kubespanlib.DumpDiagnostics()
-			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: "--- kubespand.log tail ---"})
+			log.Printf("--- kubespand.log tail ---")
 			initlib.DumpLog("/tmp/kubespand.log")
 		}
 	}

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"log"
 	"strconv"
 	"strings"
 
@@ -25,7 +26,7 @@ func main() {
 		initlib.Poweroff()
 	}
 
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventBoot, Message: "nft_smoke mode, levels=" + levels})
+	log.Printf("nft_smoke mode, levels=%s", levels)
 
 	// Enable EBUSY retry for all nftables operations (QEMU TCG is slow).
 	ebusyRetry = true

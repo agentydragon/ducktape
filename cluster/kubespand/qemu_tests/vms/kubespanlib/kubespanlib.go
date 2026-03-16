@@ -3,6 +3,7 @@ package kubespanlib
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 
@@ -44,7 +45,7 @@ func LoadModules() {
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "modprobe wireguard failed", Error: err.Error()})
 	}
 	initlib.RunSilent("modprobe", "virtio_net")
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventModules, Message: "all modules loaded"})
+	log.Printf("all modules loaded")
 }
 
 // ConfigureNetwork sets up eth0 with the given IP and enables ip_forward + loose rp_filter.
@@ -103,7 +104,7 @@ func StartKubespand(cfg KubespandConfig) *exec.Cmd {
 		initlib.Poweroff()
 	}
 	os.WriteFile("/etc/kubespan/agent.yaml", configData, 0o644)
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: "config written"})
+	log.Printf("kubespand config written")
 
 	logFile, _ := os.Create("/tmp/kubespand.log")
 	cmd := exec.Command("/kubespand", "-config", "/etc/kubespan/agent.yaml", "-debug")
@@ -113,6 +114,6 @@ func StartKubespand(cfg KubespandConfig) *exec.Cmd {
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "kubespand failed to start", Error: err.Error()})
 		initlib.Poweroff()
 	}
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: fmt.Sprintf("started pid=%d", cmd.Process.Pid)})
+	log.Printf("kubespand started pid=%d", cmd.Process.Pid)
 	return cmd
 }

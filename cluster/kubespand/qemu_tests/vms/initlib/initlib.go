@@ -4,6 +4,7 @@ package initlib
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -73,7 +74,7 @@ func LoadNftablesModules() {
 	if err := RunSilent("modprobe", "nf_tables"); err != nil {
 		EmitEvent(qemu.Event{Type: qemu.EventError, Message: "modprobe nf_tables failed", Error: err.Error()})
 	}
-	EmitEvent(qemu.Event{Type: qemu.EventModules, Message: fmt.Sprintf("nftables modules loaded, kver=%s", kver)})
+	log.Printf("nftables modules loaded, kver=%s", kver)
 }
 
 // HasInterface checks if a network interface appears within the given timeout.

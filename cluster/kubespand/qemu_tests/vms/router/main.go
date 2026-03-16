@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/google/nftables"
@@ -27,7 +28,7 @@ func main() {
 		initlib.Poweroff()
 	}
 
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventBoot, Message: fmt.Sprintf("router mode, internet=%s, lan=%s", internetIP, lanIP)})
+	log.Printf("router mode, internet=%s, lan=%s", internetIP, lanIP)
 
 	// Load nftables modules (common to all modes except discovery).
 	initlib.LoadNftablesModules()
@@ -85,7 +86,7 @@ func main() {
 		initlib.Poweroff()
 	}
 
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventNetwork, Message: fmt.Sprintf("router ready, internet=%s, lan=%s", internetIP, lanIP)})
+	log.Printf("router ready, internet=%s, lan=%s", internetIP, lanIP)
 
 	// mgmt NIC (QEMU user-mode) for port forwarding to the test host.
 	initlib.ConfigureMgmtNIC(false)

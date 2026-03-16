@@ -7,6 +7,7 @@ package main
 import (
 	"encoding/base64"
 	"fmt"
+	"log"
 	"os"
 
 	qemu_tests "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
@@ -37,7 +38,7 @@ func main() {
 		initlib.Poweroff()
 	}
 
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventBoot, Message: fmt.Sprintf("kubespan mode, role=%s, topology=%s", initlib.Role, topology)})
+	log.Printf("kubespan mode, role=%s, topology=%s", initlib.Role, topology)
 
 	// Assign addresses based on role and topology.
 	var linkIP, peerSubnet string
@@ -91,7 +92,7 @@ func main() {
 	// mgmt NIC (QEMU user-mode) for port forwarding to the test host.
 	initlib.ConfigureMgmtNIC(false)
 
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventNetwork, Message: fmt.Sprintf("link=%s/24, topology=%s", linkIP, topology)})
+	log.Printf("network ready: link=%s/24, topology=%s", linkIP, topology)
 
 	cfg := kubespanlib.KubespandConfig{
 		ClusterID:       clusterID,

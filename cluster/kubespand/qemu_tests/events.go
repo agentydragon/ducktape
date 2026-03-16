@@ -6,14 +6,9 @@ package qemu_tests
 type EventType string
 
 const (
-	EventBoot      EventType = "boot"
-	EventModules   EventType = "modules"
-	EventNetwork   EventType = "network"
-	EventKubespand EventType = "kubespand"
-	EventDiscovery EventType = "discovery"
-	EventProbe     EventType = "probe"
-	EventError     EventType = "error"
-	EventDone      EventType = "done"
+	EventProbe EventType = "probe"
+	EventError EventType = "error"
+	EventDone  EventType = "done"
 	// EventReady indicates the VM has started all services (kubespand, TCP
 	// listener, probe server) and is ready for test host commands.
 	EventReady EventType = "ready"

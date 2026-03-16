@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 
 	qemu_tests "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 	"github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/initlib"
@@ -29,7 +30,7 @@ func main() {
 		initlib.Poweroff()
 	}
 
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventBoot, Message: fmt.Sprintf("doublenat mode, role=%s", initlib.Role)})
+	log.Printf("doublenat mode, role=%s", initlib.Role)
 
 	var linkIP, defaultGW string
 
@@ -57,7 +58,7 @@ func main() {
 		initlib.MustRun("ip", "route", "add", "default", "via", defaultGW)
 	}
 
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventNetwork, Message: fmt.Sprintf("link=%s/24, gw=%s", linkIP, defaultGW)})
+	log.Printf("network ready: link=%s/24, gw=%s", linkIP, defaultGW)
 
 	// Basic connectivity test: can we reach the discovery service?
 	initlib.Run("ping", "-c", "1", "-W", "3", "192.168.50.254")

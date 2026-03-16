@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -26,7 +27,7 @@ func main() {
 		initlib.Poweroff()
 	}
 
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventBoot, Message: fmt.Sprintf("discovery mode, ip=%s", discoveryIP)})
+	log.Printf("discovery mode, ip=%s", discoveryIP)
 
 	initlib.RunSilent("modprobe", "virtio_net")
 
@@ -47,7 +48,7 @@ func main() {
 	// Optional — only present when the test adds a hostfwd NIC.
 	initlib.ConfigureMgmtNIC(false)
 
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventNetwork, Message: fmt.Sprintf("network ready, ip=%s", discoveryIP)})
+	log.Printf("network ready, ip=%s", discoveryIP)
 
 	// Start discovery service.
 	logFile, _ := os.Create("/tmp/discovery-service.log")
@@ -58,7 +59,7 @@ func main() {
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "discovery-service failed to start", Error: err.Error()})
 		initlib.Poweroff()
 	}
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: fmt.Sprintf("discovery-service started pid=%d", discCmd.Process.Pid)})
+	log.Printf("discovery-service started pid=%d", discCmd.Process.Pid)
 
 	// Poll until ready.
 	for i := 0; i < 60; i++ {
