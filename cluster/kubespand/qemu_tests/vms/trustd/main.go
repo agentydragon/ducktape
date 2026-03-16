@@ -1,13 +1,24 @@
 // Binary trustd is the PID-1 init for the trustd CSR flow test VM.
-// Starts kubespand (with ca_crt + token for trustd) and apid, then idles.
-// The test observes the result from outside via the Talos API on port 50000.
+// Starts kubespand (with ca_crt + token for trustd CSR flow) and monitors
+// its progress via COSI state, emitting diagnostic events.
+//
+// kubespand directly serves mTLS on :50000 once the APIController produces
+// secrets.API — no separate apid process is needed.
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
-	"os"
+	"net"
 	"os/exec"
+	"time"
+
+	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/safe"
+	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
+	"github.com/siderolabs/talos/pkg/machinery/resources/secrets"
 
 	qemu_tests "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 	"github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/initlib"
@@ -49,7 +60,7 @@ func run() error {
 	// eth0: L2 segment (mcast NIC) for KubeSpan mesh.
 	kubespanlib.ConfigureNetwork("192.168.50.1", "24")
 
-	// eth1: mgmt NIC (QEMU user-mode) for port forwarding apid to the test host.
+	// eth1: mgmt NIC (QEMU user-mode) for port forwarding to the test host.
 	initlib.WaitForInterface("eth1")
 	initlib.MustRun("ip", "link", "set", "eth1", "up")
 	initlib.MustRun("ip", "addr", "add", "10.0.2.15/24", "dev", "eth1")
@@ -64,17 +75,135 @@ func run() error {
 		CACrt:           string(caCrtPEM),
 		Token:           token,
 	}
-	kubespanlib.StartKubespand(cfg)
+	kubespandCmd := kubespanlib.StartKubespand(cfg)
 
-	// Start apid — serves mTLS on :50000 once secrets.API appears in COSI state.
-	logFile, _ := os.Create("/tmp/apid.log")
-	apidCmd := exec.Command("/apid")
-	apidCmd.Stdout = logFile
-	apidCmd.Stderr = logFile
-	if err := apidCmd.Start(); err != nil {
-		return fmt.Errorf("apid failed to start: %w", err)
-	}
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: fmt.Sprintf("apid started pid=%d", apidCmd.Process.Pid)})
+	// Monitor kubespand process and COSI state in the background.
+	go monitorLoop(kubespandCmd)
+
+	// Probe kubespand's TLS port to detect when it starts serving mTLS.
+	go func() {
+		for {
+			time.Sleep(5 * time.Second)
+			conn, err := net.DialTimeout("tcp", "127.0.0.1:50000", 2*time.Second)
+			if err != nil {
+				initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: fmt.Sprintf("TLS port probe: %v", err)})
+				continue
+			}
+			conn.Close()
+			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: "kubespand TLS port 50000 is listening!"})
+			return
+		}
+	}()
 
 	return nil
+}
+
+// monitorLoop periodically checks process health, queries COSI state for the
+// trustd CSR flow resources, and dumps diagnostic logs. Emits events for each
+// significant state change.
+func monitorLoop(kubespandCmd *exec.Cmd) {
+	var (
+		cosiState    state.State
+		lastOSRoot   bool
+		lastCertSAN  bool
+		lastAPI      bool
+		lastPeerSeen bool
+	)
+
+	for i := 0; ; i++ {
+		time.Sleep(5 * time.Second)
+
+		// Check process health.
+		if kubespandCmd.ProcessState != nil {
+			initlib.EmitEvent(qemu_tests.Event{
+				Type:    qemu_tests.EventError,
+				Message: fmt.Sprintf("kubespand exited: %s", kubespandCmd.ProcessState),
+			})
+			initlib.DumpLog("/tmp/kubespand.log")
+			break
+		}
+
+		// Connect to COSI socket (lazily).
+		if cosiState == nil {
+			var err error
+			cosiState, _, err = kubespanlib.NewCOSIClient("/system/run/machined/machine.sock")
+			if err != nil {
+				if i%6 == 0 { // every 30s
+					initlib.EmitEvent(qemu_tests.Event{
+						Type:    qemu_tests.EventKubespand,
+						Message: fmt.Sprintf("waiting for COSI socket: %v", err),
+					})
+				}
+				continue
+			}
+		}
+
+		// Probe each resource in the CSR flow chain.
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+
+		hasOSRoot := resourceExists(ctx, cosiState, secrets.NamespaceName, secrets.OSRootType, secrets.OSRootID)
+		hasCertSAN := resourceExists(ctx, cosiState, secrets.NamespaceName, secrets.CertSANType, secrets.CertSANAPIID)
+		hasAPI := resourceExists(ctx, cosiState, secrets.NamespaceName, secrets.APIType, secrets.APIID)
+
+		// Check peer discovery.
+		var peerSummary string
+		hasPeer := false
+		if list, err := safe.StateListAll[*kubespan.PeerSpec](ctx, cosiState); err == nil {
+			for it := list.Iterator(); it.Next(); {
+				ps := it.Value()
+				hasPeer = true
+				peerSummary += fmt.Sprintf(" [%s addr=%s endpoints=%v]",
+					ps.TypedSpec().Label, ps.TypedSpec().Address, ps.TypedSpec().Endpoints)
+			}
+		}
+
+		cancel()
+
+		// Emit events on state changes.
+		if hasOSRoot && !lastOSRoot {
+			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: "secrets.OSRoot created"})
+		}
+		if hasCertSAN && !lastCertSAN {
+			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: "secrets.CertSAN created"})
+		}
+		if hasAPI && !lastAPI {
+			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: "secrets.API created (trustd CSR flow complete!)"})
+		}
+		if hasPeer && !lastPeerSeen {
+			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDiscovery, Message: "first peer discovered:" + peerSummary})
+		}
+
+		lastOSRoot = hasOSRoot
+		lastCertSAN = hasCertSAN
+		lastAPI = hasAPI
+		lastPeerSeen = hasPeer
+
+		// Periodic status dump every 30s.
+		if i%6 == 0 {
+			initlib.EmitEvent(qemu_tests.Event{
+				Type: qemu_tests.EventKubespand,
+				Message: fmt.Sprintf("CSR flow status: OSRoot=%v CertSAN=%v API=%v peers=%v%s",
+					hasOSRoot, hasCertSAN, hasAPI, hasPeer, peerSummary),
+			})
+		}
+
+		// At 60s, 120s, 180s: dump detailed diagnostics.
+		elapsed := time.Duration(i+1) * 5 * time.Second
+		if elapsed == 60*time.Second || elapsed == 120*time.Second || elapsed == 180*time.Second {
+			initlib.EmitEvent(qemu_tests.Event{
+				Type:    qemu_tests.EventKubespand,
+				Message: fmt.Sprintf("=== DIAGNOSTICS DUMP at %s ===", elapsed),
+			})
+			kubespanlib.DumpDiagnostics()
+			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: "--- kubespand.log tail ---"})
+			initlib.DumpLog("/tmp/kubespand.log")
+		}
+	}
+}
+
+// resourceExists checks if a single COSI resource exists by type and ID.
+func resourceExists(ctx context.Context, st state.State, ns resource.Namespace, typ resource.Type, id resource.ID) bool {
+	md := resource.NewMetadata(ns, typ, id, resource.VersionUndefined)
+	_, err := st.Get(ctx, md)
+	return err == nil
 }

@@ -178,6 +178,17 @@ func run(configPath string, logger *zap.Logger) error {
 		apiErrCh <- apiServer.Run(ctx)
 	}()
 
+	// Start the TLS API server (mTLS on port 50000) if trustd CSR flow is enabled.
+	// This replaces apid — kubespand directly serves the Talos API with mTLS once
+	// the APIController produces secrets.API via the trustd CSR flow.
+	tlsErrCh := make(chan error, 1)
+	if cfg.Api.CACrt != "" {
+		tlsServer := api.NewTLSServer(st, fmt.Sprintf(":%d", constants.ApidPort), logger)
+		go func() {
+			tlsErrCh <- tlsServer.Run(ctx)
+		}()
+	}
+
 	// Start the COSI runtime in a goroutine.
 	runtimeErrCh := make(chan error, 1)
 	go func() {
@@ -200,6 +211,11 @@ func run(configPath string, logger *zap.Logger) error {
 	case err := <-apiErrCh:
 		if err != nil {
 			return fmt.Errorf("API server: %w", err)
+		}
+		return nil
+	case err := <-tlsErrCh:
+		if err != nil {
+			return fmt.Errorf("TLS API server: %w", err)
 		}
 		return nil
 	case <-ctx.Done():

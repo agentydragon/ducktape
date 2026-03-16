@@ -2,6 +2,7 @@ package kubespan_test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -74,24 +75,65 @@ func TestTrustdCSRFlow(t *testing.T) {
 	allVMs := []*h.VM{vmCP, vmKubespand, vmDisc}
 	h.CleanupVMs(t, allVMs, out)
 
+	// On failure, dump all available diagnostics before cleanup kills the VMs.
+	var talosConfigPath string
+	t.Cleanup(func() {
+		if !t.Failed() {
+			return
+		}
+		t.Log("=== FAILURE DIAGNOSTICS ===")
+
+		// kubespand VM events (CSR flow status, process health).
+		t.Log("--- kubespand VM events ---")
+		for _, evt := range vmKubespand.GetEvents() {
+			t.Logf("  [%s] %s (error=%s)", evt.Type, evt.Message, evt.Error)
+		}
+
+		// kubespand VM raw log (stderr from diagnostics dumps inside the VM).
+		rawLog := vmKubespand.GetRawLog()
+		h.SaveArtifact(t, out, "trustd-kubespand-raw.log", rawLog)
+		lines := strings.Split(rawLog, "\n")
+		start := len(lines) - 300
+		if start < 0 {
+			start = 0
+		}
+		t.Logf("--- kubespand VM raw log (last %d of %d lines) ---", len(lines)-start, len(lines))
+		for _, line := range lines[start:] {
+			if line != "" {
+				t.Log(line)
+			}
+		}
+
+		// Talos CP diagnostics (if API was available).
+		if talosConfigPath != "" {
+			t.Log("--- Talos CP KubeSpan diagnostics (post-failure) ---")
+			client := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
+			defer client.Close()
+			h.DumpKubeSpanDiagnostics(t, client, "192.168.50.2")
+		}
+
+		t.Log("=== END FAILURE DIAGNOSTICS ===")
+	})
+
 	// Wait for discovery service.
 	h.RequireEvent(t, vmDisc, h.EventDone, 120*time.Second)
 	sw.Lap("discovery VM ready")
 
 	// Wait for Talos CP API (boot takes ~60-120s on TCG).
-	talosClient := h.NewTalosClient(t, h.RunfilePath(t, h.TalosConfig), fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
+	talosConfigPath = h.RunfilePath(t, h.TalosConfig)
+	talosClient := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
 	defer talosClient.Close()
 	h.WaitForTalosAPI(t, talosClient, "192.168.50.2", 180*time.Second)
 	sw.Lap("Talos CP API ready")
 
 	// Dump Talos CP's KubeSpan state before waiting for kubespand apid.
 	h.DumpKubeSpanDiagnostics(t, talosClient, "192.168.50.2")
-	sw.Lap("initial diagnostics")
+	sw.Lap("initial CP diagnostics")
 
 	// Connect to kubespand's apid — success proves the full chain:
 	// kubespand → OSRootController → APICertSANsController → APIController
 	// → trustd CSR → secrets.API → apid serves mTLS on :50000.
-	kubespandClient := h.NewTalosClient(t, h.RunfilePath(t, h.TalosConfig), fmt.Sprintf("127.0.0.1:%d", kubespandAPIPort))
+	kubespandClient := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", kubespandAPIPort))
 	defer kubespandClient.Close()
 	h.WaitForTalosAPI(t, kubespandClient, "192.168.50.1", 300*time.Second)
 	sw.Lap("kubespand apid ready (trustd CSR flow succeeded)")
