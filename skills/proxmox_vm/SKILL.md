@@ -10,7 +10,7 @@ Interact with VMs on Proxmox via QEMU monitor. Actions execute sequentially in c
 ## Usage
 
 ```bash
-~/.claude/skills/proxmox_vm/vm_interact.py <vmid> [actions...]
+vm-interact <vmid> [actions...]
 ```
 
 ## Actions
@@ -29,22 +29,22 @@ Interact with VMs on Proxmox via QEMU monitor. Actions execute sequentially in c
 
 ```bash
 # Take screenshot
-./vm_interact.py 110 --screenshot
+vm-interact 110 --screenshot
 
 # Type command and press Enter
-./vm_interact.py 110 --type "ip addr" --enter
+vm-interact 110 --type "ip addr" --enter
 
 # Log in and run command
-./vm_interact.py 110 --type "root" --enter --sleep 0.5 --type "password" --enter
+vm-interact 110 --type "root" --enter --sleep 0.5 --type "password" --enter
 
 # Send Ctrl+C then screenshot
-./vm_interact.py 110 --sendkey ctrl-c --screenshot
+vm-interact 110 --sendkey ctrl-c --screenshot
 
 # Get network info
-./vm_interact.py 110 --info
+vm-interact 110 --info
 
 # From stdin
-echo -e "type ip addr\nenter\nsleep 1\nscreenshot" | ./vm_interact.py 110 --stdin
+echo -e "type ip addr\nenter\nsleep 1\nscreenshot" | vm-interact 110 --stdin
 ```
 
 ## QEMU Key Names

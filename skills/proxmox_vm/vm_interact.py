@@ -1,18 +1,6 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["pillow", "typer", "platformdirs"]
-# ///
 """Interact with Proxmox VMs via QEMU monitor.
 
 Run actions sequentially on a VM. Actions are executed in order.
-
-Examples:
-    ./vm_interact.py 110 --screenshot
-    ./vm_interact.py 110 --type "ip addr" --enter --screenshot
-    ./vm_interact.py 110 --sendkey ctrl-c --screenshot
-    ./vm_interact.py 110 --info
-    echo -e "type ip addr\\nenter\\nscreenshot" | ./vm_interact.py 110 --stdin
 """
 
 import json
@@ -27,6 +15,8 @@ from typing import Annotated
 import platformdirs
 import typer
 from PIL import Image
+
+app = typer.Typer(help="Interact with Proxmox VMs via QEMU monitor.")
 
 PROXMOX_HOST = "root@atlas"
 PROXMOX_NODE = "atlas"
@@ -139,7 +129,7 @@ def get_cache_dir(vmid: int) -> Path:
     return cache_dir
 
 
-def ssh_cmd(cmd: str) -> subprocess.CompletedProcess:
+def ssh_cmd(cmd: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["ssh", PROXMOX_HOST, cmd], check=True, capture_output=True, text=True)
 
 
@@ -257,6 +247,7 @@ def run_stdin_commands(vmid: int, delay: float) -> None:
             typer.echo(f"Unknown command: {cmd}", err=True)
 
 
+@app.command()
 def main(
     vmid: Annotated[int, typer.Argument(help="VM ID")],
     screenshot: Annotated[list[bool] | None, typer.Option("--screenshot", "-s", help="Take screenshot")] = None,
@@ -331,4 +322,4 @@ def main(
 
 
 if __name__ == "__main__":
-    typer.run(main)
+    app()

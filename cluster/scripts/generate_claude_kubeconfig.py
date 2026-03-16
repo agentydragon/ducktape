@@ -14,7 +14,7 @@ from pathlib import Path
 
 from kubernetes import client, config
 
-from devinfra.claude.k8s_secrets_setup import load_repo_config
+from devinfra.claude.hook_config import HookConfig
 from util.bazel.workspace import get_build_workspace_directory
 
 logging.basicConfig(format="[%(asctime)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.INFO)
@@ -24,9 +24,11 @@ SA_TOKEN_SECRET_NAME = "claude-code-web-token"
 
 
 def generate(root: Path) -> None:
-    hook_config = load_repo_config(root)
+    hook_config = HookConfig.load_from_repo(root)
     if not hook_config:
         raise SystemExit(f"Config file not found under {root}")
+    if not hook_config.k8s:
+        raise SystemExit("No k8s config found in hook config")
 
     kubeconfig_path = os.environ.get("KUBECONFIG")
     if not kubeconfig_path:

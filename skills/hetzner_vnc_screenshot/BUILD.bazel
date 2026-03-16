@@ -1,0 +1,23 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "vnc_screenshot",
+    srcs = ["vnc_screenshot.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//asyncvnc",
+        "@pypi//hcloud",
+        "@pypi//numpy",
+        "@pypi//pillow",
+        "@pypi//typer_slim",
+        "@pypi//websockets",
+    ],
+)
+
+py_binary(
+    name = "vnc_screenshot_bin",
+    imports = ["../.."],
+    main_module = "skills.hetzner_vnc_screenshot.vnc_screenshot",
+    deps = [":vnc_screenshot"],
+)

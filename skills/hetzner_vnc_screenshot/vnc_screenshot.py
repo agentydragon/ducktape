@@ -1,17 +1,4 @@
-#!/usr/bin/env -S uv run
-# /// script
-# requires-python = ">=3.11"
-# dependencies = [
-#     "asyncvnc>=1.3.0",
-#     "pillow>=10.0.0",
-#     "typer>=0.9.0",
-#     "hcloud>=2.0.0",
-#     "websockets>=12.0",
-#     "numpy>=1.26.0",
-# ]
-# ///
-"""
-Hetzner Cloud VNC Console Screenshot Tool
+"""Hetzner Cloud VNC Console Screenshot Tool.
 
 Connects to Hetzner's WebSocket-based VNC console and captures a screenshot.
 
@@ -76,7 +63,7 @@ class WebSocketStreamAdapter:
         idx = self._buffer.index(b"\n") + 1
         result = bytes(self._buffer[:idx])
         del self._buffer[:idx]
-        logger.debug(f"readline() returning: {result}")
+        logger.debug(f"readline() returning: {result!r}")
         return result
 
     async def read(self, n: int) -> bytes:
@@ -145,11 +132,16 @@ async def vnc_screenshot(wss_url: str, password: str, output_path: str = "screen
     logger.debug(f"Connecting to {wss_url[:60]}...")
 
     logger.debug("Opening websocket connection...")
-    async with websockets.connect(wss_url, subprotocols=["binary"]) as ws:
+    async with websockets.connect(wss_url, subprotocols=[websockets.Subprotocol("binary")]) as ws:
         logger.debug("Websocket connected, creating adapter...")
         adapter = WebSocketStreamAdapter(ws)
         logger.debug("Creating asyncvnc Client...")
-        client = await asyncvnc.Client.create(reader=adapter, writer=adapter, password=password)
+        # asyncvnc types hint StreamReader/StreamWriter but only uses readline/read/write/drain
+        client = await asyncvnc.Client.create(
+            reader=adapter,  # type: ignore[arg-type]
+            writer=adapter,  # type: ignore[arg-type]
+            password=password,
+        )
 
         logger.info(f"Connected. Screen: {client.video.width}x{client.video.height}")
         logger.debug("Taking screenshot...")

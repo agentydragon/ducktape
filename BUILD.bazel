@@ -170,6 +170,8 @@ py_package(
         "mcp_infra",
         "mcp_utils",
         "openai_utils",
+        "skills.hetzner_vnc_screenshot",
+        "skills.proxmox_vm",
         "util",
         "util.bazel",
     ],
@@ -183,6 +185,8 @@ py_package(
         # CLI tool entry points
         "//difftree:cli",
         "//git_commit_ai:git_commit_ai_lib",
+        "//skills/hetzner_vnc_screenshot:vnc_screenshot",
+        "//skills/proxmox_vm:vm_interact",
     ],
 )
 
@@ -196,6 +200,8 @@ py_wheel(
             "gmail-archiver = gmail_archiver.main:app",
             "claude-hook = devinfra.claude.hook_dispatch:main",
             "claude-statusline = devinfra.claude.statusline:main",
+            "hetzner-vnc-screenshot = skills.hetzner_vnc_screenshot.vnc_screenshot:app",
+            "vm-interact = skills.proxmox_vm.vm_interact:app",
         ],
     },
     python_requires = ">=3.13",
@@ -239,6 +245,12 @@ py_wheel(
         "psutil",
         "pyjwt",
         "supervisor",
+        # skills deps
+        "asyncvnc>=1.3.0",
+        "hcloud>=2.0.0",
+        "numpy",
+        "pillow>=10.0.0",
+        "websockets>=15.0",
     ],
     version = "0.1.0",
     deps = [":ducktape_pkg"],

@@ -55,7 +55,7 @@ def _model_entries(tag: str, ctx_variants: list[tuple[str, int | None]]) -> Iter
 
 
 def generate() -> str:
-    model_list = []
+    model_list: list[dict] = []
     for tag, ctx_variants in _MODELS:
         model_list.extend(_model_entries(tag, ctx_variants))
 

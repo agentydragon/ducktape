@@ -1,0 +1,20 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "vm_interact",
+    srcs = ["vm_interact.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pillow",
+        "@pypi//platformdirs",
+        "@pypi//typer_slim",
+    ],
+)
+
+py_binary(
+    name = "vm_interact_bin",
+    imports = ["../.."],
+    main_module = "skills.proxmox_vm.vm_interact",
+    deps = [":vm_interact"],
+)
