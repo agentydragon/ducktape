@@ -1,0 +1,95 @@
+# gazelle:ignore
+
+load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/testing:defs.bzl", "py_test")
+
+filegroup(
+    name = "all_yaml",
+    srcs = glob(["**/*.yaml"]),
+    visibility = ["//cluster:__subpackages__"],
+)
+
+filegroup(
+    name = "all_kustomize_inputs",
+    srcs = glob(
+        ["**"],
+        exclude = [
+            "**/BUILD.bazel",
+            "**/__pycache__/**",
+            "**/*.pyc",
+            # Exclude test files and conftest from the kustomize inputs
+            "conftest.py",
+            "test_*.py",
+        ],
+    ),
+    visibility = ["//cluster:__subpackages__"],
+)
+
+# Shared fixtures for integration tests (auto-discovered by pytest)
+py_library(
+    name = "conftest",
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+    deps = [
+        "//cluster/validation:cluster",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+    ],
+)
+
+# ============================================================================
+# Integration tests — validate real cluster/k8s/ config
+#
+# Pure-analysis tests use :all_yaml as data deps (sandboxed).
+# Kustomize-dependent tests consume //cluster/validation:kustomize_build_results.
+# ============================================================================
+
+py_test(
+    name = "test_cluster_validation",
+    srcs = ["test_cluster_validation.py"],
+    data = [":all_yaml"],
+    imports = ["../.."],
+    deps = [
+        ":conftest",
+        "//cluster/validation:cluster",
+        "//cluster/validation:dependencies",
+        "//cluster/validation:health_checks",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_kustomize",
+    srcs = ["test_kustomize.py"],
+    data = [
+        ":all_yaml",
+        "//cluster/validation:kustomize_build_results",
+    ],
+    imports = ["../.."],
+    deps = [
+        "//cluster/validation:crd_layering",
+        "//cluster/validation:kustomize",
+        "//util/bazel:runfiles",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_flux_build",
+    srcs = ["test_flux_build.py"],
+    data = [
+        ":all_yaml",
+        "//cluster/validation:flux_build_results",
+    ],
+    imports = ["../.."],
+    deps = [
+        ":conftest",
+        "//cluster/validation:k8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

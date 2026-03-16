@@ -22,17 +22,17 @@ def _get_values_files() -> list[Path]:
     return [get_required_path(rlocation) for rlocation in _CILIUM_VALUES_RLOCATIONS]
 
 
-def validate_helm_template(values_file: Path) -> tuple[bool, str]:
-    """Validate a Helm chart can render with the given values file."""
-    result = subprocess.run(
+def validate_helm_template(values_file: Path) -> None:
+    """Validate a Helm chart can render with the given values file.
+
+    Raises subprocess.CalledProcessError on failure.
+    """
+    subprocess.run(
         [_helm_bin(), "template", "test-release", "cilium/cilium", "-f", values_file, "--dry-run"],
-        check=False,
+        check=True,
         capture_output=True,
         text=True,
     )
-    if result.returncode == 0:
-        return True, ""
-    return False, result.stderr.strip()
 
 
 def ensure_cilium_repo() -> bool:
@@ -45,12 +45,12 @@ def ensure_cilium_repo() -> bool:
         [_helm_bin(), "repo", "add", "cilium", "https://helm.cilium.io/"], check=False, capture_output=True, text=True
     )
     if result.returncode != 0:
-        print(f"❌ Failed to add Cilium Helm repo: {result.stderr}")
+        print(f"Failed to add Cilium Helm repo: {result.stderr}")
         return False
 
     result = subprocess.run([_helm_bin(), "repo", "update"], check=False, capture_output=True, text=True)
     if result.returncode != 0:
-        print(f"⚠️  Failed to update Helm repos: {result.stderr}")
+        print(f"Failed to update Helm repos: {result.stderr}")
 
     return True
 
@@ -66,8 +66,9 @@ def validate_helm_templates() -> list[str]:
 
     errors = []
     for values_file in values_files:
-        success, error = validate_helm_template(values_file)
-        if not success:
-            errors.append(f"Helm template failed for {values_file}: {error}")
+        try:
+            validate_helm_template(values_file)
+        except subprocess.CalledProcessError as e:
+            errors.append(f"Helm template failed for {values_file}: {e.stderr}")
 
     return errors

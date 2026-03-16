@@ -1,15 +1,13 @@
-"""Kustomize domain: models, parsing, and build execution."""
+"""Kustomize domain: models and parsing."""
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 
 import yaml
 from pydantic import BaseModel
 
-from cluster.scripts.validate_cluster.k8s import K8sResource, parse_k8s_resources
-from util.bazel.runfiles import get_required_path
+from cluster.validation.k8s import K8sResource
 
 
 class KustomizeFile(BaseModel):
@@ -21,11 +19,9 @@ class KustomizeFile(BaseModel):
 
 
 class KustomizeBuildResult(BaseModel):
-    """Result of running kustomize build on a directory."""
+    """Successful kustomize build output for a single kustomization directory."""
 
     kustomization_path: Path
-    success: bool
-    error: str = ""
     resources: list[K8sResource] = []
 
 
@@ -57,24 +53,3 @@ def parse_kustomize_file(kust_file: Path) -> KustomizeFile | None:
                 patches.append(patch_path)
 
         return KustomizeFile(path=kust_file, resources=resources, patches=patches)
-
-
-async def run_kustomize_build(kustomization_path: Path) -> KustomizeBuildResult:
-    """Run kustomize build and parse the output."""
-    kustomize_bin = get_required_path("multitool/tools/kustomize/kustomize")
-    proc = await asyncio.create_subprocess_exec(
-        kustomize_bin,
-        "build",
-        kustomization_path.parent,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, stderr = await proc.communicate()
-
-    if proc.returncode != 0:
-        return KustomizeBuildResult(kustomization_path=kustomization_path, success=False, error=stderr.decode())
-
-    output = stdout.decode()
-    resources = parse_k8s_resources(yaml.safe_load_all(output))
-
-    return KustomizeBuildResult(kustomization_path=kustomization_path, success=True, resources=resources)

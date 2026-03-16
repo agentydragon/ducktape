@@ -6,9 +6,9 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from cluster.scripts.validate_cluster.flux import FluxKustomization, parse_flux_kustomization
-from cluster.scripts.validate_cluster.k8s import K8sResource, parse_k8s_resource_file
-from cluster.scripts.validate_cluster.kustomize import KustomizeBuildResult, KustomizeFile, parse_kustomize_file
+from cluster.validation.flux import FluxKustomization, parse_flux_kustomization
+from cluster.validation.k8s import K8sResource, parse_k8s_resource_file
+from cluster.validation.kustomize import KustomizeBuildResult, KustomizeFile, parse_kustomize_file
 
 # Flux kustomization spec.path values are relative to the git repo root.
 # k8s_dir sits at this subpath within the repo.

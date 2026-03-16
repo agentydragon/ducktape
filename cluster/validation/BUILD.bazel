@@ -1,0 +1,217 @@
+# gazelle:ignore
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/testing:defs.bzl", "py_test")
+
+package(default_visibility = [
+    "//cluster:__subpackages__",
+    "//devinfra/precommit:__pkg__",
+])
+
+py_library(
+    name = "k8s",
+    srcs = ["k8s.py"],
+    imports = ["../.."],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "kustomize",
+    srcs = ["kustomize.py"],
+    imports = ["../.."],
+    deps = [
+        ":k8s",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "flux",
+    srcs = ["flux.py"],
+    imports = ["../.."],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "cluster",
+    srcs = ["cluster.py"],
+    imports = ["../.."],
+    deps = [
+        ":flux",
+        ":k8s",
+        ":kustomize",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "dependencies",
+    testonly = True,
+    srcs = ["dependencies.py"],
+    imports = ["../.."],
+    deps = [
+        ":cluster",
+        ":flux",
+    ],
+)
+
+py_library(
+    name = "health_checks",
+    testonly = True,
+    srcs = ["health_checks.py"],
+    imports = ["../.."],
+    deps = [
+        ":cluster",
+        ":k8s",
+        ":kustomize",
+    ],
+)
+
+py_library(
+    name = "crd_layering",
+    testonly = True,
+    srcs = ["crd_layering.py"],
+    imports = ["../.."],
+    deps = [":kustomize"],
+)
+
+py_library(
+    name = "sealed_secrets",
+    srcs = ["sealed_secrets.py"],
+    imports = ["../.."],
+    deps = [
+        ":cluster",
+        "//util/bazel:runfiles",
+        "//util/bazel:workspace",
+    ],
+)
+
+py_library(
+    name = "helm_templates",
+    srcs = ["helm_templates.py"],
+    imports = ["../.."],
+    deps = ["//util/bazel:runfiles"],
+)
+
+py_library(
+    name = "kustomize_build_all_lib",
+    srcs = ["kustomize_build_all.py"],
+    imports = ["../.."],
+    deps = [
+        ":cluster",
+        ":k8s",
+        ":kustomize",
+        "//util/bazel:runfiles",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_binary(
+    name = "kustomize_build_all",
+    data = ["@multitool//tools/kustomize"],
+    imports = ["../.."],
+    main_module = "cluster.validation.kustomize_build_all",
+    deps = [":kustomize_build_all_lib"],
+)
+
+genrule(
+    name = "kustomize_build_results",
+    srcs = ["//cluster/k8s:all_kustomize_inputs"],
+    outs = ["kustomize_build_results.json"],
+    cmd = "$(location :kustomize_build_all) cluster/k8s $@",
+    tools = [":kustomize_build_all"],
+)
+
+genrule(
+    name = "flux_build_results",
+    srcs = ["//cluster/k8s:all_kustomize_inputs"],
+    outs = ["flux_build_results.yaml"],
+    cmd = "$(location @multitool//tools/flux) build kustomization flux-system --path cluster/k8s --kustomization-file cluster/k8s/flux-system/gotk-sync.yaml --dry-run --verbose > $@",
+    tools = ["@multitool//tools/flux"],
+)
+
+py_test(
+    name = "test_k8s",
+    srcs = ["test_k8s.py"],
+    imports = ["../.."],
+    deps = [
+        ":k8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_flux",
+    srcs = ["test_flux.py"],
+    data = glob(["testdata/**"]),
+    imports = ["../.."],
+    deps = [
+        ":dependencies",
+        ":flux",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_check_runner",
+    srcs = ["test_check_runner.py"],
+    imports = ["../.."],
+    deps = [
+        ":k8s",
+        ":kustomize",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_dependencies",
+    srcs = ["test_dependencies.py"],
+    imports = ["../.."],
+    deps = [
+        ":dependencies",
+        ":flux",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_health_checks",
+    srcs = ["test_health_checks.py"],
+    imports = ["../.."],
+    deps = [
+        ":cluster",
+        ":flux",
+        ":health_checks",
+        ":k8s",
+        ":kustomize",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_crd_layering",
+    srcs = ["test_crd_layering.py"],
+    imports = ["../.."],
+    deps = [
+        ":crd_layering",
+        ":k8s",
+        ":kustomize",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

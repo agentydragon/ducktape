@@ -52,16 +52,15 @@ py_binary(
     name = "precommit",
     srcs = ["precommit.py"],
     data = [
-        # Validators (validate_cluster is unified: kustomize + helm + CRD layering + deps + flux)
-        "//cluster/scripts/validate_cluster",
-        "//cluster/scripts/validate_cluster:validate_sealed_secrets",
+        "@multitool//tools/kubeseal",
+        "@multitool//tools/tofu",
     ],
     visibility = ["//visibility:public"],
     deps = [
         ":check_filename_conventions",
         ":check_terraform_centralization",
+        "//cluster/validation:sealed_secrets",
         "//devinfra:check_pytest_main",
-        "//util/bazel:runfiles",
         "//util/bazel:workspace",
         "@pypi//pygit2",
     ],

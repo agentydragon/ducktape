@@ -1,0 +1,22 @@
+# gazelle:ignore
+
+load("//devinfra/testing:defs.bzl", "py_test")
+
+filegroup(
+    name = "all_yaml",
+    srcs = glob(["**/*.yaml"]),
+    visibility = ["//cluster:__subpackages__"],
+)
+
+py_test(
+    name = "test_blueprint_completeness",
+    srcs = ["test_blueprint_completeness.py"],
+    data = [":all_yaml"],
+    imports = ["../../.."],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
