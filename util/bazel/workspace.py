@@ -90,7 +90,12 @@ class BazelLabel:
             raise ValueError(f"Invalid Bazel label (must start with {_PKG_SEP!r} or {_REPO_SIGIL!r}): {s!r}")
 
         if _TARGET_SEP not in rest:
-            raise ValueError(f"Invalid Bazel label (no {_TARGET_SEP!r} separator): {s!r}")
+            # Short form: //pkg means //pkg:pkg (name = last component)
+            package = rest
+            if not package:
+                raise ValueError(f"Invalid Bazel label (no {_TARGET_SEP!r} separator and empty package): {s!r}")
+            name = Path(package).name
+            return cls(repo=repo, package=Path(package), name=name)
 
         package, name = rest.split(_TARGET_SEP, 1)
         return cls(repo=repo, package=Path(package), name=name)
@@ -104,10 +109,12 @@ class BazelLabel:
             return None
 
     def __str__(self) -> str:
-        """Reconstruct the canonical label string (e.g. ``//foo/bar:baz``)."""
-        # Path("") stringifies as "." in Python, but root package must be "" in a label.
+        """Reconstruct the label string, using short form when name matches last package component."""
         pkg = "" if self.package == Path() else str(self.package)
         repo_prefix = f"@{self.repo}//" if self.repo else "//"
+        # Short form: omit :name when it matches the last package component
+        if pkg and self.name == self.package.name:
+            return f"{repo_prefix}{pkg}"
         return f"{repo_prefix}{pkg}:{self.name}"
 
     @property
