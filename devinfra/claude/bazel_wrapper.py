@@ -25,7 +25,8 @@ from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.env_file import ENV_AUTH_PROXY_URL, ENV_BAZELISK_PATH, ENV_SESSION_BAZELRC
 from devinfra.claude.errors import AuthProxyError
 from devinfra.claude.settings import HookSettings
-from devinfra.claude.supervisor.client import SupervisorClient
+from devinfra.claude.supervisor.client import SupervisorClient, try_connect
+from devinfra.claude.supervisor.setup import start as supervisor_start
 from util.env import get_required_env, get_required_existing_path
 
 logger = logging.getLogger(__name__)
@@ -119,24 +120,33 @@ def _resolve_real_binary() -> str:
     raise FileNotFoundError(f"No {invoked_as} found on PATH")
 
 
-def main() -> None:
-    """Main entry point."""
-    settings = HookSettings()
+async def _ensure_proxy_with_supervisor_restart(settings: HookSettings) -> None:
+    """Ensure proxy is running, restarting supervisor if it's dead.
 
-    _setup_logging(settings)
-    log_entrypoint_debug("bazel_wrapper")
+    If supervisor is unreachable, restarts it before retrying proxy setup.
+    This handles the case where supervisor has died between sessions.
+    """
+    supervisor = SupervisorClient(settings)
 
+    # Check if supervisor is reachable before trying proxy operations
+    if await try_connect(settings) is not None:
+        logger.info("Supervisor is reachable, ensuring proxy is running...")
+        await proxy_setup.ensure_proxy_running(settings, supervisor)
+        return
+
+    # Supervisor is dead — restart it
+    logger.warning("Supervisor is not reachable, restarting...")
+    setup_result = await supervisor_start(settings)
+    logger.info("Supervisor restarted successfully")
+
+    await proxy_setup.ensure_proxy_running(settings, setup_result.client)
+
+
+async def _async_main(settings: HookSettings) -> None:
+    """Async entry point — all async work happens here."""
     if _is_web_mode():
-        try:
-            logger.info("Calling ensure_proxy_running...")
-            asyncio.run(proxy_setup.ensure_proxy_running(settings, SupervisorClient(settings)))
-            logger.info("ensure_proxy_running completed successfully")
-            warn_if_credentials_expiring(settings)
-        except AuthProxyError as e:
-            logger.error("%s", e)
-            logger.info("To restart: run the session_start hook again")
-            logger.info("Logs: %s/auth-proxy.{log,err.log}", settings.get_supervisor_dir())
-            raise SystemExit(1) from e
+        await _ensure_proxy_with_supervisor_restart(settings)
+        warn_if_credentials_expiring(settings)
 
         local_proxy = get_required_env(ENV_AUTH_PROXY_URL)
         for var in PROXY_ENV_VARS:
@@ -151,6 +161,22 @@ def main() -> None:
 
     logger.info("Execing %s (invoked as %s)", real_binary, _invocation_name())
     os.execvp(real_binary, [real_binary, f"--bazelrc={bazelrc_path}", *sys.argv[1:]])
+
+
+def main() -> None:
+    """Main entry point."""
+    settings = HookSettings()
+
+    _setup_logging(settings)
+    log_entrypoint_debug("bazel_wrapper")
+
+    try:
+        asyncio.run(_async_main(settings))
+    except AuthProxyError as e:
+        logger.error("%s", e)
+        logger.info("Supervisor auto-restart was attempted but setup still failed")
+        logger.info("Logs: %s", settings.get_supervisor_dir())
+        raise SystemExit(1) from e
 
 
 if __name__ == "__main__":

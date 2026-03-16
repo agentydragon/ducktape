@@ -245,6 +245,7 @@ py_library(
         "//devinfra/claude/auth_proxy:setup",
         "//devinfra/claude/auth_proxy:vars",
         "//devinfra/claude/supervisor:client",
+        "//devinfra/claude/supervisor:setup",
         "//util:env",
     ],
 )
@@ -536,6 +537,22 @@ py_test(
     deps = [
         "//devinfra/claude/auth_proxy:credentials",
         "@pypi//pyjwt",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_bazel_wrapper",
+    srcs = ["test_bazel_wrapper.py"],
+    imports = ["../.."],
+    deps = [
+        ":bazel_wrapper_lib",
+        ":conftest",
+        ":errors",
+        ":settings",
+        "//devinfra/claude/supervisor:client",
+        "//devinfra/claude/supervisor:setup",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
