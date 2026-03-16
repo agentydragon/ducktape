@@ -55,5 +55,19 @@ def test_all_permission_modes(permission_mode: PermissionMode) -> None:
     assert result.permission_mode == permission_mode
 
 
+def test_missing_model_defaults_to_none() -> None:
+    """Claude Code doesn't always send the model field in SessionStart events."""
+    result = SessionStartHookInput.model_validate(
+        {
+            "session_id": "s",
+            "cwd": "/tmp",
+            "transcript_path": "/tmp/t.json",
+            "hook_event_name": "SessionStart",
+            "source": "startup",
+        }
+    )
+    assert result.model is None
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
