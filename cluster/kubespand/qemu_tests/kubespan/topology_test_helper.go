@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
 	h "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 )
 
@@ -73,18 +72,9 @@ func runTopology(t *testing.T, topology string) {
 		listenPortB = 51821
 	}
 
-	cfgB := agentconfig.AgentConfig{
-		Cluster:   agentconfig.ClusterConfig{ID: clusterID, Secret: sharedSecret},
-		Discovery: agentconfig.DiscoveryConfig{Endpoint: discAddr, Insecure: true, MachineType: "worker"},
-		Kubespan: agentconfig.KubespanConfig{
-			ForceRouting:          true,
-			ListenPort:            listenPortB,
-			MTU:                   1420,
-			IdentityFile:          "/var/lib/kubespan/identity.yaml",
-			EndpointFilters:       endpointFiltersB,
-			HarvestExtraEndpoints: true,
-		},
-	}
+	cfgB := h.NewTestAgentConfig(clusterID, sharedSecret, discAddr)
+	cfgB.Kubespan.ListenPort = listenPortB
+	cfgB.Kubespan.EndpointFilters = endpointFiltersB
 	cidataB := h.CreateKubespandCIDATA(t, tmpDir, "vm-b", cfgB)
 
 	vmB := h.BootVM(t, "vm-b", vmlinuz, initramfs,
@@ -99,19 +89,10 @@ func runTopology(t *testing.T, topology string) {
 		talosAPIPort, h.McastNIC("net0", mcastAddr, "52:54:00:c0:00:01"))
 	sw.Lap("boot Talos CP VM")
 
-	cfgA := agentconfig.AgentConfig{
-		Cluster:   agentconfig.ClusterConfig{ID: clusterID, Secret: sharedSecret},
-		Discovery: agentconfig.DiscoveryConfig{Endpoint: discAddr, Insecure: true, MachineType: "worker"},
-		Kubespan: agentconfig.KubespanConfig{
-			ForceRouting:          true,
-			ListenPort:            listenPortA,
-			MTU:                   1420,
-			IdentityFile:          "/var/lib/kubespan/identity.yaml",
-			EndpointFilters:       endpointFiltersA,
-			HarvestExtraEndpoints: true,
-		},
-		Api: agentconfig.ApiConfig{ListenTCP: ":50100"},
-	}
+	cfgA := h.NewTestAgentConfig(clusterID, sharedSecret, discAddr)
+	cfgA.Kubespan.ListenPort = listenPortA
+	cfgA.Kubespan.EndpointFilters = endpointFiltersA
+	cfgA.Api.ListenTCP = ":50100"
 	cidataA := h.CreateKubespandCIDATA(t, tmpDir, "vm-a", cfgA)
 
 	vmA := h.BootVM(t, "vm-a", vmlinuz, initramfs,

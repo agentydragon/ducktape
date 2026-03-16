@@ -169,6 +169,17 @@ func MountKubespandCIDATA() {
 	log.Printf("kubespand config loaded from CIDATA (%d bytes)", len(data))
 }
 
+// Init performs common init setup (mount filesystems, set PATH, suppress dmesg)
+// and parses kernel cmdline params. Sets Role from the "role" param if present.
+func Init() map[string]string {
+	InitBasic()
+	params := ParseCmdline()
+	if v, ok := params["role"]; ok {
+		Role = v
+	}
+	return params
+}
+
 // InitBasic performs common init setup: mount filesystems, set PATH, suppress dmesg.
 func InitBasic() {
 	os.Setenv("PATH", "/sbin:/usr/sbin:/bin:/usr/bin")

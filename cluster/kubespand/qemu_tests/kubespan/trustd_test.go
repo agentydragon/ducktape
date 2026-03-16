@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
 	h "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 )
 
@@ -54,33 +53,15 @@ func TestTrustdCSRFlow(t *testing.T) {
 	sw.Lap("boot Talos CP VM")
 
 	// Build kubespand agent config with trustd CSR flow credentials.
-	kubespandCfg := agentconfig.AgentConfig{
-		Cluster: agentconfig.ClusterConfig{
-			ID:       cfg.ClusterConfig.ClusterID,
-			Secret:   cfg.ClusterConfig.ClusterSecret,
-			Endpoint: "https://192.168.50.2:6443",
-		},
-		Discovery: agentconfig.DiscoveryConfig{
-			Endpoint:    "192.168.50.254:3000",
-			Insecure:    true,
-			MachineType: "worker",
-		},
-		Kubespan: agentconfig.KubespanConfig{
-			ForceRouting:          true,
-			ListenPort:            51820,
-			MTU:                   1420,
-			IdentityFile:          "/var/lib/kubespan/identity.yaml",
-			EndpointFilters:       []string{"192.168.50.0/24"},
-			HarvestExtraEndpoints: true,
-		},
-		Api: agentconfig.ApiConfig{
-			CACrt:    string(cfg.MachineConfig.MachineCA.Crt),
-			Token:    cfg.MachineConfig.MachineToken,
-			ApidPath: "/apid",
-			// Include 127.0.0.1 in cert SANs for port-forwarded test connections.
-			CertSANs: []string{"127.0.0.1"},
-		},
-	}
+	kubespandCfg := h.NewTestAgentConfig(cfg.ClusterConfig.ClusterID, cfg.ClusterConfig.ClusterSecret, "192.168.50.254:3000")
+	kubespandCfg.Cluster.Endpoint = "https://192.168.50.2:6443"
+	kubespandCfg.Kubespan.ListenPort = 51820
+	kubespandCfg.Kubespan.EndpointFilters = []string{"192.168.50.0/24"}
+	kubespandCfg.Api.CACrt = string(cfg.MachineConfig.MachineCA.Crt)
+	kubespandCfg.Api.Token = cfg.MachineConfig.MachineToken
+	kubespandCfg.Api.ApidPath = "/apid"
+	// Include 127.0.0.1 in cert SANs for port-forwarded test connections.
+	kubespandCfg.Api.CertSANs = []string{"127.0.0.1"}
 	kubespandCI := h.CreateKubespandCIDATA(t, tmpDir, "kubespand", kubespandCfg)
 
 	// kubespand VM with CIDATA config. Extra forward for apid port 50000.

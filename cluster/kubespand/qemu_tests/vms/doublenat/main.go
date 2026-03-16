@@ -4,7 +4,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 
 	"github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/initlib"
@@ -12,16 +11,7 @@ import (
 )
 
 func main() {
-	initlib.InitBasic()
-	params := initlib.ParseCmdline()
-	if v, ok := params["role"]; ok {
-		initlib.Role = v
-	}
-
-	if initlib.Role == "" || initlib.Role == "unknown" {
-		log.Fatalf("missing kernel cmdline params: role=%s", initlib.Role)
-	}
-
+	_ = initlib.Init()
 	log.Printf("doublenat mode, role=%s", initlib.Role)
 
 	var linkIP, defaultGW string
@@ -56,20 +46,5 @@ func main() {
 	// Can we reach VPS?
 	initlib.Run("ping", "-c", "1", "-W", "3", "192.168.50.2")
 
-	// Load kubespand config from CIDATA drive and start.
-	initlib.MountKubespandCIDATA()
-	kubespanlib.StartKubespand()
-
-	const probePort = 9999
-	cancel := kubespanlib.ServeTCP(probePort)
-	defer cancel()
-
-	// Start probe gRPC server on the mgmt NIC for test host control.
-	// The test host polls this server to detect VM readiness.
-	initlib.StartProbeServer(fmt.Sprintf(":%d", initlib.ProbeServerPort))
-
-	log.Printf("role=%s ready, tcp/%d, probe/%d", initlib.Role, probePort, initlib.ProbeServerPort)
-
-	// Idle until the test host kills the VM.
-	select {}
+	kubespanlib.RunKubespandAndIdle(9999)
 }

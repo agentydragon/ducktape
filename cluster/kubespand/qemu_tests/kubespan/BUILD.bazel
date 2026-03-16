@@ -26,7 +26,6 @@ go_test(
     data = _TOPOLOGY_DATA,
     tags = _TOPOLOGY_TAGS,
     deps = [
-        "//cluster/kubespand/agentconfig",
         "//cluster/kubespand/qemu_tests",
     ],
 )
@@ -41,7 +40,6 @@ go_test(
     data = _TOPOLOGY_DATA,
     tags = _TOPOLOGY_TAGS,
     deps = [
-        "//cluster/kubespand/agentconfig",
         "//cluster/kubespand/qemu_tests",
     ],
 )
@@ -64,7 +62,6 @@ go_test(
         "requires_qemu",
     ],
     deps = [
-        "//cluster/kubespand/agentconfig",
         "//cluster/kubespand/qemu_tests",
     ],
 )

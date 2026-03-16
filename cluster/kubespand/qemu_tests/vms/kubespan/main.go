@@ -4,7 +4,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 
@@ -13,21 +12,11 @@ import (
 )
 
 func main() {
-	initlib.InitBasic()
-	params := initlib.ParseCmdline()
-	if v, ok := params["role"]; ok {
-		initlib.Role = v
-	}
-
+	params := initlib.Init()
 	topology := params["topology"]
 	if topology == "" {
 		topology = "flat"
 	}
-
-	if initlib.Role == "" || initlib.Role == "unknown" {
-		log.Fatalf("missing kernel cmdline params: role=%s", initlib.Role)
-	}
-
 	log.Printf("kubespan mode, role=%s, topology=%s", initlib.Role, topology)
 
 	// Assign addresses based on role and topology.
@@ -73,20 +62,5 @@ func main() {
 
 	log.Printf("network ready: link=%s/24, topology=%s", linkIP, topology)
 
-	// Load kubespand config from CIDATA drive and start.
-	initlib.MountKubespandCIDATA()
-	kubespanlib.StartKubespand()
-
-	const probePort = 9999
-	cancel := kubespanlib.ServeTCP(probePort)
-	defer cancel()
-
-	// Start probe gRPC server on the mgmt NIC for test host control.
-	// The test host polls this server to detect VM readiness.
-	initlib.StartProbeServer(fmt.Sprintf(":%d", initlib.ProbeServerPort))
-
-	log.Printf("role=%s ready, tcp/%d, probe/%d", initlib.Role, probePort, initlib.ProbeServerPort)
-
-	// Idle until the test host kills the VM.
-	select {}
+	kubespanlib.RunKubespandAndIdle(9999)
 }

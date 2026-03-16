@@ -2,6 +2,7 @@
 package kubespanlib
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -43,4 +44,20 @@ func StartKubespand() *exec.Cmd {
 	}
 	log.Printf("kubespand started pid=%d", cmd.Process.Pid)
 	return cmd
+}
+
+// RunKubespandAndIdle loads config from CIDATA, starts kubespand, starts a
+// TCP probe listener on probePort, starts the gRPC probe server, then blocks
+// forever. This is the common tail for kubespan and doublenat VM inits.
+func RunKubespandAndIdle(probePort int) {
+	initlib.MountKubespandCIDATA()
+	StartKubespand()
+
+	cancel := ServeTCP(probePort)
+	defer cancel()
+
+	initlib.StartProbeServer(fmt.Sprintf(":%d", initlib.ProbeServerPort))
+	log.Printf("role=%s ready, tcp/%d, probe/%d", initlib.Role, probePort, initlib.ProbeServerPort)
+
+	select {}
 }

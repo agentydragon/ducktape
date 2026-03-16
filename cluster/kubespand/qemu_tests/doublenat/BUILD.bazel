@@ -12,7 +12,6 @@ go_test(
     ],
     tags = ["requires_qemu"],
     deps = [
-        "//cluster/kubespand/agentconfig",
         "//cluster/kubespand/qemu_tests",
     ],
 )

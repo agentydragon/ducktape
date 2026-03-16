@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
 	h "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 )
 
@@ -35,17 +34,7 @@ func TestDoubleNAT(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	// Base agent config shared by all kubespand VMs in this topology.
-	baseCfg := agentconfig.AgentConfig{
-		Cluster:   agentconfig.ClusterConfig{ID: clusterID, Secret: sharedSecret},
-		Discovery: agentconfig.DiscoveryConfig{Endpoint: discAddr, Insecure: true, MachineType: "worker"},
-		Kubespan: agentconfig.KubespanConfig{
-			ForceRouting:          true,
-			MTU:                   1420,
-			IdentityFile:          "/var/lib/kubespan/identity.yaml",
-			HarvestExtraEndpoints: true,
-		},
-	}
+	baseCfg := h.NewTestAgentConfig(clusterID, sharedSecret, discAddr)
 
 	vmDiscovery := h.BootVM(t, "vm-disc", vmlinuz, initramfsDisc,
 		"mode=discovery role=discovery discovery_ip=192.168.50.254/24",

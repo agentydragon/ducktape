@@ -32,7 +32,7 @@ import (
 )
 
 func main() {
-	initlib.InitBasic()
+	initlib.Init()
 	if err := run(); err != nil {
 		log.Fatalf("trustd init: %v", err)
 	}

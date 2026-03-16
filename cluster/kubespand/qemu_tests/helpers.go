@@ -417,6 +417,21 @@ func MgmtNICMulti(forwards []PortForward, mac string) []string {
 	}
 }
 
+// NewTestAgentConfig returns an AgentConfig with common test defaults.
+// Callers can override fields after construction.
+func NewTestAgentConfig(clusterID, sharedSecret, discoveryAddr string) agentconfig.AgentConfig {
+	return agentconfig.AgentConfig{
+		Cluster:   agentconfig.ClusterConfig{ID: clusterID, Secret: sharedSecret},
+		Discovery: agentconfig.DiscoveryConfig{Endpoint: discoveryAddr, Insecure: true, MachineType: "worker"},
+		Kubespan: agentconfig.KubespanConfig{
+			ForceRouting:          true,
+			MTU:                   1420,
+			IdentityFile:          "/var/lib/kubespan/identity.yaml",
+			HarvestExtraEndpoints: true,
+		},
+	}
+}
+
 // CreateKubespandCIDATA creates a FAT32 disk image containing the kubespand
 // agent config YAML. The VM init mounts this drive and copies agent.yaml to
 // /etc/kubespan/agent.yaml for kubespand to read.

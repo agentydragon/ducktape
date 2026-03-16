@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("//cluster/kubespand/qemu_tests:initramfs.bzl", "initramfs")
 
 # ─ NFT smoke init binary (runs inside QEMU VM as PID 1) ─────────────────────
 go_library(
@@ -29,24 +30,10 @@ go_binary(
 )
 
 # ─ NFT smoke initramfs ───────────────────────────────────────────────────────
-genrule(
+initramfs(
     name = "initramfs",
     testonly = True,
-    srcs = [
-        "@alpine_minirootfs_x86_64//file",
-        ":init",
-        "//cluster/kubespand/qemu_tests:modules_tree",
-    ],
-    outs = ["initramfs.cpio.gz"],
-    cmd = """
-        set -e
-        D=$$(mktemp -d)
-        tar -xzf $(location @alpine_minirootfs_x86_64//file) -C $$D
-        cp $(location :init) $$D/init && chmod +x $$D/init
-        tar -xf $(location //cluster/kubespand/qemu_tests:modules_tree) -C $$D
-        (cd $$D && find . -print0 | cpio --null -o -H newc 2>/dev/null) | gzip -9 > $@
-        rm -rf $$D
-    """,
+    init = ":init",
 )
 
 # ─ Test ──────────────────────────────────────────────────────────────────────

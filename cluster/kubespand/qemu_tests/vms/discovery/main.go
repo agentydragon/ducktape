@@ -14,11 +14,7 @@ import (
 )
 
 func main() {
-	initlib.InitBasic()
-	params := initlib.ParseCmdline()
-	if v, ok := params["role"]; ok {
-		initlib.Role = v
-	}
+	params := initlib.Init()
 
 	discoveryIP := params["discovery_ip"]
 	if discoveryIP == "" {
