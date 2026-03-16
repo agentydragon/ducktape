@@ -24,20 +24,16 @@ from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
 from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.env_file import ENV_AUTH_PROXY_URL, ENV_BAZELISK_PATH, ENV_SESSION_BAZELRC
 from devinfra.claude.errors import AuthProxyError
-from devinfra.claude.settings import HookSettings
+from devinfra.claude.settings import HookSettings, is_web_mode
 from devinfra.claude.supervisor.client import try_connect
 from devinfra.claude.supervisor.setup import start as supervisor_start
-from util.env import get_required_env, get_required_existing_path
+from util.env import get_required_env
 
 logger = logging.getLogger(__name__)
 
 # Set by the shell wrapper script from basename($0) and dirname($0)
 _WRAPPER_NAME_ENV = "_BAZEL_WRAPPER_NAME"
 _WRAPPER_DIR_ENV = "_BAZEL_WRAPPER_DIR"
-
-
-def _is_web_mode() -> bool:
-    return os.environ.get("CLAUDE_CODE_REMOTE") == "true"
 
 
 def _invocation_name() -> str:
@@ -105,7 +101,10 @@ def _resolve_real_binary() -> str:
     """
     env_path = os.environ.get(ENV_BAZELISK_PATH)
     if env_path:
-        return str(get_required_existing_path(ENV_BAZELISK_PATH))
+        path = Path(env_path)
+        if not path.exists():
+            raise FileNotFoundError(f"{ENV_BAZELISK_PATH}={env_path} does not exist")
+        return env_path
 
     # CLI mode: find the real binary matching our invocation name
     invoked_as = _invocation_name()
@@ -132,7 +131,7 @@ async def _ensure_proxy_with_supervisor_restart(settings: HookSettings) -> None:
 
 async def _async_main(settings: HookSettings) -> None:
     """Async entry point — all async work happens here."""
-    if _is_web_mode():
+    if is_web_mode():
         await _ensure_proxy_with_supervisor_restart(settings)
         warn_if_credentials_expiring(settings)
 
@@ -140,11 +139,7 @@ async def _async_main(settings: HookSettings) -> None:
         for var in PROXY_ENV_VARS:
             os.environ[var] = local_proxy
 
-    # SESSION_BAZELRC is the canonical env var. Fall back to AUTH_PROXY_BAZELRC
-    # for sessions started before the migration (old hook code set that instead).
-    # TODO(unify-web-cli): Remove AUTH_PROXY_BAZELRC fallback once all sessions
-    # have been restarted with the new hook code that sets SESSION_BAZELRC.
-    bazelrc_path = os.environ.get(ENV_SESSION_BAZELRC) or get_required_env("AUTH_PROXY_BAZELRC")
+    bazelrc_path = get_required_env(ENV_SESSION_BAZELRC)
     real_binary = _resolve_real_binary()
 
     logger.info("Execing %s (invoked as %s)", real_binary, _invocation_name())

@@ -10,6 +10,7 @@ Environment Variables (in priority order):
 """
 
 import importlib.resources
+import os
 from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Literal
@@ -46,6 +47,11 @@ ENV_CONTAINER_RUNTIME = _env_name("container_runtime")
 ENV_SYSTEM_BAZEL = _env_name("system_bazel")
 ENV_USE_WHEEL = _env_name("use_wheel")
 ENV_SESSION_DIR = _env_name("session_dir")
+
+
+def is_web_mode() -> bool:
+    """Check if running in Claude Code web mode (CLAUDE_CODE_REMOTE=true)."""
+    return os.environ.get("CLAUDE_CODE_REMOTE") == "true"
 
 
 class HookSettings(BaseSettings):

@@ -44,7 +44,7 @@ from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.errors import SkipError
 from devinfra.claude.hook_config import HOOKS_DOTDIR, HookConfig
 from devinfra.claude.managed_files import write_config
-from devinfra.claude.settings import CONFIG_FILES, HookSettings
+from devinfra.claude.settings import CONFIG_FILES, HookSettings, is_web_mode
 from devinfra.claude.supervisor import setup as supervisor_setup
 from devinfra.claude.tracing import init_tracing, shutdown_tracing
 from util import env
@@ -587,5 +587,5 @@ async def run_session(
 async def _async_handle(hook_input: SessionStartHookInput, settings: HookSettings) -> SessionStartOutput:
     """Async entry point called from hook_dispatch. Dispatches to web or CLI mode."""
     env_file_path = env.get_required_env_path("CLAUDE_ENV_FILE")
-    web_mode = os.environ.get("CLAUDE_CODE_REMOTE") == "true"
+    web_mode = is_web_mode()
     return await run_session(hook_input, settings, env_file_path, web_mode=web_mode)
