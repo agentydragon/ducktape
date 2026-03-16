@@ -234,7 +234,6 @@ def _normalize_field_schema(schema: dict[str, Any]) -> dict[str, Any]:
 
     Normalizations applied:
     - Strip metadata keys: title, description, default, discriminator
-    - Strip additionalProperties: false (Zod strictness, not relevant for wire compat)
     - Collapse nullable anyOf: {"anyOf": [T, {"type": "null"}]} → T
     - Normalize Record<string, unknown>: additionalProperties:{} ≡ true
     - Unify oneOf → anyOf (Pydantic uses oneOf for discriminated unions, Zod uses anyOf)
@@ -243,10 +242,6 @@ def _normalize_field_schema(schema: dict[str, Any]) -> dict[str, Any]:
     """
     _strip_keys = {"title", "description", "default", "discriminator"}
     out = {k: v for k, v in schema.items() if k not in _strip_keys}
-    # Zod sets additionalProperties: false on all objects; Pydantic omits it.
-    # For wire compat, this is irrelevant — we don't send extra properties.
-    if out.get("additionalProperties") is False:
-        del out["additionalProperties"]
     # Zod emits {"additionalProperties": {}, "propertyNames": {"type": "string"}} for
     # Record<string, unknown>; Pydantic emits {"additionalProperties": true}. These are
     # semantically equivalent in JSON Schema (both mean "any additional string-keyed properties").

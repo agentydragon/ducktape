@@ -13,6 +13,33 @@ If a component is macOS-only, document it explicitly. Do not silently assume mac
 
 @STYLE.md
 
+## Recovering from a Broken Session Start Hook (Claude Code Web)
+
+When running in Claude Code Web (`CLAUDE_CODE_REMOTE_ENVIRONMENT_TYPE` is set), the
+session start hook at <devinfra/claude/README.md> sets up Bazel, the auth proxy, and
+other tooling. If the hook fails or was never run, you'll see errors like:
+
+- **Certificate errors**: `SSL: CERTIFICATE_VERIFY_FAILED`, `unable to get local issuer certificate`,
+  `x509: certificate signed by unknown authority` — the TLS inspection CA wasn't extracted
+- **`bazel: command not found`** — Bazelisk wasn't installed
+- **Bazel `FAILED: no such package '@...'`** or `Unable to fetch` — the auth proxy isn't running,
+  so Bazel can't reach BCR through the TLS-inspecting egress proxy
+- **`source /tmp/claude_env: No such file`** — the environment file wasn't generated
+
+**Recovery steps:**
+
+1. Read <devinfra/claude/README.md> to understand the session start hook architecture
+2. Check the session start log: `tail -100 ~/.cache/claude-hooks/session-start.log`
+3. Source the env file if it exists: `source /tmp/claude_env` (or `CLAUDE_ENV_FILE` value)
+4. If env file is missing, run the session start steps manually:
+   - Run `devinfra/claude/session_start.py` (see <devinfra/claude/README.md> for what it does)
+   - Or run individual steps: proxy setup, bazelisk install, env file generation
+5. Verify the auth proxy: `curl -s --max-time 5 -x http://127.0.0.1:18081 https://bcr.bazel.build/ | head -1`
+6. Verify Bazel: `bazel info`
+
+**Do NOT** fight certificate or proxy errors by setting `--noverify`, `SSL_VERIFY=false`, or
+similar bypasses. The root cause is always a missing or broken session start hook setup.
+
 ## Sandbox
 
 Run `bazel`, `terraform`/`tofu`, `kubectl`, `systemctl`, `ss`, `ip`, `curl`, and other

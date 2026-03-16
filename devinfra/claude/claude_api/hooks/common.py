@@ -19,9 +19,9 @@ class PermissionMode(StrEnum):
 
 
 class CamelModel(BaseModel):
-    """Base for hook output models — serializes fields as camelCase."""
+    """Base for hook output models — serializes fields as camelCase, rejects extra fields."""
 
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
 
 
 class HookOutputBase(CamelModel):
