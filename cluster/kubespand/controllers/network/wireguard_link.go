@@ -16,7 +16,6 @@ package networkctrl
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/safe"
@@ -129,29 +128,10 @@ func (ctrl *WireguardLinkController) ensureInterface(spec *network.LinkSpecSpec,
 		}
 		logger.Info("WireGuard interface created", zap.String("name", spec.Name))
 
-		// Disable rp_filter on the kubespan interface. Upstream Talos leaves
-		// rp_filter at the kernel default (0), but non-Talos hosts (NixOS,
-		// Ubuntu, etc.) set rp_filter=1 or 2 via systemd sysctl.d. The
-		// effective rp_filter = max(conf/all, conf/iface), so we must also
-		// set conf/all to 0. Without this, decrypted packets arriving on
-		// kubespan are dropped by reverse path filtering because the kernel
-		// finds the return route via eth0, not kubespan.
-		for _, rpPath := range []string{
-			fmt.Sprintf("/proc/sys/net/ipv4/conf/%s/rp_filter", spec.Name),
-			"/proc/sys/net/ipv4/conf/all/rp_filter",
-		} {
-			if err := os.WriteFile(rpPath, []byte("0"), 0o644); err != nil {
-				logger.Warn("failed to disable rp_filter", zap.String("path", rpPath), zap.Error(err))
-			}
-		}
-
-		// Enable src_valid_mark so the kernel includes fwmark in reverse
-		// path validation. This is the WireGuard-recommended approach for
-		// systems with rp_filter enabled (prevents RPF from dropping packets
-		// that are correctly routed via fwmark-based policy routing).
-		if err := os.WriteFile("/proc/sys/net/ipv4/conf/all/src_valid_mark", []byte("1"), 0o644); err != nil {
-			logger.Warn("failed to enable src_valid_mark", zap.Error(err))
-		}
+		// Note: rp_filter and src_valid_mark sysctls are managed declaratively
+		// by KernelParamSpecController via ConfigController-injected resources.
+		// The per-interface rp_filter (conf/<iface>/rp_filter) is set to 0 by
+		// KernelParamDefaultsController's default sysctl list.
 	}
 
 	// Set MTU if different.

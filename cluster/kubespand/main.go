@@ -12,6 +12,7 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
+	v1alpha1runtime "github.com/siderolabs/talos/internal/app/machined/pkg/runtime"
 	"github.com/siderolabs/talos/pkg/machinery/constants"
 	"github.com/siderolabs/talos/pkg/machinery/version"
 	"go.uber.org/zap"
@@ -27,6 +28,7 @@ import (
 	taloscontrollersk8s "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/k8s"
 	taloscontrollerskubespan "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/kubespan"
 	taloscontrollersnetwork "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/network"
+	taloscontrollersruntime "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/runtime"
 	taloscontrollerssecrets "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/secrets"
 )
 
@@ -105,9 +107,10 @@ func run(configPath string, logger *zap.Logger) error {
 
 	// Register controllers.
 	if err := rt.RegisterController(&kubespandctrl.ConfigController{
-		KubespanSpec: kubespanSpec,
-		ClusterSpec:  clusterSpec,
-		AgentSpec:    agentSpec,
+		KubespanSpec:           kubespanSpec,
+		ClusterSpec:            clusterSpec,
+		AgentSpec:              agentSpec,
+		KubernetesServiceCIDRs: cfg.Kubernetes.ServiceCIDRs,
 	}); err != nil {
 		return fmt.Errorf("registering config controller: %w", err)
 	}
@@ -167,6 +170,34 @@ func run(configPath string, logger *zap.Logger) error {
 	}
 	if err := rt.RegisterController(&taloscontrollerskubespan.EndpointController{}); err != nil {
 		return fmt.Errorf("registering endpoint controller: %w", err)
+	}
+
+	// Network status: upstream controllers for live address/link monitoring.
+	// Replaces static address snapshot in NodeMetadataController.
+	if err := rt.RegisterController(&taloscontrollersnetwork.AddressStatusController{}); err != nil {
+		return fmt.Errorf("registering address status controller: %w", err)
+	}
+	if err := rt.RegisterController(&taloscontrollersnetwork.LinkStatusController{}); err != nil {
+		return fmt.Errorf("registering link status controller: %w", err)
+	}
+	if err := rt.RegisterController(&taloscontrollersnetwork.NodeAddressController{}); err != nil {
+		return fmt.Errorf("registering node address controller: %w", err)
+	}
+
+	// Kernel management: declarative module loading and sysctl application.
+	// Replaces imperative os.WriteFile calls in WireguardLinkController.
+	if err := rt.RegisterController(&taloscontrollersruntime.KernelModuleSpecController{
+		V1Alpha1Mode: v1alpha1runtime.ModeMetal,
+	}); err != nil {
+		return fmt.Errorf("registering kernel module spec controller: %w", err)
+	}
+	if err := rt.RegisterController(&taloscontrollersruntime.KernelParamSpecController{}); err != nil {
+		return fmt.Errorf("registering kernel param spec controller: %w", err)
+	}
+	if err := rt.RegisterController(&taloscontrollersruntime.KernelParamDefaultsController{
+		V1Alpha1Mode: v1alpha1runtime.ModeMetal,
+	}); err != nil {
+		return fmt.Errorf("registering kernel param defaults controller: %w", err)
 	}
 
 	logger.Info("starting COSI runtime")

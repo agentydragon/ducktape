@@ -7,10 +7,13 @@
 //   - network.HostnameStatus (from os.Hostname)
 //   - k8s.Nodename           (from agentconfig.NodeName)
 //   - config.MachineType     (from agentconfig.MachineType)
-//   - network.NodeAddress    x3 (routed + current + accumulative, from local interfaces)
 //   - k8s.APIServerConfig    (LocalPort from cluster endpoint)
 //   - k8s.Endpoint           (CP endpoints for APIController's trustd CSR flow)
 //   - network.Status         (readiness gate, always ready for kubespand)
+//
+// Node addresses (network.NodeAddress) are now produced by the upstream
+// AddressStatusController + LinkStatusController + NodeAddressController chain,
+// which provides live netlink-based address tracking instead of a static snapshot.
 //
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/local_affiliate.go (consumer)
 // Ref: talos/internal/app/machined/pkg/controllers/secrets/api.go (consumer)
@@ -38,7 +41,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
-	"github.com/agentydragon/ducktape/cluster/kubespand/discovery"
 )
 
 // NodeMetadataController produces COSI resources consumed by the upstream
@@ -65,7 +67,6 @@ func (ctrl *NodeMetadataController) Outputs() []controller.Output {
 		{Type: network.HostnameStatusType, Kind: controller.OutputExclusive},
 		{Type: k8s.NodenameType, Kind: controller.OutputExclusive},
 		{Type: talosconfig.MachineTypeType, Kind: controller.OutputExclusive},
-		{Type: network.NodeAddressType, Kind: controller.OutputExclusive},
 		{Type: k8s.APIServerConfigType, Kind: controller.OutputExclusive},
 		{Type: k8s.EndpointType, Kind: controller.OutputExclusive},
 		{Type: network.StatusType, Kind: controller.OutputExclusive},
@@ -146,31 +147,7 @@ func (ctrl *NodeMetadataController) Run(ctx context.Context, r controller.Runtim
 			return fmt.Errorf("writing machine type: %w", err)
 		}
 
-		// 5. network.NodeAddress — routed, current, and accumulative (same data for kubespand).
-		// APICertSANsController reads the filtered (no-k8s) accumulative variant.
-		// apid's LocalAddressProvider reads the raw NodeAddressCurrentID to determine
-		// if a gRPC request target is the local node (required for worker-mode routing).
-		addrs := discovery.RoutedNodeAddresses()
-		prefixes := make([]netip.Prefix, 0, len(addrs))
-		for _, addr := range addrs {
-			prefixes = append(prefixes, netip.PrefixFrom(addr, addr.BitLen()))
-		}
-		routedID := network.FilteredNodeAddressID(network.NodeAddressRoutedID, k8s.NodeAddressFilterNoK8s)
-		filteredCurrentID := network.FilteredNodeAddressID(network.NodeAddressCurrentID, k8s.NodeAddressFilterNoK8s)
-		accumulativeID := network.FilteredNodeAddressID(network.NodeAddressAccumulativeID, k8s.NodeAddressFilterNoK8s)
-		for _, id := range []resource.ID{routedID, filteredCurrentID, accumulativeID, network.NodeAddressCurrentID} {
-			if err := safe.WriterModify(ctx, r,
-				network.NewNodeAddress(network.NamespaceName, id),
-				func(res *network.NodeAddress) error {
-					res.TypedSpec().Addresses = prefixes
-					return nil
-				},
-			); err != nil {
-				return fmt.Errorf("writing node address %s: %w", id, err)
-			}
-		}
-
-		// 6. k8s.APIServerConfig — LocalPort from cluster endpoint URL.
+		// 5. k8s.APIServerConfig — LocalPort from cluster endpoint URL.
 		apiPort := 6443
 		if spec.ClusterEndpoint != "" {
 			if u, parseErr := url.Parse(spec.ClusterEndpoint); parseErr == nil {
@@ -191,7 +168,7 @@ func (ctrl *NodeMetadataController) Run(ctx context.Context, r controller.Runtim
 			return fmt.Errorf("writing api server config: %w", err)
 		}
 
-		// 7. k8s.Endpoint — CP endpoints for APIController's trustd CSR flow.
+		// 6. k8s.Endpoint — CP endpoints for APIController's trustd CSR flow.
 		// The APIController (worker mode) reads k8s.Endpoint resources to find
 		// trustd endpoints for CSR submission. Derive from cluster.endpoint URL.
 		if spec.ClusterEndpoint != "" {
@@ -211,11 +188,11 @@ func (ctrl *NodeMetadataController) Run(ctx context.Context, r controller.Runtim
 			}
 		}
 
-		// 8. network.Status — readiness gate for APIController.
-		// Set always-ready because NodeMetadataController doesn't dynamically track
-		// host network state (it only re-runs when kubespan.Identity or agentconfig
-		// change). On a laptop that loses connectivity, addresses go stale anyway.
-		// TODO: add a network watcher that triggers re-reconciliation on address changes.
+		// 7. network.Status — readiness gate for APIController.
+		// Set always-ready. The upstream StatusController depends on EtcFileStatus
+		// (Talos-managed /etc files) which doesn't exist on non-Talos hosts, so we
+		// keep this shim. AddressReady and HostnameReady are what APIController
+		// actually checks.
 		if err := safe.WriterModify(ctx, r,
 			network.NewStatus(network.NamespaceName, network.StatusID),
 			func(res *network.Status) error {
@@ -232,7 +209,6 @@ func (ctrl *NodeMetadataController) Run(ctx context.Context, r controller.Runtim
 		logger.Debug("node metadata reconciled",
 			zap.String("node_id", ksID.TypedSpec().PublicKey),
 			zap.String("hostname", hostname),
-			zap.Int("addresses", len(prefixes)),
 		)
 		r.ResetRestartBackoff()
 	}
