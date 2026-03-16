@@ -22,63 +22,54 @@ func runTopology(t *testing.T, topology string) {
 	mcastPort := h.RandomPort()
 	mcastAddr := fmt.Sprintf("230.0.0.1:%d", mcastPort)
 
-	// Choose CP config and IP based on topology.
-	var cpConfigPath, cpIP string
+	// Topology-specific parameters.
+	var cpConfigPath, cpIP, discIP string
+	var linkIPA, linkIPB, peerSubnetA, peerSubnetB string
+	var endpointFilters []string
+
 	switch topology {
 	case "flat":
 		cpConfigPath = h.KubespanCPConfig
 		cpIP = "192.168.50.253"
+		discIP = "192.168.50.254"
+		linkIPA = "192.168.50.1"
+		linkIPB = "192.168.50.2"
+		endpointFilters = []string{"192.168.50.0/24"}
 	case "cross_subnet":
 		cpConfigPath = h.KubespanCPCrossConfig
 		cpIP = "10.0.0.253"
+		discIP = "10.1.0.254"
+		linkIPA = "10.1.0.1"
+		linkIPB = "10.2.0.1"
+		peerSubnetA = "10.2.0.0/24"
+		peerSubnetB = "10.1.0.0/24"
+		endpointFilters = []string{"10.0.0.0/8"}
 	}
 
 	cpConfigData := h.ReadRunfile(t, cpConfigPath)
-	cpCfg := h.ParseTalosConfig(t, cpConfigData)
-	clusterID := cpCfg.ClusterConfig.ClusterID
-	sharedSecret := cpCfg.ClusterConfig.ClusterSecret
-
-	var discIP string
-	switch topology {
-	case "flat":
-		discIP = "192.168.50.254"
-	case "cross_subnet":
-		discIP = "10.1.0.254"
-	}
+	creds := h.ExtractClusterCreds(t, cpConfigData)
 	discAddr := fmt.Sprintf("%s:3000", discIP)
 
 	// Discovery VM with extra forward for HTTP health check from the test host.
 	vmDisc := h.BootVM(t, "vm-disc", vmlinuz, initramfsDisc,
-		fmt.Sprintf("mode=discovery role=discovery discovery_ip=%s/24 topology=%s", discIP, topology),
+		fmt.Sprintf("role=discovery discovery_ip=%s/24 topology=%s", discIP, topology),
 		h.McastNIC("net0", mcastAddr, "52:54:00:ff:00:01"),
 		h.PortForward{GuestPort: 3000})
 	sw.Lap("boot discovery VM")
 
 	tmpDir := t.TempDir()
 
-	// Build kubespand agent configs per role and topology.
-	var endpointFiltersA, endpointFiltersB []string
-	var listenPortA, listenPortB int
-	switch topology {
-	case "flat":
-		endpointFiltersA = []string{"192.168.50.0/24"}
-		endpointFiltersB = []string{"192.168.50.0/24"}
-		listenPortA = 51820
-		listenPortB = 51821
-	case "cross_subnet":
-		endpointFiltersA = []string{"10.0.0.0/8"}
-		endpointFiltersB = []string{"10.0.0.0/8"}
-		listenPortA = 51820
-		listenPortB = 51821
-	}
-
-	cfgB := h.NewTestAgentConfig(clusterID, sharedSecret, discAddr)
-	cfgB.Kubespan.ListenPort = listenPortB
-	cfgB.Kubespan.EndpointFilters = endpointFiltersB
+	cfgB := h.NewTestAgentConfig(creds, discAddr)
+	cfgB.Kubespan.ListenPort = 51821
+	cfgB.Kubespan.EndpointFilters = endpointFilters
 	cidataB := h.CreateKubespandCIDATA(t, tmpDir, "vm-b", cfgB)
 
+	vmBArgs := fmt.Sprintf("role=vm-b link_ip=%s", linkIPB)
+	if peerSubnetB != "" {
+		vmBArgs += fmt.Sprintf(" peer_subnet=%s", peerSubnetB)
+	}
 	vmB := h.BootVM(t, "vm-b", vmlinuz, initramfs,
-		fmt.Sprintf("role=b topology=%s", topology),
+		vmBArgs,
 		append(h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01"), h.CIDATADrive(cidataB)...))
 	sw.Lap("boot VM-B")
 
@@ -89,14 +80,18 @@ func runTopology(t *testing.T, topology string) {
 		talosAPIPort, h.McastNIC("net0", mcastAddr, "52:54:00:c0:00:01"))
 	sw.Lap("boot Talos CP VM")
 
-	cfgA := h.NewTestAgentConfig(clusterID, sharedSecret, discAddr)
-	cfgA.Kubespan.ListenPort = listenPortA
-	cfgA.Kubespan.EndpointFilters = endpointFiltersA
+	cfgA := h.NewTestAgentConfig(creds, discAddr)
+	cfgA.Kubespan.ListenPort = 51820
+	cfgA.Kubespan.EndpointFilters = endpointFilters
 	cfgA.Api.ListenTCP = ":50100"
 	cidataA := h.CreateKubespandCIDATA(t, tmpDir, "vm-a", cfgA)
 
+	vmAArgs := fmt.Sprintf("role=vm-a link_ip=%s", linkIPA)
+	if peerSubnetA != "" {
+		vmAArgs += fmt.Sprintf(" peer_subnet=%s", peerSubnetA)
+	}
 	vmA := h.BootVM(t, "vm-a", vmlinuz, initramfs,
-		fmt.Sprintf("role=a topology=%s", topology),
+		vmAArgs,
 		append(h.McastNIC("net0", mcastAddr, "52:54:00:a0:00:01"), h.CIDATADrive(cidataA)...),
 		h.PortForward{GuestPort: h.COSIGuestPort})
 	sw.Lap("boot VM-A")
@@ -127,14 +122,8 @@ func runTopology(t *testing.T, topology string) {
 		peerULA = vmAPeers[0].Label
 	}
 
-	// Determine peer bridge IP based on topology and role.
-	var peerBridgeIP string
-	switch topology {
-	case "flat":
-		peerBridgeIP = "192.168.50.2" // VM-B's eth0 IP
-	case "cross_subnet":
-		peerBridgeIP = "10.2.0.1" // VM-B's eth0 IP
-	}
+	// VM-B's eth0 IP — use the same linkIPB we configured above.
+	peerBridgeIP := linkIPB
 
 	// Run probes from VM-A to VM-B.
 	if peerULA != "" {
@@ -180,7 +169,7 @@ func runTopology(t *testing.T, topology string) {
 
 	summary := map[string]interface{}{
 		"topology":   topology,
-		"cluster_id": clusterID,
+		"cluster_id": creds.ClusterID,
 		"mcast_port": mcastPort,
 	}
 	summaryJSON, _ := json.MarshalIndent(summary, "", "  ")

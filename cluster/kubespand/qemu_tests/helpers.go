@@ -417,11 +417,43 @@ func MgmtNICMulti(forwards []PortForward, mac string) []string {
 	}
 }
 
+// TestClusterCreds holds shared credentials extracted from a Talos machine config.
+// Bridges Talos configs and kubespand agent configs so tests don't manually
+// extract fields from v1alpha1.Config in every test function.
+type TestClusterCreds struct {
+	ClusterID    string
+	SharedSecret string
+	CACrt        string // PEM-encoded Talos CA certificate (from machine.ca.crt)
+	MachineToken string // Talos machine token (from machine.token)
+}
+
+// ExtractClusterCreds parses a Talos machine config and returns the shared
+// credentials needed by both Talos VMs and kubespand agent configs.
+func ExtractClusterCreds(t *testing.T, talosConfigData []byte) TestClusterCreds {
+	t.Helper()
+	cfg := ParseTalosConfig(t, talosConfigData)
+	return TestClusterCreds{
+		ClusterID:    cfg.ClusterConfig.ClusterID,
+		SharedSecret: cfg.ClusterConfig.ClusterSecret,
+		CACrt:        string(cfg.MachineConfig.MachineCA.Crt),
+		MachineToken: cfg.MachineConfig.MachineToken,
+	}
+}
+
+// NewRandomCreds generates random cluster credentials for tests that don't
+// need a Talos config (e.g., kubespand-only double-NAT tests).
+func NewRandomCreds() TestClusterCreds {
+	return TestClusterCreds{
+		ClusterID:    RandomBase64(32),
+		SharedSecret: RandomBase64(32),
+	}
+}
+
 // NewTestAgentConfig returns an AgentConfig with common test defaults.
 // Callers can override fields after construction.
-func NewTestAgentConfig(clusterID, sharedSecret, discoveryAddr string) agentconfig.AgentConfig {
+func NewTestAgentConfig(creds TestClusterCreds, discoveryAddr string) agentconfig.AgentConfig {
 	return agentconfig.AgentConfig{
-		Cluster:   agentconfig.ClusterConfig{ID: clusterID, Secret: sharedSecret},
+		Cluster:   agentconfig.ClusterConfig{ID: creds.ClusterID, Secret: creds.SharedSecret},
 		Discovery: agentconfig.DiscoveryConfig{Endpoint: discoveryAddr, Insecure: true, MachineType: "worker"},
 		Kubespan: agentconfig.KubespanConfig{
 			ForceRouting:          true,

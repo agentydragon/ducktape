@@ -11,23 +11,15 @@ import (
 )
 
 func main() {
-	_ = initlib.Init()
-	log.Printf("doublenat mode, role=%s", initlib.Role)
+	params := initlib.Init()
 
-	var linkIP, defaultGW string
-
-	switch initlib.Role {
-	case "vps":
-		linkIP = "192.168.50.2"
-	case "nat1":
-		linkIP = "192.168.60.2"
-		defaultGW = "192.168.60.1"
-	case "nat2":
-		linkIP = "192.168.70.2"
-		defaultGW = "192.168.70.1"
-	default:
-		log.Fatalf("unknown role=%s", initlib.Role)
+	linkIP := params["link_ip"]
+	if linkIP == "" {
+		log.Fatalf("missing link_ip kernel parameter")
 	}
+	defaultGW := params["default_gw"]
+
+	log.Printf("doublenat mode, role=%s, link_ip=%s, default_gw=%s", initlib.Role, linkIP, defaultGW)
 
 	kubespanlib.LoadModules()
 	kubespanlib.ConfigureNetwork(linkIP, "24")

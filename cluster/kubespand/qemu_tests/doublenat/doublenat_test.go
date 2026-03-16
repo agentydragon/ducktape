@@ -20,8 +20,7 @@ func TestDoubleNAT(t *testing.T) {
 	out := h.OutputDir(t)
 	sw.Lap("resolve runfiles")
 
-	clusterID := h.RandomBase64(32)
-	sharedSecret := h.RandomBase64(32)
+	creds := h.NewRandomCreds()
 
 	mcastPortInternet := h.RandomPort()
 	mcastPortLanA := h.RandomPort()
@@ -34,28 +33,28 @@ func TestDoubleNAT(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	baseCfg := h.NewTestAgentConfig(clusterID, sharedSecret, discAddr)
+	baseCfg := h.NewTestAgentConfig(creds, discAddr)
 
 	vmDiscovery := h.BootVM(t, "vm-disc", vmlinuz, initramfsDisc,
-		"mode=discovery role=discovery discovery_ip=192.168.50.254/24",
+		"role=discovery discovery_ip=192.168.50.254/24",
 		h.McastNIC("net0", mcastInternet, "52:54:00:ff:00:01"))
 	sw.Lap("boot discovery VM")
 
 	vpsCfg := baseCfg
 	cidataVPS := h.CreateKubespandCIDATA(t, tmpDir, "vps", vpsCfg)
 	vmVPS := h.BootVM(t, "vm-vps", vmlinuz, initramfs,
-		"role=vps",
+		"role=vps link_ip=192.168.50.2",
 		append(h.McastNIC("net0", mcastInternet, "52:54:00:c0:00:01"), h.CIDATADrive(cidataVPS)...))
 	sw.Lap("boot VPS VM")
 
 	vmRouterA := h.BootVM(t, "vm-router-a", vmlinuz, initramfsRouter,
-		"mode=router role=router-a internet_ip=192.168.50.1/24 lan_ip=192.168.60.1/24",
+		"role=router-a internet_ip=192.168.50.1/24 lan_ip=192.168.60.1/24",
 		append(h.McastNIC("net0", mcastInternet, "52:54:00:c1:00:01"),
 			h.McastNIC("net1", mcastLanA, "52:54:00:c1:00:02")...))
 	sw.Lap("boot Router-A VM")
 
 	vmRouterB := h.BootVM(t, "vm-router-b", vmlinuz, initramfsRouter,
-		"mode=router role=router-b internet_ip=192.168.50.3/24 lan_ip=192.168.70.1/24",
+		"role=router-b internet_ip=192.168.50.3/24 lan_ip=192.168.70.1/24",
 		append(h.McastNIC("net0", mcastInternet, "52:54:00:c2:00:01"),
 			h.McastNIC("net1", mcastLanB, "52:54:00:c2:00:02")...))
 	sw.Lap("boot Router-B VM")
@@ -68,7 +67,7 @@ func TestDoubleNAT(t *testing.T) {
 	nat1Cfg := baseCfg
 	cidataNAT1 := h.CreateKubespandCIDATA(t, tmpDir, "nat1", nat1Cfg)
 	vmNAT1 := h.BootVM(t, "vm-nat1", vmlinuz, initramfs,
-		"role=nat1",
+		"role=nat1 link_ip=192.168.60.2 default_gw=192.168.60.1",
 		append(h.McastNIC("net0", mcastLanA, "52:54:00:d0:00:01"), h.CIDATADrive(cidataNAT1)...))
 	sw.Lap("boot NAT1 VM")
 
@@ -76,7 +75,7 @@ func TestDoubleNAT(t *testing.T) {
 	nat2Cfg.Api.ListenTCP = ":50100"
 	cidataNAT2 := h.CreateKubespandCIDATA(t, tmpDir, "nat2", nat2Cfg)
 	vmNAT2 := h.BootVM(t, "vm-nat2", vmlinuz, initramfs,
-		"role=nat2",
+		"role=nat2 link_ip=192.168.70.2 default_gw=192.168.70.1",
 		append(h.McastNIC("net0", mcastLanB, "52:54:00:e0:00:01"), h.CIDATADrive(cidataNAT2)...),
 		h.PortForward{GuestPort: h.COSIGuestPort})
 	sw.Lap("boot NAT2 VM")
@@ -129,7 +128,7 @@ func TestDoubleNAT(t *testing.T) {
 
 	summary := map[string]interface{}{
 		"topology":            "double_nat",
-		"cluster_id":          clusterID,
+		"cluster_id":          creds.ClusterID,
 		"mcast_port_internet": mcastPortInternet,
 		"mcast_port_lan_a":    mcastPortLanA,
 		"mcast_port_lan_b":    mcastPortLanB,

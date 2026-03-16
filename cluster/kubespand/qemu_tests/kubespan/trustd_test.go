@@ -28,9 +28,9 @@ func TestTrustdCSRFlow(t *testing.T) {
 	out := h.OutputDir(t)
 	tmpDir := t.TempDir()
 
-	// Parse Talos CP config to extract credentials for kubespand.
+	// Extract shared credentials from the Talos CP config.
 	vpsConfigData := h.ReadRunfile(t, h.TalosVPSConfig)
-	cfg := h.ParseTalosConfig(t, vpsConfigData)
+	creds := h.ExtractClusterCreds(t, vpsConfigData)
 	sw.Lap("parse talos config")
 
 	// Create CIDATA for the Talos CP VM.
@@ -53,12 +53,12 @@ func TestTrustdCSRFlow(t *testing.T) {
 	sw.Lap("boot Talos CP VM")
 
 	// Build kubespand agent config with trustd CSR flow credentials.
-	kubespandCfg := h.NewTestAgentConfig(cfg.ClusterConfig.ClusterID, cfg.ClusterConfig.ClusterSecret, "192.168.50.254:3000")
+	kubespandCfg := h.NewTestAgentConfig(creds, "192.168.50.254:3000")
 	kubespandCfg.Cluster.Endpoint = "https://192.168.50.2:6443"
 	kubespandCfg.Kubespan.ListenPort = 51820
 	kubespandCfg.Kubespan.EndpointFilters = []string{"192.168.50.0/24"}
-	kubespandCfg.Api.CACrt = string(cfg.MachineConfig.MachineCA.Crt)
-	kubespandCfg.Api.Token = cfg.MachineConfig.MachineToken
+	kubespandCfg.Api.CACrt = creds.CACrt
+	kubespandCfg.Api.Token = creds.MachineToken
 	kubespandCfg.Api.ApidPath = "/apid"
 	// Include 127.0.0.1 in cert SANs for port-forwarded test connections.
 	kubespandCfg.Api.CertSANs = []string{"127.0.0.1"}
