@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # ============================================================================
       # ENVIRONMENT SETUP
@@ -41,7 +41,7 @@ jobs:
       # Cache tflint plugins (~/.tflint.d/plugins) to avoid re-downloading from GitHub
       - name: Restore TFLint plugin cache
         id: cache-tflint-restore
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ~/.tflint.d
           key: tflint-plugins-${{ runner.os }}-${{ hashFiles('cluster/.tflint.hcl') }}
@@ -74,7 +74,7 @@ jobs:
       # Cache Ansible Galaxy roles (required for syntax check - meta/main.yml dependencies)
       - name: Restore Ansible Galaxy roles cache
         id: cache-ansible-roles-restore
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ~/.ansible/roles
           key: ansible-roles-${{ runner.os }}-${{ hashFiles('ansible/requirements.yaml') }}
@@ -90,7 +90,7 @@ jobs:
 
       - name: Restore pre-commit cache
         id: cache-precommit-restore
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ~/.cache/pre-commit
           # lockfile.json: nixfmt binary is cached under ~/.cache/pre-commit/nixfmt-bin
@@ -126,21 +126,21 @@ jobs:
 
       - name: Save pre-commit cache
         if: always() && steps.cache-precommit-restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: ~/.cache/pre-commit
           key: ${{ steps.cache-precommit-restore.outputs.cache-primary-key }}
 
       - name: Save Ansible Galaxy roles cache
         if: always() && steps.cache-ansible-roles-restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: ~/.ansible/roles
           key: ${{ steps.cache-ansible-roles-restore.outputs.cache-primary-key }}
 
       - name: Save TFLint plugin cache
         if: always() && steps.cache-tflint-restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: ~/.tflint.d
           key: ${{ steps.cache-tflint-restore.outputs.cache-primary-key }}

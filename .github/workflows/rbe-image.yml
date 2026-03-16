@@ -46,7 +46,7 @@ jobs:
     outputs:
       rbe_image: ${{ steps.meta.outputs.rbe_image }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.ref_name }}
 

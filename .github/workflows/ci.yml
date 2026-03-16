@@ -25,18 +25,18 @@ jobs:
       workflows: ${{ steps.decide.outputs.workflows }}
       infra_changed: ${{ steps.decide.outputs.infra_changed }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v7
       - uses: ./.github/actions/bazel-repo-cache
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
       - name: Cache bazel-diff JAR
         id: cache-bazel-diff
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: bazel-diff.jar
           key: bazel-diff-16.0.0
@@ -46,7 +46,7 @@ jobs:
             "https://github.com/Tinder/bazel-diff/releases/download/16.0.0/bazel-diff_deploy.jar"
         if: steps.cache-bazel-diff.outputs.cache-hit != 'true'
       - name: Cache bazel-diff hashes
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .bazel-diff-cache
           key: bazel-diff-hashes-${{ github.sha }}

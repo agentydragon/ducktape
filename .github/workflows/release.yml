@@ -39,7 +39,7 @@ jobs:
       gterm_theme_needed: ${{ steps.check-gterm_theme.outputs.release_needed }}
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - id: bazel
@@ -83,7 +83,7 @@ jobs:
       always() && !cancelled() && !failure() && (needs.check-releases.outputs.kubespand_needed == 'true' || (github.event_name
       == 'workflow_dispatch' && (inputs.package == 'all' || inputs.package == 'kubespand')))
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - id: bazel
         uses: ./.github/actions/setup-bazel
         with:
@@ -108,7 +108,7 @@ jobs:
       always() && !cancelled() && !failure() && (needs.check-releases.outputs.ducktape_needed == 'true' || (github.event_name
       == 'workflow_dispatch' && (inputs.package == 'all' || inputs.package == 'ducktape')))
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - id: bazel
         uses: ./.github/actions/setup-bazel
         with:
@@ -136,7 +136,7 @@ jobs:
       always() && !cancelled() && !failure() && (needs.check-releases.outputs.ducktape_needed == 'true' || (github.event_name
       == 'workflow_dispatch' && (inputs.package == 'all' || inputs.package == 'ducktape')))
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - id: bazel
         uses: ./.github/actions/setup-bazel
         with:
@@ -166,12 +166,12 @@ jobs:
       always() && !cancelled() && !failure() && (needs.check-releases.outputs.ducktape_needed == 'true' || (github.event_name
       == 'workflow_dispatch' && (inputs.package == 'all' || inputs.package == 'ducktape')))
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
       - id: bazel
         uses: ./.github/actions/setup-bazel
         with:
@@ -210,7 +210,7 @@ jobs:
       tag: kubespand-${{ env.SHORT_SHA }}
       short_sha: ${{ env.SHORT_SHA }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - id: bazel
         uses: ./.github/actions/setup-bazel
         with:
@@ -271,7 +271,7 @@ jobs:
       tag: ducktape-${{ env.SHORT_SHA }}
       short_sha: ${{ env.SHORT_SHA }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - id: bazel
         uses: ./.github/actions/setup-bazel
         with:
@@ -339,7 +339,7 @@ jobs:
       tag: headscale-cleanup-${{ env.SHORT_SHA }}
       short_sha: ${{ env.SHORT_SHA }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - id: bazel
         uses: ./.github/actions/setup-bazel
         with:
@@ -389,7 +389,7 @@ jobs:
       tag: gterm-theme-${{ env.SHORT_SHA }}
       short_sha: ${{ env.SHORT_SHA }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install system dependencies
         run:
           sudo apt-get update && sudo apt-get install -y libcairo2-dev libgirepository-2.0-dev libdbus-1-dev libxcb1-dev
@@ -445,7 +445,7 @@ jobs:
            needs.release-headscale_cleanup.outputs.released == 'true' ||
            needs.release-gterm_theme.outputs.released == 'true')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.ref_name }}
       - uses: cachix/install-nix-action@v30
