@@ -6,6 +6,7 @@ from unittest.mock import patch
 import litellm
 import pytest_bazel
 
+from agent_core.direct_provider import DirectToolProvider
 from nix.home.skills.info_gathering.evals.harness import LLMClient
 from nix.home.skills.info_gathering.evals.twenty_questions.twenty_questions import (
     Correct,
@@ -53,10 +54,10 @@ def _tool_response(tool_name: str, tool_input: dict, tool_id: str) -> litellm.Mo
 TEST_CLIENT = LLMClient(model="test-model")
 
 
-@patch("nix.home.skills.info_gathering.evals.harness.litellm.completion")
-def test_timeout(mock_completion, tmp_path):
+@patch("nix.home.skills.info_gathering.evals.harness.litellm.acompletion")
+async def test_timeout(mock_acompletion, tmp_path):
     """3-turn game with no correct guess -> Timeout, score=0."""
-    mock_completion.side_effect = [
+    mock_acompletion.side_effect = [
         _text_response("Is it alive?"),
         _tool_response("answer", {"response": "no"}, "tu_1"),
         _text_response("Is it man-made?"),
@@ -65,7 +66,7 @@ def test_timeout(mock_completion, tmp_path):
         _tool_response("answer", {"response": "no"}, "tu_3"),
     ]
 
-    summary = run_twenty_questions(
+    summary = await run_twenty_questions(
         name="test_timeout",
         client=TEST_CLIENT,
         agent_system="You are a helpful assistant.",
@@ -73,25 +74,26 @@ def test_timeout(mock_completion, tmp_path):
         sim_system="The secret is: wrench",
         turn_limit=3,
         output_dir=tmp_path,
+        agent_tool_provider=DirectToolProvider(),
     )
 
     assert isinstance(summary.result, Timeout)
     assert summary.result.limit == 3
     assert summary.turns == 3
-    assert mock_completion.call_count == 6
+    assert mock_acompletion.call_count == 6
 
 
-@patch("nix.home.skills.info_gathering.evals.harness.litellm.completion")
-def test_success_on_turn_2(mock_completion, tmp_path):
+@patch("nix.home.skills.info_gathering.evals.harness.litellm.acompletion")
+async def test_success_on_turn_2(mock_acompletion, tmp_path):
     """Agent guesses correctly on turn 2 -> Correct(turns=2)."""
-    mock_completion.side_effect = [
+    mock_acompletion.side_effect = [
         _text_response("Is it a US state?"),
         _tool_response("answer", {"response": "yes"}, "tu_1"),
         _text_response("My answer is: New Mexico"),
         _tool_response("correct_answer", {}, "tu_2"),
     ]
 
-    summary = run_twenty_questions(
+    summary = await run_twenty_questions(
         name="test_success",
         client=TEST_CLIENT,
         agent_system="You are a helpful assistant.",
@@ -99,23 +101,24 @@ def test_success_on_turn_2(mock_completion, tmp_path):
         sim_system="The secret is: New Mexico",
         turn_limit=10,
         output_dir=tmp_path,
+        agent_tool_provider=DirectToolProvider(),
     )
 
     assert isinstance(summary.result, Correct)
     assert summary.result.turns == 2
     assert summary.turns == 2
-    assert mock_completion.call_count == 4
+    assert mock_acompletion.call_count == 4
 
 
-@patch("nix.home.skills.info_gathering.evals.harness.litellm.completion")
-def test_success_on_turn_1(mock_completion, tmp_path):
+@patch("nix.home.skills.info_gathering.evals.harness.litellm.acompletion")
+async def test_success_on_turn_1(mock_acompletion, tmp_path):
     """Agent guesses correctly on turn 1 -> Correct(turns=1)."""
-    mock_completion.side_effect = [
+    mock_acompletion.side_effect = [
         _text_response("My answer is: sourdough starter"),
         _tool_response("correct_answer", {}, "tu_1"),
     ]
 
-    summary = run_twenty_questions(
+    summary = await run_twenty_questions(
         name="test_lucky",
         client=TEST_CLIENT,
         agent_system="test",
@@ -123,6 +126,7 @@ def test_success_on_turn_1(mock_completion, tmp_path):
         sim_system="The secret is: sourdough starter",
         turn_limit=10,
         output_dir=tmp_path,
+        agent_tool_provider=DirectToolProvider(),
     )
 
     assert isinstance(summary.result, Correct)

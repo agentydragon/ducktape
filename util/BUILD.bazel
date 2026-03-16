@@ -52,7 +52,6 @@ py_library(
 
 py_library(
     name = "oci",
-    testonly = True,
     srcs = ["oci.py"],
     data = ["@crane"],
     imports = [".."],
