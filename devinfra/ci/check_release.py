@@ -33,7 +33,7 @@ from pydantic import BaseModel, BeforeValidator
 
 from devinfra.ci.diff_utils import download_bazel_diff, get_changed_files, has_infra_changes, run_bazel_diff
 from devinfra.ci.github_actions import CIEnvironment
-from util.bazel.query import BazelLabel
+from util.bazel.workspace import BazelLabel
 from util.env import get_required_env
 
 logger = logging.getLogger(__name__)

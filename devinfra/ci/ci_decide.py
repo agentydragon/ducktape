@@ -33,6 +33,7 @@ from devinfra.ci.bazel_query import filter_for_ci, query_with_targets
 from devinfra.ci.diff_utils import get_changed_files, get_ci_base_commit, has_infra_changes, run_bazel_diff
 from devinfra.ci.github_actions import CIEnvironment, PushStrategy
 from devinfra.ci.models import AlwaysTrigger, BazelQueryTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
+from util.bazel.workspace import BazelWorkspace
 from util.env import get_optional_env_path, get_required_existing_path
 from util.fmt import format_limited_list
 
@@ -74,7 +75,7 @@ class CIDecision(BaseModel):
 
 
 def should_trigger(
-    name: str, config: WorkflowConfig, targets: list[str], changed_files: set[str]
+    workspace: BazelWorkspace, name: str, config: WorkflowConfig, targets: list[str], changed_files: set[str]
 ) -> tuple[bool, list[str]]:
     """Check if a workflow should be triggered.
 
@@ -98,7 +99,7 @@ def should_trigger(
                 return True, targets
         case BazelQueryTrigger(query=query):
             if targets:
-                matched = query_with_targets(query, targets)
+                matched = query_with_targets(workspace, query, targets)
                 if matched or workflow_file_changed:
                     return True, matched
             elif workflow_file_changed:
@@ -108,7 +109,11 @@ def should_trigger(
 
 
 def _compute_affected_targets(
-    repo: pygit2.Repository, env: CIEnvironment, base_commit: pygit2.Commit, changed_files: set[str]
+    workspace: BazelWorkspace,
+    repo: pygit2.Repository,
+    env: CIEnvironment,
+    base_commit: pygit2.Commit,
+    changed_files: set[str],
 ) -> tuple[list[str], bool]:
     """Compute affected Bazel targets and whether infrastructure changed.
 
@@ -120,7 +125,7 @@ def _compute_affected_targets(
     infra_changed = has_infra_changes(changed_files)
     if infra_changed:
         logger.info("Infrastructure change detected, building all targets")
-        targets = filter_for_ci(["//..."])
+        targets = filter_for_ci(workspace, ["//..."])
         logger.info("Filtered to %d CI-compatible targets", len(targets))
         return targets, True
 
@@ -133,7 +138,7 @@ def _compute_affected_targets(
         return [], False
 
     raw_count = len(affected)
-    targets = filter_for_ci([str(t) for t in affected])
+    targets = filter_for_ci(workspace, [str(t) for t in affected])
     filtered = raw_count - len(targets)
     if filtered:
         logger.info("Filtered %d targets (source files, platform-incompatible, manual)", filtered)
@@ -145,6 +150,7 @@ def _compute_affected_targets(
 def compute_decision(env: CIEnvironment, workflows: dict[str, WorkflowConfig]) -> CIDecision:
     """Compute CI decision based on changes."""
     repo = pygit2.Repository(env.workspace)
+    workspace = BazelWorkspace(root=env.workspace)
 
     if not env.is_pull_request and env.push_strategy == PushStrategy.FULL:
         logger.info("Push with full strategy: building all targets")
@@ -159,7 +165,7 @@ def compute_decision(env: CIEnvironment, workflows: dict[str, WorkflowConfig]) -
     changed_files = get_changed_files(repo, base_commit)
     logger.info("Changed files: %s", format_limited_list(sorted(changed_files), 20))
 
-    targets, infra_changed = _compute_affected_targets(repo, env, base_commit, changed_files)
+    targets, infra_changed = _compute_affected_targets(workspace, repo, env, base_commit, changed_files)
 
     triggered: set[str] = set()
     workflow_targets: dict[str, list[str]] = {}
@@ -167,7 +173,7 @@ def compute_decision(env: CIEnvironment, workflows: dict[str, WorkflowConfig]) -
         if env.event_name not in config.events:
             logger.info("Skipping %s: event %s not in %s", name, env.event_name, config.events)
             continue
-        should_run, wf_targets = should_trigger(name, config, targets, changed_files)
+        should_run, wf_targets = should_trigger(workspace, name, config, targets, changed_files)
         if should_run:
             triggered.add(name)
             if config.targets:

@@ -21,6 +21,8 @@ from pre_commit.constants import CONFIG_FILE
 from pre_commit.repository import all_hooks, install_hook_envs
 from pre_commit.store import Store
 
+from util.fs import restore_file
+
 logger = logging.getLogger(__name__)
 
 _MAX_OUTPUT_CHARS = 500
@@ -35,16 +37,6 @@ def _chdir(path: Path) -> Generator[None]:
         yield
     finally:
         os.chdir(saved)
-
-
-@contextlib.contextmanager
-def _restore_file(path: Path) -> Generator[None]:
-    """Restore file content on exit, even if hooks modified it."""
-    original = path.read_bytes()
-    try:
-        yield
-    finally:
-        path.write_bytes(original)
 
 
 @dataclass
@@ -132,7 +124,7 @@ def run_on_file(file_path: Path, project_dir: Path) -> RunResult:
     # pre-commit's internals assume cwd is the project root:
     # Classifier uses relative paths and hooks inherit process cwd
     # via subprocess.Popen (no cwd= parameter).
-    with _chdir(project_dir), _restore_file(file_path):
+    with _chdir(project_dir), restore_file(file_path):
         hook_results = _run_hooks(file_path, project_dir)
         modified_content = file_path.read_bytes()
 

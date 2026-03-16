@@ -266,6 +266,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        "//util:fs",
         "@pypi//pre_commit",
     ],
 )

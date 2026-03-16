@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import NamedTuple
 
-from util.bazel.query import run_query
+from util.bazel.workspace import BazelWorkspace
 
 
 class CheckResult(NamedTuple):
@@ -58,13 +58,14 @@ class BazelPyTestIndex:
 def build_bazel_index(repo_root: Path) -> BazelPyTestIndex:
     """Query Bazel for all py_test targets and build a src-file index.
 
-    Runs two concurrent bazel queries via bazel_util.query.run_query:
+    Runs two concurrent bazel queries via BazelWorkspace.query:
       - All source files that are srcs of some py_test target
       - Source files that are srcs of a py_test with a custom main= attribute
     """
+    workspace = BazelWorkspace(root=repo_root)
     with ThreadPoolExecutor(max_workers=2) as executor:
-        all_fut = executor.submit(run_query, "labels(srcs, kind(py_test, //...))", cwd=repo_root)
-        exempt_fut = executor.submit(run_query, "labels(srcs, attr(main, '.+', kind(py_test, //...)))", cwd=repo_root)
+        all_fut = executor.submit(workspace.query, "labels(srcs, kind(py_test, //...))")
+        exempt_fut = executor.submit(workspace.query, "labels(srcs, attr(main, '.+', kind(py_test, //...)))")
         all_srcs_labels = all_fut.result()
         exempt_srcs_labels = exempt_fut.result()
 

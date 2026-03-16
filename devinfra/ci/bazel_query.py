@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from util.bazel.query import run_query as _run_query  # avoids shadowing local run_query wrapper below
+from util.bazel.workspace import BazelWorkspace
 
 logger = logging.getLogger(__name__)
 
@@ -32,16 +32,16 @@ def _make_persist_dir() -> Path:
     return query_dir
 
 
-def run_query(query: str) -> list[str]:
+def run_query(workspace: BazelWorkspace, query: str) -> list[str]:
     """Run a bazel query and return matching targets as label strings.
 
     Raises CalledProcessError on failure.
     """
-    labels = _run_query(query, persist_dir=_make_persist_dir())
+    labels = workspace.query(query, persist_dir=_make_persist_dir())
     return [str(label) for label in labels]
 
 
-def query_with_targets(query_template: str, targets: list[str]) -> list[str]:
+def query_with_targets(workspace: BazelWorkspace, query_template: str, targets: list[str]) -> list[str]:
     """Run a Bazel query template with ``$targets`` replaced by the target set.
 
     Returns matching targets, or an empty list if targets is empty.
@@ -51,10 +51,10 @@ def query_with_targets(query_template: str, targets: list[str]) -> list[str]:
 
     target_set = f"set({' '.join(targets)})"
     query = query_template.replace("$targets", target_set)
-    return run_query(query)
+    return run_query(workspace, query)
 
 
-def filter_for_ci(targets: list[str]) -> list[str]:
+def filter_for_ci(workspace: BazelWorkspace, targets: list[str]) -> list[str]:
     """Filter targets for CI: keep only buildable, compatible, non-manual targets.
 
     Combines three filters into a single bazel query invocation:
@@ -86,4 +86,4 @@ def filter_for_ci(targets: list[str]) -> list[str]:
             f"except attr(target_compatible_with, '@platforms//os:macos', $targets) "
             f"except attr(tags, 'manual', $targets)"
         )
-    return run_query(query)
+    return run_query(workspace, query)

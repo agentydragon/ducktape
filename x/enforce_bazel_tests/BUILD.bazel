@@ -1,0 +1,31 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "enforce_bazel_tests",
+    srcs = ["enforce_bazel_tests.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//util/bazel:workspace",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "bench_lib",
+    srcs = ["bench.py"],
+    imports = ["../.."],
+    deps = [
+        ":enforce_bazel_tests",
+        "//util:fs",
+        "//util/bazel:workspace",
+        "@pypi//pygit2",
+    ],
+)
+
+py_binary(
+    name = "bench",
+    imports = ["../.."],
+    main_module = "x.enforce_bazel_tests.bench",
+    deps = [":bench_lib"],
+)

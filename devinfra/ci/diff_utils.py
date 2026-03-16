@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 import pygit2
 
-from util.bazel.query import BazelLabel
+from util.bazel.workspace import BazelLabel
 
 if TYPE_CHECKING:
     from devinfra.ci.github_actions import CIEnvironment
