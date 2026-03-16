@@ -25,22 +25,63 @@ tooling. If the hook fails or was never run, you'll see errors like:
 - **Bazel `FAILED: no such package '@...'`** or `Unable to fetch` — the session bazelrc
   wasn't written, so Bazel's JVM proxy auth flags are missing
 - **`source /tmp/claude_env: No such file`** — the environment file wasn't generated
+- **Bazel `UNAVAILABLE: Unable to resolve host remote.buildbuddy.io`** — BuildBuddy
+  API key not configured (k8s secrets step was skipped)
 
-**Recovery steps:**
+**Recovery steps — follow the session start hook process:**
 
-1. Read <devinfra/claude/README.md> to understand the session start hook architecture
-2. Check the session start log: `tail -100 ~/.claude/session-env/<session_id>/session-start.log`
-3. Source the env file if it exists: `source /tmp/claude_env` (or `CLAUDE_ENV_FILE` value)
-4. If env file is missing, run the session start steps manually:
-   - Run `devinfra/claude/session_start.py` (see <devinfra/claude/README.md> for what it does)
-   - Or run individual steps: TLS CA setup, bazelisk install, env file generation
-5. Verify Bazel: `bazel info`
+The session start hook (`devinfra/claude/session_start.py`) performs these steps in order.
+When recovering manually, follow the same sequence:
+
+1. **Check the session start log first:**
+   `tail -100 ~/.claude/session-env/<session_id>/session-start.log`
+   Source the env file if it exists: `source /tmp/claude_env` (or `CLAUDE_ENV_FILE` value)
+
+2. **TLS CA setup** — Extract the Anthropic egress proxy CA and create trust stores:
+   - CA cert lives at `/usr/local/share/ca-certificates/swp-ca-production.crt`
+   - Create combined CA bundle (system CAs + Anthropic CA)
+   - Create Java truststore: copy system `cacerts` from `$JAVA_HOME/lib/security/cacerts`,
+     then add the Anthropic CA via `keytool -importcert`
+   - Set `SSL_CERT_FILE` to the combined CA bundle path
+
+3. **Install Bazelisk** — Download bazelisk binary to PATH:
+   `curl -fsSL https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 -o /usr/local/bin/bazel && chmod +x /usr/local/bin/bazel`
+
+4. **Fetch K8s secrets** (CRITICAL — provides BuildBuddy API key and other credentials):
+   - The SA token is in `DUCKTAPE_CLAUDE_HOOKS_K8S_TOKEN` env var
+   - Config is in `.claude_hooks/config.yaml` (k8s server, namespace, secret mappings)
+   - Fetch secrets via curl (the Python k8s client may fail with proxy auth issues):
+     ```bash
+     curl -s --cacert "$COMBINED_CA" \
+       -H "Authorization: Bearer $DUCKTAPE_CLAUDE_HOOKS_K8S_TOKEN" \
+       "https://api.allegedly.works:16443/api/v1/namespaces/claude-sandbox/secrets/<secret-name>"
+     ```
+   - Key secrets: `buildbuddy-api-key` (data key: `api-key`), `github-token` (data key: `token`)
+
+5. **Configure BuildBuddy** (CRITICAL — enables RBE for remote test execution):
+   - Run `BUILDBUDDY_API_KEY=<key> bash devinfra/setup_buildbuddy.sh`
+   - This writes `~/.config/bazel/buildbuddy.bazelrc` with the API key and `--config=rbe`
+   - Ensures `~/.bazelrc` has `try-import` for the buildbuddy bazelrc
+
+6. **Write session bazelrc** — See `devinfra/claude/config/bazelrc.mako` for the template.
+   Key settings for web mode: JVM proxy auth flags (`-Djdk.http.auth.tunneling.disabledSchemes=`),
+   truststore path, `--repo_env` for `HTTPS_PROXY`/`SSL_CERT_FILE`/`GIT_SSL_CAINFO`,
+   and `try-import` for the buildbuddy bazelrc.
+
+7. **Verify:** `bazel info` (should connect to BCR through the proxy)
 
 **Notify the user** if you suspect the session start hook failed — they may need to
 re-run it or debug the hook configuration. Do not silently work around the problem.
 
 **Do NOT** fight certificate or proxy errors by setting `--noverify`, `SSL_VERIFY=false`, or
 similar bypasses. The root cause is always a missing or broken session start hook setup.
+
+**Known limitation:** Bazel's gRPC remote execution client cannot authenticate with
+Anthropic's egress proxy (gRPC doesn't support authenticated HTTP CONNECT proxies).
+BCR fetches work (Java HTTP layer handles 407 auth), but `--remote_executor` to
+`remote.buildbuddy.io` fails with `Unable to resolve host`. Tests tagged `requires_qemu`
+or needing RBE workers must be run via CI (BuildBuddy Workflows) or from a machine with
+direct internet access.
 
 ## Sandbox
 
