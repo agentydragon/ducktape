@@ -21,7 +21,7 @@ from pathlib import Path
 import pygit2
 
 from devinfra.precommit.enforce_bazel_tests import _build_universe
-from util.bazel.query import BazelWorkspace
+from util.bazel.workspace import BazelWorkspace
 from util.fs import restore_file
 
 # The file we'll temporarily modify to simulate a change.

@@ -275,7 +275,7 @@ repos:
   # See MODULE.bazel tf.download(mirror={...}) for provider configuration.
 
   # TODO: Re-enable once enforce_bazel_tests runs via Bazel (language: system)
-  # instead of language: python, so it can import util.bazel.query.
+  # instead of language: python, so it can import util.bazel.workspace.
   # - repo: local
   #   hooks:
   #     - id: enforce-bazel-tests

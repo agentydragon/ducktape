@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pygit2
 
-from util.bazel.query import BazelLabel, BazelWorkspace
+from util.bazel.workspace import BazelLabel, BazelWorkspace
 
 # Infrastructure files that affect too many targets — CI catches these.
 _INFRA_PATTERNS = (

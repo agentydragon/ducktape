@@ -69,7 +69,7 @@ Bazel rejects `//:*` with "invalid target name: empty target name". Fixed by usi
 See the plan in the PR description. Key changes:
 
 - New `check_enforce_bazel_tests.py` validator module
-- Uses `util.bazel.query.run_query` directly (no inlining)
+- Uses `util.bazel.workspace.BazelWorkspace` for queries (no inlining)
 - Runs via `run_precommit.sh` wrapper (language: system, no virtualenv isolation)
 - Add `always_run: true` to bazel-precommit hook
 - Set `PRECOMMIT_HOOK=1` env var in `run_precommit.sh` to distinguish from manual invocation

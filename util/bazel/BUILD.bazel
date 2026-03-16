@@ -25,13 +25,6 @@ py_library(
     visibility = ["//visibility:public"],
 )
 
-py_library(
-    name = "query",
-    srcs = ["query.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-)
-
 py_test(
     name = "test_subprocess",
     srcs = ["test_subprocess.py"],
@@ -43,10 +36,10 @@ py_test(
 )
 
 py_test(
-    name = "test_query",
-    srcs = ["test_query.py"],
+    name = "test_workspace",
+    srcs = ["test_workspace.py"],
     deps = [
-        ":query",
+        ":workspace",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

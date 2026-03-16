@@ -163,7 +163,7 @@ live_openai_py_test(
 - `util.workspace.get_build_working_directory()` — cwd where `bazel run` was invoked.
 - `util.runfiles` — runfiles resolution utilities (`//util:runfiles`).
 - `util.bazel_subprocess` — subprocess execution helpers for Bazel (`//util:bazel_subprocess`).
-- `util.bazel_query` — Bazel query utilities and `BazelLabel` type (`//util:bazel_query`).
+- `util.bazel.workspace` — `BazelLabel`, `BazelWorkspace`, and workspace env helpers (`//util/bazel:workspace`).
 - `util.env.get_required_env(name)` — get env var or raise `KeyError` (`//util:env`).
 - `util.env.get_required_env_path(name)` — get env var as `Path`.
 - `util.env.get_required_existing_path(name)` — get env var as `Path`, verify it exists.

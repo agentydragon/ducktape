@@ -20,7 +20,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
-        "//util/bazel:query",
+        "//util/bazel:workspace",
         "@pypi//pygit2",
     ],
 )
@@ -32,7 +32,7 @@ py_library(
     deps = [
         ":enforce_bazel_tests",
         "//util:fs",
-        "//util/bazel:query",
+        "//util/bazel:workspace",
         "@pypi//pygit2",
     ],
 )

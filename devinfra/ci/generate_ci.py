@@ -17,9 +17,8 @@ import yaml
 from devinfra.ci.diff_utils import BAZEL_DIFF_VERSION
 from devinfra.ci.github_actions import Job, Step, Workflow
 from devinfra.ci.models import HarborImageConfig, ReleaseConfig, WorkflowConfig, WorkflowManifest
-from util.bazel.query import BazelLabel
 from util.bazel.runfiles import get_required_path
-from util.bazel.workspace import get_build_workspace_directory
+from util.bazel.workspace import BazelLabel, get_build_workspace_directory
 
 SCRIPT_DIR = Path(__file__).parent
 REPO_ROOT = SCRIPT_DIR.parent.parent

@@ -22,8 +22,7 @@ from textwrap import dedent
 import pathspec
 import pygit2
 
-from util.bazel.query import BazelLabel, run_query
-from util.bazel.workspace import get_build_workspace_directory
+from util.bazel.workspace import BazelLabel, BazelWorkspace, get_build_workspace_directory
 
 
 @dataclasses.dataclass
@@ -48,17 +47,17 @@ _ENTRY_POINT_KINDS = [
 ]
 
 
-def query_orphan_py_libraries(repo_root: Path, *, keep_going: bool = False) -> set[BazelLabel]:
+def query_orphan_py_libraries(workspace: BazelWorkspace, *, keep_going: bool = False) -> set[BazelLabel]:
     """Find py_library targets not transitively depended on by any entry point."""
     kinds = "|".join(_ENTRY_POINT_KINDS)
     expr = dedent(f"""\
         let entry_points = kind("{kinds}", //...)
         in kind("py_library", //...) except deps($entry_points)
     """)
-    return set(run_query(expr, cwd=repo_root, keep_going=keep_going))
+    return set(workspace.query(expr, keep_going=keep_going))
 
 
-def query_bazel_files(repo_root: Path) -> set[Path]:
+def query_bazel_files(workspace: BazelWorkspace) -> set[Path]:
     """Query all source files covered by Bazel targets.
 
     Uses labels(srcs/data, //...) for standard attributes, and adds full
@@ -75,7 +74,7 @@ def query_bazel_files(repo_root: Path) -> set[Path]:
         "  union deps(kind('create_data_blob', //...))"
         ")"
     )
-    labels = run_query(expr, cwd=repo_root)
+    labels = workspace.query(expr)
     return {p for label in labels if (p := label.path)}
 
 
@@ -87,7 +86,7 @@ def get_git_files(repo_root: Path) -> set[Path]:
     return {Path(entry.path) for entry in index}
 
 
-def run_report(repo_root: Path, whitelist_path: Path) -> tuple[list[Path], list[PatternStats]]:
+def run_report(workspace: BazelWorkspace, whitelist_path: Path) -> tuple[list[Path], list[PatternStats]]:
     """Return (orphaned_files, per_pattern_stats), querying Bazel once.
 
     Each non-blank, non-comment whitelist pattern is parsed exactly once and
@@ -97,8 +96,8 @@ def run_report(repo_root: Path, whitelist_path: Path) -> tuple[list[Path], list[
     either because all matching files are now in Bazel (bazel_covered > 0)
     or because the pattern matches no git-tracked files at all.
     """
-    git_files = get_git_files(repo_root)
-    bazel_files = query_bazel_files(repo_root)
+    git_files = get_git_files(workspace.root)
+    bazel_files = query_bazel_files(workspace)
 
     raw_orphans = git_files - bazel_files
     covered_files = git_files - raw_orphans  # files in both git and Bazel
@@ -141,10 +140,11 @@ def main() -> int:
     args = parser.parse_args()
 
     repo_root = get_build_workspace_directory()
+    workspace = BazelWorkspace(root=repo_root)
     whitelist_path = args.whitelist or repo_root / "devinfra/orphans/whitelist.txt"
 
-    orphans, stats = run_report(repo_root, whitelist_path)
-    orphan_libs = query_orphan_py_libraries(repo_root, keep_going=args.keep_going)
+    orphans, stats = run_report(workspace, whitelist_path)
+    orphan_libs = query_orphan_py_libraries(workspace, keep_going=args.keep_going)
 
     for orphan in orphans:
         print(orphan)
