@@ -32,7 +32,7 @@ class ElicitationInput(HookInputBase):
 
 class ElicitationHookSpecificOutput(CamelModel):
     hook_event_name: Literal["Elicitation"] = "Elicitation"
-    action: ElicitationAction
+    action: ElicitationAction | None = None
     content: dict[str, Any] | None = None
 
 
@@ -51,7 +51,7 @@ class ElicitationResultInput(HookInputBase):
 
 class ElicitationResultHookSpecificOutput(CamelModel):
     hook_event_name: Literal["ElicitationResult"] = "ElicitationResult"
-    action: ElicitationAction
+    action: ElicitationAction | None = None
     content: dict[str, Any] | None = None
 
 

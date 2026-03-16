@@ -20,8 +20,9 @@ from devinfra.claude.claude_api.hooks.pre_compact import PreCompactInput
 from devinfra.claude.claude_api.hooks.pre_tool_use import PreToolUseInput
 from devinfra.claude.claude_api.hooks.session_end import SessionEndInput
 from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput
-from devinfra.claude.claude_api.hooks.stop import StopInput, SubagentStopInput
+from devinfra.claude.claude_api.hooks.stop import StopInput
 from devinfra.claude.claude_api.hooks.subagent_start import SubagentStartInput
+from devinfra.claude.claude_api.hooks.subagent_stop import SubagentStopInput
 from devinfra.claude.claude_api.hooks.task_completed import TaskCompletedInput
 from devinfra.claude.claude_api.hooks.teammate_idle import TeammateIdleInput
 from devinfra.claude.claude_api.hooks.user_prompt_submit import UserPromptSubmitInput

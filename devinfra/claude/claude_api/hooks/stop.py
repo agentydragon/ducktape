@@ -1,4 +1,4 @@
-"""Pydantic models for Claude Code Stop and SubagentStop hooks."""
+"""Pydantic models for Claude Code Stop hook."""
 
 from typing import Literal
 
@@ -12,17 +12,4 @@ class StopInput(HookInputBase):
 
 
 class StopOutput(HookOutputBase):
-    pass
-
-
-class SubagentStopInput(HookInputBase):
-    hook_event_name: Literal["SubagentStop"] = "SubagentStop"
-    stop_hook_active: bool
-    agent_id: str
-    agent_type: str
-    agent_transcript_path: str
-    last_assistant_message: str
-
-
-class SubagentStopOutput(HookOutputBase):
     pass

@@ -619,7 +619,7 @@ py_test(
     name = "test_schema_equivalence",
     srcs = ["test_schema_equivalence.py"],
     data = [
-        "//devinfra/claude/claude_api/hooks/schemas/2.1.76:hook_output_schema",
+        "//devinfra/claude/claude_api/hooks/schemas/2.1.76:hook_schemas",
     ],
     imports = ["../.."],
     deps = [
@@ -635,7 +635,9 @@ py_test(
         "//devinfra/claude/claude_api/hooks:setup",
         "//devinfra/claude/claude_api/hooks:stop",
         "//devinfra/claude/claude_api/hooks:subagent_start",
+        "//devinfra/claude/claude_api/hooks:subagent_stop",
         "//devinfra/claude/claude_api/hooks:user_prompt_submit",
+        "//util:json_schema",
         "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pytest",

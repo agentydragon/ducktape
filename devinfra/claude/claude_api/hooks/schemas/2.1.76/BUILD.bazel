@@ -17,23 +17,14 @@ js_binary(
 )
 
 js_run_binary(
-    name = "hook_output_schema",
-    outs = ["hook_output.json"],
-    args = [
-        "hookOutput",
+    name = "hook_schemas",
+    outs = [
+        "hook_input.json",
         "hook_output.json",
     ],
-    chdir = package_name(),
-    tool = ":export_json_schema_bin",
-    visibility = ["//devinfra/claude:__subpackages__"],
-)
-
-js_run_binary(
-    name = "hook_input_schema",
-    outs = ["hook_input.json"],
     args = [
-        "AnyHookInput",
-        "hook_input.json",
+        "hookOutput=hook_output.json",
+        "AnyHookInput=hook_input.json",
     ],
     chdir = package_name(),
     tool = ":export_json_schema_bin",

@@ -63,6 +63,13 @@ py_library(
 )
 
 py_library(
+    name = "json_schema",
+    srcs = ["json_schema.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "playwright",
     testonly = True,
     srcs = ["playwright.py"],

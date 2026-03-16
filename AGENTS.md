@@ -37,6 +37,9 @@ other tooling. If the hook fails or was never run, you'll see errors like:
 5. Verify the auth proxy: `curl -s --max-time 5 -x http://127.0.0.1:18081 https://bcr.bazel.build/ | head -1`
 6. Verify Bazel: `bazel info`
 
+**Notify the user** if you suspect the session start hook failed — they may need to
+re-run it or debug the hook configuration. Do not silently work around the problem.
+
 **Do NOT** fight certificate or proxy errors by setting `--noverify`, `SSL_VERIFY=false`, or
 similar bypasses. The root cause is always a missing or broken session start hook setup.
 

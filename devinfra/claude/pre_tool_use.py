@@ -6,7 +6,7 @@ normal permission system.
 
 from devinfra.claude.claude_api.hooks.pre_tool_use import (
     PermissionDecision,
-    PreToolUseDecision,
+    PreToolUseHookSpecificOutput,
     PreToolUseInput,
     PreToolUseOutput,
 )
@@ -22,13 +22,13 @@ def evaluate(hook_input: PreToolUseInput) -> PreToolUseOutput:
         command = hook_input.tool_input.get("command", "")
         if command in ALWAYS_ALLOW_COMMANDS:
             return PreToolUseOutput(
-                hook_specific_output=PreToolUseDecision(
+                hook_specific_output=PreToolUseHookSpecificOutput(
                     permission_decision=PermissionDecision.ALLOW,
                     permission_decision_reason="Command in always-allow list",
                 )
             )
     return PreToolUseOutput(
-        hook_specific_output=PreToolUseDecision(
+        hook_specific_output=PreToolUseHookSpecificOutput(
             permission_decision=PermissionDecision.ALLOW, permission_decision_reason="No policy matched"
         )
     )

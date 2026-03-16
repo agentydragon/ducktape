@@ -80,6 +80,14 @@ py_library(
 )
 
 py_library(
+    name = "subagent_stop",
+    srcs = ["subagent_stop.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [":common"],
+)
+
+py_library(
     name = "post_tool_use_failure",
     srcs = ["post_tool_use_failure.py"],
     imports = ["../../../.."],
@@ -224,6 +232,7 @@ py_library(
         ":session_start",
         ":stop",
         ":subagent_start",
+        ":subagent_stop",
         ":task_completed",
         ":teammate_idle",
         ":user_prompt_submit",

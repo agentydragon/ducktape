@@ -32,9 +32,5 @@ class PreToolUseHookSpecificOutput(CamelModel):
     additional_context: str | None = None
 
 
-# Keep old name as alias for backwards compatibility in pre_tool_use.py
-PreToolUseDecision = PreToolUseHookSpecificOutput
-
-
 class PreToolUseOutput(HookOutputBase):
     hook_specific_output: PreToolUseHookSpecificOutput | None = None
