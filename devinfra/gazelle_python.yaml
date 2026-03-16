@@ -36,6 +36,7 @@ manifest:
     asgiref: asgiref
     asttokens: asttokens
     asyncpg: asyncpg
+    asyncvnc: asyncvnc
     attr: attrs
     attrs: attrs
     authlib: authlib
@@ -186,6 +187,7 @@ manifest:
     h2: h2
     hamcrest: pyhamcrest
     hass_client: hass_client
+    hcloud: hcloud
     hf_xet: hf_xet
     homeassistant_api: homeassistant_api
     hpack: hpack
@@ -240,6 +242,7 @@ manifest:
     jwt: pyjwt
     key_value: py_key_value_aio
     keyring: keyring
+    keysymdef: keysymdef
     kiwisolver: kiwisolver
     kubernetes: kubernetes
     kubernetes_asyncio: kubernetes_asyncio
@@ -408,7 +411,7 @@ manifest:
     supervisor: supervisor
     syrupy: syrupy
     tabulate: tabulate
-    takethetime: TakeTheTime
+    takethetime: takethetime
     tenacity: tenacity
     terminado: terminado
     testcontainers.arangodb: testcontainers
@@ -505,4 +508,4 @@ manifest:
     zmq: pyzmq
   pip_repository:
     name: pypi
-integrity: 48ff857d5d45f472b10762ae110bf4deefd66b6e43c2885ecfaab1894753e861
+integrity: a7e17ac3c3434be8311d772bfbf1752f8d5cd5ff2139d2b41c03367624c95634
