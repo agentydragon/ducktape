@@ -7,20 +7,16 @@ PID 1 duties (orphan adoption, zombie reaping).
 
 ## Target Binary
 
-| Property            | Value                                      |
-| ------------------- | ------------------------------------------ |
-| **Release**         | `process_api_2026-02-02-04-57`             |
-| **Package version** | `0.1.0`                                    |
-| **ELF Build ID**    | `b0e4b2f428d0472787f5b2a22fea44a58bc8fdd0` |
-| **Reference file**  | `claude_web_env/reference/process_api.gz`  |
-| **Language**        | Rust                                       |
-| **Compiler**        | `rustc 1.83.0 (90b35a623 2024-11-26)`      |
-| **Stripped**        | Yes (no debug info, no symbol table)       |
-| **Binary size**     | ~912 KB (gzipped)                          |
-| **Functions**       | 2,382 total (29 application, rest stdlib)  |
+| Property           | Value                                      |
+| ------------------ | ------------------------------------------ |
+| **ELF Build ID**   | `e409c31a846219e05541706c43daf1756365f486` |
+| **Reference file** | `claude_web_env/reference/process_api.gz`  |
+| **Language**       | Rust                                       |
+| **Stripped**       | Yes (no debug info, no symbol table)       |
+| **Linking**        | Static-pie (was dynamically linked)        |
+| **Binary size**    | 3.2 MB uncompressed, ~1.5 MB gzipped       |
 
-Reconstructed source lives under `b0e4b2f4/` (Build ID prefix), so multiple
-binary versions can coexist.
+Reconstructed source lives under `e409c31a/` (Build ID prefix).
 
 ## Build
 
@@ -161,10 +157,31 @@ Options:
   --control-server-addr <ADDR>     HTTP control server (e.g., "0.0.0.0:2025")
                                    When set, SIGINT handler is disabled
   --block-local-connections        Reject 127.0.0.1, ::1, 0.0.0.0, :: on both servers
+  --firecracker-init               Run as Firecracker VM init (new in e409c31a)
 ```
 
 All flags accept corresponding `SCREAMING_SNAKE_CASE` environment variables
-(e.g., `MEMORY_LIMIT_BYTES`, `CONTROL_SERVER_ADDR`).
+(e.g., `MEMORY_LIMIT_BYTES`, `CONTROL_SERVER_ADDR`, `FIRECRACKER_INIT`).
+
+### `--firecracker-init` Mode (New)
+
+When `--firecracker-init` is set, `process_api` runs a full VM init sequence
+before starting the WebSocket listener:
+
+1. Mount root partition (`/dev/vda`)
+2. `pivot_root` to mounted filesystem
+3. Set up networking (socket creation, interface configuration)
+4. Set up FUSE (`/dev/fuse`, FUSE service URL)
+5. Mount rclone_tools (remote storage)
+6. Parse `container.env` JSON for memory and filestore mount config
+7. Mount memory and filestore destinations
+8. Spawn the main process
+
+This mode is used in the current live container invocation:
+
+```
+/process_api --firecracker-init --addr 0.0.0.0:2024 --max-ws-buffer-size 32768 --block-local-connections
+```
 
 ## WebSocket Protocol
 
@@ -505,7 +522,16 @@ Tracked zombies log their age when finally reaped.
 
 ## Container Integration
 
-In the live Claude Code web container, `process_api` is invoked as:
+In the live Claude Code web container (as of 2026-03-16), `process_api` is invoked as:
+
+```
+/process_api --firecracker-init \
+  --addr 0.0.0.0:2024 \
+  --max-ws-buffer-size 32768 \
+  --block-local-connections
+```
+
+Previous invocation (before `--firecracker-init`):
 
 ```
 /process_api --addr 0.0.0.0:2024 \
@@ -553,12 +579,13 @@ strings) but have no behavioral impact.
 
 ## Verification Status
 
-See <b0e4b2f4/PLAN.md> for detailed verification work items.
+See <e409c31a/PLAN.md> for detailed status. Previous version: `b0e4b2f4/`.
 
 - [x] Binary analysis, decompilation, translation, build
-- [x] String differential analysis + remediation (Phases A-D)
+- [x] String differential analysis + remediation
 - [x] String coverage diff passes (application-level strings)
 - [x] Every function annotated with `Decompiled from 0x...`
-- [x] Structural type enrichment (Phase C7)
-- [ ] Behavioral test harness written
+- [x] Structural type enrichment
+- [x] Firecracker init module (new in e409c31a)
+- [ ] Behavioral test harness
 - [ ] Behavioral tests pass against both binaries

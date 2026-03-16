@@ -74,70 +74,16 @@ step count. See PLAN.md for details.
 
 ### Container Update Procedure
 
-When the live container has been updated (new runtime versions, new binaries, new
-environment variables), follow this procedure to bring the reconstruction in sync:
+Use the `/update_container_re` skill for the full procedure. It covers:
+detection, binary capture, parallel RE subagents for bindiff/decompilation,
+container snapshot→diff, and documentation refresh.
 
-#### 1. Capture current versions
+### RE Documentation Style
 
-```bash
-cd claude_web_env
-bazel run //claude_web_env/tools:capture_versions -- > reference/versions-$(date +%Y-%m-%d).yaml
-```
-
-This creates a structured YAML snapshot of all runtime versions, npm packages,
-binary hashes, environment variables, and environment-manager metadata.
-
-#### 2. Compare against previous capture
-
-```bash
-bazel run //claude_web_env/tools:capture_versions -- --diff reference/versions-YYYY-MM-DD.yaml
-```
-
-This shows a unified diff of what changed. Use this to identify which Dockerfile
-version pins, rootfs files, and documentation need updating.
-
-#### 3. Update the Dockerfile
-
-For each changed version identified in the diff:
-
-- **Node.js versions**: Update download URLs in the Layer 9 `RUN` step
-- **npm globals**: Update version pins in the Layer 10 `RUN` step
-- **Bun version**: Update the `bun-v` pin in Layer 17
-- **Go versions**: Update download URLs in Layer 13
-- **golangci-lint**: Update version in Layer 13
-- **APT packages**: Check if snapshot date needs advancing or version pins need updating
-
-#### 4. Update documentation
-
-Files that may need updates when the container changes:
-
-| File                            | What to update                                                   |
-| ------------------------------- | ---------------------------------------------------------------- |
-| `docs/environment_discovery.md` | environment-manager version, help output, flags, env vars, tools |
-| `docs/container_spec.md`        | Captured date, any changed runtime properties                    |
-| `README.md`                     | Build instructions if changed                                    |
-| `PLAN.md`                       | Diff summary after rebuild                                       |
-
-For `environment_discovery.md` specifically, check:
-
-- **environment-manager `--version`** output
-- **environment-manager `--help`** for new/changed subcommands
-- **`task-run --help`** and **`orchestrator --help`** for new/changed flags
-- **`print-sandbox-settings`** for changed sandbox configuration
-- **Environment variables**: run `env | grep -E "^(CLAUDE|CODESIGN|MCP_)"` and compare
-- **Stop hook**: diff `/home/claude/.claude/stop-hook-git-check.sh` against docs
-
-#### 5. Rebuild and diff
-
-```bash
-bazel run //claude_web_env/tools:build_and_diff
-```
-
-Review `diff_report.md` and update `PLAN.md` with the new diff summary.
-
-#### 6. Commit everything
-
-Commit the versions snapshot, Dockerfile changes, doc updates, and diff report together.
+READMEs should describe the **current binary version only** — no historical
+change summaries, version diff sections, or accumulated change history.
+Previous versions are preserved in their own BuildID directories. The parent
+README reflects current state.
 
 ### Current Plan
 

@@ -1,6 +1,6 @@
 # Claude Code Web Environment Discovery
 
-Documented from a live session on 2026-01-19.
+Documented from a live session on 2026-03-16.
 
 ## Table of Contents
 
@@ -24,15 +24,19 @@ Documented from a live session on 2026-01-19.
 The container uses a custom init process instead of systemd:
 
 ```
-PID 1: /process_api --addr 0.0.0.0:2024 \
+PID 1: /process_api --firecracker-init \
+         --addr 0.0.0.0:2024 \
          --max-ws-buffer-size 32768 \
-         --cpu-shares 4096 \
-         --oom-polling-period-ms 100 \
-         --memory-limit-bytes 17179869184 \
          --block-local-connections
 ```
 
-**Binary**: `/process_api` (Rust, ELF 64-bit, stripped)
+**Binary**: `/process_api` (Rust, ELF 64-bit, static-pie linked, stripped)
+
+As of 2026-03-16, the binary uses `--firecracker-init` mode, which adds a
+full VM init system (mount root, pivot_root, networking, FUSE, rclone) before
+starting the WebSocket listener. The `--cpu-shares`, `--memory-limit-bytes`,
+and `--oom-polling-period-ms` flags are no longer passed on the command line
+in the current container invocation.
 
 **Help output**:
 
@@ -48,13 +52,16 @@ Options:
       --cgroupv2                                Use cgroups v2
       --control-server-addr <ADDR>              For graceful shutdown
       --block-local-connections                 Block localhost connections
+      --firecracker-init                        Run as Firecracker VM init
 ```
 
 **Purpose**:
 
 - Acts as container init (PID 1)
+- In `--firecracker-init` mode: mounts root filesystem, sets up networking,
+  configures FUSE, mounts rclone tools, then spawns the main process
 - Exposes WebSocket API on port 2024
-- Manages container resources (memory: 16GB, CPU shares: 4096)
+- Manages container resources (memory limits, CPU shares via cgroups)
 - Handles OOM conditions
 - Blocks local network connections for security
 
@@ -138,8 +145,8 @@ From `/usr/local/bin/environment-manager print-sandbox-settings`:
 
 ## Environment Runner
 
-Binary: `/usr/local/bin/environment-manager` (Go, ELF 64-bit)
-Version: `staging-7c3cd5476`
+Binary: `/usr/local/bin/environment-manager` → `/opt/env-runner/environment-manager` (Go, ELF 64-bit, unstripped with DWARF)
+Version: `staging-68f0dff496` (previously `staging-7c3cd5476`)
 
 ### Overview
 

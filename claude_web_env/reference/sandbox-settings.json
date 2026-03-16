@@ -25,5 +25,5 @@
     "denyWrite": [],
     "allowGitConfig": true
   },
-  "enableWeakerNestedSandbox": true
+  "enableWeakerNestedSandbox": false
 }

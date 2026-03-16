@@ -1,4 +1,161 @@
-=== task-run help ===
+=== environment-runner --help ===
+Environment Runner handles the lifecycle of agentic sessions.
+
+Usage:
+  environment-runner [command]
+
+Available Commands:
+  completion             Generate the autocompletion script for the specified shell
+  help                   Help about any command
+  orchestrator           Poll for session tasks and hand off for execution
+  poll                   Make a single poll request for work
+  print-sandbox-settings Print the default sandbox runtime settings
+  setup                  Install dependencies for orchestrator mode
+  task-run               Handles execution of a provided session
+
+Flags:
+  -h, --help      help for environment-runner
+  -v, --version   version for environment-runner
+
+Use "environment-runner [command] --help" for more information about a command.
+
+=== environment-runner --version ===
+environment-runner version staging-68f0dff496
+
+=== environment-runner setup --help ===
+The setup command pre-installs all required dependencies for orchestrator mode.
+
+This command is intended to be run during container image build to ensure that
+all dependencies are available when the worker starts. It installs:
+
+  - Claude Code (@anthropic-ai/claude-code) via npm
+  - Sandbox Runtime (@anthropic-ai/sandbox-runtime) via npm
+
+Running setup does NOT disable auto-updates. The orchestrator and task-run
+commands still check for updates on each session. The benefit of running setup
+is faster first session startup since dependencies are pre-installed.
+
+Prerequisites:
+  - npm must be available in PATH (comes with Node.js)
+  - Node.js must be installed (for running the installed packages)
+
+Optionally, provide an environment service key to verify API connectivity:
+  --service-key-file /path/to/key    Verify environment can reach the API
+
+The healthcheck calls /v1/environments/whoami to validate the service key
+and confirm network connectivity. Recommended for manual testing.
+
+Note: Language runtimes (Node.js, Python, Go) must be pre-installed in the
+container image. The environment manager only creates symlinks to these during
+session initialization.
+
+Usage:
+  environment-runner setup [flags]
+
+Examples:
+  # Basic usage - install everything with defaults (no healthcheck)
+  environment-runner setup
+
+  # Specify versions
+  environment-runner setup --claude-code-version 2.0.20 --sandbox-runtime-version 1.2.3
+
+  # Skip certain installations
+  environment-runner setup --skip-sandbox-runtime
+
+  # Setup with healthcheck - for manual testing
+  environment-runner setup --service-key-file /path/to/key
+
+  # Setup with healthcheck via env var
+  export ENVIRONMENT_SERVICE_KEY="sk-ant-..."
+  environment-runner setup
+
+  # Verbose output
+  environment-runner setup --log-level debug
+
+Flags:
+      --api-url string                   API base URL for connectivity healthcheck (default "https://api.anthropic.com")
+      --claude-code-version string       Version of Claude Code to install (latest, stable, or specific version like 2.0.20) (default "latest")
+  -h, --help                             help for setup
+      --log-level string                 Log level (debug, info, warn, error) (default "info")
+      --sandbox-runtime-version string   Version of sandbox-runtime to install (latest or specific version) (default "latest")
+      --service-key-file string          Path to environment service key file for API healthcheck. Falls back to ENVIRONMENT_SERVICE_KEY env var if not set. When provided, verifies connectivity by calling /v1/environments/whoami
+      --skip-claude-code                 Skip Claude Code installation
+      --skip-sandbox-runtime             Skip sandbox-runtime installation
+
+=== environment-runner orchestrator --help ===
+The orchestrator command polls the API for session tasks and handing off work to be executed.
+
+It handles:
+- Discovering environment identity via the /v1/environments/whoami endpoint
+- Polling the environments API work/poll endpoint
+- Executing work:
+  - With --execute-hook: pipes JSON to hook via stdin and exits with hook's exit code
+  - Without --execute-hook: auto-invokes 'task-run --input-format=v1'
+    - With --sandbox-backend=sandbox-runtime (default): wraps execution in sandbox
+    - With --sandbox-backend=none: runs without sandbox (logs warning)
+- Running timeout hooks for periodic maintenance (e.g., monorepo updates)
+- Sleeping with jitter when queue is empty
+- Graceful shutdown on SIGTERM/SIGINT
+
+Required environment variable:
+  ENVIRONMENT_SERVICE_KEY: Service key for the environment
+
+The environment ID and organization ID are discovered automatically via the whoami
+endpoint. You can optionally provide --environment-id and --organization-id flags
+to validate them against the token's identity.
+
+Usage:
+  environment-runner orchestrator [flags]
+
+Examples:
+  # Basic usage with sandbox (recommended - identity discovered via whoami)
+  export ENVIRONMENT_SERVICE_KEY="your-environment-service-key"
+  environment-runner orchestrator
+
+  # With explicit IDs for validation
+  export ENVIRONMENT_SERVICE_KEY="your-environment-service-key"
+  environment-runner orchestrator \
+    --environment-id "env_01ABC123" \
+    --organization-id "org_01XYZ789"
+
+  # With custom execute hook to handle sessions
+  export ENVIRONMENT_SERVICE_KEY="your-environment-service-key"
+  environment-runner orchestrator \
+    --environment-id "env_01ABC123" \
+    --organization-id "org_01XYZ789" \
+    --execute-hook "./handle-session.sh"
+
+  # Without sandbox (auto-invokes task-run without sandboxing)
+  export ENVIRONMENT_SERVICE_KEY="your-environment-service-key"
+  environment-runner orchestrator \
+    --sandbox-backend none
+
+Flags:
+      --api-url string                  API base URL (default "https://api.anthropic.com")
+      --client-id string                Client ID (worker identifier, default: hostname)
+      --environment-id string           Environment ID (find at claude.ai/settings, e.g., env_01ABC123)
+      --execute-hook string             Command to run with session JSON via stdin when task received. If not provided, defaults to self-invoking 'task-run --stdin --input-format=v1' (with or without sandbox based on --sandbox-backend)
+      --execute-hook-timeout duration   Timeout for execute hook (0 = no timeout, session lifetime controlled by API)
+  -h, --help                            help for orchestrator
+      --log-level string                Log level (debug, info, warn, error) (default "info")
+      --loop-timeout duration           Loop timeout before triggering timeout hook (default 5m0s)
+      --max-poll-failures int           Maximum consecutive poll failures before exiting (0 = infinite)
+      --organization-id string          Organization ID (find at claude.ai/settings > Account)
+      --poll-hook string                Command to execute for polling instead of built-in Poller. Receives environment context via stdin, returns work JSON via stdout.
+      --poll-hook-timeout duration      Timeout for poll hook execution (default 30s)
+      --poll-timeout duration           Poll request timeout duration (default 5m0s)
+      --reclaim-older-than-ms int       Reclaim unacknowledged work items older than this many milliseconds (0 = use API default of 5000ms)
+      --sandbox-backend string          Sandbox backend for execute hook: none, sandbox-runtime.
+                                        Use 'none' to disable sandboxing (allows running as non-root user).
+                                        Use 'sandbox-runtime' (default) for sandboxed execution (requires root or unprivileged user namespaces). (default "sandbox-runtime")
+      --sandbox-settings string         Path to custom sandbox-runtime settings JSON file (must include Anthropic domains)
+      --service-key-file string         Path to file containing the environment service key. If not set, falls back to ENVIRONMENT_SERVICE_KEY environment variable
+      --skip-container-lock             Skip container-level lock (WARNING: allows multiple sessions per container, use only for development/testing)
+      --skip-git-config                 Skip git configuration setup (use container's existing .gitconfig)
+      --timeout-hook string             Command to run on loop timeout (e.g., monorepo updates)
+      --timeout-hook-timeout duration   Timeout for timeout hook execution (e.g., monorepo updates) (default 5m0s)
+
+=== environment-runner task-run --help ===
 Connects directly to the API to execute an existing session id.
 
 Provide a JSON object via stdin with the following structure:
@@ -27,6 +184,7 @@ Usage:
 Flags:
       --allowed-tools string                    Comma-separated list of allowed tools for Claude (e.g., 'Bash,Edit,Write,MultiEdit,Agent,Glob,Grep,LS,View,Search,NotebookEdit,NotebookRead,TodoRead,TodoWrite')
       --claude-agent-version claude --version   Target Claude Agent version (latest, current, stable, or specific version like 2.0.20), located at claude --version. Use 'current' to skip installation and updates. Defaults to 'latest' if not specified.
+      --claude-path string                      Path to the Claude CLI executable or a wrapper binary. When specified, this executable runs instead of the default 'claude' command. Wrapper binaries must forward all arguments and connect stdin/stdout directly to Claude Code.
       --debug                                   Enable debug mode when executing the Claude Agent.
       --environment-id string                   Environment ID for API calls (required for self-hosted)
   -h, --help                                    help for task-run
@@ -35,26 +193,24 @@ Flags:
       --local-testing                           Disable Claude WebSocket connections and git configuration (run in standalone mode for local testing)
       --log-level string                        Log level (debug, info, warn, error) (default "info")
       --organization-id string                  Organization ID for API calls (required for self-hosted)
+      --print-code-logs                         Print Claude Code logs to console when execution completes or fails
       --session string                          ID of the session to manage (required)
       --session-mode string                     Session mode: 'new' (default for Cloud), 'resume' (skip git clone and setup scripts), 'resume-cached' (default for self-hosted), 'setup-only' (exit after setup) (default "new")
+      --skip-git-config                         Skip git configuration setup (use container's existing .gitconfig)
       --stdin                                   Deprecated: stdin is now always used. This flag is ignored.
       --upgrade-claude-code                     Deprecated: use --claude-agent-version instead. When true (default), upgrades Claude Agent to latest version. (default true)
       --verbose-claude-logs                     Enable verbose logging of Claude Agent output to console (automatically enabled with --local-testing)
       --working-directory string                Default working directory for the session (used when session context doesn't specify cwd) (default "/root")
 
-=== orchestrator help ===
-The orchestrator command polls the API for session tasks and handing off work to be executed.
+=== environment-runner poll --help ===
+The poll command makes a single non-blocking request to the API for work.
 
-It handles:
-- Discovering environment identity via the /v1/environments/whoami endpoint
-- Polling the environments API work/poll endpoint
-- Executing work:
-  - With --execute-hook: pipes JSON to hook via stdin and exits with hook's exit code
-  - With --sandbox-backend=sandbox-runtime (default): auto-invokes 'task-run --input-format=v1' in sandbox
-  - Without --execute-hook and without sandbox: outputs JSON to stdout and exits (caller handles execution)
-- Running timeout hooks for periodic maintenance (e.g., monorepo updates)
-- Sleeping with jitter when queue is empty
-- Graceful shutdown on SIGTERM/SIGINT
+This is a thin wrapper around the poll endpoint that returns work JSON on stdout
+if work is available, or "null" if the queue is empty.
+
+The worker_id parameter enables per-worker IDs for better observability
+and faster reclaim of unacknowledged work. If not provided, it defaults to the
+system hostname. The worker ID is sent via the Anthropic-Worker-ID HTTP header.
 
 Required environment variable:
   ENVIRONMENT_SERVICE_KEY: Service key for the environment
@@ -64,55 +220,34 @@ endpoint. You can optionally provide --environment-id and --organization-id flag
 to validate them against the token's identity.
 
 Usage:
-  environment-runner orchestrator [flags]
+  environment-runner poll [flags]
 
 Examples:
-  # Basic usage with sandbox (recommended - identity discovered via whoami)
+  # Basic usage (identity discovered via whoami, worker-id defaults to hostname)
   export ENVIRONMENT_SERVICE_KEY="your-environment-service-key"
-  environment-manager orchestrator
+  environment-runner poll
+
+  # With explicit worker ID
+  export ENVIRONMENT_SERVICE_KEY="your-environment-service-key"
+  environment-runner poll --worker-id "worker-$(hostname)-$$"
 
   # With explicit IDs for validation
   export ENVIRONMENT_SERVICE_KEY="your-environment-service-key"
-  environment-runner orchestrator \
+  environment-runner poll \
+    --worker-id "worker-123" \
     --environment-id "env_01ABC123" \
     --organization-id "org_01XYZ789"
 
-  # With custom execute hook to handle sessions
-  export ENVIRONMENT_SERVICE_KEY="your-environment-service-key"
-  environment-runner orchestrator \
-    --environment-id "env_01ABC123" \
-    --organization-id "org_01XYZ789" \
-    --execute-hook "./handle-session.sh"
-
-  # Without sandbox (outputs JSON to stdout)
-  export ENVIRONMENT_SERVICE_KEY="your-environment-service-key"
-  environment-manager orchestrator \
-    --sandbox-backend none
+  # Read service key from file
+  environment-runner poll \
+    --service-key-file /path/to/service-key
 
 Flags:
-      --api-url string                  API base URL (default "https://api.anthropic.com")
-      --client-id string                Client ID (worker identifier, default: hostname)
-      --environment-id string           Environment ID (find at claude.ai/settings, e.g., env_01ABC123)
-      --execute-hook string             Command to run with session JSON via stdin when task received. Optional when --sandbox-backend=sandbox-runtime: defaults to self-invoking 'task-run --stdin --input-format=v1'
-      --execute-hook-timeout duration   Timeout for execute hook (0 = no timeout, session lifetime controlled by API)
-  -h, --help                            help for orchestrator
-      --log-level string                Log level (debug, info, warn, error) (default "info")
-      --loop-timeout duration           Loop timeout before triggering timeout hook (default 5m0s)
-      --max-poll-failures int           Maximum consecutive poll failures before exiting (0 = infinite)
-      --organization-id string          Organization ID (find at claude.ai/settings > Account)
-      --poll-timeout duration           Poll request timeout duration (default 5m0s)
-      --sandbox-backend string          Sandbox backend for execute hook: none, sandbox-runtime (default "sandbox-runtime")
-      --sandbox-settings string         Path to custom sandbox-runtime settings JSON file (must include Anthropic domains)
-      --service-key-file string         Path to file containing the environment service key. If not set, falls back to ENVIRONMENT_SERVICE_KEY environment variable
-      --timeout-hook string             Command to run on loop timeout (e.g., monorepo updates)
-      --timeout-hook-timeout duration   Timeout for timeout hook execution (e.g., monorepo updates) (default 5m0s)
-
-=== code-sign (with -Y sign) ===
-Error: no file specified to sign
-Usage:
-  environment-runner code-sign [flags]
-
-Flags:
-  -h, --help   help for code-sign
-
-Error: no file specified to sign
+      --api-url string              API base URL (default "https://api.anthropic.com")
+      --environment-id string       Environment ID (find at claude.ai/settings, e.g., env_01ABC123)
+  -h, --help                        help for poll
+      --log-level string            Log level (debug, info, warn, error) (default "info")
+      --organization-id string      Organization ID (find at claude.ai/settings > Account)
+      --reclaim-older-than-ms int   Reclaim unacknowledged work items older than this many milliseconds (0 = use API default of 5000ms)
+      --service-key-file string     Path to file containing the environment service key. If not set, falls back to ENVIRONMENT_SERVICE_KEY environment variable
+      --worker-id string            Unique worker identifier for this worker. Sent via Anthropic-Worker-ID header. If not set, defaults to system hostname

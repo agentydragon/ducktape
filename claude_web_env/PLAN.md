@@ -2,13 +2,16 @@
 
 ## Build Status
 
-**Diff Summary**: 4 real differences (build v19, 2026-02-18)
+**Diff Summary**: 4 real differences (build v20, 2026-03-16)
 
 | Category       | Count   |
 | -------------- | ------- |
 | Identical      | 120,695 |
 | Excluded       | 562,198 |
 | **Real diffs** | **4**   |
+
+Note: these counts are from the v19 build. A rebuild with the updated Dockerfile
+(2026-03-16 snapshot) may change the counts.
 
 ## Real Difference Analysis
 
@@ -23,71 +26,21 @@ All remaining diffs are minor build non-determinism — no gaps in the Dockerfil
   or minor apt metadata variation)
 
 **libpng16**: Three files with the same package version but different binary content.
-This is a known apt snapshot reproducibility issue — the package is compiled at build
-time with slightly different results. Very low priority; the live and built versions
-are functionally identical.
+Known apt snapshot reproducibility issue — functionally identical.
 
-**dpkg/status**: 15-byte difference. With Podman removed, the package lists are now
-nearly identical. The remaining difference is likely trailing whitespace or a minor
-metadata variation. Low priority.
+**dpkg/status**: 15-byte difference. Likely trailing whitespace or minor metadata.
 
 ## Next Steps
 
-No significant action items. The reconstruction is essentially complete:
-
-- The live container has Docker CE (not Podman), matching the updated Dockerfile
-- All session-specific runtime state (mkcert CAs, Docker buildx state, containerd
-  plugins) is properly excluded
-- Only libpng16 build non-determinism remains, which is cosmetic
+- Rebuild container with updated Dockerfile and regenerate diff report
+- Container diff may reveal new package versions from the 2026-03-16 snapshot
 
 ### Optional future work
 
 1. **Add libpng16 to `hash_may_differ`** — eliminates the remaining 3 libpng diffs.
-   Since they're the same version but built non-reproducibly, this is safe.
+2. **Investigate dpkg/status 15-byte diff** — identify the exact difference.
 
-2. **Pin libpng16 snapshot date** — try pinning to a specific snapshot date where
-   the binary matches. Low priority.
-
-3. **Investigate dpkg/status 15-byte diff** — identify the exact difference and
-   either fix or exclude.
-
-## Change History
-
-### v19 (2026-02-18)
-
-- **Removed Podman packages from Dockerfile** — eliminated 183 "only in built" diffs.
-  Packages removed: `podman buildah crun conmon catatonit fuse-overlayfs fuse3
-slirp4netns passt netavark aardvark-dns uidmap containernetworking-plugins`.
-  The live container uses Docker CE only.
-
-- **Added mkcert exclusions** — excluded session-specific mkcert development CAs:
-  - `/etc/ssl/certs/mkcert_*` and `/usr/local/share/ca-certificates/mkcert_*`
-  - `/etc/ssl/certs/*.[0-9]` (generalized from `*.0` to cover collision-numbered
-    symlinks when mkcert CAs push system certs to `.1`, `.2`, etc.)
-  - `/etc/ssl/certs/ca-certificates.crt` moved to `hash_may_differ` (mkcert appends
-    session dev CAs at runtime)
-
-- **Added Docker runtime exclusions** — `/root/.docker/**` (BuildKit/buildx state),
-  `/opt/containerd/**` (Docker daemon runtime plugins)
-
-- **Added `/root/.zshrc` to `only_in_live`** — live container has a zsh config;
-  built image doesn't
-
-- **Added `/etc/cloud/build.info` to `hash_may_differ`** — embeds build timestamp,
-  always differs
-
-- **Added `/usr/local/bin/environment-manager` to `hash_may_differ`** — captured
-  fresh each build, so hashes match (UNUSED in current run), but protects future
-  session-drift cases
-
-### v18 (2026-02-18)
-
-**Diff Summary**: 225 real differences
-
-- Migrated from Podman to Docker for building the reconstruction image
-- Identified Podman packages (183 diffs) as the primary issue
-
-## Docker Build Notes (2026-02-18)
+## Docker Build Notes
 
 **Key Docker issues in gVisor:**
 

@@ -7,23 +7,21 @@ and symbols**, making reconstruction significantly more tractable.
 
 ## Target Binary
 
-| Property           | Value                                                         |
-| ------------------ | ------------------------------------------------------------- |
-| **ELF Build ID**   | `6b49f1ca37d9bf02f0b899a4a845ce551dcbcf14`                    |
-| **Reference file** | `claude_web_env/reference/environment-manager.gz`             |
-| **Language**       | Go                                                            |
-| **Go version**     | `go1.25.6`                                                    |
-| **Version string** | `staging-7c3cd5476` (via `-ldflags -X main.Version`)          |
-| **Compiler**       | `gc` (standard Go compiler)                                   |
-| **CGO**            | Enabled                                                       |
-| **Stripped**       | No (full DWARF debug info, symbol table)                      |
-| **Binary size**    | 26 MB (uncompressed), 13 MB (gzipped)                         |
-| **Symbols**        | 28,272 total, 808 Anthropic application                       |
-| **Source files**   | 78 application Go files across 28 packages (79 reconstructed) |
-| **Dynamic deps**   | Only `libc.so.6`                                              |
-| **Build env**      | GitHub Actions (`/home/runner/work/anthropic/anthropic/`)     |
+| Property           | Value                                                 |
+| ------------------ | ----------------------------------------------------- |
+| **ELF Build ID**   | `a6f96673c2497a946dc0797780b5c6df47c0946e`            |
+| **Reference file** | `claude_web_env/reference/environment-manager.gz`     |
+| **Language**       | Go 1.25.7                                             |
+| **Version string** | `staging-68f0dff496` (via `-ldflags -X main.Version`) |
+| **Compiler**       | `gc` (standard Go compiler), CGO enabled              |
+| **Stripped**       | No (full DWARF debug info, symbol table)              |
+| **Binary size**    | 27.3 MB (uncompressed), 13 MB (gzipped)               |
+| **Binary path**    | `/opt/env-runner/environment-manager`                 |
+| **Dynamic deps**   | Only `libc.so.6`                                      |
+| **Functions**      | 949 Anthropic functions                               |
+| **RE directory**   | `a6f96673/`                                           |
 
-Reconstructed source lives under `6b49f1ca/` (Build ID prefix).
+Previous version: `6b49f1ca/` (staging-7c3cd5476, Go 1.25.6, 808 functions).
 
 ## Binary Name vs CLI Name
 
@@ -39,7 +37,6 @@ extracted from DWARF debug info (78 files):
 ```
 main.go                                         # Entry point: Cobra root command + Version
 cmd/
-  cmd_code_sign.go                              # GPG/SSH signing via MCP
   cmd_orchestrator.go                           # Full session lifecycle orchestrator
   cmd_poll.go                                   # Work polling loop
   cmd_print_sandbox_settings.go                 # Print sandbox config as JSON
@@ -134,8 +131,13 @@ internal/
     actions/
       registry.go                               # Tunnel action registry
       deploy/
-        action.go                               # Deploy action
+        action.go                               # Deploy action (Vercel + Antspace)
+        antspace.go                             # Antspace deployment client
         vercel.go                               # Vercel deployment client
+      snapshot/
+        action.go                               # Snapshot action
+      status/
+        action.go                               # Status action
   util/
     git.go                                      # Git helper utilities
     lockfile.go                                 # File-based advisory locking
@@ -146,7 +148,7 @@ internal/
 
 ## CLI Commands
 
-The binary exposes six subcommands via Cobra:
+The binary exposes five subcommands via Cobra:
 
 ### `environment-runner setup`
 
@@ -157,13 +159,13 @@ a session — use `orchestrator` or `task-run` for that.
 environment-runner setup [flags]
 
 Flags:
-  --claude-code-version <version>       Target Claude Agent version (latest|current|stable|X.Y.Z)
-  --sandbox-runtime-version <version>   Target sandbox runtime version
-  --skip-sandbox-runtime                Skip sandbox runtime installation
-  --log-level <level>                   Log level (debug|info|warn|error)
-  --api-url <url>                       API base URL (default: api.anthropic.com)
+  --api-url <url>                       API base URL for connectivity healthcheck (default: api.anthropic.com)
+  --claude-code-version <version>       Version to install (latest|stable|X.Y.Z) (default: latest)
+  --log-level <level>                   Log level (debug|info|warn|error) (default: info)
+  --sandbox-runtime-version <version>   Version to install (latest|X.Y.Z) (default: latest)
   --service-key-file <path>             Service key for API healthcheck (/v1/environments/whoami)
-  --skip-git-config                     Skip git configuration
+  --skip-claude-code                    Skip Claude Code installation
+  --skip-sandbox-runtime                Skip sandbox-runtime installation
 ```
 
 ### `environment-runner orchestrator`
@@ -175,13 +177,26 @@ graceful shutdown. This is the primary entry point in production containers.
 environment-runner orchestrator [flags]
 
 Flags:
-  --environment-id <id>                 Environment ID (required)
-  --organization-id <id>                Organization ID
-  --sandbox-backend <backend>           sandbox-runtime (default) | none
-  --sandbox-settings <json>             Sandbox settings JSON
+  --api-url <url>                       API base URL (default: api.anthropic.com)
+  --client-id <id>                      Client/worker identifier (default: hostname)
+  --environment-id <id>                 Environment ID (validated against whoami)
   --execute-hook <command>              Custom session handler command
-  --log-level <level>                   Log level
-  --api-url <url>                       API base URL
+  --execute-hook-timeout <duration>     Timeout for execute hook (0 = no timeout)
+  --log-level <level>                   Log level (default: info)
+  --loop-timeout <duration>             Loop timeout before triggering timeout hook (default: 5m)
+  --max-poll-failures <n>               Max consecutive failures before exit (0 = infinite)
+  --organization-id <id>                Organization ID (validated against whoami)
+  --poll-hook <command>                 Custom polling command
+  --poll-hook-timeout <duration>        Poll hook timeout (default: 30s)
+  --poll-timeout <duration>             Poll request timeout (default: 5m)
+  --reclaim-older-than-ms <ms>          Reclaim unacknowledged work items (0 = API default 5000ms)
+  --sandbox-backend <backend>           sandbox-runtime (default) | none
+  --sandbox-settings <path>             Path to sandbox-runtime settings JSON
+  --service-key-file <path>             Path to environment service key file
+  --skip-container-lock                 Skip container-level lock (dev/testing only)
+  --skip-git-config                     Skip git configuration setup
+  --timeout-hook <command>              Command to run on loop timeout
+  --timeout-hook-timeout <duration>     Timeout hook timeout (default: 5m)
 ```
 
 ### `environment-runner task-run`
@@ -193,37 +208,37 @@ default execute hook, or can be invoked directly.
 environment-runner task-run [flags]
 
 Flags:
-  --stdin                               Read session JSON from stdin
-  --input-format <format>               v0 | v1
-  --sandbox-backend <backend>           sandbox-runtime | none
-  --sandbox-settings <json>             Sandbox settings JSON
-  --working-directory <path>            Working directory
-  --debug-to-stderr                     Log debug output to stderr
-  --print-code-logs                     Print Claude Code logs
+  --allowed-tools <tools>               Comma-separated list of allowed tools
+  --claude-agent-version <version>      Target Claude Agent version (latest|current|stable|X.Y.Z)
+  --claude-path <path>                  Path to Claude CLI executable or wrapper binary
+  --debug                               Enable debug mode
+  --environment-id <id>                 Environment ID (required for self-hosted)
+  --input-format <format>               v0 | v1 (default: v0)
+  --local-append-system-prompt <text>   Additional system prompt to append locally
+  --local-testing                       Disable WebSocket connections and git config
+  --log-level <level>                   Log level (default: info)
+  --organization-id <id>                Organization ID (required for self-hosted)
+  --print-code-logs                     Print Claude Code logs on completion/failure
+  --session <id>                        Session ID (required)
+  --session-mode <mode>                 new | resume | resume-cached | setup-only (default: new)
+  --skip-git-config                     Skip git configuration setup
+  --stdin                               Deprecated: stdin is always used
+  --upgrade-claude-code                 Deprecated: use --claude-agent-version
+  --verbose-claude-logs                 Enable verbose Claude Agent output
+  --working-directory <path>            Default working directory (default: /root)
 ```
 
 ### `environment-runner poll`
 
-Polls the environments API work endpoint for tasks. Used in polling-based
-deployment models (vs webhook-based `orchestrator`).
-
-```
-environment-runner poll [flags]
-
-Flags:
-  --worker-id <id>                      Worker identifier (default: hostname)
-  --max-poll-failures <n>               Max consecutive failures before exit
-  --poll-hook-timeout <duration>        Hook timeout
-  --execute-hook <command>              Custom task handler
-```
+Makes a single poll request for work.
 
 ### `environment-runner print-sandbox-settings`
 
 Prints default sandbox configuration as JSON to stdout.
 
-### `environment-runner code-sign`
+### `environment-runner completion`
 
-GPG/SSH signing wrapper that invokes the MCP code-sign server.
+Generates shell completion scripts (bash, zsh, fish, PowerShell).
 
 ## Architecture
 
@@ -235,7 +250,7 @@ GPG/SSH signing wrapper that invokes the MCP code-sign server.
 │  │     Cobra CLI           │   │     Orchestrator           │  │
 │  │  setup | orchestrator   │──►│  lease mgmt, setup,        │  │
 │  │  task-run | poll        │   │  session loop, shutdown    │  │
-│  │  code-sign | print-...  │   └────────────┬───────────────┘  │
+│  │  print-... | completion │   └────────────┬───────────────┘  │
 │  └─────────────────────────┘                │                  │
 │                                             ▼                  │
 │  ┌──────────────┐  ┌───────────┐  ┌─────────────────────┐     │
@@ -323,7 +338,10 @@ Bidirectional HTTP/WebSocket tunneling using gRPC + protobuf
 - **Client**: WebSocket + gRPC tunnel client
 - **HTTP handler**: Forward HTTP requests from tunnel to local services
 - **WS handler**: Forward WebSocket connections through tunnel
-- **Deploy action**: Vercel deployment through tunnel
+- **Deploy action**: Vercel deployment through tunnel, plus Antspace deployment
+  as alternative to Vercel
+- **Snapshot action**: Project state snapshot (file listings, git status)
+- **Status action**: Health check (port validation, "ok" response)
 
 Protobuf messages: `HTTPTunnelRequest`, `HTTPTunnelResponseChunk`,
 `HTTPTunnelResponseHeaders`, `WSTunnelOpen`, `WSTunnelClose`,
@@ -338,7 +356,8 @@ Protobuf messages: `HTTPTunnelRequest`, `HTTPTunnelResponseChunk`,
 ### Authentication (`internal/auth/`)
 
 - `AuthContext`: Holds API token (Anthropic), OAuth token, session ID,
-  session ingress token, Vercel deploy token
+  session ingress token, Vercel deploy token, Antspace control plane URL +
+  auth token, Supabase credentials
 - `GitHubSourceAuthProvider`: GitHub App authentication for source repos
 
 ### Environment Types (`internal/envtype/`)
@@ -409,10 +428,10 @@ via Cobra's built-in completion generation.
 | `github.com/gorilla/websocket`                 | `v1.5.4-pre` | WebSocket (process_api)  |
 | `github.com/mark3labs/mcp-go`                  | `v0.37.0`    | MCP server framework     |
 | `github.com/DataDog/datadog-go/v5`             | `v5.8.2`     | StatsD metrics           |
-| `connectrpc.com/connect`                       | `v1.18.1`    | Connect RPC              |
-| `google.golang.org/grpc`                       | `v1.75.1`    | gRPC (tunnel protocol)   |
-| `google.golang.org/protobuf`                   | `v1.36.10`   | Protobuf                 |
-| `go.opentelemetry.io/otel`                     | `v1.38.0`    | OpenTelemetry SDK        |
+| `connectrpc.com/connect`                       | `v1.19.1`    | Connect RPC              |
+| `google.golang.org/grpc`                       | `v1.79.0`    | gRPC (tunnel protocol)   |
+| `google.golang.org/protobuf`                   | `v1.36.11`   | Protobuf                 |
+| `go.opentelemetry.io/otel`                     | `v1.39.0`    | OpenTelemetry SDK        |
 | `go.opentelemetry.io/otel/exporters/otlp/...`  | various      | OTLP HTTP exporters      |
 | `go.opentelemetry.io/contrib/bridges/otelslog` | `v0.13.0`    | slog → OTel bridge       |
 | `github.com/cenkalti/backoff/v4`               | `v4.3.0`     | Exponential backoff      |
@@ -470,24 +489,18 @@ strings "$BIN" | grep -vE '^(runtime\.|go\.|reflect\.|sync\.)' | sort -u
 
 ## Key Differences from process_api RE
 
-| Aspect       | process_api          | environment-manager                  |
-| ------------ | -------------------- | ------------------------------------ |
-| Language     | Rust                 | Go                                   |
-| Debug info   | Stripped             | Full DWARF + symbols                 |
-| Functions    | 29 application       | 808 Anthropic, 624 env-manager       |
-| Source files | 9 files (decompiled) | 78 files (DWARF-extracted)           |
-| Complexity   | ~3,500 LoC           | ~17,800 LoC (79 files reconstructed) |
-| RE approach  | Ghidra decompilation | Symbol analysis + DWARF + Go tooling |
-| Build system | Bazel rust_binary    | TBD (Bazel go_binary or native Go)   |
+| Aspect       | process_api           | environment-manager                  |
+| ------------ | --------------------- | ------------------------------------ |
+| Language     | Rust                  | Go                                   |
+| Debug info   | Stripped              | Full DWARF + symbols                 |
+| Functions    | 29 application        | 949 Anthropic                        |
+| Source files | 10 files (decompiled) | 78 files (DWARF-extracted)           |
+| Complexity   | ~4,600 LoC            | ~17,800 LoC (79 files reconstructed) |
+| RE approach  | Ghidra decompilation  | Symbol analysis + DWARF + Go tooling |
+| Build system | Bazel rust_binary     | TBD (Bazel go_binary or native Go)   |
 
 ## Reconstruction Status
 
 **79 Go source files** reconstructed across **27 packages** totaling
-**~17,800 lines** of annotated Go code. Every function is annotated with
-its binary address. Key cmd functions (`orchestrator RunE`, `initDiagLogging`)
-are fully traced from 1000+ line disassembly. Some cmd helper stubs remain
-(code-sign MCP operations, setup install functions) pending further
-disassembly.
-
-Source lives under `6b49f1ca/src/`. See `6b49f1ca/PLAN.md` for detailed
-per-package status.
+**~17,800 lines** of annotated Go code. Source lives under `a6f96673/src/`.
+See `a6f96673/PLAN.md` for detailed status.

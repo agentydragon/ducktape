@@ -99,7 +99,7 @@ RUN rm -f /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list && \
       echo "apt-get update had partial failures (attempt $attempt/5), retrying in 15s..."; \
       sleep 15; \
     done && \
-    apt-get install --allow-downgrades -y gpgv libsystemd0 libudev1 && \
+    apt-get dist-upgrade --allow-downgrades -y && \
     apt-get install --allow-downgrades -y --no-install-recommends ca-certificates && \
     update-ca-certificates && \
     rm /etc/apt/apt.conf.d/99no-verify
@@ -118,12 +118,12 @@ RUN apt-get install --allow-downgrades -y --no-install-recommends \
     gdb libc6-dev libtool lto-disabled-list make ninja-build pkg-config \
     clang clang-18 clang-format clang-format-18 clang-tidy clang-tidy-18 \
     clang-tools-18 lld lld-18 lldb lldb-18 llvm llvm-18 llvm-18-runtime \
-    libssl-dev libssl3t64 openssl \
+    libssl-dev openssl \
     libsqlite3-dev libreadline-dev libncurses-dev \
     libbz2-dev libffi-dev zlib1g-dev \
     libyaml-dev libgdbm-dev libgdbm-compat-dev libdb-dev uuid-dev liblzma-dev \
     libpng-dev libpng16-16t64 libbrotli-dev \
-    libblkid-dev libblkid1 libmount-dev libmount1 \
+    libblkid-dev libmount-dev \
     libselinux1-dev libsepol-dev \
     libcairo2-dev libpixman-1-dev libxcb-render0-dev libxcb-shm0-dev \
     libxrender-dev libxext-dev libfontconfig-dev libfreetype-dev \
@@ -131,7 +131,7 @@ RUN apt-get install --allow-downgrades -y --no-install-recommends \
     x11proto-core-dev git \
     gnupg gnupg-utils gpg gpg-agent gpgconf gpgsm gpgv dirmngr keyboxd \
     jq ripgrep strace valgrind vim xvfb yq zsh \
-    systemd systemd-dev systemd-sysv libsystemd0 libsystemd-shared libudev1 libpam-systemd \
+    systemd systemd-dev systemd-sysv libsystemd-shared libpam-systemd \
     fonts-dejavu-core fonts-dejavu-mono fonts-freefont-ttf fonts-ipafont-gothic \
     fonts-liberation fonts-noto-color-emoji fonts-opensymbol fonts-tlwg-loma-otf \
     fonts-unifont fonts-wqy-zenhei xfonts-cyrillic xfonts-scalable \
@@ -140,7 +140,7 @@ RUN apt-get install --allow-downgrades -y --no-install-recommends \
     openjdk-21-jdk openjdk-21-jre ca-certificates-java \
     postgresql-16 postgresql-common postgresql-client-16 redis-server redis-tools \
     libdrm2 libdrm-amdgpu1 libdrm-intel1 libdrm-common \
-    libxml2 libxml2-utils libfdisk1 libsmartcols1 libuuid1 \
+    libxml2 libxml2-utils libfdisk1 libsmartcols1 \
     libxslt1.1 libsodium23 libtasn1-6 \
     libavahi-client3 libavahi-common3 libavahi-common-data \
     libheif1 libheif-plugin-aomdec libheif-plugin-libde265 \

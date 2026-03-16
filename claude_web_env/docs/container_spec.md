@@ -4,28 +4,38 @@ Runtime context for the Claude Code web environment. The reproducible container
 definition lives in the [Dockerfile](../Dockerfile); this file documents the
 parts that aren't captured there.
 
-**Captured**: 2026-02-11
+**Captured**: 2026-03-16.
 
 ## Runtime Environment
 
 | Property     | Value                             |
 | ------------ | --------------------------------- |
 | OS           | Ubuntu 24.04.3 LTS (Noble Numbat) |
-| Kernel       | Linux 4.4.0 (gVisor sandbox)      |
+| Kernel       | Linux 6.18.5 (gVisor sandbox)     |
 | Architecture | x86_64                            |
-| CPUs         | 16                                |
-| Memory       | 21Gi                              |
-| Disk         | 30G root filesystem               |
+| CPUs         | 4                                 |
+| Memory       | 15Gi                              |
+| Disk         | 252G root filesystem              |
 | Hostname     | runsc                             |
+
+Note: Hardware specs vary by container allocation. The kernel version
+reflects the gVisor sandbox kernel, not the host kernel.
 
 ## Anthropic-Specific Components
 
-Proprietary binaries stored in `binaries/`:
+Proprietary binaries stored in `reference/`:
 
-| Binary              | Path                                 | Purpose                                 |
-| ------------------- | ------------------------------------ | --------------------------------------- |
-| environment-manager | `/usr/local/bin/environment-manager` | Process manager, HTTP proxy             |
-| process_api         | `/process_api`                       | Container process API (not snapshotted) |
+| Binary              | Path                                                                  | Purpose                                        |
+| ------------------- | --------------------------------------------------------------------- | ---------------------------------------------- |
+| environment-manager | `/opt/env-runner/environment-manager` (symlink from `/usr/local/bin`) | Session orchestration, Claude Code lifecycle   |
+| process_api         | `/process_api`                                                        | Container init (PID 1), WebSocket API, VM init |
+
+As of 2026-03-16, `process_api` runs with `--firecracker-init` which adds
+Firecracker VM initialization (root mount, pivot_root, networking, FUSE,
+rclone) before starting the WebSocket listener.
+
+The `sandbox-runtime` (`@anthropic-ai/sandbox-runtime`) is now **open source**
+at <https://github.com/anthropic-experimental/sandbox-runtime>.
 
 `/container_info.json` contains per-session metadata (`container_name`,
 `creation_time`).
