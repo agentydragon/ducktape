@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Benchmark: measure wall-clock time for Bazel test target discovery strategies.
 
 Benchmarks from a cold Bazel server (shut down before each section):
