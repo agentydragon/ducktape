@@ -37,11 +37,11 @@ class TestEvaluate:
         [("Bash", {"command": "rm -rf /"}), ("Read", {"file_path": "/etc/passwd"}), ("Bash", {})],
         ids=["unknown-bash-command", "non-bash-tool", "bash-without-command"],
     )
-    def test_returns_allow_for_unmatched(self, tool_name: str, tool_input: dict) -> None:
+    def test_returns_no_decision_for_unmatched(self, tool_name: str, tool_input: dict) -> None:
+        # Unmatched tools return no hook_specific_output (implicit allow — no blocking decision)
         hook_input = PreToolUseInput(**_COMMON, tool_name=tool_name, tool_input=tool_input)
         result = evaluate(hook_input)
-        assert result.hook_specific_output is not None
-        assert result.hook_specific_output.permission_decision == PermissionDecision.ALLOW
+        assert result.hook_specific_output is None
 
 
 if __name__ == "__main__":

@@ -69,8 +69,8 @@ class BazelLabel:
                 raise ValueError(f"Invalid Bazel label (no {_TARGET_SEP!r} separator and empty package): {s!r}")
             return cls(repo=repo, package=package, name=package.name)
 
-        package, name = rest.split(_TARGET_SEP, 1)
-        return cls(repo=repo, package=Path(package), name=name)
+        pkg_str, name = rest.split(_TARGET_SEP, 1)
+        return cls(repo=repo, package=Path(pkg_str), name=name)
 
     @classmethod
     def try_parse(cls, s: str) -> BazelLabel | None:
