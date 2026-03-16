@@ -27,8 +27,4 @@ def evaluate(hook_input: PreToolUseInput) -> PreToolUseOutput:
                     permission_decision_reason="Command in always-allow list",
                 )
             )
-    return PreToolUseOutput(
-        hook_specific_output=PreToolUseHookSpecificOutput(
-            permission_decision=PermissionDecision.ALLOW, permission_decision_reason="No policy matched"
-        )
-    )
+    return PreToolUseOutput()
