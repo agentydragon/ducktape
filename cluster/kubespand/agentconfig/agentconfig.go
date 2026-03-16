@@ -51,6 +51,10 @@ type ApiConfig struct {
 	// machined's service manager waits for APIReadyCondition before starting
 	// apid. If empty, apid is not managed by kubespand.
 	ApidPath string `yaml:"apid_path"`
+	// CertSANs are additional IPs or DNS names to include in the apid TLS
+	// certificate SANs. Matches Talos machine.certSANs. Useful for
+	// testing via port forwarding (e.g., "127.0.0.1").
+	CertSANs []string `yaml:"cert_sans,omitempty"`
 	// ListenTCP is an optional TCP address (e.g., ":50100") to expose the
 	// read-only COSI API without mTLS. Useful for test harnesses and diagnostics.
 	ListenTCP string `yaml:"listen_tcp"`

@@ -13,6 +13,7 @@ package kubespandctrl
 import (
 	"context"
 	"fmt"
+	"net/netip"
 
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/safe"
@@ -82,9 +83,16 @@ func (ctrl *OSRootController) Run(ctx context.Context, r controller.Runtime, log
 				}
 				rootSpec.AcceptedCAs = []*x509.PEMEncodedCertificate{caCert}
 				rootSpec.Token = spec.Token
-				// CertSANIPs and CertSANDNSNames are populated by APICertSANsController.
+				// Parse CertSANs into IPs and DNS names (matches Talos machine.certSANs).
 				rootSpec.CertSANIPs = nil
 				rootSpec.CertSANDNSNames = nil
+				for _, san := range spec.CertSANs {
+					if addr, err := netip.ParseAddr(san); err == nil {
+						rootSpec.CertSANIPs = append(rootSpec.CertSANIPs, addr)
+					} else {
+						rootSpec.CertSANDNSNames = append(rootSpec.CertSANDNSNames, san)
+					}
+				}
 
 				return nil
 			},

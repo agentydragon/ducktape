@@ -43,6 +43,8 @@ type KubespandConfig struct {
 	ApidPath string
 	// ListenTCP is a TCP address for the read-only COSI API (e.g., ":50100").
 	ListenTCP string
+	// CertSANs are additional IPs or DNS names for the apid TLS certificate.
+	CertSANs []string
 }
 
 // LoadModules loads wireguard, virtio_net, and nftables kernel modules.
@@ -102,6 +104,7 @@ func StartKubespand(cfg KubespandConfig) *exec.Cmd {
 			Token:     cfg.Token,
 			ApidPath:  cfg.ApidPath,
 			ListenTCP: cfg.ListenTCP,
+			CertSANs:  cfg.CertSANs,
 		},
 	}
 	configData, err := yaml.Marshal(agentCfg)

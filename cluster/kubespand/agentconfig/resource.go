@@ -71,6 +71,10 @@ type Spec struct {
 
 	// Token is the Talos machine token for trustd authentication.
 	Token string
+
+	// CertSANs are additional IPs or DNS names for the apid TLS certificate.
+	// Matches Talos machine.certSANs.
+	CertSANs []string
 }
 
 // DeepCopy implements typed.DeepCopyable.
@@ -79,6 +83,10 @@ func (s Spec) DeepCopy() Spec {
 	if s.ServiceCIDRs != nil {
 		cp.ServiceCIDRs = make([]netip.Prefix, len(s.ServiceCIDRs))
 		copy(cp.ServiceCIDRs, s.ServiceCIDRs)
+	}
+	if s.CertSANs != nil {
+		cp.CertSANs = make([]string, len(s.CertSANs))
+		copy(cp.CertSANs, s.CertSANs)
 	}
 	return cp
 }
@@ -121,5 +129,6 @@ func SpecFromAgentConfig(ac *AgentConfig) Spec {
 		KubePrismPort:    ac.KubePrism.Port,
 		CACrt:            ac.Api.CACrt,
 		Token:            ac.Api.Token,
+		CertSANs:         ac.Api.CertSANs,
 	}
 }

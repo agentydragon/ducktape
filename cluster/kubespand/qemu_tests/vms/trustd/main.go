@@ -75,6 +75,8 @@ func run() error {
 		CACrt:           string(caCrtPEM),
 		Token:           token,
 		ApidPath:        "/apid",
+		// Include 127.0.0.1 in cert SANs for port-forwarded test connections.
+		CertSANs: []string{"127.0.0.1"},
 	}
 	kubespandCmd := kubespanlib.StartKubespand(cfg)
 
