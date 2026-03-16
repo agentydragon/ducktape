@@ -79,6 +79,11 @@ def main() -> int:
     _bench_query(workspace, 'kind("go_test", //...)', 'kind("go_test", //...)')
     _bench_query(workspace, 'kind(".*_test", //...)', 'kind(".*_test", //...)')
 
+    # --- Section 3: universe enumeration and rdeps ---
+    print("\n=== universe and rdeps (each from cold start) ===")
+    _bench_query(workspace, "//...", "//...")
+    _bench_query(workspace, f"rdeps(//..., {label})", f"rdeps(//..., {label})")
+
     return 0
 
 
