@@ -6,7 +6,6 @@ go_library(
     srcs = [
         "events.go",
         "helpers.go",
-        "kubespand_vm.go",
         "talos_helpers.go",
     ],
     importpath = "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests",

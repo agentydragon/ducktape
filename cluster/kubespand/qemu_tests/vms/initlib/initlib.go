@@ -110,18 +110,54 @@ func DumpLog(path string) {
 	os.Stderr.Write(data)
 }
 
-// ConfigureMgmtNIC brings up the QEMU user-mode management NIC (eth1) with
-// the standard 10.0.2.15/24 address. If required is true, the function waits
-// indefinitely for the interface; if false, it returns silently if eth1 doesn't
-// appear within 2 seconds.
+// MgmtMAC is the well-known MAC address assigned to the management NIC.
+// BootVM on the test host always uses this MAC, allowing the VM init to
+// find the mgmt NIC regardless of how many mesh NICs precede it.
+const MgmtMAC = "52:54:00:aa:00:01"
+
+// findMgmtNIC scans /sys/class/net for an interface with MgmtMAC.
+func findMgmtNIC(timeout time.Duration) string {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		entries, _ := os.ReadDir("/sys/class/net")
+		for _, e := range entries {
+			if !strings.HasPrefix(e.Name(), "eth") {
+				continue
+			}
+			mac, err := os.ReadFile("/sys/class/net/" + e.Name() + "/address")
+			if err != nil {
+				continue
+			}
+			if strings.TrimSpace(string(mac)) == MgmtMAC {
+				return e.Name()
+			}
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return ""
+}
+
+// ConfigureMgmtNIC brings up the QEMU user-mode management NIC with the
+// standard 10.0.2.15/24 address. The NIC is identified by its well-known
+// MAC address (MgmtMAC), so it works regardless of how many mesh NICs
+// precede it. If required is true, the function waits up to 10s; if false,
+// it returns silently if the NIC doesn't appear within 2s.
 func ConfigureMgmtNIC(required bool) {
+	var iface string
 	if required {
-		WaitForInterface("eth1")
-	} else if !HasInterface("eth1", 2*time.Second) {
+		iface = findMgmtNIC(10 * time.Second)
+	} else {
+		iface = findMgmtNIC(2 * time.Second)
+	}
+	if iface == "" {
+		if required {
+			EmitEvent(qemu.Event{Type: qemu.EventError, Message: "mgmt NIC not found (MAC " + MgmtMAC + ")"})
+			Poweroff()
+		}
 		return
 	}
-	MustRun("ip", "link", "set", "eth1", "up")
-	MustRun("ip", "addr", "add", "10.0.2.15/24", "dev", "eth1")
+	MustRun("ip", "link", "set", iface, "up")
+	MustRun("ip", "addr", "add", "10.0.2.15/24", "dev", iface)
 }
 
 // InitBasic performs common init setup: mount filesystems, set PATH, suppress dmesg.

@@ -111,8 +111,10 @@ func tcpProbe(target string, port int, timeout time.Duration) bool {
 	return false
 }
 
-func ping4(target string, seq int) bool {
-	conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
+// ping sends a single ICMP echo and checks for a reply. Protocol-agnostic:
+// pass the appropriate network/listen/resolve/echoType/replyType/protoNum for v4 or v6.
+func ping(target string, seq int, network, listenAddr, resolveNet string, echoType icmp.Type, replyType icmp.Type, protoNum int) bool {
+	conn, err := icmp.ListenPacket(network, listenAddr)
 	if err != nil {
 		return false
 	}
@@ -123,7 +125,7 @@ func ping4(target string, seq int) bool {
 	}
 
 	msg := icmp.Message{
-		Type: ipv4.ICMPTypeEcho, Code: 0,
+		Type: echoType, Code: 0,
 		Body: &icmp.Echo{ID: os.Getpid() & 0xffff, Seq: seq, Data: []byte("kubespan-probe")},
 	}
 	wb, err := msg.Marshal(nil)
@@ -131,7 +133,7 @@ func ping4(target string, seq int) bool {
 		return false
 	}
 
-	dst, err := net.ResolveIPAddr("ip4", target)
+	dst, err := net.ResolveIPAddr(resolveNet, target)
 	if err != nil {
 		return false
 	}
@@ -144,51 +146,19 @@ func ping4(target string, seq int) bool {
 	if err != nil {
 		return false
 	}
-	rm, err := icmp.ParseMessage(1, rb[:n])
+	rm, err := icmp.ParseMessage(protoNum, rb[:n])
 	if err != nil {
 		return false
 	}
-	return rm.Type == ipv4.ICMPTypeEchoReply
+	return rm.Type == replyType
+}
+
+func ping4(target string, seq int) bool {
+	return ping(target, seq, "ip4:icmp", "0.0.0.0", "ip4", ipv4.ICMPTypeEcho, ipv4.ICMPTypeEchoReply, 1)
 }
 
 func ping6(target string, seq int) bool {
-	conn, err := icmp.ListenPacket("ip6:ipv6-icmp", "::")
-	if err != nil {
-		return false
-	}
-	defer conn.Close()
-
-	if err := conn.SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
-		return false
-	}
-
-	msg := icmp.Message{
-		Type: ipv6.ICMPTypeEchoRequest, Code: 0,
-		Body: &icmp.Echo{ID: os.Getpid() & 0xffff, Seq: seq, Data: []byte("kubespan-probe")},
-	}
-	wb, err := msg.Marshal(nil)
-	if err != nil {
-		return false
-	}
-
-	dst, err := net.ResolveIPAddr("ip6", target)
-	if err != nil {
-		return false
-	}
-	if _, err := conn.WriteTo(wb, dst); err != nil {
-		return false
-	}
-
-	rb := make([]byte, 1500)
-	n, _, err := conn.ReadFrom(rb)
-	if err != nil {
-		return false
-	}
-	rm, err := icmp.ParseMessage(58, rb[:n])
-	if err != nil {
-		return false
-	}
-	return rm.Type == ipv6.ICMPTypeEchoReply
+	return ping(target, seq, "ip6:ipv6-icmp", "::", "ip6", ipv6.ICMPTypeEchoRequest, ipv6.ICMPTypeEchoReply, 58)
 }
 
 // collectDiagnostics runs diagnostic commands and returns their combined output.

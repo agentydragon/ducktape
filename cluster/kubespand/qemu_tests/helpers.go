@@ -2,6 +2,7 @@ package qemu_tests
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -16,7 +17,17 @@ import (
 	"testing"
 	"time"
 
+	v1alpha1 "github.com/cosi-project/runtime/api/v1alpha1"
+	"github.com/cosi-project/runtime/pkg/safe"
+	"github.com/cosi-project/runtime/pkg/state"
+	stateclient "github.com/cosi-project/runtime/pkg/state/protobuf/client"
+	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
+
+	pb "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/probepb"
+
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Runfile paths for shared test artifacts.
@@ -40,6 +51,18 @@ const (
 	TalosConfig           = "cluster/kubespand/qemu_tests/talos/testdata/talosconfig.yaml"
 )
 
+// Well-known guest ports for the management NIC.
+const (
+	// ProbeServerGuestPort is the port the probe gRPC server listens on inside the VM.
+	ProbeServerGuestPort = 50200
+	// COSIGuestPort is the port kubespand's COSI API listens on inside the VM.
+	COSIGuestPort = 50100
+)
+
+// mgmtMAC is the MAC address assigned to the management NIC by BootVM.
+// Must match initlib.MgmtMAC so the VM init can find it.
+const mgmtMAC = "52:54:00:aa:00:01"
+
 // VM represents a running QEMU VM.
 type VM struct {
 	Name   string
@@ -49,6 +72,11 @@ type VM struct {
 	events []Event
 	rawLog strings.Builder
 	mu     sync.Mutex
+
+	t         *testing.T
+	probeAddr string         // "127.0.0.1:<port>" for probe gRPC, always set by BootVM
+	cosiAddr  string         // "127.0.0.1:<port>" for COSI API, empty if not forwarded
+	forwards  map[int]string // guestPort -> "127.0.0.1:<hostPort>"
 }
 
 func (v *VM) Wait() {
@@ -81,8 +109,32 @@ func (v *VM) SaveLogs(t *testing.T, dir string) {
 }
 
 // BootVM starts a QEMU VM with the given kernel cmdline args.
-func BootVM(t *testing.T, name string, vmlinuz, initramfs string, kernelArgs string, extraQemuArgs ...string) *VM {
+// A management NIC with probe server port forwarding is always added.
+// meshNICs are the multicast NICs (from McastNIC calls).
+// extraForwards are additional port forwards on the mgmt NIC (e.g., COSI, HTTP).
+// PortForwards with HostPort==0 get a random port assigned.
+func BootVM(t *testing.T, name string, vmlinuz, initramfs string, kernelArgs string, meshNICs []string, extraForwards ...PortForward) *VM {
 	t.Helper()
+
+	probePort := RandomPort()
+	allForwards := []PortForward{{HostPort: probePort, GuestPort: ProbeServerGuestPort}}
+	forwards := map[int]string{
+		ProbeServerGuestPort: fmt.Sprintf("127.0.0.1:%d", probePort),
+	}
+	var cosiAddr string
+	for _, ef := range extraForwards {
+		if ef.HostPort == 0 {
+			ef.HostPort = RandomPort()
+		}
+		allForwards = append(allForwards, ef)
+		addr := fmt.Sprintf("127.0.0.1:%d", ef.HostPort)
+		forwards[ef.GuestPort] = addr
+		if ef.GuestPort == COSIGuestPort {
+			cosiAddr = addr
+		}
+	}
+
+	mgmtArgs := MgmtNICMulti(allForwards, mgmtMAC)
 
 	args := []string{
 		"-kernel", vmlinuz,
@@ -95,9 +147,15 @@ func BootVM(t *testing.T, name string, vmlinuz, initramfs string, kernelArgs str
 		"-cpu", "max",
 		"-display", "none",
 	}
-	args = append(args, extraQemuArgs...)
+	args = append(args, meshNICs...)
+	args = append(args, mgmtArgs...)
 
-	return StartVM(t, name, exec.Command("qemu-system-x86_64", args...), true)
+	v := StartVM(t, name, exec.Command("qemu-system-x86_64", args...), true)
+	v.t = t
+	v.probeAddr = fmt.Sprintf("127.0.0.1:%d", probePort)
+	v.cosiAddr = cosiAddr
+	v.forwards = forwards
+	return v
 }
 
 // StartVM starts a QEMU process from a pre-built command and returns a VM.
@@ -417,23 +475,28 @@ func (s *Stopwatch) Summary(outDir string) {
 	}
 }
 
+// ForwardAddr returns the host-side address for a forwarded guest port.
+func (v *VM) ForwardAddr(guestPort int) string {
+	return v.forwards[guestPort]
+}
+
 // WaitForDiscoveryHTTP polls the discovery service's HTTP endpoint on the
 // forwarded mgmt port until it responds (or times out).
-func WaitForDiscoveryHTTP(t *testing.T, port int, timeout time.Duration) {
+func WaitForDiscoveryHTTP(t *testing.T, addr string, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
-	url := fmt.Sprintf("http://127.0.0.1:%d/", port)
+	url := fmt.Sprintf("http://%s/", addr)
 	client := &http.Client{Timeout: 2 * time.Second}
 	for time.Now().Before(deadline) {
 		resp, err := client.Get(url)
 		if err == nil {
 			resp.Body.Close()
-			t.Logf("discovery HTTP ready on port %d", port)
+			t.Logf("discovery HTTP ready at %s", addr)
 			return
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	t.Fatalf("discovery HTTP not ready after %v on port %d", timeout, port)
+	t.Fatalf("discovery HTTP not ready after %v at %s", timeout, addr)
 }
 
 // MgmtNIC returns QEMU args for a user-mode NIC with a port forwarded to the host.
@@ -460,4 +523,179 @@ func MgmtNICMulti(forwards []PortForward, mac string) []string {
 		"-netdev", fmt.Sprintf("user,id=mgmt,%s", strings.Join(fwds, ",")),
 		"-device", fmt.Sprintf("virtio-net-pci,netdev=mgmt,mac=%s", mac),
 	}
+}
+
+// probeWithRetry runs a probe RPC with retry until success or timeout.
+// probeFn is called with a ProbeServiceClient and returns (success, error_detail).
+func (v *VM) probeWithRetry(label string, timeout time.Duration, probeFn func(pb.ProbeServiceClient, context.Context) (bool, string)) bool {
+	v.t.Helper()
+	prefix := fmt.Sprintf("[%s] %s", v.Name, label)
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		conn, err := grpc.NewClient(v.probeAddr,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
+		if err != nil {
+			cancel()
+			v.t.Logf("%s: connect: %v", prefix, err)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		client := pb.NewProbeServiceClient(conn)
+		ok, detail := probeFn(client, ctx)
+		cancel()
+		conn.Close()
+
+		if ok {
+			v.t.Logf("%s: success", prefix)
+			return true
+		}
+		v.t.Logf("%s: %s (retrying)", prefix, detail)
+		time.Sleep(1 * time.Second)
+	}
+
+	v.t.Errorf("%s: timed out after %v", prefix, timeout)
+	return false
+}
+
+// ProbeICMP sends an ICMP probe request via the VM's probe server, retrying
+// until success or timeout.
+func (v *VM) ProbeICMP(target string, timeout time.Duration) bool {
+	v.t.Helper()
+	return v.probeWithRetry(fmt.Sprintf("probe ICMP→%s", target), timeout,
+		func(client pb.ProbeServiceClient, ctx context.Context) (bool, string) {
+			resp, err := client.ICMPProbe(ctx, &pb.ICMPProbeRequest{
+				Target:         target,
+				TimeoutSeconds: 10,
+			})
+			if err != nil {
+				return false, err.Error()
+			}
+			if resp.Success {
+				return true, ""
+			}
+			return false, resp.Error
+		})
+}
+
+// ProbeTCP sends a TCP probe request via the VM's probe server, retrying
+// until success or timeout.
+func (v *VM) ProbeTCP(target string, port int, timeout time.Duration) bool {
+	v.t.Helper()
+	return v.probeWithRetry(fmt.Sprintf("probe TCP→%s:%d", target, port), timeout,
+		func(client pb.ProbeServiceClient, ctx context.Context) (bool, string) {
+			resp, err := client.TCPProbe(ctx, &pb.TCPProbeRequest{
+				Target:         target,
+				Port:           int32(port),
+				TimeoutSeconds: 10,
+			})
+			if err != nil {
+				return false, err.Error()
+			}
+			if resp.Success {
+				return true, ""
+			}
+			return false, resp.Error
+		})
+}
+
+// DumpDiagnostics fetches routing/WG/nftables state from the VM's probe server.
+func (v *VM) DumpDiagnostics() string {
+	v.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	conn, err := grpc.NewClient(v.probeAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		v.t.Logf("[%s] diagnostics connect: %v", v.Name, err)
+		return ""
+	}
+	defer conn.Close()
+
+	client := pb.NewProbeServiceClient(conn)
+	resp, err := client.Diagnostics(ctx, &pb.DiagnosticsRequest{})
+	if err != nil {
+		v.t.Logf("[%s] diagnostics rpc: %v", v.Name, err)
+		return ""
+	}
+	return resp.Output
+}
+
+// PollPeerStatus connects to kubespand's COSI API and polls PeerStatus
+// resources until at least minPeers report state "up".
+// Requires a COSIGuestPort forward in BootVM's extraForwards.
+func (v *VM) PollPeerStatus(minPeers int, timeout time.Duration) ([]KubespanPeerResult, error) {
+	v.t.Helper()
+
+	if v.cosiAddr == "" {
+		v.t.Fatalf("[%s] PollPeerStatus called but COSI not configured", v.Name)
+	}
+
+	deadline := time.Now().Add(timeout)
+	var lastErr string
+
+	for time.Now().Before(deadline) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		conn, err := grpc.NewClient(v.cosiAddr,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
+		if err != nil {
+			cancel()
+			lastErr = err.Error()
+			v.t.Logf("[%s] COSI connect (waiting): %s", v.Name, lastErr)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		st := state.WrapCore(stateclient.NewAdapter(v1alpha1.NewStateClient(conn)))
+		list, err := safe.StateListAll[*kubespan.PeerStatus](ctx, st)
+		cancel()
+		conn.Close()
+
+		if err != nil {
+			lastErr = err.Error()
+			v.t.Logf("[%s] COSI poll (waiting): %s", v.Name, lastErr)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		var peers []KubespanPeerResult
+		for it := list.Iterator(); it.Next(); {
+			ps := it.Value()
+			peers = append(peers, KubespanPeerResult{
+				Label:    ps.TypedSpec().Label,
+				State:    ps.TypedSpec().State,
+				Endpoint: ps.TypedSpec().Endpoint.String(),
+			})
+		}
+
+		upCount := 0
+		for _, p := range peers {
+			if p.State == kubespan.PeerStateUp {
+				upCount++
+			}
+		}
+
+		var peerSummary strings.Builder
+		for i, p := range peers {
+			if i > 0 {
+				peerSummary.WriteString("; ")
+			}
+			fmt.Fprintf(&peerSummary, "%s state=%s ep=%s", p.Label, p.State, p.Endpoint)
+		}
+		v.t.Logf("[%s] COSI poll: %d peers, %d up (need %d) [%s]", v.Name, len(peers), upCount, minPeers, peerSummary.String())
+
+		if upCount >= minPeers {
+			return peers, nil
+		}
+
+		time.Sleep(1 * time.Second)
+	}
+
+	return nil, fmt.Errorf("timeout after %v waiting for %d peers up, last error: %s", timeout, minPeers, lastErr)
 }

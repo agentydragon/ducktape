@@ -70,6 +70,9 @@ func main() {
 		time.Sleep(500 * time.Millisecond)
 	}
 
+	// Start probe gRPC server on the mgmt NIC for test host diagnostics.
+	initlib.StartProbeServer(fmt.Sprintf(":%d", initlib.ProbeServerPort))
+
 	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: "discovery-service running"})
 
 	// Block until the discovery service exits (or the VM is killed).

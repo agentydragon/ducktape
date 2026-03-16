@@ -60,8 +60,5 @@ go_test(
         "//cluster/kubespand/qemu_tests:vmlinuz",
     ],
     tags = ["requires_qemu"],
-    deps = [
-        "//cluster/kubespand/qemu_tests",
-        "@io_bazel_rules_go//go/runfiles",
-    ],
+    deps = ["//cluster/kubespand/qemu_tests"],
 )

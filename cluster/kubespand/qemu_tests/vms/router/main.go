@@ -86,6 +86,13 @@ func main() {
 	}
 
 	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventNetwork, Message: fmt.Sprintf("router ready, internet=%s, lan=%s", internetIP, lanIP)})
+
+	// mgmt NIC (QEMU user-mode) for port forwarding to the test host.
+	initlib.ConfigureMgmtNIC(false)
+
+	// Start probe gRPC server on the mgmt NIC for test host diagnostics.
+	initlib.StartProbeServer(fmt.Sprintf(":%d", initlib.ProbeServerPort))
+
 	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: "router running"})
 
 	select {}

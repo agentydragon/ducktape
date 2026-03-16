@@ -42,15 +42,15 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 
 	vmDiscovery := h.BootVM(t, "talos-disc", alpineVmlinuz, alpineInitramfsDisc,
 		"mode=discovery role=discovery discovery_ip=192.168.50.254/24",
-		h.McastNIC("net0", mcastInternet, "52:54:00:ff:00:01")...)
+		h.McastNIC("net0", mcastInternet, "52:54:00:ff:00:01"))
 	vmRouter1 := h.BootVM(t, "talos-router-1", alpineVmlinuz, alpineInitramfsRouter,
 		"mode=router role=router-1 internet_ip=192.168.50.1/24 lan_ip=192.168.60.1/24",
 		append(h.McastNIC("net0", mcastInternet, "52:54:00:c1:00:01"),
-			h.McastNIC("net1", mcastLan1, "52:54:00:c1:00:02")...)...)
+			h.McastNIC("net1", mcastLan1, "52:54:00:c1:00:02")...))
 	vmRouter2 := h.BootVM(t, "talos-router-2", alpineVmlinuz, alpineInitramfsRouter,
 		"mode=router role=router-2 internet_ip=192.168.50.3/24 lan_ip=192.168.70.1/24",
 		append(h.McastNIC("net0", mcastInternet, "52:54:00:c2:00:01"),
-			h.McastNIC("net1", mcastLan2, "52:54:00:c2:00:02")...)...)
+			h.McastNIC("net1", mcastLan2, "52:54:00:c2:00:02")...))
 	sw.Lap("boot infrastructure VMs (discovery + routers)")
 
 	vpsAPIPort := h.RandomPort()

@@ -37,46 +37,47 @@ func TestDoubleNAT(t *testing.T) {
 
 	vmDiscovery := h.BootVM(t, "vm-disc", vmlinuz, initramfsDisc,
 		"mode=discovery role=discovery discovery_ip=192.168.50.254/24",
-		h.McastNIC("net0", mcastInternet, "52:54:00:ff:00:01")...)
+		h.McastNIC("net0", mcastInternet, "52:54:00:ff:00:01"))
 	sw.Lap("boot discovery VM")
 
-	vmVPS := h.BootKubespandVM(t, "vm-vps", vmlinuz, initramfs,
-		kubespanBase+" role=vps", false, "52:54:00:c0:00:02",
+	vmVPS := h.BootVM(t, "vm-vps", vmlinuz, initramfs,
+		kubespanBase+" role=vps",
 		h.McastNIC("net0", mcastInternet, "52:54:00:c0:00:01"))
 	sw.Lap("boot VPS VM")
 
 	vmRouterA := h.BootVM(t, "vm-router-a", vmlinuz, initramfsRouter,
 		"mode=router role=router-a internet_ip=192.168.50.1/24 lan_ip=192.168.60.1/24",
 		append(h.McastNIC("net0", mcastInternet, "52:54:00:c1:00:01"),
-			h.McastNIC("net1", mcastLanA, "52:54:00:c1:00:02")...)...)
+			h.McastNIC("net1", mcastLanA, "52:54:00:c1:00:02")...))
 	sw.Lap("boot Router-A VM")
 
 	vmRouterB := h.BootVM(t, "vm-router-b", vmlinuz, initramfsRouter,
 		"mode=router role=router-b internet_ip=192.168.50.3/24 lan_ip=192.168.70.1/24",
 		append(h.McastNIC("net0", mcastInternet, "52:54:00:c2:00:01"),
-			h.McastNIC("net1", mcastLanB, "52:54:00:c2:00:02")...)...)
+			h.McastNIC("net1", mcastLanB, "52:54:00:c2:00:02")...))
 	sw.Lap("boot Router-B VM")
 
-	allVMs := []*h.VM{vmVPS.VM, vmRouterA, vmRouterB, vmDiscovery}
+	allVMs := []*h.VM{vmVPS, vmRouterA, vmRouterB, vmDiscovery}
 
 	h.RequireAllEvents(t, []*h.VM{vmDiscovery, vmRouterA, vmRouterB}, h.EventDone, 30*time.Second)
 	sw.Lap("infrastructure VMs ready")
 
-	vmNAT1 := h.BootKubespandVM(t, "vm-nat1", vmlinuz, initramfs,
-		kubespanBase+" role=nat1", false, "52:54:00:d0:00:02",
+	vmNAT1 := h.BootVM(t, "vm-nat1", vmlinuz, initramfs,
+		kubespanBase+" role=nat1",
 		h.McastNIC("net0", mcastLanA, "52:54:00:d0:00:01"))
 	sw.Lap("boot NAT1 VM")
 
-	vmNAT2 := h.BootKubespandVM(t, "vm-nat2", vmlinuz, initramfs,
-		kubespanBase+" role=nat2 listen_tcp=:50100", true, "52:54:00:e0:00:02",
-		h.McastNIC("net0", mcastLanB, "52:54:00:e0:00:01"))
+	vmNAT2 := h.BootVM(t, "vm-nat2", vmlinuz, initramfs,
+		kubespanBase+" role=nat2 listen_tcp=:50100",
+		h.McastNIC("net0", mcastLanB, "52:54:00:e0:00:01"),
+		h.PortForward{GuestPort: h.COSIGuestPort})
 	sw.Lap("boot NAT2 VM")
 
-	allVMs = append(allVMs, vmNAT1.VM, vmNAT2.VM)
+	allVMs = append(allVMs, vmNAT1, vmNAT2)
 	h.CleanupVMs(t, allVMs, out)
 
 	// Wait for all kubespand VMs to be ready.
-	h.RequireAllEvents(t, []*h.VM{vmVPS.VM, vmNAT1.VM, vmNAT2.VM}, h.EventReady, 180*time.Second)
+	h.RequireAllEvents(t, []*h.VM{vmVPS, vmNAT1, vmNAT2}, h.EventReady, 180*time.Second)
 	sw.Lap("kubespand VMs ready")
 
 	// Poll NAT2's PeerStatus — in double-NAT, only the VPS peer is expected

@@ -18,7 +18,7 @@ func TestNftSmoke(t *testing.T) {
 
 	levels := "1,2,3,4,5,6"
 	v := h.BootVM(t, "nft-smoke", vmlinuz, initramfs,
-		fmt.Sprintf("mode=nft_smoke levels=%s", levels))
+		fmt.Sprintf("mode=nft_smoke levels=%s", levels), nil)
 	sw.Lap("boot VM")
 
 	if !h.WaitVMDone(t, v, 120*time.Second) {

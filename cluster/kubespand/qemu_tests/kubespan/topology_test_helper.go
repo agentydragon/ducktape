@@ -47,19 +47,18 @@ func runTopology(t *testing.T, topology string) {
 	}
 	discAddr := fmt.Sprintf("%s:3000", discIP)
 
-	// Discovery VM with mgmt NIC for HTTP health check from the test host.
-	discHTTPPort := h.RandomPort()
+	// Discovery VM with extra forward for HTTP health check from the test host.
 	vmDisc := h.BootVM(t, "vm-disc", vmlinuz, initramfsDisc,
 		fmt.Sprintf("mode=discovery role=discovery discovery_ip=%s/24 topology=%s", discIP, topology),
-		append(h.McastNIC("net0", mcastAddr, "52:54:00:ff:00:01"),
-			h.MgmtNIC(discHTTPPort, 3000, "52:54:00:ff:00:02")...)...)
+		h.McastNIC("net0", mcastAddr, "52:54:00:ff:00:01"),
+		h.PortForward{GuestPort: 3000})
 	sw.Lap("boot discovery VM")
 
 	kernelBase := fmt.Sprintf("mode=kubespan cluster_id=%s shared_secret=%s discovery=%s topology=%s",
 		clusterID, sharedSecret, discAddr, topology)
 
-	vmB := h.BootKubespandVM(t, "vm-b", vmlinuz, initramfs,
-		kernelBase+" role=b", false, "52:54:00:b0:00:02",
+	vmB := h.BootVM(t, "vm-b", vmlinuz, initramfs,
+		kernelBase+" role=b",
 		h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01"))
 	sw.Lap("boot VM-B")
 
@@ -71,20 +70,21 @@ func runTopology(t *testing.T, topology string) {
 		talosAPIPort, h.McastNIC("net0", mcastAddr, "52:54:00:c0:00:01"))
 	sw.Lap("boot Talos CP VM")
 
-	vmA := h.BootKubespandVM(t, "vm-a", vmlinuz, initramfs,
-		kernelBase+" role=a listen_tcp=:50100", true, "52:54:00:a0:00:02",
-		h.McastNIC("net0", mcastAddr, "52:54:00:a0:00:01"))
+	vmA := h.BootVM(t, "vm-a", vmlinuz, initramfs,
+		kernelBase+" role=a listen_tcp=:50100",
+		h.McastNIC("net0", mcastAddr, "52:54:00:a0:00:01"),
+		h.PortForward{GuestPort: h.COSIGuestPort})
 	sw.Lap("boot VM-A")
 
-	allVMs := []*h.VM{vmA.VM, vmB.VM, vmDisc, vmCP}
+	allVMs := []*h.VM{vmA, vmB, vmDisc, vmCP}
 	h.CleanupVMs(t, allVMs, out)
 
 	// Discovery health check via HTTP from the test host.
-	h.WaitForDiscoveryHTTP(t, discHTTPPort, 120*time.Second)
+	h.WaitForDiscoveryHTTP(t, vmDisc.ForwardAddr(3000), 120*time.Second)
 	sw.Lap("discovery HTTP ready")
 
 	// Wait for both Alpine VMs to be ready (services started, probe server up).
-	h.RequireAllEvents(t, []*h.VM{vmA.VM, vmB.VM}, h.EventReady, 180*time.Second)
+	h.RequireAllEvents(t, []*h.VM{vmA, vmB}, h.EventReady, 180*time.Second)
 	sw.Lap("VMs ready")
 
 	// Poll VM-A's PeerStatus via COSI — verify WireGuard handshake completes.

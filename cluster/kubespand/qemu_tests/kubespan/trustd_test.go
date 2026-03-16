@@ -44,7 +44,7 @@ func TestTrustdCSRFlow(t *testing.T) {
 
 	vmDisc := h.BootVM(t, "trustd-disc", vmlinuz, initramfsDisc,
 		"mode=discovery role=discovery discovery_ip=192.168.50.254/24",
-		h.McastNIC("net0", mcastAddr, "52:54:00:ff:00:01")...)
+		h.McastNIC("net0", mcastAddr, "52:54:00:ff:00:01"))
 	sw.Lap("boot discovery VM")
 
 	// Talos CP VM — provides trustd on port 50001.
@@ -54,19 +54,15 @@ func TestTrustdCSRFlow(t *testing.T) {
 	sw.Lap("boot Talos CP VM")
 
 	// kubespand VM with CA cert + token for the trustd CSR flow.
-	// mgmt NIC forwards apid port 50000 so the test can observe from outside.
-	kubespandAPIPort := h.RandomPort()
+	// Extra forward for apid port 50000 so the test can observe from outside.
 	caCrtB64 := base64.StdEncoding.EncodeToString(cfg.MachineConfig.MachineCA.Crt)
 	kernelArgs := fmt.Sprintf(
 		"cluster_id=%s shared_secret=%s discovery=192.168.50.254:3000 ca_crt=%s token=%s cluster_endpoint=https://192.168.50.2:6443",
 		cfg.ClusterConfig.ClusterID, cfg.ClusterConfig.ClusterSecret, caCrtB64, cfg.MachineConfig.MachineToken,
 	)
-	mgmtNIC := []string{
-		"-netdev", fmt.Sprintf("user,id=mgmt,hostfwd=tcp::%d-:50000", kubespandAPIPort),
-		"-device", "virtio-net-pci,netdev=mgmt,mac=52:54:00:ab:00:01",
-	}
 	vmKubespand := h.BootVM(t, "trustd-kubespand", vmlinuz, initramfsTrustd, kernelArgs,
-		append(h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01"), mgmtNIC...)...)
+		h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01"),
+		h.PortForward{GuestPort: 50000})
 	sw.Lap("boot kubespand VM")
 
 	allVMs := []*h.VM{vmCP, vmKubespand, vmDisc}
@@ -130,7 +126,7 @@ func TestTrustdCSRFlow(t *testing.T) {
 	// Connect to kubespand's apid — success proves the full chain:
 	// kubespand → OSRootController → APICertSANsController → APIController
 	// → trustd CSR → secrets.API → apid serves mTLS on :50000.
-	kubespandClient := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", kubespandAPIPort))
+	kubespandClient := h.NewTalosClient(t, talosConfigPath, vmKubespand.ForwardAddr(50000))
 	defer kubespandClient.Close()
 	h.WaitForTalosAPI(t, kubespandClient, "192.168.50.1", 300*time.Second)
 	sw.Lap("kubespand apid ready (trustd CSR flow succeeded)")
