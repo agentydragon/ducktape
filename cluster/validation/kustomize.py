@@ -15,7 +15,7 @@ class KustomizeFile(BaseModel):
 
     path: Path
     resources: list[Path] = []  # Resolved absolute paths
-    patches: list[Path] = []  # Resolved absolute paths (from patches: and patchesStrategicMerge:)
+    patches: list[Path] = []  # Resolved absolute paths
 
 
 class KustomizeBuildResult(BaseModel):
@@ -46,10 +46,10 @@ def parse_kustomize_file(kust_file: Path) -> KustomizeFile | None:
                 patch_path = (kust_file.parent / patch["path"]).resolve()
                 patches.append(patch_path)
 
-        # Parse patchesStrategicMerge: (legacy format)
-        for patch in doc.get("patchesStrategicMerge", []):
-            if isinstance(patch, str):
-                patch_path = (kust_file.parent / patch).resolve()
-                patches.append(patch_path)
+        if "patchesStrategicMerge" in doc:
+            raise ValueError(
+                f"{kust_file}: uses deprecated 'patchesStrategicMerge'. "
+                "Convert to 'patches' format (list of {{path: ...}} objects)."
+            )
 
         return KustomizeFile(path=kust_file, resources=resources, patches=patches)
