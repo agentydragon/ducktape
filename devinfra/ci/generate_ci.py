@@ -42,15 +42,15 @@ COMPUTE_TARGETS_JOB = Job(
         "infra_changed": "${{ steps.decide.outputs.infra_changed }}",
     },
     steps=[
-        Step(uses="actions/checkout@v4", with_args={"fetch-depth": 0}),
-        Step(uses="astral-sh/setup-uv@v4"),
+        Step(uses="actions/checkout@v6", with_args={"fetch-depth": 0}),
+        Step(uses="astral-sh/setup-uv@v7"),
         # Set up Bazelisk
         Step(uses="./.github/actions/bazel-repo-cache"),
-        Step(uses="actions/setup-java@v4", with_args={"distribution": "temurin", "java-version": "21"}),
+        Step(uses="actions/setup-java@v5", with_args={"distribution": "temurin", "java-version": "21"}),
         Step(
             name="Cache bazel-diff JAR",
             id="cache-bazel-diff",
-            uses="actions/cache@v4",
+            uses="actions/cache@v5",
             with_args={"path": "bazel-diff.jar", "key": f"bazel-diff-{BAZEL_DIFF_VERSION}"},
         ),
         Step(
@@ -63,7 +63,7 @@ COMPUTE_TARGETS_JOB = Job(
         ),
         Step(
             name="Cache bazel-diff hashes",
-            uses="actions/cache@v4",
+            uses="actions/cache@v5",
             with_args={
                 "path": ".bazel-diff-cache",
                 "key": "bazel-diff-hashes-${{ github.sha }}",
@@ -203,7 +203,7 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
 
     # --- check-releases job ---
     check_steps: list[Step] = [
-        Step(name="Check out code", uses="actions/checkout@v4", with_args={"fetch-depth": 0}),
+        Step(name="Check out code", uses="actions/checkout@v6", with_args={"fetch-depth": 0}),
         Step(
             uses="./.github/actions/setup-bazel",
             id="bazel",
@@ -245,7 +245,7 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
 
         if config.test_targets:
             test_steps: list[Step] = [
-                Step(uses="actions/checkout@v4"),
+                Step(uses="actions/checkout@v6"),
                 Step(
                     uses="./.github/actions/setup-bazel",
                     id="bazel",
@@ -331,7 +331,7 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
             if_cond = f"always() && !cancelled() && !failure() && ({needed_cond})"
 
         release_steps: list[Step] = [
-            Step(uses="actions/checkout@v4"),
+            Step(uses="actions/checkout@v6"),
             Step(
                 uses="./.github/actions/setup-bazel",
                 id="bazel",
@@ -441,7 +441,7 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
     flake_updates: list[str] = []
     for name, config in releases.items():
         # Skip packages with no flake inputs at all
-        if not any(t.flake_input for t in config.targets):
+        if not any(t.flake_input for t in config.targets) and not config.update_claude_settings:
             continue
         pid = _pkg_id(name)
         job_name = f"release-{pid}"
@@ -454,31 +454,25 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
                 if not config.wheel_name:
                     raise ValueError(f"wheel_name must be set for wheel package {name!r}")
                 file_pattern = config.wheel_name
-            sed_lines += (
-                f"  sed -i 's|releases/download/{name}-[^/]*/{file_pattern}|"
-                f"releases/download/${{{{ needs.{job_name}.outputs.tag }}}}/{file_pattern}|' flake.nix\n"
-            )
             if target.flake_input:
+                sed_lines += (
+                    f"  sed -i 's|releases/download/{name}-[^/]*/{file_pattern}|"
+                    f"releases/download/${{{{ needs.{job_name}.outputs.tag }}}}/{file_pattern}|' flake.nix\n"
+                )
                 lock_lines += f"  nix flake lock --update-input {target.flake_input} .\n"
+        if config.update_claude_settings:
+            # Update settings.json BEFORE nix flake lock so it succeeds even if nix fails
+            settings_file_pattern = name.replace("-", "_")
+            sed_lines += (
+                f'  sed -i "s|releases/download/{name}-[a-f0-9]*/{settings_file_pattern}|'
+                f'releases/download/${{{{ needs.{job_name}.outputs.tag }}}}/{settings_file_pattern}|g"'
+                f" .claude/settings.json\n"
+            )
         flake_updates.append(
             f'if [ "${{{{ needs.{job_name}.outputs.released }}}}" = "true" ]; then\n{sed_lines}{lock_lines}fi'
         )
 
-    settings_update = ""
-    for name, config in releases.items():
-        if config.update_claude_settings:
-            pid = _pkg_id(name)
-            settings_update = (
-                f'if [ "${{{{ needs.release-{pid}.outputs.released }}}}" = "true" ]; then\n'
-                f'  sed -i "s|releases/download/{name}-[a-f0-9]*/{name.replace("-", "_")}|'
-                f'releases/download/${{{{ needs.release-{pid}.outputs.tag }}}}/{name.replace("-", "_")}|g"'
-                f" .claude/settings.json\n"
-                f"fi"
-            )
-
     downstream_run = "\n".join(flake_updates)
-    if settings_update:
-        downstream_run += f"\n\n{settings_update}"
 
     downstream_run += (
         '\n\ngit config user.name "github-actions[bot]"\n'
@@ -505,7 +499,7 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
         runs_on="ubuntu-latest",
         timeout_minutes=15,
         steps=[
-            Step(uses="actions/checkout@v4", with_args={"ref": "${{ github.ref_name }}"}),
+            Step(uses="actions/checkout@v6", with_args={"ref": "${{ github.ref_name }}"}),
             Step(uses="cachix/install-nix-action@v30"),
             Step(name="Update references and push", run=downstream_run),
         ],
@@ -549,7 +543,7 @@ def generate_harbor_images_config(images: list[HarborImageConfig]) -> Workflow:
     Harbor once, then builds and pushes each image in sequence.
     """
     steps: list[Step] = [
-        Step(uses="actions/checkout@v4"),
+        Step(uses="actions/checkout@v6"),
         Step(
             uses="./.github/actions/setup-bazel",
             with_args={
