@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 import yaml
-from pydantic import BaseModel, Discriminator, Field, Tag
+from pydantic import BaseModel, BeforeValidator, Discriminator, Field, Tag
 
 from util.bazel.query import BazelLabel
 
@@ -88,18 +88,24 @@ class ExtraJobConfig(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class ReleaseTarget(BaseModel):
+    """A build target in a release, with optional Nix flake input for downstream updates."""
+
+    bazel_target: Annotated[BazelLabel, BeforeValidator(BazelLabel.parse)]
+    flake_input: str | None = None
+
+
 class ReleaseConfig(BaseModel):
     """Configuration for a package release in the consolidated release workflow.
 
-    wheel_path is derived from bazel_target's package path.
+    wheel_path is derived from the primary target's package path.
     wheel_name and latest_release_tag are computed from the manifest key.
     """
 
-    bazel_target: str
+    targets: list[ReleaseTarget]
     release_body: str
     artifact_type: Literal["wheel", "binary"] = "wheel"
     test_targets: str | None = None
-    flake_input: str | None = None
     update_claude_settings: bool = False
     apt_packages: list[str] = Field(default_factory=list)
     extra_jobs: dict[str, ExtraJobConfig] = Field(default_factory=dict)
@@ -108,7 +114,7 @@ class ReleaseConfig(BaseModel):
 
     @property
     def wheel_path(self) -> str:
-        label = BazelLabel.parse(self.bazel_target)
+        label = self.targets[0].bazel_target
         return f"bazel-bin/{label.package}" if label.package.parts else "bazel-bin"
 
 

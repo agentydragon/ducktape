@@ -191,14 +191,12 @@ def _pkg_id(name: str) -> str:
     return name.replace("-", "_")
 
 
-def _binary_dist_path(bazel_target: str) -> str:
+def _binary_dist_path(label: BazelLabel) -> str:
     """Compute the bazel-bin path for a binary target.
 
     rules_go appends a _ suffix to the output directory for go_binary targets.
     """
-    label = BazelLabel.parse(bazel_target)
-    target_name = label.name
-    return f"bazel-bin/{label.package}/{target_name}_/{target_name}"
+    return f"bazel-bin/{label.package}/{label.name}_/{label.name}"
 
 
 def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflow:
@@ -224,7 +222,7 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
                 uses="./.github/actions/check-release-needed",
                 with_args={
                     "package_prefix": name,
-                    "bazel_target": config.bazel_target,
+                    "bazel_targets": " ".join(str(t.bazel_target) for t in config.targets),
                     "latest_release_tag": f"{name}-latest",
                 },
             )
@@ -354,12 +352,18 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
             )
 
         if config.artifact_type == "binary":
-            dist_path = _binary_dist_path(config.bazel_target)
-            label = BazelLabel.parse(config.bazel_target)
+            labels = [t.bazel_target for t in config.targets]
+            dist_paths = [_binary_dist_path(lbl) for lbl in labels]
+            noun = "binaries" if len(config.targets) > 1 else "binary"
+            files_str = "\n".join(f"dist/{lbl.name}" for lbl in labels)
+            prepare_cmds = "mkdir -p dist\n" + "\n".join(f"cp {dp} dist/" for dp in dist_paths)
             release_steps.extend(
                 [
-                    Step(name="Build binary", run=f"bazel build --remote_download_toplevel {config.bazel_target}"),
-                    Step(name="Prepare binary", run=f"mkdir -p dist\ncp {dist_path} dist/"),
+                    Step(
+                        name=f"Build {noun}",
+                        run=f"bazel build --remote_download_toplevel {' '.join(str(lbl) for lbl in labels)}",
+                    ),
+                    Step(name=f"Prepare {noun}", run=prepare_cmds),
                     Step(
                         name="Create release",
                         uses="softprops/action-gh-release@v2",
@@ -367,7 +371,7 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
                             "tag_name": f"{name}-${{{{ env.SHORT_SHA }}}}",
                             "name": f"{name} (${{{{ env.SHORT_SHA }}}})",
                             "body": f"{config.release_body}\nCommit: ${{{{ github.sha }}}}\nBranch: ${{{{ github.ref_name }}}}",
-                            "files": f"dist/{label.name}",
+                            "files": files_str,
                         },
                     ),
                     Step(
@@ -377,7 +381,7 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
                             "latest_tag": latest_tag,
                             "title": f"{name} (latest)",
                             "body": config.release_body,
-                            "files": f"dist/{label.name}",
+                            "files": files_str,
                         },
                     ),
                 ]
@@ -388,7 +392,10 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
             wheel_name = config.wheel_name
             release_steps.extend(
                 [
-                    Step(name="Build wheel", run=f"bazel build --remote_download_toplevel {config.bazel_target}"),
+                    Step(
+                        name="Build wheel",
+                        run=f"bazel build --remote_download_toplevel {config.targets[0].bazel_target}",
+                    ),
                     Step(name="Prepare wheel", run=f"mkdir -p dist\ncp {config.wheel_path}/{wheel_name}-*.whl dist/"),
                     Step(
                         name="Create release",
@@ -431,25 +438,32 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
     release_job_names = [f"release-{_pkg_id(n)}" for n in pkg_names]
     any_released = " ||\n     ".join(f"needs.{j}.outputs.released == 'true'" for j in release_job_names)
 
+    # TODO: Replace sed-based URL rewriting with a structured approach (tree-sitter-nix
+    # or nix-manipulator once it supports `formals @ identifier : let_expression` syntax).
     flake_updates: list[str] = []
     for name, config in releases.items():
-        if not config.flake_input:
+        # Skip packages with no flake inputs at all
+        if not any(t.flake_input for t in config.targets):
             continue
         pid = _pkg_id(name)
         job_name = f"release-{pid}"
-        if config.artifact_type == "binary":
-            label = BazelLabel.parse(config.bazel_target)
-            file_pattern = label.name
-        else:
-            if not config.wheel_name:
-                raise ValueError(f"wheel_name must be set for wheel package {name!r}")
-            file_pattern = config.wheel_name
+        sed_lines = ""
+        lock_lines = ""
+        for target in config.targets:
+            if config.artifact_type == "binary":
+                file_pattern = target.bazel_target.name
+            else:
+                if not config.wheel_name:
+                    raise ValueError(f"wheel_name must be set for wheel package {name!r}")
+                file_pattern = config.wheel_name
+            sed_lines += (
+                f"  sed -i 's|releases/download/{name}-[^/]*/{file_pattern}|"
+                f"releases/download/${{{{ needs.{job_name}.outputs.tag }}}}/{file_pattern}|' nix/flake.nix\n"
+            )
+            if target.flake_input:
+                lock_lines += f"  nix flake lock --update-input {target.flake_input} ./nix\n"
         flake_updates.append(
-            f'if [ "${{{{ needs.{job_name}.outputs.released }}}}" = "true" ]; then\n'
-            f"  sed -i 's|releases/download/{name}-[^/]*/{file_pattern}|"
-            f"releases/download/${{{{ needs.{job_name}.outputs.tag }}}}/{file_pattern}|' nix/flake.nix\n"
-            f"  nix flake lock --update-input {config.flake_input} ./nix\n"
-            f"fi"
+            f'if [ "${{{{ needs.{job_name}.outputs.released }}}}" = "true" ]; then\n{sed_lines}{lock_lines}fi'
         )
 
     settings_update = ""

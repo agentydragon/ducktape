@@ -91,20 +91,25 @@ workflows:
 #   release_needs:    Extra job names the release job depends on (beyond standard test)
 releases:
   kubespand:
-    bazel_target: //cluster/kubespand:kubespand
     artifact_type: binary
+    targets:
+      - bazel_target: //cluster/kubespand:kubespand
+        flake_input: kubespand-bin
+      - bazel_target: //cluster/kubespand/cmd/apid
+        flake_input: apid-bin
     test_targets: //cluster/kubespand/...
-    flake_input: kubespand-bin
     release_body: |
       kubespand — standalone KubeSpan daemon for non-Talos Linux.
+      apid — Talos API proxy daemon for kubespand (mTLS on port 50000).
 
-      Static x86_64 binary. See `cluster/kubespand/README.md` for usage.
+      Static x86_64 binaries. See `cluster/kubespand/README.md` for usage.
 
   ducktape:
-    bazel_target: //:wheel
+    targets:
+      - bazel_target: //:wheel
+        flake_input: ducktape-wheel
     wheel_name: ducktape
     test_targets: //devinfra/claude/...
-    flake_input: ducktape-wheel
     update_claude_settings: true
     extra_jobs:
       test-ducktape-e2e:
@@ -179,19 +184,21 @@ releases:
       Requires Python 3.13+
 
   headscale-cleanup:
-    bazel_target: //headscale_cleanup:wheel
+    targets:
+      - bazel_target: //headscale_cleanup:wheel
+        flake_input: headscale-cleanup-wheel
     wheel_name: headscale_cleanup
-    flake_input: headscale-cleanup-wheel
     release_body: |
       headscale-cleanup wheel.
 
       CLI tool for cleaning up stale Headscale nodes (controlplane* and worker* nodes).
 
   gterm-theme:
-    bazel_target: //gterm_theme:wheel
+    targets:
+      - bazel_target: //gterm_theme:wheel
+        flake_input: gterm-theme-wheel
     wheel_name: gterm_theme
     apt_packages: [libcairo2-dev, libgirepository-2.0-dev, libdbus-1-dev, libxcb1-dev, pkg-config]
-    flake_input: gterm-theme-wheel
     release_body: |
       gterm-theme wheel (GNOME Terminal theme follower).
 

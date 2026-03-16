@@ -51,28 +51,28 @@ jobs:
         uses: ./.github/actions/check-release-needed
         with:
           package_prefix: kubespand
-          bazel_target: //cluster/kubespand:kubespand
+          bazel_targets: //cluster/kubespand //cluster/kubespand/cmd/apid
           latest_release_tag: kubespand-latest
       - name: Check ducktape
         id: check-ducktape
         uses: ./.github/actions/check-release-needed
         with:
           package_prefix: ducktape
-          bazel_target: //:wheel
+          bazel_targets: //:wheel
           latest_release_tag: ducktape-latest
       - name: Check headscale-cleanup
         id: check-headscale_cleanup
         uses: ./.github/actions/check-release-needed
         with:
           package_prefix: headscale-cleanup
-          bazel_target: //headscale_cleanup:wheel
+          bazel_targets: //headscale_cleanup:wheel
           latest_release_tag: headscale-cleanup-latest
       - name: Check gterm-theme
         id: check-gterm_theme
         uses: ./.github/actions/check-release-needed
         with:
           package_prefix: gterm-theme
-          bazel_target: //gterm_theme:wheel
+          bazel_targets: //gterm_theme:wheel
           latest_release_tag: gterm-theme-latest
   test-kubespand:
     name: Test kubespand
@@ -218,7 +218,7 @@ jobs:
       - name: Set short SHA
         run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
       - name: Build binaries
-        run: bazel build --remote_download_toplevel //cluster/kubespand:kubespand //cluster/kubespand/cmd/apid
+        run: bazel build --remote_download_toplevel //cluster/kubespand //cluster/kubespand/cmd/apid
       - name: Prepare binaries
         run: |-
           mkdir -p dist

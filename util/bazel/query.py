@@ -42,14 +42,10 @@ class BazelLabel:
 
     @classmethod
     def parse(cls, s: str) -> BazelLabel:
-        """Parse a label string as produced by ``bazel query``.
+        """Parse a label string.
 
-        Handles ``//pkg:target``, ``@repo//pkg:target`` and the Bzlmod
-        canonical ``@@repo//pkg:target`` forms.
-
-        Raises :class:`ValueError` for bare package references (no ``:``)
-        and unrecognised formats.  Use :meth:`try_parse` if ``None`` is
-        preferred over an exception.
+        Handles ``//pkg:target``, ``//pkg`` (short for ``//pkg:pkg``),
+        ``@repo//pkg:target`` and ``@@repo//pkg:target``.
         """
         if s.startswith(_CANONICAL_SIGIL):
             rest_after_sigil = s.removeprefix(_CANONICAL_SIGIL)
@@ -67,7 +63,11 @@ class BazelLabel:
             raise ValueError(f"Invalid Bazel label (must start with {_PKG_SEP!r} or {_REPO_SIGIL!r}): {s!r}")
 
         if _TARGET_SEP not in rest:
-            raise ValueError(f"Invalid Bazel label (no {_TARGET_SEP!r} separator): {s!r}")
+            # Support short form: //foo/bar implies //foo/bar:bar
+            package = Path(rest)
+            if not package.name:
+                raise ValueError(f"Invalid Bazel label (no {_TARGET_SEP!r} separator and empty package): {s!r}")
+            return cls(repo=repo, package=package, name=package.name)
 
         package, name = rest.split(_TARGET_SEP, 1)
         return cls(repo=repo, package=Path(package), name=name)
@@ -81,10 +81,16 @@ class BazelLabel:
             return None
 
     def __str__(self) -> str:
-        """Reconstruct the canonical label string (e.g. ``//foo/bar:baz``)."""
+        """Reconstruct the label string, using short form when possible.
+
+        Short form omits the target when it matches the last package component:
+        ``//foo/bar:bar`` → ``//foo/bar``.
+        """
         # Path("") stringifies as "." in Python, but root package must be "" in a label.
         pkg = "" if self.package == Path() else str(self.package)
         repo_prefix = f"@{self.repo}//" if self.repo else "//"
+        if self.name == self.package.name:
+            return f"{repo_prefix}{pkg}"
         return f"{repo_prefix}{pkg}:{self.name}"
 
     @property

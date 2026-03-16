@@ -7,8 +7,8 @@ inputs:
   package_prefix:
     description: "Package name prefix used in release tags (e.g., 'ducktape', 'claude-hooks')"
     required: true
-  bazel_target:
-    description: "Bazel wheel target to check for changes (e.g., '//:wheel')"
+  bazel_targets:
+    description: "Space-separated Bazel targets to check for changes (e.g., '//:wheel' or '//pkg:a //pkg:b')"
     required: true
   latest_release_tag:
     description: "Floating tag pointing to the last release (e.g., 'ducktape-latest')"
@@ -41,7 +41,7 @@ runs:
       shell: bash
       env:
         PACKAGE_PREFIX: ${{ inputs.package_prefix }}
-        BAZEL_WHEEL_TARGET: ${{ inputs.bazel_target }}
+        BAZEL_TARGETS: ${{ inputs.bazel_targets }}
         LATEST_RELEASE_TAG: ${{ inputs.latest_release_tag }}
         CI_PUSH_STRATEGY: incremental
       run: |

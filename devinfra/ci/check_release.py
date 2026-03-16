@@ -6,10 +6,10 @@
 """Check if a release is needed for a specific package.
 
 Compares against the floating latest release tag using bazel-diff to determine
-if the package's wheel target has been affected.
+if any of the package's build targets have been affected.
 
 Usage:
-    PACKAGE_PREFIX=ducktape BAZEL_WHEEL_TARGET="//:wheel" \
+    PACKAGE_PREFIX=ducktape BAZEL_TARGETS="//:wheel" \
         LATEST_RELEASE_TAG=ducktape-latest \
         uv run devinfra/ci/check_release.py
 """
@@ -26,11 +26,14 @@ _REPO_ROOT = Path(__file__).parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from typing import Annotated
+
 import pygit2
-from pydantic import BaseModel
+from pydantic import BaseModel, BeforeValidator
 
 from devinfra.ci.diff_utils import download_bazel_diff, get_changed_files, has_infra_changes, run_bazel_diff
 from devinfra.ci.github_actions import CIEnvironment
+from util.bazel.query import BazelLabel
 from util.env import get_required_env
 
 logger = logging.getLogger(__name__)
@@ -41,7 +44,7 @@ class ReleaseEnvironment(BaseModel):
 
     ci: CIEnvironment
     package_prefix: str
-    wheel_target: str
+    bazel_targets: list[Annotated[BazelLabel, BeforeValidator(BazelLabel.parse)]]
     latest_release_tag: str
 
     @classmethod
@@ -50,7 +53,7 @@ class ReleaseEnvironment(BaseModel):
         return cls(
             ci=CIEnvironment.from_env(),
             package_prefix=get_required_env("PACKAGE_PREFIX"),
-            wheel_target=get_required_env("BAZEL_WHEEL_TARGET"),
+            bazel_targets=get_required_env("BAZEL_TARGETS").split(),
             latest_release_tag=get_required_env("LATEST_RELEASE_TAG"),
         )
 
@@ -69,7 +72,7 @@ def get_last_release_commit(repo: pygit2.Repository, latest_release_tag: str) ->
 def compute_release_decision(env: ReleaseEnvironment, repo: pygit2.Repository) -> bool:
     """Compute whether a release is needed for a package.
 
-    Checks if the specific wheel target is in the affected targets list.
+    Checks if any of the package's build targets are in the affected targets list.
     """
     base_commit = get_last_release_commit(repo, env.latest_release_tag)
 
@@ -90,12 +93,13 @@ def compute_release_decision(env: ReleaseEnvironment, repo: pygit2.Repository) -
     download_bazel_diff(jar_path)
 
     cache_dir = env.ci.workspace / ".bazel-diff-cache"
-    targets = run_bazel_diff(repo, jar_path, env.ci.workspace, base_commit, cache_dir)
-    logger.info("Found %d affected targets total", len(targets))
+    affected = run_bazel_diff(repo, jar_path, env.ci.workspace, base_commit, cache_dir)
+    logger.info("Found %d affected targets total", len(affected))
 
-    needed = env.wheel_target in targets
-    logger.info("Target %s %s", env.wheel_target, "changed" if needed else "not in affected targets")
-    return needed
+    hit = set(env.bazel_targets) & affected
+    for t in env.bazel_targets:
+        logger.info("Target %s %s", t, "changed" if t in hit else "not affected")
+    return bool(hit)
 
 
 def main() -> None:
@@ -105,7 +109,7 @@ def main() -> None:
     env = ReleaseEnvironment.from_env()
 
     logger.info("Checking if release needed for %s", env.package_prefix)
-    logger.info("Wheel target: %s", env.wheel_target)
+    logger.info("Targets: %s", " ".join(str(t) for t in env.bazel_targets))
     logger.info("Latest release tag: %s", env.latest_release_tag)
 
     repo = pygit2.Repository(env.ci.workspace)

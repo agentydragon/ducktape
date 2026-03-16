@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING
 
 import pygit2
 
+from util.bazel.query import BazelLabel
+
 if TYPE_CHECKING:
     from devinfra.ci.github_actions import CIEnvironment
 
@@ -140,10 +142,10 @@ class BazelDiffError(Exception):
 
 def run_bazel_diff(
     repo: pygit2.Repository, jar_path: Path, workspace: Path, base_commit: pygit2.Commit, cache_dir: Path
-) -> list[str]:
+) -> set[BazelLabel]:
     """Run bazel-diff to compute impacted targets.
 
-    Returns list of targets, or empty list if no changes.
+    Returns set of affected targets, or empty set if no changes.
     Raises BazelDiffError on failure.
     """
     head_commit = repo.head.peel(pygit2.Commit)
@@ -165,4 +167,4 @@ def run_bazel_diff(
     except subprocess.CalledProcessError as e:
         raise BazelDiffError(f"bazel-diff get-impacted-targets failed with exit code {e.returncode}") from e
 
-    return [t for t in result.stdout.strip().split("\n") if t]
+    return {BazelLabel.parse(t) for t in result.stdout.strip().split("\n") if t}

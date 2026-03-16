@@ -67,6 +67,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":github_actions",
+        "//util/bazel:query",
         "@pypi//pygit2",
     ],
 )
@@ -82,6 +83,7 @@ py_library(
         ":diff_utils",
         ":github_actions",
         "//util:env",
+        "//util/bazel:query",
         "@pypi//pydantic",
         "@pypi//pygit2",
     ],

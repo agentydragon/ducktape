@@ -20,6 +20,10 @@ from util.bazel.query import BazelLabel, run_query
         ("//a/b/c:d/e.rs", BazelLabel(repo="", package=Path("a/b/c"), name="d/e.rs")),
         ("@repo//pkg:target", BazelLabel(repo="repo", package=Path("pkg"), name="target")),
         ("@@canonical//pkg:target", BazelLabel(repo="canonical", package=Path("pkg"), name="target")),
+        # Short form: //pkg implies //pkg:pkg
+        ("//foo/bar", BazelLabel(repo="", package=Path("foo/bar"), name="bar")),
+        ("//cluster/kubespand/cmd/apid", BazelLabel(repo="", package=Path("cluster/kubespand/cmd/apid"), name="apid")),
+        ("@repo//pkg", BazelLabel(repo="repo", package=Path("pkg"), name="pkg")),
     ],
 )
 def test_parse_valid(raw: str, expected: BazelLabel) -> None:
@@ -29,7 +33,6 @@ def test_parse_valid(raw: str, expected: BazelLabel) -> None:
 @pytest.mark.parametrize(
     "raw",
     [
-        "//foo/bar",  # bare package ref — no colon
         "foo:bar",  # no // prefix
         "",  # empty
         "@repo",  # @ but no //
@@ -41,7 +44,7 @@ def test_parse_invalid_raises(raw: str) -> None:
         BazelLabel.parse(raw)
 
 
-@pytest.mark.parametrize("raw", ["//foo/bar", "foo:bar", ""])
+@pytest.mark.parametrize("raw", ["foo:bar", ""])
 def test_try_parse_invalid_returns_none(raw: str) -> None:
     assert BazelLabel.try_parse(raw) is None
 
@@ -96,6 +99,10 @@ def test_package_path_property(label: BazelLabel, expected: Path | None) -> None
         (BazelLabel(repo="", package=Path(), name="root.txt"), "//:root.txt"),
         (BazelLabel(repo="repo", package=Path("pkg"), name="target"), "@repo//pkg:target"),
         (BazelLabel(repo="canonical", package=Path("pkg"), name="target"), "@canonical//pkg:target"),
+        # Short form: name matches last package component
+        (BazelLabel(repo="", package=Path("foo/bar"), name="bar"), "//foo/bar"),
+        (BazelLabel(repo="", package=Path("cluster/kubespand/cmd/apid"), name="apid"), "//cluster/kubespand/cmd/apid"),
+        (BazelLabel(repo="repo", package=Path("pkg"), name="pkg"), "@repo//pkg"),
     ],
 )
 def test_str(label: BazelLabel, expected: str) -> None:

@@ -126,14 +126,14 @@ def _compute_affected_targets(
 
     jar_path = get_required_existing_path("BAZEL_DIFF_JAR")
     cache_dir = get_optional_env_path("BAZEL_DIFF_CACHE_DIR") or (env.workspace / ".bazel-diff-cache")
-    targets = run_bazel_diff(repo, jar_path, env.workspace, base_commit, cache_dir)
+    affected = run_bazel_diff(repo, jar_path, env.workspace, base_commit, cache_dir)
 
-    if not targets:
+    if not affected:
         logger.info("No Bazel targets affected")
-        return targets, False
+        return [], False
 
-    raw_count = len(targets)
-    targets = filter_for_ci(targets)
+    raw_count = len(affected)
+    targets = filter_for_ci([str(t) for t in affected])
     filtered = raw_count - len(targets)
     if filtered:
         logger.info("Filtered %d targets (source files, platform-incompatible, manual)", filtered)
