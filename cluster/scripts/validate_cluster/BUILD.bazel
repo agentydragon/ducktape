@@ -1,46 +1,29 @@
 # gazelle:ignore
-# Cluster validation scripts
+# Cluster validation binary — thin wrapper around //cluster/validation library.
 #
 # Two binaries:
 #   validate_cluster — kustomizations + helm templates (unified, fast local checks)
 #   validate_sealed_secrets — sealed secret decryption (separate, needs terraform state)
-#
-# Binaries (kustomize, flux, kubeseal, helm, tofu) are managed via rules_multitool.
 #
 # Usage:
 #   bazel run //cluster/scripts/validate_cluster
 #   bazel run //cluster/scripts/validate_cluster:validate_sealed_secrets
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
 
 package(default_visibility = [
     "//cluster:__subpackages__",
     "//devinfra/precommit:__pkg__",
 ])
 
-# ============================================================================
-# Kustomization validation — domain modules
-# ============================================================================
-
-py_library(
-    name = "k8s",
-    srcs = ["k8s.py"],
-    imports = ["../../.."],
-    deps = [
-        "@pypi//pydantic",
-        "@pypi//pyyaml",
-    ],
-)
-
 py_library(
     name = "kustomize",
     srcs = ["kustomize.py"],
     imports = ["../../.."],
     deps = [
-        ":k8s",
+        "//cluster/validation:k8s",
+        "//cluster/validation:kustomize",
         "//util/bazel:runfiles",
-        "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
 )
@@ -50,22 +33,9 @@ py_library(
     srcs = ["flux.py"],
     imports = ["../../.."],
     deps = [
-        ":k8s",
+        "//cluster/validation:k8s",
         "//util/bazel:runfiles",
-        "@pypi//pydantic",
         "@pypi//pyyaml",
-    ],
-)
-
-py_library(
-    name = "cluster",
-    srcs = ["cluster.py"],
-    imports = ["../../.."],
-    deps = [
-        ":flux",
-        ":k8s",
-        ":kustomize",
-        "@pypi//pydantic",
     ],
 )
 
@@ -74,22 +44,19 @@ py_library(
     srcs = ["checks.py"],
     imports = ["../../.."],
     deps = [
-        ":cluster",
-        ":flux",
-        ":k8s",
-        ":kustomize",
+        "//cluster/validation:cluster",
+        "//cluster/validation:crd_layering",
+        "//cluster/validation:health_checks",
+        "//cluster/validation:kustomize",
         "@pypi//pyyaml",
     ],
 )
 
 py_library(
-    name = "dependencies",
-    srcs = ["dependencies.py"],
+    name = "helm_templates",
+    srcs = ["helm_templates.py"],
     imports = ["../../.."],
-    deps = [
-        ":cluster",
-        ":flux",
-    ],
+    deps = ["//util/bazel:runfiles"],
 )
 
 py_library(
@@ -98,11 +65,12 @@ py_library(
     imports = ["../../.."],
     deps = [
         ":checks",
-        ":cluster",
-        ":dependencies",
         ":flux",
         ":helm_templates",
         ":kustomize",
+        "//cluster/validation:cluster",
+        "//cluster/validation:dependencies",
+        "//cluster/validation:kustomize",
         "//util/bazel:workspace",
     ],
 )
@@ -120,21 +88,6 @@ py_binary(
     deps = [":main"],
 )
 
-# ============================================================================
-# Sealed secrets validation (separate binary — different deps/trigger pattern)
-# ============================================================================
-
-py_library(
-    name = "sealed_secrets",
-    srcs = ["sealed_secrets.py"],
-    imports = ["../../.."],
-    deps = [
-        ":cluster",
-        "//util/bazel:runfiles",
-        "//util/bazel:workspace",
-    ],
-)
-
 py_binary(
     name = "validate_sealed_secrets",
     data = [
@@ -142,70 +95,6 @@ py_binary(
         "@multitool//tools/tofu",
     ],
     imports = ["../../.."],
-    main_module = "cluster.scripts.validate_cluster.sealed_secrets",
-    deps = [":sealed_secrets"],
-)
-
-py_library(
-    name = "helm_templates",
-    srcs = ["helm_templates.py"],
-    imports = ["../../.."],
-    deps = ["//util/bazel:runfiles"],
-)
-
-# ============================================================================
-# Tests
-# ============================================================================
-
-py_test(
-    name = "test_k8s",
-    srcs = ["test_k8s.py"],
-    imports = ["../../.."],
-    deps = [
-        ":k8s",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_flux",
-    srcs = ["test_flux.py"],
-    data = glob(["testdata/**"]),
-    imports = ["../../.."],
-    deps = [
-        ":dependencies",
-        ":flux",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_checks",
-    srcs = ["test_checks.py"],
-    imports = ["../../.."],
-    deps = [
-        ":checks",
-        ":cluster",
-        ":flux",
-        ":k8s",
-        ":kustomize",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-        "@pypi//types_pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_dependencies",
-    srcs = ["test_dependencies.py"],
-    imports = ["../../.."],
-    deps = [
-        ":dependencies",
-        ":flux",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
+    main_module = "cluster.validation.sealed_secrets",
+    deps = ["//cluster/validation:sealed_secrets"],
 )

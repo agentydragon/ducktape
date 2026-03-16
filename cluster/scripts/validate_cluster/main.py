@@ -34,12 +34,21 @@ from cluster.scripts.validate_cluster.checks import (
     check_duplicate_external_secrets,
     find_orphaned_files,
 )
-from cluster.scripts.validate_cluster.cluster import _K8S_SUBPATH, parse_cluster
-from cluster.scripts.validate_cluster.dependencies import validate_dependencies
 from cluster.scripts.validate_cluster.flux import validate_flux_build
 from cluster.scripts.validate_cluster.helm_templates import validate_helm_templates
-from cluster.scripts.validate_cluster.kustomize import run_kustomize_build
+from cluster.scripts.validate_cluster.kustomize import KustomizeBuildError, run_kustomize_build
+from cluster.validation.cluster import _K8S_SUBPATH, parse_cluster
+from cluster.validation.dependencies import validate_dependencies
+from cluster.validation.kustomize import KustomizeBuildResult
 from util.bazel.workspace import get_build_workspace_directory
+
+
+async def _try_kustomize_build(kustomization_path: Path) -> KustomizeBuildResult | KustomizeBuildError:
+    """Run kustomize build, returning the result or error (not raising)."""
+    try:
+        return await run_kustomize_build(kustomization_path)
+    except KustomizeBuildError as e:
+        return e
 
 
 async def main() -> int:
@@ -70,18 +79,17 @@ async def main() -> int:
         print(f"No kustomizations found in {root}")
         return 0
 
-    # Run kustomize build in parallel
-    tasks = [run_kustomize_build(k) for k in kustomization_files]
-    cluster.build_results = await asyncio.gather(*tasks)
+    # Run kustomize build in parallel — collect successes and failures
+    outcomes = await asyncio.gather(*[_try_kustomize_build(k) for k in kustomization_files])
 
-    # Collect errors
     kust_errors: list[tuple[Path, str]] = []
     global_errors: list[str] = []
 
-    successful = [r for r in cluster.build_results if r.success]
-    for result in cluster.build_results:
-        if not result.success:
-            kust_errors.append((result.kustomization_path, result.error))
+    for outcome in outcomes:
+        if isinstance(outcome, KustomizeBuildError):
+            kust_errors.append((outcome.kustomization_path, str(outcome)))
+        else:
+            cluster.build_results.append(outcome)
 
     # Check duplicate external-secrets
     global_errors.extend(check_duplicate_external_secrets(cluster.build_results))
@@ -121,14 +129,14 @@ async def main() -> int:
             result_json = {"error": f"Validation failed with {len(error_details)} errors", "details": error_details}
             print(json.dumps(result_json), file=sys.stderr)
             return 1
-        result_json = {"status": "passed", "validated_count": str(len(successful))}
+        result_json = {"status": "passed", "validated_count": str(len(cluster.build_results))}
         print(json.dumps(result_json))
         return 0
 
     # Human-readable output
-    if args.verbose and successful:
-        print(f"✅ Successfully validated {len(successful)} kustomizations:")
-        for r in successful:
+    if args.verbose and cluster.build_results:
+        print(f"✅ Successfully validated {len(cluster.build_results)} kustomizations:")
+        for r in cluster.build_results:
             print(f"  {r.kustomization_path.parent}")
 
     if has_errors:
@@ -141,7 +149,7 @@ async def main() -> int:
         return 1
 
     if not args.verbose:
-        print(f"✅ All {len(successful)} kustomizations valid, no dependency/layering issues")
+        print(f"✅ All {len(cluster.build_results)} kustomizations valid, no dependency/layering issues")
 
     return 0
 

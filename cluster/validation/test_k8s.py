@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from cluster.scripts.validate_cluster.k8s import parse_k8s_resources
+from cluster.validation.k8s import parse_k8s_resources
 
 
 class TestParseK8sResources:
