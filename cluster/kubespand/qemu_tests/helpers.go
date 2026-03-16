@@ -507,7 +507,8 @@ func AssertProbes(t *testing.T, events []Event, topology string) {
 }
 
 // PollKubespandPeerStatus connects to kubespand's TCP COSI API and polls
-// PeerStatus resources until minPeers peers report state "up".
+// PeerStatus resources until at least minPeers peers report state "up".
+// Other discovered peers may be in any state (unknown, down).
 func PollKubespandPeerStatus(t *testing.T, addr string, minPeers int, timeout time.Duration) ([]KubespanPeerResult, error) {
 	t.Helper()
 
@@ -549,10 +550,10 @@ func PollKubespandPeerStatus(t *testing.T, addr string, minPeers int, timeout ti
 			})
 		}
 
-		allUp := len(peers) >= minPeers
+		upCount := 0
 		for _, p := range peers {
-			if p.State != kubespan.PeerStateUp {
-				allUp = false
+			if p.State == kubespan.PeerStateUp {
+				upCount++
 			}
 		}
 
@@ -563,9 +564,9 @@ func PollKubespandPeerStatus(t *testing.T, addr string, minPeers int, timeout ti
 			}
 			fmt.Fprintf(&peerSummary, "%s state=%s ep=%s", p.Label, p.State, p.Endpoint)
 		}
-		t.Logf("kubespand COSI poll: %d peers, allUp=%v [%s]", len(peers), allUp, peerSummary.String())
+		t.Logf("kubespand COSI poll: %d peers, %d up (need %d) [%s]", len(peers), upCount, minPeers, peerSummary.String())
 
-		if allUp {
+		if upCount >= minPeers {
 			return peers, nil
 		}
 
