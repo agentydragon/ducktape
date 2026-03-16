@@ -22,11 +22,11 @@ from pathlib import Path
 import pygit2
 
 from devinfra.precommit.enforce_bazel_tests import _build_universe
-from util.bazel.query import file_to_label, run_query
+from util.bazel.query import BazelWorkspace, run_query
 from util.fs import restore_file
 
 # The file we'll temporarily modify to simulate a change.
-_TARGET_FILE = "util/bazel/query.py"
+_TARGET_FILE = Path("util/bazel/query.py")
 _SENTINEL = "\n# benchmark-sentinel-comment\n"
 
 
@@ -51,7 +51,8 @@ def main() -> int:
     repo_root = _repo_root()
     _assert_git_clean(repo_root)
 
-    label = file_to_label(_TARGET_FILE, repo_root)
+    workspace = BazelWorkspace(root=repo_root)
+    label = workspace.file_to_label(_TARGET_FILE)
     if label is None:
         raise ValueError(f"No BUILD file found for {_TARGET_FILE}")
 
@@ -77,10 +78,10 @@ def main() -> int:
         t1_start = time.monotonic()
         pkg_str = str(label.package) if label.package != Path() else ""
         validate_expr = f'kind("source file", //{pkg_str}:*)'
-        known_sources = {str(lbl) for lbl in run_query(validate_expr, cwd=repo_root)}
+        known_sources = set(run_query(validate_expr, cwd=repo_root))
         t1_end = time.monotonic()
 
-        if str(label) not in known_sources:
+        if label not in known_sources:
             raise RuntimeError(f"{label} is not a known source file")
 
         # Step 2: find affected tests via rdeps
@@ -96,7 +97,7 @@ def main() -> int:
         universe_scope = ",".join(parts)
 
         rdeps_expr = f'kind(".*_test", rdeps({universe_expr}, set({label})))'
-        targets = [str(lbl) for lbl in run_query(rdeps_expr, cwd=repo_root, universe_scope=universe_scope)]
+        targets = run_query(rdeps_expr, cwd=repo_root, universe_scope=universe_scope)
         t2_end = time.monotonic()
 
         t_total = time.monotonic() - t0
@@ -105,7 +106,7 @@ def main() -> int:
         print(f"step 2 (rdeps query):        {t2_end - t2_start:6.2f}s")
         print(f"total:                       {t_total:6.2f}s")
         print(f"\naffected tests ({len(targets)}):")
-        for t in sorted(targets):
+        for t in sorted(str(lbl) for lbl in targets):
             print(f"  {t}")
 
     return 0

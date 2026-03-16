@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pygit2
 
-from util.bazel.query import file_to_label, run_query
+from util.bazel.query import BazelLabel, BazelWorkspace, run_query
 
 # Infrastructure files that affect too many targets — CI catches these.
 _INFRA_PATTERNS = (
@@ -109,16 +109,17 @@ def main() -> int:
         return 0
 
     # Convert staged files to candidate Bazel source file labels.
-    candidates: list[str] = []
-    packages: set[Path] = set()
+    workspace = BazelWorkspace(root=repo_root)
+    candidates: list[BazelLabel] = []
     for f in staged:
-        label = file_to_label(f, repo_root)
+        label = workspace.file_to_label(Path(f))
         if label is not None:
-            candidates.append(str(label))
-            packages.add(label.package)
+            candidates.append(label)
 
     if not candidates:
         return 0
+
+    packages = {label.package for label in candidates}
 
     timeout = int(os.environ.get("DUCKTAPE_BAZEL_QUERY_TIMEOUT", "120"))
 
@@ -129,7 +130,7 @@ def main() -> int:
     validate_expr = f'kind("source file", {pkg_union})'
 
     try:
-        known_sources = {str(label) for label in run_query(validate_expr, cwd=repo_root, timeout=timeout)}
+        known_sources = set(run_query(validate_expr, cwd=repo_root, timeout=timeout))
     except subprocess.TimeoutExpired:
         print(f"{_PREFIX}: bazel query (validate) timed out after {timeout}s", file=sys.stderr)
         return 1
@@ -162,7 +163,7 @@ def main() -> int:
     universe_expr = " + ".join(parts)
     universe_scope = ",".join(parts)
 
-    labels_set = " ".join(valid_labels)
+    labels_set = " ".join(str(label) for label in valid_labels)
     rdeps_expr = f'kind(".*_test", rdeps({universe_expr}, set({labels_set})))'
 
     try:
