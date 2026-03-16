@@ -21,6 +21,7 @@ class TestEvaluate:
     def test_allowed_bash_command_returns_allow(self, command: str) -> None:
         hook_input = PreToolUseInput(**_COMMON, tool_name="Bash", tool_input={"command": command})
         result = evaluate(hook_input)
+        assert result.hook_specific_output is not None
         assert result.hook_specific_output.permission_decision == PermissionDecision.ALLOW
 
     def test_output_serializes_to_camel_case(self) -> None:
@@ -39,6 +40,7 @@ class TestEvaluate:
     def test_returns_allow_for_unmatched(self, tool_name: str, tool_input: dict) -> None:
         hook_input = PreToolUseInput(**_COMMON, tool_name=tool_name, tool_input=tool_input)
         result = evaluate(hook_input)
+        assert result.hook_specific_output is not None
         assert result.hook_specific_output.permission_decision == PermissionDecision.ALLOW
 
 
