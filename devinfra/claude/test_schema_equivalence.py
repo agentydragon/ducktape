@@ -121,7 +121,7 @@ def test_common_fields_match() -> None:
 
             pydantic_field = pydantic_props[field_name]
             # Compare type representations (excluding title/description metadata)
-            if _strip_metadata(zod_field) != _strip_metadata(pydantic_field):
+            if _normalize_field_schema(zod_field) != _normalize_field_schema(pydantic_field):
                 deltas.append(
                     f"[{model_name}] Field '{field_name}' differs:\n"
                     f"  Zod:     {json.dumps(zod_field, sort_keys=True)}\n"
@@ -206,8 +206,8 @@ def test_hook_specific_output_variants_match() -> None:
                 )
                 continue
 
-            pydantic_field_schema = hso_props[field_name]
-            if _strip_metadata(zod_field_schema) != _strip_metadata(pydantic_field_schema):
+            pydantic_field_schema = _inline_refs(hso_props[field_name], defs)
+            if _normalize_field_schema(zod_field_schema) != _normalize_field_schema(pydantic_field_schema):
                 deltas.append(
                     f"[{event_name}] hookSpecificOutput field '{field_name}' differs:\n"
                     f"  Zod:     {json.dumps(zod_field_schema, sort_keys=True)}\n"
@@ -227,9 +227,61 @@ def test_hook_specific_output_variants_match() -> None:
         )
 
 
-def _strip_metadata(schema: dict[str, Any]) -> dict[str, Any]:
-    """Strip title and description from a JSON Schema dict (non-recursive, single level)."""
-    return {k: v for k, v in schema.items() if k not in ("title", "description")}
+def _normalize_field_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a JSON Schema field for comparison.
+
+    Strips metadata (title, description, default) and collapses Pydantic's
+    nullable-optional pattern to match Zod's .optional() representation.
+
+    Zod .optional() emits {"type": "string"} and omits the field from required.
+    Pydantic `str | None = None` emits {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null}.
+    These are equivalent on the wire because we serialize with exclude_none=True,
+    so None values are omitted (absent) rather than sent as null.
+    """
+    out = {k: v for k, v in schema.items() if k not in ("title", "description", "default")}
+    # Zod emits {"additionalProperties": {}, "propertyNames": {"type": "string"}} for
+    # Record<string, unknown>; Pydantic emits {"additionalProperties": true}. These are
+    # semantically equivalent in JSON Schema (both mean "any additional string-keyed properties").
+    if out.get("additionalProperties") in ({}, True):
+        out["additionalProperties"] = True
+        out.pop("propertyNames", None)
+    # Collapse anyOf with a null variant: {"anyOf": [<real_type>, {"type": "null"}]}
+    # becomes just <real_type>, matching Zod's .optional() representation.
+    if "anyOf" in out:
+        non_null = [v for v in out["anyOf"] if v != {"type": "null"}]
+        if len(non_null) == 1 and len(out["anyOf"]) == len(non_null) + 1:
+            # Replace the anyOf with the single non-null variant, keeping other keys.
+            # Also strip metadata from the resolved variant (e.g. from inlined $refs).
+            collapsed = {k: v for k, v in out.items() if k != "anyOf"}
+            inner = {k: v for k, v in non_null[0].items() if k not in ("title", "description")}
+            collapsed.update(inner)
+            return collapsed
+    return out
+
+
+def _inline_refs(schema: dict[str, Any], defs: dict[str, Any]) -> dict[str, Any]:
+    """Recursively inline all $ref references so schemas can be compared structurally."""
+    if "$ref" in schema:
+        ref = schema["$ref"]
+        if ref.startswith("#/$defs/"):
+            def_name = ref[len("#/$defs/") :]
+            resolved = defs.get(def_name, schema)
+            # Merge any sibling keys (e.g. default) with the resolved definition
+            merged = {**_inline_refs(resolved, defs)}
+            for k, v in schema.items():
+                if k != "$ref":
+                    merged[k] = v
+            return merged
+        return schema
+    result: dict[str, Any] = {}
+    for k, v in schema.items():
+        if isinstance(v, dict):
+            result[k] = _inline_refs(v, defs)
+        elif isinstance(v, list):
+            result[k] = [_inline_refs(item, defs) if isinstance(item, dict) else item for item in v]
+        else:
+            result[k] = v
+    return result
 
 
 def _resolve_ref(schema: dict[str, Any], defs: dict[str, Any]) -> dict[str, Any] | None:
