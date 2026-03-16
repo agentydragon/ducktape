@@ -18,6 +18,7 @@ py_test(
     imports = ["../.."],
     deps = [
         ":find_orphans",
+        "//util/bazel:workspace",
         "@pypi//pytest_bazel",
     ],
 )

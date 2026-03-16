@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pytest_bazel
 
 from devinfra.orphans.find_orphans import PatternStats, run_report
+from util.bazel.workspace import BazelWorkspace
 
 
 def _run(
@@ -19,7 +20,7 @@ def _run(
         patch("devinfra.orphans.find_orphans.get_git_files", return_value=git_files),
         patch("devinfra.orphans.find_orphans.query_bazel_files", return_value=bazel_files),
     ):
-        return run_report(tmp_path, whitelist)
+        return run_report(BazelWorkspace(root=tmp_path), whitelist)
 
 
 def _unused(stats: list[PatternStats]) -> list[str]:
