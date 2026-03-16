@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from textwrap import dedent
 
 import pytest
 import pytest_bazel
@@ -12,108 +11,39 @@ import yaml
 from cluster.validation.crd_layering import CrdLayeringViolationError, check_crd_layering
 from cluster.validation.k8s import parse_k8s_resources
 from cluster.validation.kustomize import KustomizeBuildResult
+from util.bazel.runfiles import get_required_path
+
+_TESTDATA = get_required_path("_main/cluster/validation/testdata/crd_layering")
 
 
-def _build_result(path: Path, yaml_output: str) -> KustomizeBuildResult:
-    return KustomizeBuildResult(kustomization_path=path, resources=parse_k8s_resources(yaml.safe_load_all(yaml_output)))
-
-
-_HELMRELEASE_ONLY = dedent("""
-    apiVersion: helm.toolkit.fluxcd.io/v2
-    kind: HelmRelease
-    metadata:
-      name: test-app
-    spec:
-      chart:
-        spec:
-          chart: test
-""")
-
-_CRD_ONLY = dedent("""
-    apiVersion: external-secrets.io/v1beta1
-    kind: ExternalSecret
-    metadata:
-      name: test-secret
-    spec:
-      secretStoreRef:
-        name: vault-backend
-""")
-
-_MIXED_HELMRELEASE_AND_CRD = dedent("""
-    apiVersion: helm.toolkit.fluxcd.io/v2
-    kind: HelmRelease
-    metadata:
-      name: test-app
-    spec:
-      chart:
-        spec:
-          chart: test
-    ---
-    apiVersion: external-secrets.io/v1beta1
-    kind: ExternalSecret
-    metadata:
-      name: test-secret
-    spec:
-      secretStoreRef:
-        name: vault-backend
-""")
-
-_OPERATOR_WITH_CRD = dedent("""
-    apiVersion: helm.toolkit.fluxcd.io/v2
-    kind: HelmRelease
-    metadata:
-      name: external-secrets
-    ---
-    apiVersion: external-secrets.io/v1beta1
-    kind: ClusterSecretStore
-    metadata:
-      name: vault
-""")
-
-_CERT_MANAGER_NESTED = dedent("""
-    apiVersion: helm.toolkit.fluxcd.io/v2
-    kind: HelmRelease
-    metadata:
-      name: cert-manager-webhook
-    ---
-    apiVersion: cert-manager.io/v1
-    kind: ClusterIssuer
-    metadata:
-      name: letsencrypt-prod
-""")
-
-_VAULT_NESTED = dedent("""
-    apiVersion: helm.toolkit.fluxcd.io/v2
-    kind: HelmRelease
-    metadata:
-      name: vault-webhook
-    ---
-    apiVersion: vault.banzaicloud.com/v1alpha1
-    kind: Vault
-    metadata:
-      name: vault
-""")
+def _build_result(kustomization_path: Path, build_output_file: Path) -> KustomizeBuildResult:
+    yaml_output = build_output_file.read_text()
+    return KustomizeBuildResult(
+        kustomization_path=kustomization_path, resources=parse_k8s_resources(yaml.safe_load_all(yaml_output))
+    )
 
 
 @pytest.mark.parametrize(
-    ("path", "yaml_output"),
+    ("kustomization_path", "testdata_dir"),
     [
-        (Path("/k8s/test-app/kustomization.yaml"), _HELMRELEASE_ONLY),
-        (Path("/k8s/test-app/kustomization.yaml"), _CRD_ONLY),
-        (Path("/k8s/external-secrets-operator/kustomization.yaml"), _OPERATOR_WITH_CRD),
-        (Path("/k8s/cert-manager-config/base/kustomization.yaml"), _CERT_MANAGER_NESTED),
-        (Path("/k8s/vault/config/base/kustomization.yaml"), _VAULT_NESTED),
-        (Path("/k8s/test-app/overlays/production/kustomization.yaml"), _MIXED_HELMRELEASE_AND_CRD),
+        (Path("/k8s/test-app/kustomization.yaml"), "helmrelease_only"),
+        (Path("/k8s/test-app/kustomization.yaml"), "crd_only"),
+        (Path("/k8s/external-secrets-operator/kustomization.yaml"), "operator_with_crd"),
+        (Path("/k8s/cert-manager-config/base/kustomization.yaml"), "cert_manager_nested"),
+        (Path("/k8s/vault/config/base/kustomization.yaml"), "vault_nested"),
+        (Path("/k8s/test-app/overlays/production/kustomization.yaml"), "mixed_helmrelease_and_crd"),
     ],
     ids=["helmrelease_only", "crd_only", "operator_with_crd", "cert_manager_nested", "vault_nested", "overlay_skipped"],
 )
-def test_valid_cases(path: Path, yaml_output: str) -> None:
-    check_crd_layering(_build_result(path, yaml_output))
+def test_valid_cases(kustomization_path: Path, testdata_dir: str) -> None:
+    build_output = _TESTDATA / testdata_dir / "build_output.yaml"
+    check_crd_layering(_build_result(kustomization_path, build_output))
 
 
 def test_detects_crd_layering_violation() -> None:
+    build_output = _TESTDATA / "mixed_helmrelease_and_crd" / "build_output.yaml"
     with pytest.raises(CrdLayeringViolationError, match="ExternalSecret"):
-        check_crd_layering(_build_result(Path("/k8s/test-app/kustomization.yaml"), _MIXED_HELMRELEASE_AND_CRD))
+        check_crd_layering(_build_result(Path("/k8s/test-app/kustomization.yaml"), build_output))
 
 
 if __name__ == "__main__":
