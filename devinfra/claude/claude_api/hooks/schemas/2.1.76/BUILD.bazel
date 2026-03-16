@@ -1,10 +1,41 @@
-# JSON Schema files generated from hooks.zod.js via export_json_schema.mjs.
-# To regenerate: cd to this directory, run `npm install --no-save zod`,
-# then `node export_json_schema.mjs hookOutput > hook_output.json`.
-# Clean up node_modules afterward.
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
 
-filegroup(
+js_library(
+    name = "hooks_zod",
+    srcs = ["hooks.zod.js"],
+    tags = ["no-lint"],
+)
+
+js_binary(
+    name = "export_json_schema_bin",
+    data = [
+        ":hooks_zod",
+        "//:node_modules",
+    ],
+    entry_point = "export_json_schema.mjs",
+    tags = ["no-lint"],
+)
+
+js_run_binary(
     name = "hook_output_schema",
-    srcs = ["hook_output.json"],
+    outs = ["hook_output.json"],
+    args = [
+        "hookOutput",
+        "hook_output.json",
+    ],
+    chdir = package_name(),
+    tool = ":export_json_schema_bin",
+    visibility = ["//devinfra/claude:__subpackages__"],
+)
+
+js_run_binary(
+    name = "hook_input_schema",
+    outs = ["hook_input.json"],
+    args = [
+        "AnyHookInput",
+        "hook_input.json",
+    ],
+    chdir = package_name(),
+    tool = ":export_json_schema_bin",
     visibility = ["//devinfra/claude:__subpackages__"],
 )
