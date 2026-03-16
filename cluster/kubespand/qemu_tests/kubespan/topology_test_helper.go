@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
 	h "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 )
 
@@ -54,25 +55,68 @@ func runTopology(t *testing.T, topology string) {
 		h.PortForward{GuestPort: 3000})
 	sw.Lap("boot discovery VM")
 
-	kernelBase := fmt.Sprintf("mode=kubespan cluster_id=%s shared_secret=%s discovery=%s topology=%s",
-		clusterID, sharedSecret, discAddr, topology)
+	tmpDir := t.TempDir()
+
+	// Build kubespand agent configs per role and topology.
+	var endpointFiltersA, endpointFiltersB []string
+	var listenPortA, listenPortB int
+	switch topology {
+	case "flat":
+		endpointFiltersA = []string{"192.168.50.0/24"}
+		endpointFiltersB = []string{"192.168.50.0/24"}
+		listenPortA = 51820
+		listenPortB = 51821
+	case "cross_subnet":
+		endpointFiltersA = []string{"10.0.0.0/8"}
+		endpointFiltersB = []string{"10.0.0.0/8"}
+		listenPortA = 51820
+		listenPortB = 51821
+	}
+
+	cfgB := agentconfig.AgentConfig{
+		Cluster:   agentconfig.ClusterConfig{ID: clusterID, Secret: sharedSecret},
+		Discovery: agentconfig.DiscoveryConfig{Endpoint: discAddr, Insecure: true, MachineType: "worker"},
+		Kubespan: agentconfig.KubespanConfig{
+			ForceRouting:          true,
+			ListenPort:            listenPortB,
+			MTU:                   1420,
+			IdentityFile:          "/var/lib/kubespan/identity.yaml",
+			EndpointFilters:       endpointFiltersB,
+			HarvestExtraEndpoints: true,
+		},
+	}
+	cidataB := h.CreateKubespandCIDATA(t, tmpDir, "vm-b", cfgB)
 
 	vmB := h.BootVM(t, "vm-b", vmlinuz, initramfs,
-		kernelBase+" role=b",
-		h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01"))
+		fmt.Sprintf("role=b topology=%s", topology),
+		append(h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01"), h.CIDATADrive(cidataB)...))
 	sw.Lap("boot VM-B")
 
 	// Talos CP VM — participates in KubeSpan mesh for API-based peer observation.
-	tmpDir := t.TempDir()
 	cpCI := h.CreateCIDATA(t, tmpDir, "cp", cpConfigData)
 	talosAPIPort := h.RandomPort()
 	vmCP := h.BootTalosVM(t, "vm-cp", talosBaseImage, cpCI,
 		talosAPIPort, h.McastNIC("net0", mcastAddr, "52:54:00:c0:00:01"))
 	sw.Lap("boot Talos CP VM")
 
+	cfgA := agentconfig.AgentConfig{
+		Cluster:   agentconfig.ClusterConfig{ID: clusterID, Secret: sharedSecret},
+		Discovery: agentconfig.DiscoveryConfig{Endpoint: discAddr, Insecure: true, MachineType: "worker"},
+		Kubespan: agentconfig.KubespanConfig{
+			ForceRouting:          true,
+			ListenPort:            listenPortA,
+			MTU:                   1420,
+			IdentityFile:          "/var/lib/kubespan/identity.yaml",
+			EndpointFilters:       endpointFiltersA,
+			HarvestExtraEndpoints: true,
+		},
+		Api: agentconfig.ApiConfig{ListenTCP: ":50100"},
+	}
+	cidataA := h.CreateKubespandCIDATA(t, tmpDir, "vm-a", cfgA)
+
 	vmA := h.BootVM(t, "vm-a", vmlinuz, initramfs,
-		kernelBase+" role=a listen_tcp=:50100",
-		h.McastNIC("net0", mcastAddr, "52:54:00:a0:00:01"),
+		fmt.Sprintf("role=a topology=%s", topology),
+		append(h.McastNIC("net0", mcastAddr, "52:54:00:a0:00:01"), h.CIDATADrive(cidataA)...),
 		h.PortForward{GuestPort: h.COSIGuestPort})
 	sw.Lap("boot VM-A")
 
@@ -83,8 +127,8 @@ func runTopology(t *testing.T, topology string) {
 	h.WaitForDiscoveryHTTP(t, vmDisc.ForwardAddr(3000), 120*time.Second)
 	sw.Lap("discovery HTTP ready")
 
-	// Wait for both Alpine VMs to be ready (services started, probe server up).
-	h.RequireAllEvents(t, []*h.VM{vmA, vmB}, h.EventReady, 180*time.Second)
+	// Wait for both Alpine VMs to be ready (probe server responding).
+	h.WaitForProbeServers(t, []*h.VM{vmA, vmB}, 180*time.Second)
 	sw.Lap("VMs ready")
 
 	// Poll VM-A's PeerStatus via COSI — verify WireGuard handshake completes.
@@ -154,12 +198,9 @@ func runTopology(t *testing.T, topology string) {
 	}
 
 	summary := map[string]interface{}{
-		"topology":       topology,
-		"cluster_id":     clusterID,
-		"mcast_port":     mcastPort,
-		"vm_a_events":    vmA.GetEvents(),
-		"vm_b_events":    vmB.GetEvents(),
-		"vm_disc_events": vmDisc.GetEvents(),
+		"topology":   topology,
+		"cluster_id": clusterID,
+		"mcast_port": mcastPort,
 	}
 	summaryJSON, _ := json.MarshalIndent(summary, "", "  ")
 	h.SaveArtifact(t, out, "test-summary.json", string(summaryJSON))

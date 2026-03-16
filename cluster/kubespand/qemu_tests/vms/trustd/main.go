@@ -1,14 +1,15 @@
 // Binary trustd is the PID-1 init for the trustd CSR flow test VM.
 // Starts kubespand (with ca_crt + token + apid_path for trustd CSR flow)
-// and monitors its progress via COSI state, emitting diagnostic events.
+// and monitors its progress via COSI state, emitting diagnostic logs.
 //
 // kubespand manages the apid subprocess: it waits for secrets.API (using
 // Talos's APIReadyCondition), then starts apid which serves mTLS on :50000.
+//
+// Kubespand agent config is provided via a CIDATA virtio drive.
 package main
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"log"
 	"net"
@@ -18,10 +19,14 @@ import (
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
+	stateclient "github.com/cosi-project/runtime/pkg/state/protobuf/client"
+
+	v1alpha1 "github.com/cosi-project/runtime/api/v1alpha1"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"github.com/siderolabs/talos/pkg/machinery/resources/secrets"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
-	qemu_tests "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 	"github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/initlib"
 	"github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/kubespanlib"
 )
@@ -29,33 +34,13 @@ import (
 func main() {
 	initlib.InitBasic()
 	if err := run(); err != nil {
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: err.Error()})
-		initlib.Poweroff()
+		log.Fatalf("trustd init: %v", err)
 	}
 	// Idle until the test host kills the VM.
 	select {}
 }
 
 func run() error {
-	params := initlib.ParseCmdline()
-
-	clusterID := params["cluster_id"]
-	sharedSecret := params["shared_secret"]
-	discoveryAddr := params["discovery"]
-	caCrtB64 := params["ca_crt"]
-	token := params["token"]
-	clusterEndpoint := params["cluster_endpoint"]
-
-	if clusterID == "" || sharedSecret == "" || discoveryAddr == "" || caCrtB64 == "" || token == "" || clusterEndpoint == "" {
-		return fmt.Errorf("missing required kernel cmdline params: cluster_id=%s discovery=%s ca_crt_len=%d token=%s endpoint=%s",
-			clusterID, discoveryAddr, len(caCrtB64), token, clusterEndpoint)
-	}
-
-	caCrtPEM, err := base64.StdEncoding.DecodeString(caCrtB64)
-	if err != nil {
-		return fmt.Errorf("ca_crt base64 decode failed: %w", err)
-	}
-
 	kubespanlib.LoadModules()
 
 	// eth0: L2 segment (mcast NIC) for KubeSpan mesh.
@@ -64,20 +49,9 @@ func run() error {
 	// mgmt NIC (QEMU user-mode) for port forwarding to the test host.
 	initlib.ConfigureMgmtNIC(true)
 
-	cfg := kubespanlib.KubespandConfig{
-		ClusterID:       clusterID,
-		SharedSecret:    sharedSecret,
-		DiscoveryAddr:   discoveryAddr,
-		ListenPort:      51820,
-		EndpointFilters: []string{"192.168.50.0/24"},
-		ClusterEndpoint: clusterEndpoint,
-		CACrt:           string(caCrtPEM),
-		Token:           token,
-		ApidPath:        "/apid",
-		// Include 127.0.0.1 in cert SANs for port-forwarded test connections.
-		CertSANs: []string{"127.0.0.1"},
-	}
-	kubespandCmd := kubespanlib.StartKubespand(cfg)
+	// Load kubespand config from CIDATA drive and start.
+	initlib.MountKubespandCIDATA()
+	kubespandCmd := kubespanlib.StartKubespand()
 
 	// Monitor kubespand process and COSI state in the background.
 	go monitorLoop(kubespandCmd)
@@ -101,9 +75,20 @@ func run() error {
 	return nil
 }
 
+// newCOSIClient connects to a local COSI socket and returns a state.State.
+func newCOSIClient(socketPath string) (state.State, *grpc.ClientConn, error) {
+	conn, err := grpc.NewClient(
+		"unix://"+socketPath,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	return state.WrapCore(stateclient.NewAdapter(v1alpha1.NewStateClient(conn))), conn, nil
+}
+
 // monitorLoop periodically checks process health, queries COSI state for the
-// trustd CSR flow resources, and dumps diagnostic logs. Emits events for each
-// significant state change.
+// trustd CSR flow resources, and dumps diagnostic logs.
 func monitorLoop(kubespandCmd *exec.Cmd) {
 	var (
 		cosiState    state.State
@@ -118,10 +103,7 @@ func monitorLoop(kubespandCmd *exec.Cmd) {
 
 		// Check process health.
 		if kubespandCmd.ProcessState != nil {
-			initlib.EmitEvent(qemu_tests.Event{
-				Type:    qemu_tests.EventError,
-				Message: fmt.Sprintf("kubespand exited: %s", kubespandCmd.ProcessState),
-			})
+			log.Printf("kubespand exited: %s", kubespandCmd.ProcessState)
 			initlib.DumpLog("/tmp/kubespand.log")
 			break
 		}
@@ -129,7 +111,7 @@ func monitorLoop(kubespandCmd *exec.Cmd) {
 		// Connect to COSI socket (lazily).
 		if cosiState == nil {
 			var err error
-			cosiState, _, err = kubespanlib.NewCOSIClient("/system/run/machined/machine.sock")
+			cosiState, _, err = newCOSIClient("/system/run/machined/machine.sock")
 			if err != nil {
 				if i%6 == 0 { // every 30s
 					log.Printf("waiting for COSI socket: %v", err)
@@ -184,11 +166,10 @@ func monitorLoop(kubespandCmd *exec.Cmd) {
 				hasOSRoot, hasCertSAN, hasAPI, hasPeer, peerSummary)
 		}
 
-		// At 60s, 120s, 180s: dump detailed diagnostics.
+		// At 60s, 120s, 180s: dump kubespand log.
 		elapsed := time.Duration(i+1) * 5 * time.Second
 		if elapsed == 60*time.Second || elapsed == 120*time.Second || elapsed == 180*time.Second {
 			log.Printf("=== DIAGNOSTICS DUMP at %s ===", elapsed)
-			kubespanlib.DumpDiagnostics()
 			log.Printf("--- kubespand.log tail ---")
 			initlib.DumpLog("/tmp/kubespand.log")
 		}

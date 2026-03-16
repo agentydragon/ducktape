@@ -7,7 +7,6 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/discovery",
     visibility = ["//visibility:private"],
     deps = [
-        "//cluster/kubespand/qemu_tests",
         "//cluster/kubespand/qemu_tests/vms/initlib",
     ],
 )

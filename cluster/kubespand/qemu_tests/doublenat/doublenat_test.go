@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
 	h "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 )
 
@@ -32,17 +33,30 @@ func TestDoubleNAT(t *testing.T) {
 
 	const discAddr = "192.168.50.254:3000"
 
-	kubespanBase := fmt.Sprintf("mode=kubespan cluster_id=%s shared_secret=%s discovery=%s topology=double_nat",
-		clusterID, sharedSecret, discAddr)
+	tmpDir := t.TempDir()
+
+	// Base agent config shared by all kubespand VMs in this topology.
+	baseCfg := agentconfig.AgentConfig{
+		Cluster:   agentconfig.ClusterConfig{ID: clusterID, Secret: sharedSecret},
+		Discovery: agentconfig.DiscoveryConfig{Endpoint: discAddr, Insecure: true, MachineType: "worker"},
+		Kubespan: agentconfig.KubespanConfig{
+			ForceRouting:          true,
+			MTU:                   1420,
+			IdentityFile:          "/var/lib/kubespan/identity.yaml",
+			HarvestExtraEndpoints: true,
+		},
+	}
 
 	vmDiscovery := h.BootVM(t, "vm-disc", vmlinuz, initramfsDisc,
 		"mode=discovery role=discovery discovery_ip=192.168.50.254/24",
 		h.McastNIC("net0", mcastInternet, "52:54:00:ff:00:01"))
 	sw.Lap("boot discovery VM")
 
+	vpsCfg := baseCfg
+	cidataVPS := h.CreateKubespandCIDATA(t, tmpDir, "vps", vpsCfg)
 	vmVPS := h.BootVM(t, "vm-vps", vmlinuz, initramfs,
-		kubespanBase+" role=vps",
-		h.McastNIC("net0", mcastInternet, "52:54:00:c0:00:01"))
+		"role=vps",
+		append(h.McastNIC("net0", mcastInternet, "52:54:00:c0:00:01"), h.CIDATADrive(cidataVPS)...))
 	sw.Lap("boot VPS VM")
 
 	vmRouterA := h.BootVM(t, "vm-router-a", vmlinuz, initramfsRouter,
@@ -59,25 +73,30 @@ func TestDoubleNAT(t *testing.T) {
 
 	allVMs := []*h.VM{vmVPS, vmRouterA, vmRouterB, vmDiscovery}
 
-	h.RequireAllEvents(t, []*h.VM{vmDiscovery, vmRouterA, vmRouterB}, h.EventDone, 30*time.Second)
+	h.WaitForProbeServers(t, []*h.VM{vmDiscovery, vmRouterA, vmRouterB}, 30*time.Second)
 	sw.Lap("infrastructure VMs ready")
 
+	nat1Cfg := baseCfg
+	cidataNAT1 := h.CreateKubespandCIDATA(t, tmpDir, "nat1", nat1Cfg)
 	vmNAT1 := h.BootVM(t, "vm-nat1", vmlinuz, initramfs,
-		kubespanBase+" role=nat1",
-		h.McastNIC("net0", mcastLanA, "52:54:00:d0:00:01"))
+		"role=nat1",
+		append(h.McastNIC("net0", mcastLanA, "52:54:00:d0:00:01"), h.CIDATADrive(cidataNAT1)...))
 	sw.Lap("boot NAT1 VM")
 
+	nat2Cfg := baseCfg
+	nat2Cfg.Api.ListenTCP = ":50100"
+	cidataNAT2 := h.CreateKubespandCIDATA(t, tmpDir, "nat2", nat2Cfg)
 	vmNAT2 := h.BootVM(t, "vm-nat2", vmlinuz, initramfs,
-		kubespanBase+" role=nat2 listen_tcp=:50100",
-		h.McastNIC("net0", mcastLanB, "52:54:00:e0:00:01"),
+		"role=nat2",
+		append(h.McastNIC("net0", mcastLanB, "52:54:00:e0:00:01"), h.CIDATADrive(cidataNAT2)...),
 		h.PortForward{GuestPort: h.COSIGuestPort})
 	sw.Lap("boot NAT2 VM")
 
 	allVMs = append(allVMs, vmNAT1, vmNAT2)
 	h.CleanupVMs(t, allVMs, out)
 
-	// Wait for all kubespand VMs to be ready.
-	h.RequireAllEvents(t, []*h.VM{vmVPS, vmNAT1, vmNAT2}, h.EventReady, 180*time.Second)
+	// Wait for all kubespand VMs to be ready (probe server responding).
+	h.WaitForProbeServers(t, []*h.VM{vmVPS, vmNAT1, vmNAT2}, 180*time.Second)
 	sw.Lap("kubespand VMs ready")
 
 	// Poll NAT2's PeerStatus — in double-NAT, only the VPS peer is expected
@@ -125,12 +144,6 @@ func TestDoubleNAT(t *testing.T) {
 		"mcast_port_internet": mcastPortInternet,
 		"mcast_port_lan_a":    mcastPortLanA,
 		"mcast_port_lan_b":    mcastPortLanB,
-		"vm_disc_events":      vmDiscovery.GetEvents(),
-		"vm_vps_events":       vmVPS.GetEvents(),
-		"vm_router_a_events":  vmRouterA.GetEvents(),
-		"vm_router_b_events":  vmRouterB.GetEvents(),
-		"vm_nat1_events":      vmNAT1.GetEvents(),
-		"vm_nat2_events":      vmNAT2.GetEvents(),
 	}
 	summaryJSON, _ := json.MarshalIndent(summary, "", "  ")
 	h.SaveArtifact(t, out, "test-summary.json", string(summaryJSON))

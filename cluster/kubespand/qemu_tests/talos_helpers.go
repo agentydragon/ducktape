@@ -75,7 +75,7 @@ func BootTalosVM(t *testing.T, name, baseImage, cidataPath string, mgmtPort int,
 		args = append(args, MgmtNIC(mgmtPort, 50000, "52:54:00:ab:00:01")...)
 	}
 
-	return StartVM(t, name, exec.Command("qemu-system-x86_64", args...), false)
+	return StartVM(t, name, exec.Command("qemu-system-x86_64", args...))
 }
 
 // CreateCIDATA creates a FAT32 disk image with cloud-init metadata for Talos.

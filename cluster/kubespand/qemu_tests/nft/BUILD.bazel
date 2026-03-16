@@ -11,7 +11,6 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/nft/init",
     deps = [
-        "//cluster/kubespand/qemu_tests",
         "//cluster/kubespand/qemu_tests/vms/initlib",
         "@com_github_google_nftables//:nftables",
         "@com_github_google_nftables//binaryutil",

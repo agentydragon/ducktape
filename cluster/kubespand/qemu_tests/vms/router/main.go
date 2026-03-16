@@ -10,7 +10,6 @@ import (
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
 
-	qemu_tests "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 	"github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/initlib"
 )
 
@@ -24,8 +23,7 @@ func main() {
 	internetIP := params["internet_ip"]
 	lanIP := params["lan_ip"]
 	if internetIP == "" || lanIP == "" {
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "missing internet_ip or lan_ip", Error: fmt.Sprintf("internet_ip=%s lan_ip=%s", internetIP, lanIP)})
-		initlib.Poweroff()
+		log.Fatalf("missing internet_ip or lan_ip: internet_ip=%s lan_ip=%s", internetIP, lanIP)
 	}
 
 	log.Printf("router mode, internet=%s, lan=%s", internetIP, lanIP)
@@ -56,8 +54,7 @@ func main() {
 	// Set up nftables masquerade on eth0.
 	conn, err := nftables.New()
 	if err != nil {
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "nftables.New() failed", Error: err.Error()})
-		initlib.Poweroff()
+		log.Fatalf("nftables.New() failed: %v", err)
 	}
 	table := conn.AddTable(&nftables.Table{Family: nftables.TableFamilyIPv4, Name: "nat"})
 	chain := conn.AddChain(&nftables.Chain{
@@ -82,8 +79,7 @@ func main() {
 		},
 	})
 	if err := conn.Flush(); err != nil {
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "nftables flush failed", Error: err.Error()})
-		initlib.Poweroff()
+		log.Fatalf("nftables flush failed: %v", err)
 	}
 
 	log.Printf("router ready, internet=%s, lan=%s", internetIP, lanIP)
@@ -92,9 +88,10 @@ func main() {
 	initlib.ConfigureMgmtNIC(false)
 
 	// Start probe gRPC server on the mgmt NIC for test host diagnostics.
+	// The test host polls this server to detect VM readiness.
 	initlib.StartProbeServer(fmt.Sprintf(":%d", initlib.ProbeServerPort))
 
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: "router running"})
+	log.Printf("router running")
 
 	select {}
 }

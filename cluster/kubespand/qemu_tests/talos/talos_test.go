@@ -65,7 +65,7 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 		nat2APIPort, h.McastNIC("net0", mcastLan2, "52:54:00:a0:00:03"))
 	sw.Lap("boot Talos VMs")
 
-	h.RequireAllEvents(t, []*h.VM{vmDiscovery, vmRouter1, vmRouter2}, h.EventDone, 30*time.Second)
+	h.WaitForProbeServers(t, []*h.VM{vmDiscovery, vmRouter1, vmRouter2}, 30*time.Second)
 	sw.Lap("infrastructure VMs ready")
 
 	allVMs := []*h.VM{vmVPS, vmNAT1, vmNAT2, vmRouter1, vmRouter2, vmDiscovery}

@@ -22,7 +22,9 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 	stateclient "github.com/cosi-project/runtime/pkg/state/protobuf/client"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
+	"gopkg.in/yaml.v3"
 
+	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
 	pb "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/probepb"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
@@ -66,10 +68,8 @@ const mgmtMAC = "52:54:00:aa:00:01"
 // VM represents a running QEMU VM.
 type VM struct {
 	Name   string
-	Events chan Event // buffered channel; receives all parsed events
 	Done   chan struct{}
 	cmd    *exec.Cmd
-	events []Event
 	rawLog strings.Builder
 	mu     sync.Mutex
 
@@ -89,23 +89,16 @@ func (v *VM) Kill() {
 	}
 }
 
-func (v *VM) GetEvents() []Event {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	return append([]Event{}, v.events...)
-}
-
 func (v *VM) GetRawLog() string {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	return v.rawLog.String()
 }
 
-// SaveLogs saves raw log and event artifacts for this VM using its name.
+// SaveLogs saves the raw log artifact for this VM.
 func (v *VM) SaveLogs(t *testing.T, dir string) {
 	t.Helper()
 	SaveArtifact(t, dir, v.Name+".log", v.GetRawLog())
-	SaveEventsArtifact(t, dir, v.Name+"-events.jsonl", v.GetEvents())
 }
 
 // BootVM starts a QEMU VM with the given kernel cmdline args.
@@ -150,7 +143,7 @@ func BootVM(t *testing.T, name string, vmlinuz, initramfs string, kernelArgs str
 	args = append(args, meshNICs...)
 	args = append(args, mgmtArgs...)
 
-	v := StartVM(t, name, exec.Command("qemu-system-x86_64", args...), true)
+	v := StartVM(t, name, exec.Command("qemu-system-x86_64", args...))
 	v.t = t
 	v.probeAddr = fmt.Sprintf("127.0.0.1:%d", probePort)
 	v.cosiAddr = cosiAddr
@@ -160,8 +153,7 @@ func BootVM(t *testing.T, name string, vmlinuz, initramfs string, kernelArgs str
 
 // StartVM starts a QEMU process from a pre-built command and returns a VM.
 // Use this for custom QEMU configurations (e.g., Talos VMs with CIDATA drives).
-// If parseEvents is true, JSON event lines are parsed; otherwise only raw log is captured.
-func StartVM(t *testing.T, name string, cmd *exec.Cmd, parseEvents bool) *VM {
+func StartVM(t *testing.T, name string, cmd *exec.Cmd) *VM {
 	t.Helper()
 
 	stdout, err := cmd.StdoutPipe()
@@ -171,10 +163,9 @@ func StartVM(t *testing.T, name string, cmd *exec.Cmd, parseEvents bool) *VM {
 	cmd.Stderr = cmd.Stdout
 
 	v := &VM{
-		Name:   name,
-		Events: make(chan Event, 64),
-		Done:   make(chan struct{}),
-		cmd:    cmd,
+		Name: name,
+		Done: make(chan struct{}),
+		cmd:  cmd,
 	}
 
 	if err := cmd.Start(); err != nil {
@@ -183,28 +174,14 @@ func StartVM(t *testing.T, name string, cmd *exec.Cmd, parseEvents bool) *VM {
 
 	go func() {
 		defer close(v.Done)
-		defer close(v.Events)
 		scanner := bufio.NewScanner(stdout)
-		if !parseEvents {
-			scanner.Buffer(make([]byte, 0, 256*1024), 256*1024)
-		}
+		scanner.Buffer(make([]byte, 0, 256*1024), 256*1024)
 		for scanner.Scan() {
 			line := scanner.Text()
 			v.mu.Lock()
 			v.rawLog.WriteString(line)
 			v.rawLog.WriteByte('\n')
 			v.mu.Unlock()
-
-			if parseEvents {
-				var evt Event
-				if json.Unmarshal([]byte(line), &evt) == nil && evt.Type != "" {
-					v.mu.Lock()
-					v.events = append(v.events, evt)
-					v.mu.Unlock()
-					t.Logf("[%s] %s: %s", name, evt.Type, evt.Message)
-					v.Events <- evt
-				}
-			}
 		}
 		cmd.Wait()
 	}()
@@ -236,17 +213,6 @@ func SaveArtifact(t *testing.T, dir, name, content string) {
 	os.WriteFile(path, []byte(content), 0o644)
 }
 
-func SaveEventsArtifact(t *testing.T, dir, name string, events []Event) {
-	t.Helper()
-	var sb strings.Builder
-	for _, e := range events {
-		b, _ := json.Marshal(e)
-		sb.Write(b)
-		sb.WriteByte('\n')
-	}
-	SaveArtifact(t, dir, name, sb.String())
-}
-
 func RandomBase64(n int) string {
 	buf := make([]byte, n)
 	rand.Read(buf)
@@ -256,73 +222,6 @@ func RandomBase64(n int) string {
 func RandomPort() int {
 	n, _ := rand.Int(rand.Reader, big.NewInt(50000))
 	return 10000 + int(n.Int64())
-}
-
-// WaitForEvent blocks until the VM emits an event of the given type.
-// Returns immediately on VM exit or timeout.
-func (v *VM) WaitForEvent(typ EventType, timeout time.Duration) (Event, bool) {
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	for {
-		select {
-		case <-timer.C:
-			return Event{}, false
-		case evt, ok := <-v.Events:
-			if !ok {
-				return Event{}, false // VM exited, channel closed
-			}
-			if evt.Type == typ {
-				return evt, true
-			}
-			if evt.Type == EventError {
-				return evt, false
-			}
-		}
-	}
-}
-
-// RequireEvent waits for a VM event and fails the test if it doesn't arrive.
-func RequireEvent(t *testing.T, v *VM, typ EventType, timeout time.Duration) Event {
-	t.Helper()
-	evt, ok := v.WaitForEvent(typ, timeout)
-	if !ok {
-		if evt.Type == EventError {
-			t.Fatalf("[%s] error while waiting for %s: %s", v.Name, typ, evt.Message)
-		}
-		t.Fatalf("[%s] timed out waiting for %s event (%v)", v.Name, typ, timeout)
-	}
-	return evt
-}
-
-// RequireAllEvents waits for multiple VMs to emit the given event type in
-// parallel, with a single shared deadline. Fails the test if any VM doesn't
-// produce the event within the timeout.
-func RequireAllEvents(t *testing.T, vms []*VM, typ EventType, timeout time.Duration) {
-	t.Helper()
-
-	type result struct {
-		vm  *VM
-		evt Event
-		ok  bool
-	}
-
-	ch := make(chan result, len(vms))
-	for _, vm := range vms {
-		go func(v *VM) {
-			evt, ok := v.WaitForEvent(typ, timeout)
-			ch <- result{vm: v, evt: evt, ok: ok}
-		}(vm)
-	}
-
-	for range vms {
-		res := <-ch
-		if !res.ok {
-			if res.evt.Type == EventError {
-				t.Fatalf("[%s] error while waiting for %s: %s", res.vm.Name, typ, res.evt.Message)
-			}
-			t.Fatalf("[%s] timed out waiting for %s event (%v)", res.vm.Name, typ, timeout)
-		}
-	}
 }
 
 // CleanupVMs registers a t.Cleanup that kills all VMs and saves their logs.
@@ -351,11 +250,8 @@ func WaitVMDone(t *testing.T, v *VM, timeout time.Duration) bool {
 }
 
 // RunfilePath resolves a Bazel runfile path using rules_go's runfiles library.
-// Paths starting with an external repo name (no slash prefix) are resolved as
-// external repos; paths under cluster/ are resolved under _main/.
 func RunfilePath(t *testing.T, path string) string {
 	t.Helper()
-	// External repo paths don't get _main/ prefix.
 	rloc := "_main/" + path
 	if !strings.HasPrefix(path, "cluster/") {
 		rloc = path
@@ -379,7 +275,6 @@ func OutputDir(t *testing.T) string {
 	return dir
 }
 
-// RunCmd runs a command, logging output and failing on error.
 // ReadRunfile resolves a Bazel runfile path and reads the file contents.
 func ReadRunfile(t *testing.T, path string) []byte {
 	t.Helper()
@@ -416,14 +311,12 @@ type Phase struct {
 	Elapsed  time.Duration `json:"elapsed"`
 }
 
-// NewStopwatch creates a stopwatch and logs the start time.
 func NewStopwatch(t *testing.T) *Stopwatch {
 	t.Helper()
 	now := time.Now()
 	return &Stopwatch{t: t, start: now, last: now}
 }
 
-// Lap records a named phase and logs the time since the last lap.
 func (s *Stopwatch) Lap(name string) {
 	s.t.Helper()
 	now := time.Now()
@@ -434,7 +327,6 @@ func (s *Stopwatch) Lap(name string) {
 	s.last = now
 }
 
-// Summary logs all phases and total time, and saves a JSON artifact.
 func (s *Stopwatch) Summary(outDir string) {
 	s.t.Helper()
 	total := time.Since(s.start)
@@ -525,15 +417,83 @@ func MgmtNICMulti(forwards []PortForward, mac string) []string {
 	}
 }
 
+// CreateKubespandCIDATA creates a FAT32 disk image containing the kubespand
+// agent config YAML. The VM init mounts this drive and copies agent.yaml to
+// /etc/kubespan/agent.yaml for kubespand to read.
+func CreateKubespandCIDATA(t *testing.T, tmpDir, name string, cfg agentconfig.AgentConfig) string {
+	t.Helper()
+
+	configData, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal agent config: %v", err)
+	}
+
+	ciDir := filepath.Join(tmpDir, "kubespand-cidata-"+name)
+	os.MkdirAll(ciDir, 0o755)
+	os.WriteFile(filepath.Join(ciDir, "agent.yaml"), configData, 0o644)
+
+	imgPath := filepath.Join(tmpDir, fmt.Sprintf("kubespand-cidata-%s.img", name))
+	RunCmd(t, "dd", "if=/dev/zero", "of="+imgPath, "bs=1M", "count=1")
+	RunCmd(t, "/usr/sbin/mkfs.vfat", "-n", "KUBESPAND", imgPath)
+	RunCmd(t, "/usr/bin/mcopy", "-i", imgPath, filepath.Join(ciDir, "agent.yaml"), "::")
+
+	t.Logf("created kubespand CIDATA for %s: %s (%d bytes config)", name, imgPath, len(configData))
+	return imgPath
+}
+
+// CIDATADrive returns QEMU args to attach a CIDATA FAT32 image as a virtio drive.
+func CIDATADrive(path string) []string {
+	return []string{
+		"-drive", fmt.Sprintf("file=%s,if=virtio,format=raw,readonly=on", path),
+	}
+}
+
+// WaitForProbeServer polls the VM's probe gRPC server until it responds.
+// A responding probe server means the VM has completed initialization.
+func (v *VM) WaitForProbeServer(timeout time.Duration) bool {
+	v.t.Helper()
+	return v.probeWithRetry("wait for probe server", timeout,
+		func(client pb.ProbeServiceClient, ctx context.Context) (bool, string) {
+			_, err := client.Diagnostics(ctx, &pb.DiagnosticsRequest{})
+			if err != nil {
+				return false, err.Error()
+			}
+			return true, ""
+		})
+}
+
+// WaitForProbeServers waits for multiple VMs' probe servers to respond in parallel.
+func WaitForProbeServers(t *testing.T, vms []*VM, timeout time.Duration) {
+	t.Helper()
+
+	type result struct {
+		vm *VM
+		ok bool
+	}
+
+	ch := make(chan result, len(vms))
+	for _, vm := range vms {
+		go func(v *VM) {
+			ch <- result{vm: v, ok: v.WaitForProbeServer(timeout)}
+		}(vm)
+	}
+
+	for range vms {
+		res := <-ch
+		if !res.ok {
+			t.Fatalf("[%s] probe server not ready after %v", res.vm.Name, timeout)
+		}
+	}
+}
+
 // probeWithRetry runs a probe RPC with retry until success or timeout.
-// probeFn is called with a ProbeServiceClient and returns (success, error_detail).
 func (v *VM) probeWithRetry(label string, timeout time.Duration, probeFn func(pb.ProbeServiceClient, context.Context) (bool, string)) bool {
 	v.t.Helper()
 	prefix := fmt.Sprintf("[%s] %s", v.Name, label)
 	deadline := time.Now().Add(timeout)
 
 	for time.Now().Before(deadline) {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		conn, err := grpc.NewClient(v.probeAddr,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 		)
@@ -561,8 +521,7 @@ func (v *VM) probeWithRetry(label string, timeout time.Duration, probeFn func(pb
 	return false
 }
 
-// ProbeICMP sends an ICMP probe request via the VM's probe server, retrying
-// until success or timeout.
+// ProbeICMP sends an ICMP probe request via the VM's probe server, retrying until success or timeout.
 func (v *VM) ProbeICMP(target string, timeout time.Duration) bool {
 	v.t.Helper()
 	return v.probeWithRetry(fmt.Sprintf("probe ICMP→%s", target), timeout,
@@ -581,8 +540,7 @@ func (v *VM) ProbeICMP(target string, timeout time.Duration) bool {
 		})
 }
 
-// ProbeTCP sends a TCP probe request via the VM's probe server, retrying
-// until success or timeout.
+// ProbeTCP sends a TCP probe request via the VM's probe server, retrying until success or timeout.
 func (v *VM) ProbeTCP(target string, port int, timeout time.Duration) bool {
 	v.t.Helper()
 	return v.probeWithRetry(fmt.Sprintf("probe TCP→%s:%d", target, port), timeout,
@@ -628,7 +586,6 @@ func (v *VM) DumpDiagnostics() string {
 
 // PollPeerStatus connects to kubespand's COSI API and polls PeerStatus
 // resources until at least minPeers report state "up".
-// Requires a COSIGuestPort forward in BootVM's extraForwards.
 func (v *VM) PollPeerStatus(minPeers int, timeout time.Duration) ([]KubespanPeerResult, error) {
 	v.t.Helper()
 

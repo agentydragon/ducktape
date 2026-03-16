@@ -25,7 +25,10 @@ go_test(
     ],
     data = _TOPOLOGY_DATA,
     tags = _TOPOLOGY_TAGS,
-    deps = ["//cluster/kubespand/qemu_tests"],
+    deps = [
+        "//cluster/kubespand/agentconfig",
+        "//cluster/kubespand/qemu_tests",
+    ],
 )
 
 go_test(
@@ -37,7 +40,10 @@ go_test(
     ],
     data = _TOPOLOGY_DATA,
     tags = _TOPOLOGY_TAGS,
-    deps = ["//cluster/kubespand/qemu_tests"],
+    deps = [
+        "//cluster/kubespand/agentconfig",
+        "//cluster/kubespand/qemu_tests",
+    ],
 )
 
 # Trustd CSR flow test: boots 3 VMs (discovery + Talos CP + kubespand).
@@ -57,5 +63,8 @@ go_test(
         "cpu:4",
         "requires_qemu",
     ],
-    deps = ["//cluster/kubespand/qemu_tests"],
+    deps = [
+        "//cluster/kubespand/agentconfig",
+        "//cluster/kubespand/qemu_tests",
+    ],
 )

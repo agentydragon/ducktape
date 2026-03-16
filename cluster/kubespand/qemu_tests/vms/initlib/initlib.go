@@ -2,7 +2,6 @@
 package initlib
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -10,16 +9,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	qemu "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 )
 
 var Role = "unknown"
-
-func EmitEvent(evt qemu.Event) {
-	b, _ := json.Marshal(evt)
-	fmt.Println(string(b))
-}
 
 func Run(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
@@ -37,8 +29,7 @@ func RunSilent(name string, args ...string) error {
 
 func MustRun(name string, args ...string) {
 	if err := Run(name, args...); err != nil {
-		EmitEvent(qemu.Event{Type: qemu.EventError, Message: fmt.Sprintf("%s failed: %v", name, err), Error: err.Error()})
-		Poweroff()
+		log.Fatalf("%s %v failed: %v", name, args, err)
 	}
 }
 
@@ -66,13 +57,12 @@ func ParseCmdline() map[string]string {
 func LoadNftablesModules() {
 	kvers, _ := os.ReadDir("/lib/modules")
 	if len(kvers) == 0 {
-		EmitEvent(qemu.Event{Type: qemu.EventError, Message: "no kernel modules found", Error: "empty /lib/modules/"})
-		Poweroff()
+		log.Fatalf("no kernel modules found: empty /lib/modules/")
 	}
 	kver := kvers[0].Name()
 	RunSilent("modprobe", "crc32c_generic")
 	if err := RunSilent("modprobe", "nf_tables"); err != nil {
-		EmitEvent(qemu.Event{Type: qemu.EventError, Message: "modprobe nf_tables failed", Error: err.Error()})
+		log.Printf("modprobe nf_tables failed: %v", err)
 	}
 	log.Printf("nftables modules loaded, kver=%s", kver)
 }
@@ -99,8 +89,7 @@ func WaitForInterface(name string) {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	EmitEvent(qemu.Event{Type: qemu.EventError, Message: fmt.Sprintf("%s not found after 10s", name), Error: fmt.Sprintf("%s interface missing", name)})
-	Poweroff()
+	log.Fatalf("%s not found after 10s", name)
 }
 
 func DumpLog(path string) {
@@ -152,13 +141,32 @@ func ConfigureMgmtNIC(required bool) {
 	}
 	if iface == "" {
 		if required {
-			EmitEvent(qemu.Event{Type: qemu.EventError, Message: "mgmt NIC not found (MAC " + MgmtMAC + ")"})
-			Poweroff()
+			log.Fatalf("mgmt NIC not found (MAC %s)", MgmtMAC)
 		}
 		return
 	}
 	MustRun("ip", "link", "set", iface, "up")
 	MustRun("ip", "addr", "add", "10.0.2.15/24", "dev", iface)
+}
+
+// MountKubespandCIDATA mounts the CIDATA virtio drive and copies agent.yaml
+// to /etc/kubespan/agent.yaml. The CIDATA drive is the first virtio block
+// device (/dev/vda) for initramfs-only VMs (no root disk).
+func MountKubespandCIDATA() {
+	os.MkdirAll("/mnt/cidata", 0o755)
+	os.MkdirAll("/etc/kubespan", 0o755)
+	os.MkdirAll("/var/lib/kubespan", 0o755)
+
+	MustRun("mount", "-t", "vfat", "-o", "ro", "/dev/vda", "/mnt/cidata")
+
+	data, err := os.ReadFile("/mnt/cidata/agent.yaml")
+	if err != nil {
+		log.Fatalf("read CIDATA agent.yaml: %v", err)
+	}
+	if err := os.WriteFile("/etc/kubespan/agent.yaml", data, 0o644); err != nil {
+		log.Fatalf("write /etc/kubespan/agent.yaml: %v", err)
+	}
+	log.Printf("kubespand config loaded from CIDATA (%d bytes)", len(data))
 }
 
 // InitBasic performs common init setup: mount filesystems, set PATH, suppress dmesg.
@@ -170,4 +178,7 @@ func InitBasic() {
 	os.MkdirAll("/tmp", 0o755)
 	os.MkdirAll("/run", 0o755)
 	RunSilent("dmesg", "-n", "1")
+	// Redirect log output to stderr so it shows up in VM raw log (not parsed as events).
+	log.SetOutput(os.Stderr)
+	log.SetPrefix(fmt.Sprintf("[%s] ", Role))
 }

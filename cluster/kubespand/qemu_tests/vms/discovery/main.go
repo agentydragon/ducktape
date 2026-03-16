@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"time"
 
-	qemu_tests "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 	"github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/initlib"
 )
 
@@ -23,8 +22,7 @@ func main() {
 
 	discoveryIP := params["discovery_ip"]
 	if discoveryIP == "" {
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "missing discovery_ip", Error: "discovery_ip parameter required"})
-		initlib.Poweroff()
+		log.Fatalf("missing discovery_ip parameter")
 	}
 
 	log.Printf("discovery mode, ip=%s", discoveryIP)
@@ -56,8 +54,7 @@ func main() {
 	discCmd.Stdout = logFile
 	discCmd.Stderr = logFile
 	if err := discCmd.Start(); err != nil {
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "discovery-service failed to start", Error: err.Error()})
-		initlib.Poweroff()
+		log.Fatalf("discovery-service failed to start: %v", err)
 	}
 	log.Printf("discovery-service started pid=%d", discCmd.Process.Pid)
 
@@ -72,15 +69,16 @@ func main() {
 	}
 
 	// Start probe gRPC server on the mgmt NIC for test host diagnostics.
+	// The test host polls this server to detect VM readiness.
 	initlib.StartProbeServer(fmt.Sprintf(":%d", initlib.ProbeServerPort))
 
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: "discovery-service running"})
+	log.Printf("discovery-service running")
 
 	// Block until the discovery service exits (or the VM is killed).
 	// Using discCmd.Wait() instead of select{} avoids Go's deadlock
 	// detector, which would panic because no other goroutines are running.
 	if err := discCmd.Wait(); err != nil {
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "discovery-service exited", Error: err.Error()})
+		log.Printf("discovery-service exited: %v", err)
 	}
 	initlib.Poweroff()
 }

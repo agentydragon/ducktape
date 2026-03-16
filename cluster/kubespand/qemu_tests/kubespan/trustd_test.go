@@ -1,12 +1,12 @@
 package kubespan_test
 
 import (
-	"encoding/base64"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
 	h "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 )
 
@@ -53,15 +53,39 @@ func TestTrustdCSRFlow(t *testing.T) {
 		talosAPIPort, h.McastNIC("net0", mcastAddr, "52:54:00:a0:00:01"))
 	sw.Lap("boot Talos CP VM")
 
-	// kubespand VM with CA cert + token for the trustd CSR flow.
-	// Extra forward for apid port 50000 so the test can observe from outside.
-	caCrtB64 := base64.StdEncoding.EncodeToString(cfg.MachineConfig.MachineCA.Crt)
-	kernelArgs := fmt.Sprintf(
-		"cluster_id=%s shared_secret=%s discovery=192.168.50.254:3000 ca_crt=%s token=%s cluster_endpoint=https://192.168.50.2:6443",
-		cfg.ClusterConfig.ClusterID, cfg.ClusterConfig.ClusterSecret, caCrtB64, cfg.MachineConfig.MachineToken,
-	)
-	vmKubespand := h.BootVM(t, "trustd-kubespand", vmlinuz, initramfsTrustd, kernelArgs,
-		h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01"),
+	// Build kubespand agent config with trustd CSR flow credentials.
+	kubespandCfg := agentconfig.AgentConfig{
+		Cluster: agentconfig.ClusterConfig{
+			ID:       cfg.ClusterConfig.ClusterID,
+			Secret:   cfg.ClusterConfig.ClusterSecret,
+			Endpoint: "https://192.168.50.2:6443",
+		},
+		Discovery: agentconfig.DiscoveryConfig{
+			Endpoint:    "192.168.50.254:3000",
+			Insecure:    true,
+			MachineType: "worker",
+		},
+		Kubespan: agentconfig.KubespanConfig{
+			ForceRouting:          true,
+			ListenPort:            51820,
+			MTU:                   1420,
+			IdentityFile:          "/var/lib/kubespan/identity.yaml",
+			EndpointFilters:       []string{"192.168.50.0/24"},
+			HarvestExtraEndpoints: true,
+		},
+		Api: agentconfig.ApiConfig{
+			CACrt:    string(cfg.MachineConfig.MachineCA.Crt),
+			Token:    cfg.MachineConfig.MachineToken,
+			ApidPath: "/apid",
+			// Include 127.0.0.1 in cert SANs for port-forwarded test connections.
+			CertSANs: []string{"127.0.0.1"},
+		},
+	}
+	kubespandCI := h.CreateKubespandCIDATA(t, tmpDir, "kubespand", kubespandCfg)
+
+	// kubespand VM with CIDATA config. Extra forward for apid port 50000.
+	vmKubespand := h.BootVM(t, "trustd-kubespand", vmlinuz, initramfsTrustd, "",
+		append(h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01"), h.CIDATADrive(kubespandCI)...),
 		h.PortForward{GuestPort: 50000})
 	sw.Lap("boot kubespand VM")
 
@@ -75,12 +99,6 @@ func TestTrustdCSRFlow(t *testing.T) {
 			return
 		}
 		t.Log("=== FAILURE DIAGNOSTICS ===")
-
-		// kubespand VM events (CSR flow status, process health).
-		t.Log("--- kubespand VM events ---")
-		for _, evt := range vmKubespand.GetEvents() {
-			t.Logf("  [%s] %s (error=%s)", evt.Type, evt.Message, evt.Error)
-		}
 
 		// kubespand VM raw log (stderr from diagnostics dumps inside the VM).
 		rawLog := vmKubespand.GetRawLog()
@@ -108,8 +126,8 @@ func TestTrustdCSRFlow(t *testing.T) {
 		t.Log("=== END FAILURE DIAGNOSTICS ===")
 	})
 
-	// Wait for discovery service.
-	h.RequireEvent(t, vmDisc, h.EventDone, 120*time.Second)
+	// Wait for discovery service (probe server responding = VM ready).
+	vmDisc.WaitForProbeServer(120 * time.Second)
 	sw.Lap("discovery VM ready")
 
 	// Wait for Talos CP API (boot takes ~60-120s on TCG).

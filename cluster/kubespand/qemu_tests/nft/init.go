@@ -1,13 +1,13 @@
 // Binary init is the PID-1 process for nft-smoke test VMs.
-// Runs nftables smoke test levels and emits structured events.
+// Runs nftables smoke test levels and emits structured log lines.
 package main
 
 import (
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
 
-	qemu_tests "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 	"github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/initlib"
 )
 
@@ -22,7 +22,7 @@ func main() {
 
 	levels := params["levels"]
 	if levels == "" {
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "no levels= on kernel cmdline", Error: "missing levels parameter"})
+		log.Printf("FATAL: no levels= on kernel cmdline")
 		initlib.Poweroff()
 	}
 
@@ -39,7 +39,7 @@ func main() {
 		}
 		levelNum, err := strconv.Atoi(level)
 		if err != nil {
-			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "invalid level " + strconv.Quote(level), Error: err.Error()})
+			log.Printf("invalid level %s: %v", strconv.Quote(level), err)
 			anyFail = true
 			continue
 		}
@@ -48,13 +48,18 @@ func main() {
 		if !success {
 			anyFail = true
 		}
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventProbe, Message: "level " + level, Target: "nft-smoke-" + level, Success: &success})
+		// Structured result line parsed by the test host.
+		if success {
+			fmt.Printf("NFT_RESULT level=%s pass\n", level)
+		} else {
+			fmt.Printf("NFT_RESULT level=%s fail\n", level)
+		}
 	}
 
 	if anyFail {
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: "some levels failed", Error: "not all nft-smoke levels passed"})
+		fmt.Println("NFT_DONE fail")
 	} else {
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: "all levels passed"})
+		fmt.Println("NFT_DONE pass")
 	}
 	initlib.Poweroff()
 }

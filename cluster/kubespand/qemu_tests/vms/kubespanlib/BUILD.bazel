@@ -10,10 +10,6 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/kubespanlib",
     visibility = ["//cluster/kubespand:__subpackages__"],
     deps = [
-        "//cluster/kubespand/agentconfig",
-        "//cluster/kubespand/qemu_tests",
         "//cluster/kubespand/qemu_tests/vms/initlib",
-        "@com_github_siderolabs_talos_pkg_machinery//constants",
-        "@in_gopkg_yaml_v3//:yaml_v3",
     ],
 )

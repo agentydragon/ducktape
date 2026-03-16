@@ -6,7 +6,6 @@ go_library(
     srcs = ["main.go"],
     importpath = "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/doublenat",
     deps = [
-        "//cluster/kubespand/qemu_tests",
         "//cluster/kubespand/qemu_tests/vms/initlib",
         "//cluster/kubespand/qemu_tests/vms/kubespanlib",
     ],
