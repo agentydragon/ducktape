@@ -22,6 +22,10 @@ machine:
           - network: 0.0.0.0/0
             gateway: 192.168.60.1
         dhcp: false
+      - interface: eth1
+        addresses:
+          - 10.0.2.15/24
+        dhcp: false
     kubespan:
       enabled: true
       filters:
