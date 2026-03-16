@@ -17,7 +17,6 @@ import (
 	"time"
 
 	v1alpha1 "github.com/cosi-project/runtime/api/v1alpha1"
-	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 	pemx509 "github.com/siderolabs/crypto/x509"
