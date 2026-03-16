@@ -147,16 +147,18 @@ func (ctrl *NodeMetadataController) Run(ctx context.Context, r controller.Runtim
 		}
 
 		// 5. network.NodeAddress — routed, current, and accumulative (same data for kubespand).
-		// APICertSANsController reads the accumulative variant.
+		// APICertSANsController reads the filtered (no-k8s) accumulative variant.
+		// apid's LocalAddressProvider reads the raw NodeAddressCurrentID to determine
+		// if a gRPC request target is the local node (required for worker-mode routing).
 		addrs := discovery.RoutedNodeAddresses()
 		prefixes := make([]netip.Prefix, 0, len(addrs))
 		for _, addr := range addrs {
 			prefixes = append(prefixes, netip.PrefixFrom(addr, addr.BitLen()))
 		}
 		routedID := network.FilteredNodeAddressID(network.NodeAddressRoutedID, k8s.NodeAddressFilterNoK8s)
-		currentID := network.FilteredNodeAddressID(network.NodeAddressCurrentID, k8s.NodeAddressFilterNoK8s)
+		filteredCurrentID := network.FilteredNodeAddressID(network.NodeAddressCurrentID, k8s.NodeAddressFilterNoK8s)
 		accumulativeID := network.FilteredNodeAddressID(network.NodeAddressAccumulativeID, k8s.NodeAddressFilterNoK8s)
-		for _, id := range []resource.ID{routedID, currentID, accumulativeID} {
+		for _, id := range []resource.ID{routedID, filteredCurrentID, accumulativeID, network.NodeAddressCurrentID} {
 			if err := safe.WriterModify(ctx, r,
 				network.NewNodeAddress(network.NamespaceName, id),
 				func(res *network.NodeAddress) error {
