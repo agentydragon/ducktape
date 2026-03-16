@@ -2,7 +2,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
 go_library(
     name = "kubespand_lib",
-    srcs = ["main.go"],
+    srcs = [
+        "apid.go",
+        "main.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/cluster/kubespand",
     visibility = ["//visibility:private"],
     deps = [
@@ -23,6 +26,7 @@ go_library(
         "@com_github_siderolabs_talos//internal/app/machined/pkg/controllers/network",
         "@com_github_siderolabs_talos//internal/app/machined/pkg/controllers/secrets",
         "@com_github_siderolabs_talos_pkg_machinery//constants",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/secrets",
         "@com_github_siderolabs_talos_pkg_machinery//version",
         "@org_uber_go_zap//:zap",
     ],

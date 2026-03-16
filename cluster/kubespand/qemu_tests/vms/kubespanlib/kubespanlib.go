@@ -38,6 +38,9 @@ type KubespandConfig struct {
 	CACrt string
 	// Token is the Talos machine token (for trustd authentication).
 	Token string
+	// ApidPath is the path to the apid binary. When set, kubespand manages apid
+	// as a subprocess (waits for secrets.API, then starts apid).
+	ApidPath string
 	// ListenTCP is a TCP address for the read-only COSI API (e.g., ":50100").
 	ListenTCP string
 }
@@ -97,6 +100,7 @@ func StartKubespand(cfg KubespandConfig) *exec.Cmd {
 		Api: agentconfig.ApiConfig{
 			CACrt:     cfg.CACrt,
 			Token:     cfg.Token,
+			ApidPath:  cfg.ApidPath,
 			ListenTCP: cfg.ListenTCP,
 		},
 	}

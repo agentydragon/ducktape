@@ -1,9 +1,9 @@
 // Binary trustd is the PID-1 init for the trustd CSR flow test VM.
-// Starts kubespand (with ca_crt + token for trustd CSR flow) and monitors
-// its progress via COSI state, emitting diagnostic events.
+// Starts kubespand (with ca_crt + token + apid_path for trustd CSR flow)
+// and monitors its progress via COSI state, emitting diagnostic events.
 //
-// kubespand directly serves mTLS on :50000 once the APIController produces
-// secrets.API — no separate apid process is needed.
+// kubespand manages the apid subprocess: it waits for secrets.API (using
+// Talos's APIReadyCondition), then starts apid which serves mTLS on :50000.
 package main
 
 import (
@@ -74,23 +74,25 @@ func run() error {
 		ClusterEndpoint: clusterEndpoint,
 		CACrt:           string(caCrtPEM),
 		Token:           token,
+		ApidPath:        "/apid",
 	}
 	kubespandCmd := kubespanlib.StartKubespand(cfg)
 
 	// Monitor kubespand process and COSI state in the background.
 	go monitorLoop(kubespandCmd)
 
-	// Probe kubespand's TLS port to detect when it starts serving mTLS.
+	// Probe apid's TLS port to detect when it starts serving mTLS.
+	// kubespand waits for secrets.API then starts apid, which listens on :50000.
 	go func() {
 		for {
 			time.Sleep(5 * time.Second)
 			conn, err := net.DialTimeout("tcp", "127.0.0.1:50000", 2*time.Second)
 			if err != nil {
-				initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: fmt.Sprintf("TLS port probe: %v", err)})
+				initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: fmt.Sprintf("apid TLS port probe: %v", err)})
 				continue
 			}
 			conn.Close()
-			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: "kubespand TLS port 50000 is listening!"})
+			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: "apid TLS port 50000 is listening!"})
 			return
 		}
 	}()

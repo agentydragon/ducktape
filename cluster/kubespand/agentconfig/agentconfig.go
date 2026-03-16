@@ -45,6 +45,12 @@ type ApiConfig struct {
 	CACrt string `yaml:"ca_crt"`
 	// Token is the Talos machine token for trustd authentication.
 	Token string `yaml:"token"`
+	// ApidPath is the path to the apid binary. When set (along with ca_crt
+	// and token), kubespand waits for secrets.API to appear in COSI state
+	// then starts apid as a subprocess. This follows Talos's pattern where
+	// machined's service manager waits for APIReadyCondition before starting
+	// apid. If empty, apid is not managed by kubespand.
+	ApidPath string `yaml:"apid_path"`
 	// ListenTCP is an optional TCP address (e.g., ":50100") to expose the
 	// read-only COSI API without mTLS. Useful for test harnesses and diagnostics.
 	ListenTCP string `yaml:"listen_tcp"`

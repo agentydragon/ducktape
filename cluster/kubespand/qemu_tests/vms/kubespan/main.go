@@ -1,13 +1,13 @@
 // Binary kubespan is the PID-1 init for KubeSpan test VMs.
 // Handles flat, cross_subnet, and discovery_only topologies.
-// Optionally starts apid when ca_crt + token are provided (for Talos API observation).
+// Optionally enables trustd CSR flow when ca_crt + token are provided;
+// kubespand manages the apid subprocess internally.
 package main
 
 import (
 	"encoding/base64"
 	"fmt"
 	"os"
-	"os/exec"
 	"time"
 
 	qemu_tests "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
@@ -111,7 +111,8 @@ func main() {
 		ListenTCP:       params["listen_tcp"],
 	}
 
-	// If ca_crt + token are provided, enable the trustd CSR flow for apid.
+	// If ca_crt + token are provided, enable the trustd CSR flow.
+	// kubespand manages apid as a subprocess (waits for secrets.API, then starts apid).
 	if caCrtB64 := params["ca_crt"]; caCrtB64 != "" {
 		caCrtPEM, err := base64.StdEncoding.DecodeString(caCrtB64)
 		if err != nil {
@@ -121,22 +122,10 @@ func main() {
 		cfg.ClusterEndpoint = params["cluster_endpoint"]
 		cfg.CACrt = string(caCrtPEM)
 		cfg.Token = params["token"]
+		cfg.ApidPath = "/apid"
 	}
 
 	kubespandCmd := kubespanlib.StartKubespand(cfg)
-
-	// Start apid if trustd credentials were provided.
-	if cfg.CACrt != "" {
-		logFile, _ := os.Create("/tmp/apid.log")
-		apidCmd := exec.Command("/apid")
-		apidCmd.Stdout = logFile
-		apidCmd.Stderr = logFile
-		if err := apidCmd.Start(); err != nil {
-			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "apid failed to start", Error: err.Error()})
-			initlib.Poweroff()
-		}
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: fmt.Sprintf("apid started pid=%d", apidCmd.Process.Pid)})
-	}
 
 	const probePort = 9999
 
