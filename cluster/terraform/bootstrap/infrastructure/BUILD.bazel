@@ -33,6 +33,10 @@ py_test(
         "cilium-values.yaml",
         "@multitool//tools/helm",
     ],
+    # TODO: Verify dockerNetwork is actually needed. The test calls `helm repo add`
+    # and `helm template` which need internet access. On RBE, workers have no network
+    # by default; dockerNetwork=bridge gives them access. Couldn't test empirically
+    # due to gitlab.arm.com outage — try removing and running on RBE to confirm.
     exec_properties = {"dockerNetwork": "bridge"},
     imports = ["../../../.."],
     tags = ["requires-network"],
