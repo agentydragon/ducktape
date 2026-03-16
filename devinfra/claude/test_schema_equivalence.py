@@ -230,32 +230,57 @@ def test_hook_specific_output_variants_match() -> None:
 def _normalize_field_schema(schema: dict[str, Any]) -> dict[str, Any]:
     """Normalize a JSON Schema field for comparison.
 
-    Strips metadata (title, description, default) and collapses Pydantic's
-    nullable-optional pattern to match Zod's .optional() representation.
+    Strips metadata and structural differences that don't affect wire compatibility.
 
-    Zod .optional() emits {"type": "string"} and omits the field from required.
-    Pydantic `str | None = None` emits {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null}.
-    These are equivalent on the wire because we serialize with exclude_none=True,
-    so None values are omitted (absent) rather than sent as null.
+    Normalizations applied:
+    - Strip metadata keys: title, description, default, discriminator
+    - Strip additionalProperties: false (Zod strictness, not relevant for wire compat)
+    - Collapse nullable anyOf: {"anyOf": [T, {"type": "null"}]} → T
+    - Normalize Record<string, unknown>: additionalProperties:{} ≡ true
+    - Unify oneOf → anyOf (Pydantic uses oneOf for discriminated unions, Zod uses anyOf)
+    - Normalize required: remove const-defaulted fields (always have a fixed value)
+    - Recurse into nested structures (properties, items, anyOf/oneOf variants)
     """
-    out = {k: v for k, v in schema.items() if k not in ("title", "description", "default")}
+    _strip_keys = {"title", "description", "default", "discriminator"}
+    out = {k: v for k, v in schema.items() if k not in _strip_keys}
+    # Zod sets additionalProperties: false on all objects; Pydantic omits it.
+    # For wire compat, this is irrelevant — we don't send extra properties.
+    if out.get("additionalProperties") is False:
+        del out["additionalProperties"]
     # Zod emits {"additionalProperties": {}, "propertyNames": {"type": "string"}} for
     # Record<string, unknown>; Pydantic emits {"additionalProperties": true}. These are
     # semantically equivalent in JSON Schema (both mean "any additional string-keyed properties").
     if out.get("additionalProperties") in ({}, True):
         out["additionalProperties"] = True
         out.pop("propertyNames", None)
+    # Pydantic uses oneOf for discriminated unions, Zod uses anyOf. Normalize to anyOf.
+    if "oneOf" in out and "anyOf" not in out:
+        out["anyOf"] = out.pop("oneOf")
     # Collapse anyOf with a null variant: {"anyOf": [<real_type>, {"type": "null"}]}
     # becomes just <real_type>, matching Zod's .optional() representation.
     if "anyOf" in out:
         non_null = [v for v in out["anyOf"] if v != {"type": "null"}]
         if len(non_null) == 1 and len(out["anyOf"]) == len(non_null) + 1:
-            # Replace the anyOf with the single non-null variant, keeping other keys.
-            # Also strip metadata from the resolved variant (e.g. from inlined $refs).
             collapsed = {k: v for k, v in out.items() if k != "anyOf"}
-            inner = {k: v for k, v in non_null[0].items() if k not in ("title", "description")}
+            inner = {k: v for k, v in non_null[0].items() if k not in _strip_keys}
             collapsed.update(inner)
-            return collapsed
+            return _normalize_field_schema(collapsed)
+    # Remove const-defaulted fields from required — a field with a const value
+    # is always present with that fixed value, so required vs optional is moot.
+    if "required" in out and "properties" in out:
+        props = out["properties"]
+        out["required"] = [
+            f for f in out["required"] if not (f in props and isinstance(props[f], dict) and "const" in props[f])
+        ]
+        if not out["required"]:
+            del out["required"]
+    # Recursively normalize nested structures
+    if "anyOf" in out:
+        out["anyOf"] = [_normalize_field_schema(v) if isinstance(v, dict) else v for v in out["anyOf"]]
+    if "properties" in out:
+        out["properties"] = {k: _normalize_field_schema(v) for k, v in out["properties"].items()}
+    if "items" in out and isinstance(out["items"], dict):
+        out["items"] = _normalize_field_schema(out["items"])
     return out
 
 
