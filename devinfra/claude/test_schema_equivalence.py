@@ -112,8 +112,8 @@ def test_common_fields_match() -> None:
                 continue
 
             pydantic_field = pydantic_props[field_name]
-            # Compare type representations
-            if zod_field != pydantic_field:
+            # Compare type representations (excluding title/description metadata)
+            if _strip_metadata(zod_field) != _strip_metadata(pydantic_field):
                 deltas.append(
                     f"[{model_name}] Field '{field_name}' differs:\n"
                     f"  Zod:     {json.dumps(zod_field, sort_keys=True)}\n"
@@ -199,7 +199,7 @@ def test_hook_specific_output_variants_match() -> None:
                 continue
 
             pydantic_field_schema = hso_props[field_name]
-            if zod_field_schema != pydantic_field_schema:
+            if _strip_metadata(zod_field_schema) != _strip_metadata(pydantic_field_schema):
                 deltas.append(
                     f"[{event_name}] hookSpecificOutput field '{field_name}' differs:\n"
                     f"  Zod:     {json.dumps(zod_field_schema, sort_keys=True)}\n"
@@ -217,6 +217,11 @@ def test_hook_specific_output_variants_match() -> None:
         raise AssertionError(
             f"hookSpecificOutput equivalence check found {len(deltas)} delta(s):\n\n" + "\n\n".join(deltas)
         )
+
+
+def _strip_metadata(schema: dict[str, Any]) -> dict[str, Any]:
+    """Strip title and description from a JSON Schema dict (non-recursive, single level)."""
+    return {k: v for k, v in schema.items() if k not in ("title", "description")}
 
 
 def _resolve_ref(schema: dict[str, Any], defs: dict[str, Any]) -> dict[str, Any] | None:

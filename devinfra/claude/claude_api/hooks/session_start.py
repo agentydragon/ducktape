@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase
+from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase, HookOutputBase
 
 
 class HookSource(StrEnum):
@@ -34,11 +34,7 @@ class SessionStartHookSpecificOutput(CamelModel):
     additional_context: str | None = Field(default=None, description="Context added to Claude's system prompt")
 
 
-class SessionStartOutput(CamelModel):
+class SessionStartOutput(HookOutputBase):
     """SessionStart hook stdout JSON output."""
 
-    continue_: bool = Field(default=True, alias="continue", description="False to stop Claude entirely")
-    stop_reason: str | None = Field(default=None, description="User-visible message when continue=false")
-    suppress_output: bool = Field(default=False, description="Hide from transcript mode output")
-    system_message: str | None = Field(default=None, description="Warning shown to user")
     hook_specific_output: SessionStartHookSpecificOutput | None = None

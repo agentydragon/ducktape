@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
-from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase
+from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase, HookOutputBase
 
 
 class PostToolUseInput(HookInputBase):
@@ -25,21 +25,14 @@ class PostToolUseHookSpecificOutput(CamelModel):
 
     hook_event_name: Literal["PostToolUse"] = "PostToolUse"
     additional_context: str | None = Field(default=None, description="Non-blocking extra context for Claude")
-    updated_mcp_tool_output: Any | None = Field(default=None, description="MCP tools only — replaces the tool's output")
+    updated_mcp_tool_output: Any | None = Field(
+        default=None, alias="updatedMCPToolOutput", description="MCP tools only — replaces the tool's output"
+    )
 
 
-class PostToolUseOutput(CamelModel):
+class PostToolUseOutput(HookOutputBase):
     """PostToolUse hook output per Claude Code API."""
 
-    decision: Literal["block"] | None = Field(
-        default=None, description="Set to 'block' to re-prompt Claude with reason feedback"
-    )
-    reason: str | None = Field(default=None, description="Feedback shown to Claude when decision='block'")
-    continue_: bool = Field(
-        default=True, alias="continue", description="False to stop Claude entirely (overrides decision)"
-    )
-    stop_reason: str | None = Field(default=None, description="User-visible message when continue=false")
-    suppress_output: bool = Field(default=False, description="Hide from transcript mode output")
     hook_specific_output: PostToolUseHookSpecificOutput | None = None
 
     @model_validator(mode="after")

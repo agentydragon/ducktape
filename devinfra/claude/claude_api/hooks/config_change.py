@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase
+from devinfra.claude.claude_api.hooks.common import HookInputBase, HookOutputBase
 
 
 class ConfigChangeSource(StrEnum):
@@ -23,8 +23,5 @@ class ConfigChangeInput(HookInputBase):
     file_path: Path | None = Field(default=None, description="Path to changed file; absent for some source types")
 
 
-class ConfigChangeOutput(CamelModel):
-    decision: Literal["block"] | None = Field(default=None, description="Set to 'block' to reject the config change")
-    reason: str | None = None
-    continue_: bool = Field(default=True, alias="continue")
-    suppress_output: bool = False
+class ConfigChangeOutput(HookOutputBase):
+    pass

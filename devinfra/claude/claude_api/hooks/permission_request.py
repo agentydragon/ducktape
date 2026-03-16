@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase
+from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase, HookOutputBase
 
 
 class PermissionSuggestion(BaseModel):
@@ -31,7 +31,5 @@ class PermissionRequestHookSpecificOutput(CamelModel):
     decision: PermissionRequestDecision
 
 
-class PermissionRequestOutput(CamelModel):
-    continue_: bool = Field(default=True, alias="continue")
-    suppress_output: bool = False
+class PermissionRequestOutput(HookOutputBase):
     hook_specific_output: PermissionRequestHookSpecificOutput | None = None
