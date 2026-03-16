@@ -459,6 +459,7 @@ jobs:
           fi
           if [ "${{ needs.release-ducktape.outputs.released }}" = "true" ]; then
             sed -i 's|releases/download/ducktape-[^/]*/ducktape|releases/download/${{ needs.release-ducktape.outputs.tag }}/ducktape|' flake.nix
+            sed -i "s|releases/download/ducktape-[a-f0-9]*/ducktape|releases/download/${{ needs.release-ducktape.outputs.tag }}/ducktape|g" .claude/settings.json
             nix flake lock --update-input ducktape-wheel .
           fi
           if [ "${{ needs.release-headscale_cleanup.outputs.released }}" = "true" ]; then
@@ -468,10 +469,6 @@ jobs:
           if [ "${{ needs.release-gterm_theme.outputs.released }}" = "true" ]; then
             sed -i 's|releases/download/gterm-theme-[^/]*/gterm_theme|releases/download/${{ needs.release-gterm_theme.outputs.tag }}/gterm_theme|' flake.nix
             nix flake lock --update-input gterm-theme-wheel .
-          fi
-
-          if [ "${{ needs.release-ducktape.outputs.released }}" = "true" ]; then
-            sed -i "s|releases/download/ducktape-[a-f0-9]*/ducktape|releases/download/${{ needs.release-ducktape.outputs.tag }}/ducktape|g" .claude/settings.json
           fi
 
           git config user.name "github-actions[bot]"
