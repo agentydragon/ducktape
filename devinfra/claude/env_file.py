@@ -15,6 +15,8 @@ from devinfra.claude.settings import ENV_SESSION_DIR, ENV_SUPERVISOR_PORT
 from util.bazel.subprocess import exports_from_dict
 
 # Runtime env var names (written by session hook, read by bazel_wrapper)
+ENV_AUTH_PROXY_PORT = "AUTH_PROXY_PORT"
+ENV_AUTH_PROXY_URL = "AUTH_PROXY_URL"
 ENV_SESSION_BAZELRC = "SESSION_BAZELRC"
 ENV_BAZELISK_PATH = "BAZELISK_PATH"
 ENV_BAZEL_REPO_ROOT = "BAZEL_REPO_ROOT"
@@ -60,7 +62,8 @@ class EnvVars:
     # Web mode: per-session directory
     session_dir: Path | None = None
 
-    # Web mode: Bazel configuration
+    # Web mode: auth proxy and Bazel configuration
+    proxy_port: int | None = None
     supervisor_port: int | None = None
     repo_root: Path | None = None
     combined_ca: Path | None = None
@@ -103,25 +106,29 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
         ["", "# Bazel tooling", *exports_from_dict({"PATH": path_str, ENV_SESSION_BAZELRC: vars.session_bazelrc})]
     )
 
-    if vars.session_dir is not None:
+    if vars.proxy_port is not None:
+        assert vars.session_dir is not None
         assert vars.supervisor_port is not None
         assert vars.repo_root is not None
         assert vars.combined_ca is not None
         assert vars.bazelisk_path is not None
-        web_config: dict[str, str | Path] = {
+        local_proxy = f"http://localhost:{vars.proxy_port}"
+        auth_proxy_config: dict[str, str | Path] = {
             ENV_SESSION_DIR: vars.session_dir,
+            ENV_AUTH_PROXY_PORT: str(vars.proxy_port),
+            ENV_AUTH_PROXY_URL: local_proxy,
             ENV_BAZELISK_PATH: vars.bazelisk_path,
             ENV_BAZEL_REPO_ROOT: vars.repo_root,
+            # Supervisor port needed by bazel_wrapper to connect to supervisor
             ENV_SUPERVISOR_PORT: str(vars.supervisor_port),
         }
         ca_config: dict[str, str | Path] = dict.fromkeys(SSL_CA_ENV_VARS, vars.combined_ca)
-        exports.extend(["", "# Web mode: Bazel and TLS CA configuration"])
-        exports.extend(exports_from_dict(web_config | ca_config))
+        exports.extend(["", "# Auth proxy configuration"])
+        exports.extend(exports_from_dict(auth_proxy_config | ca_config))
 
     # NOTE: We intentionally do NOT export HTTPS_PROXY/HTTP_PROXY here.
     # Anthropic sets these in the container with fresh JWT credentials.
-    # Bazel reads HTTPS_PROXY via --repo_env (in the session bazelrc) at invocation time,
-    # picking up fresh JWT tokens automatically.
+    # Only the bazel wrapper overrides them for its subprocess.
     # See README.md "Our Design Principle" section.
 
     # Fix NO_PROXY: Anthropic's container sets NO_PROXY with *.googleapis.com

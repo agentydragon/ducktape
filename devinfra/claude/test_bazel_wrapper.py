@@ -1,33 +1,59 @@
-"""Unit tests for bazel_wrapper."""
+"""Unit tests for bazel_wrapper supervisor restart logic."""
 
-import os
-from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_bazel
 
-from devinfra.claude.bazel_wrapper import _resolve_real_binary
-from devinfra.claude.env_file import ENV_BAZELISK_PATH
+from devinfra.claude.bazel_wrapper import _ensure_proxy_with_supervisor_restart
+from devinfra.claude.errors import SupervisorError
+from devinfra.claude.settings import HookSettings
 
 
-def test_resolve_real_binary_uses_bazelisk_path(tmp_path: Path) -> None:
-    """When BAZELISK_PATH is set, _resolve_real_binary returns it."""
-    fake_bazelisk = tmp_path / "bazelisk"
-    fake_bazelisk.write_text("#!/bin/sh")
-    fake_bazelisk.chmod(0o755)
-
-    with patch.dict(os.environ, {ENV_BAZELISK_PATH: str(fake_bazelisk)}):
-        assert _resolve_real_binary() == str(fake_bazelisk)
-
-
-def test_resolve_real_binary_missing_bazelisk_raises(tmp_path: Path) -> None:
-    """When BAZELISK_PATH points to a non-existent file, FileNotFoundError is raised."""
+async def test_supervisor_reachable_skips_restart(hook_settings: HookSettings) -> None:
+    """When supervisor is reachable, proxy setup runs without restart."""
     with (
-        patch.dict(os.environ, {ENV_BAZELISK_PATH: str(tmp_path / "nonexistent")}),
-        pytest.raises(FileNotFoundError, match="does not exist"),
+        patch(
+            "devinfra.claude.bazel_wrapper.try_connect", new_callable=AsyncMock, return_value=AsyncMock()
+        ) as mock_try_connect,
+        patch("devinfra.claude.bazel_wrapper.proxy_setup.ensure_proxy_running", new_callable=AsyncMock) as mock_ensure,
+        patch("devinfra.claude.bazel_wrapper.supervisor_start", new_callable=AsyncMock) as mock_start,
     ):
-        _resolve_real_binary()
+        await _ensure_proxy_with_supervisor_restart(hook_settings)
+
+        mock_try_connect.assert_awaited_once_with(hook_settings)
+        mock_ensure.assert_awaited_once()
+        mock_start.assert_not_awaited()
+
+
+async def test_supervisor_dead_triggers_restart(hook_settings: HookSettings) -> None:
+    """When supervisor is unreachable, it gets restarted before proxy setup."""
+    with (
+        patch(
+            "devinfra.claude.bazel_wrapper.try_connect", new_callable=AsyncMock, return_value=None
+        ) as mock_try_connect,
+        patch("devinfra.claude.bazel_wrapper.proxy_setup.ensure_proxy_running", new_callable=AsyncMock) as mock_ensure,
+        patch("devinfra.claude.bazel_wrapper.supervisor_start", new_callable=AsyncMock) as mock_start,
+    ):
+        await _ensure_proxy_with_supervisor_restart(hook_settings)
+
+        mock_try_connect.assert_awaited_once_with(hook_settings)
+        mock_start.assert_awaited_once_with(hook_settings)
+        mock_ensure.assert_awaited_once()
+
+
+async def test_supervisor_restart_failure_propagates(hook_settings: HookSettings) -> None:
+    """When supervisor restart fails, the error propagates as SupervisorError."""
+    with (
+        patch("devinfra.claude.bazel_wrapper.try_connect", new_callable=AsyncMock, return_value=None),
+        patch(
+            "devinfra.claude.bazel_wrapper.supervisor_start",
+            new_callable=AsyncMock,
+            side_effect=SupervisorError("supervisord did not start in time"),
+        ),
+        pytest.raises(SupervisorError, match="did not start in time"),
+    ):
+        await _ensure_proxy_with_supervisor_restart(hook_settings)
 
 
 if __name__ == "__main__":

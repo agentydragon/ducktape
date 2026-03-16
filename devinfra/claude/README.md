@@ -1,6 +1,7 @@
 # Claude Code Integration
 
-Session hooks, statusline, and Claude Code API models for Claude Code web environments.
+Session hooks, auth proxy, statusline, and Claude Code API models for Claude Code
+web environments.
 
 ## References
 
@@ -9,10 +10,12 @@ Session hooks, statusline, and Claude Code API models for Claude Code web enviro
 
 ## Glossary
 
-| Concept                   | Canonical term        | Rationale                                         |
-| ------------------------- | --------------------- | ------------------------------------------------- |
-| Anthropic's Envoy gateway | **egress proxy**      | Matches Anthropic's own docs ("egress controls"). |
-| Mock TLS MITM for tests   | **mock egress proxy** | Says what it simulates.                           |
+| Concept                            | Canonical term        | Rationale                                                                                                                         |
+| ---------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Anthropic's Envoy gateway          | **egress proxy**      | Matches Anthropic's own docs ("egress controls"). Unambiguous.                                                                    |
+| Local auth-adding proxy            | **auth proxy**        | Describes function. Short.                                                                                                        |
+| Mock TLS MITM for tests            | **mock egress proxy** | Says what it simulates.                                                                                                           |
+| "The proxy this proxy forwards to" | **upstream proxy**    | Standard networking term. Context-dependent (auth proxy's upstream = egress proxy; mock's upstream = auth proxy or egress proxy). |
 
 ## Anthropic's TLS-Inspecting Proxy
 
@@ -46,18 +49,20 @@ By preserving the original proxy env vars:
 ## Components
 
 - **Session Start Hook**: Sets up the development environment for Claude Code web sessions
+- **Auth Proxy**: Adds authentication headers for Bazel's proxy connections (not global)
 
 ## Session Start Hook
 
 The hook runs at the start of each Claude Code web session and:
 
-### Proxy/TLS Setup (via `auth_proxy/setup.py`)
+### Proxy Setup (via `proxy_setup.py`)
 
-1. Starts supervisord for process management (needed for container runtime)
-2. Loads the TLS inspection CA from the pre-installed filesystem path (`/usr/local/share/ca-certificates/swp-ca-production.crt`)
-3. Creates a Java truststore with the CA using keytool
-4. Creates combined CA bundle (system CAs + proxy CA)
-5. Writes bazelrc to `<session_dir>/bazelrc`
+1. Starts supervisord for process management
+2. Registers proxy with supervisor at `127.0.0.1:18081`
+3. Loads the TLS inspection CA from the pre-installed filesystem path (`/usr/local/share/ca-certificates/swp-ca-production.crt`)
+4. Creates a Java truststore with the CA using keytool
+5. Creates combined CA bundle (system CAs + proxy CA)
+6. Writes bazelrc to `<session_dir>/auth-proxy/bazelrc`
 
 ### Bazel Setup (via `bazelisk_setup.py`)
 
@@ -82,30 +87,31 @@ Nix formatting uses a static nixfmt binary downloaded by `devinfra/precommit/run
 
 See `.claude/settings.json` for hook configuration.
 
-# Bazel Proxy Authentication
+# Auth Proxy
 
-How Bazel accesses the Bazel Central Registry (BCR) through Anthropic's TLS-inspecting egress proxy.
+A local HTTP CONNECT proxy that adds authentication to Anthropic's egress proxy, enabling Bazel's gRPC remote execution and BCR access.
 
-## Background
+## Why This Exists
 
-[Claude Code on the web](https://docs.anthropic.com/en/docs/claude-code/claude-code-on-the-web) runs in ephemeral containers with a TLS-inspecting proxy for network egress. Getting Bazel to authenticate with this proxy required working around Java/JVM limitations:
+[Claude Code on the web](https://docs.anthropic.com/en/docs/claude-code/claude-code-on-the-web) runs in ephemeral containers with a TLS-inspecting proxy for network egress. Bazel needs to route both **BCR fetches** (Java HTTP) and **gRPC remote execution** (gRPC-Java/Netty) through this proxy.
 
-1. **TLS Inspection**: The proxy does TLS inspection with a custom Anthropic CA certificate
-2. **JWT Authentication**: Proxy credentials include a JWT token for authentication (see [network docs](https://docs.anthropic.com/en/docs/claude-code/security#network-access))
-3. **Java doesn't read `HTTPS_PROXY` env vars natively**: Bazel's bzlmod/repository rules use `ProxyHelper`, which only reads `HTTPS_PROXY` from Bazel's `getRepoEnv()` map — not the process environment. Requires `--repo_env=HTTPS_PROXY` to be set.
-4. **Basic auth disabled by default**: Since [Java 8u111](https://confluence.atlassian.com/kb/basic-authentication-fails-for-outgoing-proxy-in-java-8u111-909643110.html), Basic authentication for HTTPS tunneling is disabled via `jdk.http.auth.tunneling.disabledSchemes=Basic`
+### The Problem: gRPC-Java Cannot Authenticate with the Egress Proxy
 
-## The Solution
+Bazel's Java HTTP layer *can* authenticate with the egress proxy: `ProxyHelper` reads `HTTPS_PROXY`, installs a `java.net.Authenticator`, and handles 407 challenges. BCR fetches work this way. However, **gRPC-Java's remote execution client cannot reliably authenticate**:
 
-Bazel authenticates **directly** with Anthropic's egress proxy using Java's native `Authenticator` mechanism. The session bazelrc configures three things:
+1. **gRPC-Java's `ProxyDetectorImpl`** reads proxy settings from `ProxySelector.getDefault()` (which uses JVM system properties `-Dhttps.proxyHost`/`-Dhttps.proxyPort`), then calls `Authenticator.requestPasswordAuthentication()` for credentials
+2. **Bazel's `ProxyHelper`** installs the `Authenticator` — but only when a repository rule triggers a download. The gRPC remote execution channel may already be established before any repository rule runs
+3. **Timing dependency**: If gRPC creates its channel before `ProxyHelper` installs the `Authenticator`, the `ProxyDetectorImpl` gets no credentials and gRPC's Netty transport sends an unauthenticated CONNECT → the egress proxy returns 407 → connection fails with "Unable to resolve host"
 
-1. **Re-enable Basic auth**: `startup --host_jvm_args=-Djdk.http.auth.tunneling.disabledSchemes=` and `-Djdk.http.auth.proxying.disabledSchemes=`
-2. **Expose credentials to ProxyHelper**: `common --repo_env=HTTPS_PROXY` (inherits current env value at bazel invocation time)
-3. **Trust the inspection CA**: `startup --host_jvm_args=-Djavax.net.ssl.trustStore=<custom-truststore>`
+### The Solution: Local Unauthenticated Proxy
 
-With these flags, Bazel's `ProxyHelper` parses the `HTTPS_PROXY` URL (including JWT credentials), installs a `java.net.Authenticator`, and authenticates the CONNECT tunnel on 407 challenge/response. No local proxy daemon needed.
+The auth proxy decouples authentication from this timing problem:
 
-See <docs/proxy-alternatives.md> for earlier analysis and why native JVM settings were initially considered unworkable (the egress proxy now returns RFC-compliant 407 responses, and `--repo_env` solves the env-var problem).
+- Runs on `localhost:18081`, accepts **unauthenticated** CONNECT requests
+- Bazel's JVM is configured with `-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=18081`
+- gRPC-Java's `ProxyDetectorImpl` sees the proxy via `ProxySelector` and connects without needing credentials
+- The auth proxy injects `Proxy-Authorization: Basic` credentials when forwarding to the egress proxy
+- Reads credentials from a file on each connection, enabling JWT hot-reload without restart
 
 ## References
 
@@ -120,14 +126,15 @@ See <proxy-alternatives.md> for analysis of why alternatives don't work.
 
 All settings use [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) with the `DUCKTAPE_CLAUDE_HOOKS_` prefix:
 
-| Environment Variable                      | Default                    | Description                                       |
-| ----------------------------------------- | -------------------------- | ------------------------------------------------- |
-| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_DIR`    | `<session_dir>/supervisor` | Supervisor config directory                       |
-| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT`   | `19001`                    | Supervisor TCP port                               |
-| `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_DIR`    | `<session_dir>/auth-proxy` | TLS CA cache directory                            |
-| `DUCKTAPE_CLAUDE_HOOKS_INSTALL_BAZELISK`  | `true`                     | Install bazelisk                                  |
-| `DUCKTAPE_CLAUDE_HOOKS_INSTALL_NIX`       | `false`                    | Install nix package manager                       |
-| `DUCKTAPE_CLAUDE_HOOKS_CONTAINER_RUNTIME` | `docker`                   | Container runtime (`podman`, `docker`, or `none`) |
+| Environment Variable                     | Default                             | Description                 |
+| ---------------------------------------- | ----------------------------------- | --------------------------- |
+| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_DIR`   | `<session_dir>/supervisor`          | Supervisor config directory |
+| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT`  | `19001`                             | Supervisor TCP port         |
+| `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_DIR`   | `<session_dir>/auth-proxy`          | Proxy cache directory       |
+| `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_PORT`  | `18081`                             | Auth proxy port             |
+| `DUCKTAPE_CLAUDE_HOOKS_INSTALL_BAZELISK` | `true`                              | Install bazelisk            |
+| `DUCKTAPE_CLAUDE_HOOKS_INSTALL_NIX`      | `false`                             | Install nix package manager |
+| `DUCKTAPE_CLAUDE_HOOKS_CONTAINER_RUNTIME`| `docker`                            | Container runtime (`podman`, `docker`, or `none`) |
 
 `<session_dir>` = `~/.claude/session-env/<session_id>/` — a per-session directory managed by Claude Code.
 
@@ -141,58 +148,116 @@ See BUILD.bazel for the full dependency list. Key runtime requirements:
 
 ## Usage
 
-Bazel proxy authentication is fully automatic — no daemon to manage. The session start hook writes the bazelrc; the bazel wrapper picks it up on each invocation.
+### Via Supervisor (recommended)
+
+The proxy runs under supervisor for automatic restarts and easy log access:
+
+```bash
+# View proxy status (use the Python that has supervisor installed)
+python -m supervisor.supervisorctl -c ~/.config/claude-hooks/supervisor/supervisord.conf status auth-proxy
+
+# Restart proxy (e.g., after credential refresh)
+python -m supervisor.supervisorctl -c ~/.config/claude-hooks/supervisor/supervisord.conf restart auth-proxy
+
+# View proxy logs (stdout)
+tail -f ~/.config/claude-hooks/supervisor/auth-proxy.log
+
+# View proxy errors (stderr)
+tail -f ~/.config/claude-hooks/supervisor/auth-proxy.err.log
+
+# Stop proxy
+python -m supervisor.supervisorctl -c ~/.config/claude-hooks/supervisor/supervisord.conf stop auth-proxy
+```
+
+**Note**: Use the same Python interpreter that has the `supervisor` package installed. In Claude Code web environments, this is typically the interpreter from the claude-hooks uv tool environment.
+
+### From session-start hook
+
+The session-start hook (`session_start.py`) calls `proxy_setup.py` which performs
+the proxy setup steps described above.
+
+### Manual startup (for debugging)
+
+For debugging only. Normal operation uses supervisor:
+
+```bash
+# The auth proxy reads upstream URL from a file (enables credential hot-reload)
+# File format: http://username:password@host:port
+claude-auth-proxy --listen-port 18081 --creds-file /path/to/upstream_proxy
+```
 
 ## How It Works
 
-### Architecture
+### Proxy Architecture
 
 ```
-All tools (curl, pip, npm, Bazel, etc.)
+Most tools (curl, pip, npm, etc.)
     │
-    └──► HTTPS_PROXY (Anthropic's egress proxy, fresh JWT) ──► Internet
-         (unchanged — we never overwrite HTTPS_PROXY)
+    └──► HTTPS_PROXY (Anthropic's proxy) ──► Internet
+         (unchanged, fresh JWT)
 
-Bazel specifically:
+Bazel/Bazelisk
+    │
     └──► bazel wrapper
-           └── Execs bazelisk with --bazelrc=<session-bazelrc>
+           │
+           ├── 1. Reads HTTPS_PROXY (fresh JWT from Anthropic)
+           ├── 2. Writes to creds file (~/.cache/.../upstream_proxy)
+           ├── 3. Sets HTTPS_PROXY=localhost:18081 for subprocess only
+           └── 4. Execs bazelisk
                    │
-                   └──► Bazel JVM
-                          │  startup: -Djdk.http.auth.tunneling.disabledSchemes=
-                          │  startup: -Djdk.http.auth.proxying.disabledSchemes=
-                          │  startup: -Djavax.net.ssl.trustStore=<custom>
-                          │  common:  --repo_env=HTTPS_PROXY (inherits JWT from env)
+                   └──► Auth proxy (localhost:18081)
                           │
-                          └──► ProxyHelper parses HTTPS_PROXY → installs Authenticator
-                                 └──► CONNECT bcr.bazel.build:443 → 407 → auth → 200
-                                        └──► BCR / Internet
+                          ├── Reads creds file on each connection
+                          ├── Adds Proxy-Authorization header
+                          └──► Anthropic's proxy ──► Internet
 ```
 
-### Flow
+### Flow Details
 
-1. **Session hook** extracts the Anthropic CA, creates a Java truststore, creates a combined CA bundle, and writes a per-session bazelrc with the JVM flags above.
-2. **Bazel wrapper** (invoked as `bazel`) just execs bazelisk with `--bazelrc=<session-bazelrc>`. No proxy manipulation.
-3. **Bazel JVM** (at build time): `--repo_env=HTTPS_PROXY` passes the current egress proxy URL (with fresh JWT) to `ProxyHelper`, which installs a `java.net.Authenticator`. When the proxy returns 407, the Authenticator provides credentials and the CONNECT succeeds.
+1. **Session hook** starts the auth proxy daemon via supervisor
+2. **Bazel wrapper** (invoked instead of bazel directly):
+   - Reads current `HTTPS_PROXY` from environment (Anthropic's proxy with fresh JWT)
+   - Writes upstream URL to credentials file (for the long-running proxy daemon)
+   - Sets `HTTPS_PROXY=localhost:18081` for the bazel subprocess only
+   - Execs bazelisk with proxy configuration
+3. **Auth proxy** (long-running daemon):
+   - Reads credentials file on each connection (picks up fresh JWT)
+   - Forwards CONNECT requests to Anthropic's proxy with auth header
 
-### Why This Works Now
+### Why This Design
 
-The egress proxy now returns RFC-compliant `HTTP/1.1 407 Proxy Authentication Required` with `Proxy-Authenticate: Basic` (verified 2026-03-16). Combined with the three JVM flags, Java's native proxy auth handles the 407 challenge correctly.
+- **Fresh credentials**: Bazel wrapper reads `HTTPS_PROXY` on each invocation, so JWT refreshes are picked up
+- **No global override**: Other tools continue to use Anthropic's proxy directly
+- **Hot-reload**: Auth proxy reads creds file per-connection, enabling credential updates without restart
 
-See <docs/proxy-alternatives.md> for historical analysis and earlier investigation.
+## Lifecycle Management
+
+The auth proxy runs under supervisor:
+
+- **Process Manager**: supervisord (`~/.config/claude-hooks/supervisor/supervisord.conf`)
+- **Service Config**: `~/.config/claude-hooks/supervisor/conf.d/auth-proxy.conf`
+- **Logging**: Stdout/stderr to `~/.config/claude-hooks/supervisor/auth-proxy.{log,err.log}`
+- **Auto-restart**: Supervisor automatically restarts on crashes
+- **Credentials**: Read from file on each connection (hot-reload)
 
 ## Verification
 
 After session start:
 
 ```bash
-# Verify Bazel can reach BCR
+# Verify supervisor is running the proxy
+# SESSION_DIR is exported as DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR by the env file
+python -m supervisor.supervisorctl -c "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/supervisor/supervisord.conf" status
+
+# Proxy should be accessible
+curl -s --max-time 5 -x http://127.0.0.1:18081 https://bcr.bazel.build/ | head -1
+
+# Bazel should be able to access BCR
 bazel info
 
-# Verify egress proxy is reachable (direct — no local proxy shim)
-curl -s --max-time 5 -x "$HTTPS_PROXY" https://bcr.bazel.build/ | head -1
-
-# Check session bazelrc (should contain jdk.http.auth.tunneling.disabledSchemes)
-cat "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/bazelrc"
+# Check proxy logs
+tail -20 "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/supervisor/auth-proxy.log"
+tail -20 "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/supervisor/auth-proxy.err.log"
 ```
 
 ## Files
@@ -203,14 +268,17 @@ Supervisor files (in `<session_dir>/supervisor/`):
 
 - `supervisord.conf` - Supervisor main configuration
 - `supervisord.{log,pid}` - Supervisor daemon state
+- `conf.d/auth-proxy.conf` - Proxy service configuration
+- `auth-proxy.{log,err.log}` - Proxy stdout/stderr logs
 
-Note: Supervisor listens on TCP `127.0.0.1:19001` (no Unix socket file). Supervisor runs only to manage container runtime (podman/docker), not an auth proxy daemon.
+Note: Supervisor listens on TCP `127.0.0.1:19001` (no Unix socket file).
 
-TLS CA files (in `<session_dir>/auth-proxy/`, created by `auth_proxy/setup.py`):
+Auth proxy files (in `<session_dir>/auth-proxy/`, created by `proxy_setup.py`):
 
+- `upstream_proxy` - Upstream proxy credentials (read on each connection)
 - `anthropic_ca.pem` - Loaded TLS inspection CA
-- `combined_ca.pem` - System CAs + Anthropic CA bundle (used by SSL_CERT_FILE)
-- `cacerts.jks` - Java truststore with CA (used by Bazel JVM via --host_jvm_args)
+- `combined_ca.pem` - System CAs + Anthropic CA bundle
+- `cacerts.jks` - Java truststore with CA
 
 Global (non-session-scoped) files in `~/.cache/claude-hooks/`:
 
@@ -233,7 +301,7 @@ lock(
     srcs = [...],
     out = "requirements_bazel.txt",
     env = {
-        "HTTPS_PROXY": "http://container:jwt_token@proxy_host:port",
+        "HTTPS_PROXY": "http://localhost:18081",
         "SSL_CERT_FILE": "/path/to/combined_ca.pem",  # For TLS inspection
     },
 )
@@ -270,14 +338,17 @@ Configuration via environment variable:
 
 - `HTTPS_PROXY` is not set
 - `MockEgressProxy` connects directly to the internet
+- The auth proxy is started by the test's session start hook but never receives traffic
+  (nothing points `HTTPS_PROXY` at it — the mock connects directly)
 - DNS resolution works directly
 
 **Claude Code Web** (gVisor sandbox with egress proxy):
 
 - `HTTPS_PROXY` is set to `http://CONTAINER:JWT@host:port` by Anthropic
-- The bazel wrapper does NOT rewrite `HTTPS_PROXY` — Bazel reads it via `--repo_env=HTTPS_PROXY`
-- `env_inherit` in BUILD.bazel passes the original `HTTPS_PROXY` to test processes
-- `MockEgressProxy` chains through the egress proxy directly
+- The bazel wrapper rewrites `HTTPS_PROXY=http://localhost:18081` before exec'ing bazelisk
+- `env_inherit` in BUILD.bazel passes the **rewritten** `HTTPS_PROXY` to the test process
+- `MockEgressProxy` detects `HTTPS_PROXY=localhost:18081` via `EgressProxyConfig.from_env()`
+  and chains through: mock → auth proxy (18081) → egress proxy → internet
 - DNS does NOT work directly (all traffic must go through egress proxy)
 
 **Developer laptop** (no proxy):
@@ -292,10 +363,18 @@ test client (e.g. bazel, podman)
     └──► mock egress proxy (random port, TLS MITM)
            │ simulates Anthropic's TLS inspection
            │ chains through HTTPS_PROXY if set
-           └──► egress proxy (21.x.x.x:15004)
-                  │ TLS inspection, JWT validation
-                  └──► internet
+           └──► auth proxy (localhost:18081, no TLS)
+                  │ adds Proxy-Authorization: Basic
+                  └──► egress proxy (21.x.x.x:15004)
+                         │ TLS inspection, JWT validation
+                         └──► internet
 ```
+
+### The `env_inherit` + Bazel Wrapper Interaction
+
+The BUILD.bazel target has `env_inherit = ["HTTPS_PROXY", ...]`. When tests run via the `bazel` command (which is actually the bazel wrapper), the wrapper rewrites `HTTPS_PROXY` to `localhost:18081` before exec'ing bazelisk. So the test process inherits the rewritten value, not the original egress proxy URL.
+
+This is correct behavior: it means the mock egress proxy chains through the auth proxy, which adds credentials and forwards to the real egress proxy. The full chain works.
 
 ## Encrypted Secrets
 

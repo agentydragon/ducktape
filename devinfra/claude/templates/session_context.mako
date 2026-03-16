@@ -2,7 +2,7 @@
 
 % if proxy:
 **Environment:** gVisor sandbox, TLS-inspecting proxy, no overlay fs (vfs), 9p fs
-**Bazel:** direct egress proxy auth via `HTTPS_PROXY` + JVM Basic auth flags (${proxy.ca_status})
+**Bazel:** wrapper adds auth proxy (port ${proxy.port}, ${proxy.ca_status})
 % else:
 **Environment:** CLI (local)
 % endif

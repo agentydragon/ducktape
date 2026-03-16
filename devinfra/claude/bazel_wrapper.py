@@ -1,9 +1,8 @@
 """Bazel wrapper for Claude Code — sets up environment and execs bazel.
 
+Mode-aware: in web mode (CLAUDE_CODE_REMOTE=true), sets proxy env vars and
+ensures auth proxy is running. In CLI mode, passes through directly.
 Both modes inject --bazelrc=<per-session-bazelrc> via SESSION_BAZELRC.
-In web mode, HTTPS_PROXY is already set by Anthropic with fresh JWT credentials;
-the session bazelrc configures Bazel to authenticate directly with the egress proxy
-using Java's Authenticator mechanism — no local auth proxy shim needed.
 
 Routes to the correct binary based on invocation name: if invoked as "bazelisk",
 execs bazelisk; if invoked as "bazel", execs bazel. The shell wrapper sets
@@ -12,14 +11,22 @@ _BAZEL_WRAPPER_NAME from basename($0).
 Reads configuration from environment variables set by session_start.py.
 """
 
+import asyncio
 import logging
 import os
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
+from devinfra.claude.auth_proxy import setup as proxy_setup
+from devinfra.claude.auth_proxy.credentials import check_credential_expiry
+from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
 from devinfra.claude.debug import log_entrypoint_debug
-from devinfra.claude.env_file import ENV_BAZELISK_PATH, ENV_SESSION_BAZELRC
-from devinfra.claude.settings import HookSettings
+from devinfra.claude.env_file import ENV_AUTH_PROXY_URL, ENV_BAZELISK_PATH, ENV_SESSION_BAZELRC
+from devinfra.claude.errors import AuthProxyError
+from devinfra.claude.settings import HookSettings, is_web_mode
+from devinfra.claude.supervisor.client import try_connect
+from devinfra.claude.supervisor.setup import start as supervisor_start
 from util.env import get_required_env
 
 logger = logging.getLogger(__name__)
@@ -32,6 +39,27 @@ _WRAPPER_DIR_ENV = "_BAZEL_WRAPPER_DIR"
 def _invocation_name() -> str:
     """Determine the binary name this wrapper was invoked as (bazel or bazelisk)."""
     return os.environ.get(_WRAPPER_NAME_ENV, "bazel")
+
+
+def warn_if_credentials_expiring(settings: HookSettings) -> None:
+    """Check JWT expiry and log warning if concerning."""
+    creds_file = settings.get_auth_proxy_creds_file()
+    if not creds_file.exists():
+        return
+
+    status = check_credential_expiry(creds_file.read_text().strip())
+
+    if status.expiry is None:
+        return
+
+    minutes_remaining = (status.expiry - datetime.now(UTC)).total_seconds() / 60
+
+    if minutes_remaining <= 0:
+        logger.warning(
+            "JWT EXPIRED (%.0f min ago). Start a new Claude Code session for fresh credentials", -minutes_remaining
+        )
+    elif minutes_remaining < 30:
+        logger.info("JWT valid for %.0f min", minutes_remaining)
 
 
 def _setup_logging(settings: HookSettings) -> None:
@@ -91,6 +119,33 @@ def _resolve_real_binary() -> str:
     raise FileNotFoundError(f"No {invoked_as} found on PATH")
 
 
+async def _ensure_proxy_with_supervisor_restart(settings: HookSettings) -> None:
+    """Ensure proxy is running, restarting supervisor if it's dead."""
+    client = await try_connect(settings)
+    if client is None:
+        logger.warning("Supervisor is not reachable, restarting...")
+        client = (await supervisor_start(settings)).client
+
+    await proxy_setup.ensure_proxy_running(settings, client)
+
+
+async def _async_main(settings: HookSettings) -> None:
+    """Async entry point — all async work happens here."""
+    if is_web_mode():
+        await _ensure_proxy_with_supervisor_restart(settings)
+        warn_if_credentials_expiring(settings)
+
+        local_proxy = get_required_env(ENV_AUTH_PROXY_URL)
+        for var in PROXY_ENV_VARS:
+            os.environ[var] = local_proxy
+
+    bazelrc_path = get_required_env(ENV_SESSION_BAZELRC)
+    real_binary = _resolve_real_binary()
+
+    logger.info("Execing %s (invoked as %s)", real_binary, _invocation_name())
+    os.execvp(real_binary, [real_binary, f"--bazelrc={bazelrc_path}", *sys.argv[1:]])
+
+
 def main() -> None:
     """Main entry point."""
     settings = HookSettings()
@@ -98,11 +153,13 @@ def main() -> None:
     _setup_logging(settings)
     log_entrypoint_debug("bazel_wrapper")
 
-    bazelrc_path = get_required_env(ENV_SESSION_BAZELRC)
-    real_binary = _resolve_real_binary()
-
-    logger.info("Execing %s (invoked as %s)", real_binary, _invocation_name())
-    os.execvp(real_binary, [real_binary, f"--bazelrc={bazelrc_path}", *sys.argv[1:]])
+    try:
+        asyncio.run(_async_main(settings))
+    except AuthProxyError as e:
+        logger.error("%s", e)
+        logger.info("Supervisor auto-restart was attempted but setup still failed")
+        logger.info("Logs: %s", settings.get_supervisor_dir())
+        raise SystemExit(1) from e
 
 
 if __name__ == "__main__":

@@ -91,8 +91,9 @@ def setup_hook_env(
     system_cas = system_ca_path.read_bytes() if system_ca_path else b""
     combined_ca_path.write_bytes(system_cas + b"\n" + mock_proxy.ca_cert_pem)
 
-    # Pick isolated port for supervisor
+    # Pick isolated ports for supervisor and auth proxy
     supervisor_port = pick_free_port()
+    auth_proxy_port = pick_free_port()
 
     # Required for web mode
     monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
@@ -107,6 +108,7 @@ def setup_hook_env(
 
     # Isolated ports (avoid conflicts between tests)
     monkeypatch.setenv(settings.ENV_SUPERVISOR_PORT, str(supervisor_port))
+    monkeypatch.setenv(settings.ENV_AUTH_PROXY_PORT, str(auth_proxy_port))
 
     # Disable nix (speeds up tests)
     monkeypatch.setenv(settings.ENV_INSTALL_NIX, "0")

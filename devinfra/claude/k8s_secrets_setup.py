@@ -76,8 +76,8 @@ def setup_k8s_secrets(
     from the configured namespace, maps data keys to env var names, and
     writes a kubeconfig file for kubectl CLI use.
 
-    In web mode, pass proxy=HTTPS_PROXY value (egress proxy URL with credentials)
-    so urllib3 routes requests through the proxy correctly.
+    In web mode, pass proxy="http://localhost:<port>" to route through the
+    auth proxy, which adds Proxy-Authorization for the upstream egress proxy.
     """
     result = K8sSecretsResult()
     if not config.k8s or not config.k8s_secrets:

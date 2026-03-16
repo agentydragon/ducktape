@@ -68,8 +68,10 @@ class PlatformSetup:
     """
 
     # Bazelrc rendering params
+    proxy_port: int | None = None
     truststore_path: Path | None = None
     truststore_password: str | None = None
+    local_proxy: str | None = None
     combined_ca_path: Path | None = None
     bazel_cache_dir: Path | None = None
 
@@ -216,9 +218,12 @@ async def _setup_web(
     # Consider: skip downstream tasks silently or return a sentinel value instead
     # of re-raising, so only the original upstream error surfaces once.
     async def setup_proxy_with_supervisor(*, buildbuddy_configured: bool = False) -> proxy_setup.ProxySetup:
-        """Set up TLS CA for egress proxy (no longer depends on supervisor)."""
+        """Set up auth proxy (depends on supervisor)."""
         with tracer.start_as_current_span("setup_proxy", context=root_ctx):
-            return await proxy_setup.setup_auth_proxy(settings, buildbuddy_configured=buildbuddy_configured)
+            supervisor_result = await supervisor_task
+            return await proxy_setup.setup_auth_proxy(
+                settings, supervisor_result.client, buildbuddy_configured=buildbuddy_configured
+            )
 
     async def setup_container_runtime_task() -> container_runtime.ContainerRuntimeSetup:
         """Set up configured container runtime (depends on supervisor + per-component tmpfs)."""
@@ -262,9 +267,9 @@ async def _setup_web(
 
     # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
     # Dependency graph:
-    #   proxy_task ──── setup_mkcert_with_proxy  (filesystem CA ops, no supervisor needed)
-    #   supervisor_task ──── setup_container_runtime (Docker or Podman)
-    #                        (each runtime mounts its own tmpfs internally)
+    #   supervisor_task ──┬── proxy_task ──── setup_mkcert_with_proxy
+    #                     └── setup_container_runtime (Docker or Podman)
+    #                         (each runtime mounts its own tmpfs internally)
     #   setup_bazel_on_tmpfs mounts its own tmpfs independently
     logger.info("Starting parallel installations...")
 
@@ -369,17 +374,13 @@ async def _setup_web(
     # Route through the auth proxy so the upstream egress proxy gets credentials.
     secrets: k8s_secrets_setup.K8sSecretsResult | None = None
     if settings.k8s_token and hook_config:
-        # Pass egress proxy URL directly (urllib3 doesn't auto-detect HTTPS_PROXY env var).
-        # With Basic auth re-enabled in the JVM, the auth proxy daemon is no longer needed;
-        # Python's urllib3 handles Basic proxy auth natively.
-        egress_proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
         with tracer.start_as_current_span("setup_k8s_secrets", context=root_ctx):
             secrets = k8s_secrets_setup.setup_k8s_secrets(
                 token=settings.k8s_token,
                 session_dir=settings.session_dir,
                 combined_ca_path=combined_ca,
                 config=hook_config,
-                proxy=egress_proxy,
+                proxy=f"http://localhost:{settings.get_auth_proxy_port()}",
             )
 
     # Configure BuildBuddy now that k8s secrets (with API key) are available.
@@ -422,8 +423,10 @@ async def _setup_web(
 
     return PlatformSetup(
         # Bazelrc rendering
+        proxy_port=settings.get_auth_proxy_port(),
         truststore_path=settings.get_auth_proxy_truststore(),
         truststore_password=proxy_setup.TRUSTSTORE_PASSWORD,
+        local_proxy=f"http://localhost:{settings.get_auth_proxy_port()}",
         combined_ca_path=combined_ca,
         bazel_cache_dir=tmpfs_result.bazel_cache if isinstance(tmpfs_result, tmpfs_setup.TmpfsSetup) else None,
         # EnvVars
@@ -507,8 +510,10 @@ async def run_session(
         )
         bazelrc_content: str = bazelrc_template.render(
             web_proxy=web_mode,
+            proxy_port=setup.proxy_port,
             truststore_path=setup.truststore_path,
             truststore_password=setup.truststore_password,
+            local_proxy=setup.local_proxy,
             combined_ca_path=setup.combined_ca_path,
             buildbuddy_configured=setup.buildbuddy_configured,
             buildbuddy_bazelrc=buildbuddy_setup.BUILDBUDDY_BAZELRC,
@@ -533,6 +538,7 @@ async def run_session(
             bazel_wrapper_dir=settings.get_wrapper_dir(),
             session_bazelrc=session_bazelrc,
             session_dir=setup.session_dir,
+            proxy_port=setup.proxy_port,
             supervisor_port=setup.supervisor_port,
             repo_root=setup.repo_root,
             combined_ca=setup.combined_ca_path,

@@ -37,6 +37,7 @@ def _env_name(field: str) -> str:
 ENV_SUPERVISOR_DIR = _env_name("supervisor_dir")
 ENV_SUPERVISOR_PORT = _env_name("supervisor_port")
 ENV_AUTH_PROXY_DIR = _env_name("auth_proxy_dir")
+ENV_AUTH_PROXY_PORT = _env_name("auth_proxy_port")
 ENV_PODMAN_DIR = _env_name("podman_dir")
 ENV_PODMAN_SOCKET = _env_name("podman_socket")
 ENV_DOCKER_DIR = _env_name("docker_dir")
@@ -75,6 +76,7 @@ class HookSettings(BaseSettings):
 
     # Port overrides
     supervisor_port: int | None = Field(default=None, description="Override supervisor TCP port")
+    auth_proxy_port: int | None = Field(default=None, description="Override auth proxy port")
 
     # Feature flags (enable/disable installations)
     install_bazelisk: bool = Field(default=True, description="Download and install bazelisk")
@@ -133,6 +135,10 @@ class HookSettings(BaseSettings):
             return self.auth_proxy_dir
         return self.session_dir / "auth-proxy"
 
+    def get_auth_proxy_port(self) -> int:
+        """Get auth proxy port with default."""
+        return self.auth_proxy_port if self.auth_proxy_port is not None else 18081
+
     def get_podman_dir(self) -> Path:
         """Get podman configuration and storage directory."""
         if self.podman_dir is not None:
@@ -143,6 +149,10 @@ class HookSettings(BaseSettings):
     def get_auth_proxy_combined_ca(self) -> Path:
         """Get path to combined CA bundle (system CAs + proxy CA)."""
         return self.get_auth_proxy_dir() / "combined_ca.pem"
+
+    def get_auth_proxy_creds_file(self) -> Path:
+        """Get path to upstream proxy credentials file."""
+        return self.get_auth_proxy_dir() / "upstream_proxy"
 
     def get_auth_proxy_ca_file(self) -> Path:
         """Get path to extracted Anthropic CA file."""

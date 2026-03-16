@@ -239,7 +239,13 @@ py_library(
     deps = [
         ":debug",
         ":env_file",
+        ":errors",
         ":settings",
+        "//devinfra/claude/auth_proxy:credentials",
+        "//devinfra/claude/auth_proxy:setup",
+        "//devinfra/claude/auth_proxy:vars",
+        "//devinfra/claude/supervisor:client",
+        "//devinfra/claude/supervisor:setup",
         "//util:env",
     ],
 )
@@ -457,6 +463,7 @@ py_test(
     srcs = ["test_session_start.py"],
     data = [
         ":hook_dispatch",
+        "//devinfra/claude/auth_proxy:run",
         "//devinfra/claude/testdata/test_workspace:workspace_files",
         "//third_party/jdk:cacerts",
         "//third_party/jdk:keytool",
@@ -500,6 +507,7 @@ py_test(
     srcs = ["test_session_start_podman.py"],
     data = [
         ":hook_dispatch",
+        "//devinfra/claude/auth_proxy:run",
         "//third_party/jdk:cacerts",
         "//third_party/jdk:keytool",
     ],
@@ -536,6 +544,18 @@ py_test(
 )
 
 py_test(
+    name = "test_proxy",
+    srcs = ["test_proxy.py"],
+    imports = ["../.."],
+    deps = [
+        "//devinfra/claude/auth_proxy:credentials",
+        "@pypi//pyjwt",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_bazel_wrapper",
     srcs = ["test_bazel_wrapper.py"],
     imports = ["../.."],
@@ -561,6 +581,37 @@ py_test(
         "//devinfra/claude/claude_api:credentials",
         "//devinfra/claude/claude_api:statusline",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_integration",
+    srcs = ["test_integration.py"],
+    data = [
+        # The proxy binary is spawned as a subprocess by supervisor
+        "//devinfra/claude/auth_proxy:run",
+    ],
+    env_inherit = [
+        "HTTPS_PROXY",
+        "https_proxy",
+        "SSL_CERT_FILE",
+        "REQUESTS_CA_BUNDLE",
+    ],
+    imports = ["../.."],
+    tags = ["e2e"],
+    deps = [
+        ":conftest",
+        ":settings",
+        "//devinfra/claude/auth_proxy:setup",
+        "//devinfra/claude/supervisor:client",
+        "//devinfra/claude/supervisor:setup",
+        "//devinfra/claude/testing:fixtures",
+        "//devinfra/claude/testing:mock_egress_proxy",
+        "//util:net",
+        "@pypi//cryptography",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

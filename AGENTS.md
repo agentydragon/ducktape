@@ -16,10 +16,10 @@ If a component is macOS-only, document it explicitly. Do not silently assume mac
 ## Recovering from a Broken Session Start Hook (Claude Code Web)
 
 When running in Claude Code Web (`CLAUDE_CODE_REMOTE_ENVIRONMENT_TYPE` is set), the
-session start hook sets up Bazel, TLS CA, k8s secrets, BuildBuddy RBE, and other tooling.
-If the hook fails or was never run, you'll see errors like certificate failures,
-`bazel: command not found`, `Unable to resolve host remote.buildbuddy.io`, or missing
-env files.
+session start hook sets up Bazel, the auth proxy, TLS CA, k8s secrets, BuildBuddy RBE,
+and other tooling. If the hook fails or was never run, you'll see errors like certificate
+failures, `bazel: command not found`, `Unable to resolve host remote.buildbuddy.io`, or
+missing env files.
 
 **Recovery: read the implementation and replicate it manually.**
 
@@ -48,13 +48,6 @@ similar bypasses. The root cause is always a missing or broken session start hoo
 
 **Notify the user** if you suspect the session start hook failed — they may need to
 re-run it or debug the hook configuration. Do not silently work around the problem.
-
-**Known limitation:** Bazel's gRPC remote execution client cannot authenticate with
-Anthropic's egress proxy (gRPC doesn't support authenticated HTTP CONNECT proxies).
-BCR fetches work (Java HTTP layer handles 407 auth), but `--remote_executor` to
-`remote.buildbuddy.io` fails with `Unable to resolve host`. Tests tagged `requires_qemu`
-or needing RBE workers must be run via CI (BuildBuddy Workflows) or from a machine with
-direct internet access.
 
 ## Sandbox
 

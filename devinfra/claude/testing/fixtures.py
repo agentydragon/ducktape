@@ -60,6 +60,7 @@ def isolated_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[
     monkeypatch.setenv(settings.ENV_SUPERVISOR_DIR, str(supervisor_dir))
     monkeypatch.setenv(settings.ENV_SUPERVISOR_PORT, str(pick_free_port()))
     monkeypatch.setenv(settings.ENV_AUTH_PROXY_DIR, str(auth_proxy_dir))
+    monkeypatch.setenv(settings.ENV_AUTH_PROXY_PORT, str(pick_free_port()))
 
     with supervisor_cleanup(supervisor_dir / "supervisord.pid"):
         yield IsolatedSupervisorDirs(
