@@ -80,7 +80,9 @@ def main() -> None:
                     return
 
             span.set_attribute("hook.handled", True)
-            sys.stdout.write(output.model_dump_json(by_alias=True))
+            # exclude_none=True: Zod .optional() accepts absent fields but NOT null.
+            # Emitting "field": null causes validation failure in Claude Code.
+            sys.stdout.write(output.model_dump_json(by_alias=True, exclude_none=True))
         except Exception as e:
             span.set_status(trace.StatusCode.ERROR, str(e))
             span.record_exception(e)

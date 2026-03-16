@@ -432,6 +432,18 @@ py_test(
 )
 
 py_test(
+    name = "test_hook_output_serialization",
+    srcs = ["test_hook_output_serialization.py"],
+    imports = ["../.."],
+    deps = [
+        ":conftest",
+        "//devinfra/claude/claude_api/hooks:session_start",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_session_start_input",
     srcs = ["test_session_start_input.py"],
     imports = ["../.."],
