@@ -7,7 +7,6 @@ import (
 	"time"
 
 	h "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
-	"github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/initlib"
 )
 
 func TestDoubleNAT(t *testing.T) {
@@ -41,11 +40,9 @@ func TestDoubleNAT(t *testing.T) {
 		h.McastNIC("net0", mcastInternet, "52:54:00:ff:00:01")...)
 	sw.Lap("boot discovery VM")
 
-	// VPS: gets mgmt NIC with probe server port forward.
-	vmVPSProbePort := h.RandomPort()
-	vmVPS := h.BootVM(t, "vm-vps", vmlinuz, initramfs, kubespanBase+" role=vps",
-		append(h.McastNIC("net0", mcastInternet, "52:54:00:c0:00:01"),
-			h.MgmtNIC(vmVPSProbePort, initlib.ProbeServerPort, "52:54:00:c0:00:02")...)...)
+	vmVPS := h.BootKubespandVM(t, "vm-vps", vmlinuz, initramfs,
+		kubespanBase+" role=vps", false, "52:54:00:c0:00:02",
+		h.McastNIC("net0", mcastInternet, "52:54:00:c0:00:01"))
 	sw.Lap("boot VPS VM")
 
 	vmRouterA := h.BootVM(t, "vm-router-a", vmlinuz, initramfsRouter,
@@ -60,39 +57,31 @@ func TestDoubleNAT(t *testing.T) {
 			h.McastNIC("net1", mcastLanB, "52:54:00:c2:00:02")...)...)
 	sw.Lap("boot Router-B VM")
 
-	allVMs := []*h.VM{vmVPS, vmRouterA, vmRouterB, vmDiscovery}
+	allVMs := []*h.VM{vmVPS.VM, vmRouterA, vmRouterB, vmDiscovery}
 
 	h.RequireAllEvents(t, []*h.VM{vmDiscovery, vmRouterA, vmRouterB}, h.EventDone, 30*time.Second)
 	sw.Lap("infrastructure VMs ready")
 
-	// NAT1: gets mgmt NIC with probe server port forward.
-	vmNAT1ProbePort := h.RandomPort()
-	vmNAT1 := h.BootVM(t, "vm-nat1", vmlinuz, initramfs, kubespanBase+" role=nat1",
-		append(h.McastNIC("net0", mcastLanA, "52:54:00:d0:00:01"),
-			h.MgmtNIC(vmNAT1ProbePort, initlib.ProbeServerPort, "52:54:00:d0:00:02")...)...)
+	vmNAT1 := h.BootKubespandVM(t, "vm-nat1", vmlinuz, initramfs,
+		kubespanBase+" role=nat1", false, "52:54:00:d0:00:02",
+		h.McastNIC("net0", mcastLanA, "52:54:00:d0:00:01"))
 	sw.Lap("boot NAT1 VM")
 
-	// NAT2: gets mgmt NIC with both COSI API and probe server port forwards.
-	nat2COSIPort := h.RandomPort()
-	nat2ProbePort := h.RandomPort()
-	vmNAT2 := h.BootVM(t, "vm-nat2", vmlinuz, initramfs, kubespanBase+" role=nat2 listen_tcp=:50100",
-		append(h.McastNIC("net0", mcastLanB, "52:54:00:e0:00:01"),
-			h.MgmtNICMulti([]h.PortForward{
-				{HostPort: nat2COSIPort, GuestPort: 50100},
-				{HostPort: nat2ProbePort, GuestPort: initlib.ProbeServerPort},
-			}, "52:54:00:e0:00:02")...)...)
+	vmNAT2 := h.BootKubespandVM(t, "vm-nat2", vmlinuz, initramfs,
+		kubespanBase+" role=nat2 listen_tcp=:50100", true, "52:54:00:e0:00:02",
+		h.McastNIC("net0", mcastLanB, "52:54:00:e0:00:01"))
 	sw.Lap("boot NAT2 VM")
 
-	allVMs = append(allVMs, vmNAT1, vmNAT2)
+	allVMs = append(allVMs, vmNAT1.VM, vmNAT2.VM)
 	h.CleanupVMs(t, allVMs, out)
 
 	// Wait for all kubespand VMs to be ready.
-	h.RequireAllEvents(t, []*h.VM{vmVPS, vmNAT1, vmNAT2}, h.EventReady, 180*time.Second)
+	h.RequireAllEvents(t, []*h.VM{vmVPS.VM, vmNAT1.VM, vmNAT2.VM}, h.EventReady, 180*time.Second)
 	sw.Lap("kubespand VMs ready")
 
 	// Poll NAT2's PeerStatus — in double-NAT, only the VPS peer is expected
 	// to reach "up" (NAT1 is behind endpoint-dependent filtering).
-	nat2Peers, err := h.PollKubespandPeerStatus(t, fmt.Sprintf("127.0.0.1:%d", nat2COSIPort), 1, 180*time.Second)
+	nat2Peers, err := vmNAT2.PollPeerStatus(1, 180*time.Second)
 	if err != nil {
 		t.Errorf("NAT2 peer status poll: %v", err)
 	} else {
@@ -100,17 +89,14 @@ func TestDoubleNAT(t *testing.T) {
 	}
 	sw.Lap("NAT2 peers up (host-side PeerStatus)")
 
-	// Run probes from NAT2 to peers via probe RPC.
-	nat2ProbeAddr := fmt.Sprintf("127.0.0.1:%d", nat2ProbePort)
-
-	// Probe each discovered peer.
+	// Probe each discovered peer from NAT2.
 	icmpOK := false
 	tcpOK := false
 	for _, peer := range nat2Peers {
-		if h.ProbeICMP(t, nat2ProbeAddr, peer.Label, 60*time.Second) {
+		if vmNAT2.ProbeICMP(peer.Label, 60*time.Second) {
 			icmpOK = true
 		}
-		if h.ProbeTCP(t, nat2ProbeAddr, peer.Label, 9999, 30*time.Second) {
+		if vmNAT2.ProbeTCP(peer.Label, 9999, 30*time.Second) {
 			tcpOK = true
 		}
 	}
@@ -127,10 +113,9 @@ func TestDoubleNAT(t *testing.T) {
 	// Dump diagnostics on failure.
 	if t.Failed() {
 		t.Log("=== NAT2 diagnostics ===")
-		t.Log(h.DumpVMDiagnostics(t, nat2ProbeAddr))
-		vmVPSProbeAddr := fmt.Sprintf("127.0.0.1:%d", vmVPSProbePort)
+		t.Log(vmNAT2.DumpDiagnostics())
 		t.Log("=== VPS diagnostics ===")
-		t.Log(h.DumpVMDiagnostics(t, vmVPSProbeAddr))
+		t.Log(vmVPS.DumpDiagnostics())
 	}
 
 	summary := map[string]interface{}{

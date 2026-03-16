@@ -17,8 +17,6 @@ _TOPOLOGY_TAGS = [
 
 _TOPOLOGY_DEPS = [
     "//cluster/kubespand/qemu_tests",
-    "//cluster/kubespand/qemu_tests/vms/initlib",
-    "@io_bazel_rules_go//go/runfiles",
 ]
 
 # Each topology test gets its own RBE worker (4 VMs each: discovery + CP + VM-A + VM-B).

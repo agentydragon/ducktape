@@ -13,7 +13,5 @@ go_test(
     tags = ["requires_qemu"],
     deps = [
         "//cluster/kubespand/qemu_tests",
-        "//cluster/kubespand/qemu_tests/vms/initlib",
-        "@io_bazel_rules_go//go/runfiles",
     ],
 )

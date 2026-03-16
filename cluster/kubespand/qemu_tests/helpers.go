@@ -2,7 +2,6 @@ package qemu_tests
 
 import (
 	"bufio"
-	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -17,17 +16,7 @@ import (
 	"testing"
 	"time"
 
-	v1alpha1 "github.com/cosi-project/runtime/api/v1alpha1"
-	"github.com/cosi-project/runtime/pkg/safe"
-	"github.com/cosi-project/runtime/pkg/state"
-	stateclient "github.com/cosi-project/runtime/pkg/state/protobuf/client"
-	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
-
-	pb "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/probepb"
-
 	"github.com/bazelbuild/rules_go/go/runfiles"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Runfile paths for shared test artifacts.
@@ -455,76 +444,6 @@ func MgmtNIC(hostPort, guestPort int, mac string) []string {
 	}
 }
 
-// PollKubespandPeerStatus connects to kubespand's TCP COSI API and polls
-// PeerStatus resources until at least minPeers peers report state "up".
-// Other discovered peers may be in any state (unknown, down).
-func PollKubespandPeerStatus(t *testing.T, addr string, minPeers int, timeout time.Duration) ([]KubespanPeerResult, error) {
-	t.Helper()
-
-	deadline := time.Now().Add(timeout)
-	var lastErr string
-
-	for time.Now().Before(deadline) {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		conn, err := grpc.NewClient(addr,
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		)
-		if err != nil {
-			cancel()
-			lastErr = err.Error()
-			t.Logf("kubespand COSI connect (waiting): %s", lastErr)
-			time.Sleep(1 * time.Second)
-			continue
-		}
-
-		st := state.WrapCore(stateclient.NewAdapter(v1alpha1.NewStateClient(conn)))
-		list, err := safe.StateListAll[*kubespan.PeerStatus](ctx, st)
-		cancel()
-		conn.Close()
-
-		if err != nil {
-			lastErr = err.Error()
-			t.Logf("kubespand COSI poll (waiting): %s", lastErr)
-			time.Sleep(1 * time.Second)
-			continue
-		}
-
-		var peers []KubespanPeerResult
-		for it := list.Iterator(); it.Next(); {
-			ps := it.Value()
-			peers = append(peers, KubespanPeerResult{
-				Label:    ps.TypedSpec().Label,
-				State:    ps.TypedSpec().State,
-				Endpoint: ps.TypedSpec().Endpoint.String(),
-			})
-		}
-
-		upCount := 0
-		for _, p := range peers {
-			if p.State == kubespan.PeerStateUp {
-				upCount++
-			}
-		}
-
-		var peerSummary strings.Builder
-		for i, p := range peers {
-			if i > 0 {
-				peerSummary.WriteString("; ")
-			}
-			fmt.Fprintf(&peerSummary, "%s state=%s ep=%s", p.Label, p.State, p.Endpoint)
-		}
-		t.Logf("kubespand COSI poll: %d peers, %d up (need %d) [%s]", len(peers), upCount, minPeers, peerSummary.String())
-
-		if upCount >= minPeers {
-			return peers, nil
-		}
-
-		time.Sleep(1 * time.Second)
-	}
-
-	return nil, fmt.Errorf("timeout after %v waiting for %d peers up, last error: %s", timeout, minPeers, lastErr)
-}
-
 // PortForward maps a host port to a guest port for QEMU user-mode networking.
 type PortForward struct {
 	HostPort  int
@@ -541,119 +460,4 @@ func MgmtNICMulti(forwards []PortForward, mac string) []string {
 		"-netdev", fmt.Sprintf("user,id=mgmt,%s", strings.Join(fwds, ",")),
 		"-device", fmt.Sprintf("virtio-net-pci,netdev=mgmt,mac=%s", mac),
 	}
-}
-
-// ProbeICMP sends an ICMP probe request to a VM's probe server and retries
-// until the probe succeeds or the outer timeout expires.
-func ProbeICMP(t *testing.T, probeServerAddr, target string, timeout time.Duration) bool {
-	t.Helper()
-	deadline := time.Now().Add(timeout)
-
-	for time.Now().Before(deadline) {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		conn, err := grpc.NewClient(probeServerAddr,
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		)
-		if err != nil {
-			cancel()
-			t.Logf("probe ICMP connect %s: %v", probeServerAddr, err)
-			time.Sleep(1 * time.Second)
-			continue
-		}
-
-		client := pb.NewProbeServiceClient(conn)
-		resp, err := client.ICMPProbe(ctx, &pb.ICMPProbeRequest{
-			Target:         target,
-			TimeoutSeconds: 10,
-		})
-		cancel()
-		conn.Close()
-
-		if err != nil {
-			t.Logf("probe ICMP rpc %s→%s: %v", probeServerAddr, target, err)
-			time.Sleep(1 * time.Second)
-			continue
-		}
-
-		if resp.Success {
-			t.Logf("probe ICMP %s→%s: success", probeServerAddr, target)
-			return true
-		}
-
-		t.Logf("probe ICMP %s→%s: %s (retrying)", probeServerAddr, target, resp.Error)
-		time.Sleep(1 * time.Second)
-	}
-
-	t.Errorf("probe ICMP %s→%s: timed out after %v", probeServerAddr, target, timeout)
-	return false
-}
-
-// ProbeTCP sends a TCP probe request to a VM's probe server and retries
-// until the probe succeeds or the outer timeout expires.
-func ProbeTCP(t *testing.T, probeServerAddr, target string, port int, timeout time.Duration) bool {
-	t.Helper()
-	deadline := time.Now().Add(timeout)
-
-	for time.Now().Before(deadline) {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		conn, err := grpc.NewClient(probeServerAddr,
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		)
-		if err != nil {
-			cancel()
-			t.Logf("probe TCP connect %s: %v", probeServerAddr, err)
-			time.Sleep(1 * time.Second)
-			continue
-		}
-
-		client := pb.NewProbeServiceClient(conn)
-		resp, err := client.TCPProbe(ctx, &pb.TCPProbeRequest{
-			Target:         target,
-			Port:           int32(port),
-			TimeoutSeconds: 10,
-		})
-		cancel()
-		conn.Close()
-
-		if err != nil {
-			t.Logf("probe TCP rpc %s→%s:%d: %v", probeServerAddr, target, port, err)
-			time.Sleep(1 * time.Second)
-			continue
-		}
-
-		if resp.Success {
-			t.Logf("probe TCP %s→%s:%d: success", probeServerAddr, target, port)
-			return true
-		}
-
-		t.Logf("probe TCP %s→%s:%d: %s (retrying)", probeServerAddr, target, port, resp.Error)
-		time.Sleep(1 * time.Second)
-	}
-
-	t.Errorf("probe TCP %s→%s:%d: timed out after %v", probeServerAddr, target, port, timeout)
-	return false
-}
-
-// DumpVMDiagnostics fetches routing/WG/nftables state from a VM's probe server.
-func DumpVMDiagnostics(t *testing.T, probeServerAddr string) string {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	conn, err := grpc.NewClient(probeServerAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		t.Logf("diagnostics connect %s: %v", probeServerAddr, err)
-		return ""
-	}
-	defer conn.Close()
-
-	client := pb.NewProbeServiceClient(conn)
-	resp, err := client.Diagnostics(ctx, &pb.DiagnosticsRequest{})
-	if err != nil {
-		t.Logf("diagnostics rpc %s: %v", probeServerAddr, err)
-		return ""
-	}
-	return resp.Output
 }
