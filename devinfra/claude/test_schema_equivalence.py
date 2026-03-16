@@ -17,11 +17,15 @@ from pydantic import TypeAdapter
 
 from devinfra.claude.claude_api.hooks.config_change import ConfigChangeOutput
 from devinfra.claude.claude_api.hooks.elicitation import ElicitationOutput, ElicitationResultOutput
+from devinfra.claude.claude_api.hooks.notification import NotificationOutput
 from devinfra.claude.claude_api.hooks.permission_request import PermissionRequestOutput
 from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseOutput
+from devinfra.claude.claude_api.hooks.post_tool_use_failure import PostToolUseFailureOutput
 from devinfra.claude.claude_api.hooks.pre_tool_use import PreToolUseOutput
 from devinfra.claude.claude_api.hooks.session_start import SessionStartOutput
+from devinfra.claude.claude_api.hooks.setup import SetupOutput
 from devinfra.claude.claude_api.hooks.stop import StopOutput, SubagentStopOutput
+from devinfra.claude.claude_api.hooks.subagent_start import SubagentStartOutput
 from devinfra.claude.claude_api.hooks.user_prompt_submit import UserPromptSubmitOutput
 from util.bazel.runfiles import get_required_path
 
@@ -66,12 +70,16 @@ def _extract_zod_hook_specific_variants(zod_schema: dict[str, Any]) -> dict[str,
 # Map from Zod hookEventName to Pydantic output model class
 _HOOK_OUTPUT_MODELS: dict[str, type] = {
     "SessionStart": SessionStartOutput,
+    "Setup": SetupOutput,
     "PreToolUse": PreToolUseOutput,
     "PostToolUse": PostToolUseOutput,
+    "PostToolUseFailure": PostToolUseFailureOutput,
     "UserPromptSubmit": UserPromptSubmitOutput,
+    "Notification": NotificationOutput,
     "PermissionRequest": PermissionRequestOutput,
     "Elicitation": ElicitationOutput,
     "ElicitationResult": ElicitationResultOutput,
+    "SubagentStart": SubagentStartOutput,
 }
 
 # Models that share the same common fields but have no hookSpecificOutput in Zod

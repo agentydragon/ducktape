@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from devinfra.claude.claude_api.hooks.common import HookInputBase
+from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase, HookOutputBase
 
 
 class PostToolUseFailureInput(HookInputBase):
@@ -14,3 +14,12 @@ class PostToolUseFailureInput(HookInputBase):
     tool_use_id: str
     error: str
     is_interrupt: bool | None = Field(default=None, description="Whether failure was due to user interruption")
+
+
+class PostToolUseFailureHookSpecificOutput(CamelModel):
+    hook_event_name: Literal["PostToolUseFailure"] = "PostToolUseFailure"
+    additional_context: str | None = None
+
+
+class PostToolUseFailureOutput(HookOutputBase):
+    hook_specific_output: PostToolUseFailureHookSpecificOutput | None = None

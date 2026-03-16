@@ -1,17 +1,10 @@
 # JSON Schema files generated from hooks.zod.js via export_json_schema.mjs.
 # To regenerate: cd to this directory, run `npm install --no-save zod`,
-# then `node export_json_schema.mjs hookOutput > hook_output.json`
-# and `node export_json_schema.mjs AnyHookInput > hook_input.json`.
+# then `node export_json_schema.mjs hookOutput > hook_output.json`.
 # Clean up node_modules afterward.
 
 filegroup(
     name = "hook_output_schema",
     srcs = ["hook_output.json"],
-    visibility = ["//devinfra/claude:__subpackages__"],
-)
-
-filegroup(
-    name = "hook_input_schema",
-    srcs = ["hook_input.json"],
     visibility = ["//devinfra/claude:__subpackages__"],
 )

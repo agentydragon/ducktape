@@ -124,6 +124,14 @@ py_library(
 )
 
 py_library(
+    name = "setup",
+    srcs = ["setup.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [":common"],
+)
+
+py_library(
     name = "pre_compact",
     srcs = ["pre_compact.py"],
     imports = ["../../../.."],
