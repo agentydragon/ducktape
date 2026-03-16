@@ -32,6 +32,12 @@ output "talos_config" {
   sensitive   = true
 }
 
+output "talos_reader_config" {
+  description = "Talos readonly client configuration (os:reader role)"
+  value       = local.talos_reader_config
+  sensitive   = true
+}
+
 # ============================================================================
 # CLUSTER INFORMATION
 # ============================================================================
