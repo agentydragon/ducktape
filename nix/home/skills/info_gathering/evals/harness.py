@@ -2,7 +2,6 @@
 
 Agent (uses skill) vs Simulator (holds ground truth). Provides:
 - LLMClient wrapping LiteLLM (call, resolve_tool_calls)
-- Conversation eval runner (run_conversation_eval)
 - CLI utilities (add_common_args, load_skill, etc.)
 - Pydantic models for results and logging
 
@@ -23,7 +22,6 @@ import litellm
 from litellm.types.utils import Usage
 from pydantic import BaseModel
 
-from agent_core.direct_provider import DirectToolProvider
 from agent_core.tool_provider import ToolProvider
 from nix.home.skills.info_gathering.evals.litellm_tool_provider import (
     ToolParam,
@@ -40,22 +38,6 @@ litellm.suppress_debug_info = True
 
 
 # === Pydantic models ==========================================================
-
-
-class Judged(BaseModel):
-    """Result from simulator judgment or Python-side scoring."""
-
-    outcome: Literal["correct", "incorrect", "partial", "timeout"]
-    score: float = 0
-    summary: str = ""
-
-
-class EndGameInput(BaseModel):
-    """Input schema for the end_game tool (simulator terminates the game)."""
-
-    outcome: Literal["correct", "incorrect", "partial"]
-    score: float
-    summary: str
 
 
 class LogEntry(BaseModel):
@@ -117,12 +99,6 @@ def tool_def(name: str, description: str, input_model: type[BaseModel]) -> ToolP
 
 
 # === LLM client ===============================================================
-
-
-def extract_text(response: Any) -> str:
-    """Extract text content from a LiteLLM ModelResponse."""
-    msg = response.choices[0].message
-    return msg.content or ""
 
 
 def extract_tool_calls(response: Any) -> list[Any]:
@@ -331,89 +307,3 @@ def client_from_args(args: argparse.Namespace) -> LLMClient:
     return LLMClient(
         model=args.model, thinking_budget=thinking_from_args(args), base_url=args.base_url, api_key=args.api_key
     )
-
-
-# === Conversation eval runner =================================================
-
-
-async def run_conversation_eval(
-    *,
-    name: str,
-    client: LLMClient,
-    agent_system: str,
-    first_user_message: str,
-    sim_system: str,
-    turn_limit: int = 20,
-    output_dir: Path,
-) -> RunSummary:
-    """Run a conversation eval: agent and simulator exchange text.
-
-    Simulator may call end_game to finish. Agent has no tools in this pattern.
-    """
-    tracker = TokenTracker(model=client.model)
-    log_entries: list[LogEntry] = []
-    result: Judged | None = None
-
-    agent_messages: list[dict[str, Any]] = [{"role": "user", "content": first_user_message}]
-    sim_messages: list[dict[str, Any]] = []
-
-    sim_provider = DirectToolProvider()
-
-    @sim_provider.tool
-    def end_game(args: EndGameInput) -> None:
-        """End the game. Call when the agent states a final answer."""
-        nonlocal result
-        result = Judged(outcome=args.outcome, score=args.score, summary=args.summary)
-
-    sim_tool_params = await tool_params_from_provider(sim_provider)
-
-    for turn in range(1, turn_limit + 1):
-        logger.info("Turn %d...", turn)
-
-        # Agent turn (no tools)
-        agent_resp = await client.call(messages=agent_messages, system=agent_system)
-        tracker.add(agent_resp.usage)
-        log_response(log_entries, name=name, player="agent", turn=turn, model=client.model, response=agent_resp)
-
-        agent_msg = _serialize_message(agent_resp.choices[0].message)
-        agent_messages.append(agent_msg)
-
-        agent_text = (agent_msg["content"] or "").strip()
-        if not agent_text:
-            continue
-
-        # Simulator turn (with tools)
-        sim_messages.append({"role": "user", "content": agent_text})
-        sim_resp = await client.call(messages=sim_messages, system=sim_system, tools=sim_tool_params)
-        tracker.add(sim_resp.usage)
-        log_response(log_entries, name=name, player="simulator", turn=turn, model=client.model, response=sim_resp)
-
-        if extract_tool_calls(sim_resp):
-            sim_resp, sim_messages, usages = await client.resolve_tool_calls(
-                response=sim_resp, messages=sim_messages, system=sim_system, provider=sim_provider
-            )
-            for u in usages:
-                tracker.add(u)
-            log_response(log_entries, name=name, player="simulator", turn=turn, model=client.model, response=sim_resp)
-
-        sim_msg = _serialize_message(sim_resp.choices[0].message)
-        sim_messages.append(sim_msg)
-        agent_messages.append({"role": "user", "content": (sim_msg["content"] or "").strip()})
-
-        if result:
-            break
-    else:
-        result = Judged(outcome="timeout", summary=f"Hit {turn_limit} turn limit")
-
-    summary = RunSummary(
-        eval_name=name,
-        model=client.model,
-        turns=turn,
-        result=result,
-        api_calls=tracker.api_calls,
-        input_tokens=tracker.input_tokens,
-        output_tokens=tracker.output_tokens,
-        api_cost_usd=round(tracker.cost_usd, 4),
-    )
-    save_results(name=name, log_entries=log_entries, summary=summary, output_dir=output_dir)
-    return summary

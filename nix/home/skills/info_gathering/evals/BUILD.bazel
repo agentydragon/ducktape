@@ -18,7 +18,6 @@ py_library(
     visibility = ["//nix/home/skills/info_gathering/evals:__subpackages__"],
     deps = [
         ":litellm_tool_provider",
-        "//agent_core:direct_provider",
         "//agent_core:tool_provider",
         "//openai_utils:json_schema",
         "//util/bazel:runfiles",

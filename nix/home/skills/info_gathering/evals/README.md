@@ -14,7 +14,6 @@ Each eval tests a different aspect of the info-gathering skill. See each eval's
 `harness.py` provides shared infrastructure:
 
 - `LLMClient` — LiteLLM wrapper (call, resolve_tool_calls)
-- `run_conversation_eval` — generic agent-vs-simulator loop
 - CLI utilities (`add_common_args`, `client_from_args`, etc.)
 - Result models (`RunSummary`, `LogEntry`, `TokenTracker`)
 
