@@ -49,38 +49,11 @@ class LogEntry(BaseModel):
     usage: dict[str, Any]
 
 
-class TokenTracker(BaseModel):
-    model: str
-    api_calls: int = 0
-    input_tokens: int = 0
-    output_tokens: int = 0
-
-    PRICING: dict[str, dict[str, float]] = {
-        "anthropic/claude-haiku-4-5-20251001": {"input": 1.0, "output": 5.0},
-        "anthropic/claude-sonnet-4-6-20250514": {"input": 3.0, "output": 15.0},
-        "anthropic/claude-opus-4-6-20250514": {"input": 15.0, "output": 75.0},
-    }
-
-    def add(self, usage: Usage) -> None:
-        self.input_tokens += usage.prompt_tokens or 0
-        self.output_tokens += usage.completion_tokens or 0
-        self.api_calls += 1
-
-    @property
-    def cost_usd(self) -> float:
-        p = self.PRICING.get(self.model, {"input": 1.0, "output": 5.0})
-        return (self.input_tokens * p["input"] + self.output_tokens * p["output"]) / 1_000_000
-
-
 class RunSummary(BaseModel):
     eval_name: str
     model: str
     turns: int
     result: BaseModel
-    api_calls: int = 0
-    input_tokens: int = 0
-    output_tokens: int = 0
-    api_cost_usd: float = 0
 
 
 # === Tool helpers ==============================================================

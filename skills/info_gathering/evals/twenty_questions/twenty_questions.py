@@ -21,7 +21,6 @@ from skills.info_gathering.evals.harness import (
     LLMClient,
     LogEntry,
     RunSummary,
-    TokenTracker,
     _serialize_message,
     add_common_args,
     build_agent_system,
@@ -114,7 +113,6 @@ class _TwentyQuestionsRunner:
         self.agent_system = agent_system
         self.sim_system = sim_system
         self.agent_tool_provider = agent_tool_provider
-        self.tracker = TokenTracker(model=client.model)
         self.log_entries: list[LogEntry] = []
         self.agent_messages: list[dict[str, Any]] = []
         self.sim_messages: list[dict[str, Any]] = []
@@ -126,21 +124,18 @@ class _TwentyQuestionsRunner:
         agent_resp = await self.client.call(
             messages=self.agent_messages, system=self.agent_system, tools=agent_tool_params or None
         )
-        self.tracker.add(agent_resp.usage)
         log_response(
             self.log_entries, name=self.name, player="agent", turn=turn, model=self.client.model, response=agent_resp
         )
 
         # Resolve any scratch tool calls — does not count as a new turn
         if extract_tool_calls(agent_resp):
-            agent_resp, self.agent_messages, usages = await self.client.resolve_tool_calls(
+            agent_resp, self.agent_messages, _ = await self.client.resolve_tool_calls(
                 response=agent_resp,
                 messages=self.agent_messages,
                 system=self.agent_system,
                 provider=self.agent_tool_provider,
             )
-            for u in usages:
-                self.tracker.add(u)
             log_response(
                 self.log_entries,
                 name=self.name,
@@ -167,7 +162,6 @@ class _TwentyQuestionsRunner:
         sim_resp = await self.client.call(
             messages=self.sim_messages, system=self.sim_system, tools=SIM_TOOLS, tool_choice="required"
         )
-        self.tracker.add(sim_resp.usage)
         log_response(
             self.log_entries, name=self.name, player="simulator", turn=turn, model=self.client.model, response=sim_resp
         )
@@ -225,10 +219,6 @@ class _TwentyQuestionsRunner:
             model=self.client.model,
             turns=turn,
             result=result,
-            api_calls=self.tracker.api_calls,
-            input_tokens=self.tracker.input_tokens,
-            output_tokens=self.tracker.output_tokens,
-            api_cost_usd=round(self.tracker.cost_usd, 4),
         )
         save_results(name=self.name, log_entries=self.log_entries, summary=summary, output_dir=output_dir)
         return summary
