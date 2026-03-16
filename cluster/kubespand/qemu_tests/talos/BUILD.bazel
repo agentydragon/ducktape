@@ -18,11 +18,6 @@ filegroup(
     output_group = "tarball",
 )
 
-exports_files(
-    glob(["testdata/**"]),
-    visibility = ["//cluster/kubespand:__subpackages__"],
-)
-
 genrule(
     name = "talos_nocloud_image",
     srcs = [
@@ -47,7 +42,7 @@ go_test(
         "//cluster/kubespand/qemu_tests:vmlinuz",
         "//cluster/kubespand/qemu_tests/vms/discovery:initramfs",
         "//cluster/kubespand/qemu_tests/vms/router:initramfs",
-    ] + glob(["testdata/**"]),
+    ],
     tags = [
         "cpu:4",
         "requires_qemu",

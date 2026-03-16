@@ -24,14 +24,36 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 	out := h.OutputDir(t)
 	tmpDir := t.TempDir()
 
-	vpsConfig := h.ReadRunfile(t, h.TalosVPSConfig)
-	nat1Config := h.ReadRunfile(t, h.TalosNAT1Config)
-	nat2Config := h.ReadRunfile(t, h.TalosNAT2Config)
+	// Generate all crypto material and Talos configs at test time.
+	secrets := h.GenerateTestTalosSecrets(t)
+
+	vpsConfig := secrets.ControlPlaneConfig(h.TalosNodeConfig{
+		IP:                   "192.168.50.2/24",
+		ControlPlaneEndpoint: "https://192.168.50.2:6443",
+		DiscoveryEndpoint:    "http://192.168.50.254:3000",
+		EndpointFilters:      []string{"0.0.0.0/0"},
+		CertSANs:             []string{"192.168.50.2", "127.0.0.1"},
+	})
+	nat1Config := secrets.WorkerConfig(h.TalosNodeConfig{
+		IP:                   "192.168.60.2/24",
+		Gateway:              "192.168.60.1",
+		ControlPlaneEndpoint: "https://192.168.50.2:6443",
+		DiscoveryEndpoint:    "http://192.168.50.254:3000",
+		EndpointFilters:      []string{"0.0.0.0/0"},
+	})
+	nat2Config := secrets.WorkerConfig(h.TalosNodeConfig{
+		IP:                   "192.168.70.2/24",
+		Gateway:              "192.168.70.1",
+		ControlPlaneEndpoint: "https://192.168.50.2:6443",
+		DiscoveryEndpoint:    "http://192.168.50.254:3000",
+		EndpointFilters:      []string{"0.0.0.0/0"},
+	})
+	talosConfigPath := secrets.WriteTalosconfig(t, tmpDir)
 
 	vpsCI := h.CreateCIDATA(t, tmpDir, "vps", vpsConfig)
 	nat1CI := h.CreateCIDATA(t, tmpDir, "nat1", nat1Config)
 	nat2CI := h.CreateCIDATA(t, tmpDir, "nat2", nat2Config)
-	sw.Lap("create CIDATA volumes")
+	sw.Lap("generate configs + create CIDATA volumes")
 
 	mcastPortInternet := h.RandomPort()
 	mcastPortLan1 := h.RandomPort()
@@ -70,8 +92,6 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 
 	allVMs := []*h.VM{vmVPS, vmNAT1, vmNAT2, vmRouter1, vmRouter2, vmDiscovery}
 	h.CleanupVMs(t, allVMs, out)
-
-	talosConfigPath := h.RunfilePath(t, h.TalosConfig)
 
 	// Create Talos API clients for all three nodes.
 	type talosNode struct {

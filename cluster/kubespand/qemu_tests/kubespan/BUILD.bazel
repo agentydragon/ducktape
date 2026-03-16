@@ -3,9 +3,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 _TOPOLOGY_DATA = [
     "//cluster/kubespand/qemu_tests:vmlinuz",
     "//cluster/kubespand/qemu_tests/talos:talos_nocloud_image",
-    "//cluster/kubespand/qemu_tests/talos:testdata/cp-kubespan.yaml",
-    "//cluster/kubespand/qemu_tests/talos:testdata/cp-kubespan-cross.yaml",
-    "//cluster/kubespand/qemu_tests/talos:testdata/talosconfig.yaml",
     "//cluster/kubespand/qemu_tests/vms/discovery:initramfs",
     "//cluster/kubespand/qemu_tests/vms/kubespan:initramfs",
 ]
@@ -52,8 +49,6 @@ go_test(
     data = [
         "//cluster/kubespand/qemu_tests:vmlinuz",
         "//cluster/kubespand/qemu_tests/talos:talos_nocloud_image",
-        "//cluster/kubespand/qemu_tests/talos:testdata/talosconfig.yaml",
-        "//cluster/kubespand/qemu_tests/talos:testdata/vps-controlplane.yaml",
         "//cluster/kubespand/qemu_tests/vms/discovery:initramfs",
         "//cluster/kubespand/qemu_tests/vms/trustd:initramfs",
     ],

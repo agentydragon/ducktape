@@ -28,10 +28,19 @@ func TestTrustdCSRFlow(t *testing.T) {
 	out := h.OutputDir(t)
 	tmpDir := t.TempDir()
 
-	// Extract shared credentials from the Talos CP config.
-	vpsConfigData := h.ReadRunfile(t, h.TalosVPSConfig)
-	creds := h.ExtractClusterCreds(t, vpsConfigData)
-	sw.Lap("parse talos config")
+	// Generate all crypto material and configs at test time.
+	secrets := h.GenerateTestTalosSecrets(t)
+	creds := secrets.Creds()
+
+	vpsConfigData := secrets.ControlPlaneConfig(h.TalosNodeConfig{
+		IP:                   "192.168.50.2/24",
+		ControlPlaneEndpoint: "https://192.168.50.2:6443",
+		DiscoveryEndpoint:    "http://192.168.50.254:3000",
+		EndpointFilters:      []string{"192.168.50.0/24"},
+		CertSANs:             []string{"192.168.50.2", "127.0.0.1"},
+	})
+	talosConfigPath := secrets.WriteTalosconfig(t, tmpDir)
+	sw.Lap("generate talos configs")
 
 	// Create CIDATA for the Talos CP VM.
 	vpsCI := h.CreateCIDATA(t, tmpDir, "vps", vpsConfigData)
@@ -74,7 +83,6 @@ func TestTrustdCSRFlow(t *testing.T) {
 	h.CleanupVMs(t, allVMs, out)
 
 	// On failure, dump all available diagnostics before cleanup kills the VMs.
-	var talosConfigPath string
 	t.Cleanup(func() {
 		if !t.Failed() {
 			return
@@ -97,12 +105,10 @@ func TestTrustdCSRFlow(t *testing.T) {
 		}
 
 		// Talos CP diagnostics (if API was available).
-		if talosConfigPath != "" {
-			t.Log("--- Talos CP KubeSpan diagnostics (post-failure) ---")
-			client := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
-			defer client.Close()
-			h.DumpKubeSpanDiagnostics(t, client, "192.168.50.2")
-		}
+		t.Log("--- Talos CP KubeSpan diagnostics (post-failure) ---")
+		client := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
+		defer client.Close()
+		h.DumpKubeSpanDiagnostics(t, client, "192.168.50.2")
 
 		t.Log("=== END FAILURE DIAGNOSTICS ===")
 	})
@@ -112,7 +118,6 @@ func TestTrustdCSRFlow(t *testing.T) {
 	sw.Lap("discovery VM ready")
 
 	// Wait for Talos CP API (boot takes ~60-120s on TCG).
-	talosConfigPath = h.RunfilePath(t, h.TalosConfig)
 	talosClient := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
 	defer talosClient.Close()
 	h.WaitForTalosAPI(t, talosClient, "192.168.50.2", 180*time.Second)

@@ -5,7 +5,6 @@ go_library(
     testonly = True,
     srcs = [
         "kubespanlib.go",
-        "probes.go",
     ],
     importpath = "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/kubespanlib",
     visibility = ["//cluster/kubespand:__subpackages__"],

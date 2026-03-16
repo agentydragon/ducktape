@@ -23,20 +23,18 @@ func runTopology(t *testing.T, topology string) {
 	mcastAddr := fmt.Sprintf("230.0.0.1:%d", mcastPort)
 
 	// Topology-specific parameters.
-	var cpConfigPath, cpIP, discIP string
+	var cpIP, discIP string
 	var linkIPA, linkIPB, peerSubnetA, peerSubnetB string
 	var endpointFilters []string
 
 	switch topology {
 	case "flat":
-		cpConfigPath = h.KubespanCPConfig
 		cpIP = "192.168.50.253"
 		discIP = "192.168.50.254"
 		linkIPA = "192.168.50.1"
 		linkIPB = "192.168.50.2"
 		endpointFilters = []string{"192.168.50.0/24"}
 	case "cross_subnet":
-		cpConfigPath = h.KubespanCPCrossConfig
 		cpIP = "10.0.0.253"
 		discIP = "10.1.0.254"
 		linkIPA = "10.1.0.1"
@@ -46,9 +44,23 @@ func runTopology(t *testing.T, topology string) {
 		endpointFilters = []string{"10.0.0.0/8"}
 	}
 
-	cpConfigData := h.ReadRunfile(t, cpConfigPath)
-	creds := h.ExtractClusterCreds(t, cpConfigData)
 	discAddr := fmt.Sprintf("%s:3000", discIP)
+	tmpDir := t.TempDir()
+
+	// Generate all crypto material and Talos configs at test time.
+	secrets := h.GenerateTestTalosSecrets(t)
+	creds := secrets.Creds()
+
+	cpConfigData := secrets.ControlPlaneConfig(h.TalosNodeConfig{
+		IP:                   fmt.Sprintf("%s/24", cpIP),
+		ControlPlaneEndpoint: fmt.Sprintf("https://%s:6443", cpIP),
+		DiscoveryEndpoint:    fmt.Sprintf("http://%s:3000", discIP),
+		EndpointFilters:      endpointFilters,
+		CertSANs:             []string{cpIP, "127.0.0.1"},
+	})
+
+	talosConfigPath := secrets.WriteTalosconfig(t, tmpDir)
+	sw.Lap("generate talos configs")
 
 	// Discovery VM with extra forward for HTTP health check from the test host.
 	vmDisc := h.BootVM(t, "vm-disc", vmlinuz, initramfsDisc,
@@ -56,8 +68,6 @@ func runTopology(t *testing.T, topology string) {
 		h.McastNIC("net0", mcastAddr, "52:54:00:ff:00:01"),
 		h.PortForward{GuestPort: 3000})
 	sw.Lap("boot discovery VM")
-
-	tmpDir := t.TempDir()
 
 	cfgB := h.NewTestAgentConfig(creds, discAddr)
 	cfgB.Kubespan.ListenPort = 51821
@@ -142,7 +152,7 @@ func runTopology(t *testing.T, topology string) {
 	sw.Lap("probes completed")
 
 	// Observe KubeSpan peer status from the Talos CP's API.
-	talosClient := h.NewTalosClient(t, h.RunfilePath(t, h.TalosConfig), fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
+	talosClient := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
 	defer talosClient.Close()
 	h.WaitForTalosAPI(t, talosClient, cpIP, 180*time.Second)
 	sw.Lap("Talos CP API ready")

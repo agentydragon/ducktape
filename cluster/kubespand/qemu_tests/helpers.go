@@ -43,14 +43,6 @@ const (
 	TrustdInitramfs    = "cluster/kubespand/qemu_tests/vms/trustd/initramfs.cpio.gz"
 	// Talos nocloud image built by genrule — under _main/ prefix.
 	TalosNocloudImagePath = "cluster/kubespand/qemu_tests/talos/nocloud-amd64.qcow2"
-
-	// Pre-generated Talos configs (committed as testdata).
-	KubespanCPConfig      = "cluster/kubespand/qemu_tests/talos/testdata/cp-kubespan.yaml"
-	KubespanCPCrossConfig = "cluster/kubespand/qemu_tests/talos/testdata/cp-kubespan-cross.yaml"
-	TalosVPSConfig        = "cluster/kubespand/qemu_tests/talos/testdata/vps-controlplane.yaml"
-	TalosNAT1Config       = "cluster/kubespand/qemu_tests/talos/testdata/nat1-worker.yaml"
-	TalosNAT2Config       = "cluster/kubespand/qemu_tests/talos/testdata/nat2-worker.yaml"
-	TalosConfig           = "cluster/kubespand/qemu_tests/talos/testdata/talosconfig.yaml"
 )
 
 // Well-known guest ports for the management NIC.
@@ -427,19 +419,6 @@ type TestClusterCreds struct {
 	MachineToken string // Talos machine token (from machine.token)
 }
 
-// ExtractClusterCreds parses a Talos machine config and returns the shared
-// credentials needed by both Talos VMs and kubespand agent configs.
-func ExtractClusterCreds(t *testing.T, talosConfigData []byte) TestClusterCreds {
-	t.Helper()
-	cfg := ParseTalosConfig(t, talosConfigData)
-	return TestClusterCreds{
-		ClusterID:    cfg.ClusterConfig.ClusterID,
-		SharedSecret: cfg.ClusterConfig.ClusterSecret,
-		CACrt:        string(cfg.MachineConfig.MachineCA.Crt),
-		MachineToken: cfg.MachineConfig.MachineToken,
-	}
-}
-
 // NewRandomCreds generates random cluster credentials for tests that don't
 // need a Talos config (e.g., kubespand-only double-NAT tests).
 func NewRandomCreds() TestClusterCreds {
@@ -633,7 +612,7 @@ func (v *VM) DumpDiagnostics() string {
 
 // PollPeerStatus connects to kubespand's COSI API and polls PeerStatus
 // resources until at least minPeers report state "up".
-func (v *VM) PollPeerStatus(minPeers int, timeout time.Duration) ([]KubespanPeerResult, error) {
+func (v *VM) PollPeerStatus(minPeers int, timeout time.Duration) ([]kubespan.PeerStatusSpec, error) {
 	v.t.Helper()
 
 	if v.cosiAddr == "" {
@@ -668,14 +647,9 @@ func (v *VM) PollPeerStatus(minPeers int, timeout time.Duration) ([]KubespanPeer
 			continue
 		}
 
-		var peers []KubespanPeerResult
+		var peers []kubespan.PeerStatusSpec
 		for it := list.Iterator(); it.Next(); {
-			ps := it.Value()
-			peers = append(peers, KubespanPeerResult{
-				Label:    ps.TypedSpec().Label,
-				State:    ps.TypedSpec().State,
-				Endpoint: ps.TypedSpec().Endpoint.String(),
-			})
+			peers = append(peers, *it.Value().TypedSpec())
 		}
 
 		upCount := 0
