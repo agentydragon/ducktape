@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pygit2
 
-from util.bazel.query import BazelLabel, BazelWorkspace, run_query
+from util.bazel.query import BazelLabel, BazelWorkspace
 
 # Infrastructure files that affect too many targets — CI catches these.
 _INFRA_PATTERNS = (
@@ -130,7 +130,7 @@ def main() -> int:
     validate_expr = f'kind("source file", {pkg_union})'
 
     try:
-        known_sources = set(run_query(validate_expr, cwd=repo_root, timeout=timeout))
+        known_sources = set(workspace.query(validate_expr, timeout=timeout))
     except subprocess.TimeoutExpired:
         print(f"{_PREFIX}: bazel query (validate) timed out after {timeout}s", file=sys.stderr)
         return 1
@@ -167,9 +167,7 @@ def main() -> int:
     rdeps_expr = f'kind(".*_test", rdeps({universe_expr}, set({labels_set})))'
 
     try:
-        targets = [
-            str(label) for label in run_query(rdeps_expr, cwd=repo_root, timeout=timeout, universe_scope=universe_scope)
-        ]
+        targets = [str(label) for label in workspace.query(rdeps_expr, timeout=timeout, universe_scope=universe_scope)]
     except subprocess.TimeoutExpired:
         print(f"{_PREFIX}: bazel query (rdeps) timed out after {timeout}s", file=sys.stderr)
         return 1
@@ -191,18 +189,14 @@ def main() -> int:
 
     if run_tests:
         print(f"{_PREFIX}: running tests (DUCKTAPE_PRECOMMIT_RUN_TESTS=1)...")
-        cmd = ["bazel", "test", *targets]
-    else:
-        # Fast path: just check if tests are cached and passing.
-        cmd = ["bazel", "test", "--check_tests_up_to_date", *targets]
 
     try:
-        result = subprocess.run(cmd, check=False, cwd=repo_root, timeout=timeout)
+        rc = workspace.test(targets, check_up_to_date=not run_tests, timeout=timeout)
     except subprocess.TimeoutExpired:
         print(f"{_PREFIX}: bazel test timed out after {timeout}s", file=sys.stderr)
         return 1
 
-    if result.returncode == 0:
+    if rc == 0:
         return 0
 
     if run_tests:

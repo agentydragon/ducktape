@@ -14,7 +14,6 @@ Usage:
 
 from __future__ import annotations
 
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -22,7 +21,7 @@ from pathlib import Path
 import pygit2
 
 from devinfra.precommit.enforce_bazel_tests import _build_universe
-from util.bazel.query import BazelWorkspace, run_query
+from util.bazel.query import BazelWorkspace
 from util.fs import restore_file
 
 # The file we'll temporarily modify to simulate a change.
@@ -30,26 +29,17 @@ _TARGET_FILE = Path("util/bazel/query.py")
 _SENTINEL = "\n# benchmark-sentinel-comment\n"
 
 
-def _repo_root() -> Path:
-    repo = pygit2.Repository(".")
-    return Path(repo.workdir).resolve()
-
-
-def _assert_git_clean(repo_root: Path) -> None:
+def _assert_git_clean(repo: pygit2.Repository) -> None:
     """Raise if the working tree has uncommitted changes."""
-    repo = pygit2.Repository(str(repo_root))
-    status = {path: flags for path, flags in repo.status().items() if flags != pygit2.GIT_STATUS_IGNORED}
-    if status:
-        raise RuntimeError(f"git working tree is not clean ({len(status)} dirty files). Commit or stash first.")
-
-
-def _shutdown_bazel(repo_root: Path) -> None:
-    subprocess.run(["bazel", "shutdown"], cwd=repo_root, check=True, capture_output=True)
+    dirty = {path: flags for path, flags in repo.status().items() if flags != pygit2.GIT_STATUS_IGNORED}
+    if dirty:
+        raise RuntimeError(f"git working tree is not clean ({len(dirty)} dirty files). Commit or stash first.")
 
 
 def main() -> int:
-    repo_root = _repo_root()
-    _assert_git_clean(repo_root)
+    repo = pygit2.Repository(".")
+    repo_root = Path(repo.workdir).resolve()
+    _assert_git_clean(repo)
 
     workspace = BazelWorkspace(root=repo_root)
     label = workspace.file_to_label(_TARGET_FILE)
@@ -69,7 +59,7 @@ def main() -> int:
 
         # Shut down the Bazel server for a cold-start measurement.
         print("shutting down bazel server...")
-        _shutdown_bazel(repo_root)
+        workspace.shutdown()
 
         print("starting benchmark (cold bazel server)...\n")
         t0 = time.monotonic()
@@ -78,7 +68,7 @@ def main() -> int:
         t1_start = time.monotonic()
         pkg_str = str(label.package) if label.package != Path() else ""
         validate_expr = f'kind("source file", //{pkg_str}:*)'
-        known_sources = set(run_query(validate_expr, cwd=repo_root))
+        known_sources = set(workspace.query(validate_expr))
         t1_end = time.monotonic()
 
         if label not in known_sources:
@@ -97,7 +87,7 @@ def main() -> int:
         universe_scope = ",".join(parts)
 
         rdeps_expr = f'kind(".*_test", rdeps({universe_expr}, set({label})))'
-        targets = run_query(rdeps_expr, cwd=repo_root, universe_scope=universe_scope)
+        targets = workspace.query(rdeps_expr, universe_scope=universe_scope)
         t2_end = time.monotonic()
 
         t_total = time.monotonic() - t0

@@ -143,6 +143,38 @@ class BazelWorkspace:
         rel = filepath.relative_to(pkg) if pkg != Path() else filepath
         return BazelLabel(repo="", package=pkg, name=str(rel))
 
+    def query(
+        self,
+        expr: str,
+        *,
+        persist_dir: Path | None = None,
+        keep_going: bool = False,
+        timeout: int | None = None,
+        universe_scope: str | None = None,
+    ) -> list[BazelLabel]:
+        """Run ``bazel query`` in this workspace."""
+        return run_query(
+            expr,
+            cwd=self.root,
+            persist_dir=persist_dir,
+            keep_going=keep_going,
+            timeout=timeout,
+            universe_scope=universe_scope,
+        )
+
+    def test(self, targets: list[str], *, check_up_to_date: bool = False, timeout: int | None = None) -> int:
+        """Run ``bazel test`` and return the exit code."""
+        cmd = ["bazel", "test"]
+        if check_up_to_date:
+            cmd.append("--check_tests_up_to_date")
+        cmd.extend(targets)
+        result = subprocess.run(cmd, check=False, cwd=self.root, timeout=timeout)
+        return result.returncode
+
+    def shutdown(self) -> None:
+        """Shut down the Bazel server for this workspace."""
+        subprocess.run(["bazel", "shutdown"], cwd=self.root, check=True, capture_output=True)
+
 
 def run_query(
     expr: str,
