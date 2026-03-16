@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package probepb;
+
+option go_package = "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/probepb";
+
+// ProbeService runs network probes from inside a QEMU test VM.
+// The test host calls these RPCs via the mgmt NIC port forward.
+service ProbeService {
+  rpc ICMPProbe(ICMPProbeRequest) returns (ProbeResponse);
+  rpc TCPProbe(TCPProbeRequest) returns (ProbeResponse);
+  rpc Diagnostics(DiagnosticsRequest) returns (DiagnosticsResponse);
+}
+
+message ICMPProbeRequest {
+  string target = 1;
+  int32 timeout_seconds = 2;
+}
+
+message TCPProbeRequest {
+  string target = 1;
+  int32 port = 2;
+  int32 timeout_seconds = 3;
+}
+
+message ProbeResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message DiagnosticsRequest {}
+
+message DiagnosticsResponse {
+  string output = 1;
+}

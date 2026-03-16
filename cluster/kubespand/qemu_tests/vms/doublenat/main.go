@@ -50,7 +50,7 @@ func main() {
 	kubespanlib.LoadModules()
 	kubespanlib.ConfigureNetwork(linkIP, "24")
 
-	// mgmt NIC (QEMU user-mode) for port forwarding COSI API to the test host.
+	// mgmt NIC (QEMU user-mode) for port forwarding to the test host.
 	initlib.ConfigureMgmtNIC(false)
 
 	if defaultGW != "" {
@@ -64,7 +64,7 @@ func main() {
 	// Can we reach VPS?
 	initlib.Run("ping", "-c", "1", "-W", "3", "192.168.50.2")
 
-	kubespandCmd := kubespanlib.StartKubespand(kubespanlib.KubespandConfig{
+	kubespanlib.StartKubespand(kubespanlib.KubespandConfig{
 		ClusterID:     clusterID,
 		SharedSecret:  sharedSecret,
 		DiscoveryAddr: discovery,
@@ -72,25 +72,14 @@ func main() {
 	})
 
 	const probePort = 9999
+	cancel := kubespanlib.ServeTCP(probePort)
+	defer cancel()
 
-	switch initlib.Role {
-	case "vps", "nat1":
-		cancel := kubespanlib.ServeTCP(probePort)
-		defer cancel()
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: fmt.Sprintf("role=%s listening", initlib.Role)})
-	case "nat2":
-		peerAddrs := kubespanlib.WaitForPeers(kubespandCmd, 2)
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDiscovery, Message: fmt.Sprintf("discovered %d peers", len(peerAddrs))})
+	// Start probe gRPC server on the mgmt NIC for test host control.
+	initlib.StartProbeServer(fmt.Sprintf(":%d", initlib.ProbeServerPort))
 
-		// Wait for at least 1 peer handshake before probes (VPS is directly
-		// reachable; NAT1 may stay down due to endpoint-dependent filtering).
-		kubespanlib.WaitForPeerUp(kubespandCmd, 1)
-		kubespanlib.DumpDiagnostics()
-
-		kubespanlib.RunDoubleNATProbes(peerAddrs, probePort)
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: "probes completed"})
-	}
+	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventReady, Message: fmt.Sprintf("role=%s ready, tcp/%d, probe/%d", initlib.Role, probePort, initlib.ProbeServerPort)})
 
 	// Idle until the test host kills the VM.
-	initlib.Idle()
+	select {}
 }

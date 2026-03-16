@@ -3,8 +3,18 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "initlib",
     testonly = True,
-    srcs = ["initlib.go"],
+    srcs = [
+        "initlib.go",
+        "probe_server.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/initlib",
     visibility = ["//cluster/kubespand:__subpackages__"],
-    deps = ["//cluster/kubespand/qemu_tests"],
+    deps = [
+        "//cluster/kubespand/qemu_tests",
+        "//cluster/kubespand/qemu_tests/probepb",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_x_net//icmp",
+        "@org_golang_x_net//ipv4",
+        "@org_golang_x_net//ipv6",
+    ],
 )

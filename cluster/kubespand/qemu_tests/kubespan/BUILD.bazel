@@ -17,6 +17,7 @@ _TOPOLOGY_TAGS = [
 
 _TOPOLOGY_DEPS = [
     "//cluster/kubespand/qemu_tests",
+    "//cluster/kubespand/qemu_tests/vms/initlib",
     "@io_bazel_rules_go//go/runfiles",
 ]
 

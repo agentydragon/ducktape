@@ -7,6 +7,7 @@ import (
 	"time"
 
 	h "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
+	"github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/initlib"
 )
 
 func TestDoubleNAT(t *testing.T) {
@@ -40,8 +41,11 @@ func TestDoubleNAT(t *testing.T) {
 		h.McastNIC("net0", mcastInternet, "52:54:00:ff:00:01")...)
 	sw.Lap("boot discovery VM")
 
+	// VPS: gets mgmt NIC with probe server port forward.
+	vmVPSProbePort := h.RandomPort()
 	vmVPS := h.BootVM(t, "vm-vps", vmlinuz, initramfs, kubespanBase+" role=vps",
-		h.McastNIC("net0", mcastInternet, "52:54:00:c0:00:01")...)
+		append(h.McastNIC("net0", mcastInternet, "52:54:00:c0:00:01"),
+			h.MgmtNIC(vmVPSProbePort, initlib.ProbeServerPort, "52:54:00:c0:00:02")...)...)
 	sw.Lap("boot VPS VM")
 
 	vmRouterA := h.BootVM(t, "vm-router-a", vmlinuz, initramfsRouter,
@@ -61,19 +65,30 @@ func TestDoubleNAT(t *testing.T) {
 	h.RequireAllEvents(t, []*h.VM{vmDiscovery, vmRouterA, vmRouterB}, h.EventDone, 30*time.Second)
 	sw.Lap("infrastructure VMs ready")
 
+	// NAT1: gets mgmt NIC with probe server port forward.
+	vmNAT1ProbePort := h.RandomPort()
 	vmNAT1 := h.BootVM(t, "vm-nat1", vmlinuz, initramfs, kubespanBase+" role=nat1",
-		h.McastNIC("net0", mcastLanA, "52:54:00:d0:00:01")...)
+		append(h.McastNIC("net0", mcastLanA, "52:54:00:d0:00:01"),
+			h.MgmtNIC(vmNAT1ProbePort, initlib.ProbeServerPort, "52:54:00:d0:00:02")...)...)
 	sw.Lap("boot NAT1 VM")
 
-	// NAT2 gets a mgmt NIC so the test host can poll its COSI API for PeerStatus.
+	// NAT2: gets mgmt NIC with both COSI API and probe server port forwards.
 	nat2COSIPort := h.RandomPort()
+	nat2ProbePort := h.RandomPort()
 	vmNAT2 := h.BootVM(t, "vm-nat2", vmlinuz, initramfs, kubespanBase+" role=nat2 listen_tcp=:50100",
 		append(h.McastNIC("net0", mcastLanB, "52:54:00:e0:00:01"),
-			h.MgmtNIC(nat2COSIPort, 50100, "52:54:00:e0:00:02")...)...)
+			h.MgmtNICMulti([]h.PortForward{
+				{HostPort: nat2COSIPort, GuestPort: 50100},
+				{HostPort: nat2ProbePort, GuestPort: initlib.ProbeServerPort},
+			}, "52:54:00:e0:00:02")...)...)
 	sw.Lap("boot NAT2 VM")
 
 	allVMs = append(allVMs, vmNAT1, vmNAT2)
 	h.CleanupVMs(t, allVMs, out)
+
+	// Wait for all kubespand VMs to be ready.
+	h.RequireAllEvents(t, []*h.VM{vmVPS, vmNAT1, vmNAT2}, h.EventReady, 180*time.Second)
+	sw.Lap("kubespand VMs ready")
 
 	// Poll NAT2's PeerStatus — in double-NAT, only the VPS peer is expected
 	// to reach "up" (NAT1 is behind endpoint-dependent filtering).
@@ -85,8 +100,38 @@ func TestDoubleNAT(t *testing.T) {
 	}
 	sw.Lap("NAT2 peers up (host-side PeerStatus)")
 
-	h.RequireEvent(t, vmNAT2, h.EventDone, 300*time.Second)
-	sw.Lap("NAT2 done (probes)")
+	// Run probes from NAT2 to peers via probe RPC.
+	nat2ProbeAddr := fmt.Sprintf("127.0.0.1:%d", nat2ProbePort)
+
+	// Probe each discovered peer.
+	icmpOK := false
+	tcpOK := false
+	for _, peer := range nat2Peers {
+		if h.ProbeICMP(t, nat2ProbeAddr, peer.Label, 60*time.Second) {
+			icmpOK = true
+		}
+		if h.ProbeTCP(t, nat2ProbeAddr, peer.Label, 9999, 30*time.Second) {
+			tcpOK = true
+		}
+	}
+
+	// In double NAT, at least one peer (VPS) must be reachable.
+	if !icmpOK {
+		t.Errorf("no peer ULA ICMP probe succeeded (need at least VPS)")
+	}
+	if !tcpOK {
+		t.Errorf("no peer ULA TCP probe succeeded (need at least VPS)")
+	}
+	sw.Lap("probes completed")
+
+	// Dump diagnostics on failure.
+	if t.Failed() {
+		t.Log("=== NAT2 diagnostics ===")
+		t.Log(h.DumpVMDiagnostics(t, nat2ProbeAddr))
+		vmVPSProbeAddr := fmt.Sprintf("127.0.0.1:%d", vmVPSProbePort)
+		t.Log("=== VPS diagnostics ===")
+		t.Log(h.DumpVMDiagnostics(t, vmVPSProbeAddr))
+	}
 
 	summary := map[string]interface{}{
 		"topology":            "double_nat",
@@ -103,8 +148,6 @@ func TestDoubleNAT(t *testing.T) {
 	}
 	summaryJSON, _ := json.MarshalIndent(summary, "", "  ")
 	h.SaveArtifact(t, out, "test-summary.json", string(summaryJSON))
-
-	h.AssertProbes(t, vmNAT2.GetEvents(), "double_nat")
 	sw.Lap("assertions")
 
 	sw.Summary(out)

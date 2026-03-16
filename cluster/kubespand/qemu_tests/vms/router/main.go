@@ -88,5 +88,5 @@ func main() {
 	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventNetwork, Message: fmt.Sprintf("router ready, internet=%s, lan=%s", internetIP, lanIP)})
 	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: "router running"})
 
-	initlib.Idle()
+	select {}
 }

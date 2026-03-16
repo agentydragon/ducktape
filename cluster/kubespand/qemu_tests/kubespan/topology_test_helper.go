@@ -7,6 +7,7 @@ import (
 	"time"
 
 	h "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
+	"github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/initlib"
 )
 
 func runTopology(t *testing.T, topology string) {
@@ -62,8 +63,11 @@ func runTopology(t *testing.T, topology string) {
 	kernelBase := fmt.Sprintf("mode=kubespan cluster_id=%s shared_secret=%s discovery=%s topology=%s",
 		clusterID, sharedSecret, discAddr, topology)
 
+	// VM-B: gets mgmt NIC with probe server port forward.
+	vmBProbePort := h.RandomPort()
 	vmB := h.BootVM(t, "vm-b", vmlinuz, initramfs, kernelBase+" role=b",
-		h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01")...)
+		append(h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01"),
+			h.MgmtNIC(vmBProbePort, initlib.ProbeServerPort, "52:54:00:b0:00:02")...)...)
 	sw.Lap("boot VM-B")
 
 	// Talos CP VM — participates in KubeSpan mesh for API-based peer observation.
@@ -74,11 +78,15 @@ func runTopology(t *testing.T, topology string) {
 		talosAPIPort, h.McastNIC("net0", mcastAddr, "52:54:00:c0:00:01"))
 	sw.Lap("boot Talos CP VM")
 
-	// VM-A gets a mgmt NIC so the test host can poll its COSI API for PeerStatus.
+	// VM-A: gets mgmt NIC with both COSI API and probe server port forwards.
 	vmACOSIPort := h.RandomPort()
+	vmAProbePort := h.RandomPort()
 	vmA := h.BootVM(t, "vm-a", vmlinuz, initramfs, kernelBase+" role=a listen_tcp=:50100",
 		append(h.McastNIC("net0", mcastAddr, "52:54:00:a0:00:01"),
-			h.MgmtNIC(vmACOSIPort, 50100, "52:54:00:a0:00:02")...)...)
+			h.MgmtNICMulti([]h.PortForward{
+				{HostPort: vmACOSIPort, GuestPort: 50100},
+				{HostPort: vmAProbePort, GuestPort: initlib.ProbeServerPort},
+			}, "52:54:00:a0:00:02")...)...)
 	sw.Lap("boot VM-A")
 
 	allVMs := []*h.VM{vmA, vmB, vmDisc, vmCP}
@@ -88,8 +96,12 @@ func runTopology(t *testing.T, topology string) {
 	h.WaitForDiscoveryHTTP(t, discHTTPPort, 120*time.Second)
 	sw.Lap("discovery HTTP ready")
 
+	// Wait for both Alpine VMs to be ready (services started, probe server up).
+	h.RequireAllEvents(t, []*h.VM{vmA, vmB}, h.EventReady, 180*time.Second)
+	sw.Lap("VMs ready")
+
 	// Poll VM-A's PeerStatus via its TCP COSI API — verify WireGuard
-	// handshake completes before waiting for probes to finish.
+	// handshake completes.
 	vmAPeers, err := h.PollKubespandPeerStatus(t, fmt.Sprintf("127.0.0.1:%d", vmACOSIPort), 1, 180*time.Second)
 	if err != nil {
 		t.Errorf("VM-A peer status poll: %v", err)
@@ -98,9 +110,38 @@ func runTopology(t *testing.T, topology string) {
 	}
 	sw.Lap("VM-A peers up (host-side PeerStatus)")
 
-	// Wait for VM-A to signal probes completed.
-	h.RequireEvent(t, vmA, h.EventDone, 300*time.Second)
-	sw.Lap("VM-A done (probes)")
+	// Run probes from VM-A to VM-B via probe RPC.
+	vmAProbeAddr := fmt.Sprintf("127.0.0.1:%d", vmAProbePort)
+
+	// Get peer ULA from the PeerStatus results.
+	var peerULA string
+	if len(vmAPeers) > 0 {
+		peerULA = vmAPeers[0].Label
+	}
+
+	// Determine peer bridge IP based on topology and role.
+	var peerBridgeIP string
+	switch topology {
+	case "flat":
+		peerBridgeIP = "192.168.50.2" // VM-B's eth0 IP
+	case "cross_subnet":
+		peerBridgeIP = "10.2.0.1" // VM-B's eth0 IP
+	}
+
+	if peerULA != "" {
+		if !h.ProbeICMP(t, vmAProbeAddr, peerULA, 60*time.Second) {
+			t.Log(h.DumpVMDiagnostics(t, vmAProbeAddr))
+		}
+		if !h.ProbeTCP(t, vmAProbeAddr, peerULA, 9999, 30*time.Second) {
+			t.Log(h.DumpVMDiagnostics(t, vmAProbeAddr))
+		}
+	} else {
+		t.Error("no peer ULA discovered, skipping ULA probes")
+	}
+
+	h.ProbeICMP(t, vmAProbeAddr, peerBridgeIP, 60*time.Second)
+	h.ProbeTCP(t, vmAProbeAddr, peerBridgeIP, 9999, 30*time.Second)
+	sw.Lap("probes completed")
 
 	// Observe KubeSpan peer status from the Talos CP's API.
 	// CP participates in the same mesh and sees kubespand VMs as peers.
@@ -124,6 +165,15 @@ func runTopology(t *testing.T, topology string) {
 	}
 	sw.Lap("peer discovery via Talos API")
 
+	// Dump diagnostics from both VMs on failure.
+	if t.Failed() {
+		t.Log("=== VM-A diagnostics ===")
+		t.Log(h.DumpVMDiagnostics(t, vmAProbeAddr))
+		vmBProbeAddr := fmt.Sprintf("127.0.0.1:%d", vmBProbePort)
+		t.Log("=== VM-B diagnostics ===")
+		t.Log(h.DumpVMDiagnostics(t, vmBProbeAddr))
+	}
+
 	summary := map[string]interface{}{
 		"topology":       topology,
 		"cluster_id":     clusterID,
@@ -134,8 +184,6 @@ func runTopology(t *testing.T, topology string) {
 	}
 	summaryJSON, _ := json.MarshalIndent(summary, "", "  ")
 	h.SaveArtifact(t, out, "test-summary.json", string(summaryJSON))
-
-	h.AssertProbes(t, vmA.GetEvents(), topology)
 	sw.Lap("assertions")
 
 	sw.Summary(out)

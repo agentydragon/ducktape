@@ -1,0 +1,25 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+
+proto_library(
+    name = "probe_proto",
+    srcs = ["probe.proto"],
+    visibility = ["//cluster/kubespand:__subpackages__"],
+)
+
+go_proto_library(
+    name = "probe_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/probepb",
+    proto = ":probe_proto",
+    visibility = ["//cluster/kubespand:__subpackages__"],
+)
+
+go_library(
+    name = "probepb",
+    testonly = True,
+    embed = [":probe_go_proto"],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/probepb",
+    visibility = ["//cluster/kubespand:__subpackages__"],
+)

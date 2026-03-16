@@ -14,16 +14,9 @@ const (
 	EventProbe     EventType = "probe"
 	EventError     EventType = "error"
 	EventDone      EventType = "done"
-)
-
-// Probe names shared between VM init binaries (emitters) and test assertions.
-const (
-	ProbeIPv6ULAICMP    = "ipv6 ULA icmp"
-	ProbeIPv4Eth0ICMP   = "ipv4 peer eth0 icmp"
-	ProbeIPv6ULATCP     = "ipv6 ULA tcp"
-	ProbeIPv4Eth0TCP    = "ipv4 peer eth0 tcp"
-	ProbePeerULAICMPFmt = "peer %d ULA icmp"
-	ProbePeerULATCPFmt  = "peer %d ULA tcp"
+	// EventReady indicates the VM has started all services (kubespand, TCP
+	// listener, probe server) and is ready for test host commands.
+	EventReady EventType = "ready"
 )
 
 // Event is a structured message emitted by a QEMU VM as a JSON line.

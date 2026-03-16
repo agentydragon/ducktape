@@ -32,7 +32,7 @@ func main() {
 		initlib.Poweroff()
 	}
 	// Idle until the test host kills the VM.
-	initlib.Idle()
+	select {}
 }
 
 func run() error {

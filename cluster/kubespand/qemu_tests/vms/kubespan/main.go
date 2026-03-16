@@ -40,7 +40,7 @@ func main() {
 	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventBoot, Message: fmt.Sprintf("kubespan mode, role=%s, topology=%s", initlib.Role, topology)})
 
 	// Assign addresses based on role and topology.
-	var linkIP, peerBridgeIP, peerSubnet string
+	var linkIP, peerSubnet string
 	var endpointFilters []string
 	var listenPort int
 
@@ -49,11 +49,9 @@ func main() {
 		switch initlib.Role {
 		case "a":
 			linkIP = "192.168.50.1"
-			peerBridgeIP = "192.168.50.2"
 			listenPort = 51820
 		case "b":
 			linkIP = "192.168.50.2"
-			peerBridgeIP = "192.168.50.1"
 			listenPort = 51821
 		default:
 			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: fmt.Sprintf("unknown role=%s for topology=%s", initlib.Role, topology)})
@@ -64,12 +62,10 @@ func main() {
 		switch initlib.Role {
 		case "a":
 			linkIP = "10.1.0.1"
-			peerBridgeIP = "10.2.0.1"
 			peerSubnet = "10.2.0.0/24"
 			listenPort = 51820
 		case "b":
 			linkIP = "10.2.0.1"
-			peerBridgeIP = "10.1.0.1"
 			peerSubnet = "10.1.0.0/24"
 			listenPort = 51821
 		default:
@@ -93,7 +89,6 @@ func main() {
 	}
 
 	// mgmt NIC (QEMU user-mode) for port forwarding to the test host.
-	// Optional — only present when the test adds a hostfwd NIC.
 	initlib.ConfigureMgmtNIC(false)
 
 	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventNetwork, Message: fmt.Sprintf("link=%s/24, topology=%s", linkIP, topology)})
@@ -121,26 +116,17 @@ func main() {
 		cfg.ApidPath = "/apid"
 	}
 
-	kubespandCmd := kubespanlib.StartKubespand(cfg)
+	kubespanlib.StartKubespand(cfg)
 
 	const probePort = 9999
+	cancel := kubespanlib.ServeTCP(probePort)
+	defer cancel()
 
-	peerAddr := kubespanlib.WaitForPeer(kubespandCmd)
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDiscovery, Message: fmt.Sprintf("peer discovered addr=%s ipv4=%s", peerAddr, peerBridgeIP)})
+	// Start probe gRPC server on the mgmt NIC for test host control.
+	initlib.StartProbeServer(fmt.Sprintf(":%d", initlib.ProbeServerPort))
 
-	if initlib.Role == "b" {
-		cancel := kubespanlib.ServeTCP(probePort)
-		defer cancel()
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: fmt.Sprintf("role=b listening on tcp/%d", probePort)})
-	} else {
-		// Wait for WireGuard handshake to complete (PeerStatus "up") before
-		// running probes.
-		kubespanlib.WaitForPeerUp(kubespandCmd, 1)
-		kubespanlib.DumpDiagnostics(peerBridgeIP)
-		kubespanlib.RunProbes(peerAddr, peerBridgeIP, probePort)
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: "probes completed"})
-	}
+	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventReady, Message: fmt.Sprintf("role=%s ready, tcp/%d, probe/%d", initlib.Role, probePort, initlib.ProbeServerPort)})
 
 	// Idle until the test host kills the VM.
-	initlib.Idle()
+	select {}
 }

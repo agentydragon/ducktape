@@ -124,12 +124,6 @@ func ConfigureMgmtNIC(required bool) {
 	MustRun("ip", "addr", "add", "10.0.2.15/24", "dev", "eth1")
 }
 
-// Idle blocks the process forever. VM init binaries call this after completing
-// their work — the test host kills the QEMU VM when it's done observing.
-func Idle() {
-	select {}
-}
-
 // InitBasic performs common init setup: mount filesystems, set PATH, suppress dmesg.
 func InitBasic() {
 	os.Setenv("PATH", "/sbin:/usr/sbin:/bin:/usr/bin")
