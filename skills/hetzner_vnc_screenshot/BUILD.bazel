@@ -8,7 +8,6 @@ py_library(
     deps = [
         "@pypi//asyncvnc",
         "@pypi//hcloud",
-        "@pypi//numpy",
         "@pypi//pillow",
         "@pypi//typer_slim",
         "@pypi//websockets",
