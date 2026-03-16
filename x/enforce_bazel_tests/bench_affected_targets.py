@@ -9,7 +9,7 @@ Runs with a cold Bazel server (shuts it down before each run) and a
 single small change to util/bazel/workspace.py (a comment appended).
 
 Usage:
-    bazel run //devinfra/precommit:bench_affected_targets
+    bazel run //x/enforce_bazel_tests:bench_affected_targets
 """
 
 from __future__ import annotations
@@ -20,9 +20,9 @@ from pathlib import Path
 
 import pygit2
 
-from devinfra.precommit.enforce_bazel_tests import find_affected_tests
 from util.bazel.workspace import BazelWorkspace
 from util.fs import restore_file
+from x.enforce_bazel_tests.enforce_bazel_tests import find_affected_tests
 
 # The file we'll temporarily modify to simulate a change.
 _TARGET_FILE = Path("util/bazel/workspace.py")
