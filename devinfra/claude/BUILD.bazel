@@ -551,8 +551,6 @@ py_test(
         ":conftest",
         ":errors",
         ":settings",
-        "//devinfra/claude/supervisor:client",
-        "//devinfra/claude/supervisor:setup",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

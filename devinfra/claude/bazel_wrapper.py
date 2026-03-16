@@ -121,25 +121,12 @@ def _resolve_real_binary() -> str:
 
 
 async def _ensure_proxy_with_supervisor_restart(settings: HookSettings) -> None:
-    """Ensure proxy is running, restarting supervisor if it's dead.
+    """Ensure proxy is running, restarting supervisor if it's dead."""
+    if await try_connect(settings) is None:
+        logger.warning("Supervisor is not reachable, restarting...")
+        await supervisor_start(settings)
 
-    If supervisor is unreachable, restarts it before retrying proxy setup.
-    This handles the case where supervisor has died between sessions.
-    """
-    supervisor = SupervisorClient(settings)
-
-    # Check if supervisor is reachable before trying proxy operations
-    if await try_connect(settings) is not None:
-        logger.info("Supervisor is reachable, ensuring proxy is running...")
-        await proxy_setup.ensure_proxy_running(settings, supervisor)
-        return
-
-    # Supervisor is dead — restart it
-    logger.warning("Supervisor is not reachable, restarting...")
-    setup_result = await supervisor_start(settings)
-    logger.info("Supervisor restarted successfully")
-
-    await proxy_setup.ensure_proxy_running(settings, setup_result.client)
+    await proxy_setup.ensure_proxy_running(settings, SupervisorClient(settings))
 
 
 async def _async_main(settings: HookSettings) -> None:
