@@ -6,7 +6,7 @@ Measures the two-step query approach used by enforce_bazel_tests.py:
 2. Find affected test targets via kind(".*_test", rdeps(...))
 
 Runs with a cold Bazel server (shuts it down before each run) and a
-single small change to util/bazel/query.py (a comment appended).
+single small change to util/bazel/workspace.py (a comment appended).
 
 Usage:
     bazel run //devinfra/precommit:bench_affected_targets
@@ -20,12 +20,12 @@ from pathlib import Path
 
 import pygit2
 
-from devinfra.precommit.enforce_bazel_tests import _build_universe
+from devinfra.precommit.enforce_bazel_tests import find_affected_tests
 from util.bazel.workspace import BazelWorkspace
 from util.fs import restore_file
 
 # The file we'll temporarily modify to simulate a change.
-_TARGET_FILE = Path("util/bazel/query.py")
+_TARGET_FILE = Path("util/bazel/workspace.py")
 _SENTINEL = "\n# benchmark-sentinel-comment\n"
 
 
@@ -64,37 +64,11 @@ def main() -> int:
         print("starting benchmark (cold bazel server)...\n")
         t0 = time.monotonic()
 
-        # Step 1: validate label
-        t1_start = time.monotonic()
-        pkg_str = str(label.package) if label.package != Path() else ""
-        validate_expr = f'kind("source file", //{pkg_str}:*)'
-        known_sources = set(workspace.query(validate_expr))
-        t1_end = time.monotonic()
-
-        if label not in known_sources:
-            raise RuntimeError(f"{label} is not a known source file")
-
-        # Step 2: find affected tests via rdeps
-        t2_start = time.monotonic()
-        universe_dirs = _build_universe(repo_root)
-        parts: list[str] = []
-        for d in universe_dirs:
-            if d == "":
-                parts.append("//:all")
-            else:
-                parts.append(f"//{d}/...")
-        universe_expr = " + ".join(parts)
-        universe_scope = ",".join(parts)
-
-        rdeps_expr = f'kind(".*_test", rdeps({universe_expr}, set({label})))'
-        targets = workspace.query(rdeps_expr, universe_scope=universe_scope)
-        t2_end = time.monotonic()
+        targets = find_affected_tests(workspace, [label])
 
         t_total = time.monotonic() - t0
 
-        print(f"step 1 (validate labels):    {t1_end - t1_start:6.2f}s")
-        print(f"step 2 (rdeps query):        {t2_end - t2_start:6.2f}s")
-        print(f"total:                       {t_total:6.2f}s")
+        print(f"total:  {t_total:6.2f}s")
         print(f"\naffected tests ({len(targets)}):")
         for t in sorted(str(lbl) for lbl in targets):
             print(f"  {t}")

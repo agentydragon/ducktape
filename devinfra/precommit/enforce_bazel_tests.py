@@ -96,63 +96,35 @@ def _build_universe(repo_root: Path) -> list[str]:
     return dirs
 
 
-def main() -> int:
-    repo = pygit2.Repository(".")
-    repo_root = Path(repo.workdir).resolve()
+def find_affected_tests(
+    workspace: BazelWorkspace, candidates: list[BazelLabel], *, timeout: int | None = None
+) -> list[BazelLabel]:
+    """Find test targets affected by the given source file label candidates.
 
-    staged = _get_staged_files(repo)
-    if not staged:
-        return 0
-
-    if any(_is_infra_file(f) for f in staged):
-        print(f"{_PREFIX}: infrastructure file changed, skipping (CI catches these)")
-        return 0
-
-    # Convert staged files to candidate Bazel source file labels.
-    workspace = BazelWorkspace(root=repo_root)
-    candidates: list[BazelLabel] = []
-    for f in staged:
-        label = workspace.file_to_label(Path(f))
-        if label is not None:
-            candidates.append(label)
-
+    Two-step query:
+    1. Validate candidates against known Bazel source files in their packages.
+    2. Find test targets that transitively depend on the valid sources via
+       rdeps with a scoped universe (excluding broken packages).
+    """
     if not candidates:
-        return 0
+        return []
 
+    # Step 1: Validate labels — not all files in a Bazel package are source
+    # targets (e.g. .pre-commit-config.yaml in the root package).
     packages = {label.package for label in candidates}
-
-    timeout = int(os.environ.get("DUCKTAPE_BAZEL_QUERY_TIMEOUT", "120"))
-
-    # Step 1: Validate labels — query Bazel for source files in affected packages.
-    # Not all files in a Bazel package are source targets (e.g. .pre-commit-config.yaml
-    # in the root package isn't in any BUILD srcs).
     pkg_union = " + ".join(f"//{pkg}:*" for pkg in sorted(str(p) if p != Path() else "" for p in packages))
     validate_expr = f'kind("source file", {pkg_union})'
-
-    try:
-        known_sources = set(workspace.query(validate_expr, timeout=timeout))
-    except subprocess.TimeoutExpired:
-        print(f"{_PREFIX}: bazel query (validate) timed out after {timeout}s", file=sys.stderr)
-        return 1
-    except subprocess.CalledProcessError as e:
-        print(f"{_PREFIX}: bazel query (validate) failed (exit {e.returncode})", file=sys.stderr)
-        if e.stderr:
-            print(e.stderr, file=sys.stderr)
-        return 1
-    except FileNotFoundError:
-        print(f"{_PREFIX}: bazel not found on PATH", file=sys.stderr)
-        return 1
+    known_sources = set(workspace.query(validate_expr, timeout=timeout))
 
     valid_labels = [label for label in candidates if label in known_sources]
     if not valid_labels:
-        return 0
+        return []
 
     # Step 2: Find affected test targets via rdeps with scoped universe.
-    universe_dirs = _build_universe(repo_root)
+    universe_dirs = _build_universe(workspace.root)
     if not universe_dirs:
-        return 0
+        return []
 
-    # Build union expression for rdeps universe: //dir_a/... + //dir_b/... + ...
     parts: list[str] = []
     for d in universe_dirs:
         if d == "":
@@ -165,14 +137,40 @@ def main() -> int:
 
     labels_set = " ".join(str(label) for label in valid_labels)
     rdeps_expr = f'kind(".*_test", rdeps({universe_expr}, set({labels_set})))'
+    return workspace.query(rdeps_expr, timeout=timeout, universe_scope=universe_scope)
+
+
+def main() -> int:
+    repo = pygit2.Repository(".")
+    repo_root = Path(repo.workdir).resolve()
+
+    staged = _get_staged_files(repo)
+    if not staged:
+        return 0
+
+    if any(_is_infra_file(f) for f in staged):
+        print(f"{_PREFIX}: infrastructure file changed, skipping (CI catches these)")
+        return 0
+
+    workspace = BazelWorkspace(root=repo_root)
+    candidates: list[BazelLabel] = []
+    for f in staged:
+        label = workspace.file_to_label(Path(f))
+        if label is not None:
+            candidates.append(label)
+
+    if not candidates:
+        return 0
+
+    timeout = int(os.environ.get("DUCKTAPE_BAZEL_QUERY_TIMEOUT", "120"))
 
     try:
-        targets = [str(label) for label in workspace.query(rdeps_expr, timeout=timeout, universe_scope=universe_scope)]
+        affected = find_affected_tests(workspace, candidates, timeout=timeout)
     except subprocess.TimeoutExpired:
-        print(f"{_PREFIX}: bazel query (rdeps) timed out after {timeout}s", file=sys.stderr)
+        print(f"{_PREFIX}: bazel query timed out after {timeout}s", file=sys.stderr)
         return 1
     except subprocess.CalledProcessError as e:
-        print(f"{_PREFIX}: bazel query (rdeps) failed (exit {e.returncode})", file=sys.stderr)
+        print(f"{_PREFIX}: bazel query failed (exit {e.returncode})", file=sys.stderr)
         if e.stderr:
             print(e.stderr, file=sys.stderr)
         return 1
@@ -180,9 +178,10 @@ def main() -> int:
         print(f"{_PREFIX}: bazel not found on PATH", file=sys.stderr)
         return 1
 
-    if not targets:
+    if not affected:
         return 0
 
+    targets = [str(label) for label in affected]
     print(f"{_PREFIX}: checking {len(targets)} affected test(s)...")
 
     run_tests = os.environ.get("DUCKTAPE_PRECOMMIT_RUN_TESTS", "") == "1"
