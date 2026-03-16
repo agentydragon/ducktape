@@ -59,7 +59,7 @@
     };
 
     # SideroLabs docs — source of truth for Talos/Omni AI agent skill
-    # Update: nix flake lock --update-input siderolabs-docs
+    # Update: nix flake update siderolabs-docs
     siderolabs-docs = {
       url = "github:siderolabs/docs";
       flake = false;

@@ -459,7 +459,7 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
                     f"  sed -i 's|releases/download/{name}-[^/]*/{file_pattern}|"
                     f"releases/download/${{{{ needs.{job_name}.outputs.tag }}}}/{file_pattern}|' flake.nix\n"
                 )
-                lock_lines += f"  nix flake lock --update-input {target.flake_input} .\n"
+                lock_lines += f"  update_flake_input {target.flake_input}\n"
         if config.update_claude_settings:
             # Update settings.json BEFORE nix flake lock so it succeeds even if nix fails
             settings_file_pattern = name.replace("-", "_")
@@ -472,7 +472,21 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
             f'if [ "${{{{ needs.{job_name}.outputs.released }}}}" = "true" ]; then\n{sed_lines}{lock_lines}fi'
         )
 
-    downstream_run = "\n".join(flake_updates)
+    # Preamble: helper function for resilient flake input updates
+    preamble = (
+        "FAILED_INPUTS=()\n"
+        "update_flake_input() {\n"
+        '  local input_name="$1"\n'
+        '  if nix flake update "$input_name"; then\n'
+        '    echo "Updated flake input: $input_name"\n'
+        "  else\n"
+        '    echo "::warning::Failed to update flake input: $input_name"\n'
+        '    FAILED_INPUTS+=("$input_name")\n'
+        "  fi\n"
+        "}\n"
+    )
+
+    downstream_run = preamble + "\n".join(flake_updates)
 
     downstream_run += (
         '\n\ngit config user.name "github-actions[bot]"\n'
@@ -482,6 +496,10 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
         "\n"
         "if git diff --cached --quiet; then\n"
         '  echo "No downstream changes"\n'
+        "  if [ ${#FAILED_INPUTS[@]} -gt 0 ]; then\n"
+        '    echo "::error::Failed to update flake inputs: ${FAILED_INPUTS[*]}"\n'
+        "    exit 1\n"
+        "  fi\n"
         "  exit 0\n"
         "fi\n"
         "\n"
@@ -489,7 +507,12 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
         "\n"
         'BRANCH="${{ github.ref_name }}"\n'
         'git pull --rebase origin "$BRANCH"\n'
-        'git push origin "HEAD:${BRANCH}"'
+        'git push origin "HEAD:${BRANCH}"\n'
+        "\n"
+        "if [ ${#FAILED_INPUTS[@]} -gt 0 ]; then\n"
+        '  echo "::error::Partial update committed, but failed to update: ${FAILED_INPUTS[*]}"\n'
+        "  exit 1\n"
+        "fi"
     )
 
     jobs["update-downstream"] = Job(

@@ -451,24 +451,34 @@ jobs:
       - uses: cachix/install-nix-action@v30
       - name: Update references and push
         run: |-
+          FAILED_INPUTS=()
+          update_flake_input() {
+            local input_name="$1"
+            if nix flake update "$input_name"; then
+              echo "Updated flake input: $input_name"
+            else
+              echo "::warning::Failed to update flake input: $input_name"
+              FAILED_INPUTS+=("$input_name")
+            fi
+          }
           if [ "${{ needs.release-kubespand.outputs.released }}" = "true" ]; then
             sed -i 's|releases/download/kubespand-[^/]*/kubespand|releases/download/${{ needs.release-kubespand.outputs.tag }}/kubespand|' flake.nix
             sed -i 's|releases/download/kubespand-[^/]*/apid|releases/download/${{ needs.release-kubespand.outputs.tag }}/apid|' flake.nix
-            nix flake lock --update-input kubespand-bin .
-            nix flake lock --update-input apid-bin .
+            update_flake_input kubespand-bin
+            update_flake_input apid-bin
           fi
           if [ "${{ needs.release-ducktape.outputs.released }}" = "true" ]; then
             sed -i 's|releases/download/ducktape-[^/]*/ducktape|releases/download/${{ needs.release-ducktape.outputs.tag }}/ducktape|' flake.nix
             sed -i "s|releases/download/ducktape-[a-f0-9]*/ducktape|releases/download/${{ needs.release-ducktape.outputs.tag }}/ducktape|g" .claude/settings.json
-            nix flake lock --update-input ducktape-wheel .
+            update_flake_input ducktape-wheel
           fi
           if [ "${{ needs.release-headscale_cleanup.outputs.released }}" = "true" ]; then
             sed -i 's|releases/download/headscale-cleanup-[^/]*/headscale_cleanup|releases/download/${{ needs.release-headscale_cleanup.outputs.tag }}/headscale_cleanup|' flake.nix
-            nix flake lock --update-input headscale-cleanup-wheel .
+            update_flake_input headscale-cleanup-wheel
           fi
           if [ "${{ needs.release-gterm_theme.outputs.released }}" = "true" ]; then
             sed -i 's|releases/download/gterm-theme-[^/]*/gterm_theme|releases/download/${{ needs.release-gterm_theme.outputs.tag }}/gterm_theme|' flake.nix
-            nix flake lock --update-input gterm-theme-wheel .
+            update_flake_input gterm-theme-wheel
           fi
 
           git config user.name "github-actions[bot]"
@@ -478,6 +488,10 @@ jobs:
 
           if git diff --cached --quiet; then
             echo "No downstream changes"
+            if [ ${#FAILED_INPUTS[@]} -gt 0 ]; then
+              echo "::error::Failed to update flake inputs: ${FAILED_INPUTS[*]}"
+              exit 1
+            fi
             exit 0
           fi
 
@@ -486,3 +500,8 @@ jobs:
           BRANCH="${{ github.ref_name }}"
           git pull --rebase origin "$BRANCH"
           git push origin "HEAD:${BRANCH}"
+
+          if [ ${#FAILED_INPUTS[@]} -gt 0 ]; then
+            echo "::error::Partial update committed, but failed to update: ${FAILED_INPUTS[*]}"
+            exit 1
+          fi
