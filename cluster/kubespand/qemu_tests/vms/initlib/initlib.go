@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"os/signal"
 	"strings"
 	"syscall"
 	"time"
@@ -126,11 +125,9 @@ func ConfigureMgmtNIC(required bool) {
 }
 
 // Idle blocks the process forever. VM init binaries call this after completing
-// their work — the test host kills the VM when it's done observing.
+// their work — the test host kills the QEMU VM when it's done observing.
 func Idle() {
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
-	<-sigCh
+	select {}
 }
 
 // InitBasic performs common init setup: mount filesystems, set PATH, suppress dmesg.
