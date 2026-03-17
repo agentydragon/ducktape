@@ -48,10 +48,13 @@ func runTrustdCSRFlow(t *testing.T, workerType h.WorkerType) {
 	discIP := "192.168.50.254"
 	workerIP := "192.168.50.1"
 
+	cpEndpoint := h.ControlPlaneEndpoint(cpIP)
+	discEndpoint := h.DiscoveryEndpoint(discIP)
+
 	vpsConfigData := secrets.ControlPlaneConfig(h.TalosNodeConfig{
 		IP:                   cpIP + "/24",
-		ControlPlaneEndpoint: "https://" + cpIP + ":6443",
-		DiscoveryEndpoint:    "http://" + discIP + ":3000",
+		ControlPlaneEndpoint: cpEndpoint,
+		DiscoveryEndpoint:    discEndpoint,
 		CertSANs:             []string{cpIP, "127.0.0.1"},
 	})
 	talosConfigPath := filepath.Join(tmpDir, "talosconfig")
@@ -68,13 +71,13 @@ func runTrustdCSRFlow(t *testing.T, workerType h.WorkerType) {
 
 	vmDisc := h.BootVM(t, "trustd-disc", vmlinuz, initramfsDisc,
 		fmt.Sprintf("mode=discovery role=discovery discovery_ip=%s/24", discIP),
-		h.McastNIC("net0", mcastAddr, "52:54:00:ff:00:01"))
+		h.McastNIC("net0", mcastAddr, h.DiscoveryMAC))
 	sw.Lap("boot discovery VM")
 
 	// Talos CP VM — provides trustd on port 50001.
 	talosAPIPort := h.RandomPort()
 	vmCP := h.BootTalosVM(t, "trustd-cp", talosBaseImage, vpsCI,
-		talosAPIPort, h.McastNIC("net0", mcastAddr, "52:54:00:a0:00:01"))
+		talosAPIPort, h.McastNIC("net0", mcastAddr, h.NodeAMAC))
 	sw.Lap("boot Talos CP VM")
 
 	// Boot worker based on workerType.
@@ -85,7 +88,7 @@ func runTrustdCSRFlow(t *testing.T, workerType h.WorkerType) {
 	case h.WorkerTypeKubespand:
 		initramfsTrustd := h.RunfilePath(t, h.TrustdInitramfs)
 		kubespandCfg := h.NewTestAgentConfig(creds, discIP+":3000")
-		kubespandCfg.Cluster.Endpoint = "https://" + cpIP + ":6443"
+		kubespandCfg.Cluster.Endpoint = cpEndpoint
 		kubespandCfg.Kubespan.ListenPort = 51820
 		kubespandCfg.Api.CACrt = creds.CACrt
 		kubespandCfg.Api.Token = creds.MachineToken
@@ -95,20 +98,20 @@ func runTrustdCSRFlow(t *testing.T, workerType h.WorkerType) {
 
 		workerAPIPort = 50000 // kubespand apid port
 		workerVM = h.BootVM(t, "trustd-worker", vmlinuz, initramfsTrustd, "",
-			append(h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01"), h.CIDATADrive(kubespandCI)...),
+			append(h.McastNIC("net0", mcastAddr, h.NodeBMAC), h.CIDATADrive(kubespandCI)...),
 			h.PortForward{GuestPort: workerAPIPort})
 
 	case h.WorkerTypeTalos:
 		workerConfig := secrets.WorkerConfig(h.TalosNodeConfig{
 			IP:                   workerIP + "/24",
-			ControlPlaneEndpoint: "https://" + cpIP + ":6443",
-			DiscoveryEndpoint:    "http://" + discIP + ":3000",
+			ControlPlaneEndpoint: cpEndpoint,
+			DiscoveryEndpoint:    discEndpoint,
 		})
 		workerCI := h.CreateCIDATA(t, tmpDir, "trustd-worker", workerConfig)
 
 		workerAPIPort = h.RandomPort()
 		workerVM = h.BootTalosVM(t, "trustd-worker", talosBaseImage, workerCI,
-			workerAPIPort, h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01"))
+			workerAPIPort, h.McastNIC("net0", mcastAddr, h.NodeBMAC))
 	}
 	sw.Lap("boot worker VM")
 

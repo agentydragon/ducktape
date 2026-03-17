@@ -33,47 +33,29 @@ const (
 // capabilities. For kubespand workers, COSI is accessed via direct insecure
 // gRPC; for Talos workers, via the Talos mTLS API client.
 type WorkerNode struct {
-	VM     *VM
-	Type   WorkerType
-	NodeIP string // Talos-only: node IP for WithNode context
-
-	t           *testing.T
-	talosClient *client.Client // nil for kubespand
-}
-
-// NewKubespandWorker creates a WorkerNode for a kubespand VM.
-func NewKubespandWorker(t *testing.T, vm *VM) *WorkerNode {
-	return &WorkerNode{VM: vm, Type: WorkerTypeKubespand, t: t}
-}
-
-// NewTalosWorker creates a WorkerNode for a Talos VM with a pre-configured
-// Talos API client.
-func NewTalosWorker(t *testing.T, vm *VM, talosClient *client.Client, nodeIP string) *WorkerNode {
-	return &WorkerNode{
-		VM:          vm,
-		Type:        WorkerTypeTalos,
-		NodeIP:      nodeIP,
-		t:           t,
-		talosClient: talosClient,
-	}
+	VM          *VM
+	Type        WorkerType
+	NodeIP      string // Talos-only: node IP for WithNode context
+	T           *testing.T
+	TalosClient *client.Client // nil for kubespand
 }
 
 // Close cleans up resources (closes the Talos client if present).
 func (w *WorkerNode) Close() {
-	if w.talosClient != nil {
-		w.talosClient.Close()
+	if w.TalosClient != nil {
+		w.TalosClient.Close()
 	}
 }
 
 // WaitForReady waits for the worker to become reachable. For kubespand workers,
 // waits for the probe server. For Talos workers, waits for the Talos API.
 func (w *WorkerNode) WaitForReady(timeout time.Duration) {
-	w.t.Helper()
+	w.T.Helper()
 	switch w.Type {
 	case WorkerTypeKubespand:
-		WaitForProbeServers(w.t, []*VM{w.VM}, timeout)
+		WaitForProbeServers(w.T, []*VM{w.VM}, timeout)
 	case WorkerTypeTalos:
-		WaitForTalosAPI(w.t, w.talosClient, w.NodeIP, timeout)
+		WaitForTalosAPI(w.T, w.TalosClient, w.NodeIP, timeout)
 	}
 }
 
@@ -103,7 +85,7 @@ func (w *WorkerNode) HasProbeServer() bool {
 // PollPeerStatus polls COSI PeerStatus resources until at least minPeers
 // report state "up", or timeout is reached.
 func (w *WorkerNode) PollPeerStatus(minPeers int, timeout time.Duration) ([]kubespan.PeerStatusSpec, error) {
-	w.t.Helper()
+	w.T.Helper()
 
 	deadline := time.Now().Add(timeout)
 	var lastErr string
@@ -112,7 +94,7 @@ func (w *WorkerNode) PollPeerStatus(minPeers int, timeout time.Duration) ([]kube
 		peers, err := w.listPeerStatuses()
 		if err != nil {
 			lastErr = err.Error()
-			w.t.Logf("[%s] COSI poll (waiting): %s", w.VM.Name, lastErr)
+			w.T.Logf("[%s] COSI poll (waiting): %s", w.VM.Name, lastErr)
 			time.Sleep(1 * time.Second)
 			continue
 		}
@@ -131,7 +113,7 @@ func (w *WorkerNode) PollPeerStatus(minPeers int, timeout time.Duration) ([]kube
 			}
 			fmt.Fprintf(&summary, "%s state=%s ep=%s", p.Label, p.State, p.Endpoint)
 		}
-		w.t.Logf("[%s] COSI poll: %d peers, %d up (need %d) [%s]", w.VM.Name, len(peers), upCount, minPeers, summary.String())
+		w.T.Logf("[%s] COSI poll: %d peers, %d up (need %d) [%s]", w.VM.Name, len(peers), upCount, minPeers, summary.String())
 
 		if upCount >= minPeers {
 			return peers, nil
@@ -145,7 +127,7 @@ func (w *WorkerNode) PollPeerStatus(minPeers int, timeout time.Duration) ([]kube
 
 // GetPeerSpecs queries all PeerSpec resources from the worker's COSI API.
 func (w *WorkerNode) GetPeerSpecs() ([]kubespan.PeerSpecSpec, error) {
-	w.t.Helper()
+	w.T.Helper()
 
 	st, cleanup, err := w.cosiState()
 	if err != nil {
@@ -173,7 +155,7 @@ func (w *WorkerNode) GetPeerSpecs() ([]kubespan.PeerSpecSpec, error) {
 // workers (returns false for Talos).
 func (w *WorkerNode) ProbeICMP(target string, timeout time.Duration) bool {
 	if !w.HasProbeServer() {
-		w.t.Logf("[%s] skipping ICMP probe (Talos worker, no probe server)", w.VM.Name)
+		w.T.Logf("[%s] skipping ICMP probe (Talos worker, no probe server)", w.VM.Name)
 		return true // not a failure, just not testable
 	}
 	return w.VM.ProbeICMP(target, timeout)
@@ -183,7 +165,7 @@ func (w *WorkerNode) ProbeICMP(target string, timeout time.Duration) bool {
 // workers (returns false for Talos).
 func (w *WorkerNode) ProbeTCP(target string, port int, timeout time.Duration) bool {
 	if !w.HasProbeServer() {
-		w.t.Logf("[%s] skipping TCP probe (Talos worker, no probe server)", w.VM.Name)
+		w.T.Logf("[%s] skipping TCP probe (Talos worker, no probe server)", w.VM.Name)
 		return true
 	}
 	return w.VM.ProbeTCP(target, port, timeout)
@@ -198,8 +180,8 @@ func (w *WorkerNode) DumpDiagnostics(t *testing.T) {
 		t.Log(w.VM.DumpDiagnostics())
 	case WorkerTypeTalos:
 		t.Logf("=== %s diagnostics (talos) ===", w.VM.Name)
-		if w.talosClient != nil {
-			DumpKubeSpanDiagnostics(t, w.talosClient, w.NodeIP)
+		if w.TalosClient != nil {
+			DumpKubeSpanDiagnostics(t, w.TalosClient, w.NodeIP)
 		}
 	}
 }
@@ -248,10 +230,10 @@ func (w *WorkerNode) cosiState() (state.State, func(), error) {
 		return st, func() { conn.Close() }, nil
 
 	case WorkerTypeTalos:
-		if w.talosClient == nil {
+		if w.TalosClient == nil {
 			return nil, nil, fmt.Errorf("[%s] Talos client not configured", w.VM.Name)
 		}
-		return w.talosClient.COSI, func() {}, nil
+		return w.TalosClient.COSI, func() {}, nil
 
 	default:
 		return nil, nil, fmt.Errorf("unknown worker type: %s", w.Type)

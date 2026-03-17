@@ -54,7 +54,9 @@ func runTopology(t *testing.T, topology string, workerType h.WorkerType) {
 		}
 	}
 
-	discAddr := fmt.Sprintf("%s:3000", discIP)
+	discAddr := discIP + ":3000"
+	cpEndpoint := h.ControlPlaneEndpoint(cpIP)
+	discEndpoint := h.DiscoveryEndpoint(discIP)
 	tmpDir := t.TempDir()
 
 	// Generate all crypto material and Talos configs at test time.
@@ -64,8 +66,8 @@ func runTopology(t *testing.T, topology string, workerType h.WorkerType) {
 	cpConfigData := secrets.ControlPlaneConfig(h.TalosNodeConfig{
 		IP:                   fmt.Sprintf("%s/24", cpIP),
 		Routes:               cpRoutes,
-		ControlPlaneEndpoint: fmt.Sprintf("https://%s:6443", cpIP),
-		DiscoveryEndpoint:    fmt.Sprintf("http://%s:3000", discIP),
+		ControlPlaneEndpoint: cpEndpoint,
+		DiscoveryEndpoint:    discEndpoint,
 		CertSANs:             []string{cpIP, "127.0.0.1"},
 	})
 
@@ -76,7 +78,7 @@ func runTopology(t *testing.T, topology string, workerType h.WorkerType) {
 	// Discovery VM with extra forward for HTTP health check from the test host.
 	vmDisc := h.BootVM(t, "vm-disc", vmlinuz, initramfsDisc,
 		fmt.Sprintf("role=discovery discovery_ip=%s/24 topology=%s", discIP, topology),
-		h.McastNIC("net0", mcastAddr, "52:54:00:ff:00:01"),
+		h.McastNIC("net0", mcastAddr, h.DiscoveryMAC),
 		h.PortForward{GuestPort: 3000})
 	sw.Lap("boot discovery VM")
 
@@ -96,7 +98,7 @@ func runTopology(t *testing.T, topology string, workerType h.WorkerType) {
 		}
 		vmB := h.BootVM(t, "vm-b", vmlinuz, kubespandInitramfs,
 			vmBArgs,
-			append(h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01"), h.CIDATADrive(cidataB)...))
+			append(h.McastNIC("net0", mcastAddr, h.NodeBMAC), h.CIDATADrive(cidataB)...))
 		sw.Lap("boot VM-B")
 
 		cfgA := h.NewTestAgentConfig(creds, discAddr)
@@ -110,24 +112,24 @@ func runTopology(t *testing.T, topology string, workerType h.WorkerType) {
 		}
 		vmA := h.BootVM(t, "vm-a", vmlinuz, kubespandInitramfs,
 			vmAArgs,
-			append(h.McastNIC("net0", mcastAddr, "52:54:00:a0:00:01"), h.CIDATADrive(cidataA)...),
+			append(h.McastNIC("net0", mcastAddr, h.NodeAMAC), h.CIDATADrive(cidataA)...),
 			h.PortForward{GuestPort: h.COSIGuestPort})
 		sw.Lap("boot VM-A")
 
-		workerA = h.NewKubespandWorker(t, vmA)
-		workerB = h.NewKubespandWorker(t, vmB)
+		workerA = &h.WorkerNode{VM: vmA, Type: h.WorkerTypeKubespand, T: t}
+		workerB = &h.WorkerNode{VM: vmB, Type: h.WorkerTypeKubespand, T: t}
 		allVMs = []*h.VM{vmA, vmB, vmDisc}
 
 	case h.WorkerTypeTalos:
 		workerAConfig := secrets.WorkerConfig(h.TalosNodeConfig{
 			IP:                   fmt.Sprintf("%s/24", linkIPA),
-			ControlPlaneEndpoint: fmt.Sprintf("https://%s:6443", cpIP),
-			DiscoveryEndpoint:    fmt.Sprintf("http://%s:3000", discIP),
+			ControlPlaneEndpoint: cpEndpoint,
+			DiscoveryEndpoint:    discEndpoint,
 		})
 		workerBConfig := secrets.WorkerConfig(h.TalosNodeConfig{
 			IP:                   fmt.Sprintf("%s/24", linkIPB),
-			ControlPlaneEndpoint: fmt.Sprintf("https://%s:6443", cpIP),
-			DiscoveryEndpoint:    fmt.Sprintf("http://%s:3000", discIP),
+			ControlPlaneEndpoint: cpEndpoint,
+			DiscoveryEndpoint:    discEndpoint,
 		})
 		aCI := h.CreateCIDATA(t, tmpDir, "vm-a", workerAConfig)
 		bCI := h.CreateCIDATA(t, tmpDir, "vm-b", workerBConfig)
@@ -135,16 +137,16 @@ func runTopology(t *testing.T, topology string, workerType h.WorkerType) {
 		aAPIPort := h.RandomPort()
 		bAPIPort := h.RandomPort()
 		vmA := h.BootTalosVM(t, "vm-a", talosBaseImage, aCI,
-			aAPIPort, h.McastNIC("net0", mcastAddr, "52:54:00:a0:00:01"))
+			aAPIPort, h.McastNIC("net0", mcastAddr, h.NodeAMAC))
 		vmB := h.BootTalosVM(t, "vm-b", talosBaseImage, bCI,
-			bAPIPort, h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01"))
+			bAPIPort, h.McastNIC("net0", mcastAddr, h.NodeBMAC))
 		sw.Lap("boot Talos workers")
 
 		aClient := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", aAPIPort))
 		bClient := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", bAPIPort))
 
-		workerA = h.NewTalosWorker(t, vmA, aClient, linkIPA)
-		workerB = h.NewTalosWorker(t, vmB, bClient, linkIPB)
+		workerA = &h.WorkerNode{VM: vmA, Type: h.WorkerTypeTalos, NodeIP: linkIPA, T: t, TalosClient: aClient}
+		workerB = &h.WorkerNode{VM: vmB, Type: h.WorkerTypeTalos, NodeIP: linkIPB, T: t, TalosClient: bClient}
 		allVMs = []*h.VM{vmA, vmB, vmDisc}
 	}
 	defer workerA.Close()
@@ -154,7 +156,7 @@ func runTopology(t *testing.T, topology string, workerType h.WorkerType) {
 	cpCI := h.CreateCIDATA(t, tmpDir, "cp", cpConfigData)
 	talosAPIPort := h.RandomPort()
 	vmCP := h.BootTalosVM(t, "vm-cp", talosBaseImage, cpCI,
-		talosAPIPort, h.McastNIC("net0", mcastAddr, "52:54:00:c0:00:01"))
+		talosAPIPort, h.McastNIC("net0", mcastAddr, h.NodeCPMAC))
 	sw.Lap("boot Talos CP VM")
 
 	allVMs = append(allVMs, vmCP)

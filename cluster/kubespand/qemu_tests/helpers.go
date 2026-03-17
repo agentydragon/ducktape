@@ -66,6 +66,24 @@ const (
 // Must match initlib.MgmtMAC so the VM init can find it.
 const mgmtMAC = "52:54:00:aa:00:01"
 
+// MAC addresses for flat/cross-subnet/trustd topology VMs.
+const (
+	DiscoveryMAC = "52:54:00:ff:00:01"
+	NodeAMAC     = "52:54:00:a0:00:01"
+	NodeBMAC     = "52:54:00:b0:00:01"
+	NodeCPMAC    = "52:54:00:c0:00:01"
+)
+
+// ControlPlaneEndpoint returns the Talos API server URL for the given IP.
+func ControlPlaneEndpoint(ip string) string {
+	return "https://" + ip + ":6443"
+}
+
+// DiscoveryEndpoint returns the discovery service URL for the given IP.
+func DiscoveryEndpoint(ip string) string {
+	return "http://" + ip + ":3000"
+}
+
 // VM represents a running QEMU VM.
 type VM struct {
 	Name   string

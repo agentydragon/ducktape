@@ -39,9 +39,12 @@ const (
 	DoubleNATNAT2Gateway    = "192.168.70.1"
 )
 
-// MAC addresses for infrastructure VMs (consistent across test variants).
+// MAC addresses for double-NAT infrastructure VMs.
 const (
-	DoubleNATDiscoveryMAC       = "52:54:00:ff:00:01"
+	DoubleNATDiscoveryMAC       = DiscoveryMAC
+	DoubleNATVPSMAC             = NodeAMAC
+	DoubleNATNAT1MAC            = "52:54:00:d0:00:01"
+	DoubleNATNAT2MAC            = "52:54:00:e0:00:01"
 	DoubleNATRouterAInternetMAC = "52:54:00:c1:00:01"
 	DoubleNATRouterALanMAC      = "52:54:00:c1:00:02"
 	DoubleNATRouterBInternetMAC = "52:54:00:c2:00:01"

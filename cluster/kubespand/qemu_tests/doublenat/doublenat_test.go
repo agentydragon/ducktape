@@ -55,10 +55,13 @@ func runDoubleNAT(t *testing.T, workerType h.WorkerType) {
 	secrets := h.GenerateTestTalosSecrets(t)
 	creds := secrets.Creds()
 
+	cpEndpoint := h.ControlPlaneEndpoint(h.DoubleNATVPSIP)
+	discEndpoint := h.DiscoveryEndpoint(h.DoubleNATDiscoveryIP)
+
 	vpsConfig := secrets.ControlPlaneConfig(h.TalosNodeConfig{
 		IP:                   h.DoubleNATVPSIP + "/24",
-		ControlPlaneEndpoint: "https://" + h.DoubleNATVPSIP + ":6443",
-		DiscoveryEndpoint:    "http://" + h.DoubleNATDiscoveryAddr,
+		ControlPlaneEndpoint: cpEndpoint,
+		DiscoveryEndpoint:    discEndpoint,
 		CertSANs:             []string{h.DoubleNATVPSIP, "127.0.0.1"},
 	})
 	talosConfigPath := filepath.Join(tmpDir, "talosconfig")
@@ -92,7 +95,7 @@ func runDoubleNAT(t *testing.T, workerType h.WorkerType) {
 	// VPS (Talos CP).
 	vpsAPIPort := h.RandomPort()
 	vmVPS := h.BootTalosVM(t, "vm-vps", talosBaseImage, vpsCI,
-		vpsAPIPort, h.McastNIC("net0", mcastInternet, "52:54:00:a0:00:01"))
+		vpsAPIPort, h.McastNIC("net0", mcastInternet, h.DoubleNATVPSMAC))
 	sw.Lap("boot VPS CP")
 
 	// Boot worker VMs (NAT1, NAT2) based on workerType.
@@ -105,32 +108,32 @@ func runDoubleNAT(t *testing.T, workerType h.WorkerType) {
 		cidataNAT1 := h.CreateKubespandCIDATA(t, tmpDir, "nat1", nat1Cfg)
 		vmNAT1 := h.BootVM(t, "vm-nat1", vmlinuz, kubespandInitramfs,
 			"role=nat1 link_ip="+h.DoubleNATNAT1IP+" default_gw="+h.DoubleNATNAT1Gateway,
-			append(h.McastNIC("net0", mcastLanA, "52:54:00:d0:00:01"), h.CIDATADrive(cidataNAT1)...))
+			append(h.McastNIC("net0", mcastLanA, h.DoubleNATNAT1MAC), h.CIDATADrive(cidataNAT1)...))
 
 		nat2Cfg := h.NewTestAgentConfig(creds, h.DoubleNATDiscoveryAddr)
 		nat2Cfg.Api.ListenTCP = ":50100"
 		cidataNAT2 := h.CreateKubespandCIDATA(t, tmpDir, "nat2", nat2Cfg)
 		vmNAT2 := h.BootVM(t, "vm-nat2", vmlinuz, kubespandInitramfs,
 			"role=nat2 link_ip="+h.DoubleNATNAT2IP+" default_gw="+h.DoubleNATNAT2Gateway,
-			append(h.McastNIC("net0", mcastLanB, "52:54:00:e0:00:01"), h.CIDATADrive(cidataNAT2)...),
+			append(h.McastNIC("net0", mcastLanB, h.DoubleNATNAT2MAC), h.CIDATADrive(cidataNAT2)...),
 			h.PortForward{GuestPort: h.COSIGuestPort})
 
-		nat1 = h.NewKubespandWorker(t, vmNAT1)
-		nat2 = h.NewKubespandWorker(t, vmNAT2)
+		nat1 = &h.WorkerNode{VM: vmNAT1, Type: h.WorkerTypeKubespand, T: t}
+		nat2 = &h.WorkerNode{VM: vmNAT2, Type: h.WorkerTypeKubespand, T: t}
 		allVMs = append(allVMs, vmNAT1, vmNAT2)
 
 	case h.WorkerTypeTalos:
 		nat1Config := secrets.WorkerConfig(h.TalosNodeConfig{
 			IP:                   h.DoubleNATNAT1IP + "/24",
 			Gateway:              h.DoubleNATNAT1Gateway,
-			ControlPlaneEndpoint: "https://" + h.DoubleNATVPSIP + ":6443",
-			DiscoveryEndpoint:    "http://" + h.DoubleNATDiscoveryAddr,
+			ControlPlaneEndpoint: cpEndpoint,
+			DiscoveryEndpoint:    discEndpoint,
 		})
 		nat2Config := secrets.WorkerConfig(h.TalosNodeConfig{
 			IP:                   h.DoubleNATNAT2IP + "/24",
 			Gateway:              h.DoubleNATNAT2Gateway,
-			ControlPlaneEndpoint: "https://" + h.DoubleNATVPSIP + ":6443",
-			DiscoveryEndpoint:    "http://" + h.DoubleNATDiscoveryAddr,
+			ControlPlaneEndpoint: cpEndpoint,
+			DiscoveryEndpoint:    discEndpoint,
 		})
 		nat1CI := h.CreateCIDATA(t, tmpDir, "nat1", nat1Config)
 		nat2CI := h.CreateCIDATA(t, tmpDir, "nat2", nat2Config)
@@ -138,15 +141,15 @@ func runDoubleNAT(t *testing.T, workerType h.WorkerType) {
 		nat1APIPort := h.RandomPort()
 		nat2APIPort := h.RandomPort()
 		vmNAT1 := h.BootTalosVM(t, "vm-nat1", talosBaseImage, nat1CI,
-			nat1APIPort, h.McastNIC("net0", mcastLanA, "52:54:00:d0:00:01"))
+			nat1APIPort, h.McastNIC("net0", mcastLanA, h.DoubleNATNAT1MAC))
 		vmNAT2 := h.BootTalosVM(t, "vm-nat2", talosBaseImage, nat2CI,
-			nat2APIPort, h.McastNIC("net0", mcastLanB, "52:54:00:e0:00:01"))
+			nat2APIPort, h.McastNIC("net0", mcastLanB, h.DoubleNATNAT2MAC))
 
 		nat1Client := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", nat1APIPort))
 		nat2Client := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", nat2APIPort))
 
-		nat1 = h.NewTalosWorker(t, vmNAT1, nat1Client, h.DoubleNATNAT1IP)
-		nat2 = h.NewTalosWorker(t, vmNAT2, nat2Client, h.DoubleNATNAT2IP)
+		nat1 = &h.WorkerNode{VM: vmNAT1, Type: h.WorkerTypeTalos, NodeIP: h.DoubleNATNAT1IP, T: t, TalosClient: nat1Client}
+		nat2 = &h.WorkerNode{VM: vmNAT2, Type: h.WorkerTypeTalos, NodeIP: h.DoubleNATNAT2IP, T: t, TalosClient: nat2Client}
 		allVMs = append(allVMs, vmNAT1, vmNAT2)
 	}
 	defer nat1.Close()
