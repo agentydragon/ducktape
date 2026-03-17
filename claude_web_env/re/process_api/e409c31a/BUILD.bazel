@@ -16,7 +16,7 @@ rust_binary(
     ],
     crate_root = "src/main.rs",
     edition = "2024",
-    # New binary is static-pie linked (was dynamically linked in b0e4b2f4).
+    # Binary is static-pie linked.
     # This doesn't affect Rust source — it's a linker/rustc flag difference.
     # To match: rustflags = ["-C", "target-feature=+crt-static"]
     visibility = ["//visibility:public"],

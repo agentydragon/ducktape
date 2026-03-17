@@ -7,12 +7,12 @@ go_library(
         "sources.go",
     ],
     importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/sources",
-    visibility = ["//claude_web_env/re/environment_manager/6b49f1ca/src:__subpackages__"],
+    visibility = ["//claude_web_env/re/environment_manager/a6f96673/src:__subpackages__"],
     deps = [
-        "//claude_web_env/re/environment_manager/6b49f1ca/src/internal/auth",
-        "//claude_web_env/re/environment_manager/6b49f1ca/src/internal/config",
-        "//claude_web_env/re/environment_manager/6b49f1ca/src/internal/gitproxy",
-        "//claude_web_env/re/environment_manager/6b49f1ca/src/internal/o11y",
-        "//claude_web_env/re/environment_manager/6b49f1ca/src/internal/o11y/diag",
+        "//claude_web_env/re/environment_manager/a6f96673/src/internal/auth",
+        "//claude_web_env/re/environment_manager/a6f96673/src/internal/config",
+        "//claude_web_env/re/environment_manager/a6f96673/src/internal/gitproxy",
+        "//claude_web_env/re/environment_manager/a6f96673/src/internal/o11y",
+        "//claude_web_env/re/environment_manager/a6f96673/src/internal/o11y/diag",
     ],
 )

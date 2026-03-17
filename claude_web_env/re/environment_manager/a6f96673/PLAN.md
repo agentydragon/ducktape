@@ -1,8 +1,7 @@
 # environment-manager RE Plan (a6f96673)
 
-Delta reconstruction plan for `environment-manager` binary
-(Build ID `a6f96673c2497a946dc0797780b5c6df47c0946e`), updating from
-the previous `6b49f1ca` reconstruction.
+Reconstruction plan for `environment-manager` binary
+(Build ID `a6f96673c2497a946dc0797780b5c6df47c0946e`).
 
 ## Binary Summary
 
@@ -10,21 +9,21 @@ the previous `6b49f1ca` reconstruction.
 | -------------------- | ------------------------------------------ |
 | Build ID             | `a6f96673c2497a946dc0797780b5c6df47c0946e` |
 | Version              | `staging-68f0dff496`                       |
-| Go version           | 1.25.7 (was 1.25.6)                        |
+| Go version           | 1.25.7                                     |
 | Binary size          | 27.3 MB                                    |
-| Anthropic functions  | 949 (was ~808)                             |
-| Source files (DWARF) | ~82 (was 78)                               |
+| Anthropic functions  | 949                                        |
+| Source files (DWARF) | ~82                                        |
 
-## Dependency Changes (6b49f1ca to a6f96673)
+## Dependencies
 
-| Module                       | Old Version   | New Version      |
-| ---------------------------- | ------------- | ---------------- |
-| Go compiler                  | 1.25.6        | 1.25.7           |
-| `connectrpc.com/connect`     | v1.18.1       | v1.19.1          |
-| `google.golang.org/grpc`     | v1.75.1       | v1.79.0          |
-| `go.opentelemetry.io/otel`   | v1.38.0       | v1.39.0          |
-| `google.golang.org/protobuf` | v1.36.10      | v1.36.11         |
-| `cenkalti/backoff/v5`        | (not present) | v5.0.3 (**NEW**) |
+| Module                       | Version  |
+| ---------------------------- | -------- |
+| Go compiler                  | 1.25.7   |
+| `connectrpc.com/connect`     | v1.19.1  |
+| `google.golang.org/grpc`     | v1.79.0  |
+| `go.opentelemetry.io/otel`   | v1.39.0  |
+| `google.golang.org/protobuf` | v1.36.11 |
+| `cenkalti/backoff/v5`        | v5.0.3   |
 
 ## Phase 1: Census & Diff (COMPLETE)
 
@@ -80,7 +79,7 @@ the previous `6b49f1ca` reconstruction.
 
 ### Build ID Reference Updates
 
-9. [x] Updated Build ID references from `6b49f1ca` to `a6f96673` across all 37+ files
+9. [x] Updated all Build ID references to `a6f96673` across all source files
 
 ## Phase 3: Apply Known Changes (PARTIAL)
 

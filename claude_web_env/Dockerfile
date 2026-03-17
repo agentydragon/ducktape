@@ -68,7 +68,7 @@ COPY rootfs/usr/ /usr/
 # APT SETUP (Layers 5-9)
 # =============================================================================
 
-# Layer 5: Configure APT snapshot repos + install ca-certificates
+# Layer 5: Configure APT snapshot repos + dist-upgrade + install ca-certificates
 RUN rm -f /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list && \
     printf 'Types: deb\nURIs: https://snapshot.ubuntu.com/ubuntu/20251201T000000Z\nSuites: noble noble-updates noble-security\nComponents: main restricted universe multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' \
       > /etc/apt/sources.list.d/snapshot.sources && \
@@ -91,6 +91,9 @@ RUN rm -f /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list && \
     printf '%s\n' 'Package: *' 'Pin: origin ppa.launchpadcontent.net' 'Pin-Priority: 1002' \
       > /etc/apt/preferences.d/ppa-pin && \
     echo 'Acquire::https::Verify-Peer "false";' > /etc/apt/apt.conf.d/99no-verify && \
+    { echo "Acquire::http::Proxy \"$(printenv http_proxy 2>/dev/null || true)\";"; \
+      echo "Acquire::https::Proxy \"$(printenv https_proxy 2>/dev/null || true)\";"; } \
+      > /etc/apt/apt.conf.d/01proxy && \
     printf 'Acquire::Retries "3";\nAcquire::https::Timeout "30";\nAcquire::http::Timeout "30";\n' > /etc/apt/apt.conf.d/80retries && \
     for attempt in 1 2 3 4 5; do \
       rm -rf /var/lib/apt/lists/* && \
@@ -102,7 +105,7 @@ RUN rm -f /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list && \
     apt-get dist-upgrade --allow-downgrades -y && \
     apt-get install --allow-downgrades -y --no-install-recommends ca-certificates && \
     update-ca-certificates && \
-    rm /etc/apt/apt.conf.d/99no-verify
+    rm /etc/apt/apt.conf.d/99no-verify /etc/apt/apt.conf.d/01proxy
 
 # Layer 6: Core packages (base system, build tools, clang, libs, systemd, fonts, java, postgres, redis)
 # NOTE: apt lists persist from Layer 5 - no apt-get update needed here

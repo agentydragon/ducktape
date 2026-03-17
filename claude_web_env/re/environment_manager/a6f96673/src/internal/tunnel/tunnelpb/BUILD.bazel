@@ -20,7 +20,7 @@ go_library(
     srcs = ["helpers.go"],
     embed = [":tunnel_go_proto"],
     importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/tunnel/tunnelpb",
-    visibility = ["//claude_web_env/re/environment_manager/6b49f1ca/src:__subpackages__"],
+    visibility = ["//claude_web_env/re/environment_manager/a6f96673/src:__subpackages__"],
 )
 
 go_test(

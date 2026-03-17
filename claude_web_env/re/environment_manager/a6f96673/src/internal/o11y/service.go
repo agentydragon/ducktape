@@ -1,4 +1,4 @@
-// Reconstructed from binary 6b49f1ca
+// Reconstructed from binary a6f96673
 // Source: internal/o11y/service.go
 
 package o11y

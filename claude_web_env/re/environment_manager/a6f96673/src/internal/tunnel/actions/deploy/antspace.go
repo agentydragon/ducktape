@@ -2,7 +2,7 @@
 // Source: internal/tunnel/actions/deploy/antspace.go
 // Module: github.com/anthropics/anthropic/api-go/environment-manager
 //
-// NEW in a6f96673 (not present in 6b49f1ca).
+// Antspace deployment client - deploys Edge Functions to Anthropic's control plane.
 // Antspace deployment client - deploys Edge Functions to Anthropic's
 // Antspace control plane (alternative to Vercel deployments).
 

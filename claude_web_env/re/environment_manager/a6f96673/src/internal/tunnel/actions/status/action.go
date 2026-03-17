@@ -2,7 +2,7 @@
 // Source: internal/tunnel/actions/status/action.go
 // Module: github.com/anthropics/anthropic/api-go/environment-manager
 //
-// NEW in a6f96673 (not present in 6b49f1ca).
+// Package status implements the status tunnel action.
 
 package status
 

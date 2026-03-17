@@ -1,4 +1,4 @@
-// Reconstructed from binary 6b49f1ca
+// Reconstructed from binary a6f96673
 // Source: internal/o11y/otel_logger.go
 //
 // This file contains the OpenTelemetry logging provider initialization,

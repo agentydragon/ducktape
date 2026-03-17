@@ -21,8 +21,6 @@ and symbols**, making reconstruction significantly more tractable.
 | **Functions**      | 949 Anthropic functions                               |
 | **RE directory**   | `a6f96673/`                                           |
 
-Previous version: `6b49f1ca/` (staging-7c3cd5476, Go 1.25.6, 808 functions).
-
 ## Binary Name vs CLI Name
 
 The binary is named `environment-manager` on disk but the Cobra root command

@@ -8,5 +8,5 @@ go_library(
         "multi_handler.go",
     ],
     importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/logger",
-    visibility = ["//claude_web_env/re/environment_manager/6b49f1ca/src:__subpackages__"],
+    visibility = ["//claude_web_env/re/environment_manager/a6f96673/src:__subpackages__"],
 )

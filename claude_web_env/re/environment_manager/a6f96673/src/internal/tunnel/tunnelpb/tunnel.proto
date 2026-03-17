@@ -1,7 +1,7 @@
 // Tunnel protobuf definitions for the environment-manager tunnel protocol.
 // Original import path: github.com/anthropics/anthropic/api-go/gen/proto/anthropic/sessions/tunnel/v1alpha
 //
-// Reconstructed from environment-manager binary (Build ID: 6b49f1ca)
+// Reconstructed from environment-manager binary (Build ID: a6f96673)
 
 syntax = "proto3";
 

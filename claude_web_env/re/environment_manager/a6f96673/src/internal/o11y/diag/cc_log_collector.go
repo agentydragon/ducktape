@@ -1,4 +1,4 @@
-// Reconstructed from binary 6b49f1ca
+// Reconstructed from binary a6f96673
 // Source: internal/o11y/diag/cc_log_collector.go
 //
 // This file implements the Claude Code log collector which tails the

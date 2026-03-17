@@ -21,7 +21,7 @@ Reconstructed source lives under `e409c31a/` (Build ID prefix).
 ## Build
 
 ```bash
-bazel build //claude_web_env/re/process_api/b0e4b2f4:process_api_re
+bazel build //claude_web_env/re/process_api/e409c31a:process_api_re
 ```
 
 ## Approach
@@ -579,7 +579,7 @@ strings) but have no behavioral impact.
 
 ## Verification Status
 
-See <e409c31a/PLAN.md> for detailed status. Previous version: `b0e4b2f4/`.
+See <e409c31a/PLAN.md> for detailed status.
 
 - [x] Binary analysis, decompilation, translation, build
 - [x] String differential analysis + remediation

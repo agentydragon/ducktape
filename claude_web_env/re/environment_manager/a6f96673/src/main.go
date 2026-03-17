@@ -1,6 +1,6 @@
 // Reconstructed from binary: environment-manager (Build ID a6f96673)
 // Source: /home/runner/work/anthropic/anthropic/api-go/environment-manager/main.go
-// Updated from 6b49f1ca to a6f96673.
+// Reconstructed for binary a6f96673.
 //
 // Key changes in a6f96673:
 //   - Version string changed: staging-7c3cd5476 -> staging-68f0dff496

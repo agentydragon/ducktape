@@ -1,4 +1,4 @@
-// Reconstructed from binary 6b49f1ca
+// Reconstructed from binary a6f96673
 // Source: internal/o11y/diag/diag_logs.go
 //
 // This file implements the DiagService which manages diagnostic logging

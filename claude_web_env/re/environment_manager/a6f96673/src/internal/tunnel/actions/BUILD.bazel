@@ -4,8 +4,8 @@ go_library(
     name = "actions",
     srcs = ["registry.go"],
     importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/tunnel/actions",
-    visibility = ["//claude_web_env/re/environment_manager/6b49f1ca/src:__subpackages__"],
+    visibility = ["//claude_web_env/re/environment_manager/a6f96673/src:__subpackages__"],
     deps = [
-        "//claude_web_env/re/environment_manager/6b49f1ca/src/internal/tunnel/tunnelpb",
+        "//claude_web_env/re/environment_manager/a6f96673/src/internal/tunnel/tunnelpb",
     ],
 )

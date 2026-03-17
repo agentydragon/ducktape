@@ -7,8 +7,8 @@ go_library(
         "vercel.go",
     ],
     importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/tunnel/actions/deploy",
-    visibility = ["//claude_web_env/re/environment_manager/6b49f1ca/src:__subpackages__"],
+    visibility = ["//claude_web_env/re/environment_manager/a6f96673/src:__subpackages__"],
     deps = [
-        "//claude_web_env/re/environment_manager/6b49f1ca/src/internal/tunnel/actions",
+        "//claude_web_env/re/environment_manager/a6f96673/src/internal/tunnel/actions",
     ],
 )

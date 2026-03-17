@@ -10,7 +10,7 @@
 //     (itab + data) and called with (ctx, StreamType, []byte) returning error.
 //   - noopStopper itab: go:itab.*session.noopStopper,util.Stopper (b71486df) confirms Stopper
 //     is an interface with a single Stop() method.
-//     (Old binary 6b49f1ca had go:itab.*cmd.noopStopper,util.Stopper)
+//     (Old binary a6f96673 had go:itab.*cmd.noopStopper,util.Stopper)
 
 package util
 

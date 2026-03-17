@@ -5,7 +5,7 @@
 // Reconstructed from binary b71486df (Go 1.25.6).
 // Source path: .../environment-manager/internal/mcp/servers/supabase/
 //
-// New symbols in b71486df (vs 6b49f1ca):
+// New symbols in b71486df (vs a6f96673):
 //   - supabase.NewClient (exported constructor)
 //   - supabase.(*Client).ApplyMigration
 //   - supabase.(*Client).GenerateTypes

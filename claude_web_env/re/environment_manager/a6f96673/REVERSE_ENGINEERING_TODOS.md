@@ -1,6 +1,6 @@
 # Environment Manager Reverse Engineering - Remaining Work
 
-Binary: `/tmp/em-re/environment-manager` (Build ID: 6b49f1ca, Go 1.25.6)
+Binary: `/tmp/em-re/environment-manager` (Build ID: a6f96673, Go 1.25.7)
 
 **Status:** ✅ Builds successfully, all critical functionality works
 
@@ -45,7 +45,7 @@ Binary: `/tmp/em-re/environment-manager` (Build ID: 6b49f1ca, Go 1.25.6)
 ## Build Command
 
 ```bash
-bazel build //claude_web_env/re/environment_manager/6b49f1ca/src/cmd:cmd
+bazel build //claude_web_env/re/environment_manager/a6f96673/src/cmd:cmd
 ```
 
 ## Summary

@@ -1,21 +1,20 @@
-# e409c31a RE Plan — Delta from b0e4b2f4
+# e409c31a RE Plan
 
 ## Binary Info
 
-| Property         | Old (b0e4b2f4)     | New (e409c31a)                    |
-| ---------------- | ------------------ | --------------------------------- |
-| **Size**         | 2.1 MB             | 3.2 MB (52% larger)               |
-| **Linking**      | Dynamic (ld-linux) | Static-pie                        |
-| **Rust version** | 1.83.0             | TBD (likely newer)                |
-| **Source files** | 9 modules          | 10 modules (+firecracker_init.rs) |
+| Property         | Value                                      |
+| ---------------- | ------------------------------------------ |
+| **Build ID**     | `e409c31a846219e05541706c43daf1756365f486` |
+| **Size**         | 3.2 MB                                     |
+| **Linking**      | Static-pie                                 |
+| **Source files** | 10 modules                                 |
 
-## New Features Identified
+## Features
 
 ### 1. Firecracker VM Init (`--firecracker-init`)
 
-The single largest addition. When enabled, process_api acts as a full VM init
-system (PID 1) inside a Firecracker microVM, handling tasks normally done by
-the container runtime host:
+The largest module. When enabled, process_api acts as a full VM init
+system (PID 1) inside a Firecracker microVM:
 
 - Mount essential filesystems (/proc, /sys, /dev, /dev/pts, /dev/shm, cgroup2)
 - Set up networking (IP=192.0.2.2/24, GW=192.0.2.1, MTU=1400)
@@ -36,7 +35,7 @@ the container runtime host:
 enters snapstart template mode and signals SNAPSTART_READY. The mount root
 config is then supplied via POST /mount_root on the control server.
 
-### 2. New CLI Flags
+### 2. CLI Flags
 
 | Flag                   | Env Var              | Description                            |
 | ---------------------- | -------------------- | -------------------------------------- |
@@ -45,9 +44,9 @@ config is then supplied via POST /mount_root on the control server.
 | `--listen-vsock-port`  | `LISTEN_VSOCK_PORT`  | Vsock WebSocket listener (Firecracker) |
 | `--control-vsock-port` | `CONTROL_VSOCK_PORT` | Vsock control server (Firecracker)     |
 
-Note: `--addr` is now Optional (was required) since vsock/UDS are alternatives.
+Note: `--addr` is Optional since vsock/UDS are alternatives.
 
-### 3. New Control Server Endpoints
+### 3. Control Server Endpoints
 
 | Method | Path          | Description                                               |
 | ------ | ------------- | --------------------------------------------------------- |
@@ -66,15 +65,15 @@ WebSocket listener can operate over a Unix domain socket via `--listen-uds`.
 
 ### 6. JWT Auth Token Validation
 
-New dependency on `jsonwebtoken 9.3.1`. TokenClaims struct with `sub`, `iat`,
-`exp` fields. Used to validate auth tokens in FUSE mount configs.
+Uses `jsonwebtoken 9.3.1`. TokenClaims struct with `sub`, `iat`,
+`exp` fields. Validates auth tokens in FUSE mount configs.
 
 ### 7. Container Info Persistence
 
 Container name and auth public key are persisted to `/container_info.json`
 when updated via control server.
 
-## New Dependencies
+## Key Dependencies
 
 | Crate          | Version | Purpose                       |
 | -------------- | ------- | ----------------------------- |
@@ -103,4 +102,4 @@ when updated via control server.
 - [ ] JWT validation integration in auth endpoints
 - [ ] FIFREEZE/FITHAW ioctl number verification
 - [ ] Network ioctl implementation detail (SIOCSIFADDR etc.)
-- [ ] Behavioral test harness (inherited from b0e4b2f4 PLAN.md)
+- [ ] Behavioral test harness
