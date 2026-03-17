@@ -24,13 +24,12 @@ Package: libpam0g libpam-modules libpam-modules-bin libpam-runtime
 Pin: version 1.5.3-5ubuntu5.5
 Pin-Priority: 1002
 
-Package: util-linux mount libfdisk1 libsmartcols1 libuuid1 libblkid1 libmount1 libblkid-dev libmount-dev uuid-dev
-Pin: version 2.39.3-9ubuntu6.4
-Pin-Priority: 1002
+# util-linux: live container has .4, snapshot has .3. Cannot pin to .4
+# because -dev packages (libblkid-dev, libmount-dev, uuid-dev) need exact
+# version match with their library counterparts. Let snapshot version win.
+# The .3→.4 version difference will appear in the diff report.
 
-Package: bsdutils
-Pin: version 1:2.39.3-9ubuntu6.4
-Pin-Priority: 1002
+# bsdutils: part of util-linux, same .3→.4 version issue (see above)
 
 Package: libxml2 libxml2-utils
 Pin: version 2.9.14+dfsg-1.3ubuntu3.7

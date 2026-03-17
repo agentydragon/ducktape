@@ -8,3 +8,6 @@ live_manifest.ndjson.gz
 # Uncompressed binaries (build uses compressed reference/*.gz instead)
 rootfs/usr/local/bin/environment-manager
 rootfs/process_api/
+
+# Repacked debs (generated at build time by dpkg-repack, not committed)
+local_debs/
