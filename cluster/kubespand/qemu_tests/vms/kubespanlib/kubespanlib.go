@@ -12,7 +12,9 @@ import (
 )
 
 // LoadModules loads kernel modules needed by kubespand VMs: nftables, wireguard,
-// virtio drivers, and filesystem modules for CIDATA mounting.
+// virtio drivers, filesystem modules for CIDATA mounting, and modules required by
+// the embedded Talos KernelParamSpecController (br_netfilter for bridge-nf-call-*
+// sysctls, yama for ptrace_scope).
 func LoadModules() {
 	initlib.LoadNftablesModules()
 	// virtio_blk: CIDATA virtio drive to appear as /dev/vda.
@@ -20,6 +22,7 @@ func LoadModules() {
 	// These are modules (not built-in) in the Alpine linux-virt kernel.
 	for _, mod := range []string{
 		"wireguard", "virtio_net", "virtio_blk", "fat", "vfat",
+		"br_netfilter", "yama",
 	} {
 		if err := initlib.RunSilent("modprobe", mod); err != nil {
 			log.Printf("modprobe %s failed: %v", mod, err)
