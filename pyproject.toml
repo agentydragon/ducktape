@@ -79,6 +79,8 @@ dependencies = [
     # Visualization
     "plotnine>=0.13.0",
     "matplotlib",
+    "networkx>=3.0",
+    "types-networkx",
 
 
     # Jupyter

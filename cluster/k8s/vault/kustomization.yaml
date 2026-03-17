@@ -5,5 +5,6 @@ resources:
   - rbac.yaml
   - internal-tls-certificate.yaml
   - instance.yaml
+  - servicemonitor.yaml
 # Note: Vault uses cluster-internal-ca (from cluster-ca kustomization) instead of vault-specific CA
 # Note: ingress.yaml and certificate.yaml in separate vault-ingress kustomization

@@ -27,6 +27,9 @@ spec:
     storageClass: local-path
     size: 1Gi
 
+  monitoring:
+    enablePodMonitor: true
+
   bootstrap:
     initdb:
       database: headscale

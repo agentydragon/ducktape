@@ -77,6 +77,12 @@ spec:
         queue:
           TYPE: level
 
+        metrics:
+          ENABLED: true
+          TOKEN: ""
+          # TODO: Set a metrics token and add bearerTokenSecret to the ServiceMonitor once
+          # a Vault secret + ESO pattern is in place (follow LiteLLM token pattern).
+
         security:
           INSTALL_LOCK: true
           SECRET_KEY: "change-this-secret-key-in-production"

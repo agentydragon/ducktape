@@ -1,0 +1,15 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: gitea
+  namespace: gitea
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gitea
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      # TODO: Set metrics.TOKEN in Gitea config and add bearerTokenSecret here once
+      # a Vault secret + ESO pattern is in place (follow LiteLLM token pattern).

@@ -57,6 +57,7 @@ resources:
   - authentik-namespace/flux-kustomization.yaml
   - authentik-db/flux-kustomization.yaml
   - authentik/flux-kustomization.yaml
+  - authentik-servicemonitor/flux-kustomization.yaml
   - authentik-secrets/flux-kustomization.yaml
   - authentik-token/flux-kustomization.yaml
   - harbor-namespace/flux-kustomization.yaml
@@ -68,6 +69,7 @@ resources:
   - harbor-webhook/flux-kustomization.yaml
   - gitea-namespace/flux-kustomization.yaml
   - applications/gitea/flux-kustomization.yaml
+  - applications/gitea-servicemonitor/flux-kustomization.yaml
   - applications/gitea-admin-token/flux-kustomization.yaml
   - applications/gitea-secrets/flux-kustomization.yaml
   - matrix-namespace/flux-kustomization.yaml

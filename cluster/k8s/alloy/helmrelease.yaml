@@ -38,6 +38,9 @@ spec:
           containerPort: 4318
           protocol: TCP
 
+    serviceMonitor:
+      enabled: true
+
     resources:
       requests:
         cpu: 50m

@@ -17,6 +17,9 @@ spec:
     storageClass: longhorn
     size: 10Gi
 
+  monitoring:
+    enablePodMonitor: true
+
   bootstrap:
     initdb:
       database: eval_results

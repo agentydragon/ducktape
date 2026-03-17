@@ -47,7 +47,7 @@ spec:
     prometheus:
       enabled: true
       servicemonitor:
-        enabled: false # Enable later when we have Prometheus
+        enabled: true
 
     # Resource configuration
     resources:

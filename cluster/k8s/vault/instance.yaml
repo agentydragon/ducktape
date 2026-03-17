@@ -61,6 +61,11 @@ spec:
     api_addr: "http://instance.vault.svc.cluster.local:8200"
     cluster_addr: "http://${.Env.POD_NAME}.vault.svc.cluster.local:8201"
     ui: true
+    telemetry:
+      unauthenticated_metrics_access: true
+      prometheus_retention_time: "30s"
+      # TODO: Consider restricting /v1/sys/metrics to monitoring namespace only
+      # via CiliumNetworkPolicy once baseline metrics are confirmed working.
 
   # Automatic unsealing using Kubernetes secrets
   unsealConfig:

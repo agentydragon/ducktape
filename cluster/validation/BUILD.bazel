@@ -47,7 +47,9 @@ py_library(
         ":flux",
         ":k8s",
         ":kustomize",
-        "@pypi//pydantic",
+        "@pypi//networkx",
+        "@pypi//numpy",
+        "@pypi//types_networkx",
     ],
 )
 
@@ -57,7 +59,11 @@ py_library(
     imports = ["../.."],
     deps = [
         ":cluster",
+        ":crd_layering",
         ":flux",
+        "@pypi//networkx",
+        "@pypi//numpy",
+        "@pypi//types_networkx",
     ],
 )
 
@@ -136,6 +142,7 @@ py_test(
     data = glob(["testdata/**"]),
     imports = ["../.."],
     deps = [
+        ":cluster",
         ":dependencies",
         ":flux",
         "//util/bazel:runfiles",
@@ -149,8 +156,10 @@ py_test(
     srcs = ["test_dependencies.py"],
     imports = ["../.."],
     deps = [
+        ":cluster",
         ":dependencies",
         ":flux",
+        ":k8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

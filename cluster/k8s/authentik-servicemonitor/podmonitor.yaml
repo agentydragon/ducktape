@@ -1,0 +1,15 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: authentik-server
+  namespace: authentik
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: authentik
+      app.kubernetes.io/component: server
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      # TODO: Consider adding bearer token auth if Authentik metrics require authentication.

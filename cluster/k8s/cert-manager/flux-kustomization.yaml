@@ -32,3 +32,4 @@ spec:
         name: cert-manager-issuer-config
   dependsOn:
     - name: cert-manager-issuer-config
+    - name: monitoring-stack

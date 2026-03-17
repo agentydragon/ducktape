@@ -27,8 +27,25 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     "vault-operator": {"Vault"},
     "vault": set(),
     "tofu-controller": {"Terraform"},
-    "powerdns-operator": {"ClusterZone", "ClusterRRset"},
-    "sealed-secrets": set(),
+    "powerdns-operator": {"ClusterZone", "ClusterRRset", "Zone", "RRset"},
+    "sealed-secrets": {"SealedSecret"},
+    "monitoring-stack": {"ServiceMonitor", "PodMonitor"},
+    "cnpg": {
+        "Cluster",
+        "Backup",
+        "ScheduledBackup",
+        "Pooler",
+        "ClusterImageCatalog",
+        "ImageCatalog",
+        "Database",
+        "Publication",
+        "Subscription",
+    },
+    "longhorn": set(),  # Longhorn CRDs (Volume, Engine, etc.) are internal to the operator
+    "vpa": {"VerticalPodAutoscaler", "VerticalPodAutoscalerCheckpoint"},
+    "node-feature-discovery": {"NodeFeatureRule", "NodeFeature", "NodeFeatureGroup"},
+    "openclaw-operator": {"OpenClawInstance", "OpenClawSelfConfig"},
+    "flux-image-automation": {"ImageRepository", "ImagePolicy", "ImageUpdateAutomation"},
 }
 
 # Derived: CRD kind -> operator name (for error messages)

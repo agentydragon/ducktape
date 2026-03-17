@@ -15,6 +15,7 @@ spec:
   dependsOn:
     - name: vault-operator # Vault instance needs operator and CRDs
     - name: local-path-provisioner # Vault uses local-path storage
+    - name: monitoring-stack # ServiceMonitor CRD must exist before vault deploys servicemonitor.yaml
   # Verify Bank-Vaults operator, Vault StatefulSet, and unseal keys are ready.
   # The instance-unseal-keys secret is created by Bank-Vaults after Vault
   # initialization — downstream consumers (vault-token, external-secrets-config)

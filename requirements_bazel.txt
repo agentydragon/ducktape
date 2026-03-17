@@ -2731,6 +2731,10 @@ nest-asyncio==1.6.0 \
     # via
     #   ducktape (pyproject.toml)
     #   ipykernel
+networkx==3.6.1 \
+    --hash=sha256:26b7c357accc0c8cde558ad486283728b65b6a95d85ee1cd66bafab4c8168509 \
+    --hash=sha256:d47fbf302e7d9cbbb9e2555a0d267983d2aa476bac30e90dfbe5669bd57f3762
+    # via ducktape (pyproject.toml)
 nodeenv==1.10.0 \
     --hash=sha256:5bb13e3eed2923615535339b3c620e76779af4cb4c6a90deccc9e36b274d3827 \
     --hash=sha256:996c191ad80897d076bdfba80a41994c2b47c68e224c542b48feba42ba00f8bb
@@ -2820,6 +2824,7 @@ numpy==2.4.2 \
     #   plotnine
     #   scipy
     #   statsmodels
+    #   types-networkx
 oauthlib==3.3.1 \
     --hash=sha256:0f0f8aa759826a193cf66c12ea1af1637f87b9b4622d46e866952bb022e538c9 \
     --hash=sha256:88119c938d2b8fb88561af5f6ee0eec8cc8d552b7bb1f712743136eb7523b7a1
@@ -5206,6 +5211,10 @@ types-jsonschema==4.26.0.20260202 \
 types-markdown==3.10.2.20260211 \
     --hash=sha256:2d94d08587e3738203b3c4479c449845112b171abe8b5cadc9b0c12fcf3e99da \
     --hash=sha256:66164310f88c11a58c6c706094c6f8c537c418e3525d33b76276a5fbd66b01ce
+    # via ducktape (pyproject.toml)
+types-networkx==3.6.1.20260303 \
+    --hash=sha256:754c7c7bcaab3c317b0b86441240c0a5bd0d2f419aba80a88e9718248a5c89af \
+    --hash=sha256:8248aa6fcadc08bd7992af6e412bfc5cfa043bda5ce7ab407fa591c808ce8557
     # via ducktape (pyproject.toml)
 types-paramiko==4.0.0.20250822 \
     --hash=sha256:1b56b0cbd3eec3d2fd123c9eb2704e612b777e15a17705a804279ea6525e0c53 \
