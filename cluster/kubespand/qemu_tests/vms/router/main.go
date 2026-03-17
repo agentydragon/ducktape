@@ -71,9 +71,22 @@ func main() {
 				Register: 1,
 				Data:     []byte("eth0\x00"),
 			},
-			// Persistent: endpoint-independent mapping (full-cone NAT).
-			// Same source port regardless of destination, enabling NAT
-			// hole-punching between peers behind different NAT routers.
+			// Persistent maps to NF_NAT_RANGE_PERSISTENT, which creates
+			// endpoint-independent mapping (full-cone NAT): the kernel reuses
+			// the same translated source port for a given (src-ip, src-port)
+			// regardless of destination. Without it, Linux masquerade uses
+			// endpoint-dependent mapping (symmetric NAT), where each
+			// (src-ip, src-port, dst-ip) tuple gets a different mapped port.
+			//
+			// This is required for WireGuard NAT hole-punching: when the VPS
+			// observes NAT1's mapped port via a WireGuard handshake and
+			// publishes it through the discovery service, NAT2 must be able
+			// to reach NAT1 at that same mapped port. With symmetric NAT,
+			// the port is only valid for VPS→NAT1 traffic, so NAT2→NAT1
+			// packets hit a different (or nonexistent) mapping and are dropped.
+			//
+			// Most consumer/SOHO routers use endpoint-independent mapping for
+			// UDP, which is what the STUN/TURN/ICE ecosystem relies on.
 			&expr.Masq{Persistent: true},
 		},
 	})

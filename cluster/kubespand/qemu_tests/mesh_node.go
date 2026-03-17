@@ -35,7 +35,7 @@ const (
 	// NodeReadyTimeout is how long to wait for a node's API to become reachable.
 	NodeReadyTimeout = 180 * time.Second
 	// FullMeshTimeout is how long to wait for full mesh convergence after nodes are ready.
-	FullMeshTimeout = 120 * time.Second
+	FullMeshTimeout = 30 * time.Second
 )
 
 // MeshNode wraps a VM with node-type-specific COSI access and probe
