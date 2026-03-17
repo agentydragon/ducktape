@@ -256,6 +256,51 @@ Phase 3 is the right long-term architecture for eliminating the ~700ms
 baseline, but is only justified when the per-hook latency budget matters
 enough to warrant the complexity.
 
+## Future Extensions
+
+### Multi-Session Daemon
+
+Every hook invocation includes `session_id` in its JSON input. A single
+daemon process could multiplex across multiple concurrent Claude Code
+sessions on the same machine — maintaining per-session OTEL providers,
+cached secrets, and circuit breaker state in a `dict[str, SessionState]`.
+
+Benefits:
+
+- One process for all sessions instead of one per session.
+- Shared OTEL exporter connection pool across sessions.
+- Single point for health monitoring and metrics.
+- Survives individual session restarts (daemon stays up, session
+  re-registers on SessionStart).
+
+The daemon would need session lifecycle management: register on
+SessionStart, clean up state on SessionEnd (or TTL expiry for
+sessions that exit ungracefully).
+
+### Cluster-Centralized Daemon
+
+The daemon's API is just JSON-over-HTTP — there's nothing inherently
+local about it. A centralized instance on the cluster could serve
+multiple machines:
+
+- Central OTEL aggregation point (one exporter, not per-machine).
+- Shared k8s secret cache (fetch once, serve many sessions).
+- Central circuit breaker state (if OTEL is down, all sessions
+  learn immediately).
+- Observability dashboard for all active sessions.
+
+This would require:
+
+- TLS + auth for the daemon endpoint (mTLS or bearer token).
+- Network path from Claude Code containers to the cluster
+  (Headscale/tailnet or proxy chain).
+- Graceful degradation when the central daemon is itself unreachable
+  (fall back to local dispatch).
+
+The local daemon (Phase 3) is a natural stepping stone — it proves
+the protocol and client, and the centralized version is just moving
+where the daemon runs.
+
 ## Open Questions
 
 - **`Setup` hook**: Claude Code's binary contains a `Setup` schema alongside
