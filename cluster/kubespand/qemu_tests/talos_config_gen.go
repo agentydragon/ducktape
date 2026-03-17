@@ -214,6 +214,13 @@ func (s *TestTalosSecrets) baseConfig(machineType string, opts TalosNodeConfig) 
 			MachineInstall: &v1alpha1.InstallConfig{
 				InstallDisk: "/dev/sda",
 			},
+			// Disable NTP: QEMU test networks have no internet access.
+			// TimeBootTimeout defaults to infinity, blocking kubelet
+			// startup until NTP sync succeeds. WireGuard uses monotonic
+			// clocks for handshakes, so wall clock accuracy is irrelevant.
+			MachineTime: &v1alpha1.TimeConfig{
+				TimeDisabled: boolPtr(true),
+			},
 			MachineFeatures: &v1alpha1.FeaturesConfig{
 				RBAC:                 &trueVal,
 				StableHostname:       &trueVal,
@@ -224,8 +231,11 @@ func (s *TestTalosSecrets) baseConfig(machineType string, opts TalosNodeConfig) 
 					ServerPort:    7445,
 				},
 				HostDNSSupport: &v1alpha1.HostDNSConfig{
-					HostDNSEnabled:              boolPtr(true),
-					HostDNSForwardKubeDNSToHost: boolPtr(true),
+					HostDNSEnabled: boolPtr(true),
+					// Don't forward to upstream DNS — no internet access
+					// in QEMU test networks. Avoids timeout errors from
+					// the host DNS resolver trying to reach 8.8.8.8.
+					HostDNSForwardKubeDNSToHost: boolPtr(false),
 				},
 			},
 		},
@@ -238,6 +248,11 @@ func (s *TestTalosSecrets) baseConfig(machineType string, opts TalosNodeConfig) 
 			ClusterName:                      "test-kubespan",
 			BootstrapToken:                   s.ClusterToken,
 			ClusterSecretboxEncryptionSecret: s.SecretboxSecret,
+			// CoreDNS can't start (CNI is "none"), disable explicitly to
+			// avoid Talos waiting for it.
+			CoreDNSConfig: &v1alpha1.CoreDNS{
+				CoreDNSDisabled: boolPtr(true),
+			},
 			ClusterNetwork: &v1alpha1.ClusterNetworkConfig{
 				CNI: &v1alpha1.CNIConfig{
 					CNIName: "none",
