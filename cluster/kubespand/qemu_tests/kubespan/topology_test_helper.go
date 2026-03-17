@@ -3,6 +3,7 @@ package kubespan_test
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -59,7 +60,8 @@ func runTopology(t *testing.T, topology string) {
 		CertSANs:             []string{cpIP, "127.0.0.1"},
 	})
 
-	talosConfigPath := secrets.WriteTalosconfig(t, tmpDir)
+	talosConfigPath := filepath.Join(tmpDir, "talosconfig")
+	secrets.WriteTalosconfig(t, talosConfigPath)
 	sw.Lap("generate talos configs")
 
 	// Discovery VM with extra forward for HTTP health check from the test host.

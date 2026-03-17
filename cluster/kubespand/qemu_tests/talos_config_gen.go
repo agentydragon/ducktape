@@ -5,15 +5,13 @@ package qemu_tests
 
 import (
 	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"net/url"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
 	sx509 "github.com/siderolabs/crypto/x509"
+	clientconfig "github.com/siderolabs/talos/pkg/machinery/client/config"
 	"github.com/siderolabs/talos/pkg/machinery/config"
 	gensecrets "github.com/siderolabs/talos/pkg/machinery/config/generate/secrets"
 	v1alpha1 "github.com/siderolabs/talos/pkg/machinery/config/types/v1alpha1"
@@ -178,30 +176,14 @@ func (s *TestTalosSecrets) WorkerConfig(opts TalosNodeConfig) []byte {
 	return marshalConfig(cfg)
 }
 
-// WriteTalosconfig writes a talosconfig (client config) file and returns the path.
-func (s *TestTalosSecrets) WriteTalosconfig(t *testing.T, dir string) string {
+// WriteTalosconfig writes a talosconfig (client config) file to path.
+// Ref: pkg/machinery/client/config/config.go (NewConfig + Save)
+func (s *TestTalosSecrets) WriteTalosconfig(t *testing.T, path string) {
 	t.Helper()
-	// talosconfig format: YAML with context, ca, crt, key as base64.
-	config := map[string]interface{}{
-		"context": "test-kubespan",
-		"contexts": map[string]interface{}{
-			"test-kubespan": map[string]interface{}{
-				"endpoints": []string{},
-				"ca":        base64.StdEncoding.EncodeToString(s.MachineCA.Crt),
-				"crt":       base64.StdEncoding.EncodeToString(s.ClientCert.Crt),
-				"key":       base64.StdEncoding.EncodeToString(s.ClientCert.Key),
-			},
-		},
-	}
-	data, err := yaml.Marshal(config)
-	if err != nil {
-		t.Fatalf("marshal talosconfig: %v", err)
-	}
-	path := filepath.Join(dir, "talosconfig")
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	cfg := clientconfig.NewConfig("test-kubespan", nil, s.MachineCA.Crt, s.ClientCert)
+	if err := cfg.Save(path); err != nil {
 		t.Fatalf("write talosconfig: %v", err)
 	}
-	return path
 }
 
 // baseConfig constructs the shared v1alpha1.Config fields common to CPs and workers.

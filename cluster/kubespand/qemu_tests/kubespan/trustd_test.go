@@ -2,6 +2,7 @@ package kubespan_test
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -39,7 +40,8 @@ func TestTrustdCSRFlow(t *testing.T) {
 		EndpointFilters:      []string{"192.168.50.0/24"},
 		CertSANs:             []string{"192.168.50.2", "127.0.0.1"},
 	})
-	talosConfigPath := secrets.WriteTalosconfig(t, tmpDir)
+	talosConfigPath := filepath.Join(tmpDir, "talosconfig")
+	secrets.WriteTalosconfig(t, talosConfigPath)
 	sw.Lap("generate talos configs")
 
 	// Create CIDATA for the Talos CP VM.

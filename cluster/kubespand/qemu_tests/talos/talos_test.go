@@ -3,6 +3,7 @@ package talos_test
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -48,7 +49,8 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 		DiscoveryEndpoint:    "http://192.168.50.254:3000",
 		EndpointFilters:      []string{"0.0.0.0/0"},
 	})
-	talosConfigPath := secrets.WriteTalosconfig(t, tmpDir)
+	talosConfigPath := filepath.Join(tmpDir, "talosconfig")
+	secrets.WriteTalosconfig(t, talosConfigPath)
 
 	vpsCI := h.CreateCIDATA(t, tmpDir, "vps", vpsConfig)
 	nat1CI := h.CreateCIDATA(t, tmpDir, "nat1", nat1Config)
