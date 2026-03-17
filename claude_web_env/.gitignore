@@ -9,5 +9,5 @@ live_manifest.ndjson.gz
 rootfs/usr/local/bin/environment-manager
 rootfs/process_api/
 
-# Repacked debs (generated at build time by dpkg-repack, not committed)
+# Downloaded debs (fetched from snapshot archives by fetch_debs.py, not committed)
 local_debs/

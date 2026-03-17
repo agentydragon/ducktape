@@ -16,8 +16,11 @@ documentation refresh.
 
 **Directory:** `claude_web_env/` in the repo root.
 
-**Prerequisite:** Running inside a Claude Code web container with access to
-the live binaries.
+**Prerequisite:** Phases 1-3 (detection, binary capture, metadata) require
+running inside a Claude Code web container with access to the live binaries.
+Phase 5 (container build) works from **any machine** with Docker and network
+access — it fetches packages from pinned Ubuntu snapshot archives via
+`fetch_debs.py`, not dpkg-repack.
 
 ---
 
@@ -217,16 +220,23 @@ strings "$BIN" | grep -E '^--(addr|port|max|block|fire|cgr|mem|cpu|oom|control)'
 
 ## Phase 5: Container Snapshot → Diff
 
+**This phase works from any machine with Docker and network access.**
+
 Update the Dockerfile if the version diff (Phase 2b) revealed changes:
 
 - **Node.js/Bun versions**: Update download URLs
 - **npm globals**: Update version pins
 - **Go versions**: Update download URLs
-- **APT packages**: Advance snapshot date or version pins
+- **APT packages**: Update `live-dpkg-versions.txt` and optionally advance
+  `SNAPSHOT_DATE` in `fetch_debs.py`
 
-Then rebuild and diff:
+Then fetch packages and rebuild:
 
 ```bash
+# Fetch .deb packages from pinned Ubuntu snapshot archives (no dpkg-repack needed)
+bazel run //claude_web_env/tools:fetch_debs
+
+# Build and diff (also calls fetch_debs automatically)
 bazel run //claude_web_env/tools:build_and_diff
 ```
 

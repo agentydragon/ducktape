@@ -58,6 +58,20 @@ py_binary(
 )
 
 py_library(
+    name = "fetch_debs_lib",
+    srcs = ["fetch_debs.py"],
+    imports = ["../.."],
+    deps = ["//util/bazel:workspace"],
+)
+
+py_binary(
+    name = "fetch_debs",
+    imports = ["../.."],
+    main_module = "claude_web_env.tools.fetch_debs",
+    deps = [":fetch_debs_lib"],
+)
+
+py_library(
     name = "build_and_diff_lib",
     srcs = ["build_and_diff.py"],
     imports = ["../.."],
@@ -65,6 +79,7 @@ py_library(
         ":capture_manifest_lib",
         ":capture_versions_lib",
         ":diff_manifests_lib",
+        ":fetch_debs_lib",
         ":manifest",
         "//util/bazel:workspace",
     ],

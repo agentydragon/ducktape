@@ -15,8 +15,8 @@
 #   1. Proprietary binaries must be captured first (run from within live container):
 #        bazel run //claude_web_env/tools:build_and_diff -- --capture-binaries
 #      This writes reference/environment-manager.gz and reference/process_api.gz.
-#   2. local_debs/ must be populated with dpkg-repack output from the live machine.
-#      The build_and_diff.py script handles this automatically.
+#   2. local_debs/ must be populated by running fetch_debs.py (downloads from
+#      Ubuntu snapshot archives + PPAs). build_and_diff.py calls this automatically.
 
 FROM docker.io/library/ubuntu:24.04
 
@@ -61,10 +61,10 @@ COPY rootfs/usr/ /usr/
 # PACKAGE INSTALLATION
 # =============================================================================
 
-# All dpkg packages — install from local debs repacked from the live container
-# via dpkg-repack. This guarantees exact version match with the live environment.
-# The build script (build_and_diff.py) generates local_debs/ before Docker build
-# by comparing live-dpkg-versions.txt against the base image.
+# All dpkg packages — fetched from Ubuntu snapshot archives and PPAs by
+# fetch_debs.py. This guarantees exact version match with the live environment
+# and works from any machine (no dpkg-repack or live container needed).
+# The build script (build_and_diff.py) calls fetch_debs automatically.
 # local_debs/ is .gitignored — it's a build artifact.
 COPY local_debs/ /tmp/local_debs/
 # Force-install all debs (ignoring postinst failures on first pass), then

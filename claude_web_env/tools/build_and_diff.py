@@ -23,6 +23,7 @@ from typing import Any
 from claude_web_env.tools.capture_manifest import capture, write_manifest
 from claude_web_env.tools.capture_versions import capture_versions_yaml
 from claude_web_env.tools.diff_manifests import REAL_DIFF_STATUSES, diff_manifests, generate_report
+from claude_web_env.tools.fetch_debs import fetch_debs
 from claude_web_env.tools.manifest import Entry, load_default_exclusions
 from util.bazel.workspace import get_build_workspace_directory
 
@@ -55,56 +56,12 @@ def capture_proprietary_binaries(work_dir: Path) -> None:
 
 
 def generate_local_debs(work_dir: Path) -> None:
-    """Repack dpkg packages that differ from the ubuntu:24.04 base image.
+    """Fetch .deb packages from Ubuntu snapshot archives and PPAs.
 
-    Reads live-dpkg-versions.txt (exact versions from the live container),
-    compares against the base image's package list, and runs dpkg-repack
-    for all packages that are new or at different versions.
+    Downloads exact package versions from pinned remote sources. Works from
+    any machine with network access — no dpkg-repack or live container needed.
     """
-    logger.info("Generating local_debs/ from live-dpkg-versions.txt...")
-
-    versions_file = work_dir / "live-dpkg-versions.txt"
-    if not versions_file.exists():
-        raise FileNotFoundError(
-            f"{versions_file} not found — run dpkg-query -W -f='${{Package}}=${{Version}}\\n' > {versions_file}"
-        )
-
-    # Parse live versions
-    live_pkgs: dict[str, str] = {}
-    for raw_line in versions_file.read_text().splitlines():
-        stripped = raw_line.strip()
-        if "=" in stripped:
-            pkg, ver = stripped.split("=", 1)
-            live_pkgs[pkg] = ver
-
-    # Get base image packages
-    result = run(
-        ["docker", "run", "--rm", "docker.io/library/ubuntu:24.04", "dpkg-query", "-W", "-f=${Package}=${Version}\n"],
-        capture_output=True,
-        text=True,
-    )
-    base_pkgs: dict[str, str] = {}
-    for raw_line in result.stdout.splitlines():
-        stripped = raw_line.strip()
-        if "=" in stripped:
-            pkg, ver = stripped.split("=", 1)
-            base_pkgs[pkg] = ver
-
-    # Find packages to repack
-    to_repack = [pkg for pkg, ver in live_pkgs.items() if base_pkgs.get(pkg) != ver]
-    logger.info("Need to repack %d packages (of %d total, %d in base)", len(to_repack), len(live_pkgs), len(base_pkgs))
-
-    # Clean and create local_debs/
-    debs_dir = work_dir / "local_debs"
-    if debs_dir.exists():
-        shutil.rmtree(debs_dir)
-    debs_dir.mkdir()
-
-    # Repack in parallel
-    run(["xargs", "-P", "8", "-I{}", "dpkg-repack", "{}"], input="\n".join(to_repack), text=True, cwd=debs_dir)
-
-    deb_count = len(list(debs_dir.glob("*.deb")))
-    logger.info("Generated %d .deb files in local_debs/", deb_count)
+    fetch_debs(work_dir)
 
 
 def build_image(work_dir: Path) -> None:
