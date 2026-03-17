@@ -11,6 +11,9 @@ go_test(
         "//cluster/kubespand/qemu_tests/vms/doublenat:initramfs",
         "//cluster/kubespand/qemu_tests/vms/router:initramfs",
     ],
+    # QEMU tests run multiple VMs under TCG (no KVM) — need more CPU than the
+    # platform default (3 compute units).
+    exec_properties = {"EstimatedComputeUnits": "8"},
     tags = [
         "cpu:4",
         "requires_qemu",

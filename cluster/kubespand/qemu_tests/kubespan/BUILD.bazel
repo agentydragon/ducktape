@@ -12,6 +12,10 @@ _TOPOLOGY_TAGS = [
     "requires_qemu",
 ]
 
+# QEMU tests run multiple VMs under TCG (no KVM) — need more CPU than the
+# platform default (3 compute units).
+_QEMU_EXEC_PROPERTIES = {"EstimatedComputeUnits": "8"}
+
 _TOPOLOGY_DEPS = [
     "//cluster/kubespand/qemu_tests",
     "@com_github_siderolabs_talos_pkg_machinery//config/types/v1alpha1",
@@ -26,6 +30,7 @@ go_test(
         "topology_test_helper.go",
     ],
     data = _TOPOLOGY_DATA,
+    exec_properties = _QEMU_EXEC_PROPERTIES,
     tags = _TOPOLOGY_TAGS,
     deps = _TOPOLOGY_DEPS,
 )
@@ -41,6 +46,7 @@ go_test(
         "//cluster/kubespand/qemu_tests/vms/discovery:initramfs",
         "//cluster/kubespand/qemu_tests/vms/trustd:initramfs",
     ],
+    exec_properties = _QEMU_EXEC_PROPERTIES,
     tags = [
         "cpu:4",
         "requires_qemu",
