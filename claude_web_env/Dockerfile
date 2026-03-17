@@ -69,6 +69,10 @@ COPY rootfs/usr/ /usr/
 # =============================================================================
 
 # Layer 5: Configure APT snapshot repos + dist-upgrade + install ca-certificates
+# Use plain shell for APT setup — the eval "$0" SHELL wrapper can corrupt
+# proxy URLs containing special characters (JWTs with =, +, /, etc.), causing
+# apt-get update to fail to reach repositories through the proxy.
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 RUN rm -f /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list && \
     printf 'Types: deb\nURIs: https://snapshot.ubuntu.com/ubuntu/20251201T000000Z\nSuites: noble noble-updates noble-security\nComponents: main restricted universe multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' \
       > /etc/apt/sources.list.d/snapshot.sources && \
@@ -91,9 +95,8 @@ RUN rm -f /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list && \
     printf '%s\n' 'Package: *' 'Pin: origin ppa.launchpadcontent.net' 'Pin-Priority: 1002' \
       > /etc/apt/preferences.d/ppa-pin && \
     echo 'Acquire::https::Verify-Peer "false";' > /etc/apt/apt.conf.d/99no-verify && \
-    { echo "Acquire::http::Proxy \"$(printenv http_proxy 2>/dev/null || true)\";"; \
-      echo "Acquire::https::Proxy \"$(printenv https_proxy 2>/dev/null || true)\";"; } \
-      > /etc/apt/apt.conf.d/01proxy && \
+    printf 'Acquire::http::Proxy "%s";\nAcquire::https::Proxy "%s";\n' \
+      "${http_proxy:-}" "${https_proxy:-}" > /etc/apt/apt.conf.d/01proxy && \
     printf 'Acquire::Retries "3";\nAcquire::https::Timeout "30";\nAcquire::http::Timeout "30";\n' > /etc/apt/apt.conf.d/80retries && \
     for attempt in 1 2 3 4 5; do \
       rm -rf /var/lib/apt/lists/* && \
@@ -106,6 +109,9 @@ RUN rm -f /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list && \
     apt-get install --allow-downgrades -y --no-install-recommends ca-certificates && \
     update-ca-certificates && \
     rm /etc/apt/apt.conf.d/99no-verify /etc/apt/apt.conf.d/01proxy
+
+# Restore logging SHELL wrapper for remaining layers.
+SHELL ["/bin/bash", "-c", "exec 3>&2; set -euo pipefail; trap 'rc=$?; tail -200 /tmp/build-step.log >&3; exit $rc' ERR; exec > /tmp/build-step.log 2>&1; eval \"$0\""]
 
 # Layer 6: Core packages (base system, build tools, clang, libs, systemd, fonts, java, postgres, redis)
 # NOTE: apt lists persist from Layer 5 - no apt-get update needed here

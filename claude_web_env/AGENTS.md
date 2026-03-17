@@ -62,6 +62,14 @@ passed explicitly as `--build-arg https_proxy=... --build-arg http_proxy=...`.
 ARG names from the cache key, so session-specific JWT proxy URLs don't break
 layer caching.
 
+**SHELL wrapper + proxy pitfall**: The Dockerfile uses a logging SHELL wrapper
+(`eval "$0"`) to capture build output. This wrapper corrupts proxy URLs
+containing JWT tokens (special chars `=`, `+`, `/`, `@`), causing `apt-get
+update` to fail with "Temporary failure resolving". **Fix**: Switch to plain
+`SHELL ["/bin/bash", "-euo", "pipefail", "-c"]` for any layer that writes APT
+proxy config or runs `apt-get update`, then restore the logging wrapper
+afterward. See the `/update_container_re` skill appendix for details.
+
 **Layer limit**: Docker's overlay snapshotter in gVisor is limited to ~35 lowerdir
 entries (empirical gVisor limit; NOT a string-length issue — lowerdir uses relative
 paths like `51/fs`). Ubuntu 24.04 base = 4 layers; Dockerfile may have at most ~31
