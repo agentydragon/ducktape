@@ -12,7 +12,7 @@ import (
 	h "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 )
 
-func runTopology(t *testing.T, topology string, workerType h.WorkerType) {
+func runTopology(t *testing.T, topology string, workerType h.NodeType) {
 	sw := h.NewStopwatch(t)
 
 	vmlinuz := h.RunfilePath(t, h.VmlinuzPath)
@@ -23,7 +23,7 @@ func runTopology(t *testing.T, topology string, workerType h.WorkerType) {
 
 	// Resolve kubespand initramfs only if needed.
 	var kubespandInitramfs string
-	if workerType == h.WorkerTypeKubespand {
+	if workerType == h.NodeTypeKubespand {
 		kubespandInitramfs = h.RunfilePath(t, h.KubespanInitramfs)
 	}
 
@@ -83,11 +83,11 @@ func runTopology(t *testing.T, topology string, workerType h.WorkerType) {
 	sw.Lap("boot discovery VM")
 
 	// Boot workers based on workerType.
-	var workerA, workerB *h.WorkerNode
+	var workerA, workerB *h.MeshNode
 	var allVMs []*h.VM
 
 	switch workerType {
-	case h.WorkerTypeKubespand:
+	case h.NodeTypeKubespand:
 		cfgB := h.NewTestAgentConfig(creds, discAddr)
 		cfgB.Kubespan.ListenPort = 51821
 		cidataB := h.CreateKubespandCIDATA(t, tmpDir, "vm-b", cfgB)
@@ -116,11 +116,11 @@ func runTopology(t *testing.T, topology string, workerType h.WorkerType) {
 			h.PortForward{GuestPort: h.COSIGuestPort})
 		sw.Lap("boot VM-A")
 
-		workerA = &h.WorkerNode{VM: vmA, Type: h.WorkerTypeKubespand, T: t}
-		workerB = &h.WorkerNode{VM: vmB, Type: h.WorkerTypeKubespand, T: t}
+		workerA = &h.MeshNode{VM: vmA, Type: h.NodeTypeKubespand, T: t}
+		workerB = &h.MeshNode{VM: vmB, Type: h.NodeTypeKubespand, T: t}
 		allVMs = []*h.VM{vmA, vmB, vmDisc}
 
-	case h.WorkerTypeTalos:
+	case h.NodeTypeTalos:
 		workerAConfig := secrets.WorkerConfig(h.TalosNodeConfig{
 			IP:                   fmt.Sprintf("%s/24", linkIPA),
 			ControlPlaneEndpoint: cpEndpoint,
@@ -145,8 +145,8 @@ func runTopology(t *testing.T, topology string, workerType h.WorkerType) {
 		aClient := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", aAPIPort))
 		bClient := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", bAPIPort))
 
-		workerA = &h.WorkerNode{VM: vmA, Type: h.WorkerTypeTalos, NodeIP: linkIPA, T: t, TalosClient: aClient}
-		workerB = &h.WorkerNode{VM: vmB, Type: h.WorkerTypeTalos, NodeIP: linkIPB, T: t, TalosClient: bClient}
+		workerA = &h.MeshNode{VM: vmA, Type: h.NodeTypeTalos, NodeIP: linkIPA, T: t, TalosClient: aClient}
+		workerB = &h.MeshNode{VM: vmB, Type: h.NodeTypeTalos, NodeIP: linkIPB, T: t, TalosClient: bClient}
 		allVMs = []*h.VM{vmA, vmB, vmDisc}
 	}
 	defer workerA.Close()
@@ -166,18 +166,23 @@ func runTopology(t *testing.T, topology string, workerType h.WorkerType) {
 	h.WaitForDiscoveryHTTP(t, vmDisc.ForwardAddr(3000), 120*time.Second)
 	sw.Lap("discovery HTTP ready")
 
-	// Wait for workers to be ready (parallel).
-	h.WaitForWorkersReady(t, []*h.WorkerNode{workerA, workerB}, 180*time.Second)
-	sw.Lap("workers ready")
+	// Talos CP API.
+	talosClient := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
+	defer talosClient.Close()
+	cpNode := &h.MeshNode{VM: vmCP, Type: h.NodeTypeTalos, NodeIP: cpIP, T: t, TalosClient: talosClient}
 
-	// Poll VM-A's PeerStatus via COSI — verify WireGuard handshake completes.
-	vmAPeers, err := workerA.PollPeerStatus(1, 180*time.Second)
-	if err != nil {
-		t.Errorf("VM-A peer status poll: %v", err)
-	} else {
-		t.Logf("VM-A peers up: %v", vmAPeers)
+	// Wait for all nodes to be ready (parallel).
+	h.WaitForNodesReady(t, []*h.MeshNode{cpNode, workerA, workerB}, h.NodeReadyTimeout)
+	sw.Lap("all nodes ready")
+
+	// Full mesh: every node must see all other nodes as "up".
+	if err := h.WaitForFullMesh(t, []*h.MeshNode{cpNode, workerA, workerB}, h.FullMeshTimeout); err != nil {
+		workerA.DumpDiagnostics(t)
+		workerB.DumpDiagnostics(t)
+		h.DumpKubeSpanDiagnostics(t, talosClient, cpIP)
+		t.Fatalf("full mesh not achieved: %v", err)
 	}
-	sw.Lap("VM-A peers up")
+	sw.Lap("full mesh achieved")
 
 	// Data-plane probes (kubespand workers only).
 	if workerA.HasProbeServer() {
@@ -218,24 +223,6 @@ func runTopology(t *testing.T, topology string, workerType h.WorkerType) {
 		workerA.ProbeTCP(peerBridgeIP, 9999, 30*time.Second)
 		sw.Lap("probes completed")
 	}
-
-	// Observe KubeSpan peer status from the Talos CP's API.
-	talosClient := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
-	defer talosClient.Close()
-	h.WaitForTalosAPI(t, talosClient, cpIP, 180*time.Second)
-	sw.Lap("Talos CP API ready")
-
-	h.DumpKubeSpanDiagnostics(t, talosClient, cpIP)
-	sw.Lap("initial diagnostics")
-
-	peers, err := h.PollKubeSpanStatus(t, talosClient, cpIP, 120*time.Second)
-	if err != nil {
-		h.DumpKubeSpanDiagnostics(t, talosClient, cpIP)
-		t.Errorf("peer discovery via Talos API: %v", err)
-	} else {
-		t.Logf("KubeSpan peers observed from Talos CP: %v", peers)
-	}
-	sw.Lap("peer discovery via Talos API")
 
 	// Dump diagnostics from workers on failure.
 	if t.Failed() {

@@ -9,7 +9,7 @@ import (
 func TestTopology(t *testing.T) {
 	t.Parallel()
 	for _, topology := range []string{"flat", "cross_subnet"} {
-		for _, wt := range []h.WorkerType{h.WorkerTypeKubespand, h.WorkerTypeTalos} {
+		for _, wt := range []h.NodeType{h.NodeTypeKubespand, h.NodeTypeTalos} {
 			t.Run(topology+"/"+string(wt), func(t *testing.T) {
 				t.Parallel()
 				runTopology(t, topology, wt)

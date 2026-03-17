@@ -20,7 +20,7 @@ import (
 // For Talos: the native Talos API is accessible (CSR flow is built-in).
 func TestTrustdCSRFlow(t *testing.T) {
 	t.Parallel()
-	for _, wt := range []h.WorkerType{h.WorkerTypeKubespand, h.WorkerTypeTalos} {
+	for _, wt := range []h.NodeType{h.NodeTypeKubespand, h.NodeTypeTalos} {
 		t.Run(string(wt), func(t *testing.T) {
 			t.Parallel()
 			runTrustdCSRFlow(t, wt)
@@ -28,7 +28,7 @@ func TestTrustdCSRFlow(t *testing.T) {
 	}
 }
 
-func runTrustdCSRFlow(t *testing.T, workerType h.WorkerType) {
+func runTrustdCSRFlow(t *testing.T, workerType h.NodeType) {
 	sw := h.NewStopwatch(t)
 
 	// Resolve runfiles.
@@ -85,7 +85,7 @@ func runTrustdCSRFlow(t *testing.T, workerType h.WorkerType) {
 	var workerAPIPort int
 
 	switch workerType {
-	case h.WorkerTypeKubespand:
+	case h.NodeTypeKubespand:
 		initramfsTrustd := h.RunfilePath(t, h.TrustdInitramfs)
 		kubespandCfg := h.NewTestAgentConfig(creds, discIP+":3000")
 		kubespandCfg.Cluster.Endpoint = cpEndpoint
@@ -101,7 +101,7 @@ func runTrustdCSRFlow(t *testing.T, workerType h.WorkerType) {
 			append(h.McastNIC("net0", mcastAddr, h.NodeBMAC), h.CIDATADrive(kubespandCI)...),
 			h.PortForward{GuestPort: workerAPIPort})
 
-	case h.WorkerTypeTalos:
+	case h.NodeTypeTalos:
 		workerConfig := secrets.WorkerConfig(h.TalosNodeConfig{
 			IP:                   workerIP + "/24",
 			ControlPlaneEndpoint: cpEndpoint,
@@ -165,9 +165,9 @@ func runTrustdCSRFlow(t *testing.T, workerType h.WorkerType) {
 	// For Talos: native Talos API on forwarded port.
 	var workerAddr string
 	switch workerType {
-	case h.WorkerTypeKubespand:
+	case h.NodeTypeKubespand:
 		workerAddr = workerVM.ForwardAddr(workerAPIPort)
-	case h.WorkerTypeTalos:
+	case h.NodeTypeTalos:
 		workerAddr = fmt.Sprintf("127.0.0.1:%d", workerAPIPort)
 	}
 	workerClient := h.NewTalosClient(t, talosConfigPath, workerAddr)

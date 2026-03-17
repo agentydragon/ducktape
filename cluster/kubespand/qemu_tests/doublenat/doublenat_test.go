@@ -12,7 +12,7 @@ import (
 
 func TestDoubleNAT(t *testing.T) {
 	t.Parallel()
-	for _, wt := range []h.WorkerType{h.WorkerTypeKubespand, h.WorkerTypeTalos} {
+	for _, wt := range []h.NodeType{h.NodeTypeKubespand, h.NodeTypeTalos} {
 		t.Run(string(wt), func(t *testing.T) {
 			t.Parallel()
 			runDoubleNAT(t, wt)
@@ -34,7 +34,7 @@ func TestDoubleNAT(t *testing.T) {
 //	                                 |
 //	                            [VPS (CP)]
 //	                          [Discovery]
-func runDoubleNAT(t *testing.T, workerType h.WorkerType) {
+func runDoubleNAT(t *testing.T, workerType h.NodeType) {
 	sw := h.NewStopwatch(t)
 
 	vmlinuz := h.RunfilePath(t, h.VmlinuzPath)
@@ -46,7 +46,7 @@ func runDoubleNAT(t *testing.T, workerType h.WorkerType) {
 
 	// Resolve worker-specific runfiles.
 	var kubespandInitramfs string
-	if workerType == h.WorkerTypeKubespand {
+	if workerType == h.NodeTypeKubespand {
 		kubespandInitramfs = h.RunfilePath(t, h.DoublenatInitramfs)
 	}
 	sw.Lap("resolve runfiles")
@@ -99,11 +99,11 @@ func runDoubleNAT(t *testing.T, workerType h.WorkerType) {
 	sw.Lap("boot VPS CP")
 
 	// Boot worker VMs (NAT1, NAT2) based on workerType.
-	var nat1, nat2 *h.WorkerNode
+	var nat1, nat2 *h.MeshNode
 	allVMs := []*h.VM{vmVPS, vmRouterA, vmRouterB, vmDiscovery}
 
 	switch workerType {
-	case h.WorkerTypeKubespand:
+	case h.NodeTypeKubespand:
 		nat1Cfg := h.NewTestAgentConfig(creds, h.DoubleNATDiscoveryAddr)
 		cidataNAT1 := h.CreateKubespandCIDATA(t, tmpDir, "nat1", nat1Cfg)
 		vmNAT1 := h.BootVM(t, "vm-nat1", vmlinuz, kubespandInitramfs,
@@ -118,11 +118,11 @@ func runDoubleNAT(t *testing.T, workerType h.WorkerType) {
 			append(h.McastNIC("net0", mcastLanB, h.DoubleNATNAT2MAC), h.CIDATADrive(cidataNAT2)...),
 			h.PortForward{GuestPort: h.COSIGuestPort})
 
-		nat1 = &h.WorkerNode{VM: vmNAT1, Type: h.WorkerTypeKubespand, T: t}
-		nat2 = &h.WorkerNode{VM: vmNAT2, Type: h.WorkerTypeKubespand, T: t}
+		nat1 = &h.MeshNode{VM: vmNAT1, Type: h.NodeTypeKubespand, T: t}
+		nat2 = &h.MeshNode{VM: vmNAT2, Type: h.NodeTypeKubespand, T: t}
 		allVMs = append(allVMs, vmNAT1, vmNAT2)
 
-	case h.WorkerTypeTalos:
+	case h.NodeTypeTalos:
 		nat1Config := secrets.WorkerConfig(h.TalosNodeConfig{
 			IP:                   h.DoubleNATNAT1IP + "/24",
 			Gateway:              h.DoubleNATNAT1Gateway,
@@ -148,8 +148,8 @@ func runDoubleNAT(t *testing.T, workerType h.WorkerType) {
 		nat1Client := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", nat1APIPort))
 		nat2Client := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", nat2APIPort))
 
-		nat1 = &h.WorkerNode{VM: vmNAT1, Type: h.WorkerTypeTalos, NodeIP: h.DoubleNATNAT1IP, T: t, TalosClient: nat1Client}
-		nat2 = &h.WorkerNode{VM: vmNAT2, Type: h.WorkerTypeTalos, NodeIP: h.DoubleNATNAT2IP, T: t, TalosClient: nat2Client}
+		nat1 = &h.MeshNode{VM: vmNAT1, Type: h.NodeTypeTalos, NodeIP: h.DoubleNATNAT1IP, T: t, TalosClient: nat1Client}
+		nat2 = &h.MeshNode{VM: vmNAT2, Type: h.NodeTypeTalos, NodeIP: h.DoubleNATNAT2IP, T: t, TalosClient: nat2Client}
 		allVMs = append(allVMs, vmNAT1, vmNAT2)
 	}
 	defer nat1.Close()
@@ -165,30 +165,20 @@ func runDoubleNAT(t *testing.T, workerType h.WorkerType) {
 	// Wait for VPS Talos API.
 	vpsClient := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", vpsAPIPort))
 	defer vpsClient.Close()
-	h.WaitForTalosAPI(t, vpsClient, h.DoubleNATVPSIP, 120*time.Second)
-	sw.Lap("VPS Talos API ready")
+	vpsNode := &h.MeshNode{VM: vmVPS, Type: h.NodeTypeTalos, NodeIP: h.DoubleNATVPSIP, T: t, TalosClient: vpsClient}
 
-	// Wait for workers to be ready (parallel).
-	h.WaitForWorkersReady(t, []*h.WorkerNode{nat1, nat2}, 180*time.Second)
-	sw.Lap("workers ready")
+	// Wait for all nodes to be ready (parallel).
+	h.WaitForNodesReady(t, []*h.MeshNode{vpsNode, nat1, nat2}, h.NodeReadyTimeout)
+	sw.Lap("all nodes ready")
 
-	// Poll VPS PeerStatus — should see 2 worker peers "up".
-	vpsPeers, err := h.PollKubeSpanStatus(t, vpsClient, h.DoubleNATVPSIP, 300*time.Second)
-	if err != nil {
-		t.Errorf("VPS peer status poll: %v", err)
-	} else {
-		t.Logf("VPS peers: %v", vpsPeers)
+	// Full mesh: every node must see all other nodes as "up".
+	if err := h.WaitForFullMesh(t, []*h.MeshNode{vpsNode, nat1, nat2}, h.FullMeshTimeout); err != nil {
+		nat1.DumpDiagnostics(t)
+		nat2.DumpDiagnostics(t)
+		h.DumpKubeSpanDiagnostics(t, vpsClient, h.DoubleNATVPSIP)
+		t.Fatalf("full mesh not achieved: %v", err)
 	}
-	sw.Lap("VPS peers up")
-
-	// Poll NAT2 PeerStatus — at least 1 peer (VPS) should be "up".
-	nat2Peers, err := nat2.PollPeerStatus(1, 300*time.Second)
-	if err != nil {
-		t.Errorf("NAT2 peer status poll: %v", err)
-	} else {
-		t.Logf("NAT2 peers: %v", nat2Peers)
-	}
-	sw.Lap("NAT2 peers up")
+	sw.Lap("full mesh achieved")
 
 	// Data-plane probes (kubespand workers only).
 	if nat2.HasProbeServer() {

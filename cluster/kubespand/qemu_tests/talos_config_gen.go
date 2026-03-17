@@ -188,7 +188,8 @@ func (s *TestTalosSecrets) baseConfig(machineType string, opts TalosNodeConfig) 
 	}
 
 	kubeSpan := &v1alpha1.NetworkKubeSpan{
-		KubeSpanEnabled: boolPtr(true),
+		KubeSpanEnabled:               boolPtr(true),
+		KubeSpanHarvestExtraEndpoints: boolPtr(true),
 	}
 	if len(opts.EndpointFilters) > 0 {
 		kubeSpan.KubeSpanFilters = &v1alpha1.KubeSpanFilters{

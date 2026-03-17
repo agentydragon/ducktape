@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -123,60 +122,6 @@ func WaitForTalosAPI(t *testing.T, c *client.Client, nodeIP string, timeout time
 	}) {
 		t.Fatalf("talos API not reachable after %v", timeout)
 	}
-}
-
-// PollKubeSpanStatus polls the Talos COSI API for KubeSpan peer status.
-// Returns when at least minPeers peers are found and all are in "up" state.
-func PollKubeSpanStatus(t *testing.T, c *client.Client, nodeIP string, timeout time.Duration) ([]kubespan.PeerStatusSpec, error) {
-	t.Helper()
-
-	var lastErr string
-	var finalPeers []kubespan.PeerStatusSpec
-
-	pollUntil(time.Now().Add(timeout), func() bool {
-		ctx, cancel := context.WithTimeout(client.WithNode(context.Background(), nodeIP), 10*time.Second)
-		list, err := safe.StateListAll[*kubespan.PeerStatus](ctx, c.COSI)
-		cancel()
-		if err != nil {
-			lastErr = err.Error()
-			t.Logf("COSI poll (waiting): %s", lastErr)
-			return false
-		}
-
-		resources := collectList(list)
-		peers := make([]kubespan.PeerStatusSpec, len(resources))
-		for i, r := range resources {
-			peers[i] = *r.TypedSpec()
-		}
-
-		allUp := len(peers) >= 2
-		for _, p := range peers {
-			if p.State != kubespan.PeerStateUp {
-				allUp = false
-			}
-		}
-		var peerSummary strings.Builder
-		for i, p := range peers {
-			if i > 0 {
-				peerSummary.WriteString("; ")
-			}
-			fmt.Fprintf(&peerSummary, "%s state=%s ep=%s", p.Label, p.State, p.Endpoint)
-		}
-		t.Logf("COSI poll: %d peers, allUp=%v [%s]", len(peers), allUp, peerSummary.String())
-		finalPeers = peers
-		return allUp
-	})
-
-	allUp := len(finalPeers) >= 2
-	for _, p := range finalPeers {
-		if p.State != kubespan.PeerStateUp {
-			allUp = false
-		}
-	}
-	if allUp {
-		return finalPeers, nil
-	}
-	return nil, fmt.Errorf("timeout after %v, last error: %s", timeout, lastErr)
 }
 
 // dumpCOSIList lists all resources of type T and logs each one with %+v.

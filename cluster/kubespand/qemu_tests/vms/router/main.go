@@ -71,7 +71,10 @@ func main() {
 				Register: 1,
 				Data:     []byte("eth0\x00"),
 			},
-			&expr.Masq{},
+			// Persistent: endpoint-independent mapping (full-cone NAT).
+			// Same source port regardless of destination, enabling NAT
+			// hole-punching between peers behind different NAT routers.
+			&expr.Masq{Persistent: true},
 		},
 	})
 	if err := conn.Flush(); err != nil {
