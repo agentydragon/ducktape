@@ -29,7 +29,7 @@
 //     string endpoints, netip.Prefix AllowedIPs) — matches upstream exactly
 //   - Factory interfaces for WireguardClient and RulesManager (testability)
 //   - IPSetBuilder for routed prefix compaction with ULA exclusion
-//   - updateSpecs optimization: skip WireGuard reconfiguration on timer-only ticks
+//   - LinkSpec is always written on every reconciliation (idempotent via COSI)
 //
 // # What diverges
 //
@@ -168,9 +168,7 @@ func (ctrl *ManagerController) Run(ctx context.Context, r controller.Runtime, lo
 	}()
 
 	// Timer-tick goroutine. When the ticker fires, we queue a reconcile
-	// but set updateSpecs=false (only peer status polling, no WireGuard
-	// reconfiguration needed unless an endpoint actually changes).
-	// Ref: upstream tickerC / updateSpecs pattern
+	// for peer status polling and state refresh.
 	go func() {
 		for {
 			select {
@@ -182,23 +180,20 @@ func (ctrl *ManagerController) Run(ctx context.Context, r controller.Runtime, lo
 		}
 	}()
 
-	var updateSpecs bool
-
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-r.EventCh():
-			updateSpecs = true
 		}
 
-		if err := ctrl.reconcile(ctx, r, logger, &updateSpecs); err != nil {
+		if err := ctrl.reconcile(ctx, r, logger); err != nil {
 			return err
 		}
 	}
 }
 
-func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runtime, logger *zap.Logger, updateSpecs *bool) error {
+func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runtime, logger *zap.Logger) error {
 	cfg, err := safe.ReaderGetByID[*kubespan.Config](ctx, r, kubespan.ConfigID)
 	if err != nil {
 		if state.IsNotFoundError(err) {
@@ -398,7 +393,6 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 					zap.Stringer("new", newEP),
 				)
 				kubespanadapter.PeerStatusSpec(ps).UpdateEndpoint(newEP)
-				*updateSpecs = true
 			}
 		}
 
@@ -414,7 +408,6 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 		} else if len(peerSpec.Endpoints) > 0 {
 			wgPeer.Endpoint = peerSpec.Endpoints[0].String()
 			kubespanadapter.PeerStatusSpec(ps).UpdateEndpoint(peerSpec.Endpoints[0])
-			*updateSpecs = true
 		}
 		wgPeers = append(wgPeers, wgPeer)
 
@@ -455,16 +448,11 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 		return fmt.Errorf("writing nftables chains: %w", err)
 	}
 
-	if !*updateSpecs {
-		// Micro-optimization: skip WireGuard reconfiguration when only
-		// a timer tick fired and no endpoint changes occurred.
-		// Ref: upstream updateSpecs optimization
-		r.ResetRestartBackoff()
-		return nil
-	}
-
 	// Write LinkSpec with embedded WireguardSpec.
-	// The WireguardLinkController watches this and applies to the kernel.
+	// Always written on every reconciliation — COSI's WriterModify is
+	// idempotent (unchanged specs don't trigger downstream controllers),
+	// and the WireguardLinkController's diff-based Encode() avoids
+	// kernel writes when the config hasn't changed.
 	if err := safe.WriterModify(ctx, r,
 		network.NewLinkSpec(network.NamespaceName, network.LinkID(constants.KubeSpanLinkName)),
 		func(res *network.LinkSpec) error {
@@ -488,7 +476,6 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 		return fmt.Errorf("writing link spec: %w", err)
 	}
 
-	*updateSpecs = false
 	r.ResetRestartBackoff()
 	return nil
 }
