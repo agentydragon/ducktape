@@ -39,6 +39,8 @@ logger = logging.getLogger(__name__)
 
 _SIM_RLOCATION = "_main/skills/info_gathering/evals/twenty_questions/sim.txt"
 
+_SIM_RETRIES = 3
+
 _SCRATCH_SYSTEM_NOTE = """\
 You have access to an `exec` tool — a private Docker container for scratch computation. \
 Use it freely: run code, track hypothesis spaces, write notes, organize your reasoning. \
@@ -159,16 +161,36 @@ class _TwentyQuestionsRunner:
 
         self.sim_messages.append({"role": "user", "content": agent_text})
 
-        sim_resp = await self.client.call(
-            messages=self.sim_messages, system=self.sim_system, tools=SIM_TOOLS, tool_choice="required"
-        )
-        log_response(
-            self.log_entries, name=self.name, player="simulator", turn=turn, model=self.client.model, response=sim_resp
-        )
+        # Retry sim call up to SIM_RETRIES times if no tool call produced.
+        # Some backends (e.g. LiteLLM proxy with drop_params=true) silently drop
+        # tool_choice="required", so the model occasionally responds with text.
+        sim_resp = None
+        for attempt in range(_SIM_RETRIES):
+            sim_resp = await self.client.call(
+                messages=self.sim_messages, system=self.sim_system, tools=SIM_TOOLS, tool_choice="required"
+            )
+            log_response(
+                self.log_entries,
+                name=self.name,
+                player="simulator",
+                turn=turn,
+                model=self.client.model,
+                response=sim_resp,
+            )
+            if extract_tool_calls(sim_resp):
+                break
+            logger.warning(
+                "Turn %d: sim attempt %d/%d produced no tool call (content=%r), retrying...",
+                turn,
+                attempt + 1,
+                _SIM_RETRIES,
+                sim_resp.choices[0].message.content,
+            )
+        assert sim_resp is not None
 
         if not extract_tool_calls(sim_resp):
             raise RuntimeError(
-                f"Turn {turn}: simulator made no tool call despite tool_choice=required "
+                f"Turn {turn}: simulator made no tool call after {_SIM_RETRIES} attempts "
                 f"(finish_reason={sim_resp.choices[0].finish_reason!r}, "
                 f"content={sim_resp.choices[0].message.content!r})"
             )
