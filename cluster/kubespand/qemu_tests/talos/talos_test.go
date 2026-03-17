@@ -29,24 +29,24 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 	secrets := h.GenerateTestTalosSecrets(t)
 
 	vpsConfig := secrets.ControlPlaneConfig(h.TalosNodeConfig{
-		IP:                   "192.168.50.2/24",
-		ControlPlaneEndpoint: "https://192.168.50.2:6443",
-		DiscoveryEndpoint:    "http://192.168.50.254:3000",
+		IP:                   h.DoubleNATVPSIP + "/24",
+		ControlPlaneEndpoint: "https://" + h.DoubleNATVPSIP + ":6443",
+		DiscoveryEndpoint:    "http://" + h.DoubleNATDiscoveryAddr,
 		EndpointFilters:      []string{"0.0.0.0/0"},
-		CertSANs:             []string{"192.168.50.2", "127.0.0.1"},
+		CertSANs:             []string{h.DoubleNATVPSIP, "127.0.0.1"},
 	})
 	nat1Config := secrets.WorkerConfig(h.TalosNodeConfig{
-		IP:                   "192.168.60.2/24",
-		Gateway:              "192.168.60.1",
-		ControlPlaneEndpoint: "https://192.168.50.2:6443",
-		DiscoveryEndpoint:    "http://192.168.50.254:3000",
+		IP:                   h.DoubleNATNAT1IP + "/24",
+		Gateway:              h.DoubleNATNAT1Gateway,
+		ControlPlaneEndpoint: "https://" + h.DoubleNATVPSIP + ":6443",
+		DiscoveryEndpoint:    "http://" + h.DoubleNATDiscoveryAddr,
 		EndpointFilters:      []string{"0.0.0.0/0"},
 	})
 	nat2Config := secrets.WorkerConfig(h.TalosNodeConfig{
-		IP:                   "192.168.70.2/24",
-		Gateway:              "192.168.70.1",
-		ControlPlaneEndpoint: "https://192.168.50.2:6443",
-		DiscoveryEndpoint:    "http://192.168.50.254:3000",
+		IP:                   h.DoubleNATNAT2IP + "/24",
+		Gateway:              h.DoubleNATNAT2Gateway,
+		ControlPlaneEndpoint: "https://" + h.DoubleNATVPSIP + ":6443",
+		DiscoveryEndpoint:    "http://" + h.DoubleNATDiscoveryAddr,
 		EndpointFilters:      []string{"0.0.0.0/0"},
 	})
 	talosConfigPath := filepath.Join(tmpDir, "talosconfig")
@@ -65,16 +65,16 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 	mcastLan2 := fmt.Sprintf("230.0.0.1:%d", mcastPortLan2)
 
 	vmDiscovery := h.BootVM(t, "talos-disc", alpineVmlinuz, alpineInitramfsDisc,
-		"mode=discovery role=discovery discovery_ip=192.168.50.254/24",
-		h.McastNIC("net0", mcastInternet, "52:54:00:ff:00:01"))
+		"mode=discovery role=discovery discovery_ip="+h.DoubleNATDiscoveryCIDR,
+		h.McastNIC("net0", mcastInternet, h.DoubleNATDiscoveryMAC))
 	vmRouter1 := h.BootVM(t, "talos-router-1", alpineVmlinuz, alpineInitramfsRouter,
-		"mode=router role=router-1 internet_ip=192.168.50.1/24 lan_ip=192.168.60.1/24",
-		append(h.McastNIC("net0", mcastInternet, "52:54:00:c1:00:01"),
-			h.McastNIC("net1", mcastLan1, "52:54:00:c1:00:02")...))
+		"mode=router role=router-1 internet_ip="+h.DoubleNATRouterAInternetCIDR+" lan_ip="+h.DoubleNATRouterALanCIDR,
+		append(h.McastNIC("net0", mcastInternet, h.DoubleNATRouterAInternetMAC),
+			h.McastNIC("net1", mcastLan1, h.DoubleNATRouterALanMAC)...))
 	vmRouter2 := h.BootVM(t, "talos-router-2", alpineVmlinuz, alpineInitramfsRouter,
-		"mode=router role=router-2 internet_ip=192.168.50.3/24 lan_ip=192.168.70.1/24",
-		append(h.McastNIC("net0", mcastInternet, "52:54:00:c2:00:01"),
-			h.McastNIC("net1", mcastLan2, "52:54:00:c2:00:02")...))
+		"mode=router role=router-2 internet_ip="+h.DoubleNATRouterBInternetCIDR+" lan_ip="+h.DoubleNATRouterBLanCIDR,
+		append(h.McastNIC("net0", mcastInternet, h.DoubleNATRouterBInternetMAC),
+			h.McastNIC("net1", mcastLan2, h.DoubleNATRouterBLanMAC)...))
 	sw.Lap("boot infrastructure VMs (discovery + routers)")
 
 	vpsAPIPort := h.RandomPort()
@@ -102,9 +102,9 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 		nodeIP   string
 	}
 	nodes := []talosNode{
-		{"vps", fmt.Sprintf("127.0.0.1:%d", vpsAPIPort), "192.168.50.2"},
-		{"nat1", fmt.Sprintf("127.0.0.1:%d", nat1APIPort), "192.168.60.2"},
-		{"nat2", fmt.Sprintf("127.0.0.1:%d", nat2APIPort), "192.168.70.2"},
+		{"vps", fmt.Sprintf("127.0.0.1:%d", vpsAPIPort), h.DoubleNATVPSIP},
+		{"nat1", fmt.Sprintf("127.0.0.1:%d", nat1APIPort), h.DoubleNATNAT1IP},
+		{"nat2", fmt.Sprintf("127.0.0.1:%d", nat2APIPort), h.DoubleNATNAT2IP},
 	}
 
 	// Wait for Talos API on all nodes.

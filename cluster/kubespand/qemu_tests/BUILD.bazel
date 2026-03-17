@@ -4,6 +4,7 @@ go_library(
     name = "qemu_tests",
     testonly = True,
     srcs = [
+        "doublenat_topology.go",
         "helpers.go",
         "talos_config_gen.go",
         "talos_helpers.go",
