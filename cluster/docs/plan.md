@@ -36,6 +36,10 @@ See <changelog.md> for detailed change history.
 - [ ] **Plaid integration: fix onboarding** — `link/token/create` returns 400.
       Plaid's production onboarding process is involved (redirect URI registration,
       per-product approval, environment-specific keys). Revisit when needed.
+- [ ] **Deploy readonly Talos credentials into cluster** — Store the `os:reader`
+      talosconfig (generated in `talos-reader-config.tf`) into Vault, then create
+      ExternalSecrets in `claude-sandbox-secrets/` and `openclaw-sandbox-secrets/` so
+      both sandbox namespaces can read Talos cluster state.
 - [ ] **Grocy: provision API token for agent access**
 - [x] **Harbor: co-locate core and Redis on same node** — Harbor core crashes on startup
       when Redis is on a different node and Cilium hasn't fully programmed the cross-node

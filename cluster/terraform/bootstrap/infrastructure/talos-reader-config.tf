@@ -49,3 +49,9 @@ resource "local_file" "talosconfig_reader" {
   content  = local.talos_reader_config
   filename = "${path.module}/talosconfig-reader.yml"
 }
+
+# TODO: Deploy the readonly Talos credentials into the cluster as a K8s Secret,
+# readable by openclaw-sandbox and claude-sandbox namespaces. Pattern: store the
+# reader config in Vault (via Terraform output → Vault KV), then use ExternalSecrets
+# in claude-sandbox-secrets/ and openclaw-sandbox-secrets/ to read it into each
+# namespace (following the existing Vault → ESO pattern used for other shared secrets).
