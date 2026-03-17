@@ -1,0 +1,9 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "vmconst",
+    testonly = True,
+    srcs = ["vmconst.go"],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vmconst",
+    visibility = ["//cluster/kubespand:__subpackages__"],
+)

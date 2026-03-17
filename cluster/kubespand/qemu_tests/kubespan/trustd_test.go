@@ -140,9 +140,9 @@ func runTrustdCSRFlow(t *testing.T, workerType h.NodeType) {
 		}
 
 		t.Log("--- Talos CP KubeSpan diagnostics (post-failure) ---")
-		client := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
-		defer client.Close()
-		h.DumpKubeSpanDiagnostics(t, client, cpIP)
+		cpDiag := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
+		defer cpDiag.Close()
+		h.DumpKubeSpanDiagnostics(t, cpDiag, cpIP)
 
 		t.Log("=== END FAILURE DIAGNOSTICS ===")
 	})
@@ -151,28 +151,18 @@ func runTrustdCSRFlow(t *testing.T, workerType h.NodeType) {
 	vmDisc.WaitForProbeServer(120 * time.Second)
 	sw.Lap("discovery VM ready")
 
-	// Wait for Talos CP API.
-	talosClient := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
-	defer talosClient.Close()
-	h.WaitForTalosAPI(t, talosClient, cpIP, 180*time.Second)
+	// Wait for Talos CP API (must be ready before worker, which needs CP for trustd).
+	cpNode := h.NewTalosMeshNode(t, vmCP, cpIP, talosConfigPath, talosAPIPort)
+	h.WaitForNodesReady(t, []*h.MeshNode{cpNode}, 180*time.Second)
 	sw.Lap("Talos CP API ready")
 
-	h.DumpKubeSpanDiagnostics(t, talosClient, cpIP)
+	cpNode.DumpDiagnostics(t)
 	sw.Lap("initial CP diagnostics")
 
 	// Verify worker's API is accessible — proves trustd CSR flow succeeded.
-	// For kubespand: apid on port 50000 (forwarded).
-	// For Talos: native Talos API on forwarded port.
-	var workerAddr string
-	switch workerType {
-	case h.NodeTypeKubespand:
-		workerAddr = workerVM.ForwardAddr(workerAPIPort)
-	case h.NodeTypeTalos:
-		workerAddr = fmt.Sprintf("127.0.0.1:%d", workerAPIPort)
-	}
-	workerClient := h.NewTalosClient(t, talosConfigPath, workerAddr)
-	defer workerClient.Close()
-	h.WaitForTalosAPI(t, workerClient, workerIP, 300*time.Second)
+	// Both kubespand (apid on 50000) and Talos (native API) speak the Talos API.
+	workerNode := h.NewTalosMeshNode(t, workerVM, workerIP, talosConfigPath, workerAPIPort)
+	h.WaitForNodesReady(t, []*h.MeshNode{workerNode}, 300*time.Second)
 	sw.Lap("worker API ready (trustd CSR flow succeeded)")
 
 	sw.Summary(out)

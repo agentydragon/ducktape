@@ -26,6 +26,7 @@ import (
 
 	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
 	pb "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/probepb"
+	"github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vmconst"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"google.golang.org/grpc"
@@ -63,8 +64,7 @@ const (
 )
 
 // mgmtMAC is the MAC address assigned to the management NIC by BootVM.
-// Must match initlib.MgmtMAC so the VM init can find it.
-const mgmtMAC = "52:54:00:aa:00:01"
+const mgmtMAC = vmconst.MgmtMAC
 
 // MAC addresses for flat/cross-subnet/trustd topology VMs.
 const (

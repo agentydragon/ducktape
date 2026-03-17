@@ -17,6 +17,8 @@ import (
 	v1alpha1 "github.com/siderolabs/talos/pkg/machinery/config/types/v1alpha1"
 	"github.com/siderolabs/talos/pkg/machinery/role"
 	"gopkg.in/yaml.v3"
+
+	"github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vmconst"
 )
 
 // TestTalosSecrets holds all cryptographic material for a test Talos cluster.
@@ -184,7 +186,7 @@ func (s *TestTalosSecrets) baseConfig(machineType string, opts TalosNodeConfig) 
 	// Management NIC (QEMU user-mode networking).
 	eth1 := &v1alpha1.Device{
 		DeviceInterface: "eth1",
-		DeviceAddresses: []string{"10.0.2.15/24"},
+		DeviceAddresses: []string{vmconst.MgmtIP + "/24"},
 	}
 
 	kubeSpan := &v1alpha1.NetworkKubeSpan{

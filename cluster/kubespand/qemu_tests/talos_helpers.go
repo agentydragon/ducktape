@@ -100,30 +100,6 @@ func NewTalosClient(t *testing.T, configPath, endpoint string) *client.Client {
 	return c
 }
 
-// WaitForTalosAPI polls client.Version() until the Talos API responds.
-func WaitForTalosAPI(t *testing.T, c *client.Client, nodeIP string, timeout time.Duration) {
-	t.Helper()
-	if !pollUntil(time.Now().Add(timeout), func() bool {
-		ctx, cancel := context.WithTimeout(client.WithNode(context.Background(), nodeIP), 5*time.Second)
-		resp, err := c.Version(ctx)
-		cancel()
-		if err != nil {
-			t.Logf("waiting for talos API: %v", err)
-			return false
-		}
-		tag := ""
-		for _, msg := range resp.Messages {
-			if msg.Version != nil {
-				tag = msg.Version.Tag
-			}
-		}
-		t.Logf("talos API ready: %s", tag)
-		return true
-	}) {
-		t.Fatalf("talos API not reachable after %v", timeout)
-	}
-}
-
 // dumpCOSIList lists all resources of type T and logs each one with %+v.
 func dumpCOSIList[T generic.ResourceWithRD](t *testing.T, ctx context.Context, st state.State, label string) {
 	t.Helper()

@@ -44,11 +44,7 @@ func runDoubleNAT(t *testing.T, workerType h.NodeType) {
 	out := h.OutputDir(t)
 	tmpDir := t.TempDir()
 
-	// Resolve worker-specific runfiles.
-	var kubespandInitramfs string
-	if workerType == h.NodeTypeKubespand {
-		kubespandInitramfs = h.RunfilePath(t, h.DoublenatInitramfs)
-	}
+	kubespandInitramfs := h.RunfilePath(t, h.DoublenatInitramfs)
 	sw.Lap("resolve runfiles")
 
 	// Generate Talos secrets (VPS is always a Talos CP).
@@ -145,15 +141,10 @@ func runDoubleNAT(t *testing.T, workerType h.NodeType) {
 		vmNAT2 := h.BootTalosVM(t, "vm-nat2", talosBaseImage, nat2CI,
 			nat2APIPort, h.McastNIC("net0", mcastLanB, h.DoubleNATNAT2MAC))
 
-		nat1Client := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", nat1APIPort))
-		nat2Client := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", nat2APIPort))
-
-		nat1 = &h.MeshNode{VM: vmNAT1, Type: h.NodeTypeTalos, NodeIP: h.DoubleNATNAT1IP, T: t, TalosClient: nat1Client}
-		nat2 = &h.MeshNode{VM: vmNAT2, Type: h.NodeTypeTalos, NodeIP: h.DoubleNATNAT2IP, T: t, TalosClient: nat2Client}
+		nat1 = h.NewTalosMeshNode(t, vmNAT1, h.DoubleNATNAT1IP, talosConfigPath, nat1APIPort)
+		nat2 = h.NewTalosMeshNode(t, vmNAT2, h.DoubleNATNAT2IP, talosConfigPath, nat2APIPort)
 		allVMs = append(allVMs, vmNAT1, vmNAT2)
 	}
-	defer nat1.Close()
-	defer nat2.Close()
 	sw.Lap("boot worker VMs")
 
 	h.CleanupVMs(t, allVMs, out)
@@ -163,9 +154,7 @@ func runDoubleNAT(t *testing.T, workerType h.NodeType) {
 	sw.Lap("infrastructure VMs ready")
 
 	// Wait for VPS Talos API.
-	vpsClient := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", vpsAPIPort))
-	defer vpsClient.Close()
-	vpsNode := &h.MeshNode{VM: vmVPS, Type: h.NodeTypeTalos, NodeIP: h.DoubleNATVPSIP, T: t, TalosClient: vpsClient}
+	vpsNode := h.NewTalosMeshNode(t, vmVPS, h.DoubleNATVPSIP, talosConfigPath, vpsAPIPort)
 
 	// Wait for all nodes to be ready (parallel).
 	h.WaitForNodesReady(t, []*h.MeshNode{vpsNode, nat1, nat2}, h.NodeReadyTimeout)
@@ -175,7 +164,7 @@ func runDoubleNAT(t *testing.T, workerType h.NodeType) {
 	if err := h.WaitForFullMesh(t, []*h.MeshNode{vpsNode, nat1, nat2}, h.FullMeshTimeout); err != nil {
 		nat1.DumpDiagnostics(t)
 		nat2.DumpDiagnostics(t)
-		h.DumpKubeSpanDiagnostics(t, vpsClient, h.DoubleNATVPSIP)
+		vpsNode.DumpDiagnostics(t)
 		t.Fatalf("full mesh not achieved: %v", err)
 	}
 	sw.Lap("full mesh achieved")
@@ -213,7 +202,7 @@ func runDoubleNAT(t *testing.T, workerType h.NodeType) {
 	if t.Failed() {
 		nat1.DumpDiagnostics(t)
 		nat2.DumpDiagnostics(t)
-		h.DumpKubeSpanDiagnostics(t, vpsClient, h.DoubleNATVPSIP)
+		vpsNode.DumpDiagnostics(t)
 	}
 
 	summary := map[string]interface{}{

@@ -15,6 +15,7 @@ go_library(
     deps = [
         "//cluster/kubespand/agentconfig",
         "//cluster/kubespand/qemu_tests/probepb",
+        "//cluster/kubespand/qemu_tests/vmconst",
         "@com_github_cosi_project_runtime//api/v1alpha1",
         "@com_github_cosi_project_runtime//pkg/controller/generic",
         "@com_github_cosi_project_runtime//pkg/resource",

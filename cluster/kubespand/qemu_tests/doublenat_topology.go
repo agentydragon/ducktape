@@ -1,5 +1,5 @@
 // Shared network topology constants for double-NAT test scenarios.
-// Used by both the kubespand doublenat test and the Talos-only doublenat test.
+// Used by the parameterized doublenat test (both kubespand and Talos workers).
 package qemu_tests
 
 // Double-NAT topology:

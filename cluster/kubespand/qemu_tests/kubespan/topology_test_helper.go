@@ -17,15 +17,10 @@ func runTopology(t *testing.T, topology string, workerType h.NodeType) {
 
 	vmlinuz := h.RunfilePath(t, h.VmlinuzPath)
 	initramfsDisc := h.RunfilePath(t, h.DiscoveryInitramfs)
+	kubespandInitramfs := h.RunfilePath(t, h.KubespanInitramfs)
 	talosBaseImage := h.RunfilePath(t, h.TalosNocloudImagePath)
 	out := h.OutputDir(t)
 	sw.Lap("resolve runfiles")
-
-	// Resolve kubespand initramfs only if needed.
-	var kubespandInitramfs string
-	if workerType == h.NodeTypeKubespand {
-		kubespandInitramfs = h.RunfilePath(t, h.KubespanInitramfs)
-	}
 
 	mcastPort := h.RandomPort()
 	mcastAddr := fmt.Sprintf("230.0.0.1:%d", mcastPort)
@@ -142,16 +137,10 @@ func runTopology(t *testing.T, topology string, workerType h.NodeType) {
 			bAPIPort, h.McastNIC("net0", mcastAddr, h.NodeBMAC))
 		sw.Lap("boot Talos workers")
 
-		aClient := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", aAPIPort))
-		bClient := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", bAPIPort))
-
-		workerA = &h.MeshNode{VM: vmA, Type: h.NodeTypeTalos, NodeIP: linkIPA, T: t, TalosClient: aClient}
-		workerB = &h.MeshNode{VM: vmB, Type: h.NodeTypeTalos, NodeIP: linkIPB, T: t, TalosClient: bClient}
+		workerA = h.NewTalosMeshNode(t, vmA, linkIPA, talosConfigPath, aAPIPort)
+		workerB = h.NewTalosMeshNode(t, vmB, linkIPB, talosConfigPath, bAPIPort)
 		allVMs = []*h.VM{vmA, vmB, vmDisc}
 	}
-	defer workerA.Close()
-	defer workerB.Close()
-
 	// Talos CP VM — participates in KubeSpan mesh for API-based peer observation.
 	cpCI := h.CreateCIDATA(t, tmpDir, "cp", cpConfigData)
 	talosAPIPort := h.RandomPort()
@@ -167,9 +156,7 @@ func runTopology(t *testing.T, topology string, workerType h.NodeType) {
 	sw.Lap("discovery HTTP ready")
 
 	// Talos CP API.
-	talosClient := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
-	defer talosClient.Close()
-	cpNode := &h.MeshNode{VM: vmCP, Type: h.NodeTypeTalos, NodeIP: cpIP, T: t, TalosClient: talosClient}
+	cpNode := h.NewTalosMeshNode(t, vmCP, cpIP, talosConfigPath, talosAPIPort)
 
 	// Wait for all nodes to be ready (parallel).
 	h.WaitForNodesReady(t, []*h.MeshNode{cpNode, workerA, workerB}, h.NodeReadyTimeout)
@@ -179,7 +166,7 @@ func runTopology(t *testing.T, topology string, workerType h.NodeType) {
 	if err := h.WaitForFullMesh(t, []*h.MeshNode{cpNode, workerA, workerB}, h.FullMeshTimeout); err != nil {
 		workerA.DumpDiagnostics(t)
 		workerB.DumpDiagnostics(t)
-		h.DumpKubeSpanDiagnostics(t, talosClient, cpIP)
+		cpNode.DumpDiagnostics(t)
 		t.Fatalf("full mesh not achieved: %v", err)
 	}
 	sw.Lap("full mesh achieved")

@@ -49,6 +49,15 @@ type MeshNode struct {
 	TalosClient *client.Client // nil for kubespand
 }
 
+// NewTalosMeshNode constructs a MeshNode for a Talos VM, creating the Talos
+// mTLS API client internally. The client is closed automatically via t.Cleanup.
+func NewTalosMeshNode(t *testing.T, vm *VM, nodeIP, talosConfigPath string, apiPort int) *MeshNode {
+	t.Helper()
+	c := NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", apiPort))
+	t.Cleanup(func() { c.Close() })
+	return &MeshNode{VM: vm, Type: NodeTypeTalos, NodeIP: nodeIP, T: t, TalosClient: c}
+}
+
 // Close cleans up resources (closes the Talos client if present).
 func (w *MeshNode) Close() {
 	if w.TalosClient != nil {
@@ -56,34 +65,53 @@ func (w *MeshNode) Close() {
 	}
 }
 
-// WaitForReady waits for the node to become reachable. For kubespand nodes,
-// waits for the probe server. For Talos nodes, waits for the Talos API.
-func (w *MeshNode) WaitForReady(timeout time.Duration) {
-	w.T.Helper()
+// waitForReady waits for the node to become reachable. Returns an error instead
+// of calling t.Fatalf, so it's safe to call from goroutines.
+func (w *MeshNode) waitForReady(timeout time.Duration) error {
 	switch w.Type {
 	case NodeTypeKubespand:
-		WaitForProbeServers(w.T, []*VM{w.VM}, timeout)
+		if !w.VM.WaitForProbeServer(timeout) {
+			return fmt.Errorf("probe server not ready after %v", timeout)
+		}
+		return nil
 	case NodeTypeTalos:
-		WaitForTalosAPI(w.T, w.TalosClient, w.NodeIP, timeout)
+		if !pollUntil(time.Now().Add(timeout), func() bool {
+			ctx, cancel := context.WithTimeout(client.WithNode(context.Background(), w.NodeIP), 5*time.Second)
+			_, err := w.TalosClient.Version(ctx)
+			cancel()
+			return err == nil
+		}) {
+			return fmt.Errorf("talos API not reachable after %v", timeout)
+		}
+		return nil
 	default:
-		w.T.Fatalf("unknown node type %q in WaitForReady", w.Type)
+		return fmt.Errorf("unknown node type %q", w.Type)
 	}
 }
 
 // WaitForNodesReady waits for all nodes to become reachable in parallel.
+// Collects readiness results in goroutines and fails from the test goroutine
+// to avoid panics from t.Fatalf in non-test goroutines.
 func WaitForNodesReady(t *testing.T, nodes []*MeshNode, timeout time.Duration) {
 	t.Helper()
 
-	done := make(chan struct{}, len(nodes))
+	type result struct {
+		name string
+		err  error
+	}
+	ch := make(chan result, len(nodes))
 	for _, w := range nodes {
 		w := w
 		go func() {
-			w.WaitForReady(timeout)
-			done <- struct{}{}
+			err := w.waitForReady(timeout)
+			ch <- result{name: w.VM.Name, err: err}
 		}()
 	}
 	for range len(nodes) {
-		<-done
+		r := <-ch
+		if r.err != nil {
+			t.Fatalf("[%s] not ready: %v", r.name, r.err)
+		}
 	}
 }
 
@@ -144,7 +172,7 @@ func (w *MeshNode) GetPeerSpecs() ([]kubespan.PeerSpecSpec, error) {
 }
 
 // ProbeICMP sends an ICMP probe from the node's VM. Only works on kubespand
-// nodes (returns true without probing for Talos).
+// nodes (skips with true for Talos nodes that lack a probe server).
 func (w *MeshNode) ProbeICMP(target string, timeout time.Duration) bool {
 	if !w.HasProbeServer() {
 		w.T.Logf("[%s] skipping ICMP probe (Talos node, no probe server)", w.VM.Name)
@@ -154,7 +182,7 @@ func (w *MeshNode) ProbeICMP(target string, timeout time.Duration) bool {
 }
 
 // ProbeTCP sends a TCP probe from the node's VM. Only works on kubespand
-// nodes (returns true without probing for Talos).
+// nodes (skips with true for Talos nodes that lack a probe server).
 func (w *MeshNode) ProbeTCP(target string, port int, timeout time.Duration) bool {
 	if !w.HasProbeServer() {
 		w.T.Logf("[%s] skipping TCP probe (Talos node, no probe server)", w.VM.Name)
@@ -182,6 +210,11 @@ func (w *MeshNode) DumpDiagnostics(t *testing.T) {
 // For kubespand: insecure gRPC to vm.cosiAddr.
 // For Talos: the client's COSI field.
 // cleanup must be called when done.
+//
+// TODO: Unify COSI access via Talos mTLS API for both node types. kubespand
+// implements apid (port 50000) with trustd CSR flow, so both could use the Talos
+// client. Requires setting up API config (ca_crt, token, cert_sans) in all tests,
+// not just the trustd test.
 func (w *MeshNode) cosiState() (state.State, func(), error) {
 	switch w.Type {
 	case NodeTypeKubespand:

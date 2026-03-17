@@ -9,6 +9,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vmconst"
 )
 
 var Role = "unknown"
@@ -100,10 +102,12 @@ func DumpLog(path string) {
 	os.Stderr.Write(data)
 }
 
-// MgmtMAC is the well-known MAC address assigned to the management NIC.
-// BootVM on the test host always uses this MAC, allowing the VM init to
-// find the mgmt NIC regardless of how many mesh NICs precede it.
-const MgmtMAC = "52:54:00:aa:00:01"
+// Re-export vmconst values for convenience — initlib consumers don't need
+// to import vmconst separately.
+const (
+	MgmtMAC = vmconst.MgmtMAC
+	MgmtIP  = vmconst.MgmtIP
+)
 
 // findMgmtNIC scans /sys/class/net for an interface with MgmtMAC.
 func findMgmtNIC(timeout time.Duration) string {
@@ -146,7 +150,7 @@ func ConfigureMgmtNIC(required bool) {
 		return
 	}
 	MustRun("ip", "link", "set", iface, "up")
-	MustRun("ip", "addr", "add", "10.0.2.15/24", "dev", iface)
+	MustRun("ip", "addr", "add", MgmtIP+"/24", "dev", iface)
 }
 
 // MountKubespandCIDATA mounts the CIDATA virtio drive and copies agent.yaml
