@@ -48,19 +48,15 @@ func GenerateTestTalosSecrets(t *testing.T) *TestTalosSecrets {
 	now := time.Now()
 	contract := config.TalosVersionCurrent
 
-	// Machine CA (ed25519) — signs apid client certs.
-	// Ref: pkg/machinery/config/generate/secrets/ca.go (NewTalosCA)
+	// All CA generation uses Talos's own functions from
+	// pkg/machinery/config/generate/secrets/ca.go.
 	machineCA, err := gensecrets.NewTalosCA(now)
 	if err != nil {
 		t.Fatalf("generate machine CA: %v", err)
 	}
-	machineCAPEM := &sx509.PEMEncodedCertificateAndKey{
-		Crt: machineCA.CrtPEM,
-		Key: machineCA.KeyPEM,
-	}
+	machineCAPEM := sx509.NewCertificateAndKeyFromCertificateAuthority(machineCA)
 
 	// Admin client cert with ExtKeyUsage=[ClientAuth] only.
-	// Ref: pkg/machinery/config/generate/secrets/ca.go (NewAdminCertificateAndKey)
 	clientCert, err := gensecrets.NewAdminCertificateAndKey(
 		now, machineCAPEM, role.MakeSet(role.Admin), 365*24*time.Hour,
 	)
@@ -68,42 +64,25 @@ func GenerateTestTalosSecrets(t *testing.T) *TestTalosSecrets {
 		t.Fatalf("generate admin client cert: %v", err)
 	}
 
-	// Cluster CA (ECDSA P-256) — Kubernetes API server CA.
-	// Ref: pkg/machinery/config/generate/secrets/ca.go (NewKubernetesCA)
 	clusterCA, err := gensecrets.NewKubernetesCA(now, contract)
 	if err != nil {
 		t.Fatalf("generate kubernetes CA: %v", err)
 	}
-	// Aggregator CA (ECDSA P-256) — front-proxy CA.
-	// Ref: pkg/machinery/config/generate/secrets/ca.go (NewAggregatorCA)
 	aggregatorCA, err := gensecrets.NewAggregatorCA(now, contract)
 	if err != nil {
 		t.Fatalf("generate aggregator CA: %v", err)
 	}
-	// Etcd CA (ECDSA P-256).
-	// Ref: pkg/machinery/config/generate/secrets/ca.go (NewEtcdCA)
 	etcdCA, err := gensecrets.NewEtcdCA(now, contract)
 	if err != nil {
 		t.Fatalf("generate etcd CA: %v", err)
 	}
-	// Service account signing key (RSA).
-	saKey := generateRSAKey(t)
 
 	return &TestTalosSecrets{
-		MachineCA: machineCAPEM,
-		ClusterCA: &sx509.PEMEncodedCertificateAndKey{
-			Crt: clusterCA.CrtPEM,
-			Key: clusterCA.KeyPEM,
-		},
-		AggregatorCA: &sx509.PEMEncodedCertificateAndKey{
-			Crt: aggregatorCA.CrtPEM,
-			Key: aggregatorCA.KeyPEM,
-		},
-		EtcdCA: &sx509.PEMEncodedCertificateAndKey{
-			Crt: etcdCA.CrtPEM,
-			Key: etcdCA.KeyPEM,
-		},
-		ServiceAccountKey: saKey,
+		MachineCA:         machineCAPEM,
+		ClusterCA:         sx509.NewCertificateAndKeyFromCertificateAuthority(clusterCA),
+		AggregatorCA:      sx509.NewCertificateAndKeyFromCertificateAuthority(aggregatorCA),
+		EtcdCA:            sx509.NewCertificateAndKeyFromCertificateAuthority(etcdCA),
+		ServiceAccountKey: generateRSAKey(t),
 		MachineToken:      randomBootstrapToken(),
 		ClusterToken:      randomBootstrapToken(),
 		ClusterID:         RandomBase64(32),
