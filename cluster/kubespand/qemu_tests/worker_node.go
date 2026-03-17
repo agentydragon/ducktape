@@ -56,6 +56,8 @@ func (w *WorkerNode) WaitForReady(timeout time.Duration) {
 		WaitForProbeServers(w.T, []*VM{w.VM}, timeout)
 	case WorkerTypeTalos:
 		WaitForTalosAPI(w.T, w.TalosClient, w.NodeIP, timeout)
+	default:
+		w.T.Fatalf("unknown worker type %q in WaitForReady", w.Type)
 	}
 }
 
