@@ -24,7 +24,7 @@ spec:
       terminationGracePeriodSeconds: 90
       containers:
         - name: litellm
-          image: ghcr.io/berriai/litellm:main-v1.23.9
+          image: litellm/litellm:1.82.1
           args: ["--config", "/etc/litellm/config.yaml"]
           ports:
             - name: http
