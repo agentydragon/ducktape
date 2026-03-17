@@ -340,5 +340,5 @@ kubectl get secret ollama-api-key -n claude-sandbox \
 - **Agent containers**: Run with host networking, per-agent PostgreSQL roles,
   and RLS-scoped database access.
 - **Model config**: `config.ollama.toml` (this skill directory) configures
-  `gpt-oss:20b` via the remote ollama cluster at `ollama.allegedly.works`.
+  `gpt-oss:20b` via the remote LiteLLM cluster at `litellm.allegedly.works`.
   The cluster serves the model with 131072-token context (`OLLAMA_NUM_CTX=131072`).

@@ -231,7 +231,7 @@ repos:
             cluster/k8s/applications/headscale/config\.yaml|
             cluster/k8s/airlock/config\.yaml|
             cluster/k8s/homeassistant-proxy/config\.yaml|
-            cluster/k8s/ollama/litellm-proxy-config\.yaml
+            cluster/k8s/litellm/proxy-config\.yaml
           )$
         types: [yaml]
 

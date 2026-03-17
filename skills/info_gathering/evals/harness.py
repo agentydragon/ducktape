@@ -256,9 +256,7 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
         "--thinking-budget", type=int, default=DEFAULT_THINKING, help="0 to disable (only for anthropic/ models)"
     )
     parser.add_argument("--output-dir", default=None)
-    parser.add_argument(
-        "--base-url", default=None, help="Custom API base URL (e.g. https://ollama-api.allegedly.works)"
-    )
+    parser.add_argument("--base-url", default=None, help="Custom API base URL (e.g. https://ollama.allegedly.works)")
     parser.add_argument("--api-key", default=None, help="API key (reads from provider env var by default)")
 
 

@@ -4,7 +4,7 @@ Results from benchmarking `gpt-oss` models on the k8s Ollama cluster.
 
 Hardware: 2× NVIDIA RTX 5090 (64 GB VRAM total).
 Cluster config: `OLLAMA_KV_CACHE_TYPE=q8_0`, `OLLAMA_FLASH_ATTENTION=1`.
-Endpoint: `https://ollama.allegedly.works/v1` (LiteLLM proxy).
+Endpoint: `https://litellm.allegedly.works/v1` (LiteLLM proxy).
 
 Scripts:
 

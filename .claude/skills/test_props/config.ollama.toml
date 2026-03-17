@@ -1,4 +1,4 @@
-# Props configuration for the remote Ollama cluster (ollama.allegedly.works).
+# Props configuration for the remote LiteLLM cluster (litellm.allegedly.works).
 # Used by the test_props skill when running critics and graders with gpt-oss:20b.
 # Pointed to by PROPS_CONFIG_FILE env var when starting the backend.
 #
@@ -23,7 +23,7 @@ PGPORT = "5433"
 PGDATABASE = "eval_results"
 
 [upstreams.ollama]
-url = "https://ollama.allegedly.works/v1"
+url = "https://litellm.allegedly.works/v1"
 api_key_env = "OLLAMA_API_KEY"
 
 # gpt-oss:20b — 20B MoE model (4 of 32 experts active), 128k native context.

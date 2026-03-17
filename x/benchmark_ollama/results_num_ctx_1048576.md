@@ -3,7 +3,7 @@
 Date: 2026-02-23
 Hardware: 2x NVIDIA RTX 5090 (64 GB VRAM total)
 Config: `OLLAMA_KV_CACHE_TYPE=q8_0`, `OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_NUM_CTX=1048576`
-Endpoint: `https://ollama.allegedly.works/v1` (LiteLLM proxy)
+Endpoint: `https://litellm.allegedly.works/v1` (LiteLLM proxy)
 Seed: 42, time limit: 60s per config, NIAH samples: 8
 
 ## gpt-oss-20b-128k

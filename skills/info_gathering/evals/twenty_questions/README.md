@@ -28,7 +28,7 @@ OLLAMA_KEY=$(kubectl get secret ollama-api-key -n claude-sandbox \
 bazel run //skills/info_gathering/evals/twenty_questions:twenty_questions_bin -- \
   --variant states \
   --model openai/gpt-oss-20b-128k \
-  --base-url https://ollama.allegedly.works/v1 \
+  --base-url https://litellm.allegedly.works/v1 \
   --api-key "$OLLAMA_KEY" \
   --thinking-budget 0
 ```

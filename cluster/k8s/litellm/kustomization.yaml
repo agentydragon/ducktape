@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ollama
+resources:
+  - deployment.yaml
+  - service.yaml
+  - serviceaccount.yaml
+  - servicemonitor.yaml
+  - httproute.yaml
+
+configMapGenerator:
+  - name: litellm-config
+    options:
+      disableNameSuffixHash: true
+    files:
+      - config.yaml=proxy-config.yaml

@@ -26,8 +26,8 @@ let
         wire_api = "chat";
       };
       cluster = {
-        name = "Cluster (ollama.allegedly.works)";
-        base_url = "https://ollama.allegedly.works/v1";
+        name = "Cluster (litellm.allegedly.works)";
+        base_url = "https://litellm.allegedly.works/v1";
         env_key = "OLLAMA_API_KEY";
         wire_api = "chat";
       };

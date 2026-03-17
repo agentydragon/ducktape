@@ -12,7 +12,7 @@ Usage:
     bazel run //hack/benchmark_ollama:benchmark_ollama -- --unload-between-models
 
 Environment:
-    OLLAMA_API_KEY  API key for ollama.allegedly.works (optional)
+    OLLAMA_API_KEY  API key for litellm.allegedly.works (optional)
 
 Methodology:
     prewarm: one throwaway request per context size to allocate KV cache.
@@ -56,7 +56,7 @@ import openai
 
 from util.bazel.workspace import get_build_working_directory
 
-OLLAMA_BASE_URL = "https://ollama.allegedly.works/v1"
+OLLAMA_BASE_URL = "https://litellm.allegedly.works/v1"
 DEFAULT_MODELS = ["gpt-oss-20b-128k", "gpt-oss-120b-128k"]
 
 TIME_LIMIT_S = 60

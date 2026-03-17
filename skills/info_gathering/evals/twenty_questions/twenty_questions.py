@@ -2,7 +2,7 @@
 
 Usage:
   bazel run //skills/info_gathering/evals/twenty_questions:twenty_questions_bin -- --variant states
-  bazel run //skills/info_gathering/evals/twenty_questions:twenty_questions_bin -- --variant states --model openai/gpt-oss:20b --base-url https://ollama-api.allegedly.works --thinking-budget 0
+  bazel run //skills/info_gathering/evals/twenty_questions:twenty_questions_bin -- --variant states --model openai/gpt-oss:20b --base-url https://ollama.allegedly.works --thinking-budget 0
 """
 
 import argparse
@@ -214,12 +214,7 @@ class _TwentyQuestionsRunner:
             result = Timeout(limit=turn_limit)
             turn = 0
 
-        summary = RunSummary(
-            eval_name=self.name,
-            model=self.client.model,
-            turns=turn,
-            result=result,
-        )
+        summary = RunSummary(eval_name=self.name, model=self.client.model, turns=turn, result=result)
         save_results(name=self.name, log_entries=self.log_entries, summary=summary, output_dir=output_dir)
         return summary
 

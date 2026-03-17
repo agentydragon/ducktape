@@ -113,6 +113,7 @@ resources:
   - ollama-namespace/flux-kustomization.yaml
   - ollama-secrets/flux-kustomization.yaml
   - ollama/flux-kustomization.yaml
+  - litellm/flux-kustomization.yaml
   - langfuse-namespace/flux-kustomization.yaml
   - langfuse-secrets/flux-kustomization.yaml
   - langfuse/flux-kustomization.yaml

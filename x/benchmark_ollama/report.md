@@ -3,7 +3,7 @@
 **Date**: 2026-02-24
 **Hardware**: 2x NVIDIA RTX 5090 (32 GiB each, 64 GiB total), 8 CPU cores, 28 GiB RAM
 **Node**: `talos-pve-gpu-worker-0` (Proxmox VM)
-**Software**: Ollama with LiteLLM proxy at `ollama.allegedly.works`
+**Software**: Ollama with LiteLLM proxy at `litellm.allegedly.works`
 **Config**: `OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_KV_CACHE_TYPE=q8_0`
 
 ## Models

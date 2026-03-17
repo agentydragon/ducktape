@@ -8,7 +8,7 @@ See <benchmarks.md> for model performance data.
 ## Remote Ollama Cluster (Recommended)
 
 The repo ships a `config.ollama.toml` in `.claude/skills/test_props/` that
-points to the shared Ollama cluster at `ollama.allegedly.works`. The cluster
+points to the shared LiteLLM cluster at `litellm.allegedly.works`. The cluster
 runs `gpt-oss:20b` with `OLLAMA_NUM_CTX=131072` (128k context).
 
 **Prerequisites:**

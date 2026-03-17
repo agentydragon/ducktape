@@ -117,15 +117,15 @@ let
         };
       };
 
-      # === Cluster: GPT-OSS via LiteLLM at ollama.allegedly.works ===
+      # === Cluster: GPT-OSS via LiteLLM at litellm.allegedly.works ===
       # Select in UI: /model → pick cluster/gpt-oss-20b-128k or cluster/gpt-oss-120b-128k
       # ⚠️ gpt-oss streaming bug may apply (finishReason as object).
       # See: https://github.com/anomalyco/opencode/issues/7439
       cluster = {
         npm = "@ai-sdk/openai-compatible";
-        name = "Cluster (ollama.allegedly.works)";
+        name = "Cluster (litellm.allegedly.works)";
         options = {
-          baseURL = "https://ollama.allegedly.works/v1";
+          baseURL = "https://litellm.allegedly.works/v1";
           apiKey = "{env:OLLAMA_API_KEY}";
         };
         models = {

@@ -17,14 +17,14 @@ py_library(
 py_binary(
     name = "generate_litellm_bin",
     imports = ["../../.."],
-    main_module = "cluster.k8s.ollama.generate_litellm",
+    main_module = "cluster.k8s.litellm.generate_litellm",
     deps = [":generate_litellm"],
 )
 
 py_test(
     name = "test_generate_litellm",
     srcs = ["test_generate_litellm.py"],
-    data = ["litellm-proxy-config.yaml"],
+    data = ["proxy-config.yaml"],
     imports = ["../../.."],
     deps = [
         ":generate_litellm",
