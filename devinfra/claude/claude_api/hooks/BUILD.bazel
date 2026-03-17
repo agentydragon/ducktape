@@ -136,7 +136,10 @@ py_library(
     srcs = ["setup.py"],
     imports = ["../../../.."],
     visibility = ["//visibility:public"],
-    deps = [":common"],
+    deps = [
+        ":common",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -230,6 +233,7 @@ py_library(
         ":pre_tool_use",
         ":session_end",
         ":session_start",
+        ":setup",
         ":stop",
         ":subagent_start",
         ":subagent_stop",

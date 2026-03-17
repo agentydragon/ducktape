@@ -303,10 +303,17 @@ where the daemon runs.
 
 ## Open Questions
 
-- **`Setup` hook**: Claude Code's binary contains a `Setup` schema alongside
-  the hook schemas. Its semantics and availability are not fully documented.
-  If Setup hooks become available, they could replace some SessionStart
-  responsibilities (one-time machine setup vs per-session init).
+- **`Setup` hook** (now documented): Reverse-engineered from v2.1.77 binary.
+  Setup is a separate lifecycle event from SessionStart, fired _before_
+  SessionStart in the startup sequence. Input schema:
+  `{...baseFields, hook_event_name: "Setup", trigger: "init" | "maintenance"}`.
+  Invoked via hidden CLI flags: `--init` (trigger=init, continue),
+  `--init-only` (trigger=init + SessionStart:startup, then exit),
+  `--maintenance` (trigger=maintenance, continue). Setup hooks receive
+  `CLAUDE_ENV_FILE` (separate file from SessionStart's). Like SessionStart,
+  only command hooks are supported (HTTP hooks skipped). Progress output is
+  shown to the user. This could be useful for one-time repo setup vs
+  per-session init, or for the daemon's maintenance cycle (Phase 3).
 
 - **`CLAUDE_ENV_FILE` re-sourcing**: Confirmed that Claude Code re-sources
   the env file on every Bash tool call. This means a background process
