@@ -32,7 +32,6 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 		IP:                   h.DoubleNATVPSIP + "/24",
 		ControlPlaneEndpoint: "https://" + h.DoubleNATVPSIP + ":6443",
 		DiscoveryEndpoint:    "http://" + h.DoubleNATDiscoveryAddr,
-		EndpointFilters:      []string{"0.0.0.0/0"},
 		CertSANs:             []string{h.DoubleNATVPSIP, "127.0.0.1"},
 	})
 	nat1Config := secrets.WorkerConfig(h.TalosNodeConfig{
@@ -40,14 +39,12 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 		Gateway:              h.DoubleNATNAT1Gateway,
 		ControlPlaneEndpoint: "https://" + h.DoubleNATVPSIP + ":6443",
 		DiscoveryEndpoint:    "http://" + h.DoubleNATDiscoveryAddr,
-		EndpointFilters:      []string{"0.0.0.0/0"},
 	})
 	nat2Config := secrets.WorkerConfig(h.TalosNodeConfig{
 		IP:                   h.DoubleNATNAT2IP + "/24",
 		Gateway:              h.DoubleNATNAT2Gateway,
 		ControlPlaneEndpoint: "https://" + h.DoubleNATVPSIP + ":6443",
 		DiscoveryEndpoint:    "http://" + h.DoubleNATDiscoveryAddr,
-		EndpointFilters:      []string{"0.0.0.0/0"},
 	})
 	talosConfigPath := filepath.Join(tmpDir, "talosconfig")
 	secrets.WriteTalosconfig(t, talosConfigPath)

@@ -6,6 +6,7 @@
 //   - agentconfig.Resource — kubespand-specific fields (custom type)
 //   - runtime.KernelModuleSpec — kernel modules to load (e.g. "wireguard")
 //   - runtime.KernelParamSpec — sysctls to apply (rp_filter, src_valid_mark)
+//   - runtime.DevicesStatus — devices ready gate (always true for non-Talos hosts)
 //   - network.NodeAddressFilter — K8s subnet exclusion for NodeAddressController
 //   - network.NodeAddressSortAlgorithm — address sorting config
 //
@@ -68,6 +69,7 @@ func (ctrl *ConfigController) Outputs() []controller.Output {
 		{Type: agentconfig.ResourceType, Kind: controller.OutputExclusive},
 		{Type: runtime.KernelModuleSpecType, Kind: controller.OutputShared},
 		{Type: runtime.KernelParamSpecType, Kind: controller.OutputShared},
+		{Type: runtime.DevicesStatusType, Kind: controller.OutputExclusive},
 		{Type: network.NodeAddressFilterType, Kind: controller.OutputExclusive},
 		{Type: network.NodeAddressSortAlgorithmType, Kind: controller.OutputExclusive},
 	}
@@ -110,6 +112,20 @@ func (ctrl *ConfigController) Run(ctx context.Context, r controller.Runtime, log
 			},
 		); err != nil {
 			return fmt.Errorf("writing agent config: %w", err)
+		}
+
+		// Devices ready: upstream LinkStatusController calls WaitForDevicesReady,
+		// which blocks until DevicesStatus.Ready is true (normally produced by Talos's
+		// udev-based DevicesStatusController). On non-Talos hosts we set it immediately
+		// since there's no udev rename phase to wait for.
+		if err := safe.WriterModify(ctx, r,
+			runtime.NewDevicesStatus(runtime.NamespaceName, runtime.DevicesID),
+			func(res *runtime.DevicesStatus) error {
+				res.TypedSpec().Ready = true
+				return nil
+			},
+		); err != nil {
+			return fmt.Errorf("writing devices status: %w", err)
 		}
 
 		// Kernel module: wireguard.

@@ -194,11 +194,11 @@ func run(configPath string, logger *zap.Logger) error {
 	if err := rt.RegisterController(&taloscontrollersruntime.KernelParamSpecController{}); err != nil {
 		return fmt.Errorf("registering kernel param spec controller: %w", err)
 	}
-	if err := rt.RegisterController(&taloscontrollersruntime.KernelParamDefaultsController{
-		V1Alpha1Mode: v1alpha1runtime.ModeMetal,
-	}); err != nil {
-		return fmt.Errorf("registering kernel param defaults controller: %w", err)
-	}
+	// Note: KernelParamDefaultsController is NOT registered. It produces Talos
+	// KSPP hardening defaults (yama/ptrace_scope, unprivileged_userfaultfd, etc.)
+	// which don't exist on non-Talos kernels (Alpine, NixOS) and would crash-loop
+	// KernelParamSpecController. kubespand only needs the specific sysctls
+	// produced by ConfigController (rp_filter, src_valid_mark).
 
 	logger.Info("starting COSI runtime")
 
