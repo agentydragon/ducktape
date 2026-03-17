@@ -10,20 +10,31 @@ import (
 	h "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 )
 
-// TestTrustdCSRFlow verifies that kubespand can obtain TLS certificates from
-// a Talos controlplane node's trustd service via the standard CSR flow.
-// Topology: discovery VM + Talos CP VM + kubespand VM on 192.168.50.0/24.
-// The kubespand VM runs apid on port 50000 — if we can connect via Talos API,
-// that proves the trustd CSR flow produced secrets.API successfully.
+// TestTrustdCSRFlow verifies that the trustd CSR flow works for both kubespand
+// and Talos workers. The CP's trustd service signs CSRs, enabling workers to
+// serve mTLS on their API port.
+//
+// Topology: discovery VM + Talos CP VM + worker VM on 192.168.50.0/24.
+//
+// For kubespand: apid on port 50000 is accessible via Talos API client.
+// For Talos: the native Talos API is accessible (CSR flow is built-in).
 func TestTrustdCSRFlow(t *testing.T) {
 	t.Parallel()
+	for _, wt := range []h.WorkerType{h.WorkerTypeKubespand, h.WorkerTypeTalos} {
+		t.Run(string(wt), func(t *testing.T) {
+			t.Parallel()
+			runTrustdCSRFlow(t, wt)
+		})
+	}
+}
+
+func runTrustdCSRFlow(t *testing.T, workerType h.WorkerType) {
 	sw := h.NewStopwatch(t)
 
 	// Resolve runfiles.
 	talosBaseImage := h.RunfilePath(t, h.TalosNocloudImagePath)
 	vmlinuz := h.RunfilePath(t, h.VmlinuzPath)
 	initramfsDisc := h.RunfilePath(t, h.DiscoveryInitramfs)
-	initramfsTrustd := h.RunfilePath(t, h.TrustdInitramfs)
 	sw.Lap("resolve runfiles")
 
 	out := h.OutputDir(t)
@@ -33,12 +44,15 @@ func TestTrustdCSRFlow(t *testing.T) {
 	secrets := h.GenerateTestTalosSecrets(t)
 	creds := secrets.Creds()
 
+	cpIP := "192.168.50.2"
+	discIP := "192.168.50.254"
+	workerIP := "192.168.50.1"
+
 	vpsConfigData := secrets.ControlPlaneConfig(h.TalosNodeConfig{
-		IP:                   "192.168.50.2/24",
-		ControlPlaneEndpoint: "https://192.168.50.2:6443",
-		DiscoveryEndpoint:    "http://192.168.50.254:3000",
-		EndpointFilters:      []string{"192.168.50.0/24"},
-		CertSANs:             []string{"192.168.50.2", "127.0.0.1"},
+		IP:                   cpIP + "/24",
+		ControlPlaneEndpoint: "https://" + cpIP + ":6443",
+		DiscoveryEndpoint:    "http://" + discIP + ":3000",
+		CertSANs:             []string{cpIP, "127.0.0.1"},
 	})
 	talosConfigPath := filepath.Join(tmpDir, "talosconfig")
 	secrets.WriteTalosconfig(t, talosConfigPath)
@@ -53,7 +67,7 @@ func TestTrustdCSRFlow(t *testing.T) {
 	mcastAddr := fmt.Sprintf("230.0.0.1:%d", mcastPort)
 
 	vmDisc := h.BootVM(t, "trustd-disc", vmlinuz, initramfsDisc,
-		"mode=discovery role=discovery discovery_ip=192.168.50.254/24",
+		fmt.Sprintf("mode=discovery role=discovery discovery_ip=%s/24", discIP),
 		h.McastNIC("net0", mcastAddr, "52:54:00:ff:00:01"))
 	sw.Lap("boot discovery VM")
 
@@ -63,79 +77,100 @@ func TestTrustdCSRFlow(t *testing.T) {
 		talosAPIPort, h.McastNIC("net0", mcastAddr, "52:54:00:a0:00:01"))
 	sw.Lap("boot Talos CP VM")
 
-	// Build kubespand agent config with trustd CSR flow credentials.
-	kubespandCfg := h.NewTestAgentConfig(creds, "192.168.50.254:3000")
-	kubespandCfg.Cluster.Endpoint = "https://192.168.50.2:6443"
-	kubespandCfg.Kubespan.ListenPort = 51820
-	kubespandCfg.Kubespan.EndpointFilters = []string{"192.168.50.0/24"}
-	kubespandCfg.Api.CACrt = creds.CACrt
-	kubespandCfg.Api.Token = creds.MachineToken
-	kubespandCfg.Api.ApidPath = "/apid"
-	// Include 127.0.0.1 in cert SANs for port-forwarded test connections.
-	kubespandCfg.Api.CertSANs = []string{"127.0.0.1"}
-	kubespandCI := h.CreateKubespandCIDATA(t, tmpDir, "kubespand", kubespandCfg)
+	// Boot worker based on workerType.
+	var workerVM *h.VM
+	var workerAPIPort int
 
-	// kubespand VM with CIDATA config. Extra forward for apid port 50000.
-	vmKubespand := h.BootVM(t, "trustd-kubespand", vmlinuz, initramfsTrustd, "",
-		append(h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01"), h.CIDATADrive(kubespandCI)...),
-		h.PortForward{GuestPort: 50000})
-	sw.Lap("boot kubespand VM")
+	switch workerType {
+	case h.WorkerTypeKubespand:
+		initramfsTrustd := h.RunfilePath(t, h.TrustdInitramfs)
+		kubespandCfg := h.NewTestAgentConfig(creds, discIP+":3000")
+		kubespandCfg.Cluster.Endpoint = "https://" + cpIP + ":6443"
+		kubespandCfg.Kubespan.ListenPort = 51820
+		kubespandCfg.Api.CACrt = creds.CACrt
+		kubespandCfg.Api.Token = creds.MachineToken
+		kubespandCfg.Api.ApidPath = "/apid"
+		kubespandCfg.Api.CertSANs = []string{"127.0.0.1"}
+		kubespandCI := h.CreateKubespandCIDATA(t, tmpDir, "trustd-worker", kubespandCfg)
 
-	allVMs := []*h.VM{vmCP, vmKubespand, vmDisc}
+		workerAPIPort = 50000 // kubespand apid port
+		workerVM = h.BootVM(t, "trustd-worker", vmlinuz, initramfsTrustd, "",
+			append(h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01"), h.CIDATADrive(kubespandCI)...),
+			h.PortForward{GuestPort: workerAPIPort})
+
+	case h.WorkerTypeTalos:
+		workerConfig := secrets.WorkerConfig(h.TalosNodeConfig{
+			IP:                   workerIP + "/24",
+			ControlPlaneEndpoint: "https://" + cpIP + ":6443",
+			DiscoveryEndpoint:    "http://" + discIP + ":3000",
+		})
+		workerCI := h.CreateCIDATA(t, tmpDir, "trustd-worker", workerConfig)
+
+		workerAPIPort = h.RandomPort()
+		workerVM = h.BootTalosVM(t, "trustd-worker", talosBaseImage, workerCI,
+			workerAPIPort, h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01"))
+	}
+	sw.Lap("boot worker VM")
+
+	allVMs := []*h.VM{vmCP, workerVM, vmDisc}
 	h.CleanupVMs(t, allVMs, out)
 
-	// On failure, dump all available diagnostics before cleanup kills the VMs.
+	// On failure, dump diagnostics.
 	t.Cleanup(func() {
 		if !t.Failed() {
 			return
 		}
 		t.Log("=== FAILURE DIAGNOSTICS ===")
 
-		// kubespand VM raw log (stderr from diagnostics dumps inside the VM).
-		rawLog := vmKubespand.GetRawLog()
-		h.SaveArtifact(t, out, "trustd-kubespand-raw.log", rawLog)
+		rawLog := workerVM.GetRawLog()
+		h.SaveArtifact(t, out, "trustd-worker-raw.log", rawLog)
 		lines := strings.Split(rawLog, "\n")
 		start := len(lines) - 300
 		if start < 0 {
 			start = 0
 		}
-		t.Logf("--- kubespand VM raw log (last %d of %d lines) ---", len(lines)-start, len(lines))
+		t.Logf("--- worker VM raw log (last %d of %d lines) ---", len(lines)-start, len(lines))
 		for _, line := range lines[start:] {
 			if line != "" {
 				t.Log(line)
 			}
 		}
 
-		// Talos CP diagnostics (if API was available).
 		t.Log("--- Talos CP KubeSpan diagnostics (post-failure) ---")
 		client := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
 		defer client.Close()
-		h.DumpKubeSpanDiagnostics(t, client, "192.168.50.2")
+		h.DumpKubeSpanDiagnostics(t, client, cpIP)
 
 		t.Log("=== END FAILURE DIAGNOSTICS ===")
 	})
 
-	// Wait for discovery service (probe server responding = VM ready).
+	// Wait for discovery service.
 	vmDisc.WaitForProbeServer(120 * time.Second)
 	sw.Lap("discovery VM ready")
 
-	// Wait for Talos CP API (boot takes ~60-120s on TCG).
+	// Wait for Talos CP API.
 	talosClient := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
 	defer talosClient.Close()
-	h.WaitForTalosAPI(t, talosClient, "192.168.50.2", 180*time.Second)
+	h.WaitForTalosAPI(t, talosClient, cpIP, 180*time.Second)
 	sw.Lap("Talos CP API ready")
 
-	// Dump Talos CP's KubeSpan state before waiting for kubespand apid.
-	h.DumpKubeSpanDiagnostics(t, talosClient, "192.168.50.2")
+	h.DumpKubeSpanDiagnostics(t, talosClient, cpIP)
 	sw.Lap("initial CP diagnostics")
 
-	// Connect to kubespand's apid — success proves the full chain:
-	// kubespand → OSRootController → APICertSANsController → APIController
-	// → trustd CSR → secrets.API → apid serves mTLS on :50000.
-	kubespandClient := h.NewTalosClient(t, talosConfigPath, vmKubespand.ForwardAddr(50000))
-	defer kubespandClient.Close()
-	h.WaitForTalosAPI(t, kubespandClient, "192.168.50.1", 300*time.Second)
-	sw.Lap("kubespand apid ready (trustd CSR flow succeeded)")
+	// Verify worker's API is accessible — proves trustd CSR flow succeeded.
+	// For kubespand: apid on port 50000 (forwarded).
+	// For Talos: native Talos API on forwarded port.
+	var workerAddr string
+	switch workerType {
+	case h.WorkerTypeKubespand:
+		workerAddr = workerVM.ForwardAddr(workerAPIPort)
+	case h.WorkerTypeTalos:
+		workerAddr = fmt.Sprintf("127.0.0.1:%d", workerAPIPort)
+	}
+	workerClient := h.NewTalosClient(t, talosConfigPath, workerAddr)
+	defer workerClient.Close()
+	h.WaitForTalosAPI(t, workerClient, workerIP, 300*time.Second)
+	sw.Lap("worker API ready (trustd CSR flow succeeded)")
 
 	sw.Summary(out)
 }

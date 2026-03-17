@@ -12,14 +12,14 @@ _TOPOLOGY_TAGS = [
     "requires_qemu",
 ]
 
-# Each topology test gets its own RBE worker (4 VMs each: discovery + CP + VM-A + VM-B).
 _TOPOLOGY_DEPS = [
     "//cluster/kubespand/qemu_tests",
     "@com_github_siderolabs_talos_pkg_machinery//config/types/v1alpha1",
 ]
 
+# Parameterized topology tests: flat × {kubespand,talos}, cross_subnet × {kubespand,talos}.
 go_test(
-    name = "flat_test",
+    name = "topology_test",
     timeout = "long",
     srcs = [
         "flat_test.go",
@@ -30,19 +30,7 @@ go_test(
     deps = _TOPOLOGY_DEPS,
 )
 
-go_test(
-    name = "cross_subnet_test",
-    timeout = "long",
-    srcs = [
-        "cross_subnet_test.go",
-        "topology_test_helper.go",
-    ],
-    data = _TOPOLOGY_DATA,
-    tags = _TOPOLOGY_TAGS,
-    deps = _TOPOLOGY_DEPS,
-)
-
-# Trustd CSR flow test: boots 3 VMs (discovery + Talos CP + kubespand).
+# Trustd CSR flow test: parameterized by worker type.
 go_test(
     name = "trustd_test",
     timeout = "long",

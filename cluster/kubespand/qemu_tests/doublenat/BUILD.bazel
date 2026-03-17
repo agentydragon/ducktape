@@ -6,11 +6,15 @@ go_test(
     srcs = ["doublenat_test.go"],
     data = [
         "//cluster/kubespand/qemu_tests:vmlinuz",
+        "//cluster/kubespand/qemu_tests/talos:talos_nocloud_image",
         "//cluster/kubespand/qemu_tests/vms/discovery:initramfs",
         "//cluster/kubespand/qemu_tests/vms/doublenat:initramfs",
         "//cluster/kubespand/qemu_tests/vms/router:initramfs",
     ],
-    tags = ["requires_qemu"],
+    tags = [
+        "cpu:4",
+        "requires_qemu",
+    ],
     deps = [
         "//cluster/kubespand/qemu_tests",
     ],

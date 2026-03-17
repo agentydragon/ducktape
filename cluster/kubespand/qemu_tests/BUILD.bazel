@@ -8,6 +8,7 @@ go_library(
         "helpers.go",
         "talos_config_gen.go",
         "talos_helpers.go",
+        "worker_node.go",
     ],
     importpath = "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests",
     visibility = ["//cluster/kubespand:__subpackages__"],
