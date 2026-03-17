@@ -11,13 +11,20 @@ import (
 	"github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/initlib"
 )
 
-// LoadModules loads wireguard, virtio_net, and nftables kernel modules.
+// LoadModules loads kernel modules needed by kubespand VMs: nftables, wireguard,
+// virtio drivers, and filesystem modules for CIDATA mounting.
 func LoadModules() {
 	initlib.LoadNftablesModules()
 	if err := initlib.RunSilent("modprobe", "wireguard"); err != nil {
 		log.Printf("modprobe wireguard failed: %v", err)
 	}
 	initlib.RunSilent("modprobe", "virtio_net")
+	// virtio_blk is needed for the CIDATA virtio drive to appear as /dev/vda.
+	// fat and vfat are needed to mount the FAT32 CIDATA filesystem.
+	// These are modules (not built-in) in the Alpine linux-virt kernel.
+	initlib.RunSilent("modprobe", "virtio_blk")
+	initlib.RunSilent("modprobe", "fat")
+	initlib.RunSilent("modprobe", "vfat")
 	log.Printf("all modules loaded")
 }
 

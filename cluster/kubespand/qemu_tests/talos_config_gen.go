@@ -4,15 +4,9 @@
 package qemu_tests
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/base64"
-	"encoding/pem"
 	"fmt"
-	"math/big"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -20,7 +14,10 @@ import (
 	"time"
 
 	sx509 "github.com/siderolabs/crypto/x509"
+	"github.com/siderolabs/talos/pkg/machinery/config"
+	gensecrets "github.com/siderolabs/talos/pkg/machinery/config/generate/secrets"
 	v1alpha1 "github.com/siderolabs/talos/pkg/machinery/config/types/v1alpha1"
+	"github.com/siderolabs/talos/pkg/machinery/role"
 	"gopkg.in/yaml.v3"
 )
 
@@ -43,47 +40,78 @@ type TestTalosSecrets struct {
 }
 
 // GenerateTestTalosSecrets creates a complete set of cluster secrets for test
-// Talos VMs. All crypto material is freshly generated — no committed testdata.
+// Talos VMs. Uses Talos's own CA and certificate generation functions to ensure
+// crypto material matches what real Talos clusters produce.
+// Ref: pkg/machinery/config/generate/secrets/bundle.go (Bundle.populate)
+// Ref: pkg/machinery/config/generate/secrets/ca.go (NewAdminCertificateAndKey)
 func GenerateTestTalosSecrets(t *testing.T) *TestTalosSecrets {
 	t.Helper()
 
+	now := time.Now()
+	contract := config.TalosVersionCurrent
+
 	// Machine CA (ed25519) — signs apid client certs.
-	machineCA, err := sx509.NewSelfSignedCertificateAuthority(
-		sx509.Organization("talos"),
-	)
+	// Ref: pkg/machinery/config/generate/secrets/ca.go (NewTalosCA)
+	machineCA, err := gensecrets.NewTalosCA(now)
 	if err != nil {
 		t.Fatalf("generate machine CA: %v", err)
 	}
+	machineCAPEM := &sx509.PEMEncodedCertificateAndKey{
+		Crt: machineCA.CrtPEM,
+		Key: machineCA.KeyPEM,
+	}
 
-	// Client cert for talosconfig (ed25519, signed by machine CA).
-	clientKP, err := sx509.NewKeyPair(machineCA,
-		sx509.Organization("os:admin"),
+	// Admin client cert with ExtKeyUsage=[ClientAuth] only.
+	// Ref: pkg/machinery/config/generate/secrets/ca.go (NewAdminCertificateAndKey)
+	clientCert, err := gensecrets.NewAdminCertificateAndKey(
+		now, machineCAPEM, role.MakeSet(role.Admin), 365*24*time.Hour,
 	)
 	if err != nil {
-		t.Fatalf("generate client cert: %v", err)
+		t.Fatalf("generate admin client cert: %v", err)
 	}
 
 	// Cluster CA (ECDSA P-256) — Kubernetes API server CA.
-	clusterCA := generateECDSACA(t, "kubernetes")
-	// Aggregator CA (ECDSA P-256) — front-proxy CA, empty subject.
-	aggregatorCA := generateECDSACA(t, "")
+	// Ref: pkg/machinery/config/generate/secrets/ca.go (NewKubernetesCA)
+	clusterCA, err := gensecrets.NewKubernetesCA(now, contract)
+	if err != nil {
+		t.Fatalf("generate kubernetes CA: %v", err)
+	}
+	// Aggregator CA (ECDSA P-256) — front-proxy CA.
+	// Ref: pkg/machinery/config/generate/secrets/ca.go (NewAggregatorCA)
+	aggregatorCA, err := gensecrets.NewAggregatorCA(now, contract)
+	if err != nil {
+		t.Fatalf("generate aggregator CA: %v", err)
+	}
 	// Etcd CA (ECDSA P-256).
-	etcdCA := generateECDSACA(t, "etcd")
+	// Ref: pkg/machinery/config/generate/secrets/ca.go (NewEtcdCA)
+	etcdCA, err := gensecrets.NewEtcdCA(now, contract)
+	if err != nil {
+		t.Fatalf("generate etcd CA: %v", err)
+	}
 	// Service account signing key (RSA).
 	saKey := generateRSAKey(t)
 
 	return &TestTalosSecrets{
-		MachineCA:         sx509.NewCertificateAndKeyFromCertificateAuthority(machineCA),
-		ClusterCA:         clusterCA,
-		AggregatorCA:      aggregatorCA,
-		EtcdCA:            etcdCA,
+		MachineCA: machineCAPEM,
+		ClusterCA: &sx509.PEMEncodedCertificateAndKey{
+			Crt: clusterCA.CrtPEM,
+			Key: clusterCA.KeyPEM,
+		},
+		AggregatorCA: &sx509.PEMEncodedCertificateAndKey{
+			Crt: aggregatorCA.CrtPEM,
+			Key: aggregatorCA.KeyPEM,
+		},
+		EtcdCA: &sx509.PEMEncodedCertificateAndKey{
+			Crt: etcdCA.CrtPEM,
+			Key: etcdCA.KeyPEM,
+		},
 		ServiceAccountKey: saKey,
 		MachineToken:      randomBootstrapToken(),
 		ClusterToken:      randomBootstrapToken(),
 		ClusterID:         RandomBase64(32),
 		ClusterSecret:     RandomBase64(32),
 		SecretboxSecret:   RandomBase64(32),
-		ClientCert:        sx509.NewCertificateAndKeyFromKeyPair(clientKP),
+		ClientCert:        clientCert,
 	}
 }
 
@@ -284,40 +312,6 @@ func mustParseURL(rawURL string) *url.URL {
 		panic(fmt.Sprintf("parse URL %q: %v", rawURL, err))
 	}
 	return u
-}
-
-// generateECDSACA creates a self-signed ECDSA P-256 CA certificate.
-func generateECDSACA(t *testing.T, org string) *sx509.PEMEncodedCertificateAndKey {
-	t.Helper()
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatalf("generate ECDSA key: %v", err)
-	}
-	serial, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
-	template := &x509.Certificate{
-		SerialNumber:          serial,
-		NotBefore:             time.Now(),
-		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour),
-		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,
-		BasicConstraintsValid: true,
-		IsCA:                  true,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
-	}
-	if org != "" {
-		template.Subject = pkix.Name{Organization: []string{org}}
-	}
-	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
-	if err != nil {
-		t.Fatalf("create ECDSA cert: %v", err)
-	}
-	keyDER, err := x509.MarshalECPrivateKey(key)
-	if err != nil {
-		t.Fatalf("marshal ECDSA key: %v", err)
-	}
-	return &sx509.PEMEncodedCertificateAndKey{
-		Crt: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER}),
-		Key: pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}),
-	}
 }
 
 // generateRSAKey creates a PEM-encoded RSA private key for service account signing.
