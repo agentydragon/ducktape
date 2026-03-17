@@ -16,6 +16,9 @@ separate from SessionStart. Key differences from SessionStart:
 - **Matcher field**: ``trigger`` (matches ``"init"`` or ``"maintenance"``).
 - **HTTP hooks disabled**: Like SessionStart, only command hooks are
   supported (HTTP hooks are skipped with a warning).
+- **Cannot block**: Unlike most hooks, Setup cannot block the session.
+  The binary says "Blocking errors are ignored" — exit code 2 (the
+  standard "block" signal) has no special meaning for Setup.
 - **Progress reporting**: Like SessionStart, Setup hook output is shown
   to the user during startup (not silently consumed).
 - **forceSyncExecution**: ``--init-only`` runs Setup with
