@@ -2,7 +2,7 @@ server {
     listen 11435;
 
     location / {
-        set $expected "Bearer $${OLLAMA_DIRECT_TOKEN}";
+        set $expected "Bearer ${OLLAMA_DIRECT_TOKEN}";
         if ($http_authorization != $expected) {
             return 401 '{"error": "unauthorized"}';
         }
