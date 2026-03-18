@@ -247,16 +247,19 @@ func (s *MachineServer) Netstat(ctx context.Context, req *machine.NetstatRequest
 		req = new(machine.NetstatRequest)
 	}
 
-	features := netstat.EnableFeatures{
-		TCP:      req.L4Proto.Tcp,
-		TCP6:     req.L4Proto.Tcp6,
-		UDP:      req.L4Proto.Udp,
-		UDP6:     req.L4Proto.Udp6,
-		UDPLite:  req.L4Proto.Udplite,
-		UDPLite6: req.L4Proto.Udplite6,
-		Raw:      req.L4Proto.Raw,
-		Raw6:     req.L4Proto.Raw6,
-		PID:      req.Feature.Pid,
+	var features netstat.EnableFeatures
+	if req.L4Proto != nil {
+		features.TCP = req.L4Proto.Tcp
+		features.TCP6 = req.L4Proto.Tcp6
+		features.UDP = req.L4Proto.Udp
+		features.UDP6 = req.L4Proto.Udp6
+		features.UDPLite = req.L4Proto.Udplite
+		features.UDPLite6 = req.L4Proto.Udplite6
+		features.Raw = req.L4Proto.Raw
+		features.Raw6 = req.L4Proto.Raw6
+	}
+	if req.Feature != nil {
+		features.PID = req.Feature.Pid
 	}
 
 	if req.Netns != nil {

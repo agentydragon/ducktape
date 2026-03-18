@@ -34,8 +34,6 @@
 // # What diverges
 //
 //   - No Enabled toggle: kubespand is always-on when running (no cfg.Enabled check).
-//   - NfTablesChain outputs are OutputExclusive (kubespand is the only producer)
-//     vs OutputShared in upstream (Talos has multiple chain producers).
 //   - Nftables mark rules include explicit Xor:0 field for clarity.
 package kubespanctrl
 
@@ -116,6 +114,9 @@ func (ctrl *ManagerController) Inputs() []controller.Input {
 
 // Outputs implements controller.Controller.
 // Ref: Talos manager.go Outputs()
+// Network resource types use OutputShared to match upstream Talos, where multiple
+// controllers (ManagerController, RouteConfigController, AddressSpecController,
+// NfTablesChainController) contribute to the same resource types.
 func (ctrl *ManagerController) Outputs() []controller.Output {
 	return []controller.Output{
 		{
@@ -124,19 +125,19 @@ func (ctrl *ManagerController) Outputs() []controller.Output {
 		},
 		{
 			Type: network.NfTablesChainType,
-			Kind: controller.OutputExclusive,
+			Kind: controller.OutputShared,
 		},
 		{
 			Type: network.AddressSpecType,
-			Kind: controller.OutputExclusive,
+			Kind: controller.OutputShared,
 		},
 		{
 			Type: network.RouteSpecType,
-			Kind: controller.OutputExclusive,
+			Kind: controller.OutputShared,
 		},
 		{
 			Type: network.LinkSpecType,
-			Kind: controller.OutputExclusive,
+			Kind: controller.OutputShared,
 		},
 	}
 }
