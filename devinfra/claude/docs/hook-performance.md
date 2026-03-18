@@ -9,18 +9,19 @@ each hook call blocks for up to ~5.7s — making sessions painfully slow.
 
 ### Measured Latency Breakdown
 
-| Component                                    | Latency          | Notes                                         |
-| -------------------------------------------- | ---------------- | --------------------------------------------- |
-| Bare python startup                          | ~14ms            | Baseline                                      |
-| uvx resolution (cached wheel)                | ~200ms           | uv environment lookup + symlink setup         |
-| Hook imports (pydantic, opentelemetry, etc.) | ~400ms           | Module-level imports in `hook_dispatch.py`    |
-| **Full hook invocation (happy path)**        | **~600-700ms**   | uvx + imports + dispatch + handler            |
-| OTEL `force_flush` (endpoint unreachable)    | **up to 5000ms** | `hook_dispatch.py:104`, `timeout_millis=5000` |
-| **Full hook invocation (cluster down)**      | **~5700ms**      | The actual problem                            |
+| Component                                    | Latency         | Notes                                        |
+| -------------------------------------------- | --------------- | -------------------------------------------- |
+| Bare python startup                          | ~14ms           | Baseline                                     |
+| uvx resolution (cached wheel)                | ~200ms          | uv environment lookup + symlink setup        |
+| Hook imports (pydantic, opentelemetry, etc.) | ~400ms          | Module-level imports in `hook_dispatch.py`   |
+| **Full hook invocation (happy path)**        | **~600-700ms**  | uvx + imports + dispatch + handler           |
+| OTEL `force_flush` (endpoint unreachable)    | **up to 500ms** | Was 5000ms, reduced in Phase 1               |
+| **Full hook invocation (cluster down)**      | **~700ms**      | Was ~5700ms, OTEL skipped for frequent hooks |
 
 The ~200ms uvx delta (vs direct python) is the cost of uv resolving the cached
 environment. The ~400ms import cost is pydantic + opentelemetry SDK. The 5s OTEL
-flush is the dominant problem.
+flush was the dominant problem — now fixed (Phase 1 skips OTEL for frequent
+hooks, reduces flush timeout to 500ms).
 
 ### Where the OTEL Blocking Happens
 
@@ -45,25 +46,39 @@ flush is the dominant problem.
 PreToolUse and PostToolUse do not need OTEL. They produce one trivial span
 each, and losing those spans is acceptable.
 
+## Current State
+
+**Phase 1 is implemented** (commit `15f2efe`). OTEL is skipped for
+PreToolUse/PostToolUse, and the flush timeout is 500ms (reduced from 5000ms).
+
 ## Alternatives
 
-### A: Quick Fix — Skip OTEL for Frequent Hooks
+### A: Quick Fix — Skip OTEL for Frequent Hooks (**DONE**)
 
 **Change**: In `hook_dispatch.py`, only initialize OTEL for `SessionStart`.
 Skip `init_from_config` and `force_flush` for `PreToolUse`/`PostToolUse`.
 
+**Implementation** (in `hook_dispatch.py`):
+
 ```python
-# hook_dispatch.py, simplified
-should_trace = isinstance(parsed, SessionStartHookInput)
-if should_trace and config and config.otel and config.otel.endpoint:
-    otel.init_from_config(config.otel)
-# ...
-finally:
-    if should_trace:
-        provider.force_flush(timeout_millis=2000)
+_HOOKS_WITH_OTEL: set[type] = {SessionStartHookInput}
+
+should_trace = type(parsed) in _HOOKS_WITH_OTEL
+if should_trace:
+    config = HookConfig.load_from_repo(cwd)
+    if config and config.otel and config.otel.endpoint:
+        otel.init_from_config(config.otel)
 ```
 
-Also reduce SessionStart flush timeout from 5000ms to 2000ms.
+The `otel.flush()` call runs unconditionally in the `finally` block but is
+a no-op when no SDK `TracerProvider` was configured — it checks
+`isinstance(provider, TracerProvider)` and returns early for the default
+`ProxyTracerProvider`.
+
+Flush timeout reduced to 500ms (in `otel.py:DEFAULT_FLUSH_TIMEOUT_MS`),
+not 2000ms as originally planned — 500ms is sufficient for a healthy
+nearby endpoint, and a warn-and-continue approach avoids blocking even
+for SessionStart.
 
 **Pros:**
 
@@ -76,10 +91,10 @@ Also reduce SessionStart flush timeout from 5000ms to 2000ms.
 
 - Still pays ~700ms per hook (uvx + imports).
 - No circuit breaker — if OTEL breaks during SessionStart, it still
-  blocks for 2s there.
+  blocks for up to 500ms there.
 - Does not help if we later add hooks that need external services.
 
-**Latency when cluster down:** ~700ms per PreToolUse/PostToolUse, ~2700ms for
+**Latency when cluster down:** ~700ms per PreToolUse/PostToolUse, ~1200ms for
 SessionStart.
 
 ### B: File-Based State Cache
@@ -204,12 +219,12 @@ supervisor failed to start the daemon.
 **Latency when cluster down:** ~30-50ms per hook. OTEL failures are
 invisible.
 
-### D: Hybrid Phased Approach (A → B → C)
+### D: Hybrid Phased Approach (A → B → C) (**Phase 1 DONE**)
 
-**Phase 1** (immediate, ~1 hour): Implement Alternative A.
+**Phase 1** (**DONE**, commit `15f2efe`): Implement Alternative A.
 
 - Skip OTEL for PreToolUse/PostToolUse.
-- Reduce SessionStart flush timeout to 2000ms.
+- Reduce SessionStart flush timeout to 500ms.
 - Immediate relief for the acute problem.
 
 **Phase 1.5** (quick win, ~2 hours): Eager venv install via Setup hook.
@@ -271,7 +286,7 @@ overhead, and provide circuit breaker behavior.
 | ------------------------------- | ------------ | ---------------- | --------------------- | ---------------- | --------------- |
 | Per-hook latency (cluster down) | ~700ms       | ~500ms           | ~500ms                | ~50ms            | 50ms (after P3) |
 | Per-hook latency (cluster up)   | ~700ms       | ~500ms           | ~500ms                | ~50ms            | 50ms (after P3) |
-| SessionStart overhead change    | -3s          | -3s              | -3s + circuit breaker | -5s              | Progressive     |
+| SessionStart overhead change    | -4.5s        | -4.5s            | -4.5s + circuit break | -5s              | Progressive     |
 | Implementation effort           | ~1h          | ~2h              | ~1d                   | ~3-5d            | Progressive     |
 | New failure modes               | None         | Stale venv       | Stale state file      | Daemon lifecycle | Progressive     |
 | gVisor compatibility            | N/A          | File I/O only    | File I/O only         | TCP (proven)     | All proven      |
@@ -279,17 +294,17 @@ overhead, and provide circuit breaker behavior.
 
 ## Recommendation
 
-**Alternative D (Hybrid Phased Approach).**
+**Alternative D (Hybrid Phased Approach).** Phase 1 is done.
 
-Phase 1 solves the acute pain (5s OTEL timeout on every hook) in ~1 hour
-with zero risk. The PreToolUse/PostToolUse spans are low-value telemetry
-— losing them costs nothing.
+Phase 1 (**done**) solved the acute pain (5s OTEL timeout on every hook)
+with zero risk. OTEL is skipped for PreToolUse/PostToolUse, and flush
+timeout is 500ms. The PreToolUse/PostToolUse spans are low-value
+telemetry — losing them costs nothing.
 
-Phase 1.5 leverages the Setup hook (fired once by `claude --init-only`
-during `task-run` startup) to eagerly install hook packages into a
-persistent venv, eliminating the ~200ms uvx resolution cost on every
-subsequent hook call. This also lays groundwork for Phase 3: the daemon
-binary would be installed into the same venv.
+**Next up**: Phase 1.5 — eagerly install hook packages into a persistent
+venv via the Setup hook, eliminating the ~200ms uvx resolution cost on
+every subsequent hook call. This also lays groundwork for Phase 3: the
+daemon binary would be installed into the same venv.
 
 Phase 2 adds circuit breaker durability so SessionStart also degrades
 gracefully on repeat failures.
