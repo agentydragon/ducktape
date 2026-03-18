@@ -75,8 +75,6 @@ The hook runs at the start of each Claude Code web session and:
 
 ### Development Tools
 
-10. Installs nix via `nix_setup.py` (for nix eval, flake operations)
-
 Note: flux, kustomize, kubeseal, helm are now Bazel-managed via `@multitool//tools/*`.
 Nix formatting uses a static nixfmt binary downloaded by `devinfra/precommit/run_nixfmt.sh`.
 
@@ -97,7 +95,7 @@ A local HTTP CONNECT proxy that adds authentication to Anthropic's egress proxy,
 
 ### The Problem: gRPC-Java Cannot Authenticate with the Egress Proxy
 
-Bazel's Java HTTP layer *can* authenticate with the egress proxy: `ProxyHelper` reads `HTTPS_PROXY`, installs a `java.net.Authenticator`, and handles 407 challenges. BCR fetches work this way. However, **gRPC-Java's remote execution client cannot reliably authenticate**:
+Bazel's Java HTTP layer _can_ authenticate with the egress proxy: `ProxyHelper` reads `HTTPS_PROXY`, installs a `java.net.Authenticator`, and handles 407 challenges. BCR fetches work this way. However, **gRPC-Java's remote execution client cannot reliably authenticate**:
 
 1. **gRPC-Java's `ProxyDetectorImpl`** reads proxy settings from `ProxySelector.getDefault()` (which uses JVM system properties `-Dhttps.proxyHost`/`-Dhttps.proxyPort`), then calls `Authenticator.requestPasswordAuthentication()` for credentials
 2. **Bazel's `ProxyHelper`** installs the `Authenticator` — but only when a repository rule triggers a download. The gRPC remote execution channel may already be established before any repository rule runs
@@ -126,15 +124,14 @@ See <proxy-alternatives.md> for analysis of why alternatives don't work.
 
 All settings use [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) with the `DUCKTAPE_CLAUDE_HOOKS_` prefix:
 
-| Environment Variable                     | Default                             | Description                 |
-| ---------------------------------------- | ----------------------------------- | --------------------------- |
-| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_DIR`   | `<session_dir>/supervisor`          | Supervisor config directory |
-| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT`  | `19001`                             | Supervisor TCP port         |
-| `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_DIR`   | `<session_dir>/auth-proxy`          | Proxy cache directory       |
-| `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_PORT`  | `18081`                             | Auth proxy port             |
-| `DUCKTAPE_CLAUDE_HOOKS_INSTALL_BAZELISK` | `true`                              | Install bazelisk            |
-| `DUCKTAPE_CLAUDE_HOOKS_INSTALL_NIX`      | `false`                             | Install nix package manager |
-| `DUCKTAPE_CLAUDE_HOOKS_CONTAINER_RUNTIME`| `docker`                            | Container runtime (`podman`, `docker`, or `none`) |
+| Environment Variable                      | Default                    | Description                                       |
+| ----------------------------------------- | -------------------------- | ------------------------------------------------- |
+| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_DIR`    | `<session_dir>/supervisor` | Supervisor config directory                       |
+| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT`   | `19001`                    | Supervisor TCP port                               |
+| `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_DIR`    | `<session_dir>/auth-proxy` | Proxy cache directory                             |
+| `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_PORT`   | `18081`                    | Auth proxy port                                   |
+| `DUCKTAPE_CLAUDE_HOOKS_INSTALL_BAZELISK`  | `true`                     | Install bazelisk                                  |
+| `DUCKTAPE_CLAUDE_HOOKS_CONTAINER_RUNTIME` | `docker`                   | Container runtime (`podman`, `docker`, or `none`) |
 
 `<session_dir>` = `~/.claude/session-env/<session_id>/` — a per-session directory managed by Claude Code.
 

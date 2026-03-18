@@ -12,9 +12,9 @@ import stat
 from dataclasses import dataclass
 from pathlib import Path
 
-import httpx
 from opentelemetry import trace
 
+from devinfra.claude.http_client import HttpConfig, download
 from devinfra.claude.platform_utils import get_platform
 from devinfra.claude.session_paths import SessionPaths
 
@@ -51,7 +51,7 @@ def _get_download_url() -> str:
     )
 
 
-async def _download_mkcert(paths: SessionPaths) -> Path:
+def _download_mkcert(paths: SessionPaths, http: HttpConfig) -> Path:
     """Download mkcert binary if not already present."""
     mkcert_dir = _get_mkcert_dir(paths)
     mkcert_path = _get_mkcert_binary(paths)
@@ -65,12 +65,7 @@ async def _download_mkcert(paths: SessionPaths) -> Path:
     url = _get_download_url()
     logger.info("Downloading mkcert from %s", url)
 
-    async with httpx.AsyncClient(follow_redirects=True, timeout=60) as client:
-        response = await client.get(url)
-        response.raise_for_status()
-        data = response.content
-
-    mkcert_path.write_bytes(data)
+    mkcert_path.write_bytes(download(url, http))
     mkcert_path.chmod(mkcert_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     logger.info("Installed mkcert to %s", mkcert_path)
     return mkcert_path
@@ -93,18 +88,12 @@ def append_mkcert_ca_to_bundle(ca_root: Path, combined_ca: Path) -> None:
     logger.info("Appended mkcert root CA to %s", combined_ca)
 
 
-async def setup_mkcert(paths: SessionPaths, combined_ca: Path | None) -> MkcertSetup:
+async def setup_mkcert(paths: SessionPaths, combined_ca: Path | None, http: HttpConfig) -> MkcertSetup:
     """Generate a trusted localhost TLS certificate via mkcert.
 
     Downloads the mkcert binary if needed, generates a certificate for
     localhost/127.0.0.1/::1, and optionally appends the root CA to the
     combined CA bundle so Python/curl/Node trust it via SSL_CERT_FILE.
-
-    Note: `mkcert -install` (system trust store installation) is intentionally
-    skipped. We rely on the combined CA bundle (SSL_CERT_FILE) for tool trust,
-    which doesn't require browser or OS trust store integration. mkcert
-    automatically creates rootCA.pem in CAROOT when generating the first cert,
-    so -install is not needed to produce the CA file.
     """
     mkcert_dir = _get_mkcert_dir(paths)
     mkcert_dir.mkdir(parents=True, exist_ok=True)
@@ -119,7 +108,7 @@ async def setup_mkcert(paths: SessionPaths, combined_ca: Path | None) -> MkcertS
 
     if not cert_path.exists() or not key_path.exists():
         with tracer.start_as_current_span("mkcert_download_binary"):
-            mkcert_bin = await _download_mkcert(paths)
+            mkcert_bin = _download_mkcert(paths, http)
 
         logger.info("Generating localhost certificate...")
         with tracer.start_as_current_span("mkcert_generate_cert"):

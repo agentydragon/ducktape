@@ -89,7 +89,7 @@ async def handle_hook(req: HookRequest) -> HookResponse:
 
 async def _handle_session_start(hook_input: SessionStartHookInput, env: dict[str, str]) -> AnyHookOutput | None:
     """Handle SessionStart by passing caller's env through to session_start."""
-    paths = SessionPaths(hook_input.session_id)
+    paths = SessionPaths.from_env(hook_input.session_id, env)
     return await _async_handle(hook_input, paths, app.state.settings, caller_env=env)
 
 

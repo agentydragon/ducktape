@@ -72,7 +72,7 @@ class TestFullSessionStartHook:
         # Copy testdata workspace to test location
         # This is a minimal bzlmod workspace with no external dependencies, so the mock
         # MockEgressProxy (which can't do real DNS/forwarding) isn't a blocker.
-        test_file_dir = Path(__file__).parent
+        test_file_dir = Path(__file__).parent.parent
         testdata_workspace = test_file_dir / "testdata" / "test_workspace"
         workspace = isolated_dirs.project / "test_workspace"
         shutil.copytree(testdata_workspace, workspace)

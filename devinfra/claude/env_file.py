@@ -5,7 +5,7 @@ Centralizes all environment variable exports into a single file write.
 
 import os
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -69,9 +69,6 @@ class EnvVars:
     combined_ca: Path | None = None
     bazelisk_path: Path | None = None
 
-    # Additional PATH entries (Nix); empty in CLI mode
-    nix_paths: list[Path] = field(default_factory=list)
-
     # Container runtime env vars (web mode)
     docker_env: dict[str, str] | None = None
 
@@ -95,9 +92,7 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     This is the SINGLE write point for all session environment variables.
     Works for both web mode (all fields set) and CLI mode (minimal fields).
     """
-    path_str = ":".join(
-        filter(None, [str(vars.bazel_wrapper_dir), *(str(p) for p in vars.nix_paths), os.environ.get("PATH")])
-    )
+    path_str = ":".join(filter(None, [str(vars.bazel_wrapper_dir), os.environ.get("PATH")]))
 
     exports: list[str] = ["# Environment configured by session start hook"]
     if vars.hook_timestamp:

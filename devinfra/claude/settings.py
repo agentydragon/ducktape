@@ -34,7 +34,6 @@ def _env_name(field: str) -> str:
 ENV_SUPERVISOR_PORT = _env_name("supervisor_port")
 ENV_AUTH_PROXY_PORT = _env_name("auth_proxy_port")
 ENV_INSTALL_BAZELISK = _env_name("install_bazelisk")
-ENV_INSTALL_NIX = _env_name("install_nix")
 ENV_CONTAINER_RUNTIME = _env_name("container_runtime")
 ENV_SYSTEM_BAZEL = _env_name("system_bazel")
 ENV_USE_WHEEL = _env_name("use_wheel")
@@ -61,7 +60,6 @@ class HookSettings(BaseSettings):
 
     # Feature flags (enable/disable installations)
     install_bazelisk: bool = Field(default=True, description="Download and install bazelisk")
-    install_nix: bool = Field(default=False, description="Install nix package manager")
     install_mkcert: bool = Field(default=True, description="Install mkcert and generate localhost TLS cert")
     container_runtime: Literal["podman", "docker", "none"] = Field(
         default="docker", description="Container runtime to set up (podman, docker, or none)"

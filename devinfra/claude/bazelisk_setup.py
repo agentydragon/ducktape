@@ -11,10 +11,10 @@ import logging
 import shutil
 import stat
 import subprocess
-import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+from devinfra.claude.http_client import HttpConfig, download
 from devinfra.claude.platform_utils import get_platform
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import ENV_SESSION_DIR
@@ -74,11 +74,9 @@ def get_bazelisk_url() -> str:
     return f"https://github.com/bazelbuild/bazelisk/releases/download/v{BAZELISK_VERSION}/{binary}"
 
 
-def install_bazelisk(paths: SessionPaths) -> Path:
+def install_bazelisk(paths: SessionPaths, http: HttpConfig) -> Path:
     """Download bazelisk to private location, returning the binary path.
 
-    Installs to ~/.cache/claude-hooks/auth-proxy/bazelisk (private, not on PATH).
-    The wrapper script in ~/.cache/claude-hooks/auth-proxy/bin/bazel will call this.
     Skips download if already installed.
     """
     bazelisk_path = paths.bazelisk_path
@@ -92,10 +90,7 @@ def install_bazelisk(paths: SessionPaths) -> Path:
     url = get_bazelisk_url()
     logger.info("Downloading Bazelisk from %s", url)
 
-    # urllib respects HTTPS_PROXY env var and uses system CA bundle (SSL_CERT_FILE).
-    # In CC web, system CAs already include the Anthropic TLS inspection CA.
-    with urllib.request.urlopen(url, timeout=60) as response:
-        bazelisk_path.write_bytes(response.read())
+    bazelisk_path.write_bytes(download(url, http))
 
     # Make executable
     bazelisk_path.chmod(bazelisk_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
@@ -112,15 +107,7 @@ _WRAPPER_RUNTIME_LINES = (
 def install_wrapper(paths: SessionPaths, *, wrapper_dir: Path | None = None) -> Path:
     """Install wrapper script that sets proxy env vars before calling bazelisk.
 
-    The wrapper is in ~/.cache/claude-hooks/auth-proxy/bin/bazel (web mode) or a
-    session-specific bin directory (CLI mode). Also creates a bazelisk symlink.
-
-    Bakes DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR into the script so subprocesses
-    (pre-commit, CI) that don't source the env file still have the session dir set.
-
-    Args:
-        paths: Session paths
-        wrapper_dir: Optional directory for wrappers (defaults to paths.wrapper_dir)
+    Also creates a bazelisk symlink for pre-commit hooks.
     """
     if wrapper_dir is None:
         wrapper_dir = paths.wrapper_dir

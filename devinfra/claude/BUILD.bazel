@@ -51,7 +51,6 @@ py_library(
     srcs = ["settings.py"],
     data = [
         "config/bazelrc.mako",
-        "config/nix.conf",
         "//devinfra/claude/config/podman:containers.conf",
         "//devinfra/claude/config/podman:crun_gvisor_wrapper.py",
         "//devinfra/claude/config/podman:policy.json",
@@ -125,11 +124,21 @@ py_library(
 )
 
 py_library(
+    name = "http_client",
+    srcs = ["http_client.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "cli_tools_setup",
     srcs = ["cli_tools_setup.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
-    deps = [":platform_utils"],
+    deps = [
+        ":http_client",
+        ":platform_utils",
+    ],
 )
 
 py_library(
@@ -138,6 +147,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        ":http_client",
         ":platform_utils",
         ":session_paths",
         ":settings",
@@ -158,24 +168,10 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        ":http_client",
         ":platform_utils",
         ":session_paths",
-        "@pypi//httpx",
         "@pypi//opentelemetry_api",
-    ],
-)
-
-py_library(
-    name = "nix_setup",
-    srcs = ["nix_setup.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":errors",
-        ":managed_files",
-        ":session_paths",
-        ":settings",
-        ":streaming",
     ],
 )
 

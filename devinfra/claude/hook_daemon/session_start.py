@@ -12,7 +12,7 @@ import logging
 import logging.handlers
 import shutil
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -29,7 +29,6 @@ from devinfra.claude import (
     fork_remote_setup,
     k8s_secrets_setup,
     mkcert_setup,
-    nix_setup,
     precommit_setup,
     tmpfs_setup,
 )
@@ -42,6 +41,7 @@ from devinfra.claude.claude_api.hooks.session_start import (
 from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.errors import SkipError
 from devinfra.claude.hook_config import HOOKS_DOTDIR, HookConfig
+from devinfra.claude.http_client import HttpConfig
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import CONFIG_FILES, HookSettings
@@ -79,7 +79,6 @@ class PlatformSetup:
     supervisor_port: int | None = None
     repo_root: Path | None = None
     bazelisk_path: Path | None = None
-    nix_paths: list[Path] = field(default_factory=list)
     docker_env: dict[str, str] | None = None
     mkcert_cert: Path | None = None
     mkcert_key: Path | None = None
@@ -186,12 +185,14 @@ async def _setup_web(
     tracer: trace.Tracer,
     root_ctx: trace.Context,
     hook_config: k8s_secrets_setup.HookConfig | None,
+    caller_env: dict[str, str],
 ) -> PlatformSetup:
     """Web mode: supervisor, proxy, containers, secrets, parallel installs.
 
     Returns a fully populated PlatformSetup with all results needed by the
     shared downstream steps.
     """
+    http = HttpConfig.from_env(caller_env)
     logger.info("Setting up dev environment...")
 
     async def traced_supervisor_start():
@@ -255,7 +256,7 @@ async def _setup_web(
         wrapper_path = bazelisk_setup.install_wrapper(paths)
         skipped = not settings.install_bazelisk
         if not skipped:
-            bazelisk_setup.install_bazelisk(paths)
+            bazelisk_setup.install_bazelisk(paths, http)
         else:
             logger.info("Skipping bazelisk download (install_bazelisk=False)")
         return bazelisk_setup.BazeliskSetup(
@@ -280,7 +281,7 @@ async def _setup_web(
             if not settings.install_mkcert:
                 raise SkipError("mkcert disabled (install_mkcert=False)")
             # Pass combined_ca=None: bundle append happens in mkcert_append_bundle
-            return await mkcert_setup.setup_mkcert(paths, combined_ca=None)
+            return await mkcert_setup.setup_mkcert(paths, combined_ca=None, http=http)
 
     # Start cert generation immediately, without waiting for the proxy.
     mkcert_task = asyncio.create_task(mkcert_generate_certs())
@@ -299,19 +300,14 @@ async def _setup_web(
     async def traced_precommit():
         return await run_in_thread(precommit_setup.install_precommit, project_dir, paths.session_dir)
 
-    @tracer.start_as_current_span("install_nix", context=root_ctx)
-    async def traced_nix():
-        return await run_in_thread(nix_setup.install_nix, paths, settings)
-
     @tracer.start_as_current_span("install_cli_tools", context=root_ctx)
     async def traced_cli_tools():
-        return await run_in_thread(cli_tools_setup.install_cli_tools, paths.wrapper_dir)
+        return await run_in_thread(cli_tools_setup.install_cli_tools, paths.wrapper_dir, http)
 
     results = await asyncio.gather(
         proxy_task,
         setup_container_runtime_task(),
         traced_precommit(),
-        traced_nix(),
         run_in_thread(install_bazelisk_wrapper),
         setup_bazel_on_tmpfs(),
         mkcert_append_bundle(),
@@ -322,11 +318,10 @@ async def _setup_web(
     auth_proxy_result: proxy_setup.ProxySetup | BaseException = results[0]
     container_result: container_runtime.ContainerRuntimeSetup | BaseException = results[1]
     precommit_result: precommit_setup.PrecommitSetup | BaseException = results[2]
-    nix_result: nix_setup.NixSetup | BaseException = results[3]
-    bazelisk_result: bazelisk_setup.BazeliskSetup | BaseException = results[4]
-    tmpfs_result: tmpfs_setup.TmpfsSetup | BaseException = results[5]
-    mkcert_result: mkcert_setup.MkcertSetup | BaseException = results[6]
-    cli_tools_result: list[str] | BaseException = results[7]
+    bazelisk_result: bazelisk_setup.BazeliskSetup | BaseException = results[3]
+    tmpfs_result: tmpfs_setup.TmpfsSetup | BaseException = results[4]
+    mkcert_result: mkcert_setup.MkcertSetup | BaseException = results[5]
+    cli_tools_result: list[str] | BaseException = results[6]
 
     # Log non-critical failures
     if isinstance(precommit_result, BaseException):
@@ -341,12 +336,6 @@ async def _setup_web(
         logger.warning("Failed to set up mkcert: %s", mkcert_result)
     if isinstance(cli_tools_result, BaseException):
         logger.warning("Failed to install CLI tools: %s", cli_tools_result)
-
-    # Handle nix result
-    if isinstance(nix_result, SkipError):
-        logger.info("Nix setup skipped: %s", nix_result)
-    elif isinstance(nix_result, BaseException):
-        logger.warning("Failed to install nix: %s", nix_result)
 
     # Handle container runtime result
     docker_env: dict[str, str] | None = None
@@ -416,7 +405,6 @@ async def _setup_web(
     logger.info(
         "Ready: bazel=%s, proxy=%s, CA=%s", bazelisk_result, auth_proxy_result.status, auth_proxy_result.ca_status
     )
-    logger.info("Nix: %s", nix_setup.find_nix_bin())
     logger.info("Container: %s", container_result)
 
     return PlatformSetup(
@@ -432,7 +420,6 @@ async def _setup_web(
         supervisor_port=settings.supervisor_port,
         repo_root=project_dir,
         bazelisk_path=bazelisk_path,
-        nix_paths=nix_result.paths if isinstance(nix_result, nix_setup.NixSetup) else [],
         docker_env=docker_env,
         mkcert_cert=mkcert_result.cert_path if isinstance(mkcert_result, mkcert_setup.MkcertSetup) else None,
         mkcert_key=mkcert_result.key_path if isinstance(mkcert_result, mkcert_setup.MkcertSetup) else None,
@@ -505,7 +492,7 @@ async def run_session(
 
     # Platform-specific setup
     if web_mode:
-        setup = await _setup_web(paths, settings, project_dir, tracer, root_ctx, hook_config)
+        setup = await _setup_web(paths, settings, project_dir, tracer, root_ctx, hook_config, caller_env=caller_env)
     else:
         # CLI mode: read k8s secrets (no proxy needed, combined_ca_path=None).
         if settings.k8s_token and hook_config:
@@ -559,7 +546,6 @@ async def run_session(
             repo_root=setup.repo_root,
             combined_ca=setup.combined_ca_path,
             bazelisk_path=setup.bazelisk_path,
-            nix_paths=setup.nix_paths,
             docker_env=setup.docker_env,
             hook_timestamp=hook_timestamp,
             mkcert_cert=setup.mkcert_cert,

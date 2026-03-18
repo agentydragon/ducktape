@@ -4,7 +4,7 @@ Downloads standalone static binaries during web-mode session start.
 Each tool is installed independently — failures are logged but don't block
 the session or other tool installs.
 
-Follows the same pattern as bazelisk_setup.py (urllib.request, platform_utils).
+Follows the same pattern as bazelisk_setup.py (http_client, platform_utils).
 
 TODO(unify-web-cli): Make tool installation truly async — have session_start
 exit before downloads complete, so the hook returns quickly. The bin dir is
@@ -17,11 +17,11 @@ import shutil
 import stat
 import tarfile
 import tempfile
-import urllib.request
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 
+from devinfra.claude.http_client import HttpConfig, download
 from devinfra.claude.platform_utils import get_platform
 
 logger = logging.getLogger(__name__)
@@ -70,7 +70,7 @@ def _make_executable(path: Path) -> None:
     path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
-def _install_tool(tool: CliTool, bin_dir: Path) -> None:
+def _install_tool(tool: CliTool, bin_dir: Path, http: HttpConfig) -> None:
     """Download and install a single CLI tool (synchronous)."""
     dest = bin_dir / tool.name
     if dest.exists():
@@ -83,9 +83,7 @@ def _install_tool(tool: CliTool, bin_dir: Path) -> None:
 
     logger.info("Downloading %s from %s", tool.name, tool.url)
 
-    # urllib respects HTTPS_PROXY env var and uses system CA bundle (SSL_CERT_FILE).
-    with urllib.request.urlopen(tool.url, timeout=120) as response:
-        data = response.read()
+    data = download(tool.url, http, timeout=120)
 
     if tool.tar_member:
         with tarfile.open(fileobj=BytesIO(data), mode="r:gz") as tf:
@@ -105,7 +103,7 @@ def _install_tool(tool: CliTool, bin_dir: Path) -> None:
     logger.info("Installed %s to %s", tool.name, dest)
 
 
-def install_cli_tools(bin_dir: Path) -> list[str]:
+def install_cli_tools(bin_dir: Path, http: HttpConfig) -> list[str]:
     """Install all CLI tools into bin_dir. Returns list of successfully installed tool names.
 
     Non-fatal — logs warnings for individual failures and continues.
@@ -114,7 +112,7 @@ def install_cli_tools(bin_dir: Path) -> list[str]:
     installed: list[str] = []
     for tool in _tools():
         try:
-            _install_tool(tool, bin_dir)
+            _install_tool(tool, bin_dir, http)
             installed.append(tool.name)
         except Exception:
             logger.warning("Failed to install %s", tool.name, exc_info=True)

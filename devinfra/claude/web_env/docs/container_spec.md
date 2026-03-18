@@ -69,11 +69,6 @@ The proxy returns non-standard HTTP 401 (not 407) with `www-authenticate` (not
 - **PTY race condition**: `nix-env` fails due to gVisor EIO on `/dev/ptmx`.
 - **No `binfmt_misc`**: APE (Actually Portable Executable) needs local registry.
 
-## Nix
-
-Nix is installed with a minimal store (~30 packages). `sandbox = false` is
-required (gVisor breaks the build sandbox). See `devinfra/claude/nix_setup.py`.
-
 ## Users
 
 | User   | UID  | Home         | Shell     |

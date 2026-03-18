@@ -10,22 +10,44 @@ from platformdirs import user_cache_dir, user_config_dir
 
 
 class SessionPaths:
-    """All session-scoped paths, derived from session_id."""
+    """All session-scoped paths, derived from session_id.
 
-    def __init__(self, session_id: str) -> None:
+    When constructed inside a long-lived daemon, pass the caller's HOME and
+    XDG dirs via ``from_env()`` so paths resolve against the caller's
+    environment rather than the daemon's.
+    """
+
+    def __init__(self, session_id: str, *, home: Path | None = None, xdg_cache_home: Path | None = None) -> None:
         self._session_id = session_id
+        self._home = home
+        self._xdg_cache_home = xdg_cache_home
+
+    @classmethod
+    def from_env(cls, session_id: str, env: dict[str, str]) -> "SessionPaths":
+        """Construct from a caller's environment dict (daemon use-case)."""
+        home = Path(env["HOME"]) if "HOME" in env else None
+        xdg_cache_home = Path(env["XDG_CACHE_HOME"]) if "XDG_CACHE_HOME" in env else None
+        return cls(session_id, home=home, xdg_cache_home=xdg_cache_home)
 
     @property
     def session_id(self) -> str:
         return self._session_id
 
     @property
+    def _resolved_home(self) -> Path:
+        return self._home if self._home is not None else Path.home()
+
+    @property
     def session_dir(self) -> Path:
-        return Path.home() / ".claude" / "session-env" / self._session_id
+        return self._resolved_home / ".claude" / "session-env" / self._session_id
 
     @property
     def cache_dir(self) -> Path:
         """Base cache directory for claude-hooks (auto-created)."""
+        if self._xdg_cache_home is not None:
+            d = self._xdg_cache_home / "claude-hooks"
+            d.mkdir(parents=True, exist_ok=True)
+            return d
         return Path(user_cache_dir(appname="claude-hooks", ensure_exists=True))
 
     @property

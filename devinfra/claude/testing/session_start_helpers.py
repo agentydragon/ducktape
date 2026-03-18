@@ -110,9 +110,6 @@ def setup_hook_env(
     monkeypatch.setenv(settings.ENV_SUPERVISOR_PORT, str(supervisor_port))
     monkeypatch.setenv(settings.ENV_AUTH_PROXY_PORT, str(auth_proxy_port))
 
-    # Disable nix (speeds up tests)
-    monkeypatch.setenv(settings.ENV_INSTALL_NIX, "0")
-
     # Proxy configuration (simulating Claude Code web)
     for var in PROXY_ENV_VARS:
         monkeypatch.setenv(var, mock_proxy.url)
