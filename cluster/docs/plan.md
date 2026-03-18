@@ -138,6 +138,9 @@ kubernetes.io/hostname: wyrm2` as a temporary fix for the 2026-03-17 OOM cascade
       Vault secret, ESO into scanner namespace, direct HTTPRoute, updated networkpolicy
       (gateway-system instead of outpost), remove from `shared-proxy-outpost.yaml`.
 - [ ] **Ollama: per-user auth** — Options: Authentik JWTs, LiteLLM proxy.
+      Currently the LiteLLM openai-chat models use a dummy `api_key: "ollama"`
+      because Ollama accepts any key. Once per-user auth is deployed, replace
+      the dummy key with a real credential (stored in Vault, injected via ESO).
 - [ ] **Harbor terraform: switch to robot accounts** for least-privilege
 - [ ] **Harbor CI robot: scope per-namespace pull secrets to read-only on specific projects** —
       `activitywatch`, `inventree`, `openclaw`, `props` namespaces all use the same system-level
