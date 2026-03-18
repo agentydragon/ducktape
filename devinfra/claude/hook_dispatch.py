@@ -2,9 +2,9 @@
 
 Reads JSON from stdin, parses into a discriminated union (AnyHookInput),
 then dispatches to the appropriate handler via match/isinstance.
-Initializes OTEL tracing from .claude_hooks/config.yaml if available.
-Uses lazy imports for handler modules (mako, kubernetes, etc.) so lightweight
-hooks like PreToolUse and PostToolUse don't pay for those imports.
+Initializes OTEL tracing from .claude_hooks/config.yaml for SessionStart only.
+PreToolUse/PostToolUse skip OTEL — they do local work (set lookup, pre-commit)
+and the tracing overhead isn't worth the latency cost on every tool call.
 """
 
 import asyncio
@@ -32,6 +32,10 @@ _tracer = trace.get_tracer(__name__)
 # Claude Code stores per-session data at ~/.claude/session-env/<session_id>/
 _SESSION_ENV_BASE = Path.home() / ".claude" / "session-env"
 
+# Only these hook types justify OTEL overhead. Lightweight hooks (PreToolUse,
+# PostToolUse) produce trivial spans that aren't worth blocking for.
+_HOOKS_WITH_OTEL: set[type] = {SessionStartHookInput}
+
 
 def _span_attrs(parsed: AnyHookInput) -> dict[str, str]:
     """Extract span attributes from a hook input model."""
@@ -48,9 +52,11 @@ def main() -> None:
     parsed = _adapter.validate_json(raw)
     cwd = Path(parsed.cwd)
 
-    config = HookConfig.load_from_repo(cwd)
-    if config and config.otel and config.otel.endpoint:
-        otel.init_from_config(config.otel)
+    should_trace = type(parsed) in _HOOKS_WITH_OTEL
+    if should_trace:
+        config = HookConfig.load_from_repo(cwd)
+        if config and config.otel and config.otel.endpoint:
+            otel.init_from_config(config.otel)
 
     session_dir = _SESSION_ENV_BASE / parsed.session_id
 
@@ -96,9 +102,4 @@ if __name__ == "__main__":
     try:
         main()
     finally:
-        # Flush any buffered OTEL spans before exit.
-        provider = trace.get_tracer_provider()
-        if isinstance(provider, trace.ProxyTracerProvider):
-            pass  # No real provider configured — nothing to flush.
-        elif hasattr(provider, "force_flush"):
-            provider.force_flush(timeout_millis=5000)
+        otel.flush()

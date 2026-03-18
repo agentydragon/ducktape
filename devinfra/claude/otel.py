@@ -15,6 +15,10 @@ from devinfra.claude.hook_config import OtelConfig
 
 logger = logging.getLogger(__name__)
 
+# Default flush timeout. 500ms is enough for a healthy local/nearby endpoint.
+# If the endpoint is down, we warn and move on rather than blocking for seconds.
+DEFAULT_FLUSH_TIMEOUT_MS = 500
+
 
 def init_from_config(config: OtelConfig) -> None:
     """Initialize OTLP tracing. No-op if endpoint is not set."""
@@ -34,3 +38,15 @@ def init_from_config(config: OtelConfig) -> None:
     provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
     logger.info("OTEL: traces → %s", config.endpoint)
+
+
+def flush(timeout_ms: int = DEFAULT_FLUSH_TIMEOUT_MS) -> None:
+    """Flush buffered spans. Warns and returns if the endpoint is slow/down."""
+    provider = trace.get_tracer_provider()
+    if not isinstance(provider, TracerProvider):
+        return  # No SDK provider configured (ProxyTracerProvider or similar).
+    if not provider.force_flush(timeout_millis=timeout_ms):
+        logger.warning(
+            "OTEL: flush timed out after %dms — endpoint may be unreachable. Spans from this invocation will be lost.",
+            timeout_ms,
+        )
