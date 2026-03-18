@@ -92,7 +92,6 @@ func runTopology(t *testing.T, topology string, workerType h.NodeType) {
 	switch workerType {
 	case h.NodeTypeKubespand:
 		cfgB := h.NewTestAgentConfig(creds, discAddr, cpEndpoint)
-		cfgB.Kubespan.ListenPort = 51821
 		cfgB.Network.Interface = "eth0"
 		cfgB.Network.Routes = workerBRoutes
 		cidataB := h.CreateKubespandCIDATA(t, tmpDir, "vm-b", cfgB)
@@ -106,7 +105,6 @@ func runTopology(t *testing.T, topology string, workerType h.NodeType) {
 		sw.Lap("boot VM-B")
 
 		cfgA := h.NewTestAgentConfig(creds, discAddr, cpEndpoint)
-		cfgA.Kubespan.ListenPort = 51820
 		cfgA.Network.Interface = "eth0"
 		cfgA.Network.Routes = workerARoutes
 		cidataA := h.CreateKubespandCIDATA(t, tmpDir, "vm-a", cfgA)

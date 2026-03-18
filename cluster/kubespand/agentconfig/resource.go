@@ -34,10 +34,6 @@ type Spec struct {
 	// Talos uses the STATE partition; kubespand uses a flat file.
 	IdentityFile string
 
-	// ListenPort is the WireGuard UDP port.
-	// Talos hardcodes constants.KubeSpanDefaultPort.
-	ListenPort int
-
 	// MachineType is advertised to the discovery service ("worker" or "controlplane").
 	// Talos reads from MachineConfig.
 	MachineType string
@@ -118,7 +114,6 @@ func NewResource() *Resource {
 func SpecFromAgentConfig(ac *AgentConfig) Spec {
 	return Spec{
 		IdentityFile:     ac.Kubespan.IdentityFile,
-		ListenPort:       ac.Kubespan.ListenPort,
 		MachineType:      ac.Discovery.MachineType,
 		KubeconfigPath:   ac.Kubernetes.KubeconfigPath,
 		NodeName:         ac.Kubernetes.NodeName,

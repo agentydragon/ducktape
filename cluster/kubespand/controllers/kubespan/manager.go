@@ -221,7 +221,7 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 
 	cfgSpec := cfg.TypedSpec()
 	idSpec := id.TypedSpec()
-	agentSpec := acfg.TypedSpec()
+	_ = acfg // Agent config gate: wait for it to exist before proceeding.
 
 	// Initialize read-only WireGuard client and routing rules if needed.
 	if ctrl.wgClient == nil {
@@ -467,7 +467,7 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 			spec.ConfigLayer = network.ConfigOperator
 			spec.Wireguard = network.WireguardSpec{
 				PrivateKey:   idSpec.PrivateKey,
-				ListenPort:   agentSpec.ListenPort,
+				ListenPort:   constants.KubeSpanDefaultPort,
 				FirewallMark: constants.KubeSpanDefaultFirewallMark,
 				Peers:        wgPeers,
 			}

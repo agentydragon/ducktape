@@ -97,14 +97,12 @@ type ClusterConfig struct {
 
 // KubespanConfig holds WireGuard interface and routing settings.
 //
-// TODO: 6 of 8 fields mirror kubespan.ConfigSpec. Consider switching to camelCase
+// TODO: 6 of 7 fields mirror kubespan.ConfigSpec. Consider switching to camelCase
 // YAML tags (matching upstream) so we can embed kubespan.ConfigSpec directly and
-// only add kubespand-only fields (ListenPort, IdentityFile). This would eliminate
+// only add kubespand-only fields (IdentityFile). This would eliminate
 // the field-by-field copying in ToConfigSpec(). Same applies to DiscoveryConfig
 // vs cluster.ConfigSpec.
 type KubespanConfig struct {
-	// ListenPort is the UDP port for the WireGuard interface. Default: 51820.
-	ListenPort int `yaml:"listen_port"`
 	// MTU for the kubespan WireGuard interface. Default: 1420.
 	MTU uint32 `yaml:"mtu"`
 	// ForceRouting routes all traffic through KubeSpan even when peers are down.
@@ -157,7 +155,6 @@ func Load(path string) (*AgentConfig, error) {
 			MachineType: "worker",
 		},
 		Kubespan: KubespanConfig{
-			ListenPort:            constants.KubeSpanDefaultPort,
 			MTU:                   constants.KubeSpanLinkMTU,
 			IdentityFile:          "/var/lib/kubespan/identity.yaml",
 			HarvestExtraEndpoints: true,

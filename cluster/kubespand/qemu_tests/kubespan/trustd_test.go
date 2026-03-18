@@ -87,7 +87,6 @@ func runTrustdCSRFlow(t *testing.T, workerType h.NodeType) {
 	case h.NodeTypeKubespand:
 		initramfsTrustd := h.RunfilePath(t, h.TrustdInitramfs)
 		kubespandCfg := h.NewTestAgentConfig(creds, discIP+":3000", cpEndpoint)
-		kubespandCfg.Kubespan.ListenPort = 51820
 		kubespandCI := h.CreateKubespandCIDATA(t, tmpDir, "trustd-worker", kubespandCfg)
 
 		workerAPIPort = h.RandomPort()

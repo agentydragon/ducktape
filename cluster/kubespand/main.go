@@ -71,7 +71,6 @@ func run(configPath string, logger *zap.Logger) error {
 	logger.Info("loaded config",
 		zap.String("cluster_id", cfg.Cluster.ID),
 		zap.String("discovery_endpoint", cfg.Discovery.Endpoint),
-		zap.Int("listen_port", cfg.Kubespan.ListenPort),
 		zap.Uint32("mtu", cfg.Kubespan.MTU),
 	)
 

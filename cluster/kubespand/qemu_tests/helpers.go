@@ -470,7 +470,7 @@ type TestClusterCreds struct {
 
 // NewTestAgentConfig returns an AgentConfig with common test defaults,
 // including apid/trustd CSR flow fields so kubespand serves mTLS on port 50000.
-// Callers can override fields (e.g., Kubespan.ListenPort) after construction.
+// Callers can override fields after construction.
 func NewTestAgentConfig(creds TestClusterCreds, discoveryAddr, cpEndpoint string) agentconfig.AgentConfig {
 	return agentconfig.AgentConfig{
 		Cluster: agentconfig.ClusterConfig{

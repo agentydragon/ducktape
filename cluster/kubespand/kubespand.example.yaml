@@ -17,9 +17,6 @@ cluster:
   # endpoint: "https://api.example.com:6443"
 
 # kubespan:
-#   # WireGuard UDP listen port. Must match Talos KubeSpan port. Default: 51820.
-#   listen_port: 51820
-#
 #   # MTU for the kubespan WireGuard interface. Default: 1420.
 #   # If running Cilium VXLAN (50 byte overhead) on top, use:
 #   #   1500 - 80 (WireGuard) - 50 (VXLAN) = 1370

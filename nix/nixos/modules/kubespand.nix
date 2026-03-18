@@ -34,12 +34,6 @@ in
       description = "Path to the YAML config file (contains secrets, placed manually)";
     };
 
-    listenPort = lib.mkOption {
-      type = lib.types.port;
-      default = 51820;
-      description = "WireGuard UDP listen port (must match Talos KubeSpan port)";
-    };
-
     debug = lib.mkOption {
       type = lib.types.bool;
       default = false;
@@ -72,7 +66,7 @@ in
     boot.kernel.sysctl."net.ipv6.conf.all.forwarding" = 1;
 
     # Firewall: allow WireGuard UDP port
-    networking.firewall.allowedUDPPorts = [ cfg.listenPort ];
+    networking.firewall.allowedUDPPorts = [ 51820 ];
 
     # State directory for identity keypair
     systemd.tmpfiles.rules = [ "d /var/lib/kubespan 0700 root root -" ];
