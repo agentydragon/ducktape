@@ -132,5 +132,9 @@ rules:
     resources:
       - clusters
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["infra.contrib.fluxcd.io"]
+    resources:
+      - terraforms
+    verbs: ["get", "list", "watch"]
 # pods/log and configmaps granted via namespaced Roles in monitoring, kube-system,
 # longhorn-system, flux-system (see role-logs-configmaps-reader.yaml).
