@@ -345,19 +345,25 @@ The local daemon (Phase 3) is a natural stepping stone — it proves
 the protocol and client, and the centralized version is just moving
 where the daemon runs.
 
-## Claude Code Hook Transport Types
+## Claude Code Hook Types
 
-Claude Code supports two hook transport types, with different event coverage:
+Claude Code supports four hook types, configured via `"type"` in
+`settings.json` hook handlers.
 
 ### Command hooks (`"type": "command"`)
 
-Runs a local command, passes JSON on stdin, reads JSON from stdout. **Supported
-for all hook events.** This is our current approach (uvx → `hook_dispatch.py`).
+Runs a shell command. Event JSON arrives on stdin, results communicated
+via exit code and stdout JSON. **Supported for all hook events.**
+
+This is our current approach (uvx → `hook_dispatch.py`).
+
+```json
+{ "type": "command", "command": "uvx --from <wheel> claude-hook" }
+```
 
 ### HTTP hooks (`"type": "http"`)
 
-POSTs JSON to a URL, reads JSON from the response body. Configured in
-`settings.json`:
+POSTs event JSON to a URL, reads JSON from the response body.
 
 ```json
 {
@@ -382,6 +388,57 @@ POSTs JSON to a URL, reads JSON from the response body. Configured in
 
 HTTP hooks that target unsupported events are skipped with a warning.
 
+#### HTTP hook error semantics
+
+- **2xx with empty body**: success (like exit code 0)
+- **2xx with JSON body**: success, parsed as standard hook output
+- **2xx with plain text**: success, text added as context
+- **Non-2xx / timeout / connection failure**: non-blocking error, execution
+  continues. To block an action, return 2xx with JSON containing the
+  appropriate decision field (e.g., `"decision": "block"`).
+
+### Prompt hooks (`"type": "prompt"`)
+
+Sends a prompt to a Claude model for single-turn evaluation. The model
+returns a yes/no decision as JSON. No external process or endpoint needed —
+Claude Code evaluates the prompt internally using the configured model.
+
+Use case: lightweight policy checks that can be expressed as natural language
+rules (e.g., "Does this bash command modify files outside the project
+directory?").
+
+```json
+{
+  "type": "prompt",
+  "prompt": "Does this command modify files outside the project directory? Answer yes or no."
+}
+```
+
+### Agent hooks (`"type": "agent"`)
+
+Spawns a subagent with tool access (Read, Grep, Glob) to verify conditions
+before returning a decision. More powerful than prompt hooks — the agent can
+inspect files, search the codebase, and reason about context before deciding.
+
+Use case: complex policy checks that require reading files or understanding
+project structure (e.g., "Does this edit follow our code style guidelines?").
+
+```json
+{
+  "type": "agent",
+  "prompt": "Check if this edit follows our code style guidelines in STYLE.md."
+}
+```
+
+### Event support by hook type
+
+| Hook type | Supported events                                                                                                                    |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `command` | All events                                                                                                                          |
+| `http`    | `PermissionRequest`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop`, `SubagentStop`, `TaskCompleted`, `UserPromptSubmit` |
+| `prompt`  | Same as `http` (not supported for lifecycle events like `Setup`, `SessionStart`)                                                    |
+| `agent`   | Same as `http` (not supported for lifecycle events like `Setup`, `SessionStart`)                                                    |
+
 ### Implications for daemon design (Phase 3)
 
 HTTP hooks are a natural fit for the hook daemon architecture: the daemon
@@ -402,14 +459,8 @@ cannot receive these via HTTP hooks. Two options:
 Option 1 is preferred — it uses native HTTP hooks for the hot path while
 accepting command hooks for the infrequent lifecycle events.
 
-### HTTP hook error semantics
-
-- **2xx with empty body**: success (like exit code 0)
-- **2xx with JSON body**: success, parsed as standard hook output
-- **2xx with plain text**: success, text added as context
-- **Non-2xx / timeout / connection failure**: non-blocking error, execution
-  continues. To block an action, return 2xx with JSON containing the
-  appropriate decision field (e.g., `"decision": "block"`).
+Prompt and agent hooks are not relevant for our use case — we need custom
+logic (OTEL, pre-commit, k8s secrets) that can't be expressed as LLM prompts.
 
 ## Setup Hook Invocation Path
 
