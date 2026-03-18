@@ -123,9 +123,9 @@ class SessionPaths:
         """Directory writable from within Claude Code's sandbox.
 
         Claude Code's Bash tool sandbox makes ~/.claude/session-env/ read-only,
-        so runtime writes (e.g. bazel-wrapper log) must go to /tmp/claude-hooks/.
+        so runtime writes (e.g. bazel-wrapper log) must go to /tmp/claude/.
         """
-        return Path("/tmp/claude-hooks") / self.session_id
+        return Path("/tmp/claude") / self.session_id
 
     @property
     def bazel_cache_dir(self) -> Path:
@@ -144,7 +144,7 @@ class SessionPaths:
         Uses a short path under /tmp to stay within the 108-byte AF_UNIX limit.
         The parent directory is created by ensure_dirs(), not on every access.
         """
-        return Path(f"/tmp/claude-hd-{self.session_id}") / "d.sock"
+        return Path("/tmp/claude-hd") / self.session_id / "d.sock"
 
     def ensure_dirs(self) -> None:
         """Create all directories that must exist before use (socket dir, session dir, etc.)."""

@@ -58,12 +58,16 @@ class CallerContext:
     """Structured env vars extracted from the hook client's environment.
 
     Replaces passing raw dict[str, str] through the call stack. Extracted once
-    at the daemon entry point (_async_handle), then threaded through.
+    at the session start entry point (handle), then threaded through.
     """
 
     env_file_path: Path
     web_mode: bool
     project_dir: Path
+
+    @property
+    def mode_label(self) -> str:
+        return "web" if self.web_mode else "cli"
 
     @classmethod
     def from_env(cls, env: dict[str, str]) -> "CallerContext":
@@ -160,13 +164,13 @@ class LogCollector(logging.handlers.MemoryHandler):
         return any(r.levelno == logging.WARNING for r in self.buffer)
 
 
-def _setup_session_logging(paths: SessionPaths, *, print_banner: bool = True) -> tuple[LogCollector, Path]:
+def _setup_session_logging(paths: SessionPaths) -> tuple[LogCollector, Path]:
     """Set up file logging and a LogCollector for session start output.
 
     Returns (LogCollector, log_file_path) tuple.
     """
     log_file = paths.log_file
-    setup_file_logging(log_file, print_banner=print_banner)
+    setup_file_logging(log_file)
 
     formatter = logging.Formatter("%(asctime)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
     collector = LogCollector()
@@ -466,16 +470,15 @@ async def run_session(
     bazelrc render, wrapper install, env file write, session context emit.
     """
 
-    collector, log_file = _setup_session_logging(paths, print_banner=ctx.web_mode)
+    collector, log_file = _setup_session_logging(paths)
     tracer = trace.get_tracer(__name__)
-    mode_label = "web" if ctx.web_mode else "cli"
     root_span = tracer.start_span(
         "session_start",
-        attributes={"session.id": hook_input.session_id, "hook.source": hook_input.source, "mode": mode_label},
+        attributes={"session.id": hook_input.session_id, "hook.source": hook_input.source, "mode": ctx.mode_label},
     )
     root_ctx = trace.set_span_in_context(root_span)
 
-    logger.info("Session start hook (%s mode)", mode_label)
+    logger.info("Session start hook (%s mode)", ctx.mode_label)
     logger.info("Hook input: %s", hook_input.model_dump_json())
     log_entrypoint_debug("session_start")
 
@@ -587,14 +590,14 @@ async def run_session(
     return output
 
 
-async def _async_handle(
+async def handle(
     hook_input: SessionStartHookInput,
     paths: SessionPaths,
     settings: HookSettings,
     caller_env: dict[str, str],
     http: httpx.Client,
 ) -> SessionStartOutput:
-    """Async entry point called from the hook daemon with the client's env."""
+    """Entry point called from the hook daemon with the client's env."""
     logger.info("Caller environment: %s", caller_env)
     ctx = CallerContext.from_env(caller_env)
     return await run_session(hook_input, paths, settings, ctx, http)

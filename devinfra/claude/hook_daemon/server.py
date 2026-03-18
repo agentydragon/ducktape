@@ -21,7 +21,7 @@ from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput
 from devinfra.claude.hook_daemon.models import HookRequest, HookResponse
 from devinfra.claude.hook_daemon.post_tool_use import evaluate as evaluate_post
 from devinfra.claude.hook_daemon.pre_tool_use import evaluate as evaluate_pre
-from devinfra.claude.hook_daemon.session_start import _async_handle
+from devinfra.claude.hook_daemon.session_start import handle as handle_session_start
 from devinfra.claude.http_client import build_http_client
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings
@@ -73,7 +73,9 @@ async def handle_hook(req: HookRequest) -> HookResponse:
             case SessionStartHookInput():
                 paths = SessionPaths.from_env(req.hook.session_id, req.env)
                 with build_http_client(req.env) as http:
-                    output = await _async_handle(req.hook, paths, app.state.settings, caller_env=req.env, http=http)
+                    output = await handle_session_start(
+                        req.hook, paths, app.state.settings, caller_env=req.env, http=http
+                    )
             case PreToolUseInput():
                 output = evaluate_pre(req.hook)
             case PostToolUseInput():
