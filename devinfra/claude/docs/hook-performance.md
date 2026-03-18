@@ -399,36 +399,166 @@ HTTP hooks that target unsupported events are skipped with a warning.
 
 ### Prompt hooks (`"type": "prompt"`)
 
-Sends a prompt to a Claude model for single-turn evaluation. The model
-returns a yes/no decision as JSON. No external process or endpoint needed —
-Claude Code evaluates the prompt internally using the configured model.
+Single-turn LLM evaluation. Claude Code sends the prompt (with `$ARGUMENTS`
+expanded to the hook event JSON) to a fast model and parses the response as
+a hook decision. No external process, no endpoint — runs inside Claude Code.
 
-Use case: lightweight policy checks that can be expressed as natural language
-rules (e.g., "Does this bash command modify files outside the project
-directory?").
+**Fields:**
 
-```json
+| Field     | Required | Description                                                     |
+| --------- | -------- | --------------------------------------------------------------- |
+| `prompt`  | yes      | Prompt text. `$ARGUMENTS` is replaced with the hook input JSON. |
+| `model`   | no       | Model for evaluation. Defaults to a fast model (haiku).         |
+| `timeout` | no       | Timeout in seconds.                                             |
+
+**How it works:** The model receives the prompt + event JSON and returns a
+JSON decision. For `PreToolUse`, the decision maps to `permissionDecision`
+(`allow`/`deny`/`ask`). For `Stop`, it maps to `continue` (true/false).
+The model's response is parsed as standard hook output JSON.
+
+**Use case:** Lightweight policy checks expressible as natural language rules.
+Good for nuanced decisions that are hard to write as regex or shell logic.
+Bad for anything requiring file access, codebase context, or deterministic
+behavior.
+
+**Trade-offs:**
+
+- Adds LLM latency (~1-3s per hook invocation) + API token cost
+- Non-deterministic — the same input may produce different decisions
+- No tool access — the model can only reason about the event JSON, not
+  read files or inspect the codebase
+
+**Examples:**
+
+```jsonc
+// PreToolUse: judge if a bash command could affect production
 {
-  "type": "prompt",
-  "prompt": "Does this command modify files outside the project directory? Answer yes or no."
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Bash",
+      "hooks": [{
+        "type": "prompt",
+        "prompt": "Evaluate whether this Bash command could affect the production environment: $ARGUMENTS"
+      }]
+    }]
+  }
+}
+
+// Stop: evaluate whether all tasks are actually complete before stopping
+{
+  "hooks": {
+    "Stop": [{
+      "hooks": [{
+        "type": "prompt",
+        "prompt": "Evaluate if Claude should stop: $ARGUMENTS. Check if all tasks are complete."
+      }]
+    }]
+  }
+}
+
+// PreToolUse: prevent writes to vendored directories
+{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Edit|Write",
+      "hooks": [{
+        "type": "prompt",
+        "prompt": "Does this file write target a vendored or generated directory (vendor/, node_modules/, generated/, dist/)? If yes, deny. Event: $ARGUMENTS"
+      }]
+    }]
+  }
 }
 ```
 
 ### Agent hooks (`"type": "agent"`)
 
-Spawns a subagent with tool access (Read, Grep, Glob) to verify conditions
-before returning a decision. More powerful than prompt hooks — the agent can
-inspect files, search the codebase, and reason about context before deciding.
+Multi-step LLM evaluation with tool access. Claude Code spawns a subagent
+that can use Read, Grep, and Glob to inspect the codebase before returning
+a decision. The most powerful hook type — and the most expensive.
 
-Use case: complex policy checks that require reading files or understanding
-project structure (e.g., "Does this edit follow our code style guidelines?").
+**Fields:**
 
-```json
+| Field     | Required | Description                                                     |
+| --------- | -------- | --------------------------------------------------------------- |
+| `prompt`  | yes      | Prompt text. `$ARGUMENTS` is replaced with the hook input JSON. |
+| `model`   | no       | Model for the subagent. Defaults to a fast model (haiku).       |
+| `timeout` | no       | Timeout in seconds. Default: 60s.                               |
+
+**How it works:** A subagent is spawned with the prompt + event JSON. The
+subagent has access to Read, Grep, and Glob tools (but NOT Bash, Edit,
+Write, or Agent). It can read files, search the codebase, and perform
+multi-step reasoning before returning a JSON decision. The decision format
+is the same as prompt hooks.
+
+**Use case:** Policy checks that require codebase context — verifying tests
+exist for changed files, checking that edits follow style guidelines by
+reading the actual style doc, confirming that imports match project
+conventions.
+
+**Trade-offs:**
+
+- Highest latency (~5-30s depending on tool use depth) + highest token cost
+  (2,000-5,000+ input tokens per invocation)
+- Non-deterministic — subagent may take different tool-use paths
+- [Known issue](https://github.com/anthropics/claude-code/issues/22750):
+  agent hooks that expect JSON responses often fail because the model wraps
+  JSON in markdown code fences. Structured outputs API would fix this but
+  isn't yet used for hook responses.
+
+**Examples:**
+
+```jsonc
+// PreToolUse: verify tests exist for changed files before allowing edits
 {
-  "type": "agent",
-  "prompt": "Check if this edit follows our code style guidelines in STYLE.md."
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Edit|Write",
+      "hooks": [{
+        "type": "agent",
+        "prompt": "Check whether tests exist for the changed files: $ARGUMENTS. Use Grep to search for test files matching the source file name. If no tests exist, deny with reason 'No tests found for this file'.",
+        "model": "haiku"
+      }]
+    }]
+  }
+}
+
+// Stop: verify the task is complete by reading TODO list and checking files
+{
+  "hooks": {
+    "Stop": [{
+      "hooks": [{
+        "type": "agent",
+        "prompt": "Verify the task is complete: $ARGUMENTS. Read any TODO files or task descriptions. Use Grep to check that referenced files exist and contain expected changes. Allow stopping only if all items are addressed."
+      }]
+    }]
+  }
+}
+
+// PreToolUse: enforce style guidelines by reading the actual STYLE.md
+{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Edit|Write",
+      "hooks": [{
+        "type": "agent",
+        "prompt": "Read STYLE.md and check if this code change follows the project's style guidelines: $ARGUMENTS. Focus on naming conventions, import ordering, and documentation requirements.",
+        "model": "haiku"
+      }]
+    }]
+  }
 }
 ```
+
+### Prompt vs agent: when to use which
+
+| Criterion   | Prompt                          | Agent                                |
+| ----------- | ------------------------------- | ------------------------------------ |
+| Latency     | ~1-3s                           | ~5-30s                               |
+| Token cost  | Low (~500 tokens)               | High (~2,000-5,000+ tokens)          |
+| File access | No                              | Yes (Read, Grep, Glob)               |
+| Determinism | Low                             | Low                                  |
+| Best for    | Self-contained policy questions | Checks requiring codebase inspection |
+| Avoid for   | Anything needing file context   | High-frequency hooks (latency)       |
 
 ### Event support by hook type
 
