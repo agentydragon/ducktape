@@ -381,19 +381,26 @@ process_api (PID 1, Rust)
     │
     └──► environment-manager orchestrator
            │  --api-url, --service-key-file, --environment-id, ...
-           │  manages Claude Code lifecycle
+           │  polls /v1/environments/{env_id}/work/poll for session tasks
+           │  dispatches to task-run (self-invoke or --execute-hook)
            │
-           └──► claude (Node.js)
-                  │  --init / --init-only / --maintenance (hidden flags)
-                  │  fires Setup hook before SessionStart
+           └──► environment-manager task-run --stdin --input-format=v1
+                  │  parses session JSON from stdin
+                  │  installs/updates Claude Code (@anthropic-ai/claude-code)
+                  │  runs Manager: git clone, env config, skills, hooks bootstrap
                   │
-                  ├── Setup hook (trigger=init or maintenance)
-                  │     └──► our command hook (uvx claude-hook Setup ...)
-                  │           writes to CLAUDE_ENV_FILE (separate from SessionStart's)
+                  ├── claude --init-only (per repo, non-fatal on failure)
+                  │     │  "Running claude --init-only for session start hooks"
+                  │     ├── Setup hook (trigger=init)
+                  │     │     └──► our command hook (uvx claude-hook Setup ...)
+                  │     │           writes to CLAUDE_ENV_FILE
+                  │     └── SessionStart hook (trigger=startup), then exits
                   │
-                  └── SessionStart hook (trigger=startup)
-                        └──► our command hook (uvx claude-hook SessionStart ...)
-                              writes to CLAUDE_ENV_FILE
+                  └── ClaudeCodeExecutor.Execute() → claude (interactive session)
+                        │  the actual Claude Code session
+                        └── SessionStart hook (trigger=startup)
+                              └──► our command hook (uvx claude-hook SessionStart ...)
+                                    writes to CLAUDE_ENV_FILE
 ```
 
 ### When Setup hooks fire
@@ -402,9 +409,17 @@ process_api (PID 1, Rust)
 - **`--init-only`**: trigger=init, fires SessionStart:startup, then exits
 - **`--maintenance`**: trigger=maintenance, Claude Code continues after Setup
 
-The `environment-manager orchestrator` subcommand manages the Claude Code
-process lifecycle. It launches Claude Code with the appropriate init flags
-based on session state (new session → init, existing session → maintenance).
+The `task-run` subcommand uses `--init-only` during startup to trigger Setup
+hooks before launching the interactive session. This is per-repo and non-fatal:
+`"claude --init-only failed for repo, continuing"`. Resume modes (`resume`,
+`resume-cached`) skip `--init-only` entirely for faster startup.
+
+| Session mode    | Init script | Git clone | `claude --init-only` |
+| --------------- | ----------- | --------- | -------------------- |
+| `new` (default) | Yes         | Yes       | Yes                  |
+| `setup-only`    | Yes         | Yes       | Yes, then exit       |
+| `resume`        | Skipped     | Skipped   | Skipped              |
+| `resume-cached` | Skipped     | Skipped   | Skipped              |
 
 ### Relevance to hook package installation
 
