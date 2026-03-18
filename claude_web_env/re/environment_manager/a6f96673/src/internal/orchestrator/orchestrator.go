@@ -114,11 +114,21 @@ func NewOrchestrator(
 	)
 
 	// Allocate and populate the Orchestrator struct.
-	// Binary: 0xa8c8b9 runtime.newobject call
+	// Binary: 0xae1ad2-0xae1b4c — newobject + movups copies fields from registers.
+	// The apiClient parameter is the PollerInterface passed from the caller
+	// (cmd_orchestrator passes `poller` here). Struct layout from binary:
+	//   offset 0x00: apiClient (interface, 16 bytes) — also serves as the Poller
+	//   offset 0x10: sessionID (string, 16 bytes)
+	//   offset 0x20: pollInterval (Duration, 8 bytes)
+	//   offset 0x28: timeout (Duration, 8 bytes)
+	//   offset 0x30: hookCommand (string, 16 bytes)
+	//   offset 0x40: logger (*slog.Logger, 8 bytes)
+	poller, _ := apiClient.(PollerInterface)
 	orch := &Orchestrator{
 		APIClient:    apiClient,
 		SessionID:    sessionID,
 		PollInterval: pollInterval,
+		Poller:       poller,
 		HookCommand:  hookCommand,
 		Timeout:      timeout,
 		Logger:       logger,

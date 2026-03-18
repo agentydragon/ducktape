@@ -119,7 +119,12 @@ to validate them against the token's identity.`,
 			// Step 3: Check service key is available.
 			// Binary: 0xb763a9 JE to error at 0xb76b4e if serviceKey empty
 			if serviceKey == "" {
-				return fmt.Errorf("session_id and org_id are required when identity could not be retrieved")
+				return fmt.Errorf("service key is required: use --service-key-file or set ENVIRONMENT_SERVICE_KEY environment variable\n" +
+					"  export ENVIRONMENT_SERVICE_KEY=\"your-environment-service-key\"\n" +
+					"Or use --service-key-file to read from a file:\n" +
+					"  --service-key-file /path/to/service-key\n" +
+					"You can create and manage environment service keys at claude.ai/settings\n" +
+					"under your environment's settings")
 			}
 
 			// Step 4: Create WhoamiClient and get identity.
@@ -167,8 +172,8 @@ to validate them against the token's identity.`,
 			// Step 7: Output result.
 			// Binary: 0xb76840-0xb76a28
 			if session == nil {
-				// No session available - print empty message.
-				fmt.Fprintln(os.Stdout, "")
+				// No session available - print "null" (matches Long description).
+				fmt.Fprintln(os.Stdout, "null")
 			} else {
 				// Try to pretty-print as JSON.
 				// Binary: 0xb76862-0xb768f6 - json.Unmarshal into new object

@@ -117,14 +117,18 @@ to validate them against the token's identity.`,
 
 			// Step 3: Acquire container-level lock (unless --skip-container-lock).
 			// Binary: 0xb73e86 AcquireContainerLock
+			// Binary: 0xbaf8df cmpb $0x0,(%rcx) — checks skipContainerLock bool
+			// Binary: 0xbaf8e2 je baf91f — if false, jumps to lock acquisition
+			// Binary: 0xbaf8e4-0xbaf91a — if true, logs warning then jmp past lock
 			if skipContainerLock {
 				log.Warn("Skipping container-level lock (--skip-container-lock)")
+			} else {
+				cleanup, err := util.AcquireContainerLock(context.Background(), "orchestrator", environmentID)
+				if err != nil {
+					return fmt.Errorf("failed to acquire container lock: %w", err)
+				}
+				defer cleanup()
 			}
-			cleanup, err := util.AcquireContainerLock(context.Background(), "orchestrator", environmentID)
-			if err != nil {
-				return fmt.Errorf("failed to acquire container lock: %w", err)
-			}
-			defer cleanup()
 
 			// Step 4: Read secret from file or env var.
 			// Binary: 0xb73f60 os.ReadFile, 0xb74065 TrimSpace, 0xb74080 os.Getenv
@@ -189,8 +193,11 @@ to validate them against the token's identity.`,
 			)
 
 			// Step 10: Create orchestrator.
-			// Binary: 0xb75421 NewOrchestrator
-			orch, err := orchestrator.NewOrchestrator(poller, environmentID, loopTimeout, executeHookTimeout, sandboxBackend, log)
+			// Binary: 0xbb0ee1 NewOrchestrator
+			// Args (register ABI): AX,BX=poller (as apiClient interface),
+			//   CX,DI=environmentID, SI=loopTimeout, R8=executeHookTimeout,
+			//   R9,R10=executeHook (hookCommand), stack=log
+			orch, err := orchestrator.NewOrchestrator(poller, environmentID, loopTimeout, executeHookTimeout, executeHook, log)
 			if err != nil {
 				return fmt.Errorf("failed to create orchestrator: %w", err)
 			}
