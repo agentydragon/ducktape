@@ -15,6 +15,7 @@ go_library(
         "@com_github_cosi_project_runtime//pkg/state",
         "@com_github_siderolabs_talos//internal/app/machined/pkg/adapters/kubespan",
         "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/network",
         "@org_uber_go_zap//:zap",
     ],
 )

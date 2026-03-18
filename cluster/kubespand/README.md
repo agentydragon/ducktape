@@ -127,25 +127,26 @@ that starts kubespand, waits for peer discovery, and runs ICMP + TCP connectivit
 
 Maps to the following Talos source files:
 
-| kubespand file / imported controller       | Talos source                                                                                                |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| `controllers/kubespan/identity.go`         | `internal/.../controllers/kubespan/identity.go` (IdentityController)                                        |
-| `controllers/cluster/discovery_service.go` | `internal/.../controllers/cluster/discovery_service.go` (DiscoveryServiceController)                        |
-| (imported) `controllers/cluster`           | `internal/.../controllers/cluster/local_affiliate.go` (LocalAffiliateController)                            |
-| (imported) `controllers/kubespan`          | `internal/.../controllers/kubespan/peer_spec.go` (PeerSpecController + endpoint filters)                    |
-| (imported) `controllers/kubespan`          | `internal/.../controllers/kubespan/manager.go` (ManagerController — WG interface, nftables, peer state)     |
-| `controllers/network/wireguard_link.go`    | `internal/.../controllers/network/link_spec.go` (WireGuard subset)                                          |
-| `controllers/kubespand/config.go`          | (kubespand-only: YAML → COSI config injection)                                                              |
-| `controllers/kubespand/node_metadata.go`   | (kubespand-only: produces shim COSI resources for LocalAffiliateController)                                 |
-| `controllers/cluster/kubernetes_node.go`   | (kubespand-only: K8s informer → `k8s.NodeStatus` for PodCIDRs)                                              |
-| `controllers/k8s/kubeprism_config.go`      | `internal/.../controllers/k8s/kubeprism_endpoints.go` + `kubeprism_config.go` (adapted)                     |
-| (imported) `controllers/k8s`               | `internal/.../controllers/k8s/kubeprism.go` (TCP LB manager)                                                |
-| `controllers/kubespand/os_root.go`         | `internal/.../controllers/secrets/root.go` (RootOSController — adapted for YAML config)                     |
-| (imported) `controllers/secrets`           | `internal/.../controllers/secrets/api.go` + `api_cert_sans.go` (APIController + APICertSANsController)      |
-| `identity/identity.go`                     | `pkg/machinery/resources/network/ula.go` (ULAPrefix), `internal/.../adapters/kubespan/identity.go` (EUI-64) |
-| `discovery/discovery.go`                   | `internal/.../controllers/cluster/discovery_service.go` (discovery client wrapper)                          |
-| `agentconfig/agentconfig.go`               | `pkg/machinery/constants/constants.go` (KubeSpan\* constants)                                               |
-| `agentconfig/resource.go`                  | (kubespand-only: COSI resource for agent-specific config)                                                   |
+| kubespand file / imported controller       | Talos source                                                                                            |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `controllers/kubespan/identity.go`         | `internal/.../controllers/kubespan/identity.go` (IdentityController)                                    |
+| `controllers/cluster/discovery_service.go` | `internal/.../controllers/cluster/discovery_service.go` (DiscoveryServiceController)                    |
+| (imported) `controllers/cluster`           | `internal/.../controllers/cluster/local_affiliate.go` (LocalAffiliateController)                        |
+| (imported) `controllers/kubespan`          | `internal/.../controllers/kubespan/peer_spec.go` (PeerSpecController + endpoint filters)                |
+| (imported) `controllers/kubespan`          | `internal/.../controllers/kubespan/manager.go` (ManagerController — WG interface, nftables, peer state) |
+| `controllers/network/wireguard_link.go`    | `internal/.../controllers/network/link_spec.go` (WireGuard subset)                                      |
+| `controllers/kubespand/config.go`          | (kubespand-only: YAML → COSI config injection)                                                          |
+| `controllers/kubespand/node_metadata.go`   | (kubespand-only: produces shim COSI resources for LocalAffiliateController)                             |
+| `controllers/cluster/kubernetes_node.go`   | (kubespand-only: K8s informer → `k8s.NodeStatus` for PodCIDRs)                                          |
+| `controllers/k8s/kubeprism_config.go`      | `internal/.../controllers/k8s/kubeprism_endpoints.go` + `kubeprism_config.go` (adapted)                 |
+| (imported) `controllers/k8s`               | `internal/.../controllers/k8s/kubeprism.go` (TCP LB manager)                                            |
+| `controllers/kubespand/os_root.go`         | `internal/.../controllers/secrets/root.go` (RootOSController — adapted for YAML config)                 |
+| (imported) `controllers/secrets`           | `internal/.../controllers/secrets/api.go` + `api_cert_sans.go` (APIController + APICertSANsController)  |
+| (imported) `controllers/network`           | `internal/.../controllers/network/hardware_addr.go` (HardwareAddrController — first physical NIC MAC)   |
+| `identity/identity.go`                     | `internal/.../adapters/kubespan/identity.go` (keypair persistence only; MAC via HardwareAddrController) |
+| `discovery/discovery.go`                   | `internal/.../controllers/cluster/discovery_service.go` (discovery client wrapper)                      |
+| `agentconfig/agentconfig.go`               | `pkg/machinery/constants/constants.go` (KubeSpan\* constants)                                           |
+| `agentconfig/resource.go`                  | (kubespand-only: COSI resource for agent-specific config)                                               |
 
 ## Known Gaps
 
@@ -154,6 +155,5 @@ Maps to the following Talos source files:
 | `AffiliateMergeController`   | Merges raw → cluster namespace affiliates      | Skipped (single source)                   |
 | `MachineResetSignal` cleanup | DiscoveryServiceCtrl cleans up on reset        | Not implemented                           |
 | `ConfigController`           | Reads `MachineConfig` → `ConfigSpec`           | We inject from YAML                       |
-| Multiple identity sources    | Talos uses STATE partition + `HardwareAddr`    | We use flat file + sysfs                  |
-| Single MAC detection         | Uses sysfs probe with fallback                 | Talos uses `FirstHardwareAddr` controller |
+| Multiple identity sources    | Talos uses STATE partition + `HardwareAddr`    | We use flat file + HardwareAddrController |
 | Full `LinkSpecController`    | Handles bonds, bridges, VLANs, WG (~700 lines) | WireguardLinkController (WG only)         |

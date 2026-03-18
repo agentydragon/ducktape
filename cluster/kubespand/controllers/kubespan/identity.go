@@ -1,8 +1,9 @@
-// IdentityController watches Config and AgentConfig, and produces the node's
-// KubeSpan Identity.
+// IdentityController watches Config, AgentConfig, and HardwareAddr, and produces
+// the node's KubeSpan Identity.
 //
 // It loads or creates a WireGuard keypair and derives the KubeSpan ULA address
-// from the cluster ID and the machine's MAC address.
+// from the cluster ID and the machine's MAC address (read from the upstream
+// HardwareAddrController's network.HardwareAddr resource).
 //
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/identity.go
 package kubespanctrl
@@ -10,11 +11,13 @@ package kubespanctrl
 import (
 	"context"
 	"fmt"
+	"net"
 
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
+	"github.com/siderolabs/talos/pkg/machinery/resources/network"
 	"go.uber.org/zap"
 
 	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
@@ -22,7 +25,7 @@ import (
 	kubespanadapter "github.com/siderolabs/talos/internal/app/machined/pkg/adapters/kubespan"
 )
 
-// IdentityController watches Config and AgentConfig, producing Identity.
+// IdentityController watches Config, AgentConfig, and HardwareAddr, producing Identity.
 type IdentityController struct {
 	cachedID *kubespan.IdentitySpec
 }
@@ -37,6 +40,7 @@ func (ctrl *IdentityController) Inputs() []controller.Input {
 	return []controller.Input{
 		safe.Input[*kubespan.Config](controller.InputWeak),
 		safe.Input[*agentconfig.Resource](controller.InputWeak),
+		safe.Input[*network.HardwareAddr](controller.InputWeak),
 	}
 }
 
@@ -75,14 +79,19 @@ func (ctrl *IdentityController) Run(ctx context.Context, r controller.Runtime, l
 			return fmt.Errorf("getting agent config: %w", err)
 		}
 
+		hwAddr, err := safe.ReaderGetByID[*network.HardwareAddr](ctx, r, network.FirstHardwareAddr)
+		if err != nil {
+			if state.IsNotFoundError(err) {
+				continue
+			}
+			return fmt.Errorf("getting hardware addr: %w", err)
+		}
+
 		cfgSpec := cfg.TypedSpec()
 		agentSpec := acfg.TypedSpec()
 
 		if ctrl.cachedID == nil {
-			mac, err := identity.DetectMAC()
-			if err != nil {
-				return fmt.Errorf("detecting MAC: %w", err)
-			}
+			mac := net.HardwareAddr(hwAddr.TypedSpec().HardwareAddr)
 
 			id, err := identity.LoadOrCreate(agentSpec.IdentityFile, cfgSpec.ClusterID)
 			if err != nil {

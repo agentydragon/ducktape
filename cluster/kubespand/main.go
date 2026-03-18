@@ -206,6 +206,9 @@ func run(configPath string, logger *zap.Logger) error {
 	if err := rt.RegisterController(&taloscontrollersnetwork.LinkStatusController{}); err != nil {
 		return fmt.Errorf("registering link status controller: %w", err)
 	}
+	if err := rt.RegisterController(&taloscontrollersnetwork.HardwareAddrController{}); err != nil {
+		return fmt.Errorf("registering hardware addr controller: %w", err)
+	}
 	if err := rt.RegisterController(&taloscontrollersnetwork.NodeAddressController{}); err != nil {
 		return fmt.Errorf("registering node address controller: %w", err)
 	}

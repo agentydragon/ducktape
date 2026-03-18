@@ -1,14 +1,14 @@
-// Package identity handles KubeSpan node identity (WireGuard keypair + derived addresses).
+// Package identity handles KubeSpan node identity (WireGuard keypair persistence).
 //
 // Key generation and address derivation are in the upstream adapter
 // (peerstate package, pulled from Talos adapters/kubespan/identity.go).
-// LoadOrCreate and DetectMAC are kubespand-only (Talos uses STATE partition and COSI HardwareAddr).
+// LoadOrCreate is kubespand-only (Talos uses STATE partition).
+// MAC detection uses the upstream HardwareAddrController (network.HardwareAddr resource).
 package identity
 
 import (
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 
@@ -63,37 +63,4 @@ func load(path string) (*kubespan.IdentitySpec, error) {
 		return nil, fmt.Errorf("identity missing keys")
 	}
 	return &spec, nil
-}
-
-// DetectMAC finds the first physical NIC's MAC address.
-//
-// Uses the same heuristic as Talos's FirstHardwareAddr: iterates interfaces
-// in kernel order, skipping loopback and interfaces without a MAC. Physical
-// NICs are preferred (detected via /sys/class/net/<name>/device symlink);
-// falls back to the first non-loopback interface if no physical NIC is found
-// (e.g., in a container).
-func DetectMAC() (net.HardwareAddr, error) {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return nil, fmt.Errorf("listing interfaces: %w", err)
-	}
-
-	var firstNonLoopback net.HardwareAddr
-	for _, iface := range ifaces {
-		if iface.Flags&net.FlagLoopback != 0 || len(iface.HardwareAddr) == 0 {
-			continue
-		}
-		if firstNonLoopback == nil {
-			firstNonLoopback = iface.HardwareAddr
-		}
-		if _, err := os.Stat(fmt.Sprintf("/sys/class/net/%s/device", iface.Name)); err != nil {
-			continue
-		}
-		return iface.HardwareAddr, nil
-	}
-
-	if firstNonLoopback != nil {
-		return firstNonLoopback, nil
-	}
-	return nil, errors.New("no suitable network interface found")
 }

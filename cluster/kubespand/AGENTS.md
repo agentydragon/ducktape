@@ -16,13 +16,13 @@ Upstream Talos code (imported via @com_github_siderolabs_talos//internal/...):
   @com_github_siderolabs_talos//internal/.../controllers/cluster   (LocalAffiliateController)
   @com_github_siderolabs_talos//internal/.../controllers/kubespan  (PeerSpecController, EndpointController, ManagerController)
   @com_github_siderolabs_talos//internal/.../controllers/k8s       (KubePrismController)
-  @com_github_siderolabs_talos//internal/.../controllers/network   (merge controllers, spec controllers)
+  @com_github_siderolabs_talos//internal/.../controllers/network   (merge controllers, spec controllers, HardwareAddrController)
   @com_github_siderolabs_talos//internal/.../controllers/secrets   (APIController + APICertSANsController)
   @com_github_siderolabs_talos//internal/.../controllers/runtime   (KernelModuleSpecController, KernelParamSpecController)
   (standard Gazelle-managed go_library deps — no overlay files needed)
 
 kubespand code:
-  controllers/kubespan/identity.go     ↔  controllers/kubespan/identity.go          (reimplemented)
+  controllers/kubespan/identity.go     ↔  controllers/kubespan/identity.go          (reimplemented; reads network.HardwareAddr from upstream controller)
   controllers/cluster/discovery_service.go  ↔  controllers/cluster/discovery_service.go  (reimplemented, publishes affiliate)
   controllers/cluster/kubernetes_node.go    ↔  (kubespand-only: K8s informer → k8s.NodeStatus for PodCIDRs)
   controllers/kubespand/config.go      ↔  (kubespand-only: YAML → COSI config injection)
@@ -30,7 +30,7 @@ kubespand code:
   controllers/kubespand/os_root.go  ↔  (kubespand-only: produces secrets.OSRoot from YAML config for trustd CSR flow)
   controllers/k8s/kubeprism_config.go  ↔  controllers/k8s/kubeprism_endpoints.go + kubeprism_config.go  (adapted)
   controllers/network/wireguard_link.go  ↔  controllers/network/link_spec.go  (WG subset only)
-  identity/                  ↔  (kubespand-only: disk identity)
+  identity/                  ↔  (kubespand-only: disk identity persistence)
   discovery/                 ↔  (kubespand-only: discovery client wrapper)
   agentconfig/               ↔  (kubespand-only: YAML config + COSI resource)
 ```
