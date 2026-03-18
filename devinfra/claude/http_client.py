@@ -7,8 +7,9 @@ not read from the daemon's os.environ.
 
 import logging
 import ssl
-import urllib.request
 from dataclasses import dataclass
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +18,8 @@ logger = logging.getLogger(__name__)
 class HttpConfig:
     """Explicit HTTP client configuration derived from caller's environment."""
 
-    proxy_url: str | None = None
-    ca_file: str | None = None
+    proxy_url: str | None
+    ca_file: str | None
 
     @classmethod
     def from_env(cls, env: dict[str, str]) -> "HttpConfig":
@@ -29,19 +30,17 @@ class HttpConfig:
         )
 
 
-def _build_opener(config: HttpConfig) -> urllib.request.OpenerDirector:
-    """Build a urllib opener from explicit config."""
-    handlers: list[urllib.request.BaseHandler] = []
-    if config.proxy_url:
-        handlers.append(urllib.request.ProxyHandler({"https": config.proxy_url, "http": config.proxy_url}))
+def _build_client(config: HttpConfig, *, timeout: int = 60) -> httpx.Client:
+    """Build an httpx client from explicit config."""
+    ssl_context: ssl.SSLContext | bool = True
     if config.ca_file:
-        ctx = ssl.create_default_context(cafile=config.ca_file)
-        handlers.append(urllib.request.HTTPSHandler(context=ctx))
-    return urllib.request.build_opener(*handlers)
+        ssl_context = ssl.create_default_context(cafile=config.ca_file)
+    return httpx.Client(proxy=config.proxy_url, verify=ssl_context, timeout=timeout, follow_redirects=True)
 
 
 def download(url: str, config: HttpConfig, *, timeout: int = 60) -> bytes:
     """Download URL content using explicit proxy/TLS config."""
-    opener = _build_opener(config)
-    with opener.open(url, timeout=timeout) as response:
-        return response.read()
+    with _build_client(config, timeout=timeout) as client:
+        response = client.get(url)
+        response.raise_for_status()
+        return response.content

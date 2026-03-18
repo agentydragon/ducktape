@@ -1,54 +1,42 @@
 """Session-scoped path computations.
 
-All paths derived from a session_id live here. This is a plain class
+All paths derived from a session_id live here. This is a plain dataclass
 (not pydantic-settings) — it computes paths, not config.
 """
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from platformdirs import user_cache_dir, user_config_dir
 
 
+@dataclass(frozen=True)
 class SessionPaths:
-    """All session-scoped paths, derived from session_id.
+    """All session-scoped paths, derived from session_id + resolved home/cache roots."""
 
-    When constructed inside a long-lived daemon, pass the caller's HOME and
-    XDG dirs via ``from_env()`` so paths resolve against the caller's
-    environment rather than the daemon's.
-    """
-
-    def __init__(self, session_id: str, *, home: Path | None = None, xdg_cache_home: Path | None = None) -> None:
-        self._session_id = session_id
-        self._home = home
-        self._xdg_cache_home = xdg_cache_home
+    session_id: str
+    home: Path
+    xdg_cache_home: Path
 
     @classmethod
     def from_env(cls, session_id: str, env: dict[str, str]) -> "SessionPaths":
-        """Construct from a caller's environment dict (daemon use-case)."""
-        home = Path(env["HOME"]) if "HOME" in env else None
-        xdg_cache_home = Path(env["XDG_CACHE_HOME"]) if "XDG_CACHE_HOME" in env else None
-        return cls(session_id, home=home, xdg_cache_home=xdg_cache_home)
-
-    @property
-    def session_id(self) -> str:
-        return self._session_id
-
-    @property
-    def _resolved_home(self) -> Path:
-        return self._home if self._home is not None else Path.home()
+        """Construct from an environment dict, resolving home/cache eagerly."""
+        home = Path(env["HOME"]) if "HOME" in env else Path.home()
+        xdg_cache_home = (
+            Path(env["XDG_CACHE_HOME"]) if "XDG_CACHE_HOME" in env else Path(user_cache_dir(appname="claude-hooks"))
+        )
+        return cls(session_id=session_id, home=home, xdg_cache_home=xdg_cache_home)
 
     @property
     def session_dir(self) -> Path:
-        return self._resolved_home / ".claude" / "session-env" / self._session_id
+        return self.home / ".claude" / "session-env" / self.session_id
 
     @property
     def cache_dir(self) -> Path:
         """Base cache directory for claude-hooks (auto-created)."""
-        if self._xdg_cache_home is not None:
-            d = self._xdg_cache_home / "claude-hooks"
-            d.mkdir(parents=True, exist_ok=True)
-            return d
-        return Path(user_cache_dir(appname="claude-hooks", ensure_exists=True))
+        d = self.xdg_cache_home
+        d.mkdir(parents=True, exist_ok=True)
+        return d
 
     @property
     def config_dir(self) -> Path:
@@ -137,7 +125,7 @@ class SessionPaths:
         Claude Code's Bash tool sandbox makes ~/.claude/session-env/ read-only,
         so runtime writes (e.g. bazel-wrapper log) must go to /tmp/claude/.
         """
-        return Path("/tmp/claude") / self._session_id
+        return Path("/tmp/claude") / self.session_id
 
     @property
     def bazel_cache_dir(self) -> Path:
@@ -156,7 +144,7 @@ class SessionPaths:
         Uses a short path under /tmp to stay within the 108-byte AF_UNIX limit.
         The parent directory is created by ensure_dirs(), not on every access.
         """
-        return Path(f"/tmp/claude-hd-{self._session_id}") / "d.sock"
+        return Path(f"/tmp/claude-hd-{self.session_id}") / "d.sock"
 
     def ensure_dirs(self) -> None:
         """Create all directories that must exist before use (socket dir, session dir, etc.)."""

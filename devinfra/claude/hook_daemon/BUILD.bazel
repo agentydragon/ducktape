@@ -89,6 +89,7 @@ py_library(
         ":post_tool_use_lib",
         ":pre_tool_use_lib",
         ":session_start_lib",
+        "//devinfra/claude:http_client",
         "//devinfra/claude:session_paths",
         "//devinfra/claude:settings",
         "//devinfra/claude/claude_api/hooks:dispatch_output",

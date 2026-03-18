@@ -92,7 +92,7 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     This is the SINGLE write point for all session environment variables.
     Works for both web mode (all fields set) and CLI mode (minimal fields).
     """
-    path_str = ":".join(filter(None, [str(vars.bazel_wrapper_dir), os.environ.get("PATH")]))
+    path_str = os.pathsep.join(filter(None, [str(vars.bazel_wrapper_dir), os.environ.get("PATH")]))
 
     exports: list[str] = ["# Environment configured by session start hook"]
     if vars.hook_timestamp:

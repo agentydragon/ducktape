@@ -58,7 +58,7 @@ def isolated_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
 
-    # SessionPaths(TEST_SESSION_ID) will derive: home/.claude/session-env/test-session
+    # SessionPaths.from_env(TEST_SESSION_ID, env) will derive: home/.claude/session-env/test-session
     session_dir = home / ".claude" / "session-env" / TEST_SESSION_ID
     session_dir.mkdir(parents=True)
     supervisor_dir = session_dir / "supervisor"
@@ -81,8 +81,8 @@ def isolated_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[
 
 @pytest.fixture
 def session_paths(isolated_dirs: IsolatedSupervisorDirs) -> SessionPaths:
-    """SessionPaths wired to isolated dirs."""
-    return SessionPaths(TEST_SESSION_ID)
+    """SessionPaths wired to isolated dirs (reads monkeypatched HOME from os.environ)."""
+    return SessionPaths.from_env(TEST_SESSION_ID, dict(os.environ))
 
 
 @pytest.fixture

@@ -153,7 +153,7 @@ def main() -> None:
     if not session_dir_str:
         raise RuntimeError(f"{ENV_SESSION_DIR} environment variable is required")
     session_id = Path(session_dir_str).name
-    paths = SessionPaths(session_id)
+    paths = SessionPaths.from_env(session_id, dict(os.environ))
     settings = HookSettings()
 
     _setup_logging(paths)

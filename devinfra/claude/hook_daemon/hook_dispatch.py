@@ -22,7 +22,7 @@ def main() -> None:
     raw = sys.stdin.buffer.read()
     parsed = _adapter.validate_json(raw)
 
-    paths = SessionPaths(parsed.session_id)
+    paths = SessionPaths.from_env(parsed.session_id, dict(os.environ))
 
     result = call_daemon(parsed, dict(os.environ), paths)
     if result is not None and result.output is not None:

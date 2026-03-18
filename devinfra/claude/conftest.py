@@ -1,5 +1,6 @@
 """Pytest configuration for claude tests."""
 
+import os
 import uuid
 from pathlib import Path
 from unittest.mock import patch
@@ -18,7 +19,7 @@ def pytest_configure(config: pytest.Config) -> None:
 @pytest.fixture
 def session_paths() -> SessionPaths:
     """Minimal SessionPaths for tests that don't need supervisor/proxy infrastructure."""
-    return SessionPaths(f"test-session-{uuid.uuid4().hex[:8]}")
+    return SessionPaths.from_env(f"test-session-{uuid.uuid4().hex[:8]}", dict(os.environ))
 
 
 @pytest.fixture

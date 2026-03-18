@@ -185,14 +185,13 @@ async def _setup_web(
     tracer: trace.Tracer,
     root_ctx: trace.Context,
     hook_config: k8s_secrets_setup.HookConfig | None,
-    caller_env: dict[str, str],
+    http: HttpConfig,
 ) -> PlatformSetup:
     """Web mode: supervisor, proxy, containers, secrets, parallel installs.
 
     Returns a fully populated PlatformSetup with all results needed by the
     shared downstream steps.
     """
-    http = HttpConfig.from_env(caller_env)
     logger.info("Setting up dev environment...")
 
     async def traced_supervisor_start():
@@ -448,6 +447,7 @@ async def run_session(
     *,
     web_mode: bool,
     caller_env: dict[str, str],
+    http: HttpConfig,
 ) -> SessionStartOutput:
     """Unified session setup for both web and CLI modes.
 
@@ -456,6 +456,7 @@ async def run_session(
 
     caller_env: the hook client's environment dict, threaded through from
     the daemon to avoid os.environ patching.
+    http: explicit HTTP client config for downloads (proxy/TLS from caller's env).
     """
 
     collector, log_file = setup_logging(paths, print_banner=web_mode)
@@ -492,7 +493,7 @@ async def run_session(
 
     # Platform-specific setup
     if web_mode:
-        setup = await _setup_web(paths, settings, project_dir, tracer, root_ctx, hook_config, caller_env=caller_env)
+        setup = await _setup_web(paths, settings, project_dir, tracer, root_ctx, hook_config, http=http)
     else:
         # CLI mode: read k8s secrets (no proxy needed, combined_ca_path=None).
         if settings.k8s_token and hook_config:
@@ -585,7 +586,11 @@ async def run_session(
 
 
 async def _async_handle(
-    hook_input: SessionStartHookInput, paths: SessionPaths, settings: HookSettings, caller_env: dict[str, str]
+    hook_input: SessionStartHookInput,
+    paths: SessionPaths,
+    settings: HookSettings,
+    caller_env: dict[str, str],
+    http: HttpConfig,
 ) -> SessionStartOutput:
     """Async entry point called from the hook daemon with the client's env."""
     env_file_path_str = caller_env.get("CLAUDE_ENV_FILE")
@@ -594,4 +599,6 @@ async def _async_handle(
         raise KeyError(msg)
     env_file_path = Path(env_file_path_str)
     web_mode = caller_env.get("CLAUDE_CODE_REMOTE") == "true"
-    return await run_session(hook_input, paths, settings, env_file_path, web_mode=web_mode, caller_env=caller_env)
+    return await run_session(
+        hook_input, paths, settings, env_file_path, web_mode=web_mode, caller_env=caller_env, http=http
+    )
