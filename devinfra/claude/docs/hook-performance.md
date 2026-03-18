@@ -411,10 +411,21 @@ a hook decision. No external process, no endpoint — runs inside Claude Code.
 | `model`   | no       | Model for evaluation. Defaults to a fast model (haiku).         |
 | `timeout` | no       | Timeout in seconds.                                             |
 
-**How it works:** The model receives the prompt + event JSON and returns a
-JSON decision. For `PreToolUse`, the decision maps to `permissionDecision`
-(`allow`/`deny`/`ask`). For `Stop`, it maps to `continue` (true/false).
-The model's response is parsed as standard hook output JSON.
+**How it works:** `$ARGUMENTS` in the prompt is replaced with the hook event
+JSON (literal string substitution), and the resulting text is sent to the
+model as the sole input. There is no hidden system prompt — the model
+receives only the user-written prompt with arguments expanded. It must
+return a JSON object:
+
+```json
+{ "ok": true }
+{ "ok": false, "reason": "explanation for Claude" }
+```
+
+This is simpler than command/HTTP hooks (which use `decision`/`reason`
+fields in `hookSpecificOutput`). Since there's no system prompt or
+structured output constraint guiding the model, it may fail to emit valid
+JSON — see the known issue under agent hooks.
 
 **Use case:** Lightweight policy checks expressible as natural language rules.
 Good for nuanced decisions that are hard to write as regex or shell logic.
@@ -484,11 +495,13 @@ a decision. The most powerful hook type — and the most expensive.
 | `model`   | no       | Model for the subagent. Defaults to a fast model (haiku).       |
 | `timeout` | no       | Timeout in seconds. Default: 60s.                               |
 
-**How it works:** A subagent is spawned with the prompt + event JSON. The
-subagent has access to Read, Grep, and Glob tools (but NOT Bash, Edit,
-Write, or Agent). It can read files, search the codebase, and perform
-multi-step reasoning before returning a JSON decision. The decision format
-is the same as prompt hooks.
+**How it works:** A subagent is spawned with the prompt (after `$ARGUMENTS`
+substitution, same as prompt hooks) as its sole instruction. The subagent
+has access to Read, Grep, and Glob tools (but NOT Bash, Edit, Write, or
+Agent). It can read files, search the codebase, and perform multi-step
+reasoning. Like prompt hooks, there is no hidden system prompt instructing
+it on output format — it must infer from the user-written prompt that it
+should return `{"ok": true/false, "reason": "..."}` JSON.
 
 **Use case:** Policy checks that require codebase context — verifying tests
 exist for changed files, checking that edits follow style guidelines by
