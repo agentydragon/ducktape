@@ -194,10 +194,12 @@ to validate them against the token's identity.`,
 
 			// Step 10: Create orchestrator.
 			// Binary: 0xbb0ee1 NewOrchestrator
-			// Args (register ABI): AX,BX=poller (as apiClient interface),
-			//   CX,DI=environmentID, SI=loopTimeout, R8=executeHookTimeout,
-			//   R9,R10=executeHook (hookCommand), stack=log
-			orch, err := orchestrator.NewOrchestrator(poller, environmentID, loopTimeout, executeHookTimeout, executeHook, log)
+			// Args (register ABI): AX,BX=poller (PollerInterface),
+			//   CX,DI=environmentID, SI=pollTimeout, R8=loopTimeout,
+			//   R9=maxPollFailures, R10=log
+			// NOTE: executeHook is NOT passed here — it's already wrapped
+			// inside the PollHook (created in Step 7 when pollHook != "").
+			orch, err := orchestrator.NewOrchestrator(poller, environmentID, pollTimeout, loopTimeout, maxPollFailures, log)
 			if err != nil {
 				return fmt.Errorf("failed to create orchestrator: %w", err)
 			}

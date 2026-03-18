@@ -138,9 +138,8 @@ to validate them against the token's identity.`,
 				if environmentID != "" && organizationID != "" {
 					// Identity not needed, continue with provided IDs
 				} else {
-					// Error: "session_id and org_id are required when identity could not be retrieved"
-					// Binary: 0xb76577 - 0x73=115 chars error message
-					return fmt.Errorf("session_id and org_id are required when identity could not be retrieved")
+					// Binary: 0xb76577 — wraps whoami error with guidance to use fallback flags
+					return fmt.Errorf("failed to get environment identity from whoami (provide --organization-id and --environment-id to use fallback): %w", err)
 				}
 			} else {
 				// Step 4b: Update environmentID and organizationID from identity.

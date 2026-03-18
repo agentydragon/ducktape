@@ -25,21 +25,24 @@ type PollerInterface interface {
 // and reporting results. It runs in a loop, polling for sessions and
 // dispatching them to hooks.
 type Orchestrator struct {
-	// Field layout (reconstructed from NewOrchestrator at 0xa8c780):
-	// Offset 0x00: apiClient interface pair (itab + data) - the API client
-	// Offset 0x10: sessionID string (ptr + len)
-	// Offset 0x20: pollInterval time.Duration
-	// Offset 0x28: poller (via offset read in Run)
-	// Offset 0x30: hook command string (ptr + len)
-	// Offset 0x38: timeout time.Duration (not always set)
-	// Offset 0x40: logger *slog.Logger (set via With in constructor)
-	APIClient    interface{} // API/config client
-	SessionID    string
-	PollInterval time.Duration
-	Poller       PollerInterface
-	HookCommand  string
-	Timeout      time.Duration
-	Logger       *slog.Logger
+	// Field layout (reconstructed from NewOrchestrator at 0xae19a0):
+	// Offset 0x00: poller PollerInterface (interface pair, 16 bytes)
+	// Offset 0x10: unknown interface/string pair (16 bytes) — possibly sessionID or config
+	// Offset 0x20: pollTimeout time.Duration (defaults to 5min)
+	// Offset 0x28: loopTimeout time.Duration (defaults to 5min)
+	// Offset 0x30: maxPollFailures int (0 = infinite)
+	// Offset 0x38: (original logger from param, overwritten at 0x40)
+	// Offset 0x40: logger *slog.Logger (enriched with component=orchestrator)
+	//
+	// NOTE: The execute-hook command is NOT stored in this struct. When
+	// --execute-hook is set, cmd_orchestrator wraps it inside a PollHook
+	// (which implements PollerInterface) before passing to NewOrchestrator.
+	Poller          PollerInterface
+	SessionID       string // field at offset 0x10, exact semantics TBD
+	PollInterval    time.Duration
+	LoopTimeout     time.Duration
+	MaxPollFailures int
+	Logger          *slog.Logger
 }
 
 // SessionResponse represents a session received from polling.
@@ -50,18 +53,18 @@ type SessionResponse struct {
 // NewOrchestrator creates a new Orchestrator with the given configuration.
 // It validates inputs and sets defaults for optional parameters.
 //
-// Binary: 0xa8c780 - orchestrator.NewOrchestrator
+// Binary: 0xae19a0 - orchestrator.NewOrchestrator
 // Source: orchestrator/orchestrator.go
 //
 // Parameters (register ABI):
 //
-//	AX = apiClient (interface itab ptr, validated != nil)
-//	BX = apiClient (interface data ptr)
-//	CX = sessionID string ptr
-//	DI = sessionID string len
-//	SI = pollInterval time.Duration (defaults to 5min=0x45d964b800 if 0)
-//	R8 = timeout time.Duration (defaults to 5min if 0)
-//	R9 = hookCommand string ptr
+//	AX = poller (PollerInterface itab ptr, validated != nil)
+//	BX = poller (PollerInterface data ptr)
+//	CX = sessionID string ptr (or unknown interface itab)
+//	DI = sessionID string len (or unknown interface data)
+//	SI = pollTimeout time.Duration (defaults to 5min=0x45d964b800 if 0)
+//	R8 = loopTimeout time.Duration (defaults to 5min if 0)
+//	R9 = maxPollFailures int (0 = infinite)
 //	R10 = logger *slog.Logger (defaults to slog.Default() if nil)
 //
 // Returns:
@@ -70,68 +73,58 @@ type SessionResponse struct {
 //	BX = error (interface type, nil on success)
 //	CX = error (interface data, nil on success)
 func NewOrchestrator(
-	apiClient interface{},
+	poller PollerInterface,
 	sessionID string,
-	pollInterval time.Duration,
-	timeout time.Duration,
-	hookCommand string,
+	pollTimeout time.Duration,
+	loopTimeout time.Duration,
+	maxPollFailures int,
 	logger *slog.Logger,
 ) (*Orchestrator, error) {
-	// Validate apiClient is not nil.
-	// Binary: 0xa8c7d2-0xa8c7e0 CMPQ + JE to error path at 0xa8c93f
-	if apiClient == nil {
-		// Error at 0xa8c93f: "apiClient is nil" (0x12=18 chars)
-		return nil, fmt.Errorf("apiClient is nil")
+	// Validate poller is not nil.
+	// Binary: 0xae19f2-0xae1a00 CMPQ + JE to error path at 0xae1b5f
+	if poller == nil {
+		// Error at 0xae1b5f: "poller is required" (0x12=18 chars)
+		return nil, fmt.Errorf("poller is required")
 	}
 
-	// Default pollInterval to 5 minutes (0x45d964b800 ns = 300,000,000,000 ns).
-	// Binary: 0xa8c7e6-0xa8c7fd
+	// Default pollTimeout to 5 minutes (0x45d964b800 ns = 300,000,000,000 ns).
+	// Binary: 0xae1a06-0xae1a1d
 	const defaultInterval = 5 * time.Minute // 0x45d964b800
-	if pollInterval == 0 {
-		pollInterval = defaultInterval
+	if pollTimeout == 0 {
+		pollTimeout = defaultInterval
 	}
 
-	// Default timeout to 5 minutes.
-	// Binary: 0xa8c809-0xa8c814
-	if timeout == 0 {
-		timeout = defaultInterval
+	// Default loopTimeout to 5 minutes.
+	// Binary: 0xae1a29-0xae1a3b
+	if loopTimeout == 0 {
+		loopTimeout = defaultInterval
 	}
 
 	// Default logger to slog.Default().
-	// Binary: 0xa8c81c-0xa8c82b: loads slog.defaultLogger global
+	// Binary: 0xae1a3c-0xae1a4b: loads slog.defaultLogger global
 	if logger == nil {
 		logger = slog.Default()
 	}
 
 	// Create logger with orchestrator-specific attributes.
-	// Binary: 0xa8c837-0xa8c8a8
+	// Binary: 0xae1a52-0xae1acd
 	// Adds slog.String attribute with:
 	//   key = "component" (0x09=9 chars)
 	//   value = "orchestrator" (0x0c=12 chars)
-	// Also sets up a Poller attribute structure
 	logger = logger.With(
 		slog.String("component", "orchestrator"),
 	)
 
 	// Allocate and populate the Orchestrator struct.
-	// Binary: 0xae1ad2-0xae1b4c — newobject + movups copies fields from registers.
-	// The apiClient parameter is the PollerInterface passed from the caller
-	// (cmd_orchestrator passes `poller` here). Struct layout from binary:
-	//   offset 0x00: apiClient (interface, 16 bytes) — also serves as the Poller
-	//   offset 0x10: sessionID (string, 16 bytes)
-	//   offset 0x20: pollInterval (Duration, 8 bytes)
-	//   offset 0x28: timeout (Duration, 8 bytes)
-	//   offset 0x30: hookCommand (string, 16 bytes)
-	//   offset 0x40: logger (*slog.Logger, 8 bytes)
-	poller, _ := apiClient.(PollerInterface)
+	// Binary: 0xae1ad2-0xae1b4c — newobject + 4x movups copies fields from
+	// register spill slots, then mov for enriched logger at offset 0x40.
 	orch := &Orchestrator{
-		APIClient:    apiClient,
-		SessionID:    sessionID,
-		PollInterval: pollInterval,
-		Poller:       poller,
-		HookCommand:  hookCommand,
-		Timeout:      timeout,
-		Logger:       logger,
+		Poller:          poller,
+		SessionID:       sessionID,
+		PollInterval:    pollTimeout,
+		LoopTimeout:     loopTimeout,
+		MaxPollFailures: maxPollFailures,
+		Logger:          logger,
 	}
 
 	return orch, nil
@@ -155,12 +148,12 @@ func NewOrchestrator(
 func (o *Orchestrator) Run(ctx context.Context) error {
 	// Log startup with 3 slog attrs at Info level.
 	// Binary: 0xa8d9e2 slog call with level=0, 3 attrs
-	// Attrs: "session_id" (0x0c), "poll_interval" (0x0c), "sandbox_command" (0x11=17)
+	// Attrs: "session_id" (0x0c), "poll_interval" (0x0d=13), "loop_timeout" (0x0c=12)
 	// "starting orchestrator" (0x15=21 chars)
 	o.Logger.Info("starting orchestrator",
 		"session_id", o.SessionID,
 		"poll_interval", o.PollInterval,
-		"sandbox_command", o.HookCommand,
+		"loop_timeout", o.LoopTimeout,
 	)
 
 	var loopCount int64
@@ -206,39 +199,25 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 			continue
 		}
 
-		// Session received - check if hook is configured.
-		// Binary: 0xa8dadf CMPQ offset 0x18 (hook pointer)
-		if o.HookCommand == "" {
-			// No hook: output session directly.
-			// Binary: 0xa8dd52 call to outputSession
-			if err := o.outputSession(ctx, session); err != nil {
-				return fmt.Errorf("failed to output session: %w", err)
-			}
-			return nil
-		}
-
-		// Hook is configured: execute it.
+		// Session received — dispatch to poller for execution.
+		// The Poller handles both polling and execution: a standard Poller
+		// outputs the session, while a PollHook (wrapping --execute-hook)
+		// pipes it to the hook command. This dispatch is internal to the
+		// PollerInterface implementation, not controlled by Orchestrator.
+		//
 		// Binary: 0xa8db29 loads OrchestratorSessionStartCounter
-		o.Logger.Info("session received, executing hook command")
+		o.Logger.Info("session received, dispatching")
 		o11y.Increment(ctx, o11y.OrchestratorSessionStartCounter, nil)
 
-		// Create hook and execute with stdin.
-		// Binary: 0xa8db80 call to (*Hook).ExecuteWithStdin
-		hook := &Hook{Command: o.HookCommand, Logger: o.Logger}
-		hookErr := hook.ExecuteWithStdin(ctx, session)
-
-		if hookErr != nil {
-			// Hook execution failed.
-			// Binary: 0xa8db93-0xa8dcdc
-			// Logs error with slog at ERROR level (0x08):
-			// "hook execution failed" (0x13=19 chars)
-			o.Logger.Error("hook execution failed", "error", hookErr)
-			o11y.IncrementOrchestratorSessionEnd(ctx, hookErr)
-
-			return fmt.Errorf("hook execution error: %w", hookErr)
+		// Binary: 0xa8db80 — indirect call through Poller interface
+		// (PollHook.ExecuteWithStdin or direct output depending on poller type)
+		if err := o.outputSession(ctx, session); err != nil {
+			o.Logger.Error("session execution failed", "error", err)
+			o11y.IncrementOrchestratorSessionEnd(ctx, err)
+			return fmt.Errorf("session execution error: %w", err)
 		}
 
-		// Hook succeeded.
+		// Session succeeded.
 		// Binary: 0xa8dcee-0xa8dd51
 		// "session completed successfully, waiting for next" (0x23=35 chars)
 		o.Logger.Info("session completed successfully, waiting for next")
