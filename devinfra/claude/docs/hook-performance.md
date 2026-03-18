@@ -411,21 +411,39 @@ a hook decision. No external process, no endpoint — runs inside Claude Code.
 | `model`   | no       | Model for evaluation. Defaults to a fast model (haiku).         |
 | `timeout` | no       | Timeout in seconds.                                             |
 
-**How it works:** `$ARGUMENTS` in the prompt is replaced with the hook event
-JSON (literal string substitution), and the resulting text is sent to the
-model as the sole input. There is no hidden system prompt — the model
-receives only the user-written prompt with arguments expanded. It must
-return a JSON object:
+**How it works** (verified from binary build `ab38858`):
 
-```json
-{ "ok": true }
-{ "ok": false, "reason": "explanation for Claude" }
-```
+1. `$ARGUMENTS` is replaced with the hook event JSON (literal string
+   substitution via `replaceAll`). Indexed substitution (`$ARGUMENTS[0]`,
+   `$1`, `$2`, named `$argName`) is also supported. If no substitution
+   occurs and input exists, it's appended on a new line.
+2. The expanded prompt is sent as a **user message** to an API call with a
+   **system prompt**:
 
-This is simpler than command/HTTP hooks (which use `decision`/`reason`
-fields in `hookSpecificOutput`). Since there's no system prompt or
-structured output constraint guiding the model, it may fail to emit valid
-JSON — see the known issue under agent hooks.
+   ```
+   You are evaluating a hook in Claude Code.
+
+   Your response must be a JSON object matching one of the following schemas:
+   1. If the condition is met, return: {"ok": true}
+   2. If the condition is not met, return: {"ok": false, "reason": "Reason for why it is not met"}
+   ```
+
+3. The call uses **`outputFormat: { type: "json_schema" }`** (structured
+   outputs / constrained decoding) with the schema
+   `{ ok: boolean, reason?: string }`. This constrains the model to emit
+   valid JSON — no markdown fences.
+4. Thinking is disabled (`thinkingConfig: { type: "disabled" }`).
+5. The response text is parsed with a JSON parser that strips a leading
+   UTF-8 BOM if present, then validated against a Zod schema
+   (`{ ok: boolean, reason?: string }`).
+6. Default timeout: 30 seconds. Default model: `ANTHROPIC_SMALL_FAST_MODEL`
+   env var, or the built-in fast model (haiku).
+7. If the conversation has prior messages (the `messages` parameter from
+   the hook executor), they are prepended before the expanded prompt
+   message.
+
+The output schema is simpler than command/HTTP hooks (which use
+`decision`/`reason` fields in `hookSpecificOutput`).
 
 **Use case:** Lightweight policy checks expressible as natural language rules.
 Good for nuanced decisions that are hard to write as regex or shell logic.
@@ -495,13 +513,42 @@ a decision. The most powerful hook type — and the most expensive.
 | `model`   | no       | Model for the subagent. Defaults to a fast model (haiku).       |
 | `timeout` | no       | Timeout in seconds. Default: 60s.                               |
 
-**How it works:** A subagent is spawned with the prompt (after `$ARGUMENTS`
-substitution, same as prompt hooks) as its sole instruction. The subagent
-has access to Read, Grep, and Glob tools (but NOT Bash, Edit, Write, or
-Agent). It can read files, search the codebase, and perform multi-step
-reasoning. Like prompt hooks, there is no hidden system prompt instructing
-it on output format — it must infer from the user-written prompt that it
-should return `{"ok": true/false, "reason": "..."}` JSON.
+**How it works** (verified from binary build `ab38858`):
+
+1. `$ARGUMENTS` substitution works the same as prompt hooks.
+2. A subagent is spawned with the expanded prompt as a user message and a
+   **system prompt**:
+
+   ```
+   You are verifying a stop condition in Claude Code. Your task is to
+   verify that the agent completed the given plan. The conversation
+   transcript is available at: <transcript_path>
+   You can read this file to analyze the conversation history if needed.
+
+   Use the available tools to inspect the codebase and verify the condition.
+   Use as few steps as possible - be efficient and direct.
+
+   When done, return your result using the StructuredOutput tool with:
+   - ok: true if the condition is met
+   - ok: false with reason if the condition is not met
+   ```
+
+3. The subagent has access to all tools from the main session **except**:
+   TaskOutput, ExitPlanMode, EnterPlanMode, Agent, AskUserQuestion,
+   TaskStop, and StructuredOutput (which is replaced by the hook's own
+   `StructuredOutput` tool). The agent gets the parent's tool permission
+   context set to `dontAsk` mode so it can use tools without prompting.
+4. The subagent's `StructuredOutput` tool has the same `{ok, reason?}`
+   schema as prompt hooks. When the agent calls it, the result is captured
+   as a `structured_output` attachment and validated via Zod.
+5. A nudge message is injected: `"You MUST call the StructuredOutput tool
+to complete this request. Call this tool now."` (with a 5-second
+   timeout) to force the agent to call the tool if it hasn't yet.
+6. Max 50 tool-use turns. Default timeout: 60 seconds. Default model:
+   same as prompt hooks (haiku).
+7. The conversation transcript path points to the parent agent's
+   transcript file, allowing the subagent to read the full conversation
+   history if needed for verification.
 
 **Use case:** Policy checks that require codebase context — verifying tests
 exist for changed files, checking that edits follow style guidelines by
@@ -513,10 +560,12 @@ conventions.
 - Highest latency (~5-30s depending on tool use depth) + highest token cost
   (2,000-5,000+ input tokens per invocation)
 - Non-deterministic — subagent may take different tool-use paths
-- [Known issue](https://github.com/anthropics/claude-code/issues/22750):
-  agent hooks that expect JSON responses often fail because the model wraps
-  JSON in markdown code fences. Structured outputs API would fix this but
-  isn't yet used for hook responses.
+- The agent must call the `StructuredOutput` tool to return a decision. If
+  it exhausts 50 turns or times out without calling the tool, the outcome
+  is `"cancelled"` (not blocking — the action proceeds)
+- The system prompt references "stop condition" and "completed the given
+  plan" regardless of hook event type — this wording is hardcoded and may
+  confuse the model for `PreToolUse` hooks
 
 **Examples:**
 
