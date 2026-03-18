@@ -22,8 +22,8 @@ class SessionPaths:
     def from_env(cls, session_id: str, env: dict[str, str]) -> "SessionPaths":
         """Construct from an environment dict, resolving home/cache eagerly."""
         home = Path(env["HOME"]) if "HOME" in env else Path.home()
-        xdg_cache_home = (
-            Path(env["XDG_CACHE_HOME"]) if "XDG_CACHE_HOME" in env else Path(user_cache_dir(appname="claude-hooks"))
+        xdg_cache_home = Path(
+            env["XDG_CACHE_HOME"] if "XDG_CACHE_HOME" in env else user_cache_dir(appname="claude-hooks")
         )
         return cls(session_id=session_id, home=home, xdg_cache_home=xdg_cache_home)
 
@@ -123,9 +123,9 @@ class SessionPaths:
         """Directory writable from within Claude Code's sandbox.
 
         Claude Code's Bash tool sandbox makes ~/.claude/session-env/ read-only,
-        so runtime writes (e.g. bazel-wrapper log) must go to /tmp/claude/.
+        so runtime writes (e.g. bazel-wrapper log) must go to /tmp/claude-hooks/.
         """
-        return Path("/tmp/claude") / self.session_id
+        return Path("/tmp/claude-hooks") / self.session_id
 
     @property
     def bazel_cache_dir(self) -> Path:

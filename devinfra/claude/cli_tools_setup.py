@@ -21,7 +21,9 @@ from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 
-from devinfra.claude.http_client import HttpConfig, download
+import httpx
+
+from devinfra.claude.http_client import download
 from devinfra.claude.platform_utils import get_platform
 
 logger = logging.getLogger(__name__)
@@ -70,7 +72,7 @@ def _make_executable(path: Path) -> None:
     path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
-def _install_tool(tool: CliTool, bin_dir: Path, http: HttpConfig) -> None:
+def _install_tool(tool: CliTool, bin_dir: Path, http: httpx.Client) -> None:
     """Download and install a single CLI tool (synchronous)."""
     dest = bin_dir / tool.name
     if dest.exists():
@@ -83,7 +85,7 @@ def _install_tool(tool: CliTool, bin_dir: Path, http: HttpConfig) -> None:
 
     logger.info("Downloading %s from %s", tool.name, tool.url)
 
-    data = download(tool.url, http, timeout=120)
+    data = download(tool.url, http)
 
     if tool.tar_member:
         with tarfile.open(fileobj=BytesIO(data), mode="r:gz") as tf:
@@ -103,7 +105,7 @@ def _install_tool(tool: CliTool, bin_dir: Path, http: HttpConfig) -> None:
     logger.info("Installed %s to %s", tool.name, dest)
 
 
-def install_cli_tools(bin_dir: Path, http: HttpConfig) -> list[str]:
+def install_cli_tools(bin_dir: Path, http: httpx.Client) -> list[str]:
     """Install all CLI tools into bin_dir. Returns list of successfully installed tool names.
 
     Non-fatal — logs warnings for individual failures and continues.

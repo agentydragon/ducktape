@@ -14,7 +14,9 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from devinfra.claude.http_client import HttpConfig, download
+import httpx
+
+from devinfra.claude.http_client import download
 from devinfra.claude.platform_utils import get_platform
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import ENV_SESSION_DIR
@@ -74,7 +76,7 @@ def get_bazelisk_url() -> str:
     return f"https://github.com/bazelbuild/bazelisk/releases/download/v{BAZELISK_VERSION}/{binary}"
 
 
-def install_bazelisk(paths: SessionPaths, http: HttpConfig) -> Path:
+def install_bazelisk(paths: SessionPaths, http: httpx.Client) -> Path:
     """Download bazelisk to private location, returning the binary path.
 
     Skips download if already installed.

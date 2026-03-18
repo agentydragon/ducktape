@@ -12,9 +12,10 @@ import stat
 from dataclasses import dataclass
 from pathlib import Path
 
+import httpx
 from opentelemetry import trace
 
-from devinfra.claude.http_client import HttpConfig, download
+from devinfra.claude.http_client import download
 from devinfra.claude.platform_utils import get_platform
 from devinfra.claude.session_paths import SessionPaths
 
@@ -51,7 +52,7 @@ def _get_download_url() -> str:
     )
 
 
-def _download_mkcert(paths: SessionPaths, http: HttpConfig) -> Path:
+def _download_mkcert(paths: SessionPaths, http: httpx.Client) -> Path:
     """Download mkcert binary if not already present."""
     mkcert_dir = _get_mkcert_dir(paths)
     mkcert_path = _get_mkcert_binary(paths)
@@ -88,7 +89,7 @@ def append_mkcert_ca_to_bundle(ca_root: Path, combined_ca: Path) -> None:
     logger.info("Appended mkcert root CA to %s", combined_ca)
 
 
-async def setup_mkcert(paths: SessionPaths, combined_ca: Path | None, http: HttpConfig) -> MkcertSetup:
+async def setup_mkcert(paths: SessionPaths, combined_ca: Path | None, http: httpx.Client) -> MkcertSetup:
     """Generate a trusted localhost TLS certificate via mkcert.
 
     Downloads the mkcert binary if needed, generates a certificate for

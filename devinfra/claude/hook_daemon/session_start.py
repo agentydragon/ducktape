@@ -11,11 +11,11 @@ import asyncio
 import logging
 import logging.handlers
 import shutil
-import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+import httpx
 from mako.template import Template
 from opentelemetry import trace
 
@@ -41,7 +41,7 @@ from devinfra.claude.claude_api.hooks.session_start import (
 from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.errors import SkipError
 from devinfra.claude.hook_config import HOOKS_DOTDIR, HookConfig
-from devinfra.claude.http_client import HttpConfig
+from devinfra.claude.hook_logging import setup_file_logging
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import CONFIG_FILES, HookSettings
@@ -51,6 +51,33 @@ from devinfra.claude.tracing import add_otlp_exporter
 logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
+
+
+@dataclass(frozen=True)
+class CallerContext:
+    """Structured env vars extracted from the hook client's environment.
+
+    Replaces passing raw dict[str, str] through the call stack. Extracted once
+    at the daemon entry point (_async_handle), then threaded through.
+    """
+
+    env_file_path: Path
+    web_mode: bool
+    project_dir: Path
+
+    @classmethod
+    def from_env(cls, env: dict[str, str]) -> "CallerContext":
+        env_file_str = env.get("CLAUDE_ENV_FILE")
+        if not env_file_str:
+            raise KeyError("CLAUDE_ENV_FILE environment variable is required")
+        project_dir_str = env.get("CLAUDE_PROJECT_DIR")
+        if not project_dir_str:
+            raise KeyError("CLAUDE_PROJECT_DIR environment variable is required")
+        return cls(
+            env_file_path=Path(env_file_str),
+            web_mode=env.get("CLAUDE_CODE_REMOTE") == "true",
+            project_dir=Path(project_dir_str),
+        )
 
 
 # ============================================================================
@@ -115,13 +142,13 @@ def _render_extra_context(
 
 
 class LogCollector(logging.handlers.MemoryHandler):
-    """Handler that collects log records for later inspection.
+    """Collects log records from session start for the mako template output.
 
     Uses MemoryHandler with high capacity and no auto-flush to buffer all records.
+    The collected warnings/errors are rendered into the session context banner.
     """
 
     def __init__(self) -> None:
-        # Large capacity, no flush level, no target - just collect
         super().__init__(capacity=1000, flushLevel=logging.CRITICAL + 1)
 
     @property
@@ -133,31 +160,18 @@ class LogCollector(logging.handlers.MemoryHandler):
         return any(r.levelno == logging.WARNING for r in self.buffer)
 
 
-def setup_logging(paths: SessionPaths, *, print_banner: bool = True) -> tuple[LogCollector, Path]:
-    """Configure root logger so all modules in devinfra.claude get handlers.
+def _setup_session_logging(paths: SessionPaths, *, print_banner: bool = True) -> tuple[LogCollector, Path]:
+    """Set up file logging and a LogCollector for session start output.
 
     Returns (LogCollector, log_file_path) tuple.
     """
     log_file = paths.log_file
+    setup_file_logging(log_file, print_banner=print_banner)
 
     formatter = logging.Formatter("%(asctime)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
     collector = LogCollector()
     collector.setFormatter(formatter)
-
-    # Configure root logger so all child loggers (proxy_setup, bazelisk_setup, etc.) inherit.
-    # Logs go to file only — stdout is reserved for structured agent context.
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.DEBUG)
-
-    file_handler = logging.FileHandler(log_file, mode="a")
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(formatter)
-    root_logger.addHandler(file_handler)
-
-    root_logger.addHandler(collector)
-
-    if print_banner:
-        print(f"Setup log: {log_file}", file=sys.stderr)
+    logging.getLogger().addHandler(collector)
 
     return collector, log_file
 
@@ -185,7 +199,7 @@ async def _setup_web(
     tracer: trace.Tracer,
     root_ctx: trace.Context,
     hook_config: k8s_secrets_setup.HookConfig | None,
-    http: HttpConfig,
+    http: httpx.Client,
 ) -> PlatformSetup:
     """Web mode: supervisor, proxy, containers, secrets, parallel installs.
 
@@ -443,25 +457,18 @@ async def run_session(
     hook_input: SessionStartHookInput,
     paths: SessionPaths,
     settings: HookSettings,
-    env_file_path: Path,
-    *,
-    web_mode: bool,
-    caller_env: dict[str, str],
-    http: HttpConfig,
+    ctx: CallerContext,
+    http: httpx.Client,
 ) -> SessionStartOutput:
     """Unified session setup for both web and CLI modes.
 
     Dispatches platform-specific setup, then runs shared steps:
     bazelrc render, wrapper install, env file write, session context emit.
-
-    caller_env: the hook client's environment dict, threaded through from
-    the daemon to avoid os.environ patching.
-    http: explicit HTTP client config for downloads (proxy/TLS from caller's env).
     """
 
-    collector, log_file = setup_logging(paths, print_banner=web_mode)
+    collector, log_file = _setup_session_logging(paths, print_banner=ctx.web_mode)
     tracer = trace.get_tracer(__name__)
-    mode_label = "web" if web_mode else "cli"
+    mode_label = "web" if ctx.web_mode else "cli"
     root_span = tracer.start_span(
         "session_start",
         attributes={"session.id": hook_input.session_id, "hook.source": hook_input.source, "mode": mode_label},
@@ -471,13 +478,8 @@ async def run_session(
     logger.info("Session start hook (%s mode)", mode_label)
     logger.info("Hook input: %s", hook_input.model_dump_json())
     log_entrypoint_debug("session_start")
-    logger.info("Environment: %s", caller_env)
 
-    project_dir_str = caller_env.get("CLAUDE_PROJECT_DIR")
-    if not project_dir_str:
-        msg = "CLAUDE_PROJECT_DIR environment variable is required"
-        raise KeyError(msg)
-    project_dir = Path(project_dir_str)
+    project_dir = ctx.project_dir
     logger.info("CLAUDE_PROJECT_DIR: %s", project_dir)
     logger.info("Session directory: %s", paths.session_dir)
 
@@ -492,7 +494,7 @@ async def run_session(
     secrets: k8s_secrets_setup.K8sSecretsResult | None = None
 
     # Platform-specific setup
-    if web_mode:
+    if ctx.web_mode:
         setup = await _setup_web(paths, settings, project_dir, tracer, root_ctx, hook_config, http=http)
     else:
         # CLI mode: read k8s secrets (no proxy needed, combined_ca_path=None).
@@ -513,7 +515,7 @@ async def run_session(
             CONFIG_FILES.joinpath("bazelrc.mako").read_text(), imports=["from shlex import quote as sh"]
         )
         bazelrc_content: str = bazelrc_template.render(
-            web_proxy=web_mode,
+            web_proxy=ctx.web_mode,
             proxy_port=setup.proxy_port,
             truststore_path=setup.truststore_path,
             truststore_password=setup.truststore_password,
@@ -554,8 +556,8 @@ async def run_session(
             secrets_env_vars=setup.secrets_env_vars,
             with_direnv=setup.with_direnv,
         )
-        env_file.write_env_file(env_file_path, env_vars)
-    logger.info("Wrote environment to %s", env_file_path)
+        env_file.write_env_file(ctx.env_file_path, env_vars)
+    logger.info("Wrote environment to %s", ctx.env_file_path)
 
     # Build structured session context for Claude Code transcript
     with tracer.start_as_current_span("emit_session_context", context=root_ctx):
@@ -590,15 +592,9 @@ async def _async_handle(
     paths: SessionPaths,
     settings: HookSettings,
     caller_env: dict[str, str],
-    http: HttpConfig,
+    http: httpx.Client,
 ) -> SessionStartOutput:
     """Async entry point called from the hook daemon with the client's env."""
-    env_file_path_str = caller_env.get("CLAUDE_ENV_FILE")
-    if not env_file_path_str:
-        msg = "CLAUDE_ENV_FILE environment variable is required"
-        raise KeyError(msg)
-    env_file_path = Path(env_file_path_str)
-    web_mode = caller_env.get("CLAUDE_CODE_REMOTE") == "true"
-    return await run_session(
-        hook_input, paths, settings, env_file_path, web_mode=web_mode, caller_env=caller_env, http=http
-    )
+    logger.info("Caller environment: %s", caller_env)
+    ctx = CallerContext.from_env(caller_env)
+    return await run_session(hook_input, paths, settings, ctx, http)

@@ -124,6 +124,13 @@ py_library(
 )
 
 py_library(
+    name = "hook_logging",
+    srcs = ["hook_logging.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "http_client",
     srcs = ["http_client.py"],
     imports = ["../.."],
@@ -139,6 +146,7 @@ py_library(
     deps = [
         ":http_client",
         ":platform_utils",
+        "@pypi//httpx",
     ],
 )
 
@@ -153,6 +161,7 @@ py_library(
         ":session_paths",
         ":settings",
         "//util/bazel:subprocess",
+        "@pypi//httpx",
     ],
 )
 
@@ -172,6 +181,7 @@ py_library(
         ":http_client",
         ":platform_utils",
         ":session_paths",
+        "@pypi//httpx",
         "@pypi//opentelemetry_api",
     ],
 )
