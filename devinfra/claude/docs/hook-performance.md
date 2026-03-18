@@ -728,14 +728,114 @@ Currently, the hook uv environment is lazily created on first `uvx` invocation
 creation transparently. For the daemon approach, the daemon would be started
 by SessionStart (not Setup), which is after hook packages are already available.
 
-## Open Questions
+## Environment Variable Delivery to Hooks
 
-- **`CLAUDE_ENV_FILE` re-sourcing**: Confirmed that Claude Code re-sources
-  the env file on every Bash tool call. This means a background process
-  (including the daemon) could update env vars mid-session by writing to
-  the env file. However, only SessionStart hooks receive `CLAUDE_ENV_FILE`
-  in their environment — other hooks and the daemon would need the path
-  passed to them explicitly (e.g., via supervisor environment).
+Verified from the Claude Code binary (build `ab38858`). Session start hooks
+can export env vars via `CLAUDE_ENV_FILE`, but those vars are **not**
+automatically available to all hook types. The delivery mechanism differs by
+context.
+
+### How session env files work
+
+1. **SessionStart/Setup hooks** receive a `CLAUDE_ENV_FILE` env var pointing
+   to a writable `.sh` file (e.g.,
+   `~/.claude/session-env/<id>/sessionstart-hook-0.sh`). The hook writes
+   shell `export` statements to this file.
+2. Claude Code caches the contents of all `sessionstart-hook-*.sh` and
+   `setup-hook-*.sh` files (sorted: setup first, then sessionstart, by
+   index). It also reads the file at `$CLAUDE_ENV_FILE` (if set in the
+   Node.js process environment). The cache (`ro` variable in the binary)
+   is a single string joining all file contents.
+3. Only the **Bash tool** sources this cached script. Other hook types do
+   not.
+
+### Env availability by hook type
+
+| Context                | `process.env` | Session env files | How                                                                                    |
+| ---------------------- | ------------- | ----------------- | -------------------------------------------------------------------------------------- |
+| **Bash tool**          | Yes           | **Yes**           | Session env script is prepended to command: `source <snapshot> && <env> && eval <cmd>` |
+| **Command hooks**      | Yes           | **No**            | Spawned with `{...process.env, CLAUDE_PROJECT_DIR, ...}`. No `hAD()` call.             |
+| **SessionStart/Setup** | Yes           | **No** (writes)   | Gets `CLAUDE_ENV_FILE` path to _write_ to, but doesn't source prior files.             |
+| **HTTP hooks**         | N/A           | N/A               | HTTP POST — no subprocess, no env.                                                     |
+| **Prompt hooks**       | N/A           | N/A               | LLM API call — no subprocess.                                                          |
+| **Agent hooks**        | N/A           | N/A               | LLM subagent — no subprocess.                                                          |
+
+### What command hooks DO get
+
+The command hook subprocess environment (`W` in the binary) is constructed as:
+
+```js
+W = {
+  ...process.env,             // inherit Node.js process env
+  CLAUDE_PROJECT_DIR: cwd,    // project root
+  // Plugin hooks only:
+  CLAUDE_PLUGIN_ROOT: pluginRoot,
+  CLAUDE_PLUGIN_DATA: pluginDataDir,
+  CLAUDE_PLUGIN_OPTION_<KEY>: value,  // per-option from plugin config
+  // SessionStart/Setup hooks only:
+  CLAUDE_ENV_FILE: path,      // path to write env exports to
+};
+```
+
+Key points:
+
+- `process.env` contains what was in the parent environment when Claude
+  Code started, plus any `env` entries from `settings.json` (applied via
+  `Object.assign(process.env, settings.env)` at startup).
+- Session env files written by earlier hooks are **not** read back into
+  `process.env` — they only affect the Bash tool.
+
+### What the Bash tool gets (for comparison)
+
+The Bash tool constructs its command string as:
+
+```sh
+source <shell_snapshot> && <session_env_script> && <extglob_fix> && eval <command> && pwd -P >| <cwd_file>
+```
+
+Where `<session_env_script>` is the cached contents of all session env
+files (the `hAD()` return value). This is why env vars exported by
+SessionStart are available in Bash tool commands but not in hook commands.
+
+### Implications for our hooks
+
+Our `PreToolUse` and `PostToolUse` command hooks (invoked via
+`uvx --from <wheel> claude-hook`) do **not** have access to env vars
+exported by the SessionStart hook's `CLAUDE_ENV_FILE`. They only get
+`process.env`, which includes:
+
+- Vars set by Anthropic's container environment (e.g., `HTTPS_PROXY`)
+- Vars from `settings.json` `env` blocks
+- Vars set before Claude Code started
+
+If a hook needs a var from SessionStart (e.g., `DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR`,
+`BUILDBUDDY_API_KEY`), workarounds:
+
+1. **Source the env files manually** in the hook command:
+
+   ```json
+   {
+     "type": "command",
+     "command": "bash -c 'for f in ~/.claude/session-env/*/sessionstart-hook-*.sh; do source \"$f\" 2>/dev/null; done; uvx --from <wheel> claude-hook'"
+   }
+   ```
+
+2. **Put the vars in `settings.json` `env`** — these are applied to
+   `process.env` at startup and inherited by all hooks. Only works for
+   static values known before the session starts.
+
+3. **Use the daemon architecture (Phase 3)** — the daemon is started by
+   SessionStart with full env context and serves requests via HTTP.
+
+### `CLAUDE_ENV_FILE` re-sourcing
+
+The Bash tool re-reads session env files on every invocation (the `hAD()`
+cache is invalidated by `yAD()` when env files change). This means a
+background process (including the daemon) could update env vars mid-session
+by writing to the env file. However, this only affects the Bash tool — not
+command hooks.
+
+## Open Questions
 
 - **Daemon state consistency**: Since only SessionStart can populate
   `CLAUDE_ENV_FILE`, the daemon must be started during SessionStart to
