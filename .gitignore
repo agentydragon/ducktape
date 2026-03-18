@@ -76,18 +76,18 @@ cluster/.claude/
 # Claude Code sandbox phantom dotfiles
 # Bug: https://github.com/anthropics/claude-code/issues/17258
 .bashrc
-!claude_web_env/rootfs/root/.bashrc
+!devinfra/claude/web_env/rootfs/root/.bashrc
 .bash_profile
 .gitconfig
-!claude_web_env/rootfs/root/.gitconfig
+!devinfra/claude/web_env/rootfs/root/.gitconfig
 .gitmodules
 .mcp.json
 .profile
-!claude_web_env/rootfs/root/.profile
+!devinfra/claude/web_env/rootfs/root/.profile
 .ripgreprc
 .zprofile
 .zshrc
-!claude_web_env/rootfs/root/.zshrc
+!devinfra/claude/web_env/rootfs/root/.zshrc
 .claude/agents
 
 **/config
@@ -98,7 +98,7 @@ cluster/.claude/
 !x/claude_linter_v2/config
 !**/claude_hooks/config
 !**/dotfiles/config
-!claude_web_env/re/environment_manager/*/src/internal/config
+!devinfra/claude/web_env/re/environment_manager/*/src/internal/config
 
 **/refs
 **/objects
@@ -116,7 +116,7 @@ cluster/.claude/
 **/.claude/skills
 !/.claude/settings.json
 !/.claude/skills
-!/claude_web_env/rootfs/home/claude/.claude/settings.json
-!/claude_web_env/rootfs/home/claude/.claude/skills
-!/claude_web_env/rootfs/root/.claude/settings.json
-!/claude_web_env/rootfs/root/.claude/skills
+!/devinfra/claude/web_env/rootfs/home/claude/.claude/settings.json
+!/devinfra/claude/web_env/rootfs/home/claude/.claude/skills
+!/devinfra/claude/web_env/rootfs/root/.claude/settings.json
+!/devinfra/claude/web_env/rootfs/root/.claude/skills

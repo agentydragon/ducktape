@@ -106,19 +106,19 @@ finance/worthy/worthy/graph.js
 
 # JSON config/example files
 agent_cli/example.mcp.json
-claude_web_env/diff-report.json
+devinfra/claude/web_env/diff-report.json
 devinfra/multitool/lockfile.json
 
 # Props docker compose (infra config, not Bazelized)
 props/compose.yaml
 
-# claude_web_env: re/ is mostly Bazelized reverse-engineered source; one orphaned Go file
+# devinfra/claude/web_env: re/ is mostly Bazelized reverse-engineered source; one orphaned Go file
 # and go module files are orphaned (BUILD.bazel/md/toml covered by type patterns)
-# claude_web_env/docs/** omitted — all files there are *.md, covered by the *.md pattern above
-claude_web_env/re/**/go.mod
-claude_web_env/re/**/go.sum
-claude_web_env/reference/**
-claude_web_env/rootfs/**
+# devinfra/claude/web_env/docs/** omitted — all files there are *.md, covered by the *.md pattern above
+devinfra/claude/web_env/re/**/go.mod
+devinfra/claude/web_env/re/**/go.sum
+devinfra/claude/web_env/reference/**
+devinfra/claude/web_env/rootfs/**
 
 # Compressed data files
 *.zst

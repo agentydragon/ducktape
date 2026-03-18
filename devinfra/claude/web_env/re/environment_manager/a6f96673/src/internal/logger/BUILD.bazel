@@ -1,0 +1,12 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "logger",
+    srcs = [
+        "file_logger.go",
+        "log_writer.go",
+        "multi_handler.go",
+    ],
+    importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/logger",
+    visibility = ["//devinfra/claude/web_env/re/environment_manager/a6f96673/src:__subpackages__"],
+)

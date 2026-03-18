@@ -1,0 +1,93 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "manifest",
+    srcs = ["manifest.py"],
+    data = ["//devinfra/claude/web_env:exclusions.yaml"],
+    imports = ["../../../.."],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "capture_manifest_lib",
+    srcs = ["capture_manifest.py"],
+    imports = ["../../../.."],
+    deps = [":manifest"],
+)
+
+py_binary(
+    name = "capture_manifest",
+    imports = ["../../../.."],
+    main_module = "devinfra.claude.web_env.tools.capture_manifest",
+    deps = [":capture_manifest_lib"],
+)
+
+py_library(
+    name = "capture_versions_lib",
+    srcs = ["capture_versions.py"],
+    imports = ["../../../.."],
+    deps = ["@pypi//pydantic"],
+)
+
+py_binary(
+    name = "capture_versions",
+    imports = ["../../../.."],
+    main_module = "devinfra.claude.web_env.tools.capture_versions",
+    deps = [":capture_versions_lib"],
+)
+
+py_library(
+    name = "diff_manifests_lib",
+    srcs = ["diff_manifests.py"],
+    imports = ["../../../.."],
+    deps = [
+        ":manifest",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "diff_manifests",
+    imports = ["../../../.."],
+    main_module = "devinfra.claude.web_env.tools.diff_manifests",
+    deps = [":diff_manifests_lib"],
+)
+
+py_library(
+    name = "fetch_debs_lib",
+    srcs = ["fetch_debs.py"],
+    imports = ["../../../.."],
+    deps = ["//util/bazel:workspace"],
+)
+
+py_binary(
+    name = "fetch_debs",
+    imports = ["../../../.."],
+    main_module = "devinfra.claude.web_env.tools.fetch_debs",
+    deps = [":fetch_debs_lib"],
+)
+
+py_library(
+    name = "build_and_diff_lib",
+    srcs = ["build_and_diff.py"],
+    imports = ["../../../.."],
+    deps = [
+        ":capture_manifest_lib",
+        ":capture_versions_lib",
+        ":diff_manifests_lib",
+        ":fetch_debs_lib",
+        ":manifest",
+        "//util/bazel:workspace",
+    ],
+)
+
+py_binary(
+    name = "build_and_diff",
+    imports = ["../../../.."],
+    main_module = "devinfra.claude.web_env.tools.build_and_diff",
+    deps = [":build_and_diff_lib"],
+)

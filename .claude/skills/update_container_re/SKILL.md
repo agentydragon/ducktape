@@ -14,7 +14,7 @@ documentation refresh.
 
 **Argument:** `$ARGUMENTS` — optional flags to limit scope.
 
-**Directory:** `claude_web_env/` in the repo root.
+**Directory:** `devinfra/claude/web_env/` in the repo root.
 
 **Prerequisite:** Phases 1-3 (detection, binary capture, metadata) require
 running inside a Claude Code web container with access to the live binaries.
@@ -31,12 +31,12 @@ Compare live binaries against stored references to determine scope.
 ```bash
 # Environment-manager
 LIVE_EM_HASH=$(md5sum /opt/env-runner/environment-manager | awk '{print $1}')
-REF_EM_HASH=$(zcat claude_web_env/reference/environment-manager.gz | md5sum | awk '{print $1}')
+REF_EM_HASH=$(zcat devinfra/claude/web_env/reference/environment-manager.gz | md5sum | awk '{print $1}')
 echo "environment-manager: live=$LIVE_EM_HASH ref=$REF_EM_HASH"
 
 # process_api (PID 1)
 LIVE_PA_HASH=$(md5sum /proc/1/exe | awk '{print $1}')
-REF_PA_HASH=$(zcat claude_web_env/reference/process_api.gz | md5sum | awk '{print $1}')
+REF_PA_HASH=$(zcat devinfra/claude/web_env/reference/process_api.gz | md5sum | awk '{print $1}')
 echo "process_api: live=$LIVE_PA_HASH ref=$REF_PA_HASH"
 
 # Quick version check
@@ -70,22 +70,22 @@ strings /proc/1/exe | grep 'process_api_20'  # Release string
 ```bash
 # process_api
 cp /proc/1/exe /tmp/process_api_new
-gzip -c /tmp/process_api_new > claude_web_env/reference/process_api.gz
+gzip -c /tmp/process_api_new > devinfra/claude/web_env/reference/process_api.gz
 
 # environment-manager
 cp /opt/env-runner/environment-manager /tmp/env-manager-new
-gzip -c /tmp/env-manager-new > claude_web_env/reference/environment-manager.gz
+gzip -c /tmp/env-manager-new > devinfra/claude/web_env/reference/environment-manager.gz
 ```
 
 ### 2b. Version Snapshot
 
 ```bash
-bazel run //claude_web_env/tools:capture_versions -- \
-  > claude_web_env/reference/versions-$(date +%Y-%m-%d).yaml
+bazel run //devinfra/claude/web_env/tools:capture_versions -- \
+  > devinfra/claude/web_env/reference/versions-$(date +%Y-%m-%d).yaml
 
 # Diff against previous
-bazel run //claude_web_env/tools:capture_versions -- \
-  --diff claude_web_env/reference/versions-YYYY-MM-DD.yaml
+bazel run //devinfra/claude/web_env/tools:capture_versions -- \
+  --diff devinfra/claude/web_env/reference/versions-YYYY-MM-DD.yaml
 ```
 
 ### 2c. Metadata
@@ -93,7 +93,7 @@ bazel run //claude_web_env/tools:capture_versions -- \
 ```bash
 # Sandbox settings
 /usr/local/bin/environment-manager print-sandbox-settings \
-  > claude_web_env/reference/sandbox-settings.json
+  > devinfra/claude/web_env/reference/sandbox-settings.json
 
 # Subcommand help
 {
@@ -103,11 +103,11 @@ bazel run //claude_web_env/tools:capture_versions -- \
   /usr/local/bin/environment-manager orchestrator --help 2>&1
   /usr/local/bin/environment-manager task-run --help 2>&1
   /usr/local/bin/environment-manager poll --help 2>&1
-} > claude_web_env/reference/subcommands.txt
+} > devinfra/claude/web_env/reference/subcommands.txt
 
 # Environment variables
 env | grep -E '^(CLAUDE|CODESIGN|MCP_)' | sort \
-  > claude_web_env/reference/claude-env-vars.txt
+  > devinfra/claude/web_env/reference/claude-env-vars.txt
 ```
 
 ---
@@ -122,13 +122,13 @@ NEW_EM_BUILDID=$(readelf -n /tmp/env-manager-new | grep 'Build ID' | awk '{print
 NEW_PA_BUILDID=$(readelf -n /tmp/process_api_new | grep 'Build ID' | awk '{print substr($NF,1,8)}')
 
 # Copy old RE as starting point
-OLD_EM_DIR=$(ls claude_web_env/re/environment_manager/ | grep -v README)
-OLD_PA_DIR=$(ls claude_web_env/re/process_api/ | grep -v README)
+OLD_EM_DIR=$(ls devinfra/claude/web_env/re/environment_manager/ | grep -v README)
+OLD_PA_DIR=$(ls devinfra/claude/web_env/re/process_api/ | grep -v README)
 
-cp -r "claude_web_env/re/environment_manager/$OLD_EM_DIR" \
-      "claude_web_env/re/environment_manager/$NEW_EM_BUILDID"
-cp -r "claude_web_env/re/process_api/$OLD_PA_DIR" \
-      "claude_web_env/re/process_api/$NEW_PA_BUILDID"
+cp -r "devinfra/claude/web_env/re/environment_manager/$OLD_EM_DIR" \
+      "devinfra/claude/web_env/re/environment_manager/$NEW_EM_BUILDID"
+cp -r "devinfra/claude/web_env/re/process_api/$OLD_PA_DIR" \
+      "devinfra/claude/web_env/re/process_api/$NEW_PA_BUILDID"
 ```
 
 ---
@@ -211,7 +211,7 @@ strings "$BIN" | grep -E '^--(addr|port|max|block|fire|cgr|mem|cpu|oom|control)'
 
 ### Verification (after each subagent)
 
-1. **Build check**: `bazel build //claude_web_env/re/...` succeeds
+1. **Build check**: `bazel build //devinfra/claude/web_env/re/...` succeeds
 2. **String coverage**: All application strings in the new binary appear in RE source
 3. **Function coverage**: All DWARF-listed functions (env-manager) have source files
 4. **Address annotations**: Every function has binary address annotation
@@ -234,10 +234,10 @@ Then fetch packages and rebuild:
 
 ```bash
 # Fetch .deb packages from pinned Ubuntu snapshot archives (no dpkg-repack needed)
-bazel run //claude_web_env/tools:fetch_debs
+bazel run //devinfra/claude/web_env/tools:fetch_debs
 
 # Build and diff (also calls fetch_debs automatically)
-bazel run //claude_web_env/tools:build_and_diff
+bazel run //devinfra/claude/web_env/tools:build_and_diff
 ```
 
 Review `diff_report.md`. Update `exclusions.yaml` if new runtime artifacts
@@ -249,15 +249,15 @@ need exclusion. Update `PLAN.md` with the new diff summary.
 
 Files to update:
 
-| File                                              | What to update                             |
-| ------------------------------------------------- | ------------------------------------------ |
-| `claude_web_env/PLAN.md`                          | Diff summary, change history entry         |
-| `claude_web_env/docs/environment_discovery.md`    | env-manager version, help, flags, env vars |
-| `claude_web_env/docs/container_spec.md`           | Binary info, new capabilities              |
-| `claude_web_env/re/environment_manager/README.md` | Target binary table, source tree, CLI docs |
-| `claude_web_env/re/process_api/README.md`         | Target binary, new features                |
-| `claude_web_env/re/*/NEW_BUILDID/README.md`       | Per-version details                        |
-| `claude_web_env/re/*/NEW_BUILDID/PLAN.md`         | Reconstruction status                      |
+| File                                                       | What to update                             |
+| ---------------------------------------------------------- | ------------------------------------------ |
+| `devinfra/claude/web_env/PLAN.md`                          | Diff summary, change history entry         |
+| `devinfra/claude/web_env/docs/environment_discovery.md`    | env-manager version, help, flags, env vars |
+| `devinfra/claude/web_env/docs/container_spec.md`           | Binary info, new capabilities              |
+| `devinfra/claude/web_env/re/environment_manager/README.md` | Target binary table, source tree, CLI docs |
+| `devinfra/claude/web_env/re/process_api/README.md`         | Target binary, new features                |
+| `devinfra/claude/web_env/re/*/NEW_BUILDID/README.md`       | Per-version details                        |
+| `devinfra/claude/web_env/re/*/NEW_BUILDID/PLAN.md`         | Reconstruction status                      |
 
 For `environment_discovery.md`, verify:
 

@@ -1,0 +1,11 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "envtype",
+    srcs = ["envtype.go"],
+    importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/envtype",
+    visibility = ["//devinfra/claude/web_env/re/environment_manager/a6f96673/src:__subpackages__"],
+    deps = [
+        "//devinfra/claude/web_env/re/environment_manager/a6f96673/src/internal/config",
+    ],
+)

@@ -69,7 +69,7 @@ buildifier(
 # Go static analysis via rules_go nogo.
 # Runs go vet analyzers on every go_library/go_binary compile action.
 # TODO: Add third-party analyzers (staticcheck, errcheck) and a nogo_config.json
-# to exclude vendored code (claude_web_env/re/).
+# to exclude vendored code (devinfra/claude/web_env/re/).
 nogo(
     name = "nogo",
     vet = True,

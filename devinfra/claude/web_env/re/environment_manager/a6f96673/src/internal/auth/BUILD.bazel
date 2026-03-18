@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "auth",
+    srcs = [
+        "context.go",
+        "github_source_provider.go",
+    ],
+    importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/auth",
+    visibility = ["//devinfra/claude/web_env/re/environment_manager/a6f96673/src:__subpackages__"],
+    deps = [
+        "//devinfra/claude/web_env/re/environment_manager/a6f96673/src/internal/o11y/diag",
+    ],
+)

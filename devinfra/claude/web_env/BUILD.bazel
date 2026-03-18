@@ -1,0 +1,4 @@
+exports_files(
+    ["exclusions.yaml"],
+    visibility = ["//devinfra/claude/web_env:__subpackages__"],
+)

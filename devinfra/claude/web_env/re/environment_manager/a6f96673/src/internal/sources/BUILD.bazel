@@ -1,0 +1,18 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "sources",
+    srcs = [
+        "git.go",
+        "sources.go",
+    ],
+    importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/sources",
+    visibility = ["//devinfra/claude/web_env/re/environment_manager/a6f96673/src:__subpackages__"],
+    deps = [
+        "//devinfra/claude/web_env/re/environment_manager/a6f96673/src/internal/auth",
+        "//devinfra/claude/web_env/re/environment_manager/a6f96673/src/internal/config",
+        "//devinfra/claude/web_env/re/environment_manager/a6f96673/src/internal/gitproxy",
+        "//devinfra/claude/web_env/re/environment_manager/a6f96673/src/internal/o11y",
+        "//devinfra/claude/web_env/re/environment_manager/a6f96673/src/internal/o11y/diag",
+    ],
+)

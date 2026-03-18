@@ -11103,7 +11103,7 @@ spec:
           limits:
             cpu: 1000m
             # TODO: strip large binary blobs from git history to reduce pack size
-            # (currently 922 MiB: claude_web_env/reference/environment-manager.gz,
+            # (currently 922 MiB: devinfra/claude/web_env/reference/environment-manager.gz,
             # adgn/src/adgn/props/specimens/ducktape/specimens.bundle, etc.)
             # Use git filter-repo then force-push. Until then, 2Gi needed to clone.
             memory: 2Gi

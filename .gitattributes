@@ -24,9 +24,9 @@ package-lock.json linguist-generated=true
 requirements_bazel.txt linguist-generated=true
 
 # Artifacts captured from live Claude Code containers — not our source code
-claude_web_env/rootfs/** rules-lint-ignored=true
-claude_web_env/reference/** rules-lint-ignored=true
-claude_web_env/live-dpkg-versions.txt rules-lint-ignored=true
+devinfra/claude/web_env/rootfs/** rules-lint-ignored=true
+devinfra/claude/web_env/reference/** rules-lint-ignored=true
+devinfra/claude/web_env/live-dpkg-versions.txt rules-lint-ignored=true
 
 # Terraform/k8s - kebab-case is conventional in HCL and k8s manifests
 # TODO: Consider renaming cluster/terraform/01-infrastructure/ and terraform/nixos-dev-env/

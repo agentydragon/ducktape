@@ -113,7 +113,7 @@ gVisor's ~60-70 keyring quota limit.
 **No action required** — the fix is applied automatically for all `podman build`
 and `podman run` operations.
 
-See `claude_web_env/docs/sandbox-investigation.md` for technical details on why
+See `devinfra/claude/web_env/docs/sandbox-investigation.md` for technical details on why
 this fix is necessary.
 
 ## Verifying shared library completeness

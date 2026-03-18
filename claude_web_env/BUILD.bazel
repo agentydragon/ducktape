@@ -1,4 +1,0 @@
-exports_files(
-    ["exclusions.yaml"],
-    visibility = ["//claude_web_env:__subpackages__"],
-)
