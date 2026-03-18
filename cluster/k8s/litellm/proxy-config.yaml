@@ -4,6 +4,7 @@ model_list:
     litellm_params:
       model: openai/gpt-oss:20b
       api_base: http://ollama.ollama.svc.cluster.local:11434/v1
+      api_key: ollama
     model_info:
       mode: chat
       supports_function_calling: true
@@ -11,6 +12,7 @@ model_list:
     litellm_params:
       model: openai/gpt-oss:20b
       api_base: http://ollama.ollama.svc.cluster.local:11434/v1
+      api_key: ollama
       extra_body:
         options:
           num_ctx: 262144
@@ -21,6 +23,7 @@ model_list:
     litellm_params:
       model: openai/gpt-oss:20b
       api_base: http://ollama.ollama.svc.cluster.local:11434/v1
+      api_key: ollama
       extra_body:
         options:
           num_ctx: 524288
@@ -31,6 +34,7 @@ model_list:
     litellm_params:
       model: openai/gpt-oss:20b
       api_base: http://ollama.ollama.svc.cluster.local:11434/v1
+      api_key: ollama
       extra_body:
         options:
           num_ctx: 1048576
@@ -78,6 +82,7 @@ model_list:
     litellm_params:
       model: openai/gpt-oss:120b
       api_base: http://ollama.ollama.svc.cluster.local:11434/v1
+      api_key: ollama
     model_info:
       mode: chat
       supports_function_calling: true
