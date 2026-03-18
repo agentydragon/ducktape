@@ -162,13 +162,11 @@ func BootVM(t *testing.T, name string, vmlinuz, initramfs string, kernelArgs str
 	args = append(args, meshNICs...)
 	args = append(args, mgmtArgs...)
 
-	fmt.Fprintf(os.Stderr, "[diag] BootVM %s: starting QEMU with %d args\n", name, len(args))
 	v := StartVM(t, name, exec.Command("qemu-system-x86_64", args...))
 	v.t = t
 	v.probeAddr = fmt.Sprintf("127.0.0.1:%d", probePort)
 	v.cosiAddr = cosiAddr
 	v.forwards = forwards
-	fmt.Fprintf(os.Stderr, "[diag] BootVM %s: started, probe=%s cosi=%s\n", name, v.probeAddr, v.cosiAddr)
 	return v
 }
 
@@ -189,35 +187,22 @@ func StartVM(t *testing.T, name string, cmd *exec.Cmd) *VM {
 		cmd:  cmd,
 	}
 
-	fmt.Fprintf(os.Stderr, "[diag] StartVM %s: calling cmd.Start()\n", name)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start QEMU %s: %v", name, err)
 	}
-	fmt.Fprintf(os.Stderr, "[diag] StartVM %s: QEMU pid=%d\n", name, cmd.Process.Pid)
 
 	go func() {
 		defer close(v.Done)
 		scanner := bufio.NewScanner(stdout)
 		scanner.Buffer(make([]byte, 0, 256*1024), 256*1024)
-		lineCount := 0
 		for scanner.Scan() {
 			line := scanner.Text()
-			lineCount++
-			if lineCount <= 5 || strings.Contains(line, "kubespand") || strings.Contains(line, "apid") ||
-				strings.Contains(line, "trustd") || strings.Contains(line, "CSR") || strings.Contains(line, "cert") ||
-				strings.Contains(line, "ERROR") || strings.Contains(line, "FATAL") || strings.Contains(line, "panic") ||
-				strings.Contains(line, "ready") || strings.Contains(line, "identity") || strings.Contains(line, "discovery") ||
-				strings.Contains(line, "api.") || strings.Contains(line, "listening") {
-				fmt.Fprintf(os.Stderr, "[diag] %s line %d: %s\n", name, lineCount, line)
-			}
 			v.mu.Lock()
 			v.rawLog.WriteString(line)
 			v.rawLog.WriteByte('\n')
 			v.mu.Unlock()
 		}
-		fmt.Fprintf(os.Stderr, "[diag] %s: QEMU output ended after %d lines, err=%v\n", name, lineCount, scanner.Err())
 		cmd.Wait()
-		fmt.Fprintf(os.Stderr, "[diag] %s: QEMU exited\n", name)
 	}()
 
 	return v
@@ -416,7 +401,6 @@ func (v *VM) ForwardAddr(guestPort int) string {
 // forwarded mgmt port until it responds (or times out).
 func WaitForDiscoveryHTTP(t *testing.T, addr string, timeout time.Duration) {
 	t.Helper()
-	fmt.Fprintf(os.Stderr, "[diag] WaitForDiscoveryHTTP: addr=%s timeout=%v\n", addr, timeout)
 	deadline := time.Now().Add(timeout)
 	url := fmt.Sprintf("http://%s/", addr)
 	client := &http.Client{Timeout: 2 * time.Second}

@@ -3,7 +3,6 @@ package kubespan_test
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -14,7 +13,6 @@ import (
 )
 
 func runTopology(t *testing.T, topology string, workerType h.NodeType) {
-	fmt.Fprintf(os.Stderr, "[diag] runTopology: topology=%s workerType=%s\n", topology, workerType)
 	sw := h.NewStopwatch(t)
 
 	vmlinuz := h.RunfilePath(t, h.VmlinuzPath)
