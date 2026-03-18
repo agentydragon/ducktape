@@ -301,19 +301,132 @@ The local daemon (Phase 3) is a natural stepping stone — it proves
 the protocol and client, and the centralized version is just moving
 where the daemon runs.
 
-## Open Questions
+## Claude Code Hook Transport Types
 
-- **`Setup` hook** (now documented): Reverse-engineered from v2.1.77 binary.
-  Setup is a separate lifecycle event from SessionStart, fired _before_
-  SessionStart in the startup sequence. Input schema:
-  `{...baseFields, hook_event_name: "Setup", trigger: "init" | "maintenance"}`.
-  Invoked via hidden CLI flags: `--init` (trigger=init, continue),
-  `--init-only` (trigger=init + SessionStart:startup, then exit),
-  `--maintenance` (trigger=maintenance, continue). Setup hooks receive
-  `CLAUDE_ENV_FILE` (separate file from SessionStart's). Like SessionStart,
-  only command hooks are supported (HTTP hooks skipped). Progress output is
-  shown to the user. This could be useful for one-time repo setup vs
-  per-session init, or for the daemon's maintenance cycle (Phase 3).
+Claude Code supports two hook transport types, with different event coverage:
+
+### Command hooks (`"type": "command"`)
+
+Runs a local command, passes JSON on stdin, reads JSON from stdout. **Supported
+for all hook events.** This is our current approach (uvx → `hook_dispatch.py`).
+
+### HTTP hooks (`"type": "http"`)
+
+POSTs JSON to a URL, reads JSON from the response body. Configured in
+`settings.json`:
+
+```json
+{
+  "type": "http",
+  "url": "http://localhost:8080/hooks/pre-tool-use",
+  "timeout": 30,
+  "headers": {
+    "Authorization": "Bearer $MY_TOKEN"
+  },
+  "allowedEnvVars": ["MY_TOKEN"]
+}
+```
+
+**Only supported for a subset of events**: `PermissionRequest`, `PostToolUse`,
+`PostToolUseFailure`, `PreToolUse`, `Stop`, `SubagentStop`, `TaskCompleted`,
+`UserPromptSubmit`.
+
+**NOT supported (command-only)**: `Setup`, `SessionStart`, `ConfigChange`,
+`Elicitation`, `ElicitationResult`, `InstructionsLoaded`, `Notification`,
+`PostCompact`, `PreCompact`, `SessionEnd`, `SubagentStart`, `TeammateIdle`,
+`WorktreeCreate`, `WorktreeRemove`.
+
+HTTP hooks that target unsupported events are skipped with a warning.
+
+### Implications for daemon design (Phase 3)
+
+HTTP hooks are a natural fit for the hook daemon architecture: the daemon
+listens on `localhost:<port>`, and hooks are configured as HTTP hooks pointing
+at it. This eliminates the uvx + import overhead entirely — Claude Code
+makes a direct HTTP POST to the daemon.
+
+**However**, `Setup` and `SessionStart` are command-only events. The daemon
+cannot receive these via HTTP hooks. Two options:
+
+1. **Hybrid**: Use command hooks for `Setup`/`SessionStart` (which start the
+   daemon) and HTTP hooks for `PreToolUse`/`PostToolUse` (high-frequency
+   events where latency matters).
+2. **Command client**: Keep a thin command-hook client for all events. The
+   client reads stdin, POSTs to the daemon, writes the response. This avoids
+   the transport type split but still pays ~50ms command startup.
+
+Option 1 is preferred — it uses native HTTP hooks for the hot path while
+accepting command hooks for the infrequent lifecycle events.
+
+### HTTP hook error semantics
+
+- **2xx with empty body**: success (like exit code 0)
+- **2xx with JSON body**: success, parsed as standard hook output
+- **2xx with plain text**: success, text added as context
+- **Non-2xx / timeout / connection failure**: non-blocking error, execution
+  continues. To block an action, return 2xx with JSON containing the
+  appropriate decision field (e.g., `"decision": "block"`).
+
+## Setup Hook Invocation Path
+
+The Setup hook is invoked by Claude Code before SessionStart, triggered by
+the `environment-manager` binary during session orchestration.
+
+### Invocation chain
+
+```
+process_api (PID 1, Rust)
+    │  listens on 0.0.0.0:2024 (WebSocket)
+    │  receives session parameters from Anthropic control plane
+    │
+    └──► environment-manager orchestrator
+           │  --api-url, --service-key-file, --environment-id, ...
+           │  manages Claude Code lifecycle
+           │
+           └──► claude (Node.js)
+                  │  --init / --init-only / --maintenance (hidden flags)
+                  │  fires Setup hook before SessionStart
+                  │
+                  ├── Setup hook (trigger=init or maintenance)
+                  │     └──► our command hook (uvx claude-hook Setup ...)
+                  │           writes to CLAUDE_ENV_FILE (separate from SessionStart's)
+                  │
+                  └── SessionStart hook (trigger=startup)
+                        └──► our command hook (uvx claude-hook SessionStart ...)
+                              writes to CLAUDE_ENV_FILE
+```
+
+### When Setup hooks fire
+
+- **`--init`**: trigger=init, Claude Code continues to SessionStart after Setup
+- **`--init-only`**: trigger=init, fires SessionStart:startup, then exits
+- **`--maintenance`**: trigger=maintenance, Claude Code continues after Setup
+
+The `environment-manager orchestrator` subcommand manages the Claude Code
+process lifecycle. It launches Claude Code with the appropriate init flags
+based on session state (new session → init, existing session → maintenance).
+
+### Relevance to hook package installation
+
+Setup hooks fire _before_ SessionStart. This means:
+
+- Setup hooks cannot rely on packages installed by SessionStart (e.g., our
+  hook uv environment).
+- The hook command configured for Setup must be available _before_ any
+  session-specific setup runs.
+- For the daemon (Phase 3), the daemon cannot be started by a Setup hook
+  because the daemon depends on session state (k8s secrets, proxy config)
+  that SessionStart provides.
+- **Practical implication**: Our hook packages must either be pre-installed
+  in the container image or installed by the Setup hook itself using a
+  bootstrap mechanism that doesn't depend on SessionStart's environment.
+
+Currently, the hook uv environment is lazily created on first `uvx` invocation
+(the cached wheel is pre-installed). This works because uvx handles environment
+creation transparently. For the daemon approach, the daemon would be started
+by SessionStart (not Setup), which is after hook packages are already available.
+
+## Open Questions
 
 - **`CLAUDE_ENV_FILE` re-sourcing**: Confirmed that Claude Code re-sources
   the env file on every Bash tool call. This means a background process

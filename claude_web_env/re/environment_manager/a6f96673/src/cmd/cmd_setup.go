@@ -60,13 +60,50 @@ func AddSetupCommand(rootCmd *cobra.Command) {
 	//   Example (offset 0x70+0x78): 0x23c=572 chars usage examples
 	setupCmd := &cobra.Command{
 		Use:   "setup",
-		Short: "Set up the environment for a Claude session",
-		Long:  `Set up the environment for a Claude session. This command initializes the environment by installing dependencies, configuring git signing, registering MCP servers, and setting up tunnels. It reads the environment configuration from the API and applies it locally.`,
-		Example: `  # Basic usage
-  environment-runner setup --session-id=abc --secret-path=/path/to/key --api-url=https://api.example.com
+		Short: "Install dependencies for orchestrator mode",
+		Long: `The setup command pre-installs all required dependencies for orchestrator mode.
 
-  # With metrics enabled
-  environment-runner setup --session-id=abc --secret-path=/path/to/key --api-url=https://api.example.com --metrics-enabled`,
+This command is intended to be run during container image build to ensure that
+all dependencies are available when the worker starts. It installs:
+
+  - Claude Code (@anthropic-ai/claude-code) via npm
+  - Sandbox Runtime (@anthropic-ai/sandbox-runtime) via npm
+
+Running setup does NOT disable auto-updates. The orchestrator and task-run
+commands still check for updates on each session. The benefit of running setup
+is faster first session startup since dependencies are pre-installed.
+
+Prerequisites:
+  - npm must be available in PATH (comes with Node.js)
+  - Node.js must be installed (for running the installed packages)
+
+Optionally, provide an environment service key to verify API connectivity:
+  --service-key-file /path/to/key    Verify environment can reach the API
+
+The healthcheck calls /v1/environments/whoami to validate the service key
+and confirm network connectivity. Recommended for manual testing.
+
+Note: Language runtimes (Node.js, Python, Go) must be pre-installed in the
+container image. The environment manager only creates symlinks to these during
+session initialization.`,
+		Example: `  # Basic usage - install everything with defaults (no healthcheck)
+  environment-runner setup
+
+  # Specify versions
+  environment-runner setup --claude-code-version 2.0.20 --sandbox-runtime-version 1.2.3
+
+  # Skip certain installations
+  environment-runner setup --skip-sandbox-runtime
+
+  # Setup with healthcheck - for manual testing
+  environment-runner setup --service-key-file /path/to/key
+
+  # Setup with healthcheck via env var
+  export ENVIRONMENT_SERVICE_KEY="sk-ant-..."
+  environment-runner setup
+
+  # Verbose output
+  environment-runner setup --log-level debug`,
 		// Binary: 0xb772a0 - AddSetupCommand.func1
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSetup(cmd.Context(), logLevel, claudeCodeVersion, sandboxRuntimeVersion, skipClaudeCode, skipSandboxRuntime, apiURL, serviceKeyFile)

@@ -417,19 +417,44 @@ environment-manager task-run --session=<id> --input-format=v1
 
 ## RE Source vs Binary Discrepancies
 
-The reconstructed source in `a6f96673/src/cmd/` has **stale flag names** that
-don't match the live binary's `--help` output. The binary is ground truth.
+All previously identified discrepancies have been resolved. The reconstructed
+source in `a6f96673/src/cmd/` now matches the live binary's `--help` output.
 
-| RE Source Flag             | Actual Binary Flag       | Notes                           |
-| -------------------------- | ------------------------ | ------------------------------- |
-| `--secret-path`            | `--service-key-file`     | Renamed                         |
-| `--session-id`             | `--environment-id`       | Renamed (orchestrator)          |
-| `--hook-command`           | `--execute-hook`         | Renamed                         |
-| `--hook-timeout`           | `--execute-hook-timeout` | Renamed                         |
-| `--session-timeout`        | `--loop-timeout`         | Renamed                         |
-| `--sandbox-enabled`        | (removed)                | Replaced by `--sandbox-backend` |
-| `--task-command`           | `--execute-hook`         | Consolidated                    |
-| `--work-id` (orchestrator) | `--client-id`            | Renamed                         |
+Previously fixed discrepancies (for historical reference):
 
-The RE source was reconstructed from an earlier analysis pass. The flag names,
-descriptions, and defaults in this document are from the **live binary**.
+| Old RE Source Flag         | Corrected To              | Subcommand   |
+| -------------------------- | ------------------------- | ------------ |
+| `--secret-path`            | `--service-key-file`      | All          |
+| `--session-id`             | `--environment-id`        | orchestrator |
+| `--hook-command`           | `--execute-hook`          | orchestrator |
+| `--hook-timeout`           | `--execute-hook-timeout`  | orchestrator |
+| `--session-timeout`        | `--loop-timeout`          | orchestrator |
+| `--sandbox-enabled`        | (removed)                 | orchestrator |
+| `--task-command`           | `--execute-hook`          | orchestrator |
+| `--work-id` (orchestrator) | `--client-id`             | orchestrator |
+| `--poll-interval`          | `--poll-timeout`          | orchestrator |
+| `--max-poll-retries`       | `--max-poll-failures`     | orchestrator |
+| `--max-hook-retries`       | (removed)                 | orchestrator |
+| `--session-backoff`        | (removed)                 | orchestrator |
+| `--log-file`               | `--log-level`             | orchestrator |
+| `--mode`                   | (removed)                 | orchestrator |
+| `--session-id` (poll)      | `--environment-id`        | poll         |
+| `--work-id` (poll)         | `--worker-id`             | poll         |
+| `--secret-key-env`         | (removed)                 | poll         |
+| `--max-poll-retries`       | `--reclaim-older-than-ms` | poll         |
+| `--log-file` (poll)        | `--log-level`             | poll         |
+| `--api-url` (task-run)     | (removed)                 | task-run     |
+| `--work-id` (task-run)     | (removed)                 | task-run     |
+| `--output-file`            | (removed)                 | task-run     |
+| `--working-dir`            | `--working-directory`     | task-run     |
+| `--script-path`            | `--claude-path`           | task-run     |
+| `--sandbox-enabled`        | (removed)                 | task-run     |
+| `--sandbox-command`        | (removed)                 | task-run     |
+| `--sandbox-disabled`       | (removed)                 | task-run     |
+| `--sandbox-backend`        | (removed)                 | task-run     |
+| `--log-file` (task-run)    | (removed)                 | task-run     |
+| `--secret-path` (task-run) | (removed)                 | task-run     |
+| `--enable-telemetry`       | (removed)                 | task-run     |
+| `--metrics-enabled`        | (removed)                 | task-run     |
+| `--session-id` (task-run)  | `--session`               | task-run     |
+| `--secret-key`             | (removed)                 | task-run     |

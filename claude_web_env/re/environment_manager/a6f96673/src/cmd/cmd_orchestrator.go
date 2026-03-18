@@ -29,35 +29,70 @@ import (
 // Source: cmd/cmd_orchestrator.go
 func AddOrchestratorCommand(rootCmd *cobra.Command) {
 	var apiURL string
-	var secretPath string
-	var sessionID string
-	var workID string
-	var pollInterval time.Duration
-	var hookTimeout time.Duration
-	var maxPollRetries int
-	var maxHookRetries int
-	var hookCommand string
-	var taskCommand string
-	var sessionTimeout time.Duration
-	var sessionBackoff time.Duration
-	var sandboxBackend string
-	var logFile string
-	var mode string
-	var sandboxEnabled bool
+	var clientID string
+	var environmentID string
+	var executeHook string
+	var executeHookTimeout time.Duration
 	var logLevel string
+	var loopTimeout time.Duration
+	var maxPollFailures int
+	var organizationID string
+	var pollHook string
+	var pollHookTimeout time.Duration
+	var pollTimeout time.Duration
+	var reclaimOlderThanMs int
+	var sandboxBackend string
+	var sandboxSettings string
+	var serviceKeyFile string
+	var skipContainerLock bool
+	var skipGitConfig bool
+	var timeoutHook string
+	var timeoutHookTimeout time.Duration
 
 	orchCmd := &cobra.Command{
 		Use:   "orchestrator",
-		Short: "Run the session orchestrator polling loop",
-		Long:  `Run the session orchestrator that polls for available sessions and dispatches them to hook commands. The orchestrator runs as a long-lived process, continuously polling the API for work and executing the configured hook command when sessions are received. It supports configurable poll intervals, timeouts, retry policies, and sandbox wrapping.`,
-		Example: `  # Basic usage (identity discovered via whoami, worker-id defaults to hostname)
-  environment-runner orchestrator --api-url=https://api.example.com --secret-path=/path/to/key --session-id=abc
+		Short: "Poll for session tasks and hand off for execution",
+		Long: `The orchestrator command polls the API for session tasks and handing off work to be executed.
 
-  # With custom hook command
-  environment-runner orchestrator --api-url=https://api.example.com --secret-path=/path/to/key --session-id=abc --hook-command="/usr/bin/my-hook"
+It handles:
+- Discovering environment identity via the /v1/environments/whoami endpoint
+- Polling the environments API work/poll endpoint
+- Executing work:
+  - With --execute-hook: pipes JSON to hook via stdin and exits with hook's exit code
+  - Without --execute-hook: auto-invokes 'task-run --input-format=v1'
+    - With --sandbox-backend=sandbox-runtime (default): wraps execution in sandbox
+    - With --sandbox-backend=none: runs without sandbox (logs warning)
+- Running timeout hooks for periodic maintenance (e.g., monorepo updates)
+- Sleeping with jitter when queue is empty
+- Graceful shutdown on SIGTERM/SIGINT
 
-  # Basic usage with sandbox (recommended - identity discovered via whoami)
-  environment-runner orchestrator --api-url=https://api.example.com --secret-path=/path/to/key --session-id=abc --sandbox-backend=bubblewrap`,
+Required environment variable:
+  ENVIRONMENT_SERVICE_KEY: Service key for the environment
+
+The environment ID and organization ID are discovered automatically via the whoami
+endpoint. You can optionally provide --environment-id and --organization-id flags
+to validate them against the token's identity.`,
+		Example: `  # Basic usage with sandbox (recommended - identity discovered via whoami)
+  export ENVIRONMENT_SERVICE_KEY="your-environment-service-key"
+  environment-runner orchestrator
+
+  # With explicit IDs for validation
+  export ENVIRONMENT_SERVICE_KEY="your-environment-service-key"
+  environment-runner orchestrator \
+    --environment-id "env_01ABC123" \
+    --organization-id "org_01XYZ789"
+
+  # With custom execute hook to handle sessions
+  export ENVIRONMENT_SERVICE_KEY="your-environment-service-key"
+  environment-runner orchestrator \
+    --environment-id "env_01ABC123" \
+    --organization-id "org_01XYZ789" \
+    --execute-hook "./handle-session.sh"
+
+  # Without sandbox (auto-invokes task-run without sandboxing)
+  export ENVIRONMENT_SERVICE_KEY="your-environment-service-key"
+  environment-runner orchestrator \
+    --sandbox-backend none`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Binary: 0xb73960 - AddOrchestratorCommand.func1 (1577 lines of asm)
 
@@ -73,33 +108,29 @@ func AddOrchestratorCommand(rootCmd *cobra.Command) {
 			// Binary: 0xb73ad0-0xb73dd4 — builds 7 slog.Attr key-value pairs and calls log.Info
 			log.Info("Starting orchestrator",
 				"api-url", apiURL,
-				"secret-path", secretPath,
-				"session-id", sessionID,
-				"work-id", workID,
+				"service-key-file", serviceKeyFile,
+				"environment-id", environmentID,
+				"client-id", clientID,
 				"sandbox-backend", sandboxBackend,
-				"poll-interval", pollInterval,
-				"sandbox-enabled", sandboxEnabled,
+				"poll-timeout", pollTimeout,
 			)
 
-			// Step 3: If sandbox enabled, log long sandbox info message.
-			// Binary: 0xb73e1f CMPB sandbox_enabled, 0xb73e55 log call with 0xd6-length string
-			if sandboxEnabled {
-				log.Info("Sandbox mode enabled. The orchestrator will wrap task execution in a sandboxed environment. This provides isolation for running untrusted code. The sandbox backend determines the isolation technology used (e.g., bubblewrap for Linux namespaces).")
-			}
-
-			// Step 4: Acquire container-level lock.
+			// Step 3: Acquire container-level lock (unless --skip-container-lock).
 			// Binary: 0xb73e86 AcquireContainerLock
-			cleanup, err := util.AcquireContainerLock(context.Background(), "orchestrator", sessionID)
+			if skipContainerLock {
+				log.Warn("Skipping container-level lock (--skip-container-lock)")
+			}
+			cleanup, err := util.AcquireContainerLock(context.Background(), "orchestrator", environmentID)
 			if err != nil {
 				return fmt.Errorf("failed to acquire container lock: %w", err)
 			}
 			defer cleanup()
 
-			// Step 5: Read secret from file or env var.
+			// Step 4: Read secret from file or env var.
 			// Binary: 0xb73f60 os.ReadFile, 0xb74065 TrimSpace, 0xb74080 os.Getenv
 			var secret string
-			if secretPath != "" {
-				data, err := os.ReadFile(secretPath)
+			if serviceKeyFile != "" {
+				data, err := os.ReadFile(serviceKeyFile)
 				if err != nil {
 					return fmt.Errorf("failed to read secret file: %w", err)
 				}
@@ -108,9 +139,9 @@ func AddOrchestratorCommand(rootCmd *cobra.Command) {
 				secret = os.Getenv("ENVIRONMENT_SERVICE_KEY")
 			}
 
-			// Step 6: Discover identity via whoami.
+			// Step 5: Discover identity via whoami.
 			// Binary: 0xb740c0 NewWhoamiClient, 0xb740e4 GetIdentity
-			whoamiClient := orchestrator.NewWhoamiClient(apiURL, secret, sessionID, log)
+			whoamiClient := orchestrator.NewWhoamiClient(apiURL, secret, environmentID, log)
 			identity, err := whoamiClient.GetIdentity(context.Background())
 			if err != nil {
 				log.Warn("Failed to get identity via whoami",
@@ -125,14 +156,14 @@ func AddOrchestratorCommand(rootCmd *cobra.Command) {
 
 			// Step 7: Create poller (either PollHook or regular Poller).
 			// Binary: 0xb7470a NewPollHook, 0xb7476c NewPollerWithWorkerID
-			// If hookCommand is set, use PollHook; otherwise use regular Poller
+			// If pollHook is set, use PollHook; otherwise use regular Poller
 			var poller orchestrator.PollerInterface
-			if hookCommand != "" {
-				// Create PollHook when hook command is specified
-				poller = orchestrator.NewPollHook(nil, hookCommand, hookTimeout, nil, sandboxEnabled, sandboxBackend, nil, log)
+			if pollHook != "" {
+				// Create PollHook when poll hook command is specified
+				poller = orchestrator.NewPollHook(nil, pollHook, pollHookTimeout, nil, sandboxBackend, nil, log)
 			} else {
 				// Create regular Poller when no hook command
-				poller = orchestrator.NewPollerWithWorkerID(apiURL, sessionID, secret, secretPath, workID, log)
+				poller = orchestrator.NewPollerWithWorkerID(apiURL, environmentID, secret, serviceKeyFile, clientID, log)
 			}
 
 			// Step 8: Install sandbox runtime if configured.
@@ -159,7 +190,7 @@ func AddOrchestratorCommand(rootCmd *cobra.Command) {
 
 			// Step 10: Create orchestrator.
 			// Binary: 0xb75421 NewOrchestrator
-			orch, err := orchestrator.NewOrchestrator(poller, sessionID, sessionTimeout, sessionBackoff, mode, log)
+			orch, err := orchestrator.NewOrchestrator(poller, environmentID, loopTimeout, executeHookTimeout, sandboxBackend, log)
 			if err != nil {
 				return fmt.Errorf("failed to create orchestrator: %w", err)
 			}
@@ -202,22 +233,27 @@ func AddOrchestratorCommand(rootCmd *cobra.Command) {
 	// Register all flags.
 	// Binary: 0xb734ca-0xb73920+
 	orchCmd.Flags().StringVar(&apiURL, "api-url", "https://api.anthropic.com", "API base URL")
-	orchCmd.Flags().StringVar(&secretPath, "secret-path", "", "Path to environment service key file for API authentication. Falls back to ENVIRONMENT_SERVICE_KEY env var if not set.")
-	orchCmd.Flags().StringVar(&sessionID, "session-id", "", "Session identifier for polling. Required for session-based orchestration.")
-	orchCmd.Flags().StringVar(&workID, "work-id", "", "Work identifier for acknowledging work items from the API.")
-	orchCmd.Flags().DurationVar(&pollInterval, "poll-interval", 5*time.Minute, "Interval between poll requests")
-	orchCmd.Flags().DurationVar(&hookTimeout, "hook-timeout", 5*time.Minute, "Maximum time to wait for hook command execution")
-	orchCmd.Flags().IntVar(&maxPollRetries, "max-poll-retries", 0, "Maximum number of consecutive poll failures before giving up (0 = unlimited)")
-	orchCmd.Flags().IntVar(&maxHookRetries, "max-hook-retries", 0, "Maximum number of hook execution retries before reporting failure. Each retry uses exponential backoff.")
-	orchCmd.Flags().StringVar(&hookCommand, "hook-command", "", "Command to run when a session is received from polling")
-	orchCmd.Flags().StringVar(&taskCommand, "task-command", "", "Command to run with session JSON via stdin when task received. If not provided, defaults to self-invoking 'task-run --stdin --input-format=v1' (with or without sandbox based on --sandbox-backend)")
-	orchCmd.Flags().DurationVar(&sessionTimeout, "session-timeout", 5*time.Minute, "Maximum time to wait for a session before timing out")
-	orchCmd.Flags().DurationVar(&sessionBackoff, "session-backoff", 0, "Backoff duration between session polling cycles")
-	orchCmd.Flags().StringVar(&sandboxBackend, "sandbox-backend", "", "Sandbox backend to use for task execution (e.g., bubblewrap)")
-	orchCmd.Flags().StringVar(&logFile, "log-file", "", "Path to log file for diagnostic output")
-	orchCmd.Flags().StringVar(&mode, "mode", "", "Operating mode")
-	orchCmd.Flags().BoolVar(&sandboxEnabled, "sandbox-enabled", false, "Enable sandbox mode for task execution")
-	orchCmd.Flags().StringVar(&logLevel, "log-level", "", "Log level (debug, info, warn, error)")
+	orchCmd.Flags().StringVar(&clientID, "client-id", "", "Client ID (worker identifier, default: hostname)")
+	orchCmd.Flags().StringVar(&environmentID, "environment-id", "", "Environment ID (find at claude.ai/settings, e.g., env_01ABC123)")
+	orchCmd.Flags().StringVar(&executeHook, "execute-hook", "", "Command to run with session JSON via stdin when task received. If not provided, defaults to self-invoking 'task-run --stdin --input-format=v1' (with or without sandbox based on --sandbox-backend)")
+	orchCmd.Flags().DurationVar(&executeHookTimeout, "execute-hook-timeout", 0, "Timeout for execute hook (0 = no timeout, session lifetime controlled by API)")
+	orchCmd.Flags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
+	orchCmd.Flags().DurationVar(&loopTimeout, "loop-timeout", 5*time.Minute, "Loop timeout before triggering timeout hook")
+	orchCmd.Flags().IntVar(&maxPollFailures, "max-poll-failures", 0, "Maximum consecutive poll failures before exiting (0 = infinite)")
+	orchCmd.Flags().StringVar(&organizationID, "organization-id", "", "Organization ID (find at claude.ai/settings > Account)")
+	orchCmd.Flags().StringVar(&pollHook, "poll-hook", "", "Command to execute for polling instead of built-in Poller. Receives environment context via stdin, returns work JSON via stdout.")
+	orchCmd.Flags().DurationVar(&pollHookTimeout, "poll-hook-timeout", 30*time.Second, "Timeout for poll hook execution")
+	orchCmd.Flags().DurationVar(&pollTimeout, "poll-timeout", 5*time.Minute, "Poll request timeout duration")
+	orchCmd.Flags().IntVar(&reclaimOlderThanMs, "reclaim-older-than-ms", 0, "Reclaim unacknowledged work items older than this many milliseconds (0 = use API default of 5000ms)")
+	orchCmd.Flags().StringVar(&sandboxBackend, "sandbox-backend", "sandbox-runtime", `Sandbox backend for execute hook: none, sandbox-runtime.
+Use 'none' to disable sandboxing (allows running as non-root user).
+Use 'sandbox-runtime' (default) for sandboxed execution (requires root or unprivileged user namespaces).`)
+	orchCmd.Flags().StringVar(&sandboxSettings, "sandbox-settings", "", "Path to custom sandbox-runtime settings JSON file (must include Anthropic domains)")
+	orchCmd.Flags().StringVar(&serviceKeyFile, "service-key-file", "", "Path to file containing the environment service key. If not set, falls back to ENVIRONMENT_SERVICE_KEY environment variable")
+	orchCmd.Flags().BoolVar(&skipContainerLock, "skip-container-lock", false, "Skip container-level lock (WARNING: allows multiple sessions per container, use only for development/testing)")
+	orchCmd.Flags().BoolVar(&skipGitConfig, "skip-git-config", false, "Skip git configuration setup (use container's existing .gitconfig)")
+	orchCmd.Flags().StringVar(&timeoutHook, "timeout-hook", "", "Command to run on loop timeout (e.g., monorepo updates)")
+	orchCmd.Flags().DurationVar(&timeoutHookTimeout, "timeout-hook-timeout", 5*time.Minute, "Timeout for timeout hook execution (e.g., monorepo updates)")
 
 	rootCmd.AddCommand(orchCmd)
 }

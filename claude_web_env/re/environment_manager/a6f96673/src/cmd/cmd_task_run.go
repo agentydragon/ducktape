@@ -40,45 +40,47 @@ import (
 //
 //	AX = *cobra.Command (parent/root command)
 //
-// Flags registered (from pflag calls):
+// Flags registered (from live binary --help):
 //
-//	--api-url           (0x07=7 chars) StringVar, desc (0x26=38 chars)
-//	--work-id           (0x09=9 chars) StringVar, default "mode" (0x04), desc (0x24=36 chars)
-//	--stdin             (0x05=5 chars) BoolVarP, default false, desc (0x3b=59 chars)
-//	--output-file       (0x0c=12 chars) StringVar, short "o" (0x02), desc (0x6f=111 chars)
-//	--working-dir       (0x0c=12 chars) StringVar, short "dir" (0x03), desc (0xa0=160 chars)
-//	--script-path       (0x0d=13 chars) StringVar, desc (0xa0=160 chars)
-//	--input-format      (0x0d=13 chars) BoolVarP, desc (0x65=101 chars)
-//	--sandbox-enabled   (0x13=19 chars) BoolVarP, default 1, desc (0x6d=109 chars)
-//	--sandbox-command   (0x14=20 chars) StringVar, desc (0xcd=205 chars)
-//	--debug             (0x05=5 chars) BoolVarP, default false, desc (0x32=50 chars)
-//	--sandbox-disabled  (0x13=19 chars) BoolVarP, desc (0x65=101 chars)
-//	--sandbox-backend   (0x0f=15 chars) BoolVarP, desc (0x43=67 chars)
-//	--log-file          StringVar
-//	--secret-path       StringVar
+//	--allowed-tools              StringVar
+//	--claude-agent-version       StringVar
+//	--claude-path                StringVar
+//	--debug                      BoolVar
+//	--environment-id             StringVar
+//	--input-format               StringVar, default "v0"
+//	--local-append-system-prompt StringVar
+//	--local-testing              BoolVar
+//	--log-level                  StringVar, default "info"
+//	--organization-id            StringVar
+//	--print-code-logs            BoolVar
+//	--session                    StringVar
+//	--session-mode               StringVar, default "new"
+//	--skip-git-config            BoolVar
+//	--stdin                      BoolVar (deprecated)
+//	--upgrade-claude-code        BoolVar, default true (deprecated)
+//	--verbose-claude-logs        BoolVar
+//	--working-directory          StringVar, default "/root"
 func AddTaskRunCommand(rootCmd *cobra.Command) {
 	// Allocate flag storage variables.
 	// Binary: 0xb78365-0xb78492 - many runtime.newobject + mallocgc calls
-	var apiURL string         // offset 0xb0
-	var workID string         // offset 0xc8
-	var stdin bool            // offset 0x78[0] - byte 0 of 7-byte bool block
-	var outputFile string     // offset 0xe0
-	var workingDir string     // offset 0xa8
-	var scriptPath string     // offset 0x108
-	var inputFormat string    // offset 0x78[1-2] - bytes 1-2
-	var sandboxEnabled bool   // offset 0x78[3-5] - bytes 3-5
-	var sandboxCommand string // offset 0x100
-	var debug bool            // offset 0x78[6] - byte 6
-	var sandboxDisabled bool
-	var sandboxBackend string // offset 0x80
-	var logFile string        // offset 0xe8
-	var secretPath string     // offset 0xc0
-	var logLevel string       // offset 0xd8
-	var enableTelemetry bool
-	var metricsEnabled bool
+	var allowedTools string
+	var claudeAgentVersion string
+	var claudePath string
+	var debug bool
+	var environmentID string
+	var inputFormat string
+	var localAppendSystemPrompt string
+	var localTesting bool
+	var logLevel string
+	var organizationID string
+	var printCodeLogs bool
 	var sessionID string
-	var mode string
-	var secretKeyVar string // offset 0xf8
+	var sessionMode string
+	var skipGitConfig bool
+	var stdin bool
+	var upgradeClaudeCode bool
+	var verboseClaudeLogs bool
+	var workingDirectory string
 
 	// Create the cobra.Command.
 	// Binary: 0xb78492-0xb784db
@@ -87,8 +89,28 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 	// Long: 0x188=392 chars
 	taskRunCmd := &cobra.Command{
 		Use:   "task-run",
-		Short: "Execute a task script within a session",
-		Long:  `Execute a task script within a session context. This command runs a specified script or reads session context from stdin, optionally wrapping execution in a sandbox for security. It supports work acknowledgment, output file capture, and configurable sandbox backends.`,
+		Short: "Handles execution of a provided session",
+		Long: `Connects directly to the API to execute an existing session id.
+
+Provide a JSON object via stdin with the following structure:
+{
+  "startup_context": {
+    "sources": [...],
+    "cwd": "..."
+  },
+  "environment": {
+    "environment_type": "...",
+    "version": "...",
+    ...
+  },
+  "auth": [
+    {
+      "type": "github_app",
+      "url": "github.com",
+      "token": "ghs_..."
+    }
+  ]
+}`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Binary: 0xb78b80 - AddTaskRunCommand.func1
 			// Contains func1.1 at 0xb7b0a0 and func1.3 at 0xb7af60
@@ -136,7 +158,7 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 			defer lockRelease()
 
 			// 0xb78f26: Parse session mode
-			sessionMode, err := config.ParseSessionMode(mode)
+			parsedSessionMode, err := config.ParseSessionMode(sessionMode)
 			if err != nil {
 				return fmt.Errorf("failed to parse session mode: %w", err)
 			}
@@ -148,8 +170,8 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 			parsedCtx, err := loadContextFromStdin(
 				slogger,
 				inputFormat,
-				secretPath,
-				secretKeyVar,
+				"", // secretPath (read from env or stdin in v1 format)
+				"", // secretKeyVar
 				sessionID,
 			)
 			if err != nil {
@@ -188,10 +210,10 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 			// 0xb79188: Acknowledge work if needed
 			err = acknowledgeWorkIfNeeded(
 				slogger,
-				apiURL,
-				secretPath,
+				"", // apiURL (from parsed context)
+				"", // secretPath
 				sess,
-				workID,
+				sess.WorkID,
 				envServiceKey,
 				parsedCtx != nil,
 			)
@@ -227,9 +249,9 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 			// No need to read it here.
 
 			// 0xb79654-0xb79672: Log custom executable path if set
-			if scriptPath != "" {
+			if claudePath != "" {
 				slogger.Info("Using custom executable path from CLI flag",
-					"script_path", scriptPath,
+					"claude_path", claudePath,
 				)
 			}
 
@@ -362,9 +384,9 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 				Logger:        slogger,
 				Config:        stdinClient,
 				SessionID:     sessionID,
-				APIBaseURL:    apiURL,
+				APIBaseURL:    "", // from parsed context
 				SessionConfig: parsedCtx,
-				SessionMode:   string(sessionMode),
+				SessionMode:   string(parsedSessionMode),
 			}
 			managerErr := mgr.Run(context.Background(), slogger)
 
@@ -428,26 +450,24 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 
 	// Register all flags.
 	// Binary: 0xb786e9-0xb78999+
-	taskRunCmd.Flags().StringVar(&apiURL, "api-url", "", "Base URL for the API for work acknowledgment")
-	taskRunCmd.Flags().StringVar(&workID, "work-id", "", "The work ID for acknowledging work items from the API")
-	taskRunCmd.Flags().BoolVar(&stdin, "stdin", false, "Read session context from stdin instead of using script-path. When enabled, expects JSON on stdin.")
-	taskRunCmd.Flags().StringVarP(&outputFile, "output-file", "o", "", "Path to write task output. If not specified, output goes to stdout. When specified, captures script stdout/stderr to this file.")
-	taskRunCmd.Flags().StringVarP(&workingDir, "working-dir", "d", "", "Working directory for script execution. Defaults to current directory. The script will be executed with this as its working directory.")
-	taskRunCmd.Flags().StringVar(&scriptPath, "script-path", "", "Path to the script to execute. Required unless --stdin is used. The script must be executable.")
-	taskRunCmd.Flags().StringVar(&inputFormat, "input-format", "v1", "Input format version for stdin parsing. Use 'v0' for legacy format or 'v1' for the work response format.")
-	taskRunCmd.Flags().BoolVar(&sandboxEnabled, "sandbox-enabled", true, "Enable sandbox wrapping for script execution. When enabled, the script runs inside a security sandbox.")
-	taskRunCmd.Flags().StringVar(&sandboxCommand, "sandbox-command", "", "Custom sandbox command to use for wrapping script execution. Overrides the default sandbox binary. Supports multiple sandbox backends with configurable security profiles.")
-	taskRunCmd.Flags().BoolVar(&debug, "debug", false, "Enable debug mode with verbose logging for troubleshooting")
-	taskRunCmd.Flags().BoolVar(&sandboxDisabled, "sandbox-disabled", false, "Explicitly disable sandbox wrapping for script execution. Overrides --sandbox-enabled.")
-	taskRunCmd.Flags().StringVar(&sandboxBackend, "sandbox-backend", "", "Sandbox backend to use (e.g., bubblewrap, firecracker)")
-	taskRunCmd.Flags().StringVar(&logFile, "log-file", "", "Path to log file")
-	taskRunCmd.Flags().StringVar(&secretPath, "secret-path", "", "Path to secret key file")
+	taskRunCmd.Flags().StringVar(&allowedTools, "allowed-tools", "", "Comma-separated list of allowed tools for Claude (e.g., 'Bash,Edit,Write,MultiEdit,Agent,Glob,Grep,LS,View,Search,NotebookEdit,NotebookRead,TodoRead,TodoWrite')")
+	taskRunCmd.Flags().StringVar(&claudeAgentVersion, "claude-agent-version", "", "Target Claude Agent version (latest, current, stable, or specific version like 2.0.20), located at claude --version. Use 'current' to skip installation and updates. Defaults to 'latest' if not specified.")
+	taskRunCmd.Flags().StringVar(&claudePath, "claude-path", "", "Path to the Claude CLI executable or a wrapper binary. When specified, this executable runs instead of the default 'claude' command. Wrapper binaries must forward all arguments and connect stdin/stdout directly to Claude Code.")
+	taskRunCmd.Flags().BoolVar(&debug, "debug", false, "Enable debug mode when executing the Claude Agent.")
+	taskRunCmd.Flags().StringVar(&environmentID, "environment-id", "", "Environment ID for API calls (required for self-hosted)")
+	taskRunCmd.Flags().StringVar(&inputFormat, "input-format", "v0", `Input format for stdin data: 'v0' (startup_context/environment/auth) or 'v1' (work response with packed secret)`)
+	taskRunCmd.Flags().StringVar(&localAppendSystemPrompt, "local-append-system-prompt", "", "Additional system prompt content to append locally (useful for self-hosted environments to inject custom instructions)")
+	taskRunCmd.Flags().BoolVar(&localTesting, "local-testing", false, "Disable Claude WebSocket connections and git configuration (run in standalone mode for local testing)")
 	taskRunCmd.Flags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
-	taskRunCmd.Flags().BoolVar(&enableTelemetry, "enable-telemetry", false, "Enable OpenTelemetry reporting")
-	taskRunCmd.Flags().BoolVar(&metricsEnabled, "metrics-enabled", false, "Enable metrics collection")
-	taskRunCmd.Flags().StringVar(&sessionID, "session-id", "", "The session ID for this task run")
-	taskRunCmd.Flags().StringVar(&mode, "session-mode", "", "Session mode (new, resume, setup-only, resume-cached)")
-	taskRunCmd.Flags().StringVar(&secretKeyVar, "secret-key", "", "Secret key value for API authentication")
+	taskRunCmd.Flags().StringVar(&organizationID, "organization-id", "", "Organization ID for API calls (required for self-hosted)")
+	taskRunCmd.Flags().BoolVar(&printCodeLogs, "print-code-logs", false, "Print Claude Code logs to console when execution completes or fails")
+	taskRunCmd.Flags().StringVar(&sessionID, "session", "", "ID of the session to manage (required)")
+	taskRunCmd.Flags().StringVar(&sessionMode, "session-mode", "new", "Session mode: 'new' (default for Cloud), 'resume' (skip git clone and setup scripts), 'resume-cached' (default for self-hosted), 'setup-only' (exit after setup)")
+	taskRunCmd.Flags().BoolVar(&skipGitConfig, "skip-git-config", false, "Skip git configuration setup (use container's existing .gitconfig)")
+	taskRunCmd.Flags().BoolVar(&stdin, "stdin", false, "Deprecated: stdin is now always used. This flag is ignored.")
+	taskRunCmd.Flags().BoolVar(&upgradeClaudeCode, "upgrade-claude-code", true, "Deprecated: use --claude-agent-version instead. When true (default), upgrades Claude Agent to latest version.")
+	taskRunCmd.Flags().BoolVar(&verboseClaudeLogs, "verbose-claude-logs", false, "Enable verbose logging of Claude Agent output to console (automatically enabled with --local-testing)")
+	taskRunCmd.Flags().StringVar(&workingDirectory, "working-directory", "/root", "Default working directory for the session (used when session context doesn't specify cwd)")
 
 	// Add to root command.
 	rootCmd.AddCommand(taskRunCmd)
