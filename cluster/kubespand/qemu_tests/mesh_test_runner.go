@@ -8,7 +8,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -118,7 +117,6 @@ var defaultWatches = []watchSpec{
 // Run blocks until SuccessFunc returns true or ctx is cancelled.
 func (r *MeshTestRunner) Run(ctx context.Context) {
 	r.T.Helper()
-	fmt.Fprintf(os.Stderr, "[diag] MeshTestRunner.Run: starting with %d nodes\n", len(r.Nodes))
 
 	meshState := &MeshState{Nodes: make(map[string]*NodeState, len(r.Nodes))}
 	for _, n := range r.Nodes {
@@ -195,29 +193,21 @@ func (r *MeshTestRunner) Run(ctx context.Context) {
 // dmesg streaming. Runs in its own goroutine.
 func (r *MeshTestRunner) watchNode(ctx context.Context, node *MeshNode, eventCh chan<- cosiEvent, dmesgCh chan<- dmesgLine, readyCh chan<- nodeReady) {
 	name := node.VM.Name
-	fmt.Fprintf(os.Stderr, "[diag] watchNode %s: polling TalosClient.Version (nodeIP=%s)\n", name, node.NodeIP)
 
 	// Poll until reachable.
-	attempt := 0
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Fprintf(os.Stderr, "[diag] watchNode %s: context cancelled after %d attempts\n", name, attempt)
 			readyCh <- nodeReady{NodeName: name, Err: ctx.Err()}
 			return
 		default:
 		}
 
-		attempt++
 		rctx, cancel := context.WithTimeout(client.WithNode(ctx, node.NodeIP), 5*time.Second)
 		_, err := node.TalosClient.Version(rctx)
 		cancel()
 		if err == nil {
-			fmt.Fprintf(os.Stderr, "[diag] watchNode %s: reachable after %d attempts\n", name, attempt)
 			break
-		}
-		if attempt%30 == 0 {
-			fmt.Fprintf(os.Stderr, "[diag] watchNode %s: attempt %d failed: %v\n", name, attempt, err)
 		}
 		time.Sleep(1 * time.Second)
 	}

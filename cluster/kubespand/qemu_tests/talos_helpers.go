@@ -37,7 +37,6 @@ func pollUntil(deadline time.Time, fn func() bool) bool {
 // base image read-only and allowing multiple VMs to share it.
 func BootTalosVM(t *testing.T, name, baseImage, cidataPath string, mgmtPort int, netArgs []string) *VM {
 	t.Helper()
-	fmt.Fprintf(os.Stderr, "[diag] BootTalosVM %s: baseImage=%s mgmtPort=%d\n", name, baseImage, mgmtPort)
 
 	args := []string{
 		"-drive", fmt.Sprintf("file=%s,if=virtio,format=qcow2,snapshot=on", baseImage),
