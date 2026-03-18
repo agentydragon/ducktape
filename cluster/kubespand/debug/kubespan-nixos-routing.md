@@ -180,7 +180,7 @@ kubespan interface with the peer's physical IP as the source. The kernel's
 network stack sees these as valid WireGuard-validated packets, bypassing the
 need for the `/32` address workaround.
 
-kubespand uses the upstream `PeerSpecController` (via `@talos_internal`), so
+kubespand uses the upstream `PeerSpecController` (via `@com_github_siderolabs_talos`), so
 this mechanism should already be present. The NixOS worker issue was likely
 caused by a different factor (see `rp_filter` below).
 
