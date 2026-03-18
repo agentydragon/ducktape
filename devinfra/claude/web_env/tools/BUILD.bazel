@@ -61,7 +61,10 @@ py_library(
     name = "fetch_debs_lib",
     srcs = ["fetch_debs.py"],
     imports = ["../../../.."],
-    deps = ["//util/bazel:workspace"],
+    deps = [
+        "//util/bazel:workspace",
+        "@pypi//requests",
+    ],
 )
 
 py_binary(

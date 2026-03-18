@@ -26,7 +26,8 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from urllib.request import Request, urlopen
+
+import requests
 
 from util.bazel.workspace import get_build_workspace_directory
 
@@ -66,9 +67,9 @@ MAX_WORKERS = 8
 
 def _url_read(url: str) -> bytes:
     """Fetch URL contents with a reasonable timeout."""
-    req = Request(url, headers={"User-Agent": "fetch_debs/1.0"})
-    with urlopen(req, timeout=60) as resp:
-        return resp.read()
+    resp = requests.get(url, headers={"User-Agent": "fetch_debs/1.0"}, timeout=60)
+    resp.raise_for_status()
+    return resp.content
 
 
 def _parse_packages_index(raw: str) -> dict[tuple[str, str], str]:

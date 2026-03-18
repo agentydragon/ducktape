@@ -984,14 +984,16 @@ fn configure_network_interface(sock: i32, name: &str, ip: &str, netmask: &str, m
 
     // SIOCSIFADDR — set IP address
     let sa = make_sockaddr_in(ip);
-    ifr.ifr_ifru.ifru_addr = unsafe { std::mem::transmute(sa) };
+    ifr.ifr_ifru.ifru_addr =
+        unsafe { std::mem::transmute::<libc::sockaddr_in, libc::sockaddr>(sa) };
     unsafe {
         libc::ioctl(sock, libc::SIOCSIFADDR, &ifr);
     }
 
     // SIOCSIFNETMASK — set netmask
     let sa = make_sockaddr_in(netmask);
-    ifr.ifr_ifru.ifru_addr = unsafe { std::mem::transmute(sa) };
+    ifr.ifr_ifru.ifru_addr =
+        unsafe { std::mem::transmute::<libc::sockaddr_in, libc::sockaddr>(sa) };
     unsafe {
         libc::ioctl(sock, libc::SIOCSIFNETMASK, &ifr);
     }
@@ -1018,7 +1020,7 @@ fn configure_default_route(sock: i32, gateway: &str) {
     let mut dst: libc::sockaddr_in = unsafe { std::mem::zeroed() };
     dst.sin_family = libc::AF_INET as libc::sa_family_t;
     dst.sin_addr.s_addr = 0; // 0.0.0.0
-    rt.rt_dst = unsafe { std::mem::transmute(dst) };
+    rt.rt_dst = unsafe { std::mem::transmute::<libc::sockaddr_in, libc::sockaddr>(dst) };
 
     // Gateway
     let mut gw: libc::sockaddr_in = unsafe { std::mem::zeroed() };
@@ -1027,16 +1029,16 @@ fn configure_default_route(sock: i32, gateway: &str) {
     if octets.len() == 4 {
         gw.sin_addr.s_addr = u32::from_ne_bytes([octets[0], octets[1], octets[2], octets[3]]);
     }
-    rt.rt_gateway = unsafe { std::mem::transmute(gw) };
+    rt.rt_gateway = unsafe { std::mem::transmute::<libc::sockaddr_in, libc::sockaddr>(gw) };
 
     // Netmask: 0.0.0.0 (default route)
     let mut mask: libc::sockaddr_in = unsafe { std::mem::zeroed() };
     mask.sin_family = libc::AF_INET as libc::sa_family_t;
     mask.sin_addr.s_addr = 0;
-    rt.rt_genmask = unsafe { std::mem::transmute(mask) };
+    rt.rt_genmask = unsafe { std::mem::transmute::<libc::sockaddr_in, libc::sockaddr>(mask) };
 
     // Flags: RTF_UP | RTF_GATEWAY
-    rt.rt_flags = (libc::RTF_UP | libc::RTF_GATEWAY) as u16;
+    rt.rt_flags = libc::RTF_UP | libc::RTF_GATEWAY;
 
     unsafe {
         libc::ioctl(sock, libc::SIOCADDRT, &rt);
