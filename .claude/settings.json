@@ -1,13 +1,24 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "hooks": {
+    "Setup": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv tool install https://github.com/agentydragon/ducktape/releases/download/ducktape-ab388584/ducktape-0.1.0-py3-none-any.whl --force >&2"
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": "uvx --from https://github.com/agentydragon/ducktape/releases/download/ducktape-ab388584/ducktape-0.1.0-py3-none-any.whl claude-hook"
+            "command": "uv tool install https://github.com/agentydragon/ducktape/releases/download/ducktape-ab388584/ducktape-0.1.0-py3-none-any.whl --force >&2; ~/.local/bin/claude-hook"
           }
         ]
       }
@@ -18,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uvx --from https://github.com/agentydragon/ducktape/releases/download/ducktape-ab388584/ducktape-0.1.0-py3-none-any.whl claude-hook"
+            "command": "~/.local/bin/claude-hook"
           }
         ]
       }
@@ -29,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uvx --from https://github.com/agentydragon/ducktape/releases/download/ducktape-ab388584/ducktape-0.1.0-py3-none-any.whl claude-hook"
+            "command": "~/.local/bin/claude-hook"
           }
         ]
       }

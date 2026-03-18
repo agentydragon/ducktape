@@ -227,39 +227,20 @@ invisible.
 - Reduce SessionStart flush timeout to 500ms.
 - Immediate relief for the acute problem.
 
-**Phase 1.5** (quick win, ~2 hours): Eager venv install via Setup hook.
+**Phase 1.5** (**DONE**): Eager tool install via `uv tool install`.
 
-- The Setup hook fires once per session during `claude --init-only`
-  (after container init, before SessionStart — see [invocation chain](#invocation-chain)).
-- Use the Setup hook to eagerly install the hook package into a persistent
-  venv at a known path (e.g., `~/.local/share/claude-hooks/venv/`).
-- Reconfigure PreToolUse/PostToolUse to invoke the venv's `claude-hook`
-  directly instead of going through `uvx`:
-
-  ```json
-  {
-    "hooks": {
-      "Setup": [{ "type": "command", "command": "uvx --from <wheel> claude-hook" }],
-      "PreToolUse": [{ "type": "command", "command": "~/.local/share/claude-hooks/venv/bin/claude-hook" }],
-      "PostToolUse": [{ "type": "command", "command": "~/.local/share/claude-hooks/venv/bin/claude-hook" }]
-    }
-  }
-  ```
-
-- Setup still pays the ~200ms uvx cost once. Subsequent hooks skip uvx
-  resolution entirely, saving ~200ms per call.
-- The Setup hook handler would run something like:
-
-  ```python
-  uv_venv = Path("~/.local/share/claude-hooks/venv").expanduser()
-  if not uv_venv.exists():
-      subprocess.run(["uv", "venv", str(uv_venv)])
-      subprocess.run(["uv", "pip", "install", "--python", str(uv_venv / "bin/python"), WHEEL_URL])
-  ```
-
-- **No-op on resume**: Resume modes (`resume`, `resume-cached`) skip
-  `claude --init-only`, so Setup won't fire. But the venv persists from
-  the initial session, so PreToolUse/PostToolUse still work.
+- Both Setup and SessionStart hooks run
+  `uv tool install <wheel-url> --force >&2` in `settings.json`,
+  installing `claude-hook` to `~/.local/bin/claude-hook` via uv's
+  standard tool management.
+- PreToolUse/PostToolUse invoke `~/.local/bin/claude-hook` directly,
+  skipping uvx resolution (~200ms saved per call).
+- SessionStart chains the install with the hook binary:
+  `uv tool install ... >&2; ~/.local/bin/claude-hook`.
+- The wheel URL lives in `settings.json` so CI can repin without
+  touching Python source.
+- **No-op on resume**: Resume modes skip `claude --init-only`, so
+  Setup won't fire. But the tool persists from the initial session.
 
 **Phase 2** (near-term, ~1 day): Add file-based state cache (B).
 
@@ -282,38 +263,35 @@ overhead, and provide circuit breaker behavior.
 
 ## Comparison Matrix
 
-| Criterion                       | A: Quick Fix | P1.5: Setup venv | B: State Cache        | C: Daemon        | D: Hybrid       |
-| ------------------------------- | ------------ | ---------------- | --------------------- | ---------------- | --------------- |
-| Per-hook latency (cluster down) | ~700ms       | ~500ms           | ~500ms                | ~50ms            | 50ms (after P3) |
-| Per-hook latency (cluster up)   | ~700ms       | ~500ms           | ~500ms                | ~50ms            | 50ms (after P3) |
-| SessionStart overhead change    | -4.5s        | -4.5s            | -4.5s + circuit break | -5s              | Progressive     |
-| Implementation effort           | ~1h          | ~2h              | ~1d                   | ~3-5d            | Progressive     |
-| New failure modes               | None         | Stale venv       | Stale state file      | Daemon lifecycle | Progressive     |
-| gVisor compatibility            | N/A          | File I/O only    | File I/O only         | TCP (proven)     | All proven      |
-| Backwards compatible            | Yes          | Yes              | Yes                   | Needs new client | Yes per phase   |
+| Criterion                       | A: Quick Fix | P1.5: Tool install | B: State Cache        | C: Daemon        | D: Hybrid       |
+| ------------------------------- | ------------ | ------------------ | --------------------- | ---------------- | --------------- |
+| Per-hook latency (cluster down) | ~700ms       | ~500ms             | ~500ms                | ~50ms            | 50ms (after P3) |
+| Per-hook latency (cluster up)   | ~700ms       | ~500ms             | ~500ms                | ~50ms            | 50ms (after P3) |
+| SessionStart overhead change    | -4.5s        | -4.5s              | -4.5s + circuit break | -5s              | Progressive     |
+| Implementation effort           | ~1h          | ~30min             | ~1d                   | ~3-5d            | Progressive     |
+| New failure modes               | None         | Stale tool install | Stale state file      | Daemon lifecycle | Progressive     |
+| gVisor compatibility            | N/A          | File I/O only      | File I/O only         | TCP (proven)     | All proven      |
+| Backwards compatible            | Yes          | Yes                | Yes                   | Needs new client | Yes per phase   |
 
 ## Recommendation
 
-**Alternative D (Hybrid Phased Approach).** Phase 1 is done.
+**Alternative D (Hybrid Phased Approach).** Phases 1 and 1.5 are done.
 
 Phase 1 (**done**) solved the acute pain (5s OTEL timeout on every hook)
 with zero risk. OTEL is skipped for PreToolUse/PostToolUse, and flush
-timeout is 500ms. The PreToolUse/PostToolUse spans are low-value
-telemetry — losing them costs nothing.
+timeout is 500ms.
 
-**Next up**: Phase 1.5 — eagerly install hook packages into a persistent
-venv via the Setup hook, eliminating the ~200ms uvx resolution cost on
-every subsequent hook call. This also lays groundwork for Phase 3: the
-daemon binary would be installed into the same venv.
+Phase 1.5 (**done**) eliminated the ~200ms uvx resolution overhead on
+every PreToolUse/PostToolUse call by using `uv tool install` (in both
+Setup and SessionStart hooks) and invoking `~/.local/bin/claude-hook`
+directly.
 
-Phase 2 adds circuit breaker durability so SessionStart also degrades
-gracefully on repeat failures.
+**Next up**: Phase 2 adds circuit breaker durability so SessionStart
+also degrades gracefully on repeat OTEL failures.
 
-Phase 3 is the right long-term architecture for eliminating the ~500ms
-baseline, but is only justified when the per-hook latency budget matters
-enough to warrant the complexity. The Setup hook installs the daemon
-package (Phase 1.5), SessionStart starts it with session context, and
-PreToolUse/PostToolUse switch to HTTP hooks (~50ms).
+Phase 3 is the right long-term architecture for eliminating the remaining
+~500ms import baseline, but is only justified when the per-hook latency
+budget matters enough to warrant the complexity.
 
 ## Future Extensions
 
