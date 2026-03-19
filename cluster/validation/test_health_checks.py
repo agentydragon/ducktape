@@ -9,7 +9,7 @@ import pytest_bazel
 
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.flux import FluxKustomization, FluxKustomizationSpec, HealthCheck
-from cluster.validation.health_checks import check_controller_health_checks
+from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
 from cluster.validation.k8s import K8sResource
 from cluster.validation.kustomize import KustomizeFile
 
@@ -87,6 +87,72 @@ class TestControllerResourceHealthChecks:
     def test_no_error_for_plain_resources(self, k8s_dir: Path, repo_root: Path) -> None:
         cluster = _make_cluster(k8s_dir, resource_kind="ConfigMap", resource_api_version="v1")
         assert check_controller_health_checks(cluster, k8s_dir, repo_root) == []
+
+
+class TestRetryPolicy:
+    @pytest.fixture
+    def k8s_dir(self, tmp_path: Path) -> Path:
+        k8s = tmp_path / "cluster" / "k8s"
+        k8s.mkdir(parents=True)
+        return k8s
+
+    def _make_cluster_with_retry(
+        self,
+        k8s_dir: Path,
+        *,
+        health_check_kind: str = "HelmRelease",
+        retries: int | None = None,
+        retry_interval: str | None = None,
+        wait: bool = False,
+    ) -> ParsedCluster:
+        flux_file = k8s_dir / "test-app" / "flux-kustomization.yaml"
+        return ParsedCluster(
+            kustomize_files={},
+            flux_kustomizations={
+                "test-app": FluxKustomization(
+                    name="test-app",
+                    file_path=flux_file,
+                    spec=FluxKustomizationSpec(
+                        path="./cluster/k8s/test-app",
+                        health_checks=[HealthCheck(kind=health_check_kind, name="test-app", namespace="test-app")],
+                        retries=retries,
+                        retry_interval=retry_interval,
+                        wait=wait,
+                    ),
+                )
+            },
+            source_resources={},
+        )
+
+    def test_async_health_check_with_retry_passes(self, k8s_dir: Path) -> None:
+        cluster = self._make_cluster_with_retry(k8s_dir, retries=5, retry_interval="1m")
+        check_retry_policy(cluster, k8s_dir)
+
+    def test_async_health_check_without_retry_fails(self, k8s_dir: Path) -> None:
+        cluster = self._make_cluster_with_retry(k8s_dir, retries=0)
+        with pytest.raises(AssertionError, match="retries=0"):
+            check_retry_policy(cluster, k8s_dir)
+
+    def test_async_health_check_without_retry_interval_fails(self, k8s_dir: Path) -> None:
+        cluster = self._make_cluster_with_retry(k8s_dir, retries=5)
+        with pytest.raises(AssertionError, match="no retryInterval"):
+            check_retry_policy(cluster, k8s_dir)
+
+    def test_wait_true_requires_retry(self, k8s_dir: Path) -> None:
+        cluster = self._make_cluster_with_retry(k8s_dir, health_check_kind="Namespace", wait=True, retries=0)
+        with pytest.raises(AssertionError, match="retries=0"):
+            check_retry_policy(cluster, k8s_dir)
+
+    def test_wait_true_with_retry_passes(self, k8s_dir: Path) -> None:
+        cluster = self._make_cluster_with_retry(
+            k8s_dir, health_check_kind="Namespace", wait=True, retries=5, retry_interval="1m"
+        )
+        check_retry_policy(cluster, k8s_dir)
+
+    def test_sync_only_no_wait_no_retry_passes(self, k8s_dir: Path) -> None:
+        """Sync-only health checks (Namespace) without wait don't need retries."""
+        cluster = self._make_cluster_with_retry(k8s_dir, health_check_kind="Namespace", retries=0)
+        check_retry_policy(cluster, k8s_dir)
 
 
 if __name__ == "__main__":
