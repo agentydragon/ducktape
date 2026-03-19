@@ -248,7 +248,7 @@ Hook daemon files (in `<session_dir>/hook-daemon/`):
 - `upstream_proxy` - Auth proxy credentials (read on each connection)
 - `daemon.sock` - UDS for hook RPC
 - `daemon.pid` - Daemon pidfile
-- `daemon.log` - Daemon startup logs
+- `daemon.log` - Daemon and session start logs
 
 Auth proxy files (in `<session_dir>/auth-proxy/`, created by `proxy_setup.py`):
 

@@ -40,8 +40,8 @@ step exists for a reason. In particular:
 - **Do not skip BuildBuddy setup** — run `devinfra/setup_buildbuddy.sh` with the
   fetched API key. Without this, Bazel has no remote cache or execution.
 
-Check the session start log first if it exists:
-`tail -100 ~/.claude/session-env/<session_id>/session-start.log`
+Check the hook daemon log first if it exists:
+`tail -100 ~/.claude/session-env/<session_id>/hook-daemon/daemon.log`
 
 **Do NOT** fight certificate or proxy errors by setting `--noverify`, `SSL_VERIFY=false`, or
 similar bypasses. The root cause is always a missing or broken session start hook setup.

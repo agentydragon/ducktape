@@ -111,13 +111,6 @@ py_library(
 )
 
 py_library(
-    name = "hook_logging",
-    srcs = ["hook_logging.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
     name = "http_client",
     srcs = ["http_client.py"],
     imports = ["../.."],

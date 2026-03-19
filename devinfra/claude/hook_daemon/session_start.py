@@ -43,7 +43,6 @@ from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.errors import SkipError
 from devinfra.claude.hook_config import HOOKS_DOTDIR, HookConfig, OtelConfig
 from devinfra.claude.hook_daemon.tracing import DeferredOtlpExporter
-from devinfra.claude.hook_logging import setup_file_logging
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import CONFIG_FILES, HookSettings
@@ -165,20 +164,19 @@ class LogCollector(logging.handlers.MemoryHandler):
         return any(r.levelno == logging.WARNING for r in self.buffer)
 
 
-def _setup_session_logging(paths: SessionPaths) -> tuple[LogCollector, Path]:
-    """Set up file logging and a LogCollector for session start output.
+def _setup_session_logging() -> LogCollector:
+    """Set up a LogCollector for session start output.
 
-    Returns (LogCollector, log_file_path) tuple.
+    Session start runs inside the hook daemon, which already configures
+    file logging to daemon.log.  We only add a LogCollector to capture
+    warnings/errors for the session context banner.
     """
-    log_file = paths.log_file
-    setup_file_logging(log_file)
-
     formatter = logging.Formatter("%(asctime)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
     collector = LogCollector()
     collector.setFormatter(formatter)
     logging.getLogger().addHandler(collector)
 
-    return collector, log_file
+    return collector
 
 
 # ============================================================================
@@ -467,7 +465,8 @@ async def run_session(
     bazelrc render, wrapper install, env file write, session context emit.
     """
 
-    collector, log_file = _setup_session_logging(paths)
+    collector = _setup_session_logging()
+    log_file = paths.hook_daemon_dir / "daemon.log"
     tracer = trace.get_tracer(__name__)
     root_span = tracer.start_span(
         "session_start",

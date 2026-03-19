@@ -101,11 +101,6 @@ class SessionPaths:
         return self.cache_dir / "mkcert"
 
     @property
-    def log_file(self) -> Path:
-        """Session-start log file."""
-        return self.session_dir / "session-start.log"
-
-    @property
     def podman_dir(self) -> Path:
         return self.session_dir / "podman"
 
