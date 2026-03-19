@@ -20,6 +20,7 @@ py_library(
         ":litellm_tool_provider",
         "//agent_core:tool_provider",
         "//openai_utils:json_schema",
+        "//openai_utils:model",
         "//util/bazel:runfiles",
         "@pypi//litellm",
         "@pypi//openai",

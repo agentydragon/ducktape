@@ -23,6 +23,19 @@ from pydantic import BaseModel
 
 from agent_core.tool_provider import ToolProvider
 from openai_utils.json_schema import openai_json_schema
+from openai_utils.model import (
+    AssistantMessage,
+    AssistantMessageOut,
+    BoundOpenAIModel,
+    FunctionCallItem,
+    FunctionCallOutputItem,
+    FunctionToolParam,
+    ReasoningItem,
+    ResponsesRequest,
+    ResponsesResult,
+    ToolChoiceFunction,
+    UserMessage,
+)
 from skills.info_gathering.evals.litellm_tool_provider import ToolParam, tool_params_from_provider, tool_result_content
 from util.bazel.runfiles import get_required_path
 
@@ -66,6 +79,125 @@ def tool_def(name: str, description: str, input_model: type[BaseModel]) -> ToolP
     }
 
 
+# === Responses API helpers ====================================================
+
+
+def _clean_tool_name(name: str) -> str:
+    """Strip trailing <|...|> artifacts from tool names (Ollama/gpt-oss quirk)."""
+    idx = name.find("<|")
+    return name[:idx].strip() if idx != -1 else name
+
+
+def _chat_messages_to_responses_input(messages: list[dict[str, Any]]) -> list[Any]:
+    """Convert Chat Completions message dicts to Responses API input items."""
+    items: list[Any] = []
+    for msg in messages:
+        role = msg.get("role")
+        content = msg.get("content") or ""
+        if role == "user":
+            items.append(UserMessage.text(content))
+        elif role == "assistant":
+            tool_calls = msg.get("tool_calls")
+            if content:
+                items.append(AssistantMessage.text(content))
+            if tool_calls:
+                for tc in tool_calls:
+                    items.append(
+                        FunctionCallItem(
+                            name=tc["function"]["name"],
+                            arguments=tc["function"]["arguments"],
+                            call_id=tc["id"],
+                            id=tc["id"],
+                        )
+                    )
+        elif role == "tool":
+            items.append(FunctionCallOutputItem(call_id=msg["tool_call_id"], output=content))
+    return items
+
+
+def _chat_tools_to_responses_tools(tools: list[ToolParam]) -> list[FunctionToolParam]:
+    """Convert Chat Completions tool definitions to Responses API FunctionToolParam list."""
+    result = []
+    for tool in tools:
+        fn = tool.get("function", {})
+        result.append(
+            FunctionToolParam(
+                name=fn.get("name", ""), description=fn.get("description"), parameters=fn.get("parameters", {})
+            )
+        )
+    return result
+
+
+def _convert_tool_choice(tc: str | dict[str, Any] | None) -> Any:
+    """Convert Chat Completions tool_choice to Responses API ToolChoice."""
+    if tc is None or isinstance(tc, str):
+        return tc
+    if isinstance(tc, dict) and tc.get("type") == "function":
+        return ToolChoiceFunction(name=tc["function"]["name"])
+    return None
+
+
+class _FakeFunction:
+    def __init__(self, name: str, arguments: str) -> None:
+        self.name = name
+        self.arguments = arguments
+
+
+class _FakeToolCall:
+    def __init__(self, call_id: str, name: str, arguments: str) -> None:
+        self.id = call_id
+        self.type = "function"
+        self.function = _FakeFunction(name=name, arguments=arguments)
+
+
+class _FakeMessage:
+    def __init__(self, content: str | None, tool_calls: list[Any] | None, reasoning_content: str | None) -> None:
+        self.content = content
+        self.tool_calls = tool_calls if tool_calls else None
+        self.reasoning_content = reasoning_content
+
+
+class _FakeChoice:
+    def __init__(self, message: Any, finish_reason: str) -> None:
+        self.message = message
+        self.finish_reason = finish_reason
+
+
+class _ResponsesResultAdapter:
+    """Wraps ResponsesResult to expose a Chat Completions-compatible interface.
+
+    Allows eval harness code that expects .choices[0].message etc. to work
+    transparently with Responses API results.
+    """
+
+    def __init__(self, result: ResponsesResult) -> None:
+        self._result = result
+
+        text_parts = [item.text for item in result.output if isinstance(item, AssistantMessageOut)]
+        content: str | None = "\n".join(text_parts) if text_parts else None
+
+        fc_items = [item for item in result.output if isinstance(item, FunctionCallItem)]
+        tool_calls: list[_FakeToolCall] | None = (
+            [_FakeToolCall(fc.call_id, _clean_tool_name(fc.name), fc.arguments or "{}") for fc in fc_items]
+            if fc_items
+            else None
+        )
+
+        reasoning_parts: list[str] = []
+        for item in result.output:
+            if isinstance(item, ReasoningItem):
+                reasoning_parts.extend(s.text for s in item.summary)
+        reasoning_content: str | None = "\n".join(reasoning_parts) if reasoning_parts else None
+
+        finish_reason = "tool_calls" if fc_items else "stop"
+        msg = _FakeMessage(content=content, tool_calls=tool_calls, reasoning_content=reasoning_content)
+        self.choices = [_FakeChoice(message=msg, finish_reason=finish_reason)]
+        self.usage = result.usage
+
+    def model_dump(self) -> dict[str, Any]:
+        return self._result.model_dump()
+
+
 # === LLM client ===============================================================
 
 
@@ -90,15 +222,25 @@ class LLMClient:
     """
 
     def __init__(
-        self, *, model: str, thinking_budget: int | None = None, base_url: str | None = None, api_key: str | None = None
+        self,
+        *,
+        model: str,
+        thinking_budget: int | None = None,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        use_responses_api: bool = False,
     ) -> None:
         self.model = model
         self.thinking_budget = thinking_budget
         self.base_url = base_url
         self.api_key = api_key
+        self.use_responses_api = use_responses_api
 
         if not model.startswith("anthropic/"):
+            self._model_name = model.removeprefix("openai/")
             self._openai_client = AsyncOpenAI(base_url=base_url, api_key=api_key or "unused")
+            if use_responses_api:
+                self._bound_model = BoundOpenAIModel(client=self._openai_client, model=self._model_name)
 
     async def call(
         self,
@@ -117,8 +259,12 @@ class LLMClient:
                 full_messages=full_messages, tools=tools, tool_choice=tool_choice, max_tokens=max_tokens
             )
 
-        # OpenAI-compatible path (Ollama, LiteLLM proxy, OpenAI, etc.)
-        model_name = self.model.removeprefix("openai/")
+        if self.use_responses_api:
+            return await self._call_responses_api(
+                full_messages=full_messages, tools=tools, tool_choice=tool_choice, max_tokens=max_tokens
+            )
+
+        # OpenAI Chat Completions path (Ollama, LiteLLM proxy, OpenAI, etc.)
         kwargs: dict[str, Any] = {}
         if tools:
             kwargs["tools"] = tools
@@ -126,8 +272,33 @@ class LLMClient:
             kwargs["tool_choice"] = tool_choice
 
         return await self._openai_client.chat.completions.create(
-            model=model_name, messages=cast(Any, full_messages), max_completion_tokens=max_tokens, **kwargs
+            model=self._model_name, messages=cast(Any, full_messages), max_completion_tokens=max_tokens, **kwargs
         )
+
+    async def _call_responses_api(
+        self,
+        *,
+        full_messages: list[dict[str, Any]],
+        tools: list[ToolParam] | None,
+        tool_choice: str | dict[str, Any] | None,
+        max_tokens: int,
+    ) -> "_ResponsesResultAdapter":
+        """Call model via OpenAI Responses API (/v1/responses)."""
+        instructions: str | None = None
+        rest = full_messages
+        if rest and rest[0]["role"] == "system":
+            instructions = str(rest[0]["content"])
+            rest = rest[1:]
+
+        req = ResponsesRequest(
+            input=_chat_messages_to_responses_input(rest),
+            instructions=instructions,
+            tools=_chat_tools_to_responses_tools(tools) if tools else None,
+            tool_choice=_convert_tool_choice(tool_choice),
+            max_output_tokens=max_tokens,
+        )
+        result = await self._bound_model.responses_create(req)
+        return _ResponsesResultAdapter(result)
 
     async def _call_anthropic(
         self,
@@ -287,6 +458,12 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--output-dir", default=None)
     parser.add_argument("--base-url", default=None, help="Custom API base URL (e.g. https://ollama.allegedly.works)")
     parser.add_argument("--api-key", default=None, help="API key (reads from provider env var by default)")
+    parser.add_argument(
+        "--responses-api",
+        action="store_true",
+        default=False,
+        help="Use OpenAI Responses API (/v1/responses) instead of Chat Completions",
+    )
 
 
 def thinking_from_args(args: argparse.Namespace) -> int | None:
@@ -301,5 +478,9 @@ def output_dir_from_args(args: argparse.Namespace) -> Path:
 
 def client_from_args(args: argparse.Namespace) -> LLMClient:
     return LLMClient(
-        model=args.model, thinking_budget=thinking_from_args(args), base_url=args.base_url, api_key=args.api_key
+        model=args.model,
+        thinking_budget=thinking_from_args(args),
+        base_url=args.base_url,
+        api_key=args.api_key,
+        use_responses_api=getattr(args, "responses_api", False),
     )
