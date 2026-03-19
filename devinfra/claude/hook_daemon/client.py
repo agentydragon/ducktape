@@ -50,7 +50,7 @@ def call_daemon(hook_input: AnyHookInput, env: dict[str, str], paths: SessionPat
 
     # Daemon unreachable or socket missing — start it
     if _start_daemon(paths):
-        _wait_for_sock(sock_path, timeout_secs=5)
+        _wait_for_sock(sock_path, timeout_secs=30)
         return _post_to_daemon(request, sock_path)
 
     return None
@@ -141,7 +141,7 @@ def _start_daemon(paths: SessionPaths) -> bool:
     return True
 
 
-def _wait_for_sock(sock_path: Path, *, timeout_secs: float = 5) -> bool:
+def _wait_for_sock(sock_path: Path, *, timeout_secs: float = 30) -> bool:
     """Poll until socket file exists and accepts connections."""
     logger.debug("Waiting for daemon socket %s (timeout=%.1fs)", sock_path, timeout_secs)
     deadline = time.monotonic() + timeout_secs
