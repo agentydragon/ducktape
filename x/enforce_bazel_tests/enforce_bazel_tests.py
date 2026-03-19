@@ -47,7 +47,6 @@ _INFRA_GLOBS = ("devinfra/bazel*",)
 _EXCLUDED_PACKAGES = {
     "gterm_theme",  # pycairo, pygobject — need native libs
     "x/cotrl",  # gymnasium — not in requirements
-    "bazel-ducktape",  # Bazel output symlink, not a real package
 }
 
 _PREFIX = "enforce-bazel-tests"
