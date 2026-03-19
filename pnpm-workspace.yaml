@@ -2,6 +2,7 @@ packages:
   - "x/agent_server/web"
   - "airlock/frontend"
   - "airlock/openclaw"
+  - "cluster/scripts/visualize_dag"
   - "third_party/mcporter"
   - "x/rspcache/admin_ui"
   - "props/frontend"
