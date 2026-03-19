@@ -3,7 +3,7 @@
 Mode-aware: in web mode (CLAUDE_CODE_REMOTE=true), writes fresh proxy
 credentials and verifies the in-process auth proxy is running. In CLI mode,
 passes through directly.
-Both modes inject --bazelrc=<per-session-bazelrc> via SESSION_BAZELRC.
+Both modes inject --bazelrc=<per-session-bazelrc> derived from the session dir.
 
 Routes to the correct binary based on invocation name: if invoked as "bazelisk",
 execs bazelisk; if invoked as "bazel", execs bazel. The shell wrapper sets
@@ -22,7 +22,7 @@ from pathlib import Path
 from devinfra.claude.auth_proxy.credentials import check_credential_expiry
 from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS, get_upstream_proxy_url
 from devinfra.claude.debug import log_entrypoint_debug
-from devinfra.claude.env_file import ENV_AUTH_PROXY_URL, ENV_BAZELISK_PATH, ENV_SESSION_BAZELRC
+from devinfra.claude.env_file import ENV_AUTH_PROXY_URL, ENV_BAZELISK_PATH
 from devinfra.claude.errors import AuthProxyError
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import ENV_SESSION_DIR, HookSettings, is_web_mode
@@ -155,11 +155,10 @@ async def _async_main(paths: SessionPaths, settings: HookSettings) -> None:
         for var in PROXY_ENV_VARS:
             os.environ[var] = local_proxy
 
-    bazelrc_path = get_required_env(ENV_SESSION_BAZELRC)
     real_binary = _resolve_real_binary()
 
     logger.info("Execing %s (invoked as %s)", real_binary, _invocation_name())
-    os.execvp(real_binary, [real_binary, f"--bazelrc={bazelrc_path}", *sys.argv[1:]])
+    os.execvp(real_binary, [real_binary, f"--bazelrc={paths.bazelrc}", *sys.argv[1:]])
 
 
 def main() -> None:

@@ -19,7 +19,6 @@ ENV_AUTH_PROXY_PORT = "AUTH_PROXY_PORT"
 ENV_AUTH_PROXY_URL = "AUTH_PROXY_URL"
 ENV_SESSION_BAZELRC = "SESSION_BAZELRC"
 ENV_BAZELISK_PATH = "BAZELISK_PATH"
-ENV_BAZEL_REPO_ROOT = "BAZEL_REPO_ROOT"
 
 
 # NO_PROXY entries that break Go module downloads in the gVisor sandbox.
@@ -65,7 +64,6 @@ class EnvVars:
     # Web mode: auth proxy and Bazel configuration
     proxy_port: int | None = None
     supervisor_port: int | None = None
-    repo_root: Path | None = None
     combined_ca: Path | None = None
     bazelisk_path: Path | None = None
 
@@ -104,7 +102,6 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     if vars.proxy_port is not None:
         assert vars.session_dir is not None
         assert vars.supervisor_port is not None
-        assert vars.repo_root is not None
         assert vars.combined_ca is not None
         assert vars.bazelisk_path is not None
         local_proxy = f"http://localhost:{vars.proxy_port}"
@@ -113,7 +110,6 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
             ENV_AUTH_PROXY_PORT: str(vars.proxy_port),
             ENV_AUTH_PROXY_URL: local_proxy,
             ENV_BAZELISK_PATH: vars.bazelisk_path,
-            ENV_BAZEL_REPO_ROOT: vars.repo_root,
             # Supervisor port needed by bazel_wrapper to connect to supervisor
             ENV_SUPERVISOR_PORT: str(vars.supervisor_port),
         }

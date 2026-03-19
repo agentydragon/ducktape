@@ -108,7 +108,6 @@ class PlatformSetup:
     # EnvVars params
     session_dir: Path | None = None
     supervisor_port: int | None = None
-    repo_root: Path | None = None
     bazelisk_path: Path | None = None
     docker_env: dict[str, str] | None = None
     mkcert_cert: Path | None = None
@@ -425,7 +424,6 @@ async def _setup_web(
         # EnvVars
         session_dir=paths.session_dir,
         supervisor_port=settings.supervisor_port,
-        repo_root=project_dir,
         bazelisk_path=bazelisk_path,
         docker_env=docker_env,
         mkcert_cert=mkcert_result.cert_path if isinstance(mkcert_result, mkcert_setup.MkcertSetup) else None,
@@ -547,7 +545,6 @@ async def run_session(
             session_dir=setup.session_dir,
             proxy_port=setup.proxy_port,
             supervisor_port=setup.supervisor_port,
-            repo_root=setup.repo_root,
             combined_ca=setup.combined_ca_path,
             bazelisk_path=setup.bazelisk_path,
             docker_env=setup.docker_env,

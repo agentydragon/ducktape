@@ -123,6 +123,11 @@ class SessionPaths:
         return Path("/tmp/claude") / self.session_id
 
     @property
+    def bazelrc(self) -> Path:
+        """Per-session bazelrc file (rendered by session start hook)."""
+        return self.session_dir / "bazelrc"
+
+    @property
     def bazel_cache_dir(self) -> Path:
         """Bazel cache directory (tmpfs-backed, via startup --output_user_root)."""
         return self.session_dir / "bazel-cache"
