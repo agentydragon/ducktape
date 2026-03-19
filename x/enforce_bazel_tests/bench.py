@@ -109,25 +109,14 @@ def _query(expr: str, *, repo_root: Path, persist_dir: Path | None = None, profi
     return [BazelLabel.parse(line) for line in result.stdout.splitlines() if line]
 
 
-def _slug(expr: str) -> str:
-    """Convert a query expression to a filesystem-safe slug."""
-    return (
-        expr.replace("/", "_")
-        .replace('"', "")
-        .replace("(", "_")
-        .replace(")", "_")
-        .replace(" ", "_")
-        .replace(",", "")[:80]
-    )
-
-
-def _bench_query(expr: str, *, cold: bool, repo_root: Path, out_dir: Path, profile: bool, run_index: int) -> None:
+def _bench_query(
+    name: str, expr: str, *, cold: bool, repo_root: Path, out_dir: Path, profile: bool, run_index: int
+) -> None:
     """Run a query, save output, print timing."""
     if cold:
         _shutdown()
 
-    slug = f"{run_index:02d}_{_slug(expr)}"
-    query_dir = out_dir / slug
+    query_dir = out_dir / f"{run_index:02d}_{name}"
     query_dir.mkdir(parents=True, exist_ok=True)
 
     t0 = time.monotonic()
@@ -135,7 +124,7 @@ def _bench_query(expr: str, *, cold: bool, repo_root: Path, out_dir: Path, profi
         result = _query(expr, repo_root=repo_root, persist_dir=query_dir, profile=profile)
     except subprocess.CalledProcessError as e:
         elapsed = time.monotonic() - t0
-        print(f"  {expr + ':':.<55s} {elapsed:6.2f}s  FAILED (exit {e.returncode})")
+        print(f"  {name + ':':.<40s} {elapsed:6.2f}s  FAILED (exit {e.returncode})")
         if e.stderr:
             # Show last meaningful line of stderr
             for line in reversed(e.stderr.strip().splitlines()):
@@ -146,12 +135,12 @@ def _bench_query(expr: str, *, cold: bool, repo_root: Path, out_dir: Path, profi
         return
     except subprocess.TimeoutExpired:
         elapsed = time.monotonic() - t0
-        print(f"  {expr + ':':.<55s} {elapsed:6.2f}s  TIMEOUT")
+        print(f"  {name + ':':.<40s} {elapsed:6.2f}s  TIMEOUT")
         (query_dir / "elapsed_s.txt").write_text(f"{elapsed:.3f}")
         return
 
     elapsed = time.monotonic() - t0
-    print(f"  {expr + ':':.<55s} {elapsed:6.2f}s  ({len(result)} targets)")
+    print(f"  {name + ':':.<40s} {elapsed:6.2f}s  ({len(result)} targets)")
     (query_dir / "elapsed_s.txt").write_text(f"{elapsed:.3f}")
     (query_dir / "targets.txt").write_text("\n".join(str(lbl) for lbl in result) + "\n")
 
@@ -202,30 +191,33 @@ def main() -> int:
 
     # --- Section 1: kind/tests queries (each from cold) ---
     print("=== kind/tests queries (each from cold start) ===")
-    queries = [
-        'kind("py_test", //...)',
-        'kind("go_test", //...)',
-        'kind(".*_test", //...)',
-        "tests(//...)",
-        # Scoped variants (exclude broken packages)
-        f'kind("py_test", {universe})',
-        f'kind(".*_test", {universe})',
-        f"tests({universe})",
+    cold_kind_cases = [
+        ("kind_py_test_all", 'kind("py_test", //...)'),
+        ("kind_go_test_all", 'kind("go_test", //...)'),
+        ("kind_any_test_all", 'kind(".*_test", //...)'),
+        ("tests_all", "tests(//...)"),
+        ("kind_py_test_scoped", f'kind("py_test", {universe})'),
+        ("kind_any_test_scoped", f'kind(".*_test", {universe})'),
+        ("tests_scoped", f"tests({universe})"),
     ]
-    for expr in queries:
-        _bench_query(expr, cold=True, repo_root=repo_root, out_dir=out_dir, profile=args.profile, run_index=run_index)
+    for name, expr in cold_kind_cases:
+        _bench_query(
+            name, expr, cold=True, repo_root=repo_root, out_dir=out_dir, profile=args.profile, run_index=run_index
+        )
         run_index += 1
 
     # --- Section 2: alternative strategies (each from cold) ---
     print("\n=== alternative strategies (each from cold start) ===")
-    alt_queries = [
-        "//...",
-        f"rdeps(//..., {label})",
-        f'somepath(kind(".*_test", //...), {label})',
-        f'kind(".*_test", allrdeps({label}))',
+    cold_alt_cases = [
+        ("enumerate_all", "//..."),
+        ("rdeps_all", f"rdeps(//..., {label})"),
+        ("somepath_all", f'somepath(kind(".*_test", //...), {label})'),
+        ("allrdeps", f'kind(".*_test", allrdeps({label}))'),
     ]
-    for expr in alt_queries:
-        _bench_query(expr, cold=True, repo_root=repo_root, out_dir=out_dir, profile=args.profile, run_index=run_index)
+    for name, expr in cold_alt_cases:
+        _bench_query(
+            name, expr, cold=True, repo_root=repo_root, out_dir=out_dir, profile=args.profile, run_index=run_index
+        )
         run_index += 1
 
     # --- Section 3: warm-server queries ---
@@ -235,15 +227,17 @@ def main() -> int:
     with contextlib.suppress(subprocess.CalledProcessError):
         _query("//util/bazel:workspace.py", repo_root=repo_root)
 
-    warm_queries = [
-        'kind("py_test", //...)',
-        'kind(".*_test", //...)',
-        "tests(//...)",
-        f"rdeps(//..., {label})",
-        f'kind(".*_test", allrdeps({label}))',
+    warm_cases = [
+        ("warm_kind_py_test", 'kind("py_test", //...)'),
+        ("warm_kind_any_test", 'kind(".*_test", //...)'),
+        ("warm_tests", "tests(//...)"),
+        ("warm_rdeps", f"rdeps(//..., {label})"),
+        ("warm_allrdeps", f'kind(".*_test", allrdeps({label}))'),
     ]
-    for expr in warm_queries:
-        _bench_query(expr, cold=False, repo_root=repo_root, out_dir=out_dir, profile=args.profile, run_index=run_index)
+    for name, expr in warm_cases:
+        _bench_query(
+            name, expr, cold=False, repo_root=repo_root, out_dir=out_dir, profile=args.profile, run_index=run_index
+        )
         run_index += 1
 
     print(f"\nResults saved to: {out_dir}")
