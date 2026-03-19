@@ -40,11 +40,15 @@ _INFRA_PATTERNS = (
 )
 _INFRA_GLOBS = ("devinfra/bazel*",)
 
-# Top-level Bazel packages excluded from the query universe.
-# These have external deps (gymnasium, pygobject/pycairo) that fail at repo
-# fetch time without system native libraries. Both already use tags=["manual"]
-# but //... still loads their packages, triggering the fetch.
-_EXCLUDED_PACKAGES = {"x", "gterm_theme", "bazel-ducktape"}
+# Bazel packages excluded from the query universe.
+# These have external deps that fail at repo fetch time without system native
+# libraries. They already use tags=["manual"] but //... still loads their
+# packages, triggering the fetch.
+_EXCLUDED_PACKAGES = {
+    "gterm_theme",  # pycairo, pygobject — need native libs
+    "x/cotrl",  # gymnasium — not in requirements
+    "bazel-ducktape",  # Bazel output symlink, not a real package
+}
 
 _PREFIX = "enforce-bazel-tests"
 
@@ -74,24 +78,47 @@ def _get_staged_files(repo: pygit2.Repository) -> list[str]:
     return [entry.path for entry in repo.index]
 
 
-def build_universe(repo_root: Path) -> list[str]:
-    """Find top-level Bazel package dirs, excluding broken packages.
+def _has_build_file(path: Path) -> bool:
+    return (path / "BUILD.bazel").exists() or (path / "BUILD").exists()
 
-    Returns sorted list of top-level directory names that contain
-    BUILD or BUILD.bazel files, minus _EXCLUDED_PACKAGES.
+
+def build_universe(repo_root: Path) -> list[str]:
+    """Find Bazel package dirs for the query universe, excluding broken packages.
+
+    Returns sorted list of Bazel package paths (relative to repo root, empty
+    string for root). Top-level excluded packages are skipped entirely.
+    For sub-package exclusions (e.g. "x/cotrl"), the parent is expanded into
+    its sibling sub-packages so the broken one can be omitted.
     """
+    top_level_excluded = {p for p in _EXCLUDED_PACKAGES if "/" not in p}
+    sub_excluded = {p for p in _EXCLUDED_PACKAGES if "/" in p}
+    # Parent dirs that need sub-package expansion (e.g. "x" for "x/cotrl").
+    parents_to_expand = {p.split("/", 1)[0] for p in sub_excluded}
+
     dirs: list[str] = []
     for entry in sorted(repo_root.iterdir()):
-        if not entry.is_dir():
+        if not entry.is_dir() or entry.name.startswith("."):
             continue
-        if entry.name.startswith("."):
+        if entry.name in top_level_excluded:
             continue
-        if entry.name in _EXCLUDED_PACKAGES:
+        if entry.name in parents_to_expand:
+            # Expand into individual sub-packages, skipping excluded ones.
+            for sub in sorted(entry.iterdir()):
+                if not sub.is_dir():
+                    continue
+                rel = f"{entry.name}/{sub.name}"
+                if rel in sub_excluded:
+                    continue
+                if _has_build_file(sub):
+                    dirs.append(rel)
+            # Also include the parent itself if it has a BUILD file.
+            if _has_build_file(entry):
+                dirs.append(entry.name)
             continue
-        if (entry / "BUILD.bazel").exists() or (entry / "BUILD").exists():
+        if _has_build_file(entry):
             dirs.append(entry.name)
-    # Also include the root package if it has a BUILD file.
-    if (repo_root / "BUILD.bazel").exists() or (repo_root / "BUILD").exists():
+
+    if _has_build_file(repo_root):
         dirs.insert(0, "")
     return dirs
 

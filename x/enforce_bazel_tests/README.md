@@ -12,8 +12,9 @@ Bazel source labels, and finds affected test targets through a two-step query:
    filters out files that exist on disk but aren't declared in any BUILD srcs.
 2. **Find affected tests** (~3s warm):
    `kind(".*_test", rdeps(<universe>, set(<labels>)))` with
-   `--universe_scope` excluding broken packages (`x`, `gterm_theme`,
-   `bazel-ducktape`).
+   `--universe_scope` excluding broken packages (`x/cotrl`, `gterm_theme`,
+   `bazel-ducktape`). The `x/` directory is expanded into individual
+   sub-packages so only the broken `x/cotrl` is excluded.
 
 Then runs `bazel test --check_tests_up_to_date` on the affected targets
 (no execution — just checks the local action cache). Requires
@@ -106,7 +107,8 @@ evaluation (~7s) + parallelized package loading (~3s on the critical path).
 - **No query optimization can fix cold start** — the bottleneck is server
   boot, not query evaluation. A persistent Bazel server is the only fix.
 - **Scoped queries return fewer targets** (369 vs 461) because they exclude
-  `x/`, `gterm_theme`, `bazel-ducktape`. No speed benefit for cold start.
+  broken packages (`x/cotrl`, `gterm_theme`, `bazel-ducktape`). No speed
+  benefit for cold start.
 - **`rdeps` and `somepath` fail** with `//...` universe due to `gymnasium`
   (missing pip package). They need scoped universes.
 - **`kind("py_test", //...)`** is anomalously slow on first warm-server call
