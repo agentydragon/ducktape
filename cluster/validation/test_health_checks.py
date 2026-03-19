@@ -101,7 +101,6 @@ class TestRetryPolicy:
         k8s_dir: Path,
         *,
         health_check_kind: str = "HelmRelease",
-        retries: int | None = None,
         retry_interval: str | None = None,
         wait: bool = False,
     ) -> ParsedCluster:
@@ -115,7 +114,6 @@ class TestRetryPolicy:
                     spec=FluxKustomizationSpec(
                         path="./cluster/k8s/test-app",
                         health_checks=[HealthCheck(kind=health_check_kind, name="test-app", namespace="test-app")],
-                        retries=retries,
                         retry_interval=retry_interval,
                         wait=wait,
                     ),
@@ -124,36 +122,28 @@ class TestRetryPolicy:
             source_resources={},
         )
 
-    def test_async_health_check_with_retry_passes(self, k8s_dir: Path) -> None:
-        cluster = self._make_cluster_with_retry(k8s_dir, retries=5, retry_interval="1m")
+    def test_async_health_check_with_retry_interval_passes(self, k8s_dir: Path) -> None:
+        cluster = self._make_cluster_with_retry(k8s_dir, retry_interval="1m")
         check_retry_policy(cluster, k8s_dir)
 
-    def test_async_health_check_without_retry_fails(self, k8s_dir: Path) -> None:
-        cluster = self._make_cluster_with_retry(k8s_dir, retries=0, retry_interval="1m")
-        with pytest.raises(AssertionError, match="retries=0"):
-            check_retry_policy(cluster, k8s_dir)
-
     def test_async_health_check_without_retry_interval_fails(self, k8s_dir: Path) -> None:
-        cluster = self._make_cluster_with_retry(k8s_dir, retries=5)
+        cluster = self._make_cluster_with_retry(k8s_dir)
         with pytest.raises(AssertionError, match="no retryInterval"):
             check_retry_policy(cluster, k8s_dir)
 
-    def test_wait_true_requires_retry(self, k8s_dir: Path) -> None:
-        cluster = self._make_cluster_with_retry(
-            k8s_dir, health_check_kind="Namespace", wait=True, retries=0, retry_interval="1m"
-        )
-        with pytest.raises(AssertionError, match="retries=0"):
+    def test_wait_true_without_retry_interval_fails(self, k8s_dir: Path) -> None:
+        """wait: true requires retryInterval (spec.retries was removed from the Flux CRD)."""
+        cluster = self._make_cluster_with_retry(k8s_dir, health_check_kind="Namespace", wait=True)
+        with pytest.raises(AssertionError, match="no retryInterval"):
             check_retry_policy(cluster, k8s_dir)
 
     def test_wait_true_with_retry_passes(self, k8s_dir: Path) -> None:
-        cluster = self._make_cluster_with_retry(
-            k8s_dir, health_check_kind="Namespace", wait=True, retries=5, retry_interval="1m"
-        )
+        cluster = self._make_cluster_with_retry(k8s_dir, health_check_kind="Namespace", wait=True, retry_interval="1m")
         check_retry_policy(cluster, k8s_dir)
 
     def test_sync_only_no_wait_no_retry_passes(self, k8s_dir: Path) -> None:
-        """Sync-only health checks (Namespace) without wait don't need retries."""
-        cluster = self._make_cluster_with_retry(k8s_dir, health_check_kind="Namespace", retries=0)
+        """Sync-only health checks (Namespace) without wait don't need retryInterval."""
+        cluster = self._make_cluster_with_retry(k8s_dir, health_check_kind="Namespace")
         check_retry_policy(cluster, k8s_dir)
 
 
