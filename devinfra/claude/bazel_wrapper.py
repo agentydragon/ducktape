@@ -136,10 +136,6 @@ async def _ensure_proxy_creds_fresh(paths: SessionPaths, settings: HookSettings)
     daemon_creds.write_text(https_proxy)
     logger.debug("Wrote fresh proxy credentials to %s", daemon_creds)
 
-    # Also write to session-scoped location for backward compatibility
-    paths.auth_proxy_creds_file.parent.mkdir(parents=True, exist_ok=True)
-    paths.auth_proxy_creds_file.write_text(https_proxy)
-
     # Verify proxy is listening
     try:
         await async_wait_for_port("127.0.0.1", settings.auth_proxy_port, timeout_secs=5.0)
