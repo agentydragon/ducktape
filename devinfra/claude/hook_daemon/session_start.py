@@ -361,10 +361,7 @@ async def _setup_web(
         logger.error("Proxy setup failed: %s", auth_proxy_result)
         raise RuntimeError(f"Proxy setup failed: {auth_proxy_result}") from auth_proxy_result
 
-    # Verify combined CA was created (sanity check - should always exist after successful proxy setup)
     combined_ca = paths.auth_proxy_combined_ca
-    if not combined_ca.exists():
-        raise RuntimeError("Combined CA bundle not found - proxy setup incomplete")
 
     # Read k8s secrets now that combined CA is available for TLS.
     # Route through the auth proxy so the upstream egress proxy gets credentials.
