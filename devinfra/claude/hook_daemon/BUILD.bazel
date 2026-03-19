@@ -243,7 +243,6 @@ py_test(
     srcs = ["test_session_start.py"],
     data = [
         ":hook_dispatch",
-        "//devinfra/claude/auth_proxy:run",
         "//devinfra/claude/testdata/test_workspace:workspace_files",
         "//third_party/jdk:cacerts",
         "//third_party/jdk:keytool",
@@ -287,7 +286,6 @@ py_test(
     srcs = ["test_session_start_podman.py"],
     data = [
         ":hook_dispatch",
-        "//devinfra/claude/auth_proxy:run",
         "//third_party/jdk:cacerts",
         "//third_party/jdk:keytool",
     ],

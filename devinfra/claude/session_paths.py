@@ -62,8 +62,8 @@ class SessionPaths:
 
     @property
     def auth_proxy_creds_file(self) -> Path:
-        """Upstream proxy credentials file."""
-        return self.auth_proxy_dir / "upstream_proxy"
+        """Upstream proxy credentials file (lives in hook daemon dir, read by in-process proxy)."""
+        return self.hook_daemon_dir / "upstream_proxy"
 
     @property
     def auth_proxy_ca_file(self) -> Path:

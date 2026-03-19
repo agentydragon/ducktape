@@ -130,11 +130,10 @@ async def _ensure_proxy_creds_fresh(paths: SessionPaths, settings: HookSettings)
     if not https_proxy:
         raise AuthProxyError("No HTTPS_PROXY environment variable set")
 
-    # Write creds to the daemon's creds file location
-    daemon_creds = paths.hook_daemon_dir / "upstream_proxy"
-    daemon_creds.parent.mkdir(parents=True, exist_ok=True)
-    daemon_creds.write_text(https_proxy)
-    logger.debug("Wrote fresh proxy credentials to %s", daemon_creds)
+    creds_file = paths.auth_proxy_creds_file
+    creds_file.parent.mkdir(parents=True, exist_ok=True)
+    creds_file.write_text(https_proxy)
+    logger.debug("Wrote fresh proxy credentials to %s", creds_file)
 
     # Verify proxy is listening
     try:

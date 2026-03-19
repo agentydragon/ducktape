@@ -145,22 +145,10 @@ See BUILD.bazel for the full dependency list. Key runtime requirements:
 
 ## Usage
 
-### In-process (default)
-
 The proxy runs in-process within the hook daemon as daemon threads. It starts
 automatically when the daemon starts (if `HTTPS_PROXY` is set) and stops when
 the daemon shuts down. Credentials are written by session start and read on
 each connection (hot-reload).
-
-### Manual startup (for debugging)
-
-For debugging only. Normal operation runs in-process in the hook daemon:
-
-```bash
-# The auth proxy reads upstream URL from a file (enables credential hot-reload)
-# File format: http://username:password@host:port
-claude-auth-proxy --listen-port 18081 --creds-file /path/to/upstream_proxy
-```
 
 ## How It Works
 
@@ -177,7 +165,7 @@ Bazel/Bazelisk
     └──► bazel wrapper
            │
            ├── 1. Reads HTTPS_PROXY (fresh JWT from Anthropic)
-           ├── 2. Writes to creds file (~/.cache/.../upstream_proxy)
+           ├── 2. Writes to creds file (<session_dir>/hook-daemon/upstream_proxy)
            ├── 3. Sets HTTPS_PROXY=localhost:18081 for subprocess only
            └── 4. Execs bazelisk
                    │
@@ -240,19 +228,17 @@ Supervisor files (in `<session_dir>/supervisor/`, used for container runtime onl
 - `supervisord.conf` - Supervisor main configuration
 - `supervisord.{log,pid}` - Supervisor daemon state
 
-Note: Supervisor listens on TCP `127.0.0.1:19001` (no Unix socket file). The auth proxy
-no longer runs under supervisor — it runs in-process in the hook daemon.
+Note: Supervisor listens on TCP `127.0.0.1:19001` (no Unix socket file).
 
 Hook daemon files (in `<session_dir>/hook-daemon/`):
 
-- `upstream_proxy` - Auth proxy credentials (read on each connection)
+- `upstream_proxy` - Auth proxy credentials (read by in-process proxy on each connection)
 - `daemon.sock` - UDS for hook RPC
 - `daemon.pid` - Daemon pidfile
 - `daemon.log` - Daemon and session start logs
 
 Auth proxy files (in `<session_dir>/auth-proxy/`, created by `proxy_setup.py`):
 
-- `upstream_proxy` - Upstream proxy credentials (read on each connection)
 - `anthropic_ca.pem` - Loaded TLS inspection CA
 - `combined_ca.pem` - System CAs + Anthropic CA bundle
 - `cacerts.jks` - Java truststore with CA

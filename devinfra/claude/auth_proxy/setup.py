@@ -289,21 +289,12 @@ def _create_combined_ca_bundle(paths: SessionPaths) -> None:
     logger.info("Created combined CA bundle at %s", combined_ca)
 
 
-async def setup_auth_proxy(
-    paths: SessionPaths, settings: HookSettings, proxy: AuthForwardingProxy | None = None
-) -> ProxySetup:
+async def setup_auth_proxy(paths: SessionPaths, settings: HookSettings, proxy: AuthForwardingProxy) -> ProxySetup:
     """Set up the auth proxy environment for TLS-inspecting proxies.
 
     The proxy is expected to already be running in-process (started by the
     hook daemon server at startup). This function writes credentials and
     configures the CA/truststore environment.
-
-    Steps:
-    1. Write credentials to the proxy's creds file
-    2. Verify the proxy port is listening
-    3. Extract the TLS inspection CA from filesystem
-    4. Create Java truststore with the CA
-    5. Create combined CA bundle for SSL tools
     """
     port = settings.auth_proxy_port
     combined_ca = paths.auth_proxy_combined_ca
@@ -317,34 +308,29 @@ async def setup_auth_proxy(
     # Ensure proxy dir exists
     paths.auth_proxy_dir.mkdir(parents=True, exist_ok=True)
 
-    # Step 1: Write credentials to the proxy's creds file
+    # Write credentials to the proxy's creds file
     https_proxy = get_upstream_proxy_url()
     if not https_proxy:
         raise ProxyServiceError("No https_proxy environment variable set")
 
-    if proxy is not None:
-        _write_creds_file(proxy.creds_file, https_proxy)
-    else:
-        # Fallback: write to session-scoped creds file
-        _write_creds_file(paths.auth_proxy_creds_file, https_proxy)
+    _write_creds_file(proxy.creds_file, https_proxy)
 
-    # Step 2: Verify proxy is listening
+    # Verify proxy is listening
     with tracer.start_as_current_span("proxy_wait_socket"):
         await _wait_for_proxy_port(port)
     logger.info("Auth proxy confirmed running on port %d", port)
 
-    # Step 3: Load the TLS inspection CA from filesystem
+    # Load the TLS inspection CA from filesystem
     _extract_proxy_ca(paths)
 
-    # Step 4: Create Java truststore with the CA
+    # Create Java truststore with the CA
     with tracer.start_as_current_span("proxy_create_truststore"):
         await _create_java_truststore(paths)
 
-    # Step 5: Create combined CA bundle (for tools like uv that use SSL_CERT_FILE)
+    # Create combined CA bundle (for tools like uv that use SSL_CERT_FILE)
     _create_combined_ca_bundle(paths)
 
-    running = proxy is not None and proxy._running
-    status = f"running (port {port})" if running else "configured"
+    status = f"running (port {port})" if proxy._running else "configured"
     ca_status = "custom CA" if combined_ca.exists() else "system"
 
     logger.info("Auth proxy setup complete")

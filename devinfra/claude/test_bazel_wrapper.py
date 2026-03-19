@@ -22,10 +22,10 @@ async def test_writes_creds_and_verifies_port(
 
         mock_wait.assert_awaited_once_with("127.0.0.1", hook_settings.auth_proxy_port, timeout_secs=5.0)
 
-    # Verify creds were written to daemon location
-    daemon_creds = session_paths.hook_daemon_dir / "upstream_proxy"
-    assert daemon_creds.exists()
-    assert "user:pass" in daemon_creds.read_text()
+    # Verify creds were written to canonical location
+    creds_file = session_paths.auth_proxy_creds_file
+    assert creds_file.exists()
+    assert "user:pass" in creds_file.read_text()
 
 
 async def test_raises_when_no_proxy_env(

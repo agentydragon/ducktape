@@ -183,9 +183,6 @@ py_package(
         # Unified hook dispatcher (transitively pulls in all hook handler deps)
         "//devinfra/claude/hook_daemon:hook_dispatch_lib",
         "//devinfra/claude:statusline_lib",
-        # Auth proxy main module — invoked as subprocess by supervisor
-        # (not transitively reachable from hook_dispatch_lib)
-        "//devinfra/claude/auth_proxy:main",
         # CLI tool entry points
         "//difftree:cli",
         "//git_commit_ai:git_commit_ai_lib",

@@ -203,7 +203,7 @@ async def _setup_web(
     root_ctx: trace.Context,
     hook_config: k8s_secrets_setup.HookConfig | None,
     http: httpx.Client,
-    proxy: AuthForwardingProxy | None = None,
+    proxy: AuthForwardingProxy,
 ) -> PlatformSetup:
     """Web mode: supervisor, proxy, containers, secrets, parallel installs.
 
@@ -454,7 +454,7 @@ async def run_session(
     ctx: CallerContext,
     http: httpx.Client,
     otlp_exporter: DeferredOtlpExporter,
-    proxy: AuthForwardingProxy | None = None,
+    proxy: AuthForwardingProxy | None,
 ) -> SessionStartOutput:
     """Unified session setup for both web and CLI modes.
 
@@ -595,7 +595,7 @@ async def handle(
     caller_env: dict[str, str],
     http: httpx.Client,
     otlp_exporter: DeferredOtlpExporter,
-    proxy: AuthForwardingProxy | None = None,
+    proxy: AuthForwardingProxy | None,
 ) -> SessionStartOutput:
     """Entry point called from the hook daemon with the client's env."""
     logger.info("Caller environment: %s", caller_env)
