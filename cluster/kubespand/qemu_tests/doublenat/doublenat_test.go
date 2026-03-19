@@ -118,8 +118,8 @@ func runDoubleNAT(t *testing.T, workerType h.NodeType) {
 			h.PortForward{GuestPort: h.COSIGuestPort},
 			h.PortForward{HostPort: nat2APIPort, GuestPort: h.ApidGuestPort})
 
-		nat1 = h.NewTalosMeshNode(t, vmNAT1, h.DoubleNATNAT1IP, talosConfigPath, nat1APIPort)
-		nat2 = h.NewTalosMeshNode(t, vmNAT2, h.DoubleNATNAT2IP, talosConfigPath, nat2APIPort)
+		nat1 = h.NewTalosMeshNode(t, vmNAT1, talosConfigPath, nat1APIPort)
+		nat2 = h.NewTalosMeshNode(t, vmNAT2, talosConfigPath, nat2APIPort)
 		allVMs = append(allVMs, vmNAT1, vmNAT2)
 
 	case h.NodeTypeTalos:
@@ -145,8 +145,8 @@ func runDoubleNAT(t *testing.T, workerType h.NodeType) {
 		vmNAT2 := h.BootTalosVM(t, "vm-nat2", talosBaseImage, nat2CI,
 			nat2APIPort, h.McastNIC("net0", mcastLanB, h.DoubleNATNAT2MAC))
 
-		nat1 = h.NewTalosMeshNode(t, vmNAT1, h.DoubleNATNAT1IP, talosConfigPath, nat1APIPort)
-		nat2 = h.NewTalosMeshNode(t, vmNAT2, h.DoubleNATNAT2IP, talosConfigPath, nat2APIPort)
+		nat1 = h.NewTalosMeshNode(t, vmNAT1, talosConfigPath, nat1APIPort)
+		nat2 = h.NewTalosMeshNode(t, vmNAT2, talosConfigPath, nat2APIPort)
 		allVMs = append(allVMs, vmNAT1, vmNAT2)
 	}
 	sw.Lap("boot worker VMs")
@@ -157,7 +157,7 @@ func runDoubleNAT(t *testing.T, workerType h.NodeType) {
 	h.WaitForProbeServers(t, []*h.VM{vmDiscovery, vmRouterA, vmRouterB}, 120*time.Second)
 	sw.Lap("infrastructure VMs ready")
 
-	vpsNode := h.NewTalosMeshNode(t, vmVPS, h.DoubleNATVPSIP, talosConfigPath, vpsAPIPort)
+	vpsNode := h.NewTalosMeshNode(t, vmVPS, talosConfigPath, vpsAPIPort)
 
 	// Run convergence loop: watches COSI on all nodes, streams dmesg,
 	// fires probes when peers come up, exits on full mesh + probes pass.

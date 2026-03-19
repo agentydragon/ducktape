@@ -115,8 +115,8 @@ func runTrustdCSRFlow(t *testing.T, workerType h.NodeType) {
 	vmDisc.WaitForProbeServer(120 * time.Second)
 	sw.Lap("discovery VM ready")
 
-	cpNode := h.NewTalosMeshNode(t, vmCP, cpIP, talosConfigPath, talosAPIPort)
-	workerNode := h.NewTalosMeshNode(t, workerVM, workerIP, talosConfigPath, workerAPIPort)
+	cpNode := h.NewTalosMeshNode(t, vmCP, talosConfigPath, talosAPIPort)
+	workerNode := h.NewTalosMeshNode(t, workerVM, talosConfigPath, workerAPIPort)
 
 	// Run convergence loop: worker becoming "ready" (COSI watches established)
 	// proves the trustd CSR flow succeeded — the worker's TalosClient connecting

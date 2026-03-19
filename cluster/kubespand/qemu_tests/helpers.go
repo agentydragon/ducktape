@@ -66,6 +66,9 @@ const (
 // mgmtMAC is the MAC address assigned to the management NIC by BootVM.
 const mgmtMAC = vmconst.MgmtMAC
 
+// MgmtIP is the IP address assigned to the management NIC (QEMU user-mode default).
+const MgmtIP = vmconst.MgmtIP
+
 // MAC addresses for flat/cross-subnet/trustd topology VMs.
 const (
 	DiscoveryMAC = "52:54:00:ff:00:01"

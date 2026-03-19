@@ -49,11 +49,19 @@ type MeshNode struct {
 
 // NewTalosMeshNode constructs a MeshNode for a Talos VM, creating the Talos
 // mTLS API client internally. The client is closed automatically via t.Cleanup.
-func NewTalosMeshNode(t *testing.T, vm *VM, nodeIP, talosConfigPath string, apiPort int) *MeshNode {
+//
+// Uses the management NIC IP (10.0.2.15) for client.WithNode context. Each
+// TalosClient already connects to the correct node via port forwarding, so
+// WithNode just needs to resolve to "this node" inside apid. The management IP
+// is statically assigned in the Talos config (eth1), available immediately on
+// boot without depending on COSI NodeAddress reconciliation. Using mesh-facing
+// IPs (e.g. 192.168.60.2) fails in NAT topologies because apid can't verify
+// them as local during KubeSpan network reconfiguration.
+func NewTalosMeshNode(t *testing.T, vm *VM, talosConfigPath string, apiPort int) *MeshNode {
 	t.Helper()
 	c := NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", apiPort))
 	t.Cleanup(func() { c.Close() })
-	return &MeshNode{VM: vm, Type: NodeTypeTalos, NodeIP: nodeIP, T: t, TalosClient: c}
+	return &MeshNode{VM: vm, Type: NodeTypeTalos, NodeIP: MgmtIP, T: t, TalosClient: c}
 }
 
 // Close cleans up resources (closes the Talos client if present).

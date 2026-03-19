@@ -115,8 +115,8 @@ func runTopology(t *testing.T, topology string, workerType h.NodeType) {
 			h.PortForward{HostPort: aAPIPort, GuestPort: h.ApidGuestPort})
 		sw.Lap("boot VM-A")
 
-		workerA = h.NewTalosMeshNode(t, vmA, linkIPA, talosConfigPath, aAPIPort)
-		workerB = h.NewTalosMeshNode(t, vmB, linkIPB, talosConfigPath, bAPIPort)
+		workerA = h.NewTalosMeshNode(t, vmA, talosConfigPath, aAPIPort)
+		workerB = h.NewTalosMeshNode(t, vmB, talosConfigPath, bAPIPort)
 		allVMs = []*h.VM{vmA, vmB, vmDisc}
 
 	case h.NodeTypeTalos:
@@ -143,8 +143,8 @@ func runTopology(t *testing.T, topology string, workerType h.NodeType) {
 			bAPIPort, h.McastNIC("net0", mcastAddr, h.NodeBMAC))
 		sw.Lap("boot Talos workers")
 
-		workerA = h.NewTalosMeshNode(t, vmA, linkIPA, talosConfigPath, aAPIPort)
-		workerB = h.NewTalosMeshNode(t, vmB, linkIPB, talosConfigPath, bAPIPort)
+		workerA = h.NewTalosMeshNode(t, vmA, talosConfigPath, aAPIPort)
+		workerB = h.NewTalosMeshNode(t, vmB, talosConfigPath, bAPIPort)
 		allVMs = []*h.VM{vmA, vmB, vmDisc}
 	}
 	// Talos CP VM — participates in KubeSpan mesh for API-based peer observation.
@@ -162,7 +162,7 @@ func runTopology(t *testing.T, topology string, workerType h.NodeType) {
 	sw.Lap("discovery HTTP ready")
 
 	// Talos CP API.
-	cpNode := h.NewTalosMeshNode(t, vmCP, cpIP, talosConfigPath, talosAPIPort)
+	cpNode := h.NewTalosMeshNode(t, vmCP, talosConfigPath, talosAPIPort)
 
 	// Run convergence loop: watches COSI on all nodes, streams dmesg,
 	// fires probes when peers come up, exits on full mesh + probes pass.
