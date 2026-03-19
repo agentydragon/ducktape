@@ -12,7 +12,7 @@ Bazel source labels, and finds affected test targets through a two-step query:
    filters out files that exist on disk but aren't declared in any BUILD srcs.
 2. **Find affected tests** (~3s warm):
    `kind(".*_test", rdeps(<universe>, set(<labels>)))` with
-   `--universe_scope` excluding broken packages (`x/cotrl`, `gterm_theme`).
+   `--universe_scope` excluding broken packages (`x/cotrl`).
    The `x/` directory is expanded into individual sub-packages so only the
    broken `x/cotrl` is excluded.
 
@@ -107,8 +107,7 @@ evaluation (~7s) + parallelized package loading (~3s on the critical path).
 - **No query optimization can fix cold start** — the bottleneck is server
   boot, not query evaluation. A persistent Bazel server is the only fix.
 - **Scoped queries return fewer targets** (369 vs 461) because they exclude
-  broken packages (`x/cotrl`, `gterm_theme`). No speed benefit for cold
-  start.
+  broken packages (`x/cotrl`). No speed benefit for cold start.
 - **`rdeps` and `somepath` fail** with `//...` universe due to `gymnasium`
   (missing pip package). They need scoped universes.
 - **`kind("py_test", //...)`** is anomalously slow on first warm-server call
@@ -133,6 +132,10 @@ isn't already running.
   labels with `kind("source file", ...)` before the rdeps query.
 - **`//...` universe loads broken external deps** (gymnasium, pygobject).
   Fixed by constructing a scoped universe that excludes `_EXCLUDED_PACKAGES`.
+  `gterm_theme` (pygobject/pycairo) was fixed by installing the correct
+  native dev packages (`libgirepository-2.0-dev`, `libcairo2-dev`,
+  `libdbus-1-dev` — 3 packages, ~2.2 MB, ~7s install on Claude Code web).
+  Only `x/cotrl` (gymnasium) remains excluded.
 - **`//...` is slow for rdeps** (~21s warm). `--universe_scope` brings it
   to ~3s.
 - **Root package label `//:*`** rejected by Bazel ("empty target name").

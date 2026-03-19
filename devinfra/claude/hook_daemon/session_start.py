@@ -29,6 +29,7 @@ from devinfra.claude import (
     fork_remote_setup,
     k8s_secrets_setup,
     mkcert_setup,
+    native_deps_setup,
     precommit_setup,
     tmpfs_setup,
 )
@@ -313,6 +314,10 @@ async def _setup_web(
     async def traced_cli_tools():
         return await run_in_thread(cli_tools_setup.install_cli_tools, paths.wrapper_dir, http)
 
+    @tracer.start_as_current_span("install_native_deps", context=root_ctx)
+    async def traced_native_deps():
+        return await native_deps_setup.install_native_deps()
+
     results = await asyncio.gather(
         proxy_task,
         setup_container_runtime_task(),
@@ -321,6 +326,7 @@ async def _setup_web(
         setup_bazel_on_tmpfs(),
         mkcert_append_bundle(),
         traced_cli_tools(),
+        traced_native_deps(),
         return_exceptions=True,
     )
     # Unpack with explicit type annotations for mypy
@@ -331,6 +337,7 @@ async def _setup_web(
     tmpfs_result: tmpfs_setup.TmpfsSetup | BaseException = results[4]
     mkcert_result: mkcert_setup.MkcertSetup | BaseException = results[5]
     cli_tools_result: list[str] | BaseException = results[6]
+    native_deps_result: native_deps_setup.NativeDepsSetup | BaseException = results[7]
 
     # Log non-critical failures
     if isinstance(precommit_result, BaseException):
@@ -345,6 +352,8 @@ async def _setup_web(
         logger.warning("Failed to set up mkcert: %s", mkcert_result)
     if isinstance(cli_tools_result, BaseException):
         logger.warning("Failed to install CLI tools: %s", cli_tools_result)
+    if isinstance(native_deps_result, BaseException):
+        logger.warning("Failed to install native dev packages: %s", native_deps_result)
 
     # Handle container runtime result
     docker_env: dict[str, str] | None = None

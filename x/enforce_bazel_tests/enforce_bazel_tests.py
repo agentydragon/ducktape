@@ -41,12 +41,9 @@ _INFRA_PATTERNS = (
 _INFRA_GLOBS = ("devinfra/bazel*",)
 
 # Bazel packages excluded from the query universe.
-# These have external deps that fail at repo fetch time without system native
-# libraries. They already use tags=["manual"] but //... still loads their
-# packages, triggering the fetch.
+# These have external deps that fail at repo fetch time.
 _EXCLUDED_PACKAGES = {
-    "gterm_theme",  # pycairo, pygobject — need native libs
-    "x/cotrl",  # gymnasium — not in requirements
+    "x/cotrl"  # gymnasium — not in requirements
 }
 
 _PREFIX = "enforce-bazel-tests"

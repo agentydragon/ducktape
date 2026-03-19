@@ -22,6 +22,10 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
         # dbus-daemon: needed by tests that spawn a private D-Bus session
         # (e.g. experimental/dbus_fast_example)
         dbus-daemon \
+        # Native dev headers for pip wheel builds (pygobject, pycairo, dbus-python)
+        libgirepository-2.0-dev \
+        libcairo2-dev \
+        libdbus-1-dev \
         # cpio: needed to build initramfs for QEMU-based tests
         cpio \
         # dosfstools + mtools: needed to create FAT CIDATA volumes for Talos

@@ -79,6 +79,7 @@ py_library(
         "//devinfra/claude:k8s_secrets_setup",
         "//devinfra/claude:managed_files",
         "//devinfra/claude:mkcert_setup",
+        "//devinfra/claude:native_deps_setup",
         "//devinfra/claude:precommit_setup",
         "//devinfra/claude:session_paths",
         "//devinfra/claude:settings",
