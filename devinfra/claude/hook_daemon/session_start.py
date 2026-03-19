@@ -33,6 +33,7 @@ from devinfra.claude import (
     tmpfs_setup,
 )
 from devinfra.claude.auth_proxy import setup as proxy_setup
+from devinfra.claude.auth_proxy.proxy import AuthForwardingProxy
 from devinfra.claude.claude_api.hooks.session_start import (
     SessionStartHookInput,
     SessionStartHookSpecificOutput,
@@ -204,6 +205,7 @@ async def _setup_web(
     root_ctx: trace.Context,
     hook_config: k8s_secrets_setup.HookConfig | None,
     http: httpx.Client,
+    proxy: AuthForwardingProxy | None = None,
 ) -> PlatformSetup:
     """Web mode: supervisor, proxy, containers, secrets, parallel installs.
 
@@ -229,19 +231,10 @@ async def _setup_web(
             logger.warning("tmpfs mount failed at %s, will fall back to 9p: %s", path, e)
             return False
 
-    # Wrappers that depend on supervisor being ready
-    # TODO: Handle upstream dependency failures more gracefully.
-    # Currently, when supervisor_task fails, all downstream tasks (proxy, podman)
-    # re-raise the same exception, resulting in N copies of the upstream error.
-    # Consider: skip downstream tasks silently or return a sentinel value instead
-    # of re-raising, so only the original upstream error surfaces once.
-    async def setup_proxy_with_supervisor(*, buildbuddy_configured: bool = False) -> proxy_setup.ProxySetup:
-        """Set up auth proxy (depends on supervisor)."""
+    async def setup_proxy_credentials() -> proxy_setup.ProxySetup:
+        """Write proxy credentials and set up CA/truststore (proxy already running in-process)."""
         with tracer.start_as_current_span("setup_proxy", context=root_ctx):
-            supervisor_result = await supervisor_task
-            return await proxy_setup.setup_auth_proxy(
-                paths, settings, supervisor_result.client, buildbuddy_configured=buildbuddy_configured
-            )
+            return await proxy_setup.setup_auth_proxy(paths, settings, proxy=proxy)
 
     async def setup_container_runtime_task() -> container_runtime.ContainerRuntimeSetup:
         """Set up configured container runtime (depends on supervisor + per-component tmpfs)."""
@@ -282,15 +275,17 @@ async def _setup_web(
 
     # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
     # Dependency graph:
-    #   supervisor_task ──┬── proxy_task ──── setup_mkcert_with_proxy
-    #                     └── setup_container_runtime (Docker or Podman)
-    #                         (each runtime mounts its own tmpfs internally)
+    #   proxy_task (in-process, no supervisor dependency)
+    #   supervisor_task ── setup_container_runtime (Docker or Podman)
+    #                      (each runtime mounts its own tmpfs internally)
     #   setup_bazel_on_tmpfs mounts its own tmpfs independently
     logger.info("Starting parallel installations...")
 
     # Proxy task starts without BuildBuddy state (buildbuddy setup depends on
     # k8s secrets which in turn depend on proxy being up for TLS).
-    proxy_task = asyncio.create_task(setup_proxy_with_supervisor())
+    # Proxy runs in-process (daemon threads, started by hook daemon server).
+    # This task writes credentials and sets up CA/truststore.
+    proxy_task = asyncio.create_task(setup_proxy_credentials())
 
     async def mkcert_generate_certs() -> mkcert_setup.MkcertSetup:
         """Generate mkcert certs (no proxy dependency — runs immediately in parallel)."""
@@ -464,6 +459,7 @@ async def run_session(
     ctx: CallerContext,
     http: httpx.Client,
     otlp_exporter: DeferredOtlpExporter,
+    proxy: AuthForwardingProxy | None = None,
 ) -> SessionStartOutput:
     """Unified session setup for both web and CLI modes.
 
@@ -495,7 +491,7 @@ async def run_session(
 
     # Platform-specific setup
     if ctx.web_mode:
-        setup = await _setup_web(paths, settings, project_dir, tracer, root_ctx, hook_config, http=http)
+        setup = await _setup_web(paths, settings, project_dir, tracer, root_ctx, hook_config, http=http, proxy=proxy)
     else:
         # CLI mode: read k8s secrets (no proxy needed, combined_ca_path=None).
         if settings.k8s_token and hook_config:
@@ -603,8 +599,9 @@ async def handle(
     caller_env: dict[str, str],
     http: httpx.Client,
     otlp_exporter: DeferredOtlpExporter,
+    proxy: AuthForwardingProxy | None = None,
 ) -> SessionStartOutput:
     """Entry point called from the hook daemon with the client's env."""
     logger.info("Caller environment: %s", caller_env)
     ctx = CallerContext.from_env(caller_env)
-    return await run_session(hook_input, paths, settings, ctx, http, otlp_exporter)
+    return await run_session(hook_input, paths, settings, ctx, http, otlp_exporter, proxy=proxy)

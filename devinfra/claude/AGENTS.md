@@ -3,7 +3,8 @@
 ## Agent Instructions
 
 - **Session start log**: `~/.claude/session-env/<session_id>/session-start.log`
-- **Supervisor logs**: `~/.claude/session-env/<session_id>/supervisor/supervisord.log` (supervisor daemon), `~/.claude/session-env/<session_id>/supervisor/auth-proxy.{log,err.log}` (auth proxy service)
+- **Hook daemon logs**: `~/.claude/session-env/<session_id>/hook-daemon/daemon.log` (hook daemon + in-process auth proxy)
+- **Supervisor logs**: `~/.claude/session-env/<session_id>/supervisor/supervisord.log` (supervisor daemon, used for container runtime)
 - **gVisor environment**: Claude Code web runs on gVisor, not real Linux. Some syscalls behave differently.
 - **9p filesystem limitation**: Root `/` is 9p. Supervisor uses TCP socket (`127.0.0.1:19001`) instead of Unix socket to avoid 9p hard link issues (EOPNOTSUPP).
 
@@ -23,6 +24,9 @@ curl -s --max-time 5 -x http://127.0.0.1:18081 https://bcr.bazel.build/ | head -
 # Check session bazelrc
 cat "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/bazelrc"
 
-# Check supervisor status
+# Check hook daemon logs (auth proxy runs in-process)
+tail -50 "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/hook-daemon/daemon.log"
+
+# Check supervisor status (container runtime only)
 python -m supervisor.supervisorctl -c "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/supervisor/supervisord.conf" status
 ```

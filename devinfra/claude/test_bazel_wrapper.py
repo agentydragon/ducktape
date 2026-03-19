@@ -1,60 +1,59 @@
-"""Unit tests for bazel_wrapper supervisor restart logic."""
+"""Unit tests for bazel_wrapper proxy credential refresh logic."""
 
 from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_bazel
 
-from devinfra.claude.bazel_wrapper import _ensure_proxy_with_supervisor_restart
-from devinfra.claude.errors import SupervisorError
+from devinfra.claude.bazel_wrapper import _ensure_proxy_creds_fresh
+from devinfra.claude.errors import AuthProxyError
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings
 
 
-async def test_supervisor_reachable_skips_restart(session_paths: SessionPaths, hook_settings: HookSettings) -> None:
-    """When supervisor is reachable, proxy setup runs without restart."""
+async def test_writes_creds_and_verifies_port(
+    session_paths: SessionPaths, hook_settings: HookSettings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When proxy is listening, creds are written and no error is raised."""
+    monkeypatch.setenv("HTTPS_PROXY", "http://user:pass@proxy.example.com:8080")
+
+    with patch("devinfra.claude.bazel_wrapper.async_wait_for_port", new_callable=AsyncMock) as mock_wait:
+        await _ensure_proxy_creds_fresh(session_paths, hook_settings)
+
+        mock_wait.assert_awaited_once_with("127.0.0.1", hook_settings.auth_proxy_port, timeout_secs=5.0)
+
+    # Verify creds were written to daemon location
+    daemon_creds = session_paths.hook_daemon_dir / "upstream_proxy"
+    assert daemon_creds.exists()
+    assert "user:pass" in daemon_creds.read_text()
+
+
+async def test_raises_when_no_proxy_env(
+    session_paths: SessionPaths, hook_settings: HookSettings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When HTTPS_PROXY is not set, raises AuthProxyError."""
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    monkeypatch.delenv("https_proxy", raising=False)
+
+    with pytest.raises(AuthProxyError, match="No HTTPS_PROXY"):
+        await _ensure_proxy_creds_fresh(session_paths, hook_settings)
+
+
+async def test_raises_when_proxy_not_listening(
+    session_paths: SessionPaths, hook_settings: HookSettings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When proxy port is not listening, raises AuthProxyError with restart guidance."""
+    monkeypatch.setenv("HTTPS_PROXY", "http://user:pass@proxy.example.com:8080")
+
     with (
         patch(
-            "devinfra.claude.bazel_wrapper.try_connect", new_callable=AsyncMock, return_value=AsyncMock()
-        ) as mock_try_connect,
-        patch("devinfra.claude.bazel_wrapper.proxy_setup.ensure_proxy_running", new_callable=AsyncMock) as mock_ensure,
-        patch("devinfra.claude.bazel_wrapper.supervisor_start", new_callable=AsyncMock) as mock_start,
-    ):
-        await _ensure_proxy_with_supervisor_restart(session_paths, hook_settings)
-
-        mock_try_connect.assert_awaited_once_with(session_paths, hook_settings)
-        mock_ensure.assert_awaited_once()
-        mock_start.assert_not_awaited()
-
-
-async def test_supervisor_dead_triggers_restart(session_paths: SessionPaths, hook_settings: HookSettings) -> None:
-    """When supervisor is unreachable, it gets restarted before proxy setup."""
-    with (
-        patch(
-            "devinfra.claude.bazel_wrapper.try_connect", new_callable=AsyncMock, return_value=None
-        ) as mock_try_connect,
-        patch("devinfra.claude.bazel_wrapper.proxy_setup.ensure_proxy_running", new_callable=AsyncMock) as mock_ensure,
-        patch("devinfra.claude.bazel_wrapper.supervisor_start", new_callable=AsyncMock) as mock_start,
-    ):
-        await _ensure_proxy_with_supervisor_restart(session_paths, hook_settings)
-
-        mock_try_connect.assert_awaited_once_with(session_paths, hook_settings)
-        mock_start.assert_awaited_once_with(session_paths, hook_settings)
-        mock_ensure.assert_awaited_once()
-
-
-async def test_supervisor_restart_failure_propagates(session_paths: SessionPaths, hook_settings: HookSettings) -> None:
-    """When supervisor restart fails, the error propagates as SupervisorError."""
-    with (
-        patch("devinfra.claude.bazel_wrapper.try_connect", new_callable=AsyncMock, return_value=None),
-        patch(
-            "devinfra.claude.bazel_wrapper.supervisor_start",
+            "devinfra.claude.bazel_wrapper.async_wait_for_port",
             new_callable=AsyncMock,
-            side_effect=SupervisorError("supervisord did not start in time"),
+            side_effect=TimeoutError("port not ready"),
         ),
-        pytest.raises(SupervisorError, match="did not start in time"),
+        pytest.raises(AuthProxyError, match="not listening"),
     ):
-        await _ensure_proxy_with_supervisor_restart(session_paths, hook_settings)
+        await _ensure_proxy_creds_fresh(session_paths, hook_settings)
 
 
 if __name__ == "__main__":

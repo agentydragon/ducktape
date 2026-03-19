@@ -1,7 +1,8 @@
 """Bazel wrapper for Claude Code — sets up environment and execs bazel.
 
-Mode-aware: in web mode (CLAUDE_CODE_REMOTE=true), sets proxy env vars and
-ensures auth proxy is running. In CLI mode, passes through directly.
+Mode-aware: in web mode (CLAUDE_CODE_REMOTE=true), writes fresh proxy
+credentials and verifies the in-process auth proxy is running. In CLI mode,
+passes through directly.
 Both modes inject --bazelrc=<per-session-bazelrc> via SESSION_BAZELRC.
 
 Routes to the correct binary based on invocation name: if invoked as "bazelisk",
@@ -18,17 +19,15 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from devinfra.claude.auth_proxy import setup as proxy_setup
 from devinfra.claude.auth_proxy.credentials import check_credential_expiry
-from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
+from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS, get_upstream_proxy_url
 from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.env_file import ENV_AUTH_PROXY_URL, ENV_BAZELISK_PATH, ENV_SESSION_BAZELRC
 from devinfra.claude.errors import AuthProxyError
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import ENV_SESSION_DIR, HookSettings, is_web_mode
-from devinfra.claude.supervisor.client import try_connect
-from devinfra.claude.supervisor.setup import start as supervisor_start
 from util.env import get_required_env
+from util.net import async_wait_for_port
 
 logger = logging.getLogger(__name__)
 
@@ -120,20 +119,41 @@ def _resolve_real_binary() -> str:
     raise FileNotFoundError(f"No {invoked_as} found on PATH")
 
 
-async def _ensure_proxy_with_supervisor_restart(paths: SessionPaths, settings: HookSettings) -> None:
-    """Ensure proxy is running, restarting supervisor if it's dead."""
-    client = await try_connect(paths, settings)
-    if client is None:
-        logger.warning("Supervisor is not reachable, restarting...")
-        client = (await supervisor_start(paths, settings)).client
+async def _ensure_proxy_creds_fresh(paths: SessionPaths, settings: HookSettings) -> None:
+    """Write fresh credentials and verify the in-process auth proxy is listening.
 
-    await proxy_setup.ensure_proxy_running(paths, settings, client)
+    The auth proxy runs in the hook daemon process and reads its creds file
+    on each connection. This function writes the current upstream proxy URL
+    (which may have a refreshed JWT) to the daemon's creds file.
+    """
+    https_proxy = get_upstream_proxy_url()
+    if not https_proxy:
+        raise AuthProxyError("No HTTPS_PROXY environment variable set")
+
+    # Write creds to the daemon's creds file location
+    daemon_creds = paths.hook_daemon_dir / "upstream_proxy"
+    daemon_creds.parent.mkdir(parents=True, exist_ok=True)
+    daemon_creds.write_text(https_proxy)
+    logger.debug("Wrote fresh proxy credentials to %s", daemon_creds)
+
+    # Also write to session-scoped location for backward compatibility
+    paths.auth_proxy_creds_file.parent.mkdir(parents=True, exist_ok=True)
+    paths.auth_proxy_creds_file.write_text(https_proxy)
+
+    # Verify proxy is listening
+    try:
+        await async_wait_for_port("127.0.0.1", settings.auth_proxy_port, timeout_secs=5.0)
+    except TimeoutError as e:
+        raise AuthProxyError(
+            f"Auth proxy not listening on port {settings.auth_proxy_port}. "
+            "The hook daemon may not be running. Try restarting your Claude Code session."
+        ) from e
 
 
 async def _async_main(paths: SessionPaths, settings: HookSettings) -> None:
     """Async entry point — all async work happens here."""
     if is_web_mode():
-        await _ensure_proxy_with_supervisor_restart(paths, settings)
+        await _ensure_proxy_creds_fresh(paths, settings)
         warn_if_credentials_expiring(paths)
 
         local_proxy = get_required_env(ENV_AUTH_PROXY_URL)
@@ -163,8 +183,7 @@ def main() -> None:
         asyncio.run(_async_main(paths, settings))
     except AuthProxyError as e:
         logger.error("%s", e)
-        logger.info("Supervisor auto-restart was attempted but setup still failed")
-        logger.info("Logs: %s", paths.supervisor_dir)
+        logger.info("The hook daemon may need restarting — start a new session or re-trigger hooks")
         raise SystemExit(1) from e
 
 

@@ -244,11 +244,9 @@ py_library(
         ":session_paths",
         ":settings",
         "//devinfra/claude/auth_proxy:credentials",
-        "//devinfra/claude/auth_proxy:setup",
         "//devinfra/claude/auth_proxy:vars",
-        "//devinfra/claude/supervisor:client",
-        "//devinfra/claude/supervisor:setup",
         "//util:env",
+        "//util:net",
     ],
 )
 
@@ -383,10 +381,6 @@ py_test(
 py_test(
     name = "test_integration",
     srcs = ["test_integration.py"],
-    data = [
-        # The proxy binary is spawned as a subprocess by supervisor
-        "//devinfra/claude/auth_proxy:run",
-    ],
     env_inherit = [
         "HTTPS_PROXY",
         "https_proxy",
@@ -399,9 +393,9 @@ py_test(
         ":conftest",
         ":session_paths",
         ":settings",
+        "//devinfra/claude/auth_proxy:proxy",
         "//devinfra/claude/auth_proxy:setup",
-        "//devinfra/claude/supervisor:client",
-        "//devinfra/claude/supervisor:setup",
+        "//devinfra/claude/auth_proxy:vars",
         "//devinfra/claude/testing:fixtures",
         "//devinfra/claude/testing:mock_egress_proxy",
         "//util:net",

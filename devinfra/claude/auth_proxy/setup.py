@@ -1,30 +1,28 @@
 """Auth proxy setup for Claude Code web's TLS-inspecting proxy.
 
 Handles:
+- Writing credentials for the in-process auth proxy
 - Loading the Anthropic TLS inspection CA certificate from the filesystem
 - Creating a Java truststore with the CA for Bazel
 - Creating combined CA bundle for SSL tools
-- Starting the local auth proxy
 """
 
 import asyncio
 import logging
 import os
 import shutil
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from cryptography import x509
 from opentelemetry import trace
 
+from devinfra.claude.auth_proxy.proxy import AuthForwardingProxy
 from devinfra.claude.auth_proxy.vars import get_upstream_proxy_url
 from devinfra.claude.errors import CaBundleError, CaExtractionError, ProxyServiceError, TruststoreError
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings
-from devinfra.claude.supervisor.client import SupervisorClient
-from util.bazel.subprocess import python_env
-from util.net import async_wait_for_port, is_port_in_use
+from util.net import async_wait_for_port
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -32,9 +30,6 @@ tracer = trace.get_tracer(__name__)
 # Env vars set by Bazel BUILD targets (rlocation keys for hermetic JDK files)
 _KEYTOOL_RLOCATION_ENV = "KEYTOOL_RLOCATION"
 _JAVA_CACERTS_RLOCATION_ENV = "JAVA_CACERTS_RLOCATION"
-
-# Auth proxy supervisor service name
-AUTH_PROXY_SERVICE = "auth-proxy"
 
 # Pre-installed Anthropic CA on Claude Code web containers
 ANTHROPIC_CA_PREINSTALLED = Path("/usr/local/share/ca-certificates/swp-ca-production.crt")
@@ -95,11 +90,7 @@ def _find_keytool() -> str:
 
 @dataclass
 class ProxySetup:
-    """Result of auth proxy setup.
-
-    Status is snapshotted at setup time rather than querying supervisor
-    on each access.
-    """
+    """Result of auth proxy setup."""
 
     port: int
     combined_ca: Path
@@ -242,94 +233,26 @@ async def _create_java_truststore(paths: SessionPaths) -> None:
         raise TruststoreError(f"Failed to create truststore: {e}") from e
 
 
-def _build_auth_proxy_command(paths: SessionPaths, settings: HookSettings) -> str:
-    """Build command to run auth proxy.
-
-    Uses sys.executable -m to run the module. This works in both:
-    - Bazel mode: PYTHONPATH is set and forwarded via python_env()
-    - Wheel mode: the package is installed, so the module is importable
-    """
-    proxy_port = settings.auth_proxy_port
-    creds_file = paths.auth_proxy_creds_file
-    auth_proxy_cmd = f"{sys.executable} -m devinfra.claude.auth_proxy.main"
-    return f"{auth_proxy_cmd} --listen-port {proxy_port} --creds-file {creds_file}"
-
-
-def _write_creds_file(paths: SessionPaths, https_proxy: str) -> None:
+def _write_creds_file(creds_file: Path, https_proxy: str) -> None:
     """Write the upstream proxy URL to the credentials file.
 
     The proxy reads this file on each connection for hot-reload.
     """
-    creds_file = paths.auth_proxy_creds_file
     creds_file.parent.mkdir(parents=True, exist_ok=True)
     creds_file.write_text(https_proxy)
     logger.debug("Wrote proxy credentials to %s", creds_file)
 
 
-async def _wait_for_proxy_running(
-    settings: HookSettings, supervisor: SupervisorClient, *, timeout_seconds: float = 5.0
-) -> None:
-    """Wait for proxy port to be listening AND supervisor to report RUNNING.
+async def _wait_for_proxy_port(port: int) -> None:
+    """Wait for the proxy port to become available.
 
     Raises:
-        ProxyServiceError: If proxy does not become ready within timeout.
+        ProxyServiceError: If proxy port is not listening within timeout.
     """
-    proxy_port = settings.auth_proxy_port
     try:
-        async with asyncio.timeout(timeout_seconds):
-            await async_wait_for_port("127.0.0.1", proxy_port, timeout_secs=timeout_seconds)
-            await supervisor.wait_for_service_running(AUTH_PROXY_SERVICE)
-    except TimeoutError:
-        port_ready = is_port_in_use(proxy_port)
-        state = await supervisor.get_service_state(AUTH_PROXY_SERVICE)
-        raise ProxyServiceError(
-            f"Auth proxy did not become ready within {timeout_seconds}s "
-            f"(port_listening={port_ready}, supervisor_state={state})"
-        )
-
-
-async def ensure_proxy_running(paths: SessionPaths, settings: HookSettings, supervisor: SupervisorClient) -> None:
-    """Ensure proxy is running with current credentials.
-
-    Writes the current https_proxy URL to the credentials file. The proxy
-    reads this file on each connection, so credential changes take effect
-    immediately without restart.
-
-    Raises:
-        ProxyServiceError: If https_proxy not set or proxy fails to start.
-    """
-    proxy_dir = paths.auth_proxy_dir
-    proxy_dir.mkdir(parents=True, exist_ok=True)
-
-    https_proxy = get_upstream_proxy_url()
-    if not https_proxy:
-        raise ProxyServiceError("No https_proxy environment variable set")
-
-    # Write current proxy URL (proxy reads on each connection)
-    _write_creds_file(paths, https_proxy)
-
-    # If proxy is already running, we're done (it will pick up new creds)
-    if await supervisor.is_service_running(AUTH_PROXY_SERVICE):
-        return
-
-    # Service exists but not running (FATAL/STOPPED/EXITED) - restart it
-    command = _build_auth_proxy_command(paths, settings)
-    proxy_port = settings.auth_proxy_port
-    if await supervisor.service_exists(AUTH_PROXY_SERVICE):
-        logger.info("Restarting proxy service on port %d", proxy_port)
-        await supervisor.update_service(
-            name=AUTH_PROXY_SERVICE, command=command, directory=proxy_dir, environment=python_env(inherit=False)
-        )
-    else:
-        # Start proxy service for the first time
-        logger.info("Starting auth proxy on port %d via supervisor", proxy_port)
-        await supervisor.add_service(
-            name=AUTH_PROXY_SERVICE, command=command, directory=proxy_dir, environment=python_env(inherit=False)
-        )
-
-    with tracer.start_as_current_span("proxy_wait_socket"):
-        await _wait_for_proxy_running(settings, supervisor)
-    logger.info("Auth proxy running successfully")
+        await async_wait_for_port("127.0.0.1", port, timeout_secs=5.0)
+    except TimeoutError as e:
+        raise ProxyServiceError(f"Auth proxy port {port} not listening after 5s") from e
 
 
 @tracer.start_as_current_span("proxy_create_bundle")
@@ -366,26 +289,21 @@ def _create_combined_ca_bundle(paths: SessionPaths) -> None:
     logger.info("Created combined CA bundle at %s", combined_ca)
 
 
-async def _snapshot_proxy_status(paths: SessionPaths, supervisor: SupervisorClient, port: int) -> str:
-    """Snapshot the current proxy status."""
-    if not paths.auth_proxy_truststore.exists():
-        return "not configured"
-    if await supervisor.is_service_running(AUTH_PROXY_SERVICE):
-        return f"running (port {port})"
-    return "configured (not running)"
-
-
 async def setup_auth_proxy(
-    paths: SessionPaths, settings: HookSettings, supervisor: SupervisorClient, *, buildbuddy_configured: bool = False
+    paths: SessionPaths, settings: HookSettings, proxy: AuthForwardingProxy | None = None
 ) -> ProxySetup:
-    """Set up the complete auth proxy environment for TLS-inspecting proxies.
+    """Set up the auth proxy environment for TLS-inspecting proxies.
 
-    This is needed when running behind Anthropic's TLS-inspecting proxy
-    (Claude Code web). Steps:
-    1. Start auth proxy (handles auth to upstream)
-    2. Extract the TLS inspection CA (via auth proxy)
-    3. Create Java truststore with the CA
-    4. Create combined CA bundle for SSL tools
+    The proxy is expected to already be running in-process (started by the
+    hook daemon server at startup). This function writes credentials and
+    configures the CA/truststore environment.
+
+    Steps:
+    1. Write credentials to the proxy's creds file
+    2. Verify the proxy port is listening
+    3. Extract the TLS inspection CA from filesystem
+    4. Create Java truststore with the CA
+    5. Create combined CA bundle for SSL tools
     """
     port = settings.auth_proxy_port
     combined_ca = paths.auth_proxy_combined_ca
@@ -399,21 +317,34 @@ async def setup_auth_proxy(
     # Ensure proxy dir exists
     paths.auth_proxy_dir.mkdir(parents=True, exist_ok=True)
 
-    # Step 1: Start auth proxy first (needed for CA extraction)
-    with tracer.start_as_current_span("proxy_start_service"):
-        await ensure_proxy_running(paths, settings, supervisor)
+    # Step 1: Write credentials to the proxy's creds file
+    https_proxy = get_upstream_proxy_url()
+    if not https_proxy:
+        raise ProxyServiceError("No https_proxy environment variable set")
 
-    # Step 2: Load the TLS inspection CA from filesystem
+    if proxy is not None:
+        _write_creds_file(proxy.creds_file, https_proxy)
+    else:
+        # Fallback: write to session-scoped creds file
+        _write_creds_file(paths.auth_proxy_creds_file, https_proxy)
+
+    # Step 2: Verify proxy is listening
+    with tracer.start_as_current_span("proxy_wait_socket"):
+        await _wait_for_proxy_port(port)
+    logger.info("Auth proxy confirmed running on port %d", port)
+
+    # Step 3: Load the TLS inspection CA from filesystem
     _extract_proxy_ca(paths)
 
-    # Step 3: Create Java truststore with the CA
+    # Step 4: Create Java truststore with the CA
     with tracer.start_as_current_span("proxy_create_truststore"):
         await _create_java_truststore(paths)
 
-    # Step 4: Create combined CA bundle (for tools like uv that use SSL_CERT_FILE)
+    # Step 5: Create combined CA bundle (for tools like uv that use SSL_CERT_FILE)
     _create_combined_ca_bundle(paths)
 
-    status = await _snapshot_proxy_status(paths, supervisor, port)
+    running = proxy is not None and proxy._running
+    status = f"running (port {port})" if running else "configured"
     ca_status = "custom CA" if combined_ca.exists() else "system"
 
     logger.info("Auth proxy setup complete")

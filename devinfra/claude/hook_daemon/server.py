@@ -2,6 +2,9 @@
 
 Handles all Claude Code hook types over UDS. Imports expensive modules once at
 startup (pydantic, opentelemetry, session_start) so individual hook calls are fast.
+
+The auth proxy runs in-process as daemon threads, started at server startup.
+Session start writes credentials; the proxy reads them on each connection.
 """
 
 import asyncio
@@ -14,6 +17,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from opentelemetry import trace
 
+from devinfra.claude.auth_proxy.proxy import AuthForwardingProxy
+from devinfra.claude.auth_proxy.vars import get_upstream_proxy_url
 from devinfra.claude.claude_api.hooks.dispatch_output import AnyHookOutput
 from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput
 from devinfra.claude.claude_api.hooks.pre_tool_use import PreToolUseInput
@@ -41,6 +46,18 @@ def configure(daemon_dir: Path, otlp_exporter: DeferredOtlpExporter) -> None:
     app.state.settings = HookSettings()
     app.state.otlp_exporter = otlp_exporter
     app.state.last_request_time = time.monotonic()
+    app.state.proxy: AuthForwardingProxy | None = None
+
+    # Start auth proxy in-process if upstream proxy is configured.
+    # The proxy binds the port immediately; credentials are written later
+    # by session_start (proxy reads creds file on each connection).
+    if get_upstream_proxy_url():
+        settings: HookSettings = app.state.settings
+        creds_file = daemon_dir / "upstream_proxy"
+        proxy = AuthForwardingProxy(listen_port=settings.auth_proxy_port, creds_file=creds_file)
+        proxy.start()
+        app.state.proxy = proxy
+        logger.info("Auth proxy started in-process on port %d", settings.auth_proxy_port)
 
 
 def _save_session_env(env: dict[str, str]) -> None:
@@ -82,6 +99,7 @@ async def handle_hook(req: HookRequest) -> HookResponse:
                         caller_env=req.env,
                         http=http,
                         otlp_exporter=app.state.otlp_exporter,
+                        proxy=app.state.proxy,
                     )
             case PreToolUseInput():
                 output = evaluate_pre(req.hook)
@@ -119,3 +137,12 @@ async def _idle_watchdog() -> None:
 @app.on_event("startup")
 async def _start_idle_watchdog() -> None:
     app.state.watchdog_task = asyncio.create_task(_idle_watchdog())
+
+
+@app.on_event("shutdown")
+async def _stop_proxy() -> None:
+    """Stop the in-process auth proxy on daemon shutdown."""
+    proxy: AuthForwardingProxy | None = getattr(app.state, "proxy", None)
+    if proxy is not None:
+        logger.info("Stopping in-process auth proxy...")
+        proxy.stop()
