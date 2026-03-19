@@ -129,7 +129,7 @@ class TestRetryPolicy:
         check_retry_policy(cluster, k8s_dir)
 
     def test_async_health_check_without_retry_fails(self, k8s_dir: Path) -> None:
-        cluster = self._make_cluster_with_retry(k8s_dir, retries=0)
+        cluster = self._make_cluster_with_retry(k8s_dir, retries=0, retry_interval="1m")
         with pytest.raises(AssertionError, match="retries=0"):
             check_retry_policy(cluster, k8s_dir)
 
@@ -139,7 +139,9 @@ class TestRetryPolicy:
             check_retry_policy(cluster, k8s_dir)
 
     def test_wait_true_requires_retry(self, k8s_dir: Path) -> None:
-        cluster = self._make_cluster_with_retry(k8s_dir, health_check_kind="Namespace", wait=True, retries=0)
+        cluster = self._make_cluster_with_retry(
+            k8s_dir, health_check_kind="Namespace", wait=True, retries=0, retry_interval="1m"
+        )
         with pytest.raises(AssertionError, match="retries=0"):
             check_retry_policy(cluster, k8s_dir)
 
