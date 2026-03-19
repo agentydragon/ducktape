@@ -154,12 +154,15 @@ class BazelWorkspace:
 
     root: Path
     output_base: Path | None = None
+    startup_flags: tuple[str, ...] = ()
 
     def _bazel_prefix(self) -> list[str]:
-        """Base bazel command with optional --output_base."""
+        """Base bazel command with optional --output_base and startup flags."""
+        cmd = ["bazel"]
         if self.output_base is not None:
-            return ["bazel", f"--output_base={self.output_base}"]
-        return ["bazel"]
+            cmd.append(f"--output_base={self.output_base}")
+        cmd.extend(self.startup_flags)
+        return cmd
 
     def find_package(self, filepath: Path) -> Path | None:
         """Find the Bazel package containing a file by walking up to find BUILD."""
@@ -237,4 +240,4 @@ class BazelWorkspace:
 
     def shutdown(self) -> None:
         """Shut down the Bazel server for this workspace."""
-        subprocess.run([*self._bazel_prefix(), "shutdown"], cwd=self.root, check=True, capture_output=True)
+        subprocess.run([*self._bazel_prefix(), "shutdown"], cwd=self.root, check=False, capture_output=True)

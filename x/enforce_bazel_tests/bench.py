@@ -21,14 +21,13 @@ import contextlib
 import os
 import subprocess
 import sys
-import tempfile
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pygit2
 
-from util.bazel.workspace import BazelLabel, BazelWorkspace, get_build_workspace_directory
+from util.bazel.workspace import BazelWorkspace, get_build_workspace_directory
 from x.enforce_bazel_tests.enforce_bazel_tests import build_universe
 
 # The file we'll temporarily modify to simulate a change.
@@ -51,77 +50,40 @@ def _assert_index_clean(repo: pygit2.Repository) -> None:
         raise RuntimeError(f"git index is not clean ({len(staged)} staged files). Commit or stash first.")
 
 
-def _bazel_cmd(*, profile_path: Path | None = None) -> list[str]:
-    """Build the base bazel command with output_base and startup flags.
+def _read_session_startup_flags() -> tuple[str, ...]:
+    """Extract JVM startup flags from the session bazelrc.
 
     Re-injects the session's proxy and TLS CA JVM args so the bench's
     separate Bazel server can reach BCR through the auth proxy.
     """
-    cmd = ["bazel", f"--output_base={_BENCH_OUTPUT_BASE}"]
-
-    # Propagate the session's proxy and TLS startup flags if available.
-    session_bazelrc = _find_session_bazelrc()
-    if session_bazelrc is not None:
-        for raw_line in session_bazelrc.read_text().splitlines():
-            stripped = raw_line.strip()
-            if stripped.startswith("startup --host_jvm_args="):
-                cmd.append(stripped.removeprefix("startup "))
-    return cmd
-
-
-def _find_session_bazelrc() -> Path | None:
-    """Find the session bazelrc via SESSION_BAZELRC env var."""
     path_str = os.environ.get("SESSION_BAZELRC")
-    if path_str is not None:
-        p = Path(path_str)
-        if p.exists():
-            return p
-    return None
-
-
-def _shutdown() -> None:
-    """Shut down the bench's Bazel server."""
-    cmd = [*_bazel_cmd(), "shutdown"]
-    subprocess.run(cmd, check=False, capture_output=True)
-
-
-def _query(expr: str, *, repo_root: Path, persist_dir: Path | None = None, profile: bool = False) -> list[BazelLabel]:
-    """Run a bazel query with the bench's output base."""
-    cmd = [*_bazel_cmd(), "query", "--output=label"]
-    if profile and persist_dir is not None:
-        profile_path = persist_dir / "profile.json"
-        cmd.extend([f"--profile={profile_path}", "--generate_json_trace_profile"])
-
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".bazelquery") as qf:
-        qf.write(expr)
-        qf.flush()
-        cmd.append(f"--query_file={qf.name}")
-        result = subprocess.run(cmd, capture_output=True, text=True, cwd=repo_root, check=False, timeout=_QUERY_TIMEOUT)
-
-    if persist_dir is not None:
-        (persist_dir / "query.txt").write_text(expr)
-        (persist_dir / "stdout").write_text(result.stdout)
-        (persist_dir / "stderr").write_text(result.stderr)
-        (persist_dir / "exit_code").write_text(str(result.returncode))
-
-    if result.returncode != 0:
-        raise subprocess.CalledProcessError(result.returncode, "bazel", result.stdout, result.stderr)
-    return [BazelLabel.parse(line) for line in result.stdout.splitlines() if line]
+    if path_str is None:
+        return ()
+    p = Path(path_str)
+    if not p.exists():
+        return ()
+    flags = []
+    for raw_line in p.read_text().splitlines():
+        stripped = raw_line.strip()
+        if stripped.startswith("startup --host_jvm_args="):
+            flags.append(stripped.removeprefix("startup "))
+    return tuple(flags)
 
 
 def _bench_query(
-    name: str, expr: str, *, cold: bool, repo_root: Path, out_dir: Path, profile: bool, run_index: int
+    ws: BazelWorkspace, name: str, expr: str, *, cold: bool, out_dir: Path, profile: bool, run_index: int
 ) -> None:
     """Run a query, save output, print timing."""
     if cold:
-        _shutdown()
+        ws.shutdown()
 
     query_dir = out_dir / f"{run_index:02d}_{name}"
     query_dir.mkdir(parents=True, exist_ok=True)
+    profile_path = (query_dir / "profile.json") if profile else None
 
     t0 = time.monotonic()
     try:
-        result = _query(expr, repo_root=repo_root, persist_dir=query_dir, profile=profile)
+        result = ws.query(expr, persist_dir=query_dir, timeout=_QUERY_TIMEOUT, profile_path=profile_path)
     except subprocess.CalledProcessError as e:
         elapsed = time.monotonic() - t0
         print(f"  {name + ':':.<40s} {elapsed:6.2f}s  FAILED (exit {e.returncode})")
@@ -168,10 +130,16 @@ def main() -> int:
 
     _BENCH_OUTPUT_BASE.mkdir(parents=True, exist_ok=True)
 
-    ws = BazelWorkspace(root=repo_root)
-    label = ws.file_to_label(_TARGET_FILE)
+    # Main workspace (default output base) for file_to_label.
+    main_ws = BazelWorkspace(root=repo_root)
+    label = main_ws.file_to_label(_TARGET_FILE)
     if label is None:
         raise ValueError(f"No BUILD file found for {_TARGET_FILE}")
+
+    # Bench workspace with separate output base to avoid lock contention.
+    bench_ws = BazelWorkspace(
+        root=repo_root, output_base=_BENCH_OUTPUT_BASE, startup_flags=_read_session_startup_flags()
+    )
 
     timestamp = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ")
     out_dir = Path(f"/tmp/enforce_bazel_tests_bench/runs/{timestamp}")
@@ -201,9 +169,7 @@ def main() -> int:
         ("tests_scoped", f"tests({universe})"),
     ]
     for name, expr in cold_kind_cases:
-        _bench_query(
-            name, expr, cold=True, repo_root=repo_root, out_dir=out_dir, profile=args.profile, run_index=run_index
-        )
+        _bench_query(bench_ws, name, expr, cold=True, out_dir=out_dir, profile=args.profile, run_index=run_index)
         run_index += 1
 
     # --- Section 2: alternative strategies (each from cold) ---
@@ -215,9 +181,7 @@ def main() -> int:
         ("allrdeps", f'kind(".*_test", allrdeps({label}))'),
     ]
     for name, expr in cold_alt_cases:
-        _bench_query(
-            name, expr, cold=True, repo_root=repo_root, out_dir=out_dir, profile=args.profile, run_index=run_index
-        )
+        _bench_query(bench_ws, name, expr, cold=True, out_dir=out_dir, profile=args.profile, run_index=run_index)
         run_index += 1
 
     # --- Section 3: warm-server queries ---
@@ -225,7 +189,7 @@ def main() -> int:
     # Server is warm from the last query above. If all cold queries failed,
     # start a server with a trivial query first.
     with contextlib.suppress(subprocess.CalledProcessError):
-        _query("//util/bazel:workspace.py", repo_root=repo_root)
+        bench_ws.query("//util/bazel:workspace.py", timeout=_QUERY_TIMEOUT)
 
     warm_cases = [
         ("warm_kind_py_test", 'kind("py_test", //...)'),
@@ -235,9 +199,7 @@ def main() -> int:
         ("warm_allrdeps", f'kind(".*_test", allrdeps({label}))'),
     ]
     for name, expr in warm_cases:
-        _bench_query(
-            name, expr, cold=False, repo_root=repo_root, out_dir=out_dir, profile=args.profile, run_index=run_index
-        )
+        _bench_query(bench_ws, name, expr, cold=False, out_dir=out_dir, profile=args.profile, run_index=run_index)
         run_index += 1
 
     print(f"\nResults saved to: {out_dir}")
