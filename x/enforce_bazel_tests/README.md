@@ -76,12 +76,35 @@ resolution overhead. Subsequent cold starts are ~31s.
 | `rdeps(//..., <label>)`              | 20.78s |       — | FAILED (exit 7) |
 | `kind(".*_test", allrdeps(<label>))` |  0.39s |       — | FAILED (exit 2) |
 
+### Cold-start profile breakdown
+
+Profiled with `--generate_json_trace_profile`. All measurements from Claude
+Code web (gVisor container) — gVisor intercepts every syscall, which
+dramatically inflates JVM startup. Expect ~2–3s JVM startup on bare metal.
+
+| Phase                            |  Time | Notes                                            |
+| -------------------------------- | ----: | ------------------------------------------------ |
+| **JVM startup ("Launch Blaze")** | 21.1s | 68% of wall time — gVisor syscall overhead       |
+| Module ext: `pip.bzl%pip`        |  2.9s | Parsing `requirements_bazel.txt`, creating repos |
+| Module ext: `npm:extensions%npm` |  1.6s | Parsing `pnpm-lock.yaml`                         |
+| Module ext: `go_deps`            |  1.1s | Resolving Go module graph                        |
+| Module ext: `go_sdk`             |  1.0s | Go SDK setup                                     |
+| Module ext: `python.bzl%python`  |  0.4s | Python toolchain                                 |
+| Repository fetches (npm links)   | ~138s | 3000 repos, ~1s each, heavily parallelized       |
+| Package creation (BUILD loading) | ~110s | 671 packages, heavily parallelized               |
+
+The ~31s wall time is dominated by JVM startup (21s) + module extension
+evaluation (~7s) + parallelized package loading (~3s on the critical path).
+
 ### Key observations
 
 - **`tests(//...)` is the fastest warm-server option** — 0.27s vs 0.34s for
   `kind(".*_test", //...)`. Functionally equivalent (both return 461 targets).
-- **Cold-start is ~31s regardless of query** — dominated by Bazel server
-  startup + BCR resolution. Query complexity adds negligible overhead.
+- **Cold-start is ~31s regardless of query** — dominated by JVM startup
+  (21s under gVisor) + module extension evaluation. Query complexity adds
+  negligible overhead. On bare metal, expect ~12–15s cold start.
+- **No query optimization can fix cold start** — the bottleneck is server
+  boot, not query evaluation. A persistent Bazel server is the only fix.
 - **Scoped queries return fewer targets** (369 vs 461) because they exclude
   `x/`, `gterm_theme`, `bazel-ducktape`. No speed benefit for cold start.
 - **`rdeps` and `somepath` fail** with `//...` universe due to `gymnasium`
