@@ -21,6 +21,7 @@ from opentelemetry import trace
 
 from devinfra.build_info import get_build_info
 from devinfra.claude import (
+    apt_setup,
     bazelisk_setup,
     buildbuddy_setup,
     cli_tools_setup,
@@ -29,7 +30,6 @@ from devinfra.claude import (
     fork_remote_setup,
     k8s_secrets_setup,
     mkcert_setup,
-    native_deps_setup,
     precommit_setup,
     tmpfs_setup,
 )
@@ -235,11 +235,14 @@ async def _setup_web(
             return await proxy_setup.setup_auth_proxy(paths, settings, proxy=proxy)
 
     async def setup_container_runtime_task() -> container_runtime.ContainerRuntimeSetup:
-        """Set up configured container runtime (depends on supervisor + per-component tmpfs)."""
+        """Set up configured container runtime (depends on supervisor + apt for podman)."""
         with tracer.start_as_current_span("setup_container_runtime", context=root_ctx):
             storage_dir = container_runtime.get_storage_dir(paths, settings)
             if storage_dir is None:
                 raise SkipError(f"Container runtime disabled (container_runtime={settings.container_runtime})")
+            # Podman needs apt packages installed first.
+            if settings.container_runtime == "podman":
+                await apt_task
             supervisor_result = await supervisor_task
             # tmpfs failure is non-fatal — runtime falls back to VFS on 9p
             tmpfs_mounted = await mount_tmpfs_at(storage_dir)
@@ -273,11 +276,23 @@ async def _setup_web(
 
     # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
     # Dependency graph:
+    #   apt_task (no deps — runs immediately)
     #   proxy_task (in-process, no supervisor dependency)
-    #   supervisor_task ── setup_container_runtime (Docker or Podman)
-    #                      (each runtime mounts its own tmpfs internally)
+    #   supervisor_task + apt_task ── setup_container_runtime (Docker or Podman)
+    #                                 (each runtime mounts its own tmpfs internally)
     #   setup_bazel_on_tmpfs mounts its own tmpfs independently
     logger.info("Starting parallel installations...")
+
+    # Consolidated apt install: native dev headers (always) + podman (if needed).
+    apt_packages = list(apt_setup.NATIVE_DEV_PACKAGES)
+    if settings.container_runtime == "podman" and shutil.which("podman") is None:
+        apt_packages.extend(apt_setup.PODMAN_PACKAGES)
+
+    @tracer.start_as_current_span("install_apt_packages", context=root_ctx)
+    async def traced_apt_setup():
+        return await apt_setup.install_packages(apt_packages)
+
+    apt_task = asyncio.create_task(traced_apt_setup())
 
     # Proxy task starts without BuildBuddy state (buildbuddy setup depends on
     # k8s secrets which in turn depend on proxy being up for TLS).
@@ -314,10 +329,6 @@ async def _setup_web(
     async def traced_cli_tools():
         return await run_in_thread(cli_tools_setup.install_cli_tools, paths.wrapper_dir, http)
 
-    @tracer.start_as_current_span("install_native_deps", context=root_ctx)
-    async def traced_native_deps():
-        return await native_deps_setup.install_native_deps()
-
     results = await asyncio.gather(
         proxy_task,
         setup_container_runtime_task(),
@@ -326,7 +337,7 @@ async def _setup_web(
         setup_bazel_on_tmpfs(),
         mkcert_append_bundle(),
         traced_cli_tools(),
-        traced_native_deps(),
+        apt_task,
         return_exceptions=True,
     )
     # Unpack with explicit type annotations for mypy
@@ -337,7 +348,7 @@ async def _setup_web(
     tmpfs_result: tmpfs_setup.TmpfsSetup | BaseException = results[4]
     mkcert_result: mkcert_setup.MkcertSetup | BaseException = results[5]
     cli_tools_result: list[str] | BaseException = results[6]
-    native_deps_result: native_deps_setup.NativeDepsSetup | BaseException = results[7]
+    apt_result: apt_setup.AptSetup | BaseException = results[7]
 
     # Log non-critical failures
     if isinstance(precommit_result, BaseException):
@@ -352,8 +363,8 @@ async def _setup_web(
         logger.warning("Failed to set up mkcert: %s", mkcert_result)
     if isinstance(cli_tools_result, BaseException):
         logger.warning("Failed to install CLI tools: %s", cli_tools_result)
-    if isinstance(native_deps_result, BaseException):
-        logger.warning("Failed to install native dev packages: %s", native_deps_result)
+    if isinstance(apt_result, BaseException):
+        logger.warning("Failed to install system packages: %s", apt_result)
 
     # Handle container runtime result
     docker_env: dict[str, str] | None = None

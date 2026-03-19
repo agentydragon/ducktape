@@ -192,37 +192,8 @@ def _configure_docker(paths: SessionPaths, tmpfs_mounted: bool) -> _RuntimeSpec:
 # ============================================================================
 
 
-class PodmanInstallError(Exception):
-    """Raised when podman installation fails."""
-
-
-async def install_podman() -> None:
-    """Install podman and crun via apt.
-
-    Raises:
-        FileNotFoundError: If apt-get is not available.
-        TimeoutError: If apt operations time out.
-        PodmanInstallError: If installation fails.
-    """
-    logger.info("Installing podman via apt...")
-
-    process = await asyncio.create_subprocess_exec(
-        "apt-get", "update", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-    )
-    _, stderr = await asyncio.wait_for(process.communicate(), timeout=120)
-    if process.returncode != 0:
-        logger.warning("apt-get update failed: %s", stderr.decode())
-
-    process = await asyncio.create_subprocess_exec(
-        "apt-get", "install", "-y", "podman", "crun", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-    )
-    _, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
-    if process.returncode != 0:
-        raise PodmanInstallError(f"apt-get install podman crun failed: {stderr.decode()}")
-
-    if shutil.which("podman") is None:
-        raise PodmanInstallError("podman not found after installation")
-    logger.info("Podman and crun installed successfully")
+class PodmanNotFoundError(Exception):
+    """Raised when podman is not available after apt setup."""
 
 
 def _get_podman_socket_path(paths: SessionPaths) -> Path:
@@ -397,13 +368,13 @@ async def setup_container_runtime(
 
     Raises:
         SkipError: If container_runtime is "none".
-        PodmanInstallError: If podman installation fails.
+        PodmanNotFoundError: If podman is not on PATH (should be installed by apt_setup).
     """
     runtime = settings.container_runtime
 
     if runtime == "podman":
         if shutil.which("podman") is None:
-            await install_podman()
+            raise PodmanNotFoundError("podman not found on PATH (apt_setup should have installed it)")
         spec = _configure_podman(paths, tmpfs_mounted)
     elif runtime == "docker":
         spec = _configure_docker(paths, tmpfs_mounted)

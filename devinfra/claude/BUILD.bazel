@@ -183,8 +183,8 @@ py_library(
 )
 
 py_library(
-    name = "native_deps_setup",
-    srcs = ["native_deps_setup.py"],
+    name = "apt_setup",
+    srcs = ["apt_setup.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
 )
