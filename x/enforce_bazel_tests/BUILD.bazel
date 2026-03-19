@@ -17,7 +17,6 @@ py_library(
     imports = ["../.."],
     deps = [
         ":enforce_bazel_tests",
-        "//util:fs",
         "//util/bazel:workspace",
         "@pypi//pygit2",
     ],

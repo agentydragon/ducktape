@@ -153,6 +153,13 @@ class BazelWorkspace:
     """A local Bazel workspace rooted at a specific directory."""
 
     root: Path
+    output_base: Path | None = None
+
+    def _bazel_prefix(self) -> list[str]:
+        """Base bazel command with optional --output_base."""
+        if self.output_base is not None:
+            return ["bazel", f"--output_base={self.output_base}"]
+        return ["bazel"]
 
     def find_package(self, filepath: Path) -> Path | None:
         """Find the Bazel package containing a file by walking up to find BUILD."""
@@ -181,6 +188,7 @@ class BazelWorkspace:
         keep_going: bool = False,
         timeout: int | None = None,
         universe_scope: str | None = None,
+        profile_path: Path | None = None,
     ) -> list[BazelLabel]:
         """Run ``bazel query`` in this workspace.
 
@@ -188,15 +196,20 @@ class BazelWorkspace:
         The expression is passed via ``--query_file`` to avoid
         ``E2BIG`` / "Argument list too long" errors on large queries.
 
+        When *profile_path* is set, ``--generate_json_trace_profile`` and
+        ``--profile`` are passed to Bazel, producing a Chrome trace JSON.
+
         Raises :class:`subprocess.CalledProcessError` if the query exits non-zero
         (or non-3 when *keep_going*), with ``.stderr`` containing the captured
         error text.
         """
-        cmd = ["bazel", "query", "--output=label"]
+        cmd = [*self._bazel_prefix(), "query", "--output=label"]
         if keep_going:
             cmd.append("--keep_going")
         if universe_scope is not None:
             cmd.append(f"--universe_scope={universe_scope}")
+        if profile_path is not None:
+            cmd.extend([f"--profile={profile_path}", "--generate_json_trace_profile"])
         with tempfile.NamedTemporaryFile(mode="w", suffix=".bazelquery") as query_file:
             query_file.write(expr)
             query_file.flush()
@@ -215,7 +228,7 @@ class BazelWorkspace:
 
     def test(self, targets: list[str], *, check_up_to_date: bool = False, timeout: int | None = None) -> int:
         """Run ``bazel test`` and return the exit code."""
-        cmd = ["bazel", "test"]
+        cmd = [*self._bazel_prefix(), "test"]
         if check_up_to_date:
             cmd.append("--check_tests_up_to_date")
         cmd.extend(targets)
@@ -224,4 +237,4 @@ class BazelWorkspace:
 
     def shutdown(self) -> None:
         """Shut down the Bazel server for this workspace."""
-        subprocess.run(["bazel", "shutdown"], cwd=self.root, check=True, capture_output=True)
+        subprocess.run([*self._bazel_prefix(), "shutdown"], cwd=self.root, check=True, capture_output=True)

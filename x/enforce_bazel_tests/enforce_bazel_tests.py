@@ -74,7 +74,7 @@ def _get_staged_files(repo: pygit2.Repository) -> list[str]:
     return [entry.path for entry in repo.index]
 
 
-def _build_universe(repo_root: Path) -> list[str]:
+def build_universe(repo_root: Path) -> list[str]:
     """Find top-level Bazel package dirs, excluding broken packages.
 
     Returns sorted list of top-level directory names that contain
@@ -121,7 +121,7 @@ def find_affected_tests(
         return []
 
     # Step 2: Find affected test targets via rdeps with scoped universe.
-    universe_dirs = _build_universe(workspace.root)
+    universe_dirs = build_universe(workspace.root)
     if not universe_dirs:
         return []
 
