@@ -6,7 +6,7 @@ all external connectivity).
 
 Architecture:
     Host side:
-        - Builds the ducktape wheel via Bazel
+        - Builds the claude_hooks wheel via Bazel
         - Builds MockEgressProxy OCI image via Bazel and loads it into Docker
         - Pulls e2e-container image from GHCR (python:3.13-slim + git + JDK)
         - Creates two Docker networks:
@@ -16,7 +16,7 @@ Architecture:
         - Drives test steps via docker exec calls
 
     Container side (via docker exec):
-        - Installs ducktape wheel (pip through proxy -> MockEgressProxy container)
+        - Installs claude_hooks wheel (pip through proxy -> MockEgressProxy container)
         - Runs claude-hook (session start hook) which sets up:
           auth proxy, supervisor, bazel wrapper, CA bundles, env file
         - Runs bazel build through the full proxy chain
@@ -62,8 +62,9 @@ logger = logging.getLogger(__name__)
 STREAM_TYPE_STDOUT = 1
 STREAM_TYPE_STDERR = 2
 
-# Rlocation for the ducktape wheel (built by //:wheel)
-_WHEEL_RLOCATION = "_main/ducktape-0.1.0-py3-none-any.whl"
+# Rlocation for the claude_hooks wheel (built by //:claude_hooks_wheel)
+_WHEEL_RLOCATION = "_main/claude_hooks-0.1.0-py3-none-any.whl"
+_WHEEL_FILENAME = _WHEEL_RLOCATION.rsplit("/", 1)[-1]
 
 # Rlocation for a file in the test workspace (used to derive directory path)
 _TEST_WORKSPACE_MODULE = "_main/devinfra/claude/testdata/test_workspace/MODULE.bazel"
@@ -410,7 +411,7 @@ async def test_container_e2e(
     # (runfiles may be symlinks that Docker cannot resolve in gVisor)
     staging = tmp_path / "staging"
     staging.mkdir()
-    staged_wheel = staging / "ducktape-0.1.0-py3-none-any.whl"
+    staged_wheel = staging / _WHEEL_FILENAME
     shutil.copy2(wheel_path, staged_wheel)
     staged_workspace = staging / "test_workspace"
     shutil.copytree(test_workspace_path, staged_workspace)
@@ -434,7 +435,7 @@ async def test_container_e2e(
         "DUCKTAPE_CLAUDE_HOOKS_INSTALL_MKCERT": "false",
         "DUCKTAPE_CLAUDE_HOOKS_CONTAINER_RUNTIME": "none",
         "ANTHROPIC_CA_PATH": "/certs/mock_ca.pem",
-        "WHEEL_PATH": "/wheel/ducktape-0.1.0-py3-none-any.whl",
+        "WHEEL_PATH": f"/wheel/{_WHEEL_FILENAME}",
     }
     for var in PROXY_ENV_VARS:
         env[var] = proxy_env.proxy_url
@@ -442,7 +443,7 @@ async def test_container_e2e(
         env[var] = "/certs/combined_ca.pem"
 
     binds = [
-        f"{staged_wheel}:/wheel/ducktape-0.1.0-py3-none-any.whl:ro",
+        f"{staged_wheel}:/wheel/{_WHEEL_FILENAME}:ro",
         f"{mock_ca_path}:/certs/mock_ca.pem:ro",
         f"{combined_ca_path}:/certs/combined_ca.pem:ro",
         f"{staged_workspace}:/project/test_workspace:ro",
@@ -474,9 +475,7 @@ async def test_container_e2e(
             # TODO(container-e2e): Install via uv by reading .claude/settings.json
             # hook definition and piping the JSON into sh, instead of raw pip.
             logger.info("Installing wheel")
-            await _exec(
-                container, ["pip", "install", "--break-system-packages", "/wheel/ducktape-0.1.0-py3-none-any.whl"]
-            )
+            await _exec(container, ["pip", "install", "--break-system-packages", f"/wheel/{_WHEEL_FILENAME}"])
 
             # Run session start hook
             logger.info("Running claude-hook (session start)")

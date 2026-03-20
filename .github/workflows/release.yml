@@ -13,6 +13,7 @@ name: Release
         type: choice
         options:
           - all
+          - claude-hooks
           - ducktape
           - headscale-cleanup
           - gterm-theme
@@ -32,6 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
+      claude_hooks_needed: ${{ steps.check-claude_hooks.outputs.release_needed }}
       ducktape_needed: ${{ steps.check-ducktape.outputs.release_needed }}
       headscale_cleanup_needed: ${{ steps.check-headscale_cleanup.outputs.release_needed }}
       gterm_theme_needed: ${{ steps.check-gterm_theme.outputs.release_needed }}
@@ -44,6 +46,13 @@ jobs:
         uses: ./.github/actions/setup-bazel
         with:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+      - name: Check claude-hooks
+        id: check-claude_hooks
+        uses: ./.github/actions/check-release-needed
+        with:
+          package_prefix: claude-hooks
+          bazel_targets: //:claude_hooks_wheel
+          latest_release_tag: claude-hooks-latest
       - name: Check ducktape
         id: check-ducktape
         uses: ./.github/actions/check-release-needed
@@ -65,14 +74,14 @@ jobs:
           package_prefix: gterm-theme
           bazel_targets: //gterm_theme:wheel
           latest_release_tag: gterm-theme-latest
-  test-ducktape:
-    name: Test ducktape
+  test-claude_hooks:
+    name: Test claude-hooks
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: check-releases
     if:
-      always() && !cancelled() && !failure() && (needs.check-releases.outputs.ducktape_needed == 'true' || (github.event_name
-      == 'workflow_dispatch' && (inputs.package == 'all' || inputs.package == 'ducktape')))
+      always() && !cancelled() && !failure() && (needs.check-releases.outputs.claude_hooks_needed == 'true' || (github.event_name
+      == 'workflow_dispatch' && (inputs.package == 'all' || inputs.package == 'claude-hooks')))
     steps:
       - uses: actions/checkout@v6
       - id: bazel
@@ -84,56 +93,79 @@ jobs:
           bazel test --keep_going \
             --test_output=all \
             --nocache_test_results \
-            --test_tag_filters=-e2e \
             --test_env=CI=true \
-            --test_env=GITHUB_ACTIONS=true \
             //devinfra/claude/...
       - uses: ./.github/actions/collect-test-logs
         if: always()
         with:
-          artifact-name: ducktape-test-logs
-  test-ducktape-e2e:
-    name: test-ducktape-e2e
+          artifact-name: claude-hooks-test-logs
+  release-claude_hooks:
+    name: Release claude-hooks
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     needs:
       - check-releases
+      - test-claude_hooks
     if:
-      always() && !cancelled() && !failure() && (needs.check-releases.outputs.ducktape_needed == 'true' || (github.event_name
-      == 'workflow_dispatch' && (inputs.package == 'all' || inputs.package == 'ducktape')))
+      always() && !cancelled() && needs.test-claude_hooks.result == 'success' && (needs.check-releases.outputs.claude_hooks_needed
+      == 'true' || (github.event_name == 'workflow_dispatch' && inputs.force == true && (inputs.package == 'all' || inputs.package
+      == 'claude-hooks')))
+    outputs:
+      released: "true"
+      tag: claude-hooks-${{ env.SHORT_SHA }}
+      short_sha: ${{ env.SHORT_SHA }}
     steps:
       - uses: actions/checkout@v6
       - id: bazel
         uses: ./.github/actions/setup-bazel
         with:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
-      - name: Run e2e tests
-        run: |
-          bazel test \
-            --test_output=all \
-            --nocache_test_results \
-            --test_tag_filters=e2e \
-            --spawn_strategy=local \
-            --test_env=CI=true \
-            --test_env=GITHUB_ACTIONS=true \
-            --test_env=PATH \
-            //devinfra/claude/...
-      - uses: ./.github/actions/collect-test-logs
-        if: always()
+      - name: Set short SHA
+        run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
+      - name: Build wheel
+        run: bazel build --remote_download_toplevel //:claude_hooks_wheel
+      - name: Prepare wheel
+        run: |-
+          mkdir -p dist
+          cp bazel-bin/claude_hooks-*.whl dist/
+      - name: Create release
+        uses: softprops/action-gh-release@v2
         with:
-          artifact-name: ducktape-e2e-test-logs
+          tag_name: claude-hooks-${{ env.SHORT_SHA }}
+          name: claude-hooks (${{ env.SHORT_SHA }})
+          body: |-
+            claude-hooks wheel for Claude Code integration:
+
+            - `claude-hook` - Unified hook dispatcher for Claude Code web
+            - `claude-statusline` - Statusline for Claude Code
+
+            Requires Python 3.13+
+
+            Commit: ${{ github.sha }}
+            Branch: ${{ github.ref_name }}
+          files: dist/*.whl
+      - uses: ./.github/actions/update-latest-release
+        with:
+          package_prefix: claude-hooks
+          latest_tag: claude-hooks-latest
+          title: claude-hooks (latest)
+          body: |
+            claude-hooks wheel for Claude Code integration:
+
+            - `claude-hook` - Unified hook dispatcher for Claude Code web
+            - `claude-statusline` - Statusline for Claude Code
+
+            Requires Python 3.13+
+          files: dist/*.whl
   release-ducktape:
     name: Release ducktape
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs:
       - check-releases
-      - test-ducktape
-      - test-ducktape-e2e
     if:
-      always() && !cancelled() && needs.test-ducktape.result == 'success' && needs.test-ducktape-e2e.result == 'success'
-      && (needs.check-releases.outputs.ducktape_needed == 'true' || (github.event_name == 'workflow_dispatch' && inputs.force
-      == true && (inputs.package == 'all' || inputs.package == 'ducktape')))
+      always() && !cancelled() && !failure() && (needs.check-releases.outputs.ducktape_needed == 'true' || (github.event_name
+      == 'workflow_dispatch' && inputs.force == true && (inputs.package == 'all' || inputs.package == 'ducktape')))
     outputs:
       released: "true"
       tag: ducktape-${{ env.SHORT_SHA }}
@@ -158,16 +190,11 @@ jobs:
           tag_name: ducktape-${{ env.SHORT_SHA }}
           name: ducktape (${{ env.SHORT_SHA }})
           body: |-
-            ducktape wheel containing:
+            ducktape wheel containing CLI tools:
 
-            CLI tools:
             - `git-commit-ai` - AI-powered commit message generator
             - `difftree` - Tree-style visualization of diffs
             - `gmail-archiver` - Gmail email auto-archiving tool
-
-            Claude Code hooks:
-            - `claude-hook` - Unified hook dispatcher for Claude Code web
-            - `claude-statusline` - Statusline for Claude Code
 
             Requires Python 3.13+
 
@@ -180,16 +207,11 @@ jobs:
           latest_tag: ducktape-latest
           title: ducktape (latest)
           body: |
-            ducktape wheel containing:
+            ducktape wheel containing CLI tools:
 
-            CLI tools:
             - `git-commit-ai` - AI-powered commit message generator
             - `difftree` - Tree-style visualization of diffs
             - `gmail-archiver` - Gmail email auto-archiving tool
-
-            Claude Code hooks:
-            - `claude-hook` - Unified hook dispatcher for Claude Code web
-            - `claude-statusline` - Statusline for Claude Code
 
             Requires Python 3.13+
           files: dist/*.whl
@@ -302,12 +324,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs:
+      - release-claude_hooks
       - release-ducktape
       - release-headscale_cleanup
       - release-gterm_theme
     if: |-
       always() && !cancelled() &&
-           (needs.release-ducktape.outputs.released == 'true' ||
+           (needs.release-claude_hooks.outputs.released == 'true' ||
+           needs.release-ducktape.outputs.released == 'true' ||
            needs.release-headscale_cleanup.outputs.released == 'true' ||
            needs.release-gterm_theme.outputs.released == 'true')
     steps:
@@ -327,9 +351,13 @@ jobs:
               FAILED_INPUTS+=("$input_name")
             fi
           }
+          if [ "${{ needs.release-claude_hooks.outputs.released }}" = "true" ]; then
+            sed -i 's|releases/download/claude-hooks-[^/]*/claude_hooks|releases/download/${{ needs.release-claude_hooks.outputs.tag }}/claude_hooks|' flake.nix
+            sed -i "s|releases/download/claude-hooks-[a-f0-9]*/claude_hooks|releases/download/${{ needs.release-claude_hooks.outputs.tag }}/claude_hooks|g" .claude/settings.json
+            update_flake_input claude-hooks-wheel
+          fi
           if [ "${{ needs.release-ducktape.outputs.released }}" = "true" ]; then
             sed -i 's|releases/download/ducktape-[^/]*/ducktape|releases/download/${{ needs.release-ducktape.outputs.tag }}/ducktape|' flake.nix
-            sed -i "s|releases/download/ducktape-[a-f0-9]*/ducktape|releases/download/${{ needs.release-ducktape.outputs.tag }}/ducktape|g" .claude/settings.json
             update_flake_input ducktape-wheel
           fi
           if [ "${{ needs.release-headscale_cleanup.outputs.released }}" = "true" ]; then

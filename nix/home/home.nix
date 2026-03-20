@@ -13,6 +13,7 @@
   solarizedDark,
   terminalFont,
   ducktape-wheel,
+  claude-hooks-wheel,
   headscale-cleanup-wheel,
   gterm-theme-wheel,
   ...
@@ -78,8 +79,11 @@ let
   bashInit = builtins.readFile ./shell/bash-init.sh;
   zshInit = builtins.readFile ./shell/zsh-init.zsh;
 
-  # git-commit-ai, difftree, Claude Code hooks/statusline
+  # git-commit-ai, difftree, gmail-archiver
   ducktape = pkgs.callPackage ./packages/ducktape.nix { inherit ducktape-wheel; };
+
+  # Claude Code hooks/statusline
+  claude-hooks = pkgs.callPackage ./packages/claude-hooks.nix { inherit claude-hooks-wheel; };
 
   # headscale-cleanup - Headscale node management tool
   headscale-cleanup = pkgs.callPackage ./packages/headscale-cleanup.nix {
@@ -416,7 +420,8 @@ in
       stylua # Lua formatter
 
       # Custom packages from ducktape repo
-      ducktape # git-commit-ai, difftree, Claude Code hooks etc.
+      ducktape # git-commit-ai, difftree, gmail-archiver
+      claude-hooks # Claude Code hooks/statusline
       headscale-cleanup # Headscale node management
       gterm-theme # GNOME Terminal theme follower
     ]

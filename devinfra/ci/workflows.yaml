@@ -93,50 +93,32 @@ workflows:
 #   extra_jobs:       Additional jobs spliced into the workflow (name → job config)
 #   release_needs:    Extra job names the release job depends on (beyond standard test)
 releases:
+  claude-hooks:
+    targets:
+      - bazel_target: //:claude_hooks_wheel
+        flake_input: claude-hooks-wheel
+    wheel_name: claude_hooks
+    test_targets: //devinfra/claude/...
+    update_claude_settings: true
+    release_body: |
+      claude-hooks wheel for Claude Code integration:
+
+      - `claude-hook` - Unified hook dispatcher for Claude Code web
+      - `claude-statusline` - Statusline for Claude Code
+
+      Requires Python 3.13+
+
   ducktape:
     targets:
       - bazel_target: //:wheel
         flake_input: ducktape-wheel
     wheel_name: ducktape
-    test_targets: //devinfra/claude/...
-    update_claude_settings: true
-    extra_jobs:
-      test-ducktape-e2e:
-        needs: [check-releases]
-        timeout-minutes: 30
-        steps:
-          - uses: actions/checkout@v6
-          - uses: ./.github/actions/setup-bazel
-            id: bazel
-            with:
-              buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
-          - name: Run e2e tests
-            run: |
-              bazel test \
-                --test_output=all \
-                --nocache_test_results \
-                --test_tag_filters=e2e \
-                --spawn_strategy=local \
-                --test_env=CI=true \
-                --test_env=GITHUB_ACTIONS=true \
-                --test_env=PATH \
-                //devinfra/claude/...
-          - uses: ./.github/actions/collect-test-logs
-            if: always()
-            with:
-              artifact-name: ducktape-e2e-test-logs
-    release_needs: [test-ducktape-e2e]
     release_body: |
-      ducktape wheel containing:
+      ducktape wheel containing CLI tools:
 
-      CLI tools:
       - `git-commit-ai` - AI-powered commit message generator
       - `difftree` - Tree-style visualization of diffs
       - `gmail-archiver` - Gmail email auto-archiving tool
-
-      Claude Code hooks:
-      - `claude-hook` - Unified hook dispatcher for Claude Code web
-      - `claude-statusline` - Statusline for Claude Code
 
       Requires Python 3.13+
 

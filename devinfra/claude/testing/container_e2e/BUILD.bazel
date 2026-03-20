@@ -21,7 +21,7 @@ py_test(
     srcs = ["test_container_e2e.py"],
     data = [
         ":e2e_container_tarball",
-        "//:wheel",
+        "//:claude_hooks_wheel",
         "//devinfra/claude/testdata/test_workspace:workspace_files",
         "//devinfra/claude/testing:mock_egress_proxy_tarball",
     ],

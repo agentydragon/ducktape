@@ -1,4 +1,4 @@
-# ducktape: CLI tools (git-commit-ai, difftree) and Claude Code hooks (statusline, session-start)
+# ducktape: CLI tools (git-commit-ai, difftree, gmail-archiver)
 # Wheel fetched as a flake input (ducktape-wheel) from GitHub Releases.
 # To update: nix flake lock --update-input ducktape-wheel ./nix
 {
@@ -48,21 +48,9 @@ pkgs.python3Packages.buildPythonApplication {
     google-api-python-client
     google-auth-httplib2
     google-auth-oauthlib
-    python-dateutil
-
-    # claude_hooks deps
-    cryptography
-    opentelemetry-api
-    opentelemetry-exporter-otlp-proto-http
-    opentelemetry-sdk
-    platformdirs
-    psutil
     pydantic-settings
-    pyjwt
-    # pyrage not in nixpkgs — lazily imported in secrets_setup.py,
-    # so CLI mode (statusline, session_start) works without it
+    python-dateutil
     pyyaml
-    supervisor
 
     # Not in nixpkgs - from overlay
     compact-json
@@ -72,7 +60,7 @@ pkgs.python3Packages.buildPythonApplication {
   doCheck = false;
 
   meta = {
-    description = "CLI tools (git-commit-ai, difftree) and Claude Code hooks (statusline, session-start)";
+    description = "CLI tools (git-commit-ai, difftree, gmail-archiver)";
     homepage = "https://github.com/agentydragon/ducktape";
     license = lib.licenses.agpl3Only;
     mainProgram = "git-commit-ai";
