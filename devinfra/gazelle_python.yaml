@@ -14,6 +14,7 @@ manifest:
     OpenSSL: pyopenssl
     PIL: pillow
     absl: absl_py
+    agents: openai_agents
     aiodocker: aiodocker
     aiofile: aiofile
     aiofiles: aiofiles
@@ -40,15 +41,20 @@ manifest:
     attr: attrs
     attrs: attrs
     authlib: authlib
+    autogen_agentchat: autogen_agentchat
+    autogen_core: autogen_core
+    autogen_ext: autogen_ext
     aw_client: aw_client
     aw_core: aw_core
     aw_datastore: aw_core
     aw_query: aw_core
     aw_transform: aw_core
+    backoff: backoff
     bcrypt: bcrypt
     beartype: beartype
     bleach: bleach
     bs4: beautifulsoup4
+    build: build
     cachetools: cachetools
     caio: caio
     canonicaljson: canonicaljson
@@ -58,6 +64,8 @@ manifest:
     cffi: cffi
     cfgv: cfgv
     charset_normalizer: charset_normalizer
+    chromadb: chromadb
+    chromadb_rust_bindings: chromadb
     claude_code_sdk: claude_code_sdk
     click: click
     colorama: colorama
@@ -65,6 +73,7 @@ manifest:
     compact_json: compact_json
     contourpy: contourpy
     coverage: coverage
+    crewai: crewai
     cryptography: cryptography
     cycler: cycler
     cyclopts: cyclopts
@@ -75,6 +84,7 @@ manifest:
     defusedxml: defusedxml
     deprecation: deprecation
     dev.make-release-notes: vulture
+    diskcache: diskcache
     distlib: distlib
     distro: distro
     django: django
@@ -87,6 +97,7 @@ manifest:
     e2e-tests: splitwise
     email_reply_parser: email_reply_parser
     email_validator: email_validator
+    et_xmlfile: et_xmlfile
     exceptiongroup: exceptiongroup
     execnet: execnet
     executing: executing
@@ -99,12 +110,14 @@ manifest:
     fastmcp: fastmcp
     fastuuid: fastuuid
     filelock: filelock
+    flatbuffers: flatbuffers
     flexcache: flexcache
     flexparser: flexparser
     fontTools: fonttools
     fqdn: fqdn
     frozenlist: frozenlist
     fsspec: fsspec
+    genai_prices: genai_prices
     gepa: gepa
     github: pygithub
     google.api.annotations_pb2: googleapis_common_protos
@@ -183,6 +196,8 @@ manifest:
     google_auth_oauthlib: google_auth_oauthlib
     googleapiclient: google_api_python_client
     greenlet: greenlet
+    griffe: griffelib
+    grpc: grpcio
     h11: h11
     h2: h2
     hamcrest: pyhamcrest
@@ -204,6 +219,7 @@ manifest:
     importlib_metadata: importlib_metadata
     importlib_resources: importlib_resources
     iniconfig: iniconfig
+    instructor: instructor
     inventree: inventree
     invoke: invoke
     ipykernel: ipykernel
@@ -211,6 +227,7 @@ manifest:
     ipython_pygments_lexers: ipython_pygments_lexers
     iso8601: iso8601
     isoduration: isoduration
+    isympy: sympy
     itsdangerous: itsdangerous
     jaraco.classes: jaraco.classes
     jaraco.context: jaraco_context
@@ -219,6 +236,9 @@ manifest:
     jeepney: jeepney
     jinja2: jinja2
     jiter: jiter
+    json5: json5
+    json_repair: json_repair
+    jsonpatch: jsonpatch
     jsonpointer: jsonpointer
     jsonref: jsonref
     jsonschema: jsonschema
@@ -246,8 +266,38 @@ manifest:
     kiwisolver: kiwisolver
     kubernetes: kubernetes
     kubernetes_asyncio: kubernetes_asyncio
+    langchain_anthropic: langchain_anthropic
+    langchain_core: langchain_core
+    langchain_mcp_adapters: langchain_mcp_adapters
+    langchain_openai: langchain_openai
+    langgraph.cache.base: langgraph_checkpoint
+    langgraph.cache.memory: langgraph_checkpoint
+    langgraph.cache.redis: langgraph_checkpoint
+    langgraph.channels: langgraph
+    langgraph.checkpoint.base: langgraph_checkpoint
+    langgraph.checkpoint.memory: langgraph_checkpoint
+    langgraph.checkpoint.serde: langgraph_checkpoint
+    langgraph.config: langgraph
+    langgraph.constants: langgraph
+    langgraph.errors: langgraph
+    langgraph.func: langgraph
+    langgraph.graph: langgraph
+    langgraph.managed: langgraph
+    langgraph.prebuilt: langgraph_prebuilt
+    langgraph.pregel: langgraph
+    langgraph.runtime: langgraph
+    langgraph.store.base: langgraph_checkpoint
+    langgraph.store.memory: langgraph_checkpoint
+    langgraph.types: langgraph
+    langgraph.typing: langgraph
+    langgraph.utils: langgraph
+    langgraph.version: langgraph
+    langgraph.warnings: langgraph
+    langgraph_sdk: langgraph_sdk
+    langsmith: langsmith
     lark: lark
     litellm: litellm
+    logfire_api: logfire_api
     lxml: lxml
     makefun: makefun
     mako: mako
@@ -263,10 +313,12 @@ manifest:
     mirakuru: mirakuru
     mistune: mistune
     mizani: mizani
+    mmh3: mmh3
     more_itertools: more_itertools
     mpl_toolkits.axes_grid1: matplotlib
     mpl_toolkits.axisartist: matplotlib
     mpl_toolkits.mplot3d: matplotlib
+    mpmath: mpmath
     multidict: multidict
     multipart: python_multipart
     mypy: mypy
@@ -283,13 +335,16 @@ manifest:
     nodeenv: nodeenv
     numpy: numpy
     oauthlib: oauthlib
+    onnxruntime: onnxruntime
     openai: openai
     openapi_pydantic: openapi_pydantic
+    openpyxl: openpyxl
     opentelemetry.attributes: opentelemetry_api
     opentelemetry.baggage: opentelemetry_api
     opentelemetry.context: opentelemetry_api
     opentelemetry.environment_variables: opentelemetry_api
     opentelemetry.exporter.otlp.proto.common: opentelemetry_exporter_otlp_proto_common
+    opentelemetry.exporter.otlp.proto.grpc: opentelemetry_exporter_otlp_proto_grpc
     opentelemetry.exporter.otlp.proto.http: opentelemetry_exporter_otlp_proto_http
     opentelemetry.metrics: opentelemetry_api
     opentelemetry.propagate: opentelemetry_api
@@ -308,6 +363,9 @@ manifest:
     opentelemetry.util.re: opentelemetry_api
     opentelemetry.util.types: opentelemetry_api
     opentelemetry.version: opentelemetry_api
+    orjson: orjson
+    ormsgpack: ormsgpack
+    overrides: overrides
     packaging: packaging
     pandas: pandas
     pandocfilters: pandocfilters
@@ -317,6 +375,8 @@ manifest:
     pathable: pathable
     pathspec: pathspec
     patsy: patsy
+    pdfminer: pdfminer_six
+    pdfplumber: pdfplumber
     peewee: peewee
     persistqueue: persist_queue
     pexpect: pexpect
@@ -327,6 +387,8 @@ manifest:
     plotnine: plotnine
     pluggy: pluggy
     port_for: port_for
+    portalocker: portalocker
+    posthog: posthog
     pproxy: pproxy
     pre_commit: pre_commit
     prometheus_client: prometheus_client
@@ -347,17 +409,24 @@ manifest:
     pyarrow: pyarrow
     pyasn1: pyasn1
     pyasn1_modules: pyasn1_modules
+    pybase64: pybase64
     pycparser: pycparser
     pycrdt: pycrdt
     pydantic: pydantic
+    pydantic_ai: pydantic_ai_slim
     pydantic_core: pydantic_core
+    pydantic_graph: pydantic_graph
     pydantic_settings: pydantic_settings
     pyee: pyee
     pygit2: pygit2
     pygments: pygments
     pylab: matplotlib
     pyparsing: pyparsing
+    pypdfium2: pypdfium2
+    pypdfium2_raw: pypdfium2
     pyperclip: pyperclip
+    pypika: pypika
+    pyproject_hooks: pyproject_hooks
     pyrage: pyrage
     pytest: pytest
     pytest_asyncio: pytest_asyncio
@@ -381,6 +450,7 @@ manifest:
     requests: requests
     requests_cache: requests_cache
     requests_oauthlib: requests_oauthlib
+    requests_toolbelt: requests_toolbelt
     respx: respx
     rfc3339_validator: rfc3339_validator
     rfc3986_validator: rfc3986_validator
@@ -410,6 +480,7 @@ manifest:
     strict_rfc3339: strict_rfc3339
     structlog: structlog
     supervisor: supervisor
+    sympy: sympy
     syrupy: syrupy
     tabulate: tabulate
     takethetime: takethetime
@@ -489,6 +560,8 @@ manifest:
     uritemplate: uritemplate
     url_normalize: url_normalize
     urllib3: urllib3
+    uuid_utils: uuid_utils
+    uv: uv
     uvicorn: uvicorn
     uvloop: uvloop
     virtualenv: virtualenv
@@ -502,11 +575,13 @@ manifest:
     websockets: websockets
     wrapt: wrapt
     xdist: pytest_xdist
+    xxhash: xxhash
     yaml: pyyaml
     yamllint: yamllint
     yarl: yarl
     zipp: zipp
     zmq: pyzmq
+    zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: cc5b081634595d1db3b534715d8ed77fcd057a596804a34783a41be5c20ed65a
+integrity: 6d67afae7047d57b3f1f995278fac0151114e29bdd9c3a75d29b64280e20ccb6
