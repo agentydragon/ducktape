@@ -10,7 +10,6 @@ Both fall back to ``Path.cwd()`` when not running under ``bazel run``.
 
 from __future__ import annotations
 
-import asyncio
 import dataclasses
 import os
 import subprocess
@@ -150,93 +149,6 @@ class BazelLabel:
 
 
 @dataclasses.dataclass(frozen=True)
-class BazelInfoResult:
-    """Parsed output of ``bazel info``."""
-
-    workspace: Path | None = None
-    install_base: Path | None = None
-    output_base: Path | None = None
-    output_path: Path | None = None
-    execution_root: Path | None = None
-    bazel_bin: Path | None = None
-    bazel_genfiles: Path | None = None
-    bazel_testlogs: Path | None = None
-    repository_cache: Path | None = None
-    server_pid: int | None = None
-    server_log: Path | None = None
-    command_log: Path | None = None
-    release: str | None = None
-    java_home: Path | None = None
-    java_runtime: str | None = None
-    java_vm: str | None = None
-    package_path: str | None = None
-    character_encoding: str | None = None
-    used_heap_size: str | None = None
-    committed_heap_size: str | None = None
-    max_heap_size: str | None = None
-    gc_count: int | None = None
-    gc_time: str | None = None
-    local_resources: str | None = None
-
-
-# Mapping from bazel info key names to BazelInfoResult field names.
-_INFO_KEY_TO_FIELD: dict[str, str] = {
-    "workspace": "workspace",
-    "install_base": "install_base",
-    "output_base": "output_base",
-    "output_path": "output_path",
-    "execution_root": "execution_root",
-    "bazel-bin": "bazel_bin",
-    "bazel-genfiles": "bazel_genfiles",
-    "bazel-testlogs": "bazel_testlogs",
-    "repository_cache": "repository_cache",
-    "server_pid": "server_pid",
-    "server_log": "server_log",
-    "command_log": "command_log",
-    "release": "release",
-    "java-home": "java_home",
-    "java-runtime": "java_runtime",
-    "java-vm": "java_vm",
-    "package_path": "package_path",
-    "character-encoding": "character_encoding",
-    "used-heap-size": "used_heap_size",
-    "committed-heap-size": "committed_heap_size",
-    "max-heap-size": "max_heap_size",
-    "gc-count": "gc_count",
-    "gc-time": "gc_time",
-    "local_resources": "local_resources",
-}
-
-# Fields that should be parsed as Path.
-_PATH_FIELDS: set[str] = {f.name for f in dataclasses.fields(BazelInfoResult) if f.type in ("Path | None",)}
-
-# Fields that should be parsed as int.
-_INT_FIELDS: set[str] = {f.name for f in dataclasses.fields(BazelInfoResult) if f.type in ("int | None",)}
-
-
-def parse_info_output(stdout: str) -> BazelInfoResult:
-    """Parse ``bazel info`` key-value output into a typed result."""
-    raw: dict[str, str] = {}
-    for line in stdout.strip().splitlines():
-        if ": " in line:
-            key, _, value = line.partition(": ")
-            raw[key.strip()] = value.strip()
-
-    kwargs: dict[str, object] = {}
-    for info_key, field_name in _INFO_KEY_TO_FIELD.items():
-        value = raw.get(info_key)
-        if value is None:
-            continue
-        if field_name in _PATH_FIELDS:
-            kwargs[field_name] = Path(value)
-        elif field_name in _INT_FIELDS:
-            kwargs[field_name] = int(value) if value.isdigit() else None
-        else:
-            kwargs[field_name] = value
-    return BazelInfoResult(**kwargs)
-
-
-@dataclasses.dataclass(frozen=True)
 class BazelWorkspace:
     """A local Bazel workspace rooted at a specific directory."""
 
@@ -326,20 +238,6 @@ class BazelWorkspace:
         cmd.extend(targets)
         result = subprocess.run(cmd, check=False, cwd=self.root, timeout=timeout)
         return result.returncode
-
-    async def info(self, *keys: str) -> BazelInfoResult:
-        """Run ``bazel info [keys...]`` and return parsed result.
-
-        Callers that need a timeout should wrap with ``asyncio.timeout()``.
-        """
-        cmd = [*self._bazel_prefix(), "info", *keys]
-        proc = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=str(self.root)
-        )
-        stdout_bytes, stderr_bytes = await proc.communicate()
-        if proc.returncode != 0:
-            raise subprocess.CalledProcessError(proc.returncode, cmd, stdout_bytes.decode(), stderr_bytes.decode())
-        return parse_info_output(stdout_bytes.decode())
 
     def shutdown(self) -> None:
         """Shut down the Bazel server for this workspace."""

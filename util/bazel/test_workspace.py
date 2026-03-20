@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import pytest_bazel
 
-from util.bazel.workspace import BazelInfoResult, BazelLabel, BazelWorkspace, parse_info_output
+from util.bazel.workspace import BazelLabel, BazelWorkspace
 
 
 @pytest.mark.parametrize(
@@ -150,42 +150,6 @@ def test_query_raises_on_failure(tmp_path: Path) -> None:
     workspace = BazelWorkspace(root=tmp_path)
     with patch("util.bazel.workspace.subprocess.run", return_value=mock_result), pytest.raises(CalledProcessError):
         workspace.query("//...")
-
-
-# --- parse_info_output / BazelInfoResult tests ---
-
-
-def test_parse_info_output_full():
-    output = "server_pid: 12345\noutput_base: /home/user/.cache/bazel/abc123\nrelease: release 8.5.0\n"
-    result = parse_info_output(output)
-    assert result.server_pid == 12345
-    assert result.output_base == Path("/home/user/.cache/bazel/abc123")
-    assert result.release == "release 8.5.0"
-
-
-def test_parse_info_output_empty():
-    result = parse_info_output("")
-    assert result == BazelInfoResult()
-
-
-def test_parse_info_output_partial():
-    result = parse_info_output("server_pid: 99\n")
-    assert result.server_pid == 99
-    assert result.output_base is None
-
-
-def test_parse_info_output_hyphenated_keys():
-    output = "bazel-bin: /tmp/bin\njava-home: /usr/lib/jvm\ngc-count: 42\n"
-    result = parse_info_output(output)
-    assert result.bazel_bin == Path("/tmp/bin")
-    assert result.java_home == Path("/usr/lib/jvm")
-    assert result.gc_count == 42
-
-
-def test_parse_info_output_unknown_keys_ignored():
-    output = "server_pid: 1\nsome_future_key: whatever\n"
-    result = parse_info_output(output)
-    assert result.server_pid == 1
 
 
 def test_binary_field():
