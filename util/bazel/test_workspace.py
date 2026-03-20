@@ -198,21 +198,5 @@ def test_binary_field_default():
     assert ws._bazel_prefix()[0] == "bazel"
 
 
-def test_env_file_wraps_command():
-    ws = BazelWorkspace(root=Path("/tmp"), env_file=Path("/path/to/env"))
-    cmd = ws._wrap_for_env_file(["bazel", "info"])
-    assert cmd[0] == "bash"
-    assert cmd[1] == "-c"
-    assert "source" in cmd[2]
-    assert "/path/to/env" in cmd[2]
-    assert "bazel info" in cmd[2]
-
-
-def test_env_file_none_passthrough():
-    ws = BazelWorkspace(root=Path("/tmp"))
-    cmd = ws._wrap_for_env_file(["bazel", "info"])
-    assert cmd == ["bazel", "info"]
-
-
 if __name__ == "__main__":
     pytest_bazel.main()

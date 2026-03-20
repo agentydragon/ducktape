@@ -13,7 +13,6 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import os
-import shlex
 import subprocess
 import tempfile
 from pathlib import Path
@@ -245,7 +244,6 @@ class BazelWorkspace:
     output_base: Path | None = None
     startup_flags: tuple[str, ...] = ()
     binary: str = "bazel"
-    env_file: Path | None = None
 
     def _bazel_prefix(self) -> list[str]:
         """Base bazel command with optional --output_base and startup flags."""
@@ -254,13 +252,6 @@ class BazelWorkspace:
             cmd.append(f"--output_base={self.output_base}")
         cmd.extend(self.startup_flags)
         return cmd
-
-    def _wrap_for_env_file(self, cmd: list[str]) -> list[str]:
-        """Wrap command with ``source <env_file> &&`` if env_file is set."""
-        if self.env_file is None:
-            return cmd
-        shell_cmd = f"source {shlex.quote(str(self.env_file))} && {shlex.join(cmd)}"
-        return ["bash", "-c", shell_cmd]
 
     def find_package(self, filepath: Path) -> Path | None:
         """Find the Bazel package containing a file by walking up to find BUILD."""
@@ -341,7 +332,7 @@ class BazelWorkspace:
 
         Callers that need a timeout should wrap with ``asyncio.timeout()``.
         """
-        cmd = self._wrap_for_env_file([*self._bazel_prefix(), "info", *keys])
+        cmd = [*self._bazel_prefix(), "info", *keys]
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=str(self.root)
         )

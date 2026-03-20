@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, patch
 import pytest_bazel
 
 from devinfra.claude.bazel_server_warmup import warmup_bazel_server
-from util.bazel.workspace import BazelInfoResult
 
 
 async def test_warmup_success(tmp_path: Path):
@@ -18,11 +17,9 @@ async def test_warmup_success(tmp_path: Path):
     mock_proc.communicate = AsyncMock(return_value=(b"server_pid: 12345\noutput_base: /tmp/bazel\n", b""))
 
     with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-        result = await warmup_bazel_server(
+        await warmup_bazel_server(
             wrapper_path=Path("/fake/bin/bazel"), project_dir=Path("/fake/project"), env_file=env_file
         )
-    assert result.server_pid == 12345
-    assert result.output_base == Path("/tmp/bazel")
 
 
 async def test_warmup_failure(tmp_path: Path):
@@ -34,10 +31,9 @@ async def test_warmup_failure(tmp_path: Path):
     mock_proc.communicate = AsyncMock(return_value=(b"", b"ERROR: something\n"))
 
     with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-        result = await warmup_bazel_server(
+        await warmup_bazel_server(
             wrapper_path=Path("/fake/bin/bazel"), project_dir=Path("/fake/project"), env_file=env_file
         )
-    assert result == BazelInfoResult()
 
 
 async def test_warmup_timeout(tmp_path: Path):
@@ -48,10 +44,9 @@ async def test_warmup_timeout(tmp_path: Path):
     mock_proc.communicate = AsyncMock(side_effect=TimeoutError)
 
     with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-        result = await warmup_bazel_server(
+        await warmup_bazel_server(
             wrapper_path=Path("/fake/bin/bazel"), project_dir=Path("/fake/project"), env_file=env_file
         )
-    assert result == BazelInfoResult()
 
 
 if __name__ == "__main__":

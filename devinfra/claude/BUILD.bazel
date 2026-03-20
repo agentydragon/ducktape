@@ -362,7 +362,6 @@ py_test(
     deps = [
         ":bazel_server_warmup",
         ":conftest",
-        "//util/bazel:workspace",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",

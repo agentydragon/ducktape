@@ -6,37 +6,46 @@ doesn't pay the JVM startup cost.
 
 import asyncio
 import logging
-import subprocess
+import shlex
 from pathlib import Path
 
-from util.bazel.workspace import BazelInfoResult, BazelWorkspace
+from util.bazel.workspace import parse_info_output
 
 logger = logging.getLogger(__name__)
 
 _WARMUP_TIMEOUT_SECS = 120
 
 
-async def warmup_bazel_server(wrapper_path: Path, project_dir: Path, env_file: Path) -> BazelInfoResult:
+async def warmup_bazel_server(wrapper_path: Path, project_dir: Path, env_file: Path) -> None:
     """Fire-and-forget Bazel server warmup. Logs errors, never raises.
 
-    Uses the bazel wrapper so --bazelrc, proxy credentials, and session env
-    vars are applied (sourced from *env_file*). Runs as an async subprocess
-    with a timeout.
+    Sources *env_file* then runs the bazel wrapper so --bazelrc, proxy
+    credentials, and session env vars are applied.
     """
     logger.info("Warming up Bazel server (wrapper=%s, project=%s)", wrapper_path, project_dir)
-    workspace = BazelWorkspace(root=project_dir, binary=str(wrapper_path), env_file=env_file)
+    bazel_cmd = shlex.join([str(wrapper_path), "info"])
+    shell_cmd = f"source {shlex.quote(str(env_file))} && {bazel_cmd}"
     try:
         async with asyncio.timeout(_WARMUP_TIMEOUT_SECS):
-            result = await workspace.info()
+            proc = await asyncio.create_subprocess_exec(
+                "bash",
+                "-c",
+                shell_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(project_dir),
+            )
+            stdout_bytes, stderr_bytes = await proc.communicate()
     except TimeoutError:
         logger.warning("Bazel server warmup timed out")
-        return BazelInfoResult()
-    except subprocess.CalledProcessError as e:
-        logger.warning("Bazel server warmup failed (exit=%d): %s", e.returncode, (e.stderr or "").strip())
-        return BazelInfoResult()
+        return
     except Exception as e:
         logger.warning("Bazel server warmup failed: %s", e)
-        return BazelInfoResult()
+        return
 
+    if proc.returncode != 0:
+        logger.warning("Bazel server warmup failed (exit=%d): %s", proc.returncode, stderr_bytes.decode().strip())
+        return
+
+    result = parse_info_output(stdout_bytes.decode())
     logger.info("Bazel server warm (pid=%s, output_base=%s)", result.server_pid, result.output_base)
-    return result
