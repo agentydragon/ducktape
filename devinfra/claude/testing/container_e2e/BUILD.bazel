@@ -23,7 +23,8 @@ py_test(
         ":e2e_container_tarball",
         "//:claude_hooks_wheel",
         "//devinfra/claude/testdata/test_workspace:workspace_files",
-        "//devinfra/claude/testing:mock_egress_proxy_tarball",
+        "//devinfra/claude/testing:mitmproxy_addon",
+        "//devinfra/claude/testing:mitmproxy_tarball",
     ],
     env_inherit = [
         "DOCKER_HOST",

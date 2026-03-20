@@ -7,16 +7,18 @@ all external connectivity).
 Architecture:
     Host side:
         - Builds the claude_hooks wheel via Bazel
-        - Builds MockEgressProxy OCI image via Bazel and loads it into Docker
+        - Loads mitmproxy:11 OCI image into Docker (stock image + mounted addon)
         - Pulls e2e-container image from GHCR (python:3.13-slim + git + JDK)
         - Creates two Docker networks:
           - e2e-proxy (bridge): proxy container has internet access
           - e2e-isolated (internal bridge): test container <-> proxy container only
-        - MockEgressProxy runs as a container on both networks
+        - mitmproxy runs as a container on both networks with a Python addon for
+          structured request/response logging
+        - CA cert generated host-side and mounted into both containers
         - Drives test steps via docker exec calls
 
     Container side (via docker exec):
-        - Installs claude_hooks wheel (pip through proxy -> MockEgressProxy container)
+        - Installs claude_hooks wheel (pip through proxy -> mitmproxy container)
         - Runs claude-hook (session start hook) which sets up:
           auth proxy, supervisor, bazel wrapper, CA bundles, env file
         - Runs bazel build through the full proxy chain
@@ -42,7 +44,6 @@ from pathlib import Path
 from typing import Any
 
 import aiodocker
-import aiohttp
 import pytest
 import pytest_bazel
 import tenacity
@@ -50,7 +51,7 @@ from yarl import URL
 
 from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
 from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
-from devinfra.claude.testing.mock_egress_proxy import EgressProxyConfig
+from devinfra.claude.testing.mock_egress_proxy import EgressProxyConfig, generate_mock_ca
 from util.bazel.runfiles import get_required_path
 from util.oci import load_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -72,9 +73,12 @@ _TEST_WORKSPACE_MODULE = "_main/devinfra/claude/testdata/test_workspace/MODULE.b
 _E2E_IMAGE = "e2e-container:pinned"
 _E2E_TARBALL = "_main/devinfra/claude/testing/container_e2e/e2e_container_load/tarball.tar"
 
-# OCI image for the mock egress proxy container
-_MOCK_PROXY_IMAGE = "mock-egress-proxy:latest"
-_MOCK_PROXY_TARBALL = "_main/devinfra/claude/testing/mock_egress_proxy_load/tarball.tar"
+# mitmproxy OCI image for the proxy container
+_MITMPROXY_IMAGE = "mitmproxy:11"
+_MITMPROXY_TARBALL = "_main/devinfra/claude/testing/mitmproxy_load/tarball.tar"
+
+# mitmproxy addon script (mounted into proxy container)
+_MITMPROXY_ADDON_RLOCATION = "_main/devinfra/claude/testing/mitmproxy_addon.py"
 
 # Container name prefix
 _CONTAINER_NAME = "ducktape-container-e2e"
@@ -84,9 +88,12 @@ _SESSION_ID = "container-e2e-test"
 
 _ENV_FILE = f"/root/.claude/session-env/{_SESSION_ID}/sessionstart-hook-0.sh"
 
-# Ports inside the proxy container
+# Port inside the proxy container
 _PROXY_LISTEN_PORT = 8080
-_PROXY_MGMT_PORT = 8081
+
+# Proxy credentials
+_PROXY_USERNAME = "proxy_user"
+_PROXY_PASSWORD = "test_jwt_token"
 
 # Timeout for proxy container readiness (seconds)
 _PROXY_READY_TIMEOUT = 60
@@ -150,44 +157,48 @@ async def _exec(
     return exit_code, bytes(stdout_buf), bytes(stderr_buf)
 
 
-async def _mgmt_get(session: aiohttp.ClientSession, url: URL) -> bytes:
-    """HTTP GET against the proxy management API. Returns the response body."""
-    async with session.get(url) as resp:
-        resp.raise_for_status()
-        return await resp.read()
-
-
 @tenacity.retry(
     stop=tenacity.stop_after_delay(_PROXY_READY_TIMEOUT),
     wait=tenacity.wait_fixed(0.3),
-    retry=tenacity.retry_if_exception_type((OSError, TimeoutError, aiohttp.ClientError)),
+    retry=tenacity.retry_if_exception_type(OSError),
     reraise=True,
 )
-async def _wait_for_proxy_ready(session: aiohttp.ClientSession, mgmt_base: URL) -> None:
-    """Poll the management /ready endpoint until it responds."""
-    body = await _mgmt_get(session, mgmt_base / "ready")
-    assert body == b"ok", f"Unexpected /ready response: {body!r}"
+async def _wait_for_proxy_ready(host: str, port: int) -> None:
+    """TCP connect to the proxy port until it accepts connections."""
+    _, writer = await asyncio.open_connection(host, port)
+    writer.close()
+    await writer.wait_closed()
 
 
-def _build_upstream_proxy_args(upstream: EgressProxyConfig, gateway_ip: str, proxy_shared: Path) -> list[str]:
-    """Build CLI args for upstream proxy configuration.
+def _build_mitmproxy_cmd(upstream: EgressProxyConfig | None) -> list[str]:
+    """Build mitmdump command line for the proxy container."""
+    cmd = [
+        "mitmdump",
+        "--listen-host",
+        "0.0.0.0",
+        "--listen-port",
+        str(_PROXY_LISTEN_PORT),
+        "--set",
+        "confdir=/certs",
+        "--set",
+        f"proxyauth={_PROXY_USERNAME}:{_PROXY_PASSWORD}",
+        "-s",
+        "/addon/mitmproxy_addon.py",
+    ]
 
-    Rewrites localhost references to gateway_ip so the proxy container can
-    reach host-side services via the bridge network gateway.
-    """
-    host = upstream.host
-    if host in ("localhost", "127.0.0.1"):
-        host = gateway_ip
+    if upstream:
+        url = URL.build(scheme="http", host=upstream.host, port=upstream.port)
+        cmd += ["--mode", f"upstream:{url}"]
+        if upstream.username and upstream.password:
+            cmd += ["--upstream-auth", f"{upstream.username}:{upstream.password}"]
+        if upstream.ca_bundle:
+            cmd += ["--set", "ssl_verify_upstream_trusted_ca=/shared/upstream_ca.pem"]
+        else:
+            cmd += ["--ssl-insecure"]
+    else:
+        cmd += ["--ssl-insecure"]
 
-    url = URL.build(scheme="http", user=upstream.username, password=upstream.password, host=host, port=upstream.port)
-
-    args = ["--upstream-proxy-url", str(url)]
-
-    if upstream.ca_bundle:
-        shutil.copy2(upstream.ca_bundle, proxy_shared / "upstream_ca.pem")
-        args += ["--upstream-ca-bundle", "/shared/upstream_ca.pem"]
-
-    return args
+    return cmd
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +223,6 @@ class ProxySetup:
 
     proxy_url: str
     mock_ca_pem: bytes
-    mgmt_base: URL
     isolated_net_name: str
 
 
@@ -241,10 +251,10 @@ def e2e_image() -> str:
 
 
 @pytest.fixture
-def mock_proxy_image() -> str:
-    """Load the mock egress proxy OCI image into Docker."""
-    load_image(_MOCK_PROXY_TARBALL)
-    return _MOCK_PROXY_IMAGE
+def mitmproxy_image() -> str:
+    """Load the mitmproxy OCI image into Docker."""
+    load_image(_MITMPROXY_TARBALL)
+    return _MITMPROXY_IMAGE
 
 
 @pytest.fixture
@@ -288,105 +298,79 @@ async def docker_networks(docker_client: aiodocker.Docker) -> AsyncGenerator[Doc
 
 @pytest.fixture
 async def proxy_env(
-    tmp_path: Path, mock_proxy_image: str, docker_client: aiodocker.Docker, docker_networks: DockerNetworks
+    tmp_path: Path, mitmproxy_image: str, docker_client: aiodocker.Docker, docker_networks: DockerNetworks
 ) -> AsyncGenerator[ProxySetup]:
-    """Start MockEgressProxy container on the Docker networks.
+    """Start mitmproxy container on the Docker networks.
 
     The proxy container sits on both the proxy network (internet access)
-    and the isolated network (reachable by the test container). Yields a
-    ProxySetup with the proxy URL, CA cert, management base URL, and isolated
-    network name. Cleans up the proxy container on teardown.
+    and the isolated network (reachable by the test container). CA cert is
+    generated host-side and mounted into the container. Yields a ProxySetup
+    with the proxy URL, CA cert, and isolated network name.
     """
+    # Generate CA host-side and write mitmproxy confdir files
+    cert_pem, key_pem = generate_mock_ca()
+    certs_dir = tmp_path / "mitmproxy_certs"
+    certs_dir.mkdir()
+    # mitmproxy expects key+cert concatenated as mitmproxy-ca.pem in confdir
+    (certs_dir / "mitmproxy-ca.pem").write_bytes(key_pem + cert_pem)
+    (certs_dir / "mitmproxy-ca-cert.pem").write_bytes(cert_pem)
+
+    # Resolve addon script from runfiles
+    addon_path = get_required_path(_MITMPROXY_ADDON_RLOCATION)
+
     proxy_shared = tmp_path / "proxy_shared"
     proxy_shared.mkdir()
 
     proxy_name = f"{_CONTAINER_NAME}-proxy-{os.getpid()}"
 
-    proxy_cmd = [
-        "--listen-port",
-        str(_PROXY_LISTEN_PORT),
-        "--mgmt-port",
-        str(_PROXY_MGMT_PORT),
-        "--username",
-        "proxy_user",
-        "--password",
-        "test_jwt_token",
-        "--log-dir",
-        "/logs",
-    ]
-
     upstream = EgressProxyConfig.from_env()
-    binds_proxy: list[str] = []
+    binds: list[str] = [f"{certs_dir}:/certs:ro", f"{addon_path}:/addon/mitmproxy_addon.py:ro"]
     if upstream:
-        proxy_cmd += _build_upstream_proxy_args(upstream, docker_networks.gateway_ip, proxy_shared)
+        # Rewrite localhost to gateway IP so container can reach host services
+        if upstream.host in ("localhost", "127.0.0.1"):
+            upstream = EgressProxyConfig(
+                host=docker_networks.gateway_ip,
+                port=upstream.port,
+                username=upstream.username,
+                password=upstream.password,
+                ca_bundle=upstream.ca_bundle,
+            )
         if upstream.ca_bundle:
-            binds_proxy.append(f"{proxy_shared / 'upstream_ca.pem'}:/shared/upstream_ca.pem:ro")
-    else:
-        proxy_cmd.append("--no-verify-target-certs")
+            shutil.copy2(upstream.ca_bundle, proxy_shared / "upstream_ca.pem")
+            binds.append(f"{proxy_shared / 'upstream_ca.pem'}:/shared/upstream_ca.pem:ro")
 
-    host_config: dict[str, Any] = {
-        "NetworkMode": docker_networks.proxy_net_name,
-        "PortBindings": {f"{_PROXY_MGMT_PORT}/tcp": [{"HostPort": "0"}]},
-        "Binds": binds_proxy,
-    }
+    proxy_cmd = _build_mitmproxy_cmd(upstream)
+
+    host_config: dict[str, Any] = {"NetworkMode": docker_networks.proxy_net_name, "Binds": binds}
 
     proxy_container = await docker_client.containers.create(
-        {
-            "Image": mock_proxy_image,
-            "Cmd": proxy_cmd,
-            "ExposedPorts": {f"{_PROXY_MGMT_PORT}/tcp": {}},
-            "HostConfig": host_config,
-        },
-        name=proxy_name,
+        {"Image": mitmproxy_image, "Cmd": proxy_cmd, "HostConfig": host_config}, name=proxy_name
     )
     await proxy_container.start()
-    logger.info("Started proxy container %s", proxy_name)
+    logger.info("Started mitmproxy container %s", proxy_name)
 
     try:
-        # Get the published mgmt port on the host
-        proxy_info = await proxy_container.show()
-        mgmt_host_port = int(proxy_info["NetworkSettings"]["Ports"][f"{_PROXY_MGMT_PORT}/tcp"][0]["HostPort"])
-        mgmt_base = URL.build(scheme="http", host="127.0.0.1", port=mgmt_host_port)
-        logger.info("Proxy management API at %s", mgmt_base)
-
         # Connect proxy container to the isolated network
         await docker_networks.isolated_net.connect({"Container": proxy_container._id})
 
-        async with aiohttp.ClientSession() as session:
-            await _wait_for_proxy_ready(session, mgmt_base)
-            logger.info("MockEgressProxy container is ready")
-
-            mock_ca_pem = await _mgmt_get(session, mgmt_base / "ca.pem")
-
-        # Get proxy container's IP on the isolated network (re-inspect after connect)
+        # Wait for mitmproxy to be ready (TCP connect to proxy port)
         proxy_info = await proxy_container.show()
         proxy_ip = proxy_info["NetworkSettings"]["Networks"][docker_networks.isolated_net_name]["IPAddress"]
         logger.info("Proxy container IP on isolated network: %s", proxy_ip)
 
+        await _wait_for_proxy_ready(proxy_ip, _PROXY_LISTEN_PORT)
+        logger.info("mitmproxy container is ready")
+
         yield ProxySetup(
-            proxy_url=f"http://proxy_user:test_jwt_token@{proxy_ip}:{_PROXY_LISTEN_PORT}",
-            mock_ca_pem=mock_ca_pem,
-            mgmt_base=mgmt_base,
+            proxy_url=f"http://{_PROXY_USERNAME}:{_PROXY_PASSWORD}@{proxy_ip}:{_PROXY_LISTEN_PORT}",
+            mock_ca_pem=cert_pem,
             isolated_net_name=docker_networks.isolated_net_name,
         )
 
     finally:
-        stdout = "".join(await proxy_container.log(stdout=True, stderr=True))
-        _save_output("proxy-container.log", stdout)
-
-        # Extract structured proxy log via exec (not bind-mount, avoids root-owned files)
-        exec_obj = await proxy_container.exec(
-            ["cat", "/logs/proxy.log"], stdout=True, stderr=False, stdin=False, tty=False
-        )
-        stream: Any = exec_obj.start()
-        proxy_log_buf = bytearray()
-        while True:
-            chunk = await stream.read_out()
-            if chunk is None:
-                break
-            proxy_log_buf.extend(chunk.data if isinstance(chunk.data, bytes) else chunk.data.encode())
-        if proxy_log_buf:
-            _save_output("proxy.log", proxy_log_buf.decode(errors="replace"))
+        # Collect mitmproxy logs (stdout/stderr)
+        proxy_logs = "".join(await proxy_container.log(stdout=True, stderr=True))
+        _save_output("proxy.log", proxy_logs)
 
         await proxy_container.delete(force=True)
 

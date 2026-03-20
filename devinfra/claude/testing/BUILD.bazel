@@ -1,8 +1,6 @@
-load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_oci//oci:defs.bzl", "oci_load")
 load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/testing:defs.bzl", "py_test")
-load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//devinfra/claude:__subpackages__"])
 
@@ -65,8 +63,15 @@ py_library(
 )
 
 # =============================================================================
-# MockEgressProxy OCI image (for container E2E test)
+# mitmproxy OCI image (for container E2E test)
 # =============================================================================
+
+py_library(
+    name = "mitmproxy_addon",
+    testonly = True,
+    srcs = ["mitmproxy_addon.py"],
+    imports = ["../../.."],
+)
 
 py_library(
     name = "mock_egress_proxy_main",
@@ -80,40 +85,17 @@ py_library(
     ],
 )
 
-aspect_py_binary(
-    name = "mock_egress_proxy_bin",
-    testonly = True,
-    imports = ["../../.."],
-    main = "mock_egress_proxy_main.py",
-    deps = [":mock_egress_proxy_main"],
-)
-
-py_image_layer(
-    name = "mock_egress_proxy_layers",
-    testonly = True,
-    binary = ":mock_egress_proxy_bin",
-)
-
-oci_image(
-    name = "mock_egress_proxy_image",
-    testonly = True,
-    base = "@debian_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("mock_egress_proxy_bin"),
-    env = py_image_env(binary_name = "mock_egress_proxy_bin"),
-    tars = [":mock_egress_proxy_layers"],
-)
-
 oci_load(
-    name = "mock_egress_proxy_load",
+    name = "mitmproxy_load",
     testonly = True,
-    image = ":mock_egress_proxy_image",
-    repo_tags = ["mock-egress-proxy:latest"],
+    image = "@mitmproxy_linux_amd64",
+    repo_tags = ["mitmproxy:11"],
 )
 
 filegroup(
-    name = "mock_egress_proxy_tarball",
+    name = "mitmproxy_tarball",
     testonly = True,
-    srcs = [":mock_egress_proxy_load"],
+    srcs = [":mitmproxy_load"],
     output_group = "tarball",
 )
 
