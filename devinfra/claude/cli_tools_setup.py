@@ -105,14 +105,18 @@ def _install_tool(tool: CliTool, bin_dir: Path, http: httpx.Client) -> None:
     logger.info("Installed %s to %s", tool.name, dest)
 
 
-def install_cli_tools(bin_dir: Path, http: httpx.Client) -> list[str]:
+def install_cli_tools(bin_dir: Path, http: httpx.Client, *, skip: set[str] | None = None) -> list[str]:
     """Install all CLI tools into bin_dir. Returns list of successfully installed tool names.
 
     Non-fatal — logs warnings for individual failures and continues.
+    skip: tool names to skip (e.g. {"gh", "kubectl", "flux"}).
     """
     bin_dir.mkdir(parents=True, exist_ok=True)
     installed: list[str] = []
     for tool in _tools():
+        if skip and tool.name in skip:
+            logger.info("Skipping %s install (disabled by settings)", tool.name)
+            continue
         try:
             _install_tool(tool, bin_dir, http)
             installed.append(tool.name)

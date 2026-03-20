@@ -60,6 +60,11 @@ class HookSettings(BaseSettings):
     # Feature flags (enable/disable installations)
     install_bazelisk: bool = Field(default=True, description="Download and install bazelisk")
     install_mkcert: bool = Field(default=True, description="Install mkcert and generate localhost TLS cert")
+    install_cli_tools: bool = Field(default=True, description="Download CLI tools (gh, kubectl, flux)")
+    install_gh: bool = Field(default=True, description="Download gh CLI")
+    install_kubectl: bool = Field(default=True, description="Download kubectl")
+    install_flux: bool = Field(default=True, description="Download flux CLI")
+    install_apt_packages: bool = Field(default=True, description="Install native dev apt packages")
     container_runtime: Literal["podman", "docker", "none"] = Field(
         default="docker", description="Container runtime to set up (podman, docker, or none)"
     )

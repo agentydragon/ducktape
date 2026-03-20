@@ -284,8 +284,12 @@ async def _setup_web(
     #   setup_bazel_on_tmpfs mounts its own tmpfs independently
     logger.info("Starting parallel installations...")
 
-    # Consolidated apt install: native dev headers (always) + podman (if needed).
-    apt_packages = list(apt_setup.NATIVE_DEV_PACKAGES)
+    # Consolidated apt install: native dev headers (if enabled) + podman (if needed).
+    apt_packages: list[str] = []
+    if settings.install_apt_packages:
+        apt_packages.extend(apt_setup.NATIVE_DEV_PACKAGES)
+    else:
+        logger.info("Skipping native apt packages (install_apt_packages=False)")
     if settings.container_runtime == "podman" and shutil.which("podman") is None:
         apt_packages.extend(apt_setup.PODMAN_PACKAGES)
 
@@ -328,7 +332,17 @@ async def _setup_web(
 
     @tracer.start_as_current_span("install_cli_tools", context=root_ctx)
     async def traced_cli_tools():
-        return await run_in_thread(cli_tools_setup.install_cli_tools, paths.wrapper_dir, http)
+        skip_tools: set[str] = set()
+        if not settings.install_cli_tools:
+            skip_tools = {"gh", "kubectl", "flux"}
+        else:
+            if not settings.install_gh:
+                skip_tools.add("gh")
+            if not settings.install_kubectl:
+                skip_tools.add("kubectl")
+            if not settings.install_flux:
+                skip_tools.add("flux")
+        return await run_in_thread(cli_tools_setup.install_cli_tools, paths.wrapper_dir, http, skip=skip_tools)
 
     results = await asyncio.gather(
         proxy_task,

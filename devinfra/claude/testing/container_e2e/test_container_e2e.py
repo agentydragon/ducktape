@@ -21,14 +21,13 @@ Architecture:
           auth proxy, supervisor, bazel wrapper, CA bundles, env file
         - Runs bazel build through the full proxy chain
 
-Network traffic profile (~327 MB total, measured 2026-03-20):
-    releases.bazel.build:443       130 MB  40%  Bazel binary (2 conns)
-    files.pythonhosted.org:443      81 MB  25%  pip wheel deps (protobuf, cryptography, etc.)
-    dl.k8s.io:443                   57 MB  17%  kubectl binary
-    deb.debian.org:80               49 MB  15%  apt packages (libdbus, etc.)
-    pypi.org:443                    10 MB   3%  pip index metadata
+Network traffic profile (~221 MB with cli tools + apt skipped, measured 2026-03-20):
+    releases.bazel.build:443       130 MB  59%  Bazel binary (2 conns)
+    files.pythonhosted.org:443      81 MB  37%  pip wheel deps (protobuf, cryptography, etc.)
+    pypi.org:443                    10 MB   4%  pip index metadata
     bcr.bazel.build:443            0.3 MB  <1%  Bazel Central Registry metadata
-    Top 4 hosts account for 97% of traffic. See proxy.log in undeclared outputs.
+    Skipped by settings: kubectl (57 MB), apt packages (49 MB), gh, flux.
+    See proxy.log in undeclared outputs.
 """
 
 import asyncio
@@ -433,6 +432,10 @@ async def test_container_e2e(
         "CLAUDE_ENV_FILE": _ENV_FILE,
         "DUCKTAPE_CLAUDE_HOOKS_INSTALL_BAZELISK": "true",
         "DUCKTAPE_CLAUDE_HOOKS_INSTALL_MKCERT": "false",
+        "DUCKTAPE_CLAUDE_HOOKS_INSTALL_GH": "false",
+        "DUCKTAPE_CLAUDE_HOOKS_INSTALL_KUBECTL": "false",
+        "DUCKTAPE_CLAUDE_HOOKS_INSTALL_FLUX": "false",
+        "DUCKTAPE_CLAUDE_HOOKS_INSTALL_APT_PACKAGES": "false",
         "DUCKTAPE_CLAUDE_HOOKS_CONTAINER_RUNTIME": "none",
         "ANTHROPIC_CA_PATH": "/certs/mock_ca.pem",
         "WHEEL_PATH": f"/wheel/{_WHEEL_FILENAME}",
