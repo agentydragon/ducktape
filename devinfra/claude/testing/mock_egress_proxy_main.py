@@ -46,7 +46,11 @@ def _parse_upstream_config(url: str, ca_bundle: str | None) -> EgressProxyConfig
     if not parsed.host:
         raise ValueError(f"Invalid upstream proxy URL: {url}")
     return EgressProxyConfig(
-        host=parsed.host, port=parsed.port or 8080, username=parsed.user, password=parsed.password, ca_bundle=ca_bundle
+        host=parsed.host,
+        port=parsed.port or 8080,
+        username=parsed.user,
+        password=parsed.password,
+        ca_bundle=Path(ca_bundle) if ca_bundle else None,
     )
 
 

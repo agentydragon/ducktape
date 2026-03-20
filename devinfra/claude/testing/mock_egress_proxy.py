@@ -43,7 +43,7 @@ class EgressProxyConfig:
     port: int
     username: str | None = None
     password: str | None = None
-    ca_bundle: str | None = None  # Path to CA bundle for verifying upstream TLS
+    ca_bundle: Path | None = None
 
     @classmethod
     def from_env(cls) -> EgressProxyConfig | None:
@@ -64,7 +64,8 @@ class EgressProxyConfig:
             return None
 
         # Get CA bundle for verifying upstream proxy's TLS interception cert.
-        ca_bundle = next((v for var in SSL_CA_ENV_VARS if (v := os.environ.get(var))), None)
+        ca_bundle_str = next((v for var in SSL_CA_ENV_VARS if (v := os.environ.get(var))), None)
+        ca_bundle = Path(ca_bundle_str) if ca_bundle_str else None
 
         return cls(
             host=parsed.hostname,
@@ -387,19 +388,13 @@ class MockEgressProxy:
                 await self._send_error(writer, b"HTTP/1.1 502 Bad Gateway\r\n\r\n", error_msg)
                 return None
 
-    def _create_client_ssl_context(self, *, ca_bundle: str | None = None) -> ssl.SSLContext:
-        """Create an SSL context for outbound connections to targets or upstream proxies.
-
-        With ca_bundle: load it if it exists, otherwise disable verification.
-        Without ca_bundle: use system CAs, but disable verification if verify_target_certs is False.
-        """
+    def _create_client_ssl_context(self, *, ca_bundle: Path | None) -> ssl.SSLContext:
+        """Create an SSL context for outbound connections to targets or upstream proxies."""
         ctx = ssl.create_default_context()
         if ca_bundle:
-            if Path(ca_bundle).exists():
-                ctx.load_verify_locations(ca_bundle)
-                return ctx
-            logger.debug("CA bundle %s not found, disabling verification", ca_bundle)
-        elif self.verify_target_certs:
+            ctx.load_verify_locations(ca_bundle)
+            return ctx
+        if self.verify_target_certs:
             return ctx
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
@@ -408,54 +403,25 @@ class MockEgressProxy:
     async def _connect_to_target(
         self, target_host: str, target_port: int, *, use_tls: bool = True
     ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-        if self.upstream_proxy:
+        """Connect to a target, optionally through an upstream proxy."""
+        if not self.upstream_proxy:
             if use_tls:
-                return await self._connect_via_upstream(target_host, target_port)
-            return await self._connect_via_upstream_plain(target_host, target_port)
-        if use_tls:
-            return await self._connect_direct(target_host, target_port)
-        return await self._connect_direct_plain(target_host, target_port)
+                ctx = self._create_client_ssl_context(ca_bundle=None)
+                return await asyncio.open_connection(target_host, target_port, ssl=ctx)
+            return await asyncio.open_connection(target_host, target_port)
 
-    async def _connect_direct(
-        self, target_host: str, target_port: int
-    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-        ctx = self._create_client_ssl_context()
-        return await asyncio.open_connection(target_host, target_port, ssl=ctx)
-
-    async def _connect_direct_plain(
-        self, target_host: str, target_port: int
-    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-        """Connect to target over plain TCP (no TLS)."""
-        return await asyncio.open_connection(target_host, target_port)
-
-    async def _connect_via_upstream_plain(
-        self, target_host: str, target_port: int
-    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-        """Connect to target through upstream proxy for plain HTTP.
-
-        For plain HTTP, we open a TCP connection to the upstream proxy and
-        let the caller send the full HTTP request with absolute URL.
-        The upstream proxy will forward it.
-        """
         upstream = self.upstream_proxy
-        assert upstream is not None
-        return await asyncio.open_connection(upstream.host, upstream.port)
+        if not use_tls:
+            # Plain HTTP: open TCP to upstream, caller sends absolute-URL request
+            return await asyncio.open_connection(upstream.host, upstream.port)
 
-    async def _connect_via_upstream(
-        self, target_host: str, target_port: int
+        # TLS via upstream: CONNECT tunnel, then TLS upgrade
+        return await self._connect_via_upstream_tunnel(target_host, target_port, upstream)
+
+    async def _connect_via_upstream_tunnel(
+        self, target_host: str, target_port: int, upstream: EgressProxyConfig
     ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-        """Connect to target through upstream proxy.
-
-        The upstream proxy (e.g., Anthropic's TLS-inspecting proxy) will:
-        1. Accept our CONNECT request
-        2. Establish tunnel to target
-        3. Perform TLS MITM (presenting a cert signed by its CA)
-
-        We trust the upstream CA via SSL_CERT_FILE or similar env var.
-        """
-        upstream = self.upstream_proxy
-        assert upstream is not None
-
+        """CONNECT tunnel through upstream proxy with TLS upgrade."""
         logger.debug(
             "Connecting to %s:%d via upstream proxy %s:%d (auth: %s, ca: %s)",
             target_host,
@@ -468,7 +434,6 @@ class MockEgressProxy:
 
         proxy_reader, proxy_writer = await asyncio.open_connection(upstream.host, upstream.port)
         try:
-            # Build and send CONNECT request
             connect_req = f"CONNECT {target_host}:{target_port} HTTP/1.1\r\n"
             connect_req += f"Host: {target_host}:{target_port}\r\n"
             if upstream.username and upstream.password:
@@ -479,7 +444,6 @@ class MockEgressProxy:
             proxy_writer.write(connect_req.encode())
             await proxy_writer.drain()
 
-            # Read response headers
             try:
                 response = await proxy_reader.readuntil(b"\r\n\r\n")
             except asyncio.IncompleteReadError as e:
@@ -491,7 +455,6 @@ class MockEgressProxy:
 
             logger.debug("Upstream proxy tunnel established to %s:%d", target_host, target_port)
 
-            # Upgrade to TLS (client side — we're connecting to the target through the tunnel)
             ctx = self._create_client_ssl_context(ca_bundle=upstream.ca_bundle)
             await proxy_writer.start_tls(ctx, server_hostname=target_host)
             return proxy_reader, proxy_writer
@@ -575,27 +538,21 @@ class MockEgressProxy:
             _load_cert_chain_from_bytes(client_ctx, server_cert_pem, server_key_pem, self._ca_cert_pem)
             await writer.start_tls(client_ctx)
 
-            bytes_forwarded = await self._forward_bidirectional(
-                reader, writer, server_reader, server_writer, target_host
-            )
-            self.stats.record_success(bytes_forwarded)
-            self._record_completed_connection(
-                ConnectionRecord(
-                    method="CONNECT", host=target_host, port=target_port, success=True, bytes_forwarded=bytes_forwarded
-                )
-            )
-            logger.info(
-                "[conn %d] Completed %s:%d, %d bytes forwarded", conn_id, target_host, target_port, bytes_forwarded
+            await self._relay_and_record(
+                reader,
+                writer,
+                server_reader,
+                server_writer,
+                method="CONNECT",
+                host=target_host,
+                port=target_port,
+                conn_id=conn_id,
             )
 
     async def _handle_plain_http(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, request: bytes, request_line: str
     ) -> None:
-        """Handle plain HTTP proxy requests (GET http://host/path, etc.).
-
-        Forwards the request to the target server over plain TCP and relays
-        the response back. Used by tools like apt-get that use HTTP_PROXY.
-        """
+        """Handle plain HTTP proxy requests (GET http://host/path, etc.)."""
         parts = request_line.split()
         if len(parts) < 3:
             await self._send_error(writer, b"HTTP/1.1 400 Bad Request\r\n\r\n", "Malformed HTTP request")
@@ -603,7 +560,6 @@ class MockEgressProxy:
 
         method, url, http_version = parts[0], parts[1], parts[2]
 
-        # Parse absolute URL (e.g., http://archive.ubuntu.com/ubuntu/dists/...)
         parsed = urllib.parse.urlparse(url)
         if not parsed.hostname:
             await self._send_error(writer, b"HTTP/1.1 400 Bad Request\r\n\r\n", f"Non-absolute URL: {url[:80]}")
@@ -647,17 +603,38 @@ class MockEgressProxy:
             server_writer.write(forwarded_request.encode())
             await server_writer.drain()
 
-            # Relay bidirectionally (handles request body and response)
-            bytes_forwarded = await self._forward_bidirectional(
-                reader, writer, server_reader, server_writer, target_host
+            await self._relay_and_record(
+                reader,
+                writer,
+                server_reader,
+                server_writer,
+                method=method,
+                host=target_host,
+                port=target_port,
+                conn_id=conn_id,
             )
-            self.stats.record_success(bytes_forwarded)
-            self._record_completed_connection(
-                ConnectionRecord(
-                    method=method, host=target_host, port=target_port, success=True, bytes_forwarded=bytes_forwarded
-                )
-            )
-            logger.info("[conn %d] Completed %s %s, %d bytes", conn_id, method, target_host, bytes_forwarded)
+
+    async def _relay_and_record(
+        self,
+        client_reader: asyncio.StreamReader,
+        client_writer: asyncio.StreamWriter,
+        server_reader: asyncio.StreamReader,
+        server_writer: asyncio.StreamWriter,
+        *,
+        method: str,
+        host: str,
+        port: int,
+        conn_id: int,
+    ) -> None:
+        """Bidirectional relay + stats recording + connection logging."""
+        bytes_forwarded = await self._forward_bidirectional(
+            client_reader, client_writer, server_reader, server_writer, host
+        )
+        self.stats.record_success(bytes_forwarded)
+        self._record_completed_connection(
+            ConnectionRecord(method=method, host=host, port=port, success=True, bytes_forwarded=bytes_forwarded)
+        )
+        logger.info("[conn %d] Completed %s %s:%d, %d bytes", conn_id, method, host, port, bytes_forwarded)
 
     async def _forward_bidirectional(
         self,
