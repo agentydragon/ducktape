@@ -63,20 +63,8 @@ py_library(
 )
 
 # =============================================================================
-# mitmproxy OCI image (for container E2E test)
+# mitmproxy (for container E2E test)
 # =============================================================================
-
-py_library(
-    name = "mock_egress_proxy_main",
-    testonly = True,
-    srcs = ["mock_egress_proxy_main.py"],
-    imports = ["../../.."],
-    deps = [
-        ":mock_egress_proxy",
-        "@pypi//aiohttp",
-        "@pypi//yarl",
-    ],
-)
 
 oci_load(
     name = "mitmproxy_load",
