@@ -9,8 +9,6 @@ import logging
 import shlex
 from pathlib import Path
 
-from util.bazel.workspace import parse_info_output
-
 logger = logging.getLogger(__name__)
 
 _WARMUP_TIMEOUT_SECS = 120
@@ -35,7 +33,7 @@ async def warmup_bazel_server(wrapper_path: Path, project_dir: Path, env_file: P
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(project_dir),
             )
-            stdout_bytes, stderr_bytes = await proc.communicate()
+            _, stderr_bytes = await proc.communicate()
     except TimeoutError:
         logger.warning("Bazel server warmup timed out")
         return
@@ -47,5 +45,4 @@ async def warmup_bazel_server(wrapper_path: Path, project_dir: Path, env_file: P
         logger.warning("Bazel server warmup failed (exit=%d): %s", proc.returncode, stderr_bytes.decode().strip())
         return
 
-    result = parse_info_output(stdout_bytes.decode())
-    logger.info("Bazel server warm (pid=%s, output_base=%s)", result.server_pid, result.output_base)
+    logger.info("Bazel server warm")

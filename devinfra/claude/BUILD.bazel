@@ -135,7 +135,6 @@ py_library(
     srcs = ["bazel_server_warmup.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
-    deps = ["//util/bazel:workspace"],
 )
 
 py_library(
