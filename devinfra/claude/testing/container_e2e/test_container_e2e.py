@@ -496,7 +496,20 @@ async def test_container_e2e(
         stderr = "".join(await container.log(stdout=False, stderr=True))
         _save_output("container-stdout.log", stdout)
         _save_output("container-stderr.log", stderr)
+
+        # Fix permissions on bind-mounted session logs before container deletion.
+        # The container runs as root, so files it creates (bazel cache, hook logs)
+        # are owned by root. The CI runner can't read them, causing Bazel to fail
+        # when collecting undeclared test outputs.
+        await _exec(container, ["chmod", "-R", "a+rX", f"/root/.claude/session-env/{_SESSION_ID}"], check=False)
+
         await container.delete(force=True)
+
+        # Remove container's bazel cache — not useful diagnostics and contains
+        # symlinks into execroot that break Bazel's output collection.
+        bazel_cache = session_logs_dir / "bazel-cache"
+        if bazel_cache.exists():
+            shutil.rmtree(bazel_cache, ignore_errors=True)
 
         _cleanup_dangling_symlinks(session_logs_dir)
 
