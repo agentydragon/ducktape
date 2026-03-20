@@ -1,10 +1,26 @@
+load("@rules_oci//oci:defs.bzl", "oci_load")
 load("//devinfra/testing:defs.bzl", "py_test")
+
+oci_load(
+    name = "e2e_container_load",
+    testonly = True,
+    image = "@e2e_container_linux_amd64",
+    repo_tags = ["e2e-container:pinned"],
+)
+
+filegroup(
+    name = "e2e_container_tarball",
+    testonly = True,
+    srcs = [":e2e_container_load"],
+    output_group = "tarball",
+)
 
 py_test(
     name = "test_container_e2e",
     size = "small",
     srcs = ["test_container_e2e.py"],
     data = [
+        ":e2e_container_tarball",
         "//:wheel",
         "//devinfra/claude/testdata/test_workspace:workspace_files",
         "//devinfra/claude/testing:mock_egress_proxy_tarball",

@@ -41,7 +41,7 @@ from yarl import URL
 
 from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
 from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
-from devinfra.claude.testing.mock_egress_proxy import ConnectionStats, EgressProxyConfig
+from devinfra.claude.testing.mock_egress_proxy import ConnectionRecord, ConnectionStats, EgressProxyConfig
 from util.bazel.runfiles import get_required_path
 from util.oci import load_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -58,8 +58,9 @@ _WHEEL_RLOCATION = "_main/ducktape-0.1.0-py3-none-any.whl"
 # Rlocation for a file in the test workspace (used to derive directory path)
 _TEST_WORKSPACE_MODULE = "_main/devinfra/claude/testdata/test_workspace/MODULE.bazel"
 
-# GHCR image for the e2e test container (built by e2e-container-image.yml CI workflow)
-_E2E_IMAGE = "ghcr.io/agentydragon/e2e-container:latest"
+# E2E test container image (pinned in MODULE.bazel via oci.pull, loaded via oci_load)
+_E2E_IMAGE = "e2e-container:pinned"
+_E2E_TARBALL = "_main/devinfra/claude/testing/container_e2e/e2e_container_load/tarball.tar"
 
 # OCI image for the mock egress proxy container
 _MOCK_PROXY_IMAGE = "mock-egress-proxy:latest"
@@ -226,6 +227,13 @@ def test_workspace_path() -> Path:
 
 
 @pytest.fixture
+def e2e_image() -> str:
+    """Load the e2e container OCI image into Docker."""
+    load_image(_E2E_TARBALL)
+    return _E2E_IMAGE
+
+
+@pytest.fixture
 def mock_proxy_image() -> str:
     """Load the mock egress proxy OCI image into Docker."""
     load_image(_MOCK_PROXY_TARBALL)
@@ -365,10 +373,14 @@ async def proxy_env(
 
 
 async def test_container_e2e(
-    tmp_path: Path, wheel_path: Path, test_workspace_path: Path, proxy_env: ProxySetup, docker_client: aiodocker.Docker
+    tmp_path: Path,
+    wheel_path: Path,
+    test_workspace_path: Path,
+    proxy_env: ProxySetup,
+    docker_client: aiodocker.Docker,
+    e2e_image: str,
 ) -> None:
     """Full E2E: install wheel in container, run hook, bazel build through proxy."""
-    await docker_client.pull(_E2E_IMAGE)
 
     # Copy files to a staging directory so Docker can mount real files
     # (runfiles may be symlinks that Docker cannot resolve in gVisor)
@@ -419,7 +431,7 @@ async def test_container_e2e(
 
     container = await docker_client.containers.create(
         {
-            "Image": _E2E_IMAGE,
+            "Image": e2e_image,
             "Env": [f"{k}={v}" for k, v in env.items()],
             "Cmd": ["sleep", "infinity"],
             "HostConfig": {"NetworkMode": proxy_env.isolated_net_name, "Binds": binds},
@@ -464,14 +476,21 @@ async def test_container_e2e(
         bazel_cmd = f"source {_ENV_FILE} && bazel build //:hello"
         await _exec(container, ["bash", "-c", bazel_cmd], workdir="/project/test_workspace")
 
-        # Fetch stats from management API
+        # Fetch stats and connection log from management API
         async with aiohttp.ClientSession() as session:
             stats_body = await _mgmt_get(session, proxy_env.mgmt_base / "stats")
-        stats = ConnectionStats(**json.loads(stats_body))
+            connections_body = await _mgmt_get(session, proxy_env.mgmt_base / "connections")
+        stats = ConnectionStats.model_validate_json(stats_body)
         assert stats.total_connections > 0, (
             "Mock egress proxy received no connections - network isolation may not be working"
         )
         logger.info("Proxy stats: %s", stats)
+
+        # Save proxy connection log (every URL the proxy was asked to handle)
+        connections = [ConnectionRecord.model_validate(c) for c in json.loads(connections_body)]
+        lines = [f"{c.method} {c.host}:{c.port} success={c.success} bytes={c.bytes_forwarded}" for c in connections]
+        _save_output("proxy-connections.log", "\n".join(lines) + "\n")
+        logger.info("Proxy handled %d connections", len(connections))
 
     finally:
         stdout = "".join(await container.log(stdout=True, stderr=False))

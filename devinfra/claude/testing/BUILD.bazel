@@ -15,6 +15,7 @@ py_library(
         "//devinfra/claude/auth_proxy:setup",
         "//devinfra/claude/auth_proxy:vars",
         "@pypi//cryptography",
+        "@pypi//pydantic",
     ],
 )
 

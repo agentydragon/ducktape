@@ -19,7 +19,7 @@ import ssl
 import tempfile
 import urllib.parse
 from collections.abc import AsyncGenerator
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -27,6 +27,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
+from pydantic import BaseModel
 
 from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS
 from devinfra.claude.auth_proxy.vars import get_upstream_proxy_url
@@ -210,15 +211,26 @@ def generate_server_cert(ca_cert_pem: bytes, ca_key_pem: bytes, hostname: str) -
     return cert_pem, key_pem
 
 
-@dataclass
-class ConnectionStats:
+class ConnectionRecord(BaseModel):
+    """A single proxied connection."""
+
+    method: str
+    host: str
+    port: int
+    success: bool
+    bytes_forwarded: int = 0
+    error: str | None = None
+
+
+class ConnectionStats(BaseModel):
     """Track connection statistics for debugging."""
 
     total_connections: int = 0
     successful_connections: int = 0
     failed_connections: int = 0
     bytes_forwarded: int = 0
-    errors: list[str] = field(default_factory=list)
+    errors: list[str] = []
+    connections: list[ConnectionRecord] = []
 
     def record_success(self, bytes_count: int = 0) -> None:
         self.successful_connections += 1
@@ -539,6 +551,11 @@ class MockEgressProxy:
                 reader, writer, server_reader, server_writer, target_host
             )
             self.stats.record_success(bytes_forwarded)
+            self.stats.connections.append(
+                ConnectionRecord(
+                    method="CONNECT", host=target_host, port=target_port, success=True, bytes_forwarded=bytes_forwarded
+                )
+            )
             logger.info(
                 "[conn %d] Completed %s:%d, %d bytes forwarded", conn_id, target_host, target_port, bytes_forwarded
             )
@@ -618,6 +635,11 @@ class MockEgressProxy:
                 reader, writer, server_reader, server_writer, target_host
             )
             self.stats.record_success(bytes_forwarded)
+            self.stats.connections.append(
+                ConnectionRecord(
+                    method=method, host=target_host, port=target_port, success=True, bytes_forwarded=bytes_forwarded
+                )
+            )
             logger.info("[conn %d] Completed %s %s, %d bytes", conn_id, method, target_host, bytes_forwarded)
 
     async def _forward_bidirectional(

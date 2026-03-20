@@ -4,14 +4,14 @@ Wraps MockEgressProxy with CLI args and an HTTP management API for CA cert
 retrieval, readiness checks, and stats. Used as the entrypoint for the OCI image.
 
 Management endpoints (on --mgmt-port, default 8081):
-    GET /ready   — 200 when proxy is listening
-    GET /ca.pem  — PEM-encoded CA certificate
-    GET /stats   — JSON connection statistics
+    GET /ready       — 200 when proxy is listening
+    GET /ca.pem      — PEM-encoded CA certificate
+    GET /stats       — JSON connection statistics
+    GET /connections — JSON array of all proxied connection records (method, host, port, etc.)
 """
 
 import argparse
 import asyncio
-import dataclasses
 import logging
 import signal
 
@@ -56,12 +56,17 @@ def _build_mgmt_app(proxy: MockEgressProxy) -> web.Application:
         return web.Response(body=proxy.ca_cert_pem, content_type="application/x-pem-file")
 
     async def handle_stats(_request: web.Request) -> web.Response:
-        return web.json_response(dataclasses.asdict(proxy.stats))
+        return web.json_response(proxy.stats.model_dump(exclude={"connections"}))
+
+    async def handle_connections(_request: web.Request) -> web.Response:
+        """Return all proxied connection records as JSON array."""
+        return web.json_response([c.model_dump() for c in proxy.stats.connections])
 
     app = web.Application()
     app.router.add_get("/ready", handle_ready)
     app.router.add_get("/ca.pem", handle_ca_pem)
     app.router.add_get("/stats", handle_stats)
+    app.router.add_get("/connections", handle_connections)
     return app
 
 
