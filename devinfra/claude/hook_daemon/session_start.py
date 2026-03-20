@@ -332,16 +332,15 @@ async def _setup_web(
 
     @tracer.start_as_current_span("install_cli_tools", context=root_ctx)
     async def traced_cli_tools():
-        skip_tools: set[str] = set()
-        if not settings.install_cli_tools:
-            skip_tools = {"gh", "kubectl", "flux"}
-        else:
-            if not settings.install_gh:
-                skip_tools.add("gh")
-            if not settings.install_kubectl:
-                skip_tools.add("kubectl")
-            if not settings.install_flux:
-                skip_tools.add("flux")
+        skip_tools = {
+            name
+            for name, enabled in [
+                ("gh", settings.install_gh),
+                ("kubectl", settings.install_kubectl),
+                ("flux", settings.install_flux),
+            ]
+            if not enabled
+        }
         return await run_in_thread(cli_tools_setup.install_cli_tools, paths.wrapper_dir, http, skip=skip_tools)
 
     results = await asyncio.gather(
