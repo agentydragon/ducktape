@@ -162,21 +162,3 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
 
     content = "\n".join(exports) + "\n"
     write_config(env_file, content, "session environment")
-
-
-def build_subprocess_env(vars: EnvVars) -> dict[str, str]:
-    """Build an environment dict for running the bazel wrapper as a subprocess.
-
-    Merges the current process env with session-specific overrides that would
-    normally be sourced from the env file.
-    """
-    env = dict(os.environ)
-    env["PATH"] = os.pathsep.join(filter(None, [str(vars.bazel_wrapper_dir), env.get("PATH")]))
-    env[ENV_SESSION_BAZELRC] = str(vars.session_bazelrc)
-    if vars.session_dir is not None:
-        env[ENV_SESSION_DIR] = str(vars.session_dir)
-    if vars.bazelisk_path is not None:
-        env[ENV_BAZELISK_PATH] = str(vars.bazelisk_path)
-    if vars.proxy_port is not None:
-        env[ENV_AUTH_PROXY_URL] = f"http://localhost:{vars.proxy_port}"
-    return env
