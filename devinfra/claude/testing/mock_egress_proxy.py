@@ -18,7 +18,7 @@ import os
 import ssl
 import tempfile
 import urllib.parse
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -267,7 +267,6 @@ class MockEgressProxy:
         password: str = "testpass",
         max_concurrent_outbound: int = 20,
         verify_target_certs: bool = True,
-        on_connection_complete: Callable[[ConnectionRecord], None] | None = None,
     ):
         self.listen_port = listen_port
         self.listen_address = listen_address
@@ -275,7 +274,6 @@ class MockEgressProxy:
         self.password = password
         self.upstream_proxy = upstream_proxy
         self.verify_target_certs = verify_target_certs
-        self._on_connection_complete = on_connection_complete
 
         self._server: asyncio.Server | None = None
         self.port: int = 0
@@ -288,11 +286,6 @@ class MockEgressProxy:
 
         self.stats = ConnectionStats()
         self._outbound_semaphore = asyncio.Semaphore(max_concurrent_outbound)
-
-    def _record_completed_connection(self, record: ConnectionRecord) -> None:
-        self.stats.connections.append(record)
-        if self._on_connection_complete:
-            self._on_connection_complete(record)
 
     @property
     def ca_cert_pem(self) -> bytes:
@@ -351,19 +344,23 @@ class MockEgressProxy:
         finally:
             self._tasks.discard(task)
 
-    def _get_server_cert(self, hostname: str) -> tuple[bytes, bytes]:
-        if hostname not in self._server_certs:
-            self._server_certs[hostname] = generate_server_cert(self._ca_cert_pem, self._ca_key_pem, hostname)
-        return self._server_certs[hostname]
-
     async def _send_error(self, writer: asyncio.StreamWriter, response: bytes, error: str) -> None:
         writer.write(response)
         await writer.drain()
         self.stats.record_failure(error)
 
     async def _require_auth(self, writer: asyncio.StreamWriter, request: bytes, context: str) -> bool:
-        """Check auth, send 407 if it fails. Returns True if auth passed."""
-        if self._check_proxy_auth(request):
+        """Check Proxy-Authorization header, send 407 if it fails. Returns True if auth passed."""
+        authenticated = False
+        for line in request.split(b"\r\n"):
+            if line.lower().startswith(b"proxy-authorization: basic "):
+                encoded = line.split(b" ", 2)[2]
+                decoded = base64.b64decode(encoded).decode()
+                if ":" in decoded:
+                    user, passwd = decoded.split(":", 1)
+                    authenticated = user == self.username and passwd == self.password
+                break
+        if authenticated:
             return True
         await self._send_error(
             writer, b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n", f"Auth failed for {context}"
@@ -377,11 +374,26 @@ class MockEgressProxy:
         async with self._outbound_semaphore:
             logger.info("[conn %d] Connecting to target %s:%d", conn_id, target_host, target_port)
             try:
-                reader, server_writer = await asyncio.wait_for(
-                    self._connect_to_target(target_host, target_port, use_tls=use_tls), timeout=60
-                )
+                if not self.upstream_proxy:
+                    if use_tls:
+                        ctx = self._create_client_ssl_context(ca_bundle=None)
+                        result = await asyncio.wait_for(
+                            asyncio.open_connection(target_host, target_port, ssl=ctx), timeout=60
+                        )
+                    else:
+                        result = await asyncio.wait_for(asyncio.open_connection(target_host, target_port), timeout=60)
+                elif not use_tls:
+                    # Plain HTTP: open TCP to upstream, caller sends absolute-URL request
+                    result = await asyncio.wait_for(
+                        asyncio.open_connection(self.upstream_proxy.host, self.upstream_proxy.port), timeout=60
+                    )
+                else:
+                    # TLS via upstream: CONNECT tunnel, then TLS upgrade
+                    result = await asyncio.wait_for(
+                        self._connect_via_upstream_tunnel(target_host, target_port, self.upstream_proxy), timeout=60
+                    )
                 logger.info("[conn %d] Connected to target %s:%d", conn_id, target_host, target_port)
-                return reader, server_writer
+                return result
             except Exception as e:
                 error_msg = f"Failed to connect to {target_host}:{target_port}: {e}"
                 logger.warning("[conn %d] %s", conn_id, error_msg)
@@ -399,24 +411,6 @@ class MockEgressProxy:
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
         return ctx
-
-    async def _connect_to_target(
-        self, target_host: str, target_port: int, *, use_tls: bool = True
-    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-        """Connect to a target, optionally through an upstream proxy."""
-        if not self.upstream_proxy:
-            if use_tls:
-                ctx = self._create_client_ssl_context(ca_bundle=None)
-                return await asyncio.open_connection(target_host, target_port, ssl=ctx)
-            return await asyncio.open_connection(target_host, target_port)
-
-        upstream = self.upstream_proxy
-        if not use_tls:
-            # Plain HTTP: open TCP to upstream, caller sends absolute-URL request
-            return await asyncio.open_connection(upstream.host, upstream.port)
-
-        # TLS via upstream: CONNECT tunnel, then TLS upgrade
-        return await self._connect_via_upstream_tunnel(target_host, target_port, upstream)
 
     async def _connect_via_upstream_tunnel(
         self, target_host: str, target_port: int, upstream: EgressProxyConfig
@@ -461,18 +455,6 @@ class MockEgressProxy:
         except BaseException:
             proxy_writer.close()
             raise
-
-    def _check_proxy_auth(self, request: bytes) -> bool:
-        """Check Proxy-Authorization header in an HTTP request."""
-        for line in request.split(b"\r\n"):
-            if line.lower().startswith(b"proxy-authorization: basic "):
-                encoded = line.split(b" ", 2)[2]
-                decoded = base64.b64decode(encoded).decode()
-                if ":" in decoded:
-                    user, passwd = decoded.split(":", 1)
-                    return user == self.username and passwd == self.password
-                return False
-        return False
 
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         target_host = "<unknown>"
@@ -533,7 +515,9 @@ class MockEgressProxy:
             await writer.drain()
 
             # Generate server cert and upgrade client connection to TLS (server-side)
-            server_cert_pem, server_key_pem = self._get_server_cert(target_host)
+            if target_host not in self._server_certs:
+                self._server_certs[target_host] = generate_server_cert(self._ca_cert_pem, self._ca_key_pem, target_host)
+            server_cert_pem, server_key_pem = self._server_certs[target_host]
             client_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             _load_cert_chain_from_bytes(client_ctx, server_cert_pem, server_key_pem, self._ca_cert_pem)
             await writer.start_tls(client_ctx)
@@ -627,29 +611,6 @@ class MockEgressProxy:
         conn_id: int,
     ) -> None:
         """Bidirectional relay + stats recording + connection logging."""
-        bytes_forwarded = await self._forward_bidirectional(
-            client_reader, client_writer, server_reader, server_writer, host
-        )
-        self.stats.record_success(bytes_forwarded)
-        self._record_completed_connection(
-            ConnectionRecord(method=method, host=host, port=port, success=True, bytes_forwarded=bytes_forwarded)
-        )
-        logger.info("[conn %d] Completed %s %s:%d, %d bytes", conn_id, method, host, port, bytes_forwarded)
-
-    async def _forward_bidirectional(
-        self,
-        client_reader: asyncio.StreamReader,
-        client_writer: asyncio.StreamWriter,
-        server_reader: asyncio.StreamReader,
-        server_writer: asyncio.StreamWriter,
-        target_host: str,
-    ) -> int:
-        """Forward data bidirectionally between client and server.
-
-        Uses two asyncio tasks, one per direction. When either direction
-        completes (EOF or error), the other is cancelled.
-        """
-        bytes_forwarded = 0
 
         async def forward(src: asyncio.StreamReader, dst: asyncio.StreamWriter, direction: str) -> int:
             count = 0
@@ -662,7 +623,7 @@ class MockEgressProxy:
                     await dst.drain()
                     count += len(data)
             except (OSError, ssl.SSLError, ConnectionError) as e:
-                logger.debug("Forward %s finished for %s: %s", direction, target_host, e)
+                logger.debug("Forward %s finished for %s: %s", direction, host, e)
             return count
 
         c2s = asyncio.create_task(forward(client_reader, server_writer, "c2s"))
@@ -674,11 +635,11 @@ class MockEgressProxy:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
 
-        for task in done:
-            if not task.cancelled() and task.exception() is None:
-                bytes_forwarded += task.result()
-
-        return bytes_forwarded
+        bytes_forwarded = sum(t.result() for t in done if not t.cancelled() and t.exception() is None)
+        self.stats.record_success(bytes_forwarded)
+        record = ConnectionRecord(method=method, host=host, port=port, success=True, bytes_forwarded=bytes_forwarded)
+        self.stats.connections.append(record)
+        logger.info("[conn %d] %s", conn_id, record.model_dump_json())
 
 
 @contextlib.asynccontextmanager
