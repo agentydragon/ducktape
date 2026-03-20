@@ -158,7 +158,7 @@ def create_app(settings: Settings, *, include_static: bool = True) -> FastAPI:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=100)
         gate.add_sse_listener(queue)
 
-        async def generate():  # type: ignore[no-untyped-def]
+        async def generate():
             try:
                 while True:
                     event = await queue.get()
