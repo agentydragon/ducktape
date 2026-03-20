@@ -43,7 +43,7 @@ from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
 from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
 from devinfra.claude.testing.mock_egress_proxy import ConnectionStats, EgressProxyConfig
 from util.bazel.runfiles import get_required_path
-from util.oci import load_bazel_image
+from util.oci import load_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ _E2E_IMAGE = "ghcr.io/agentydragon/e2e-container:latest"
 
 # OCI image for the mock egress proxy container
 _MOCK_PROXY_IMAGE = "mock-egress-proxy:latest"
-_MOCK_PROXY_LOAD_SCRIPT = "devinfra/claude/testing/mock_egress_proxy_load/load.sh"
+_MOCK_PROXY_TARBALL = "_main/devinfra/claude/testing/mock_egress_proxy_load/tarball.tar"
 
 # Container name prefix
 _CONTAINER_NAME = "ducktape-container-e2e"
@@ -228,7 +228,8 @@ def test_workspace_path() -> Path:
 @pytest.fixture
 def mock_proxy_image() -> str:
     """Load the mock egress proxy OCI image into Docker."""
-    return load_bazel_image(_MOCK_PROXY_LOAD_SCRIPT, _MOCK_PROXY_IMAGE)
+    load_image(_MOCK_PROXY_TARBALL)
+    return _MOCK_PROXY_IMAGE
 
 
 @pytest.fixture

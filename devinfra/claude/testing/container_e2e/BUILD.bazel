@@ -7,7 +7,7 @@ py_test(
     data = [
         "//:wheel",
         "//devinfra/claude/testdata/test_workspace:workspace_files",
-        "//devinfra/claude/testing:mock_egress_proxy_load",
+        "//devinfra/claude/testing:mock_egress_proxy_tarball",
     ],
     # Inherit proxy env vars so the proxy container can chain through real proxy
     env_inherit = [

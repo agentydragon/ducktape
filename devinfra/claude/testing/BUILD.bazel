@@ -110,6 +110,13 @@ oci_load(
     repo_tags = ["mock-egress-proxy:latest"],
 )
 
+filegroup(
+    name = "mock_egress_proxy_tarball",
+    testonly = True,
+    srcs = [":mock_egress_proxy_load"],
+    output_group = "tarball",
+)
+
 py_library(
     name = "session_start_helpers",
     testonly = True,
