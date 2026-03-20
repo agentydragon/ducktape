@@ -166,6 +166,8 @@ py_package(
         "devinfra.claude.auth_proxy",
         "devinfra.claude.claude_api",
         "devinfra.claude.supervisor",
+        "devinfra.precommit",
+        "devinfra.precommit.enforce_bazel_tests",
         "difftree",
         "git_commit_ai",
         "gmail_archiver",
@@ -188,6 +190,8 @@ py_package(
         "//git_commit_ai:git_commit_ai_lib",
         "//skills/hetzner_vnc_screenshot:vnc_screenshot",
         "//skills/proxmox_vm:vm_interact",
+        # Pre-commit entry point
+        "//devinfra/precommit:ducktape_precommit",
     ],
 )
 
@@ -203,6 +207,7 @@ py_wheel(
             "claude-statusline = devinfra.claude.statusline:main",
             "hetzner-vnc-screenshot = skills.hetzner_vnc_screenshot.vnc_screenshot:app",
             "vm-interact = skills.proxmox_vm.vm_interact:app",
+            "ducktape-precommit = devinfra.precommit.ducktape_precommit:main",
         ],
     },
     python_requires = ">=3.13",

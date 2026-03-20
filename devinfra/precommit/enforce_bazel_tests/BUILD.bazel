@@ -3,7 +3,7 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 py_library(
     name = "enforce_bazel_tests",
     srcs = ["enforce_bazel_tests.py"],
-    imports = ["../.."],
+    imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
         "//util/bazel:workspace",
@@ -14,7 +14,7 @@ py_library(
 py_library(
     name = "bench_lib",
     srcs = ["bench.py"],
-    imports = ["../.."],
+    imports = ["../../.."],
     deps = [
         ":enforce_bazel_tests",
         "//util/bazel:workspace",
@@ -24,7 +24,7 @@ py_library(
 
 py_binary(
     name = "bench",
-    imports = ["../.."],
-    main_module = "x.enforce_bazel_tests.bench",
+    imports = ["../../.."],
+    main_module = "devinfra.precommit.enforce_bazel_tests.bench",
     deps = [":bench_lib"],
 )

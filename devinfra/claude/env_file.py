@@ -157,6 +157,10 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     exports.extend(["", "# Ansible (pre-commit sandbox compatibility)"])
     exports.extend(exports_from_dict({"ANSIBLE_LOCAL_TEMP": ansible_tmp}))
 
+    # Enable enforce-bazel-tests pre-commit check (verifies affected tests are cached/passing)
+    exports.extend(["", "# Pre-commit: enforce affected Bazel tests are passing"])
+    exports.extend(exports_from_dict({"DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS": "1"}))
+
     if vars.with_direnv and shutil.which("direnv"):
         exports.append('eval "$(direnv export bash 2>/dev/null)"')
 

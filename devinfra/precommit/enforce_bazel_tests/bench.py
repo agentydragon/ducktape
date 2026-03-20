@@ -10,8 +10,8 @@ Saves stdout/stderr to a timestamped output directory under
 /tmp/enforce_bazel_tests_bench/.
 
 Usage:
-    bazel run //x/enforce_bazel_tests:bench
-    bazel run //x/enforce_bazel_tests:bench -- --profile  # enable Bazel JSON profiles
+    bazel run //devinfra/precommit/enforce_bazel_tests:bench
+    bazel run //devinfra/precommit/enforce_bazel_tests:bench -- --profile  # enable Bazel JSON profiles
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ from pathlib import Path
 
 import pygit2
 
+from devinfra.precommit.enforce_bazel_tests.enforce_bazel_tests import build_universe
 from util.bazel.workspace import BazelWorkspace, get_build_workspace_directory
-from x.enforce_bazel_tests.enforce_bazel_tests import build_universe
 
 # The file we'll temporarily modify to simulate a change.
 _TARGET_FILE = Path("util/bazel/workspace.py")

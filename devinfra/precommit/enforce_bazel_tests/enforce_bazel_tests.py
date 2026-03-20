@@ -13,6 +13,8 @@ exist in the remote cache and the check always reports "not up-to-date".
 See https://github.com/bazelbuild/bazel/issues/3978 for details.
 
 Currently set as `build:rbe --remote_download_minimal` in .bazelrc.
+
+Guarded by DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=1 (default off).
 """
 
 from __future__ import annotations
@@ -164,6 +166,9 @@ def find_affected_tests(
 
 
 def main() -> int:
+    if os.environ.get("DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS") != "1":
+        return 0
+
     repo = pygit2.Repository(".")
     repo_root = Path(repo.workdir).resolve()
 

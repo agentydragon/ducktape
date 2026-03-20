@@ -66,3 +66,15 @@ py_binary(
         "@pypi//pygit2",
     ],
 )
+
+# Generic pre-commit entry point for the ducktape wheel.
+# Currently dispatches to enforce-bazel-tests; future checks get added here.
+py_library(
+    name = "ducktape_precommit",
+    srcs = ["ducktape_precommit.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/precommit/enforce_bazel_tests",
+    ],
+)
