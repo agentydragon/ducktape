@@ -7,14 +7,14 @@ all external connectivity).
 Architecture:
     Host side:
         - Builds the claude_hooks wheel via Bazel
-        - Loads mitmproxy:11 OCI image into Docker (stock image + mounted addon)
+        - Loads mitmproxy:11 OCI image into Docker
         - Pulls e2e-container image from GHCR (python:3.13-slim + git + JDK)
         - Creates two Docker networks:
           - e2e-proxy (bridge): proxy container has internet access
           - e2e-isolated (internal bridge): test container <-> proxy container only
-        - mitmproxy runs as a container on both networks with a Python addon for
-          structured request/response logging
-        - CA cert generated host-side and mounted into both containers
+        - mitmproxy runs as a container on both networks (mitmdump logs full
+          URLs to stderr natively)
+        - CA cert generated host-side and mounted into mitmproxy container
         - Drives test steps via docker exec calls
 
     Container side (via docker exec):
@@ -76,9 +76,6 @@ _E2E_TARBALL = "_main/devinfra/claude/testing/container_e2e/e2e_container_load/t
 # mitmproxy OCI image for the proxy container
 _MITMPROXY_IMAGE = "mitmproxy:11"
 _MITMPROXY_TARBALL = "_main/devinfra/claude/testing/mitmproxy_load/tarball.tar"
-
-# mitmproxy addon script (mounted into proxy container)
-_MITMPROXY_ADDON_RLOCATION = "_main/devinfra/claude/testing/mitmproxy_addon.py"
 
 # Container name prefix
 _CONTAINER_NAME = "ducktape-container-e2e"
@@ -182,8 +179,6 @@ def _build_mitmproxy_cmd(upstream: EgressProxyConfig | None) -> list[str]:
         "confdir=/certs",
         "--set",
         f"proxyauth={_PROXY_USERNAME}:{_PROXY_PASSWORD}",
-        "-s",
-        "/addon/mitmproxy_addon.py",
     ]
 
     if upstream:
@@ -315,16 +310,13 @@ async def proxy_env(
     (certs_dir / "mitmproxy-ca.pem").write_bytes(key_pem + cert_pem)
     (certs_dir / "mitmproxy-ca-cert.pem").write_bytes(cert_pem)
 
-    # Resolve addon script from runfiles
-    addon_path = get_required_path(_MITMPROXY_ADDON_RLOCATION)
-
     proxy_shared = tmp_path / "proxy_shared"
     proxy_shared.mkdir()
 
     proxy_name = f"{_CONTAINER_NAME}-proxy-{os.getpid()}"
 
     upstream = EgressProxyConfig.from_env()
-    binds: list[str] = [f"{certs_dir}:/certs:ro", f"{addon_path}:/addon/mitmproxy_addon.py:ro"]
+    binds: list[str] = [f"{certs_dir}:/certs:ro"]
     if upstream:
         # Rewrite localhost to gateway IP so container can reach host services
         if upstream.host in ("localhost", "127.0.0.1"):

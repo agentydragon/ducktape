@@ -67,13 +67,6 @@ py_library(
 # =============================================================================
 
 py_library(
-    name = "mitmproxy_addon",
-    testonly = True,
-    srcs = ["mitmproxy_addon.py"],
-    imports = ["../../.."],
-)
-
-py_library(
     name = "mock_egress_proxy_main",
     testonly = True,
     srcs = ["mock_egress_proxy_main.py"],
