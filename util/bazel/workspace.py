@@ -155,11 +155,10 @@ class BazelWorkspace:
     root: Path
     output_base: Path | None = None
     startup_flags: tuple[str, ...] = ()
-    binary: str = "bazel"
 
     def _bazel_prefix(self) -> list[str]:
         """Base bazel command with optional --output_base and startup flags."""
-        cmd = [self.binary]
+        cmd = ["bazel"]
         if self.output_base is not None:
             cmd.append(f"--output_base={self.output_base}")
         cmd.extend(self.startup_flags)

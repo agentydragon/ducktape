@@ -152,15 +152,5 @@ def test_query_raises_on_failure(tmp_path: Path) -> None:
         workspace.query("//...")
 
 
-def test_binary_field():
-    ws = BazelWorkspace(root=Path("/tmp"), binary="/custom/bazel")
-    assert ws._bazel_prefix()[0] == "/custom/bazel"
-
-
-def test_binary_field_default():
-    ws = BazelWorkspace(root=Path("/tmp"))
-    assert ws._bazel_prefix()[0] == "bazel"
-
-
 if __name__ == "__main__":
     pytest_bazel.main()
