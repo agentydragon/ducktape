@@ -4,16 +4,19 @@ Wraps MockEgressProxy with CLI args and an HTTP management API for CA cert
 retrieval, readiness checks, and stats. Used as the entrypoint for the OCI image.
 
 Management endpoints (on --mgmt-port, default 8081):
-    GET /ready       — 200 when proxy is listening
-    GET /ca.pem      — PEM-encoded CA certificate
-    GET /stats       — JSON connection statistics
-    GET /connections — JSON array of all proxied connection records (method, host, port, etc.)
+    GET /ready   — 200 when proxy is listening
+    GET /ca.pem  — PEM-encoded CA certificate
+    GET /stats   — JSON connection statistics
+
+When --log-dir is set, writes connections.log (one line per completed connection)
+to the specified directory. Mount a host dir there to collect as test output.
 """
 
 import argparse
 import asyncio
 import logging
 import signal
+from pathlib import Path
 
 from aiohttp import web
 from yarl import URL
@@ -33,6 +36,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--upstream-proxy-url", help="Upstream proxy URL (http://user:pass@host:port)")
     parser.add_argument("--upstream-ca-bundle", help="Path to CA bundle for upstream proxy TLS")
     parser.add_argument("--no-verify-target-certs", action="store_true")
+    parser.add_argument("--log-dir", help="Directory for connection log files (connections.log)")
     return parser.parse_args()
 
 
@@ -58,15 +62,10 @@ def _build_mgmt_app(proxy: MockEgressProxy) -> web.Application:
     async def handle_stats(_request: web.Request) -> web.Response:
         return web.json_response(proxy.stats.model_dump(exclude={"connections"}))
 
-    async def handle_connections(_request: web.Request) -> web.Response:
-        """Return all proxied connection records as JSON array."""
-        return web.json_response([c.model_dump() for c in proxy.stats.connections])
-
     app = web.Application()
     app.router.add_get("/ready", handle_ready)
     app.router.add_get("/ca.pem", handle_ca_pem)
     app.router.add_get("/stats", handle_stats)
-    app.router.add_get("/connections", handle_connections)
     return app
 
 
@@ -75,6 +74,12 @@ async def _run(args: argparse.Namespace) -> None:
     if args.upstream_proxy_url:
         upstream = _parse_upstream_config(args.upstream_proxy_url, args.upstream_ca_bundle)
 
+    log_dir = Path(args.log_dir) if args.log_dir else None
+    connections_log = None
+    if log_dir:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        connections_log = (log_dir / "connections.log").open("a")
+
     async with MockEgressProxy(
         listen_port=args.listen_port,
         listen_address="0.0.0.0",
@@ -82,6 +87,10 @@ async def _run(args: argparse.Namespace) -> None:
         password=args.password,
         upstream_proxy=upstream,
         verify_target_certs=not args.no_verify_target_certs,
+        on_connection_complete=lambda rec: connections_log.write(rec.model_dump_json() + "\n")
+        or connections_log.flush()
+        if connections_log
+        else None,
     ) as proxy:
         app = _build_mgmt_app(proxy)
         runner = web.AppRunner(app)
@@ -99,6 +108,9 @@ async def _run(args: argparse.Namespace) -> None:
 
         logger.info("Shutting down...")
         await runner.cleanup()
+
+    if connections_log:
+        connections_log.close()
 
 
 def main() -> None:

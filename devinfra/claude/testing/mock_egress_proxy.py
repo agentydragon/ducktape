@@ -18,7 +18,7 @@ import os
 import ssl
 import tempfile
 import urllib.parse
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -266,6 +266,7 @@ class MockEgressProxy:
         password: str = "testpass",
         max_concurrent_outbound: int = 20,
         verify_target_certs: bool = True,
+        on_connection_complete: Callable[[ConnectionRecord], None] | None = None,
     ):
         self.listen_port = listen_port
         self.listen_address = listen_address
@@ -273,6 +274,7 @@ class MockEgressProxy:
         self.password = password
         self.upstream_proxy = upstream_proxy
         self.verify_target_certs = verify_target_certs
+        self._on_connection_complete = on_connection_complete
 
         self._server: asyncio.Server | None = None
         self.port: int = 0
@@ -285,6 +287,11 @@ class MockEgressProxy:
 
         self.stats = ConnectionStats()
         self._outbound_semaphore = asyncio.Semaphore(max_concurrent_outbound)
+
+    def _record_completed_connection(self, record: ConnectionRecord) -> None:
+        self.stats.connections.append(record)
+        if self._on_connection_complete:
+            self._on_connection_complete(record)
 
     @property
     def ca_cert_pem(self) -> bytes:
@@ -551,7 +558,7 @@ class MockEgressProxy:
                 reader, writer, server_reader, server_writer, target_host
             )
             self.stats.record_success(bytes_forwarded)
-            self.stats.connections.append(
+            self._record_completed_connection(
                 ConnectionRecord(
                     method="CONNECT", host=target_host, port=target_port, success=True, bytes_forwarded=bytes_forwarded
                 )
@@ -635,7 +642,7 @@ class MockEgressProxy:
                 reader, writer, server_reader, server_writer, target_host
             )
             self.stats.record_success(bytes_forwarded)
-            self.stats.connections.append(
+            self._record_completed_connection(
                 ConnectionRecord(
                     method=method, host=target_host, port=target_port, success=True, bytes_forwarded=bytes_forwarded
                 )

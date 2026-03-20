@@ -41,7 +41,7 @@ from yarl import URL
 
 from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
 from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
-from devinfra.claude.testing.mock_egress_proxy import ConnectionRecord, ConnectionStats, EgressProxyConfig
+from devinfra.claude.testing.mock_egress_proxy import ConnectionStats, EgressProxyConfig
 from util.bazel.runfiles import get_required_path
 from util.oci import load_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -293,6 +293,10 @@ async def proxy_env(
     proxy_shared = tmp_path / "proxy_shared"
     proxy_shared.mkdir()
 
+    # Proxy logs land directly in undeclared test outputs
+    proxy_logs_dir = undeclared_outputs_dir() / "container-e2e" / "proxy-logs"
+    proxy_logs_dir.mkdir(parents=True, exist_ok=True)
+
     proxy_name = f"{_CONTAINER_NAME}-proxy-{os.getpid()}"
 
     proxy_cmd = [
@@ -304,10 +308,12 @@ async def proxy_env(
         "proxy_user",
         "--password",
         "test_jwt_token",
+        "--log-dir",
+        "/logs",
     ]
 
     upstream = EgressProxyConfig.from_env()
-    binds_proxy: list[str] = []
+    binds_proxy: list[str] = [f"{proxy_logs_dir}:/logs"]
     if upstream:
         proxy_cmd += _build_upstream_proxy_args(upstream, docker_networks.gateway_ip, proxy_shared)
         if upstream.ca_bundle:
@@ -476,21 +482,14 @@ async def test_container_e2e(
         bazel_cmd = f"source {_ENV_FILE} && bazel build //:hello"
         await _exec(container, ["bash", "-c", bazel_cmd], workdir="/project/test_workspace")
 
-        # Fetch stats and connection log from management API
+        # Fetch stats from management API
         async with aiohttp.ClientSession() as session:
             stats_body = await _mgmt_get(session, proxy_env.mgmt_base / "stats")
-            connections_body = await _mgmt_get(session, proxy_env.mgmt_base / "connections")
         stats = ConnectionStats.model_validate_json(stats_body)
         assert stats.total_connections > 0, (
             "Mock egress proxy received no connections - network isolation may not be working"
         )
         logger.info("Proxy stats: %s", stats)
-
-        # Save proxy connection log (every URL the proxy was asked to handle)
-        connections = [ConnectionRecord.model_validate(c) for c in json.loads(connections_body)]
-        lines = [f"{c.method} {c.host}:{c.port} success={c.success} bytes={c.bytes_forwarded}" for c in connections]
-        _save_output("proxy-connections.log", "\n".join(lines) + "\n")
-        logger.info("Proxy handled %d connections", len(connections))
 
     finally:
         stdout = "".join(await container.log(stdout=True, stderr=False))
