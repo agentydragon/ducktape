@@ -17,7 +17,7 @@ _WARMUP_TIMEOUT_SECS = 120
 
 
 async def warmup_bazel_server(wrapper_path: Path, project_dir: Path, env_file: Path) -> BazelInfoResult:
-    """Start the Bazel server by running ``bazel info``.
+    """Fire-and-forget Bazel server warmup. Logs errors, never raises.
 
     Uses the bazel wrapper so --bazelrc, proxy credentials, and session env
     vars are applied (sourced from *env_file*). Runs as an async subprocess
@@ -28,8 +28,14 @@ async def warmup_bazel_server(wrapper_path: Path, project_dir: Path, env_file: P
     try:
         async with asyncio.timeout(_WARMUP_TIMEOUT_SECS):
             result = await workspace.info()
+    except TimeoutError:
+        logger.warning("Bazel server warmup timed out")
+        return BazelInfoResult()
     except subprocess.CalledProcessError as e:
         logger.warning("Bazel server warmup failed (exit=%d): %s", e.returncode, (e.stderr or "").strip())
+        return BazelInfoResult()
+    except Exception as e:
+        logger.warning("Bazel server warmup failed: %s", e)
         return BazelInfoResult()
 
     logger.info("Bazel server warm (pid=%s, output_base=%s)", result.server_pid, result.output_base)

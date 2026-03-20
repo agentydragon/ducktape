@@ -466,21 +466,6 @@ async def _setup_web(
 # ============================================================================
 
 
-async def _run_bazel_warmup(
-    paths: SessionPaths, project_dir: Path, env_file: Path, tracer: trace.Tracer, root_ctx: trace.Context
-) -> None:
-    """Fire-and-forget Bazel server warmup. Logs errors, never raises."""
-    try:
-        with tracer.start_as_current_span("bazel_server_warmup", context=root_ctx):
-            await bazel_server_warmup.warmup_bazel_server(
-                wrapper_path=paths.wrapper_path, project_dir=project_dir, env_file=env_file
-            )
-    except TimeoutError:
-        logger.warning("Bazel server warmup timed out")
-    except Exception as e:
-        logger.warning("Bazel server warmup failed: %s", e)
-
-
 async def run_session(
     hook_input: SessionStartHookInput,
     paths: SessionPaths,
@@ -598,7 +583,11 @@ async def run_session(
     # Fire-and-forget Bazel server warmup (both web and CLI modes).
     # Store task reference in background_tasks to prevent GC before completion.
     if settings.warmup_bazel_server and background_tasks is not None:
-        task = asyncio.create_task(_run_bazel_warmup(paths, ctx.project_dir, ctx.env_file_path, tracer, root_ctx))
+        task = asyncio.create_task(
+            bazel_server_warmup.warmup_bazel_server(
+                wrapper_path=paths.wrapper_path, project_dir=ctx.project_dir, env_file=ctx.env_file_path
+            )
+        )
         background_tasks.add(task)
         task.add_done_callback(background_tasks.discard)
 

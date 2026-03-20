@@ -3,7 +3,6 @@
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-import pytest
 import pytest_bazel
 
 from devinfra.claude.bazel_server_warmup import warmup_bazel_server
@@ -48,10 +47,11 @@ async def test_warmup_timeout(tmp_path: Path):
     mock_proc = AsyncMock()
     mock_proc.communicate = AsyncMock(side_effect=TimeoutError)
 
-    with patch("asyncio.create_subprocess_exec", return_value=mock_proc), pytest.raises(TimeoutError):
-        await warmup_bazel_server(
+    with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+        result = await warmup_bazel_server(
             wrapper_path=Path("/fake/bin/bazel"), project_dir=Path("/fake/project"), env_file=env_file
         )
+    assert result == BazelInfoResult()
 
 
 if __name__ == "__main__":
