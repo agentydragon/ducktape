@@ -360,6 +360,51 @@ class MockEgressProxy:
         await writer.drain()
         self.stats.record_failure(error)
 
+    async def _require_auth(self, writer: asyncio.StreamWriter, request: bytes, context: str) -> bool:
+        """Check auth, send 407 if it fails. Returns True if auth passed."""
+        if self._check_proxy_auth(request):
+            return True
+        await self._send_error(
+            writer, b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n", f"Auth failed for {context}"
+        )
+        return False
+
+    async def _connect_or_reject(
+        self, writer: asyncio.StreamWriter, target_host: str, target_port: int, conn_id: int, *, use_tls: bool = True
+    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter] | None:
+        """Connect to target with semaphore + timeout, send 502 on failure. Returns None on error."""
+        async with self._outbound_semaphore:
+            logger.info("[conn %d] Connecting to target %s:%d", conn_id, target_host, target_port)
+            try:
+                reader, server_writer = await asyncio.wait_for(
+                    self._connect_to_target(target_host, target_port, use_tls=use_tls), timeout=60
+                )
+                logger.info("[conn %d] Connected to target %s:%d", conn_id, target_host, target_port)
+                return reader, server_writer
+            except Exception as e:
+                error_msg = f"Failed to connect to {target_host}:{target_port}: {e}"
+                logger.warning("[conn %d] %s", conn_id, error_msg)
+                await self._send_error(writer, b"HTTP/1.1 502 Bad Gateway\r\n\r\n", error_msg)
+                return None
+
+    def _create_client_ssl_context(self, *, ca_bundle: str | None = None) -> ssl.SSLContext:
+        """Create an SSL context for outbound connections to targets or upstream proxies.
+
+        With ca_bundle: load it if it exists, otherwise disable verification.
+        Without ca_bundle: use system CAs, but disable verification if verify_target_certs is False.
+        """
+        ctx = ssl.create_default_context()
+        if ca_bundle:
+            if Path(ca_bundle).exists():
+                ctx.load_verify_locations(ca_bundle)
+                return ctx
+            logger.debug("CA bundle %s not found, disabling verification", ca_bundle)
+        elif self.verify_target_certs:
+            return ctx
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+
     async def _connect_to_target(
         self, target_host: str, target_port: int, *, use_tls: bool = True
     ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
@@ -374,11 +419,8 @@ class MockEgressProxy:
     async def _connect_direct(
         self, target_host: str, target_port: int
     ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-        server_ctx = ssl.create_default_context()
-        if not self.verify_target_certs:
-            server_ctx.check_hostname = False
-            server_ctx.verify_mode = ssl.CERT_NONE
-        return await asyncio.open_connection(target_host, target_port, ssl=server_ctx)
+        ctx = self._create_client_ssl_context()
+        return await asyncio.open_connection(target_host, target_port, ssl=ctx)
 
     async def _connect_direct_plain(
         self, target_host: str, target_port: int
@@ -450,15 +492,8 @@ class MockEgressProxy:
             logger.debug("Upstream proxy tunnel established to %s:%d", target_host, target_port)
 
             # Upgrade to TLS (client side — we're connecting to the target through the tunnel)
-            server_ctx = ssl.create_default_context()
-            if upstream.ca_bundle and Path(upstream.ca_bundle).exists():
-                server_ctx.load_verify_locations(upstream.ca_bundle)
-            else:
-                logger.debug("No CA bundle for upstream proxy, disabling certificate verification")
-                server_ctx.check_hostname = False
-                server_ctx.verify_mode = ssl.CERT_NONE
-
-            await proxy_writer.start_tls(server_ctx, server_hostname=target_host)
+            ctx = self._create_client_ssl_context(ca_bundle=upstream.ca_bundle)
+            await proxy_writer.start_tls(ctx, server_hostname=target_host)
             return proxy_reader, proxy_writer
         except BaseException:
             proxy_writer.close()
@@ -520,27 +555,13 @@ class MockEgressProxy:
         conn_id = self.stats.total_connections
         logger.info("[conn %d] CONNECT request for %s:%d", conn_id, target_host, target_port)
 
-        if not self._check_proxy_auth(request):
-            await self._send_error(
-                writer,
-                b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n",
-                f"Auth failed for {target_host}:{target_port}",
-            )
+        if not await self._require_auth(writer, request, f"{target_host}:{target_port}"):
             return
 
-        # Connect to target (with concurrency limit)
-        async with self._outbound_semaphore:
-            logger.info("[conn %d] Connecting to target %s:%d", conn_id, target_host, target_port)
-            try:
-                server_reader, server_writer = await asyncio.wait_for(
-                    self._connect_to_target(target_host, target_port), timeout=60
-                )
-                logger.info("[conn %d] Connected to target %s:%d", conn_id, target_host, target_port)
-            except Exception as e:
-                error_msg = f"Failed to connect to {target_host}:{target_port}: {e}"
-                logger.warning("[conn %d] %s", conn_id, error_msg)
-                await self._send_error(writer, b"HTTP/1.1 502 Bad Gateway\r\n\r\n", error_msg)
-                return
+        result = await self._connect_or_reject(writer, target_host, target_port, conn_id)
+        if not result:
+            return
+        server_reader, server_writer = result
 
         async with _close_writer(server_writer):
             # Send 200 Connection Established (only after successful target connection)
@@ -594,24 +615,13 @@ class MockEgressProxy:
         conn_id = self.stats.total_connections
         logger.info("[conn %d] %s %s (plain HTTP proxy)", conn_id, method, url[:120])
 
-        if not self._check_proxy_auth(request):
-            await self._send_error(
-                writer,
-                b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n",
-                f"Auth failed for {method} {target_host}:{target_port}",
-            )
+        if not await self._require_auth(writer, request, f"{method} {target_host}:{target_port}"):
             return
 
-        async with self._outbound_semaphore:
-            try:
-                server_reader, server_writer = await asyncio.wait_for(
-                    self._connect_to_target(target_host, target_port, use_tls=False), timeout=60
-                )
-            except Exception as e:
-                error_msg = f"Failed to connect to {target_host}:{target_port}: {e}"
-                logger.warning("[conn %d] %s", conn_id, error_msg)
-                await self._send_error(writer, b"HTTP/1.1 502 Bad Gateway\r\n\r\n", error_msg)
-                return
+        result = await self._connect_or_reject(writer, target_host, target_port, conn_id, use_tls=False)
+        if not result:
+            return
+        server_reader, server_writer = result
 
         async with _close_writer(server_writer):
             # Rewrite absolute URL to relative path for direct connections.
