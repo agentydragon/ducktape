@@ -8,6 +8,7 @@ Session start writes credentials; the proxy reads them on each connection.
 """
 
 import asyncio
+import errno
 import json
 import logging
 import signal
@@ -52,13 +53,30 @@ def configure(daemon_dir: Path, otlp_exporter: DeferredOtlpExporter) -> None:
     # Start auth proxy in-process if upstream proxy is configured.
     # The proxy binds the port immediately; credentials are written later
     # by session_start (proxy reads creds file on each connection).
+    #
+    # Port conflict (EADDRINUSE): Claude Code may send Setup and SessionStart hooks
+    # with *different* session IDs (e.g. Setup for the new session after compaction,
+    # SessionStart for the old/compacting session). This causes two daemon instances
+    # to start concurrently, both trying to bind the auth proxy port. The second
+    # daemon logs a warning and skips starting its own proxy — the first daemon's
+    # proxy is already serving on that port.
     if get_upstream_proxy_url():
         settings: HookSettings = app.state.settings
         creds_file = daemon_dir / "upstream_proxy"
         proxy = AuthForwardingProxy(listen_port=settings.auth_proxy_port, creds_file=creds_file)
-        proxy.start()
-        app.state.proxy = proxy
-        logger.info("Auth proxy started in-process on port %d", settings.auth_proxy_port)
+        try:
+            proxy.start()
+            app.state.proxy = proxy
+            logger.info("Auth proxy started in-process on port %d", settings.auth_proxy_port)
+        except OSError as e:
+            if e.errno == errno.EADDRINUSE:
+                logger.warning(
+                    "Auth proxy port %d already in use — another daemon instance has it. "
+                    "Skipping proxy start for this daemon.",
+                    settings.auth_proxy_port,
+                )
+            else:
+                raise
 
 
 def _save_session_env(env: dict[str, str]) -> None:
