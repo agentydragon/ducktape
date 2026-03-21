@@ -341,7 +341,7 @@ async def _setup_web(
             ]
             if not enabled
         }
-        return await run_in_thread(cli_tools_setup.install_cli_tools, paths.wrapper_dir, http, skip=skip_tools)
+        return await run_in_thread(lambda: cli_tools_setup.install_cli_tools(paths.wrapper_dir, http, skip=skip_tools))
 
     results = await asyncio.gather(
         proxy_task,
