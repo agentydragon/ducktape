@@ -1,16 +1,14 @@
 """Post-infrastructure network readiness checks.
 
-Verifies KubeSpan mesh, Cilium health, and ClusterIP routing are converged
+Verifies Nebula mesh, Cilium health, and ClusterIP routing are converged
 before proceeding with service deployment.
 """
 
 import contextlib
 import json
 import logging
-import subprocess
 import time
 from datetime import UTC, datetime
-from pathlib import Path
 
 from kubernetes import client
 from kubernetes.client import ApiException
@@ -21,75 +19,29 @@ from tenacity import Retrying, retry_if_result, stop_after_delay, wait_fixed
 logger = logging.getLogger(__name__)
 
 
-def parse_json_objects(text: str) -> list[dict]:
-    """Parse concatenated JSON objects (talosctl -o json output)."""
-    decoder = json.JSONDecoder()
-    results = []
-    idx = 0
-    text = text.strip()
-    while idx < len(text):
-        try:
-            obj, end_idx = decoder.raw_decode(text, idx)
-            results.append(obj)
-            idx = end_idx
-        except json.JSONDecodeError:
-            idx += 1
-    return results
-
-
-def wait_for_convergence(
+def wait_for_cilium_health(
     v1: client.CoreV1Api,
-    bootstrap_ip: str,
-    talosconfig: Path,
-    expected_peers: int,
     timeout: int = 600,
     interval: int = 15,
 ) -> None:
-    """Wait for KubeSpan peers and Cilium health mesh to converge.
+    """Wait for Cilium health mesh to converge.
 
     Deploying webhook-based services (kyverno) before cross-node networking
     converges causes webhook timeout failures from API servers that can't reach
     webhook pods on other nodes.
+
+    Nebula handles inter-node mesh connectivity. This function only waits for
+    the Cilium health mesh (ICMP/HTTP between cilium pods on all nodes).
     """
-    logger.info("Waiting for cross-node networking to converge...")
+    logger.info("Waiting for Cilium health mesh to converge...")
 
     Retrying(
         stop=stop_after_delay(timeout),
         wait=wait_fixed(interval),
-        retry=retry_if_result(lambda converged: not converged),
-    )(_check_convergence, v1, bootstrap_ip, talosconfig, expected_peers)
+        retry=retry_if_result(lambda healthy: not healthy),
+    )(_check_cilium_health, v1)
 
-    logger.info("Cross-node networking converged")
-
-
-def _check_convergence(v1: client.CoreV1Api, bootstrap_ip: str, talosconfig: Path, expected_peers: int) -> bool:
-    """Check KubeSpan peers and Cilium health, return True when converged."""
-    result = subprocess.run(
-        [
-            "talosctl",
-            "-n",
-            bootstrap_ip,
-            "--talosconfig",
-            str(talosconfig),
-            "get",
-            "kubespanpeerstatuses",
-            "-o",
-            "json",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    peers = parse_json_objects(result.stdout) if result.returncode == 0 else []
-    up_count = sum(1 for p in peers if p.get("spec", {}).get("state") == "up")
-    cilium_ok = _check_cilium_health(v1)
-
-    if up_count < expected_peers or not cilium_ok:
-        logger.info(
-            "  KubeSpan: %d/%d peers up (need %d), Cilium healthy: %s", up_count, len(peers), expected_peers, cilium_ok
-        )
-        return False
-    return True
+    logger.info("Cilium health mesh converged")
 
 
 def _check_cilium_health(v1: client.CoreV1Api) -> bool:

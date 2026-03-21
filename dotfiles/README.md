@@ -1,10 +1,8 @@
 # dotfiles
 
-**Most shell configuration has migrated to Nix home-manager** (see `nix/home/home.nix`).
+**Migrating to Nix home-manager** (see `nix/home/home.nix`). Goal is full NixOS on all machines.
 
-Remaining dotfiles are managed with [rcm](https://github.com/thoughtbot/rcm), deployed by Ansible.
-
-## What's Still Here
+## What's Still Here (pending migration)
 
 | Path          | Purpose                                              |
 | ------------- | ---------------------------------------------------- |
@@ -14,14 +12,5 @@ Remaining dotfiles are managed with [rcm](https://github.com/thoughtbot/rcm), de
 
 ## What's in Nix Now
 
-Shell configs (`~/.bashrc`, `~/.zshrc`), aliases, environment variables, Powerlevel10k - all in `nix/home/home.nix`.
-
-See `docs/shell_configuration.md` for migration status and loading order.
-
-## Commands
-
-```bash
-lsrc                    # List managed files
-mkrc ~/.tigrc           # Add new RC file
-rcup -B agentydragon    # Update symlinks
-```
+Shell configs (`~/.bashrc`, `~/.zshrc`), aliases, environment variables, Powerlevel10k,
+GNOME/dconf settings, Git, tmux, SSH/GPG — all in `nix/home/home.nix`.

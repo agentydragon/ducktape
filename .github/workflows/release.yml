@@ -15,7 +15,6 @@ name: Release
           - all
           - claude-hooks
           - ducktape
-          - headscale-cleanup
           - gterm-theme
           - skills
         default: all
@@ -36,7 +35,6 @@ jobs:
     outputs:
       claude_hooks_needed: ${{ steps.check-claude_hooks.outputs.release_needed }}
       ducktape_needed: ${{ steps.check-ducktape.outputs.release_needed }}
-      headscale_cleanup_needed: ${{ steps.check-headscale_cleanup.outputs.release_needed }}
       gterm_theme_needed: ${{ steps.check-gterm_theme.outputs.release_needed }}
       skills_needed: ${{ steps.check-skills.outputs.release_needed }}
     steps:
@@ -62,13 +60,6 @@ jobs:
           package_prefix: ducktape
           bazel_targets: //:wheel
           latest_release_tag: ducktape-latest
-      - name: Check headscale-cleanup
-        id: check-headscale_cleanup
-        uses: ./.github/actions/check-release-needed
-        with:
-          package_prefix: headscale-cleanup
-          bazel_targets: //headscale_cleanup:wheel
-          latest_release_tag: headscale-cleanup-latest
       - name: Check gterm-theme
         id: check-gterm_theme
         uses: ./.github/actions/check-release-needed
@@ -224,56 +215,6 @@ jobs:
 
             Requires Python 3.13+
           files: dist/*.whl
-  release-headscale_cleanup:
-    name: Release headscale-cleanup
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs:
-      - check-releases
-    if:
-      always() && !cancelled() && !failure() && (needs.check-releases.outputs.headscale_cleanup_needed == 'true' || (github.event_name
-      == 'workflow_dispatch' && inputs.force == true && (inputs.package == 'all' || inputs.package == 'headscale-cleanup')))
-    outputs:
-      released: "true"
-      tag: headscale-cleanup-${{ env.SHORT_SHA }}
-      short_sha: ${{ env.SHORT_SHA }}
-    steps:
-      - uses: actions/checkout@v6
-      - id: bazel
-        uses: ./.github/actions/setup-bazel
-        with:
-          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
-      - name: Set short SHA
-        run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
-      - name: Build wheel
-        run: bazel build --remote_download_toplevel //headscale_cleanup:wheel
-      - name: Prepare wheel
-        run: |-
-          mkdir -p dist
-          cp bazel-bin/headscale_cleanup/headscale_cleanup-*.whl dist/
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: headscale-cleanup-${{ env.SHORT_SHA }}
-          name: headscale-cleanup (${{ env.SHORT_SHA }})
-          body: |-
-            headscale-cleanup wheel.
-
-            CLI tool for cleaning up stale Headscale nodes (controlplane* and worker* nodes).
-
-            Commit: ${{ github.sha }}
-            Branch: ${{ github.ref_name }}
-          files: dist/*.whl
-      - uses: ./.github/actions/update-latest-release
-        with:
-          package_prefix: headscale-cleanup
-          latest_tag: headscale-cleanup-latest
-          title: headscale-cleanup (latest)
-          body: |
-            headscale-cleanup wheel.
-
-            CLI tool for cleaning up stale Headscale nodes (controlplane* and worker* nodes).
-          files: dist/*.whl
   release-gterm_theme:
     name: Release gterm-theme
     runs-on: ubuntu-latest
@@ -385,14 +326,12 @@ jobs:
     needs:
       - release-claude_hooks
       - release-ducktape
-      - release-headscale_cleanup
       - release-gterm_theme
       - release-skills
     if: |-
       always() && !cancelled() &&
            (needs.release-claude_hooks.outputs.released == 'true' ||
            needs.release-ducktape.outputs.released == 'true' ||
-           needs.release-headscale_cleanup.outputs.released == 'true' ||
            needs.release-gterm_theme.outputs.released == 'true' ||
            needs.release-skills.outputs.released == 'true')
     steps:
@@ -420,10 +359,6 @@ jobs:
           if [ "${{ needs.release-ducktape.outputs.released }}" = "true" ]; then
             sed -i 's|releases/download/ducktape-[^/]*/ducktape|releases/download/${{ needs.release-ducktape.outputs.tag }}/ducktape|' flake.nix
             update_flake_input ducktape-wheel
-          fi
-          if [ "${{ needs.release-headscale_cleanup.outputs.released }}" = "true" ]; then
-            sed -i 's|releases/download/headscale-cleanup-[^/]*/headscale_cleanup|releases/download/${{ needs.release-headscale_cleanup.outputs.tag }}/headscale_cleanup|' flake.nix
-            update_flake_input headscale-cleanup-wheel
           fi
           if [ "${{ needs.release-gterm_theme.outputs.released }}" = "true" ]; then
             sed -i 's|releases/download/gterm-theme-[^/]*/gterm_theme|releases/download/${{ needs.release-gterm_theme.outputs.tag }}/gterm_theme|' flake.nix

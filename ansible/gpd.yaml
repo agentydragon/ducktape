@@ -3,8 +3,6 @@
   hosts: gpd
   vars_files:
     - vars/common_vars.yml
-  vars:
-    rcup_computer: gpd
   remote_user: "{{ my_user }}"
 
   roles:

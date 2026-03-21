@@ -1,5 +1,5 @@
 # Manual-only: update non-release Nix flake inputs (nixpkgs, home-manager, etc.).
-# CI-released inputs (kubespand-bin, ducktape-wheel, etc.) are updated
+# CI-released inputs (ducktape-wheel, claude-hooks-wheel, etc.) are updated
 # automatically by the release.yml update-downstream job.
 name: Update Nix flake inputs
 

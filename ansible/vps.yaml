@@ -19,8 +19,6 @@
     - group_vars/all.yml
 
   vars:
-    # Misc host-specific variables
-    rcup_computer: vps
     # Disable heavy dev packages on VPS
     include_heavy_dev_packages: false
     # TLS stream routing defaults
@@ -38,13 +36,6 @@
     - role: system_inspection_nopasswd
 
   tasks:
-    - name: Apply PowerDNS role
-      ansible.builtin.include_role:
-        name: powerdns
-      vars:
-        powerdns_state: absent
-      tags: [powerdns]
-
     # Configure systemd-resolved for public DNS
     - name: Ensure systemd-resolved is enabled
       ansible.builtin.systemd:
@@ -84,22 +75,6 @@
         mode: "0644"
       become: true
       notify: Restart systemd-resolved
-      tags: [dns]
-
-    - name: Remove legacy PowerDNS network configuration
-      ansible.builtin.file:
-        path: /etc/systemd/network/10-powerdns.network
-        state: absent
-      become: true
-      tags: [dns]
-
-    - name: Remove PowerDNS forwarding from systemd-resolved
-      ansible.builtin.file:
-        path: /etc/systemd/resolved.conf.d/10-powerdns-domains.conf
-        state: absent
-      become: true
-      notify:
-        - Restart systemd-resolved
       tags: [dns]
 
     - name: Ensure /etc/resolv.conf is symlinked to systemd-resolved
@@ -163,14 +138,6 @@
           - "adgn.link"
           - "www.adgn.link"
 
-    - name: "Let's Encrypt | atlas.agentydragon.com"
-      ansible.builtin.import_role:
-        name: letsencrypt
-      vars:
-        letsencrypt_cert_name: "atlas.agentydragon.com"
-        letsencrypt_domains:
-          - "atlas.agentydragon.com"
-
     - name: Uninstall headscale server
       tags: [headscale]
       block:
@@ -225,7 +192,6 @@
         nginx_sites:
           - agentydragon.com
           - adgn.link
-          - atlas.agentydragon.com
       block:
         - name: "Render and enable nginx websites"
           ansible.builtin.template:
@@ -273,7 +239,6 @@
             mode: "0644"
           loop:
             - { template: https_sni_router, name: https-sni-router }
-            - { template: atlas_spice, name: atlas-spice }
           notify:
             - Reload nginx
 
@@ -284,7 +249,6 @@
             dest: /etc/nginx/streams-enabled/{{ item }}
           loop:
             - https-sni-router
-            - atlas-spice
           notify:
             - Reload nginx
 

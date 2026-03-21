@@ -32,8 +32,8 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
         # nocloud platform configuration in QEMU-based tests
         dosfstools \
         mtools \
-        # qemu-system-x86: QEMU emulator + firmware/BIOS for nftables and
-        # KubeSpan integration tests (TCG software emulation, no KVM needed)
+        # qemu-system-x86: QEMU emulator + firmware/BIOS for integration tests
+        # (TCG software emulation, no KVM needed)
         qemu-system-x86 \
         # Chromium headless shell shared library dependencies
         libasound2t64 \

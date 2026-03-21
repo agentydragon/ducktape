@@ -18,11 +18,6 @@ python3 -c "import secrets; print(secrets.token_urlsafe(32))" | \
   ansible-vault encrypt_string --stdin-name 'vault_variable_name'
 ```
 
-## Caveats
-
-- The `rcup` command asks for confirmation before overwriting existing dotfiles.
-  Which we can't give from an Ansible playbook. Which sucks.
-
 ## To update requirements
 
 ```bash
@@ -90,7 +85,7 @@ These parts can't be done by Ansible:
 
 When provisioning a new VM or remote machine:
 
-1. The ducktape repository must be cloned before running the playbook, as the dotfiles deployment depends on it.
+1. The ducktape repository must be cloned before running the playbook.
 2. Generate SSH key and add to GitHub/GitLab:
 
    ```bash
@@ -127,17 +122,8 @@ When provisioning a new VM or remote machine:
 
    When prompted for the BECOME password, enter the sudo password for the agentydragon user on the VM.
 
-5. If the playbook fails on dotfiles installation, SSH to the machine and run:
-
-   ```bash
-   ssh agentydragon@NEW_MACHINE_IP 'RCRC=~/code/ducktape/dotfiles/rcrc rcup -B new-vm'
-   ```
-
-   You'll need to confirm overwriting default files like .bashrc with 'y'.
+5. Run `home-manager switch --flake ~/code/ducktape#<hostname>` on the new machine.
 
 - TODO: Set hostname on the VM (currently using IP address)
 - TODO: Document how to set up `gh` authentication on the new machine (for CLI operations beyond SSH)
 - TODO: Document how to set up `glab` authentication on the new machine (for CLI operations beyond SSH)
-- TODO: Handle cronomix config - unclear how it should be managed (rcm symlinks individual files in ~/.config/cronomix, not the directory itself)
-- TODO: XDG associations (mimeapps.list) shouldn't be an rcm-managed dotfile - the 2 critical associations are now enforced by Nix activation script (home.activation.fixMimeApps), Ansible task may be redundant
-- TODO: (low priority): Consider adding repository setup + package install as an option to the shared Python install implementation, since "add repo & install package" is a common pattern and deb822_repository doesn't reliably trigger apt cache update

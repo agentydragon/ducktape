@@ -13,7 +13,7 @@ See <../README.md> for architecture overview, node topology, and networking deta
 
 ### Required Access
 
-- SSH to `root@atlas.agentydragon.com` (Proxmox host)
+- SSH to `root@atlas` (Proxmox host)
 - `direnv` configured in cluster directory
 
 ### Persistent Auth Layer
@@ -69,7 +69,7 @@ kubectl get storageclass               # hcloud-volumes + proxmox-csi
 ## Dependency Chain
 
 ```text
-Talos OS → KubeSpan (WireGuard) → K8s API → Cilium CNI → Sealed Secrets → CSI Drivers → Apps
+Talos OS → Nebula mesh → K8s API → Cilium CNI → Sealed Secrets → CSI Drivers → Apps
 ```
 
 ## Let's Encrypt Issuer Toggle
@@ -104,8 +104,9 @@ via `${LETSENCRYPT_ISSUER}-root-ca` naming convention.
 
 ### Cluster Endpoint
 
-Uses KubePrism (`localhost:7445`) during bootstrap to avoid circular dependency.
-Kubeconfig is patched post-bootstrap with real VPS IP for external access.
+Uses `localhost:7445` (Talos KubePrism on CP nodes, haproxy on NixOS workers) during
+bootstrap to avoid circular dependency. Kubeconfig is patched post-bootstrap with
+real VPS IP for external access.
 
 ## Troubleshooting
 

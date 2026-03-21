@@ -4,7 +4,6 @@
   vars_files:
     - vars/common_vars.yml
   vars:
-    rcup_computer: wyrm
     # Use system Python for modules requiring python3-debian (deb822_repository)
     ansible_python_interpreter: /usr/bin/python3
   remote_user: "{{ my_user }}"

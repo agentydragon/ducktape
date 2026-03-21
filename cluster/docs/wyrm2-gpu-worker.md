@@ -19,30 +19,6 @@ Proxmox host + lightweight Talos CP VM).
 
 The Talos control plane VM on Proxmox stays unchanged (lightweight, ~4GB).
 
-## Architecture
-
-```text
-┌─────────────────────────────────────────────────┐
-│  NixOS VM (Proxmox, ~28GB RAM, 2x RTX 5090)    │
-│                                                 │
-│  ┌─── Desktop ──────────────────────────────┐   │
-│  │  GNOME/KDE, Steam, browser, dev tools    │   │
-│  └──────────────────────────────────────────┘   │
-│                                                 │
-│  ┌─── K8s Worker ───────────────────────────┐   │
-│  │  containerd + kubelet (systemd service)  │   │
-│  │  NVIDIA device plugin (DaemonSet)        │   │
-│  │  Cilium agent (DaemonSet)                │   │
-│  │  Ollama, ML workloads (scheduled pods)   │   │
-│  └──────────────────────────────────────────┘   │
-│                                                 │
-│  ┌─── Networking ───────────────────────────┐   │
-│  │  KubeSpan mesh (kubespand)               │   │
-│  │  KubePrism localhost:7445 → CP endpoints │   │
-│  └──────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────┘
-```
-
 ## GPU Mode Switching
 
 The GPUs are always passed through to the single VM via VFIO. The question is whether
@@ -72,10 +48,10 @@ For full GPU release (no device plugin, no container runtime holding GPU context
 ```bash
 # Enter gaming mode
 kubectl drain gpu-node --ignore-daemonsets --delete-emptydir-data
-sudo systemctl stop k3s-agent  # or kubelet
+sudo systemctl stop kubelet
 
 # Exit gaming mode
-sudo systemctl start k3s-agent
+sudo systemctl start kubelet
 kubectl uncordon gpu-node
 ```
 

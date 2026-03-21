@@ -24,7 +24,7 @@ from cluster.flux_convergence import monitor_flux_convergence
 from cluster.network_readiness import (
     restart_cilium_operator_gateway_controller,
     verify_clusterip_routing,
-    wait_for_convergence,
+    wait_for_cilium_health,
 )
 from cluster.scripts.generate_claude_kubeconfig import generate
 from util.bazel.runfiles import get_required_path
@@ -136,11 +136,7 @@ def deploy_infrastructure() -> None:
         ready = any(c.type == "Ready" and c.status == "True" for c in conditions)
         log.info("  %s: %s", node.metadata.name, "Ready" if ready else "NotReady")
 
-    talosconfig = Layer.INFRASTRUCTURE.tf_dir / "talosconfig.yml"
-    bootstrap_ip = tofu_output(Layer.INFRASTRUCTURE, "bootstrap_node_ip")
-    expected_peers = int(tofu_output(Layer.INFRASTRUCTURE, "expected_node_count")) - 1
-
-    wait_for_convergence(v1, bootstrap_ip, talosconfig, expected_peers)
+    wait_for_cilium_health(v1)
     verify_clusterip_routing(v1)
     restart_cilium_operator_gateway_controller(v1)
     log.info("Infrastructure layer ready")

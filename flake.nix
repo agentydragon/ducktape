@@ -39,10 +39,6 @@
       url = "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-b5030df2/claude_hooks-0.1.0-py3-none-any.whl";
       flake = false;
     };
-    headscale-cleanup-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-3358d587/headscale_cleanup-0.1.0-py3-none-any.whl";
-      flake = false;
-    };
     gterm-theme-wheel = {
       url = "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-3358d587/gterm_theme-0.1.0-py3-none-any.whl";
       flake = false;
@@ -84,7 +80,6 @@
       nixGL,
       ducktape-wheel,
       claude-hooks-wheel,
-      headscale-cleanup-wheel,
       gterm-theme-wheel,
       skills-tar,
       claude-plugins-official,
@@ -156,7 +151,6 @@
                 inherit
                   ducktape-wheel
                   claude-hooks-wheel
-                  headscale-cleanup-wheel
                   gterm-theme-wheel
                   skills-tar
                   claude-plugins-official
@@ -213,7 +207,6 @@
                 inherit
                   ducktape-wheel
                   claude-hooks-wheel
-                  headscale-cleanup-wheel
                   gterm-theme-wheel
                   skills-tar
                   claude-plugins-official

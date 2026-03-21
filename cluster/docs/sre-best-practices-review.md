@@ -17,48 +17,9 @@ priority.
 
 ---
 
-## 1. URGENT: Ingress-NGINX Retirement (March 2026)
+## ~~1. URGENT: Ingress-NGINX Retirement (March 2026)~~ — DONE
 
-**Risk**: Critical
-**Timeline**: ~6 weeks
-
-Kubernetes SIG Network announced the [retirement of Ingress NGINX](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/)
-in November 2025. Best-effort maintenance continues until **March 2026**, after which
-there will be no further releases, bugfixes, or security patches. The Ingress API itself
-is frozen — no new features.
-
-### Current State
-
-The cluster uses `ingress-nginx` with `hostNetwork: true` on VPS nodes. 10+ services
-depend on it for HTTPS termination.
-
-### Recommendation: Migrate to Cilium Gateway API
-
-Since Cilium is already the CNI, [Cilium Gateway API](https://docs.cilium.io/en/stable/network/servicemesh/gateway-api/gateway-api/)
-is the natural successor:
-
-- **Zero additional controllers** — uses the existing per-node Envoy DaemonSet
-- **eBPF policy integration** — network policies apply at the gateway level
-- **Gateway API is GA** (v1.2+) with richer routing (header-based, traffic splitting, mirroring)
-- **Role-oriented design** — GatewayClass (infra), Gateway (operator), HTTPRoute (developer)
-
-### Migration Path
-
-1. Deploy Gateway API CRDs and enable Cilium's gateway support
-2. Create Gateway resources mirroring current Ingress hostNetwork binding
-3. Migrate services one at a time: create HTTPRoute alongside existing Ingress
-4. Verify TLS termination and cert-manager integration (cert-manager supports Gateway API natively)
-5. Remove Ingress resources and ingress-nginx deployment
-
-### Alternatives
-
-| Implementation         | Strengths                                     | Trade-offs                 |
-| ---------------------- | --------------------------------------------- | -------------------------- |
-| **Cilium Gateway API** | Zero new controllers, CNI-integrated          | Newer, smaller community   |
-| **Envoy Gateway**      | Purpose-built for Gateway API, official Envoy | Extra deployment to manage |
-| **Traefik**            | Mature, simple migration                      | Another controller to run  |
-
-**Action**: Start migration planning now. Target completion before March 2026.
+**Status**: Completed 2026-02-16. Migrated to Cilium Gateway API. See changelog.
 
 ---
 
@@ -162,7 +123,7 @@ that operate on workload identity rather than IP addresses.
 | ---------------- | ---------------------------- | ------------------- |
 | Default deny all | Every namespace              | Zero-trust baseline |
 | Allow DNS        | All pods → kube-dns          | CoreDNS resolution  |
-| Allow ingress    | ingress-nginx → backend pods | HTTP routing        |
+| Allow ingress    | Cilium gateway → backend pods | HTTP routing       |
 | Allow Vault      | ESO → Vault                  | Secret sync         |
 | Allow monitoring | Prometheus → all pods        | Metric scraping     |
 | Allow Authentik  | Apps → Authentik             | SSO/forward-auth    |
@@ -280,7 +241,7 @@ kernel level. Natural complement to the existing Cilium stack.
 The Kubernetes API (port 6443) is currently open to `0.0.0.0/0` in Hetzner firewall
 rules (noted in `plan.md` as TODO). Restrict to:
 
-- Admin IPs (Headscale mesh)
+- Admin IPs (Nebula mesh)
 - Inter-node CIDRs
 - CI runner IPs (if any)
 
@@ -414,7 +375,7 @@ For the current scale (62 modules, single operator), the pragmatic path is:
 
 | #   | Item                                                  | Risk                                | Effort |
 | --- | ----------------------------------------------------- | ----------------------------------- | ------ |
-| 1   | **Migrate off ingress-nginx** to Gateway API (Cilium) | Service disruption after March 2026 | Large  |
+| 1   | ~~**Migrate off ingress-nginx**~~ (DONE 2026-02-16)   | ~~Service disruption~~              | ~~Done~~ |
 | 2   | **Back up persistent-auth tofu state**                | Unrecoverable secret loss           | Small  |
 
 ### P1 — Do Soon (High Value)
@@ -436,7 +397,7 @@ For the current scale (62 modules, single operator), the pragmatic path is:
 | 10  | **Velero for PVC backup**                            | Application data loss         | Medium |
 | 11  | **ResourceQuota + LimitRange** per namespace         | Resource contention           | Small  |
 | 12  | **Golden Signals dashboards**                        | Visibility gaps               | Small  |
-| 13  | **Flux webhook receiver** for instant reconciliation | 1-min reconciliation delay    | Small  |
+| 13  | ~~**Flux webhook receiver**~~ (DONE)                 | ~~Reconciliation delay~~      | ~~Done~~ |
 | 14  | **Image registry allowlist** via Kyverno             | Supply chain risk             | Small  |
 
 ### P3 — Future Consideration

@@ -185,7 +185,7 @@ def generate_ci_yml(workflow: Workflow) -> str:
 
 
 def _pkg_id(name: str) -> str:
-    """Convert package name to a valid GitHub Actions identifier (e.g., headscale-cleanup -> headscale_cleanup)."""
+    """Convert package name to a valid GitHub Actions identifier (e.g., gterm-theme -> gterm_theme)."""
     return name.replace("-", "_")
 
 

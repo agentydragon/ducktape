@@ -28,7 +28,7 @@ See <changelog.md> for detailed change history.
 
 - [x] **Atlas: add to Nebula mesh** — Proxmox host `atlas` added to mesh (10.42.0.5,
       groups: hypervisor,proxmox). Cert via Terraform PKI, config via Ansible `nebula`
-      role, DNS via dnsmasq forwarding to lighthouse DNS. Tailscale removed.
+      role, DNS via dnsmasq forwarding to lighthouse DNS.
 - [ ] **Prometheus: investigate memory growth and right-size** — Prometheus was OOM-killed
       8 times in 49 minutes at 2Gi limit (1686Mi usage, WAL replay spikes higher).
       Currently pinned to wyrm2 with temporary 6Gi limit. Investigate: which scrape
@@ -116,10 +116,8 @@ kubernetes.io/hostname: wyrm2` as a temporary fix for the 2026-03-17 OOM cascade
       `atlas.allegedly.works` which handles network-level access). Needs: Authentik
       blueprint for OIDC provider, Vault secret for client credentials, PVE realm config
       (manual or via API).
-- [ ] **Proxmox SPICE proxy routing** — Atlas's `spice_proxy` setting currently points
-      elsewhere. When accessing VMs via SPICE through `atlas.allegedly.works`, the proxy
-      needs to route correctly. Configure `spice_proxy` in PVE datacenter config to point
-      at `atlas.allegedly.works` or handle it in the nginx reverse proxy.
+- [ ] **Proxmox SPICE proxy routing** — Configure `spice_proxy` in PVE datacenter config
+      to point at `atlas.allegedly.works` for SPICE access through the cluster ingress.
 - [ ] **Proxmox: switch to direct HTTPRoute after OIDC auth** — Once PVE uses native
       Authentik OIDC (see above), the proxy outpost wrapper becomes redundant. Switch
       from outpost-based HTTPRoute to a direct HTTPRoute (like Vault/Gitea pattern),
@@ -167,7 +165,19 @@ kubernetes.io/hostname: wyrm2` as a temporary fix for the 2026-03-17 OOM cascade
 - [x] Atlas Proxmox accessible via Nebula mesh
 - [ ] Website hosted in cluster, verify accessible
 - [ ] Update `agentydragon.com` DNS to point to cluster
-- [ ] Decommission ansible-managed VPS
+- [ ] **Delete headscale-cleanup GitHub releases** — `headscale-cleanup-*` and
+      `headscale-cleanup-latest` releases on GitHub. Tool has been removed from the repo.
+- [ ] **Decommission ansible-managed VPS** — the old VPS running `agentydragon.com` is
+      being retired. Before decommission:
+  - [ ] Back up InvenTree data from VPS (database + media)
+  - [ ] Sweep for any other data on VPS not backed up elsewhere
+  - [ ] Migrate Syncthing to cluster (see file sync below) or alternative
+  - [ ] Verify no remaining services depend on the old VPS
+  - [ ] Update DNS records, tear down VPS
+
+### File Sync (Syncthing Replacement)
+
+See <plans/file-sync-evaluation.md> for detailed evaluation of candidates.
 
 ## 🛡️ VPS-Only Resilience Invariants
 
@@ -239,7 +249,7 @@ SPIRE/Talos compatibility improves.
 ### TODO: Firewall Hardening
 
 All Hetzner firewall rules currently allow `0.0.0.0/0`. Keep 80/443/53 public; restrict
-K8s API (6443), Talos API (50000-50001), etcd (2379-2380), kubelet (10250), Nebula (51820),
+K8s API (6443), Talos API (50000-50001), etcd (2379-2380), kubelet (10250), Nebula (4242),
 VXLAN (8472) to admin IPs and inter-node CIDRs.
 
 ### ~~TODO: Remote Proxmox API Access~~ — DONE
@@ -472,7 +482,7 @@ Setup and architecture details in <../README.md>.
 - [ ] Jellyfin (media streaming)
 - [ ] \*arr stack (media automation)
 - [ ] Paperless-ngx (document management)
-- [ ] Syncthing (file sync)
+- [ ] File sync service (see "File Sync" section above)
 - [ ] Bazel Remote Cache
 - [ ] Capacitor / Weave GitOps (Flux dependency DAG visualization)
 - [ ] Tetragon (eBPF runtime security enforcement, complements Cilium)

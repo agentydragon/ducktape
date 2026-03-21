@@ -837,7 +837,7 @@ clusters:
   token: "kubernetes-csi@pve!csi=$CSI_TOKEN_SECRET"
   token_id: "kubernetes-csi@pve!csi"
   token_secret: "$CSI_TOKEN_SECRET"
-  url: "https://atlas.agentydragon.com/api2/json"
+  url: "https://atlas:8006/api2/json"
 EOF
 
 kubectl create secret generic proxmox-csi-plugin \

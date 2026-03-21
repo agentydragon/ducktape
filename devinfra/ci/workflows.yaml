@@ -122,16 +122,6 @@ releases:
 
       Requires Python 3.13+
 
-  headscale-cleanup:
-    targets:
-      - bazel_target: //headscale_cleanup:wheel
-        flake_input: headscale-cleanup-wheel
-    wheel_name: headscale_cleanup
-    release_body: |
-      headscale-cleanup wheel.
-
-      CLI tool for cleaning up stale Headscale nodes (controlplane* and worker* nodes).
-
   gterm-theme:
     targets:
       - bazel_target: //gterm_theme:wheel

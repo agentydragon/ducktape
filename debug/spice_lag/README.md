@@ -206,9 +206,8 @@ Recording: `results/spice_latency_9qbkb_c8/`
 **SPICE routing through VPS**: Early hypothesis was that SPICE traffic might
 round-trip through the VPS (Atlas → Internet → VPS nginx → Headscale tunnel →
 Atlas). Verified this is NOT happening — `ss -tnp | grep spice` shows
-connections on `[::1]:3128` (localhost IPv6). `atlas.agentydragon.com` resolves
-to Atlas's Tailscale IP (100.64.1.30) via Headscale `extra_records`, and all
-SPICE connections stay local.
+connections on `[::1]:3128` (localhost IPv6). `atlas` resolves via Nebula
+lighthouse DNS, and all SPICE connections stay local.
 
 **Browser SPICE client**: Using native `remote-viewer` (virt-viewer), not the
 browser-based spice-html5 client. Native client is significantly faster.

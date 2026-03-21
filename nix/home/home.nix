@@ -14,7 +14,6 @@
   terminalFont,
   ducktape-wheel,
   claude-hooks-wheel,
-  headscale-cleanup-wheel,
   gterm-theme-wheel,
   ...
 }:
@@ -29,7 +28,6 @@
 #
 # Ansible continues to manage:
 #   - System packages (via apt)
-#   - Some dotfiles via rcm
 #   - Services and system configuration
 #   - Build dependencies (libssl-dev, etc.)
 #
@@ -95,11 +93,6 @@ let
   # Claude Code hooks/statusline
   claude-hooks = pkgs.callPackage ./packages/claude-hooks.nix {
     claude-hooks-wheel = renameWheel "claude_hooks-0.1.0-py3-none-any.whl" claude-hooks-wheel;
-  };
-
-  # headscale-cleanup - Headscale node management tool
-  headscale-cleanup = pkgs.callPackage ./packages/headscale-cleanup.nix {
-    headscale-cleanup-wheel = renameWheel "headscale_cleanup-0.1.0-py3-none-any.whl" headscale-cleanup-wheel;
   };
 
   # gterm-theme - GNOME Terminal theme follower
@@ -434,7 +427,6 @@ in
       # Custom packages from ducktape repo
       ducktape # git-commit-ai, difftree, gmail-archiver
       claude-hooks # Claude Code hooks/statusline
-      headscale-cleanup # Headscale node management
       gterm-theme # GNOME Terminal theme follower
     ]
     ++ lib.optionals enableKube [

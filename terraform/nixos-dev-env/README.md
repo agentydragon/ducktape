@@ -108,7 +108,7 @@ This ensures least-privilege: the VM is created with the user's own credentials,
 The VM automatically receives these environment variables (machine-wide via NixOS):
 
 ```bash
-PROXMOX_VE_ENDPOINT=https://atlas.agentydragon.com:8006
+PROXMOX_VE_ENDPOINT=https://atlas:8006
 PROXMOX_VE_USERNAME=user@pve
 PROXMOX_VE_API_TOKEN=user@pve!api=<secret>
 PROXMOX_VE_INSECURE=true
@@ -238,7 +238,7 @@ terraform output instructions
 # Set password for web UI access
 ssh root@atlas "pveum user password {username}@pve"
 
-# Access: https://atlas.agentydragon.com:8006
+# Access: https://atlas:8006
 ```
 
 ### Console Access

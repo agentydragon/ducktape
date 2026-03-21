@@ -1,7 +1,7 @@
 # lxc-k8s-test — NixOS LXC Container on Proxmox
 
 Test container for running a k8s worker node in LXC on atlas.
-Joins the Talos k8s cluster via KubeSpan mesh (like wyrm2/rugged).
+Joins the Talos k8s cluster via Nebula mesh (like wyrm2/rugged).
 
 ## Why Not Terraform?
 
@@ -78,7 +78,6 @@ ssh root@atlas "pct stop 200 && pct destroy 200"
 
 K8s credentials must be placed manually after boot (no cloud-init in LXC):
 
-- `/etc/kubespan/agent.yaml`
 - `/etc/kubernetes/pki/ca.crt`
 - `/etc/kubernetes/bootstrap-kubelet.conf`
 

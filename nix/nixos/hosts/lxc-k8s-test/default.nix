@@ -1,12 +1,12 @@
 # lxc-k8s-test — NixOS LXC container on Proxmox (atlas)
 # Test container for running a k8s worker node in LXC.
-# Joins the Talos k8s cluster via KubeSpan mesh (like wyrm2/rugged).
+# Joins the Talos k8s cluster via Nebula mesh (like wyrm2/rugged).
 #
-# Requires privileged LXC for: containerd (nesting), WireGuard, iSCSI.
-# Host kernel modules (overlay, br_netfilter, wireguard, iscsi_tcp) must
+# Requires privileged LXC for: containerd (nesting), iSCSI.
+# Host kernel modules (overlay, br_netfilter, iscsi_tcp) must
 # be loaded on atlas — managed by ansible/atlas.yaml.
 #
-# K8s credentials (/etc/kubespan/agent.yaml, /etc/kubernetes/pki/ca.crt,
+# K8s credentials (/etc/kubernetes/pki/ca.crt,
 # /etc/kubernetes/bootstrap-kubelet.conf) are placed manually after boot.
 {
   config,

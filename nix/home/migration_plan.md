@@ -15,10 +15,10 @@ home-manager switch --flake ~/code/ducktape#<hostname>
 
 | Host             | Nix                | Ansible roles                                                                        | Notes                                              |
 | ---------------- | ------------------ | ------------------------------------------------------------------------------------ | -------------------------------------------------- |
-| **agentydragon** | Full               | `nix`, `docker`, `system_inspection_nopasswd`, `tailscale_client`, `k3s_client`      | `cli`/`gui` commented out — Nix handles everything |
-| **wyrm**         | Full               | `cli`, `dev_env`, `golang`, `docker`, `gui`, `tailscale_client`, `k3s_client`        | Ansible for system packages only                   |
-| **atlas**        | Full               | `cli`, `nix`, `system_inspection_nopasswd`, `tailscale_client`                       | Minimal Proxmox host                               |
-| **gpd**          | Flake entry exists | `cli`, `legacy_cli`, `gui`, `legacy_gui`, `laptop`, `tailscale_client`, `k3s_client` | Still uses legacy roles — last holdout             |
+| **agentydragon** | Full               | `nix`, `docker`, `system_inspection_nopasswd`, `legacy_vpn_uninstall`      | `cli`/`gui` commented out — Nix handles everything |
+| **wyrm**         | Full               | (NixOS-managed, no Ansible playbook)                                        | Fully NixOS                                        |
+| **atlas**        | Full               | `cli`, `nix`, `system_inspection_nopasswd`, `nebula`                        | Minimal Proxmox host                               |
+| **gpd**          | Flake entry exists | `cli`, `legacy_cli`, `gui`, `legacy_gui`, `laptop`, `legacy_vpn_uninstall` | Still uses legacy roles — last holdout             |
 | **vps**          | Flake entry exists | `common`, `system_inspection_nopasswd`                                               | Server, no GUI/dev tools                           |
 
 ### What Nix Manages
@@ -37,11 +37,10 @@ home-manager switch --flake ~/code/ducktape#<hostname>
 
 - System packages via apt
 - Docker daemon
-- Tailscale/headscale client
-- k3s client + kubeconfig
+- Legacy VPN uninstall (removes old Tailscale/WireGuard)
 - udev rules (GPD trackpoint quirk)
 - System-level services
-- Dotfiles via rcm (`.profile`, application configs not yet in Nix)
+- Remaining dotfiles (`.profile`, application configs not yet in Nix) — migrating to home-manager
 
 ## Remaining Work
 
@@ -57,7 +56,7 @@ the legacy roles from `gpd.yaml` and delete:
 - `ansible/roles/legacy_nerd_fonts`
 - `ansible/roles/legacy_claude_mcp`
 
-### Still in Ansible/rcm (Not Yet Migrated)
+### Not Yet Migrated to Home-Manager
 
 - **`~/.profile`** — conditional PATH management, CUDA, machine-specific config
 - **`~/.config/*`** — application configs not yet in Nix

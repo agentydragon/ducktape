@@ -645,41 +645,6 @@ http_archive(
     urls = ["https://github.com/ActivityWatch/aw-server-rust/archive/" + _AW_SERVER_RUST_COMMIT + ".tar.gz"],
 )
 
-# ─ Talos KubeSpan diagnostic test artifacts ───────────────────────────────────
-# Real Talos artifacts for verifying upstream KubeSpan through double NAT.
-# Nocloud disk image is built locally via the talos_imager container (see
-# cluster/kubespand/qemu_tests/talos/BUILD.bazel). No Image Factory download needed.
-# The test uses the Talos Go client library directly instead of the talosctl binary.
-
-# ─ QEMU nftables smoke test dependencies ──────────────────────────────────────
-# Talos discovery service binary for double_nat QEMU test (runs inside VPS VM).
-# Statically linked, runs directly on Alpine initramfs without any dependencies.
-http_file(
-    name = "discovery_service_binary",
-    downloaded_file_path = "discovery-service",
-    executable = True,
-    sha256 = "52b6ee1f408af374f80321a2500878917266b566a26b91ca7fe27adcd8f7298a",
-    urls = ["https://github.com/siderolabs/discovery-service/releases/download/v1.0.13/discovery-service-linux-amd64"],
-)
-
-# Alpine linux-virt kernel with nftables modules for QEMU-based testing.
-# Smaller than Ubuntu (~38MB vs ~181MB) and purpose-built for VMs.
-http_file(
-    name = "alpine_linux_virt",
-    downloaded_file_path = "linux-virt.apk",
-    sha256 = "af9a379fa2a4e26a365fbc050da0a54b873cc96074a4c1d2a4541f5b57b39b2b",
-    urls = ["https://dl-cdn.alpinelinux.org/alpine/v3.21/main/x86_64/linux-virt-6.12.76-r0.apk"],
-)
-
-# Alpine minirootfs tarball for QEMU initramfs base filesystem.
-# Provides proper filesystem layout (/bin, /sbin, /etc, busybox symlinks, musl libc).
-http_file(
-    name = "alpine_minirootfs_x86_64",
-    downloaded_file_path = "alpine-minirootfs.tar.gz",
-    sha256 = "460e7ea6d359b7ea6913326639cb88e5eef65292a09b63c89b4aecf048a90959",
-    urls = ["https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-minirootfs-3.21.6-x86_64.tar.gz"],
-)
-
 # tiktoken o200k_base encoding (used by gpt-4o) — bundled for offline/RBE testing.
 # Cache key = sha1("https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken")
 http_file(

@@ -8,7 +8,7 @@
 
 ## Dotfiles
 
-- [ ] Merge agentydragon & gpd dotfiles (rcrc)
+- [ ] Migrate remaining dotfiles (`profile`, `config/*`, `local/bin/*`) to Nix home-manager
 
 ## System Configuration
 

@@ -3,8 +3,6 @@
   hosts: agentydragon
   vars_files:
     - vars/common_vars.yml
-  vars:
-    rcup_computer: agentydragon
   # TODO: vars_files: agentydragon_gitlab_token.yml
   remote_user: "{{ my_user }}"
 

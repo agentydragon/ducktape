@@ -5,7 +5,6 @@
   vars_files:
     - vars/common_vars.yml
   vars:
-    rcup_computer: atlas
     docker_state: absent # Proxmox host doesn't need Docker
     skip_ubuntu_ppas: true # Debian-based Proxmox can't use Ubuntu PPAs
     include_heavy_dev_packages: false
@@ -54,14 +53,6 @@
         strip: 1
         backup: true
       tags: [proxmox, ui]
-
-    - name: Configure Proxmox SPICE proxy hostname
-      ansible.builtin.lineinfile:
-        path: /etc/pve/datacenter.cfg
-        regexp: "^spice_proxy:"
-        line: "spice_proxy: atlas.agentydragon.com"
-        state: present
-      tags: [proxmox, spice]
 
     - name: Update apt cache after repository changes
       ansible.builtin.apt:

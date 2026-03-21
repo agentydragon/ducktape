@@ -137,19 +137,12 @@ It's built and pushed by the `rbe-image.yml` CI workflow.
 
 ## Dotfiles and Shell Configuration
 
-Most configuration has migrated to Nix home-manager - see `nix/home/home.nix`.
+Configuration is managed by Nix home-manager — see `nix/home/home.nix`.
+Remaining dotfiles in `dotfiles/` are migrating to home-manager; the goal is
+full NixOS on all machines.
 
-### Important Notes
-
-- **DO NOT modify dotfiles directly in `~/`** - edit source files in `dotfiles/` or `nix/home/`
-- **Shell configs are Nix-managed** - do not edit `~/.bashrc`, `~/.zshrc`, `~/.shellrc` directly
-
-### Deployment
-
-- **Nix config**: `home-manager switch --flake ~/code/ducktape#<hostname>`
-- **Remaining dotfiles**: Via rcm (managed by Ansible role `cli/tasks/dotfiles.yml`)
-
-See `dotfiles/docs/shell_configuration.md` for detailed loading order and migration status.
+- **DO NOT modify dotfiles directly in `~/`** - edit source files in `nix/home/`
+- **Deployment**: `home-manager switch --flake ~/code/ducktape#<hostname>`
 
 ## Infrastructure Components
 

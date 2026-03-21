@@ -105,18 +105,6 @@
         "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-3358d587/gterm_theme-0.1.0-py3-none-any.whl"
       }
     },
-    "headscale-cleanup-wheel": {
-      "flake": false,
-      "locked": {
-        "narHash": "sha256-7sz/zTDVjHC6cbB6m4wvp9UtDfNZiXQmpzyOd688VFU=",
-        "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-3358d587/headscale_cleanup-0.1.0-py3-none-any.whl"
-      },
-      "original": {
-        "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-3358d587/headscale_cleanup-0.1.0-py3-none-any.whl"
-      }
-    },
     "home-manager": {
       "inputs": {
         "nixpkgs": [
@@ -248,7 +236,6 @@
         "claude-plugins-official": "claude-plugins-official",
         "ducktape-wheel": "ducktape-wheel",
         "gterm-theme-wheel": "gterm-theme-wheel",
-        "headscale-cleanup-wheel": "headscale-cleanup-wheel",
         "home-manager": "home-manager",
         "nix-colors": "nix-colors",
         "nixGL": "nixGL",
