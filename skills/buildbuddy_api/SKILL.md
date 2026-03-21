@@ -95,19 +95,13 @@ if len(matches) == 1:
         f"{BB}/file/download?bytestream_url={urllib.parse.quote(uri, safe='')}"))
 ```
 
-## Endpoint Reference
+## Other Endpoints
 
-| Path                                       | Method | Notes                                                |
-| ------------------------------------------ | ------ | ---------------------------------------------------- |
-| `/api/v1/GetInvocation`                    | POST   | By invocation ID or commit SHA                       |
-| `/api/v1/GetTarget`                        | POST   | Targets with label, status, rule type                |
-| `/api/v1/GetLog`                           | POST   | Build stderr                                         |
-| `/api/v1/GetFile`                          | POST   | Download blob by bytestream URI                      |
-| `/rpc/BuildBuddyService/SearchInvocation`  | POST   | List/filter invocations (not in public API)          |
-| `/rpc/BuildBuddyService/GetExecution`      | POST   | Remote execution details                             |
-| `/rpc/BuildBuddyService/GetCacheScoreCard` | POST   | Per-action cache hit/miss                            |
-| `/rpc/BuildBuddyService/GetEventLogChunk`  | POST   | Build log chunks                                     |
-| `/file/download`                           | GET    | Artifact download (`artifact=` or `bytestream_url=`) |
+| Path                | Method | Notes                             |
+| ------------------- | ------ | --------------------------------- |
+| `/api/v1/GetTarget` | POST   | Targets with label, status, rule type |
+| `/api/v1/GetLog`    | POST   | Build stderr                      |
+| `/api/v1/GetFile`   | POST   | Download blob by bytestream URI   |
 
 For the full ~70 internal RPCs, see `proto/buildbuddy_service.proto` in the
 [BuildBuddy repo](https://github.com/buildbuddy-io/buildbuddy).
