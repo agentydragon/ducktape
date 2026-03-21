@@ -11,7 +11,6 @@ tf_providers_versions(
     name = "providers",
     providers = {
         "hcloud": "hetznercloud/hcloud:~>1.45",
-        "helm": "hashicorp/helm:~>3.1.0",
         "kubernetes": "hashicorp/kubernetes:~>2.38.0",
         "local": "hashicorp/local:~>2.5.0",
         "null": "hashicorp/null:~>3.2.0",
@@ -27,9 +26,9 @@ tf_providers_versions(
 # Providers are served from the Bazel-cached mirror (see MODULE.bazel tf.download).
 tf_module(
     name = "infrastructure",
+    data = ["//:nebula-mesh.json"],
     providers = [
         "hcloud",
-        "helm",
         "kubernetes",
         "local",
         "null",

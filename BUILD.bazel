@@ -38,6 +38,7 @@ npm_link_all_packages(name = "node_modules")
 # Export workspace files for npm_translate_lock data tracking
 exports_files([
     "mypy.ini",
+    "nebula-mesh.json",
     "package.json",
     "pnpm-workspace.yaml",
     "requirements_bazel.txt",

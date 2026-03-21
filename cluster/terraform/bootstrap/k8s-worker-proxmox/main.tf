@@ -41,8 +41,7 @@ locals {
   )
 
   # NixOS image build inputs
-  nix_dir_hash = sha1(join("", [for f in sort(fileset("${path.module}/../../../../nix", "**/*.nix")) : filesha1("${path.module}/../../../../nix/${f}")]))
-  repo_root    = "${path.module}/../../../.."
+  repo_root = "${path.module}/../../../.."
 
 }
 
@@ -87,7 +86,6 @@ module "k8s_worker_test_image" {
   flake_target = "k8s-worker-test"
   proxmox_host = var.proxmox_host
   repo_root    = local.repo_root
-  nix_dir_hash = local.nix_dir_hash
 }
 
 # =============================================================================
