@@ -324,7 +324,7 @@ To use this repository with Claude Code on the web, configure the following setu
 
 ```bash
 #!/bin/bash
-curl -fsSL https://raw.githubusercontent.com/agentydragon/ducktape/main/devinfra/claude/web_setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/agentydragon/ducktape/devel/devinfra/claude/web_setup.sh | bash
 ```
 
 This runs <web_setup.sh> which installs:
