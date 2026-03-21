@@ -63,20 +63,16 @@ remote worker. These are uploaded as BES artifacts and downloadable via `/file/d
 
 ```bash
 INVOCATION="<UUID>"
-KEY="$(grep -oP 'x-buildbuddy-api-key=\K.*' ~/.config/bazel/buildbuddy.bazelrc)"
 
 # 1. Fetch the BES event stream
-curl -s -H "x-buildbuddy-api-key: $KEY" \
-  "https://app.buildbuddy.io/file/download?invocation_id=$INVOCATION&artifact=raw_json" \
-  > bes.json
+bb_get "$BB/file/download?invocation_id=$INVOCATION&artifact=raw_json" > bes.json
 
 # 2. List all test output files
 jq -r '.[].testResult.testActionOutput[]?.name' bes.json | sort
 
 # 3. Download one file by name
 URI=$(jq -r '.[].testResult.testActionOutput[]? | select(.name | contains("proxy.log")) | .uri' bes.json | head -1)
-curl -s -H "x-buildbuddy-api-key: $KEY" \
-  "https://app.buildbuddy.io/file/download?bytestream_url=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1],safe=''))" "$URI")"
+bb_get "$BB/file/download?bytestream_url=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1],safe=''))" "$URI")"
 ```
 
 ## Other Endpoints
