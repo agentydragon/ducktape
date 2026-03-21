@@ -1,77 +1,65 @@
+---
+name: buildbuddy_api
+description: >
+  Reference for querying the BuildBuddy API. Use when investigating failed or slow
+  CI builds, inspecting invocations by commit or branch, reading build or test logs,
+  checking remote execution (RBE) details (exit codes, stderr, worker logs), analyzing
+  cache hit/miss rates, or downloading undeclared test outputs from RBE workers.
+  Trigger when the user asks "why did this build fail", "show me the build log",
+  "check RBE execution", "get test output from RBE", "what happened in this CI run",
+  "check cache performance", or any task that requires fetching data from BuildBuddy.
+allowed-tools: Bash
+---
+
 # BuildBuddy API Reference
 
-The BuildBuddy backend is open-source: <https://github.com/buildbuddy-io/buildbuddy>.
-Proto definitions live in `proto/` (service: `proto/buildbuddy_service.proto`,
-public API: `proto/api/v1/service.proto`).
+BuildBuddy's backend is open-source (<https://github.com/buildbuddy-io/buildbuddy>).
+Proto definitions: `proto/buildbuddy_service.proto` (internal, ~70 RPCs) and
+`proto/api/v1/service.proto` (public, 9 endpoints).
 
-[Official docs](https://www.buildbuddy.io/docs/enterprise-api/) cover 9 public
-endpoints. The backend also exposes ~70 internal RPCs via
-`/rpc/BuildBuddyService/` that work with a standard API key.
+## Session Setup
 
-## Authentication
-
-API key is in `~/.config/bazel/buildbuddy.bazelrc`. All endpoints accept
-`x-buildbuddy-api-key: $KEY` as an HTTP header.
-
-## Key Capabilities
-
-- **Search invocations** by repo, branch, commit, user, command
-- **Get invocation details** (status, duration, targets, actions)
-- **Read build logs** (chunked)
-- **Get cache scorecard** (per-action hit/miss, durations, sizes)
-- **Get execution details** (remote actions, exit codes, stderr)
-- **Download artifacts** (BES event stream, build logs, profiles)
-
-## Common Recipes
+Run once before any API calls:
 
 ```bash
 KEY="$(grep -oP 'x-buildbuddy-api-key=\K.*' ~/.config/bazel/buildbuddy.bazelrc)"
 BB="https://app.buildbuddy.io"
+bb()     { curl -s -X POST -H "Content-Type: application/json" -H "x-buildbuddy-api-key: $KEY" "$@"; }
+bb_get() { curl -s -H "x-buildbuddy-api-key: $KEY" "$@"; }
+```
 
+## Common Recipes
+
+```bash
 # List recent invocations for this repo
-curl -s -X POST -H "Content-Type: application/json" \
-  -H "x-buildbuddy-api-key: $KEY" \
-  -d '{"query":{"repo_url":"https://github.com/agentydragon/ducktape"},"count":10}' \
+bb -d '{"query":{"repo_url":"https://github.com/agentydragon/ducktape"},"count":10}' \
   "$BB/rpc/BuildBuddyService/SearchInvocation"
 
 # Get invocation by ID (public API)
-curl -s -X POST -H "Content-Type: application/json" \
-  -H "x-buildbuddy-api-key: $KEY" \
-  -d '{"selector":{"invocation_id":"<UUID>"}}' \
-  "$BB/api/v1/GetInvocation"
+bb -d '{"selector":{"invocation_id":"<UUID>"}}' "$BB/api/v1/GetInvocation"
 
-# Get build log
-curl -s -X POST -H "Content-Type: application/json" \
-  -H "x-buildbuddy-api-key: $KEY" \
-  -d '{"invocation_id":"<UUID>","min_lines":500}' \
+# Get build log (chunked; increase min_lines for larger logs)
+bb -d '{"invocation_id":"<UUID>","min_lines":500}' \
   "$BB/rpc/BuildBuddyService/GetEventLogChunk"
 
 # Get remote executions for an invocation
-curl -s -X POST -H "Content-Type: application/json" \
-  -H "x-buildbuddy-api-key: $KEY" \
-  -d '{"execution_lookup":{"invocation_id":"<UUID>"},"inline_execute_response":true}' \
+bb -d '{"execution_lookup":{"invocation_id":"<UUID>"},"inline_execute_response":true}' \
   "$BB/rpc/BuildBuddyService/GetExecution"
 
-# Get cache scorecard
-curl -s -X POST -H "Content-Type: application/json" \
-  -H "x-buildbuddy-api-key: $KEY" \
-  -d '{"invocation_id":"<UUID>"}' \
-  "$BB/rpc/BuildBuddyService/GetCacheScoreCard"
+# Get cache scorecard (per-action hit/miss, durations, sizes)
+bb -d '{"invocation_id":"<UUID>"}' "$BB/rpc/BuildBuddyService/GetCacheScoreCard"
 
-# Download BES event stream (JSON)
-curl -s -H "x-buildbuddy-api-key: $KEY" \
-  "$BB/file/download?invocation_id=<UUID>&artifact=raw_json"
+# Download BES event stream (JSON) — contains all build events
+bb_get "$BB/file/download?invocation_id=<UUID>&artifact=raw_json"
 
-# Download build profile (for chrome://tracing or ui.perfetto.dev)
-curl -s -H "x-buildbuddy-api-key: $KEY" \
-  "$BB/file/download?invocation_id=<UUID>&artifact=execution_profile&execution_id=<EXEC_ID>"
+# Download build profile (open in chrome://tracing or ui.perfetto.dev)
+bb_get "$BB/file/download?invocation_id=<UUID>&artifact=execution_profile&execution_id=<EXEC_ID>"
 ```
 
 ## Downloading Undeclared Test Outputs from RBE
 
-Tests running on RBE write undeclared outputs (`TEST_UNDECLARED_OUTPUTS_DIR`) to
-the remote worker. These are uploaded to BuildBuddy as BES artifacts and can be
-downloaded via the `/file/download` endpoint.
+Tests running on RBE write undeclared outputs (`TEST_UNDECLARED_OUTPUTS_DIR`) to the
+remote worker. These are uploaded as BES artifacts and downloadable via `/file/download`.
 
 ```python
 # Download a test output from a BuildBuddy RBE invocation.
@@ -107,6 +95,8 @@ if len(matches) == 1:
         f"{BB}/file/download?bytestream_url={urllib.parse.quote(uri, safe='')}"))
 ```
 
+## Endpoint Reference
+
 | Path                                       | Method | Notes                                                |
 | ------------------------------------------ | ------ | ---------------------------------------------------- |
 | `/api/v1/GetInvocation`                    | POST   | By invocation ID or commit SHA                       |
@@ -119,5 +109,5 @@ if len(matches) == 1:
 | `/rpc/BuildBuddyService/GetEventLogChunk`  | POST   | Build log chunks                                     |
 | `/file/download`                           | GET    | Artifact download (`artifact=` or `bytestream_url=`) |
 
-For the full list of ~70 internal RPCs, see `proto/buildbuddy_service.proto` in
-the [BuildBuddy repo](https://github.com/buildbuddy-io/buildbuddy).
+For the full ~70 internal RPCs, see `proto/buildbuddy_service.proto` in the
+[BuildBuddy repo](https://github.com/buildbuddy-io/buildbuddy).
