@@ -118,7 +118,11 @@ is already bound by the first.
   across all session IDs, safe for concurrent daemons.
 - **Auth proxy port** (18081): a single fixed port shared by all daemons in the same
   container. The daemon now handles `EADDRINUSE` gracefully (warning + skip) rather
-  than crashing, as belt-and-suspenders.
+  than crashing, as belt-and-suspenders. Note that the **auth proxy creds file is still
+  session-local** (`<session_dir>/hook-daemon/upstream_proxy`), so if another session's
+  daemon already owns port 18081, this session's daemon cannot update the creds used by
+  the running proxy. In that case, skipping proxy startup only avoids a crash; it does
+  **not** guarantee a functional auth proxy for the current session.
 
 # Auth Proxy
 
