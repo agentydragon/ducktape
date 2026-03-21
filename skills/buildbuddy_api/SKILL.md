@@ -24,8 +24,8 @@ Run once before any API calls:
 ```bash
 KEY="$(grep -oP 'x-buildbuddy-api-key=\K.*' ~/.config/bazel/buildbuddy.bazelrc)"
 BB="https://app.buildbuddy.io"
-bb()     { curl -s -X POST -H "Content-Type: application/json" -H "x-buildbuddy-api-key: $KEY" "$@"; }
 bb_get() { curl -s -H "x-buildbuddy-api-key: $KEY" "$@"; }
+bb()     { bb_get -X POST -H "Content-Type: application/json" "$@"; }
 ```
 
 ## Common Recipes
