@@ -1,4 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//skills:defs.bzl", "skill_package")
 
 py_library(
     name = "vnc_screenshot",
@@ -19,4 +20,9 @@ py_binary(
     imports = ["../.."],
     main_module = "skills.hetzner_vnc_screenshot.vnc_screenshot",
     deps = [":vnc_screenshot"],
+)
+
+skill_package(
+    name = "hetzner_vnc_screenshot",
+    srcs = ["SKILL.md"],
 )

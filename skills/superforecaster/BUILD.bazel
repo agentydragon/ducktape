@@ -1,8 +1,6 @@
 load("//skills:defs.bzl", "skill_package")
 
-exports_files(["SKILL.md"])
-
 skill_package(
-    name = "info_gathering",
+    name = "superforecaster",
     srcs = ["SKILL.md"],
 )

@@ -85,7 +85,7 @@ workflows:
 # Fields:
 #   bazel_target:     Bazel target to build (required)
 #   release_body:     GitHub Release description (required)
-#   artifact_type:    "wheel" (default) or "binary"
+#   artifact_type:    "wheel" (default), "binary", or "tarball"
 #   test_targets:     Bazel test targets — generates a test job if set
 #   flake_input:      Nix flake input name — update-downstream rewrites its URL if set
 #   update_claude_settings: Also update .claude/settings.json (default: false)
@@ -142,6 +142,16 @@ releases:
       gterm-theme wheel (GNOME Terminal theme follower).
 
       **Note**: Requires system libraries (libgirepository-2.0-dev, libdbus-1-dev).
+
+  skills:
+    targets:
+      - bazel_target: //skills:all_skills_tar
+        flake_input: skills-tar
+    artifact_type: tarball
+    release_body: |
+      Skills tarball for AI agent deployment (Claude Code, Gemini CLI, etc.).
+
+      Extract to ~/.claude/skills/ or ~/.gemini/skills/.
 
 # List of Bazel-built images pushed to Harbor (registry.allegedly.works).
 # The bazel-harbor-images workflow (generated from this config) builds and

@@ -1,62 +1,79 @@
-# Shared skill deployment for AI agents (Claude Code, Gemini CLI, etc.)
+# Shared skill deployment for AI agents (Claude Code, Gemini CLI, OpenCode, etc.)
 #
-# Returns home.file entries that deploy skills to ~/.{agent}/skills/.
-# Each agent module calls this with its target prefix.
+# Returns a function: prefix -> home.file entries that deploy skills to ~/{prefix}/skills/.
+# Skills are consumed from a CI-built tarball (skills-tar flake input).
 #
 # Usage:
-#   import ./skills.nix { inherit lib siderolabs-docs repoRoot; prefix = ".claude"; }
+#   let mkSkills = import ../skills/skills.nix { inherit lib pkgs siderolabs-docs skills-tar; };
+#   in mkSkills ".claude"
 {
   lib,
+  pkgs,
   siderolabs-docs,
-  prefix,
-  repoRoot,
+  skills-tar,
 }:
 let
-  skillsDir = ./.;
+  # Unpack the CI-built skills tarball into the Nix store (once, shared across prefixes).
+  skillsSrc = pkgs.runCommand "skills-unpacked" { } ''
+    mkdir -p $out
+    tar xf ${skills-tar} -C $out
+  '';
 
-  # Skills still in nix/home/skills/ — auto-discovered, deployed recursively
-  localSkills = lib.mapAttrs' (
-    skillName: _:
-    lib.nameValuePair "${prefix}/skills/${skillName}" {
-      source = skillsDir + "/${skillName}";
-      recursive = true;
-    }
-  ) (lib.filterAttrs (name: type: type == "directory") (builtins.readDir skillsDir));
-
-  # Skills in repo-root skills/ — explicit file lists (only listed files are deployed)
+  # All skills and the files they deploy. Must match skill_package() srcs in BUILD.bazel.
   repoSkillSpecs = {
+    backtrace = {
+      files = [ "SKILL.md" ];
+    };
+    branch_splitter = {
+      files = [
+        "SKILL.md"
+        "validate_dag_split.py"
+      ];
+    };
+    buildbuddy_api = {
+      files = [ "SKILL.md" ];
+    };
+    forensic_surgeon = {
+      files = [ "SKILL.md" ];
+    };
+    hetzner_vnc_screenshot = {
+      files = [ "SKILL.md" ];
+    };
     info_gathering = {
       files = [ "SKILL.md" ];
     };
     proxmox_vm = {
+      files = [ "SKILL.md" ];
+    };
+    session_logs = {
       files = [
         "SKILL.md"
-        "vm_interact.py"
+        "analyze-session.sh"
+        "find-current-session.sh"
       ];
     };
-    hetzner_vnc_screenshot = {
-      files = [
-        "SKILL.md"
-        "vnc_screenshot.py"
-      ];
+    superforecaster = {
+      files = [ "SKILL.md" ];
     };
   };
-
+in
+# Return a function that generates home.file entries for a given prefix.
+prefix:
+let
   repoSkills = lib.concatMapAttrs (
     skillName: spec:
     lib.listToAttrs (
       map (
         fileName:
         lib.nameValuePair "${prefix}/skills/${skillName}/${fileName}" {
-          source = repoRoot + "/skills/${skillName}/${fileName}";
+          source = "${skillsSrc}/${skillName}/${fileName}";
         }
       ) spec.files
     )
   ) repoSkillSpecs;
 
-  # External skills fetched from upstream repos
   externalSkills = {
     "${prefix}/skills/siderolabs/SKILL.md".source = "${siderolabs-docs}/public/skill.md";
   };
 in
-localSkills // repoSkills // externalSkills
+repoSkills // externalSkills

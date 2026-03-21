@@ -1,0 +1,19 @@
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+# All skill tars combined into one archive for web deployment.
+# Extract with: tar xf skills.tar -C ~/.claude/skills/
+pkg_tar(
+    name = "all_skills_tar",
+    deps = [
+        "//skills/backtrace:backtrace_tar",
+        "//skills/branch_splitter:branch_splitter_tar",
+        "//skills/buildbuddy_api:buildbuddy_api_tar",
+        "//skills/forensic_surgeon:forensic_surgeon_tar",
+        "//skills/hetzner_vnc_screenshot:hetzner_vnc_screenshot_tar",
+        "//skills/info_gathering:info_gathering_tar",
+        "//skills/proxmox_vm:proxmox_vm_tar",
+        "//skills/session_logs:session_logs_tar",
+        "//skills/superforecaster:superforecaster_tar",
+    ],
+    visibility = ["//visibility:public"],
+)

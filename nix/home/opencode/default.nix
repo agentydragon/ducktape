@@ -35,6 +35,8 @@
   config,
   pkgs,
   lib,
+  siderolabs-docs,
+  skills-tar,
   ...
 }:
 let
@@ -360,4 +362,7 @@ in
   xdg.configFile."opencode/opencode.json" = {
     text = builtins.toJSON opencodeConfig;
   };
+
+  # Deploy skills to ~/.config/opencode/skills/ (shared with Claude Code, Gemini CLI)
+  home.file = (import ../skills/skills.nix { inherit lib pkgs siderolabs-docs skills-tar; }) ".config/opencode";
 }

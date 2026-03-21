@@ -1,0 +1,9 @@
+load("//skills:defs.bzl", "skill_package")
+
+skill_package(
+    name = "branch_splitter",
+    srcs = [
+        "SKILL.md",
+        "validate_dag_split.py",
+    ],
+)

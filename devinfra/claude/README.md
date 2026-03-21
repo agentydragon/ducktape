@@ -362,10 +362,13 @@ To use this repository with Claude Code on the web, configure the following setu
 
 ```bash
 #!/bin/bash
-uv tool install --force https://github.com/agentydragon/ducktape/releases/download/claude-hooks-latest/claude_hooks-0.1.0-py3-none-any.whl 2>&1 | tee /tmp/setup-script.log
+curl -fsSL https://raw.githubusercontent.com/agentydragon/ducktape/main/devinfra/claude/web_setup.sh | bash
 ```
 
-This installs the `claude-hooks` wheel which provides the `claude-hook` binary used by the session start and other hooks in `.claude/settings.json`.
+This runs <web_setup.sh> which installs:
+
+1. The `claude-hooks` wheel (provides the `claude-hook` binary used by hooks in `.claude/settings.json`)
+2. Skills tarball (deployed to `~/.claude/skills/` for AI agent use)
 
 ## Development
 

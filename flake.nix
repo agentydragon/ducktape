@@ -48,6 +48,12 @@
       flake = false;
     };
 
+    # CI-released skills tarball — updated by release.yml update-downstream job.
+    skills-tar = {
+      url = "https://github.com/agentydragon/ducktape/releases/download/skills-latest/skills.tar";
+      flake = false;
+    };
+
     # Claude Code plugin marketplaces
     claude-plugins-official = {
       url = "github:anthropics/claude-plugins-official";
@@ -80,6 +86,7 @@
       claude-hooks-wheel,
       headscale-cleanup-wheel,
       gterm-theme-wheel,
+      skills-tar,
       claude-plugins-official,
       siderolabs-docs,
       ...
@@ -151,6 +158,7 @@
                   claude-hooks-wheel
                   headscale-cleanup-wheel
                   gterm-theme-wheel
+                  skills-tar
                   claude-plugins-official
                   siderolabs-docs
                   ;
@@ -207,6 +215,7 @@
                   claude-hooks-wheel
                   headscale-cleanup-wheel
                   gterm-theme-wheel
+                  skills-tar
                   claude-plugins-official
                   siderolabs-docs
                   ;
