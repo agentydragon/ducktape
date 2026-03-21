@@ -75,6 +75,13 @@ def configure(daemon_dir: Path, otlp_exporter: DeferredOtlpExporter) -> None:
                     "Skipping proxy start for this daemon.",
                     settings.auth_proxy_port,
                 )
+                # Running without a proxy would leave app.state.proxy as None, but
+                # SessionStart handling asserts that a proxy is available. Fail fast
+                # instead of starting a partially-broken daemon.
+                raise RuntimeError(
+                    f"Auth proxy port {settings.auth_proxy_port} already in use; "
+                    "this daemon cannot start its auth proxy and will exit."
+                ) from e
             else:
                 raise
 
