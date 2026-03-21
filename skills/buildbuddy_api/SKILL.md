@@ -61,38 +61,28 @@ bb_get "$BB/file/download?invocation_id=<UUID>&artifact=execution_profile&execut
 Tests running on RBE write undeclared outputs (`TEST_UNDECLARED_OUTPUTS_DIR`) to the
 remote worker. These are uploaded as BES artifacts and downloadable via `/file/download`.
 
-```python
-# Download a test output from a BuildBuddy RBE invocation.
-# Set INVOCATION and NAME_FILTER, then run the whole snippet.
-import json, re, urllib.request, urllib.parse
+**Step 1 — fetch the BES event stream:**
 
-INVOCATION = "<UUID>"       # from "Streaming build results to: .../invocation/<UUID>"
-NAME_FILTER = "proxy.log"   # substring match; leave empty to list all outputs
+```bash
+INVOCATION="<UUID>"
+KEY="$(grep -oP 'x-buildbuddy-api-key=\K.*' ~/.config/bazel/buildbuddy.bazelrc)"
+curl -s -H "x-buildbuddy-api-key: $KEY" \
+  "https://app.buildbuddy.io/file/download?invocation_id=$INVOCATION&artifact=raw_json" \
+  > bes.json
+```
 
-BB = "https://app.buildbuddy.io"
-KEY = re.search(r"x-buildbuddy-api-key=(\S+)",
-    open("/root/.config/bazel/buildbuddy.bazelrc").read()).group(1)
+**Step 2 — list all test output files:**
 
-def fetch(url):
-    return urllib.request.urlopen(
-        urllib.request.Request(url, headers={"x-buildbuddy-api-key": KEY})).read()
+```bash
+jq -r '.[].testResult.testActionOutput[]?.name' bes.json | sort
+```
 
-# Parse BES event stream for test output bytestream URIs
-bes = json.loads(fetch(f"{BB}/file/download?invocation_id={INVOCATION}&artifact=raw_json"))
-outputs = {f["name"]: f["uri"]
-           for event in bes
-           for f in event.get("testResult", {}).get("testActionOutput", [])}
+**Step 3 — download one file by name:**
 
-matches = {n: u for n, u in outputs.items() if NAME_FILTER in n} if NAME_FILTER else outputs
-for name in sorted(matches):
-    print(name)
-
-# Download the first match to stdout (pipe to a file if needed)
-if len(matches) == 1:
-    uri = next(iter(matches.values()))
-    import sys
-    sys.stdout.buffer.write(fetch(
-        f"{BB}/file/download?bytestream_url={urllib.parse.quote(uri, safe='')}"))
+```bash
+URI=$(jq -r '.[].testResult.testActionOutput[]? | select(.name | contains("proxy.log")) | .uri' bes.json | head -1)
+curl -s -H "x-buildbuddy-api-key: $KEY" \
+  "https://app.buildbuddy.io/file/download?bytestream_url=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1],safe=''))" "$URI")"
 ```
 
 ## Other Endpoints
