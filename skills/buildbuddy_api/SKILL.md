@@ -61,25 +61,19 @@ bb_get "$BB/file/download?invocation_id=<UUID>&artifact=execution_profile&execut
 Tests running on RBE write undeclared outputs (`TEST_UNDECLARED_OUTPUTS_DIR`) to the
 remote worker. These are uploaded as BES artifacts and downloadable via `/file/download`.
 
-**Step 1 — fetch the BES event stream:**
-
 ```bash
 INVOCATION="<UUID>"
 KEY="$(grep -oP 'x-buildbuddy-api-key=\K.*' ~/.config/bazel/buildbuddy.bazelrc)"
+
+# 1. Fetch the BES event stream
 curl -s -H "x-buildbuddy-api-key: $KEY" \
   "https://app.buildbuddy.io/file/download?invocation_id=$INVOCATION&artifact=raw_json" \
   > bes.json
-```
 
-**Step 2 — list all test output files:**
-
-```bash
+# 2. List all test output files
 jq -r '.[].testResult.testActionOutput[]?.name' bes.json | sort
-```
 
-**Step 3 — download one file by name:**
-
-```bash
+# 3. Download one file by name
 URI=$(jq -r '.[].testResult.testActionOutput[]? | select(.name | contains("proxy.log")) | .uri' bes.json | head -1)
 curl -s -H "x-buildbuddy-api-key: $KEY" \
   "https://app.buildbuddy.io/file/download?bytestream_url=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1],safe=''))" "$URI")"
