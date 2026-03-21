@@ -37,10 +37,6 @@ import logging
 import os
 import shlex
 import shutil
-import socket
-import time
-from collections.abc import Generator
-from dataclasses import dataclass
 from pathlib import Path
 
 import docker
@@ -51,12 +47,14 @@ import pytest_bazel
 
 from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
 from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS, get_upstream_proxy_url
-from devinfra.claude.testing.proxy_ca import generate_mock_ca
+from devinfra.claude.testing.mitmproxy_fixture import MitmproxyFixture
 from util.bazel.runfiles import get_required_path
 from util.oci import load_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
+
+pytest_plugins = ["devinfra.claude.testing.mitmproxy_fixture"]
 
 # Rlocation for the claude_hooks wheel (built by //:claude_hooks_wheel)
 _WHEEL_RLOCATION = "_main/claude_hooks-0.1.0-py3-none-any.whl"
@@ -69,10 +67,6 @@ _TEST_WORKSPACE_MODULE = "_main/devinfra/claude/testdata/test_workspace/MODULE.b
 _E2E_IMAGE = "e2e-container:pinned"
 _E2E_TARBALL = "_main/devinfra/claude/testing/container_e2e/e2e_container_load/tarball.tar"
 
-# mitmproxy OCI image for the proxy container
-_MITMPROXY_IMAGE = "mitmproxy:11"
-_MITMPROXY_TARBALL = "_main/devinfra/claude/testing/mitmproxy_load/tarball.tar"
-
 # Container name prefix
 _CONTAINER_NAME = "ducktape-container-e2e"
 
@@ -80,29 +74,6 @@ _CONTAINER_NAME = "ducktape-container-e2e"
 _SESSION_ID = "container-e2e-test"
 
 _ENV_FILE = f"/root/.claude/session-env/{_SESSION_ID}/sessionstart-hook-0.sh"
-
-# Port inside the proxy container
-_PROXY_LISTEN_PORT = 8080
-
-# Proxy credentials
-_PROXY_USERNAME = "proxy_user"
-_PROXY_PASSWORD = "test_jwt_token"
-
-# Timeout for proxy container readiness (seconds)
-_PROXY_READY_TIMEOUT = 60
-
-_MITMPROXY_CMD = [
-    "mitmdump",
-    "--listen-host",
-    "0.0.0.0",
-    "--listen-port",
-    str(_PROXY_LISTEN_PORT),
-    "--set",
-    "confdir=/certs",
-    "--set",
-    f"proxyauth={_PROXY_USERNAME}:{_PROXY_PASSWORD}",
-    "--ssl-insecure",
-]
 
 
 # ---------------------------------------------------------------------------
@@ -149,44 +120,6 @@ def _exec(
     return exit_code, bytes(stdout), bytes(stderr)
 
 
-def _wait_for_proxy_ready(host: str, port: int, timeout: float = _PROXY_READY_TIMEOUT) -> None:
-    """TCP connect to the proxy port until it accepts connections."""
-    deadline = time.monotonic() + timeout
-    while True:
-        try:
-            with socket.create_connection((host, port), timeout=2):
-                return
-        except OSError:
-            if time.monotonic() >= deadline:
-                raise
-            time.sleep(0.3)
-
-
-# ---------------------------------------------------------------------------
-# Fixture result types
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class DockerNetworks:
-    """Docker networks for the E2E test."""
-
-    proxy_net_name: str
-    isolated_net_name: str
-    gateway_ip: str
-    proxy_net: docker.models.networks.Network
-    isolated_net: docker.models.networks.Network
-
-
-@dataclass(frozen=True)
-class ProxySetup:
-    """Everything the test needs from the proxy infrastructure."""
-
-    proxy_url: str
-    mock_ca_pem: bytes
-    isolated_net_name: str
-
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -211,116 +144,6 @@ def e2e_image() -> str:
     return _E2E_IMAGE
 
 
-@pytest.fixture
-def mitmproxy_image() -> str:
-    """Load the mitmproxy OCI image into Docker."""
-    load_image(_MITMPROXY_TARBALL)
-    return _MITMPROXY_IMAGE
-
-
-@pytest.fixture
-def docker_client() -> Generator[docker.DockerClient]:
-    """Yield a docker-py client, closing on teardown."""
-    client = docker.from_env()
-    yield client
-    client.close()
-
-
-@pytest.fixture
-def docker_networks(docker_client: docker.DockerClient) -> Generator[DockerNetworks]:
-    """Create proxy (bridge) and isolated (internal) Docker networks.
-
-    The proxy network provides internet access; the isolated network has no
-    external routing. Cleaned up on teardown.
-    """
-    pid = os.getpid()
-    proxy_net_name = f"e2e-proxy-{pid}"
-    isolated_net_name = f"e2e-isolated-{pid}"
-
-    proxy_net = docker_client.networks.create(proxy_net_name, driver="bridge")
-    isolated_net = docker_client.networks.create(isolated_net_name, driver="bridge", internal=True)
-
-    proxy_net.reload()
-    gateway_ip = proxy_net.attrs["IPAM"]["Config"][0]["Gateway"]
-    logger.info("Created networks: proxy=%s (gateway %s), isolated=%s", proxy_net_name, gateway_ip, isolated_net_name)
-
-    yield DockerNetworks(
-        proxy_net_name=proxy_net_name,
-        isolated_net_name=isolated_net_name,
-        gateway_ip=gateway_ip,
-        proxy_net=proxy_net,
-        isolated_net=isolated_net,
-    )
-
-    isolated_net.remove()
-    proxy_net.remove()
-
-
-@pytest.fixture
-def proxy_env(
-    tmp_path: Path, mitmproxy_image: str, docker_client: docker.DockerClient, docker_networks: DockerNetworks
-) -> Generator[ProxySetup]:
-    """Start mitmproxy container on the Docker networks.
-
-    The proxy container sits on both the proxy network (internet access)
-    and the isolated network (reachable by the test container). CA cert is
-    generated host-side and mounted into the container. Yields a ProxySetup
-    with the proxy URL, CA cert, and isolated network name.
-
-    Requires direct internet access — upstream proxy chaining is not supported.
-    Run via ``bazel test`` (goes to RBE) rather than inside Claude Code web.
-    """
-    assert not get_upstream_proxy_url(), (
-        "Container E2E test requires direct internet access (no HTTPS_PROXY). "
-        "Upstream proxy chaining is not supported — run via 'bazel test' on RBE."
-    )
-
-    # Generate CA host-side and write mitmproxy confdir files
-    cert_pem, key_pem = generate_mock_ca()
-    certs_dir = tmp_path / "mitmproxy_certs"
-    certs_dir.mkdir()
-    # mitmproxy expects key+cert concatenated as mitmproxy-ca.pem in confdir
-    (certs_dir / "mitmproxy-ca.pem").write_bytes(key_pem + cert_pem)
-    (certs_dir / "mitmproxy-ca-cert.pem").write_bytes(cert_pem)
-
-    proxy_name = f"{_CONTAINER_NAME}-proxy-{os.getpid()}"
-
-    proxy_container = docker_client.containers.run(
-        mitmproxy_image,
-        command=_MITMPROXY_CMD,
-        name=proxy_name,
-        network=docker_networks.proxy_net_name,
-        volumes={str(certs_dir): {"bind": "/certs", "mode": "ro"}},
-        detach=True,
-    )
-    logger.info("Started mitmproxy container %s", proxy_name)
-
-    try:
-        # Connect proxy container to the isolated network
-        docker_networks.isolated_net.connect(proxy_container)
-
-        # Wait for mitmproxy to be ready (TCP connect to proxy port)
-        proxy_container.reload()
-        proxy_ip = proxy_container.attrs["NetworkSettings"]["Networks"][docker_networks.isolated_net_name]["IPAddress"]
-        logger.info("Proxy container IP on isolated network: %s", proxy_ip)
-
-        _wait_for_proxy_ready(proxy_ip, _PROXY_LISTEN_PORT)
-        logger.info("mitmproxy container is ready")
-
-        yield ProxySetup(
-            proxy_url=f"http://{_PROXY_USERNAME}:{_PROXY_PASSWORD}@{proxy_ip}:{_PROXY_LISTEN_PORT}",
-            mock_ca_pem=cert_pem,
-            isolated_net_name=docker_networks.isolated_net_name,
-        )
-
-    finally:
-        # Collect mitmproxy logs (stdout/stderr)
-        proxy_logs = proxy_container.logs()
-        _save_output("proxy.log", proxy_logs.decode(errors="replace"))
-
-        proxy_container.remove(force=True)
-
-
 # ---------------------------------------------------------------------------
 # Test
 # ---------------------------------------------------------------------------
@@ -330,11 +153,15 @@ def test_container_e2e(
     tmp_path: Path,
     wheel_path: Path,
     test_workspace_path: Path,
-    proxy_env: ProxySetup,
-    docker_client: docker.DockerClient,
+    mitmproxy_proxy: MitmproxyFixture,
+    isolated_net: docker.models.networks.Network,
     e2e_image: str,
 ) -> None:
     """Full E2E: install wheel in container, run hook, bazel build through proxy."""
+    assert not get_upstream_proxy_url(), (
+        "Container E2E test requires direct internet access (no HTTPS_PROXY). "
+        "Upstream proxy chaining is not supported — run via 'bazel test' on RBE."
+    )
 
     # Copy files to a staging directory so Docker can mount real files
     # (runfiles may be symlinks that Docker cannot resolve in gVisor)
@@ -347,12 +174,12 @@ def test_container_e2e(
 
     # Write CA certs to files for bind-mounting
     mock_ca_path = tmp_path / "mock_ca.pem"
-    mock_ca_path.write_bytes(proxy_env.mock_ca_pem)
+    mock_ca_path.write_bytes(mitmproxy_proxy.ca_cert_pem)
 
     system_ca_path = next((p for p in SYSTEM_CA_BUNDLES if p.exists()), None)
     combined_ca_path = tmp_path / "combined_ca.pem"
     system_cas = system_ca_path.read_bytes() if system_ca_path else b""
-    combined_ca_path.write_bytes(system_cas + b"\n" + proxy_env.mock_ca_pem)
+    combined_ca_path.write_bytes(system_cas + b"\n" + mitmproxy_proxy.ca_cert_pem)
 
     container_name = f"{_CONTAINER_NAME}-{os.getpid()}"
 
@@ -371,16 +198,16 @@ def test_container_e2e(
         "WHEEL_PATH": f"/wheel/{_WHEEL_FILENAME}",
     }
     for var in PROXY_ENV_VARS:
-        env[var] = proxy_env.proxy_url
+        env[var] = mitmproxy_proxy.container_url
     for var in SSL_CA_ENV_VARS:
         env[var] = "/certs/combined_ca.pem"
 
-    container = docker_client.containers.run(
+    container = docker.from_env().containers.run(
         e2e_image,
         command=["sleep", "infinity"],
         name=container_name,
         environment=env,
-        network=proxy_env.isolated_net_name,
+        network=isolated_net.name,
         volumes={
             str(staged_wheel): {"bind": f"/wheel/{_WHEEL_FILENAME}", "mode": "ro"},
             str(mock_ca_path): {"bind": "/certs/mock_ca.pem", "mode": "ro"},

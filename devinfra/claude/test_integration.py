@@ -94,8 +94,8 @@ async def test_credential_rotation(
     assert creds_file.exists(), "Creds file should exist"
     assert "proxy_user" in creds_file.read_text(), "Initial creds should have original credentials"
 
-    # Simulate credential rotation
-    new_proxy_url = f"http://newuser:newpass@127.0.0.1:{mitmproxy_proxy.port}"
+    # Simulate credential rotation (URL just needs different credentials; port doesn't matter)
+    new_proxy_url = "http://newuser:newpass@127.0.0.1:1"
     monkeypatch.setenv("HTTPS_PROXY", new_proxy_url)
 
     # Re-run setup — should update creds file

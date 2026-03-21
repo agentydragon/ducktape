@@ -23,7 +23,6 @@ py_test(
         ":e2e_container_tarball",
         "//:claude_hooks_wheel",
         "//devinfra/claude/testdata/test_workspace:workspace_files",
-        "//devinfra/claude/testing:mitmproxy_tarball",
     ],
     env_inherit = [
         "DOCKER_HOST",
@@ -38,7 +37,7 @@ py_test(
         "//devinfra/claude/auth_proxy:setup",
         "//devinfra/claude/auth_proxy:vars",
         "//devinfra/claude/testing:conftest",
-        "//devinfra/claude/testing:proxy_ca",
+        "//devinfra/claude/testing:mitmproxy_fixture",
         "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
