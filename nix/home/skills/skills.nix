@@ -2,6 +2,7 @@
 #
 # Returns a function: prefix -> home.file entries that deploy skills to ~/{prefix}/skills/.
 # Skills are consumed from a CI-built tarball (skills-tar flake input).
+# Skill contents are controlled by skill_package(srcs=...) in each skill's BUILD.bazel.
 #
 # Usage:
 #   let mkSkills = import ../skills/skills.nix { inherit lib pkgs siderolabs-docs skills-tar; };
@@ -19,58 +20,19 @@ let
     tar xf ${skills-tar} -C $out
   '';
 
-  # All skills and the files they deploy. Must match skill_package() srcs in BUILD.bazel.
-  repoSkillSpecs = {
-    backtrace = {
-      files = [ "SKILL.md" ];
-    };
-    branch_splitter = {
-      files = [
-        "SKILL.md"
-        "validate_dag_split.py"
-      ];
-    };
-    buildbuddy_api = {
-      files = [ "SKILL.md" ];
-    };
-    forensic_surgeon = {
-      files = [ "SKILL.md" ];
-    };
-    hetzner_vnc_screenshot = {
-      files = [ "SKILL.md" ];
-    };
-    info_gathering = {
-      files = [ "SKILL.md" ];
-    };
-    proxmox_vm = {
-      files = [ "SKILL.md" ];
-    };
-    session_logs = {
-      files = [
-        "SKILL.md"
-        "analyze-session.sh"
-        "find-current-session.sh"
-      ];
-    };
-    superforecaster = {
-      files = [ "SKILL.md" ];
-    };
-  };
+  # Auto-discover skill directories from the unpacked tarball.
+  skillDirs = lib.filterAttrs (_: type: type == "directory") (builtins.readDir skillsSrc);
 in
 # Return a function that generates home.file entries for a given prefix.
 prefix:
 let
-  repoSkills = lib.concatMapAttrs (
-    skillName: spec:
-    lib.listToAttrs (
-      map (
-        fileName:
-        lib.nameValuePair "${prefix}/skills/${skillName}/${fileName}" {
-          source = "${skillsSrc}/${skillName}/${fileName}";
-        }
-      ) spec.files
-    )
-  ) repoSkillSpecs;
+  repoSkills = lib.mapAttrs' (
+    skillName: _:
+    lib.nameValuePair "${prefix}/skills/${skillName}" {
+      source = "${skillsSrc}/${skillName}";
+      recursive = true;
+    }
+  ) skillDirs;
 
   externalSkills = {
     "${prefix}/skills/siderolabs/SKILL.md".source = "${siderolabs-docs}/public/skill.md";
