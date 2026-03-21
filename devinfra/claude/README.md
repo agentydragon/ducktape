@@ -362,7 +362,7 @@ To use this repository with Claude Code on the web, configure the following setu
 
 ```bash
 #!/bin/bash
-python3.13 -m pip install --break-system-packages --force-reinstall https://github.com/agentydragon/ducktape/releases/download/claude-hooks-latest/claude_hooks-0.1.0-py3-none-any.whl 2>&1 | tee /tmp/setup-script.log
+uv tool install --force https://github.com/agentydragon/ducktape/releases/download/claude-hooks-latest/claude_hooks-0.1.0-py3-none-any.whl 2>&1 | tee /tmp/setup-script.log
 ```
 
 This installs the `claude-hooks` wheel which provides the `claude-hook` binary used by the session start and other hooks in `.claude/settings.json`.
