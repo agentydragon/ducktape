@@ -17,6 +17,7 @@ name: Release
           - ducktape
           - headscale-cleanup
           - gterm-theme
+          - skills
         default: all
       force:
         description: Force release even if no changes detected
@@ -37,6 +38,7 @@ jobs:
       ducktape_needed: ${{ steps.check-ducktape.outputs.release_needed }}
       headscale_cleanup_needed: ${{ steps.check-headscale_cleanup.outputs.release_needed }}
       gterm_theme_needed: ${{ steps.check-gterm_theme.outputs.release_needed }}
+      skills_needed: ${{ steps.check-skills.outputs.release_needed }}
     steps:
       - name: Check out code
         uses: actions/checkout@v6
@@ -74,6 +76,13 @@ jobs:
           package_prefix: gterm-theme
           bazel_targets: //gterm_theme:wheel
           latest_release_tag: gterm-theme-latest
+      - name: Check skills
+        id: check-skills
+        uses: ./.github/actions/check-release-needed
+        with:
+          package_prefix: skills
+          bazel_targets: //skills:all_skills_tar
+          latest_release_tag: skills-latest
   test-claude_hooks:
     name: Test claude-hooks
     runs-on: ubuntu-latest
@@ -319,6 +328,56 @@ jobs:
 
             **Note**: Requires system libraries (libgirepository-2.0-dev, libdbus-1-dev).
           files: dist/*.whl
+  release-skills:
+    name: Release skills
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs:
+      - check-releases
+    if:
+      always() && !cancelled() && !failure() && (needs.check-releases.outputs.skills_needed == 'true' || (github.event_name
+      == 'workflow_dispatch' && inputs.force == true && (inputs.package == 'all' || inputs.package == 'skills')))
+    outputs:
+      released: "true"
+      tag: skills-${{ env.SHORT_SHA }}
+      short_sha: ${{ env.SHORT_SHA }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: bazel
+        uses: ./.github/actions/setup-bazel
+        with:
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+      - name: Set short SHA
+        run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
+      - name: Build tarball
+        run: bazel build --remote_download_toplevel //skills:all_skills_tar
+      - name: Prepare tarball
+        run: |-
+          mkdir -p dist
+          cp bazel-bin/skills/all_skills_tar.tar dist/skills.tar
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: skills-${{ env.SHORT_SHA }}
+          name: skills (${{ env.SHORT_SHA }})
+          body: |-
+            Skills tarball for AI agent deployment (Claude Code, Gemini CLI, etc.).
+
+            Extract to ~/.claude/skills/ or ~/.gemini/skills/.
+
+            Commit: ${{ github.sha }}
+            Branch: ${{ github.ref_name }}
+          files: dist/skills.tar
+      - uses: ./.github/actions/update-latest-release
+        with:
+          package_prefix: skills
+          latest_tag: skills-latest
+          title: skills (latest)
+          body: |
+            Skills tarball for AI agent deployment (Claude Code, Gemini CLI, etc.).
+
+            Extract to ~/.claude/skills/ or ~/.gemini/skills/.
+          files: dist/skills.tar
   update-downstream:
     name: Update downstream references
     runs-on: ubuntu-latest
@@ -328,12 +387,14 @@ jobs:
       - release-ducktape
       - release-headscale_cleanup
       - release-gterm_theme
+      - release-skills
     if: |-
       always() && !cancelled() &&
            (needs.release-claude_hooks.outputs.released == 'true' ||
            needs.release-ducktape.outputs.released == 'true' ||
            needs.release-headscale_cleanup.outputs.released == 'true' ||
-           needs.release-gterm_theme.outputs.released == 'true')
+           needs.release-gterm_theme.outputs.released == 'true' ||
+           needs.release-skills.outputs.released == 'true')
     steps:
       - uses: actions/checkout@v6
         with:
@@ -367,6 +428,10 @@ jobs:
           if [ "${{ needs.release-gterm_theme.outputs.released }}" = "true" ]; then
             sed -i 's|releases/download/gterm-theme-[^/]*/gterm_theme|releases/download/${{ needs.release-gterm_theme.outputs.tag }}/gterm_theme|' flake.nix
             update_flake_input gterm-theme-wheel
+          fi
+          if [ "${{ needs.release-skills.outputs.released }}" = "true" ]; then
+            sed -i 's|releases/download/skills-[^/]*/skills.tar|releases/download/${{ needs.release-skills.outputs.tag }}/skills.tar|' flake.nix
+            update_flake_input skills-tar
           fi
 
           git config user.name "github-actions[bot]"
