@@ -48,6 +48,51 @@ location ~ ^/(about|archive|found|nfc)\.html$ {
 }
 ```
 
+## SSG Alternatives (Flat URL Support)
+
+The Hakyll site produces flat `.html` URLs (`/posts/2023-07-04-con-folder.html`).
+Zola cannot produce these — [issue #840](https://github.com/getzola/zola/issues/840)
+open since 2019, maintainer skeptical. Post-build renaming breaks Zola's internal
+links. This section evaluates alternatives.
+
+| Generator   | Flat URLs                   | Binary     | SASS | RSS  | Syntax HL | Bazel   |
+| ----------- | --------------------------- | ---------- | ---- | ---- | --------- | ------- |
+| **Hugo**    | `uglyURLs: true` (native)   | Go         | Yes  | Yes  | Chroma    | Trivial |
+| **Cobalt**  | Permalink template (native) | Rust       | Yes  | Yes  | syntect   | Trivial |
+| **Pelican** | Default output style        | Python pkg | Plug | Yes  | Pygments  | Medium  |
+| **11ty**    | Permalink config            | Node.js    | Plug | Plug | Prism     | Hard    |
+| **Zola**    | Not supported               | Rust       | Yes  | Yes  | syntect   | Trivial |
+
+### Hugo (recommended if flat URLs required)
+
+Hugo's [`uglyURLs`](https://gohugo.io/content-management/urls/) is first-class,
+even configurable per-section. Single Go binary, zero runtime deps. Extended
+edition includes SASS. Built-in Chroma syntax highlighting, RSS template, Go
+`html/template` templating. Bazel integration: `http_file` + `genrule`, same
+pattern as Zola.
+
+Tradeoff vs Zola: Go template language has steeper learning curve than Tera.
+Larger binary, but richer feature set (taxonomies, i18n, image processing).
+
+### Cobalt (alternative)
+
+Rust binary with built-in SASS, RSS, syntax highlighting. Permalink templates
+support explicit `.html` extensions:
+
+```yaml
+permalink: /posts/{{year}}-{{month}}-{{day}}-{{slug}}.html
+```
+
+Smaller community than Hugo, less documentation, Liquid templates (simpler but
+less powerful).
+
+### Decision
+
+If flat URLs are a hard requirement, **switch to Hugo** — it's the lowest-effort
+migration from the existing Zola spike (same Bazel pattern, similar template
+concepts). If directory-style URLs with nginx redirects are acceptable, **stay
+with Zola**.
+
 ## Markup Faithfulness
 
 ### What stays identical
