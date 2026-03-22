@@ -159,6 +159,13 @@ def generate_ci_config(manifest: WorkflowManifest) -> Workflow:
     if ghcr_jobs & manifest.workflows.keys():
         permissions["packages"] = "write"
 
+    # rbe-image.yml declares permissions: contents: write (to pin the built image
+    # tag in BUILD.bazel via git push). GitHub Actions validates at startup that the
+    # calling workflow grants at least the permissions declared by called workflows,
+    # so ci.yml must also declare contents: write when rbe-image is present.
+    if "rbe-image" in manifest.workflows:
+        permissions["contents"] = "write"
+
     return Workflow(
         name="CI",
         on={"push": {"branches": ["main", "master", "devel"]}, "pull_request": None, "workflow_dispatch": None},
