@@ -41,6 +41,10 @@ VFS on 9p (no layer caching, slower builds).
 
 ## pre-commit
 Hook environments installing in background. First `git commit` may block briefly.
+% elif isinstance(precommit, PrecommitNotInstalled) or precommit is None:
+
+## pre-commit
+**Warning**: pre-commit hook installation failed. Git hooks may not run. Check daemon log for details.
 % endif
 % if secrets:
 

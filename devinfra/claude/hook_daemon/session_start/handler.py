@@ -621,6 +621,7 @@ async def run_session(
             container=setup.container,
             precommit=setup.precommit_result,
             PrecommitInstallingHooks=precommit.PrecommitInstallingHooks,
+            PrecommitNotInstalled=precommit.PrecommitNotInstalled,
             mkcert=setup.mkcert_result,
             log_entries=collector.buffer,
             secrets=setup.secrets,
