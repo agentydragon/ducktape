@@ -37,6 +37,8 @@ def hakyll_to_zola_path(rel: str) -> str | None:
             return "default.css"
         case "css/default.scss":
             return None
+        case _ if rel.startswith(("llm-instruct/", "llm/")):
+            return None
         case _ if rel.startswith("posts/") and rel.endswith(".html"):
             return rel.removesuffix(".html") + "/index.html"
         case _:
@@ -162,7 +164,7 @@ summary.identical { color: #155724; }
 summary.different { color: #721c24; font-weight: bold; }
 summary.hakyll-only { color: #856404; }
 summary.zola-only { color: #0c5460; }
-table.diff { border-collapse: collapse; width: 100%; font-size: 12px; table-layout: fixed; }
+table.diff { border-collapse: collapse; width: 100%; font-size: 12px; }
 table.diff thead th {
   background: #e9ecef; padding: 4px 8px; text-align: left;
   border: 1px solid #ccc; position: sticky; top: 0; z-index: 1;
@@ -171,7 +173,7 @@ table.diff td {
   padding: 1px 6px; border: 1px solid #eee; vertical-align: top;
   white-space: pre-wrap; word-break: break-all; overflow-wrap: break-word;
 }
-table.diff td.ln { width: 3em; color: #999; text-align: right; user-select: none; }
+table.diff td.ln { width: 2em; max-width: 2em; color: #999; text-align: right; user-select: none; font-size: 10px; }
 table.diff td code { font-size: 11px; }
 tr.eq td { background: #fff; }
 tr.chg td { background: #fefce8; }
