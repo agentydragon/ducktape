@@ -14,12 +14,11 @@ from xml.etree.ElementTree import Comment
 import html5lib
 import jinja2
 
+SKIP_PATTERNS = ("llm-instruct/", "llm/")
+
 
 def hakyll_to_zola_path(rel: str) -> str | None:
-    """Map a Hakyll relative path to the expected Zola relative path.
-
-    Returns None for files that should be skipped (source files not in output).
-    """
+    """Map a Hakyll path to the expected Zola path (directory-style URLs)."""
     match rel:
         case "about.html":
             return "about/index.html"
@@ -37,10 +36,21 @@ def hakyll_to_zola_path(rel: str) -> str | None:
             return "default.css"
         case "css/default.scss":
             return None
-        case _ if rel.startswith(("llm-instruct/", "llm/")):
+        case _ if rel.startswith(SKIP_PATTERNS):
             return None
         case _ if rel.startswith("posts/") and rel.endswith(".html"):
             return rel.removesuffix(".html") + "/index.html"
+        case _:
+            return rel
+
+
+def hakyll_to_hugo_path(rel: str) -> str | None:
+    """Map a Hakyll path to the expected Hugo path (identity — uglyURLs)."""
+    match rel:
+        case "css/default.scss" | "CNAME":
+            return None
+        case _ if rel.startswith(SKIP_PATTERNS):
+            return None
         case _:
             return rel
 
@@ -239,33 +249,43 @@ span.ins { background: #acf2bd; border-radius: 2px; }
 """)
 
 
+PATH_MAPPERS = {"zola": hakyll_to_zola_path, "hugo": hakyll_to_hugo_path}
+
+
 def main() -> None:
-    if len(sys.argv) != 4:
-        print(f"Usage: {sys.argv[0]} <hakyll_dir> <zola_dir> <output.html>", file=sys.stderr)
+    if len(sys.argv) < 4 or len(sys.argv) > 5:
+        print(f"Usage: {sys.argv[0]} <hakyll_dir> <target_dir> <output.html> [--mode=zola|hugo]", file=sys.stderr)
         sys.exit(2)
 
     hakyll_dir = Path(sys.argv[1])
-    zola_dir = Path(sys.argv[2])
+    target_dir = Path(sys.argv[2])
     output_path = Path(sys.argv[3])
 
+    mode = "zola"
+    for arg in sys.argv[4:]:
+        if arg.startswith("--mode="):
+            mode = arg.split("=", 1)[1]
+
+    map_path = PATH_MAPPERS[mode]
+
     entries: list[FileEntry] = []
-    expected_zola_paths: set[str] = set()
+    expected_target_paths: set[str] = set()
 
     for hakyll_file in sorted(hakyll_dir.rglob("*")):
         if not hakyll_file.is_file():
             continue
 
         rel = str(hakyll_file.relative_to(hakyll_dir))
-        zola_rel = hakyll_to_zola_path(rel)
-        if zola_rel is None:
+        target_rel = map_path(rel)
+        if target_rel is None:
             continue
 
         anchor = rel.replace("/", "-").replace(".", "-")
-        expected_zola_paths.add(zola_rel)
-        zola_file = zola_dir / zola_rel
+        expected_target_paths.add(target_rel)
+        target_file = target_dir / target_rel
 
-        if not zola_file.exists():
-            entries.append(FileEntry(rel=rel, zola_rel=zola_rel, status="hakyll-only", anchor=anchor))
+        if not target_file.exists():
+            entries.append(FileEntry(rel=rel, zola_rel=target_rel, status="hakyll-only", anchor=anchor))
             continue
 
         suffix = hakyll_file.suffix
@@ -273,22 +293,24 @@ def main() -> None:
         is_text = suffix in {".html", ".xml", ".css", ".txt"}
 
         if is_text:
-            old_lines, new_lines = normalize_text(hakyll_file.read_text(), zola_file.read_text(), is_html)
+            old_lines, new_lines = normalize_text(hakyll_file.read_text(), target_file.read_text(), is_html)
             if old_lines == new_lines:
-                entries.append(FileEntry(rel=rel, zola_rel=zola_rel, status="identical", anchor=anchor))
+                entries.append(FileEntry(rel=rel, zola_rel=target_rel, status="identical", anchor=anchor))
             else:
                 rows = build_diff_rows(old_lines, new_lines)
-                entries.append(FileEntry(rel=rel, zola_rel=zola_rel, status="different", anchor=anchor, diff_rows=rows))
-        elif filecmp.cmp(hakyll_file, zola_file, shallow=False):
-            entries.append(FileEntry(rel=rel, zola_rel=zola_rel, status="identical", anchor=anchor))
+                entries.append(
+                    FileEntry(rel=rel, zola_rel=target_rel, status="different", anchor=anchor, diff_rows=rows)
+                )
+        elif filecmp.cmp(hakyll_file, target_file, shallow=False):
+            entries.append(FileEntry(rel=rel, zola_rel=target_rel, status="identical", anchor=anchor))
         else:
-            entries.append(FileEntry(rel=rel, zola_rel=zola_rel, status="different", anchor=anchor))
+            entries.append(FileEntry(rel=rel, zola_rel=target_rel, status="different", anchor=anchor))
 
-    for zola_file in sorted(zola_dir.rglob("*")):
-        if not zola_file.is_file():
+    for target_file in sorted(target_dir.rglob("*")):
+        if not target_file.is_file():
             continue
-        rel = str(zola_file.relative_to(zola_dir))
-        if rel not in expected_zola_paths:
+        rel = str(target_file.relative_to(target_dir))
+        if rel not in expected_target_paths:
             anchor = rel.replace("/", "-").replace(".", "-")
             entries.append(FileEntry(rel=rel, zola_rel=rel, status="zola-only", anchor=anchor))
 

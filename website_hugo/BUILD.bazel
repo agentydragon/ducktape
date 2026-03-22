@@ -1,0 +1,16 @@
+genrule(
+    name = "site",
+    srcs = glob([
+        "content/**",
+        "layouts/**",
+        "static/**",
+        "assets/**",
+    ]) + ["config.toml"],
+    outs = ["site.tar"],
+    cmd = " && ".join([
+        "$(location @hugo//:hugo) --source $$(dirname $(location config.toml)) --destination $$PWD/hugo_out",
+        "tar -cf $@ -C hugo_out .",
+    ]),
+    tags = ["manual"],
+    tools = ["@hugo"],
+)

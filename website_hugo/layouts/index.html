@@ -1,0 +1,12 @@
+{{ define "title" }}{{ end }} {{ define "heading" }}{{ end }} {{ define "main" }} {{ range (where .Site.RegularPages
+"Section" "posts").ByDate.Reverse }}
+<article>
+  <h3>{{ .Date.Format "January 2, 2006" }} - <a href="{{ .RelPermalink }}">{{ .Title }}</a></h3>
+  {{ .Content }}
+</article>
+{{ end }}
+
+<hr />
+
+<p>You can find more in the <a href="/archive.html">archive</a>.</p>
+{{ end }}

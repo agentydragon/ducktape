@@ -715,6 +715,14 @@ http_archive(
     urls = ["https://github.com/getzola/zola/releases/download/v0.22.1/zola-v0.22.1-x86_64-unknown-linux-gnu.tar.gz"],
 )
 
+# Hugo static site generator (extended edition with SASS) — used by website_hugo genrule.
+http_archive(
+    name = "hugo",
+    build_file_content = 'exports_files(["hugo"], visibility = ["//visibility:public"])\n',
+    sha256 = "7822d40360c8123a624ac8f3e4305b83908dd76cc7885ae4b00e985dac0b920f",
+    urls = ["https://github.com/gohugoio/hugo/releases/download/v0.147.1/hugo_extended_0.147.1_linux-amd64.tar.gz"],
+)
+
 # ─ Specimen code archives (remote-VCS specimens) ─────────────────────────────
 # These specimens reference external Git repos rather than bundled code/ dirs.
 # Code is fetched at build time and exposed as filegroups for create_code_tar.

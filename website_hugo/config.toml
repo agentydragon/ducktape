@@ -1,0 +1,23 @@
+baseURL = "http://agentydragon.com"
+title = "~agentydragon"
+uglyURLs = true
+languageCode = "en"
+disableKinds = ["taxonomy", "term", "sitemap", "robotsTXT", "404"]
+
+[params]
+  author = "Rai"
+  description = "*agentydragon noises*"
+
+[markup.goldmark.renderer]
+  unsafe = true
+
+[markup.highlight]
+  style = "solarized-light"
+
+[outputs]
+  home = ["HTML", "RSS"]
+  section = ["HTML"]
+
+[outputFormats.RSS]
+  baseName = "rss"
+  mediaType = "application/rss+xml"
