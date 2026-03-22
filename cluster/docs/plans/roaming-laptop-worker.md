@@ -3,8 +3,7 @@
 **Status**: Implemented (2026-03). rugged (Dell Rugged 12) joined as roaming worker
 via `nix/nixos/hosts/rugged/` + `k8s-worker.nix` + `nebula-mesh.nix`. Nebula mesh
 with VPS lighthouses/relays solves the double-NAT hole-punching problem that made
-KubeSpan unreliable. See `nebula-mesh-migration.md` and `kubespand-tombstone.md`
-for the full history.
+KubeSpan unreliable. See `../lessons_learned/nebula-mesh-migration-tombstone.md` for the full history.
 
 **TODO**: Verify double-NAT passthrough and relay with real workloads (e.g., rugged
 behind a mobile hotspot or restrictive corporate NAT, running actual pods with
@@ -29,13 +28,13 @@ Key files:
 
 ## Networking
 
-| Property   | Value                                                  |
-| ---------- | ------------------------------------------------------ |
-| Mesh       | Nebula (UDP 4242), lighthouses on VPS                  |
-| Node IP    | Nebula mesh IP (e.g., `10.42.0.30` for rugged)         |
-| API server | haproxy `localhost:7445` → CP Nebula IPs               |
-| Pod overlay| VXLAN (UDP 8472) encapsulated in Nebula                |
-| Relay      | VPS lighthouses relay when hole-punching fails         |
+| Property    | Value                                          |
+| ----------- | ---------------------------------------------- |
+| Mesh        | Nebula (UDP 4242), lighthouses on VPS          |
+| Node IP     | Nebula mesh IP (e.g., `10.42.0.30` for rugged) |
+| API server  | haproxy `localhost:7445` → CP Nebula IPs       |
+| Pod overlay | VXLAN (UDP 8472) encapsulated in Nebula        |
+| Relay       | VPS lighthouses relay when hole-punching fails |
 
 ## Scheduling
 
@@ -64,7 +63,8 @@ Taint `node-role.kubernetes.io/roaming=true:NoSchedule`, labels
 ## Historical Notes
 
 This plan went through three networking iterations:
+
 1. Tailscale/Headscale (second WireGuard mesh, required DaemonSet)
 2. KubeSpan/kubespand (reimplemented Talos KubeSpan for Linux — failed on double-NAT,
-   no relay capability). See `../lessons_learned/kubespand-tombstone.md`.
+   no relay capability). See `../lessons_learned/nebula-mesh-migration-tombstone.md`.
 3. Nebula mesh (current) — lighthouses + relays solve double-NAT reliably.
