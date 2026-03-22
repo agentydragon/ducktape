@@ -4,7 +4,10 @@ py_library(
     name = "diff_sites",
     srcs = ["diff_sites.py"],
     imports = [".."],
-    deps = ["@pypi//html5lib"],
+    deps = [
+        "@pypi//html5lib",
+        "@pypi//jinja2",
+    ],
 )
 
 py_binary(
