@@ -26,12 +26,6 @@ Two LLM agents alternate turns:
 ## Usage
 
 ```bash
-# Build all
-bazel build //skills/info_gathering/evals/twenty_questions/x/...
-
-# Run tests
-bazel test //skills/info_gathering/evals/twenty_questions/x/...
-
 # Run a specific implementation
 bazel run //skills/info_gathering/evals/twenty_questions/x/pydantic_ai:twenty_questions_bin -- \
   --variant states --model gpt-4o-mini --api openai

@@ -1,5 +1,16 @@
 # SPICE Lag Investigation
 
+> **Status: Partially resolved.** Burst latency fixed (462ms -> 152ms) by disabling videostreaming. Remaining ~59ms gap between GNOME and VT is Mutter compositor overhead. GPU type since changed to virtio (working) — measurements below are from the old GPU config and should be re-done.
+>
+> **TODO**: wyrm2 has no audio output — needs investigation.
+
+## Conclusions
+
+- **Root cause of burst lag:** `videostreaming=all` causes SPICE to MJPEG/VP8-encode frequently-changing regions. Combined with llvmpipe (CPU OpenGL), this saturates the pipeline under sustained typing.
+- **Fix:** `videostreaming=off` eliminates burst degradation entirely (flat ~112ms adjusted vs ~422ms before).
+- **VirGL** works but doesn't improve latency beyond disabling videostreaming (~117ms vs ~112ms). The remaining ~59ms gap to VT is Mutter compositor overhead (frame scheduling, damage batching), not the rendering backend.
+- **SPICE routing is local** (verified via `ss -tnp`), not through VPS.
+
 ## Problem Statement
 
 Using a desktop environment (GNOME) over SPICE on wyrm (VM) feels noticeably

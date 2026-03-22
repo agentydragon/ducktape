@@ -3,10 +3,7 @@
 Sets up a temporary git repo with local pre-commit hooks and verifies that
 run_on_file correctly identifies which hooks modified files vs just failed.
 
-# TODO: figure out a smooth syrupy snapshot update workflow with Bazel.
-# Currently: bazel test ... --strategy=TestRunner=local --nocache_test_results
-#   --test_arg=--snapshot-update
-# Undeclared test outputs (for RBE) go into BuildBuddy API.
+# Snapshot update workflow: see root AGENTS.md "Updating syrupy snapshots".
 """
 
 import sys

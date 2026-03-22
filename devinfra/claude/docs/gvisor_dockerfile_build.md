@@ -116,36 +116,7 @@ and `podman run` operations.
 See `devinfra/claude/web_env/docs/sandbox-investigation.md` for technical details on why
 this fix is necessary.
 
-## Verifying shared library completeness
-
-```bash
-podman run --rm \
-  -v /path/to/binary:/tmp/binary:ro \
-  my-image:latest ldd /tmp/binary | grep "not found"
-```
-
-No output means all libraries resolve.
-
 ## Fallback: podman run + commit
 
-If `podman build` still fails for a specific case, individual steps can be executed manually:
-
-```bash
-podman pull docker.io/library/ubuntu:24.04
-IMAGE=docker.io/library/ubuntu:24.04
-
-# RUN
-podman run --rm=false --name build-step "$IMAGE" \
-  /bin/sh -c 'apt-get update && apt-get install -y curl'
-IMAGE=$(podman commit build-step | tail -1)
-podman rm -f build-step
-
-# COPY (mount source, cp inside container, commit)
-podman run --rm=false --name build-step \
-  -v /path/to/local/file.conf:/mnt/file.conf:ro \
-  "$IMAGE" /bin/sh -c 'cp /mnt/file.conf /etc/file.conf'
-IMAGE=$(podman commit build-step | tail -1)
-podman rm -f build-step
-
-podman tag "$IMAGE" my-image:latest
-```
+If `podman build` fails for a specific case, execute steps manually with
+`podman run --rm=false` + `podman commit` for each RUN/COPY step.

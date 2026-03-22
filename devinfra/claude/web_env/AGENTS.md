@@ -24,36 +24,15 @@ If a difference can be fixed by updating the Dockerfile (pinning a version, addi
 The build works from **any machine** with Docker and network access — it does not
 require running inside the live Claude Code web container.
 
-**Standard build procedure:**
-
 ```bash
-# 1. Fetch .deb packages from Ubuntu snapshot archives (portable, no dpkg-repack)
-bazel run //devinfra/claude/web_env/tools:fetch_debs
-
-# 2. Build the Docker image and generate diff report
+# Full build + diff (calls fetch_debs automatically)
 bazel run //devinfra/claude/web_env/tools:build_and_diff
-```
 
-Or run `build_and_diff` directly — it calls `fetch_debs` automatically:
-
-```bash
-bazel run //devinfra/claude/web_env/tools:build_and_diff
-```
-
-This script:
-
-1. Fetches .deb packages from pinned Ubuntu snapshot archives and PPAs
-2. Builds the Dockerfile with Docker (`docker build --network=host`)
-3. Captures manifests from live and built images (exports built image via `docker export | tar -x`)
-4. Generates `diff_report.md`
-
-If you only need to regenerate the diff (image already built):
-
-```bash
+# Diff only (image already built)
 bazel run //devinfra/claude/web_env/tools:build_and_diff -- --diff-only
 ```
 
-**Commit `diff_report.md`** along with your Dockerfile/rootfs changes. The diff report documents the current delta between built and live containers.
+**Commit `diff_report.md`** along with Dockerfile/rootfs changes.
 
 ### Package Fetching
 
