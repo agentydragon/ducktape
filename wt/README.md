@@ -48,7 +48,7 @@ main_repo: /path/to/repo # Required
 worktrees_dir: /path/to/worktrees # Required
 branch_prefix: feature/ # Required
 upstream_branch: main # Required
-github_repo: owner/repo # Required
+github_repo: owner/repo # Required when github_enabled=true
 ```
 
 Optional: `log_operations`, `cow_method` (auto|reflink|copy|rsync), `hydrate_worktrees`, `github_enabled`, `gitstatusd_path`, `post_creation_script`, `post_creation_timeout`.
