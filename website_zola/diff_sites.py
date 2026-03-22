@@ -9,6 +9,7 @@ import html
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from xml.etree.ElementTree import Comment
 
 import html5lib
 import jinja2
@@ -45,6 +46,11 @@ def hakyll_to_zola_path(rel: str) -> str | None:
 def normalize_html(content: str) -> str:
     """Parse HTML with html5lib (WHATWG spec) and re-serialize canonically."""
     doc = html5lib.parse(content, treebuilder="etree", namespaceHTMLElements=False)
+    # Strip all HTML comments from the tree.
+    for parent in doc.iter():
+        for child in list(parent):
+            if child.tag is Comment:
+                parent.remove(child)
     serialized = html5lib.serialize(
         doc, tree="etree", quote_attr_values="always", omit_optional_tags=False, alphabetical_attributes=True
     )
