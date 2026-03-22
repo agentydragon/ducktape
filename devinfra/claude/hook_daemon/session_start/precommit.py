@@ -5,27 +5,24 @@ Calls pre-commit's Python API directly rather than shelling out.
 
 import logging
 import threading
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 from pre_commit.commands.install_uninstall import install, install_hooks
 from pre_commit.constants import VERSION as PRE_COMMIT_VERSION
 from pre_commit.store import Store
-from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
 
-class PrecommitNotInstalled(BaseModel):
+@dataclass(frozen=True)
+class PrecommitNotInstalled:
     """pre-commit hook was not installed (install failed, etc.)."""
 
-    kind: Literal["not_installed"] = "not_installed"
 
-
-class PrecommitInstallingHooks(BaseModel):
+@dataclass(frozen=True)
+class PrecommitInstallingHooks:
     """pre-commit hook freshly installed and background `install-hooks` is running."""
-
-    kind: Literal["installing_hooks"] = "installing_hooks"
 
 
 PrecommitSetup = PrecommitNotInstalled | PrecommitInstallingHooks
