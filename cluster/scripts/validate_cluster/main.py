@@ -32,6 +32,7 @@ from cluster.scripts.validate_cluster.checks import (
     check_controller_resource_health_checks,
     check_crd_layering,
     check_duplicate_external_secrets,
+    check_goldilocks_namespace_labels,
     find_orphaned_files,
 )
 from cluster.scripts.validate_cluster.flux import validate_flux_build
@@ -104,6 +105,9 @@ async def main() -> int:
 
     # Check authentik blueprint completeness
     global_errors.extend(check_blueprint_completeness(root))
+
+    # Check goldilocks namespace labels
+    global_errors.extend(check_goldilocks_namespace_labels(cluster))
 
     # Validate dependencies
     if not args.skip_dependencies:

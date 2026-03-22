@@ -74,6 +74,22 @@ def check_controller_resource_health_checks(cluster: ParsedCluster, k8s_dir: Pat
     return check_controller_health_checks(cluster, k8s_dir, repo_root)
 
 
+def check_goldilocks_namespace_labels(cluster: ParsedCluster) -> list[str]:
+    """Check that namespaces with a goldilocks vpa-update-mode label also have goldilocks enabled."""
+    errors = []
+    for file_path, resources in cluster.source_resources.items():
+        for resource in resources:
+            if resource.kind != "Namespace":
+                continue
+            labels = resource.metadata.labels
+            if "goldilocks.fairwinds.com/vpa-update-mode" in labels and labels.get("goldilocks.fairwinds.com/enabled") != "true":
+                errors.append(
+                    f"{file_path}: namespace '{resource.name}' has goldilocks.fairwinds.com/vpa-update-mode "
+                    f"but is missing goldilocks.fairwinds.com/enabled=\"true\""
+                )
+    return errors
+
+
 def check_blueprint_completeness(k8s_dir: Path) -> list[str]:
     """Check that all blueprint YAML files are listed in the authentik configMapGenerator."""
     authentik_kust = k8s_dir / "authentik" / "kustomization.yaml"

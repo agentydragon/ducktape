@@ -16,6 +16,7 @@ class K8sMetadata(BaseModel):
 
     name: str = ""
     namespace: str = ""
+    labels: dict[str, str] = Field(default_factory=dict)
 
 
 class HelmChartSpec(BaseModel):

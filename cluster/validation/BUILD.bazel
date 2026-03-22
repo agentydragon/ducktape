@@ -205,6 +205,7 @@ py_test(
         ":cluster",
         ":dependencies",
         ":health_checks",
+        "//cluster/scripts/validate_cluster:checks",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

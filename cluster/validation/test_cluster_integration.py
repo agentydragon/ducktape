@@ -17,6 +17,7 @@ import pytest
 import pytest_bazel
 import yaml
 
+from cluster.scripts.validate_cluster.checks import check_goldilocks_namespace_labels
 from cluster.validation.cluster import ParsedCluster, parse_cluster
 from cluster.validation.dependencies import validate_dependencies
 from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
@@ -86,6 +87,12 @@ def test_no_unwired_flux_kustomizations(cluster: ParsedCluster, k8s_dir: Path) -
     assert not unwired, "flux-kustomization.yaml files not listed in root kustomization.yaml:\n" + "\n".join(
         f"  {f}" for f in unwired
     )
+
+
+def test_goldilocks_namespace_labels(cluster: ParsedCluster) -> None:
+    """Namespaces with goldilocks vpa-update-mode must also have goldilocks enabled."""
+    errors = check_goldilocks_namespace_labels(cluster)
+    assert not errors, "\n".join(errors)
 
 
 def test_blueprint_completeness(k8s_dir: Path) -> None:
