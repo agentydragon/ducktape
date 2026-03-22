@@ -2,7 +2,7 @@
 # Setup script for Claude Code web sessions.
 #
 # Installs:
-#   1. claude-hooks wheel (hook dispatcher, statusline, pre-commit, ducktape-precommit)
+#   1. claude-hooks wheel (hook dispatcher, statusline, ducktape-precommit, pre-commit)
 #   2. Skills tarball (AI agent skills deployed to ~/.claude/skills/)
 #
 # Usage (Claude Code web UI setup command):
@@ -20,7 +20,9 @@ SKILLS_TAG="${DUCKTAPE_SKILLS_TAG:-skills-latest}"
 BASE_URL="https://github.com/agentydragon/ducktape/releases/download"
 
 echo "Installing claude-hooks wheel (tag: ${HOOKS_TAG})..."
-uv tool install --force "${BASE_URL}/${HOOKS_TAG}/claude_hooks-0.1.0-py3-none-any.whl"
+uv tool install --force \
+  --with-executables-from pre-commit \
+  "${BASE_URL}/${HOOKS_TAG}/claude_hooks-0.1.0-py3-none-any.whl"
 
 echo "Installing skills (tag: ${SKILLS_TAG})..."
 mkdir -p ~/.claude/skills

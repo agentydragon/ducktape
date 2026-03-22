@@ -184,9 +184,6 @@ py_wheel(
             "claude-hook = devinfra.claude.hook_daemon.hook_dispatch:main",
             "claude-statusline = devinfra.claude.statusline:main",
             "ducktape-precommit = devinfra.precommit.ducktape_precommit:main",
-            # pre-commit is a dependency but uv tool install only exposes
-            # this wheel's entry points. Re-export so it's on PATH.
-            "pre-commit = pre_commit.main:main",
         ],
     },
     python_requires = ">=3.13",
