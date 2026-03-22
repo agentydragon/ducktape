@@ -1,12 +1,14 @@
-"""Compare Hakyll and Zola static site outputs with DOM-aware HTML normalization.
+"""Compare Hakyll static site output against another generator with DOM-aware HTML normalization.
 
 Produces an HTML report with side-by-side diffs and inline change highlighting.
 """
 
 import difflib
+import enum
 import filecmp
 import html
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from xml.etree.ElementTree import Comment
@@ -16,8 +18,19 @@ import jinja2
 
 SKIP_PATTERNS = ("llm-instruct/", "llm/")
 
+PathMapper = Callable[[str], str | None]
 
-def hakyll_to_zola_path(rel: str) -> str | None:
+
+class Mode(enum.StrEnum):
+    ZOLA = "zola"
+    HUGO = "hugo"
+
+    @property
+    def path_mapper(self) -> PathMapper:
+        return _PATH_MAPPERS[self]
+
+
+def _hakyll_to_zola_path(rel: str) -> str | None:
     """Map a Hakyll path to the expected Zola path (directory-style URLs)."""
     match rel:
         case "about.html":
@@ -44,7 +57,7 @@ def hakyll_to_zola_path(rel: str) -> str | None:
             return rel
 
 
-def hakyll_to_hugo_path(rel: str) -> str | None:
+def _hakyll_to_hugo_path(rel: str) -> str | None:
     """Map a Hakyll path to the expected Hugo path (identity — uglyURLs)."""
     match rel:
         case "css/default.scss" | "CNAME":
@@ -55,10 +68,12 @@ def hakyll_to_hugo_path(rel: str) -> str | None:
             return rel
 
 
+_PATH_MAPPERS: dict[Mode, PathMapper] = {Mode.ZOLA: _hakyll_to_zola_path, Mode.HUGO: _hakyll_to_hugo_path}
+
+
 def normalize_html(content: str) -> str:
     """Parse HTML with html5lib (WHATWG spec) and re-serialize canonically."""
     doc = html5lib.parse(content, treebuilder="etree", namespaceHTMLElements=False)
-    # Strip all HTML comments from the tree.
     for parent in doc.iter():
         for child in list(parent):
             if child.tag is Comment:
@@ -69,12 +84,12 @@ def normalize_html(content: str) -> str:
     return "\n".join(line.strip() for line in serialized.splitlines())
 
 
-def normalize_text(hakyll_text: str, zola_text: str, is_html: bool) -> tuple[list[str], list[str]]:
+def normalize_text(old_text: str, new_text: str, *, is_html: bool) -> tuple[list[str], list[str]]:
     """Normalize and split into lines for comparison."""
     if is_html:
-        hakyll_text = normalize_html(hakyll_text)
-        zola_text = normalize_html(zola_text)
-    return hakyll_text.splitlines(), zola_text.splitlines()
+        old_text = normalize_html(old_text)
+        new_text = normalize_html(new_text)
+    return old_text.splitlines(), new_text.splitlines()
 
 
 # --- Inline diff rendering ---
@@ -110,6 +125,22 @@ class DiffRow:
     new_content: str
 
 
+class FileStatus(enum.StrEnum):
+    IDENTICAL = "identical"
+    DIFFERENT = "different"
+    HAKYLL_ONLY = "hakyll-only"
+    TARGET_ONLY = "target-only"
+
+
+@dataclass
+class FileEntry:
+    rel: str
+    target_rel: str
+    status: FileStatus
+    anchor: str
+    diff_rows: list[DiffRow] = field(default_factory=list)
+
+
 def build_diff_rows(old_lines: list[str], new_lines: list[str]) -> list[DiffRow]:
     """Build diff rows for the template."""
     sm = difflib.SequenceMatcher(None, old_lines, new_lines)
@@ -139,24 +170,12 @@ def build_diff_rows(old_lines: list[str], new_lines: list[str]) -> list[DiffRow]
     return rows
 
 
-# --- Report data model ---
-
-
-@dataclass
-class FileEntry:
-    rel: str
-    zola_rel: str
-    status: str  # "identical", "different", "hakyll-only", "zola-only"
-    anchor: str
-    diff_rows: list[DiffRow] = field(default_factory=list)
-
-
 REPORT_TEMPLATE = jinja2.Template("""\
 <!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
-<title>Site Diff: Hakyll vs Zola</title>
+<title>Site Diff: Hakyll vs {{ mode | title }}</title>
 <style>
 * { box-sizing: border-box; }
 body { font-family: system-ui, sans-serif; margin: 1em; background: #fafafa; }
@@ -167,13 +186,13 @@ h2 { font-size: 1.1em; margin-top: 2em; }
 .stat.identical { background: #d4edda; color: #155724; }
 .stat.different { background: #f8d7da; color: #721c24; }
 .stat.hakyll-only { background: #fff3cd; color: #856404; }
-.stat.zola-only { background: #d1ecf1; color: #0c5460; }
+.stat.target-only { background: #d1ecf1; color: #0c5460; }
 details { margin: 0.3em 0; }
 summary { cursor: pointer; font-family: monospace; padding: 0.3em; font-size: 13px; }
 summary.identical { color: #155724; }
 summary.different { color: #721c24; font-weight: bold; }
 summary.hakyll-only { color: #856404; }
-summary.zola-only { color: #0c5460; }
+summary.target-only { color: #0c5460; }
 table.diff { border-collapse: collapse; width: 100%; font-size: 12px; }
 table.diff thead th {
   background: #e9ecef; padding: 4px 8px; text-align: left;
@@ -197,23 +216,23 @@ span.ins { background: #acf2bd; border-radius: 2px; }
 .toc a.identical { color: #155724; }
 .toc a.different { color: #721c24; font-weight: bold; }
 .toc a.hakyll-only { color: #856404; }
-.toc a.zola-only { color: #0c5460; }
+.toc a.target-only { color: #0c5460; }
 </style>
 </head>
 <body>
-<h1>Site Diff: Hakyll vs Zola</h1>
+<h1>Site Diff: Hakyll vs {{ mode | title }}</h1>
 
 <div class="summary">
   <span class="stat identical">Identical: {{ counts.identical }}</span>
   <span class="stat different">Different: {{ counts.different }}</span>
   <span class="stat hakyll-only">Hakyll-only: {{ counts.hakyll_only }}</span>
-  <span class="stat zola-only">Zola-only: {{ counts.zola_only }}</span>
+  <span class="stat target-only">{{ mode | title }}-only: {{ counts.target_only }}</span>
 </div>
 
 <h2>Table of Contents</h2>
 <div class="toc">
 {% for entry in entries %}
-  <div><a class="{{ entry.status }}" href="#{{ entry.anchor }}">{{ entry.rel }}{% if entry.status == 'different' %} ↔ {{ entry.zola_rel }}{% endif %}</a></div>
+  <div><a class="{{ entry.status }}" href="#{{ entry.anchor }}">{{ entry.rel }}{% if entry.status == 'different' %} ↔ {{ entry.target_rel }}{% endif %}</a></div>
 {% endfor %}
 </div>
 
@@ -222,14 +241,14 @@ span.ins { background: #acf2bd; border-radius: 2px; }
 <details id="{{ entry.anchor }}"{% if entry.status == 'different' %} open{% endif %}>
   <summary class="{{ entry.status }}">
     {{ entry.status | upper }}  {{ entry.rel }}
-    {%- if entry.status == 'different' %}  ↔  {{ entry.zola_rel }}{% endif %}
-    {%- if entry.status == 'hakyll-only' %}  (expected: {{ entry.zola_rel }}){% endif %}
+    {%- if entry.status == 'different' %}  ↔  {{ entry.target_rel }}{% endif %}
+    {%- if entry.status == 'hakyll-only' %}  (expected: {{ entry.target_rel }}){% endif %}
   </summary>
   {% if entry.diff_rows %}
   <table class="diff">
     <thead><tr>
       <th colspan="2">hakyll/{{ entry.rel }}</th>
-      <th colspan="2">zola/{{ entry.zola_rel }}</th>
+      <th colspan="2">{{ mode }}/{{ entry.target_rel }}</th>
     </tr></thead>
     <tbody>
     {% for row in entry.diff_rows %}
@@ -249,9 +268,6 @@ span.ins { background: #acf2bd; border-radius: 2px; }
 """)
 
 
-PATH_MAPPERS = {"zola": hakyll_to_zola_path, "hugo": hakyll_to_hugo_path}
-
-
 def main() -> None:
     if len(sys.argv) < 4 or len(sys.argv) > 5:
         print(f"Usage: {sys.argv[0]} <hakyll_dir> <target_dir> <output.html> [--mode=zola|hugo]", file=sys.stderr)
@@ -261,13 +277,12 @@ def main() -> None:
     target_dir = Path(sys.argv[2])
     output_path = Path(sys.argv[3])
 
-    mode = "zola"
+    mode = Mode.ZOLA
     for arg in sys.argv[4:]:
         if arg.startswith("--mode="):
-            mode = arg.split("=", 1)[1]
+            mode = Mode(arg.split("=", 1)[1])
 
-    map_path = PATH_MAPPERS[mode]
-
+    map_path = mode.path_mapper
     entries: list[FileEntry] = []
     expected_target_paths: set[str] = set()
 
@@ -285,7 +300,7 @@ def main() -> None:
         target_file = target_dir / target_rel
 
         if not target_file.exists():
-            entries.append(FileEntry(rel=rel, zola_rel=target_rel, status="hakyll-only", anchor=anchor))
+            entries.append(FileEntry(rel=rel, target_rel=target_rel, status=FileStatus.HAKYLL_ONLY, anchor=anchor))
             continue
 
         suffix = hakyll_file.suffix
@@ -293,18 +308,20 @@ def main() -> None:
         is_text = suffix in {".html", ".xml", ".css", ".txt"}
 
         if is_text:
-            old_lines, new_lines = normalize_text(hakyll_file.read_text(), target_file.read_text(), is_html)
+            old_lines, new_lines = normalize_text(hakyll_file.read_text(), target_file.read_text(), is_html=is_html)
             if old_lines == new_lines:
-                entries.append(FileEntry(rel=rel, zola_rel=target_rel, status="identical", anchor=anchor))
+                entries.append(FileEntry(rel=rel, target_rel=target_rel, status=FileStatus.IDENTICAL, anchor=anchor))
             else:
                 rows = build_diff_rows(old_lines, new_lines)
                 entries.append(
-                    FileEntry(rel=rel, zola_rel=target_rel, status="different", anchor=anchor, diff_rows=rows)
+                    FileEntry(
+                        rel=rel, target_rel=target_rel, status=FileStatus.DIFFERENT, anchor=anchor, diff_rows=rows
+                    )
                 )
         elif filecmp.cmp(hakyll_file, target_file, shallow=False):
-            entries.append(FileEntry(rel=rel, zola_rel=target_rel, status="identical", anchor=anchor))
+            entries.append(FileEntry(rel=rel, target_rel=target_rel, status=FileStatus.IDENTICAL, anchor=anchor))
         else:
-            entries.append(FileEntry(rel=rel, zola_rel=target_rel, status="different", anchor=anchor))
+            entries.append(FileEntry(rel=rel, target_rel=target_rel, status=FileStatus.DIFFERENT, anchor=anchor))
 
     for target_file in sorted(target_dir.rglob("*")):
         if not target_file.is_file():
@@ -312,20 +329,20 @@ def main() -> None:
         rel = str(target_file.relative_to(target_dir))
         if rel not in expected_target_paths:
             anchor = rel.replace("/", "-").replace(".", "-")
-            entries.append(FileEntry(rel=rel, zola_rel=rel, status="zola-only", anchor=anchor))
+            entries.append(FileEntry(rel=rel, target_rel=rel, status=FileStatus.TARGET_ONLY, anchor=anchor))
 
     counts = {
-        "identical": sum(1 for e in entries if e.status == "identical"),
-        "different": sum(1 for e in entries if e.status == "different"),
-        "hakyll_only": sum(1 for e in entries if e.status == "hakyll-only"),
-        "zola_only": sum(1 for e in entries if e.status == "zola-only"),
+        "identical": sum(1 for e in entries if e.status == FileStatus.IDENTICAL),
+        "different": sum(1 for e in entries if e.status == FileStatus.DIFFERENT),
+        "hakyll_only": sum(1 for e in entries if e.status == FileStatus.HAKYLL_ONLY),
+        "target_only": sum(1 for e in entries if e.status == FileStatus.TARGET_ONLY),
     }
 
-    report_html = REPORT_TEMPLATE.render(entries=entries, counts=counts)
+    report_html = REPORT_TEMPLATE.render(entries=entries, counts=counts, mode=mode)
     output_path.write_text(report_html)
     print(f"Report: {output_path}")
     print(
-        f"  Identical: {counts['identical']}  Different: {counts['different']}  Hakyll-only: {counts['hakyll_only']}  Zola-only: {counts['zola_only']}"
+        f"  Identical: {counts['identical']}  Different: {counts['different']}  Hakyll-only: {counts['hakyll_only']}  {mode.title()}-only: {counts['target_only']}"
     )
 
 
