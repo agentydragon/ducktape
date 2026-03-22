@@ -1,570 +1,280 @@
 # Cluster Roadmap
 
-## 🔥 Next Steps
+**Status**: 5 nodes (2 VPS + 1 Proxmox CP + 1 GPU worker + 1 roaming laptop).
+Cilium Gateway API, DNS automation, Authentik SSO. PowerDNS and Authentik on
+CloudNativePG `local-path`. See <changelog.md> for history.
 
-**Status**: Running with 5 nodes (2 VPS + 1 Proxmox CP + 1 GPU worker + 1 roaming laptop).
-Cilium Gateway API serving HTTPS traffic. DNS automation working. Authentik auth verified.
-PowerDNS and Authentik migrated to CloudNativePG on `local-path`.
-rugged (Dell Rugged 12) joined as roaming worker via `k8s-worker.nix` + Nebula, with
-`node-role.kubernetes.io/roaming=true:NoSchedule` taint.
-
-See <changelog.md> for detailed change history.
-
-### Suspended Kustomizations
+## Suspended Kustomizations
 
 - **Kagent**: `kagent`, `kagent-namespace`, `kagent-secrets`
-- **Grocy**: `grocy`, `grocy-namespace` — revisit when needed
+- **Grocy**: `grocy`, `grocy-namespace`
 - **Gitea**: `gitea`, `gitea-namespace`, `gitea-secrets`, `gitea-admin-token`,
-  `gitea-servicemonitor`, `authentik-blueprint-gitea-secret` — suspended to reduce
-  VPS memory pressure after 2026-03-17 OOM incident. Re-enable after pod rebalancing
-  or CPX41 upgrade.
-- **BuildBuddy Executor**: `buildbuddy-executor` — suspended (was already scaled to 0
-  replicas). Re-enable when remote execution is needed.
+  `gitea-servicemonitor`, `authentik-blueprint-gitea-secret` — VPS memory pressure
+  (2026-03-17 OOM). Re-enable after rebalancing or CPX41 upgrade.
+- **BuildBuddy Executor**: `buildbuddy-executor` — scaled to 0. Re-enable when needed.
 - **InvenTree**: `inventree`, `inventree-namespace`, `inventree-secrets`,
-  `inventree-token-provisioner`, `authentik-blueprint-inventree-secret` — suspended to
-  reduce VPS memory pressure. Re-enable after pod rebalancing or CPX41 upgrade.
+  `inventree-token-provisioner`, `authentik-blueprint-inventree-secret` — VPS memory pressure.
 
-### Next Actions
+## Next Actions
 
-- [x] **Atlas: add to Nebula mesh** — Proxmox host `atlas` added to mesh (10.42.0.5,
-      groups: hypervisor,proxmox). Cert via Terraform PKI, config via Ansible `nebula`
-      role, DNS via dnsmasq forwarding to lighthouse DNS.
-- [ ] **Prometheus: investigate memory growth and right-size** — Prometheus was OOM-killed
-      8 times in 49 minutes at 2Gi limit (1686Mi usage, WAL replay spikes higher).
-      Currently pinned to wyrm2 with temporary 6Gi limit. Investigate: which scrape
-      targets / metrics drive memory growth, whether `retentionSize: 15GB` causes
-      excessive WAL, and what the steady-state memory footprint actually is. Then
-      right-size the limit (probably 2-3Gi) and revert to a tighter value.
-      See <debug/2026-03-17-cluster-down/observations.md>.
-- [ ] **Prometheus: unpin from wyrm2** — Currently pinned via `nodeSelector:
-kubernetes.io/hostname: wyrm2` as a temporary fix for the 2026-03-17 OOM cascade
-      on VPS nodes (7.5GiB CPX31 too small for Prometheus + 33 other pods). Remove the
-      pin once: (a) PriorityClasses are deployed so Prometheus survives eviction, (b) VPS
-      nodes have enough headroom (CPX41 upgrade or pod rebalancing), and (c) Prometheus
-      memory limit is right-sized. The pin prevents HA and ties Prometheus to a single
-      home node.
-- [ ] **talos-pve-cp-0: evict Longhorn storage** — `talos-pve-cp-0` is a pure control-plane
-      node and should not host Longhorn replicas. Disable scheduling on the node in Longhorn,
-      evict existing replicas to other nodes (wyrm2, VPS), and remove the Longhorn disk
-      configuration. Currently has stopped replicas causing "degraded" volume status.
-- [ ] **Enable low-priority workloads to schedule on rugged (roaming node)** — Add
-      `node-role.kubernetes.io/roaming=true:NoSchedule` toleration to stateless,
-      downtime-tolerant deployments currently pinned to wyrm2: `grocy`, `scanner`,
-      `activitywatch`, `proxmox-proxy`, `props`/`props-registry`. These
-      survive node loss and can offload wyrm2 when rugged is docked. Optionally add
-      `preferredDuringSchedulingIgnoredDuringExecution` affinity for `region: roaming`
-      to actively shift load. Skip: stateful sets, `ollama`, monitoring stack.
-- [ ] **OpenClaw: obfuscation detection forces approval despite `security: full`** —
-      Upstream commit `0e28e50b4` (PR #24287, issue #8592) adds unconditional obfuscation
-      detection that OR-overrides `requiresExecApproval` even when `ask: off` +
-      `security: full`. Triggers on `python3 -c "...exec/eval/base64..."` patterns.
-      Options: patch custom image to check security level before triggering, file
-      upstream issue arguing `security: full` should opt out, or refine agent prompts
-      to avoid inline Python with those keywords.
-- [ ] **OpenClaw: fix Ollama model discovery timeout on startup** — `TimeoutError` on
-      every pod restart (Nebula not ready). Options: init container wait, retry with
-      backoff, or `startupProbe` delay.
-- [ ] **Plaid integration: fix onboarding** — `link/token/create` returns 400.
-      Plaid's production onboarding process is involved (redirect URI registration,
-      per-product approval, environment-specific keys). Revisit when needed.
-- [ ] **Grocy: provision API token for agent access**
-- [x] **Harbor: co-locate core and Redis on same node** — Harbor core crashes on startup
-      when Redis is on a different node and Cilium hasn't fully programmed the cross-node
-      eBPF datapath yet (`connect: operation not permitted`). Add pod affinity between
-      `harbor-core` and `harbor-redis` (or pin both to the same node) to avoid transient
-      cross-node connectivity failures during rescheduling.
-- [ ] **Consider moving more PVCs to `local-path`** — Proxmox CSI has 29 LUN hard limit.
-      Candidates: `langfuse/langfuse-s3`, `monitoring/alertmanager-*`, `monitoring/prometheus-*`,
+- [ ] Prometheus: investigate memory growth and right-size (OOM-killed 8x at 2Gi, pinned to wyrm2 at 6Gi)
+- [ ] Prometheus: unpin from wyrm2 (blocked on PriorityClasses + right-sizing + VPS headroom)
+- [ ] `talos-pve-cp-0`: evict Longhorn storage (pure CP node, has stopped replicas)
+- [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `scanner`, `activitywatch`,
+      `proxmox-proxy`, `props`/`props-registry`)
+- [ ] OpenClaw: obfuscation detection forces approval despite `security: full`
+      (upstream `0e28e50b4`, PR #24287)
+- [ ] OpenClaw: fix Ollama model discovery timeout on startup (Nebula not ready)
+- [ ] OpenClaw: eliminate one-time token entry
+- [ ] Plaid integration: fix onboarding (`link/token/create` returns 400)
+- [ ] Grocy: provision API token for agent access
+- [ ] Move more PVCs to `local-path` (Proxmox CSI 29 LUN limit). Candidates:
+      `langfuse/langfuse-s3`, `monitoring/alertmanager-*`, `monitoring/prometheus-*`,
       `monitoring/storage-tempo-0`, `monitoring/kube-prometheus-stack-grafana`,
       `loki/storage-loki-stack-0`, `harbor/harbor-jobservice`
-- [ ] **Re-enable MFA** (TOTP/WebAuthn) once device enrollment is set up
-- [ ] **Wire `scripts/check-authentik-login.py` into bootstrap/CI**
-- [ ] **Gatus: Harbor robot token for authenticated `/v2/` probe**
-- [ ] **Nix cache: initialize Attic cache** — No caches created yet. Run `attic cache create main` + `attic cache configure main --public`. May need init Job or interactive setup.
-- [ ] **OpenClaw: eliminate one-time token entry** — Options: operator bootstrap config,
-      gateway-side injection, or upstream PR for `"trusted-proxy"` in `sharedAuthOk`.
-- [ ] **Proxy outpost HA: shared session storage** — 1 replica limit (sessions in `/dev/shm`).
-      Options: `CiliumEnvoyConfig` cookie hash, Gateway API `BackendLBPolicy`, upstream fix.
-- [ ] **Airlock OAuth: upgrade Google scopes (needs approval flow)** — Add write
-      scopes once agent approval mechanism is in place: `calendar` (read-write),
-      `gmail.send`, `gmail.compose` (drafts + send), `drive` (read-write),
-      `spreadsheets` (read-write).
-- [ ] **Airlock OAuth: add Google Photos readonly** —
-      `photoslibrary.readonly`. Enable Photos Library API in GCP project.
-- [ ] **Airlock OAuth: add Google Tasks readonly** —
-      `tasks.readonly`. Enable Tasks API in GCP project.
-- [ ] **Airlock OAuth: add Google Slides readonly** —
-      `presentations.readonly`. Enable Slides API in GCP project.
-- [ ] **Airlock OAuth: add Google Forms readonly** —
-      `forms.body.readonly` + `forms.responses.readonly`. Enable Forms API in GCP project.
-- [ ] **Airlock OAuth: reflect only access tokens** — Currently the Reflector-mirrored
-      secret contains the long-lived refresh token. Consider reflecting only the
-      short-lived access token to consumer namespaces, keeping refresh tokens in the
-      `airlock` namespace only. Reduces blast radius if a consumer namespace is
-      compromised.
-- [ ] **Proxmox OIDC auth via Authentik** — Proxmox supports native OpenID Connect
-      realms (`Datacenter → Permissions → Realms → Add → OpenID Connect`). Create an
-      OAuth2/OIDC provider in Authentik for Proxmox, configure the realm in PVE with
-      the issuer URL, client ID, and client secret. This lets users authenticate to the
-      Proxmox web UI via Authentik SSO (complementing the proxy outpost layer at
-      `atlas.allegedly.works` which handles network-level access). Needs: Authentik
-      blueprint for OIDC provider, Vault secret for client credentials, PVE realm config
-      (manual or via API).
-- [ ] **Proxmox SPICE proxy routing** — Configure `spice_proxy` in PVE datacenter config
-      to point at `atlas.allegedly.works` for SPICE access through the cluster ingress.
-- [ ] **Proxmox: switch to direct HTTPRoute after OIDC auth** — Once PVE uses native
-      Authentik OIDC (see above), the proxy outpost wrapper becomes redundant. Switch
-      from outpost-based HTTPRoute to a direct HTTPRoute (like Vault/Gitea pattern),
-      update Gatus monitor from internal service URL to `https://atlas.allegedly.works`,
-      and remove proxmox from `shared-proxy-outpost.yaml`.
-- [ ] **File Browser (scanner): switch to native OAuth2** — File Browser supports native
-      OAuth2/OIDC. Currently behind proxy outpost at `scanbox.allegedly.works`. Migration
-      follows the Gatus pattern: OAuth2 provider blueprint, `sso/scanner-filebrowser`
-      Vault secret, ESO into scanner namespace, direct HTTPRoute, updated networkpolicy
-      (gateway-system instead of outpost), remove from `shared-proxy-outpost.yaml`.
-- [ ] **Ollama: per-user auth** — Options: Authentik JWTs, LiteLLM proxy.
-      Currently the LiteLLM openai-chat models use a dummy `api_key: "ollama"`
-      because Ollama accepts any key. Ollama 0.18 does NOT support native API
-      key auth for self-hosted instances (`OLLAMA_API_KEY` is only for
-      ollama.com cloud). Once per-user auth is deployed, replace the dummy key
-      with a real credential (stored in Vault, injected via ESO).
-- [ ] **LiteLLM: ollama-native tool_calls not forwarded** — The `ollama/`
-      provider in LiteLLM drops `tool_calls` from Ollama responses (returns
-      empty content + `finish_reason: "stop"`). Tool calling works correctly
-      via Ollama's native `/api/chat` endpoint and via the `openai/` provider
-      (Ollama's `/v1` OpenAI-compatible endpoint). Prefer `openai-chat` model
-      variants for tool-using agents. Investigate whether this is a LiteLLM
-      bug or a missing config option.
-- [ ] **Harbor terraform: switch to robot accounts** for least-privilege
-- [ ] **Harbor CI robot: scope per-namespace pull secrets to read-only on specific projects** —
-      `activitywatch`, `inventree`, `openclaw`, `props` namespaces all use the same system-level
-      `ci` robot account (`kv/harbor/ci-robot`) which has push+pull on all projects. Create
-      project-scoped read-only robot accounts per namespace for imagePullSecrets (pull-only,
-      scoped to the relevant project). Keep the system-level `ci` robot for CI push only.
-- [ ] **Consider removing `gitea-admin-token` Job** — SSO moved to blueprints, nothing
-      consumes the token. May be useful for future Gitea API automation.
-- [ ] **Harbor proxy cache: add GHCR credentials for private repos** — 403 on
-      `openclaw/openclaw`. Needs GitHub PAT (`read:packages`) in Vault → ESO → Harbor.
-- [ ] **Verify ntfy.sh notifications** — confirm Flux failure alerts arrive on phone
-- [ ] **ActivityWatch: Gatus health check** — Add Gatus monitor for
-      `activitywatch-readonly.activitywatch:5600/api/0/info` (intra-cluster).
-      Detect poisoned-lock / SQLite issues before they go unnoticed.
-- [ ] **ActivityWatch: Android sync** — not feasible with current upstream (`aw-android`
-      embeds its own server, no remote sync). Revisit when `aw-sync` ships for Android
+- [ ] Re-enable MFA (TOTP/WebAuthn) once device enrollment is set up
+- [ ] Wire `scripts/check-authentik-login.py` into bootstrap/CI
+- [ ] Gatus: Harbor robot token for authenticated `/v2/` probe
+- [ ] Nix cache: initialize Attic cache (`attic cache create main` + configure)
+- [ ] Proxy outpost HA: shared session storage (1 replica limit, sessions in `/dev/shm`)
+- [ ] Airlock OAuth: upgrade Google scopes (needs approval flow) — `calendar`, `gmail.send`,
+      `gmail.compose`, `drive`, `spreadsheets`
+- [ ] Airlock OAuth: add readonly scopes — Photos, Tasks, Slides, Forms
+- [ ] Airlock OAuth: reflect only access tokens (not refresh tokens) to consumer namespaces
+- [ ] Proxmox OIDC auth via Authentik (native OIDC realm in PVE)
+- [ ] Proxmox SPICE proxy routing via cluster ingress
+- [ ] Proxmox: switch to direct HTTPRoute after OIDC auth (remove proxy outpost wrapper)
+- [ ] File Browser (scanner): switch to native OAuth2/OIDC
+- [ ] Ollama: per-user auth (Authentik JWTs or LiteLLM proxy)
+- [ ] LiteLLM: `ollama/` provider drops `tool_calls` — use `openai-chat` variants for now
+- [ ] Harbor terraform: switch to robot accounts
+- [ ] Harbor CI robot: scope per-namespace pull secrets to read-only per project
+- [ ] Consider removing `gitea-admin-token` Job (SSO moved to blueprints)
+- [ ] Harbor proxy cache: add GHCR credentials for private repos (403 on `openclaw/openclaw`)
+- [ ] Verify ntfy.sh notifications
+- [ ] ActivityWatch: Gatus health check (`activitywatch-readonly:5600/api/0/info`)
+- [ ] ActivityWatch: public access via Authentik proxy outpost
 
----
+## Production Cutover (`agentydragon.com`)
 
-## 📋 Production Cutover (`agentydragon.com`)
-
-- [x] Atlas Proxmox accessible via Nebula mesh
 - [ ] Website hosted in cluster, verify accessible
 - [ ] Update `agentydragon.com` DNS to point to cluster
-- [ ] **Delete headscale-cleanup GitHub releases** — `headscale-cleanup-*` and
-      `headscale-cleanup-latest` releases on GitHub. Tool has been removed from the repo.
-- [ ] **Decommission ansible-managed VPS** — the old VPS running `agentydragon.com` is
-      being retired. Before decommission:
-  - [x] Back up InvenTree data from VPS (database + media) — backed up to `agentydragon.com-vps-backups/`
-  - [x] Back up Trilium data from VPS — backed up to `agentydragon.com-vps-backups/`, Ansible role deleted
-  - [x] Clean up VPS services — deleted Grocy, ActivityWatch, webhook-inbox, llm-html,
-        bazel-remote-cache data and containers. Stopped/disabled aw-server, headscale,
-        tailscaled. Removed ActivityWatch Ansible role.
-  - [x] Migrate Syncthing to cluster (see file sync below) or alternative — data backed up to `agentydragon.com-vps-backups/syncthing/`, service stopped on VPS
-  - [ ] Clean up remaining VPS: stale nginx sites, ~~PostgreSQL 14+16~~, Let's Encrypt certs,
-        stale home dirs (`/home/{trilium,grocy,pygmy,bazel-remote-cache}`), `/tmp` tarball
-  - [ ] Verify no remaining services depend on the old VPS
+- [x] ~~Delete `headscale-cleanup-*` GitHub releases~~ — done
+- [ ] Decommission ansible-managed VPS:
+  - [x] ~~Clean up LE certs~~ — deleted unused certs, kept `adgn.link`, `agentydragon.com`, `vps.agentydragon.com`
+  - [ ] Clean up remaining: stale nginx sites, stale home dirs, `/tmp` tarball
+  - [ ] Verify no remaining services depend on old VPS
   - [ ] Update DNS records, tear down VPS
 
 ### File Sync (Syncthing Replacement)
 
-See <plans/file-sync-evaluation.md> for detailed evaluation of candidates.
+See <plans/file-sync-evaluation.md>.
 
-## 🛡️ VPS-Only Resilience Invariants
+## VPS-Only Resilience Invariants
 
-**Rule**: The following services MUST work/recover with VPS nodes only (Proxmox completely
-down). They must NOT depend on `proxmox-csi-retain` storage or Proxmox-pinned workloads.
+**Rule**: These services MUST work with VPS only (Proxmox completely down). No
+`proxmox-csi-retain` storage or Proxmox-pinned workloads.
 
-| Service   | Requirement                      | Status | Storage            | Notes                                             |
-| --------- | -------------------------------- | ------ | ------------------ | ------------------------------------------------- |
-| DNS       | Must resolve `*.allegedly.works` | ✅     | `local-path`       | CNPG PostgreSQL cluster, 2 instances on VPS nodes |
-| Website   | Must serve `allegedly.works`     | ✅     | None (stateless)   | No Proxmox dependencies                           |
-| Ingress   | Must terminate HTTPS on VPS      | ✅     | None (hostNetwork) | Cilium Gateway on VPS nodes                       |
-| Authentik | Must authenticate users          | ✅     | `local-path`       | All components pinned to VPS                      |
-| Vault     | Must serve secrets               | ✅     | `local-path`       | Raft storage, schedulable on VPS                  |
+| Service   | Status | Storage            | Notes                     |
+| --------- | ------ | ------------------ | ------------------------- |
+| DNS       | OK     | `local-path`       | CNPG 2-instance on VPS    |
+| Website   | OK     | None (stateless)   |                           |
+| Ingress   | OK     | None (hostNetwork) | Cilium Gateway on VPS     |
+| Authentik | OK     | `local-path`       | All components pinned     |
+| Vault     | OK     | `local-path`       | Raft storage, VPS-capable |
 
-### Compliance Checklist
+**Compliance checklist** for critical-path changes:
 
-When adding or modifying critical-path services, verify:
+1. No `proxmox-csi-retain` PVCs in dependency chain
+2. No `topology.kubernetes.io/region: proxmox` affinity
+3. Can schedule on VPS nodes
+4. All upstream dependencies also pass 1-3
 
-1. **No `proxmox-csi-retain`** PVCs in the service's dependency chain
-2. **No `topology.kubernetes.io/region: proxmox`** nodeSelector/affinity
-3. Service can schedule on VPS nodes (no Proxmox-only resource requirements like GPU)
-4. All upstream dependencies (databases, secret stores) also pass checks 1-3
-
-### Proxmox-Dependent Services (Acceptable)
-
-These services tolerate Proxmox downtime by design:
-
-| Service       | Storage              | Impact when Proxmox down           |
-| ------------- | -------------------- | ---------------------------------- |
-| Harbor        | `proxmox-csi-retain` | Container registry unavailable     |
-| Gitea         | `proxmox-csi-retain` | Git hosting unavailable            |
-| Loki          | `proxmox-csi-retain` | Log ingestion stops, no log search |
-| Nix cache     | `proxmox-csi-retain` | Binary cache unavailable           |
-| Grafana       | `proxmox-csi-retain` | Dashboards unavailable             |
-| BuildBuddy    | Proxmox nodes        | Remote execution unavailable       |
-| Ollama        | GPU worker           | LLM inference unavailable          |
-| InvenTree     | `proxmox-csi-retain` | Inventory unavailable              |
-| ActivityWatch | `proxmox-csi-retain` | Activity tracking unavailable      |
+**Proxmox-dependent services** (tolerate downtime by design): Harbor, Gitea, Loki,
+Nix cache, Grafana, BuildBuddy, Ollama, InvenTree, ActivityWatch.
 
 ## Operational Hardening
 
 ### Secrets: Vault SSOT
 
-All application secrets use Terraform → Vault → ESO pattern. Zero ESO Password generators
-remain. Stakater Reloader restarts pods on secret changes. See
-<lessons_learned/2025-11-28-eso-password-generator-desync.md> for historical context.
+Runtime secrets use Terraform -> Vault -> ESO. Bootstrap secrets use SealedSecrets. Zero ESO Password generators remain.
+Stakater Reloader restarts pods on changes. See
+<lessons_learned/2025-11-28-eso-password-generator-desync.md>.
 
 ### Kyverno GitOps Enforcement
 
-Deployed in Audit mode. `require-gitops` ClusterPolicy, HA (3 replicas).
+Deployed in Audit mode (`require-gitops` ClusterPolicy, 3 replicas).
 
-- [ ] Switch to `Enforce` after validation.
-- [ ] **Generic operator exclusion** — Replace per-operator SA whitelist with a generic
-      rule skipping resources with `ownerReferences`. Requires verifying Kyverno
-      `preconditions` support for `request.object.metadata.ownerReferences` length.
-- [ ] **Image registry allowlist** — Kyverno policy restricting images to `ghcr.io`,
-      `docker.io`, `registry.allegedly.works`, `quay.io`.
+- [ ] Switch to `Enforce` after validation
+- [ ] Generic operator exclusion (skip resources with `ownerReferences`)
+- [ ] Image registry allowlist (`ghcr.io`, `docker.io`, `registry.allegedly.works`, `quay.io`)
 
-### Cilium Mutual Authentication (SPIRE) — Paused
+### Cilium Mutual Auth (SPIRE) -- Paused
 
-SPIRE is disabled in `cilium-values.yaml` — install times out during bootstrap on Talos
-(SPIRE pods never become ready). Nebula provides inter-node encryption. Revisit when
-SPIRE/Talos compatibility improves.
+SPIRE disabled — times out on Talos bootstrap. Nebula provides inter-node encryption.
 
-- [ ] **Investigate SPIRE timeout** — determine root cause of SPIRE pod startup failure
-      on Talos. May require Talos-specific securityContext or init container changes.
-- [ ] Once SPIRE works: create test-mode CiliumNetworkPolicies, then promote to required.
+- [ ] Investigate SPIRE timeout on Talos
+- [ ] Once working: test-mode CiliumNetworkPolicies, then promote
 
-### TODO: Firewall Hardening
+### Firewall Hardening
 
-All Hetzner firewall rules currently allow `0.0.0.0/0`. Keep 80/443/53 public; restrict
-K8s API (6443), Talos API (50000-50001), etcd (2379-2380), kubelet (10250), Nebula (4242),
-VXLAN (8472) to admin IPs and inter-node CIDRs.
+All Hetzner rules allow `0.0.0.0/0`. Restrict K8s API (6443), Talos API (50000-50001),
+etcd (2379-2380), kubelet (10250), Nebula (4242), VXLAN (8472) to admin IPs and
+inter-node CIDRs. Keep 80/443/53 public.
 
-### ~~TODO: Remote Proxmox API Access~~ — DONE
+### Kubeconfig Endpoints (Current State)
 
-Proxmox is accessible via Nebula mesh. Any enrolled device can reach the API and web UI
-without being on the home network.
+| Consumer                      | Endpoint                 | Mechanism                                             |
+| ----------------------------- | ------------------------ | ----------------------------------------------------- |
+| Talos nodes (kubelet)         | `localhost:7445`         | KubePrism (built-in Talos API proxy)                  |
+| NixOS workers (wyrm2, rugged) | `localhost:7445`         | haproxy → all CP Nebula IPs (`10.42.0.{1,2,10}:6443`) |
+| TF state / `cluster/.envrc`   | `https://<vps0-ip>:6443` | Direct VPS IP (bootstrap node)                        |
+| `~/.kube/config` (wyrm2)      | `localhost:7445`         | Via local haproxy                                     |
 
-### TODO: Multi-Endpoint Kubeconfig via DNS
+`api.allegedly.works` exists (round-robin VPS IPs, `kube-api-proxy` DaemonSet on port 16443
+with LE cert, managed by `dns-records` TF + `k8s/kube-api-proxy/`). Bootstrappable from
+cluster — tofu-controller creates the DNS record, Flux deploys the proxy.
 
-Kubeconfig points to single VPS IP. Use `api.allegedly.works` resolving to all CP nodes
-for failover. Chicken-and-egg: bootstrap needs direct IP, post-bootstrap rewrites to DNS name.
+- [ ] Patch TF-generated kubeconfig post-bootstrap to use `api.allegedly.works:16443`
 
-### TODO: Back Up persistent-auth Terraform State
+### Backup: persistent-auth Terraform State
 
-`persistent-auth/terraform.tfstate` is local-only SSOT for sealed-secrets keypair, CSI
-tokens, Nix signing key. Minimum: rclone to encrypted cloud storage. Better: S3 backend
-with OpenTofu native state encryption + versioning.
+`persistent-auth/terraform.tfstate` is local-only SSOT. Minimum: rclone to encrypted cloud.
+Better: S3 backend with OpenTofu state encryption + versioning.
 
-### GitHub Webhook triggers reconciliation
+### GitHub Webhook Reconciliation
 
-Flux `Receiver` resources and HTTPRoute deployed at `flux-webhook.allegedly.works`.
-Harbor webhook auto-configured by `harbor-webhook` Terraform. GitHub secrets
-(`HARBOR_ROBOT_USERNAME`, `HARBOR_ROBOT_TOKEN`) and GitHub webhook registered for
-instant Flux GitRepository reconciliation on push.
+Flux `Receiver` at `flux-webhook.allegedly.works`. Harbor webhook auto-configured by
+`harbor-webhook` Terraform.
 
-### TODO: Deploy etcd Backup
+### etcd Backup
 
 Deploy [talos-backup](https://github.com/siderolabs/talos-backup) CronJob with age
-encryption to S3. Covers cluster state loss if 2/3 control-plane nodes fail simultaneously.
+encryption to S3.
 
-### Provision InvenTree API Tokens
+### InvenTree API Token Provisioning
 
-Provisioned via `inventree-token-provisioner` Job (see
-<cluster/k8s/applications/inventree-token-provisioner/>).
+Via `inventree-token-provisioner` Job. TF module -> Vault -> Job execs into pod,
+creates user via Django ORM -> `inventree-api-token` Secret in `openclaw-sandbox`
+and `claude-sandbox`.
 
-- Password: `inventree-tokens` Terraform module → Vault at `kv/inventree/sandbox-agent`
-- Job execs into the InvenTree pod, creates `sandbox-agent` user via Django ORM, fetches
-  its DRF token via `POST /api/user/token/`
-- `inventree-api-token` Secret written to both `openclaw-sandbox` and `claude-sandbox`
+### Velero PVC Backup
 
-### TODO: Deploy Velero for PVC Backup
+Scheduled backups of PVCs (Harbor, Gitea, Loki, Postgres). No backup strategy currently.
 
-Scheduled backups of PVCs (Harbor, Gitea, Loki, Postgres). Critical application data
-currently has no backup strategy. Velero integrates with Proxmox CSI and Hetzner CSI.
+### CiliumNetworkPolicy Rollout
 
-### TODO: CiliumNetworkPolicy Rollout (Security Audit 2026-02-25)
+Most services lack network policies. Goal: default-deny per namespace.
 
-Most services lack network policies. Intra-cluster APIs are unprotected — any pod
-(including openclaw sandbox, props evaluators) can reach sensitive services directly.
-Authentik proxy-backed services (grocy, gatus, hubble-ui, airlock, scanner,
-openclaw, alloy-otlp) now have policies; see the pattern in `cluster/AGENTS.md`.
+**Done**: PowerDNS API, Authentik API, Prometheus, plus all proxy-backed services.
 
-**End goal**: Default-deny per namespace with explicit allow-rules. Use Hubble to
-observe traffic flows first, then generate baseline allow-rules.
+**Priority 1 -- Secrets & DNS**:
 
-**Priority 1 — Secrets & DNS** (unauthenticated admin APIs, high blast radius):
+- [ ] Vault -- restrict to ESO, tofu-controller, Vault namespace
 
-- [ ] **Vault** — restrict ingress to ESO, tofu-controller runner, Vault namespace only.
-      Any pod can currently reach `instance.vault:8200` and attempt auth method exploitation.
-- [x] **PowerDNS API** — restrict `powerdns-api.dns-system:8081` to cert-manager webhook,
-      powerdns-operator, and external-dns. Unauthenticated zone modification = DNS poisoning.
-- [x] **Authentik API** — restrict `authentik-server.authentik:80` to system namespaces
-      and tofu-controller. Unauthenticated `/api/v3/` enables user enumeration, provider
-      tampering, backdoor user creation.
-- [x] **Prometheus** — restrict `prometheus.monitoring:9090` to Grafana, Alertmanager.
-      No auth; exposes full cluster topology, node IPs, resource usage, secret cardinality.
+**Priority 2 -- Application services**:
 
-**Priority 2 — Application services** (unauthenticated APIs, medium blast radius):
+- [ ] Harbor, Ollama, Grafana, Alertmanager, Gitea, Tempo, Langfuse, Headlamp
 
-- [ ] **Harbor** — restrict `harbor.harbor:80` to Flux image-automation, CI pull jobs.
-      Unauthenticated push/pull/API access from any pod.
-- [ ] **Ollama** — restrict `ollama.ollama:11434` to OpenClaw operator, props, LiteLLM.
-      Explicitly exclude openclaw-sandbox (untrusted code → GPU resource exhaustion).
-- [ ] **Grafana** — restrict to Authentik proxy outpost only (intra-cluster dashboard
-      queries bypass SSO).
-- [ ] **Alertmanager** — restrict to Prometheus and webhook receivers. Unauthenticated
-      alert silencing/creation.
-- [ ] **Gitea** — restrict `gitea.gitea:3000` to webhook receivers, Flux, Authentik proxy.
-- [ ] **Tempo** — restrict to Grafana, Alloy only (trace data contains request payloads).
-- [ ] **Langfuse** — restrict to props, OpenClaw telemetry, Authentik proxy.
-- [ ] **Headlamp** — restrict to Authentik proxy only (K8s admin UI).
+**Priority 3 -- Remaining**:
 
-**Priority 3 — Remaining services** (lower risk, still should be locked down):
+- [ ] Cert-Manager, Metrics Server, ESO webhook, OpenClaw sandbox egress, Props, Nix cache
 
-- [ ] **Cert-Manager** — restrict metrics endpoint to monitoring namespace.
-- [ ] **Metrics Server** — restrict to Prometheus, HPA controllers.
-- [ ] **ESO webhook** — restrict to kube-system, flux-system.
-- [ ] **OpenClaw sandbox egress** — expand existing policies to block sandbox access to
-      Vault, Sealed Secrets, Gitea API, Authentik API.
-- [ ] **Props** — restrict to OpenClaw, Authentik proxy.
-- [ ] **Nix cache** — restrict to build clients, Authentik proxy.
+### Pod Security Standards
 
-### TODO: Pod Security Standards
+Apply `restricted` PSS labels to app namespaces. System namespaces keep `privileged`.
+Start `warn`, promote to `enforce`.
 
-Apply `restricted` PSS labels to application namespaces. System namespaces (`kube-system`,
-`csi-proxmox`, `cilium`) keep `privileged`. Start with `warn` mode, promote to `enforce`.
+### Scheduling Priorities
 
-### TODO: Scheduling Priorities for Degraded Mode
+Motivated by 2026-03-17 OOM cascade. Deploy PriorityClasses: `system-critical`
+(DNS/ingress/Authentik/Vault), `important` (Gitea/Harbor/monitoring), `batch`
+(OpenClaw/props/BuildBuddy). Plus Descheduler, PDBs, ResourceQuota + LimitRange.
 
-**Motivated by**: 2026-03-17 outage — Prometheus (1686Mi) OOM-killed 8 times on VPS nodes
-(7.5GiB CPX31, 34 pods, 92% memory). Without PriorityClasses, the scheduler couldn't evict
-lower-priority pods to make room. See <debug/2026-03-17-cluster-down/observations.md>.
+### VPA + Goldilocks
 
-Define pod priority classes and resource budgets so that when the cluster loses nodes
-(e.g., reduced to 1 VPS only), the scheduler evicts non-critical workloads to keep
-critical services running. Today all pods have roughly equal priority — if a VPS goes
-down there's no guarantee DNS/ingress/Authentik get resources before Langfuse or props.
-
-Options:
-
-- **PriorityClasses**: `system-critical` (DNS, ingress, Authentik, Vault, cert-manager),
-  `important` (Gitea, Harbor, monitoring), `batch` (OpenClaw, props, BuildBuddy).
-  Scheduler preempts lower-priority pods when resources are scarce.
-- **Descheduler**: Rebalance pods after node recovery (avoid packing on survivor).
-- **Pod Disruption Budgets**: Ensure critical services maintain minimum replicas during
-  voluntary disruptions.
-- **Resource reservations**: `LimitRange` defaults + `ResourceQuota` per namespace to
-  prevent any single workload from starving others.
-
-### TODO: ResourceQuota + LimitRange per Namespace
-
-Prevent resource contention. Set default CPU/memory requests+limits via LimitRange.
-Set namespace-level quotas via ResourceQuota.
-
-### Vertical Pod Autoscaler (VPA) + Goldilocks
-
-VPA deployed via Fairwinds Helm chart (`k8s/vpa/`). Updater and admission controller
-enabled. **Goldilocks** (`k8s/goldilocks/`) auto-creates VPA objects for all workloads
-cluster-wide (`on-by-default: "true"`), replacing manual per-workload VPA definitions.
-
-Default VPA mode is "Off" (recommendation-only). To enable auto-scaling per namespace:
+VPA deployed (`k8s/vpa/`). Goldilocks auto-creates VPAs cluster-wide.
+Default mode "Off" (recommendation-only). Enable per namespace:
 
 ```bash
 kubectl label ns <namespace> goldilocks.fairwinds.com/vpa-update-mode=auto
 ```
 
-Per-workload override via annotation: `goldilocks.fairwinds.com/vpa-update-mode=initial`.
+- **`auto`** (21 ns): activitywatch, airlock, atuin, gatus, gitea, google-workspace-mcp,
+  grocy, harbor, headlamp, homeassistant-proxy, inventree, langfuse, matrix, nix-cache,
+  ollama, openclaw-gateway, openclaw-mitmproxy, props, proxmox-proxy, scanner, tana-mcp
+- **`initial`** (6 ns): authentik, cnpg-system, dns-system, loki, monitoring, vault
 
-Namespace labels applied:
+### Alertmanager -> ntfy Bridge
 
-- **`auto`** (21 namespaces): activitywatch, airlock, atuin, gatus, gitea,
-  google-workspace-mcp, grocy, harbor, headlamp, homeassistant-proxy, inventree,
-  langfuse, matrix, nix-cache, ollama, openclaw-gateway, openclaw-mitmproxy, props,
-  proxmox-proxy, scanner, tana-mcp
-- **`initial`** (6 namespaces): authentik, cnpg-system, dns-system, loki,
-  monitoring, vault
-- **Off/unlabeled**: kube-system, flux-system, cert-manager, csi-proxmox, kyverno, and
-  other system namespaces
+Deploy [alertmanager-ntfy](https://github.com/alexbakker/alertmanager-ntfy).
 
-### TODO: Alertmanager → ntfy Bridge
+### SLO Definitions
 
-Deploy [alertmanager-ntfy](https://github.com/alexbakker/alertmanager-ntfy) for structured
-alert routing with severity levels, action buttons (create silence, open Prometheus URL).
+Deploy Pyrra or Sloth. Targets: ingress 99.5%, DNS 99.9%, Vault 99.9%.
 
-### TODO: SLO Definitions
+## Future Directions
 
-Deploy Pyrra or Sloth for declarative SLO management. Start with: ingress availability
-(99.5%), DNS availability (99.9%), Vault availability (99.9%). Auto-generates multi-window,
-multi-burn-rate alerts (Google SRE methodology).
+### GPU: DRA
 
-## 🔀 Future Directions
-
-### GPU Worker Node ✅
-
-wyrm2 (NixOS, not Talos): 2x RTX 5090, joined via `k8s-worker.nix` + Nebula. NVIDIA
-device plugin uses `envvar` strategy with `nvidia-container-runtime.cdi` (CDI-based GPU
-injection from host-generated specs). Ollama at `ollama.allegedly.works` (native API) and LiteLLM at `litellm.allegedly.works` run on both GPUs.
-TODO: Revisit virtio-mem when Proxmox adds support (Bugzilla #2949).
-
-### TODO: Dynamic Resource Allocation (DRA) for GPU
-
-DRA is the successor to device plugins for exposing GPUs and other hardware to pods —
-more flexible, standardized allocation vs. the current NVIDIA device plugin approach.
-Still beta; check NVIDIA's DRA driver guidance before enabling.
+DRA replaces device plugins for GPU exposure. Still beta.
 See <https://docs.siderolabs.com/kubernetes-guides/advanced-guides/dynamic-resource-allocation>
 
-### TODO: KubeRay for distributed ML
+### GPU: KubeRay, Kueue
 
-KubeRay operator deploys Ray clusters on K8s for distributed ML workloads on the GPU node.
-See <https://docs.siderolabs.com/kubernetes-guides/advanced-guides/kuberay>
-
-### TODO: Kueue for job quota management
-
-Kueue is a K8s-native quota and job queuing system — useful for managing GPU workload scheduling.
-See <https://docs.siderolabs.com/kubernetes-guides/advanced-guides/kueue>
+KubeRay for distributed ML, Kueue for job quota management on GPU node.
 
 ### BuildBuddy Remote Executor
 
-Deployed on Proxmox, currently scaled to 0 replicas. Re-enable by setting `replicaCount > 0`
-in the HelmRelease when remote execution is needed.
+On Proxmox, scaled to 0. Set `replicaCount > 0` to re-enable.
 
-### TODO: Self-Hosted Bazel Remote Cache
+### Self-Hosted Bazel Remote Cache
 
-The legacy VPS previously ran a self-hosted `bazel-remote-cache` with htpasswd auth. That's
-been removed. If a self-hosted Bazel cache is needed again (e.g., to reduce BuildBuddy
-dependency or for faster local cache hits), deploy it in-cluster — likely on Proxmox storage
-(`proxmox-csi-retain`) behind Authentik or basic auth via the gateway.
+Legacy VPS cache removed. If needed again, deploy in-cluster on Proxmox storage.
 
-### Service Mesh (Future)
+### Service Mesh
 
-If Cilium mutual auth proves insufficient (need L7 policies, traffic splitting, retries,
-circuit breakers), consider a full service mesh. Options:
+Not needed while Cilium mutual auth + Gateway API suffice. Options if needed:
+Cilium Service Mesh (eBPF L7, no sidecars) or Istio ambient mode.
 
-- **Cilium Service Mesh** — native integration, no sidecars (eBPF-based L7 proxy). Natural
-  evolution from current Cilium setup. Still maturing.
-- **Istio ambient mode** — ztunnel (per-node L4) + waypoint proxies (per-service L7).
-  No sidecars. Most mature option but heavier footprint.
+### Database HA
 
-Not needed while Cilium mutual auth + Gateway API cover the use cases.
+CNPG is 2-instance primary+standby. Low priority -- survives single-node failure.
 
-### TODO: Database HA (Galera / CNPG Multi-primary)
+### Future Services
 
-Current CloudNativePG clusters are 2-instance primary+standby (not active-active).
-For stronger HA, consider: Galera for MariaDB workloads, or CNPG with regional standby
-clusters. Low priority — current setup survives single-node failure via automatic failover.
+- [ ] Jellyfin, \*arr stack, Paperless-ngx, File sync, Tetragon
 
-## ActivityWatch (Future)
+### Low Priority
 
-Setup and architecture details in <../README.md>.
+- `BackendTLSPolicy` for internal HTTPS (blocked on [cilium#31352](https://github.com/cilium/cilium/issues/31352))
+- Nix cache signing key -> GitOps Terraform (Vault SSOT)
+- RWX shared storage: Longhorn NFS export (try first), NFS on Proxmox, JuiceFS, SeaweedFS
 
-- [ ] **Public access via Authentik proxy outpost** — follow Grocy pattern (proxy
-      provider blueprint, shared outpost, HTTPRoute, networkpolicy). Watchers use
-      Nebula mesh (no native auth support).
-- [ ] **Android sync** — not feasible (`aw-android` embeds its own server). Revisit
-      when `aw-sync` ships for Android.
-
-## 📋 Future Services (Lower Priority)
-
-- [ ] Jellyfin (media streaming)
-- [ ] \*arr stack (media automation)
-- [ ] Paperless-ngx (document management)
-- [ ] File sync service (see "File Sync" section above)
-- [ ] Bazel Remote Cache
-- [x] Capacitor (Flux dependency DAG visualization) — deployed at `capacitor.allegedly.works`
-- [ ] Tetragon (eBPF runtime security enforcement, complements Cilium)
-- [ ] Flagger (progressive delivery / canary analysis for deployments)
-
-## 🔧 Low Priority Improvements
-
-### cosign Image Signing
-
-Sign container images in CI with cosign (keyless via GitHub Actions OIDC). Verify via
-Kyverno `verifyImages` policies. Blocks unsigned images from deploying.
-
-### BackendTLSPolicy for Internal HTTPS
-
-Cilium doesn't yet support `BackendTLSPolicy` (Gateway API GA since v1.4.0). Track
-upstream [cilium#31352](https://github.com/cilium/cilium/issues/31352). When supported,
-re-enable HTTPS between gateway and backends (Vault, etc.) instead of HTTP for internal
-traffic.
-
-### Nix Cache Signing Key → GitOps Terraform
-
-Consider moving signing key from persistent-auth to Vault SSOT (gitops terraform module).
-Trade-off: invalidates existing cached store paths (acceptable if cache is ephemeral).
-
-### ReadWriteMany (RWX) Shared Storage
-
-Shared storage mountable from both cluster pods and non-cluster VMs (e.g., wyrm).
-Use cases: LLM model snapshots, media libraries, shared caches. Cross-site access
-via Nebula mesh adds latency — large data should stay home-only.
-
-**Options** (lightest first):
-
-- **Longhorn NFS export** (built-in) — Longhorn can expose any volume as NFS,
-  giving RWX with zero new infrastructure. Single share-manager pod per volume
-  (SPOF). Try this first.
-- **NFS server on Proxmox** — plain NFS export from wyrm2/atlas + `nfs-subdir-external-provisioner`.
-  Dead simple, no replication.
-- **JuiceFS** — POSIX FUSE filesystem backed by S3 + metadata engine (Redis/PostgreSQL).
-  Lightweight client (~50-100 MB RAM), native RWX. More moving parts.
-- **SeaweedFS** — lightweight distributed storage with FUSE/S3/NFS. Less mature.
-- **Rook-Ceph** — CephFS provides RWX but is expensive (~2-4 GB RAM/node, raw block
-  devices, 3-node MON quorum, PG balancing, CRUSH maps). Not viable on 7.5 GiB
-  VPS nodes.
-
-## 📐 Architecture Decisions
+## Architecture Decisions
 
 ### CNI: Cilium with VXLAN
 
-**Decision**: VXLAN tunnel mode (not native routing), Talos-recommended defaults only
+VXLAN tunnel mode. Hetzner VPS not on same L2; native routing fails. `MTU: 1412`
+(uppercase, case-sensitive). VXLAN (50) + Nebula (38) = 88 overhead. UDP 8472 required.
+See <lessons_learned/2026-02-11-cilium-mtu-cross-node-packet-loss.md>.
 
-**Rationale**:
+### Storage Strategy
 
-- Hetzner VPS nodes are not on same L2 network
-- Native routing fails: "gateway must be directly reachable"
-- VXLAN encapsulates pod traffic between nodes
-- Nebula docs warn non-default Cilium options cause "asymmetric routing"
-- `MTU: 1412` in Helm values (uppercase key — case-sensitive, lowercase is silently ignored)
-- Avoids fragmentation: VXLAN overhead (50) + Nebula overhead (38) = 88, so 1500 - 88 = 1412
+Minimize Hetzner volumes; generous on Proxmox.
 
-**Firewall**: UDP 8472 required for VXLAN overlay
+| Location | Services                                       | Rationale                         |
+| -------- | ---------------------------------------------- | --------------------------------- |
+| VPS      | Vault, Authentik, Gateway, DNS, cert-mgr       | Always-on, critical path          |
+| Home     | Harbor, Gitea, Loki, Grafana, media, Nix cache | Storage-heavy, tolerates downtime |
 
-See <lessons_learned/2026-02-11-cilium-mtu-cross-node-packet-loss.md>
-for network stack diagrams and diagnostic checklist.
+CNPG: individual clusters per app (Authentik, PowerDNS) on `local-path` for fault isolation.
 
-### Storage Strategy: Consolidated VPS, Liberal Home
+## Related Documentation
 
-**Decision**: Minimize Hetzner volumes, consolidate databases; generous allocations on Proxmox
+- <bootstrap.md>
+- <troubleshooting.md>
+- <changelog.md>
+- <lessons_learned/2025-11-28-eso-password-generator-desync.md>
 
-| Location | Services                                                       | Rationale                            |
-| -------- | -------------------------------------------------------------- | ------------------------------------ |
-| VPS      | Vault, Authentik, Gateway, DNS, cert-mgr (all on `local-path`) | Always-on, critical path (invariant) |
-| Home     | Harbor, Gitea, Loki, Grafana, media, Nix cache                 | Storage-heavy, can tolerate downtime |
-
-Authentik and PowerDNS each have dedicated 2-instance CloudNativePG clusters on `local-path`,
-pinned to VPS nodes. Individual CNPG clusters preferred over a single shared PostgreSQL for
-fault isolation.
-
-## 🔗 Related Documentation
-
-- **Bootstrap Procedures**: <bootstrap.md>
-- **Troubleshooting**: <troubleshooting.md>
-- **Changelog**: <changelog.md>
-- **Secret Sync Analysis**: <lessons_learned/2025-11-28-eso-password-generator-desync.md>
-
-## 📊 Cluster Specifications
-
-**Monthly Cost**: ~€30 (2x CPX31 + backups) — CPX41 upgrade planned (see `docs/plans/2026-02-22-vps-cpx41-upgrade.md`)
+**Monthly Cost**: ~EUR30 (2x CPX31). CPX41 upgrade planned (see <plans/2026-02-22-vps-cpx41-upgrade.md>).
