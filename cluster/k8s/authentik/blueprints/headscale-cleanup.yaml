@@ -1,0 +1,18 @@
+version: 1
+metadata:
+  name: Cleanup - Headscale
+  labels:
+    blueprints.goauthentik.io/description: >-
+      Remove headscale SSO registration (headscale decommissioned).
+
+entries:
+  # CLEANUP(2026-03-22): Remove once confirmed absent in Authentik (headscale decommissioned).
+  - model: authentik_providers_oauth2.oauth2provider
+    state: absent
+    identifiers:
+      name: headscale
+
+  - model: authentik_core.application
+    state: absent
+    identifiers:
+      slug: headscale

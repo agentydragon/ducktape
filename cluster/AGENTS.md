@@ -111,6 +111,14 @@ spec:
 
 `namespaceSelector` + `podSelector` in the same `from` item are ANDed.
 
+**Deleting Authentik providers or applications**: Always add a `state: absent` tombstone
+entry — never just remove the `state: present` block. The worker re-applies blueprints
+every 60 min; the absent entry is what actually removes the stale resource. Follow the
+`CLEANUP` tombstone convention from <../STYLE.md>. Place absent entries in the app's
+existing blueprint, or in a dedicated cleanup blueprint (e.g.,
+`k8s/authentik/blueprints/headscale-cleanup.yaml`) when the app itself is gone. Remove
+the entries after a few reconcile cycles once confirmed clean.
+
 ## Operational Context
 
 - **SSH**: `root@atlas` (Proxmox host, key auth)

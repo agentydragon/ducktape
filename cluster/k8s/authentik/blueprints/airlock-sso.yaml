@@ -8,11 +8,24 @@ metadata:
       "read" scopes for operator access.
 
 entries:
-  # Remove old proxy provider (replaced by native OAuth2 for SPA).
+  # CLEANUP(2026-03-22): Remove once confirmed absent in Authentik (proxy provider replaced
+  #   by native OAuth2 for the airlock SPA).
   - model: authentik_providers_proxy.proxyprovider
     state: absent
     identifiers:
       name: airlock
+
+  # CLEANUP(2026-03-22): Remove once confirmed absent in Authentik (oauth-broker merged
+  #   into airlock).
+  - model: authentik_providers_oauth2.oauth2provider
+    state: absent
+    identifiers:
+      name: oauth-broker
+
+  - model: authentik_core.application
+    state: absent
+    identifiers:
+      slug: oauth-broker
 
   # OAuth2 provider — public client for the operator SPA (Authorization Code + PKCE).
   - model: authentik_providers_oauth2.oauth2provider

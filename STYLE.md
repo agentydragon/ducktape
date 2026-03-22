@@ -160,6 +160,35 @@ Style and convention rules for this repository. Package-specific elaborations be
   - Use `itertools.batched` (stdlib since 3.12) instead of `for i in range(0, len(x), n): batch = x[i:i+n]`.
   - Choose `one()` vs `first()` based on semantics: if receiving multiple items is a bug, use `one()` to enforce the invariant. If multiple items are valid and you want the first, use `first()`.
 
+## Tombstones
+
+When removing something that cannot be deleted atomically — because downstream consumers
+need a transition period (old clients still reading a serialized field, a service being
+decommissioned still holding an OAuth registration, a deprecated API still called by code
+being migrated) — leave a **tombstone**: a dated marker that records what was removed and
+the condition under which the tombstone itself can be deleted.
+
+**Tag**: `CLEANUP` followed by the ISO date the tombstone was added (today's date when you
+write it — useful for spotting stale tombstones during review). The condition text encodes
+when to remove it:
+
+```python
+# CLEANUP(2026-03-22): Remove field once all clients are on ≥v2.3
+#   (commit abc123 drops the last reader).
+old_field: str | None = None
+```
+
+**Rules:**
+
+- The condition must be specific and verifiable — "once commit X ships to all releases" or
+  "after YYYY-MM-DD", not "when safe".
+- Delete the tombstone (and any code/config it guards) once the condition is met. Tombstones
+  are not permanent fixtures.
+- Tombstones are **not** historical comments. "Used to do X" explains the past and should be
+  deleted; a `CLEANUP` comment is an active work item near the code it refers to.
+- Cross-cutting cleanup that spans many files belongs in `TODO.md`; tombstones are for
+  localized removals where the marker lives right next to the thing being cleaned up.
+
 ## SQLAlchemy
 
 - **Prefer SQLAlchemy ORM over raw SQL**: In projects using SQLAlchemy, prefer the ORM query interface over raw SQL strings. The ORM provides type safety, IDE support, and protection against SQL injection. Use raw SQL only when the ORM would make the query significantly less readable (e.g., complex window functions, CTEs, or database-specific features not well-supported by the ORM).
