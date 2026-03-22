@@ -47,8 +47,4 @@ git config pager.diff "difftree"
 
 ## Development
 
-```bash
-pytest
-pytest --cov=git_diff_tree
-pytest --snapshot-update  # Update snapshot tests
-```
+Uses syrupy snapshot tests. See root AGENTS.md "Updating syrupy snapshots" for the workflow.

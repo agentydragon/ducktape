@@ -26,14 +26,7 @@ Python 3.12+. Dependencies in `requirements_bazel.txt`.
 
 ## Verification (Required)
 
-Before handing in any work:
-
-```bash
-bazel build //...   # Build + lint (runs by default)
-bazel test //...    # Run all tests
-```
-
-For Rust code: `bazel build //finance/...`
+Before handing in any work, run `bazel build //...` and `bazel test //...`.
 
 If you modified `ansible/`, follow the checklist in [ansible/AGENTS.md](../ansible/AGENTS.md).
 

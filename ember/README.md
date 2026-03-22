@@ -76,12 +76,6 @@ With that running you can:
 - `curl -X POST http://127.0.0.1:8000/control/restart`
 - `curl -X POST http://127.0.0.1:8000/control/shutdown`
 
-The Matrix client polls the configured rooms and records unread messages. The
-assistant is expected to use the `run_shell_command` tool to post replies (for
-example via a CLI utility). No additional tool surfaces are exposed in this v0
-pilot.
-
-The runtime accepts invites from the `matrix.admin_user_id` account. Joined rooms
-are discovered directly from the homeserver (`/_matrix/client/v3/joined_rooms`)
-when Ember starts, so the agent will resume listening in the same spaces after a
-restart without relying on local cache files.
+The agent uses `run_shell_command` for replies (no other tool surfaces in v0).
+Room membership is sourced live from the homeserver on startup; the runtime
+accepts invites from `matrix.admin_user_id`.

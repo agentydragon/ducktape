@@ -127,21 +127,12 @@ The `ADGN_PROPS_SPECIMENS_ROOT` environment variable is set automatically by dir
 
 ## Evaluation Workflow
 
-The props system evaluates LLM critic agents through a fitness-based selection process:
+1. **Specimens** — frozen code snapshots with human-labeled canonical issues
+2. **Critiques** — agent-generated issue reports per specimen
+3. **Grading** — comparison against canonical issues (recall/precision)
+4. **Selection** — agents ranked by fitness scores
 
-1. **Specimens** - Code snapshots with canonical issues identified by humans (in `props/specimens/`)
-2. **Critiques** - Agent-generated issue reports for each specimen
-3. **Grading** - Comparison of critiques against canonical issues to compute metrics (TP/FP/FN/recall/precision)
-4. **Selection** - Agents are selected based on fitness scores derived from how well they identify canonical issues
-
-For detailed information on training strategies and per-file examples, see [Training Strategy](docs/training_strategy.md).
-
-Grading is handled automatically by snapshot graders.
-
-## Specimen Inspection
-
-Specimen source code is stored in PostgreSQL and fetched by agent init scripts at runtime.
-To inspect specimen files, query the database directly or use the sync'd specimens repository.
+Grading is automatic via snapshot graders. See <docs/training_strategy.md> for details.
 
 ## Cluster Deployment
 
@@ -188,19 +179,4 @@ The backend authenticates OCI requests against PostgreSQL and proxies `/v2/*` to
 
 ## GitHub Copilot Agent Setup
 
-GitHub Copilot agents working on the props codebase should use the automated environment setup configured in `.github/workflows/copilot-setup-steps.yml`. This workflow sets up:
-
-**Environment Variables** (analogous to Claude code hooks setup):
-
-- `ADGN_PROPS_SPECIMENS_ROOT`: Points to in-repo test fixtures for CI/testing
-- `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`: PostgreSQL connection
-- `PROPS_REGISTRY_PROXY_HOST`, `PROPS_REGISTRY_PROXY_PORT`: Registry proxy config
-- `PROPS_DOCKER_NETWORK`: Docker network for agent containers (props-agents)
-- `PROPS_E2E_HOST_HOSTNAME`: Host network address for containers (172.17.0.1)
-
-**Network Setup Differences:**
-
-- Claude hooks: Uses `host` network with HTTP proxy
-- GitHub Actions: Uses `props-agents` Docker network (simpler, no HTTP proxy needed)
-
-For the automated workflow, see `.github/workflows/copilot-setup-steps.yml`.
+See `.github/workflows/copilot-setup-steps.yml` for automated environment setup (env vars, network config). Uses `props-agents` Docker network (no HTTP proxy, unlike Claude hooks which use `host` network).

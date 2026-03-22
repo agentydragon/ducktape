@@ -126,4 +126,4 @@ Agents push manifests by digest only (`PUT /v2/<name>/manifests/sha256:...`), en
 
 ## Testing
 
-See `props/testing/` for shared test fixtures (database, e2e infrastructure, mocks).
+See <../testing/AGENTS.md> for shared test fixtures.

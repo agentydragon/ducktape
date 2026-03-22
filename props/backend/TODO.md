@@ -2,13 +2,6 @@
 
 ## Type Safety & Architecture
 
-### Medium Priority
-
-- [ ] **NOTE: FileLocationInfo should stay in props.core**
-  - FileLocationInfo is correctly defined in props.core (domain model layer)
-  - Backend routes import from props.core - this is correct architecture
-  - No changes needed
-
 ### Low Priority
 
 - [ ] **Make export.py functions public** (src/props_core/db/sync/export.py)

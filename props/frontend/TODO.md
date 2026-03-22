@@ -2,23 +2,22 @@
 
 ## Active Work
 
-- [ ] **Phase 4: Statistics Integration**
-  - Link to credit distribution charts
-  - Show per-file statistics
-  - Integration with existing stats views
+- [ ] **Statistics Integration** — credit distribution charts, per-file statistics, integration with stats views
+- [ ] **Critique navigation/filtering** — filter by issue type (TP/FP/critique), keyboard shortcuts
+- [ ] **Polish** — keyboard shortcuts (j/k), responsive design, loading states, search/filter in file tree
 
-- [ ] **Critique-specific navigation/filtering**
-  - Add filtering by issue type (TP/FP/critique)
-  - Navigate between issues with keyboard shortcuts
+## Infrastructure
 
-- [ ] **Phase 6: Polish**
-  - Keyboard shortcuts (j/k navigation, etc.)
-  - Responsive design improvements
-  - Loading states and error handling refinements
-  - Search/filter capabilities in file tree
+- [ ] Replace client-server polling with WebSocket for live updates
+- [ ] Consolidate active runs display (currently in 2 places)
+- [ ] "Trigger validation runs" as popup modal instead of inline form
+- [ ] Launch optimization/improvement runs with live events display
+- [ ] Live events streaming on run detail view
+- [ ] Full status string display with elliptization
+- [ ] Consistent run ID helpers with clickable styling
 
 ## Code Quality
 
-- [ ] Add file size limits / warnings for large files
-- [ ] Consider virtual scrolling for very large files
-- [ ] Add support for binary file detection and appropriate handling
+- [ ] File size limits / warnings for large files
+- [ ] Virtual scrolling for very large files
+- [ ] Binary file detection and appropriate handling

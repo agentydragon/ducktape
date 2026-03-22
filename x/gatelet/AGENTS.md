@@ -13,14 +13,6 @@ If `IS_CODEX_ENV=1` is set, tests must bring up AND tear down the database. No p
 If running in Codex without internet, run `gatelet/setup.sh` from repo root before network access
 is disabled. To add dependencies, update `setup.sh` for future runs.
 
-## Testing
-
-```bash
-pytest
-```
-
-Before committing: `pre-commit run --files <changed files>`
-
 ## Template Guidelines
 
 Each HTML template begins with a comment describing its intended audience:

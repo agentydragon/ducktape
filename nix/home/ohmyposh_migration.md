@@ -71,22 +71,9 @@ base64String, found := cache.Get[string](cache.Session, configKey)
 2. Store config file mtime and invalidate on change
 3. Include config path in session file name
 
-### Files Not Yet Committed
-
-```
-M  nix/home/ohmyposh.json
-M  nix/home/shell/zsh-init.zsh
-```
-
-The plan file at `~/.claude/plans/moonlit-dazzling-gadget.md` documents the full migration plan and was updated during the session.
-
 ## Context for Successor Agents
 
-### Project Conventions
-
-- See: `@AGENTS.md` for repository conventions
-- Shell config managed by Nix home-manager (`nix/home/home.nix`)
-- Shell init scripts in `nix/home/shell/`
+Shell config is managed by Nix home-manager (`nix/home/home.nix`), init scripts in `nix/home/shell/`.
 
 ### Build/Test
 
@@ -116,8 +103,7 @@ Cloned to `/code/github.com/JanDeDobbeleer/oh-my-posh/`:
 - `src/config/gob.go` - Config caching logic
 - `src/cache/init.go` - Session ID and cache file naming
 
-## Related Documentation
+## Related
 
-- Plan file: `~/.claude/plans/moonlit-dazzling-gadget.md`
 - Oh-My-Posh docs: https://ohmyposh.dev/docs/
-- Starship issue on powerline separators: https://github.com/starship/starship/issues/6218
+- Starship powerline separator bug: https://github.com/starship/starship/issues/6218

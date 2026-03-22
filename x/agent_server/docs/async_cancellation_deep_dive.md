@@ -1,8 +1,10 @@
 # Async Cancellation Deep Dive: Container Cleanup Failure
 
+> **Status:** Current reference. Documents the FastMCP cancellation behavior that affects Docker container cleanup. See also `mcp_infra/docs/fastmcp_lifecycle_analysis.md` for the concise technical summary. This doc is intentionally pedagogical (explains async from first principles).
+
 ## From First Principles
 
-Let me explain async, cancellation, scopes, lifespans, and shields like you've never heard of any of it.
+Explains async, cancellation, scopes, lifespans, and shields from scratch.
 
 ### What is Async/Await?
 

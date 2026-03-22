@@ -102,6 +102,4 @@ When provisioning a new VM or remote machine:
 
 5. Run `home-manager switch --flake ~/code/ducktape#<hostname>` on the new machine.
 
-- TODO: Set hostname on the VM (currently using IP address)
-- TODO: Document how to set up `gh` authentication on the new machine (for CLI operations beyond SSH)
-- TODO: Document how to set up `glab` authentication on the new machine (for CLI operations beyond SSH)
+See <TODO.md> for remaining tasks (hostname setup, `gh`/`glab` auth docs).

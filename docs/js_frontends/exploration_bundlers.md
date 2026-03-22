@@ -1,8 +1,8 @@
 # JavaScript Bundlers and Bazel Integration Exploration
 
-**Document Status**: Research findings compiled for decision-making on bundler strategy for Svelte and React frontends.
+> **Status: HISTORICAL research.** Decision was to stay with Vite. This doc captures the evaluation for reference but is no longer actively maintained.
 
-**Context**: We're evaluating whether to continue with Vite or explore alternative bundlers (esbuild, Rollup, webpack, Parcel, swc, Rspack) for building three JS frontends (props/frontend, agent_server/web, rspcache/admin_ui) under Bazel.
+**Context**: Evaluated bundlers (Vite, esbuild, Rollup, webpack, Parcel, swc, Rspack) for three JS frontends (`props/frontend`, `agent_server/web`, `rspcache/admin_ui`) under Bazel.
 
 **Core Problem**: Module identity issues with Playwright when using pnpm workspaces, and module resolution complexity in sandboxed Bazel builds.
 

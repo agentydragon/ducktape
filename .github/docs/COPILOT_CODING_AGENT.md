@@ -61,16 +61,6 @@ GitHub Copilot coding agent is an AI agent that you can assign issues to on GitH
 - Common pitfalls and workarounds
 - Verification steps
 
-**Example from this repository**:
-
-```markdown
-## Build System
-
-bazel build //... # Build all targets
-bazel test //... # Run all tests
-bazel lint //... # Lint (ruff + mypy)
-```
-
 ### 3. Agent Instructions (`AGENTS.md` files)
 
 **What it is**: Per-directory instructions for AI agents.
@@ -144,21 +134,7 @@ Add common pitfalls and workarounds to the instructions:
 - **Solution**: Run `bazel clean` first, then `bazel test //...`
 ```
 
-### 3. Provide Clear Build Instructions
-
-Always include the exact commands to run:
-
-```markdown
-# Correct (specific)
-
-bazel build //...
-
-# Avoid (vague)
-
-"Build the project"
-```
-
-### 4. Use AGENTS.md for Directory-Specific Context
+### 3. Use AGENTS.md for Directory-Specific Context
 
 For complex subdirectories (like `ansible/`), create local `AGENTS.md` files with context specific to that area.
 

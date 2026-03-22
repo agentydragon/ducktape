@@ -21,4 +21,4 @@ Agent server - FastAPI backend, runtime, and MCP infrastructure for LLM agents.
 
 ## Development
 
-See [AGENTS.md](../../AGENTS.md) for standard Bazel workflow.
+See <../../AGENTS.md> for standard Bazel workflow.

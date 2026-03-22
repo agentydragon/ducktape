@@ -6,12 +6,6 @@ Personal net worth tracker in Rust. Aggregates assets from multiple sources, con
 
 Configuration lives in `~/.config/worthy/config.yaml`.
 
-## Building
-
-```bash
-bazel build //finance/worthy:rust_main
-```
-
 ## Running
 
 ```bash

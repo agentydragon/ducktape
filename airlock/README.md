@@ -33,12 +33,10 @@ OpenClaw plugin (airlock entry in plugins.entries)
   └── connects to airlock via auth-proxy sidecar (localhost:8767)
 ```
 
-All tokens are JWTs verified against the JWKS endpoint discovered from the
-OIDC issuer's `.well-known/openid-configuration` (Authentik).
-Operator tokens are obtained by the SPA via OAuth2 Authorization Code + PKCE;
-agent tokens arrive via `Authorization: Bearer` (client_credentials flow
-through the auth-proxy sidecar). Both use `Authorization: Bearer` headers.
-JWT scopes determine capabilities: `propose` (agent), `decide` (operator),
+JWTs are verified against the JWKS endpoint from the OIDC issuer's
+`.well-known/openid-configuration` (Authentik). Operator tokens use
+Authorization Code + PKCE; agent tokens use `client_credentials` via the
+auth-proxy sidecar. JWT scopes: `propose` (agent), `decide` (operator),
 `read` (both).
 
 ## Running
@@ -47,8 +45,7 @@ JWT scopes determine capabilities: `propose` (agent), `decide` (operator),
 bazel run //airlock:server
 ```
 
-Required env vars must be set (see below). `CONFIG_PATH` must point to a YAML file
-with the backend spec (see below).
+`CONFIG_PATH` must point to a YAML config file (see below).
 
 ## Key modules
 
@@ -68,9 +65,8 @@ with the backend spec (see below).
 
 ### Backend specs (YAML config file)
 
-Backend MCP servers are configured via a YAML file. Set `CONFIG_PATH` to its path
-(default: `/etc/airlock/config.yaml`). Each backend is keyed by its namespace
-prefix (lowercase alphanumeric + underscore).
+Set `CONFIG_PATH` to a YAML file (default: `/etc/airlock/config.yaml`).
+Each backend is keyed by its namespace prefix (lowercase alphanumeric + underscore).
 
 ```yaml
 backends:
@@ -82,15 +78,14 @@ backends:
       - --mcp
 ```
 
-Each backend entry supports the full `MCPServerTypes` config (URL + headers for
-streamable-http, command + args + env for stdio).
+Each backend supports the full `MCPServerTypes` config (URL + headers for
+streamable-http, or command + args + env for stdio).
 
 ### Default wait mode
 
-The `default_wait_mode` config field sets the server-wide default for how long tool
-calls wait for action resolution before returning. Agents can override per-call via
-the `wait_mode` tool parameter. When omitted, tool calls return immediately with
-the current action state (typically `pending`).
+Server-wide default for how long tool calls wait for resolution. Agents can
+override per-call via the `wait_mode` tool parameter. When omitted, calls return
+immediately (typically `pending`).
 
 ```yaml
 # Wait up to 30s for resolution
@@ -110,7 +105,7 @@ default_wait_mode:
 | `CONFIG_PATH` | no       | Path to YAML config file (default `/etc/airlock/config.yaml`) |
 
 All other settings (`public_base_url`, `oidc_issuer`, `oidc_client_id`, `backends`,
-`db_path`, `predicate_path`, `host`, `port`) are loaded from the YAML config file.
+`db_path`, `predicate_path`, `host`, `port`) live in the YAML config file.
 
 ## Predicate file format
 
@@ -123,4 +118,4 @@ def decide(server_namespace: str, tool_name: str, arguments: dict) -> Approved |
     return NeedsHumanDecision()  # default: always queue for operator
 ```
 
-Fail-safe: any exception during predicate evaluation defaults to `NeedsHumanDecision`.
+Fail-safe: exceptions during predicate evaluation default to `NeedsHumanDecision`.

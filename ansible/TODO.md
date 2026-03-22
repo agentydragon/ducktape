@@ -12,25 +12,13 @@ desktop is needed, deploy Guacamole or similar in the cluster behind Authentik S
 
 ## Nix/Home-Manager Migration
 
-### Systems Using Home-Manager
+See <../nix/home/migration_plan.md> for full status. GPD is the last legacy holdout.
 
-- **wyrm** - deployed 2025-08-28
-- **atlas** - deployed 2025-08-30
-- **agentydragon** - deployed 2025-08-31
+## VM Provisioning Docs
 
-### Legacy Systems (without Home-Manager)
-
-- **gpd** - uses `legacy_without_home_manager/*` roles
-- **vps** - uses `legacy_without_home_manager/*` roles
-
-### Migration Pattern
-
-Tools migrated to Nix are provided by:
-
-- **Home-manager systems**: Via `nix/home/home.nix`
-- **Legacy systems**: Via `roles/legacy_without_home_manager/*` roles
-
-The `legacy_without_home_manager/` roles contain Ansible fallbacks for tools that home-manager provides on migrated systems.
+- [ ] Set hostname on the VM (currently using IP address)
+- [ ] Document how to set up `gh` authentication on new machines
+- [ ] Document how to set up `glab` authentication on new machines
 
 ## Other TODOs
 

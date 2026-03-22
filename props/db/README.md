@@ -73,9 +73,4 @@ not by different roles or username patterns.
 
 ## Running Tests
 
-```bash
-# Run database tests via Bazel
-bazel test //props/db/...
-```
-
-**Important**: Tests use fixtures that **only affect eval_results_test**. Production data is never touched.
+Tests use fixtures that **only affect eval_results_test**. Production data is never touched.
