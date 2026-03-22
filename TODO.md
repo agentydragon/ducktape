@@ -3,6 +3,7 @@
 ## Linting
 
 - [ ] Add a pre-commit linter to enforce the link style convention from STYLE.md: detect `[path](path)` duplicate-path links in markdown and suggest using `@path` transclusion or `<path>` angle bracket syntax instead
+- [ ] Reconsider `<path.md>` angle-bracket convention for local file links — GitHub doesn't render these as clickable links. May want to switch to `[path.md](path.md)` and update STYLE.md accordingly
 - [ ] Add ESLint to pre-commit for local JS/TS linting (currently only runs in CI via Bazel)
 - [ ] Consider adding mypy to pre-commit for local type checking (currently only runs in CI via Bazel)
 

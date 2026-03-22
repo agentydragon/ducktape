@@ -152,7 +152,7 @@ The auth proxy decouples authentication from this timing problem:
 
 ## References
 
-See <proxy-alternatives.md> for analysis of why alternatives don't work.
+See <docs/proxy_alternatives.md> for analysis of why alternatives don't work.
 
 - [Claude Code on the Web](https://www.anthropic.com/news/claude-code-on-the-web) - Product announcement
 - [Claude Code Sandboxing](https://www.anthropic.com/engineering/claude-code-sandboxing) - Network isolation architecture
@@ -182,16 +182,7 @@ See BUILD.bazel for the full dependency list. Key runtime requirements:
 
 - **keytool** (from JDK) for Java truststore creation
 
-## Usage
-
-The proxy runs in-process within the hook daemon as daemon threads. It starts
-automatically when the daemon starts (if `HTTPS_PROXY` is set) and stops when
-the daemon shuts down. Credentials are written by session start and read on
-each connection (hot-reload).
-
 ## How It Works
-
-### Proxy Architecture
 
 ```
 Most tools (curl, pip, npm, etc.)
@@ -210,33 +201,9 @@ Bazel/Bazelisk
                           └──► Anthropic's proxy ──► Internet
 ```
 
-### Flow Details
-
-1. **Hook daemon** starts the auth proxy in-process at daemon startup
-2. **Bazel wrapper** (invoked instead of bazel directly):
-   - Reads current `HTTPS_PROXY` from environment (Anthropic's proxy with fresh JWT)
-   - Writes upstream URL to credentials file (for the long-running proxy daemon)
-   - Sets `HTTPS_PROXY=localhost:18081` for the bazel subprocess only
-   - Execs bazelisk with proxy configuration
-3. **Auth proxy** (long-running daemon):
-   - Reads credentials file on each connection (picks up fresh JWT)
-   - Forwards CONNECT requests to Anthropic's proxy with auth header
-
-### Why This Design
-
-- **Fresh credentials**: Bazel wrapper reads `HTTPS_PROXY` on each invocation, so JWT refreshes are picked up
-- **No global override**: Other tools continue to use Anthropic's proxy directly
-- **Hot-reload**: Auth proxy reads creds file per-connection, enabling credential updates without restart
-
-## Lifecycle Management
-
-The auth proxy runs in-process within the hook daemon:
-
-- **Host process**: Hook daemon (FastAPI on UDS, `~/.claude/session-env/<session_id>/hook-daemon/`)
-- **Threading**: Daemon threads (`ThreadPoolExecutor`), non-blocking `start()`/`stop()`
-- **Shutdown**: Stopped automatically when the hook daemon shuts down (idle timeout or SIGTERM)
-- **Credentials**: Read from file on each connection (hot-reload)
-- **Creds file**: `~/.claude/session-env/<session_id>/hook-daemon/upstream_proxy`
+The auth proxy runs in-process within the hook daemon (daemon threads, FastAPI on UDS).
+Starts automatically when the daemon starts (if `HTTPS_PROXY` is set), stops on daemon
+shutdown. Creds file: `~/.claude/session-env/<session_id>/hook-daemon/upstream_proxy`.
 
 ## Verification
 

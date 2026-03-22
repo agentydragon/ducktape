@@ -18,7 +18,6 @@ To build:
 
 ```bash
 sass css/default.scss > css/default.css
-bazel build //website:site
 cd website
 ../bazel-bin/website/site build
 ```
