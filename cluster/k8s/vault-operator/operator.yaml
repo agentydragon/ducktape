@@ -4,6 +4,7 @@ kind: Namespace
 metadata:
   name: vault
   labels:
+    goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: "initial"
     # Pod Security Standards - Allow privileged containers for Vault's IPC_LOCK capability
     # TODO: IPC_LOCK should not require particularly wide privileges

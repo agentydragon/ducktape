@@ -3,5 +3,6 @@ kind: Namespace
 metadata:
   name: openclaw-gateway
   labels:
+    goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: "auto"
     name: openclaw-gateway

@@ -3,6 +3,7 @@ kind: Namespace
 metadata:
   name: langfuse
   labels:
+    goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: "auto"
   annotations:
     goldilocks.fairwinds.com/cpu-min: "500m"

@@ -3,6 +3,7 @@ kind: Namespace
 metadata:
   name: dns-system
   labels:
+    goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: "initial"
     name: dns-system
     # Allow unsafe sysctls (net.ipv4.tcp_mtu_probing) for PMTUD blackhole mitigation
