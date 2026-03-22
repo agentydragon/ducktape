@@ -184,6 +184,16 @@ repos:
             cluster/k8s/authentik/blueprints/.*
           )$
 
+      # Enforce affected Bazel tests are cached/passing before commit.
+      # Guarded by DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=1 (set in Claude Code web sessions).
+      # Uses git staged files internally, so always_run + pass_filenames=false.
+      - id: enforce-bazel-tests
+        name: enforce affected bazel tests
+        entry: ducktape-precommit
+        language: system
+        pass_filenames: false
+        always_run: true
+
       # Specimens: block changes to committed snapshot code/ directories
       - id: block-specimen-code-changes
         name: Block changes to committed specimen code

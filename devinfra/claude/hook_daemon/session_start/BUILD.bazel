@@ -121,7 +121,10 @@ py_library(
     srcs = ["precommit.py"],
     imports = ["../../../.."],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        "@pypi//pre_commit",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(

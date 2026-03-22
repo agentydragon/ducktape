@@ -2,7 +2,7 @@
 # Setup script for Claude Code web sessions.
 #
 # Installs:
-#   1. claude-hooks wheel (hook dispatcher + statusline)
+#   1. claude-hooks wheel (hook dispatcher, statusline, pre-commit, ducktape-precommit)
 #   2. Skills tarball (AI agent skills deployed to ~/.claude/skills/)
 #
 # Usage (Claude Code web UI setup command):

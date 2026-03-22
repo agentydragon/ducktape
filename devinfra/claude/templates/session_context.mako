@@ -40,7 +40,7 @@ VFS on 9p (no layer caching, slower builds).
 % if isinstance(precommit, PrecommitInstallingHooks):
 
 ## pre-commit
-Hook environments installing in background (pid ${precommit.pid}, `${precommit.log_path}`). First `git commit` may block briefly.
+Hook environments installing in background. First `git commit` may block briefly.
 % endif
 % if secrets:
 
