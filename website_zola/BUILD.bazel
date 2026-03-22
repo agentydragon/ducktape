@@ -1,3 +1,19 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "diff_sites",
+    srcs = ["diff_sites.py"],
+    imports = [".."],
+    deps = ["@pypi//html5lib"],
+)
+
+py_binary(
+    name = "diff_sites_bin",
+    imports = [".."],
+    main_module = "website_zola.diff_sites",
+    deps = [":diff_sites"],
+)
+
 genrule(
     name = "site",
     srcs = glob([
