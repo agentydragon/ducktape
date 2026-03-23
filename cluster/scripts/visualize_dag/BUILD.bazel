@@ -1,0 +1,48 @@
+# gazelle:ignore
+
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+npm_link_all_packages(name = "node_modules")
+
+js_library(
+    name = "dag_js",
+    srcs = ["dag.mjs"],
+    deps = [":node_modules"],
+)
+
+esbuild(
+    name = "dag_bundle",
+    entry_point = "dag.mjs",
+    format = "iife",
+    minify = True,
+    output = "dag.bundle.js",
+    platform = "browser",
+    deps = [":dag_js"],
+)
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    imports = ["../../.."],
+    deps = [
+        "//cluster/validation:cluster",
+        "//util/bazel:runfiles",
+        "//util/bazel:workspace",
+        "@pypi//networkx",
+        "@pypi//types_networkx",
+    ],
+)
+
+py_binary(
+    name = "visualize_dag",
+    data = [
+        "template.html",
+        ":dag_bundle",
+    ],
+    imports = ["../../.."],
+    main_module = "cluster.scripts.visualize_dag.main",
+    deps = [":main"],
+)

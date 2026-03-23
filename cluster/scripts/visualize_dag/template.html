@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Flux Kustomization DAG</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+      }
+      body {
+        background: #1a1a2e;
+        overflow: hidden;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+      }
+      svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      .link {
+        stroke: #555;
+        stroke-width: 1.2;
+        fill: none;
+      }
+      .link.highlighted {
+        stroke: #ff6b6b;
+        stroke-width: 2.5;
+      }
+      .link.dimmed {
+        stroke: #222;
+        stroke-width: 0.5;
+      }
+      .node circle {
+        fill: #4a90d9;
+        stroke: #6ab0ff;
+        stroke-width: 1.5;
+        cursor: pointer;
+        transition: fill 0.15s;
+      }
+      .node circle:hover {
+        fill: #6ab0ff;
+      }
+      .node circle.dimmed {
+        fill: #333;
+        stroke: #444;
+      }
+      .node circle.highlighted {
+        fill: #4a90d9;
+        stroke: #ff6b6b;
+        stroke-width: 2.5;
+      }
+      .node circle.selected {
+        fill: #ff6b6b;
+        stroke: #fff;
+        stroke-width: 3;
+      }
+      .node text {
+        fill: #ccc;
+        font-size: 10px;
+        pointer-events: none;
+      }
+      .node text.dimmed {
+        fill: #444;
+      }
+      #tooltip {
+        position: fixed;
+        display: none;
+        background: #16213e;
+        color: #e0e0e0;
+        border: 1px solid #4a90d9;
+        border-radius: 6px;
+        padding: 10px 14px;
+        font-size: 12px;
+        max-width: 350px;
+        pointer-events: none;
+        z-index: 100;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      }
+      #tooltip h3 {
+        color: #6ab0ff;
+        margin-bottom: 6px;
+        font-size: 13px;
+      }
+      #tooltip .label {
+        color: #888;
+      }
+      #tooltip ul {
+        margin: 4px 0 0 16px;
+      }
+      #tooltip li {
+        margin: 1px 0;
+      }
+      #controls {
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        color: #888;
+        font-size: 11px;
+        background: rgba(22, 33, 62, 0.9);
+        padding: 8px 12px;
+        border-radius: 6px;
+        border: 1px solid #333;
+      }
+      #loading {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: #6ab0ff;
+        font-size: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loading">Computing layout...</div>
+    <div id="tooltip"></div>
+    <div id="controls">
+      Scroll to zoom &middot; Drag to pan &middot; Click node to highlight deps &middot; Click background to reset
+    </div>
+    <svg id="dag"></svg>
+    <script>
+      window.GRAPH_DATA = /*GRAPH_DATA*/ null;
+    </script>
+    <script>
+      /*BUNDLE*/
+    </script>
+  </body>
+</html>

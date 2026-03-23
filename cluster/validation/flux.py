@@ -38,6 +38,7 @@ class FluxKustomizationSpec(BaseModel):
     health_checks: list[HealthCheck] = []
     retry_interval: str | None = None
     wait: bool = False
+    suspend: bool = False
 
 
 class FluxKustomization(BaseModel):

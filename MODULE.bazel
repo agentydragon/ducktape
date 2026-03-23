@@ -255,6 +255,7 @@ use_repo(apt, "trixie_e2e")
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.0")
 bazel_dep(name = "aspect_rules_js", version = "2.9.2")
+bazel_dep(name = "aspect_rules_esbuild", version = "0.25.1")
 bazel_dep(name = "aspect_rules_ts", version = "3.8.3")
 bazel_dep(name = "rules_nodejs", version = "6.7.3")
 
@@ -272,6 +273,16 @@ use_repo(playwright, "playwright_browsers")
 # Node.js toolchain
 node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
 node.toolchain(node_version = "22.11.0")  # LTS 'Jod'
+
+# esbuild toolchain (for esbuild_bundle rule)
+esbuild = use_extension("@aspect_rules_esbuild//esbuild:extensions.bzl", "esbuild")
+esbuild.toolchain(
+    name = "esbuild",
+    esbuild_version = "0.25.11",
+)
+use_repo(esbuild, "esbuild_toolchains")
+
+register_toolchains("@esbuild_toolchains//:all")
 
 # Pin pnpm v9 to match the lockfile format (rules_js 2.9.2 defaults to pnpm v8
 # which cannot read lockfileVersion 9 and triggers a non-hermetic regeneration).
@@ -302,6 +313,7 @@ npm.npm_translate_lock(
     data = [
         "//:airlock/frontend/package.json",
         "//:airlock/openclaw/package.json",
+        "//:cluster/scripts/visualize_dag/package.json",
         "//:package.json",
         "//:pnpm-workspace.yaml",
         "//:props/frontend/package.json",
