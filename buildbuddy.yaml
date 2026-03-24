@@ -95,9 +95,18 @@ actions:
 
           upload_release() {
             local tag="$1" title="$2" body="$3"; shift 3
-            gh release create "$tag" --title "$title" --notes "$body" \
-              --latest=false "$@" 2>/dev/null \
-            || gh release upload "$tag" "$@" --clobber
+            local out
+            if out=$(gh release create "$tag" --title "$title" --notes "$body" \
+                --latest=false "$@" 2>&1); then
+              return 0
+            fi
+            case "$out" in
+              *already_exist*|*"already exists"*)
+                gh release upload "$tag" "$@" --clobber ;;
+              *)
+                echo "gh release create $tag: $out" >&2
+                return 1 ;;
+            esac
           }
           # Upload to pinned commit tags (used by flake.nix for deterministic pins).
           upload_release "claude-hooks-$SHORT_SHA" \
