@@ -36,6 +36,9 @@ pkgs.python3Packages.buildPythonApplication {
       tenacity
       uvicorn
     ])
+    # TODO: pkgs.pre-commit is a system package dep rather than a Python dep;
+    # consider whether it should be a native build input, a wrapper script PATH
+    # injection, or left to the environment (home.nix) instead of propagated here.
     ++ [ pkgs.pre-commit ];
 
   # Disable checks - wheel is tested in CI
