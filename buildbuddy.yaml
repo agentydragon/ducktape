@@ -98,22 +98,6 @@ actions:
             local tag="$1" title="$2" body="$3"; shift 3
             gh release create "$tag" --title "$title" --notes "$body" --latest=false "$@"
           }
-          # Create or re-upload assets for rolling tags that are expected to already exist.
-          upsert_release() {
-            local tag="$1" title="$2" body="$3"; shift 3
-            local out
-            if out=$(gh release create "$tag" --title "$title" --notes "$body" \
-                --latest=false "$@" 2>&1); then
-              return 0
-            fi
-            case "$out" in
-              *already_exist*|*"already exists"*)
-                gh release upload "$tag" "$@" --clobber ;;
-              *)
-                echo "gh release create $tag: $out" >&2
-                return 1 ;;
-            esac
-          }
           # Upload to pinned commit tags (used by flake.nix for deterministic pins).
           create_release "claude-hooks-$SHORT_SHA" \
             "claude-hooks ($SHORT_SHA)" "claude-hooks wheel for Claude Code integration." \
@@ -130,12 +114,6 @@ actions:
           create_release "bbapi-$SHORT_SHA" \
             "bbapi ($SHORT_SHA)" "bbapi — BuildBuddy API CLI (Linux x86_64)." \
             dist/bbapi
-          # Keep a rolling claude-hooks-latest tag: pre-commit.yml installs it via pip
-          # at CI time, before the SHA-pinned release exists for that commit.
-          upsert_release claude-hooks-latest \
-            "claude-hooks (latest)" "claude-hooks wheel for Claude Code integration." \
-            dist/claude_hooks-*.whl
-
           BRANCH=$(git rev-parse --abbrev-ref HEAD)
           gh workflow run release.yml --ref "$BRANCH" --field short_sha="$SHORT_SHA"
 
