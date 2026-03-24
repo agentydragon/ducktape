@@ -130,23 +130,11 @@ actions:
           create_release "bbapi-$SHORT_SHA" \
             "bbapi ($SHORT_SHA)" "bbapi — BuildBuddy API CLI (Linux x86_64)." \
             dist/bbapi
-          # Also keep rolling -latest tags for consumers that don't use the flake
-          # (e.g. pre-commit.yml pip-installs claude-hooks-latest directly).
+          # Keep a rolling claude-hooks-latest tag: pre-commit.yml installs it via pip
+          # at CI time, before the SHA-pinned release exists for that commit.
           upsert_release claude-hooks-latest \
             "claude-hooks (latest)" "claude-hooks wheel for Claude Code integration." \
             dist/claude_hooks-*.whl
-          upsert_release ducktape-latest \
-            "ducktape (latest)" "ducktape wheel containing CLI tools." \
-            dist/ducktape-*.whl
-          upsert_release gterm-theme-latest \
-            "gterm-theme (latest)" "gterm-theme wheel (GNOME Terminal theme follower)." \
-            dist/gterm_theme-*.whl
-          upsert_release skills-latest \
-            "skills (latest)" "Skills tarball for AI agent deployment." \
-            dist/skills.tar
-          upsert_release bbapi-latest \
-            "bbapi (latest)" "bbapi — BuildBuddy API CLI (Linux x86_64)." \
-            dist/bbapi
 
           BRANCH=$(git rev-parse --abbrev-ref HEAD)
           gh workflow run release.yml --ref "$BRANCH" --field short_sha="$SHORT_SHA"
