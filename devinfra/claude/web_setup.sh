@@ -3,7 +3,7 @@
 #
 # Installs:
 #   1. Nix (via official single-user installer from nixos.org)
-#   2. claude-hooks + bbapi — from flake, fetched via attic binary cache
+#   2. web-session — claude-hooks, bbapi, gh; from flake, fetched via attic binary cache
 #   3. skills — deployed to ~/.claude/skills/ from the skills flake package
 #
 # Usage (Claude Code web UI setup command):
@@ -32,10 +32,8 @@ substituters = https://cache.nixos.org https://cache.allegedly.works/main
 trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= cache.allegedly.works-1:OX/cis8G1W13DALkGvhdUZ1OY3yGATbXw8+tIc8J7oA=
 EOF
 
-echo "Installing claude-hooks and bbapi (attic cache hit)..."
-nix profile install \
-  "${FLAKE}#claude-hooks" \
-  "${FLAKE}#bbapi"
+echo "Installing web session tools (attic cache hit)..."
+nix profile install "${FLAKE}#web-session"
 
 echo "Deploying skills to ~/.claude/skills/..."
 skills=$(nix build --no-link --print-out-paths "${FLAKE}#skills")

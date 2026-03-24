@@ -273,7 +273,7 @@
             config.allowUnfree = true;
           };
         in
-        {
+        rec {
           tana = pkgs.callPackage ./nix/home/packages/tana.nix { };
           gmail-mcp = pkgs.callPackage ./nix/home/packages/gmail-mcp.nix { };
           # ducktape wheel — provides ducktape-precommit (and git-commit-ai, difftree, etc.)
@@ -284,7 +284,6 @@
             '';
           };
           # Claude Code session hooks (claude-hook, claude-statusline, ducktape-precommit).
-          # Pushed to attic by CI; web_setup.sh installs via nix profile install.
           claude-hooks = pkgs.callPackage ./nix/home/packages/claude-hooks.nix {
             claude-hooks-wheel = artifacts.claude-hooks;
           };
@@ -300,6 +299,17 @@
             mkdir -p $out/share/claude-hooks/skills
             cp -r ${artifacts.skills}/. $out/share/claude-hooks/skills/
           '';
+          # Web session tools: single package installed by web_setup.sh.
+          # Add tools here to make them available in Claude Code web sessions;
+          # release.yml pushes this to attic so installs are cache hits.
+          web-session = pkgs.symlinkJoin {
+            name = "claude-web-session";
+            paths = [
+              claude-hooks
+              bbapi
+              pkgs.gh
+            ];
+          };
           # NixOS container tarball for docker import.
           # Build: nix build .#bazel-test-docker
           # Load:  docker import result ducktape-nixos-bazel

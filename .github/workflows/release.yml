@@ -50,6 +50,11 @@ jobs:
             store_paths+=($(nix build --no-link --print-out-paths ".#packages.x86_64-linux.$pkg"))
           done
 
+          # web-session bundles claude-hooks + bbapi + gh into a single installable.
+          # Not an npins artifact (synthesized in Nix), but push to attic so
+          # web_setup.sh nix profile install is a cache hit.
+          store_paths+=($(nix build --no-link --print-out-paths ".#packages.x86_64-linux.web-session"))
+
           attic login main https://cache.allegedly.works "$ATTIC_JWT_TOKEN"
           attic push main "${store_paths[@]}"
 
