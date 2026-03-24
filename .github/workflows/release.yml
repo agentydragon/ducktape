@@ -7,6 +7,9 @@ name: Release
       short_sha:
         description: Short commit SHA of the artifacts uploaded by BB (e.g. abc12345)
         required: true
+      changed:
+        description: Space-separated packages with new releases (e.g. "claude-hooks bbapi")
+        required: true
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -45,14 +48,14 @@ jobs:
           )
 
           store_paths=()
-          for pkg in "${!urls[@]}"; do
+          read -ra changed_pkgs <<< "${{ inputs.changed }}"
+          for pkg in "${changed_pkgs[@]}"; do
             npins update "$pkg" --url "${urls[$pkg]}"
             store_paths+=($(nix build --no-link --print-out-paths ".#packages.x86_64-linux.$pkg"))
           done
 
-          # web-session bundles claude-hooks + bbapi + gh into a single installable.
-          # Not an npins artifact (synthesized in Nix), but push to attic so
-          # web_setup.sh nix profile install is a cache hit.
+          # web-session (symlinkJoin of claude-hooks + bbapi + gh) is not an npins
+          # artifact but bundles them; rebuild and push so web_setup.sh is a cache hit.
           store_paths+=($(nix build --no-link --print-out-paths ".#packages.x86_64-linux.web-session"))
 
           attic login main https://cache.allegedly.works "$ATTIC_JWT_TOKEN"

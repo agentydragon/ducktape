@@ -93,29 +93,55 @@ actions:
 
           SHORT_SHA=$(git rev-parse --short HEAD)
 
-          # Create a new release; fails on any error including "already exists".
-          create_release() {
-            local tag="$1" title="$2" body="$3"; shift 3
-            gh release create "$tag" --title "$title" --notes "$body" --latest=false "$@"
+          # SRI hash of a file, matching the format npins stores in sources.json.
+          sri_hash() { echo "sha256-$(openssl dgst -sha256 -binary "$1" | base64 | tr -d '\n')"; }
+
+          # Hash currently pinned in npins/sources.json for a package (empty if absent).
+          pinned_hash() { python3 -c "import json,sys;d=json.load(open('npins/sources.json'));print(d.get('pins',{}).get(sys.argv[1],{}).get('hash',''))" "$1"; }
+
+          changed=()
+
+          # Create a release only when the built artifact differs from the current pin.
+          maybe_release() {
+            local pkg="$1" tag="$2" title="$3" body="$4" file="$5"
+            local new_hash old_hash
+            new_hash=$(sri_hash "$file")
+            old_hash=$(pinned_hash "$pkg")
+            if [ "$new_hash" = "$old_hash" ]; then
+              echo "$pkg: unchanged, skipping"
+              return
+            fi
+            echo "$pkg: content changed, creating release $tag"
+            gh release create "$tag" --title "$title" --notes "$body" --latest=false "$file"
+            changed+=("$pkg")
           }
-          # Upload to pinned commit tags (used by flake.nix for deterministic pins).
-          create_release "claude-hooks-$SHORT_SHA" \
+
+          maybe_release "claude-hooks" "claude-hooks-$SHORT_SHA" \
             "claude-hooks ($SHORT_SHA)" "claude-hooks wheel for Claude Code integration." \
             dist/claude_hooks-*.whl
-          create_release "ducktape-$SHORT_SHA" \
+          maybe_release "ducktape" "ducktape-$SHORT_SHA" \
             "ducktape ($SHORT_SHA)" "ducktape wheel containing CLI tools." \
             dist/ducktape-*.whl
-          create_release "gterm-theme-$SHORT_SHA" \
+          maybe_release "gterm-theme" "gterm-theme-$SHORT_SHA" \
             "gterm-theme ($SHORT_SHA)" "gterm-theme wheel (GNOME Terminal theme follower)." \
             dist/gterm_theme-*.whl
-          create_release "skills-$SHORT_SHA" \
+          maybe_release "skills" "skills-$SHORT_SHA" \
             "skills ($SHORT_SHA)" "Skills tarball for AI agent deployment." \
             dist/skills.tar
-          create_release "bbapi-$SHORT_SHA" \
+          maybe_release "bbapi" "bbapi-$SHORT_SHA" \
             "bbapi ($SHORT_SHA)" "bbapi — BuildBuddy API CLI (Linux x86_64)." \
             dist/bbapi
+
+          if [ ${#changed[@]} -eq 0 ]; then
+            echo "No artifacts changed, skipping release"
+            exit 0
+          fi
+
           BRANCH=$(git rev-parse --abbrev-ref HEAD)
-          gh workflow run release.yml --ref "$BRANCH" --field short_sha="$SHORT_SHA"
+          gh workflow run release.yml \
+            --ref "$BRANCH" \
+            --field short_sha="$SHORT_SHA" \
+            --field "changed=${changed[*]}"
 
   # Build container images (OCI images built with Bazel)
   - name: "Build Container Images"
