@@ -93,7 +93,13 @@ actions:
 
           SHORT_SHA=$(git rev-parse --short HEAD)
 
-          upload_release() {
+          # Create a new release; fails on any error including "already exists".
+          create_release() {
+            local tag="$1" title="$2" body="$3"; shift 3
+            gh release create "$tag" --title "$title" --notes "$body" --latest=false "$@"
+          }
+          # Create or re-upload assets for rolling tags that are expected to already exist.
+          upsert_release() {
             local tag="$1" title="$2" body="$3"; shift 3
             local out
             if out=$(gh release create "$tag" --title "$title" --notes "$body" \
@@ -109,36 +115,36 @@ actions:
             esac
           }
           # Upload to pinned commit tags (used by flake.nix for deterministic pins).
-          upload_release "claude-hooks-$SHORT_SHA" \
+          create_release "claude-hooks-$SHORT_SHA" \
             "claude-hooks ($SHORT_SHA)" "claude-hooks wheel for Claude Code integration." \
             dist/claude_hooks-*.whl
-          upload_release "ducktape-$SHORT_SHA" \
+          create_release "ducktape-$SHORT_SHA" \
             "ducktape ($SHORT_SHA)" "ducktape wheel containing CLI tools." \
             dist/ducktape-*.whl
-          upload_release "gterm-theme-$SHORT_SHA" \
+          create_release "gterm-theme-$SHORT_SHA" \
             "gterm-theme ($SHORT_SHA)" "gterm-theme wheel (GNOME Terminal theme follower)." \
             dist/gterm_theme-*.whl
-          upload_release "skills-$SHORT_SHA" \
+          create_release "skills-$SHORT_SHA" \
             "skills ($SHORT_SHA)" "Skills tarball for AI agent deployment." \
             dist/skills.tar
-          upload_release "bbapi-$SHORT_SHA" \
+          create_release "bbapi-$SHORT_SHA" \
             "bbapi ($SHORT_SHA)" "bbapi — BuildBuddy API CLI (Linux x86_64)." \
             dist/bbapi
           # Also keep rolling -latest tags for consumers that don't use the flake
           # (e.g. pre-commit.yml pip-installs claude-hooks-latest directly).
-          upload_release claude-hooks-latest \
+          upsert_release claude-hooks-latest \
             "claude-hooks (latest)" "claude-hooks wheel for Claude Code integration." \
             dist/claude_hooks-*.whl
-          upload_release ducktape-latest \
+          upsert_release ducktape-latest \
             "ducktape (latest)" "ducktape wheel containing CLI tools." \
             dist/ducktape-*.whl
-          upload_release gterm-theme-latest \
+          upsert_release gterm-theme-latest \
             "gterm-theme (latest)" "gterm-theme wheel (GNOME Terminal theme follower)." \
             dist/gterm_theme-*.whl
-          upload_release skills-latest \
+          upsert_release skills-latest \
             "skills (latest)" "Skills tarball for AI agent deployment." \
             dist/skills.tar
-          upload_release bbapi-latest \
+          upsert_release bbapi-latest \
             "bbapi (latest)" "bbapi — BuildBuddy API CLI (Linux x86_64)." \
             dist/bbapi
 
