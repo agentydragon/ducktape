@@ -52,7 +52,7 @@ workflows:
 
   # Path-based workflows (non-Bazel)
   nix-flake-check:
-    trigger: { kind: path, pattern: "^nix/" }
+    trigger: { kind: path, pattern: "^(nix/|flake\\.lock$|npins/sources\\.json$)" }
 
   ansible-lint:
     trigger: { kind: path, pattern: "^ansible/" }
