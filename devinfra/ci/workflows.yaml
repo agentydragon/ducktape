@@ -16,21 +16,8 @@
 # Workflow file changes automatically trigger their workflow.
 
 workflows:
-  # Core Bazel workflows
-  # Build + all quality checks (ruff, ESLint, mypy, clippy, rustfmt; run by default)
-  bazel-check:
-    trigger: { kind: bazel_query, query: "$targets" }
-    targets: true
-    secrets: inherit
-
-  bazel-test:
-    # Java (keytool) is provided hermetically via //third_party/jdk.
-    # E2E tests (local=True) run locally even when RBE is enabled.
-    # Exclude manual-tagged tests: target lists are passed by file, bypassing
-    # Bazel's default wildcard exclusion of manual targets.
-    trigger: { kind: bazel_query, query: 'kind(".*_test rule", $targets) except attr(tags, "manual", $targets)' }
-    targets: true
-    secrets: inherit
+  # Bazel build/test is handled by BuildBuddy Workflows (buildbuddy.yaml).
+  # GitHub Actions only runs non-Bazel and image-build workflows here.
 
   # Image builds
   rbe-image:

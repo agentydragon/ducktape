@@ -80,26 +80,6 @@ jobs:
           name: bazel-query-logs-${{ github.run_id }}
           path: bazel-query-logs
           if-no-files-found: ignore
-  bazel-check:
-    needs:
-      - compute-targets
-      - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-check')
-    uses: ./.github/workflows/bazel-check.yml
-    with:
-      targets: ${{ needs.compute-targets.outputs.targets }}
-      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
-    secrets: inherit
-  bazel-test:
-    needs:
-      - compute-targets
-      - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-test')
-    uses: ./.github/workflows/bazel-test.yml
-    with:
-      targets: ${{ needs.compute-targets.outputs.targets }}
-      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
-    secrets: inherit
   rbe-image:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'rbe-image')
