@@ -36,22 +36,21 @@ jobs:
           SHA="${{ inputs.short_sha }}"
           BASE="https://github.com/agentydragon/ducktape/releases/download"
 
-          declare -A pins=(
-            [claude-hooks-wheel]="$BASE/claude-hooks-$SHA/claude_hooks-0.1.0-py3-none-any.whl"
-            [ducktape-wheel]="$BASE/ducktape-$SHA/ducktape-0.1.0-py3-none-any.whl"
-            [gterm-theme-wheel]="$BASE/gterm-theme-$SHA/gterm_theme-0.1.0-py3-none-any.whl"
-            [bbapi-binary]="$BASE/bbapi-$SHA/bbapi"
-            [skills-tar]="$BASE/skills-$SHA/skills.tar"
+          declare -A urls=(
+            [claude-hooks]="$BASE/claude-hooks-$SHA/claude_hooks-0.1.0-py3-none-any.whl"
+            [ducktape]="$BASE/ducktape-$SHA/ducktape-0.1.0-py3-none-any.whl"
+            [gterm-theme]="$BASE/gterm-theme-$SHA/gterm_theme-0.1.0-py3-none-any.whl"
+            [bbapi]="$BASE/bbapi-$SHA/bbapi"
+            [skills]="$BASE/skills-$SHA/skills.tar"
           )
-          for name in "${!pins[@]}"; do
-            npins update "$name" --url "${pins[$name]}"
+
+          store_paths=()
+          for pkg in "${!urls[@]}"; do
+            npins update "$pkg" --url "${urls[$pkg]}"
+            store_paths+=($(nix build --no-link --print-out-paths ".#packages.x86_64-linux.$pkg"))
           done
 
           attic login main https://cache.allegedly.works "$ATTIC_JWT_TOKEN"
-          store_paths=()
-          for pkg in claude-hooks bbapi skills; do
-            store_paths+=($(nix build --no-link --print-out-paths ".#packages.x86_64-linux.$pkg"))
-          done
           attic push main "${store_paths[@]}"
 
       - name: Commit and push updated pins

@@ -1,27 +1,27 @@
 {
   "version": 2,
   "pins": {
-    "claude-hooks-wheel": {
+    "claude-hooks": {
       "type": "Url",
       "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-latest/claude_hooks-0.1.0-py3-none-any.whl",
       "hash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
     },
-    "ducktape-wheel": {
+    "ducktape": {
       "type": "Url",
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-latest/ducktape-0.1.0-py3-none-any.whl",
       "hash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
     },
-    "gterm-theme-wheel": {
+    "gterm-theme": {
       "type": "Url",
       "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-latest/gterm_theme-0.1.0-py3-none-any.whl",
       "hash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
     },
-    "bbapi-binary": {
+    "bbapi": {
       "type": "Url",
       "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-latest/bbapi",
       "hash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
     },
-    "skills-tar": {
+    "skills": {
       "type": "Url",
       "url": "https://github.com/agentydragon/ducktape/releases/download/skills-latest/skills.tar",
       "hash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="

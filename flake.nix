@@ -67,13 +67,6 @@
       # CI-released artifact pins — managed by npins, updated by release.yml.
       # Bootstrap: run `nix run nixpkgs#npins -- update` to populate real hashes.
       artifacts = import ./npins;
-      inherit (artifacts)
-        ducktape-wheel
-        claude-hooks-wheel
-        gterm-theme-wheel
-        bbapi-binary
-        skills-tar
-        ;
 
       # Multi-system support for devShells
       systems = [
@@ -134,12 +127,12 @@
                   pkgsUnstable
                   ;
                 nixGLPackages = nixGL.packages.${system};
+                ducktape-wheel = artifacts.ducktape;
+                claude-hooks-wheel = artifacts.claude-hooks;
+                gterm-theme-wheel = artifacts.gterm-theme;
+                bbapi-binary = artifacts.bbapi;
+                skills-tar = artifacts.skills;
                 inherit
-                  ducktape-wheel
-                  claude-hooks-wheel
-                  gterm-theme-wheel
-                  bbapi-binary
-                  skills-tar
                   claude-plugins-official
                   siderolabs-docs
                   ;
@@ -191,12 +184,12 @@
                   family = "JetBrainsMono Nerd Font";
                   size = 11;
                 };
+                ducktape-wheel = artifacts.ducktape;
+                claude-hooks-wheel = artifacts.claude-hooks;
+                gterm-theme-wheel = artifacts.gterm-theme;
+                bbapi-binary = artifacts.bbapi;
+                skills-tar = artifacts.skills;
                 inherit
-                  ducktape-wheel
-                  claude-hooks-wheel
-                  gterm-theme-wheel
-                  bbapi-binary
-                  skills-tar
                   claude-plugins-official
                   siderolabs-docs
                   ;
@@ -287,22 +280,25 @@
           # Used by CI pre-commit to satisfy the enforce-bazel-tests hook (language: system).
           ducktape = pkgs.callPackage ./nix/home/packages/ducktape.nix {
             ducktape-wheel = pkgs.runCommand "ducktape-0.1.0-py3-none-any.whl" { } ''
-              cp ${ducktape-wheel} $out
+              cp ${artifacts.ducktape} $out
             '';
           };
           # Claude Code session hooks (claude-hook, claude-statusline, ducktape-precommit).
           # Pushed to attic by CI; web_setup.sh installs via nix profile install.
           claude-hooks = pkgs.callPackage ./nix/home/packages/claude-hooks.nix {
-            inherit claude-hooks-wheel;
+            claude-hooks-wheel = artifacts.claude-hooks;
+          };
+          gterm-theme = pkgs.callPackage ./nix/home/packages/gterm-theme.nix {
+            gterm-theme-wheel = artifacts.gterm-theme;
           };
           bbapi = pkgs.callPackage ./nix/home/packages/bbapi.nix {
-            inherit bbapi-binary;
+            bbapi-binary = artifacts.bbapi;
           };
           # Skills data: $out/share/claude-hooks/skills/ — deployed to ~/.claude/skills/.
           # Pushed to attic by CI; web_setup.sh installs via nix build and copies files.
           skills = pkgs.runCommand "claude-hooks-skills" { } ''
             mkdir -p $out/share/claude-hooks/skills
-            cp -r ${skills-tar}/. $out/share/claude-hooks/skills/
+            cp -r ${artifacts.skills}/. $out/share/claude-hooks/skills/
           '';
           # NixOS container tarball for docker import.
           # Build: nix build .#bazel-test-docker
