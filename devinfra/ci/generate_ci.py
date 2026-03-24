@@ -13,7 +13,6 @@ from pathlib import Path
 
 import yaml
 
-from devinfra.ci.diff_utils import BAZEL_DIFF_VERSION
 from devinfra.ci.github_actions import Job, Step, Workflow
 from devinfra.ci.models import HarborImageConfig, ReleaseConfig, WorkflowConfig, WorkflowManifest
 from devinfra.prettier import prettier_format_in_place
@@ -36,72 +35,11 @@ COMPUTE_TARGETS_JOB = Job(
     name="Compute affected targets",
     runs_on="ubuntu-latest",
     timeout_minutes=30,
-    outputs={
-        "targets": "${{ steps.decide.outputs.targets }}",
-        "workflows": "${{ steps.decide.outputs.workflows }}",
-        "infra_changed": "${{ steps.decide.outputs.infra_changed }}",
-    },
+    outputs={"workflows": "${{ steps.decide.outputs.workflows }}"},
     steps=[
         Step(uses="actions/checkout@v6", with_args={"fetch-depth": 0}),
         Step(uses="astral-sh/setup-uv@v7"),
-        # Set up Bazelisk
-        Step(uses="./.github/actions/bazel-repo-cache"),
-        Step(uses="actions/setup-java@v5", with_args={"distribution": "temurin", "java-version": "21"}),
-        Step(
-            name="Cache bazel-diff JAR",
-            id="cache-bazel-diff",
-            uses="actions/cache@v5",
-            with_args={"path": "bazel-diff.jar", "key": f"bazel-diff-{BAZEL_DIFF_VERSION}"},
-        ),
-        Step(
-            name="Download bazel-diff",
-            if_cond="steps.cache-bazel-diff.outputs.cache-hit != 'true'",
-            run=(
-                f"curl -fsSL -o bazel-diff.jar \\\n"
-                f'  "https://github.com/Tinder/bazel-diff/releases/download/{BAZEL_DIFF_VERSION}/bazel-diff_deploy.jar"'
-            ),
-        ),
-        Step(
-            name="Cache bazel-diff hashes",
-            uses="actions/cache@v5",
-            with_args={
-                "path": ".bazel-diff-cache",
-                "key": "bazel-diff-hashes-${{ github.sha }}",
-                "restore-keys": "bazel-diff-hashes-",
-            },
-        ),
-        Step(
-            name="Set CI env",
-            run='echo "BAZEL_DIFF_JAR=$PWD/bazel-diff.jar" >> $GITHUB_ENV\n'
-            'echo "BAZEL_DIFF_CACHE_DIR=$PWD/.bazel-diff-cache" >> $GITHUB_ENV\n'
-            'echo "BAZEL_QUERY_LOG_DIR=$PWD/bazel-query-logs" >> $GITHUB_ENV\n'
-            'echo "CI_WORKFLOWS_MANIFEST=$PWD/devinfra/ci/workflows.yaml" >> $GITHUB_ENV\n'
-            "# Full build on main/master pushes; incremental everywhere else (PRs, devel, feature branches)\n"
-            'if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF_NAME" =~ ^(main|master)$ ]]; then\n'
-            '  echo "CI_PUSH_STRATEGY=full" >> $GITHUB_ENV\n'
-            "else\n"
-            '  echo "CI_PUSH_STRATEGY=incremental" >> $GITHUB_ENV\n'
-            "fi",
-        ),
         Step(name="Compute CI decision", id="decide", run="uv run devinfra/ci/ci_decide.py"),
-        Step(
-            name="Upload targets files",
-            if_cond="always()",
-            uses="actions/upload-artifact@v4",
-            # Includes targets.txt (all affected) and targets-<workflow>.txt
-            # (per-workflow, computed from each workflow's bazel query).
-            with_args={"name": "targets", "path": "targets*.txt", "if-no-files-found": "ignore"},
-        ),
-        Step(
-            name="Upload query logs",
-            if_cond="always()",
-            uses="actions/upload-artifact@v4",
-            with_args={
-                "name": "bazel-query-logs-${{ github.run_id }}",
-                "path": "bazel-query-logs",
-                "if-no-files-found": "ignore",
-            },
-        ),
     ],
 )
 
@@ -117,8 +55,6 @@ def _uses_rbe(name: str, config: WorkflowConfig) -> bool:
 def build_workflow_job(name: str, config: WorkflowConfig, *, has_rbe_image_job: bool) -> Job:
     """Build a job definition from workflow config."""
     with_args: dict[str, str] = {}
-    if config.targets:
-        with_args["targets"] = "${{ needs.compute-targets.outputs.targets }}"
     if config.inputs:
         with_args.update(config.inputs)
 

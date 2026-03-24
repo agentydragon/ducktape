@@ -21,65 +21,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
-      targets: ${{ steps.decide.outputs.targets }}
       workflows: ${{ steps.decide.outputs.workflows }}
-      infra_changed: ${{ steps.decide.outputs.infra_changed }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@v7
-      - uses: ./.github/actions/bazel-repo-cache
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "21"
-      - name: Cache bazel-diff JAR
-        id: cache-bazel-diff
-        uses: actions/cache@v5
-        with:
-          path: bazel-diff.jar
-          key: bazel-diff-16.0.0
-      - name: Download bazel-diff
-        run: |-
-          curl -fsSL -o bazel-diff.jar \
-            "https://github.com/Tinder/bazel-diff/releases/download/16.0.0/bazel-diff_deploy.jar"
-        if: steps.cache-bazel-diff.outputs.cache-hit != 'true'
-      - name: Cache bazel-diff hashes
-        uses: actions/cache@v5
-        with:
-          path: .bazel-diff-cache
-          key: bazel-diff-hashes-${{ github.sha }}
-          restore-keys: bazel-diff-hashes-
-      - name: Set CI env
-        run: |-
-          echo "BAZEL_DIFF_JAR=$PWD/bazel-diff.jar" >> $GITHUB_ENV
-          echo "BAZEL_DIFF_CACHE_DIR=$PWD/.bazel-diff-cache" >> $GITHUB_ENV
-          echo "BAZEL_QUERY_LOG_DIR=$PWD/bazel-query-logs" >> $GITHUB_ENV
-          echo "CI_WORKFLOWS_MANIFEST=$PWD/devinfra/ci/workflows.yaml" >> $GITHUB_ENV
-          # Full build on main/master pushes; incremental everywhere else (PRs, devel, feature branches)
-          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF_NAME" =~ ^(main|master)$ ]]; then
-            echo "CI_PUSH_STRATEGY=full" >> $GITHUB_ENV
-          else
-            echo "CI_PUSH_STRATEGY=incremental" >> $GITHUB_ENV
-          fi
       - name: Compute CI decision
         id: decide
         run: uv run devinfra/ci/ci_decide.py
-      - name: Upload targets files
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: targets
-          path: targets*.txt
-          if-no-files-found: ignore
-      - name: Upload query logs
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: bazel-query-logs-${{ github.run_id }}
-          path: bazel-query-logs
-          if-no-files-found: ignore
   rbe-image:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'rbe-image')

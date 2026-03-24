@@ -17,14 +17,6 @@ filegroup(
 # === Base modules (no internal deps) ===
 
 py_library(
-    name = "bazel_query",
-    srcs = ["bazel_query.py"],
-    imports = ["../.."],
-    visibility = ["//:__subpackages__"],
-    deps = ["//util/bazel:workspace"],
-)
-
-py_library(
     name = "github_actions",
     srcs = ["github_actions.py"],
     imports = ["../.."],
@@ -84,13 +76,10 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":bazel_query",
         ":diff_utils",
         ":github_actions",
         ":models",
-        "//util:env",
         "//util:fmt",
-        "//util/bazel:workspace",
         "@pypi//pydantic",
         "@pypi//pygit2",
     ],
@@ -103,7 +92,6 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":diff_utils",
         ":github_actions",
         ":models",
         "//devinfra:prettier",
