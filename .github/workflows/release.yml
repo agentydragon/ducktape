@@ -26,8 +26,8 @@ jobs:
         with:
           extra_nix_config: experimental-features = nix-command flakes
 
-      - name: Install npins
-        run: nix profile install nixpkgs#npins
+      - name: Install npins and attic-client
+        run: nix profile install nixpkgs#npins nixpkgs#attic-client
 
       - name: Update artifact pins
         run: |
@@ -55,9 +55,8 @@ jobs:
           skills=$(nix build --no-link --print-out-paths \
             .#packages.x86_64-linux.skills)
 
-          nix run nixpkgs#attic-client -- login main \
-            https://cache.allegedly.works "$ATTIC_JWT_TOKEN"
-          nix run nixpkgs#attic-client -- push main "$claude_hooks" "$bbapi" "$skills"
+          attic login main https://cache.allegedly.works "$ATTIC_JWT_TOKEN"
+          attic push main "$claude_hooks" "$bbapi" "$skills"
 
       - name: Commit and push updated pins
         run: |
