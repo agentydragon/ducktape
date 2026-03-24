@@ -34,7 +34,7 @@ jobs:
 
       - name: Update artifact pins and push Nix packages to attic
         env:
-          ATTIC_JWT_TOKEN: ${{ secrets.ATTIC_JWT_TOKEN }}
+          ATTIC_TOKEN: ${{ secrets.ATTIC_TOKEN }}
         run: |
           SHA="${{ inputs.short_sha }}"
           BASE="https://github.com/agentydragon/ducktape/releases/download"
@@ -58,7 +58,7 @@ jobs:
           # artifact but bundles them; rebuild and push so web_setup.sh is a cache hit.
           store_paths+=($(nix build --no-link --print-out-paths ".#packages.x86_64-linux.web-session"))
 
-          attic login main https://cache.allegedly.works "$ATTIC_JWT_TOKEN"
+          attic login main https://cache.allegedly.works "$ATTIC_TOKEN"
           attic push main "${store_paths[@]}"
 
       - name: Commit and push updated pins
