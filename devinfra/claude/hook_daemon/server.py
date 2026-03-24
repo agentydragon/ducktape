@@ -35,7 +35,7 @@ from devinfra.claude.settings import HookSettings
 
 logger = logging.getLogger(__name__)
 
-IDLE_TIMEOUT_SECONDS = 300  # 5 minutes
+IDLE_TIMEOUT_SECONDS = 1800  # 30 minutes
 IDLE_CHECK_INTERVAL_SECONDS = 30
 
 app = FastAPI()
