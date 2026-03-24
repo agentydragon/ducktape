@@ -48,6 +48,9 @@ props/specimens/** filename-conventions-ignored=true
 # Specimens committed snapshot code — frozen third-party code, not ours to lint
 props/specimens/*/*/code/** rules-lint-ignored=true
 
+# npins/sources.json - machine-edited by jq in release workflow, not worth formatting
+npins/sources.json rules-lint-ignored=true
+
 # OrcaSlicer config - 3D printer slicer settings, not source code
 x/orcaslicer_config/** rules-lint-ignored=true
 
