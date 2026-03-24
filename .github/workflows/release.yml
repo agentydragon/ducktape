@@ -26,19 +26,22 @@ jobs:
         with:
           extra_nix_config: experimental-features = nix-command flakes
 
+      - name: Install npins
+        run: nix profile install nixpkgs#npins
+
       - name: Update artifact pins
         run: |
           SHA="${{ inputs.short_sha }}"
           BASE="https://github.com/agentydragon/ducktape/releases/download"
-          nix run nixpkgs#npins -- update claude-hooks-wheel \
+          npins update claude-hooks-wheel \
             --url "$BASE/claude-hooks-$SHA/claude_hooks-0.1.0-py3-none-any.whl"
-          nix run nixpkgs#npins -- update ducktape-wheel \
+          npins update ducktape-wheel \
             --url "$BASE/ducktape-$SHA/ducktape-0.1.0-py3-none-any.whl"
-          nix run nixpkgs#npins -- update gterm-theme-wheel \
+          npins update gterm-theme-wheel \
             --url "$BASE/gterm-theme-$SHA/gterm_theme-0.1.0-py3-none-any.whl"
-          nix run nixpkgs#npins -- update bbapi-binary \
+          npins update bbapi-binary \
             --url "$BASE/bbapi-$SHA/bbapi"
-          nix run nixpkgs#npins -- update skills-tar \
+          npins update skills-tar \
             --url "$BASE/skills-$SHA/skills.tar"
 
       - name: Build and push Nix packages to attic
