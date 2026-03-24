@@ -25,6 +25,7 @@ tf_providers_versions(
 
 tf_module(
     name = "main",
+    data = ["//:nebula-mesh.json"],
     providers = [
         "external",
         "proxmox",
@@ -39,4 +40,9 @@ tf_module(
         "tls",
     ],
     providers_versions = ":providers",
+    tflint_config = "//cluster:.tflint.hcl",
+    deps = [
+        "//terraform/modules/nixos-image",
+        "//terraform/modules/proxmox-vm",
+    ],
 )

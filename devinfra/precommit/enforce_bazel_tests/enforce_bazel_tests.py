@@ -44,8 +44,12 @@ _INFRA_GLOBS = ("devinfra/bazel*",)
 
 # Bazel packages excluded from the query universe.
 # These have external deps that fail at repo fetch time.
+# TODO: make exclusions configurable (e.g. via .bazelproject or a config file)
+# so they don't require rebuilding the Nix package, and/or auto-detect packages
+# whose repo rules fail at fetch time and skip them gracefully.
 _EXCLUDED_PACKAGES = {
-    "x/cotrl"  # gymnasium — not in requirements
+    "x/cotrl",  # gymnasium — not in requirements
+    "gterm_theme",  # pycairo — requires dbus-1 system library not available everywhere
 }
 
 _PREFIX = "enforce-bazel-tests"

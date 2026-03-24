@@ -1,13 +1,3 @@
-plugin "terraform" {
-  enabled = true
-  version = "0.10.0"
-  source  = "github.com/terraform-linters/tflint-ruleset-terraform"
-}
-
-# plugin "aws" {  # Disabled - not using AWS
-#   enabled = false
-# }
-
 rule "terraform_deprecated_index" {
   enabled = true
 }

@@ -11,17 +11,17 @@ terraform {
     # From infrastructure + persistent-auth + nixos-dev-env
     proxmox = { source = "bpg/proxmox", version = "~> 0.91.0" }
     # From infrastructure
-    hcloud = { source = "hetznercloud/hcloud", version = "~> 1.45" }
-    talos = { source = "siderolabs/talos", version = "~> 0.10.0" }
+    hcloud     = { source = "hetznercloud/hcloud", version = "~> 1.45" }
+    talos      = { source = "siderolabs/talos", version = "~> 0.10.0" }
     kubernetes = { source = "hashicorp/kubernetes", version = "~> 2.38.0" }
     # From flux
     flux = { source = "fluxcd/flux", version = "~> 1.7.0" }
     helm = { source = "hashicorp/helm", version = "~> 3.1.0" }
     # Utility (from multiple)
-    local = { source = "hashicorp/local", version = "~> 2.5.0" }
-    null = { source = "hashicorp/null", version = "~> 3.2.0" }
+    local  = { source = "hashicorp/local", version = "~> 2.5.0" }
+    null   = { source = "hashicorp/null", version = "~> 3.2.0" }
     random = { source = "hashicorp/random", version = "~> 3.7.0" }
-    tls = { source = "hashicorp/tls", version = "~> 4.1.0" }
+    tls    = { source = "hashicorp/tls", version = "~> 4.1.0" }
   }
 }
 
