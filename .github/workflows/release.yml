@@ -29,34 +29,30 @@ jobs:
       - name: Install npins and attic-client
         run: nix profile install nixpkgs#npins nixpkgs#attic-client
 
-      - name: Update artifact pins
-        run: |
-          SHA="${{ inputs.short_sha }}"
-          BASE="https://github.com/agentydragon/ducktape/releases/download"
-          npins update claude-hooks-wheel \
-            --url "$BASE/claude-hooks-$SHA/claude_hooks-0.1.0-py3-none-any.whl"
-          npins update ducktape-wheel \
-            --url "$BASE/ducktape-$SHA/ducktape-0.1.0-py3-none-any.whl"
-          npins update gterm-theme-wheel \
-            --url "$BASE/gterm-theme-$SHA/gterm_theme-0.1.0-py3-none-any.whl"
-          npins update bbapi-binary \
-            --url "$BASE/bbapi-$SHA/bbapi"
-          npins update skills-tar \
-            --url "$BASE/skills-$SHA/skills.tar"
-
-      - name: Build and push Nix packages to attic
+      - name: Update artifact pins and push Nix packages to attic
         env:
           ATTIC_JWT_TOKEN: ${{ secrets.ATTIC_JWT_TOKEN }}
         run: |
-          claude_hooks=$(nix build --no-link --print-out-paths \
-            .#packages.x86_64-linux.claude-hooks)
-          bbapi=$(nix build --no-link --print-out-paths \
-            .#packages.x86_64-linux.bbapi)
-          skills=$(nix build --no-link --print-out-paths \
-            .#packages.x86_64-linux.skills)
+          SHA="${{ inputs.short_sha }}"
+          BASE="https://github.com/agentydragon/ducktape/releases/download"
+
+          declare -A pins=(
+            [claude-hooks-wheel]="$BASE/claude-hooks-$SHA/claude_hooks-0.1.0-py3-none-any.whl"
+            [ducktape-wheel]="$BASE/ducktape-$SHA/ducktape-0.1.0-py3-none-any.whl"
+            [gterm-theme-wheel]="$BASE/gterm-theme-$SHA/gterm_theme-0.1.0-py3-none-any.whl"
+            [bbapi-binary]="$BASE/bbapi-$SHA/bbapi"
+            [skills-tar]="$BASE/skills-$SHA/skills.tar"
+          )
+          for name in "${!pins[@]}"; do
+            npins update "$name" --url "${pins[$name]}"
+          done
 
           attic login main https://cache.allegedly.works "$ATTIC_JWT_TOKEN"
-          attic push main "$claude_hooks" "$bbapi" "$skills"
+          store_paths=()
+          for pkg in claude-hooks bbapi skills; do
+            store_paths+=($(nix build --no-link --print-out-paths ".#packages.x86_64-linux.$pkg"))
+          done
+          attic push main "${store_paths[@]}"
 
       - name: Commit and push updated pins
         run: |
