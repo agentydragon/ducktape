@@ -29,33 +29,6 @@
 
     claude-code-router.url = "github:agentydragon/claude-code-router/2b7c2ca764f74fd80a6c8b85495df7793282758d";
 
-    # CI-released artifacts — pinned to tagged releases, updated by release.yml.
-    # URLs are rewritten by the update-downstream job after each release.
-    ducktape-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/ducktape-f0511fe1/ducktape-0.1.0-py3-none-any.whl";
-      flake = false;
-    };
-    claude-hooks-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-3e1e1ba3/claude_hooks-0.1.0-py3-none-any.whl";
-      flake = false;
-    };
-    gterm-theme-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-1b3375b3/gterm_theme-0.1.0-py3-none-any.whl";
-      flake = false;
-    };
-
-    # CI-released bbapi binary — updated by release.yml update-downstream job.
-    bbapi-binary = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/bbapi-1b3375b3/bbapi";
-      flake = false;
-    };
-
-    # CI-released skills tarball — updated by release.yml update-downstream job.
-    skills-tar = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/skills-94588488/skills.tar";
-      flake = false;
-    };
-
     # Claude Code plugin marketplaces
     claude-plugins-official = {
       url = "github:anthropics/claude-plugins-official";
@@ -84,17 +57,23 @@
       nix-colors,
       claude-code-router,
       nixGL,
-      ducktape-wheel,
-      claude-hooks-wheel,
-      gterm-theme-wheel,
-      bbapi-binary,
-      skills-tar,
       claude-plugins-official,
       siderolabs-docs,
       ...
     }@inputs:
     let
       system = "x86_64-linux";
+
+      # CI-released artifact pins — managed by npins, updated by release.yml.
+      # Bootstrap: run `nix run nixpkgs#npins -- update` to populate real hashes.
+      artifacts = import ./npins;
+      inherit (artifacts)
+        ducktape-wheel
+        claude-hooks-wheel
+        gterm-theme-wheel
+        bbapi-binary
+        skills-tar
+        ;
 
       # Multi-system support for devShells
       systems = [
@@ -304,6 +283,27 @@
         {
           tana = pkgs.callPackage ./nix/home/packages/tana.nix { };
           gmail-mcp = pkgs.callPackage ./nix/home/packages/gmail-mcp.nix { };
+          # ducktape wheel — provides ducktape-precommit (and git-commit-ai, difftree, etc.)
+          # Used by CI pre-commit to satisfy the enforce-bazel-tests hook (language: system).
+          ducktape = pkgs.callPackage ./nix/home/packages/ducktape.nix {
+            ducktape-wheel = pkgs.runCommand "ducktape-0.1.0-py3-none-any.whl" { } ''
+              cp ${ducktape-wheel} $out
+            '';
+          };
+          # Claude Code session hooks (claude-hook, claude-statusline, ducktape-precommit).
+          # Pushed to attic by CI; web_setup.sh installs via nix profile install.
+          claude-hooks = pkgs.callPackage ./nix/home/packages/claude-hooks.nix {
+            inherit claude-hooks-wheel;
+          };
+          bbapi = pkgs.callPackage ./nix/home/packages/bbapi.nix {
+            inherit bbapi-binary;
+          };
+          # Skills data: $out/share/claude-hooks/skills/ — deployed to ~/.claude/skills/.
+          # Pushed to attic by CI; web_setup.sh installs via nix build and copies files.
+          skills = pkgs.runCommand "claude-hooks-skills" { } ''
+            mkdir -p $out/share/claude-hooks/skills
+            cp -r ${skills-tar}/. $out/share/claude-hooks/skills/
+          '';
           # NixOS container tarball for docker import.
           # Build: nix build .#bazel-test-docker
           # Load:  docker import result ducktape-nixos-bazel

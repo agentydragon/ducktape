@@ -96,6 +96,9 @@ let
     claude-hooks-wheel = renameWheel "claude_hooks-0.1.0-py3-none-any.whl" claude-hooks-wheel;
   };
 
+  # bbapi - BuildBuddy API CLI
+  bbapi = pkgs.callPackage ./packages/bbapi.nix { inherit bbapi-binary; };
+
   # gterm-theme - GNOME Terminal theme follower
   gterm-theme = pkgs.callPackage ./packages/gterm-theme.nix {
     gterm-theme-wheel = renameWheel "gterm_theme-0.1.0-py3-none-any.whl" gterm-theme-wheel;
@@ -174,6 +177,7 @@ in
     download-buffer-size = 268435456; # 256MB (increased from default 64MB)
 
     # Add nix-community cache for home-manager, nixGL, etc.
+    # Add self-hosted attic binary cache for CI-built closures.
     substituters = [
       "https://cache.allegedly.works/main"
       # "https://cache.nixos.org/"
@@ -429,8 +433,8 @@ in
       # Custom packages from ducktape repo
       ducktape # git-commit-ai, difftree, gmail-archiver
       claude-hooks # Claude Code hooks/statusline
-      gterm-theme # GNOME Terminal theme follower
       bbapi # BuildBuddy API CLI
+      gterm-theme # GNOME Terminal theme follower
     ]
     ++ lib.optionals enableKube [
       kubectl

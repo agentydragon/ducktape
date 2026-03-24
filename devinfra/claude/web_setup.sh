@@ -2,37 +2,44 @@
 # Setup script for Claude Code web sessions.
 #
 # Installs:
-#   1. claude-hooks wheel (hook dispatcher, statusline, ducktape-precommit, pre-commit)
-#   2. bbapi binary (BuildBuddy API CLI)
-#   3. Skills tarball (AI agent skills deployed to ~/.claude/skills/)
+#   1. Nix (via official single-user installer from nixos.org)
+#   2. claude-hooks + bbapi — from flake, fetched via attic binary cache
+#   3. skills — deployed to ~/.claude/skills/ from the skills flake package
 #
 # Usage (Claude Code web UI setup command):
 #   curl -fsSL https://raw.githubusercontent.com/agentydragon/ducktape/main/devinfra/claude/web_setup.sh | bash
-#
-# Override release tags:
-#   DUCKTAPE_HOOKS_TAG=claude-hooks-abc12345 DUCKTAPE_SKILLS_TAG=skills-abc12345 DUCKTAPE_BBAPI_TAG=bbapi-abc12345 bash web_setup.sh
 set -euo pipefail
 
 LOG_FILE="/tmp/web-setup.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-HOOKS_TAG="${DUCKTAPE_HOOKS_TAG:-claude-hooks-latest}"
-BBAPI_TAG="${DUCKTAPE_BBAPI_TAG:-bbapi-latest}"
-SKILLS_TAG="${DUCKTAPE_SKILLS_TAG:-skills-latest}"
-BASE_URL="https://github.com/agentydragon/ducktape/releases/download"
+FLAKE="github:agentydragon/ducktape"
 
-echo "Installing claude-hooks wheel (tag: ${HOOKS_TAG})..."
-uv tool install --force \
-  --with-executables-from pre-commit \
-  "${BASE_URL}/${HOOKS_TAG}/claude_hooks-0.1.0-py3-none-any.whl"
+echo "Installing Nix..."
+curl -fsSL https://nixos.org/nix/install | sh -s -- --no-daemon
+# shellcheck disable=SC1091
+. ~/.nix-profile/etc/profile.d/nix.sh
 
-echo "Installing bbapi binary (tag: ${BBAPI_TAG})..."
-mkdir -p ~/.local/bin
-curl -fsSL -o ~/.local/bin/bbapi "${BASE_URL}/${BBAPI_TAG}/bbapi"
-chmod +x ~/.local/bin/bbapi
+echo "Configuring Nix for gVisor (no local builds, attic cache)..."
+mkdir -p ~/.config/nix
+cat >>~/.config/nix/nix.conf <<'EOF'
+build-users-group =
+experimental-features = nix-command flakes
+sandbox = false
+max-jobs = 0
+system-features =
+substituters = https://cache.nixos.org https://cache.allegedly.works/main
+trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= cache.allegedly.works-1:OX/cis8G1W13DALkGvhdUZ1OY3yGATbXw8+tIc8J7oA=
+EOF
 
-echo "Installing skills (tag: ${SKILLS_TAG})..."
+echo "Installing claude-hooks and bbapi (attic cache hit)..."
+nix profile install \
+  "${FLAKE}#claude-hooks" \
+  "${FLAKE}#bbapi"
+
+echo "Deploying skills to ~/.claude/skills/..."
+skills=$(nix build --no-link --print-out-paths "${FLAKE}#skills")
 mkdir -p ~/.claude/skills
-curl -fsSL "${BASE_URL}/${SKILLS_TAG}/skills.tar" | tar xf - -C ~/.claude/skills/
+cp -r "$skills/share/claude-hooks/skills/." ~/.claude/skills/
 
 echo "Setup complete. Log: ${LOG_FILE}"

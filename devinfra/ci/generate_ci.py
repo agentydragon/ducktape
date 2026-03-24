@@ -304,11 +304,10 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
 
         # --- extra jobs ---
         for extra_name, extra_config in config.extra_jobs.items():
-            extra_steps: list[Step] = []
-            for s in extra_config.steps:
-                extra_steps.append(
-                    Step(name=s.name, id=s.id, uses=s.uses, run=s.run, if_cond=s.if_cond, with_args=s.with_args)
-                )
+            extra_steps = [
+                Step(name=s.name, id=s.id, uses=s.uses, run=s.run, if_cond=s.if_cond, with_args=s.with_args)
+                for s in extra_config.steps
+            ]
             jobs[extra_name] = Job(
                 name=extra_name,
                 needs=extra_config.needs if extra_config.needs else "check-releases",

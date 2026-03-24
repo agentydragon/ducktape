@@ -74,86 +74,8 @@ workflows:
   pre-commit:
     trigger: { kind: always }
 
-# Release definitions — single source of truth for all package releases.
-#
-# Generates a consolidated .github/workflows/release.yml with:
-#   - check-releases job (bazel-diff for all packages)
-#   - per-package test jobs (if test_targets is set)
-#   - extra_jobs spliced in as additional workflow jobs
-#   - per-package release jobs (build + GitHub Release)
-#   - update-downstream job (pin flake URLs + .claude/settings.json)
-#
-# Fields:
-#   bazel_target:     Bazel target to build (required)
-#   release_body:     GitHub Release description (required)
-#   artifact_type:    "wheel" (default), "binary", or "tarball"
-#   test_targets:     Bazel test targets — generates a test job if set
-#   flake_input:      Nix flake input name — update-downstream rewrites its URL if set
-#   update_claude_settings: Also update .claude/settings.json (default: false)
-#   apt_packages:     System packages needed for build
-#   extra_jobs:       Additional jobs spliced into the workflow (name → job config)
-#   release_needs:    Extra job names the release job depends on (beyond standard test)
-releases:
-  claude-hooks:
-    targets:
-      - bazel_target: //:claude_hooks_wheel
-        flake_input: claude-hooks-wheel
-    wheel_name: claude_hooks
-    test_targets: //devinfra/claude/...
-    update_claude_settings: true
-    release_body: |
-      claude-hooks wheel for Claude Code integration:
-
-      - `claude-hook` - Unified hook dispatcher for Claude Code web
-      - `claude-statusline` - Statusline for Claude Code
-
-      Requires Python 3.13+
-
-  ducktape:
-    targets:
-      - bazel_target: //:wheel
-        flake_input: ducktape-wheel
-    wheel_name: ducktape
-    release_body: |
-      ducktape wheel containing CLI tools:
-
-      - `git-commit-ai` - AI-powered commit message generator
-      - `difftree` - Tree-style visualization of diffs
-      - `gmail-archiver` - Gmail email auto-archiving tool
-
-      Requires Python 3.13+
-
-  gterm-theme:
-    targets:
-      - bazel_target: //gterm_theme:wheel
-        flake_input: gterm-theme-wheel
-    wheel_name: gterm_theme
-    apt_packages: [libcairo2-dev, libgirepository-2.0-dev, libdbus-1-dev, libxcb1-dev, pkg-config]
-    release_body: |
-      gterm-theme wheel (GNOME Terminal theme follower).
-
-      **Note**: Requires system libraries (libgirepository-2.0-dev, libdbus-1-dev).
-
-  skills:
-    targets:
-      - bazel_target: //skills:all_skills_tar
-        flake_input: skills-tar
-    artifact_type: tarball
-    release_body: |
-      Skills tarball for AI agent deployment (Claude Code, Gemini CLI, etc.).
-
-      Extract to ~/.claude/skills/ or ~/.gemini/skills/.
-
-  bbapi:
-    targets:
-      - bazel_target: //devinfra/buildbuddy_cli:bbapi
-        flake_input: bbapi-binary
-    artifact_type: binary
-    release_body: |
-      bbapi — BuildBuddy API CLI (Linux x86_64).
-
-      Commands: invocations, log, executions, cache, artifacts ls/get.
-      Requires BUILDBUDDY_API_KEY env var.
+# Release definitions removed — release.yml is now manually maintained.
+# See .github/workflows/release.yml for the single build-and-push job.
 
 # List of Bazel-built images pushed to Harbor (registry.allegedly.works).
 # The bazel-harbor-images workflow (generated from this config) builds and

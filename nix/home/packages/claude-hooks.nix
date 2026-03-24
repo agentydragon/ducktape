@@ -12,29 +12,31 @@ pkgs.python3Packages.buildPythonApplication {
 
   src = claude-hooks-wheel;
 
-  propagatedBuildInputs = with pkgs.python3Packages; [
-    anyio
-    cryptography
-    fastapi
-    httpx
-    kubernetes
-    mako
-    opentelemetry-api
-    opentelemetry-exporter-otlp-proto-http
-    opentelemetry-sdk
-    platformdirs
-    psutil
-    pydantic
-    pydantic-settings
-    pygit2
-    pyjwt
-    pyyaml
-    rich
-    structlog
-    supervisor
-    tenacity
-    uvicorn
-  ];
+  propagatedBuildInputs =
+    (with pkgs.python3Packages; [
+      anyio
+      cryptography
+      fastapi
+      httpx
+      kubernetes
+      mako
+      opentelemetry-api
+      opentelemetry-exporter-otlp-proto-http
+      opentelemetry-sdk
+      platformdirs
+      psutil
+      pydantic
+      pydantic-settings
+      pygit2
+      pyjwt
+      pyyaml
+      rich
+      structlog
+      supervisor
+      tenacity
+      uvicorn
+    ])
+    ++ [ pkgs.pre-commit ];
 
   # Disable checks - wheel is tested in CI
   doCheck = false;

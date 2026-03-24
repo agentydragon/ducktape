@@ -1,462 +1,70 @@
-# AUTO-GENERATED from devinfra/ci/workflows.yaml - DO NOT EDIT DIRECTLY
-# Regenerate with: bazel run //devinfra/ci:generate_ci_bin
 name: Release
+# Triggered by BB Workflows "Release" action after artifacts are uploaded to GitHub Releases.
+# Only does nix-pin + attic push + git commit — no Bazel.
 "on":
-  push:
-    branches:
-      - devel
-      - main
   workflow_dispatch:
     inputs:
-      package:
-        description: Package to release
-        type: choice
-        options:
-          - all
-          - claude-hooks
-          - ducktape
-          - gterm-theme
-          - skills
-          - bbapi
-        default: all
-      force:
-        description: Force release even if no changes detected
-        type: boolean
-        default: false
+      short_sha:
+        description: Short commit SHA of the artifacts uploaded by BB (e.g. abc12345)
+        required: true
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 permissions:
   contents: write
 jobs:
-  check-releases:
-    name: Check releases
+  pin-and-push:
+    name: Update flake pins and push
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    outputs:
-      claude_hooks_needed: ${{ steps.check-claude_hooks.outputs.release_needed }}
-      ducktape_needed: ${{ steps.check-ducktape.outputs.release_needed }}
-      gterm_theme_needed: ${{ steps.check-gterm_theme.outputs.release_needed }}
-      skills_needed: ${{ steps.check-skills.outputs.release_needed }}
-      bbapi_needed: ${{ steps.check-bbapi.outputs.release_needed }}
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - id: bazel
-        uses: ./.github/actions/setup-bazel
-        with:
-          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
-      - name: Check claude-hooks
-        id: check-claude_hooks
-        uses: ./.github/actions/check-release-needed
-        with:
-          package_prefix: claude-hooks
-          bazel_targets: //:claude_hooks_wheel
-          latest_release_tag: claude-hooks-latest
-      - name: Check ducktape
-        id: check-ducktape
-        uses: ./.github/actions/check-release-needed
-        with:
-          package_prefix: ducktape
-          bazel_targets: //:wheel
-          latest_release_tag: ducktape-latest
-      - name: Check gterm-theme
-        id: check-gterm_theme
-        uses: ./.github/actions/check-release-needed
-        with:
-          package_prefix: gterm-theme
-          bazel_targets: //gterm_theme:wheel
-          latest_release_tag: gterm-theme-latest
-      - name: Check skills
-        id: check-skills
-        uses: ./.github/actions/check-release-needed
-        with:
-          package_prefix: skills
-          bazel_targets: //skills:all_skills_tar
-          latest_release_tag: skills-latest
-      - name: Check bbapi
-        id: check-bbapi
-        uses: ./.github/actions/check-release-needed
-        with:
-          package_prefix: bbapi
-          bazel_targets: //devinfra/buildbuddy_cli:bbapi
-          latest_release_tag: bbapi-latest
-  test-claude_hooks:
-    name: Test claude-hooks
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs: check-releases
-    if:
-      always() && !cancelled() && !failure() && (needs.check-releases.outputs.claude_hooks_needed == 'true' || (github.event_name
-      == 'workflow_dispatch' && (inputs.package == 'all' || inputs.package == 'claude-hooks')))
-    steps:
-      - uses: actions/checkout@v6
-      - id: bazel
-        uses: ./.github/actions/setup-bazel
-        with:
-          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
-      - name: Run tests
-        run: |-
-          bazel test --keep_going \
-            --test_output=all \
-            --nocache_test_results \
-            --test_env=CI=true \
-            //devinfra/claude/...
-      - uses: ./.github/actions/collect-test-logs
-        if: always()
-        with:
-          artifact-name: claude-hooks-test-logs
-  release-claude_hooks:
-    name: Release claude-hooks
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs:
-      - check-releases
-      - test-claude_hooks
-    if:
-      always() && !cancelled() && needs.test-claude_hooks.result == 'success' && (needs.check-releases.outputs.claude_hooks_needed
-      == 'true' || (github.event_name == 'workflow_dispatch' && inputs.force == true && (inputs.package == 'all' || inputs.package
-      == 'claude-hooks')))
-    outputs:
-      released: "true"
-      tag: claude-hooks-${{ env.SHORT_SHA }}
-      short_sha: ${{ env.SHORT_SHA }}
-    steps:
-      - uses: actions/checkout@v6
-      - id: bazel
-        uses: ./.github/actions/setup-bazel
-        with:
-          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
-      - name: Set short SHA
-        run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
-      - name: Build wheel
-        run: bazel build --remote_download_toplevel //:claude_hooks_wheel
-      - name: Prepare wheel
-        run: |-
-          mkdir -p dist
-          cp bazel-bin/claude_hooks-*.whl dist/
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: claude-hooks-${{ env.SHORT_SHA }}
-          name: claude-hooks (${{ env.SHORT_SHA }})
-          body: |-
-            claude-hooks wheel for Claude Code integration:
-
-            - `claude-hook` - Unified hook dispatcher for Claude Code web
-            - `claude-statusline` - Statusline for Claude Code
-
-            Requires Python 3.13+
-
-            Commit: ${{ github.sha }}
-            Branch: ${{ github.ref_name }}
-          files: dist/*.whl
-      - uses: ./.github/actions/update-latest-release
-        with:
-          package_prefix: claude-hooks
-          latest_tag: claude-hooks-latest
-          title: claude-hooks (latest)
-          body: |
-            claude-hooks wheel for Claude Code integration:
-
-            - `claude-hook` - Unified hook dispatcher for Claude Code web
-            - `claude-statusline` - Statusline for Claude Code
-
-            Requires Python 3.13+
-          files: dist/*.whl
-  release-ducktape:
-    name: Release ducktape
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs:
-      - check-releases
-    if:
-      always() && !cancelled() && !failure() && (needs.check-releases.outputs.ducktape_needed == 'true' || (github.event_name
-      == 'workflow_dispatch' && inputs.force == true && (inputs.package == 'all' || inputs.package == 'ducktape')))
-    outputs:
-      released: "true"
-      tag: ducktape-${{ env.SHORT_SHA }}
-      short_sha: ${{ env.SHORT_SHA }}
-    steps:
-      - uses: actions/checkout@v6
-      - id: bazel
-        uses: ./.github/actions/setup-bazel
-        with:
-          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
-      - name: Set short SHA
-        run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
-      - name: Build wheel
-        run: bazel build --remote_download_toplevel //:wheel
-      - name: Prepare wheel
-        run: |-
-          mkdir -p dist
-          cp bazel-bin/ducktape-*.whl dist/
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ducktape-${{ env.SHORT_SHA }}
-          name: ducktape (${{ env.SHORT_SHA }})
-          body: |-
-            ducktape wheel containing CLI tools:
-
-            - `git-commit-ai` - AI-powered commit message generator
-            - `difftree` - Tree-style visualization of diffs
-            - `gmail-archiver` - Gmail email auto-archiving tool
-
-            Requires Python 3.13+
-
-            Commit: ${{ github.sha }}
-            Branch: ${{ github.ref_name }}
-          files: dist/*.whl
-      - uses: ./.github/actions/update-latest-release
-        with:
-          package_prefix: ducktape
-          latest_tag: ducktape-latest
-          title: ducktape (latest)
-          body: |
-            ducktape wheel containing CLI tools:
-
-            - `git-commit-ai` - AI-powered commit message generator
-            - `difftree` - Tree-style visualization of diffs
-            - `gmail-archiver` - Gmail email auto-archiving tool
-
-            Requires Python 3.13+
-          files: dist/*.whl
-  release-gterm_theme:
-    name: Release gterm-theme
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs:
-      - check-releases
-    if:
-      always() && !cancelled() && !failure() && (needs.check-releases.outputs.gterm_theme_needed == 'true' || (github.event_name
-      == 'workflow_dispatch' && inputs.force == true && (inputs.package == 'all' || inputs.package == 'gterm-theme')))
-    outputs:
-      released: "true"
-      tag: gterm-theme-${{ env.SHORT_SHA }}
-      short_sha: ${{ env.SHORT_SHA }}
-    steps:
-      - uses: actions/checkout@v6
-      - name: Install system dependencies
-        run:
-          sudo apt-get update && sudo apt-get install -y libcairo2-dev libgirepository-2.0-dev libdbus-1-dev libxcb1-dev
-          pkg-config
-      - id: bazel
-        uses: ./.github/actions/setup-bazel
-        with:
-          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
-      - name: Set short SHA
-        run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
-      - name: Build wheel
-        run: bazel build --remote_download_toplevel //gterm_theme:wheel
-      - name: Prepare wheel
-        run: |-
-          mkdir -p dist
-          cp bazel-bin/gterm_theme/gterm_theme-*.whl dist/
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: gterm-theme-${{ env.SHORT_SHA }}
-          name: gterm-theme (${{ env.SHORT_SHA }})
-          body: |-
-            gterm-theme wheel (GNOME Terminal theme follower).
-
-            **Note**: Requires system libraries (libgirepository-2.0-dev, libdbus-1-dev).
-
-            Commit: ${{ github.sha }}
-            Branch: ${{ github.ref_name }}
-          files: dist/*.whl
-      - uses: ./.github/actions/update-latest-release
-        with:
-          package_prefix: gterm-theme
-          latest_tag: gterm-theme-latest
-          title: gterm-theme (latest)
-          body: |
-            gterm-theme wheel (GNOME Terminal theme follower).
-
-            **Note**: Requires system libraries (libgirepository-2.0-dev, libdbus-1-dev).
-          files: dist/*.whl
-  release-skills:
-    name: Release skills
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs:
-      - check-releases
-    if:
-      always() && !cancelled() && !failure() && (needs.check-releases.outputs.skills_needed == 'true' || (github.event_name
-      == 'workflow_dispatch' && inputs.force == true && (inputs.package == 'all' || inputs.package == 'skills')))
-    outputs:
-      released: "true"
-      tag: skills-${{ env.SHORT_SHA }}
-      short_sha: ${{ env.SHORT_SHA }}
-    steps:
-      - uses: actions/checkout@v6
-      - id: bazel
-        uses: ./.github/actions/setup-bazel
-        with:
-          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
-      - name: Set short SHA
-        run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
-      - name: Build tarball
-        run: bazel build --remote_download_toplevel //skills:all_skills_tar
-      - name: Prepare tarball
-        run: |-
-          mkdir -p dist
-          cp bazel-bin/skills/all_skills_tar.tar dist/skills.tar
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: skills-${{ env.SHORT_SHA }}
-          name: skills (${{ env.SHORT_SHA }})
-          body: |-
-            Skills tarball for AI agent deployment (Claude Code, Gemini CLI, etc.).
-
-            Extract to ~/.claude/skills/ or ~/.gemini/skills/.
-
-            Commit: ${{ github.sha }}
-            Branch: ${{ github.ref_name }}
-          files: dist/skills.tar
-      - uses: ./.github/actions/update-latest-release
-        with:
-          package_prefix: skills
-          latest_tag: skills-latest
-          title: skills (latest)
-          body: |
-            Skills tarball for AI agent deployment (Claude Code, Gemini CLI, etc.).
-
-            Extract to ~/.claude/skills/ or ~/.gemini/skills/.
-          files: dist/skills.tar
-  release-bbapi:
-    name: Release bbapi
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs:
-      - check-releases
-    if:
-      always() && !cancelled() && !failure() && (needs.check-releases.outputs.bbapi_needed == 'true' || (github.event_name
-      == 'workflow_dispatch' && inputs.force == true && (inputs.package == 'all' || inputs.package == 'bbapi')))
-    outputs:
-      released: "true"
-      tag: bbapi-${{ env.SHORT_SHA }}
-      short_sha: ${{ env.SHORT_SHA }}
-    steps:
-      - uses: actions/checkout@v6
-      - id: bazel
-        uses: ./.github/actions/setup-bazel
-        with:
-          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
-      - name: Set short SHA
-        run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
-      - name: Build binary
-        run: bazel build --remote_download_toplevel //devinfra/buildbuddy_cli:bbapi
-      - name: Prepare binary
-        run: |-
-          mkdir -p dist
-          cp bazel-bin/devinfra/buildbuddy_cli/bbapi_/bbapi dist/
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: bbapi-${{ env.SHORT_SHA }}
-          name: bbapi (${{ env.SHORT_SHA }})
-          body: |-
-            bbapi — BuildBuddy API CLI (Linux x86_64).
-
-            Commands: invocations, log, executions, cache, artifacts ls/get.
-            Requires BUILDBUDDY_API_KEY env var.
-
-            Commit: ${{ github.sha }}
-            Branch: ${{ github.ref_name }}
-          files: dist/bbapi
-      - uses: ./.github/actions/update-latest-release
-        with:
-          package_prefix: bbapi
-          latest_tag: bbapi-latest
-          title: bbapi (latest)
-          body: |
-            bbapi — BuildBuddy API CLI (Linux x86_64).
-
-            Commands: invocations, log, executions, cache, artifacts ls/get.
-            Requires BUILDBUDDY_API_KEY env var.
-          files: dist/bbapi
-  update-downstream:
-    name: Update downstream references
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs:
-      - release-claude_hooks
-      - release-ducktape
-      - release-gterm_theme
-      - release-skills
-      - release-bbapi
-    if: |-
-      always() && !cancelled() &&
-           (needs.release-claude_hooks.outputs.released == 'true' ||
-           needs.release-ducktape.outputs.released == 'true' ||
-           needs.release-gterm_theme.outputs.released == 'true' ||
-           needs.release-skills.outputs.released == 'true' ||
-           needs.release-bbapi.outputs.released == 'true')
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.ref_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
       - uses: cachix/install-nix-action@v30
-      - name: Update references and push
-        run: |-
-          FAILED_INPUTS=()
-          update_flake_input() {
-            local input_name="$1"
-            if nix flake update "$input_name"; then
-              echo "Updated flake input: $input_name"
-            else
-              echo "::warning::Failed to update flake input: $input_name"
-              FAILED_INPUTS+=("$input_name")
-            fi
-          }
-          if [ "${{ needs.release-claude_hooks.outputs.released }}" = "true" ]; then
-            sed -i 's|releases/download/claude-hooks-[^/]*/claude_hooks|releases/download/${{ needs.release-claude_hooks.outputs.tag }}/claude_hooks|' flake.nix
-            sed -i "s|releases/download/claude-hooks-[a-f0-9]*/claude_hooks|releases/download/${{ needs.release-claude_hooks.outputs.tag }}/claude_hooks|g" .claude/settings.json
-            update_flake_input claude-hooks-wheel
-          fi
-          if [ "${{ needs.release-ducktape.outputs.released }}" = "true" ]; then
-            sed -i 's|releases/download/ducktape-[^/]*/ducktape|releases/download/${{ needs.release-ducktape.outputs.tag }}/ducktape|' flake.nix
-            update_flake_input ducktape-wheel
-          fi
-          if [ "${{ needs.release-gterm_theme.outputs.released }}" = "true" ]; then
-            sed -i 's|releases/download/gterm-theme-[^/]*/gterm_theme|releases/download/${{ needs.release-gterm_theme.outputs.tag }}/gterm_theme|' flake.nix
-            update_flake_input gterm-theme-wheel
-          fi
-          if [ "${{ needs.release-skills.outputs.released }}" = "true" ]; then
-            sed -i 's|releases/download/skills-[^/]*/skills.tar|releases/download/${{ needs.release-skills.outputs.tag }}/skills.tar|' flake.nix
-            update_flake_input skills-tar
-          fi
-          if [ "${{ needs.release-bbapi.outputs.released }}" = "true" ]; then
-            sed -i 's|releases/download/bbapi-[^/]*/bbapi|releases/download/${{ needs.release-bbapi.outputs.tag }}/bbapi|' flake.nix
-            update_flake_input bbapi-binary
-          fi
+        with:
+          extra_nix_config: experimental-features = nix-command flakes
 
+      - name: Update artifact pins
+        run: |
+          SHA="${{ inputs.short_sha }}"
+          BASE="https://github.com/agentydragon/ducktape/releases/download"
+          nix run nixpkgs#npins -- update claude-hooks-wheel \
+            --url "$BASE/claude-hooks-$SHA/claude_hooks-0.1.0-py3-none-any.whl"
+          nix run nixpkgs#npins -- update ducktape-wheel \
+            --url "$BASE/ducktape-$SHA/ducktape-0.1.0-py3-none-any.whl"
+          nix run nixpkgs#npins -- update gterm-theme-wheel \
+            --url "$BASE/gterm-theme-$SHA/gterm_theme-0.1.0-py3-none-any.whl"
+          nix run nixpkgs#npins -- update bbapi-binary \
+            --url "$BASE/bbapi-$SHA/bbapi"
+          nix run nixpkgs#npins -- update skills-tar \
+            --url "$BASE/skills-$SHA/skills.tar"
+
+      - name: Build and push Nix packages to attic
+        env:
+          ATTIC_JWT_TOKEN: ${{ secrets.ATTIC_JWT_TOKEN }}
+        run: |
+          claude_hooks=$(nix build --no-link --print-out-paths \
+            .#packages.x86_64-linux.claude-hooks)
+          bbapi=$(nix build --no-link --print-out-paths \
+            .#packages.x86_64-linux.bbapi)
+          skills=$(nix build --no-link --print-out-paths \
+            .#packages.x86_64-linux.skills)
+
+          nix run nixpkgs#attic-client -- login main \
+            https://cache.allegedly.works "$ATTIC_JWT_TOKEN"
+          nix run nixpkgs#attic-client -- push main "$claude_hooks" "$bbapi" "$skills"
+
+      - name: Commit and push updated pins
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add flake.nix flake.lock .claude/settings.json
-
+          git add npins/sources.json
           if git diff --cached --quiet; then
-            echo "No downstream changes"
-            if [ ${#FAILED_INPUTS[@]} -gt 0 ]; then
-              echo "::error::Failed to update flake inputs: ${FAILED_INPUTS[*]}"
-              exit 1
-            fi
+            echo "No changes to commit"
             exit 0
           fi
-
           git commit -m "chore: bump release artifacts [skip ci]"
-
-          BRANCH="${{ github.ref_name }}"
-          git pull --rebase origin "$BRANCH"
-          git push origin "HEAD:${BRANCH}"
-
-          if [ ${#FAILED_INPUTS[@]} -gt 0 ]; then
-            echo "::error::Partial update committed, but failed to update: ${FAILED_INPUTS[*]}"
-            exit 1
-          fi
+          git pull --rebase origin "${{ github.ref_name }}"
+          git push origin "HEAD:${{ github.ref_name }}"

@@ -16,4 +16,4 @@ spec:
   dependsOn:
     - name: nix-cache-namespace
     - name: cnpg
-    - name: proxmox-csi
+    - name: longhorn

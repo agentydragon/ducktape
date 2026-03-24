@@ -51,8 +51,9 @@ actions:
         --build_metadata=TAGS=check
         //...
 
-  # Separate action for manual/release builds that build wheels
-  - name: "Build Wheels"
+  # Release action: test, build all artifacts, upload to GitHub Releases, dispatch GHA nix-pin.
+  # Only triggers on push to main/devel (not PRs).
+  - name: "Release"
     triggers:
       push:
         branches:
@@ -60,18 +61,80 @@ actions:
           - devel
       workflow_dispatch: {}
 
-    # Same as CI action - BuildBuddy Workflows doesn't support custom images
     container_image: "ubuntu-24.04"
     resource_requests:
       disk: "50GB"
 
-    bazel_commands:
-      # Build all wheel targets for potential release
-      # These are built but not published (GitHub Actions handles publishing)
-      # Note: gterm_theme:wheel excluded (requires system deps: libdbus-1-dev, libgirepository1.0-dev)
-      - >
-        build --config=rbe
-        //:wheel
+    env:
+      GH_TOKEN: $GH_RELEASE_PAT
+
+    steps:
+      - run: |
+          bazel test --keep_going --config=rbe \
+            --build_metadata=ROLE=ci \
+            --test_tag_filters=-live_openai_api \
+            --test_env=CI=true \
+            //...
+      - run: |
+          sudo apt-get install -y libdbus-1-dev libgirepository1.0-dev
+          bazel build --config=rbe --remote_download_toplevel \
+            //:wheel \
+            //:claude_hooks_wheel \
+            //gterm_theme:wheel \
+            //skills:all_skills_tar \
+            //devinfra/buildbuddy_cli:bbapi
+      - run: |
+          mkdir -p dist
+          cp bazel-bin/claude_hooks-*.whl dist/
+          cp bazel-bin/ducktape-*.whl dist/
+          cp bazel-bin/gterm_theme/gterm_theme-*.whl dist/
+          cp bazel-bin/skills/all_skills_tar.tar dist/skills.tar
+          cp bazel-bin/devinfra/buildbuddy_cli/bbapi_/bbapi dist/
+
+          SHORT_SHA=$(git rev-parse --short HEAD)
+
+          upload_release() {
+            local tag="$1" title="$2" body="$3"; shift 3
+            gh release create "$tag" --title "$title" --notes "$body" \
+              --latest=false "$@" 2>/dev/null \
+            || gh release upload "$tag" "$@" --clobber
+          }
+          # Upload to pinned commit tags (used by flake.nix for deterministic pins).
+          upload_release "claude-hooks-$SHORT_SHA" \
+            "claude-hooks ($SHORT_SHA)" "claude-hooks wheel for Claude Code integration." \
+            dist/claude_hooks-*.whl
+          upload_release "ducktape-$SHORT_SHA" \
+            "ducktape ($SHORT_SHA)" "ducktape wheel containing CLI tools." \
+            dist/ducktape-*.whl
+          upload_release "gterm-theme-$SHORT_SHA" \
+            "gterm-theme ($SHORT_SHA)" "gterm-theme wheel (GNOME Terminal theme follower)." \
+            dist/gterm_theme-*.whl
+          upload_release "skills-$SHORT_SHA" \
+            "skills ($SHORT_SHA)" "Skills tarball for AI agent deployment." \
+            dist/skills.tar
+          upload_release "bbapi-$SHORT_SHA" \
+            "bbapi ($SHORT_SHA)" "bbapi — BuildBuddy API CLI (Linux x86_64)." \
+            dist/bbapi
+          # Also keep rolling -latest tags for consumers that don't use the flake
+          # (e.g. pre-commit.yml pip-installs claude-hooks-latest directly).
+          upload_release claude-hooks-latest \
+            "claude-hooks (latest)" "claude-hooks wheel for Claude Code integration." \
+            dist/claude_hooks-*.whl
+          upload_release ducktape-latest \
+            "ducktape (latest)" "ducktape wheel containing CLI tools." \
+            dist/ducktape-*.whl
+          upload_release gterm-theme-latest \
+            "gterm-theme (latest)" "gterm-theme wheel (GNOME Terminal theme follower)." \
+            dist/gterm_theme-*.whl
+          upload_release skills-latest \
+            "skills (latest)" "Skills tarball for AI agent deployment." \
+            dist/skills.tar
+          upload_release bbapi-latest \
+            "bbapi (latest)" "bbapi — BuildBuddy API CLI (Linux x86_64)." \
+            dist/bbapi
+
+          BRANCH=$(git rev-parse --abbrev-ref HEAD)
+          gh workflow run release.yml --ref "$BRANCH" --field short_sha="$SHORT_SHA"
 
   # Build container images (OCI images built with Bazel)
   - name: "Build Container Images"
