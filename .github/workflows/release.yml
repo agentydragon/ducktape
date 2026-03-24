@@ -53,9 +53,6 @@ jobs:
           read -ra changed_pkgs <<< "${{ inputs.changed }}"
           devinfra/ci/update_pins.sh "${{ inputs.short_sha }}" "${changed_pkgs[@]}"
 
-      - name: Format edited pin files
-        run: npx prettier@3.7.4 --no-config --write npins/sources.json
-
       - name: Commit and push updated pins
         run: |
           git config user.name "github-actions[bot]"
