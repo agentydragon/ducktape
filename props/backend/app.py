@@ -25,7 +25,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from props.backend.build_info import BuildInfo, get_build_info
 from props.backend.routes import agent_definitions, ground_truth, llm, model_metadata, registry, runs, stats
 from props.config import PropsConfig, load_config_from_env
 from props.core.oci_utils import RegistryProxyConfig, get_registry_proxy_config
@@ -184,10 +183,6 @@ def create_app(*, deps: BackendDeps, static_dir: Path | None = None) -> FastAPI:
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
-
-    @app.get("/api/build-info")
-    def build_info() -> BuildInfo:
-        return get_build_info()
 
     @app.exception_handler(Exception)
     async def debug_exception_handler(request: Request, exc: Exception) -> PlainTextResponse:

@@ -14,14 +14,6 @@ load("//props/specimens:defs.bzl", "specimen_layer_tars")
 # =============================================================================
 
 py_library(
-    name = "build_info",
-    srcs = ["build_info.py"],
-    imports = ["../.."],
-    visibility = ["//:__subpackages__"],
-    deps = ["@pypi//pydantic"],
-)
-
-py_library(
     name = "deps",
     srcs = ["deps.py"],
     imports = ["../.."],
@@ -54,7 +46,6 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":build_info",
         "//props:config",
         "//props/backend/routes:agent_definitions",
         "//props/backend/routes:ground_truth",

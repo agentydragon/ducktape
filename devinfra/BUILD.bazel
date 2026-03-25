@@ -8,24 +8,7 @@ load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_python_gazelle_plugin//manifest:defs.bzl", "gazelle_python_manifest")
 load("@rules_python_gazelle_plugin//modules_mapping:def.bzl", "modules_mapping")
 load("//devinfra:filter_wheels.bzl", "filter_system_packages")
-load(":build_info.bzl", "build_info")
-
 exports_files(["lockfile.json"])
-
-# Copy workspace status file for Python to parse at runtime
-# Stamping is enabled globally in .bazelrc
-build_info(
-    name = "build_info_gen",
-)
-
-# Build information parsed from Bazel workspace status
-py_library(
-    name = "build_info",
-    srcs = ["build_info.py"],
-    data = [":build_info_gen"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//pydantic"],
-)
 
 py_library(
     name = "check_pytest_main",

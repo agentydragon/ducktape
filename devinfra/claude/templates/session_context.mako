@@ -1,4 +1,4 @@
-# Claude Code session start hook [build: ${build_commit}] — ${status}
+# Claude Code session start hook — ${status}
 
 % if proxy:
 **Environment:** gVisor sandbox, TLS-inspecting proxy, no overlay fs (vfs), 9p fs

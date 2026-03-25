@@ -19,7 +19,6 @@ import httpx
 from mako.template import Template
 from opentelemetry import trace
 
-from devinfra.build_info import get_build_info
 from devinfra.claude import env_file
 from devinfra.claude.auth_proxy import setup as proxy_setup
 from devinfra.claude.auth_proxy.proxy import AuthForwardingProxy
@@ -616,7 +615,6 @@ async def run_session(
         template = Template((_TEMPLATES_DIR / "session_context.mako").read_text())
         context_output: str = template.render(
             WARNING=logging.WARNING,
-            build_commit=get_build_info().commit,
             status=status,
             proxy=setup.auth_proxy,
             container=setup.container,

@@ -29,6 +29,20 @@ This confirms the predicted risk: the `symlinkJoin` derivation hash changed
 between the attic push and the web session evaluation (CI pin-bump race),
 causing a cache miss for the top-level derivation.
 
+**Root cause of the pin bump** (investigated same session): commit `5ed94a2`
+(`chore: bump release artifacts`) changed `npins/sources.json` because CI
+detected a different wheel hash for `claude-hooks`. However, the only file
+changed in the wheel's source commit (`8688fc17f`) was `web_setup.sh`, which
+is **not in the wheel** — the wheel contains only Python modules from
+`py_package`. The wheel hash changed because `devinfra/_build_status.txt`
+(a Bazel stamping file embedding commit hash + timestamp via `ctx.info_file`)
+differs on every build. This meant *every* CI run produced a "changed" wheel,
+triggered a release, and bumped the pin — even with zero code changes.
+
+**Fix**: removed `devinfra.build_info` (the stamping module) from the wheel's
+dependency tree entirely. The session context template no longer includes a
+build commit hash.
+
 ## Root Causes (multiple)
 
 ### 1. `nix profile install` needs build-time tools unavailable on gVisor

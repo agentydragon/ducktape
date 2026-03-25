@@ -150,7 +150,6 @@ py_library(
         ":mkcert",
         ":precommit",
         ":tmpfs",
-        "//devinfra:build_info",
         "//devinfra/claude:bazel_wrapper_lib",
         "//devinfra/claude:debug",
         "//devinfra/claude:env_file",
