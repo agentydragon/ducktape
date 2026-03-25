@@ -66,14 +66,16 @@ if [ -z "$_saved_user" ]; then unset USER; else USER="$_saved_user"; fi
 unset _saved_user
 
 # --- Step 2: Configure Nix for gVisor ---
-# max-jobs=0: gVisor can't run Nix builds (missing syscalls).
-# sandbox=false: gVisor already provides isolation.
+# sandbox=false: gVisor already provides isolation; Nix's own sandbox needs
+#   kernel features (namespaces, cgroups) that gVisor doesn't fully support.
+# max-jobs=auto: local builds work fine on gVisor with sandbox=false.
+#   Needed for symlinkJoin/buildEnv derivations that won't be in the cache.
 echo "Configuring Nix for gVisor..."
 cat >~/.config/nix/nix.conf <<'EOF'
 build-users-group =
 experimental-features = nix-command flakes
 sandbox = false
-max-jobs = 0
+max-jobs = auto
 system-features =
 substituters = https://cache.allegedly.works/main https://cache.nixos.org
 trusted-public-keys = cache.allegedly.works-1:OX/cis8G1W13DALkGvhdUZ1OY3yGATbXw8+tIc8J7oA= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
@@ -88,21 +90,8 @@ echo "---"
 echo "Connectivity check (cache.allegedly.works)..."
 curl -fsSL --max-time 10 https://cache.allegedly.works/main/nix-cache-info
 
-# Use nix build + manual symlinks instead of nix profile install.
-# nix profile install creates a buildEnv wrapper that needs patchelf and
-# other build-time tools that can't be built on gVisor.
-echo "Fetching web session tools..."
-store_path=$(nix build --no-link --print-out-paths "${FLAKE}#web-session")
-echo "Linking $store_path into PATH..."
-mkdir -p ~/.nix-profile/bin ~/.nix-profile/share
-for f in "$store_path"/bin/*; do
-  ln -sfn "$f" ~/.nix-profile/bin/
-done
-if [ -d "$store_path/share" ]; then
-  for d in "$store_path"/share/*/; do
-    ln -sfn "$d" ~/.nix-profile/share/"$(basename "$d")"
-  done
-fi
+echo "Installing web session tools..."
+nix profile install "${FLAKE}#web-session"
 
 # --- Step 4: Symlink skills into ~/.claude/skills/ ---
 # Per-skill symlinks instead of replacing the directory, so Anthropic's

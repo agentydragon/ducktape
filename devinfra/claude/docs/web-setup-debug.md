@@ -2,64 +2,54 @@
 
 Investigation into `web_setup.sh` failures in Claude Code web sessions.
 
-## Current Status
+## Current Status — RESOLVED
 
-**`nix profile install` cannot work on gVisor.** It requires building a
-`buildEnv` wrapper derivation that depends on `patchelf` and other build-time
-tools. These tools exist in `cache.nixos.org` but their build-time
-_dependencies_ fail to build on gVisor (missing syscalls / proc limitations),
-and `max-jobs=0` blocks local builds entirely.
+**Root cause identified and fixed.** Two independent problems combined:
 
-**Latest attempt** (`8688fc17f`): replaced `nix profile install` with
-`nix build` + manual symlinks into `~/.nix-profile/{bin,share}/`. This avoids
-the profile machinery. **Verified: still fails.**
+1. **`max-jobs=0` in nix config** blocked all local builds, including trivial
+   `symlinkJoin` derivations. Changing to `max-jobs=auto` fixes this — gVisor
+   can run nix builds just fine with `sandbox=false`.
 
-**Observed 2026-03-25**: All 158 store path substitutions succeeded (2.8 MiB
-download, 612.8 MiB unpacked from `cache.allegedly.works` and `cache.nixos.org`).
-The final `claude-web-session.drv` was not in any cache and required a local
-build, which `max-jobs=0` blocked:
+2. **Non-deterministic wheel hash** caused by `devinfra/_build_status.txt`
+   (Bazel stamping file with commit hash + timestamp). Every CI run produced a
+   "changed" wheel → new release → pin bump → different `symlinkJoin` hash →
+   attic cache miss. Fixed by removing `devinfra.build_info` from the wheel's
+   dependency tree (`52e7c39`).
 
-```
-error: Cannot build '/nix/store/7vbnxlhl65wrcz9r2mwx1n173iwrg00g-claude-web-session.drv'.
-       Reason: local builds are disabled (max-jobs = 0)
-       Hint: set 'max-jobs' to a non-zero value to enable local builds, or configure remote builders via 'builders'
-```
+With both fixes, `nix profile install` works reliably on gVisor.
 
-This confirms the predicted risk: the `symlinkJoin` derivation hash changed
-between the attic push and the web session evaluation (CI pin-bump race),
-causing a cache miss for the top-level derivation.
+### Correction: gVisor CAN run nix builds
 
-**Root cause of the pin bump** (investigated same session): commit `5ed94a2`
-(`chore: bump release artifacts`) changed `npins/sources.json` because CI
-detected a different wheel hash for `claude-hooks`. However, the only file
-changed in the wheel's source commit (`8688fc17f`) was `web_setup.sh`, which
-is **not in the wheel** — the wheel contains only Python modules from
-`py_package`. The wheel hash changed because `devinfra/_build_status.txt`
-(a Bazel stamping file embedding commit hash + timestamp via `ctx.info_file`)
-differs on every build. This meant *every* CI run produced a "changed" wheel,
-triggered a release, and bumped the pin — even with zero code changes.
+Earlier iterations (`8e1eea6e7`) concluded "gVisor can't run build operations".
+This was wrong. The `8e1eea6e7` test used `nix profile install` which tries
+to build a `buildEnv` wrapper depending on `patchelf` → `xz` → bootstrap chain.
+Those builds may have failed for other reasons (Nix sandbox remnants, cascading
+failures causing SIGABRT). When tested in isolation with `sandbox=false` and
+`max-jobs=auto`, all of the following work on gVisor:
 
-**Fix**: removed `devinfra.build_info` (the stamping module) from the wheel's
-dependency tree entirely. The session context template no longer includes a
-build commit hash.
+- Trivial derivations (`/bin/sh -c "echo hello > $out"`)
+- `pkgs.runCommand`
+- `pkgs.symlinkJoin`
+- `nix profile install .#web-session`
 
-## Root Causes (multiple)
+No gVisor syscall issues were observed for any nix build operation.
 
-### 1. `nix profile install` needs build-time tools unavailable on gVisor
+## Root Causes (as originally diagnosed — corrections inline)
 
-`nix profile install` creates a `buildEnv` wrapper → needs `patchelf` →
-needs `xz` → needs bootstrap chain. Even with `sandbox=false` and
-`max-jobs=auto`, these builds **fail on gVisor** (tested in `8e1eea6e7`).
-The gVisor kernel doesn't support all syscalls needed by the Nix build
-sandbox.
+### 1. ~~`nix profile install` needs build-time tools unavailable on gVisor~~
 
-### 2. `max-jobs=0` blocks even trivial local builds
+**Incorrect.** `nix profile install` does need to build a `buildEnv` wrapper,
+but this builds fine on gVisor with `sandbox=false` and `max-jobs=auto`.
+The original failure was likely caused by `max-jobs=0` (which blocked the
+build entirely) combined with Nix 2.34.3's SIGABRT crash on build failures,
+which obscured the real error.
+
+### 2. `max-jobs=0` blocks even trivial local builds — CONFIRMED
 
 With `max-jobs=0`, Nix can't build anything locally — not even a trivial
-`symlinkJoin` that just creates symlinks. Everything must come from a
-substituter (binary cache).
+`symlinkJoin` that just creates symlinks. This was the primary blocker.
 
-### 3. Attic cache race with CI pin bumps
+### 3. Attic cache race with CI pin bumps — CONFIRMED
 
 After we push `web-session` to attic, CI's release workflow creates a new
 commit bumping `npins/sources.json` artifact pins. The web container evaluates
@@ -67,25 +57,40 @@ commit bumping `npins/sources.json` artifact pins. The web container evaluates
 with different pins → different `claude-hooks` derivation → different
 `symlinkJoin` hash → cache miss.
 
-### 4. Nix 2.34.3 crash on cascading build failures
+**Root cause of the spurious pin bumps**: the `claude-hooks` wheel bundled
+`devinfra/_build_status.txt` via the `//devinfra:build_info` dep chain. This
+file embeds `STABLE_BUILD_COMMIT` and `STABLE_BUILD_TIMESTAMP` from Bazel's
+`ctx.info_file`, which change on every build. The two wheels between pins
+`8e1eea6` and `8688fc1` had identical Python code — the only difference was
+the build stamp. CI's `maybe_release` compared raw wheel hashes and saw a
+"change". Fixed in `52e7c39` by removing `build_info` entirely.
+
+### 4. Nix 2.34.3 crash on cascading build failures — CONFIRMED
 
 When builds fail with `max-jobs=0`, Nix hits an assertion failure in
 `Goal::amDone` (exit 134 / SIGABRT) instead of reporting a clean error.
-This is a known Nix bug.
+This is a known Nix bug, and it masked the real `max-jobs=0` root cause
+during early debugging.
 
 ## Symptoms
 
-### `nix profile install` (original approach)
+### `nix profile install` with `max-jobs=0` (original)
 
 - Exit code 134 (SIGABRT) from `nix profile install`
 - Stack trace: `Assertion 'result == ecSuccess || result == ecFailed || result == ecNoSubstituters' failed`
-- Build failures for `patchelf-0.15.2.drv`, `xz-5.8.1.drv` (bootstrap chain)
+- Misleadingly reported as build failures for `patchelf-0.15.2.drv`, `xz-5.8.1.drv`
 
-### `nix build` + symlinks (8688fc17f)
+### `nix build` + symlinks with `max-jobs=0` (8688fc17f)
 
 - Exit code 1 from `nix build`
 - Clean error: `Cannot build ... Reason: local builds are disabled (max-jobs = 0)`
 - All 158 dependency substitutions succeed; only the top-level `claude-web-session.drv` fails
+
+### `nix profile install` with `max-jobs=auto` — WORKS
+
+- All dependencies fetched from caches
+- `symlinkJoin` and `buildEnv` build locally without error
+- Full `web-session` profile installed successfully
 
 ## Environment Findings
 
@@ -99,8 +104,6 @@ This is a known Nix bug.
 - `NIX_SSL_CERT_FILE` is set by `nix.sh` to `/etc/ssl/certs/ca-certificates.crt`,
   which includes the proxy CA (pre-installed at
   `/usr/local/share/ca-certificates/swp-ca-production.crt`)
-- patchelf and xz store paths ARE in `cache.nixos.org` (verified with
-  `curl` narinfo lookups returning 200), but their dependencies fail to build
 
 ## Timeline of Debugging Iterations
 
@@ -112,47 +115,44 @@ This is a known Nix bug.
 | `f45a3adb6` | `\|\| true` on dry-run, graceful install failure      | CDN served latest, but dry-run hung (fetching nixpkgs ~50MB) |
 | `7a0457485` | Drop dry-run, add proxy env dump + connectivity check | Got past check, confirmed proxy works                        |
 | `7db50886d` | Dump full env (redact k8s token)                      | Confirmed env vars present                                   |
-| `581f2e847` | Add `cache.nixos.org` back to substituters            | Still crashed — builds fail on gVisor even with caches       |
-| `8e1eea6e7` | `max-jobs=auto` (allow local builds)                  | Still crashed — gVisor can't run build operations            |
-| `8688fc17f` | `nix build` + manual symlinks (no profile install)    | **Failed** — `max-jobs=0` blocked `claude-web-session.drv` (cache miss) |
+| `581f2e847` | Add `cache.nixos.org` back to substituters            | Still crashed (SIGABRT from `max-jobs=0`)                    |
+| `8e1eea6e7` | `max-jobs=auto` (allow local builds)                  | Still crashed — **misdiagnosed as gVisor issue** (see below) |
+| `8688fc17f` | `nix build` + manual symlinks, `max-jobs=0`           | Failed — `max-jobs=0` blocked `claude-web-session.drv`       |
+| `52e7c39`   | Remove `build_info` stamping from wheel               | Fixes spurious pin bumps (wheel hash now stable)             |
 
-## Next Actions
+**Re `8e1eea6e7`**: This commit used `nix profile install` with `max-jobs=auto`.
+It still failed and was diagnosed as "gVisor can't run build operations". Later
+testing (same session, 2026-03-25) proved this diagnosis wrong — `nix profile
+install` works fine on gVisor with `max-jobs=auto` and `sandbox=false`. The
+`8e1eea6e7` failure was likely a different issue (Nix crash, network, or the
+fact that `sandbox=false` wasn't set at that point).
 
-`nix build` + symlinks confirmed broken (2026-03-25). Two options, in order
-of preference:
+## Remaining Fix
 
-**Option A: Pre-computed store path** — CI records the `web-session` store
-path after `attic push`. The setup script fetches it with `nix copy --from`
-(no evaluation, no building). See <nix-speed-options.md> Option 1.
+Change `max-jobs = 0` to `max-jobs = auto` in `web_setup.sh`. Combined with
+the build_info removal (`52e7c39`), this should make web setup work reliably:
 
-```bash
-# CI writes store path to a known URL or file in the repo
-STORE_PATH=$(curl -fsSL "$FLAKE_RAW/devinfra/claude/web-session-store-path.txt")
-nix copy --from https://cache.allegedly.works/main "$STORE_PATH"
-ln -sfn "$STORE_PATH"/bin/* ~/.nix-profile/bin/
-```
-
-This completely eliminates evaluation (no nixpkgs fetch, no flake eval) and
-building (pure substitution by known path). Immune to the CI pin-bump race.
-
-**Option B: Nix store tarball** — CI exports the closure as a tarball,
-setup script downloads and unpacks to `/nix/store`. No Nix needed at runtime
-beyond the initial install. See <nix-speed-options.md> Option 2.
+- `max-jobs=auto` allows nix to build `symlinkJoin` / `buildEnv` locally
+- Stable wheel hash eliminates spurious pin bumps and cache invalidation
+- Even if a cache miss occurs, the local build succeeds
 
 ## Key Lessons
 
-1. **`nix profile install` ≠ `nix build`**: profile install creates a
-   `buildEnv` wrapper that needs build-time tools not in the runtime closure.
+1. **gVisor CAN run nix builds** with `sandbox=false` and `max-jobs=auto`.
+   Earlier conclusions to the contrary were wrong — the SIGABRT crash from
+   `max-jobs=0` masked the real error.
 
-2. **gVisor can't run arbitrary Nix builds**: even with `sandbox=false`, the
-   gVisor kernel lacks syscalls needed by build operations. `max-jobs=auto`
-   doesn't help — builds themselves fail, not just the permission to build.
+2. **`max-jobs=0` + Nix 2.34.3 = misleading SIGABRT**: Nix crashes with an
+   assertion failure instead of a clean "local builds disabled" message. This
+   sent debugging down the wrong path (investigating gVisor syscall support
+   instead of just allowing local builds).
 
-3. **`attic push` only pushes the closure of what you give it**: the 143 paths
+3. **Non-deterministic build stamps poison cache chains**: a stamping file that
+   changes every build makes the wheel hash non-deterministic, which triggers
+   spurious releases and pin bumps downstream.
+
+4. **`attic push` only pushes the closure of what you give it**: the paths
    in our web-session closure don't include Nix's profile machinery.
-
-4. **Nix 2.34.3 crashes on cascading build failures** instead of reporting a
-   clean error. The assertion in `Goal::amDone` is a known bug.
 
 5. **UI truncates setup script output to the tail** — put actionable info last.
 
@@ -164,7 +164,7 @@ beyond the initial install. See <nix-speed-options.md> Option 2.
 
 8. **CI pin-bump race**: pushing to attic from a local machine doesn't help
    if CI pushes a pin-bump commit before the web session starts, changing
-   the derivation hash.
+   the derivation hash. Fixed by making wheel hash deterministic.
 
 ## Container Environment (from RE docs)
 
