@@ -90,8 +90,15 @@ echo "---"
 echo "Connectivity check (cache.allegedly.works)..."
 curl -fsSL --max-time 10 https://cache.allegedly.works/main/nix-cache-info
 
+echo "--- nix.conf ---"
+cat ~/.config/nix/nix.conf
+echo "--- nix show-config ---"
+nix show-config 2>/dev/null | grep -E "max-jobs|sandbox|build-users" || true
+echo "---"
+
 echo "Installing web session tools..."
-nix profile install "${FLAKE}#web-session"
+# Pass --max-jobs explicitly to override any nix.conf misconfiguration.
+nix profile install --max-jobs auto "${FLAKE}#web-session"
 
 # --- Step 4: Symlink skills into ~/.claude/skills/ ---
 # Per-skill symlinks instead of replacing the directory, so Anthropic's
