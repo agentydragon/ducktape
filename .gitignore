@@ -62,6 +62,8 @@ cluster/charts/*/charts/
 # NixOS build artifacts
 **/nixos-cloud-image
 nix/**/result
+/result
+/result-*
 
 # Web and build artifacts
 **/.sass-cache/
