@@ -12,13 +12,22 @@ and `max-jobs=0` blocks local builds entirely.
 
 **Latest attempt** (`8688fc17f`): replaced `nix profile install` with
 `nix build` + manual symlinks into `~/.nix-profile/{bin,share}/`. This avoids
-the profile machinery. Pending verification.
+the profile machinery. **Verified: still fails.**
 
-**Remaining risk**: `nix build` with `max-jobs=0` still needs to build the
-`symlinkJoin` derivation locally if it's not in a cache. We push it to attic,
-but CI pin-bump commits between our push and the web session evaluation can
-change the derivation hash, causing a cache miss. If this happens, the
-`symlinkJoin` can't be built (`max-jobs=0`) and nix crashes again.
+**Observed 2026-03-25**: All 158 store path substitutions succeeded (2.8 MiB
+download, 612.8 MiB unpacked from `cache.allegedly.works` and `cache.nixos.org`).
+The final `claude-web-session.drv` was not in any cache and required a local
+build, which `max-jobs=0` blocked:
+
+```
+error: Cannot build '/nix/store/7vbnxlhl65wrcz9r2mwx1n173iwrg00g-claude-web-session.drv'.
+       Reason: local builds are disabled (max-jobs = 0)
+       Hint: set 'max-jobs' to a non-zero value to enable local builds, or configure remote builders via 'builders'
+```
+
+This confirms the predicted risk: the `symlinkJoin` derivation hash changed
+between the attic push and the web session evaluation (CI pin-bump race),
+causing a cache miss for the top-level derivation.
 
 ## Root Causes (multiple)
 
@@ -52,9 +61,17 @@ This is a known Nix bug.
 
 ## Symptoms
 
+### `nix profile install` (original approach)
+
 - Exit code 134 (SIGABRT) from `nix profile install`
 - Stack trace: `Assertion 'result == ecSuccess || result == ecFailed || result == ecNoSubstituters' failed`
 - Build failures for `patchelf-0.15.2.drv`, `xz-5.8.1.drv` (bootstrap chain)
+
+### `nix build` + symlinks (8688fc17f)
+
+- Exit code 1 from `nix build`
+- Clean error: `Cannot build ... Reason: local builds are disabled (max-jobs = 0)`
+- All 158 dependency substitutions succeed; only the top-level `claude-web-session.drv` fails
 
 ## Environment Findings
 
@@ -83,18 +100,12 @@ This is a known Nix bug.
 | `7db50886d` | Dump full env (redact k8s token)                      | Confirmed env vars present                                   |
 | `581f2e847` | Add `cache.nixos.org` back to substituters            | Still crashed — builds fail on gVisor even with caches       |
 | `8e1eea6e7` | `max-jobs=auto` (allow local builds)                  | Still crashed — gVisor can't run build operations            |
-| `8688fc17f` | `nix build` + manual symlinks (no profile install)    | **Pending verification**                                     |
+| `8688fc17f` | `nix build` + manual symlinks (no profile install)    | **Failed** — `max-jobs=0` blocked `claude-web-session.drv` (cache miss) |
 
 ## Next Actions
 
-### If `nix build` + symlinks works
-
-Clean up diagnostic output (env dump, connectivity check) and remove
-the debug noise. Update this file with the resolution.
-
-### If `nix build` still fails (`max-jobs=0` + symlinkJoin not in cache)
-
-Two options, in order of preference:
+`nix build` + symlinks confirmed broken (2026-03-25). Two options, in order
+of preference:
 
 **Option A: Pre-computed store path** — CI records the `web-session` store
 path after `attic push`. The setup script fetches it with `nix copy --from`
