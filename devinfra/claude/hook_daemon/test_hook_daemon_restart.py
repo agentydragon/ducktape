@@ -5,13 +5,10 @@ Uses in-process uvicorn servers on UDS to avoid Bazel subprocess PYTHONPATH issu
 """
 
 import socket
-import tempfile
 import threading
 import time
-from collections.abc import Generator
 from pathlib import Path
 
-import pytest
 import pytest_bazel
 import uvicorn
 
@@ -27,13 +24,6 @@ _COMMON = {
     "cwd": "/tmp",
     "permission_mode": "default",
 }
-
-
-@pytest.fixture
-def short_tmp() -> Generator[Path]:
-    """Short temp dir to avoid AF_UNIX 108-byte path limit in Bazel sandboxes."""
-    with tempfile.TemporaryDirectory(prefix="hd-", dir="/tmp") as d:
-        yield Path(d)
 
 
 def _start_uvicorn_in_thread(sock_path: Path, daemon_dir: Path) -> uvicorn.Server:

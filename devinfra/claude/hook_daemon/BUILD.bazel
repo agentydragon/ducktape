@@ -93,6 +93,7 @@ py_library(
         ":server",
         ":tracing",
         "//devinfra/claude:settings",
+        "@pypi//filelock",
         "@pypi//uvicorn",
     ],
 )
@@ -159,20 +160,46 @@ py_test(
     ],
 )
 
+py_library(
+    name = "hook_daemon_conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../../.."],
+    deps = [
+        "//devinfra/claude:session_paths",
+        "@pypi//pytest",
+    ],
+)
+
 py_test(
     name = "test_hook_daemon_restart",
     srcs = ["test_hook_daemon_restart.py"],
     imports = ["../../.."],
     deps = [
         ":client",
+        ":hook_daemon_conftest",
         ":models",
         ":server",
         ":tracing",
         "//devinfra/claude:conftest",
         "//devinfra/claude/claude_api/hooks:stop",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//uvicorn",
+    ],
+)
+
+py_test(
+    name = "test_ensure_daemon",
+    size = "medium",
+    srcs = ["test_ensure_daemon.py"],
+    imports = ["../../.."],
+    deps = [
+        ":client",
+        ":hook_daemon_conftest",
+        ":main_lib",
+        "//devinfra/claude:conftest",
+        "//devinfra/claude:session_paths",
+        "@pypi//pytest_bazel",
     ],
 )
 

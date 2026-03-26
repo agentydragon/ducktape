@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 import uvicorn
+from filelock import FileLock
 
 from devinfra.claude.hook_daemon.server import app, configure
 from devinfra.claude.hook_daemon.tracing import init_daemon_tracing
@@ -22,6 +23,14 @@ def main() -> None:
 
     daemon_dir = Path(args.daemon_dir)
     daemon_dir.mkdir(parents=True, exist_ok=True)
+
+    # Acquire exclusive flock on pidfile — held for daemon lifetime.
+    # The kernel releases it on process death (flock is fd-based), so clients
+    # can probe the lock to determine liveness without PID-reuse ambiguity.
+    pidfile = daemon_dir / "daemon.pid"
+    _pidfile_lock = FileLock(pidfile)
+    _pidfile_lock.acquire()
+    pidfile.write_text(str(os.getpid()))
 
     log_file = daemon_dir / "daemon.log"
     logging.basicConfig(
