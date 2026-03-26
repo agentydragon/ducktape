@@ -225,7 +225,7 @@ async def _setup_web(
 
     async def mount_tmpfs_at(path: Path) -> bool:
         """Mount a tmpfs at the given path. Returns True on success, False on failure."""
-        path.mkdir(parents=True, exist_ok=True)
+        await run_in_thread(path.mkdir, parents=True, exist_ok=True)
         try:
             await run_in_thread(tmpfs.ensure_tmpfs_mounted, path)
             return True
@@ -346,7 +346,9 @@ async def _setup_web(
     if isinstance(precommit_result, BaseException):
         logger.warning("Failed to install git pre-commit: %s", precommit_result)
     if isinstance(bazelisk_result, BaseException):
-        raise RuntimeError("Bazel wrapper setup failed (is bazelisk on PATH from Nix web-session?)") from bazelisk_result
+        raise RuntimeError(
+            "Bazel wrapper setup failed (is bazelisk on PATH from Nix web-session?)"
+        ) from bazelisk_result
     if isinstance(tmpfs_result, BaseException):
         logger.warning("Failed to set up tmpfs caches: %s", tmpfs_result)
     if isinstance(mkcert_result, SkipError):

@@ -81,7 +81,6 @@
         in
         builtins.mapAttrs fetch data.pins;
 
-
       mkHome =
         {
           hostname,
