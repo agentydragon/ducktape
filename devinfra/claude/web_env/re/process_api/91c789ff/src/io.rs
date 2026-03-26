@@ -455,6 +455,12 @@ async fn process_ws_message(
                                 ClientMessage::StdInEOF => {
                                     stdin_writer = None;
                                 }
+                                ClientMessage::TraceEvent(_trace) => {
+                                    // Binary: 91c789ff — TraceEvent messages from
+                                    // the client are received but not processed
+                                    // server-side (no echo or forwarding observed
+                                    // in the decompiled binary).
+                                }
                             }
                         }
                     }
@@ -647,7 +653,7 @@ pub async fn handle_ws_connection<S>(
     // First-byte dispatch: '{' = JSON, 'e' = JWT token (eyJ...).
     // Binary: 0x13704f: cmp $0x65,%eax; je JWT_PATH; cmp $0x7b,%eax; je JSON_PATH
     let first_byte = first_msg.as_bytes()[0];
-    let (first_json, want_trace) = match first_byte {
+    let (first_json, _want_trace) = match first_byte {
         b'{' => {
             // JSON path — direct CreateProcess or ProcessConnection
             log::debug!("[DEBUG] Received ProcessConnection JSON (no JWT)");

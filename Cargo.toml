@@ -49,6 +49,7 @@ nix = { version = "^0.31.1", features = ["signal", "process", "fs"] }
 bytes = "^1.11.0"
 parking_lot = "^0.12.5"
 libc = "^0.2.172"
+jsonwebtoken = "^9.3.1"
 # x/twenty_questions_frameworks/rig
 anyhow = "^1.0"
 # rig-core's default `reqwest-rustls` feature pulls aws-lc-rs → aws-lc-sys (needs cmake).

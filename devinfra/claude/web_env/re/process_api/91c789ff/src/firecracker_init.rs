@@ -1197,3 +1197,41 @@ pub fn thaw_root() -> Result<(), String> {
         Ok(())
     }
 }
+
+/// Sync all filesystems (equivalent to sync(2)).
+/// Called from the control server's POST /shutdown handler before dropping page caches.
+/// Binary: 91c789ff — the shutdown path calls sync() before writing drop_caches.
+pub async fn sync_filesystem() -> Result<(), String> {
+    unsafe {
+        libc::sync();
+    }
+    Ok(())
+}
+
+/// FIFREEZE ioctl on an open file descriptor.
+/// Used by the control server's POST /fs_freeze handler.
+/// Binary: 91c789ff — FIFREEZE = _IOWR('X', 119, int) = 0xC0045877
+pub fn fifreeze_fd(file: &std::fs::File) -> Result<(), std::io::Error> {
+    use std::os::unix::io::AsRawFd;
+    let fd = file.as_raw_fd();
+    let ret = unsafe { libc::ioctl(fd, 0xC0045877, 0) };
+    if ret != 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+/// FITHAW ioctl on an open file descriptor.
+/// Used by the control server's POST /fs_thaw handler.
+/// Binary: 91c789ff — FITHAW = _IOWR('X', 120, int) = 0xC0045878
+pub fn fithaw_fd(file: &std::fs::File) -> Result<(), std::io::Error> {
+    use std::os::unix::io::AsRawFd;
+    let fd = file.as_raw_fd();
+    let ret = unsafe { libc::ioctl(fd, 0xC0045878, 0) };
+    if ret != 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}

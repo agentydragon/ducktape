@@ -635,10 +635,8 @@ async fn read_body(req: Request<Incoming>) -> Result<Bytes, Response<Full<Bytes>
 /// Decode a base64-encoded key (standard or URL-safe, with or without padding).
 /// Binary: 91c789ff — used for Ed25519 public key validation in /auth_public_key/write_etc_files.
 fn base64_decode_key(s: &str) -> Result<Vec<u8>, String> {
-    use std::io::Read;
     // Try standard base64 first, then URL-safe
     let result = {
-        let mut buf = Vec::new();
         let s_padded = if s.len() % 4 != 0 {
             let pad = 4 - (s.len() % 4);
             format!("{s}{}", "=".repeat(pad))
