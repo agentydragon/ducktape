@@ -86,9 +86,14 @@ class SessionPaths:
         return self.auth_proxy_dir / "cacerts.jks"
 
     @property
+    def _short_dir(self) -> Path:
+        """Short session-scoped dir under /tmp for Unix sockets (108-byte AF_UNIX limit)."""
+        return _short_session_dir(self.session_id)
+
+    @property
     def remote_proxy_sock(self) -> Path:
         """UDS path for --remote_proxy (Bazel gRPC remote execution/cache)."""
-        return _short_session_dir(self.session_id) / "remote-proxy.sock"
+        return self._short_dir / "remote-proxy.sock"
 
     @property
     def wrapper_dir(self) -> Path:
@@ -146,10 +151,9 @@ class SessionPaths:
     def hook_daemon_sock(self) -> Path:
         """UDS path for the hook daemon.
 
-        Uses a short path under /tmp to stay within the 108-byte AF_UNIX limit.
         The parent directory is created by ensure_dirs(), not on every access.
         """
-        return hook_daemon_sock(self.session_id)
+        return self._short_dir / "d.sock"
 
     def ensure_dirs(self) -> None:
         """Create all directories that must exist before use (socket dir, session dir, etc.)."""
