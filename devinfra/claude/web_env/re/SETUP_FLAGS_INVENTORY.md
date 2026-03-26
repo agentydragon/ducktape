@@ -11,7 +11,7 @@ Reconstructed source provides call-path details.
 
 ## Binary 1: `process_api` (Rust, stripped)
 
-**Build ID**: `e409c31a846219e05541706c43daf1756365f486`
+**Build ID**: `91c789ff2a9e647bf7b1914e351f67b89713c4ef`
 **Framework**: `clap 4.5.20` (derive macro, `#[derive(Parser)]`)
 **Env var convention**: Each `--flag-name` has a corresponding `SCREAMING_SNAKE`
 env var via `#[arg(env = "...")]`.
@@ -134,10 +134,10 @@ Control server: **always** rejects local IPs regardless of this flag.
 
 ---
 
-## Binary 2: `environment-manager` (Go, unstripped)
+## Binary 2: `environment-manager` (Go, garble-obfuscated)
 
-**Build ID**: `a6f96673c2497a946dc0797780b5c6df47c0946e`
-**Version**: `staging-68f0dff496` (via `-ldflags -X main.Version`)
+**Build ID**: `64bc4dc1a5a3a38ce5732655f7fdfbeb62b8598d`
+**Version**: `release-9f4ec76fbc-ext` (via `-ldflags -X main.Version`)
 **Framework**: `cobra v1.9.1` + `pflag`
 **Binary name**: `environment-manager` on disk, `environment-runner` as CLI name
 
@@ -418,7 +418,7 @@ environment-manager task-run --session=<id> --input-format=v1
 ## RE Source vs Binary Discrepancies
 
 All previously identified discrepancies have been resolved. The reconstructed
-source in `a6f96673/src/cmd/` now matches the live binary's `--help` output.
+source in `64bc4dc1/src/cmd/` now matches the live binary's `--help` output.
 
 Previously fixed discrepancies (for historical reference):
 

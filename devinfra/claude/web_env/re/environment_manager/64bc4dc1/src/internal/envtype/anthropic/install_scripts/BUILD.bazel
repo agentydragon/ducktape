@@ -1,0 +1,8 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "install_scripts",
+    srcs = ["scripts.go"],
+    importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/envtype/anthropic/install_scripts",
+    visibility = ["//devinfra/claude/web_env/re/environment_manager/64bc4dc1/src:__subpackages__"],
+)

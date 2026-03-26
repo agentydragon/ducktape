@@ -13,6 +13,7 @@ pkg_tar(
         "//skills/hetzner_vnc_screenshot:hetzner_vnc_screenshot_tar",
         "//skills/info_gathering:info_gathering_tar",
         "//skills/proxmox_vm:proxmox_vm_tar",
+        "//skills/reverse_engineer:reverse_engineer_tar",
         "//skills/session_logs:session_logs_tar",
         "//skills/superforecaster:superforecaster_tar",
         "//skills/update_deps:update_deps_tar",

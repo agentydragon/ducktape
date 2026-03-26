@@ -1,0 +1,16 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "byoc",
+    srcs = ["byoc.go"],
+    importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/envtype/byoc",
+    visibility = ["//devinfra/claude/web_env/re/environment_manager/64bc4dc1/src:__subpackages__"],
+    deps = [
+        "//devinfra/claude/web_env/re/environment_manager/64bc4dc1/src/internal/config",
+        "//devinfra/claude/web_env/re/environment_manager/64bc4dc1/src/internal/envtype",
+        "//devinfra/claude/web_env/re/environment_manager/64bc4dc1/src/internal/podmonitor",
+        "//devinfra/claude/web_env/re/environment_manager/64bc4dc1/src/internal/process",
+        "//devinfra/claude/web_env/re/environment_manager/64bc4dc1/src/internal/sources",
+        "//devinfra/claude/web_env/re/environment_manager/64bc4dc1/src/internal/util",
+    ],
+)

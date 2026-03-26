@@ -1,5 +1,12 @@
 # Current Plan
 
+## Binary Versions (2026-03-26)
+
+| Binary                | Build ID   | Version/Release                |
+| --------------------- | ---------- | ------------------------------ |
+| `process_api`         | `91c789ff` | `process_api_2026-03-23-22-49` |
+| `environment-manager` | `64bc4dc1` | `release-9f4ec76fbc-ext`       |
+
 ## Build Status
 
 **Diff Summary**: 4 real differences (build v20, 2026-03-16)
@@ -32,13 +39,42 @@ Known apt snapshot reproducibility issue — functionally identical.
 
 ## Next Steps
 
-- Rebuild container with updated Dockerfile and regenerate diff report
-- Container diff may reveal new package versions from the 2026-03-16 snapshot
+### RE Status
 
-### Optional future work
+**process_api (91c789ff)** — 5,704 lines Rust, 10 modules, 1 TODO.
+All modules re-verified against binary via string cross-referencing + objdump.
+JWT auth, snapstart, container_info.json confirmed present (correcting prior
+claims of removal). Only remaining gap: vsock stubs (requires tokio-vsock).
 
-1. **Add libpng16 to `hash_may_differ`** — eliminates the remaining 3 libpng diffs.
-2. **Investigate dpkg/status 15-byte diff** — identify the exact difference.
+**environment_manager (64bc4dc1)** — 22,743 lines Go, 96 files, 23 TODO(re).
+Binary diff proved "nothing changed except obfuscation" was false: Supabase,
+Vercel, Antspace, Baku features removed; filestore_url/filesystem_id/jwt added.
+Dead code deleted (-1,610 lines), 10 missing files created (+868 lines), new
+fields added. Binary diff documented in BINDIFF_RESULTS.md.
+
+### RE Priorities
+
+1. **env_manager: claude_code_executor.go** — 8 TODO(re). Core function that
+   launches Claude Code. Missing: 2 closures (pipe cleanup, output writer),
+   4 env var source values (USE_CCR_V2, WORKER_EPOCH, etc.)
+
+2. **env_manager: deploy action filestore mechanism** — 4 TODO(re). New
+   filestore-based deploy replaced Vercel/Antspace. Logic not yet recovered.
+
+3. **env_manager: API backends** — 5 TODO(re) across ccr_backend.go and
+   session_ingress_backend.go. Function bodies partially stubbed.
+
+4. **process_api: vsock support** — 1 TODO. Requires adding tokio-vsock crate.
+   Low urgency (live deployment uses TCP, not vsock).
+
+5. **env_manager: remaining 6 TODO(re)** — scattered across manager.go,
+   mcp/server.go, envtype/anthropic/config.go, cmd_task_run.go, streamer.go.
+
+### Container Build
+
+- Rebuild with updated Dockerfile and regenerate diff report
+- Container build/diff hangs on live manifest capture in gVisor (pagemap read
+  blocks). May need to capture manifest outside sandbox or use docker-based capture.
 
 ## Docker Build Notes
 

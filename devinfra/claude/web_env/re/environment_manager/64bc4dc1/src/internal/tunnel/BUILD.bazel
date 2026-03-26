@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "tunnel",
+    srcs = [
+        "client.go",
+        "factory.go",
+        "handler.go",
+        "ws_handler.go",
+    ],
+    importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/tunnel",
+    visibility = ["//devinfra/claude/web_env/re/environment_manager/64bc4dc1/src:__subpackages__"],
+    deps = [
+        "//devinfra/claude/web_env/re/environment_manager/64bc4dc1/src/internal/dogmetrics",
+        "//devinfra/claude/web_env/re/environment_manager/64bc4dc1/src/internal/manager",
+        "//devinfra/claude/web_env/re/environment_manager/64bc4dc1/src/internal/tunnel/actions",
+        "//devinfra/claude/web_env/re/environment_manager/64bc4dc1/src/internal/tunnel/tunnelpb",
+        "@com_github_gorilla_websocket//:websocket",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_x_sync//errgroup",
+    ],
+)

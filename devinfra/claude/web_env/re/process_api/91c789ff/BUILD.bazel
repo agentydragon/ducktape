@@ -1,0 +1,44 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+rust_binary(
+    name = "process_api_re",
+    srcs = [
+        "src/adopter.rs",
+        "src/cgroup.rs",
+        "src/control_server.rs",
+        "src/firecracker_init.rs",
+        "src/io.rs",
+        "src/main.rs",
+        "src/oom_killer.rs",
+        "src/pid_tree.rs",
+        "src/proc_handle.rs",
+        "src/state.rs",
+    ],
+    crate_root = "src/main.rs",
+    edition = "2021",
+    # Binary is static-pie linked.
+    # This doesn't affect Rust source — it's a linker/rustc flag difference.
+    # To match: rustflags = ["-C", "target-feature=+crt-static"]
+    visibility = ["//visibility:public"],
+    deps = [
+        "@crates//:bytes",
+        "@crates//:clap",
+        "@crates//:env_logger",
+        "@crates//:futures",
+        "@crates//:http",
+        "@crates//:http-body-util",
+        "@crates//:hyper",
+        "@crates//:hyper-util",
+        "@crates//:libc",
+        "@crates//:log",
+        "@crates//:nix",
+        "@crates//:parking_lot",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:tokio",
+        "@crates//:tokio-tungstenite",
+        "@crates//:jsonwebtoken",
+        # tokio-vsock still needed for vsock but not yet in Cargo.toml:
+        # "@crates//:tokio-vsock",     # vsock support
+    ],
+)

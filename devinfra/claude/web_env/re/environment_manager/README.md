@@ -2,24 +2,27 @@
 
 Analysis and reconstruction of Anthropic's `environment-manager` binary — the
 Go-based orchestration service that manages Claude Code web container sessions.
-Unlike `process_api` (stripped Rust), this binary ships **with full debug info
-and symbols**, making reconstruction significantly more tractable.
+
+> **Current binary is garble-obfuscated.** The previous (`a6f96673`, staging)
+> had full DWARF + symbols. The current (`64bc4dc1`, release) uses
+> [garble](https://github.com/burrowers/garble) — symbol names are randomized,
+> `go version -m` returns "unknown", DWARF extraction is not possible. RE now
+> relies on runtime behavior and string analysis only.
 
 ## Target Binary
 
 | Property           | Value                                                      |
 | ------------------ | ---------------------------------------------------------- |
-| **ELF Build ID**   | `a6f96673c2497a946dc0797780b5c6df47c0946e`                 |
+| **ELF Build ID**   | `64bc4dc1a5a3a38ce5732655f7fdfbeb62b8598d`                 |
 | **Reference file** | `devinfra/claude/web_env/reference/environment-manager.gz` |
-| **Language**       | Go 1.25.7                                                  |
-| **Version string** | `staging-68f0dff496` (via `-ldflags -X main.Version`)      |
-| **Compiler**       | `gc` (standard Go compiler), CGO enabled                   |
-| **Stripped**       | No (full DWARF debug info, symbol table)                   |
-| **Binary size**    | 27.3 MB (uncompressed), 13 MB (gzipped)                    |
+| **Language**       | Go                                                         |
+| **Version string** | `release-9f4ec76fbc-ext`                                   |
+| **Channel**        | Release (was staging)                                      |
+| **Obfuscation**    | garble (all symbol names randomized)                       |
+| **Binary size**    | 49.8 MB (uncompressed), 19 MB (gzipped)                    |
 | **Binary path**    | `/opt/env-runner/environment-manager`                      |
 | **Dynamic deps**   | Only `libc.so.6`                                           |
-| **Functions**      | 949 Anthropic functions                                    |
-| **RE directory**   | `a6f96673/`                                                |
+| **RE directory**   | `64bc4dc1/`                                                |
 
 ## Binary Name vs CLI Name
 
@@ -29,12 +32,17 @@ is `environment-runner`. All CLI examples in strings use `environment-runner`.
 ## Source Tree
 
 The original Go module lives at
-`github.com/anthropics/anthropic/api-go/environment-manager`. Full source tree
-extracted from DWARF debug info (78 files):
+`github.com/anthropics/anthropic/api-go/environment-manager`. Source tree
+was extracted from `a6f96673` DWARF debug info (87 files). Binary diff
+(2026-03-26) confirmed that 64bc4dc1 removed several packages (Supabase,
+Vercel, Antspace, Baku) and the old binary's DWARF paths revealed files
+missing from the RE source tree. Items marked `REMOVED` are confirmed
+absent from the 64bc4dc1 binary.
 
 ```
 main.go                                         # Entry point: Cobra root command + Version
 cmd/
+  cmd_code_sign.go                              # Code-sign subcommand
   cmd_orchestrator.go                           # Full session lifecycle orchestrator
   cmd_poll.go                                   # Work polling loop
   cmd_print_sandbox_settings.go                 # Print sandbox config as JSON
@@ -43,9 +51,12 @@ cmd/
   utils.go                                      # Shared CLI helpers
 internal/
   api/
+    ccr_backend.go                              # CCR v2 backend (RegisterWorker, WorkerEpoch)
     client.go                                   # HTTP client with auth
-    get_session_context.go                       # Fetch session context from API
+    get_session_context.go                      # Fetch session context from API
+    noop_backend.go                             # No-op backend for setup-only mode
     retry.go                                    # Retry logic with backoff
+    session_ingress_backend.go                  # Session ingress backend
     session_ingress_client.go                   # Session event ingress client
     session_ingress_types.go                    # Ingress event types
     work_client.go                              # Work poll/acknowledge client
@@ -58,6 +69,7 @@ internal/
     init.go                                     # Claude Code init (first run)
     install.go                                  # Install/upgrade Claude Code via npm
     outcomes.go                                 # Parse Claude Code outcomes
+    session_urls.go                             # Session URL builder
   config/
     config.go                                   # Session/source/environment config types
     session_mode.go                             # Session mode enum
@@ -66,13 +78,17 @@ internal/
     anthropic/
       anthropic.go                              # Anthropic-managed environment type
       config.go                                 # Anthropic env config
+      install_scripts/
+        scripts.go                              # Embedded language install scripts
     byoc/
       byoc.go                                   # BYOC (Bring Your Own Cloud) environment
+    shared/                                     # Shared embedded content (settings, hooks)
   gitproxy/
     handler.go                                  # Git HTTP handler (smart protocol)
     manager.go                                  # Git proxy lifecycle manager
     server.go                                   # Git proxy HTTP server
   input/
+    parser.go                                   # Input parser interface
     secret.go                                   # Work secret decoding
     v0_parser.go                                # V0 input format parser
     v1_parser.go                                # V1 input format parser
@@ -83,6 +99,7 @@ internal/
   manager/
     manager.go                                  # Top-level session manager
     mcp.go                                      # MCP server management
+    skill_extraction.go                         # Skill extraction from repos
     tunnel_register.go                          # Tunnel registration
   mcp/
     registry.go                                 # MCP server registry
@@ -91,6 +108,12 @@ internal/
       registration.go                           # Code-sign MCP registration
       server.go                                 # Code-sign MCP server
       sign_operations.go                        # Signing operations
+      types.go                                  # Code-sign type definitions
+    servers/supabase/                           # REMOVED in 64bc4dc1
+      client.go                                 # REMOVED - Supabase REST client
+      functions.go                              # REMOVED - Function deploy
+      registration.go                           # REMOVED - MCP registration
+      server.go                                 # REMOVED - MCP server
   o11y/
     discard_o11y_service.go                     # No-op observability
     metric_types.go                             # Metric type definitions
@@ -119,6 +142,7 @@ internal/
     runtime.go                                  # Sandbox runtime wrapper
   session/
     session_activity_recorder.go                # Session activity recording
+    noop_activity_recorder.go                   # No-op activity recorder
   sources/
     git.go                                      # Git source handler (clone/fetch)
     sources.go                                  # Source handler manager
@@ -129,9 +153,9 @@ internal/
     actions/
       registry.go                               # Tunnel action registry
       deploy/
-        action.go                               # Deploy action (Vercel + Antspace)
-        antspace.go                             # Antspace deployment client
-        vercel.go                               # Vercel deployment client
+        action.go                               # Deploy action (filestore-based)
+        antspace.go                             # REMOVED in 64bc4dc1
+        vercel.go                               # REMOVED in 64bc4dc1
       snapshot/
         action.go                               # Snapshot action
       status/
@@ -139,8 +163,10 @@ internal/
   util/
     git.go                                      # Git helper utilities
     lockfile.go                                 # File-based advisory locking
+    net.go                                      # Network utilities
     periodic_invoker.go                         # Periodic task runner
     retry.go                                    # Retry with backoff
+    stream.go                                   # Stream utilities
     tailer.go                                   # File tailer
 ```
 
@@ -336,8 +362,9 @@ Bidirectional HTTP/WebSocket tunneling using gRPC + protobuf
 - **Client**: WebSocket + gRPC tunnel client
 - **HTTP handler**: Forward HTTP requests from tunnel to local services
 - **WS handler**: Forward WebSocket connections through tunnel
-- **Deploy action**: Vercel deployment through tunnel, plus Antspace deployment
-  as alternative to Vercel
+- **Deploy action**: Deployment through tunnel using filestore-based mechanism
+  (`filestore_url`, `filesystem_id` fields). **Note:** Vercel and Antspace
+  backends were removed in 64bc4dc1.
 - **Snapshot action**: Project state snapshot (file listings, git status)
 - **Status action**: Health check (port validation, "ok" response)
 
@@ -350,12 +377,14 @@ Protobuf messages: `HTTPTunnelRequest`, `HTTPTunnelResponseChunk`,
 - **Registry**: Register/unregister MCP servers with Claude Code
 - **Base server**: Common MCP server infrastructure (using `mcp-go` v0.37.0)
 - **Code-sign server**: GPG/SSH code signing via MCP tool calls
+- **Supabase server**: REMOVED in 64bc4dc1 (was: database provisioning,
+  migrations, function deploy, type generation)
 
 ### Authentication (`internal/auth/`)
 
 - `AuthContext`: Holds API token (Anthropic), OAuth token, session ID,
-  session ingress token, Vercel deploy token, Antspace control plane URL +
-  auth token, Supabase credentials
+  session ingress token. **Note:** Vercel deploy token, Antspace control plane
+  URL + auth token, and Supabase credentials were removed in 64bc4dc1.
 - `GitHubSourceAuthProvider`: GitHub App authentication for source repos
 
 ### Environment Types (`internal/envtype/`)
@@ -451,54 +480,77 @@ via Cobra's built-in completion generation.
 
 Extracted from strings and function analysis:
 
-| Endpoint                                | Method | Used by                |
-| --------------------------------------- | ------ | ---------------------- |
-| `/v1/environments/whoami`               | GET    | `whoami.go` (identity) |
-| `/v1/environments/{id}/work/poll`       | POST   | `poller.go`            |
-| `/v1/environments/{id}/work/{wid}/ack`  | POST   | `work_client.go`       |
-| `/v1/environments/{id}/work/{wid}/stop` | POST   | `podmonitor`           |
-| `/v2/sessions/{id}`                     | GET    | `get_session_context`  |
-| `/v2/sessions/{id}/events`              | POST   | `session_ingress`      |
-| `/v2/sessions/{id}/logs`                | POST   | `session_ingress`      |
+| Endpoint                                     | Method | Used by                |
+| -------------------------------------------- | ------ | ---------------------- |
+| `/v1/environments/whoami`                    | GET    | `whoami.go` (identity) |
+| `/v1/environments/{id}/work/poll`            | POST   | `poller.go`            |
+| `/v1/environments/{id}/work/{wid}/ack`       | POST   | `work_client.go`       |
+| `/v1/environments/{id}/work/{wid}/heartbeat` | POST   | `lease_manager.go`     |
+| `/v1/environments/{id}/work/{wid}/stop`      | POST   | `podmonitor`           |
+| `/v1/code/sessions/{id}/worker/{wid}`        | POST   | `ccr_backend.go`       |
+| `/v1/code/sessions/{id}/sign-commit`         | POST   | `sign_operations.go`   |
+| `/v2/sessions/{id}`                          | GET    | `get_session_context`  |
+| `/v2/sessions/{id}/events`                   | POST   | `session_ingress`      |
+| `/v2/sessions/{id}/logs`                     | POST   | `session_ingress`      |
+| `/v2/ccr-sessions/{id}/supabase-provision`   | POST   | REMOVED in 64bc4dc1    |
 
 ## Artifacts
 
-Original extraction artifacts (source tree, function lists, build info, log
-messages, embedded scripts) were removed — all reproducible from the reference
-binary. Embedded scripts live in the reconstructed source
-(`src/internal/envtype/anthropic/install_scripts/scripts.go`).
+The `64bc4dc1` binary is garble-obfuscated — Go tooling cannot extract module
+info, symbols, or DWARF. Runtime probing and string analysis are the only
+available RE methods:
 
 ```bash
+# Runtime behavior (still works despite obfuscation)
+/usr/local/bin/environment-manager --version
+/usr/local/bin/environment-manager --help
+/usr/local/bin/environment-manager setup --help
+/usr/local/bin/environment-manager task-run --help
+/usr/local/bin/environment-manager orchestrator --help
+/usr/local/bin/environment-manager print-sandbox-settings
+
+# String analysis
 gunzip -k devinfra/claude/web_env/reference/environment-manager.gz
-BIN=devinfra/claude/web_env/reference/environment-manager
+strings devinfra/claude/web_env/reference/environment-manager | sort -u
 
-# Build info (module deps, build flags)
-go version -m "$BIN"
-
-# Source file paths from DWARF
-go tool objdump "$BIN" 2>/dev/null | grep -oP '(?<=TEXT )\S+' | sort -u
-
-# Application functions with addresses
-go tool nm "$BIN" | grep -E '^0x[0-9a-f]+ T (cmd\.|internal/)' | sort
-
-# Application string literals
-strings "$BIN" | grep -vE '^(runtime\.|go\.|reflect\.|sync\.)' | sort -u
+# Go tooling returns "unknown" or empty for obfuscated binary:
+# go version -m "$BIN"     → "unknown"
+# go tool nm "$BIN"         → (empty)
+# go tool objdump "$BIN"    → (no annotated source lines)
 ```
 
 ## Key Differences from process_api RE
 
-| Aspect       | process_api           | environment-manager                  |
-| ------------ | --------------------- | ------------------------------------ |
-| Language     | Rust                  | Go                                   |
-| Debug info   | Stripped              | Full DWARF + symbols                 |
-| Functions    | 29 application        | 949 Anthropic                        |
-| Source files | 10 files (decompiled) | 78 files (DWARF-extracted)           |
-| Complexity   | ~4,600 LoC            | ~17,800 LoC (79 files reconstructed) |
-| RE approach  | Ghidra decompilation  | Symbol analysis + DWARF + Go tooling |
-| Build system | Bazel rust_binary     | TBD (Bazel go_binary or native Go)   |
+| Aspect       | process_api           | environment-manager                       |
+| ------------ | --------------------- | ----------------------------------------- |
+| Language     | Rust                  | Go                                        |
+| Debug info   | Stripped              | garble-obfuscated (no DWARF, no syms)     |
+| Functions    | ~30 application       | Unknown (symbols randomized)              |
+| Source files | 10 files (decompiled) | 78 files (from previous DWARF version)    |
+| Complexity   | ~4,600 LoC            | ~17,800 LoC (reconstructed from a6f96673) |
+| RE approach  | Ghidra decompilation  | Runtime behavior + string analysis        |
+| Build system | Bazel rust_binary     | Bazel go_binary                           |
 
 ## Reconstruction Status
 
-**79 Go source files** reconstructed across **27 packages** totaling
-**~17,800 lines** of annotated Go code. Source lives under `a6f96673/src/`.
-See `a6f96673/PLAN.md` for detailed status.
+Source under `64bc4dc1/src/` was derived from the `a6f96673` DWARF-extracted
+reconstruction. A binary diff (2026-03-26) between the two versions revealed
+significant code changes -- the source contains dead code that must be removed:
+
+**Removed in 64bc4dc1 (confirmed via binary diff):**
+
+- Supabase MCP server (`internal/mcp/servers/supabase/`) -- entirely excised
+- Vercel deploy backend (`internal/tunnel/actions/deploy/vercel.go`)
+- Antspace deploy backend (`internal/tunnel/actions/deploy/antspace.go`)
+- Baku project features (initialization, templates, settings bootstrap)
+- Related auth fields (Supabase credentials, Vercel token, Antspace URL/token)
+
+**Added in 64bc4dc1:**
+
+- `filestore_url` and `filesystem_id` JSON fields (new deploy mechanism)
+- `jwt` JSON field (auth-related)
+
+**Unchanged:** V0/V1 session context structs, CLI flags, sandbox settings, API endpoints.
+
+See `64bc4dc1/BINDIFF_RESULTS.md` for full analysis and `64bc4dc1/PLAN.md` for
+detailed status.

@@ -1,0 +1,129 @@
+// Tunnel protobuf definitions for the environment-manager tunnel protocol.
+// Original import path: github.com/anthropics/anthropic/api-go/gen/proto/anthropic/sessions/tunnel/v1alpha
+//
+// Reconstructed from a6f96673 DWARF extraction, carried forward to 64bc4dc1.
+
+syntax = "proto3";
+
+package tunnelpb;
+
+option go_package = "github.com/anthropics/anthropic/api-go/environment-manager/internal/tunnel/tunnelpb";
+
+// Header represents a single HTTP header name-value pair.
+// DWARF fields: Name (string), Value (string)
+message Header {
+  string name = 1;
+  string value = 2;
+}
+
+// HttpCancel represents a cancellation of an in-flight HTTP request.
+message HttpCancel {
+  string request_id = 1;
+}
+
+// WsOpen represents a request to open a WebSocket tunnel connection.
+message WsOpen {
+  string path = 1;
+  int32 port = 2;
+  string url = 3;
+  string connection_id = 4;
+  repeated Header headers = 5;
+}
+
+// WsMessage represents a WebSocket message forwarded through the tunnel.
+message WsMessage {
+  bytes data = 1;
+  int32 type = 2;
+  string connection_id = 3;
+}
+
+// WsClose represents a WebSocket close frame forwarded through the tunnel.
+message WsClose {
+  int32 code = 1;
+  string reason = 2;
+  string path = 3;
+  int32 port = 4;
+  string url = 5;
+  string connection_id = 6;
+}
+
+// WsError represents a WebSocket error.
+message WsError {
+  string message = 1;
+}
+
+// WsOpened signals that a WebSocket tunnel connection was successfully opened.
+message WsOpened {
+  // Empty message - just a signal
+}
+
+// HttpHeaders represents the initial HTTP response headers sent through the tunnel.
+message HttpHeaders {
+  int32 status_code = 1;
+  repeated Header headers = 2;
+}
+
+// HttpChunk represents a chunk of HTTP response body data.
+message HttpChunk {
+  bytes data = 1;
+}
+
+// HttpError represents an HTTP error response.
+message HttpError {
+  string message = 1;
+  int32 status_code = 2;
+}
+
+// HTTPTunnelRequest represents an HTTP request forwarded through the tunnel.
+// Binary: github.com/anthropics/anthropic/api-go/gen/proto/anthropic/sessions/tunnel/v1alpha.HTTPTunnelRequest
+message HTTPTunnelRequest {
+  string request_id = 1;
+  int32 port = 2;
+  string method = 3;
+  string path = 4;
+  repeated Header headers = 5;
+  bytes body = 6;
+  string url = 7;
+}
+
+// TunnelRequest is the top-level message received from the tunnel server.
+// It uses a oneof for the different request payload types.
+message TunnelRequest {
+  string request_id = 1;
+  string tunnel_id = 2;
+  string path = 3;
+  string method = 4;
+  string url = 5;
+  int32 port = 6;
+  string content_type = 7;
+  bytes body = 8;
+  repeated Header headers = 9;
+
+  oneof payload {
+    HTTPTunnelRequest http_request = 10;
+    HttpCancel http_cancel = 11;
+    WsOpen ws_open = 12;
+    WsMessage ws_message = 13;
+    WsClose ws_close = 14;
+  }
+}
+
+// TunnelResponse is the top-level message sent back through the tunnel.
+// It uses a oneof for the different response payload types.
+message TunnelResponse {
+  string request_id = 1;
+  string status = 2;
+  string content_type = 3;
+  bytes body = 4;
+  bool streaming = 5;
+
+  oneof payload {
+    HttpHeaders http_headers = 10;
+    HttpChunk http_chunk = 11;
+    HttpError http_error = 12;
+    WsOpened ws_opened = 13;
+    WsMessage ws_message = 14;
+    WsClose ws_close = 15;
+    WsError ws_error = 16;
+  }
+}

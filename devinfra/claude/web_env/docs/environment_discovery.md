@@ -1,6 +1,16 @@
 # Claude Code Web Environment Discovery
 
-Documented from a live session on 2026-03-16.
+Documented from a live session on 2026-03-26.
+
+## Binary Versions
+
+| Binary                | Build ID   | Release / Version              |
+| --------------------- | ---------- | ------------------------------ |
+| `process_api` (PID 1) | `91c789ff` | `process_api_2026-03-23-22-49` |
+| `environment-manager` | `64bc4dc1` | `release-9f4ec76fbc-ext`       |
+
+`environment-manager` is garble-obfuscated (release channel, 49MB).
+DWARF/symbol extraction is not possible.
 
 ## Table of Contents
 
@@ -145,8 +155,8 @@ From `/usr/local/bin/environment-manager print-sandbox-settings`:
 
 ## Environment Runner
 
-Binary: `/usr/local/bin/environment-manager` → `/opt/env-runner/environment-manager` (Go, ELF 64-bit, unstripped with DWARF)
-Version: `staging-68f0dff496` (previously `staging-7c3cd5476`)
+Binary: `/usr/local/bin/environment-manager` → `/opt/env-runner/environment-manager` (Go, ELF 64-bit, garble-obfuscated)
+Version: `release-9f4ec76fbc-ext`
 
 ### Overview
 

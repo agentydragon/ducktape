@@ -1,4 +1,3 @@
-=== environment-runner --help ===
 Environment Runner handles the lifecycle of agentic sessions.
 
 Usage:
@@ -18,11 +17,9 @@ Flags:
   -v, --version   version for environment-runner
 
 Use "environment-runner [command] --help" for more information about a command.
-
-=== environment-runner --version ===
-environment-runner version staging-68f0dff496
-
-=== environment-runner setup --help ===
+---
+environment-runner version release-9f4ec76fbc-ext
+---
 The setup command pre-installs all required dependencies for orchestrator mode.
 
 This command is intended to be run during container image build to ensure that
@@ -81,8 +78,7 @@ Flags:
       --service-key-file string          Path to environment service key file for API healthcheck. Falls back to ENVIRONMENT_SERVICE_KEY env var if not set. When provided, verifies connectivity by calling /v1/environments/whoami
       --skip-claude-code                 Skip Claude Code installation
       --skip-sandbox-runtime             Skip sandbox-runtime installation
-
-=== environment-runner orchestrator --help ===
+---
 The orchestrator command polls the API for session tasks and handing off work to be executed.
 
 It handles:
@@ -154,8 +150,7 @@ Flags:
       --skip-git-config                 Skip git configuration setup (use container's existing .gitconfig)
       --timeout-hook string             Command to run on loop timeout (e.g., monorepo updates)
       --timeout-hook-timeout duration   Timeout for timeout hook execution (e.g., monorepo updates) (default 5m0s)
-
-=== environment-runner task-run --help ===
+---
 Connects directly to the API to execute an existing session id.
 
 Provide a JSON object via stdin with the following structure:
@@ -201,8 +196,7 @@ Flags:
       --upgrade-claude-code                     Deprecated: use --claude-agent-version instead. When true (default), upgrades Claude Agent to latest version. (default true)
       --verbose-claude-logs                     Enable verbose logging of Claude Agent output to console (automatically enabled with --local-testing)
       --working-directory string                Default working directory for the session (used when session context doesn't specify cwd) (default "/root")
-
-=== environment-runner poll --help ===
+---
 The poll command makes a single non-blocking request to the API for work.
 
 This is a thin wrapper around the poll endpoint that returns work JSON on stdout
