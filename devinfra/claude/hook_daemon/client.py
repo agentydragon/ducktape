@@ -17,6 +17,8 @@ import sys
 import time
 from pathlib import Path
 
+from filelock import FileLock
+
 from devinfra.claude.claude_api.hooks.dispatch_input import AnyHookInput
 from devinfra.claude.hook_daemon.models import HookRequest, HookResponse, UpdateProxyCredsResponse
 from devinfra.claude.session_paths import SessionPaths
@@ -136,56 +138,63 @@ def _start_daemon(paths: SessionPaths) -> subprocess.Popen[bytes] | None:
     sock_path = paths.hook_daemon_sock
     pidfile = paths.hook_daemon_pidfile
 
-    # Check if daemon is already running (pidfile with live process)
-    if pidfile.exists():
-        try:
-            pid = int(pidfile.read_text().strip())
-            if _is_pid_alive(pid):
-                # PID is alive but socket is gone — stale state, kill it
-                if not sock_path.exists():
-                    logger.info("Stale daemon (pid=%d, socket missing), killing", pid)
-                    os.kill(pid, signal.SIGTERM)
-                    time.sleep(0.5)
-                    with contextlib.suppress(ProcessLookupError):
-                        os.kill(pid, signal.SIGKILL)
-                    logger.info("Killed stale daemon pid=%d", pid)
-                else:
-                    logger.debug("Daemon already running (pid=%d, socket=%s)", pid, sock_path)
-                    return None
-            else:
-                logger.info("Stale pidfile (pid=%d is dead), cleaning up", pid)
-        except (ValueError, OSError) as e:
-            logger.warning("Bad pidfile %s: %s", pidfile, e)
-
-    # Create daemon dir and socket dir
+    # Create daemon dir before acquiring the lock (FileLock needs the parent to exist).
     daemon_dir.mkdir(parents=True, exist_ok=True)
-    paths.ensure_dirs()
 
-    # Clean stale socket
-    if sock_path.exists():
-        logger.debug("Removing stale socket %s", sock_path)
-        sock_path.unlink()
+    with FileLock(daemon_dir / "daemon.lock"):
+        # Re-check after acquiring: another process may have won the race.
+        if check_health(sock_path):
+            logger.debug("Daemon already healthy (socket=%s), skipping start", sock_path)
+            return None
 
-    # Fork daemon as detached subprocess
-    daemon_module = "devinfra.claude.hook_daemon.main"
-    log_out = daemon_dir / "daemon.log"
-    log_err = daemon_dir / "daemon.err.log"
+        # Check if daemon is already running (pidfile with live process)
+        if pidfile.exists():
+            try:
+                pid = int(pidfile.read_text().strip())
+                if _is_pid_alive(pid):
+                    # PID is alive but socket is gone — stale state, kill it
+                    if not sock_path.exists():
+                        logger.info("Stale daemon (pid=%d, socket missing), killing", pid)
+                        os.kill(pid, signal.SIGTERM)
+                        time.sleep(0.5)
+                        with contextlib.suppress(ProcessLookupError):
+                            os.kill(pid, signal.SIGKILL)
+                        logger.info("Killed stale daemon pid=%d", pid)
+                    else:
+                        logger.debug("Daemon already running (pid=%d, socket=%s)", pid, sock_path)
+                        return None
+                else:
+                    logger.info("Stale pidfile (pid=%d is dead), cleaning up", pid)
+            except (ValueError, OSError) as e:
+                logger.warning("Bad pidfile %s: %s", pidfile, e)
 
-    logger.info("Starting daemon: module=%s sock=%s daemon_dir=%s", daemon_module, sock_path, daemon_dir)
+        paths.ensure_dirs()
 
-    with log_out.open("a") as stdout_f, log_err.open("a") as stderr_f:
-        proc = subprocess.Popen(
-            [sys.executable, "-m", daemon_module, "--sock", sock_path, "--daemon-dir", daemon_dir],
-            stdout=stdout_f,
-            stderr=stderr_f,
-            env=python_env(),
-            start_new_session=True,  # Detach from parent
-        )
+        # Clean stale socket
+        if sock_path.exists():
+            logger.debug("Removing stale socket %s", sock_path)
+            sock_path.unlink()
 
-    # Write pidfile
-    pidfile.write_text(str(proc.pid))
-    logger.info("Started daemon (pid=%d, sock=%s)", proc.pid, sock_path)
-    return proc
+        # Fork daemon as detached subprocess
+        daemon_module = "devinfra.claude.hook_daemon.main"
+        log_out = daemon_dir / "daemon.log"
+        log_err = daemon_dir / "daemon.err.log"
+
+        logger.info("Starting daemon: module=%s sock=%s daemon_dir=%s", daemon_module, sock_path, daemon_dir)
+
+        with log_out.open("a") as stdout_f, log_err.open("a") as stderr_f:
+            proc = subprocess.Popen(
+                [sys.executable, "-m", daemon_module, "--sock", sock_path, "--daemon-dir", daemon_dir],
+                stdout=stdout_f,
+                stderr=stderr_f,
+                env=python_env(),
+                start_new_session=True,  # Detach from parent
+            )
+
+        # Write pidfile
+        pidfile.write_text(str(proc.pid))
+        logger.info("Started daemon (pid=%d, sock=%s)", proc.pid, sock_path)
+        return proc
 
 
 def _read_daemon_error_log(daemon_dir: Path) -> str:

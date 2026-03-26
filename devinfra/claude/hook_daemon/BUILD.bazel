@@ -114,6 +114,7 @@ py_library(
         "//devinfra/claude:session_paths",
         "//devinfra/claude/claude_api/hooks:dispatch_input",
         "//util/bazel:subprocess",
+        "@pypi//filelock",
     ],
 )
 

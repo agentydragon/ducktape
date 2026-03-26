@@ -25,6 +25,7 @@ dependencies = [
     "rich>=13.0.0",
     "structlog",
     "platformdirs>=3.0",
+    "filelock>=3.0",
 
     # Web frameworks
     "fastapi>=0.115.0",
