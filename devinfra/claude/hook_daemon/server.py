@@ -33,7 +33,7 @@ from devinfra.claude.hook_daemon.session_start.handler import handle as handle_s
 from devinfra.claude.hook_daemon.session_start.http_client import build_http_client
 from devinfra.claude.hook_daemon.tracing import DeferredOtlpExporter
 from devinfra.claude.session_paths import SessionPaths
-from devinfra.claude.settings import HookSettings, is_web_mode
+from devinfra.claude.settings import HookSettings, ProxyMode, is_web_mode
 
 logger = logging.getLogger(__name__)
 
@@ -56,27 +56,38 @@ def configure(daemon_dir: Path, otlp_exporter: DeferredOtlpExporter) -> None:
 
 
 async def _start_session_proxy(session_id: str) -> None:
-    """Start the auth proxy and UDS remote proxy for the current session.
+    """Start proxy infrastructure for the current session.
 
-    Called at the start of SessionStart handling — not at daemon startup. Using
-    listen_port=0 lets the OS assign a free port, so concurrent sessions (each
-    with their own daemon) never collide. Idempotent: no-op if the proxy is
-    already running or no upstream proxy is configured.
+    In UDS mode (default): only the UDS proxy is started. Bazel uses
+    --remote_proxy/--bes_proxy for gRPC, and JAVA_TOOL_OPTIONS (set by
+    Anthropic) for BCR fetches.
+
+    In TCP mode (legacy): both the TCP HTTP CONNECT proxy and UDS proxy
+    are started. The TCP proxy handles all Bazel traffic via JVM system
+    properties.
+
+    Called at the start of SessionStart handling — not at daemon startup.
+    Idempotent: no-op if proxies are already running or no upstream proxy
+    is configured.
     """
-    if app.state.proxy is not None:
+    if app.state.uds_proxy is not None:
         return
     if not get_upstream_proxy_url():
         return
 
-    proxy = AuthForwardingProxy(listen_port=0)
-    proxy.start()  # OS assigns a free port; proxy.listen_port is updated after bind
-    app.state.proxy = proxy
-    logger.info("Auth proxy started in-process on port %d (dynamic)", proxy.listen_port)
-
-    # Start UDS proxy for --remote_proxy (Bazel gRPC remote execution/cache).
-    paths = SessionPaths(session_id=session_id, home=Path.home(), xdg_cache_home=Path.home())
-    uds_proxy = UdsRemoteProxy(sock_path=paths.remote_proxy_sock, remote_target=app.state.settings.remote_proxy_target)
+    settings: HookSettings = app.state.settings
     upstream_url = get_upstream_proxy_url()
+
+    # CLEANUP(2026-03-26): Remove TCP proxy once UDS mode is confirmed stable.
+    if settings.proxy_mode == ProxyMode.TCP:
+        proxy = AuthForwardingProxy(listen_port=0)
+        proxy.start()
+        app.state.proxy = proxy
+        logger.info("Auth proxy started in-process on port %d (tcp mode)", proxy.listen_port)
+
+    # UDS proxy for --remote_proxy/--bes_proxy (both modes).
+    paths = SessionPaths(session_id=session_id, home=Path.home(), xdg_cache_home=Path.home())
+    uds_proxy = UdsRemoteProxy(sock_path=paths.remote_proxy_sock, remote_target=settings.remote_proxy_target)
     if upstream_url:
         uds_proxy.set_creds(upstream_url)
     uds_proxy.start()
@@ -148,16 +159,19 @@ class _UpdateProxyCredsRequest(BaseModel):
 
 @app.post("/update-proxy-creds")
 async def update_proxy_creds(req: _UpdateProxyCredsRequest) -> UpdateProxyCredsResponse:
-    """Update in-process auth proxy credentials. Called by bazel_wrapper on each invocation."""
-    proxy: AuthForwardingProxy | None = app.state.proxy
-    if proxy is None:
-        raise HTTPException(status_code=503, detail="Auth proxy not running")
-    proxy.set_creds(req.https_proxy)
+    """Update in-process proxy credentials. Called by bazel_wrapper on each invocation."""
     uds_proxy: UdsRemoteProxy | None = app.state.uds_proxy
-    if uds_proxy is not None:
-        uds_proxy.set_creds(req.https_proxy)
+    if uds_proxy is None:
+        raise HTTPException(status_code=503, detail="No proxy running")
+    uds_proxy.set_creds(req.https_proxy)
+    # CLEANUP(2026-03-26): Remove TCP proxy branch once UDS mode is confirmed stable.
+    proxy: AuthForwardingProxy | None = app.state.proxy
+    if proxy is not None:
+        proxy.set_creds(req.https_proxy)
     logger.debug("Updated proxy credentials via RPC")
-    return UpdateProxyCredsResponse(proxy_url=f"http://localhost:{proxy.listen_port}")
+    # Return TCP proxy URL if available (legacy mode), otherwise a placeholder.
+    proxy_url = f"http://localhost:{proxy.listen_port}" if proxy else "uds-only"
+    return UpdateProxyCredsResponse(proxy_url=proxy_url)
 
 
 @app.get("/health")

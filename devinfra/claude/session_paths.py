@@ -15,9 +15,14 @@ def default_cache_dir() -> Path:
     return Path(user_cache_dir(appname="claude-hooks"))
 
 
+def _short_session_dir(session_id: str) -> Path:
+    """Short session-scoped dir under /tmp for Unix sockets (108-byte AF_UNIX limit)."""
+    return Path("/tmp/claude-hd") / session_id
+
+
 def hook_daemon_sock(session_id: str) -> Path:
     """UDS path for the hook daemon, derived from session_id alone."""
-    return Path("/tmp/claude-hd") / session_id / "d.sock"
+    return _short_session_dir(session_id) / "d.sock"
 
 
 @dataclass(frozen=True)
@@ -82,11 +87,8 @@ class SessionPaths:
 
     @property
     def remote_proxy_sock(self) -> Path:
-        """UDS path for --remote_proxy (Bazel gRPC remote execution/cache).
-
-        Uses a short path under /tmp to stay within the 108-byte AF_UNIX limit.
-        """
-        return Path("/tmp/claude-hd") / self.session_id / "remote-proxy.sock"
+        """UDS path for --remote_proxy (Bazel gRPC remote execution/cache)."""
+        return _short_session_dir(self.session_id) / "remote-proxy.sock"
 
     @property
     def wrapper_dir(self) -> Path:

@@ -50,7 +50,7 @@ from devinfra.claude.hook_daemon.session_start import tmpfs
 from devinfra.claude.hook_daemon.tracing import DeferredOtlpExporter
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.session_paths import SessionPaths
-from devinfra.claude.settings import CONFIG_FILES, HookSettings
+from devinfra.claude.settings import CONFIG_FILES, HookSettings, ProxyMode
 from devinfra.claude.supervisor import setup as supervisor_setup
 
 logger = logging.getLogger(__name__)
@@ -518,6 +518,7 @@ async def run_session(
         )
         bazelrc_content: str = bazelrc_template.render(
             web_proxy=ctx.web_mode,
+            use_tcp_proxy=settings.proxy_mode == ProxyMode.TCP,
             proxy_port=setup.proxy_port,
             remote_proxy_sock=setup.remote_proxy_sock,
             truststore_path=setup.truststore_path,

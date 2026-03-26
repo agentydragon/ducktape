@@ -11,6 +11,7 @@ Environment Variables (in priority order):
 
 import importlib.resources
 import os
+from enum import StrEnum
 from importlib.resources.abc import Traversable
 from typing import Literal
 
@@ -42,6 +43,13 @@ def is_web_mode() -> bool:
     return os.environ.get("CLAUDE_CODE_REMOTE") == "true"
 
 
+class ProxyMode(StrEnum):
+    """Bazel proxy routing mode."""
+
+    UDS = "uds"
+    TCP = "tcp"
+
+
 class HookSettings(BaseSettings):
     """Configuration for claude via environment variables.
 
@@ -66,6 +74,14 @@ class HookSettings(BaseSettings):
 
     warmup_bazel_server: bool = Field(default=True, description="Start Bazel server in background after session setup")
 
+    proxy_mode: ProxyMode = Field(
+        default=ProxyMode.UDS,
+        description=(
+            "Bazel proxy mode. 'uds': route gRPC via --remote_proxy/--bes_proxy UDS, "
+            "BCR uses native JAVA_TOOL_OPTIONS proxy. 'tcp': route all Bazel traffic "
+            "through localhost TCP HTTP CONNECT proxy (legacy)."
+        ),
+    )
     remote_proxy_target: str = Field(
         default="remote.buildbuddy.io:443",
         description="host:port for UDS remote proxy CONNECT tunnel (Bazel --remote_proxy destination)",

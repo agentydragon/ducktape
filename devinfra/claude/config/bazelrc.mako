@@ -3,22 +3,28 @@
 startup --output_user_root=${bazel_cache_dir | sh}
 % endif
 % if web_proxy:
-# Route Bazel's JVM through the local auth proxy (localhost:${proxy_port}).
-# The auth proxy adds Proxy-Authorization credentials when forwarding to the
-# egress proxy. This is needed because gRPC-Java's ProxyDetectorImpl reads
-# proxy settings from ProxySelector (via these system properties) but cannot
-# reliably authenticate — Bazel's ProxyHelper installs the Authenticator only
-# when a repository rule triggers a download, which may be after the gRPC
-# remote execution channel is already established.
-startup --host_jvm_args=-Dhttps.proxyHost=127.0.0.1
-startup --host_jvm_args=-Dhttps.proxyPort=${proxy_port}
 startup --host_jvm_args=-Djavax.net.ssl.trustStore=${truststore_path | sh}
 startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=${truststore_password | sh}
+% if use_tcp_proxy:
+## CLEANUP(2026-03-26): Remove TCP proxy block once UDS mode is confirmed stable.
+# Legacy TCP mode: route all Bazel JVM traffic through the local auth proxy.
+# The auth proxy adds Proxy-Authorization credentials when forwarding to the
+# egress proxy. Needed because gRPC-Java's ProxyDetectorImpl cannot reliably
+# authenticate — Bazel's ProxyHelper installs the Authenticator only when a
+# repository rule triggers a download, which may be after the gRPC channel
+# is already established.
+startup --host_jvm_args=-Dhttps.proxyHost=127.0.0.1
+startup --host_jvm_args=-Dhttps.proxyPort=${proxy_port}
+% else:
+# UDS mode: BCR fetches use the native JVM proxy settings from Anthropic's
+# JAVA_TOOL_OPTIONS (proxyHost/proxyPort/proxyUser/proxyPassword). Only gRPC
+# traffic (remote execution, cache, BES) needs the UDS proxy.
+startup --host_jvm_args=-Djdk.http.auth.tunneling.disabledSchemes=
+% endif
 % if remote_proxy_sock:
 # Route gRPC remote execution/cache and BES through a UDS proxy that
-# establishes a CONNECT tunnel through the egress proxy. This uses Bazel's
-# native --remote_proxy/--bes_proxy mechanism instead of relying on JVM proxy
-# system properties, bypassing the gRPC-Java Authenticator timing issue.
+# establishes a CONNECT tunnel through the egress proxy. Uses Bazel's native
+# --remote_proxy/--bes_proxy, bypassing the gRPC-Java Authenticator timing issue.
 build --remote_proxy=unix:${remote_proxy_sock}
 build --bes_proxy=unix:${remote_proxy_sock}
 % endif

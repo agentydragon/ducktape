@@ -137,8 +137,14 @@ def _run(paths: SessionPaths) -> None:
     if is_web_mode():
         local_proxy = _refresh_proxy_creds(paths)
         warn_if_credentials_expiring()
-        for var in PROXY_ENV_VARS:
-            os.environ[var] = local_proxy
+        # CLEANUP(2026-03-26): Remove TCP proxy branch once UDS mode is confirmed stable.
+        # In TCP mode, override HTTPS_PROXY to point at the local auth proxy so
+        # all JVM HTTP traffic goes through it. In UDS mode, gRPC goes through
+        # --remote_proxy UDS and BCR uses the native JAVA_TOOL_OPTIONS proxy,
+        # so no env var override is needed.
+        if local_proxy != "uds-only":
+            for var in PROXY_ENV_VARS:
+                os.environ[var] = local_proxy
 
     real_binary = _resolve_real_binary()
 

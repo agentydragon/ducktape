@@ -64,6 +64,9 @@ def parse_upstream_url(url: str) -> UpstreamConfig:
     return UpstreamConfig(host=host, port=port, auth_header=auth_header)
 
 
+# CLEANUP(2026-03-26): Remove AuthForwardingProxy once UDS proxy mode is confirmed
+# stable. In UDS mode, BCR uses native JAVA_TOOL_OPTIONS proxy and gRPC goes through
+# UdsRemoteProxy. The TCP proxy is only needed if proxy_mode="tcp" (legacy fallback).
 class AuthForwardingProxy:
     """HTTP CONNECT proxy that adds authentication when forwarding to upstream.
 
@@ -237,7 +240,7 @@ class AuthForwardingProxy:
             upstream_sock.settimeout(None)
 
             # Now tunnel data bidirectionally (no inspection)
-            self._tunnel_bidirectional(client_sock, upstream_sock)
+            _tunnel_bidirectional(client_sock, upstream_sock)
             logger.info("[conn %d] Tunnel completed for %s", conn_id, target)
 
         except (OSError, ValueError) as e:
@@ -252,10 +255,6 @@ class AuthForwardingProxy:
             # Remove from connections list to allow garbage collection
             with contextlib.suppress(ValueError):
                 self._connections.remove(client_sock)
-
-    @staticmethod
-    def _tunnel_bidirectional(client_sock: socket.socket, upstream_sock: socket.socket) -> None:
-        _tunnel_bidirectional(client_sock, upstream_sock)
 
 
 def _tunnel_bidirectional(sock_a: socket.socket, sock_b: socket.socket) -> None:
