@@ -56,7 +56,5 @@ To learn more about 64bc4dc1 without DWARF:
 ## Previously Completed (in a6f96673)
 
 All medium and high-priority items were completed for the a6f96673 predecessor.
-See `../a6f96673/REVERSE_ENGINEERING_TODOS.md` for the full completion record.
-
 The 64bc4dc1 source is structurally identical to a6f96673 — only metadata
 (build ID, version string, file headers) has been updated.
