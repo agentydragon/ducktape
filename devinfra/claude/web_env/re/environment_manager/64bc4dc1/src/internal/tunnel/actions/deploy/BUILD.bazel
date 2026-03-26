@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/tunnel/actions/deploy",
     visibility = ["//devinfra/claude/web_env/re/environment_manager/64bc4dc1/src:__subpackages__"],
     deps = [
+        "//devinfra/claude/web_env/re/environment_manager/64bc4dc1/src/internal/config",
         "//devinfra/claude/web_env/re/environment_manager/64bc4dc1/src/internal/tunnel/actions",
     ],
 )

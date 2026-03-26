@@ -2,6 +2,7 @@ load("@rules_rust//rust:defs.bzl", "rust_binary")
 
 rust_binary(
     name = "process_api_re",
+    tags = ["manual"],  # Missing jsonwebtoken crate in Cargo.toml
     srcs = [
         "src/adopter.rs",
         "src/cgroup.rs",

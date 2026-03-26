@@ -17,11 +17,24 @@ import (
 	"time"
 )
 
-// Client is the interface for the API client. Implemented by HttpClient
-// and stdinConfigClient (in cmd package).
+// Client is the interface for the config client. Implemented by
+// stdinConfigClient (in cmd package).
 // Binary itab: go:itab.*cmd.stdinConfigClient,api.Client at 0xf5a240
+//
+// The binary itab shows stdinConfigClient satisfying this interface via methods:
+//   - GetEnvironmentForSession(ctx, sessionID) (json.RawMessage, error) (0xb7b8e0)
+//   - GetAuthContext() *auth.AuthContext (0xb7bae0)
+//   - GetOutcomes() *claude.Outcomes (0xb7bb00)
+//
+// The full interface cannot be expressed here due to a circular import
+// (api -> auth -> o11y/diag -> api). In the original source this interface
+// was likely defined in a separate package or used forward-declared types.
+// Manager.Config stores it as interface{} and dispatches via type assertion.
+//
+// Note: RetryableHTTPDo is a method on HttpClient (retry.go), not part of this
+// interface. It was previously mis-attributed here during RE.
 type Client interface {
-	RetryableHTTPDo(ctx interface{}, req *http.Request) (*http.Response, error)
+	GetEnvironmentForSession(ctx context.Context, sessionID string) (json.RawMessage, error)
 }
 
 // RetryConfig holds parameters for exponential backoff retry logic.
@@ -164,7 +177,7 @@ func (c *HttpClient) doPostJSON(ctx context.Context, endpoint string, apiKey str
 	c.setAuthHeader(req, apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.RetryableHTTPDo(ctx, req)
+	resp, err := c.RetryableHTTPDo(ctx, req, nil)
 	if err != nil {
 		return fmt.Errorf("request to %s failed: %w", endpoint, err)
 	}
@@ -197,7 +210,7 @@ func (c *HttpClient) PostJSONWithResponse(ctx context.Context, endpoint string, 
 	c.setAuthHeader(req, apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.RetryableHTTPDo(ctx, req)
+	resp, err := c.RetryableHTTPDo(ctx, req, nil)
 	if err != nil {
 		return nil, fmt.Errorf("request to %s failed: %w", endpoint, err)
 	}
@@ -213,13 +226,6 @@ func (c *HttpClient) PostJSONWithResponse(ctx context.Context, endpoint string, 
 	}
 
 	return respBody, nil
-}
-
-// RetryableHTTPDo executes an HTTP request with retry logic.
-//
-// Binary address: 0x82e240
-func (c *HttpClient) RetryableHTTPDo(ctx context.Context, req *http.Request) (*http.Response, error) {
-	return c.Client.Do(req)
 }
 
 // setAuthHeader sets the "Authorization" header on the HTTP request to "Bearer <apiKey>".

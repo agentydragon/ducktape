@@ -5,10 +5,10 @@
 //   /home/runner/work/anthropic/anthropic/api-go/environment-manager/internal/envtype/anthropic/config.go
 //
 // Key symbols:
-//   - anthropic.DecodeConfig (0xb1dda0)
+//   - anthropic.DecodeConfig (0xb1dda0) -> renamed to DecodeConfigFromJSON
 //
 // This file contains the Anthropic environment configuration types and
-// the DecodeConfig function for deserializing environment configuration JSON.
+// the DecodeConfigFromJSON function for deserializing environment configuration JSON.
 
 package anthropic
 
@@ -44,9 +44,14 @@ type AnthropicConfig struct {
 	InitScript *string         `json:"init_script,omitempty"`
 }
 
-// DecodeConfig unmarshals a JSON byte slice into an AnthropicConfig.
+// DecodeConfigFromJSON unmarshals a JSON byte slice into an AnthropicConfig.
 // Returns the config and an error if unmarshaling fails or if required
 // fields are missing.
+//
+// Renamed from DecodeConfig to avoid collision with the interface{}-based
+// DecodeConfig in anthropic.go (binary address 0xb04020). Both functions
+// existed in the original binary under the same garble-obfuscated symbol name
+// "anthropic.DecodeConfig" but at different addresses.
 //
 // Binary address: 0xb1dda0
 // Source lines: 28-39
@@ -60,7 +65,7 @@ type AnthropicConfig struct {
 //  5. If empty: fmt.Errorf("anthropic config: cwd field is required") at line 36
 //     (format string is 50 = 0x32 bytes)
 //  6. On success: return config, nil at line 39
-func DecodeConfig(data []byte) (*AnthropicConfig, error) {
+func DecodeConfigFromJSON(data []byte) (*AnthropicConfig, error) {
 	config := &AnthropicConfig{}
 
 	if err := json.Unmarshal(data, config); err != nil {

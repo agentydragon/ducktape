@@ -40,7 +40,11 @@ type OutcomesExtra struct{}
 // DiagReporter handles diagnostics reporting. Nil-checked with panic
 // "diagReporter must not be nil" in NewClaudeCodeExecutor.
 // Provides GetClaudeCodeDiagFilePath() for CLAUDE_CODE_DIAGNOSTICS_FILE env var.
-type DiagReporter struct{}
+//
+// Implemented by *diag.DiagService. Defined as an interface so the claude
+// package does not import the diag package (which would create a circular
+// dependency through the api package).
+type DiagReporter interface{}
 
 // ClaudeCodeExecutor manages the lifecycle of a Claude Code process.
 //
@@ -84,7 +88,7 @@ type ClaudeCodeExecutor struct {
 	SessionIngress *SessionIngressClient  // offset 0x58 — session ingress client; from R13 param (line 141)
 	SessionToken   string                 // offset 0x60 — session token string
 	OutcomesExtra  *OutcomesExtra         // offset 0x70 — additional outcomes data; from 0xc8(SP) (line 143)
-	DiagReporter   *DiagReporter          // offset 0x80 — diagnostics reporter; from 0xd0(SP) (line 144), nil-checked with panic "diagReporter must not be nil"
+	DiagReporter   DiagReporter           // offset 0x80 — diagnostics reporter; from 0xd0(SP) (line 144), nil-checked with panic "diagReporter must not be nil"
 	ClaudePath     string                 // offset 0x88 — resolved claude path (from GetClaudePath)
 }
 
@@ -109,7 +113,7 @@ func NewClaudeCodeExecutor(
 	ctx context.Context,
 	cfg *config.StartupContext,
 	outcomes *Outcomes,
-	diagReporter *DiagReporter,
+	diagReporter DiagReporter,
 	// additional parameters from stack: gatewayConfig, sessionIngress, sessionToken, etc.
 ) *ClaudeCodeExecutor {
 	if logger == nil {

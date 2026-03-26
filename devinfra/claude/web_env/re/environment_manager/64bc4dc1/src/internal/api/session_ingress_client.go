@@ -46,14 +46,6 @@ type HttpSessionIngressClient struct {
 	UseV2  bool         // offset 0x20
 }
 
-// RetryableHTTPDo delegates to the embedded HttpClient's RetryableHTTPDo.
-// This is an auto-generated wrapper that forwards calls.
-//
-// Binary addresses: 0x832b20 (value receiver), 0x832c00 (pointer receiver)
-func (c HttpSessionIngressClient) RetryableHTTPDo(ctx context.Context, req *http.Request) (*http.Response, error) {
-	return c.Client.RetryableHTTPDo(ctx, req, nil)
-}
-
 // sessionEndpoint builds the full URL for a session ingress endpoint.
 //
 // Format: "%s/%s/session_ingress/session/%s/%s" (35 = 0x23 bytes)

@@ -276,7 +276,11 @@ func (s *BaseServer) Stop() bool {
 	// 0x40) and calls method at offset 0x28 of the itab — this is a Close() or
 	// Shutdown() call on the streamable server interface. No error is checked.
 	if s.streamableServer != nil {
-		s.streamableServer.Close()
+		// RE: Binary calls method at vtable offset 0x28 with no error check.
+		// mcp-go v0.37.0 StreamableHTTPServer has Shutdown(ctx), not Close().
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		s.streamableServer.Shutdown(shutdownCtx)
 	}
 
 	// Close stop channel to signal goroutines
