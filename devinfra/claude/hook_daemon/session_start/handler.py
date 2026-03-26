@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+import anyio
 import httpx
 from mako.template import Template
 from opentelemetry import trace
@@ -225,7 +226,7 @@ async def _setup_web(
 
     async def mount_tmpfs_at(path: Path) -> bool:
         """Mount a tmpfs at the given path. Returns True on success, False on failure."""
-        await run_in_thread(path.mkdir, parents=True, exist_ok=True)
+        await anyio.Path(path).mkdir(parents=True, exist_ok=True)
         try:
             await run_in_thread(tmpfs.ensure_tmpfs_mounted, path)
             return True

@@ -198,7 +198,7 @@ def _ensure_daemon(paths: SessionPaths) -> None:
     # Create daemon dir before acquiring the lock (FileLock needs the parent to exist).
     daemon_dir.mkdir(parents=True, exist_ok=True)
 
-    with FileLock(daemon_dir / "daemon.lock"):
+    with FileLock(str(daemon_dir / "daemon.lock")):
         # Re-check after acquiring: another client may have won the race and
         # already started a healthy daemon while we were waiting.
         if check_health(sock_path):

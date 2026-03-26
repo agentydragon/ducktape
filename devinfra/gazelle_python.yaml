@@ -6,7 +6,7 @@
 ---
 manifest:
   modules_mapping:
-    7ae574991b77ef47acad__mypyc: mypy
+    4c842c94c09923bae9e4__mypyc: mypy
     7bce59c0a152c0e01f70__mypyc: tomli
     81d243bd2c585b0f4821__mypyc: charset_normalizer
     Crypto: pycryptodome
@@ -296,6 +296,11 @@ manifest:
     langgraph_sdk: langgraph_sdk
     langsmith: langsmith
     lark: lark
+    librt.base64: librt
+    librt.internal: librt
+    librt.strings: librt
+    librt.time: librt
+    librt.vecs: librt
     litellm: litellm
     logfire_api: logfire_api
     lxml: lxml
@@ -325,7 +330,6 @@ manifest:
     mypy_extensions: mypy_extensions
     mypyc: mypy
     nacl: pynacl
-    native_internal: mypy
     nbclient: nbclient
     nbconvert: nbconvert
     nbformat: nbformat
@@ -584,4 +588,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: a329b65f6a3e41cdb1de8a4da17c0162afe99e3cecbde7b67e49049a69844a2e
+integrity: 57ad9a2ed439f89ce35d1d9dd3c309de420813a5cd9543c1f4ee8cb863eaf61c

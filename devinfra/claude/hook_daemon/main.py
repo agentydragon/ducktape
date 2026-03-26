@@ -28,7 +28,7 @@ def main() -> None:
     # The kernel releases it on process death (flock is fd-based), so clients
     # can probe the lock to determine liveness without PID-reuse ambiguity.
     pidfile = daemon_dir / "daemon.pid"
-    _pidfile_lock = FileLock(pidfile)
+    _pidfile_lock = FileLock(str(pidfile))
     _pidfile_lock.acquire()
     pidfile.write_text(str(os.getpid()))
 

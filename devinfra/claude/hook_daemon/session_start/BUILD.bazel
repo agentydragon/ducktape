@@ -137,6 +137,7 @@ py_library(
         "//devinfra/claude/claude_api/hooks:session_start",
         "//devinfra/claude/hook_daemon:tracing",
         "//devinfra/claude/supervisor:setup",
+        "@pypi//anyio",
         "@pypi//httpx",
         "@pypi//mako",
         "@pypi//opentelemetry_api",
