@@ -1,8 +1,0 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
-
-go_library(
-    name = "podmonitor",
-    srcs = ["lease_manager.go"],
-    importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/podmonitor",
-    visibility = ["//devinfra/claude/web_env/re/environment_manager/a6f96673/src:__subpackages__"],
-)
