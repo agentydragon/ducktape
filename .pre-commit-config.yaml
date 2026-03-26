@@ -106,6 +106,8 @@ repos:
         files: "(BUILD|WORKSPACE|\\.bzl|\\.bazel)$"
 
   # shfmt - Shell script formatting — shfmt provided by devShell / web-session via Nix
+  # Exclude .zsh: pre-commit's identify tags zsh as shell, but shfmt can't parse
+  # advanced zsh-specific syntax (e.g. p10k.zsh, zsh-init.zsh).
   - repo: local
     hooks:
       - id: shfmt
@@ -113,6 +115,7 @@ repos:
         entry: shfmt -w
         language: system
         types: [shell]
+        exclude: "\\.zsh$"
 
   # rustfmt - Rust code formatting
   - repo: https://github.com/doublify/pre-commit-rust
