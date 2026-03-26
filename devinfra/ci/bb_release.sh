@@ -42,6 +42,7 @@ cp bazel-bin/gterm_theme/gterm_theme-*.whl dist/
 cp bazel-bin/skills/all_skills_tar.tar dist/skills.tar
 cp bazel-bin/devinfra/buildbuddy_cli/bbapi_/bbapi dist/
 
+FULL_SHA=$(git rev-parse HEAD)
 SHORT_SHA=$(git rev-parse --short HEAD)
 
 # SRI hash of a file, matching the format sources.json stores.
@@ -88,8 +89,6 @@ if [ ${#changed[@]} -eq 0 ]; then
   exit 0
 fi
 
-BRANCH=$(git rev-parse --abbrev-ref HEAD)
 gh workflow run release.yml \
-  --ref "$BRANCH" \
-  --field short_sha="$SHORT_SHA" \
+  --ref "$FULL_SHA" \
   --field "changed=${changed[*]}"

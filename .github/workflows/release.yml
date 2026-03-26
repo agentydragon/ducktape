@@ -2,12 +2,12 @@ name: Release
 # Triggered by BB Workflows "Release" action after artifacts are uploaded to GitHub Releases.
 # Updates npins with new artifact hashes and commits. Attic push happens automatically
 # via nix-attic-push workflow on the resulting commit.
+#
+# Dispatched with --ref <full-sha> so github.sha is the exact triggering commit —
+# no SHA inputs needed.
 "on":
   workflow_dispatch:
     inputs:
-      short_sha:
-        description: Short commit SHA of the artifacts uploaded by BB (e.g. abc12345)
-        required: true
       changed:
         description: Space-separated packages with new releases (e.g. "claude-hooks bbapi")
         required: true
@@ -25,14 +25,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.ref_name }}
+          ref: ${{ github.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Post pending status on triggering commit
         run: |
-          FULL_SHA=$(git rev-parse "${{ inputs.short_sha }}")
-          echo "RELEASE_COMMIT_SHA=$FULL_SHA" >> "$GITHUB_ENV"
-          gh api "repos/${{ github.repository }}/statuses/$FULL_SHA" \
+          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" \
             -f state=pending \
             -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             -f description="Updating npins" \
@@ -46,8 +44,9 @@ jobs:
 
       - name: Update artifact pins
         run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
           read -ra changed_pkgs <<< "${{ inputs.changed }}"
-          devinfra/ci/update_pins.sh "${{ inputs.short_sha }}" "${changed_pkgs[@]}"
+          devinfra/ci/update_pins.sh "$SHORT_SHA" "${changed_pkgs[@]}"
 
       - name: Commit and push updated pins
         run: |
@@ -59,13 +58,13 @@ jobs:
             exit 0
           fi
           git commit -m "chore: bump release artifacts"
-          git pull --rebase origin "${{ github.ref_name }}"
-          git push origin "HEAD:${{ github.ref_name }}"
+          git pull --rebase origin devel
+          git push origin "HEAD:devel"
 
       - name: Post success status
         if: success()
         run: |
-          gh api "repos/${{ github.repository }}/statuses/$RELEASE_COMMIT_SHA" \
+          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" \
             -f state=success \
             -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             -f description="Release complete" \
@@ -76,7 +75,7 @@ jobs:
       - name: Post failure status
         if: failure()
         run: |
-          gh api "repos/${{ github.repository }}/statuses/$RELEASE_COMMIT_SHA" \
+          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" \
             -f state=failure \
             -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             -f description="Release failed" \
