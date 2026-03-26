@@ -315,6 +315,10 @@
               pkgs.bazelisk
               pkgs.nixfmt-rfc-style
               pkgs.mkcert
+              pkgs.ruff
+              pkgs.shfmt
+              pkgs.buildifier
+              pkgs.gofumpt
               # Infrastructure tools
               pkgs.gh
               pkgs.kubectl
