@@ -346,7 +346,7 @@ async def _setup_web(
     if isinstance(precommit_result, BaseException):
         logger.warning("Failed to install git pre-commit: %s", precommit_result)
     if isinstance(bazelisk_result, BaseException):
-        logger.warning("Failed to install bazelisk: %s", bazelisk_result)
+        raise RuntimeError("Bazel wrapper setup failed (is bazelisk on PATH from Nix web-session?)") from bazelisk_result
     if isinstance(tmpfs_result, BaseException):
         logger.warning("Failed to set up tmpfs caches: %s", tmpfs_result)
     if isinstance(mkcert_result, SkipError):
@@ -402,8 +402,9 @@ async def _setup_web(
         except Exception as e:
             logger.warning("Fork remote setup failed: %s", e)
 
-    # Bazelisk path: resolved from PATH (provided by Nix web-session)
-    bazelisk_path = bazelisk_result.bazelisk_path if isinstance(bazelisk_result, bazelisk.BazeliskSetup) else None
+    # bazelisk_result is guaranteed to be BazeliskSetup (failure raises above)
+    assert isinstance(bazelisk_result, bazelisk.BazeliskSetup)
+    bazelisk_path = bazelisk_result.bazelisk_path
 
     logger.info(
         "Ready: bazel=%s, proxy=%s, CA=%s", bazelisk_result, auth_proxy_result.status, auth_proxy_result.ca_status
