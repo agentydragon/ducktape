@@ -39,6 +39,7 @@ jobs:
             drvs+=(".#homeConfigurations.$host.activationPackage")
           done
           drvs+=(".#packages.x86_64-linux.web-session")
+          drvs+=(".#devShells.x86_64-linux.default.inputDerivation")
           echo "Building ${#drvs[@]} outputs..."
           nix build --impure "${drvs[@]}" --no-link --print-out-paths | xargs attic push main
 

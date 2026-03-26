@@ -81,14 +81,6 @@
         in
         builtins.mapAttrs fetch data.pins;
 
-      # Multi-system support for devShells
-      systems = [
-        "x86_64-linux"
-        "aarch64-linux"
-        "x86_64-darwin"
-        "aarch64-darwin"
-      ];
-      forAllSystems = nixpkgs.lib.genAttrs systems;
 
       mkHome =
         {
@@ -257,22 +249,17 @@
         };
     in
     {
-      # Development shell (multi-platform)
-      devShells = forAllSystems (
-        system:
+      # Development shell — same tools as web-session, usable via `direnv` (`use flake` in .envrc).
+      devShells.${system}.default =
         let
-          pkgs = nixpkgs-unstable.legacyPackages.${system};
-        in
-        {
-          default = pkgs.mkShell {
-            packages = [
-              # Use pre-commit from nixpkgs (version may differ slightly from CI's 4.0.1)
-              pkgs.pre-commit
-              # Nix formatting uses nixfmt via pre-commit hook (static binary from GitHub releases)
-            ];
+          pkgs = import nixpkgs {
+            inherit system;
+            config.allowUnfree = true;
           };
-        }
-      );
+        in
+        pkgs.mkShell {
+          packages = [ self.packages.${system}.web-session ];
+        };
 
       # Packages exposed for nix-update and direct builds
       packages.${system} =
@@ -308,8 +295,9 @@
             mkdir -p $out/share/claude-hooks/skills
             cp -r ${artifacts.skills}/. $out/share/claude-hooks/skills/
           '';
-          # Web session tools: single package installed by web_setup.sh.
-          # Add tools here to make them available in Claude Code web sessions;
+          # Shared dev tools — installed by web_setup.sh and used by the devShell.
+          # Add tools here to make them available in both Claude Code web sessions
+          # and local development (via direnv `use flake`).
           # release.yml pushes this to attic so installs are cache hits.
           # TODO: disable NLS on pre-commit's gitMinimal to drop ~31 MiB of
           # gettext + locale data. Blocked on slow rebuild (gitMinimal override
@@ -318,12 +306,25 @@
           web-session = pkgs.symlinkJoin {
             name = "claude-web-session";
             paths = [
+              # Repo-specific tools
               claude-hooks
               bbapi
               skills
+              # Dev tools (also provided by .envrc via `use flake`)
+              pkgs.pre-commit
+              pkgs.bazelisk
+              pkgs.nixfmt-rfc-style
+              # Infrastructure tools
               pkgs.gh
               pkgs.kubectl
               pkgs.fluxcd
+              pkgs.kustomize
+              pkgs.kubeseal
+              pkgs.kubernetes-helm
+              pkgs.kubeconform
+              pkgs.opentofu
+              pkgs.tflint
+              pkgs.sops
             ];
           };
           # NixOS container tarball for docker import.

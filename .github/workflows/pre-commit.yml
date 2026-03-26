@@ -26,10 +26,10 @@ jobs:
         with:
           extra_nix_config: experimental-features = nix-command flakes
 
-      # Install claude-hooks via flake — provides ducktape-precommit for the
-      # enforce-bazel-tests pre-commit hook (language: system, needs binary on PATH).
-      - name: Install ducktape-precommit
-        run: nix profile install .#claude-hooks
+      # Install web-session via flake — provides ducktape-precommit for the
+      # enforce-bazel-tests hook and nixfmt for the nixfmt hook (both language: system).
+      - name: Install web-session tools
+        run: nix profile install .#web-session
 
       # Bazel cache for bazel-operated hooks (buildifier, bazel-format, cluster validations)
       - uses: ./.github/actions/bazel-repo-cache
@@ -102,9 +102,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ~/.cache/pre-commit
-          # lockfile.json: nixfmt binary is cached under ~/.cache/pre-commit/nixfmt-bin
-          # by devinfra/precommit/run_nixfmt.sh; bust cache when version changes.
-          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml', 'devinfra/lockfile.json') }}
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
           restore-keys: |
             pre-commit-${{ runner.os }}-
 

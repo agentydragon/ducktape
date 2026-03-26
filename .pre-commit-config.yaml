@@ -66,12 +66,12 @@ repos:
   # pre-commit mypy hooks. The Bazel mypy setup handles workspace dependencies
   # correctly and uses a single mypy.ini config.
 
-  # Nix formatter (RFC 166 style) - downloads static binary from GitHub releases
+  # Nix formatter (RFC 166 style) — nixfmt provided by devShell / web-session via Nix
   - repo: local
     hooks:
       - id: nixfmt
         name: nixfmt
-        entry: devinfra/precommit/run_nixfmt.sh
+        entry: nixfmt
         language: system
         files: "\\.nix$"
 

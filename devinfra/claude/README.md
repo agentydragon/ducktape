@@ -76,7 +76,7 @@ The hook runs at the start of each Claude Code web session and:
 ### Development Tools
 
 Note: flux, kustomize, kubeseal, helm are now Bazel-managed via `@multitool//tools/*`.
-Nix formatting uses a static nixfmt binary downloaded by `devinfra/precommit/run_nixfmt.sh`.
+Nix formatting uses `nixfmt` from the Nix devShell / web-session package.
 
 ### Environment Configuration
 
