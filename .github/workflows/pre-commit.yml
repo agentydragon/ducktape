@@ -26,50 +26,14 @@ jobs:
         with:
           extra_nix_config: experimental-features = nix-command flakes
 
-      # Install web-session via flake — provides ducktape-precommit for the
-      # enforce-bazel-tests hook and nixfmt for the nixfmt hook (both language: system).
+      # Install web-session via flake — provides ducktape-precommit, nixfmt,
+      # pre-commit, and other dev tools (all language: system hooks).
       - name: Install web-session tools
         run: nix profile install .#web-session
 
       # Bazel cache for bazel-operated hooks (buildifier, bazel-format, cluster validations)
       - uses: ./.github/actions/bazel-repo-cache
         id: bazel-cache
-
-      # Terraform tools for antonbabenko/pre-commit-terraform hooks
-      - name: Setup OpenTofu
-        uses: opentofu/setup-opentofu@v1
-        with:
-          tofu_version: 1.9.0
-
-      # TFLint for terraform_tflint hook
-      - name: Install TFLint
-        uses: terraform-linters/setup-tflint@v4
-        with:
-          tflint_version: v0.60.0
-
-      # Cache tflint plugins (~/.tflint.d/plugins) to avoid re-downloading from GitHub
-      - name: Restore TFLint plugin cache
-        id: cache-tflint-restore
-        uses: actions/cache/restore@v5
-        with:
-          path: ~/.tflint.d
-          key: tflint-plugins-${{ runner.os }}-${{ hashFiles('cluster/.tflint.hcl') }}
-          restore-keys: tflint-plugins-${{ runner.os }}-
-
-      # kubeconform for kubeconform-precommit-hook (not hermetic via Bazel)
-      # Other tools (kustomize, flux, helm, kubeseal) are hermetic via @multitool
-      - name: Install kubeconform
-        run: |
-          CHECKSUM="95f14e87aa28c09d5941f11bd024c1d02fdc0303ccaa23f61cef67bc92619d73"
-          curl -fsSL -o /tmp/kubeconform.tar.gz https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
-          echo "$CHECKSUM  /tmp/kubeconform.tar.gz" | sha256sum -c -
-          tar xz -C /tmp -f /tmp/kubeconform.tar.gz
-          sudo install -m755 /tmp/kubeconform /usr/local/bin/
-
-      - name: Configure OpenTofu for pre-commit
-        run: |
-          # Set PCT_TFPATH so antonbabenko/pre-commit-terraform hooks use tofu
-          echo "PCT_TFPATH=$(which tofu)" >> $GITHUB_ENV
 
       # Use full 'ansible' package instead of 'ansible-core' to get bundled collections.
       # This avoids Ansible Galaxy API calls entirely - Galaxy has known reliability issues:
@@ -107,16 +71,6 @@ jobs:
             pre-commit-${{ runner.os }}-
 
       # ============================================================================
-      # PRE-COMMIT INSTALLATION
-      # ============================================================================
-
-      - name: Install pre-commit
-        run: |
-          # Version synced with flake.nix (nixpkgs.pre-commit)
-          # Update both when bumping pre-commit version
-          pip install pre-commit==4.0.1
-
-      # ============================================================================
       # PRE-COMMIT RUN
       # ============================================================================
 
@@ -144,10 +98,3 @@ jobs:
         with:
           path: ~/.ansible/roles
           key: ${{ steps.cache-ansible-roles-restore.outputs.cache-primary-key }}
-
-      - name: Save TFLint plugin cache
-        if: always() && steps.cache-tflint-restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
-        with:
-          path: ~/.tflint.d
-          key: ${{ steps.cache-tflint-restore.outputs.cache-primary-key }}

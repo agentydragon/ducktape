@@ -207,7 +207,6 @@ async def _setup_web(
     tracer: trace.Tracer,
     root_ctx: trace.Context,
     hook_config: k8s_secrets.HookConfig | None,
-    http: httpx.Client,
     proxy: AuthForwardingProxy,
 ) -> PlatformSetup:
     """Web mode: supervisor, proxy, containers, secrets, parallel installs.
@@ -262,22 +261,12 @@ async def _setup_web(
             await mount_tmpfs_at(bazel_cache_dir)
             return tmpfs.setup_bazel_cache(bazel_cache_dir)
 
-    @tracer.start_as_current_span("install_bazelisk", context=root_ctx)
-    def install_bazelisk_wrapper() -> bazelisk.BazeliskSetup:
-        """Install bazelisk and wrapper.
-
-        Always installs the wrapper. Optionally downloads bazelisk unless
-        DUCKTAPE_CLAUDE_HOOKS_INSTALL_BAZELISK is False.
-        """
+    @tracer.start_as_current_span("install_bazel_wrapper", context=root_ctx)
+    def install_bazel_wrapper() -> bazelisk.BazeliskSetup:
+        """Install bazel wrapper (bazelisk binary provided by Nix web-session)."""
         wrapper_path = bazelisk.install_wrapper(paths)
-        skipped = not settings.install_bazelisk
-        if not skipped:
-            bazelisk.install_bazelisk(paths, http)
-        else:
-            logger.info("Skipping bazelisk download (install_bazelisk=False)")
-        return bazelisk.BazeliskSetup(
-            bazelisk_path=paths.bazelisk_path, wrapper_path=wrapper_path, paths=paths, bazelisk_skipped=skipped
-        )
+        bazelisk_path = bazelisk.resolve_bazelisk()
+        return bazelisk.BazeliskSetup(bazelisk_path=bazelisk_path, wrapper_path=wrapper_path)
 
     # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
     # Dependency graph:
@@ -315,7 +304,7 @@ async def _setup_web(
             if not settings.install_mkcert:
                 raise SkipError("mkcert disabled (install_mkcert=False)")
             # Pass combined_ca=None: bundle append happens in mkcert_append_bundle
-            return await mkcert.setup_mkcert(paths, combined_ca=None, http=http)
+            return await mkcert.setup_mkcert(paths, combined_ca=None)
 
     # Start cert generation immediately, without waiting for the proxy.
     mkcert_task = asyncio.create_task(mkcert_generate_certs())
@@ -338,7 +327,7 @@ async def _setup_web(
         proxy_task,
         setup_container_runtime_task(),
         traced_precommit(),
-        run_in_thread(install_bazelisk_wrapper),
+        run_in_thread(install_bazel_wrapper),
         setup_bazel_on_tmpfs(),
         mkcert_append_bundle(),
         apt_task,
@@ -413,19 +402,8 @@ async def _setup_web(
         except Exception as e:
             logger.warning("Fork remote setup failed: %s", e)
 
-    # Determine bazelisk_path: use system_bazel if install_bazelisk=False, otherwise downloaded bazelisk
-    bazelisk_path: Path | None
-    if isinstance(bazelisk_result, bazelisk.BazeliskSetup) and bazelisk_result.bazelisk_skipped:
-        if settings.system_bazel is not None:
-            bazelisk_path = Path(settings.system_bazel)
-        else:
-            # Auto-detect system bazelisk/bazel
-            auto_bazel = shutil.which("bazelisk") or shutil.which("bazel")
-            if not auto_bazel:
-                raise RuntimeError("install_bazelisk=False but no bazelisk/bazel found on PATH")
-            bazelisk_path = Path(auto_bazel)
-    else:
-        bazelisk_path = paths.bazelisk_path
+    # Bazelisk path: resolved from PATH (provided by Nix web-session)
+    bazelisk_path = bazelisk_result.bazelisk_path if isinstance(bazelisk_result, bazelisk.BazeliskSetup) else None
 
     logger.info(
         "Ready: bazel=%s, proxy=%s, CA=%s", bazelisk_result, auth_proxy_result.status, auth_proxy_result.ca_status
@@ -505,7 +483,7 @@ async def run_session(
     # Platform-specific setup
     if ctx.web_mode:
         assert proxy is not None, "proxy must be running in web mode"
-        setup = await _setup_web(paths, settings, project_dir, tracer, root_ctx, hook_config, http=http, proxy=proxy)
+        setup = await _setup_web(paths, settings, project_dir, tracer, root_ctx, hook_config, proxy=proxy)
     else:
         # CLI mode: read k8s secrets (no proxy needed, combined_ca_path=None).
         if settings.k8s_token and hook_config:

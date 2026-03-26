@@ -33,9 +33,7 @@ def _env_name(field: str) -> str:
 # Environment variable names (used by tests and env_file.py)
 ENV_SUPERVISOR_PORT = _env_name("supervisor_port")
 ENV_AUTH_PROXY_PORT = _env_name("auth_proxy_port")
-ENV_INSTALL_BAZELISK = _env_name("install_bazelisk")
 ENV_CONTAINER_RUNTIME = _env_name("container_runtime")
-ENV_SYSTEM_BAZEL = _env_name("system_bazel")
 ENV_SESSION_DIR = _env_name("session_dir")
 
 
@@ -58,14 +56,10 @@ class HookSettings(BaseSettings):
     auth_proxy_port: int = Field(default=18081, description="Auth proxy port")
 
     # Feature flags (enable/disable installations)
-    install_bazelisk: bool = Field(default=True, description="Download and install bazelisk")
     install_mkcert: bool = Field(default=True, description="Install mkcert and generate localhost TLS cert")
     install_apt_packages: bool = True
     container_runtime: Literal["podman", "docker", "none"] = Field(
         default="docker", description="Container runtime to set up (podman, docker, or none)"
-    )
-    system_bazel: str | None = Field(
-        default=None, description="Path to system bazel (used when install_bazelisk=False)"
     )
 
     k8s_token: str | None = Field(default=None, description="K8s SA token for reading secrets from cluster")

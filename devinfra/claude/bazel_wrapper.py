@@ -93,7 +93,7 @@ def _setup_logging(paths: SessionPaths) -> None:
 def _resolve_real_binary() -> str:
     """Resolve the real bazel/bazelisk binary path.
 
-    Web mode: reads BAZELISK_PATH (set by session hook to the downloaded bazelisk).
+    Web mode: reads BAZELISK_PATH (set by session hook to Nix-provided bazelisk).
     CLI mode: finds the binary matching the invocation name (bazel or bazelisk)
     on PATH, skipping our own wrapper directory.
     """

@@ -66,8 +66,8 @@ The hook runs at the start of each Claude Code web session and:
 
 ### Bazel Setup (via `hook_daemon/session_start/bazelisk.py`)
 
-7. Downloads and installs Bazelisk
-8. Creates wrapper script at `<session_dir>/bin/bazel`
+7. Bazelisk binary provided by Nix web-session package (on PATH)
+8. Creates wrapper script at `<session_dir>/bin/bazel` (injects proxy credentials)
 
 ### Git Hooks
 
@@ -160,7 +160,6 @@ All settings use [pydantic-settings](https://docs.pydantic.dev/latest/concepts/p
 | `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT`   | `19001`                    | Supervisor TCP port                               |
 | `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_DIR`    | `<session_dir>/auth-proxy` | Proxy cache directory                             |
 | `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_PORT`   | `18081`                    | Auth proxy port                                   |
-| `DUCKTAPE_CLAUDE_HOOKS_INSTALL_BAZELISK`  | `true`                     | Install bazelisk                                  |
 | `DUCKTAPE_CLAUDE_HOOKS_CONTAINER_RUNTIME` | `docker`                   | Container runtime (`podman`, `docker`, or `none`) |
 
 `<session_dir>` = `~/.claude/session-env/<session_id>/` — a per-session directory managed by Claude Code.

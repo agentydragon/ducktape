@@ -314,6 +314,7 @@
               pkgs.pre-commit
               pkgs.bazelisk
               pkgs.nixfmt-rfc-style
+              pkgs.mkcert
               # Infrastructure tools
               pkgs.gh
               pkgs.kubectl
