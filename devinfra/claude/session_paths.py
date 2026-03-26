@@ -81,6 +81,14 @@ class SessionPaths:
         return self.auth_proxy_dir / "cacerts.jks"
 
     @property
+    def remote_proxy_sock(self) -> Path:
+        """UDS path for --remote_proxy (Bazel gRPC remote execution/cache).
+
+        Uses a short path under /tmp to stay within the 108-byte AF_UNIX limit.
+        """
+        return Path("/tmp/claude-hd") / self.session_id / "remote-proxy.sock"
+
+    @property
     def wrapper_dir(self) -> Path:
         """Wrapper directory (added to PATH)."""
         return self.session_dir / "bin"

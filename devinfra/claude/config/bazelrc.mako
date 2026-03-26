@@ -14,6 +14,13 @@ startup --host_jvm_args=-Dhttps.proxyHost=127.0.0.1
 startup --host_jvm_args=-Dhttps.proxyPort=${proxy_port}
 startup --host_jvm_args=-Djavax.net.ssl.trustStore=${truststore_path | sh}
 startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=${truststore_password | sh}
+% if remote_proxy_sock:
+# Route gRPC remote execution/cache through a UDS proxy that establishes
+# a CONNECT tunnel through the egress proxy. This uses Bazel's native
+# --remote_proxy mechanism instead of relying on JVM proxy system properties,
+# bypassing the gRPC-Java Authenticator timing issue entirely.
+build --remote_proxy=unix:${remote_proxy_sock}
+% endif
 
 # Pass proxy + TLS CA to repository rules (for Go modules in gazelle, etc.)
 # GONOPROXY=* forces all Go module downloads through HTTP proxy.

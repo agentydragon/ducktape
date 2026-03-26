@@ -13,6 +13,11 @@ timing: gRPC connects to an unauthenticated localhost proxy immediately, and the
 proxy injects credentials when forwarding to the egress proxy. BCR fetches (Java
 HTTP layer) also benefit since they go through the same proxy.
 
+Also provides UdsRemoteProxy: a Unix domain socket proxy for Bazel's
+--remote_proxy flag. Bazel sends raw gRPC (HTTP/2) through the UDS; the proxy
+establishes a CONNECT tunnel through the egress proxy to a fixed remote endpoint
+(e.g. remote.buildbuddy.io:443), then shuttles bytes bidirectionally.
+
 Reads upstream proxy URL from a file on each connection, enabling credential
 hot-reload without restarting the proxy.
 """
@@ -25,6 +30,7 @@ import socket
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -247,28 +253,180 @@ class AuthForwardingProxy:
             with contextlib.suppress(ValueError):
                 self._connections.remove(client_sock)
 
-    def _tunnel_bidirectional(self, client_sock: socket.socket, upstream_sock: socket.socket) -> None:
-        """Tunnel data bidirectionally between client and upstream."""
-        sockets = [client_sock, upstream_sock]
+    @staticmethod
+    def _tunnel_bidirectional(client_sock: socket.socket, upstream_sock: socket.socket) -> None:
+        _tunnel_bidirectional(client_sock, upstream_sock)
+
+
+def _tunnel_bidirectional(sock_a: socket.socket, sock_b: socket.socket) -> None:
+    """Tunnel data bidirectionally between two sockets."""
+    sockets = [sock_a, sock_b]
+
+    try:
+        while True:
+            readable, _, errored = select.select(sockets, [], sockets, 1.0)
+
+            if errored:
+                break
+
+            for sock in readable:
+                try:
+                    data = sock.recv(8192)
+                    if not data:
+                        return  # Connection closed
+
+                    # Forward to the other socket
+                    other = sock_b if sock is sock_a else sock_a
+                    other.sendall(data)
+                except OSError:
+                    return
+
+    except OSError:
+        pass
+
+
+class UdsRemoteProxy:
+    """Unix domain socket proxy for Bazel's --remote_proxy flag.
+
+    Bazel sends raw gRPC (HTTP/2) through the UDS. For each connection, this
+    proxy establishes a CONNECT tunnel through the egress proxy to a fixed
+    remote endpoint, then shuttles bytes bidirectionally.
+
+    This bypasses gRPC-Java's ProxyDetectorImpl entirely — Bazel's
+    --remote_proxy routes gRPC traffic through the UDS natively, so there's
+    no Authenticator timing issue.
+    """
+
+    def __init__(self, sock_path: Path, remote_target: str, max_workers: int = 100):
+        """
+        Args:
+            sock_path: Path for the Unix domain socket.
+            remote_target: host:port to CONNECT to through the egress proxy
+                (e.g. "remote.buildbuddy.io:443").
+        """
+        self.sock_path = sock_path
+        self.remote_target = remote_target
+        self.max_workers = max_workers
+        self._upstream_url: str | None = None
+        self._creds_lock = threading.Lock()
+        self.server_socket: socket.socket | None = None
+        self._running = False
+        self._thread: threading.Thread | None = None
+        self._executor: ThreadPoolExecutor | None = None
+        self._connections: list[socket.socket] = []
+        self._conn_counter = 0
+        self._conn_lock = threading.Lock()
+
+    def set_creds(self, upstream_url: str) -> None:
+        """Update upstream proxy credentials (thread-safe)."""
+        with self._creds_lock:
+            self._upstream_url = upstream_url
+
+    def _get_upstream_config(self) -> UpstreamConfig:
+        with self._creds_lock:
+            url = self._upstream_url
+        if url is None:
+            raise ValueError("Proxy credentials not set")
+        return parse_upstream_url(url)
+
+    def start(self) -> None:
+        """Start the UDS proxy server."""
+        # Remove stale socket file
+        self.sock_path.parent.mkdir(parents=True, exist_ok=True)
+        with contextlib.suppress(FileNotFoundError):
+            self.sock_path.unlink()
+
+        self.server_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.server_socket.bind(str(self.sock_path))
+        self.server_socket.listen(50)
+        self.server_socket.settimeout(0.5)
+
+        self._executor = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="uds-proxy")
+        self._running = True
+        self._thread = threading.Thread(target=self._serve, daemon=True)
+        self._thread.start()
+
+        logger.info("UDS remote proxy started on %s → %s", self.sock_path, self.remote_target)
+
+    def stop(self) -> None:
+        """Stop the UDS proxy server."""
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=2)
+        if self._executor:
+            self._executor.shutdown(wait=False, cancel_futures=True)
+        for conn in self._connections:
+            with contextlib.suppress(OSError):
+                conn.close()
+        if self.server_socket:
+            self.server_socket.close()
+        with contextlib.suppress(FileNotFoundError):
+            self.sock_path.unlink()
+        logger.info("UDS remote proxy stopped")
+
+    def _serve(self) -> None:
+        """Main server loop."""
+        while self._running:
+            try:
+                client_sock, _ = self.server_socket.accept()  # type: ignore[union-attr]
+                self._connections.append(client_sock)
+                self._executor.submit(self._handle_client, client_sock)  # type: ignore[union-attr]
+            except TimeoutError:
+                continue
+            except OSError:
+                break
+
+    def _handle_client(self, client_sock: socket.socket) -> None:
+        """Handle a single UDS connection: establish CONNECT tunnel, then shuttle bytes."""
+        with self._conn_lock:
+            self._conn_counter += 1
+            conn_id = self._conn_counter
+
+        upstream_sock: socket.socket | None = None
 
         try:
-            while True:
-                readable, _, errored = select.select(sockets, [], sockets, 1.0)
+            config = self._get_upstream_config()
 
-                if errored:
-                    break
+            # Connect to egress proxy
+            logger.debug("[uds %d] Connecting to upstream %s:%d", conn_id, config.host, config.port)
+            upstream_sock = socket.create_connection((config.host, config.port), timeout=30)
+            upstream_sock.settimeout(None)
 
-                for sock in readable:
-                    try:
-                        data = sock.recv(8192)
-                        if not data:
-                            return  # Connection closed
+            # Send CONNECT request to establish tunnel to remote_target
+            connect_request = f"CONNECT {self.remote_target} HTTP/1.1\r\nHost: {self.remote_target}\r\n"
+            connect_request += config.auth_header
+            connect_request += "\r\n"
+            upstream_sock.sendall(connect_request.encode())
 
-                        # Forward to the other socket
-                        other = upstream_sock if sock is client_sock else client_sock
-                        other.sendall(data)
-                    except OSError:
-                        return
+            # Read CONNECT response
+            response = b""
+            while b"\r\n\r\n" not in response:
+                chunk = upstream_sock.recv(4096)
+                if not chunk:
+                    logger.error("[uds %d] Upstream closed before CONNECT response", conn_id)
+                    return
+                response += chunk
 
-        except OSError:
-            pass
+            response_str = response.decode("utf-8", errors="replace")
+            status_line = response_str.split("\r\n")[0]
+
+            if not status_line.startswith("HTTP/1.1 200"):
+                logger.error("[uds %d] CONNECT to %s rejected: %s", conn_id, self.remote_target, status_line)
+                return
+
+            logger.debug("[uds %d] Tunnel established to %s", conn_id, self.remote_target)
+
+            # Tunnel: raw gRPC from Bazel ↔ egress proxy ↔ remote endpoint
+            client_sock.settimeout(None)
+            _tunnel_bidirectional(client_sock, upstream_sock)
+            logger.debug("[uds %d] Tunnel completed", conn_id)
+
+        except (OSError, ValueError) as e:
+            logger.error("[uds %d] Error: %s", conn_id, e)
+        finally:
+            for sock in [client_sock, upstream_sock]:
+                if sock:
+                    with contextlib.suppress(OSError):
+                        sock.close()
+            with contextlib.suppress(ValueError):
+                self._connections.remove(client_sock)

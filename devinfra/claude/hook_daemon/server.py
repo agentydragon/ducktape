@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException
 from opentelemetry import trace
 from pydantic import BaseModel
 
-from devinfra.claude.auth_proxy.proxy import AuthForwardingProxy
+from devinfra.claude.auth_proxy.proxy import AuthForwardingProxy, UdsRemoteProxy
 from devinfra.claude.auth_proxy.vars import get_upstream_proxy_url
 from devinfra.claude.claude_api.hooks.dispatch_output import AnyHookOutput
 from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput
@@ -50,12 +50,13 @@ def configure(daemon_dir: Path, otlp_exporter: DeferredOtlpExporter) -> None:
     app.state.otlp_exporter = otlp_exporter
     app.state.last_request_time = time.monotonic()
     app.state.proxy = None
+    app.state.uds_proxy = None
     app.state.background_tasks = set[asyncio.Task[object]]()
-    # Proxy is started lazily on the first SessionStart hook, not here.
+    # Proxies are started lazily on the first SessionStart hook, not here.
 
 
-async def _start_session_proxy() -> None:
-    """Start the auth proxy for the current session.
+async def _start_session_proxy(session_id: str) -> None:
+    """Start the auth proxy and UDS remote proxy for the current session.
 
     Called at the start of SessionStart handling — not at daemon startup. Using
     listen_port=0 lets the OS assign a free port, so concurrent sessions (each
@@ -71,6 +72,15 @@ async def _start_session_proxy() -> None:
     proxy.start()  # OS assigns a free port; proxy.listen_port is updated after bind
     app.state.proxy = proxy
     logger.info("Auth proxy started in-process on port %d (dynamic)", proxy.listen_port)
+
+    # Start UDS proxy for --remote_proxy (Bazel gRPC remote execution/cache).
+    paths = SessionPaths(session_id=session_id, home=Path.home(), xdg_cache_home=Path.home())
+    uds_proxy = UdsRemoteProxy(sock_path=paths.remote_proxy_sock, remote_target=app.state.settings.remote_proxy_target)
+    upstream_url = get_upstream_proxy_url()
+    if upstream_url:
+        uds_proxy.set_creds(upstream_url)
+    uds_proxy.start()
+    app.state.uds_proxy = uds_proxy
 
 
 def _save_session_env(env: dict[str, str]) -> None:
@@ -103,7 +113,7 @@ async def handle_hook(req: HookRequest) -> HookResponse:
         output: AnyHookOutput | None = None
         match req.hook:
             case SessionStartHookInput():
-                await _start_session_proxy()
+                await _start_session_proxy(req.hook.session_id)
                 paths = SessionPaths.from_env(req.hook.session_id, req.env)
                 with build_http_client(req.env) as http:
                     output = await handle_session_start(
@@ -143,6 +153,9 @@ async def update_proxy_creds(req: _UpdateProxyCredsRequest) -> UpdateProxyCredsR
     if proxy is None:
         raise HTTPException(status_code=503, detail="Auth proxy not running")
     proxy.set_creds(req.https_proxy)
+    uds_proxy: UdsRemoteProxy | None = app.state.uds_proxy
+    if uds_proxy is not None:
+        uds_proxy.set_creds(req.https_proxy)
     logger.debug("Updated proxy credentials via RPC")
     return UpdateProxyCredsResponse(proxy_url=f"http://localhost:{proxy.listen_port}")
 
@@ -176,8 +189,12 @@ async def _start_idle_watchdog() -> None:
 
 @app.on_event("shutdown")
 async def _stop_proxy() -> None:
-    """Stop the in-process auth proxy on daemon shutdown."""
+    """Stop the in-process proxies on daemon shutdown."""
     proxy: AuthForwardingProxy | None = getattr(app.state, "proxy", None)
     if proxy is not None:
         logger.info("Stopping in-process auth proxy...")
         proxy.stop()
+    uds_proxy: UdsRemoteProxy | None = getattr(app.state, "uds_proxy", None)
+    if uds_proxy is not None:
+        logger.info("Stopping UDS remote proxy...")
+        uds_proxy.stop()

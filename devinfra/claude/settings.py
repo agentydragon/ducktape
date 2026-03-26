@@ -66,6 +66,11 @@ class HookSettings(BaseSettings):
 
     warmup_bazel_server: bool = Field(default=True, description="Start Bazel server in background after session setup")
 
+    remote_proxy_target: str = Field(
+        default="remote.buildbuddy.io:443",
+        description="host:port for UDS remote proxy CONNECT tunnel (Bazel --remote_proxy destination)",
+    )
+
     # Per-session output directory. Exported as DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR so
     # subprocesses (e.g. bazel_wrapper) pick it up automatically via pydantic-settings.
     # Baked into the bazel/bazelisk shell wrapper at install time so it survives
