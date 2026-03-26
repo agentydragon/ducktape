@@ -92,13 +92,16 @@ def _find_keytool() -> str:
 class ProxySetup:
     """Result of auth proxy setup."""
 
-    port: int
+    port: int | None
     combined_ca: Path
     status: str
     ca_status: str
 
     @property
-    def proxy_url(self) -> str:
+    def proxy_url(self) -> str | None:
+        """TCP proxy URL, or None in UDS-only mode."""
+        if self.port is None:
+            return None
         return f"http://localhost:{self.port}"
 
 
@@ -291,36 +294,48 @@ def _create_combined_ca_bundle(paths: SessionPaths) -> None:
     logger.info("Created combined CA bundle at %s", combined_ca)
 
 
-async def setup_auth_proxy(paths: SessionPaths, settings: HookSettings, proxy: AuthForwardingProxy) -> ProxySetup:
+async def setup_auth_proxy(
+    paths: SessionPaths, settings: HookSettings, proxy: AuthForwardingProxy | None
+) -> ProxySetup:
     """Set up the auth proxy environment for TLS-inspecting proxies.
 
-    The proxy is expected to already be running in-process (started by
-    _start_session_proxy in server.py). This function writes credentials
-    and configures the CA/truststore environment.
+    In TCP mode, the proxy is expected to already be running in-process (started
+    by _start_session_proxy in server.py). This function writes credentials and
+    configures the CA/truststore environment.
+
+    In UDS mode, proxy is None — the UDS remote proxy handles gRPC traffic
+    directly. CA/truststore setup still runs for BCR fetches via Java HTTP.
     """
-    port = proxy.listen_port  # Actual port (OS-assigned when started with listen_port=0)
     combined_ca = paths.auth_proxy_combined_ca
 
     if not get_upstream_proxy_url():
         logger.info("No https_proxy set, auth proxy setup not needed")
-        return ProxySetup(port=port, combined_ca=combined_ca, status="not configured", ca_status="system")
+        return ProxySetup(
+            port=proxy.listen_port if proxy else None,
+            combined_ca=combined_ca,
+            status="not configured",
+            ca_status="system",
+        )
 
     logger.info("Setting up auth proxy for TLS-inspecting proxy...")
 
     # Ensure proxy dir exists
     paths.auth_proxy_dir.mkdir(parents=True, exist_ok=True)
 
-    # Set credentials on the in-process proxy
     https_proxy = get_upstream_proxy_url()
     if not https_proxy:
         raise ProxyServiceError("No https_proxy environment variable set")
 
-    proxy.set_creds(https_proxy)
-
-    # Verify proxy is listening
-    with tracer.start_as_current_span("proxy_wait_socket"):
-        await _wait_for_proxy_port(port)
-    logger.info("Auth proxy confirmed running on port %d", port)
+    # TCP mode: set credentials on the in-process TCP proxy and verify it's listening
+    port: int | None = None
+    if proxy is not None:
+        proxy.set_creds(https_proxy)
+        port = proxy.listen_port
+        with tracer.start_as_current_span("proxy_wait_socket"):
+            await _wait_for_proxy_port(port)
+        logger.info("Auth proxy confirmed running on port %d", port)
+    else:
+        logger.info("UDS proxy mode — skipping TCP proxy setup")
 
     # Load the TLS inspection CA from filesystem
     _extract_proxy_ca(paths)
@@ -332,7 +347,7 @@ async def setup_auth_proxy(paths: SessionPaths, settings: HookSettings, proxy: A
     # Create combined CA bundle (for tools like uv that use SSL_CERT_FILE)
     _create_combined_ca_bundle(paths)
 
-    status = f"running (port {port})" if proxy._running else "configured"
+    status = (f"running (port {port})" if proxy._running else "configured") if proxy is not None else "uds-only"
     ca_status = "custom CA" if combined_ca.exists() else "system"
 
     logger.info("Auth proxy setup complete")

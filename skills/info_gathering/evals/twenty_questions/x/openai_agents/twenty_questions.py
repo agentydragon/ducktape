@@ -18,6 +18,7 @@ from agents import (
     FunctionTool,
     ModelSettings,
     Runner,
+    RunResult,
     Tool,
     ToolCallOutputItem,
     TResponseInputItem,
@@ -80,7 +81,7 @@ def _make_exec_tool(mcp_client: Client) -> FunctionTool:
     return run_exec
 
 
-def _run_sim_and_extract(sim_result: object) -> tuple[str | None, bool, bool, str | None]:
+def _run_sim_and_extract(sim_result: RunResult) -> tuple[str | None, bool, bool, str | None]:
     """Extract sim response from Runner result. Returns (response, is_correct, is_invalid, invalid_reason)."""
     sim_response: str | None = None
     is_correct = False

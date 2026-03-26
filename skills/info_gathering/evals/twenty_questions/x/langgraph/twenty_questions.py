@@ -21,15 +21,17 @@ import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Literal, TypedDict
 
 from fastmcp.client import Client
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool, StructuredTool, tool as langchain_tool
 from langchain_mcp_adapters.tools import load_mcp_tools
 from langchain_openai import ChatOpenAI
+from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
 from mcp_infra.exec.docker.server import ContainerExecServer
@@ -50,6 +52,145 @@ from skills.info_gathering.evals.twenty_questions.x.shared.output import run_out
 from skills.info_gathering.evals.twenty_questions.x.shared.variants import VARIANTS
 
 logger = logging.getLogger(__name__)
+
+
+# -- Graph state TypedDict (used by build_graph / tests) --
+
+
+class GameState(TypedDict):
+    """LangGraph state dict for the Twenty Questions game."""
+
+    guesser_messages: list[BaseMessage]
+    simulator_messages: list[BaseMessage]
+    turn: int
+    turn_limit: int
+    result: Result | None
+    last_question: str | None
+    log_entries: list[LogEntry]
+
+
+def build_graph(
+    *, guesser_model: BaseChatModel, simulator_model: BaseChatModel, exec_tool: BaseTool | None = None
+) -> StateGraph:
+    """Build a LangGraph StateGraph for the Twenty Questions game.
+
+    Nodes: guesser (calls the guesser LLM), simulator (calls the simulator LLM),
+    exec (runs the exec tool). Edges route based on whether the guesser produced
+    a tool call for exec or a text question/guess.
+    """
+    sim_with_tools = _bind_simulator_tools(simulator_model)
+
+    async def guesser_node(state: GameState) -> dict:
+        response: AIMessage = await guesser_model.ainvoke(state["guesser_messages"])
+        new_messages = [*state["guesser_messages"], response]
+        return {"guesser_messages": new_messages, "last_question": None}
+
+    async def simulator_node(state: GameState) -> dict:
+        question_text = state["last_question"] or ""
+        turn = state["turn"]
+        log_entries = list(state["log_entries"])
+        log_entries.append(LogEntry(timestamp=datetime.now(UTC), player="guesser", content=question_text))
+
+        question_msg = HumanMessage(content=question_text)
+        sim_messages = [*state["simulator_messages"], question_msg]
+        response: AIMessage = await sim_with_tools.ainvoke(sim_messages)
+        sim_messages.append(response)
+
+        tool_calls = response.tool_calls or []
+        result = state["result"]
+
+        if tool_calls:
+            tc = tool_calls[0]
+            name = tc["name"]
+            args = tc["args"]
+
+            if name == "correct_answer":
+                result = Correct(turns=turn)
+                log_entries.append(
+                    LogEntry(
+                        timestamp=datetime.now(UTC),
+                        player="simulator",
+                        content="correct",
+                        tool_calls=[{"name": "correct_answer", "args": {}}],
+                    )
+                )
+            elif name == "answer":
+                resp = str(args.get("response", ""))
+                log_entries.append(
+                    LogEntry(
+                        timestamp=datetime.now(UTC),
+                        player="simulator",
+                        content=resp,
+                        tool_calls=[{"name": "answer", "args": {"response": resp}}],
+                    )
+                )
+                new_turn = turn + 1
+                if new_turn > state["turn_limit"] and result is None:
+                    result = Timeout(limit=state["turn_limit"])
+                return {
+                    "simulator_messages": sim_messages,
+                    "turn": new_turn,
+                    "result": result,
+                    "log_entries": log_entries,
+                    "guesser_messages": [*state["guesser_messages"], HumanMessage(content=resp)],
+                }
+            elif name == "invalid_input":
+                reason = str(args.get("reason", ""))
+                log_entries.append(
+                    LogEntry(
+                        timestamp=datetime.now(UTC),
+                        player="simulator",
+                        content=reason,
+                        tool_calls=[{"name": "invalid_input", "args": {"reason": reason}}],
+                    )
+                )
+
+        return {"simulator_messages": sim_messages, "result": result, "log_entries": log_entries, "turn": turn}
+
+    async def exec_node(state: GameState) -> dict:
+        """Execute the exec tool call and feed the result back to the guesser."""
+        assert exec_tool is not None
+        messages = state["guesser_messages"]
+        last_msg = messages[-1]
+        assert isinstance(last_msg, AIMessage)
+        tc = last_msg.tool_calls[0]
+        result_str = await exec_tool.ainvoke(tc["args"])
+        new_messages = [*messages, ToolMessage(content=str(result_str), tool_call_id=tc["id"])]
+        return {"guesser_messages": new_messages}
+
+    def route_guesser(state: GameState) -> str:
+        """Route after guesser node: exec tool call -> exec, text -> simulator."""
+        if state["result"] is not None:
+            return END
+        messages = state["guesser_messages"]
+        last_msg = messages[-1]
+        if isinstance(last_msg, AIMessage) and last_msg.tool_calls:
+            tc = last_msg.tool_calls[0]
+            if tc["name"] == "exec" and exec_tool is not None:
+                return "exec"
+        # Text response -> extract question and go to simulator
+        if isinstance(last_msg, AIMessage):
+            content = last_msg.content if isinstance(last_msg.content, str) else str(last_msg.content)
+            state["last_question"] = content
+        return "simulator"
+
+    def route_simulator(state: GameState) -> str:
+        if state["result"] is not None:
+            return END
+        return "guesser"
+
+    graph = StateGraph(GameState)
+    graph.add_node("guesser", guesser_node)
+    graph.add_node("simulator", simulator_node)
+    if exec_tool is not None:
+        graph.add_node("exec", exec_node)
+    graph.set_entry_point("guesser")
+    graph.add_conditional_edges("guesser", route_guesser)
+    graph.add_conditional_edges("simulator", route_simulator)
+    if exec_tool is not None:
+        graph.add_edge("exec", "guesser")
+
+    return graph
 
 
 # -- Simulator tool schemas --
@@ -116,7 +257,7 @@ class GuessAnswerInput(BaseModel):
 class GameContext:
     """Mutable game state shared between guesser tool implementations."""
 
-    simulator_model: BaseChatModel
+    simulator_model: Runnable  # BaseChatModel with bound tools
     simulator_messages: list[BaseMessage]
     turn: int = 1
     turn_limit: int = 20
@@ -286,7 +427,7 @@ def _build_game_tools(game: GameContext) -> list[BaseTool]:
     return [ask_tool, guess_tool]
 
 
-def _bind_simulator_tools(model: BaseChatModel) -> BaseChatModel:
+def _bind_simulator_tools(model: BaseChatModel) -> Runnable:
     """Bind simulator tool schemas so the model always responds with a tool call."""
 
     @langchain_tool(args_schema=AnswerInput)

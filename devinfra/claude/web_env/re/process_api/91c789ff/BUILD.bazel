@@ -15,7 +15,7 @@ rust_binary(
         "src/state.rs",
     ],
     crate_root = "src/main.rs",
-    edition = "2021",
+    edition = "2024",
     # Binary is static-pie linked.
     # This doesn't affect Rust source — it's a linker/rustc flag difference.
     # To match: rustflags = ["-C", "target-feature=+crt-static"]

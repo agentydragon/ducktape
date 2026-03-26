@@ -1,3 +1,10 @@
+// RE code: allow dead code and clippy pedantry — incomplete reconstruction by design.
+#![allow(dead_code, unused_variables, unused_imports)]
+#![allow(
+    clippy::let_and_return,
+    clippy::manual_memcpy,
+    clippy::doc_overindented_list_items
+)]
 //! Reverse-engineered from process_api BuildID 91c789ff2a9e647bf7b1914e351f67b89713c4ef
 //! release process_api_2026-03-23-22-49
 //!
@@ -37,6 +44,7 @@ mod proc_handle;
 mod state;
 
 use std::net::{IpAddr, SocketAddr};
+use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -675,5 +683,3 @@ async fn run_uds_ws_listener(
 
     graceful_shutdown(&proc_map).await;
 }
-
-use std::os::unix::fs::PermissionsExt;

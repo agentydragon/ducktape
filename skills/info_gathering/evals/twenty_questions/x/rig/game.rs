@@ -716,7 +716,10 @@ async fn run_with_client<C: CompletionClient>(
     sim_system: &str,
     scratch: &Arc<ScratchContainer>,
     config: &GameConfig<'_>,
-) -> anyhow::Result<RunSummary> {
+) -> anyhow::Result<RunSummary>
+where
+    C::CompletionModel: 'static,
+{
     // Shared state for capturing simulator tool calls.
     let sim_action: SharedAction = Arc::new(Mutex::new(None));
 

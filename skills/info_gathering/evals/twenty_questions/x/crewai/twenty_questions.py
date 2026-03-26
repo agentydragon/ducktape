@@ -176,7 +176,9 @@ def _run_guesser_turn(*, guesser: Agent, prompt: str) -> str:
     )
     crew = Crew(agents=[guesser], tasks=[task], process=Process.sequential, verbose=False)
     result = crew.kickoff()
-    return str(result.raw).strip()
+    # CrewOutput has .raw but CrewStreamingOutput does not; getattr handles both.
+    raw = getattr(result, "raw", None)
+    return str(raw).strip() if raw is not None else str(result).strip()
 
 
 # -- Guesser game tools --

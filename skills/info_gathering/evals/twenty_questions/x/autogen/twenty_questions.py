@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
+from autogen_core import CancellationToken
 from autogen_core.models import (
     AssistantMessage,
     ChatCompletionClient,
@@ -127,7 +128,7 @@ async def _run_simulator(
     for fc in function_calls:
         tool = sim_tool_map[fc.name]
         args = json.loads(fc.arguments) if isinstance(fc.arguments, str) else fc.arguments
-        tool_result = await tool.run_json(args, None)
+        tool_result = await tool.run_json(args, CancellationToken())
         tool_output = tool.return_value_as_string(tool_result)
         exec_results.append(FunctionExecutionResult(call_id=fc.id, content=tool_output, name=fc.name))
     sim_history.append(FunctionExecutionResultMessage(content=exec_results))
@@ -303,7 +304,7 @@ async def run_game(
             tool = guesser_tool_map[fc.name]
             args = json.loads(fc.arguments) if isinstance(fc.arguments, str) else fc.arguments
             try:
-                tool_result = await tool.run_json(args, None)
+                tool_result = await tool.run_json(args, CancellationToken())
                 content = tool.return_value_as_string(tool_result)
             except Exception as e:
                 # Return validation/execution errors to the model so it can retry.

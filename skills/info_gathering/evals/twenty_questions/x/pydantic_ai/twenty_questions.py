@@ -16,6 +16,7 @@ from typing import Literal
 from pydantic import BaseModel
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage
+from pydantic_ai.result import RunContext
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.toolsets import AbstractToolset
 from pydantic_ai.toolsets.fastmcp import FastMCPToolset
@@ -111,7 +112,7 @@ def _build_game_toolset(*, state: GameState, model_id: str | None, sim_instructi
         return sim_run.output
 
     @toolset.tool
-    async def ask_yes_no_question(ctx: None, question: str) -> str:
+    async def ask_yes_no_question(ctx: RunContext[None], /, question: str) -> str:
         """Ask a yes/no question. Uses one turn."""
         state.turn += 1
         state.record("guesser", question, [{"name": "ask_yes_no_question", "args": {"question": question}}])
@@ -141,7 +142,7 @@ def _build_game_toolset(*, state: GameState, model_id: str | None, sim_instructi
         return "error"
 
     @toolset.tool
-    async def guess_answer(ctx: None, answer: str) -> str:
+    async def guess_answer(ctx: RunContext[None], /, answer: str) -> str:
         """Guess the secret answer. Uses one turn."""
         state.turn += 1
         state.record("guesser", answer, [{"name": "guess_answer", "args": {"answer": answer}}])
@@ -205,7 +206,7 @@ async def run_game_loop(
             message_history=guesser_history,
             instructions=guesser_instructions,
             toolsets=all_toolsets,
-            model_settings=ModelSettings(tool_choice="required"),
+            model_settings=ModelSettings(tool_choice="required"),  # type: ignore[typeddict-unknown-key]
         )
         guesser_history = guesser_run.all_messages()
 

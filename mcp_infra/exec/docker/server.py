@@ -52,7 +52,7 @@ def resolve_cwd(policy: CwdPolicy, tool_input: Any) -> str | None:
             model_cwd: str | None = tool_input.cwd
             return model_cwd if model_cwd is not None else str(v)
         case ModelChooses():
-            return tool_input.cwd
+            return str(tool_input.cwd)
         case _:
             raise TypeError(f"Unknown CwdPolicy: {policy!r}")
 
@@ -237,8 +237,8 @@ class ContainerExecServer(EnhancedFastMCP):
                     cmd=input.cmd,
                     cwd=resolve_cwd(cwd_policy, input),
                     timeout_ms=input.timeout_ms,
-                    env=input.env if allow_env_field else None,
-                    user=input.user if allow_user_field else None,
+                    env=getattr(input, "env", None) if allow_env_field else None,
+                    user=getattr(input, "user", None) if allow_user_field else None,
                 )
                 (stdout_buf, stderr_buf, exit_code, timed_out) = await run_session_container(
                     s, effective.cmd, effective, opts

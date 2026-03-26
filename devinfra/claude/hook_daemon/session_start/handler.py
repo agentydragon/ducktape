@@ -209,7 +209,7 @@ async def _setup_web(
     tracer: trace.Tracer,
     root_ctx: trace.Context,
     hook_config: k8s_secrets.HookConfig | None,
-    proxy: AuthForwardingProxy,
+    proxy: AuthForwardingProxy | None,
 ) -> PlatformSetup:
     """Web mode: supervisor, proxy, containers, secrets, parallel installs.
 
@@ -488,7 +488,6 @@ async def run_session(
 
     # Platform-specific setup
     if ctx.web_mode:
-        assert proxy is not None, "proxy must be running in web mode"
         setup = await _setup_web(paths, settings, project_dir, tracer, root_ctx, hook_config, proxy=proxy)
     else:
         # CLI mode: read k8s secrets (no proxy needed, combined_ca_path=None).

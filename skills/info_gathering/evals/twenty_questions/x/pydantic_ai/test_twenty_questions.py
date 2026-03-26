@@ -49,7 +49,7 @@ async def test_correct_on_turn_2():
     sim_fm = _sim_model([("SimAnswer", {"response": "yes"}), ("SimCorrectAnswer", {})])
 
     with guesser_agent.override(model=guesser_fm), sim_agent.override(model=sim_fm):
-        result, turns, log_entries = await run_game_loop(
+        result, turns, log_entries, _invalid_count = await run_game_loop(
             model_id="test",
             guesser_instructions="You are a helpful assistant.",
             sim_instructions="The secret is: New Mexico",
@@ -75,7 +75,7 @@ async def test_timeout():
     )
 
     with guesser_agent.override(model=guesser_fm), sim_agent.override(model=sim_fm):
-        result, turns, log_entries = await run_game_loop(
+        result, turns, log_entries, _invalid_count = await run_game_loop(
             model_id="test",
             guesser_instructions="You are a helpful assistant.",
             sim_instructions="The secret is: wrench",
@@ -95,7 +95,7 @@ async def test_correct_on_turn_1():
     sim_fm = _sim_model([("SimCorrectAnswer", {})])
 
     with guesser_agent.override(model=guesser_fm), sim_agent.override(model=sim_fm):
-        result, turns, _ = await run_game_loop(
+        result, turns, _, _invalid_count = await run_game_loop(
             model_id="test",
             guesser_instructions="test",
             sim_instructions="The secret is: sourdough starter",
@@ -114,7 +114,7 @@ async def test_log_entries_contain_tool_calls():
     sim_fm = _sim_model([("SimCorrectAnswer", {})])
 
     with guesser_agent.override(model=guesser_fm), sim_agent.override(model=sim_fm):
-        _, _, log_entries = await run_game_loop(
+        _, _, log_entries, _invalid_count = await run_game_loop(
             model_id="test",
             guesser_instructions="test",
             sim_instructions="The secret is: rose",
