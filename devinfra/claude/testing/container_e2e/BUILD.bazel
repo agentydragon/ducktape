@@ -49,6 +49,7 @@ py_test(
         ":e2e_container_tarball",
         "//:claude_hooks_wheel",
         "//devinfra/claude/testdata/test_workspace:workspace_files",
+        "@bazelisk_linux_amd64//file",
     ],
     env_inherit = [
         "DOCKER_HOST",

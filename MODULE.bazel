@@ -702,6 +702,16 @@ http_file(
     urls = ["https://dl.k8s.io/release/v1.32.3/bin/linux/amd64/kubectl"],
 )
 
+# Bazelisk v1.25.0 linux-amd64 — used by container E2E test to provide
+# bazelisk on PATH inside the test container (mirrors what Nix provides in prod).
+http_file(
+    name = "bazelisk_linux_amd64",
+    downloaded_file_path = "bazelisk",
+    executable = True,
+    sha256 = "fd8fdff418a1758887520fa42da7e6ae39aefc788cf5e7f7bb8db6934d279fc4",
+    urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-linux-amd64"],
+)
+
 # Node.js v22.11.0 LTS linux-x64 — provides the 'node' binary for the
 # openclaw-exec sidecar (mcporter CLI is bundled using this runtime).
 http_archive(

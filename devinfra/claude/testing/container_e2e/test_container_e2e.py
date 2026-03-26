@@ -61,6 +61,9 @@ pytest_plugins = ["devinfra.claude.testing.mitmproxy_fixture"]
 _WHEEL_RLOCATION = "_main/claude_hooks-0.1.0-py3-none-any.whl"
 _WHEEL_FILENAME = _WHEEL_RLOCATION.rsplit("/", 1)[-1]
 
+# Rlocation for bazelisk binary (mirrors what Nix web-session provides on PATH in prod)
+_BAZELISK_RLOCATION = "bazelisk_linux_amd64/file/bazelisk"
+
 # Rlocation for a file in the test workspace (used to derive directory path)
 _TEST_WORKSPACE_MODULE = "_main/devinfra/claude/testdata/test_workspace/MODULE.bazel"
 
@@ -133,6 +136,12 @@ def wheel_path() -> Path:
 
 
 @pytest.fixture
+def bazelisk_path() -> Path:
+    """Resolve the bazelisk binary from runfiles."""
+    return get_required_path(_BAZELISK_RLOCATION)
+
+
+@pytest.fixture
 def test_workspace_path() -> Path:
     """Resolve the test workspace directory from runfiles."""
     return get_required_path(_TEST_WORKSPACE_MODULE).parent
@@ -153,6 +162,7 @@ def e2e_image() -> str:
 def test_container_e2e(
     tmp_path: Path,
     wheel_path: Path,
+    bazelisk_path: Path,
     test_workspace_path: Path,
     mitmproxy_proxy: MitmproxyFixture,
     isolated_net: docker.models.networks.Network,
@@ -170,6 +180,9 @@ def test_container_e2e(
     staging.mkdir()
     staged_wheel = staging / _WHEEL_FILENAME
     shutil.copy2(wheel_path, staged_wheel)
+    staged_bazelisk = staging / "bazelisk"
+    shutil.copy2(bazelisk_path, staged_bazelisk)
+    staged_bazelisk.chmod(0o755)
     staged_workspace = staging / "test_workspace"
     shutil.copytree(test_workspace_path, staged_workspace)
     (staged_workspace / ".git").mkdir()  # pre-commit needs a git repo
@@ -189,7 +202,6 @@ def test_container_e2e(
         "CLAUDE_CODE_REMOTE": "true",
         "CLAUDE_PROJECT_DIR": "/project",
         "CLAUDE_ENV_FILE": _ENV_FILE,
-        "DUCKTAPE_CLAUDE_HOOKS_INSTALL_BAZELISK": "true",
         "DUCKTAPE_CLAUDE_HOOKS_INSTALL_MKCERT": "false",
         "DUCKTAPE_CLAUDE_HOOKS_INSTALL_GH": "false",
         "DUCKTAPE_CLAUDE_HOOKS_INSTALL_KUBECTL": "false",
@@ -198,6 +210,9 @@ def test_container_e2e(
         "DUCKTAPE_CLAUDE_HOOKS_CONTAINER_RUNTIME": "none",
         "ANTHROPIC_CA_PATH": "/certs/mock_ca.pem",
         "WHEEL_PATH": f"/wheel/{_WHEEL_FILENAME}",
+        # /tools is on PATH in the container; bazelisk is bind-mounted there.
+        "PATH": "/tools:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"
+        ":/usr/lib/jvm/java-21-openjdk-amd64/bin",
     }
     for var in PROXY_ENV_VARS:
         env[var] = mitmproxy_proxy.container_url
@@ -212,6 +227,7 @@ def test_container_e2e(
         network=isolated_net.name,
         volumes={
             str(staged_wheel): {"bind": f"/wheel/{_WHEEL_FILENAME}", "mode": "ro"},
+            str(staged_bazelisk): {"bind": "/tools/bazelisk", "mode": "ro"},
             str(mock_ca_path): {"bind": "/certs/mock_ca.pem", "mode": "ro"},
             str(combined_ca_path): {"bind": "/certs/combined_ca.pem", "mode": "ro"},
             str(staged_workspace): {"bind": "/project", "mode": "ro"},
