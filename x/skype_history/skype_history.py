@@ -22,7 +22,7 @@ def main() -> None:
                 continue
             print(row[3])
         else:
-            timestamp = datetime.datetime.fromtimestamp(row[2])
+            timestamp = datetime.datetime.fromtimestamp(row[2], tz=datetime.UTC)
             print(f"{row[1]} {timestamp}: {row[3]}")
 
     conn.close()

@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -57,7 +57,7 @@ async def _validate_key(key_id: int, db_session: AsyncSession, settings: Setting
 async def _new_challenge(key: AuthKey, db_session: AsyncSession, settings: Settings):
     nonce_value = uuid.uuid4().hex
     nonce = AuthNonce(
-        nonce_value=nonce_value, expires_at=datetime.now() + settings.auth.challenge_response.nonce_validity
+        nonce_value=nonce_value, expires_at=datetime.now(tz=UTC) + settings.auth.challenge_response.nonce_validity
     )
     db_session.add(nonce)
     await db_session.flush()
@@ -113,14 +113,14 @@ async def answer_challenge(
     if not nonce or not nonce.is_valid:
         return await _render_new_challenge(request, key, db_session, "Invalid or expired challenge", settings)
 
-    nonce.used_at = datetime.now()
+    nonce.used_at = datetime.now(tz=UTC)
     await db_session.flush()
 
     correct_idx = compute_correct_option(key.key_value, nonce_value, settings.auth.challenge_response.num_options)
     if answer != str(correct_idx):
         return await _render_new_challenge(request, key, db_session, "Incorrect answer", settings)
 
-    now = datetime.now()
+    now = datetime.now(tz=UTC)
     session = AuthCRSession(
         session_token=uuid.uuid4().hex,
         auth_key_id=key.id,

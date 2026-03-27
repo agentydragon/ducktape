@@ -7,7 +7,7 @@ import shutil
 import socket
 import subprocess
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -251,7 +251,7 @@ def sample_status_result(sample_commit_info):
         behind_count=0,
         pr_info=PRInfoDisabled(),
         commit_info=sample_commit_info,
-        last_updated_at=datetime.now(),
+        last_updated_at=datetime.now(tz=UTC),
         dirty_files_lower_bound=0,
         untracked_files_lower_bound=0,
     )

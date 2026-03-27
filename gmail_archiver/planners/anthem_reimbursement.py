@@ -39,7 +39,7 @@ def parse_anthem_reimbursement(email: Email) -> AnthemReimbursement:
     care_dt = None
     if m := re.search(r"Date of care:\s*([0-9]{1,2}/[0-9]{1,2}/[0-9]{2})", text):
         with contextlib.suppress(ValueError):
-            care_dt = datetime.strptime(m.group(1), "%m/%d/%y")
+            care_dt = datetime.strptime(m.group(1), "%m/%d/%y").replace(tzinfo=UTC)
 
     # Parse amounts (remove commas from numbers like "8,676.65")
     amount_you_pay_decimal = None

@@ -67,7 +67,7 @@ def needs_renewal(token: dict) -> bool:
         print("Token has no expiry — skipping renewal.")
         return False
     expiry = datetime.date.fromisoformat(expiry_str)
-    days_remaining = (expiry - datetime.date.today()).days
+    days_remaining = (expiry - datetime.datetime.now(tz=datetime.UTC).date()).days
     print(f"Token '{TOKEN_NAME}' expires {expiry_str} ({days_remaining} days remaining).")
     return days_remaining < RENEW_DAYS_BEFORE
 

@@ -2,7 +2,7 @@
 
 import json
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 
@@ -73,7 +73,7 @@ class SessionManager:
                 logger.exception(f"Failed to load session {session_id}")
 
         # Return default session data
-        return SessionData(id=session_id, created=datetime.now())
+        return SessionData(id=session_id, created=datetime.now(tz=UTC))
 
     def _save_session(self, session_id: SessionID, session_data: SessionData) -> None:
         """Save a single session to disk."""
@@ -92,7 +92,7 @@ class SessionManager:
             working_dir: Current working directory for the session
         """
         session_data = self._load_session(session_id)
-        session_data.last_seen = datetime.now()
+        session_data.last_seen = datetime.now(tz=UTC)
         session_data.directory = working_dir.resolve()
         self._save_session(session_id, session_data)
 
@@ -125,7 +125,7 @@ class SessionManager:
         directory = directory or Path.cwd()
         directory_str = str(directory.resolve())
 
-        rule = Rule(predicate=predicate, action=action, created=datetime.now(), expires=expires)
+        rule = Rule(predicate=predicate, action=action, created=datetime.now(tz=UTC), expires=expires)
 
         affected = 0
 
@@ -179,7 +179,7 @@ class SessionManager:
         session_data = self._load_session(session_id)
 
         # Filter out expired rules
-        now = datetime.now()
+        now = datetime.now(tz=UTC)
         active_rules = []
 
         for rule in session_data.rules:

@@ -18,14 +18,14 @@ def parse_date(date_string: str | None = None) -> datetime.datetime:
         datetime object
     """
     if not date_string:
-        return datetime.datetime.now()
+        return datetime.datetime.now(tz=datetime.UTC)
 
     try:
         return datetime.datetime.fromisoformat(date_string)
     except ValueError:
         try:
             # Try to parse as YYYY-MM-DD
-            return datetime.datetime.strptime(date_string, "%Y-%m-%d")
+            return datetime.datetime.strptime(date_string, "%Y-%m-%d").replace(tzinfo=datetime.UTC)
         except ValueError:
             raise ValueError(f"Invalid date format: {date_string}. Please use YYYY-MM-DD.")
 
@@ -41,7 +41,7 @@ def _normalize_date(date: str | datetime.date | datetime.datetime | None = None)
         Normalized datetime object
     """
     if date is None:
-        return datetime.datetime.now()
+        return datetime.datetime.now(tz=datetime.UTC)
 
     if isinstance(date, datetime.datetime):
         return date
@@ -96,7 +96,7 @@ def format_date_for_api(date: str | datetime.date | datetime.datetime | None = N
     # Special case for YYYY-MM-DD string format - optimize to avoid parsing
     if isinstance(date, str) and len(date.split("-")) == 3:
         try:
-            datetime.datetime.strptime(date, "%Y-%m-%d")
+            datetime.datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=datetime.UTC)
             return f"{date}T00:00:00+00:00"
         except ValueError:
             pass

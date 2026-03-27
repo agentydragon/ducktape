@@ -144,7 +144,10 @@ def index():
             print(content)
             print("----")
 
-            embeddings["notes"][note_id] = {"string": content, "datetime": datetime.datetime.now().isoformat()}
+            embeddings["notes"][note_id] = {
+                "string": content,
+                "datetime": datetime.datetime.now(tz=datetime.UTC).isoformat(),
+            }
 
     strings = {note["string"] for note in embeddings["notes"].values()}
     not_embedded = strings - set(embeddings["strings"].keys())

@@ -1,7 +1,7 @@
 """Tests for key-in-path authentication."""
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_bazel
@@ -20,7 +20,9 @@ async def test_validate_valid_key(db_session: AsyncSession):
     # Create a valid key with unique value
     unique_id = uuid.uuid4().hex[:8]
     key = AuthKey(
-        key_value=f"valid-test-key-{unique_id}", description=f"Valid test key {unique_id}", created_at=datetime.now()
+        key_value=f"valid-test-key-{unique_id}",
+        description=f"Valid test key {unique_id}",
+        created_at=datetime.now(tz=UTC),
     )
     key = await persist(db_session, key)
 
@@ -43,8 +45,8 @@ async def test_validate_revoked_key(db_session: AsyncSession):
     key = AuthKey(
         key_value=f"revoked-test-key-{unique_id}",
         description=f"Revoked test key {unique_id}",
-        created_at=datetime.now(),
-        revoked_at=datetime.now(),
+        created_at=datetime.now(tz=UTC),
+        revoked_at=datetime.now(tz=UTC),
     )
     key = await persist(db_session, key)
 
@@ -57,7 +59,7 @@ async def test_validate_expired_key(db_session: AsyncSession):
     """Test validating an expired key."""
     # Create a key that was created beyond the validity period with unique value
     unique_id = uuid.uuid4().hex[:8]
-    created_at = datetime.now() - TEST_KEY_VALIDITY - timedelta(days=1)
+    created_at = datetime.now(tz=UTC) - TEST_KEY_VALIDITY - timedelta(days=1)
 
     key = AuthKey(
         key_value=f"expired-test-key-{unique_id}", description=f"Expired test key {unique_id}", created_at=created_at

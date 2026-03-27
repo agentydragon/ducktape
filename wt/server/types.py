@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from wt.shared.protocol import WorktreeID
@@ -22,7 +22,7 @@ class GitWorkingStatus:
 
 
 def _now() -> datetime:
-    return datetime.now()
+    return datetime.now(tz=UTC)
 
 
 @dataclass(frozen=True, slots=True)

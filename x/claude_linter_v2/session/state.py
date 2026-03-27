@@ -1,7 +1,7 @@
 """Session state management for Claude Linter v2."""
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
@@ -49,12 +49,12 @@ class SessionState:
     def touch_file(self, file_path: Path) -> None:
         """Mark a file as touched in this session."""
         self.touched_files.add(file_path)
-        self.last_seen = datetime.now()
+        self.last_seen = datetime.now(tz=UTC)
 
     def add_warning(self, warning: str) -> None:
         """Add a warning to show in post-hook."""
         self.pending_warnings.append(warning)
-        self.last_seen = datetime.now()
+        self.last_seen = datetime.now(tz=UTC)
 
     def consume_warnings(self) -> list[str]:
         """Get and clear pending warnings."""
@@ -69,12 +69,12 @@ class SessionState:
     def add_rule(self, rule: Rule) -> None:
         """Add a session-specific rule."""
         self.rules.append(rule)
-        self.last_seen = datetime.now()
+        self.last_seen = datetime.now(tz=UTC)
 
     def set_notification_id(self, notification_id: int) -> None:
         """Set the current notification ID."""
         self.notification_id = notification_id
-        self.last_seen = datetime.now()
+        self.last_seen = datetime.now(tz=UTC)
 
     def clear_notification_id(self) -> None:
         """Clear the notification ID."""
@@ -82,4 +82,4 @@ class SessionState:
 
     def update_last_seen(self) -> None:
         """Update the last seen timestamp."""
-        self.last_seen = datetime.now()
+        self.last_seen = datetime.now(tz=UTC)

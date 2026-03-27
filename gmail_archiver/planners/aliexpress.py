@@ -114,7 +114,7 @@ def extract_delivered_date(body: str) -> datetime | None:
     if match := DELIVERED_DATE_PATTERN.search(body):
         day, month, year = int(match.group(1)), int(match.group(2)), int(match.group(3))
         try:
-            return datetime(year, month, day)
+            return datetime(year, month, day, tzinfo=UTC)
         except ValueError:
             return None
     return None
@@ -133,7 +133,7 @@ def compute_deadline(message: Email) -> datetime | None:
     return message.internal_date.replace(tzinfo=None) + timedelta(days=30)
 
 
-def parse_aliexpress(message: Email, *, should_compute_deadline: bool = False) -> AliExpressEmail:
+def parse_aliexpress(message: Email, should_compute_deadline: bool = False) -> AliExpressEmail:
     """Parse AliExpress email, optionally computing deadline from received date."""
     parsed = parse_aliexpress_subject(message.subject)
 

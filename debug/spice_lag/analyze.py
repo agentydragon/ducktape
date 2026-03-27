@@ -89,7 +89,7 @@ def _cache_path(frame_file: Path) -> Path:
 def _parse_clock(clock_str: str) -> datetime.datetime:
     """Parse HH:MM:SS.mmm clock string."""
     padded = clock_str + "000" if len(clock_str.rsplit(".", maxsplit=1)[-1]) == 3 else clock_str
-    return datetime.datetime.strptime(padded, "%H:%M:%S.%f")
+    return datetime.datetime.strptime(padded, "%H:%M:%S.%f").replace(tzinfo=datetime.UTC)
 
 
 def analyze_pixeldiff(

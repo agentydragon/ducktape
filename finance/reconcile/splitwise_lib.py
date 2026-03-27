@@ -110,7 +110,7 @@ def load_splitwise_expenses(splitwise_group_id) -> dict[str, external_system.Ext
                 # We are not involved.
                 continue
 
-            dt = datetime.datetime.strptime(expense.date, "%Y-%m-%dT%H:%M:%SZ").date()
+            dt = datetime.datetime.strptime(expense.date, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.UTC).date()
             expenses[str(expense.id)] = external_system.ExternalExpense(
                 id=str(expense.id),
                 description=((expense.description or "") + (expense.notes or "")),

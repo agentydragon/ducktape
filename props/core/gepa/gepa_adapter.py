@@ -39,7 +39,7 @@ import pickle
 import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -187,10 +187,10 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
 
         # Set up proposal logging if reflection_model provided
         if reflection_model:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S")
             log_file = run_dir / f"gepa_proposals_{timestamp}.jsonl"
             self._setup_proposal_logging(log_file)
-            logger.info(f"GEPA proposal logging enabled: {log_file.absolute()}")
+            logger.info("GEPA proposal logging enabled: %s", log_file.absolute())
         else:
             # No reflection model - GEPA will use default proposal mechanism
             self.propose_new_texts = None
@@ -310,7 +310,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
                     f.write(
                         json.dumps(
                             {
-                                "timestamp": datetime.now().isoformat(),
+                                "timestamp": datetime.now(tz=UTC).isoformat(),
                                 "call_id": call_count,
                                 "component": name,
                                 "type": "input",
@@ -337,7 +337,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
                     f.write(
                         json.dumps(
                             {
-                                "timestamp": datetime.now().isoformat(),
+                                "timestamp": datetime.now(tz=UTC).isoformat(),
                                 "call_id": call_count,
                                 "component": name,
                                 "type": "output",
@@ -521,7 +521,7 @@ async def load_datasets(db: Database) -> tuple[list[Example], list[Example]]:
         trainset = get_examples_for_split(session, Split.TRAIN)
         valset = get_examples_for_split(session, Split.VALID)
 
-    logger.info(f"Loaded {len(trainset)} training examples, {len(valset)} validation examples")
+    logger.info("Loaded %s training examples, %s validation examples", len(trainset), len(valset))
 
     return trainset, valset
 
@@ -559,18 +559,18 @@ def _log_run_statistics(critic_model: str, grader_model: str, db: Database) -> N
     # Log critic statistics
     total_critic = sum(count for _, count in critic_status_counts)
     if total_critic > 0:
-        logger.info(f"Critic run statistics (model={critic_model}, total={total_critic}):")
+        logger.info("Critic run statistics (model=%s, total=%s):", critic_model, total_critic)
         for status, count in sorted(critic_status_counts):
-            logger.info(f"  {status}: {count} ({count / total_critic:.1%})")
+            logger.info("  %s: %s (%.1f%%)", status, count, count / total_critic * 100)
     else:
         logger.info("No critic runs found")
 
     # Log grader statistics
     total_grader = sum(count for _, count in grader_status_counts)
     if total_grader > 0:
-        logger.info(f"Grader run statistics (model={grader_model}, total={total_grader}):")
+        logger.info("Grader run statistics (model=%s, total=%s):", grader_model, total_grader)
         for status, count in sorted(grader_status_counts):
-            logger.info(f"  {status}: {count} ({count / total_grader:.1%})")
+            logger.info("  %s: %s (%.1f%%)", status, count, count / total_grader * 100)
     else:
         logger.info("No grader runs found")
 
@@ -631,18 +631,18 @@ async def optimize_with_gepa(
     """
     _gepa_not_implemented()
     logger.info("Starting GEPA optimization")
-    logger.info(f"Reflection model: {reflection_model}")
-    logger.info(f"Max metric calls: {max_metric_calls}")
-    logger.info(f"Minibatch size: {minibatch_size}")
-    logger.info(f"Initial prompt length: {len(initial_prompt)} chars")
-    logger.info(f"Warm start: {warm_start}")
+    logger.info("Reflection model: %s", reflection_model)
+    logger.info("Max metric calls: %s", max_metric_calls)
+    logger.info("Minibatch size: %s", minibatch_size)
+    logger.info("Initial prompt length: %s chars", len(initial_prompt))
+    logger.info("Warm start: %s", warm_start)
     if seed is not None:
-        logger.info(f"Random seed: {seed}")
+        logger.info("Random seed: %s", seed)
 
     # Load datasets (always uses critic scopes from database)
     logger.info("Loading datasets...")
     trainset, valset = await load_datasets(db)
-    logger.info(f"Loaded {len(trainset)} training examples, {len(valset)} validation examples")
+    logger.info("Loaded %s training examples, %s validation examples", len(trainset), len(valset))
 
     # Prepare run directory with optional warm-start checkpoint
     run_dir = None
@@ -659,7 +659,9 @@ async def optimize_with_gepa(
             with checkpoint_path.open("wb") as f:
                 pickle.dump(historical_state, f)
             logger.info(
-                f"Saved historical state with {len(historical_state['program_candidates'])} prompts to {checkpoint_path}"
+                "Saved historical state with %s prompts to %s",
+                len(historical_state["program_candidates"]),
+                checkpoint_path,
             )
             run_dir = temp_dir
         else:
@@ -668,10 +670,10 @@ async def optimize_with_gepa(
     # If no run_dir yet (no warm start or no historical data), create one
     if run_dir is None:
         run_dir = tempfile.mkdtemp(prefix="gepa_run_")
-        logger.info(f"Created run directory: {run_dir}")
+        logger.info("Created run directory: %s", run_dir)
 
     # Create adapter
-    logger.info(f"Creating CriticAdapter with max_parallelism={max_parallelism}")
+    logger.info("Creating CriticAdapter with max_parallelism=%s", max_parallelism)
     adapter = CriticAdapter(
         critic_client,
         grader_client,
@@ -683,7 +685,7 @@ async def optimize_with_gepa(
     )
 
     # Run optimization (reflection_lm accepts model string directly)
-    logger.info(f"Starting GEPA evolutionary search (merge={'enabled' if use_merge else 'disabled'})...")
+    logger.info("Starting GEPA evolutionary search (merge=%s)...", "enabled" if use_merge else "disabled")
     result: GEPAResult[CriticOutput, Any] = gepa.optimize(
         seed_candidate={"system_prompt": initial_prompt},
         trainset=trainset,
@@ -702,7 +704,7 @@ async def optimize_with_gepa(
 
     optimized_prompt = result.candidates[result.best_idx]["system_prompt"]
     best_score = result.val_aggregate_scores[result.best_idx]
-    logger.info(f"GEPA optimization complete. Best score: {best_score:.3f}, Metric calls: {result.total_metric_calls}")
+    logger.info("GEPA optimization complete. Best score: %.3f, Metric calls: %s", best_score, result.total_metric_calls)
 
     # Log run statistics (critic/grader status breakdown)
     _log_run_statistics(critic_client.model, grader_client.model, db)

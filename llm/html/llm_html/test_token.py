@@ -5,7 +5,7 @@ as the CLI wrapper are intentionally excluded so the tests run fast and stay
 deterministic.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 import pytest_bazel
@@ -44,7 +44,7 @@ def token_scheme():
 @pytest.fixture
 def fresh_valid_token(token_scheme):
     """Generate a fresh *valid* token and return the scheme instance & token."""
-    prefix, bits = token_scheme.make_token(datetime.now())
+    prefix, bits = token_scheme.make_token(datetime.now(tz=UTC))
     return prefix + "".join(bits)
 
 

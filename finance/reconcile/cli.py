@@ -101,7 +101,7 @@ def add_external_to_gnucash(external_transaction, book, account_of_interest, ext
     currency = book.get_table().lookup("ISO4217", "CHF")
     tx.SetCurrency(currency)
     tx.SetDescription(external_transaction.description)
-    tx.SetNotes(f"Imported at {datetime.datetime.now()}")
+    tx.SetNotes(f"Imported at {datetime.datetime.now(tz=datetime.UTC)}")
 
     split_in_splitwise = gnucash.Split(book)
     split_in_splitwise.SetParent(tx)
@@ -162,7 +162,11 @@ def main(_):
 
             # 'start_date' sets date at which mapping starts
             if "start_date" in reconcile_config:
-                start_date = datetime.datetime.strptime(reconcile_config["start_date"], "%Y-%m-%d").date()
+                start_date = (
+                    datetime.datetime.strptime(reconcile_config["start_date"], "%Y-%m-%d")
+                    .replace(tzinfo=datetime.UTC)
+                    .date()
+                )
 
                 external_transaction_by_external_id = {
                     external_id: external_transaction

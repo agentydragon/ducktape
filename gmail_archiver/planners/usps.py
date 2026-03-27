@@ -33,7 +33,7 @@ def parse_usps(email: Email) -> USPSDelivery | None:
     date_str = match.group(1)  # e.g., "Thursday, December 18, 2025"
 
     try:
-        expected_delivery_date = datetime.strptime(date_str, "%A, %B %d, %Y")
+        expected_delivery_date = datetime.strptime(date_str, "%A, %B %d, %Y").replace(tzinfo=UTC)
     except ValueError:
         return None
 

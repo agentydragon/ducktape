@@ -1,6 +1,6 @@
 """Integration tests that verify actual CLI output formatting."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -45,7 +45,7 @@ class TestCLIOutputFormat:
                     branch_name="master",
                     dirty_files_lower_bound=1,
                     untracked_files_lower_bound=1,
-                    last_updated_at=datetime.now(),
+                    last_updated_at=datetime.now(tz=UTC),
                     commit_info=commit_info,
                     ahead_count=2,
                     behind_count=0,
@@ -59,7 +59,7 @@ class TestCLIOutputFormat:
                     branch_name="feature/test",
                     dirty_files_lower_bound=0,
                     untracked_files_lower_bound=0,
-                    last_updated_at=datetime.now(),
+                    last_updated_at=datetime.now(tz=UTC),
                     commit_info=commit_info,
                     ahead_count=1,
                     behind_count=0,
@@ -95,7 +95,7 @@ class TestCLIOutputFormat:
                     branch_name="test/test1",
                     dirty_files_lower_bound=0,
                     untracked_files_lower_bound=0,
-                    last_updated_at=datetime.now(),
+                    last_updated_at=datetime.now(tz=UTC),
                     commit_info=commit_info,
                     ahead_count=0,
                     behind_count=0,

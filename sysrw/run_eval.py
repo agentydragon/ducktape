@@ -8,7 +8,7 @@ import subprocess
 import sys
 from collections import Counter
 from contextlib import suppress
-from datetime import datetime
+from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
 from typing import Any, cast
@@ -493,7 +493,7 @@ async def run_eval(
         # Caller provided a final directory — use it directly (no nesting)
         out_dir = base_out
     else:
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        ts = datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S")
         base = DEFAULT_BASE
         # Default layout: runs/<ts> for variants; runs/baseline-<ts> for baseline
         out_dir = base / f"baseline-{ts}" if template_path.name == "current_effective_template.txt" else base / f"{ts}"

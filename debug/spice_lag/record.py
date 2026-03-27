@@ -89,7 +89,7 @@ def stop_screencast(bus: Gio.DBusConnection) -> None:
 
 def _now_str() -> str:
     """Current wall-clock time as HH:MM:SS.mmm."""
-    now = datetime.datetime.now()
+    now = datetime.datetime.now(tz=datetime.UTC)
     return now.strftime("%H:%M:%S.") + f"{now.microsecond // 1000:03d}"
 
 

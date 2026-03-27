@@ -9,7 +9,7 @@ import logging
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID
 
@@ -49,7 +49,7 @@ def parse_expiry_duration(duration_str: str) -> datetime:
     seconds = parse_duration(duration_str)
     if seconds is None:
         raise click.ClickException(f"Invalid duration format: {duration_str}\nValid formats: 30m, 2h, 1d, 1h30m, etc.")
-    return datetime.now() + timedelta(seconds=seconds)
+    return datetime.now(tz=UTC) + timedelta(seconds=seconds)
 
 
 @click.group(invoke_without_command=True)

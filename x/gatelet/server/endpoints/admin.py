@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 
@@ -36,7 +36,7 @@ async def _get_admin_session(
 
     stmt = select(AdminSession).where(AdminSession.session_token == session_token)
     admin_session = (await db_session.execute(stmt)).scalar_one_or_none()
-    if not admin_session or admin_session.expires_at <= datetime.now():
+    if not admin_session or admin_session.expires_at <= datetime.now(tz=UTC):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
 
     return admin_session
@@ -68,7 +68,9 @@ async def login(
         )
 
     session = AdminSession(
-        session_token=uuid.uuid4().hex, created_at=datetime.now(), expires_at=datetime.now() + SESSION_DURATION
+        session_token=uuid.uuid4().hex,
+        created_at=datetime.now(tz=UTC),
+        expires_at=datetime.now(tz=UTC) + SESSION_DURATION,
     )
     db_session.add(session)
     # Commit before redirect so the session is visible to the next request.
@@ -131,7 +133,7 @@ async def create_key(
     description: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
     await csrf_protect.validate_csrf(request)
-    key = AuthKey(key_value=uuid.uuid4().hex, description=description or None, created_at=datetime.now())
+    key = AuthKey(key_value=uuid.uuid4().hex, description=description or None, created_at=datetime.now(tz=UTC))
     db_session.add(key)
     await db_session.flush()
     token, signed = csrf_protect.generate_csrf_tokens()
@@ -150,7 +152,7 @@ async def revoke_key(
     stmt = select(AuthKey).where(AuthKey.id == key_id)
     key = (await db_session.execute(stmt)).scalar_one_or_none()
     if key and not key.revoked_at:
-        key.revoked_at = datetime.now()
+        key.revoked_at = datetime.now(tz=UTC)
         await db_session.flush()
     return RedirectResponse("/admin/keys/", status_code=302)
 

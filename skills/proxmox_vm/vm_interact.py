@@ -8,7 +8,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -150,7 +150,7 @@ def do_sendkey(vmid: int, key: str) -> None:
 def do_screenshot(vmid: int, delay: float) -> Path:
     remote_ppm = f"/tmp/vm{vmid}-screenshot.ppm"
     cache_dir = get_cache_dir(vmid)
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now(tz=UTC).strftime("%Y%m%d-%H%M%S")
     local_png = cache_dir / f"{timestamp}.png"
 
     qemu_monitor(vmid, f"screendump {remote_ppm}")

@@ -11,7 +11,7 @@ import asyncio
 import logging
 import logging.handlers
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import anyio
@@ -529,7 +529,7 @@ async def run_session(
         bazelisk.install_wrapper(paths)
 
     # Generate timestamp
-    hook_timestamp = datetime.now()
+    hook_timestamp = datetime.now(tz=UTC)
     timestamp_file = paths.session_dir / "session-hook-last-run"
     timestamp_file.write_text(f"{hook_timestamp.isoformat()}\n")
     logger.info("Session start hook timestamp: %s", hook_timestamp.isoformat())

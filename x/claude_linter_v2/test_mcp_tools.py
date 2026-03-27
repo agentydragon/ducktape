@@ -1,7 +1,7 @@
 """Unit tests for MCP tool handling in claude-linter-v2."""
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -267,7 +267,7 @@ class TestMCPToolLogging:
             tool_input={
                 "event": "user_action",
                 "properties": {"action": "click", "target": "button"},
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(tz=UTC).isoformat(),
             },
             tool_result={"tracked": True},
         )
