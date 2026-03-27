@@ -135,7 +135,8 @@ def parse_timedelta(value) -> timedelta:
         hh, mm, ss = value.split(":")
         return timedelta(hours=int(hh), minutes=int(mm), seconds=int(ss))
 
-    raise ValueError(f"Invalid stale_time: {value}")
+    msg = f"Invalid stale_time: {value}"
+    raise ValueError(msg)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):

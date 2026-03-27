@@ -147,16 +147,18 @@ def make_submit_server(state: SubmitState) -> SimpleFastMCP:
     def submit_commit_message(payload: CommitMessage) -> None:
         lines = payload.message.split("\n")
         if lines and len(lines[0]) > COMMIT_MESSAGE_SUBJECT_WIDTH:
-            raise ToolError(
+            msg = (
                 f"Subject line exceeds {COMMIT_MESSAGE_SUBJECT_WIDTH} chars ({len(lines[0])} chars). "
                 f"Keep subject line to {COMMIT_MESSAGE_SUBJECT_WIDTH} chars."
             )
+            raise ToolError(msg)
         for i, line in enumerate(lines[2:], start=3):
             if len(line) > COMMIT_MESSAGE_BODY_WIDTH:
-                raise ToolError(
+                msg = (
                     f"Line {i} exceeds {COMMIT_MESSAGE_BODY_WIDTH} chars ({len(line)} chars). "
                     f"Wrap body lines to {COMMIT_MESSAGE_BODY_WIDTH} chars."
                 )
+                raise ToolError(msg)
         state.result = payload
 
     return m

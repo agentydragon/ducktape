@@ -2,7 +2,7 @@
 
 import contextlib
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel
@@ -63,7 +63,7 @@ def parse_square(email: Email) -> SquareReceipt:
 
         # Parse transaction datetime - expected format: "Mar 16 2023 at 10:26 AM"
         with contextlib.suppress(ValueError):
-            transaction_dt = datetime.strptime(m.group(5).strip(), "%b %d %Y at %I:%M %p")
+            transaction_dt = datetime.strptime(m.group(5).strip(), "%b %d %Y at %I:%M %p").replace(tzinfo=UTC)
 
     return SquareReceipt(
         merchant_name=merchant_name,

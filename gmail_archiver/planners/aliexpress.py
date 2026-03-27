@@ -100,7 +100,8 @@ def parse_aliexpress_subject(subject: str) -> AliExpressEmail:
         if pattern_text in subject_lower:
             return AliExpressEmail(order_id=order_id, status=status)
 
-    raise AliExpressParseError(f"Unrecognized AliExpress email subject: {subject}")
+    msg = f"Unrecognized AliExpress email subject: {subject}"
+    raise AliExpressParseError(msg)
 
 
 DISPUTE_WINDOW_DAYS = 15  # AliExpress allows 15 days after confirmation to dispute
@@ -114,7 +115,7 @@ def extract_delivered_date(body: str) -> datetime | None:
     if match := DELIVERED_DATE_PATTERN.search(body):
         day, month, year = int(match.group(1)), int(match.group(2)), int(match.group(3))
         try:
-            return datetime(year, month, day)
+            return datetime(year, month, day, tzinfo=UTC)
         except ValueError:
             return None
     return None

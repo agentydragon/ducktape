@@ -101,10 +101,11 @@ class Plan:
         # Check for collision
         if message_id in self.actions:
             existing = self.actions[message_id]
-            raise ValueError(
+            msg = (
                 f"Message {message_id} already claimed by {existing.planner_name}, "
                 f"cannot also be claimed by {self.planner_name}"
             )
+            raise ValueError(msg)
 
         # Add planned action
         assert self.planner_name is not None  # Must be set in __init__
@@ -114,7 +115,8 @@ class Plan:
     def merge(plans: list[Plan]) -> Plan:
         """Merge multiple plans into one. Raises ValueError on conflicts."""
         if not plans:
-            raise ValueError("Cannot merge empty list of plans")
+            msg = "Cannot merge empty list of plans"
+            raise ValueError(msg)
 
         # Create merged plan using proper constructor (no specific planner owner)
         merged = Plan(planner_name=None)
@@ -124,10 +126,11 @@ class Plan:
             for message_id, planned_action in plan.actions.items():
                 if message_id in merged.actions:
                     existing = merged.actions[message_id]
-                    raise ValueError(
+                    msg = (
                         f"Message {message_id} claimed by both "
                         f"{existing.planner_name} and {planned_action.planner_name}"
                     )
+                    raise ValueError(msg)
                 merged.actions[message_id] = planned_action
 
             # Merge planner-specific messages with headers

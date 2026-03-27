@@ -1,6 +1,6 @@
 """Tests for Anthropic receipt parser."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -43,7 +43,7 @@ class TestAnthropicParser:
 
         assert isinstance(receipt, AnthropicReceipt)
         assert receipt.amount == Decimal("90.28")
-        assert receipt.charge_date == datetime(2025, 12, 15)
+        assert receipt.charge_date == datetime(2025, 12, 15, tzinfo=UTC)
         assert receipt.invoice_number == "OKBBHMMB-0145"
         assert receipt.receipt_number == "2554-1935-9612"
 
@@ -54,7 +54,7 @@ class TestAnthropicParser:
 
         assert isinstance(receipt, AnthropicReceipt)
         assert receipt.amount == Decimal("45.00")
-        assert receipt.charge_date == datetime(2025, 1, 1)
+        assert receipt.charge_date == datetime(2025, 1, 1, tzinfo=UTC)
         assert receipt.invoice_number is None
         assert receipt.receipt_number is None
 
@@ -84,9 +84,9 @@ class TestAnthropicParser:
     @pytest.mark.parametrize(
         ("date_str", "expected_date"),
         [
-            ("Paid January 15, 2025", datetime(2025, 1, 15)),
-            ("Paid February 1, 2025", datetime(2025, 2, 1)),
-            ("Paid December 31, 2024", datetime(2024, 12, 31)),
+            ("Paid January 15, 2025", datetime(2025, 1, 15, tzinfo=UTC)),
+            ("Paid February 1, 2025", datetime(2025, 2, 1, tzinfo=UTC)),
+            ("Paid December 31, 2024", datetime(2024, 12, 31, tzinfo=UTC)),
         ],
     )
     def test_parse_date_formats(self, make_email, date_str, expected_date):

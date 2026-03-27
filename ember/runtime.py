@@ -143,6 +143,7 @@ class EmberRuntime:
         await self.stop()
         replacement = await EmberRuntime.create(self._settings)
         self.__dict__.update(replacement.__dict__)
+        await self.start()
 
     async def _loop(self) -> None:
         """Main event loop - poll Matrix and run agent."""

@@ -73,7 +73,8 @@ def parse_doordash_subject(subject: str) -> DoorDashEmail:
     if m := re.search(r"receipt for \w+ from (.+)$", subject):
         return DoorDashEmail(restaurant=m.group(1), email_type=DoorDashEmailType.RECEIPT)
 
-    raise DoorDashParseError(f"Unrecognized DoorDash email subject: {subject}")
+    msg = f"Unrecognized DoorDash email subject: {subject}"
+    raise DoorDashParseError(msg)
 
 
 class DoorDashPlanner:

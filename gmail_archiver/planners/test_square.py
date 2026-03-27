@@ -1,6 +1,6 @@
 """Tests for Square receipt parser."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest_bazel
@@ -34,8 +34,8 @@ class TestSquareReceiptParser:
         assert result.amount == Decimal("27.78")
         assert result.card_type == "Visa"
         assert result.card_last4 == "6915"
-        assert result.transaction_datetime == datetime(2023, 3, 16, 10, 26)
-        assert result.email_date == datetime(2023, 3, 16, 17, 31, 44)
+        assert result.transaction_datetime == datetime(2023, 3, 16, 10, 26, tzinfo=UTC)
+        assert result.email_date == datetime(2023, 3, 16, 17, 31, 44, tzinfo=UTC)
 
     def test_parse_different_card_type(self, make_email):
         email = make_email(

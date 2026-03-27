@@ -275,7 +275,8 @@ class GitRoServer(SimpleFastMCP):
             elif isinstance(obj_any, pygit2.Commit):
                 obj = obj_any
             else:
-                raise TypeError(f"Expected commit or tag, got {type(obj_any).__name__} for {objspec!r}")
+                msg = f"Expected commit or tag, got {type(obj_any).__name__} for {objspec!r}"
+                raise TypeError(msg)
 
             # Build commit diff against first parent (or empty tree)
             if obj.parents:
@@ -340,7 +341,8 @@ class GitRoServer(SimpleFastMCP):
                     entry = conflict_entries.get(stage)
 
                 if entry is None:
-                    raise FileNotFoundError(f"Index entry not found: {objspec}")
+                    msg = f"Index entry not found: {objspec}"
+                    raise FileNotFoundError(msg)
                 blob = state[entry.id].peel(pygit2.Blob)
                 text = blob.data.decode("utf-8")
                 return apply_text_slice(text, input.slice)
@@ -359,11 +361,12 @@ class GitRoServer(SimpleFastMCP):
                         entries_here = sorted(e.name for e in cur if e.name is not None)
                         at_root = not traversed
                         location = "repository root" if at_root else f"'{'/'.join(traversed)}'"
-                        raise FileNotFoundError(
+                        msg = (
                             f"'{part}' not found at {location}. "
                             f"Path must be relative to repository root. "
                             f"Entries at {location}: {entries_here}"
-                        ) from None
+                        )
+                        raise FileNotFoundError(msg) from None
                     traversed.append(part)
                     if tree_entry.filemode == pygit2.GIT_FILEMODE_TREE:
                         cur = state[tree_entry.id].peel(pygit2.Tree)
@@ -371,7 +374,8 @@ class GitRoServer(SimpleFastMCP):
                         blob = state[tree_entry.id].peel(pygit2.Blob)
                         text = blob.data.decode("utf-8")
                         return apply_text_slice(text, input.slice)
-                raise FileNotFoundError(f"Path not found in tree: {path}")
+                msg = f"Path not found in tree: {path}"
+                raise FileNotFoundError(msg)
 
             # Raw OID or other ref - read object directly
             obj = state.revparse_single(objspec)
@@ -393,7 +397,8 @@ class GitRoServer(SimpleFastMCP):
                 # List tree entries
                 lines = [f"{e.filemode:06o} {e.type_str} {e.id}\t{e.name}" for e in obj]
                 return apply_text_slice("\n".join(lines), input.slice)
-            raise TypeError(f"Unsupported object type: {type(obj).__name__}")
+            msg = f"Unsupported object type: {type(obj).__name__}"
+            raise TypeError(msg)
 
         self.cat_file_tool = self.flat_model()(cat_file)
 

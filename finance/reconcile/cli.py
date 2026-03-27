@@ -101,7 +101,7 @@ def add_external_to_gnucash(external_transaction, book, account_of_interest, ext
     currency = book.get_table().lookup("ISO4217", "CHF")
     tx.SetCurrency(currency)
     tx.SetDescription(external_transaction.description)
-    tx.SetNotes(f"Imported at {datetime.datetime.now()}")
+    tx.SetNotes(f"Imported at {datetime.datetime.now(tz=datetime.UTC)}")
 
     split_in_splitwise = gnucash.Split(book)
     split_in_splitwise.SetParent(tx)
@@ -143,7 +143,8 @@ def main(_):
     with gnucash_util.gnucash_session(config["reconcile"]["gnucash_book_path"]) as session:
         for reconcile_config in config["reconcile"]["mappings"]:
             if "gnucash_account_path" not in reconcile_config:
-                raise Exception("no gnucash_account_path")
+                msg = "no gnucash_account_path"
+                raise Exception(msg)
 
             gnucash_account_path = reconcile_config["gnucash_account_path"]
             print("Reconciling", gnucash_account_path)
@@ -158,11 +159,16 @@ def main(_):
                 prefix = "splitwise"
                 id_regex = "([0-9]+)"
             else:
-                raise Exception(f"no way to reconcile: {reconcile_config}")
+                msg = f"no way to reconcile: {reconcile_config}"
+                raise Exception(msg)
 
             # 'start_date' sets date at which mapping starts
             if "start_date" in reconcile_config:
-                start_date = datetime.datetime.strptime(reconcile_config["start_date"], "%Y-%m-%d").date()
+                start_date = (
+                    datetime.datetime.strptime(reconcile_config["start_date"], "%Y-%m-%d")
+                    .replace(tzinfo=datetime.UTC)
+                    .date()
+                )
 
                 external_transaction_by_external_id = {
                     external_id: external_transaction
@@ -218,7 +224,8 @@ def main(_):
                 # >>> t.GetCurrency().get_fullname() --> 'Swiss Franc'
 
             if errors > 0:
-                raise Exception(f"{errors} errors")
+                msg = f"{errors} errors"
+                raise Exception(msg)
 
             unmatched_ids = set(external_transaction_by_external_id.keys()) - matched_external_ids
             print()

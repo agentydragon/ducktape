@@ -24,7 +24,8 @@ def gnc_numeric_to_python_decimal(numeric):
     copy = gnucash.GncNumeric(numeric.num(), numeric.denom())
     result = copy.to_decimal(None)
     if not result:
-        raise Exception(f"gnc numeric value {copy.to_string()} can't be converted to decimal")
+        msg = f"gnc numeric value {copy.to_string()} can't be converted to decimal"
+        raise Exception(msg)
     digit_tuple = tuple(int(char) for char in str(copy.num()) if char != "-")
     denominator = copy.denom()
     exponent = int(math.log10(denominator))
