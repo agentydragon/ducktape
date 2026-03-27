@@ -63,7 +63,10 @@ select = [
     "N",     # naming
     "PERF",  # perflint
     "FAST",  # FastAPI best practices
-    "TRY004", # prefer TypeError for type checks
+    # TRY004 disabled: isinstance() checks are used for state validation (e.g.,
+    # "mount not active", "app resources not initialized"), not just type narrowing.
+    # TRY004 blindly converts these to TypeError, which is semantically wrong —
+    # a mount being in the wrong lifecycle state is a RuntimeError, not a type error.
     "EXE",   # shebang/executable consistency
     "RUF"    # ruff-specific
 ]

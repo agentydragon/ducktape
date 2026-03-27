@@ -66,7 +66,7 @@ app = create_app()
 
 
 @app.get("/", response_class=HTMLResponse)
-async def root(request: Request, session: str | None = Cookie(None), csrf_protect: CsrfProtect = Depends()):
+async def root(request: Request, session: str | None = Cookie(default=None), csrf_protect: CsrfProtect = Depends()):
     """Root endpoint with service information and authentication options."""
     # Check if already authenticated via cookie
     if session:

@@ -373,7 +373,7 @@ class MatrixClient:
         alias = RoomAlias(identifier)
         response = await self._client.room_resolve_alias(str(alias))
         if isinstance(response, RoomResolveAliasError):
-            raise TypeError(f"Failed to resolve Matrix alias {alias}: {response.message}")
+            raise RuntimeError(f"Failed to resolve Matrix alias {alias}: {response.message}")
         if not isinstance(response, RoomResolveAliasResponse) or not response.room_id:
             raise RuntimeError(f"Matrix alias {alias} returned no room_id")
         return RoomID(response.room_id)
@@ -396,7 +396,7 @@ class MatrixClient:
 
         whoami = await client.whoami()
         if isinstance(whoami, WhoamiError):
-            raise TypeError(f"Matrix whoami failed: {whoami.message}")
+            raise RuntimeError(f"Matrix whoami failed: {whoami.message}")
         if not isinstance(whoami, WhoamiResponse) or not whoami.user_id:
             raise RuntimeError("Matrix whoami response missing user_id")
 

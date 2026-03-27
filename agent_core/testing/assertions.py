@@ -35,7 +35,7 @@ def get_last_function_output[T: BaseModel](req: ResponsesRequest, output_type: t
         ValueError: If structured content is missing or result is an error
     """
     if isinstance(req.input, str):
-        raise TypeError("Cannot extract from string input")
+        raise RuntimeError("Cannot extract from string input")
 
     # Find last FunctionCallOutputItem with output
     for item in reversed(req.input):

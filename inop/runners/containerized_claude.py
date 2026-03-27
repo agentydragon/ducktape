@@ -80,7 +80,7 @@ def _monkey_patch_claude_sdk_for_containerization():
 
     def _patched_find_cli(self) -> str:
         if not isinstance(self._options, ContainerizedClaudeCodeOptions):
-            raise TypeError("No claude_binary in options")
+            raise RuntimeError("No claude_binary in options")
         bin_path = self._options.claude_binary
         if not bin_path:
             raise RuntimeError("claude_binary not set in options")

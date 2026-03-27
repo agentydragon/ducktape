@@ -264,6 +264,7 @@ py_test(
         "testdata/ruff_repo/ruff.toml",
         "@multitool//tools/ruff",
     ],
+    env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
     imports = ["../../.."],
     deps = [
         ":hook_daemon_conftest",
@@ -274,5 +275,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )

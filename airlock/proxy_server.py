@@ -423,7 +423,7 @@ class AirlockServer(EnhancedFastMCP):
         if action is None:
             raise ValueError(f"Action not found: {key.session_key}/{key.action_seq}")
         if not isinstance(action.state, PendingState):
-            raise TypeError(f"Action {key.session_key}/{key.action_seq} is not pending ({action.state.status=})")
+            raise ValueError(f"Action {key.session_key}/{key.action_seq} is not pending ({action.state.status=})")
         fut = self._pending_decisions.get(key)
         if fut is None or fut.done():
             raise ValueError(f"Action {key.session_key}/{key.action_seq} is not awaiting a human decision")
@@ -438,7 +438,7 @@ class AirlockServer(EnhancedFastMCP):
         if action is None:
             raise ValueError(f"Action not found: {key.session_key}/{key.action_seq}")
         if not isinstance(action.state, PendingState):
-            raise TypeError(f"Action {key.session_key}/{key.action_seq} is not pending ({action.state.status=})")
+            raise ValueError(f"Action {key.session_key}/{key.action_seq} is not pending ({action.state.status=})")
         result = await self._update_and_notify(key, WithdrawnState(), WithdrawnDetail())
         fut = self._pending_decisions.pop(key, None)
         if fut is not None and not fut.done():

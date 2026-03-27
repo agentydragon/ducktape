@@ -5,16 +5,32 @@ it does NOT persist import removal to disk, and the hook output correctly
 characterizes the situation.
 """
 
+import os
 import shutil
 from pathlib import Path
 from textwrap import dedent
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput
 from devinfra.claude.hook_daemon.conftest import init_git_repo, write_precommit_config
 from devinfra.claude.hook_daemon.post_tool_use import evaluate
+
+
+def _find_ruff() -> str:
+    """Resolve ruff binary via RUFF_BIN env var (rlocation) or PATH fallback."""
+    if env_val := os.environ.get("RUFF_BIN"):
+        r = Runfiles.Create()
+        if r and (resolved := r.Rlocation(env_val)):
+            return resolved
+        if Path(env_val).exists():
+            return env_val
+    if which_path := shutil.which("ruff"):
+        return which_path
+    raise FileNotFoundError("ruff binary not found (set RUFF_BIN or add to PATH)")
+
 
 _COMMON_INPUT = {
     "session_id": "test-session",
@@ -35,8 +51,7 @@ def ruff_repo(tmp_path: Path) -> Path:
     repo_path = tmp_path / "repo"
     shutil.copytree(_TESTDATA, repo_path)
 
-    ruff_path = shutil.which("ruff")
-    assert ruff_path is not None, "ruff binary not found on PATH (expected via @multitool//tools/ruff data dep)"
+    ruff_path = _find_ruff()
 
     write_precommit_config(
         repo_path,

@@ -29,7 +29,7 @@ Csrf = Annotated[CsrfProtect, Depends()]
 
 
 async def _get_admin_session(
-    session_token: Annotated[str | None, Cookie(None, alias=ADMIN_SESSION_COOKIE)], db_session: DbSession
+    db_session: DbSession, session_token: Annotated[str | None, Cookie(alias=ADMIN_SESSION_COOKIE)] = None
 ) -> AdminSession:
     if not session_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
@@ -125,10 +125,10 @@ async def new_key_form(request: Request, admin_session: AdminSessionDep, csrf_pr
 @router.post("/admin/keys/new", response_class=HTMLResponse)
 async def create_key(
     request: Request,
-    description: Annotated[str, Form("")],
     admin_session: AdminSessionDep,
     db_session: DbSession,
     csrf_protect: Csrf,
+    description: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
     await csrf_protect.validate_csrf(request)
     key = AuthKey(key_value=uuid.uuid4().hex, description=description or None, created_at=datetime.now())
