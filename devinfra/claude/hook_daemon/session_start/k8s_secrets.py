@@ -12,6 +12,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlparse
 
 import yaml
 from kubernetes import client as k8s_client
@@ -99,7 +100,16 @@ def setup_k8s_secrets(
         client_config.verify_ssl = True
     effective_proxy = proxy or os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
     if effective_proxy:
-        client_config.proxy = effective_proxy
+        # urllib3 v2 ProxyManager does not auto-send Proxy-Authorization for HTTPS CONNECT
+        # tunnels when credentials are embedded in the proxy URL. Extract them explicitly.
+        parsed = urlparse(effective_proxy)
+        if parsed.username:
+            creds = f"{parsed.username}:{parsed.password}"
+            auth = base64.b64encode(creds.encode()).decode()
+            client_config.proxy_headers = {"Proxy-Authorization": f"Basic {auth}"}
+            client_config.proxy = parsed._replace(netloc=f"{parsed.hostname}:{parsed.port}").geturl()
+        else:
+            client_config.proxy = effective_proxy
 
     api = CoreV1Api(k8s_client.ApiClient(client_config))
 
