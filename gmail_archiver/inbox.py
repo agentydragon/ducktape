@@ -20,7 +20,7 @@ class GmailInbox:
     Planners use this interface to fetch messages without worrying about caching.
     """
 
-    def __init__(self, client: GmailClient, console: Console, cache_dir: Path, show_progress: bool = True):
+    def __init__(self, client: GmailClient, console: Console, cache_dir: Path, *, show_progress: bool = True):
         self.client = client
         self.console = console
         self.cache_dir = cache_dir

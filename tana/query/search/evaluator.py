@@ -25,7 +25,12 @@ class SearchEvaluator:
     """Evaluates search expressions against a TanaGraph."""
 
     def __init__(
-        self, store: TanaGraph, skip_trash: bool = True, skip_deleted: bool = True, parent_node: BaseNode | None = None
+        self,
+        store: TanaGraph,
+        *,
+        skip_trash: bool = True,
+        skip_deleted: bool = True,
+        parent_node: BaseNode | None = None,
     ):
         """
         Initialize the search evaluator.
@@ -78,7 +83,7 @@ class SearchEvaluator:
             return
 
         # Use the existing filter_by_tag function
-        yield from filter_by_tag(self.store, tag_node.name, self.skip_trash, self.skip_deleted)
+        yield from filter_by_tag(self.store, tag_node.name, skip_trash=self.skip_trash, skip_deleted=self.skip_deleted)
 
     def _evaluate_type(self, type_node_id: NodeId) -> Iterator[BaseNode]:
         """
@@ -100,7 +105,7 @@ class SearchEvaluator:
         def matches_type(node: BaseNode) -> bool:
             return node.props.doc_type == doc_type
 
-        yield from filter_nodes(self.store, matches_type, self.skip_trash, self.skip_deleted)
+        yield from filter_nodes(self.store, matches_type, skip_trash=self.skip_trash, skip_deleted=self.skip_deleted)
 
     def _evaluate_text(self, text: str) -> Iterator[BaseNode]:
         """
@@ -123,7 +128,7 @@ class SearchEvaluator:
         def matches_text(node: BaseNode) -> bool:
             return bool(node.name and text_lower in node.name.lower())
 
-        yield from filter_nodes(self.store, matches_text, self.skip_trash, self.skip_deleted)
+        yield from filter_nodes(self.store, matches_text, skip_trash=self.skip_trash, skip_deleted=self.skip_deleted)
 
     def _evaluate_field(self, field_name: str, values: list[str]) -> Iterator[BaseNode]:
         """
@@ -194,7 +199,9 @@ class SearchEvaluator:
             def not_excluded(node: BaseNode) -> bool:
                 return node.id not in excluded_ids
 
-            yield from filter_nodes(self.store, not_excluded, self.skip_trash, self.skip_deleted)
+            yield from filter_nodes(
+                self.store, not_excluded, skip_trash=self.skip_trash, skip_deleted=self.skip_deleted
+            )
 
     def _get_descendants(self, node: BaseNode) -> set[NodeId]:
         """

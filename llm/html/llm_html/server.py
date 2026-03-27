@@ -185,7 +185,7 @@ for page_name in MARKDOWN_PAGES:
 
 
 async def analyze_page_tokens(
-    page_id: str, markdown_path: Path, title: str, url: str, is_index: bool = False
+    page_id: str, markdown_path: Path, title: str, url: str, *, is_index: bool = False
 ) -> dict[str, Any] | None:
     """Analyze a single page's token counts by simulating the full rendering pipeline."""
     try:

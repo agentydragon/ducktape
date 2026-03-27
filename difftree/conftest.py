@@ -29,6 +29,7 @@ ColorSystem = Literal["auto", "standard", "256", "truecolor", "windows"] | None
 def render_to_string(
     renderable,
     width: int = 80,
+    *,
     force_terminal: bool = True,
     legacy_windows: bool = False,
     color_system: ColorSystem = "standard",

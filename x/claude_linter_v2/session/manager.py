@@ -153,7 +153,7 @@ class SessionManager:
 
         return affected
 
-    def list_sessions(self, all_dirs: bool = False) -> list[SessionData]:
+    def list_sessions(self, *, all_dirs: bool = False) -> list[SessionData]:
         """List all sessions."""
         current_dir = Path.cwd().resolve()
         results = []

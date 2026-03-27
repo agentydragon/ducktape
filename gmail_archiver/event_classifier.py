@@ -95,7 +95,7 @@ class EmailTemplateExtractor:
         self.client = openai.AsyncOpenAI(api_key=api_key or os.environ.get("OPENAI_API_KEY"))
         self.cache = TemplateExtractionCache()
 
-    async def extract(self, email: Email, use_cache: bool = True) -> EmailTemplateExtraction:
+    async def extract(self, email: Email, *, use_cache: bool = True) -> EmailTemplateExtraction:
         if use_cache and (cached := self.cache.get(email.id)):
             return cached
 
@@ -171,7 +171,7 @@ CONFIDENCE GUIDELINES:
         return classification
 
     async def extract_batch(
-        self, emails: Sequence[Email], use_cache: bool = True, max_concurrent: int = 10
+        self, emails: Sequence[Email], *, use_cache: bool = True, max_concurrent: int = 10
     ) -> list[tuple[str, EmailTemplateExtraction]]:
         semaphore = asyncio.Semaphore(max_concurrent)
 

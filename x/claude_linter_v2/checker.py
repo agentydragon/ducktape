@@ -16,7 +16,7 @@ class FileChecker:
     """Checks files for violations and optionally fixes them."""
 
     def __init__(
-        self, fix: bool = False, categories: list[AutofixCategory] | None = None, verbose: bool = False
+        self, *, fix: bool = False, categories: list[AutofixCategory] | None = None, verbose: bool = False
     ) -> None:
         """
         Initialize the file checker.

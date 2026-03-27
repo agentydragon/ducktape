@@ -761,7 +761,7 @@ async def run_eval(
     scores_by_source: dict[str, list[float]] = {"ccr": [], "crush": []}
     tool_stats_by_source: dict[str, ToolStats] = {"ccr": ToolStats(), "crush": ToolStats()}
 
-    def compute_and_write_summary(_final: bool = False) -> dict[str, Any]:
+    def compute_and_write_summary(*, _final: bool = False) -> dict[str, Any]:
         # Compute metrics for overall and per-source stats
         overall_metrics = tool_stats.compute_metrics()
 
@@ -835,7 +835,7 @@ async def run_eval(
                     if source in scores_by_source:
                         scores_by_source[source].append(score)
                     counters.processed += 1
-                    summary_data = compute_and_write_summary(False)
+                    summary_data = compute_and_write_summary(_final=False)
                     print(
                         json.dumps(
                             {
@@ -855,7 +855,7 @@ async def run_eval(
                     log_event({"status": "aggregate_parse_error", "error": str(e)})
 
     # Final summary after all grades
-    s_final = compute_and_write_summary(True)
+    s_final = compute_and_write_summary(_final=True)
     log_event(
         {
             "event": "summary_final",

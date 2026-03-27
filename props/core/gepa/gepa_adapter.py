@@ -173,6 +173,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
         db: Database,
         run_dir: Path,
         reflection_model: str | None = None,
+        *,
         verbose: bool = False,
         max_parallelism: int = 20,
     ):
@@ -354,7 +355,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
         self.propose_new_texts = propose_new_texts
 
     def evaluate(
-        self, batch: list[Example], candidate: dict[str, str], capture_traces: bool = False
+        self, batch: list[Example], candidate: dict[str, str], *, capture_traces: bool = False
     ) -> gepa.EvaluationBatch[CriticTrajectory, CriticOutput]:
         """Evaluate a prompt candidate on a batch of specimens.
 

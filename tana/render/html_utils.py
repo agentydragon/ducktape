@@ -85,6 +85,7 @@ def process_inline_refs(
     text: str,
     node_formatter: Callable[[str], str] | None = None,
     date_formatter: Callable[[str], str] | None = None,
+    *,
     unescape: bool = True,
 ) -> str:
     """node_formatter takes node ID, date_formatter takes ISO date string."""

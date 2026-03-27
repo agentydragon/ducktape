@@ -219,11 +219,11 @@ class SupervisorClient:
         """Remove a process group. Returns True on success."""
         return bool(await self._call("supervisor.removeProcessGroup", name))
 
-    async def start_process(self, name: str, wait: bool = True) -> bool:
+    async def start_process(self, name: str, *, wait: bool = True) -> bool:
         """Start a process. Returns True on success."""
         return bool(await self._call("supervisor.startProcess", name, wait))
 
-    async def stop_process(self, name: str, wait: bool = True) -> bool:
+    async def stop_process(self, name: str, *, wait: bool = True) -> bool:
         """Stop a process. Returns True on success."""
         return bool(await self._call("supervisor.stopProcess", name, wait))
 

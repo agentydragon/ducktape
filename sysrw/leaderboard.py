@@ -222,7 +222,7 @@ def format_rich_table(rows: list[Row]) -> Table:
 
 
 def generate(
-    runs_dir: Path, sort_key: str = "mean", asc: bool = False, limit: int | None = None
+    runs_dir: Path, sort_key: str = "mean", *, asc: bool = False, limit: int | None = None
 ) -> tuple[Table, list[str], list[str]]:
     # Build mapping from packaged templates/ only (stable names)
     known = load_known_templates()

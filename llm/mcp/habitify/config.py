@@ -5,7 +5,7 @@ import os
 from dotenv import load_dotenv
 
 
-def load_api_key(exit_on_missing: bool = True) -> str | None:
+def load_api_key(*, exit_on_missing: bool = True) -> str | None:
     """Load the Habitify API key from environment.
 
     Returns the API key if found, None if not found and exit_on_missing is False.

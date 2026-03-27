@@ -51,7 +51,7 @@ class DualOutputLogging:
     """Utility class for setting up structured logging with dual output."""
 
     @staticmethod
-    def setup_logging(logs_dir: str = "logs", log_filename: str = "optimizer.jsonl", verbose: bool = False) -> None:
+    def setup_logging(logs_dir: str = "logs", log_filename: str = "optimizer.jsonl", *, verbose: bool = False) -> None:
         """Configure structlog with dual output: pretty console + structured file logs.
 
         Args:

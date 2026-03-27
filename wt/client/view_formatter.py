@@ -62,6 +62,7 @@ class ViewFormatter:
         self,
         pr_state: PRState,
         mergeability: Literal["mergeable", "conflicting", "unknown"],
+        *,
         is_draft: bool = False,
         merged_at: str | None = None,
     ) -> str:
@@ -109,7 +110,7 @@ class ViewFormatter:
                 lines_info = f" +{d.additions}/-{d.deletions}"
 
             pr_status_text = self.get_pr_status_text(
-                pr_state, self._mergeability_label(d.mergeable), d.draft, d.merged_at
+                pr_state, self._mergeability_label(d.mergeable), is_draft=d.draft, merged_at=d.merged_at
             )
 
             pr_status = f"{clickable_link} {pr_status_text}{lines_info}"
@@ -159,7 +160,9 @@ class ViewFormatter:
         if not isinstance(status.pr_info, PRInfoOk):
             return ""
         d = status.pr_info.pr_data
-        return self.get_pr_status_text(d.pr_state, self._mergeability_label(d.mergeable), d.draft, d.merged_at)
+        return self.get_pr_status_text(
+            d.pr_state, self._mergeability_label(d.mergeable), is_draft=d.draft, merged_at=d.merged_at
+        )
 
     def _get_pr_changes_column(self, status: StatusResult) -> str:
         """Get PR changes (+lines/-lines) column."""
@@ -283,7 +286,9 @@ class ViewFormatter:
             )
 
             # Format detailed PR status
-            status_text = self.get_pr_status_text(pr_state, self._mergeability_label(d.mergeable), d.draft, d.merged_at)
+            status_text = self.get_pr_status_text(
+                pr_state, self._mergeability_label(d.mergeable), is_draft=d.draft, merged_at=d.merged_at
+            )
             if status_text in PR_STATUS_DISPLAY_MAP:
                 icon, message = PR_STATUS_DISPLAY_MAP[status_text]
                 click.echo(f"{icon} Status: This PR {message}")

@@ -271,7 +271,7 @@ class DecoratorMock(GeneratorMock):
     # "callable accepting same type as self" with classmethod factory pattern
     _play_fn: Callable[[DecoratorMock], PlayGen]
 
-    def __init__(self, play_fn: Callable[[DecoratorMock], PlayGen], check_consumed: bool = True) -> None:
+    def __init__(self, play_fn: Callable[[DecoratorMock], PlayGen], *, check_consumed: bool = True) -> None:
         self._play_fn = play_fn
         self._check_consumed = check_consumed
         super().__init__()

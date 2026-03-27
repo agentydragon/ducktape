@@ -27,7 +27,7 @@ RE_PULL_INDEX_OPTIONAL_STATUS = re.compile(
 )
 
 
-def user_headers(cookie: str = "", authz: str = "", admin: bool = False) -> dict[str, str]:
+def user_headers(cookie: str = "", authz: str = "", *, admin: bool = False) -> dict[str, str]:
     if admin and ADMIN_TOKEN:
         return {"Authorization": f"token {ADMIN_TOKEN}"}
     hdrs: dict[str, str] = {}

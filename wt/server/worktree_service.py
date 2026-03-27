@@ -118,7 +118,7 @@ class WorktreeService:
         """Get path for a worktree by name."""
         return config.worktrees_dir / name
 
-    async def remove_worktree(self, config: Configuration, name: str, force: bool = False) -> None:
+    async def remove_worktree(self, config: Configuration, name: str, *, force: bool = False) -> None:
         """Remove a worktree by name and clean up its directory."""
         validate_worktree_name(name)
         worktree_path = self.get_worktree_path(config, name)

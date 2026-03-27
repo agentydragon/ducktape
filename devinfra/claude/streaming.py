@@ -12,7 +12,7 @@ HEARTBEAT_INTERVAL_SECONDS = 5
 
 
 def run_streaming(
-    cmd: list[str | Path], operation: str | None = None, check: bool = True, env: dict[str, str] | None = None
+    cmd: list[str | Path], operation: str | None = None, *, check: bool = True, env: dict[str, str] | None = None
 ) -> int:
     """Run command with real-time streaming output.
 

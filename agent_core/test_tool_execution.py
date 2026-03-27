@@ -209,6 +209,7 @@ async def _run_malformed_json_test(
     mcp_tool_provider_echo,
     recording_handler,
     make_first_turn: Callable[[ResponsesFactory], ResponsesResult],
+    *,
     parallel: bool = False,
 ) -> tuple[str, list]:
     """Helper to run malformed JSON tests with custom first turn."""

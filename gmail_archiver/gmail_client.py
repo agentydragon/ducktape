@@ -230,7 +230,7 @@ class GmailClient:
         return results
 
     def get_messages_raw_batch(
-        self, message_ids: list[str], batch_size: int, retry_failures: bool = True
+        self, message_ids: list[str], batch_size: int, *, retry_failures: bool = True
     ) -> tuple[list[tuple[str, bytes]], list[tuple[str, str]]]:
         """Fetch raw message bytes using batch requests.
 
@@ -444,6 +444,7 @@ class GmailClient:
         label_name: str,
         batch_size: int = 1000,
         progress_callback: Callable[[int], None] | None = None,
+        *,
         archive: bool = False,
     ) -> tuple[list[str], list[tuple[str, str]]]:
         """Add label to multiple messages. Returns (successful_ids, failed_ids_with_errors)."""

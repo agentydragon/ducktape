@@ -156,7 +156,7 @@ async def handle_create_worktree(config, name: str, options: CreateWorktreeOptio
     emit_cd_command(new_path, main_repo=config.main_repo)
 
 
-async def handle_remove_worktree(config, name: str, force: bool = False) -> None:
+async def handle_remove_worktree(config, name: str, *, force: bool = False) -> None:
     """Handle worktree removal."""
     click.echo(f"🔍 Checking worktree '{name}' for removal...")
 

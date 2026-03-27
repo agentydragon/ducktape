@@ -126,7 +126,7 @@ def _extract_chat_messages(payload: dict[str, Any]) -> tuple[list[dict[str, Any]
     return (msgs or None), has_header
 
 
-def process_wire(path: Path, require_bad: bool = False) -> list[dict[str, Any]]:
+def process_wire(path: Path, *, require_bad: bool = False) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     lines = 0
     kept = 0

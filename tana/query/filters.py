@@ -9,7 +9,7 @@ from tana.query.nodes import get_field_values, is_in_deleted_nodes
 
 
 def filter_nodes(
-    store: TanaGraph, predicate: Callable[[BaseNode], bool], skip_trash: bool = True, skip_deleted: bool = True
+    store: TanaGraph, predicate: Callable[[BaseNode], bool], *, skip_trash: bool = True, skip_deleted: bool = True
 ) -> Iterator[BaseNode]:
     """
     Filter nodes in a TanaGraph based on a predicate function.
@@ -38,7 +38,7 @@ def filter_nodes(
 
 
 def filter_by_tag(
-    store: TanaGraph, tag_name: str, skip_trash: bool = True, skip_deleted: bool = True
+    store: TanaGraph, tag_name: str, *, skip_trash: bool = True, skip_deleted: bool = True
 ) -> Iterator[BaseNode]:
     """
     Filter nodes by supertag.
@@ -58,7 +58,7 @@ def filter_by_tag(
     def has_tag(node: BaseNode) -> bool:
         return store.has_supertag(node.id, tag_name)
 
-    return filter_nodes(store, has_tag, skip_trash, skip_deleted)
+    return filter_nodes(store, has_tag, skip_trash=skip_trash, skip_deleted=skip_deleted)
 
 
 def filter_by_field_value(
@@ -66,6 +66,7 @@ def filter_by_field_value(
     field_name: str,
     allowed_values: set[str] | None = None,
     excluded_values: set[str] | None = None,
+    *,
     skip_trash: bool = True,
     skip_deleted: bool = True,
 ) -> Iterator[BaseNode]:
@@ -95,7 +96,7 @@ def filter_by_field_value(
 
         return not (excluded_values and values & excluded_values)
 
-    return filter_nodes(store, matches_criteria, skip_trash, skip_deleted)
+    return filter_nodes(store, matches_criteria, skip_trash=skip_trash, skip_deleted=skip_deleted)
 
 
 def filter_open_issues(store: TanaGraph) -> Iterator[NodeId]:

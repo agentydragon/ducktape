@@ -126,7 +126,7 @@ class ConfigBuilder:
         self._preset = preset
         return self
 
-    def with_github(self, repo: str = "test-user/test-repo", enabled: bool = True):
+    def with_github(self, repo: str = "test-user/test-repo", *, enabled: bool = True):
         """Configure GitHub integration."""
         self._overrides.update({"github_enabled": enabled, "github_repo": repo})
         return self

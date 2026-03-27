@@ -248,7 +248,7 @@ Respond with ONLY a single integer representing your chosen action.
 Let's begin."""
 
     def _create_step_prompt(
-        self, state: np.ndarray, reward: float, action_space_size: int, first_step: bool = False
+        self, state: np.ndarray, reward: float, action_space_size: int, *, first_step: bool = False
     ) -> str:
         state_str = np.array2string(state, precision=4, suppress_small=True)
 
@@ -262,13 +262,13 @@ Available actions: {", ".join(str(i) for i in range(action_space_size))}
 Choose action:"""
 
     async def get_action(
-        self, state: np.ndarray, reward: float, action_space_size: int, first_step: bool = False
+        self, state: np.ndarray, reward: float, action_space_size: int, *, first_step: bool = False
     ) -> int:
         """Get action from LLM based on raw state data."""
         if not self.conversation_history:
             self.conversation_history.append(Message(role="system", content=self._create_initial_prompt()))
 
-        prompt = self._create_step_prompt(state, reward, action_space_size, first_step)
+        prompt = self._create_step_prompt(state, reward, action_space_size, first_step=first_step)
         self.conversation_history.append(Message(role="user", content=prompt))
 
         messages_dict = [msg.model_dump() for msg in self.conversation_history]

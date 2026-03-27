@@ -9,7 +9,7 @@ HOOK_DISPATCH = "_main/devinfra/claude/hook_daemon/hook_dispatch"
 
 
 async def run_with_env_file(
-    command: str, env_file: Path, cwd: Path | None = None, check: bool = False, env: dict[str, str] | None = None
+    command: str, env_file: Path, cwd: Path | None = None, *, check: bool = False, env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
     """Run command in bash with env_file sourced (mimics Claude Code behavior).
 

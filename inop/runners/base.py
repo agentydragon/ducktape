@@ -60,7 +60,7 @@ class AgentRunner(ABC):
             RunnerEnvironment with type and data, or None if no environment.
         """
 
-    async def _clone_repository(self, git_setup: GitCloneConfig, target_dir: str, is_docker: bool = False) -> None:
+    async def _clone_repository(self, git_setup: GitCloneConfig, target_dir: str, *, is_docker: bool = False) -> None:
         """Clone a git repository using shallow clone to specific commit.
 
         This method clones directly into the target directory (workspace root),

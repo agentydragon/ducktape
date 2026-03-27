@@ -27,47 +27,47 @@ def fresh_ui_state():
 
 
 @pytest.fixture
-def make_tool_result() -> Callable[[dict[str, Any] | None, bool], ToolResult]:
+def make_tool_result() -> Callable[..., ToolResult]:
     """Factory for ToolResult (agent_core internal type)."""
 
-    def _make(structured_content: dict[str, Any] | None = None, is_error: bool = False) -> ToolResult:
+    def _make(structured_content: dict[str, Any] | None = None, *, is_error: bool = False) -> ToolResult:
         return ToolResult(structured_content=structured_content or {}, is_error=is_error)
 
     return _make
 
 
 @pytest.fixture
-def make_call_result() -> Callable[[dict[str, Any] | None, bool], mcp.types.CallToolResult]:
+def make_call_result() -> Callable[..., mcp.types.CallToolResult]:
     """Factory for MCP CallToolResult (protocol type)."""
 
-    def _make(structured_content: dict[str, Any] | None = None, is_error: bool = False) -> mcp.types.CallToolResult:
+    def _make(structured_content: dict[str, Any] | None = None, *, is_error: bool = False) -> mcp.types.CallToolResult:
         return mcp.types.CallToolResult(content=[], structuredContent=structured_content or {}, isError=is_error)
 
     return _make
 
 
 @pytest.fixture
-def make_tool_call_output(
-    make_tool_result: Callable[[dict[str, Any] | None, bool], ToolResult],
-) -> Callable[[str, dict[str, Any] | None, bool], ToolCallOutput]:
+def make_tool_call_output(make_tool_result: Callable[..., ToolResult]) -> Callable[..., ToolCallOutput]:
     """Factory for ToolCallOutput events."""
 
-    def _make(call_id: str, structured_content: dict[str, Any] | None = None, is_error: bool = False) -> ToolCallOutput:
-        return ToolCallOutput(call_id=call_id, result=make_tool_result(structured_content, is_error))
+    def _make(
+        call_id: str, structured_content: dict[str, Any] | None = None, *, is_error: bool = False
+    ) -> ToolCallOutput:
+        return ToolCallOutput(call_id=call_id, result=make_tool_result(structured_content, is_error=is_error))
 
     return _make
 
 
 @pytest.fixture
 def make_function_output(
-    make_call_result: Callable[[dict[str, Any] | None, bool], mcp.types.CallToolResult],
-) -> Callable[[str, dict[str, Any] | None, bool], FunctionCallOutput]:
+    make_call_result: Callable[..., mcp.types.CallToolResult],
+) -> Callable[..., FunctionCallOutput]:
     """Factory for protocol FunctionCallOutput (not EventRecord)."""
 
     def _make(
-        call_id: str, structured_content: dict[str, Any] | None = None, is_error: bool = False
+        call_id: str, structured_content: dict[str, Any] | None = None, *, is_error: bool = False
     ) -> FunctionCallOutput:
-        return FunctionCallOutput(call_id=call_id, result=make_call_result(structured_content, is_error))
+        return FunctionCallOutput(call_id=call_id, result=make_call_result(structured_content, is_error=is_error))
 
     return _make
 
@@ -122,11 +122,11 @@ def make_tool_call_event(
 @pytest.fixture
 def make_function_output_event(
     make_event_record: Callable[[EventType, int | None], EventRecord],
-    make_tool_call_output: Callable[[str, dict[str, Any] | None, bool], ToolCallOutput],
+    make_tool_call_output: Callable[..., ToolCallOutput],
 ) -> Callable[[int, str, dict[str, Any] | None], EventRecord]:
     """Factory for ToolCallOutput EventRecord."""
 
     def _make(seq: int, call_id: str, structured_content: dict[str, Any] | None = None) -> EventRecord:
-        return make_event_record(make_tool_call_output(call_id, structured_content, False), seq)
+        return make_event_record(make_tool_call_output(call_id, structured_content, is_error=False), seq)
 
     return _make

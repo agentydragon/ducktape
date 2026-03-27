@@ -182,7 +182,7 @@ def list_habits(
     asyncio.run(_list_habits_async(include_archived=include_archived, api_key=api_key))
 
 
-async def _list_habits_async(include_archived: bool = False, api_key: str | None = None) -> None:
+async def _list_habits_async(*, include_archived: bool = False, api_key: str | None = None) -> None:
     """Async implementation of the list command."""
     # Get API key from command line or environment
     habitify_api_key = get_api_key_from_param_or_env(api_key)

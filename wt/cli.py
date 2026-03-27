@@ -119,10 +119,10 @@ def _root(
                 )
             )
         else:
-            asyncio.run(_async_main(effective_verbose))
+            asyncio.run(_async_main(verbose=effective_verbose))
 
 
-def _create_cli_dependencies(verbose: bool = False):
+def _create_cli_dependencies(*, verbose: bool = False):
     """Create common CLI dependencies."""
     config = load_config()
     formatter = ViewFormatter(daemon_log_path=config.daemon_log_file)
@@ -139,7 +139,7 @@ class ShellDispatchContext:
     ctx: typer.Context
 
 
-async def _async_main(verbose: bool = False):
+async def _async_main(*, verbose: bool = False):
     """Async main function."""
     _config, formatter, daemon_client = _create_cli_dependencies(verbose=verbose)
     await handle_status(daemon_client, formatter)
@@ -160,7 +160,7 @@ async def _cmd_rm(config, remaining_args, ctx, **_):
         click.echo("Error: rm requires a worktree name")
         ctx.exit(1)
         return
-    await handle_remove_worktree(config, name, force)
+    await handle_remove_worktree(config, name, force=force)
 
 
 async def _cmd_cp(config, remaining_args, ctx, **_):

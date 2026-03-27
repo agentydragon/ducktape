@@ -85,7 +85,7 @@ def validate_openai_strict_mode_schema(schema: dict[str, Any], model_name: str =
     """
     errors: list[str] = []
 
-    def check_recursive(obj: Any, path: str = "", is_property_root: bool = False, inside_defs: bool = False) -> None:
+    def check_recursive(obj: Any, path: str = "", *, is_property_root: bool = False, inside_defs: bool = False) -> None:
         """Recursively check schema object for violations.
 
         Args:

@@ -192,7 +192,7 @@ class GitManager:
         except subprocess.CalledProcessError as e:
             raise WorktreeCreateError(f"git worktree add failed: {e.stderr.decode(errors='replace').strip()}") from e
 
-    def worktree_remove(self, path: Path, force: bool = False) -> None:
+    def worktree_remove(self, path: Path, *, force: bool = False) -> None:
         path_obj = path
         args: list[str | os.PathLike[str]] = ["worktree", "remove"]
         if force:

@@ -42,7 +42,7 @@ class PythonRuffLinter:
             raise RuntimeError("ruff binary not found. Set RUFF_BIN env var or add ruff to PATH.")
         self._ruff_bin: str = ruff_bin
 
-    def check_code(self, code: str, file_path: Path, critical_only: bool = True) -> list[Violation]:
+    def check_code(self, code: str, file_path: Path, *, critical_only: bool = True) -> list[Violation]:
         """Check Python code with ruff."""
         violations = []
 

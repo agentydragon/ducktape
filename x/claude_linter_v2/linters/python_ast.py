@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class PythonASTAnalyzer:
     """Analyzes Python AST for hard-blocked patterns."""
 
-    def __init__(self, bare_except: bool = True, getattr_setattr: bool = True, barrel_init: bool = True) -> None:
+    def __init__(self, *, bare_except: bool = True, getattr_setattr: bool = True, barrel_init: bool = True) -> None:
         """
         Initialize the analyzer.
 

@@ -8,7 +8,7 @@ from difftree.parser import FileChange
 from difftree.tree import TreeNode, build_tree, sort_tree
 
 
-def _sorted_child_names(changes: list[FileChange], sort_by: SortMode, reverse: bool = True) -> list[str]:
+def _sorted_child_names(changes: list[FileChange], sort_by: SortMode, *, reverse: bool = True) -> list[str]:
     """Build tree, sort it, and return children names in order."""
     root = build_tree(changes)
     root = sort_tree(root, sort_by=sort_by, reverse=reverse)

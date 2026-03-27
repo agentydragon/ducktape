@@ -72,7 +72,7 @@ def _collect_display_columns(actions: Iterable[PlannedAction]) -> tuple[list[tup
     return columns, hide_subject
 
 
-def _create_table(title: str | None, custom_columns: list[tuple[str, str]], show_subject: bool = True) -> Table:
+def _create_table(title: str | None, custom_columns: list[tuple[str, str]], *, show_subject: bool = True) -> Table:
     """Build a Rich table with base and custom columns."""
     table = Table(title=title)
     table.add_column("Action", style="cyan")
@@ -111,7 +111,7 @@ def _format_date(metadata: GmailMessageWithHeaders) -> str:
     return local_dt.strftime("%Y-%m-%d %H:%M")
 
 
-def display_plan(plan: Plan, inbox: GmailInbox, console: Console, dry_run: bool, group_by_category: bool = False):
+def display_plan(plan: Plan, inbox: GmailInbox, console: Console, dry_run: bool, *, group_by_category: bool = False):
     if not plan.actions:
         console.print("[yellow]No actions planned[/yellow]")
         return
@@ -134,7 +134,9 @@ def display_plan(plan: Plan, inbox: GmailInbox, console: Console, dry_run: bool,
             table = _create_table(planner_name, custom_columns, show_subject=show_subject)
 
             for message_id, planned_action in items:
-                _add_table_row(table, inbox, message_id, planned_action, dry_run, custom_columns, show_subject)
+                _add_table_row(
+                    table, inbox, message_id, planned_action, dry_run, custom_columns, show_subject=show_subject
+                )
 
             console.print(table)
             console.print()
@@ -145,7 +147,7 @@ def display_plan(plan: Plan, inbox: GmailInbox, console: Console, dry_run: bool,
         table = _create_table("Inbox Cleanup - Action Plan", custom_columns, show_subject=show_subject)
 
         for message_id, planned_action in plan.actions.items():
-            _add_table_row(table, inbox, message_id, planned_action, dry_run, custom_columns, show_subject)
+            _add_table_row(table, inbox, message_id, planned_action, dry_run, custom_columns, show_subject=show_subject)
 
         console.print(table)
 
@@ -157,6 +159,7 @@ def _add_table_row(
     planned_action: PlannedAction,
     dry_run: bool,
     custom_columns: list[tuple[str, str]],
+    *,
     show_subject: bool = True,
 ):
     # Look up message metadata from inbox cache (fetches on demand if not cached)

@@ -35,7 +35,7 @@ async def seatbelt_session():
         yield server, sess
 
 
-def make_default_restrictive_policy(trace: bool = False) -> SBPLPolicy:
+def make_default_restrictive_policy(*, trace: bool = False) -> SBPLPolicy:
     return SBPLPolicy(
         default_behavior=DefaultBehavior.DENY,
         process=ProcessRule(allow_process_star=True, allow_signal_self=True),

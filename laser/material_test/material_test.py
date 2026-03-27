@@ -392,6 +392,7 @@ def _make_text(
     font_name: str,
     ah: HAlign = HAlign.LEFT,
     av: VAlign = VAlign.TOP,
+    *,
     rotate90ccw: bool = False,
 ) -> TextShape:
     xform = XForm.rotate90ccw(x, y) if rotate90ccw else XForm.translate(x, y)

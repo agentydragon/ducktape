@@ -118,7 +118,7 @@ def build_tree(changes: list[FileChange]) -> TreeNode:
     return to_frozen(root)
 
 
-def sort_tree(node: TreeNode, sort_by: SortMode = SortMode.SIZE, reverse: bool = True) -> TreeNode:
+def sort_tree(node: TreeNode, sort_by: SortMode = SortMode.SIZE, *, reverse: bool = True) -> TreeNode:
     """Return a new tree with nodes sorted according to the specified mode.
 
     Since TreeNode is immutable, this creates a new tree with sorted children.
@@ -127,7 +127,7 @@ def sort_tree(node: TreeNode, sort_by: SortMode = SortMode.SIZE, reverse: bool =
         return node
 
     # Recursively sort children
-    sorted_child_nodes = {name: sort_tree(child, sort_by, reverse) for name, child in node.children.items()}
+    sorted_child_nodes = {name: sort_tree(child, sort_by, reverse=reverse) for name, child in node.children.items()}
 
     # Sort the children dict
     if sort_by == SortMode.SIZE:

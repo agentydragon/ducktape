@@ -55,7 +55,7 @@ class OneLineProgressHandler(BaseHandler):
         self._render()
 
     # --- rendering ---
-    def _render(self, force: bool = False) -> None:
+    def _render(self, *, force: bool = False) -> None:
         # Throttle updates to ~20Hz to avoid noisy consoles
         now = monotonic()
         if not force and now - self._last_render < 0.05:

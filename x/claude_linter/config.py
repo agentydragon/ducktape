@@ -54,7 +54,7 @@ def merge_configs(user_cfg: dict[str, Any], local_cfg: dict[str, Any], fix: bool
     return merged
 
 
-def get_merged_config(paths: Sequence[str | Path], fix: bool = False) -> dict[str, Any]:
+def get_merged_config(paths: Sequence[str | Path], *, fix: bool = False) -> dict[str, Any]:
     user_config = load_user_config()
     # Get the pre-commit section, which contains repos array
     user_pre_commit: dict[str, Any] = user_config.get("pre-commit", {})

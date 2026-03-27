@@ -133,7 +133,7 @@ def compute_deadline(message: Email) -> datetime | None:
     return message.internal_date.replace(tzinfo=None) + timedelta(days=30)
 
 
-def parse_aliexpress(message: Email, should_compute_deadline: bool = False) -> AliExpressEmail:
+def parse_aliexpress(message: Email, *, should_compute_deadline: bool = False) -> AliExpressEmail:
     """Parse AliExpress email, optionally computing deadline from received date."""
     parsed = parse_aliexpress_subject(message.subject)
 

@@ -10,7 +10,7 @@ from x.claude_linter_v2.pattern_matcher import PatternMatcher
 
 
 def check_python_file(
-    file_path: Path, content: str, config: ModularConfig, critical_only: bool = False
+    file_path: Path, content: str, config: ModularConfig, *, critical_only: bool = False
 ) -> list[Violation]:
     """Check a Python file for violations.
 
