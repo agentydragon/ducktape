@@ -141,15 +141,8 @@ class EmberRuntime:
     async def restart(self) -> None:
         """Restart the runtime with fresh components."""
         await self.stop()
-        self._reinitialize(await EmberRuntime.create(self._settings))
-        await self.start()
-
-    def _reinitialize(self, other: EmberRuntime) -> None:
-        self._matrix_client = other._matrix_client
-        self._compositor = other._compositor
-        self._mcp_client = other._mcp_client
-        self._sleep_handler = other._sleep_handler
-        self._agent = other._agent
+        replacement = await EmberRuntime.create(self._settings)
+        self.__dict__.update(replacement.__dict__)
 
     async def _loop(self) -> None:
         """Main event loop - poll Matrix and run agent."""
