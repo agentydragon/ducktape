@@ -91,14 +91,18 @@ echo "[$(date -Iseconds)] Nix installation complete."
 # max-jobs=auto: local builds work fine on gVisor with sandbox=false.
 #   Needed for symlinkJoin/buildEnv derivations that won't be in the cache.
 echo "Configuring Nix for gVisor..."
+# CLEANUP(2026-03-27): cache.allegedly.works is currently down (503). Falling back to
+#   cache.nixos.org only. Restore the original substituters line once the cache is back:
+#     substituters = https://cache.allegedly.works/main https://cache.nixos.org
+#     trusted-public-keys = cache.allegedly.works-1:OX/cis8G1W13DALkGvhdUZ1OY3yGATbXw8+tIc8J7oA= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
 cat >~/.config/nix/nix.conf <<'EOF'
 build-users-group =
 experimental-features = nix-command flakes
 sandbox = false
 max-jobs = auto
 system-features =
-substituters = https://cache.allegedly.works/main https://cache.nixos.org
-trusted-public-keys = cache.allegedly.works-1:OX/cis8G1W13DALkGvhdUZ1OY3yGATbXw8+tIc8J7oA= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+substituters = https://cache.nixos.org
+trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
 EOF
 
 # --- Step 3: Install web session tools ---
@@ -107,8 +111,8 @@ echo "--- environment ---"
 env | sed 's/^\(DUCKTAPE_CLAUDE_HOOKS_K8S_TOKEN=\).*/\1<redacted>/' | sort
 echo "---"
 
-echo "Connectivity check (cache.allegedly.works)..."
-curl -fsSL --max-time 10 https://cache.allegedly.works/main/nix-cache-info
+echo "Connectivity check (cache.nixos.org)..."
+curl -fsSL --max-time 10 https://cache.nixos.org/nix-cache-info
 
 echo "--- nix.conf ---"
 cat ~/.config/nix/nix.conf
