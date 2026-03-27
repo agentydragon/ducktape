@@ -144,6 +144,8 @@ if __name__ == "__main__":
 
 **No test skips for missing tools**: let the test fail. Tools come from Bazel runfiles or the RBE worker image.
 
+**Test timeouts mean hangs, not slowness**: When a test times out, assume it is wedged — an internal operation is waiting on something that will never arrive (deadlock, stuck future, container that never becomes ready, connection to a port nothing is listening on). Do NOT bump `size`/`timeout` as a fix. Instead, trace the execution to find what is blocked: run with `--test_output=streamed --test_arg=-s`, add logging around fixture setup, check for stuck containers (`docker ps`), etc. A test that ran in 35s last week and now times out at 60s is not "slow" — something broke internally.
+
 ### Updating syrupy snapshots
 
 Snapshot tests use syrupy (`.ambr` files in `__snapshots__/`). To update after intentional changes, run locally (not RBE) so syrupy can write through the execroot symlinks to the source tree:
