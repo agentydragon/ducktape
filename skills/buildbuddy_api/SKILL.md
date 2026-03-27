@@ -75,7 +75,7 @@ bbapi invocation log <invocation-id>
 # 3. Download the test.log for a specific failed target
 #    Works with both workflow and child invocation IDs (auto-resolves)
 bbapi target log <invocation-id> <target-substring>
-#    Example: bbapi target log 870a5be1 test_handlers
+#    Example: bbapi target log 870a5be1-c296-4792-8c8a-77def20b2dcc test_handlers
 ```
 
 ### Workflow vs Child Invocations
