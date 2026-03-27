@@ -91,7 +91,8 @@ class Github:
         return []
 """
     else:
-        raise ValueError("unknown variant")
+        msg = "unknown variant"
+        raise ValueError(msg)
     (mock_pkg / "__init__.py").write_text(body)
 
 
@@ -106,7 +107,8 @@ def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict[str, Any])
             f.flush()
             line = f.readline()
             if not line:
-                raise AssertionError("No response from daemon")
+                msg = "No response from daemon"
+                raise AssertionError(msg)
             result: dict[str, Any] = json.loads(line.decode())
             return result
 
@@ -147,7 +149,7 @@ def test_github_pr_variants(variant, expects, github_pr_env: "GithubPrEnv"):
             state=PRState.OPEN if variant == "open_mergeable" else PRState.CLOSED,
             draft=False,
             mergeable=variant in {"open_mergeable", "merged"},
-            merged_at=None if variant != "merged" else datetime.now().isoformat(),
+            merged_at=None if variant != "merged" else datetime.now(tz=datetime.UTC).isoformat(),
             additions=10
             if variant == "open_mergeable"
             else 3

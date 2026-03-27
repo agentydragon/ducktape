@@ -164,7 +164,8 @@ class ActionStorage:
         async with self._session_factory() as session:
             action_row = await session.get(_ActionRow, (key.session_key, key.action_seq))
             if action_row is None:
-                raise ValueError(f"Action not found: {key.session_key}/{key.action_seq}")
+                msg = f"Action not found: {key.session_key}/{key.action_seq}"
+                raise ValueError(msg)
             action_row.state_json = _ACTION_STATE_TA.dump_json(new_state).decode()
             action_row.status = new_state.status
 

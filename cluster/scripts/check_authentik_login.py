@@ -36,7 +36,8 @@ def get_password_from_k8s(namespace: str, secret_name: str, secret_key: str) -> 
     )
     b64_value = result.stdout.strip()
     if not b64_value:
-        raise RuntimeError(f"Empty value for {namespace}/{secret_name}:{secret_key}")
+        msg = f"Empty value for {namespace}/{secret_name}:{secret_key}"
+        raise RuntimeError(msg)
     decoded = subprocess.run(["base64", "-d"], input=b64_value, capture_output=True, text=True, check=True)
     return decoded.stdout
 
@@ -52,7 +53,8 @@ def start_port_forward(namespace: str, service: str, local_port: int, remote_por
     time.sleep(2)
     if proc.poll() is not None:
         stderr = proc.stderr.read().decode() if proc.stderr else ""
-        raise RuntimeError(f"port-forward exited immediately: {stderr}")
+        msg = f"port-forward exited immediately: {stderr}"
+        raise RuntimeError(msg)
     return proc
 
 

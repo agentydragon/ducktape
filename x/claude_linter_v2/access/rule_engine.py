@@ -144,9 +144,11 @@ class RuleEngine:
         message = ". ".join(message_parts) if message_parts else None
 
         logger.debug(
-            f"Rule evaluation for {context}: "
-            f"winner={winner.action} from {winner.source.name}, "
-            f"total matches={len(matches)}"
+            "Rule evaluation for %s: winner=%s from %s, total matches=%s",
+            context,
+            winner.action,
+            winner.source.name,
+            len(matches),
         )
 
         return winner.action, message

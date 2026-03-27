@@ -79,9 +79,10 @@ def parse_kustomize_file(kust_file: Path) -> KustomizeFile | None:
             return None
 
     if "patchesStrategicMerge" in doc:
-        raise ValueError(
+        msg = (
             f"{kust_file}: uses deprecated 'patchesStrategicMerge'. "
             "Convert to 'patches' format (list of {{path: ...}} objects)."
         )
+        raise ValueError(msg)
 
     return KustomizeFile.model_validate(doc | {"path": kust_file})

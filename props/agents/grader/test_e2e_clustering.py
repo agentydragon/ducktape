@@ -109,7 +109,7 @@ async def test_grader_clusters_novel_issues_from_two_critiques(
                 )
             session.commit()
 
-        logger.info(f"Created 2 critic runs: {critic_1_id}, {critic_2_id}")
+        logger.info("Created 2 critic runs: %s, %s", critic_1_id, critic_2_id)
 
         # Precondition: verify grading_pending has rows
         assert get_drift(test_snapshot, db).grading, "grading_pending should have rows"
@@ -124,7 +124,8 @@ async def test_grader_clusters_novel_issues_from_two_critiques(
             try:
                 await asyncio.wait_for(clustering_done.wait(), timeout=90)
             except TimeoutError:
-                raise AssertionError("Clustering did not complete within timeout")
+                msg = "Clustering did not complete within timeout"
+                raise AssertionError(msg)
 
         # Assert cluster was created with 2 members
         with db.session() as session:

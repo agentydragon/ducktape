@@ -72,7 +72,7 @@ def main() -> int:
         temp_filename = temp.name
         temp.write(SERVER_TEMPLATE)
 
-    logger.info(f"Created temporary server file: {temp_filename}")
+    logger.info("Created temporary server file: %s", temp_filename)
 
     try:
         # Build the command
@@ -90,7 +90,7 @@ def main() -> int:
         subprocess.run(cmd, check=True)
         return 0
     except subprocess.CalledProcessError as e:
-        logger.error(f"Error running MCP dev: {e}")
+        logger.error("Error running MCP dev: %s", e)
         return 1
     except FileNotFoundError:
         logger.error("Error: 'mcp' command not found. Make sure the MCP SDK is installed.")
@@ -103,9 +103,9 @@ def main() -> int:
         # Clean up the temporary file
         try:
             Path(temp_filename).unlink()
-            logger.info(f"Removed temporary server file: {temp_filename}")
+            logger.info("Removed temporary server file: %s", temp_filename)
         except Exception as e:
-            logger.warning(f"Failed to remove temporary file: {e}")
+            logger.warning("Failed to remove temporary file: %s", e)
 
 
 if __name__ == "__main__":

@@ -42,7 +42,8 @@ def configure_logging(log_output: str | None = None, log_level: str | LogLevel |
     try:
         log_level_enum = LogLevel(log_level_upper)
     except ValueError:
-        raise ValueError(f"Invalid log level: {log_level}. Must be one of {', '.join(LogLevel)}") from None
+        msg = f"Invalid log level: {log_level}. Must be one of {', '.join(LogLevel)}"
+        raise ValueError(msg) from None
 
     # Determine handler configuration based on log_output
     if log_output == "none":

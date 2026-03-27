@@ -42,7 +42,7 @@ class PreCommitRunner:
             # Create log file using platformdirs (respects XDG_CACHE_HOME)
             log_dir = Path(platformdirs.user_cache_dir("claude-linter"))
             log_dir.mkdir(parents=True, exist_ok=True)
-            log_file = log_dir / f"debug-{datetime.datetime.now().isoformat()}.log"
+            log_file = log_dir / f"debug-{datetime.datetime.now(tz=datetime.UTC).isoformat()}.log"
 
         # Create a temporary git repo to make pre-commit happy
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -96,7 +96,7 @@ class PreCommitRunner:
             if log_file:
                 with log_file.open("w") as f:
                     f.write("=== Claude Linter Debug Log ===\n")
-                    f.write(f"Time: {datetime.datetime.now()}\n")
+                    f.write(f"Time: {datetime.datetime.now(tz=datetime.UTC)}\n")
                     f.write(f"Working dir: {current_working_dir}\n")
                     f.write(f"Temp dir: {tmpdir}\n")
                     f.write(f"Paths: {paths}\n")

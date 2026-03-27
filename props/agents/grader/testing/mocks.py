@@ -101,4 +101,5 @@ class GraderMock(DecoratorMock):
         """
         yield from self.check_no_drift()
         yield self.sleep(summary)
-        raise AssertionError("Grader woke up unexpectedly after sleeping")
+        msg = "Grader woke up unexpectedly after sleeping"
+        raise AssertionError(msg)

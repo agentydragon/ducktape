@@ -43,7 +43,8 @@ def assert_no_cycles(g: nx.DiGraph) -> None:
     """Raise CyclicDependencyError if the graph contains any cycle."""
     cycle = next(nx.simple_cycles(g), None)
     if cycle is not None:
-        raise CyclicDependencyError(f"Circular dependency: {' -> '.join([*cycle, cycle[0]])}")
+        msg = f"Circular dependency: {' -> '.join([*cycle, cycle[0]])}"
+        raise CyclicDependencyError(msg)
 
 
 def check_required_dependencies(cluster: ParsedCluster) -> list[str]:
@@ -53,7 +54,8 @@ def check_required_dependencies(cluster: ParsedCluster) -> list[str]:
 
     for rule in _DEPENDENCY_RULES:
         if rule.prerequisite not in cluster.flux_kustomizations:
-            raise ValueError(f"Dependency rule references unknown kustomization: {rule.prerequisite}")
+            msg = f"Dependency rule references unknown kustomization: {rule.prerequisite}"
+            raise ValueError(msg)
         for dependent in rule.must_come_before:
             if dependent not in cluster.flux_kustomizations:
                 continue

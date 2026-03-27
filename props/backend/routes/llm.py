@@ -60,7 +60,8 @@ def _resolve_upstream_url(config: UpstreamConfig) -> str:
         return config.url
     if config.url_env:
         return os.environ.get(config.url_env, "https://api.openai.com/v1")
-    raise ValueError("Upstream config must have url or url_env")
+    msg = "Upstream config must have url or url_env"
+    raise ValueError(msg)
 
 
 def _get_upstream_route(model_id: str, session: Session, config: PropsConfig) -> UpstreamRoute:

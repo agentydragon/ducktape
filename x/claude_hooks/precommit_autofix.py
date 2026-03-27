@@ -184,7 +184,7 @@ class PreCommitAutoFixerHook(PostToolUseHook):
             # (SubprocessError), and any unexpected errors from dependencies like pre-commit itself.
             # The broad catch ensures users get actionable feedback with logs and tracebacks
             # rather than cryptic tool failures.
-            self.logger.exception(f"Pre-commit autofix failed: {e}")
+            self.logger.exception("Pre-commit autofix failed: %s", e)
             # Show feedback for unexpected exceptions with debugging guidance
             tb_str = traceback.format_exc()
             invocation_id = get_current_invocation_id() or "unknown"
@@ -211,17 +211,17 @@ class PreCommitAutoFixerHook(PostToolUseHook):
         """
 
         if self.autofixer_config.dry_run:
-            self.logger.info(f"DRY RUN: Would run pre-commit on {file_path}")
+            self.logger.info("DRY RUN: Would run pre-commit on %s", file_path)
             return NoChanges()
 
         try:
             original_mtime = file_path.stat().st_mtime
-            self.logger.info(f"Original mtime: {original_mtime}")
+            self.logger.info("Original mtime: %s", original_mtime)
 
             config_root = self._get_precommit_root(file_path)
 
             config_file = config_root / PRECOMMIT_CONFIG_FILE
-            self.logger.info(f"Running pre-commit on {file_path} with config {config_file}")
+            self.logger.info("Running pre-commit on %s with config %s", file_path, config_file)
 
             result = run_python_module(
                 "pre_commit",
@@ -238,11 +238,11 @@ class PreCommitAutoFixerHook(PostToolUseHook):
             )
 
             # Log subprocess result for debugging
-            self.logger.info(f"Pre-commit exit code: {result.returncode}")
+            self.logger.info("Pre-commit exit code: %s", result.returncode)
             if result.stdout.strip():
-                self.logger.info(f"Pre-commit stdout: {result.stdout.strip()}")
+                self.logger.info("Pre-commit stdout: %s", result.stdout.strip())
             if result.stderr.strip():
-                self.logger.warning(f"Pre-commit stderr: {result.stderr.strip()}")
+                self.logger.warning("Pre-commit stderr: %s", result.stderr.strip())
 
             # Handle different exit codes
             # See: https://pre-commit.com/#exit-codes
@@ -250,13 +250,13 @@ class PreCommitAutoFixerHook(PostToolUseHook):
                 # Exit code 0: Success (standard Unix convention)
                 # Exit code 1: "A detected / expected error" - hooks found issues and possibly fixed them
                 new_mtime = file_path.stat().st_mtime
-                self.logger.info(f"New mtime: {new_mtime}, changed: {new_mtime > original_mtime}")
+                self.logger.info("New mtime: %s, changed: %s", new_mtime, new_mtime > original_mtime)
                 return ChangesMade() if new_mtime > original_mtime else NoChanges()
             # Exit code 3: "An unexpected error", 130: "interrupted by ^C", etc.
-            self.logger.warning(f"Pre-commit unexpected exit code {result.returncode}")
+            self.logger.warning("Pre-commit unexpected exit code %s", result.returncode)
             return Crashed(stdout=result.stdout, stderr=result.stderr, exit_code=result.returncode)
         except Exception as e:
-            self.logger.exception(f"Error in _run_precommit_autofix: {e}")
+            self.logger.exception("Error in _run_precommit_autofix: %s", e)
             # Re-raise exceptions that aren't pre-commit failures
             raise
 
@@ -265,20 +265,22 @@ class PreCommitAutoFixerHook(PostToolUseHook):
         search_dir = file_path.parent if file_path.is_file() else file_path
 
         # Use pygit2 to find repository root, starting from file's directory
-        self.logger.info(f"Looking for git repo starting from: {search_dir}")
+        self.logger.info("Looking for git repo starting from: %s", search_dir)
         git_path = pygit2.discover_repository(str(search_dir))
         if git_path is None:
-            self.logger.info(f"Not in git repo: {search_dir}")
-            raise RuntimeError(f"Not in a git repository: {search_dir}")
+            self.logger.info("Not in git repo: %s", search_dir)
+            msg = f"Not in a git repository: {search_dir}"
+            raise RuntimeError(msg)
 
         repo = pygit2.Repository(git_path)
         repo_root = Path(repo.workdir).resolve()
-        self.logger.info(f"Found git repo root: {repo_root}")
+        self.logger.info("Found git repo root: %s", repo_root)
         if (repo_root / PRECOMMIT_CONFIG_FILE).exists():
-            self.logger.info(f"Found pre-commit config at: {repo_root / PRECOMMIT_CONFIG_FILE}")
+            self.logger.info("Found pre-commit config at: %s", repo_root / PRECOMMIT_CONFIG_FILE)
             return repo_root
 
-        raise RuntimeError(f"No pre-commit config in git repo root: {repo_root}")
+        msg = f"No pre-commit config in git repo root: {repo_root}"
+        raise RuntimeError(msg)
 
 
 def main():

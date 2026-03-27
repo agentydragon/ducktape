@@ -77,7 +77,8 @@ def start_screencast(bus: Gio.DBusConnection, fps: int, output_path: Path) -> st
     success = result.get_child_value(0).get_boolean()
     filename = result.get_child_value(1).get_string()
     if not success:
-        raise RuntimeError("Failed to start GNOME screencast")
+        msg = "Failed to start GNOME screencast"
+        raise RuntimeError(msg)
     return filename
 
 
@@ -90,7 +91,7 @@ def stop_screencast(bus: Gio.DBusConnection) -> None:
 
 def _now_str() -> str:
     """Current wall-clock time as HH:MM:SS.mmm."""
-    now = datetime.datetime.now()
+    now = datetime.datetime.now(tz=datetime.UTC)
     return now.strftime("%H:%M:%S.") + f"{now.microsecond // 1000:03d}"
 
 
@@ -113,7 +114,8 @@ _MARKER_POOL = list("acdefghjkmnpqrtuvwxyACDEFGHJKLMNPQRTUVWXY3467")
 def _pick_markers(n: int) -> list[str]:
     """Pick n unique shuffled markers from the pool."""
     if n > len(_MARKER_POOL):
-        raise ValueError(f"Max {len(_MARKER_POOL)} samples supported (requested {n})")
+        msg = f"Max {len(_MARKER_POOL)} samples supported (requested {n})"
+        raise ValueError(msg)
     return random.sample(_MARKER_POOL, n)
 
 
@@ -126,11 +128,12 @@ def type_marker(char: str) -> str:
     ts = _now_str()
     result = subprocess.run(["ydotool", "type", char], check=False, capture_output=True)
     if result.returncode != 0:
-        raise RuntimeError(
+        msg = (
             f"ydotool failed (exit {result.returncode}):\n"
             f"  stdout: {result.stdout.decode(errors='replace')}\n"
             f"  stderr: {result.stderr.decode(errors='replace')}"
         )
+        raise RuntimeError(msg)
     return ts
 
 
@@ -146,18 +149,21 @@ def main():
 
     for tool in ["ydotool", "ffmpeg"]:
         if not shutil.which(tool):
-            raise RuntimeError(f"{tool} not found in PATH")
+            msg = f"{tool} not found in PATH"
+            raise RuntimeError(msg)
 
     ydotool_socket = Path("/tmp/.ydotool_socket")
     if not ydotool_socket.exists():
-        raise RuntimeError(
+        msg = (
             "ydotoold not running (/tmp/.ydotool_socket not found)\n"
             "Start it with: sudo ydotoold --socket-path=/tmp/.ydotool_socket --socket-perm=0666"
         )
+        raise RuntimeError(msg)
 
     uinput = Path("/dev/uinput")
     if uinput.exists() and not os.access(uinput, os.W_OK):
-        raise RuntimeError("/dev/uinput not writable by current user\nFix with: sudo chmod 0666 /dev/uinput")
+        msg = "/dev/uinput not writable by current user\nFix with: sudo chmod 0666 /dev/uinput"
+        raise RuntimeError(msg)
 
     work_dir = args.output_dir or Path(tempfile.mkdtemp(prefix="spice_latency_"))
     work_dir.mkdir(parents=True, exist_ok=True)

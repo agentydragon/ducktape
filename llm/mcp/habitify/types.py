@@ -23,7 +23,8 @@ def _parse_datetime(v: str | datetime) -> datetime:
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=UTC)
         return dt
-    raise ValueError(f"Expected datetime or ISO string, got {type(v)}")
+    msg = f"Expected datetime or ISO string, got {type(v)}"
+    raise ValueError(msg)
 
 
 def _serialize_datetime(v: datetime) -> str:

@@ -90,7 +90,7 @@ def _cache_path(frame_file: Path) -> Path:
 def _parse_clock(clock_str: str) -> datetime.datetime:
     """Parse HH:MM:SS.mmm clock string."""
     padded = clock_str + "000" if len(clock_str.rsplit(".", maxsplit=1)[-1]) == 3 else clock_str
-    return datetime.datetime.strptime(padded, "%H:%M:%S.%f")
+    return datetime.datetime.strptime(padded, "%H:%M:%S.%f").replace(tzinfo=datetime.UTC)
 
 
 def analyze_pixeldiff(
@@ -176,10 +176,11 @@ async def _query_frame(client: openai.AsyncOpenAI, frame_file: Path, sem: asynci
         )
     content = resp.choices[0].message.content
     if content is None:
-        raise RuntimeError(
+        msg = (
             f"API returned no content for {frame_file.name}: "
             f"finish_reason={resp.choices[0].finish_reason}, refusal={resp.choices[0].message.refusal}"
         )
+        raise RuntimeError(msg)
     return json.loads(content)
 
 
@@ -292,7 +293,8 @@ async def analyze_vision(
 def extract_frames(video_path: Path, frame_dir: Path) -> int:
     """Extract all frames from video as PNGs. Returns frame count."""
     if not shutil.which("ffmpeg"):
-        raise RuntimeError("ffmpeg not found in PATH")
+        msg = "ffmpeg not found in PATH"
+        raise RuntimeError(msg)
     frame_dir.mkdir(exist_ok=True)
     subprocess.run(
         ["ffmpeg", "-y", "-i", str(video_path), "-vsync", "0", str(frame_dir / "frame_%05d.png")],

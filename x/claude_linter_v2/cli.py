@@ -35,7 +35,7 @@ def _try_send_crash_notification(title: str, message: str) -> None:
     try:
         subprocess.run(["notify-send", "-u", "critical", title, message], check=False)
     except Exception as e:
-        logger.debug(f"Failed to send crash notification: {e}")
+        logger.debug("Failed to send crash notification: %s", e)
 
 
 def parse_expiry_duration(duration_str: str) -> datetime:
@@ -52,8 +52,9 @@ def parse_expiry_duration(duration_str: str) -> datetime:
     """
     seconds = parse_duration(duration_str)
     if seconds is None:
-        raise click.ClickException(f"Invalid duration format: {duration_str}\nValid formats: 30m, 2h, 1d, 1h30m, etc.")
-    return datetime.now() + timedelta(seconds=seconds)
+        msg = f"Invalid duration format: {duration_str}\nValid formats: 30m, 2h, 1d, 1h30m, etc."
+        raise click.ClickException(msg)
+    return datetime.now(tz=datetime.UTC) + timedelta(seconds=seconds)
 
 
 @click.group(invoke_without_command=True)
@@ -141,7 +142,7 @@ def hook(request_json: str | None) -> None:
         request_data = json.loads(request_json)
     except json.JSONDecodeError as e:
         # Log the actual error
-        logger.error(f"FATAL: JSON parse error: {e}")
+        logger.error("FATAL: JSON parse error: %s", e)
 
         # Send desktop notification
         _try_send_crash_notification("Claude Linter Hook Crashed", f"JSON parse error: {e!s}")
@@ -155,19 +156,20 @@ def hook(request_json: str | None) -> None:
     # Parse request with appropriate type
     if not (request_class := HOOK_REQUEST_TYPES.get(hook_type)):
         # Log the error
-        logger.error(f"FATAL: Unknown hook type: {hook_type}")
+        logger.error("FATAL: Unknown hook type: %s", hook_type)
 
         # Send desktop notification
         _try_send_crash_notification("Claude Linter Hook Crashed", f"Unknown hook type: {hook_type}")
 
         # DO NOT output JSON - just crash
-        raise ValueError(f"Unknown hook type: {hook_type}")
+        msg = f"Unknown hook type: {hook_type}"
+        raise ValueError(msg)
 
     try:
         request = request_class(**request_data)
     except Exception as e:
         # Log the actual error
-        logger.error(f"FATAL: Request validation error for {hook_type}: {e}", exc_info=True)
+        logger.exception("FATAL: Request validation error for %s: %s", hook_type, e)
 
         # Send desktop notification
         _try_send_crash_notification("Claude Linter Hook Crashed", f"Request validation failed for {hook_type}: {e!s}")
@@ -183,7 +185,7 @@ def hook(request_json: str | None) -> None:
         click.echo(response.model_dump_json(by_alias=True, exclude_none=True))
     except HookBugError as e:
         # Hook bug - this is OUR fault
-        logger.error(f"FATAL: Hook bug: {e}", exc_info=True)
+        logger.exception("FATAL: Hook bug: %s", e)
 
         # Send desktop notification
         _try_send_crash_notification("Claude Linter Hook Bug", f"Hook implementation error: {e!s}")
@@ -192,7 +194,7 @@ def hook(request_json: str | None) -> None:
         raise
     except Exception as e:
         # Unexpected error - log it
-        logger.error(f"FATAL: Unexpected hook processing error: {e}")
+        logger.error("FATAL: Unexpected hook processing error: %s", e)
         logger.error(traceback.format_exc())
 
         # Send desktop notification

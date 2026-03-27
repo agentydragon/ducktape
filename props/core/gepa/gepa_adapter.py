@@ -67,9 +67,8 @@ logger = logging.getLogger(__name__)
 
 def _gepa_not_implemented() -> None:
     """Raise NotImplementedError for GEPA - called at runtime entrypoints."""
-    raise NotImplementedError(
-        "GEPA is broken: run_critic_legacy() has been removed. GEPA needs migration to definition-based run_critic()."
-    )
+    msg = "GEPA is broken: run_critic_legacy() has been removed. GEPA needs migration to definition-based run_critic()."
+    raise NotImplementedError(msg)
 
 
 # =============================================================================
@@ -186,10 +185,10 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
 
         # Set up proposal logging if reflection_model provided
         if reflection_model:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(tz=datetime.UTC).strftime("%Y%m%d_%H%M%S")
             log_file = run_dir / f"gepa_proposals_{timestamp}.jsonl"
             self._setup_proposal_logging(log_file)
-            logger.info(f"GEPA proposal logging enabled: {log_file.absolute()}")
+            logger.info("GEPA proposal logging enabled: %s", log_file.absolute())
         else:
             # No reflection model - GEPA will use default proposal mechanism
             self.propose_new_texts = None
@@ -212,7 +211,8 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
         with self.db.session() as session:
             critic_run = session.get(AgentRun, critic_run_id)
             if critic_run is None:
-                raise ValueError(f"AgentRun {critic_run_id} not found")
+                msg = f"AgentRun {critic_run_id} not found"
+                raise ValueError(msg)
             critic_status = critic_run.status
             critic_image_digest = critic_run.image_digest
             critic_model = critic_run.model
@@ -309,7 +309,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
                     f.write(
                         json.dumps(
                             {
-                                "timestamp": datetime.now().isoformat(),
+                                "timestamp": datetime.now(tz=datetime.UTC).isoformat(),
                                 "call_id": call_count,
                                 "component": name,
                                 "type": "input",
@@ -336,7 +336,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
                     f.write(
                         json.dumps(
                             {
-                                "timestamp": datetime.now().isoformat(),
+                                "timestamp": datetime.now(tz=datetime.UTC).isoformat(),
                                 "call_id": call_count,
                                 "component": name,
                                 "type": "output",
@@ -421,7 +421,8 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
     ) -> EvaluationResult:
         """Implementation of single specimen evaluation (called under semaphore)."""
         _gepa_not_implemented()
-        raise AssertionError("unreachable")
+        msg = "unreachable"
+        raise AssertionError(msg)
 
     async def _evaluate_async(
         self, batch: list[Example], candidate: dict[str, str], capture_traces: bool, docker_client: aiodocker.Docker
@@ -462,9 +463,8 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
         # Validate that we only received supported components
         unsupported = [c for c in components_to_update if c != "system_prompt"]
         if unsupported:
-            raise ValueError(
-                f"Unsupported components for optimization: {unsupported}. Only 'system_prompt' is supported."
-            )
+            msg = f"Unsupported components for optimization: {unsupported}. Only 'system_prompt' is supported."
+            raise ValueError(msg)
 
         # GEPA always calls this with capture_traces=True, so trajectories must exist
         assert eval_batch.trajectories is not None, "make_reflective_dataset requires trajectories"
@@ -520,7 +520,7 @@ async def load_datasets(db: Database) -> tuple[list[Example], list[Example]]:
         trainset = get_examples_for_split(session, Split.TRAIN)
         valset = get_examples_for_split(session, Split.VALID)
 
-    logger.info(f"Loaded {len(trainset)} training examples, {len(valset)} validation examples")
+    logger.info("Loaded %s training examples, %s validation examples", len(trainset), len(valset))
 
     return trainset, valset
 

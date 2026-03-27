@@ -102,7 +102,7 @@ async def test_grader_picks_up_drift(e2e_stack, test_snapshot, all_files_scope, 
             )
             session.commit()
 
-            logger.info(f"Created critic run {critic_run_id} with reported issue")
+            logger.info("Created critic run %s with reported issue", critic_run_id)
 
         # Precondition: verify grading_pending has rows before starting grader
         drift = get_drift(test_snapshot, db)
@@ -118,7 +118,8 @@ async def test_grader_picks_up_drift(e2e_stack, test_snapshot, all_files_scope, 
             try:
                 await asyncio.wait_for(grading_done.wait(), timeout=90)
             except TimeoutError:
-                raise AssertionError("Grading did not complete within timeout")
+                msg = "Grading did not complete within timeout"
+                raise AssertionError(msg)
 
         # Assert grading happened
         with db.session() as session:

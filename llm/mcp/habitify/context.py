@@ -25,9 +25,8 @@ def make_lifespan(api_key: str | None = None):
         """Initialize client once at server startup, share across all requests."""
         key = api_key or load_api_key(exit_on_missing=False)
         if not key:
-            raise RuntimeError(
-                "HABITIFY_API_KEY environment variable is required. Set it in .env or pass via --api-key."
-            )
+            msg = "HABITIFY_API_KEY environment variable is required. Set it in .env or pass via --api-key."
+            raise RuntimeError(msg)
         async with HabitifyClient(api_key=key) as client:
             yield {CLIENT_KEY: client}
 

@@ -149,7 +149,7 @@ def clean(dry_run: bool, older_than: int) -> None:
         click.echo("No log directory found")
         return
 
-    cutoff_date = datetime.datetime.now() - datetime.timedelta(days=older_than)
+    cutoff_date = datetime.datetime.now(tz=datetime.UTC) - datetime.timedelta(days=older_than)
     deleted_count = 0
     total_size = 0
 
@@ -213,11 +213,11 @@ def unified_hook() -> None:
 
     # Create event-specific log file
     hook_type = req.hook_event_name.lower().replace("tooluse", "")  # "pre" or "post"
-    log_file = log_dir / f"hook-{hook_type}-{datetime.datetime.now().isoformat()}.json"
+    log_file = log_dir / f"hook-{hook_type}-{datetime.datetime.now(tz=datetime.UTC).isoformat()}.json"
 
     # Log input
     log_data = {
-        "timestamp": datetime.datetime.now().isoformat(),
+        "timestamp": datetime.datetime.now(tz=datetime.UTC).isoformat(),
         "hook_type": hook_type,
         "hook_event_name": req.hook_event_name,
         "input": input_data,

@@ -161,6 +161,6 @@ split-on-trailing-comma = false
 "devinfra/claude/hook_dispatch.py" = ["PLC0415"]
 # conftest.py re-exports fixtures for pytest discovery — imports are "unused" by design
 # and fixture parameters naturally shadow the imported fixture names (F811)
-"**/conftest.py" = ["F401", "F811"]
+"**/conftest.py" = ["F401", "F811", "SLF001"]
 # Tests routinely access private members for assertions
 "**/test_*.py" = ["SLF001"]

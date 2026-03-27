@@ -78,10 +78,12 @@ class CallerContext:
     def from_env(cls, env: dict[str, str]) -> "CallerContext":
         env_file_str = env.get("CLAUDE_ENV_FILE")
         if not env_file_str:
-            raise KeyError("CLAUDE_ENV_FILE environment variable is required")
+            msg = "CLAUDE_ENV_FILE environment variable is required"
+            raise KeyError(msg)
         project_dir_str = env.get("CLAUDE_PROJECT_DIR")
         if not project_dir_str:
-            raise KeyError("CLAUDE_PROJECT_DIR environment variable is required")
+            msg = "CLAUDE_PROJECT_DIR environment variable is required"
+            raise KeyError(msg)
         return cls(
             env_file_path=Path(env_file_str),
             web_mode=env.get("CLAUDE_CODE_REMOTE") == "true",
@@ -244,7 +246,8 @@ async def _setup_web(
         with tracer.start_as_current_span("setup_container_runtime", context=root_ctx):
             storage_dir = container_runtime.get_storage_dir(paths, settings)
             if storage_dir is None:
-                raise SkipError("Docker setup disabled (setup_docker=False)")
+                msg = "Docker setup disabled (setup_docker=False)"
+                raise SkipError(msg)
             supervisor_result = await supervisor_task
             # tmpfs failure is non-fatal — runtime falls back to VFS on 9p
             tmpfs_mounted = await mount_tmpfs_at(storage_dir)
@@ -297,7 +300,8 @@ async def _setup_web(
         """Generate mkcert certs (no proxy dependency — runs immediately in parallel)."""
         with tracer.start_as_current_span("setup_mkcert", context=root_ctx):
             if not settings.install_mkcert:
-                raise SkipError("mkcert disabled (install_mkcert=False)")
+                msg = "mkcert disabled (install_mkcert=False)"
+                raise SkipError(msg)
             # Pass combined_ca=None: bundle append happens in mkcert_append_bundle
             return await mkcert.setup_mkcert(paths, combined_ca=None)
 
@@ -341,9 +345,8 @@ async def _setup_web(
     if isinstance(precommit_result, BaseException):
         logger.warning("Failed to install git pre-commit: %s", precommit_result)
     if isinstance(bazelisk_result, BaseException):
-        raise RuntimeError(
-            "Bazel wrapper setup failed (is bazelisk on PATH from Nix web-session?)"
-        ) from bazelisk_result
+        msg = "Bazel wrapper setup failed (is bazelisk on PATH from Nix web-session?)"
+        raise RuntimeError(msg) from bazelisk_result
     if isinstance(tmpfs_result, BaseException):
         logger.warning("Failed to set up tmpfs caches: %s", tmpfs_result)
     if isinstance(mkcert_result, SkipError):
@@ -365,7 +368,8 @@ async def _setup_web(
     # Proxy setup is required - propagate failure with clear error message
     if isinstance(auth_proxy_result, BaseException):
         logger.error("Proxy setup failed: %s", auth_proxy_result)
-        raise RuntimeError(f"Proxy setup failed: {auth_proxy_result}") from auth_proxy_result
+        msg = f"Proxy setup failed: {auth_proxy_result}"
+        raise RuntimeError(msg) from auth_proxy_result
 
     combined_ca = paths.auth_proxy_combined_ca
 
@@ -529,7 +533,7 @@ async def run_session(
         bazelisk.install_wrapper(paths)
 
     # Generate timestamp
-    hook_timestamp = datetime.now()
+    hook_timestamp = datetime.now(tz=datetime.UTC)
     timestamp_file = paths.session_dir / "session-hook-last-run"
     timestamp_file.write_text(f"{hook_timestamp.isoformat()}\n")
     logger.info("Session start hook timestamp: %s", hook_timestamp.isoformat())

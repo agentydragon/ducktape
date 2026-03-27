@@ -59,11 +59,13 @@ async def serve_app(app: Starlette, *, port: int):
     deadline = time.monotonic() + 10.0
     while not server.started:
         if not thread.is_alive():
-            raise RuntimeError("uvicorn thread exited before starting")
+            msg = "uvicorn thread exited before starting"
+            raise RuntimeError(msg)
         if time.monotonic() > deadline:
             server.should_exit = True
             thread.join(timeout=3.0)
-            raise TimeoutError(f"server did not start on port {port}")
+            msg = f"server did not start on port {port}"
+            raise TimeoutError(msg)
         await asyncio.sleep(0.02)
     try:
         yield

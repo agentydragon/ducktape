@@ -120,7 +120,8 @@ def preflight(root: Path) -> None:
     diff = repo.index.diff_to_tree(repo.head.peel(pygit2.Tree))
     dirty = [d.delta.new_file.path for d in diff if d.delta.new_file.path.startswith(gitops_prefixes)]
     if dirty:
-        raise SystemExit(f"Uncommitted changes in GitOps paths: {', '.join(dirty)}. Commit or stash before bootstrap.")
+        msg = f"Uncommitted changes in GitOps paths: {', '.join(dirty)}. Commit or stash before bootstrap."
+        raise SystemExit(msg)
 
     log.info("Running pre-commit validation on cluster files...")
     files = [e.path for e in repo.index if e.path.startswith("cluster/")]

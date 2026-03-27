@@ -67,7 +67,7 @@ async def test_get_areas(client, mock_async_response, patch_client_method):
 
 
 async def test_get_journal(client, mock_async_response, patch_client_method):
-    today = datetime.date.today().isoformat()
+    today = datetime.datetime.now(tz=datetime.UTC).date().isoformat()
     mock_resp = mock_async_response("get_journal.yaml")
 
     with patch_client_method("get", return_value=mock_resp) as mock_get:
@@ -84,7 +84,7 @@ async def test_get_journal(client, mock_async_response, patch_client_method):
 
 
 async def test_get_journal_filtered(client, mock_async_response, patch_client_method):
-    today = datetime.date.today().isoformat()
+    today = datetime.datetime.now(tz=datetime.UTC).date().isoformat()
     mock_resp = mock_async_response("get_journal_filtered.yaml")
 
     with patch_client_method("get", return_value=mock_resp) as mock_get:

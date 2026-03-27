@@ -17,7 +17,8 @@ def run_flux_build(k8s_dir: Path) -> subprocess.CompletedProcess[str]:
     kustomization_file = k8s_dir / "flux-system" / "gotk-sync.yaml"
 
     if not kustomization_file.exists():
-        raise FileNotFoundError(f"gotk-sync.yaml not found at {kustomization_file}")
+        msg = f"gotk-sync.yaml not found at {kustomization_file}"
+        raise FileNotFoundError(msg)
 
     flux_bin = get_required_path("multitool/tools/flux/flux")
     return subprocess.run(

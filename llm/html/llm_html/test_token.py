@@ -44,7 +44,7 @@ def token_scheme():
 @pytest.fixture
 def fresh_valid_token(token_scheme):
     """Generate a fresh *valid* token and return the scheme instance & token."""
-    prefix, bits = token_scheme.make_token(datetime.now())
+    prefix, bits = token_scheme.make_token(datetime.now(tz=datetime.UTC))
     return prefix + "".join(bits)
 
 

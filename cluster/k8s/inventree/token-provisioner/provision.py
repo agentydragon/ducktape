@@ -67,7 +67,7 @@ def needs_renewal(token: dict) -> bool:
         print("Token has no expiry — skipping renewal.")
         return False
     expiry = datetime.date.fromisoformat(expiry_str)
-    days_remaining = (expiry - datetime.date.today()).days
+    days_remaining = (expiry - datetime.datetime.now(tz=datetime.UTC).date()).days
     print(f"Token '{TOKEN_NAME}' expires {expiry_str} ({days_remaining} days remaining).")
     return days_remaining < RENEW_DAYS_BEFORE
 
@@ -85,7 +85,8 @@ def provision_token(api: InvenTreeAPI, user_pk: int, existing: dict | None) -> s
     response = api.post("user/tokens/", data={"user": user_pk, "name": TOKEN_NAME})
     token_key = response.get("token")
     if not token_key:
-        raise RuntimeError(f"Token creation response missing 'token' field: {response}")
+        msg = f"Token creation response missing 'token' field: {response}"
+        raise RuntimeError(msg)
     print(f"Created token '{TOKEN_NAME}' for user pk={user_pk}")
     return str(token_key)
 

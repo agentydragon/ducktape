@@ -53,9 +53,8 @@ class HabitifyClient:
         self.base_url = os.getenv("HABITIFY_API_BASE_URL", "https://api.habitify.me")
 
         if not self.api_key:
-            raise HabitifyError(
-                "Habitify API key is required. Set HABITIFY_API_KEY environment variable or pass to constructor."
-            )
+            msg = "Habitify API key is required. Set HABITIFY_API_KEY environment variable or pass to constructor."
+            raise HabitifyError(msg)
 
         headers = {
             "Authorization": self.api_key,  # No 'Bearer' prefix based on examples
@@ -102,7 +101,8 @@ class HabitifyClient:
             The same habit ID unchanged
         """
         if not habit_id:
-            raise HabitifyError("Habit ID is required")
+            msg = "Habit ID is required"
+            raise HabitifyError(msg)
 
         return habit_id
 
@@ -274,7 +274,8 @@ class HabitifyClient:
             Habit status with timezone-aware datetime
         """
         if not status:
-            raise HabitifyError("Status is required")
+            msg = "Status is required"
+            raise HabitifyError(msg)
 
         habit_id = self._validate_habit_id(habit_id)
         target_date = format_date_for_api(date)
@@ -331,7 +332,7 @@ class HabitifyClient:
             except Exception as json_error:
                 # Instead of silently setting data to None, log what happened
                 logger.warning(
-                    f"Failed to parse error response JSON: {json_error}. Response text: {response.text[:100]}..."
+                    "Failed to parse error response JSON: %s. Response text: %s...", json_error, response.text[:100]
                 )
 
             # Check for common errors with helpful messages

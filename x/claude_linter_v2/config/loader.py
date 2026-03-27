@@ -41,15 +41,15 @@ class ConfigLoader:
         # If explicit path provided
         if self.config_path:
             if self.config_path.exists():
-                logger.info(f"Loading config from {self.config_path}")
+                logger.info("Loading config from %s", self.config_path)
                 self._config = ModularConfig.from_toml(self.config_path)
                 return self._config
-            logger.warning(f"Config file not found: {self.config_path}")
+            logger.warning("Config file not found: %s", self.config_path)
 
         # Search for config file
         config_file = self._find_config_file()
         if config_file:
-            logger.info(f"Loading config from {config_file}")
+            logger.info("Loading config from %s", config_file)
             self._config = ModularConfig.from_toml(config_file)
         else:
             logger.info("No config file found, using defaults")

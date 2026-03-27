@@ -36,10 +36,11 @@ def get_current_agent_run_id(session: Session) -> UUID:
     result = session.execute(text("SELECT current_agent_run_id()"))
     agent_run_id = result.scalar()
     if agent_run_id is None:
-        raise RuntimeError(
+        msg = (
             "current_agent_run_id() returned NULL — not connected as an agent user. "
             "Make sure you're using agent credentials (e.g., agent_{uuid})."
         )
+        raise RuntimeError(msg)
     return UUID(str(agent_run_id))
 
 
@@ -51,7 +52,8 @@ def get_current_agent_run(session: Session) -> AgentRun:
     agent_run_id = get_current_agent_run_id(session)
     agent_run = get_agent_run(session, agent_run_id)
     if agent_run.status == AgentRunStatus.EXITED:
-        raise ValueError(f"Agent run {agent_run.agent_run_id} already exited")
+        msg = f"Agent run {agent_run.agent_run_id} already exited"
+        raise ValueError(msg)
     return agent_run
 
 

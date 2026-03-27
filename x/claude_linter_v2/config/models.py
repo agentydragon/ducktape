@@ -267,7 +267,8 @@ class TaskProfile(BaseModel):
 
         # Simple validation - could be expanded
         if not re.match(r"^\d+[hmd]$", v):
-            raise ValueError("Duration must be like '2h', '30m', or '1d'")
+            msg = "Duration must be like '2h', '30m', or '1d'"
+            raise ValueError(msg)
 
         return v
 

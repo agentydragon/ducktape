@@ -27,7 +27,7 @@ async def token_refresh_loop(
                     continue
                 if not provider.needs_refresh(token):
                     continue
-                logger.info(f"Refreshing token for {name} (expires {token.expires_at})")
+                logger.info("Refreshing token for %s (expires %s)", name, token.expires_at)
                 new_token = await provider.refresh_tokens(token.refresh_token)
                 await k8s_store.write_token(
                     provider.config.refresh_secret.name,
@@ -42,9 +42,9 @@ async def token_refresh_loop(
                     annotations=provider.config.access_secret.annotations or None,
                     fields=ACCESS_TOKEN_FIELDS,
                 )
-                logger.info(f"Refreshed token for {name} (new expiry {new_token.expires_at})")
+                logger.info("Refreshed token for %s (new expiry %s)", name, new_token.expires_at)
             except Exception:
-                logger.exception(f"Failed to refresh token for {name}")
+                logger.exception("Failed to refresh token for %s", name)
         try:
             await k8s_store.delete_orphaned_secrets(target_namespace, known_secret_names)
         except Exception:

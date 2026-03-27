@@ -134,7 +134,8 @@ def _parse_tuple_operator(store: TanaGraph, node: TupleNode) -> SearchExpression
         return TextSearch(text=f"<{operator_node.name}>")
 
     # Unknown operator
-    raise SearchParseError(f"Unknown operator in search expression tuple: {operator_id}")
+    msg = f"Unknown operator in search expression tuple: {operator_id}"
+    raise SearchParseError(msg)
 
 
 def _parse_single_component(store: TanaGraph, node_id: NodeId) -> SearchExpression | None:

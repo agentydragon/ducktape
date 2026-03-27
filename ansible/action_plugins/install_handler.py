@@ -11,7 +11,8 @@ class AptInstall:
     @classmethod
     def parse(cls, val):
         if not isinstance(val, str):
-            raise AnsibleError("Invalid apt value")
+            msg = "Invalid apt value"
+            raise AnsibleError(msg)
         return cls(name=val)
 
     def module_args(self, installed):
@@ -39,7 +40,8 @@ class SnapInstall:
             case {"name": str() as name, **kwargs}:
                 return cls(name=name, kwargs=kwargs)
             case _:
-                raise AnsibleError("Invalid snap value")
+                msg = "Invalid snap value"
+                raise AnsibleError(msg)
 
     def module_args(self, installed):
         args = {"name": self.name}
@@ -61,7 +63,8 @@ class PipInstall:
     def parse(cls, val):
         def validate(pkg_name: str):
             if set(pkg_name) & set("<=>"):
-                raise AnsibleError(f"Version specifiers not allowed: {pkg_name}")
+                msg = f"Version specifiers not allowed: {pkg_name}"
+                raise AnsibleError(msg)
 
         match val:
             case str():
@@ -71,7 +74,8 @@ class PipInstall:
                 validate(name)
                 return cls(name=name, kwargs=kwargs)
             case _:
-                raise AnsibleError("Invalid pip value")
+                msg = "Invalid pip value"
+                raise AnsibleError(msg)
 
     def module_args(self, installed):
         args = {"name": self.name}
@@ -93,7 +97,8 @@ class PipxInstall:
     def parse(cls, val):
         def validate(pkg_name: str):
             if set(pkg_name) & set("<=>"):
-                raise AnsibleError(f"Version specifiers not allowed: {pkg_name}")
+                msg = f"Version specifiers not allowed: {pkg_name}"
+                raise AnsibleError(msg)
 
         match val:
             case str():
@@ -103,7 +108,8 @@ class PipxInstall:
                 validate(name)
                 return cls(name=name, kwargs=kwargs)
             case _:
-                raise AnsibleError("Invalid pipx value")
+                msg = "Invalid pipx value"
+                raise AnsibleError(msg)
 
     def module_args(self, installed):
         args = {"name": self.name}
@@ -155,7 +161,8 @@ class FlatpakInstall:
                 return cls(name=name, kwargs=kwargs)
 
             case _:
-                raise AnsibleError("Invalid flatpak value")
+                msg = "Invalid flatpak value"
+                raise AnsibleError(msg)
 
     def module_args(self, installed):
         """Return the argument dict for *community.general.flatpak*."""
@@ -180,7 +187,8 @@ class ActionModule(ActionBase):
         args = self._task.args
         debug = args.get("debug", False)
         if "use" not in args:
-            raise AnsibleError("Missing required argument: use")
+            msg = "Missing required argument: use"
+            raise AnsibleError(msg)
         use = args["use"]
 
         changed = False
@@ -192,18 +200,21 @@ class ActionModule(ActionBase):
             if arg == "use":
                 continue
             if arg not in METHODS:
-                raise AnsibleError(f"Unknown argument: {arg}. Expected: {list(METHODS.keys())}")
+                msg = f"Unknown argument: {arg}. Expected: {list(METHODS.keys())}"
+                raise AnsibleError(msg)
 
             assert arg not in parsed
             try:
                 parsed[arg] = METHODS[arg].parse(value)
             except Exception as e:
-                raise AnsibleError(f"Error parsing {arg}: {e}") from e
+                msg = f"Error parsing {arg}: {e}"
+                raise AnsibleError(msg) from e
             if debug:
                 result[f"{arg}_parsed"] = parsed[arg].__dict__
 
         if use not in parsed and use != "none":
-            raise AnsibleError(f"Invalid use value: {use}. Expected one of {list(parsed.keys())} or 'none'")
+            msg = f"Invalid use value: {use}. Expected one of {list(parsed.keys())} or 'none'"
+            raise AnsibleError(msg)
 
         # run selected install method
         for method, impl in parsed.items():

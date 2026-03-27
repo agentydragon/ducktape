@@ -18,17 +18,21 @@ except ImportError:
 def _get_runfiles() -> runfiles.Runfiles:
     """Get runfiles instance (lazily initialized, cached)."""
     if runfiles is None:
-        raise RuntimeError("python.runfiles not available - are you running via Bazel?")
+        msg = "python.runfiles not available - are you running via Bazel?"
+        raise RuntimeError(msg)
     r = runfiles.Create()
     if r is None:
-        raise RuntimeError("Could not create runfiles - are you running via Bazel?")
+        msg = "Could not create runfiles - are you running via Bazel?"
+        raise RuntimeError(msg)
     return r
 
 
 def get_required_path(rlocation: str) -> Path:
     """Resolve a runfiles path to an absolute Path, raising if missing."""
     if not (resolved := _get_runfiles().Rlocation(rlocation)):
-        raise RuntimeError(f"Could not resolve runfiles path: {rlocation}")
+        msg = f"Could not resolve runfiles path: {rlocation}"
+        raise RuntimeError(msg)
     if not (path := Path(resolved)).exists():
-        raise RuntimeError(f"Resolved path does not exist: {path}")
+        msg = f"Resolved path does not exist: {path}"
+        raise RuntimeError(msg)
     return path

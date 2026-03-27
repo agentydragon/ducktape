@@ -48,7 +48,8 @@ def search_for_arxiv_id(title) -> str | None:
     if len(matches) == 1:
         print("found by exact title", matches[0], title)
         return matches[0]
-    raise Exception("UNHANDLED: multiple matches found on arxiv!")
+    msg = "UNHANDLED: multiple matches found on arxiv!"
+    raise Exception(msg)
 
 
 def main(_):

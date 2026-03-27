@@ -600,7 +600,7 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry, db:
         async def run_one(example: ExampleSpec) -> bool:
             """Run critic for one example. Returns True on success."""
             try:
-                logger.info(f"[Job {job.job_id}] Running critic on {example.snapshot_slug}")
+                logger.info("[Job %s] Running critic on %s", job.job_id, example.snapshot_slug)
                 critic_run_id = await registry.run_critic(
                     image=image,
                     example=example,
@@ -619,14 +619,14 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry, db:
                         or critic_run.container_exit_code != 0
                     ):
                         status = critic_run.status if critic_run else "not found"
-                        logger.warning(f"[Job {job.job_id}] Critic failed with status {status}")
+                        logger.warning("[Job %s] Critic failed with status %s", job.job_id, status)
                         return False
 
-                logger.info(f"[Job {job.job_id}] Critic exited: {critic_run_id}")
+                logger.info("[Job %s] Critic exited: %s", job.job_id, critic_run_id)
                 return True
 
             except Exception:
-                logger.exception(f"[Job {job.job_id}] Error processing {example.snapshot_slug}")
+                logger.exception("[Job %s] Error processing %s", job.job_id, example.snapshot_slug)
                 return False
 
         # Run all examples in parallel
@@ -640,10 +640,10 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry, db:
                 job.failed += 1
 
         job.status = JobStatus.COMPLETED
-        logger.info(f"[Job {job.job_id}] Finished: {job.completed} completed, {job.failed} failed")
+        logger.info("[Job %s] Finished: %s completed, %s failed", job.job_id, job.completed, job.failed)
 
     except Exception:
-        logger.exception(f"[Job {job.job_id}] Batch failed")
+        logger.exception("[Job %s] Batch failed", job.job_id)
         job.status = JobStatus.FAILED
 
 

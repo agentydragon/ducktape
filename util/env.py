@@ -23,7 +23,8 @@ def get_required_existing_path(name: str) -> Path:
     """Get required environment variable as a Path, verifying the path exists."""
     path = Path(os.environ[name])
     if not path.exists():
-        raise FileNotFoundError(f"{name}={path} does not exist")
+        msg = f"{name}={path} does not exist"
+        raise FileNotFoundError(msg)
     return path
 
 

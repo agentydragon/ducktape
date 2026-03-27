@@ -187,7 +187,8 @@ class PlaidProvider(_BaseProvider):
         )
 
     async def refresh_tokens(self, refresh_token: str) -> TokenData:
-        raise NotImplementedError("Plaid access_tokens do not expire and cannot be refreshed")
+        msg = "Plaid access_tokens do not expire and cannot be refreshed"
+        raise NotImplementedError(msg)
 
     def needs_refresh(self, token: TokenData) -> bool:
         return False

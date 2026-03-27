@@ -53,7 +53,7 @@ class FileChecker:
         try:
             content = file_path.read_text()
         except (OSError, UnicodeDecodeError) as e:
-            logger.error(f"Failed to read {file_path}: {e}")
+            logger.error("Failed to read %s: %s", file_path, e)
             return violations
 
         # Run AST checks
@@ -90,11 +90,11 @@ class FileChecker:
                 try:
                     file_path.write_text(formatted_content)
                     if self.verbose:
-                        logger.info(f"Applied fixes to {file_path}: {', '.join(changes)}")
+                        logger.info("Applied fixes to %s: %s", file_path, ", ".join(changes))
 
                     # Re-check after fixing to get updated violations
                     violations = self.check_file(file_path)
                 except OSError as e:
-                    logger.error(f"Failed to write fixes to {file_path}: {e}")
+                    logger.error("Failed to write fixes to %s: %s", file_path, e)
 
         return violations

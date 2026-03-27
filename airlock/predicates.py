@@ -64,7 +64,8 @@ def load_predicate(path: Path) -> PredicateFn:
     """
     spec = importlib.util.spec_from_file_location("_approval_predicate", path)
     if spec is None or spec.loader is None:
-        raise ImportError(f"cannot load module spec from {path}")
+        msg = f"cannot load module spec from {path}"
+        raise ImportError(msg)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     fn: PredicateFn = module.decide

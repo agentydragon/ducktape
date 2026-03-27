@@ -55,7 +55,8 @@ def get_result_priority(result):
         assert priority >= 0
         return priority
     except Exception as e:
-        raise ValueError(f"failed to process {result['noteId'] = }") from e
+        msg = f"failed to process {result['noteId'] = }"
+        raise ValueError(msg) from e
 
 
 def get_trilium_papers():
@@ -96,7 +97,8 @@ def get_trilium_papers():
             elif finished_reading == "false":
                 finished_reading = False
             else:
-                raise Exception(f"{finished_reading=}")
+                msg = f"{finished_reading=}"
+                raise Exception(msg)
         except KeyError:
             finished_reading = False
 
@@ -245,7 +247,8 @@ def sync():
         print(f"{sp.stdout = }")
         # Print the standard error of the command
         print(f"{sp.stderr = }")
-        raise RuntimeError("unhandled")
+        msg = "unhandled"
+        raise RuntimeError(msg)
 
 
 def main(_):

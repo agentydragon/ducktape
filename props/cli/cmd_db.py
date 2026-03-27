@@ -118,7 +118,7 @@ def cmd_db_backup(output: Path | None = BACKUP_OUTPUT_OPT, plain: bool = BACKUP_
     if output is None:
         backup_dir = get_default_backup_dir()
         backup_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(tz=datetime.UTC).strftime("%Y%m%d_%H%M%S")
         suffix = ".sql" if plain else ".sql.gz"
         output = backup_dir / f"props_backup_{timestamp}{suffix}"
 
@@ -206,7 +206,7 @@ def cmd_db_list_backups() -> None:
     for backup in backups:
         stat = backup.stat()
         size_mb = stat.st_size / (1024 * 1024)
-        created = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+        created = datetime.fromtimestamp(stat.st_mtime, tz=datetime.UTC).strftime("%Y-%m-%d %H:%M:%S")
         table.add_row(backup.name, f"{size_mb:.1f} MB", created)
 
     console.print(table)

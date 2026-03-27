@@ -26,13 +26,16 @@ SA_TOKEN_SECRET_NAME = "claude-code-web-token"
 def generate(root: Path) -> None:
     hook_config = HookConfig.load_from_repo(root)
     if not hook_config:
-        raise SystemExit(f"Config file not found under {root}")
+        msg = f"Config file not found under {root}"
+        raise SystemExit(msg)
     if not hook_config.k8s:
-        raise SystemExit("No k8s config found in hook config")
+        msg = "No k8s config found in hook config"
+        raise SystemExit(msg)
 
     kubeconfig_path = os.environ.get("KUBECONFIG")
     if not kubeconfig_path:
-        raise SystemExit("KUBECONFIG not set — run from cluster/ with direnv or set it manually")
+        msg = "KUBECONFIG not set — run from cluster/ with direnv or set it manually"
+        raise SystemExit(msg)
 
     log.info("Loading kubeconfig from %s", kubeconfig_path)
     config.load_kube_config(kubeconfig_path)

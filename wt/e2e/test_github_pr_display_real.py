@@ -34,7 +34,8 @@ def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict[str, Any])
             f.flush()
             line = f.readline()
             if not line:
-                raise AssertionError("No response from daemon")
+                msg = "No response from daemon"
+                raise AssertionError(msg)
             result: dict[str, Any] = json.loads(line.decode())
             return result
 
@@ -89,7 +90,8 @@ def test_github_pr_display_with_mocked_pygithub(real_temp_repo, config_factory, 
 
     ok = wait_until(_status_has_pr, timeout_seconds=12.0, interval_seconds=0.25)
     if not ok:
-        raise AssertionError(f"PR details not shown in time. Last output:\n{last['out']}")
+        msg = f"PR details not shown in time. Last output:\n{last['out']}"
+        raise AssertionError(msg)
 
 
 if __name__ == "__main__":

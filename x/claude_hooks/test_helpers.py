@@ -17,7 +17,8 @@ def load_test_json(tool_name: str, scenario: str) -> dict[str, Any]:
         json_content = json_path.read_text()
         return cast(dict[str, Any], json.loads(json_content))
     except Exception as e:
-        raise FileNotFoundError(f"Could not load test data for {tool_name}/{scenario}: {e}") from e
+        msg = f"Could not load test data for {tool_name}/{scenario}: {e}"
+        raise FileNotFoundError(msg) from e
 
 
 def create_test_session_id(test_name: str) -> uuid.UUID:

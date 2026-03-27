@@ -30,7 +30,12 @@ def main() -> None:
         namespace=_detect_namespace(),
         refresh_margin_seconds=int(os.environ.get("REFRESH_MARGIN_SECONDS", "3600")),
     )
-    logger.info(f"Starting tana token broker: {cfg.tana_url=} {cfg.namespace=} {cfg.secret_name=}")
+    logger.info(
+        "Starting tana token broker: tana_url=%s namespace=%s secret_name=%s",
+        cfg.tana_url,
+        cfg.namespace,
+        cfg.secret_name,
+    )
     asyncio.run(run_broker(cfg))
 
 

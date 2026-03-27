@@ -21,15 +21,18 @@ async def get_docker_network_gateway_async(docker_client: aiodocker.Docker, netw
     networks = await docker_client.networks.list()
     network = next((n for n in networks if n["Name"] == network_name), None)
     if not network:
-        raise RuntimeError(f"Network not found: {network_name}")
+        msg = f"Network not found: {network_name}"
+        raise RuntimeError(msg)
 
     network_obj = await docker_client.networks.get(network["Id"])
     network_info = await network_obj.show()
     ipam_config = network_info.get("IPAM", {}).get("Config", [])
     if not ipam_config:
-        raise RuntimeError(f"No IPAM config for network {network_name}")
+        msg = f"No IPAM config for network {network_name}"
+        raise RuntimeError(msg)
 
     gateway = ipam_config[0].get("Gateway")
     if isinstance(gateway, str):
         return gateway
-    raise RuntimeError(f"No gateway found for network {network_name}")
+    msg = f"No gateway found for network {network_name}"
+    raise RuntimeError(msg)

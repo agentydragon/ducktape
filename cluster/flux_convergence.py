@@ -200,7 +200,8 @@ def monitor_flux_convergence(
         elapsed = now - start
         if elapsed >= global_timeout:
             _print_final_summary(tracked, success=False, reason=f"global timeout ({global_timeout})")
-            raise SystemExit("Flux convergence timed out")
+            msg = "Flux convergence timed out"
+            raise SystemExit(msg)
 
         try:
             raw = custom_api.list_namespaced_custom_object(
@@ -256,6 +257,7 @@ def monitor_flux_convergence(
                 success=False,
                 reason=f"Ready count stuck at {high_water_ready}/{len(tracked)} for {since_increase}",
             )
-            raise SystemExit("Flux convergence stalled")
+            msg = "Flux convergence stalled"
+            raise SystemExit(msg)
 
         time.sleep(poll_interval.total_seconds())

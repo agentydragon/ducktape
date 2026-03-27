@@ -55,9 +55,11 @@ class UpstreamConfig(BaseModel):
     @model_validator(mode="after")
     def check_url_or_url_env(self) -> UpstreamConfig:
         if self.url is None and self.url_env is None:
-            raise ValueError("Either url or url_env must be set")
+            msg = "Either url or url_env must be set"
+            raise ValueError(msg)
         if self.url is not None and self.url_env is not None:
-            raise ValueError("Cannot set both url and url_env")
+            msg = "Cannot set both url and url_env"
+            raise ValueError(msg)
         return self
 
 
@@ -122,5 +124,6 @@ def load_config_from_env() -> PropsConfig:
     """Load props configuration from the path in PROPS_CONFIG_FILE env var."""
     path_str = os.environ.get(ENV_CONFIG_FILE)
     if not path_str:
-        raise ValueError(f"{ENV_CONFIG_FILE} environment variable not set")
+        msg = f"{ENV_CONFIG_FILE} environment variable not set"
+        raise ValueError(msg)
     return load_config(Path(path_str))
