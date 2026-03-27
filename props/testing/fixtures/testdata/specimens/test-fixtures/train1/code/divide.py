@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Division operations for test fixture."""
 
 

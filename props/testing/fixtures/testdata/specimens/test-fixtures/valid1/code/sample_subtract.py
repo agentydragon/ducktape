@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """A trivial script that subtracts two numbers."""
 
 
