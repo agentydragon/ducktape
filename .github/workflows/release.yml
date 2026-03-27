@@ -3,16 +3,20 @@ name: Release
 # Updates npins with new artifact hashes and commits. Attic push happens automatically
 # via nix-attic-push workflow on the resulting commit.
 #
-# Dispatched with --ref <full-sha> so github.sha is the exact triggering commit —
-# no SHA inputs needed.
+# Dispatched with --ref devel (GitHub workflow_dispatch requires a branch/tag name,
+# not a bare SHA). The exact triggering commit is passed as inputs.sha so we check
+# out the right code regardless of how far devel has advanced since the BB run.
 "on":
   workflow_dispatch:
     inputs:
+      sha:
+        description: Full commit SHA to check out (exact triggering commit)
+        required: true
       changed:
         description: Space-separated packages with new releases (e.g. "claude-hooks bbapi")
         required: true
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.sha }}
   cancel-in-progress: false
 permissions:
   contents: write
@@ -25,12 +29,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ inputs.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Post pending status on triggering commit
         run: |
-          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" \
+          gh api "repos/${{ github.repository }}/statuses/${{ inputs.sha }}" \
             -f state=pending \
             -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             -f description="Updating npins" \
@@ -64,7 +68,7 @@ jobs:
       - name: Post success status
         if: success()
         run: |
-          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" \
+          gh api "repos/${{ github.repository }}/statuses/${{ inputs.sha }}" \
             -f state=success \
             -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             -f description="Release complete" \
@@ -75,7 +79,7 @@ jobs:
       - name: Post failure status
         if: failure()
         run: |
-          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" \
+          gh api "repos/${{ github.repository }}/statuses/${{ inputs.sha }}" \
             -f state=failure \
             -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             -f description="Release failed" \
