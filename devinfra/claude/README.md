@@ -312,18 +312,7 @@ Rotation: bump `rotation_version` in the TF module.
 To use this repository with Claude Code on the web, configure the following setup script in the Claude Code web UI:
 
 ```bash
-{
-  echo "=== web setup diagnostics ==="
-  echo "pwd: $(pwd)"
-  echo "whoami: $(whoami)"
-  echo "HOME: $HOME"
-  echo "flake.nix exists: $(test -f /home/user/ducktape/flake.nix && echo yes || echo no)"
-  echo "web_setup.sh exists: $(test -f /home/user/ducktape/devinfra/claude/web_setup.sh && echo yes || echo no)"
-  echo "ls /home/user/ducktape:"
-  ls /home/user/ducktape 2>&1 || echo "(not found)"
-  echo "==="
-} | tee /tmp/web-setup-pre.log
-bash /home/user/ducktape/devinfra/claude/web_setup.sh
+bash ducktape/devinfra/claude/web_setup.sh
 ```
 
 This runs <web_setup.sh> which installs:

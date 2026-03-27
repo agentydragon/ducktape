@@ -10,7 +10,7 @@
 # fails. Failures are logged to /tmp/web-setup.log and uploaded to ix.io.
 #
 # Usage (Claude Code web UI setup command):
-#   bash /home/user/ducktape/devinfra/claude/web_setup.sh
+#   bash ducktape/devinfra/claude/web_setup.sh
 
 LOG_FILE="/tmp/web-setup.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
