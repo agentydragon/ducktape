@@ -36,6 +36,7 @@ py_test(
         ":state",
         "//x/agent_server:conftest",
         "//x/agent_server/testing:typed_asserts",
+        "@pypi//mcp",
         "@pypi//pyhamcrest",
         "@pypi//pytest_bazel",
     ],
@@ -54,6 +55,7 @@ py_test(
         "//mcp_infra:prefix",
         "//x/agent_server:conftest",
         "//x/agent_server/testing:typed_asserts",
+        "@pypi//mcp",
         "@pypi//pytest_bazel",
     ],
 )
@@ -74,6 +76,7 @@ py_test(
         "//mcp_infra/exec:models",
         "//x/agent_server:conftest",
         "//x/agent_server/testing:typed_asserts",
+        "@pypi//mcp",
         "@pypi//pyhamcrest",
         "@pypi//pytest_bazel",
     ],
