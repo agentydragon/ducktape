@@ -76,7 +76,8 @@ async def setup_mkcert(paths: SessionPaths, combined_ca: Path | None) -> MkcertS
     if not await cert_path.exists() or not await key_path.exists():
         mkcert_bin = shutil.which("mkcert")
         if not mkcert_bin:
-            raise RuntimeError("mkcert not found on PATH (expected from Nix web-session package)")
+            msg = "mkcert not found on PATH (expected from Nix web-session package)"
+            raise RuntimeError(msg)
 
         logger.info("Generating localhost certificate...")
         with tracer.start_as_current_span("mkcert_generate_cert"):
@@ -95,7 +96,8 @@ async def setup_mkcert(paths: SessionPaths, combined_ca: Path | None) -> MkcertS
             )
             _, stderr = await proc.communicate()
             if proc.returncode != 0:
-                raise RuntimeError(f"mkcert certificate generation failed: {stderr.decode().strip()}")
+                msg = f"mkcert certificate generation failed: {stderr.decode().strip()}"
+                raise RuntimeError(msg)
         logger.info("Generated localhost cert: %s", cert_path)
 
     with tracer.start_as_current_span("mkcert_append_bundle"):

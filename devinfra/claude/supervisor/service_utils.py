@@ -38,10 +38,11 @@ async def wait_for_service_socket(
         # Terminal failure states — no point waiting
         if info.statename in (ProcessState.FATAL, ProcessState.BACKOFF, ProcessState.EXITED):
             on_failure(info)
-            raise TimeoutError(
+            msg = (
                 f"{service_name} service entered {info.statename} (socket_exists={socket_exists}). "
                 f"Check logs for details."
             )
+            raise TimeoutError(msg)
 
         await asyncio.sleep(0.1)
 

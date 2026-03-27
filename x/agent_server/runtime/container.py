@@ -267,7 +267,7 @@ class AgentContainer:
         meta = CompositorMetaClient(self.compositor_client)
         return cast(dict[str, ServerEntry], await meta.list_states())
 
-    def _get_session(self) -> AgentSession:
+    def get_session(self) -> AgentSession:
         """Get the agent session, raising ToolError if not initialized."""
         if self.session is None:
             msg = "Agent session not initialized"
@@ -290,14 +290,14 @@ class AgentContainer:
         @mcp.flat_model()
         async def send_prompt(input: SendPromptInput) -> str:
             """Send a prompt to the agent."""
-            session = container._get_session()
+            session = container.get_session()
             await session.run(input.prompt)
             return "Prompt sent successfully"
 
         @mcp.flat_model()
         async def abort() -> str:
             """Abort the currently active agent."""
-            session = container._get_session()
+            session = container.get_session()
             await session.cancel_active_run()
             return "Agent aborted successfully"
 

@@ -86,7 +86,8 @@ def setup_k8s_secrets(
     """
     result = K8sSecretsResult()
     if not config.k8s or not config.k8s_secrets:
-        raise ValueError(f"k8s and k8s_secrets config sections are required, got {config.k8s=}, {config.k8s_secrets=}")
+        msg = f"k8s and k8s_secrets config sections are required, got {config.k8s=}, {config.k8s_secrets=}"
+        raise ValueError(msg)
     k8s_cfg = config.k8s
     secrets_cfg = config.k8s_secrets
 

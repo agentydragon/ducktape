@@ -129,9 +129,11 @@ class GitCloneConfig(BaseModel):
     def validate_commit_hash(cls, v: str) -> str:
         """Validate that commit is a full 40-character SHA hash."""
         if len(v) != COMMIT_SHA_LEN:
-            raise ValueError(f"Commit must be a full {COMMIT_SHA_LEN}-character SHA hash, got {len(v)} characters: {v}")
+            msg = f"Commit must be a full {COMMIT_SHA_LEN}-character SHA hash, got {len(v)} characters: {v}"
+            raise ValueError(msg)
         if not all(c in "0123456789abcdefABCDEF" for c in v):
-            raise ValueError(f"Commit must be a valid hex SHA hash: {v}")
+            msg = f"Commit must be a valid hex SHA hash: {v}"
+            raise ValueError(msg)
         return v.lower()  # Normalize to lowercase
 
 
@@ -167,9 +169,8 @@ class TaskSetup(BaseModel):
     def validate_isolation(self):
         """Validate that Docker and sandbox are mutually exclusive."""
         if self.docker and self.sandbox and self.sandbox.enabled:
-            raise ValueError(
-                "Docker and sandbox cannot both be configured - they are mutually exclusive isolation methods"
-            )
+            msg = "Docker and sandbox cannot both be configured - they are mutually exclusive isolation methods"
+            raise ValueError(msg)
         return self
 
 
@@ -184,7 +185,8 @@ class FileBasedGrading(BaseModel):
     @model_validator(mode="after")
     def validate_criteria_source(self):
         if not self.criteria_file and not self.criteria:
-            raise ValueError("Must provide either criteria_file or criteria")
+            msg = "Must provide either criteria_file or criteria"
+            raise ValueError(msg)
         return self
 
 
@@ -206,7 +208,8 @@ class MessageBasedGrading(BaseModel):
     @model_validator(mode="after")
     def validate_criteria_source(self):
         if not self.criteria_file and not self.criteria:
-            raise ValueError("Must provide either criteria_file or criteria")
+            msg = "Must provide either criteria_file or criteria"
+            raise ValueError(msg)
         return self
 
 
@@ -245,7 +248,8 @@ class TaskDefinition(BaseModel):
         Grading uses task override if present, otherwise falls back to task type default.
         """
         if self.type not in task_types:
-            raise ValueError(f"Unknown task type: {self.type}")
+            msg = f"Unknown task type: {self.type}"
+            raise ValueError(msg)
 
         base_type = task_types[self.type]
 
@@ -357,7 +361,8 @@ class DockerEnvironment(BaseModel):
             Dictionary mapping file paths to contents
         """
         # TODO: Implement container file collection
-        raise NotImplementedError("Docker container file collection not yet implemented")
+        msg = "Docker container file collection not yet implemented"
+        raise NotImplementedError(msg)
 
 
 class WorkspaceEnvironment(BaseModel):
@@ -443,5 +448,6 @@ class TaskDefinitionsYaml(BaseModel):
         if task_types:
             for task in self.tasks:
                 if task.type not in task_types:
-                    raise ValueError(f"Task {task.id} has unknown type: {task.type}")
+                    msg = f"Task {task.id} has unknown type: {task.type}"
+                    raise ValueError(msg)
         return self

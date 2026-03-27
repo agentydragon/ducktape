@@ -55,7 +55,8 @@ class TokenConfig(BaseModel):
     @model_validator(mode="after")
     def _secret_not_empty(self) -> "TokenConfig":
         if not self.secret:
-            raise ValueError("token secret must not be empty")
+            msg = "token secret must not be empty"
+            raise ValueError(msg)
         return self
 
 
@@ -66,7 +67,8 @@ class HomeAssistantSettings(BaseModel):
     @model_validator(mode="after")
     def _token_not_empty(self) -> "HomeAssistantSettings":
         if not self.token:
-            raise ValueError("homeassistant token must not be empty")
+            msg = "homeassistant token must not be empty"
+            raise ValueError(msg)
         return self
 
 
@@ -76,11 +78,12 @@ class Settings(BaseModel):
 
     @classmethod
     def from_file(cls, path: Path) -> "Settings":
-        logger.info(f"Loading settings from {path.absolute()}")
+        logger.info("Loading settings from %s", path.absolute())
         with path.open() as f:
             data = yaml.safe_load(f)
         if not isinstance(data, dict):
-            raise ValueError(f"expected YAML mapping in {path}, got {type(data).__name__}")
+            msg = f"expected YAML mapping in {path}, got {type(data).__name__}"
+            raise ValueError(msg)
         # Allow HA token to come from env var
         ha_token_env = os.getenv("HOMEASSISTANT_PROXY_HA_TOKEN")
         if ha_token_env:

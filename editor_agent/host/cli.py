@@ -81,7 +81,8 @@ async def edit(
     )
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
-        raise RuntimeError(f"Failed to load editor image: {stderr.decode()}")
+        msg = f"Failed to load editor image: {stderr.decode()}"
+        raise RuntimeError(msg)
 
     async with aiodocker.Docker() as docker_client:
         typer.echo(f"Editing {file} with {model} (image {EDITOR_IMAGE_TAG})")

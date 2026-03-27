@@ -73,7 +73,7 @@ async def root(request: Request, session: str | None = Cookie(None), csrf_protec
         async with get_db_session(request) as db_session:
             stmt = select(AdminSession).where(AdminSession.session_token == session)
             admin_session = (await db_session.execute(stmt)).scalar_one_or_none()
-            if admin_session and admin_session.expires_at > datetime.now():
+            if admin_session and admin_session.expires_at > datetime.now(tz=datetime.UTC):
                 return RedirectResponse("/admin/", status_code=302)
 
     token, signed = csrf_protect.generate_csrf_tokens()

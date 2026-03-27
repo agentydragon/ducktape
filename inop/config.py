@@ -139,9 +139,10 @@ class OptimizerConfig(BaseModel):
         config_path = Path.cwd() / "config.yaml" if config_path is None else Path(config_path)
 
         if not config_path.exists():
-            raise FileNotFoundError(
+            msg = (
                 f"Configuration file not found: {config_path}. Create this file or use OptimizerConfig() for defaults."
             )
+            raise FileNotFoundError(msg)
 
         with config_path.open() as f:
             config_data = yaml.safe_load(f)

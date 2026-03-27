@@ -271,11 +271,14 @@ class SupervisorClient:
                         await asyncio.sleep(0.2)
                         last_error = e
                         continue
-                    raise ProxyServiceError(f"Failed to add service {name}: {e}") from e
+                    msg = f"Failed to add service {name}: {e}"
+                    raise ProxyServiceError(msg) from e
             if last_error:
-                raise ProxyServiceError(f"Failed to add service {name} after retries: {last_error}") from last_error
+                msg = f"Failed to add service {name} after retries: {last_error}"
+                raise ProxyServiceError(msg) from last_error
         except (ConnectionError, OSError) as e:
-            raise ProxyServiceError(f"Failed to communicate with supervisor: {e}") from e
+            msg = f"Failed to communicate with supervisor: {e}"
+            raise ProxyServiceError(msg) from e
 
     async def get_service_state(self, service_name: str) -> ProcessState | None:
         """Get the current state of a service.
@@ -317,7 +320,8 @@ class SupervisorClient:
             await self.start_process(service_name)
             logger.info("Restarted service: %s", service_name)
         except (xmlrpc.client.Fault, ConnectionError, OSError) as e:
-            raise ProxyServiceError(f"Failed to restart {service_name}: {e}") from e
+            msg = f"Failed to restart {service_name}: {e}"
+            raise ProxyServiceError(msg) from e
 
     def get_service_command(self, name: str) -> str | None:
         """Get the current command for a service from its config file.

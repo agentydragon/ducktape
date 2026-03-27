@@ -39,11 +39,13 @@ class YamlLoader:
         if self._seeds_models is None:
             data = self._load_yaml_file(self.seeds_yaml_path)
             if not isinstance(data, list):
-                raise ValueError(f"Seeds YAML must contain a list of tasks, got {type(data)}")
+                msg = f"Seeds YAML must contain a list of tasks, got {type(data)}"
+                raise ValueError(msg)
             models: list[SeedTask] = []
             for item in data:
                 if not isinstance(item, dict):
-                    raise ValueError("Each seed task must be a mapping")
+                    msg = "Each seed task must be a mapping"
+                    raise ValueError(msg)
                 models.append(SeedTask(**item))
             self._seeds_models = models
         return self._seeds_models
@@ -54,7 +56,8 @@ class YamlLoader:
         if self._graders_models is None:
             data = self._load_yaml_file(self.graders_yaml_path)
             if not isinstance(data, dict) or "graders" not in data:
-                raise ValueError(f"Graders YAML must be a dict with 'graders' key, got {type(data)}")
+                msg = f"Graders YAML must be a dict with 'graders' key, got {type(data)}"
+                raise ValueError(msg)
             models: list[GraderDataModel] = []
             for grader_data in data["graders"]:
                 if not isinstance(grader_data, dict):

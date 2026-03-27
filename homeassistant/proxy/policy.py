@@ -74,11 +74,11 @@ class PolicyEnforcer:
                 self._connected.clear()
                 return
             except (CannotConnect, ConnectionFailed, NotConnected, OSError) as exc:
-                logger.warning(f"HA connection lost: {exc}. Reconnecting in {backoff:.1f}s")
+                logger.warning("HA connection lost: %s. Reconnecting in %.1fs", exc, backoff)
             except asyncio.CancelledError:
                 raise
             except Exception:
-                logger.exception(f"Unexpected error in HA connection loop. Reconnecting in {backoff:.1f}s")
+                logger.exception("Unexpected error in HA connection loop. Reconnecting in %.1fs", backoff)
             finally:
                 self._connected.clear()
                 if self._client is not None:
@@ -96,7 +96,7 @@ class PolicyEnforcer:
                 self._entities_time = now
             except (ConnectionError, NotConnected, CannotConnect, ConnectionFailed) as exc:
                 if self._entities is not None:
-                    logger.warning(f"Registry refresh failed ({exc}), serving stale cache")
+                    logger.warning("Registry refresh failed (%s), serving stale cache", exc)
                 else:
                     raise
         return self._entities
@@ -107,7 +107,8 @@ class PolicyEnforcer:
             try:
                 await asyncio.wait_for(self._connected.wait(), timeout=10.0)
             except TimeoutError:
-                raise ConnectionError("HA WebSocket not available for registry refresh")
+                msg = "HA WebSocket not available for registry refresh"
+                raise ConnectionError(msg)
 
         client = self._client
         assert client is not None
@@ -126,7 +127,7 @@ class PolicyEnforcer:
                 area_id = device_area.get(device_id)
             registry[entity_id] = EntityInfo(entity_id=entity_id, device_id=device_id, area_id=area_id)
 
-        logger.info(f"Fetched registry: {len(registry)} entities")
+        logger.info("Fetched registry: %d entities", len(registry))
         return registry
 
     def _get_entity(self, entities: dict[str, EntityInfo], entity_id: str) -> EntityInfo:

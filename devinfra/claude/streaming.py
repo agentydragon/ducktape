@@ -34,7 +34,8 @@ def run_streaming(
     )
 
     if proc.stdout is None:
-        raise RuntimeError("Failed to create pipe for subprocess output")
+        msg = "Failed to create pipe for subprocess output"
+        raise RuntimeError(msg)
 
     while True:
         ready, _, _ = select.select([proc.stdout], [], [], HEARTBEAT_INTERVAL_SECONDS)
@@ -55,6 +56,7 @@ def run_streaming(
     else:
         logger.error("%s: failed with code %d", op, proc.returncode)
         if check:
-            raise RuntimeError(f"{op} failed with exit code {proc.returncode}")
+            msg = f"{op} failed with exit code {proc.returncode}"
+            raise RuntimeError(msg)
 
     return proc.returncode

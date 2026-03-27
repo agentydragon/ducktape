@@ -75,7 +75,8 @@ def restart_kernel() -> Path | None:
 def run_code(code: str) -> str:
     conn = ensure_kernel()
     if conn is None:
-        raise RuntimeError("Persistent kernel unavailable (ipykernel not installed?)")
+        msg = "Persistent kernel unavailable (ipykernel not installed?)"
+        raise RuntimeError(msg)
 
     client = BlockingKernelClient()
     client.load_connection_file(str(conn))

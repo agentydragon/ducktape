@@ -21,7 +21,8 @@ class ProposePromptNTimes(BaseHandler):
 
     def __init__(self, n: int) -> None:
         if n < 1:
-            raise ValueError("n must be >= 1")
+            msg = "n must be >= 1"
+            raise ValueError(msg)
         self._n = n
         self._k = 0
 

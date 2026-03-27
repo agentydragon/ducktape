@@ -17,7 +17,7 @@ def load_system_prompt() -> str:
 def _embed_package_file(relative_path: str) -> str:
     content = _read_resource(f"resources/{relative_path}")
     header = f"# /var/emberd/{relative_path}"
-    return "\n".join((header, content))
+    return f"{header}\n{content}"
 
 
 def _read_resource(name: str) -> str:

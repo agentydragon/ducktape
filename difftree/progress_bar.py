@@ -27,7 +27,8 @@ class BlockChars:
     def __post_init__(self):
         """Validate block character configuration."""
         if len(self.partials) < 1:
-            raise ValueError("partials must have at least 1 element")
+            msg = "partials must have at least 1 element"
+            raise ValueError(msg)
 
     @classmethod
     def simple(cls, char: str, empty: str = " ") -> BlockChars:

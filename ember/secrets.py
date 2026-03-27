@@ -15,7 +15,8 @@ class ProjectedSecret:
 
     def __init__(self, *, name: str, env_var: str | None = None) -> None:
         if not name:
-            raise ValueError("ProjectedSecret requires a name")
+            msg = "ProjectedSecret requires a name"
+            raise ValueError(msg)
 
         file_component = Path(name).name
         self._file_name = file_component
@@ -31,7 +32,8 @@ class ProjectedSecret:
         """Return the current value, raising if required and missing."""
         value = self._read_raw()
         if required and not value:
-            raise RuntimeError(f"{self._file_name} is not configured")
+            msg = f"{self._file_name} is not configured"
+            raise RuntimeError(msg)
         return value
 
     def _read_raw(self) -> str | None:

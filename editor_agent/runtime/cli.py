@@ -26,9 +26,11 @@ async def _get_filename() -> str:
             if str(resource.uri) == EDIT_RESOURCE_URI:
                 name: str | None = resource.name
                 if name is None:
-                    raise RuntimeError(f"Resource {EDIT_RESOURCE_URI} has no name")
+                    msg = f"Resource {EDIT_RESOURCE_URI} has no name"
+                    raise RuntimeError(msg)
                 return name
-        raise RuntimeError(f"Resource {EDIT_RESOURCE_URI} not found")
+        msg = f"Resource {EDIT_RESOURCE_URI} not found"
+        raise RuntimeError(msg)
 
 
 @submit_app.command("read-input")

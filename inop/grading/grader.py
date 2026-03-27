@@ -130,14 +130,16 @@ Return a JSON object with:
 
     if not call or call.name != "submit_comparison_grade":
         logger.error("Grader did not return expected comparison function call", task_id=task.id)
-        raise RuntimeError("Grader did not return expected comparison function call")
+        msg = "Grader did not return expected comparison function call"
+        raise RuntimeError(msg)
 
     # Parse the grading result
     try:
         parsed = json.loads(call.arguments or "{}")
     except json.JSONDecodeError as e:
         logger.error("Failed to parse comparison grading", task_id=task.id, error=str(e))
-        raise RuntimeError("Failed to parse comparison grading") from e
+        msg = "Failed to parse comparison grading"
+        raise RuntimeError(msg) from e
 
     # Convert percentage to 0-10 scale for consistency with other grades
     score = parsed["covered_percent"] / 10.0
@@ -227,7 +229,8 @@ async def _grade_with_criteria(
 
     if not call or call.name != "submit_grades":
         logger.error("Grader did not return expected grades function call", task_id=task.id)
-        raise RuntimeError("Grader did not return expected grades function call")
+        msg = "Grader did not return expected grades function call"
+        raise RuntimeError(msg)
 
     # Parse the grades
     try:
@@ -240,7 +243,8 @@ async def _grade_with_criteria(
         parsed = json.loads(arguments_str or "{}")
     except json.JSONDecodeError as e:
         logger.error("Failed to parse grades", task_id=task.id, error=str(e))
-        raise RuntimeError("Failed to parse grades") from e
+        msg = "Failed to parse grades"
+        raise RuntimeError(msg) from e
 
     # Build Grade object
     axes = {}

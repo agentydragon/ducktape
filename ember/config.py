@@ -32,7 +32,8 @@ class EnforcedSleepUntilUserMessagePolicy(_SleepPolicyBase):
     @classmethod
     def _validate_timeout(cls, value: int) -> int:
         if value <= 0:
-            raise ValueError("timeout_seconds must be positive")
+            msg = "timeout_seconds must be positive"
+            raise ValueError(msg)
         return value
 
     @property
@@ -109,7 +110,8 @@ def load_settings() -> EmberSettings:
         try:
             config_data = tomllib.loads(config_path.read_text(encoding="utf-8"))
         except tomllib.TOMLDecodeError as exc:  # pragma: no cover
-            raise RuntimeError(f"Invalid Ember config file: {exc}") from exc
+            msg = f"Invalid Ember config file: {exc}"
+            raise RuntimeError(msg) from exc
 
     matrix_cfg = config_data.get("matrix", {}) if isinstance(config_data.get("matrix"), dict) else {}
     state_cfg = config_data.get("state", {}) if isinstance(config_data.get("state"), dict) else {}
@@ -163,7 +165,8 @@ def load_settings() -> EmberSettings:
             workspace_path=workspace_path,
         )
     except ValidationError as exc:  # pragma: no cover - configuration errors should surface loudly
-        raise RuntimeError(f"Invalid pilot configuration: {exc}") from exc
+        msg = f"Invalid pilot configuration: {exc}"
+        raise RuntimeError(msg) from exc
 
 
 def _env_flag(name: str, default: bool) -> bool:

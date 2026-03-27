@@ -46,7 +46,7 @@ class DiffTree:
             width=options.max_width or 80,
             legacy_windows=False,
             force_terminal=True,  # Force ANSI codes to preserve styling
-            color_system="standard" if console._color_system else None,  # Match parent console
+            color_system="standard" if console.color_system else None,
         )
         temp_console.print(tree)
 

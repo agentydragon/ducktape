@@ -69,61 +69,51 @@ class EmberRuntime:
 
         This is the primary way to create a runtime - handles all async initialization.
         """
-        runtime = cls.__new__(cls)
-        runtime._settings = settings
-        runtime._task = None
-        runtime._stop_event = asyncio.Event()
-        await runtime._initialize()
-        return runtime
+        matrix_client = MatrixClient(settings.matrix)
 
-    async def _initialize(self) -> None:
-        """Initialize or reinitialize all components."""
-        # Create Matrix client
-        self._matrix_client = MatrixClient(self._settings.matrix)
+        settings.workspace_path.mkdir(parents=True, exist_ok=True)
 
-        # Ensure workspace exists
-        self._settings.workspace_path.mkdir(parents=True, exist_ok=True)
-
-        # Create handlers
-        self._sleep_handler = EmberSleepHandler()
+        sleep_handler = EmberSleepHandler()
         handlers = [
-            self._sleep_handler,
-            EmberPersistenceHandler(self._settings.history_path),
+            sleep_handler,
+            EmberPersistenceHandler(settings.history_path),
             RedirectOnTextMessageHandler(TEXT_REMINDER),
         ]
 
-        # Set up compositor with MCP servers
-        self._compositor = EmberCompositor(
-            workspace_path=self._settings.workspace_path,
-            sleep_callback=self._sleep_handler.request_sleep,
-            status_provider=self._matrix_client,
-            sleep_policy=self._settings.openai.sleep_tool_policy,
+        compositor = EmberCompositor(
+            workspace_path=settings.workspace_path,
+            sleep_callback=sleep_handler.request_sleep,
+            status_provider=matrix_client,
+            sleep_policy=settings.openai.sleep_tool_policy,
         )
-        await self._compositor.__aenter__()
+        await compositor.__aenter__()
 
-        # Create MCP client from compositor
-        self._mcp_client = Client(self._compositor)
-        await self._mcp_client.__aenter__()
+        mcp_client = Client(compositor)
+        await mcp_client.__aenter__()
 
-        # Create persistent agent
-        model_client = build_client(
-            self._settings.openai.model, reasoning_effort=self._settings.openai.reasoning_effort
-        )
+        model_client = build_client(settings.openai.model, reasoning_effort=settings.openai.reasoning_effort)
 
-        self._agent = await Agent.create(
-            tool_provider=MCPToolProvider(self._mcp_client),
+        agent = await Agent.create(
+            tool_provider=MCPToolProvider(mcp_client),
             client=model_client,
             handlers=handlers,
             tool_policy=AllowAnyToolOrTextMessage(),
-            reasoning_effort=self._settings.openai.reasoning_effort,
-            dynamic_instructions=self._compositor.render_agent_dynamic_instructions,
+            reasoning_effort=settings.openai.reasoning_effort,
+            dynamic_instructions=compositor.render_agent_dynamic_instructions,
         )
 
-        # Insert system prompt into agent's transcript
-        self._agent.process_message(SystemMessage.text(self._settings.openai.system_prompt))
+        agent.process_message(SystemMessage.text(settings.openai.system_prompt))
 
-        # Ensure Python kernel is running
         ensure_kernel()
+
+        return cls(
+            settings=settings,
+            matrix_client=matrix_client,
+            compositor=compositor,
+            mcp_client=mcp_client,
+            sleep_handler=sleep_handler,
+            agent=agent,
+        )
 
     async def start(self) -> None:
         """Start the runtime - begin Matrix client and main loop."""
@@ -151,8 +141,15 @@ class EmberRuntime:
     async def restart(self) -> None:
         """Restart the runtime with fresh components."""
         await self.stop()
-        await self._initialize()
+        self._reinitialize(await EmberRuntime.create(self._settings))
         await self.start()
+
+    def _reinitialize(self, other: EmberRuntime) -> None:
+        self._matrix_client = other._matrix_client
+        self._compositor = other._compositor
+        self._mcp_client = other._mcp_client
+        self._sleep_handler = other._sleep_handler
+        self._agent = other._agent
 
     async def _loop(self) -> None:
         """Main event loop - poll Matrix and run agent."""

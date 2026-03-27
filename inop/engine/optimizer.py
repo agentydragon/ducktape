@@ -186,7 +186,8 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
     elif feedback_mode == FeedbackMode.FULL_ROLLOUTS:
         feedback_provider = FullRolloutsFeedbackProvider()
     else:
-        raise ValueError(f"Invalid {feedback_mode = }.")
+        msg = f"Invalid {feedback_mode = }."
+        raise ValueError(msg)
 
     # Deps to run rollouts for a given prompt
     class _Deps:
@@ -209,7 +210,8 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
                 )
                 # Prepare task-type specific setup
                 if t.type not in args.task_types:
-                    raise ValueError(f"Unknown task type: {t.type}")
+                    msg = f"Unknown task type: {t.type}"
+                    raise ValueError(msg)
                 task_type_config = args.task_types[t.type]
                 await runner.setup(t, task_type_config)
 
@@ -220,7 +222,8 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
                 # Grade rollout
                 _, grading_config = t.resolve_config(args.task_types)
                 if grading_config is None:
-                    raise ValueError("grading_config is required for grade_rollout")
+                    msg = "grading_config is required for grade_rollout"
+                    raise ValueError(msg)
                 grade = await grade_rollout(
                     rollout=rollout,
                     task=t,
@@ -525,10 +528,10 @@ Examples:
     seed_tasks = [t for t in all_tasks if t.type == task_type_enum.value]
 
     if not seed_tasks:
-        logger.error(f"No tasks found with type '{task_type_enum.value}' in {seeds_path}")
+        logger.error("No tasks found with type '%s' in %s", task_type_enum.value, seeds_path)
         sys.exit(1)
 
-    logger.info(f"Loaded {len(seed_tasks)} {task_type_enum.value} tasks from {len(all_tasks)} total tasks")
+    logger.info("Loaded %d %s tasks from %d total tasks", len(seed_tasks), task_type_enum.value, len(all_tasks))
 
     # Load grading criteria from YAML
     logger.info("Loading grading criteria")
