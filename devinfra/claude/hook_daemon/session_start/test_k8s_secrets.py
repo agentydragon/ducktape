@@ -8,7 +8,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 import pytest_bazel
 import yaml
+from kubernetes.client import Configuration
 
+from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
 from devinfra.claude.hook_config import HookConfig, K8sConfig, K8sSecretMapping, K8sSecretsConfig
 from devinfra.claude.hook_daemon.session_start.k8s_secrets import setup_k8s_secrets
 
@@ -100,8 +102,8 @@ def test_kubeconfig_no_proxy_url_when_unset(
     """When proxy is not set and no proxy env vars are present, kubeconfig should not include proxy-url."""
     config = _make_config([])
     mock_k8s_api.read_namespaced_secret.side_effect = []
-    monkeypatch.delenv("HTTPS_PROXY", raising=False)
-    monkeypatch.delenv("HTTP_PROXY", raising=False)
+    for var in PROXY_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
 
     result = setup_k8s_secrets(token="tok", session_dir=tmp_path, combined_ca_path=None, config=config)
 
@@ -116,14 +118,50 @@ def test_kubeconfig_proxy_url_from_env(
     """When no explicit proxy is given but HTTPS_PROXY is set, kubeconfig should use it."""
     config = _make_config([])
     mock_k8s_api.read_namespaced_secret.side_effect = []
+    for var in PROXY_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("HTTPS_PROXY", "http://egress-proxy:15004")
-    monkeypatch.delenv("HTTP_PROXY", raising=False)
 
     result = setup_k8s_secrets(token="tok", session_dir=tmp_path, combined_ca_path=None, config=config)
 
     assert result.kubeconfig_path is not None
     kubeconfig = yaml.safe_load(result.kubeconfig_path.read_text())
     assert kubeconfig["clusters"][0]["cluster"]["proxy-url"] == "http://egress-proxy:15004"
+
+
+def test_proxy_credentials_extracted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Proxy URL with embedded credentials sets Proxy-Authorization and sanitizes client proxy URL."""
+    config = _make_config([])
+    for var in PROXY_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
+
+    captured_configs: list[Configuration] = []
+
+    class CapturingConfiguration(Configuration):
+        def __init__(self) -> None:
+            super().__init__()
+            captured_configs.append(self)
+
+    with (
+        patch("devinfra.claude.hook_daemon.session_start.k8s_secrets.k8s_client"),
+        patch("devinfra.claude.hook_daemon.session_start.k8s_secrets.CoreV1Api"),
+        patch("devinfra.claude.hook_daemon.session_start.k8s_secrets.Configuration", CapturingConfiguration),
+    ):
+        setup_k8s_secrets(
+            token="tok",
+            session_dir=tmp_path,
+            combined_ca_path=None,
+            config=config,
+            proxy="http://user:secret@proxy.example.com:8080",
+        )
+
+    assert len(captured_configs) == 1
+    cfg = captured_configs[0]
+    # Credentials must be stripped from the proxy URL used by the k8s client
+    assert cfg.proxy == "http://proxy.example.com:8080"
+    # Credentials must be sent via explicit Proxy-Authorization header
+    expected_auth = "Basic " + base64.b64encode(b"user:secret").decode()
+    assert cfg.proxy_headers == {"Proxy-Authorization": expected_auth}
 
 
 if __name__ == "__main__":

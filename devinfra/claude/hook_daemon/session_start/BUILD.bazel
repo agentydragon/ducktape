@@ -75,6 +75,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//devinfra/claude:hook_config",
+        "//devinfra/claude/auth_proxy:vars",
         "@pypi//kubernetes",
         "@pypi//pyyaml",
     ],
@@ -167,6 +168,8 @@ py_test(
         ":k8s_secrets",
         "//devinfra/claude:conftest",
         "//devinfra/claude:hook_config",
+        "//devinfra/claude/auth_proxy:vars",
+        "@pypi//kubernetes",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

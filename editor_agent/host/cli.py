@@ -68,7 +68,7 @@ async def edit(
         raise typer.BadParameter("FILE argument is required")
     if prompt is None:
         raise typer.BadParameter("PROMPT argument is required")
-    file = file.resolve()
+    file = Path(await anyio.Path(file).resolve())
     if not await anyio.Path(file).is_file():
         raise typer.BadParameter(f"Not a file: {file}")
 
