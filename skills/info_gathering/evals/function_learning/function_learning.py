@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Literal
 
 import aiodocker
+from autogen_core import CancellationToken
 from autogen_core.models import (
     AssistantMessage,
     ChatCompletionClient,
@@ -41,7 +42,7 @@ from skills.info_gathering.evals.function_learning.result_types import (
 from skills.info_gathering.evals.function_learning.scoring import evaluate_program
 from skills.info_gathering.evals.prompt_caching import CachedAnthropicClient
 from skills.info_gathering.evals.twenty_questions.prompts import load_skill_prompt
-from skills.info_gathering.evals.twenty_questions.x.shared.output import run_output_paths, save_summary
+from skills.info_gathering.evals.twenty_questions.x.shared.output import run_output_paths
 
 logger = logging.getLogger(__name__)
 
@@ -223,7 +224,7 @@ async def run_game(
                 continue
             args = json.loads(fc.arguments) if isinstance(fc.arguments, str) else fc.arguments
             try:
-                tool_result = await tool.run_json(args, None)
+                tool_result = await tool.run_json(args, CancellationToken())
                 content = tool.return_value_as_string(tool_result)
             except Exception as e:
                 content = f"Error: {e}"
@@ -260,7 +261,8 @@ async def run_game(
             cache_creation_input_tokens=game.total_cache_creation_tokens,
         ),
     )
-    save_summary(summary=summary, summary_path=summary_path)
+    summary_path.write_text(summary.model_dump_json(indent=2))
+    logger.info("Saved results to %s", summary_path.parent)
 
     if owns_client:
         await model_client.close()

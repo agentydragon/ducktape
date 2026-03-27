@@ -37,11 +37,11 @@ class SecretFunction(ABC):
 
     @property
     def max_input(self) -> int:
-        return 2**self.n - 1
+        return int(2**self.n - 1)
 
     @property
     def max_output(self) -> int:
-        return 2**self.m - 1
+        return int(2**self.m - 1)
 
     @abstractmethod
     def evaluate(self, x: int) -> int:
