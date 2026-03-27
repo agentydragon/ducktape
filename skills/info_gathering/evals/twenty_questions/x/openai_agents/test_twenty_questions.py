@@ -50,12 +50,12 @@ class ScriptedModel(Model):
             "arguments": json.dumps(args),
         }
         return ModelResponse(
-            output=cast(list[TResponseOutputItem], [tool_call_item]),  # type: ignore[arg-type]
+            output=cast(list[TResponseOutputItem], [tool_call_item]),
             usage=MagicMock(input_tokens=0, output_tokens=0, total_tokens=0),
             response_id="fake",
         )
 
-    def stream_response(  # type: ignore[override]
+    def stream_response(
         self,
         system_instructions: str | None,
         input: str | list[TResponseInputItem],
