@@ -96,8 +96,7 @@ app = typer.Typer(add_completion=False, context_settings={"ignore_unknown_option
 
 @app.callback(invoke_without_command=True)
 def _root(
-    ctx: typer.Context,
-    verbose: bool = typer.Option(False, "--verbose", help="Show client progress and daemon startup info"),
+    ctx: typer.Context, verbose: bool = typer.Option(default=False, help="Show client progress and daemon startup info")
 ) -> None:
     """Root Typer entry point.
 

@@ -171,7 +171,7 @@ def cmd_extract(
 def cmd_leaderboard(
     runs_dir: Path = OPT_RUNS_DIR,
     sort_key: str = typer.Option("mean", "--sort", help="Sort key: mean|lcb|ucb"),
-    asc: bool = typer.Option(False, "--asc", help="Sort ascending"),
+    asc: bool = typer.Option(default=False, help="Sort ascending"),
     limit: int | None = typer.Option(None, "--limit", help="Limit rows"),
     # --since removed; grouping by template consolidates runs regardless of timestamp
 ) -> None:

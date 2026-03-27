@@ -39,7 +39,7 @@ app.callback()(make_logging_callback())
 MODEL_OPT = typer.Option(DEFAULT_MODEL, "--model", help="Model name (OPENAI_MODEL)")
 NETWORK_OPT = typer.Option(_ENV_NETWORK, "--network", help="Docker network (ADGN_EDITOR_DOCKER_NETWORK)")
 MAX_TURNS_OPT = typer.Option(40, "--max-turns", help="Maximum agent turns before abort")
-VERBOSE_OPT = typer.Option(False, "--verbose", "-v", help="Show agent actions in real-time")
+VERBOSE_OPT = typer.Option(default=False, help="Show agent actions in real-time")
 
 
 @app.callback(invoke_without_command=True)

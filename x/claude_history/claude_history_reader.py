@@ -37,7 +37,7 @@ class MessageEntry(BaseModel):
     """Entry in the JSONL file - Claude Code wrapper around Anthropic Message"""
 
     parent_uuid: str | None = Field(None, alias="parentUuid")
-    is_sidechain: bool = Field(False, alias="isSidechain")
+    is_sidechain: bool = Field(default=False, alias="isSidechain")
     user_type: str | None = Field(None, alias="userType")
     cwd: str | None = None
     git_branch: str | None = Field(None, alias="gitBranch")

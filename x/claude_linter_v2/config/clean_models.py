@@ -56,7 +56,7 @@ def _default_hooks() -> dict[str, HookConfig]:
 class RuleConfig(BaseModel):
     """Configuration for a single rule."""
 
-    enabled: bool = Field(True, description="Whether this rule is enabled")
+    enabled: bool = Field(default=True, description="Whether this rule is enabled")
     blocks_pre_hook: bool | None = Field(None, description="Override default pre-hook blocking (None = use default)")
     blocks_stop_hook: bool | None = Field(None, description="Override default stop-hook blocking (None = use default)")
     message: str | None = Field(None, description="Override default error message")

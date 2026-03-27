@@ -24,7 +24,7 @@ def run(
     app_name: str = typer.Option("proxy", "--app", "-a", help="Which app to run: proxy or admin"),
     host: str = typer.Option("127.0.0.1", "--host"),
     port: int | None = typer.Option(None, "--port"),
-    reload: bool = typer.Option(False, "--reload", help="Enable auto-reload"),
+    reload: bool = typer.Option(default=False, help="Enable auto-reload"),
 ) -> None:
     """Run the rspcache proxy or admin application."""
     app_key = app_name.lower()

@@ -14,7 +14,7 @@ class Violation(BaseModel):
     line: int = Field(description="Line number where violation occurs")
     column: int = Field(0, description="Column number (optional)")
     message: str = Field(description="Human-readable violation message")
-    fixable: bool = Field(False, description="Whether this can be auto-fixed")
+    fixable: bool = Field(default=False, description="Whether this can be auto-fixed")
     file_path: str | None = Field(None, description="File path where violation occurs")
 
 
@@ -68,7 +68,7 @@ class PredicateRule(BaseModel):
 class HookConfigBase(BaseModel):
     """Base configuration for all hook types."""
 
-    enabled: bool = Field(True, description="Whether this hook is enabled")
+    enabled: bool = Field(default=True, description="Whether this hook is enabled")
 
 
 class PreToolHookConfig(HookConfigBase):
@@ -80,11 +80,11 @@ class PreToolHookConfig(HookConfigBase):
 class PostToolHookConfig(HookConfigBase):
     """Configuration for PostToolUse hooks."""
 
-    auto_fix: bool = Field(True, description="Whether to auto-fix issues")
+    auto_fix: bool = Field(default=True, description="Whether to auto-fix issues")
     autofix_categories: list[AutofixCategory] = Field(
         default_factory=list, description="Categories to autofix (empty = use defaults)"
     )
-    inject_permissions: bool = Field(True, description="Whether to inject permission info in responses")
+    inject_permissions: bool = Field(default=True, description="Whether to inject permission info in responses")
 
     @field_validator("autofix_categories", mode="before")
     @classmethod
@@ -106,7 +106,7 @@ class PostToolHookConfig(HookConfigBase):
 class StopHookConfig(HookConfigBase):
     """Configuration for Stop hooks."""
 
-    quality_gate: bool = Field(True, description="Whether to enforce quality gate")
+    quality_gate: bool = Field(default=True, description="Whether to enforce quality gate")
     max_files_to_show: int = Field(5, description="Maximum number of files to show in error message")
     max_violations_per_file: int = Field(3, description="Maximum violations to show per file")
 
@@ -114,7 +114,7 @@ class StopHookConfig(HookConfigBase):
 class NotificationHookConfig(HookConfigBase):
     """Configuration for Notification hooks."""
 
-    send_to_dbus: bool = Field(True, description="Whether to send notifications to D-Bus")
+    send_to_dbus: bool = Field(default=True, description="Whether to send notifications to D-Bus")
     urgency: Literal["low", "normal", "critical"] = Field("normal", description="Default notification urgency")
 
 
@@ -229,13 +229,13 @@ Respond with JSON:
 class LLMAnalysisConfig(BaseModel):
     """Configuration for LLM-based analysis."""
 
-    enabled: bool = Field(False, description="Whether to use LLM analysis")
+    enabled: bool = Field(default=False, description="Whether to use LLM analysis")
     model: str = Field("gpt-4o-mini", description="Model to use")
     check_types: list[str] = Field(
         default_factory=lambda: ["error_hiding", "security_issues"], description="Types of checks to perform"
     )
     daily_cost_limit: float = Field(5.0, description="Maximum daily cost in USD")
-    cache_results: bool = Field(True, description="Whether to cache results")
+    cache_results: bool = Field(default=True, description="Whether to cache results")
     prompts: LLMPromptTemplates = Field(default_factory=LLMPromptTemplates, description="Prompt templates")
 
 
@@ -247,7 +247,7 @@ class PatternBasedRule(BaseModel):
     relaxed_checks: list[str] = Field(default_factory=list, description="Checks to relax for matching files")
     enforced_checks: list[str] = Field(default_factory=list, description="Checks to enforce for matching files")
     custom_message: str | None = Field(None, description="Custom message when rules apply")
-    enabled: bool = Field(True, description="Whether this rule is active")
+    enabled: bool = Field(default=True, description="Whether this rule is active")
 
 
 class TaskProfile(BaseModel):

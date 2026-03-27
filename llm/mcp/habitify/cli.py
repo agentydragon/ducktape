@@ -65,8 +65,8 @@ def mcp(
     api_key: str | None = typer.Option(
         None, "--api-key", "-k", help="Habitify API key (overrides environment variable)"
     ),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Disable debug output"),
-    debug: bool = typer.Option(False, "--debug", "-d", help="Enable debug logging"),
+    quiet: bool = typer.Option(default=False, help="Disable debug output"),
+    debug: bool = typer.Option(default=False, help="Enable debug logging"),
 ) -> None:
     """Start the Habitify MCP server with the specified transport."""
     # Configure logging
@@ -172,7 +172,7 @@ def install(
 
 @app.command("list")
 def list_habits(
-    include_archived: bool = typer.Option(False, "--include-archived", "-a", help="Include archived habits"),
+    include_archived: bool = typer.Option(default=False, help="Include archived habits"),
     api_key: str | None = typer.Option(
         None, "--api-key", "-k", help="Habitify API key (overrides environment variable)"
     ),

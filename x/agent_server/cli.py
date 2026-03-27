@@ -96,7 +96,7 @@ def dev(
     port: int = PORT_OPT,
     frontend_port: int = FRONTEND_PORT_OPT,
     mcp_configs: list[Path] = MCP_CONFIGS_OPT,
-    open_browser: bool = typer.Option(True, "--open-browser/--no-open-browser"),
+    open_browser: bool = typer.Option(default=True),
 ) -> None:
     """Run dev mode: Vite frontend (HMR) + backend in one command.
 

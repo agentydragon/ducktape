@@ -57,7 +57,7 @@ def cmd_sync_specimen(
 
 
 def cmd_db_recreate(
-    ctx: typer.Context, yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt")
+    ctx: typer.Context, yes: bool = typer.Option(default=False, help="Skip confirmation prompt")
 ) -> None:
     """Recreate database from scratch (destructive - drops all tables/views/policies).
 
@@ -107,7 +107,7 @@ BACKUP_OUTPUT_OPT = typer.Option(
     "-o",
     help="Output file path. Defaults to .devenv/state/pg_backups/props_backup_<timestamp>.sql.gz",
 )
-BACKUP_PLAIN_OPT = typer.Option(False, "--plain", help="Output plain SQL instead of gzipped")
+BACKUP_PLAIN_OPT = typer.Option(default=False, help="Output plain SQL instead of gzipped")
 
 
 def cmd_db_backup(output: Path | None = BACKUP_OUTPUT_OPT, plain: bool = BACKUP_PLAIN_OPT) -> None:
@@ -143,7 +143,7 @@ def cmd_db_backup(output: Path | None = BACKUP_OUTPUT_OPT, plain: bool = BACKUP_
 
 
 RESTORE_BACKUP_FILE_ARG = typer.Argument(..., help="Backup file to restore from (.sql or .sql.gz)")
-RESTORE_YES_OPT = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt")
+RESTORE_YES_OPT = typer.Option(default=False, help="Skip confirmation prompt")
 
 
 def cmd_db_restore(backup_file: Path = RESTORE_BACKUP_FILE_ARG, yes: bool = RESTORE_YES_OPT) -> None:
