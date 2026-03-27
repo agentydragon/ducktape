@@ -124,6 +124,8 @@ echo "[$(date -Iseconds)] Installing web session tools..."
 echo "  FLAKE=${FLAKE}"
 echo "  pwd=$(pwd)"
 echo "  flake.nix exists: $(test -f flake.nix && echo yes || echo no)"
+echo "  ls pwd:"
+ls -la
 # Pass --max-jobs explicitly to override any nix.conf misconfiguration.
 nix profile install --max-jobs auto "${FLAKE}#web-session"
 echo "[$(date -Iseconds)] Web session tools installed."
