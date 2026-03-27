@@ -9,6 +9,7 @@ Config mapping (secret name, data keys, env vars) is defined in
 
 import base64
 import logging
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -80,8 +81,7 @@ def setup_k8s_secrets(
     from the configured namespace, maps data keys to env var names, and
     writes a kubeconfig file for kubectl CLI use.
 
-    In web mode, pass proxy="http://localhost:<port>" to route through the
-    auth proxy, which adds Proxy-Authorization for the upstream egress proxy.
+    Proxy priority: explicit `proxy` arg > HTTPS_PROXY > HTTP_PROXY env vars.
     """
     result = K8sSecretsResult()
     if not config.k8s or not config.k8s_secrets:
@@ -97,8 +97,9 @@ def setup_k8s_secrets(
         client_config.ssl_ca_cert = str(combined_ca_path)
     else:
         client_config.verify_ssl = True
-    if proxy:
-        client_config.proxy = proxy
+    effective_proxy = proxy or os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
+    if effective_proxy:
+        client_config.proxy = effective_proxy
 
     api = CoreV1Api(k8s_client.ApiClient(client_config))
 
@@ -132,7 +133,7 @@ def setup_k8s_secrets(
 
     # Write kubeconfig (pass proxy_url so kubectl routes through the same proxy as the Python client)
     kubeconfig = _build_kubeconfig(
-        token, k8s_cfg.server, k8s_cfg.service_account, k8s_cfg.namespace, combined_ca_path, proxy_url=proxy
+        token, k8s_cfg.server, k8s_cfg.service_account, k8s_cfg.namespace, combined_ca_path, proxy_url=effective_proxy
     )
     kubeconfig_path = session_dir / "kubeconfig"
     kubeconfig_path.write_text(yaml.dump(kubeconfig, default_flow_style=False))
