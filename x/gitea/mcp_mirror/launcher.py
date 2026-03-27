@@ -1,4 +1,3 @@
-
 """CLI to run the gitea_mirror MCP server via stdio transport."""
 
 from __future__ import annotations
