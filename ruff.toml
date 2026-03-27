@@ -124,7 +124,6 @@ known-first-party = [
     "props",
     "claude_history",
     "claude_hooks",
-    "claude_linter",
     "claude_linter_v2",
     "cli_util",
     "cotrl",
