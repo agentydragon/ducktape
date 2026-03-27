@@ -63,6 +63,8 @@ select = [
     "N",     # naming
     "PERF",  # perflint
     "FAST",  # FastAPI best practices
+    "A006",  # lambda argument shadowing builtins
+    "PGH",   # pygrep-hooks (bare type: ignore / noqa without codes)
     # TRY004 disabled: isinstance() checks are used for state validation (e.g.,
     # "mount not active", "app resources not initialized"), not just type narrowing.
     # TRY004 blindly converts these to TypeError, which is semantically wrong —
