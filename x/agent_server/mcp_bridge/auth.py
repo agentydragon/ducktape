@@ -58,14 +58,14 @@ class TokensConfig(BaseModel):
         config_path = path or Path(os.getenv("ADGN_TOKENS_PATH", str(DEFAULT_TOKENS_PATH)))
 
         if not config_path.exists():
-            logger.warning(f"Tokens config not found at {config_path}, using empty tokens")
+            logger.warning("Tokens config not found at %s, using empty tokens", config_path)
             return cls()
 
         with config_path.open() as f:
             data = yaml.safe_load(f) or {}
 
         config = cls.model_validate(data)
-        logger.info(f"Loaded {len(config.users)} user tokens, {len(config.agents)} agent tokens")
+        logger.info("Loaded %s user tokens, %s agent tokens", len(config.users), len(config.agents))
         return config
 
     @staticmethod
@@ -129,14 +129,14 @@ class TokenRoutingASGI:
 
         # Route based on token
         if user_id := self.user_tokens.get(token):
-            logger.debug(f"Routing to user compositor for user: {user_id}")
+            logger.debug("Routing to user compositor for user: %s", user_id)
             await self.user_app(scope, receive, send)
         elif agent_id := self.agent_tokens.get(token):
             if agent_app := self.agent_apps.get(agent_id):
-                logger.debug(f"Routing to agent compositor for agent: {agent_id}")
+                logger.debug("Routing to agent compositor for agent: %s", agent_id)
                 await agent_app(scope, receive, send)
             else:
-                logger.warning(f"Agent app not found for agent_id: {agent_id}")
+                logger.warning("Agent app not found for agent_id: %s", agent_id)
                 await self._send_error(scope, receive, send, f"Agent not found: {agent_id}", 404)
         else:
             await self._send_error(scope, receive, send, "Invalid token", 401)

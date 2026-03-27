@@ -256,12 +256,12 @@ def rewrite_system_with_template(system_text: str, template_path: Path) -> str:
             env=env,
         )
     except FileNotFoundError as e:
-        raise RuntimeError(
-            "Node.js ('node') not found in PATH; install Node or adjust PATH to use system rewrite"
-        ) from e
+        msg = "Node.js ('node') not found in PATH; install Node or adjust PATH to use system rewrite"
+        raise RuntimeError(msg) from e
     if proc.returncode != 0:
         sys.stderr.write(proc.stderr.decode("utf-8", errors="ignore"))
-        raise RuntimeError(f"system rewrite failed with code {proc.returncode}")
+        msg = f"system rewrite failed with code {proc.returncode}"
+        raise RuntimeError(msg)
     return proc.stdout.decode("utf-8")
 
 
@@ -317,14 +317,16 @@ def parse_grade_from_responses(response: ResponsesResult) -> Grade:
     Extracts the 'grade' tool call from the response output and validates it as a Grade model.
     """
     if not response.output:
-        raise RuntimeError("No output in responses")
+        msg = "No output in responses"
+        raise RuntimeError(msg)
 
     for item in response.output:
         if isinstance(item, FunctionCallItem) and item.name == "grade":
             if item.arguments is None:
                 return cast(Grade, Grade.model_validate({}))
             return cast(Grade, Grade.model_validate_json(item.arguments))
-    raise RuntimeError("No grade tool call in responses output")
+    msg = "No grade tool call in responses output"
+    raise RuntimeError(msg)
 
 
 def responses_prev_assistant_index(inp: Any) -> int | None:
@@ -493,7 +495,7 @@ async def run_eval(
         # Caller provided a final directory — use it directly (no nesting)
         out_dir = base_out
     else:
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        ts = datetime.now(tz=datetime.UTC).strftime("%Y%m%d_%H%M%S")
         base = DEFAULT_BASE
         # Default layout: runs/<ts> for variants; runs/baseline-<ts> for baseline
         out_dir = base / f"baseline-{ts}" if template_path.name == "current_effective_template.txt" else base / f"{ts}"
@@ -537,7 +539,8 @@ async def run_eval(
 
     # client is injected by caller (no implicit AsyncOpenAI() here)
     if client is None:
-        raise ValueError("run_eval requires a non-None AsyncOpenAI client injected by caller")
+        msg = "run_eval requires a non-None AsyncOpenAI client injected by caller"
+        raise ValueError(msg)
     sem = asyncio.Semaphore(max(1, int(concurrency)))
 
     async def process(item: Sample) -> tuple[EvalSampleRecord | None, EvalGradeRecord | None]:

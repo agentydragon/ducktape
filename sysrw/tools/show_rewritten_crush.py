@@ -92,7 +92,8 @@ def rewrite_system_with_template_py(system_text: str, template_path: Path) -> st
     for ph in placeholders:
         cnt = template.count(ph)
         if cnt != 1:
-            raise RuntimeError(f"template placeholder {ph} count={cnt} (expected 1)")
+            msg = f"template placeholder {ph} count={cnt} (expected 1)"
+            raise RuntimeError(msg)
     out = (
         template.replace("${toolsBlob}", blobs["toolsBlob"])
         .replace("${envGitBlobs}", "".join(blobs["envGitBlobs"]))
@@ -101,7 +102,8 @@ def rewrite_system_with_template_py(system_text: str, template_path: Path) -> st
     )
     for ph in placeholders:
         if ph in out:
-            raise RuntimeError(f"placeholder {ph} still present after replacement")
+            msg = f"placeholder {ph} still present after replacement"
+            raise RuntimeError(msg)
     return out
 
 

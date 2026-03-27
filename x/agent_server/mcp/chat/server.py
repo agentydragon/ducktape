@@ -160,7 +160,7 @@ class ChatStorePersisted(ChatStore):
 
     async def _fetch_optional_int(self, query: str, params: tuple) -> int | None:
         """Execute query and return optional int from first row, first column."""
-        async with self._persistence._open_row() as db, db.execute(query, params) as cur:
+        async with self._persistence.open_row() as db, db.execute(query, params) as cur:
             if (row := await cur.fetchone()) and (val := row[0]) is not None:
                 return int(val)
             return None
@@ -175,7 +175,7 @@ class ChatStorePersisted(ChatStore):
 
     async def append(self, *, author: ChatAuthor, mime: str, content: str) -> int:
         ts = datetime.now(UTC).isoformat()
-        async with self._persistence._open() as db:
+        async with self._persistence.open() as db:
             cur = await db.execute(
                 "INSERT INTO chat_messages (agent_id, ts, author, mime, content) VALUES (?, ?, ?, ?, ?)",
                 (self._agent, ts, author.value, mime, content),
@@ -189,7 +189,7 @@ class ChatStorePersisted(ChatStore):
 
     async def get_message_async(self, msg_id: int) -> ChatMessage | None:
         async with (
-            self._persistence._open_row() as db,
+            self._persistence.open_row() as db,
             db.execute(
                 "SELECT id, ts, author, mime, content FROM chat_messages WHERE agent_id = ? AND id = ?",
                 (self._agent, msg_id),
@@ -216,7 +216,7 @@ class ChatStorePersisted(ChatStore):
 
         # Fetch messages after HWM
         msgs: list[ChatMessage] = []
-        async with self._persistence._open_row() as db:
+        async with self._persistence.open_row() as db:
             sql = (
                 "SELECT id, ts, author, mime, content FROM chat_messages "
                 "WHERE agent_id = ? AND id > ? AND author = ? ORDER BY id ASC"
@@ -229,7 +229,7 @@ class ChatStorePersisted(ChatStore):
                 msgs = [_row_to_message(r) async for r in cur]
 
         if msgs:
-            async with self._persistence._open() as db:
+            async with self._persistence.open() as db:
                 await db.execute(
                     "INSERT INTO chat_last_read (agent_id, server_name, last_id) VALUES (?, ?, ?) "
                     "ON CONFLICT(agent_id, server_name) DO UPDATE SET last_id=excluded.last_id",

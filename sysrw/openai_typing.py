@@ -66,7 +66,8 @@ def chat_param_message_tool_calls(message: ChatCompletionMessageParam) -> list[C
             # Other message types don't have tool_calls
             return []
         case _:
-            raise ValueError(f"Unhandled MessageRole: {role}")
+            msg = f"Unhandled MessageRole: {role}"
+            raise ValueError(msg)
 
 
 def response_message_content_as_text(message: ResponseOutputMessage) -> str:
@@ -110,7 +111,8 @@ def chat_param_message_content_as_text(message: ChatCompletionMessageParam) -> s
                 return content
             return str(content) if content else ""
         case _:
-            raise ValueError(f"Unhandled MessageRole: {role}")
+            msg = f"Unhandled MessageRole: {role}"
+            raise ValueError(msg)
 
 
 # Removed parse_tool_call and extract_*_tool_call_info - no longer needed since we work with typed objects directly

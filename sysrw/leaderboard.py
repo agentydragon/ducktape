@@ -227,7 +227,8 @@ def generate(
     # Build mapping from packaged templates/ only (stable names)
     known = load_known_templates()
     if not runs_dir.exists():
-        raise FileNotFoundError(f"No runs dir: {runs_dir}")
+        msg = f"No runs dir: {runs_dir}"
+        raise FileNotFoundError(msg)
 
     # Build groups by template hash
     by_hash: dict[str, list[Row]] = {}

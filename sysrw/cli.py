@@ -166,7 +166,8 @@ def cmd_extract(
         asyncio.run(extract_dataset_ccr.main())
         return
 
-    raise typer.BadParameter("--source must be one of: ccr, crush, auto")
+    msg = "--source must be one of: ccr, crush, auto"
+    raise typer.BadParameter(msg)
 
 
 @app.command("leaderboard")

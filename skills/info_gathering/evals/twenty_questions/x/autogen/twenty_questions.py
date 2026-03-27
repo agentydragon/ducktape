@@ -118,7 +118,8 @@ async def _run_simulator(
     result = await model_client.create(sim_history, tools=sim_tool_schemas, tool_choice="required")
 
     if isinstance(result.content, str):
-        raise RuntimeError(f"Simulator returned text instead of tool call: {result.content!r}")
+        msg = f"Simulator returned text instead of tool call: {result.content!r}"
+        raise RuntimeError(msg)
 
     function_calls = result.content
     sim_history.append(AssistantMessage(content=function_calls, source="simulator"))
@@ -232,7 +233,8 @@ def _build_model_client(*, api: str, model: str) -> ChatCompletionClient:
                 "multiple_system_messages": False,
             },
         )
-    raise ValueError(f"Unsupported API: {api!r}")
+    msg = f"Unsupported API: {api!r}"
+    raise ValueError(msg)
 
 
 # -- Main game loop --
