@@ -156,43 +156,39 @@ class EmberRuntime:
 
     async def _loop(self) -> None:
         """Main event loop - poll Matrix and run agent."""
-        try:
-            while not self._stop_event.is_set():
-                # Poll for Matrix events
-                try:
-                    async with asyncio.timeout(60.0):
-                        events = await self._matrix_client.get_events()
-                except TimeoutError:
-                    events = []
+        while not self._stop_event.is_set():
+            # Poll for Matrix events
+            try:
+                async with asyncio.timeout(60.0):
+                    events = await self._matrix_client.get_events()
+            except TimeoutError:
+                events = []
 
-                if not events:
-                    continue
+            if not events:
+                continue
 
-                # Format incoming messages
-                message_text = "\n".join(f"{event.sender}: {event.body}" for event in events)
-                logger.info("Received Matrix batch:\n%s", message_text)
-                # nio sets room_id on events at runtime but it's not in type stubs
-                room_ids = {event.room_id for event in events if event.room_id}
+            # Format incoming messages
+            message_text = "\n".join(f"{event.sender}: {event.body}" for event in events)
+            logger.info("Received Matrix batch:\n%s", message_text)
+            # nio sets room_id on events at runtime but it's not in type stubs
+            room_ids = {event.room_id for event in events if event.room_id}
 
-                # Set typing indicator
+            # Set typing indicator
+            if room_ids:
+                await self._matrix_client.set_typing(room_ids, typing=True)
+
+            try:
+                # Reset sleep handler for new conversation turn
+                self._sleep_handler.reset()
+
+                # Add user message to persistent agent and run
+                self._agent.process_message(UserMessage.text(message_text))
+
+                # Reset agent's finished state so it can run again
+                self._agent.finished = False
+
+                # Run agent until sleep handler aborts
+                await self._agent.run()
+            finally:
                 if room_ids:
-                    await self._matrix_client.set_typing(room_ids, typing=True)
-
-                try:
-                    # Reset sleep handler for new conversation turn
-                    self._sleep_handler.reset()
-
-                    # Add user message to persistent agent and run
-                    self._agent.process_message(UserMessage.text(message_text))
-
-                    # Reset agent's finished state so it can run again
-                    self._agent.finished = False
-
-                    # Run agent until sleep handler aborts
-                    await self._agent.run()
-                finally:
-                    if room_ids:
-                        await self._matrix_client.set_typing(room_ids, typing=False)
-
-        except asyncio.CancelledError:
-            raise
+                    await self._matrix_client.set_typing(room_ids, typing=False)
