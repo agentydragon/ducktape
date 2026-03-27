@@ -1,7 +1,7 @@
 """Tests for authentication handlers."""
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -66,7 +66,7 @@ async def test_key_path_auth_valid(db_session: AsyncSession, test_settings: Sett
     key = AuthKey(
         key_value=f"valid-test-key-{unique_id}",
         description=f"Valid test key {unique_id}",
-        created_at=datetime.now(tz=datetime.UTC),
+        created_at=datetime.now(tz=UTC),
     )
     db_session.add(key)
     await db_session.flush()
@@ -93,7 +93,7 @@ async def test_session_auth_valid(db_session: AsyncSession, test_settings: Setti
     key = AuthKey(
         key_value=f"valid-test-key-{unique_id}",
         description=f"Valid test key {unique_id}",
-        created_at=datetime.now(tz=datetime.UTC),
+        created_at=datetime.now(tz=UTC),
     )
     db_session.add(key)
     await db_session.flush()
@@ -101,9 +101,9 @@ async def test_session_auth_valid(db_session: AsyncSession, test_settings: Setti
     session = AuthCRSession(
         session_token=f"valid-test-session-{unique_id}",
         auth_key_id=key.id,
-        created_at=datetime.now(tz=datetime.UTC),
-        expires_at=datetime.now(tz=datetime.UTC) + timedelta(hours=1),
-        last_activity_at=datetime.now(tz=datetime.UTC),
+        created_at=datetime.now(tz=UTC),
+        expires_at=datetime.now(tz=UTC) + timedelta(hours=1),
+        last_activity_at=datetime.now(tz=UTC),
     )
     original_activity_time = session.last_activity_at
     db_session.add(session)
@@ -131,7 +131,7 @@ async def test_session_auth_expired(db_session: AsyncSession, test_settings: Set
     # Use unique values
     unique_id = uuid.uuid4().hex[:8]
     key = AuthKey(
-        key_value=f"test-key-{unique_id}", description=f"Test key {unique_id}", created_at=datetime.now(tz=datetime.UTC)
+        key_value=f"test-key-{unique_id}", description=f"Test key {unique_id}", created_at=datetime.now(tz=UTC)
     )
     db_session.add(key)
     await db_session.flush()
@@ -140,9 +140,9 @@ async def test_session_auth_expired(db_session: AsyncSession, test_settings: Set
     session = AuthCRSession(
         session_token=f"expired-test-session-{unique_id}",
         auth_key_id=key.id,
-        created_at=datetime.now(tz=datetime.UTC) - timedelta(hours=2),
-        expires_at=datetime.now(tz=datetime.UTC) - timedelta(hours=1),
-        last_activity_at=datetime.now(tz=datetime.UTC) - timedelta(hours=2),
+        created_at=datetime.now(tz=UTC) - timedelta(hours=2),
+        expires_at=datetime.now(tz=UTC) - timedelta(hours=1),
+        last_activity_at=datetime.now(tz=UTC) - timedelta(hours=2),
     )
     db_session.add(session)
     await db_session.flush()

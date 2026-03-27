@@ -29,7 +29,8 @@ def fetch_openai_schema() -> dict[str, Any]:
         resp.raise_for_status()
         data = yaml.safe_load(resp.text)
     if not isinstance(data, dict):
-        raise TypeError("OpenAI OpenAPI document is not a JSON object")
+        msg = "OpenAI OpenAPI document is not a JSON object"
+        raise TypeError(msg)
     return data
 
 

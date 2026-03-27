@@ -100,9 +100,11 @@ class EncryptedEncoder:
         try:
             key_bytes = base64.urlsafe_b64decode(key)
         except binascii.Error:
-            raise RuntimeError("Key must be a url-safe base64 string.")
+            msg = "Key must be a url-safe base64 string."
+            raise RuntimeError(msg)
         if len(key_bytes) != 32:
-            raise RuntimeError("Key has wrong length.")
+            msg = "Key has wrong length."
+            raise RuntimeError(msg)
 
     def __init__(self, key: str | None):
         # No key → encryption disabled.

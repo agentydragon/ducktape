@@ -1,6 +1,6 @@
 """SQLAlchemy models for Gatelet."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String, create_engine, func
@@ -70,7 +70,7 @@ class AuthKey(Base):
             True if key is valid, False otherwise
         """
         expiration_time = self.created_at + validity_period
-        return self.revoked_at is None and datetime.now() < expiration_time
+        return self.revoked_at is None and datetime.now(tz=UTC) < expiration_time
 
 
 class AuthCRSession(Base):
@@ -94,7 +94,7 @@ class AuthCRSession(Base):
     @property
     def is_valid(self) -> bool:
         """Check if session is currently valid."""
-        return self.expires_at > datetime.now()
+        return self.expires_at > datetime.now(tz=UTC)
 
 
 class AuthNonce(Base):
@@ -111,7 +111,7 @@ class AuthNonce(Base):
     @property
     def is_valid(self) -> bool:
         """Check if nonce is valid (not used and not expired)."""
-        return self.used_at is None and datetime.now() < self.expires_at
+        return self.used_at is None and datetime.now(tz=UTC) < self.expires_at
 
     @property
     def is_used(self) -> bool:

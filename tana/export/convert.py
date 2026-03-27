@@ -4,7 +4,7 @@ import argparse
 import html
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from tana.domain.constants import (
@@ -31,7 +31,7 @@ def _journal_headline(name: str) -> str:
     # pattern: YYYY-MM-DD - Weekday
     try:
         date_str = name.split(" ", maxsplit=1)[0]  # "2025-05-06"
-        dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=datetime.UTC)
+        dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC)
         # TODO: detect day more robustly
         return dt.strftime("%a, %b %-d")  # "Tue, May 6"
     except (ValueError, IndexError):

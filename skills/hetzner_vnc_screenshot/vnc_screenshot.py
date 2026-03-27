@@ -180,7 +180,7 @@ def main(
     if server:
         if url or password:
             msg = "Cannot use --url/--password with server name argument"
-        raise typer.BadParameter(msg)
+            raise typer.BadParameter(msg)
         logger.info("Fetching console credentials for server '%s'...", server)
         wss_url, vnc_password = request_console_credentials(server, token)
         logger.info("Got console credentials")

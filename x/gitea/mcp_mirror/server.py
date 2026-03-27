@@ -28,7 +28,8 @@ class MirrorConfig:
             token = os.getenv("GITEA_TOKEN")
 
         if not base_url or not token:
-            raise ValueError("Gitea mirror MCP requires GITEA_BASE_URL and GITEA_TOKEN")
+            msg = "Gitea mirror MCP requires GITEA_BASE_URL and GITEA_TOKEN"
+            raise ValueError(msg)
 
         return cls(base_url=base_url, token=token)
 
@@ -164,12 +165,14 @@ def _get_typed_json[T_Model: BaseModel](
     resp.raise_for_status()
     data = resp.json()
     if not isinstance(data, dict):  # narrow type for mypy and correctness
-        raise MirrorError("Expected JSON object from Gitea API")
+        msg = "Expected JSON object from Gitea API"
+        raise MirrorError(msg)
     payload = cast(dict[str, Any], data)
     try:
         return model_type.model_validate(payload)
     except ValidationError as exc:  # pragma: no cover - exercised via tests
-        raise MirrorError(f"Unexpected payload for {model_type.__name__}") from exc
+        msg = f"Unexpected payload for {model_type.__name__}"
+        raise MirrorError(msg) from exc
 
 
 def _slug_component(value: str) -> str:
@@ -181,7 +184,8 @@ def _slug_component(value: str) -> str:
 def _derive_repo_name(url: str) -> str:
     parsed = urlparse(url)
     if not parsed.netloc:
-        raise ValueError(f"URL missing host for Gitea mirror: {url}")
+        msg = f"URL missing host for Gitea mirror: {url}"
+        raise ValueError(msg)
     path = parsed.path.removesuffix(".git").strip("/")
     components = [parsed.netloc, *([p for p in path.split("/") if p])]
     return "-".join(_slug_component(part) for part in components)
@@ -193,7 +197,8 @@ def _ensure_mirror(cfg: MirrorConfig, upstream: str, owner: str, repo: str) -> N
     resp = _post_json(migrate_url, cfg.token, payload)
     if resp.status_code not in (200, 201, 409):
         resp.raise_for_status()
-        raise MirrorError(f"migrate failed ({resp.status_code}): {resp.text.strip()}")
+        msg = f"migrate failed ({resp.status_code}): {resp.text.strip()}"
+        raise MirrorError(msg)
 
 
 def _trigger_sync(cfg: MirrorConfig, owner: str, repo: str) -> None:
@@ -202,7 +207,8 @@ def _trigger_sync(cfg: MirrorConfig, owner: str, repo: str) -> None:
     try:
         resp.raise_for_status()
     except requests.HTTPError:
-        raise MirrorError(f"mirror-sync failed ({resp.status_code}): {resp.text.strip()}") from None
+        msg = f"mirror-sync failed ({resp.status_code}): {resp.text.strip()}"
+        raise MirrorError(msg) from None
 
 
 def _get_repo_info(cfg: MirrorConfig, owner: str, repo: str) -> GiteaRepoInfo:
@@ -211,7 +217,8 @@ def _get_repo_info(cfg: MirrorConfig, owner: str, repo: str) -> GiteaRepoInfo:
     try:
         data = _get_typed_json(repo_url, cfg.token, GiteaRepoInfo)
     except requests.RequestException as exc:
-        raise MirrorError("failed to fetch repository metadata") from exc
+        msg = "failed to fetch repository metadata"
+        raise MirrorError(msg) from exc
     return data
 
 
@@ -291,7 +298,8 @@ class GiteaMirrorServer(EnhancedFastMCP):
             repo_data = _get_repo_info(cfg, input.owner, input.repo)
 
             if not repo_data.mirror:
-                raise MirrorError(f"repository {input.owner}/{input.repo} is not a mirror")
+                msg = f"repository {input.owner}/{input.repo} is not a mirror"
+                raise MirrorError(msg)
 
             # Pass through all fields from Gitea API response
             return repo_data

@@ -1,7 +1,7 @@
 """Tests for challenge-response authentication endpoints."""
 
 import html
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 
 import pytest_bazel
@@ -41,7 +41,7 @@ async def test_answer_challenge_success(
 
 
 async def test_session_extension(client: AsyncClient, db_session: AsyncSession, test_auth_session: AuthCRSession):
-    original_exp = datetime.now() + timedelta(seconds=1)
+    original_exp = datetime.now(tz=UTC) + timedelta(seconds=1)
     test_auth_session.expires_at = original_exp
     await db_session.flush()
     await client.get(f"/s/{test_auth_session.session_token}/")

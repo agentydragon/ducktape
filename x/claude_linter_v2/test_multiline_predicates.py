@@ -1,6 +1,6 @@
 """Test multiline predicate evaluation."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
@@ -29,7 +29,7 @@ class TestMultilinePredicates:
             tool="Bash",
             args={"file_path": "/home/user/test.py", "content": "print('hello')", "command": "grep -r pattern"},
             session_id=TEST_SESSION_ID,
-            timestamp=datetime.now(tz=datetime.UTC),
+            timestamp=datetime.now(tz=UTC),
         )
 
     def test_simple_multiline_function(self, evaluator, context):
@@ -45,7 +45,7 @@ def check_bash(ctx):
             tool="Edit",
             args={"file_path": "/home/user/test.py", "content": "print('hello')", "command": "grep -r pattern"},
             session_id=TEST_SESSION_ID,
-            timestamp=datetime.now(tz=datetime.UTC),
+            timestamp=datetime.now(tz=UTC),
         )
         assert evaluator.evaluate(predicate, context_edit) is False
 
@@ -97,25 +97,19 @@ def is_safe_pipeline(ctx):
             tool="Bash",
             args={"command": "grep -r pattern | wc -l"},
             session_id=TEST_SESSION_ID,
-            timestamp=datetime.now(tz=datetime.UTC),
+            timestamp=datetime.now(tz=UTC),
         )
         assert evaluator.evaluate(predicate, context_safe) is True
 
         # Unsafe command
         context_unsafe = PredicateContext(
-            tool="Bash",
-            args={"command": "rm -rf /"},
-            session_id=TEST_SESSION_ID,
-            timestamp=datetime.now(tz=datetime.UTC),
+            tool="Bash", args={"command": "rm -rf /"}, session_id=TEST_SESSION_ID, timestamp=datetime.now(tz=UTC)
         )
         assert evaluator.evaluate(predicate, context_unsafe) is False
 
         # Unknown flag
         context_bad_flag = PredicateContext(
-            tool="Bash",
-            args={"command": "grep -X pattern"},
-            session_id=TEST_SESSION_ID,
-            timestamp=datetime.now(tz=datetime.UTC),
+            tool="Bash", args={"command": "grep -X pattern"}, session_id=TEST_SESSION_ID, timestamp=datetime.now(tz=UTC)
         )
         assert evaluator.evaluate(predicate, context_bad_flag) is False
 
@@ -152,7 +146,7 @@ def check_broker_limits(ctx):
             tool="mcp_broker_place_order",
             args={"amount": 100, "margin_multiplier": 2},
             session_id=TEST_SESSION_ID,
-            timestamp=datetime.now(tz=datetime.UTC),
+            timestamp=datetime.now(tz=UTC),
         )
         assert evaluator.evaluate(predicate, broker_context) is True
 
@@ -161,7 +155,7 @@ def check_broker_limits(ctx):
             tool="mcp_broker_place_order",
             args={"amount": 1000, "margin_multiplier": 2},
             session_id=TEST_SESSION_ID,
-            timestamp=datetime.now(tz=datetime.UTC),
+            timestamp=datetime.now(tz=UTC),
         )
         assert evaluator.evaluate(predicate, broker_context_high_amount) is False
 
@@ -170,7 +164,7 @@ def check_broker_limits(ctx):
             tool="mcp_broker_place_order",
             args={"amount": 100, "margin_multiplier": 10},
             session_id=TEST_SESSION_ID,
-            timestamp=datetime.now(tz=datetime.UTC),
+            timestamp=datetime.now(tz=UTC),
         )
         assert evaluator.evaluate(predicate, broker_context_high_margin) is False
 
@@ -179,7 +173,7 @@ def check_broker_limits(ctx):
             tool="mcp_broker_withdraw",
             args={"amount": 100, "margin_multiplier": 2},
             session_id=TEST_SESSION_ID,
-            timestamp=datetime.now(tz=datetime.UTC),
+            timestamp=datetime.now(tz=UTC),
         )
         assert evaluator.evaluate(predicate, broker_context_forbidden) is False
 
@@ -200,7 +194,7 @@ def check_test_file(ctx):
             tool="Edit",
             args={"file_path": "/home/user/test_foo.py"},
             session_id=TEST_SESSION_ID,
-            timestamp=datetime.now(tz=datetime.UTC),
+            timestamp=datetime.now(tz=UTC),
         )
         assert evaluator.evaluate(predicate, context_edit_test) is True
 
@@ -208,7 +202,7 @@ def check_test_file(ctx):
             tool="Edit",
             args={"file_path": "/home/user/foo.py"},
             session_id=TEST_SESSION_ID,
-            timestamp=datetime.now(tz=datetime.UTC),
+            timestamp=datetime.now(tz=UTC),
         )
         assert evaluator.evaluate(predicate, context_edit_non_test) is False
 
@@ -217,18 +211,18 @@ def check_test_file(ctx):
         predicate = """
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 import pytest_bazel
 
 def check_recent_activity(ctx):
     # Check if activity is within last hour
-    now = datetime.now(tz=datetime.UTC)
+    now = datetime.now(tz=UTC)
     one_hour_ago = now - timedelta(hours=1)
     return ctx.timestamp > one_hour_ago
 """
         # Recent timestamp
         context_recent = PredicateContext(
-            tool="Bash", args={"command": "test"}, session_id=TEST_SESSION_ID, timestamp=datetime.now(tz=datetime.UTC)
+            tool="Bash", args={"command": "test"}, session_id=TEST_SESSION_ID, timestamp=datetime.now(tz=UTC)
         )
         assert evaluator.evaluate(predicate, context_recent) is True
 
@@ -237,7 +231,7 @@ def check_recent_activity(ctx):
             tool="Bash",
             args={"command": "test"},
             session_id=TEST_SESSION_ID,
-            timestamp=datetime.now(tz=datetime.UTC) - timedelta(hours=2),
+            timestamp=datetime.now(tz=UTC) - timedelta(hours=2),
         )
         assert evaluator.evaluate(predicate, context_old) is False
 
@@ -284,10 +278,7 @@ def safe_git_commands(ctx):
 
         # Test with git command
         context_git = PredicateContext(
-            tool="Bash",
-            args={"command": "git status"},
-            session_id=TEST_SESSION_ID,
-            timestamp=datetime.now(tz=datetime.UTC),
+            tool="Bash", args={"command": "git status"}, session_id=TEST_SESSION_ID, timestamp=datetime.now(tz=UTC)
         )
         assert evaluator.evaluate(predicate_git, context_git) is True
 

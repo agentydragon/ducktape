@@ -83,7 +83,8 @@ async def get_webhook_payloads(
     # Set default page size from settings if not provided
     if page_size is None:
         if settings is None:
-            raise ValueError("settings must be provided when page_size is None")
+            msg = "settings must be provided when page_size is None"
+            raise ValueError(msg)
         page_size = settings.webhook.default_page_size
 
     # Build base query

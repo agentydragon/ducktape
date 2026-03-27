@@ -8,7 +8,7 @@ import os
 import signal
 import subprocess
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -331,7 +331,7 @@ async def _log_async(
             elif date:
                 formatted_date = datetime.fromisoformat(date).strftime("%B %d, %Y")
             else:
-                formatted_date = datetime.now(tz=datetime.UTC).strftime("%B %d, %Y")
+                formatted_date = datetime.now(tz=UTC).strftime("%B %d, %Y")
 
             # Success message with color based on status
             status_color = get_status_color(status)

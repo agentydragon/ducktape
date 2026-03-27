@@ -2,7 +2,7 @@
 
 import logging
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Protocol
 from urllib.parse import urlencode
@@ -166,7 +166,7 @@ async def session_auth(session_token: str, db_session: AsyncSession, settings: S
         raise AuthHandlerError
 
     # Extend session if needed
-    now = datetime.now(tz=datetime.UTC)
+    now = datetime.now(tz=UTC)
     session.last_activity_at = now
     new_exp = now + settings.auth.challenge_response.session_extension
     max_exp = session.created_at + settings.auth.challenge_response.session_max_duration
@@ -186,7 +186,7 @@ async def admin_auth(session_token: str, db_session: AsyncSession) -> AdminAuthC
     """Authenticate using admin session token."""
     query = select(AdminSession).where(AdminSession.session_token == session_token)
     admin_session = (await db_session.execute(query)).scalar_one_or_none()
-    if not admin_session or admin_session.expires_at <= datetime.now(tz=datetime.UTC):
+    if not admin_session or admin_session.expires_at <= datetime.now(tz=UTC):
         raise AuthHandlerError
 
     return AdminAuthContext(admin_session)

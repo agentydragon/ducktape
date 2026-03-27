@@ -10,7 +10,7 @@ import logging
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -198,9 +198,7 @@ async def test_auth_key(db_session: AsyncSession) -> AuthKey:
 
     unique_id = uuid4().hex[:8]
     key = AuthKey(
-        key_value=f"test-key-{unique_id}",
-        description=f"Test auth key {unique_id}",
-        created_at=datetime.now(tz=datetime.UTC),
+        key_value=f"test-key-{unique_id}", description=f"Test auth key {unique_id}", created_at=datetime.now(tz=UTC)
     )
     return await persist(db_session, key)
 
@@ -213,9 +211,9 @@ async def test_auth_session(db_session: AsyncSession, test_auth_key: AuthKey) ->
     session = AuthCRSession(
         session_token=f"test-session-{unique_id}",
         auth_key_id=test_auth_key.id,
-        created_at=datetime.now(tz=datetime.UTC),
-        expires_at=datetime.now(tz=datetime.UTC) + timedelta(hours=1),
-        last_activity_at=datetime.now(tz=datetime.UTC),
+        created_at=datetime.now(tz=UTC),
+        expires_at=datetime.now(tz=UTC) + timedelta(hours=1),
+        last_activity_at=datetime.now(tz=UTC),
     )
     return await persist(db_session, session)
 
@@ -225,10 +223,10 @@ async def _stub_data(monkeypatch):
     """Stub external data fetchers for all tests."""
 
     async def _states(*_args, **_kwargs):
-        return [{"entity_id": "sensor.test", "state": "on", "last_changed": datetime(2020, 1, 1, tzinfo=datetime.UTC)}]
+        return [{"entity_id": "sensor.test", "state": "on", "last_changed": datetime(2020, 1, 1, tzinfo=UTC)}]
 
     async def _payloads(*_args, **_kwargs):
-        return [PayloadSummary(id=1, integration_name="test", received_at=datetime(2020, 1, 1, tzinfo=datetime.UTC))]
+        return [PayloadSummary(id=1, integration_name="test", received_at=datetime(2020, 1, 1, tzinfo=UTC))]
 
     monkeypatch.setattr("x.gatelet.server.endpoints.homeassistant.fetch_states", _states)
     monkeypatch.setattr("x.gatelet.server.endpoints.webhook_view.get_latest_payloads", _payloads)

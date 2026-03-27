@@ -39,7 +39,7 @@ import pickle
 import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -185,7 +185,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
 
         # Set up proposal logging if reflection_model provided
         if reflection_model:
-            timestamp = datetime.now(tz=datetime.UTC).strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S")
             log_file = run_dir / f"gepa_proposals_{timestamp}.jsonl"
             self._setup_proposal_logging(log_file)
             logger.info("GEPA proposal logging enabled: %s", log_file.absolute())
@@ -309,7 +309,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
                     f.write(
                         json.dumps(
                             {
-                                "timestamp": datetime.now(tz=datetime.UTC).isoformat(),
+                                "timestamp": datetime.now(tz=UTC).isoformat(),
                                 "call_id": call_count,
                                 "component": name,
                                 "type": "input",
@@ -336,7 +336,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
                     f.write(
                         json.dumps(
                             {
-                                "timestamp": datetime.now(tz=datetime.UTC).isoformat(),
+                                "timestamp": datetime.now(tz=UTC).isoformat(),
                                 "call_id": call_count,
                                 "component": name,
                                 "type": "output",

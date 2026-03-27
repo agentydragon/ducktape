@@ -3,7 +3,7 @@
 import contextlib
 import json
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -153,7 +153,7 @@ class HookHandler:
         """Log detailed hook information to session log file."""
         log_file = self.log_dir / f"{session_id}.log"
 
-        timestamp = datetime.now(tz=datetime.UTC).isoformat()
+        timestamp = datetime.now(tz=UTC).isoformat()
 
         # Build log entry
         log_entry = {
@@ -183,7 +183,7 @@ class HookHandler:
         log_file = self.log_dir / f"{session_id}.log"
 
         log_entry = {
-            "timestamp": datetime.now(tz=datetime.UTC).isoformat(),
+            "timestamp": datetime.now(tz=UTC).isoformat(),
             "decision_point": decision_point,
             "details": details,
         }
@@ -611,7 +611,7 @@ class HookHandler:
             "command": tool_call.command if isinstance(tool_call, BashToolCall) else None,
         }
         context = PredicateContext(
-            tool=tool_call.tool_name, args=args, session_id=session_id, timestamp=datetime.now(tz=datetime.UTC)
+            tool=tool_call.tool_name, args=args, session_id=session_id, timestamp=datetime.now(tz=UTC)
         )
 
         return self.rule_engine.evaluate_access(context, session_id)
