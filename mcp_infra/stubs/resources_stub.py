@@ -41,4 +41,4 @@ class ResourcesServerStub(ServerStub):
 
     async def list_subscriptions(self) -> SubscriptionsIndex:
         """Read the subscriptions index resource and parse into a typed model."""
-        return await read_text_json_typed(self._client.session, "resources://subscriptions", SubscriptionsIndex)
+        return await read_text_json_typed(self._client._session, "resources://subscriptions", SubscriptionsIndex)  # noqa: SLF001
