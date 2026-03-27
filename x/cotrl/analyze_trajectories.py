@@ -69,7 +69,7 @@ def plot_action_heatmap(action_counts):
                 ax.set_xlabel("Action", fontsize=9)
 
             ax.set_xticks(range(len(action_probs)))
-            ax.grid(True, alpha=0.3)
+            ax.grid(visible=True, alpha=0.3)
 
     plt.suptitle("Action Distribution by Model and Environment")
     plt.tight_layout()

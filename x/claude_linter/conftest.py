@@ -32,7 +32,7 @@ def chdir_tmp_path(tmp_path, monkeypatch):
 def chdir_tmp_path_git_repo(tmp_path, monkeypatch):
     """Change cwd to tmp_path and init a git repo via pygit2."""
     monkeypatch.chdir(tmp_path)
-    repo = pygit2.init_repository(str(tmp_path), False)
+    repo = pygit2.init_repository(str(tmp_path), bare=False)
     cfg = repo.config
     cfg["user.name"] = "test"
     cfg["user.email"] = "test@example.com"

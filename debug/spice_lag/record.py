@@ -59,7 +59,7 @@ def start_screencast(bus: Gio.DBusConnection, fps: int, output_path: Path) -> st
     builder.add_value(GLib.Variant("s", str(output_path)))
     options_builder = GLib.VariantBuilder.new(GLib.VariantType("a{sv}"))
     options_builder.add_value(GLib.Variant("{sv}", ("framerate", GLib.Variant("i", fps))))
-    options_builder.add_value(GLib.Variant("{sv}", ("draw-cursor", GLib.Variant("b", False))))
+    options_builder.add_value(GLib.Variant("{sv}", ("draw-cursor", GLib.Variant("b", value=False))))
     builder.add_value(options_builder.end())
     params = builder.end()
 

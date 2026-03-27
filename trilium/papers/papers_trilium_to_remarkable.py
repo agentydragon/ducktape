@@ -18,7 +18,7 @@ from tqdm.auto import tqdm
 
 _ETAPI_ROOT_URL = flags.DEFINE_string("etapi_root_url", "http://localhost:37840", "ETAPI root URL")
 _TOKEN = flags.DEFINE_string("token", None, "ETAPI token")
-_PURGE = flags.DEFINE_bool("purge", False, "Purge RM side?")
+_PURGE = flags.DEFINE_bool("purge", default=False, help="Purge RM side?")
 SYNCED_DIR_PATH = platformdirs.user_cache_path("papers_trilium_to_remarkable") / "synced_dir"
 REMARKABLE_SIDE_PATH = "/papers_trilium_to_remarkable"
 FILE_PREFIX = "[f]\t"

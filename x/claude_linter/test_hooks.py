@@ -229,7 +229,7 @@ sys.exit(0)
         hook_script.chmod(0o755)
 
         # Initialize as git repo using pygit2
-        repo = pygit2.init_repository(str(remote_path), False)
+        repo = pygit2.init_repository(str(remote_path), bare=False)
         cfg = repo.config
         cfg["user.name"] = "test"
         cfg["user.email"] = "test@example.com"

@@ -43,7 +43,7 @@ class DaemonStore:
 
         # Daemon config
         self._gitstatusd_config: Signal[GitstatusdConfig] = Signal(GitstatusdUnavailable(error="not initialized"))
-        self._github_enabled: Signal[bool] = Signal(True)
+        self._github_enabled: Signal[bool] = Signal(value=True)
 
         # Computed: all branches currently checked out across worktrees
         # Reads branch from GitstatusdData

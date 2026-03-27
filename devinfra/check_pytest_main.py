@@ -90,19 +90,19 @@ def check_file(file_path: Path, repo_root: Path, bazel_index: BazelPyTestIndex) 
     content = (repo_root / file_path).read_text()
 
     if has_pytest_bazel_main(content):
-        return CheckResult(file_path, True, "has pytest_bazel.main()")
+        return CheckResult(file_path, passed=True, reason="has pytest_bazel.main()")
 
     abs_path = (repo_root / file_path).resolve()
     if abs_path not in bazel_index.known_srcs:
-        return CheckResult(file_path, True, "not a py_test src (not a Bazel target)")
+        return CheckResult(file_path, passed=True, reason="not a py_test src (not a Bazel target)")
     if abs_path in bazel_index.exempt_srcs:
-        return CheckResult(file_path, True, "exempt: py_test uses custom main= (bazel query)")
+        return CheckResult(file_path, passed=True, reason="exempt: py_test uses custom main= (bazel query)")
 
     # Check if using pytest.main() directly (custom runner)
     if "pytest.main(" in content:
-        return CheckResult(file_path, True, "uses pytest.main() (custom runner)")
+        return CheckResult(file_path, passed=True, reason="uses pytest.main() (custom runner)")
 
-    return CheckResult(file_path, False, "missing pytest_bazel.main() entry point")
+    return CheckResult(file_path, passed=False, reason="missing pytest_bazel.main() entry point")
 
 
 async def check_files_async(files: list[Path], repo_root: Path, bazel_index: BazelPyTestIndex) -> list[CheckResult]:

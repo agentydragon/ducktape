@@ -60,7 +60,7 @@ def _list_to_array(lst: Iterable[str]) -> str:
     ansible.builtin.dconf expects the *printed* form of a GLib variant that
     itself contains a variant of type ``as`` (array of strings).
     """
-    return GLib.Variant("v", GLib.Variant("as", list(lst))).print_(False)
+    return GLib.Variant("v", GLib.Variant("as", list(lst))).print_(type_annotate=False)
 
 
 class ActionModule(ActionBase):

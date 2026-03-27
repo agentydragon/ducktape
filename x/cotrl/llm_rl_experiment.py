@@ -457,7 +457,7 @@ def plot_results(all_runs: list[Run]):
             if i == n_models - 1:
                 ax.set_xlabel("Step")
 
-            ax.grid(True, alpha=0.3)
+            ax.grid(visible=True, alpha=0.3)
 
     plt.suptitle("Language Models as RL Agents (Raw Numerical Data)", fontsize=14)
     plt.tight_layout()

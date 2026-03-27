@@ -201,7 +201,7 @@ class WtClient:
         fcntl.fcntl(read_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
 
         with contextlib.suppress(Exception):
-            os.set_inheritable(write_fd, True)
+            os.set_inheritable(write_fd, inheritable=True)
 
         env = os.environ.copy()
         env["WT_HANDSHAKE_FD"] = str(write_fd)

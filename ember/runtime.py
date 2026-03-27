@@ -176,7 +176,7 @@ class EmberRuntime:
 
                 # Set typing indicator
                 if room_ids:
-                    await self._matrix_client.set_typing(room_ids, True)
+                    await self._matrix_client.set_typing(room_ids, typing=True)
 
                 try:
                     # Reset sleep handler for new conversation turn
@@ -192,7 +192,7 @@ class EmberRuntime:
                     await self._agent.run()
                 finally:
                     if room_ids:
-                        await self._matrix_client.set_typing(room_ids, False)
+                        await self._matrix_client.set_typing(room_ids, typing=False)
 
         except asyncio.CancelledError:
             raise
