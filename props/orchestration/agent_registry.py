@@ -251,7 +251,9 @@ class AgentRegistry:
         proxy_url = self._registry_config.proxy_url
         manifest_url = f"{proxy_url}/v2/{repository}/manifests/{ref}"
         headers = {
-            "Accept": "application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json"
+            "Accept": ", ".join(
+                ["application/vnd.docker.distribution.manifest.v2+json", "application/vnd.oci.image.manifest.v1+json"]
+            )
         }
         auth = httpx.BasicAuth(self._db_config.user, self._db_config.password)
 

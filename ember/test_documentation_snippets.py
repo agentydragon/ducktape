@@ -20,7 +20,7 @@ def _embedded_text(relative: str) -> str:
     resource = resources.files(ember).joinpath(f"resources/{relative}")
     content = resource.read_text(encoding="utf-8").rstrip()
     header = f"# /var/emberd/{relative}"
-    return f"{header}\n{content}"
+    return "\n".join((header, content))
 
 
 def test_python_session_demo_scripts_are_embedded_and_work(
