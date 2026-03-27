@@ -61,7 +61,7 @@ def convert_mcp_server_types_to_spec(mcp_spec: MCPServerTypes) -> ServerSpec:
     """
     if isinstance(mcp_spec, StdioMCPServer):
         env_list = [KeyValue(key=k, value=v) for k, v in mcp_spec.env.items()] if mcp_spec.env else None
-        args_list = mcp_spec.args if mcp_spec.args else None
+        args_list = mcp_spec.args or None
         return StdioServerSpec(type="stdio", command=mcp_spec.command, args=args_list, env=env_list)
     if isinstance(mcp_spec, RemoteMCPServer):
         headers_list = [KeyValue(key=k, value=v) for k, v in mcp_spec.headers.items()] if mcp_spec.headers else None

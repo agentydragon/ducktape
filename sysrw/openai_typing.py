@@ -144,5 +144,5 @@ def parse_chat_messages(messages: Any) -> list[ChatCompletionMessageParam] | Non
 
 def parse_tools_list(tools: Any) -> list[dict[str, Any]]:
     """Parse a list of tools into validated dicts."""
-    validated = DICT_LIST_ADAPTER.validate_python(tools if tools else [])
+    validated = DICT_LIST_ADAPTER.validate_python(tools or [])
     return cast(list[dict[str, Any]], validated)

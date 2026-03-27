@@ -213,7 +213,7 @@ def sync():
     new_arxiv_ids = set(should_exist.keys()) - set(existing_arxiv_id_to_filename.keys())
     # Sort by priority.
     new_arxiv_ids = sorted(
-        new_arxiv_ids, key=lambda id: (should_exist[id].priority if should_exist[id].priority is not None else 200)
+        new_arxiv_ids, key=lambda id: should_exist[id].priority if should_exist[id].priority is not None else 200
     )
     # TODO: WTF why is it adding new ones?
     for arxiv_id in (t := tqdm(new_arxiv_ids)):

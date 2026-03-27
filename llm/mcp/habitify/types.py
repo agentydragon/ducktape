@@ -6,7 +6,7 @@ as documented in the reference YAML files.
 """
 
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Annotated, Any
 
 from pydantic import BaseModel, BeforeValidator, PlainSerializer
@@ -37,7 +37,7 @@ HabitifyDatetime = Annotated[
 ]
 
 
-class Status(str, Enum):
+class Status(StrEnum):
     """Valid habit status values."""
 
     COMPLETED = "completed"
@@ -47,7 +47,7 @@ class Status(str, Enum):
     IN_PROGRESS = "in_progress"
 
 
-class UnitType(str, Enum):
+class UnitType(StrEnum):
     """Valid unit types for habit goals."""
 
     REP = "rep"
@@ -55,7 +55,7 @@ class UnitType(str, Enum):
     HR = "hr"
 
 
-class Periodicity(str, Enum):
+class Periodicity(StrEnum):
     """Valid periodicity values for habit goals."""
 
     DAILY = "daily"
@@ -63,7 +63,7 @@ class Periodicity(str, Enum):
     MONTHLY = "monthly"
 
 
-class TimeOfDay(str, Enum):
+class TimeOfDay(StrEnum):
     """Valid time of day values."""
 
     MORNING = "morning"

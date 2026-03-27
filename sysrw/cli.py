@@ -54,7 +54,7 @@ def cmd_run(
 ):
     """Run an evaluation end-to-end (rewrite → sample → grade → report)."""
     dsets = dataset or [run_eval.DEFAULT_DATASET_PATH]
-    base_out = out_dir if out_dir else None
+    base_out = out_dir or None
     # Fail fast on invalid/unreadable template
     validate_template_file(template)
     asyncio.run(

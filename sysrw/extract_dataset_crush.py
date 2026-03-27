@@ -96,7 +96,7 @@ def _extract_input_messages(payload: dict[str, Any]) -> tuple[list[dict[str, Any
             if role == "system" and sys_has_tools_header(text):
                 has_header = True
             msgs.append({"role": role, "content": text})
-    return (msgs if msgs else None), has_header
+    return (msgs or None), has_header
 
 
 def _extract_chat_messages(payload: dict[str, Any]) -> tuple[list[dict[str, Any]] | None, bool]:
@@ -126,7 +126,7 @@ def _extract_chat_messages(payload: dict[str, Any]) -> tuple[list[dict[str, Any]
             if role == "system" and sys_has_tools_header(text):
                 has_header = True
             msgs.append({"role": role, "content": text})
-    return (msgs if msgs else None), has_header
+    return (msgs or None), has_header
 
 
 def process_wire(path: Path, require_bad: bool = False) -> list[dict[str, Any]]:

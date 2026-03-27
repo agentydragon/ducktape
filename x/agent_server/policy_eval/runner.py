@@ -39,7 +39,7 @@ async def run_policy_source(
     Uses asyncio.wait_for() for simpler timeout handling.
     """
     # Resolve image to a concrete string (no Optional)
-    img: str = image if image else resolve_runtime_image()
+    img: str = image or resolve_runtime_image()
     tmo = timeout_secs if timeout_secs is not None else float(os.getenv("ADGN_POLICY_EVAL_TIMEOUT_SECS", "5"))
 
     # Check image exists (async)

@@ -185,9 +185,7 @@ def normalized_to_create_request(normalized: NormalizedFilter, label_name_to_id:
                 remove_label_ids.append(resolve_label_id(name, label_name_to_id))
 
     action = FilterAction(
-        add_label_ids=add_label_ids if add_label_ids else None,
-        remove_label_ids=remove_label_ids if remove_label_ids else None,
-        forward=normalized.forward,
+        add_label_ids=add_label_ids or None, remove_label_ids=remove_label_ids or None, forward=normalized.forward
     )
 
     return CreateFilterRequest(criteria=criteria, action=action)

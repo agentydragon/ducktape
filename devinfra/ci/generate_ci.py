@@ -76,7 +76,7 @@ def build_workflow_job(name: str, config: WorkflowConfig, *, has_rbe_image_job: 
         needs=needs,
         if_cond=if_cond,
         uses=f"./.github/workflows/{name}.yml",
-        with_args=with_args if with_args else None,
+        with_args=with_args or None,
         secrets=config.secrets,
     )
 
@@ -243,7 +243,7 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
             ]
             jobs[extra_name] = Job(
                 name=extra_name,
-                needs=extra_config.needs if extra_config.needs else "check-releases",
+                needs=extra_config.needs or "check-releases",
                 if_cond=if_needed,
                 runs_on=extra_config.runs_on,
                 timeout_minutes=extra_config.timeout_minutes,

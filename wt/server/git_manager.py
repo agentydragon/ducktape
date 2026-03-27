@@ -104,7 +104,7 @@ class GitManager:
         if repo.head_is_detached:
             return None
         shorthand = repo.head.shorthand
-        return shorthand if shorthand else None
+        return shorthand or None
 
     def get_commit_info(self, ref: str, worktree: Path) -> CommitInfo:
         repo = self.get_repo(worktree)
