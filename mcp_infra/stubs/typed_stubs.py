@@ -23,13 +23,13 @@ class ToolStub[T_Out]:
     """Awaitable callable bound to a (session, tool_name, out_type)."""
 
     def __init__(self, session: Client, name: str, out_type: type[T_Out]) -> None:
-        self.session = session
+        self._session = session
         self._name = name
         self._out_type = out_type
 
     async def __call__[T_In: BaseModel](self, payload: T_In) -> T_Out:
         args = payload.model_dump(exclude_none=False)
-        result = await self.session.call_tool(name=self._name, arguments=args)
+        result = await self._session.call_tool(name=self._name, arguments=args)
 
         if result.structured_content is not None:
             content = result.structured_content
@@ -86,7 +86,7 @@ class TypedClient:
         self._models: dict[str, ToolModels] = {}
 
     def stub[T_Out](self, name: str, out_type: type[T_Out]) -> ToolStub[T_Out]:
-        return ToolStub(self.session, name, out_type)
+        return ToolStub(self._session, name, out_type)
 
     @property
     def models(self) -> dict[str, ToolModels]:
