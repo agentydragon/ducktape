@@ -18,6 +18,7 @@ py_library(
         "//util:typer",
         "//util/bazel:runfiles",
         "@pypi//aiodocker",
+        "@pypi//anyio",
         "@pypi//typer",
     ],
 )

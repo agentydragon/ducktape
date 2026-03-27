@@ -12,6 +12,7 @@ py_library(
         "//agent_pkg:mcp",
         "//util:logging",
         "//util:typer",
+        "@pypi//anyio",
         "@pypi//typer",
     ],
 )

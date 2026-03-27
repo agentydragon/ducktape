@@ -55,11 +55,23 @@ oci_load(
 )
 
 py_library(
+    name = "dependencies",
+    srcs = ["dependencies.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":responses_db",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
     name = "app",
     srcs = ["app.py"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":dependencies",
         ":models",
         ":responses_db",
         "@pypi//canonicaljson",
@@ -77,6 +89,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":app",
+        ":dependencies",
         ":models",
         ":responses_db",
         "//openai_utils:model",

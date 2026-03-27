@@ -94,7 +94,7 @@ class RunResult:
 
 def _run_hooks(
     file_path: Path, project_dir: Path, auto_apply_hooks: Iterable[str] = ()
-) -> tuple[list[HookOutcome], list[str]]:
+) -> tuple[dict[str, HookOutcome], list[str]]:
     """Run all applicable pre-commit hooks on a single file.
 
     Two-phase execution:
