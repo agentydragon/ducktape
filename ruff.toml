@@ -84,6 +84,14 @@ ignore = [
 # Avoid conflicts between ruff-format and trailing-comma rules
 extend-ignore = ["COM812"]
 
+# Rules evaluated and intentionally not enabled:
+# FIX  — TODOs shouldn't block commits; they're for future work
+# T20  — many CLIs use print() legitimately
+# TD   — single-author repo; requiring author/issue link on every TODO is overhead
+# EM   — extracting exception messages to variables adds boilerplate without sufficient value
+# ISC  — implicit string concat is fine; explicit + is sometimes clearer
+# FLY  — 2-element join is fine and consistent with longer joins
+
 # Allow mathematical symbols in strings
 allowed-confusables = ["σ"]
 
