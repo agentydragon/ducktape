@@ -68,6 +68,7 @@ select = [
     # TRY004 blindly converts these to TypeError, which is semantically wrong —
     # a mount being in the wrong lifecycle state is a RuntimeError, not a type error.
     "EXE",   # shebang/executable consistency
+    "TRY401", # redundant exception object in logging.exception
     "RUF"    # ruff-specific
 ]
 # Keep these off globally; handled case-by-case or via constants

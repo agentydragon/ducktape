@@ -181,7 +181,7 @@ class PreCommitAutoFixerHook(PostToolUseHook):
             # (SubprocessError), and any unexpected errors from dependencies like pre-commit itself.
             # The broad catch ensures users get actionable feedback with logs and tracebacks
             # rather than cryptic tool failures.
-            self.logger.exception(f"Pre-commit autofix failed: {e}")
+            self.logger.exception("Pre-commit autofix failed")
             # Show feedback for unexpected exceptions with debugging guidance
             tb_str = traceback.format_exc()
             invocation_id = get_current_invocation_id() or "unknown"
@@ -252,8 +252,8 @@ class PreCommitAutoFixerHook(PostToolUseHook):
             # Exit code 3: "An unexpected error", 130: "interrupted by ^C", etc.
             self.logger.warning(f"Pre-commit unexpected exit code {result.returncode}")
             return Crashed(stdout=result.stdout, stderr=result.stderr, exit_code=result.returncode)
-        except Exception as e:
-            self.logger.exception(f"Error in _run_precommit_autofix: {e}")
+        except Exception:
+            self.logger.exception("Error in _run_precommit_autofix")
             # Re-raise exceptions that aren't pre-commit failures
             raise
 

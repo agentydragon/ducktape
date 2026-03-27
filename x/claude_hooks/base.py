@@ -119,8 +119,8 @@ class HookBase[InputT: BaseHookInput, OutputT: HookAction](ABC):
             self.logger.info(f"Output JSON: {output_json}")
             print(output_json)
             sys.exit(0)
-        except Exception as e:
-            self.logger.exception(f"Fatal error in run_hook: {e}")
+        except Exception:
+            self.logger.exception("Fatal error in run_hook")
             # Still need to output something to not break Claude
             fallback = PostToolContinue()
             print(json.dumps(fallback.to_protocol()))

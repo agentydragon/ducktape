@@ -411,8 +411,8 @@ class MatrixClient:
         self._apply_access_token()
         try:
             response = await self._client.sync(timeout=30_000, since=self._since)
-        except Exception as exc:
-            logger.exception("Matrix sync failed: %s", exc)
+        except Exception:
+            logger.exception("Matrix sync failed")
             return None
 
         if isinstance(response, SyncError):

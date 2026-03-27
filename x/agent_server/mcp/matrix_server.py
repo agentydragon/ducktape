@@ -187,8 +187,8 @@ class _MatrixClient:
                     task.add_done_callback(lambda t: t.exception() if t.done() and not t.cancelled() else None)
                 except Exception as notify_exc:
                     logger.warning("matrix notify failed: %s", notify_exc)
-            except Exception as exc:
-                logger.exception("matrix on_message callback failed: %s", exc)
+            except Exception:
+                logger.exception("matrix on_message callback failed")
 
         c.add_event_handler(EventType.ROOM_MESSAGE, _on_message)
 
