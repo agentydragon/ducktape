@@ -22,7 +22,7 @@ exclude: |
   )$
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       # Safety guard: block pushes to protected branches.
       # 'main' and 'master' are protected by default.
@@ -80,7 +80,7 @@ repos:
 
   # Markdown linting (scoped to match .markdownlint-cli2.jsonc globs)
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.17.2
+    rev: v0.22.0
     hooks:
       - id: markdownlint-cli2
         args: [--fix]
@@ -273,7 +273,7 @@ repos:
 
   # Checkov security scanner for Terraform (standalone, avoids 10s import in bazel-precommit)
   - repo: https://github.com/bridgecrewio/checkov
-    rev: 3.2.497
+    rev: 3.2.513
     hooks:
       - id: checkov_diff
         args: ["--framework", "terraform", "--skip-check", "CKV_TF_1", "-f"]
