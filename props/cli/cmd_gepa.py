@@ -32,12 +32,12 @@ async def cmd_gepa(
         int, typer.Option(help="Budget for evaluations in this run (not counting historical)")
     ] = 100,
     output_dir: Annotated[Path, typer.Option(help="Output directory for results")] = Path("gepa_output"),
-    warm_start: Annotated[
+    warm_start: Annotated[  # noqa: FBT002
         bool, typer.Option(help="Load historical Pareto frontier from database to start from known good prompts")
     ] = True,
     max_parallelism: Annotated[int, typer.Option(help="Maximum concurrent critic/grader evaluations")] = 20,
     minibatch_size: Annotated[int, typer.Option(help="Number of training examples per reflection iteration")] = 3,
-    verbose: Annotated[bool, typer.Option(help="Enable verbose logging")] = False,
+    verbose: Annotated[bool, typer.Option(help="Enable verbose logging")] = False,  # noqa: FBT002
     seed: Annotated[int | None, typer.Option(help="Random seed for reproducibility (default: timestamp-based)")] = None,
 ) -> None:
     """Run GEPA optimization to evolve the critic system prompt.

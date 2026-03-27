@@ -73,6 +73,7 @@ select = [
     "TRY401", # redundant exception object in logging.exception
     "TRY203", # useless try-except (just re-raises)
     "TRY400", # logging.error in except → logging.exception
+    "FBT002", # boolean default in positional args
     "RUF"    # ruff-specific
 ]
 # Keep these off globally; handled case-by-case or via constants
@@ -169,3 +170,4 @@ split-on-trailing-comma = false
 # conftest.py re-exports fixtures for pytest discovery — imports are "unused" by design
 # and fixture parameters naturally shadow the imported fixture names (F811)
 "**/conftest.py" = ["F401", "F811"]
+"airlock/auth_proxy/proxy.py" = ["FBT002"]

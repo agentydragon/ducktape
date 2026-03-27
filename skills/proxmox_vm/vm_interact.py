@@ -256,9 +256,9 @@ def main(
     sendkey: Annotated[
         list[str] | None, typer.Option("--sendkey", "-k", help="Send QEMU key (e.g., ctrl-c, ret, shift-a)")
     ] = None,
-    info: Annotated[bool, typer.Option("--info", "-i", help="Show VM network info")] = False,
+    info: Annotated[bool, typer.Option("--info", "-i", help="Show VM network info")] = False,  # noqa: FBT002
     sleep: Annotated[list[float] | None, typer.Option("--sleep", help="Sleep for N seconds")] = None,
-    stdin: Annotated[bool, typer.Option("--stdin", help="Read commands from stdin")] = False,
+    stdin: Annotated[bool, typer.Option("--stdin", help="Read commands from stdin")] = False,  # noqa: FBT002
     delay: Annotated[float, typer.Option("--delay", "-d", help="Delay between keys in seconds")] = 0.05,
 ) -> None:
     """Interact with Proxmox VMs via QEMU monitor.

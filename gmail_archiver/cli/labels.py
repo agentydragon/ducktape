@@ -13,7 +13,7 @@ labels_app = typer.Typer(help="Manage Gmail labels")
 
 @labels_app.command("list")
 def list_labels(
-    show_system: Annotated[bool, typer.Option("--system", "-s", help="Include system labels")] = False,
+    show_system: Annotated[bool, typer.Option("--system", "-s", help="Include system labels")] = False,  # noqa: FBT002
     token_file: TokenFileOption = None,
 ):
     """List all labels with filter usage info."""
