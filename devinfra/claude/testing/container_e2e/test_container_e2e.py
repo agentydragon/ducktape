@@ -227,6 +227,9 @@ def test_container_e2e(
         network=isolated_net.name,
         volumes={
             str(staged_wheel): {"bind": f"/wheel/{_WHEEL_FILENAME}", "mode": "ro"},
+            # TODO: Mount as the exact binary name the nix flake provides (bazelisk),
+            # not as an alias. Don't create unconventional symlinks in the test container.
+            # The session start hook should work starting from the nix flake dev shell env.
             str(staged_bazelisk): {"bind": "/tools/bazelisk", "mode": "ro"},
             str(mock_ca_path): {"bind": "/certs/mock_ca.pem", "mode": "ro"},
             str(combined_ca_path): {"bind": "/certs/combined_ca.pem", "mode": "ro"},

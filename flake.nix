@@ -311,7 +311,7 @@
               skills
               # Dev tools (also provided by .envrc via `use flake`)
               pkgs.pre-commit
-              pkgs.bazelisk
+              pkgs.bazelisk # TODO: ensure binary name matches what session start hook expects (no unconventional symlinks/aliases)
               pkgs.nixfmt-rfc-style
               pkgs.mkcert
               pkgs.ruff
