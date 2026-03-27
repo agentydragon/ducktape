@@ -159,19 +159,12 @@ split-on-trailing-comma = false
 
 [lint.per-file-ignores]
 # Project-specific ignores (consolidated from individual pyproject.toml files)
-"x/rspcache/admin_app.py" = ["B008"]  # FastAPI dependency injection pattern
 "x/gatelet/server/**/*.py" = ["B008"]  # FastAPI dependency injection pattern
-# AST visitor methods must use visit_<NodeType> naming (framework requirement)
-# Python's ast.NodeVisitor dispatches by method name: visit_Import, visit_Name, etc.
-"py_detectors/det_*.py" = ["N802"]
 # Test fixtures are intentionally bad code for detector testing
 "py_detectors/tests/fixtures/**" = ["ALL"]
-"prompts/scans/scan_*.py" = ["N802"]
 # sys.path manipulation must happen before imports in uv run scripts and pytest
 "devinfra/ci/check_release.py" = ["E402"]
 "devinfra/ci/ci_decide.py" = ["E402"]
-# Lazy imports for performance: avoid loading mako for lightweight hooks
-"devinfra/claude/hook_dispatch.py" = ["PLC0415"]
 # conftest.py re-exports fixtures for pytest discovery — imports are "unused" by design
 # and fixture parameters naturally shadow the imported fixture names (F811)
 "**/conftest.py" = ["F401", "F811"]
