@@ -61,7 +61,7 @@ jobs:
             echo "No changes to commit"
             exit 0
           fi
-          git commit -m "chore: bump release artifacts"
+          git commit -m "chore: bump release artifacts (${{ inputs.changed }})"
           git pull --rebase origin devel
           git push origin "HEAD:devel"
 
