@@ -4,7 +4,7 @@ Analysis and reconstruction of Anthropic's `environment-manager` binary — the
 Go-based orchestration service that manages Claude Code web container sessions.
 
 > **Current binary is garble-obfuscated.** The previous (`a6f96673`, staging)
-> had full DWARF + symbols. The current (`64bc4dc1`, release) uses
+> had full DWARF + symbols. The current (`495ea204`, release) uses
 > [garble](https://github.com/burrowers/garble) — symbol names are randomized,
 > `go version -m` returns "unknown", DWARF extraction is not possible. RE now
 > relies on runtime behavior and string analysis only.
@@ -13,16 +13,16 @@ Go-based orchestration service that manages Claude Code web container sessions.
 
 | Property           | Value                                                      |
 | ------------------ | ---------------------------------------------------------- |
-| **ELF Build ID**   | `64bc4dc1a5a3a38ce5732655f7fdfbeb62b8598d`                 |
+| **ELF Build ID**   | `495ea204294a4d78ef9d6d3ef7cd2d433486514b`                 |
 | **Reference file** | `devinfra/claude/web_env/reference/environment-manager.gz` |
 | **Language**       | Go                                                         |
-| **Version string** | `release-9f4ec76fbc-ext`                                   |
+| **Version string** | `release-d84d76b7-ext`                                     |
 | **Channel**        | Release (was staging)                                      |
 | **Obfuscation**    | garble (all symbol names randomized)                       |
-| **Binary size**    | 49.8 MB (uncompressed), 19 MB (gzipped)                    |
+| **Binary size**    | 51.9 MB (uncompressed), 20 MB (gzipped)                    |
 | **Binary path**    | `/opt/env-runner/environment-manager`                      |
 | **Dynamic deps**   | Only `libc.so.6`                                           |
-| **RE directory**   | `64bc4dc1/`                                                |
+| **RE directory**   | `495ea204/`                                                |
 
 ## Binary Name vs CLI Name
 
@@ -34,10 +34,10 @@ is `environment-runner`. All CLI examples in strings use `environment-runner`.
 The original Go module lives at
 `github.com/anthropics/anthropic/api-go/environment-manager`. Source tree
 was extracted from `a6f96673` DWARF debug info (87 files). Binary diff
-(2026-03-26) confirmed that 64bc4dc1 removed several packages (Supabase,
-Vercel, Antspace, Baku) and the old binary's DWARF paths revealed files
-missing from the RE source tree. Items marked `REMOVED` are confirmed
-absent from the 64bc4dc1 binary.
+confirmed that several packages were removed (Supabase, Vercel, Antspace,
+Baku) and the old binary's DWARF paths revealed files missing from the RE
+source tree. Items marked `REMOVED` are confirmed absent from the current
+binary.
 
 ```
 main.go                                         # Entry point: Cobra root command + Version
@@ -109,7 +109,7 @@ internal/
       server.go                                 # Code-sign MCP server
       sign_operations.go                        # Signing operations
       types.go                                  # Code-sign type definitions
-    servers/supabase/                           # REMOVED in 64bc4dc1
+    servers/supabase/                           # REMOVED
       client.go                                 # REMOVED - Supabase REST client
       functions.go                              # REMOVED - Function deploy
       registration.go                           # REMOVED - MCP registration
@@ -154,8 +154,8 @@ internal/
       registry.go                               # Tunnel action registry
       deploy/
         action.go                               # Deploy action (filestore-based)
-        antspace.go                             # REMOVED in 64bc4dc1
-        vercel.go                               # REMOVED in 64bc4dc1
+        antspace.go                             # REMOVED
+        vercel.go                               # REMOVED
       snapshot/
         action.go                               # Snapshot action
       status/
@@ -364,7 +364,7 @@ Bidirectional HTTP/WebSocket tunneling using gRPC + protobuf
 - **WS handler**: Forward WebSocket connections through tunnel
 - **Deploy action**: Deployment through tunnel using filestore-based mechanism
   (`filestore_url`, `filesystem_id` fields). **Note:** Vercel and Antspace
-  backends were removed in 64bc4dc1.
+  backends were removed.
 - **Snapshot action**: Project state snapshot (file listings, git status)
 - **Status action**: Health check (port validation, "ok" response)
 
@@ -377,14 +377,14 @@ Protobuf messages: `HTTPTunnelRequest`, `HTTPTunnelResponseChunk`,
 - **Registry**: Register/unregister MCP servers with Claude Code
 - **Base server**: Common MCP server infrastructure (using `mcp-go` v0.37.0)
 - **Code-sign server**: GPG/SSH code signing via MCP tool calls
-- **Supabase server**: REMOVED in 64bc4dc1 (was: database provisioning,
+- **Supabase server**: REMOVED in 495ea204 (was: database provisioning,
   migrations, function deploy, type generation)
 
 ### Authentication (`internal/auth/`)
 
 - `AuthContext`: Holds API token (Anthropic), OAuth token, session ID,
   session ingress token. **Note:** Vercel deploy token, Antspace control plane
-  URL + auth token, and Supabase credentials were removed in 64bc4dc1.
+  URL + auth token, and Supabase credentials were removed.
 - `GitHubSourceAuthProvider`: GitHub App authentication for source repos
 
 ### Environment Types (`internal/envtype/`)
@@ -492,11 +492,11 @@ Extracted from strings and function analysis:
 | `/v2/sessions/{id}`                          | GET    | `get_session_context`  |
 | `/v2/sessions/{id}/events`                   | POST   | `session_ingress`      |
 | `/v2/sessions/{id}/logs`                     | POST   | `session_ingress`      |
-| `/v2/ccr-sessions/{id}/supabase-provision`   | POST   | REMOVED in 64bc4dc1    |
+| `/v2/ccr-sessions/{id}/supabase-provision`   | POST   | REMOVED in 495ea204    |
 
 ## Artifacts
 
-The `64bc4dc1` binary is garble-obfuscated — Go tooling cannot extract module
+The `495ea204` binary is garble-obfuscated — Go tooling cannot extract module
 info, symbols, or DWARF. Runtime probing and string analysis are the only
 available RE methods:
 
@@ -533,11 +533,11 @@ strings devinfra/claude/web_env/reference/environment-manager | sort -u
 
 ## Reconstruction Status
 
-Source under `64bc4dc1/src/` was derived from the `a6f96673` DWARF-extracted
-reconstruction. A binary diff (2026-03-26) between the two versions revealed
-significant code changes -- the source contains dead code that must be removed:
+Source under `495ea204/src/` was derived from the `a6f96673` DWARF-extracted
+reconstruction. A binary diff between versions revealed significant code
+changes — the source contains dead code that must be removed:
 
-**Removed in 64bc4dc1 (confirmed via binary diff):**
+**Removed in 495ea204 (confirmed via binary diff):**
 
 - Supabase MCP server (`internal/mcp/servers/supabase/`) -- entirely excised
 - Vercel deploy backend (`internal/tunnel/actions/deploy/vercel.go`)
@@ -545,12 +545,12 @@ significant code changes -- the source contains dead code that must be removed:
 - Baku project features (initialization, templates, settings bootstrap)
 - Related auth fields (Supabase credentials, Vercel token, Antspace URL/token)
 
-**Added in 64bc4dc1:**
+**Added in 495ea204:**
 
 - `filestore_url` and `filesystem_id` JSON fields (new deploy mechanism)
 - `jwt` JSON field (auth-related)
 
 **Unchanged:** V0/V1 session context structs, CLI flags, sandbox settings, API endpoints.
 
-See `64bc4dc1/BINDIFF_RESULTS.md` for full analysis and `64bc4dc1/PLAN.md` for
+See `495ea204/BINDIFF_RESULTS.md` for full analysis and `495ea204/PLAN.md` for
 detailed status.

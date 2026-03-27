@@ -7,9 +7,9 @@ Documented from a live session on 2026-03-26.
 | Binary                | Build ID   | Release / Version              |
 | --------------------- | ---------- | ------------------------------ |
 | `process_api` (PID 1) | `91c789ff` | `process_api_2026-03-23-22-49` |
-| `environment-manager` | `64bc4dc1` | `release-9f4ec76fbc-ext`       |
+| `environment-manager` | `495ea204` | `release-d84d76b7-ext`         |
 
-`environment-manager` is garble-obfuscated (release channel, 49MB).
+`environment-manager` is garble-obfuscated (release channel, 52MB).
 DWARF/symbol extraction is not possible.
 
 ## Table of Contents

@@ -5,7 +5,7 @@
 | Binary                | Build ID   | Version/Release                |
 | --------------------- | ---------- | ------------------------------ |
 | `process_api`         | `91c789ff` | `process_api_2026-03-23-22-49` |
-| `environment-manager` | `64bc4dc1` | `release-9f4ec76fbc-ext`       |
+| `environment-manager` | `495ea204` | `release-d84d76b7-ext`         |
 
 ## Build Status
 
@@ -46,7 +46,7 @@ All modules re-verified against binary via string cross-referencing + objdump.
 JWT auth, snapstart, container_info.json confirmed present (correcting prior
 claims of removal). Only remaining gap: vsock stubs (requires tokio-vsock).
 
-**environment_manager (64bc4dc1)** — 22,743 lines Go, 96 files, 23 TODO(re).
+**environment_manager (495ea204)** — 22,743 lines Go, 96 files, 23 TODO(re).
 Binary diff proved "nothing changed except obfuscation" was false: Supabase,
 Vercel, Antspace, Baku features removed; filestore_url/filesystem_id/jwt added.
 Dead code deleted (-1,610 lines), 10 missing files created (+868 lines), new

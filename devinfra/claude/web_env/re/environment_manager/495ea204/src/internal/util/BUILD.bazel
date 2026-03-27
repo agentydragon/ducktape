@@ -1,0 +1,16 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "util",
+    srcs = [
+        "git.go",
+        "lockfile.go",
+        "net.go",
+        "periodic_invoker.go",
+        "retry.go",
+        "streamer.go",
+        "tailer.go",
+    ],
+    importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/util",
+    visibility = ["//devinfra/claude/web_env/re/environment_manager/495ea204/src:__subpackages__"],
+)

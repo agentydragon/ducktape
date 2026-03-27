@@ -1,0 +1,20 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "input",
+    srcs = [
+        "parser.go",
+        "secret.go",
+        "v0_parser.go",
+        "v1_parser.go",
+    ],
+    importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/input",
+    visibility = ["//devinfra/claude/web_env/re/environment_manager/495ea204/src:__subpackages__"],
+    deps = [
+        "//devinfra/claude/web_env/re/environment_manager/495ea204/src/internal/api",
+        "//devinfra/claude/web_env/re/environment_manager/495ea204/src/internal/auth",
+        "//devinfra/claude/web_env/re/environment_manager/495ea204/src/internal/claude",
+        "//devinfra/claude/web_env/re/environment_manager/495ea204/src/internal/config",
+        "//devinfra/claude/web_env/re/environment_manager/495ea204/src/internal/o11y",
+    ],
+)

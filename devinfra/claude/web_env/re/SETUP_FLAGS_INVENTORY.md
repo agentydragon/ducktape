@@ -136,8 +136,8 @@ Control server: **always** rejects local IPs regardless of this flag.
 
 ## Binary 2: `environment-manager` (Go, garble-obfuscated)
 
-**Build ID**: `64bc4dc1a5a3a38ce5732655f7fdfbeb62b8598d`
-**Version**: `release-9f4ec76fbc-ext` (via `-ldflags -X main.Version`)
+**Build ID**: `495ea204294a4d78ef9d6d3ef7cd2d433486514b`
+**Version**: `release-d84d76b7-ext` (via `-ldflags -X main.Version`)
 **Framework**: `cobra v1.9.1` + `pflag`
 **Binary name**: `environment-manager` on disk, `environment-runner` as CLI name
 
@@ -418,7 +418,7 @@ environment-manager task-run --session=<id> --input-format=v1
 ## RE Source vs Binary Discrepancies
 
 All previously identified discrepancies have been resolved. The reconstructed
-source in `64bc4dc1/src/cmd/` now matches the live binary's `--help` output.
+source in `495ea204/src/cmd/` now matches the live binary's `--help` output.
 
 Previously fixed discrepancies (for historical reference):
 

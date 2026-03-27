@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "claude",
+    srcs = [
+        "claude_code_executor.go",
+        "config_helpers.go",
+        "init.go",
+        "install.go",
+        "outcomes.go",
+        "session_urls.go",
+    ],
+    importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/claude",
+    visibility = ["//devinfra/claude/web_env/re/environment_manager/495ea204/src:__subpackages__"],
+    deps = [
+        "//devinfra/claude/web_env/re/environment_manager/495ea204/src/internal/config",
+        "//devinfra/claude/web_env/re/environment_manager/495ea204/src/internal/o11y/diag",
+    ],
+)
