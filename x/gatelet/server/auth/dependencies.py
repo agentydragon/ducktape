@@ -21,7 +21,8 @@ class AuthDependency:
 
     async def __call__(self) -> AuthContext:
         if self.context is None:
-            raise RuntimeError("Auth context not initialized")
+            msg = "Auth context not initialized"
+            raise RuntimeError(msg)
         return self.context
 
 
@@ -51,7 +52,8 @@ async def get_admin_auth_with_context(
     session_token: str | None = Cookie(None, alias=ADMIN_SESSION_COOKIE), db_session: AsyncSession = DB_SESSION
 ) -> AuthContext:
     if session_token is None:
-        raise RuntimeError("No admin session")
+        msg = "No admin session"
+        raise RuntimeError(msg)
     auth_context = await admin_auth(session_token, db_session)
     auth_dependency.set_context(auth_context)
     return auth_context

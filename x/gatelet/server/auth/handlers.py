@@ -166,7 +166,7 @@ async def session_auth(session_token: str, db_session: AsyncSession, settings: S
         raise AuthHandlerError
 
     # Extend session if needed
-    now = datetime.now()
+    now = datetime.now(tz=datetime.UTC)
     session.last_activity_at = now
     new_exp = now + settings.auth.challenge_response.session_extension
     max_exp = session.created_at + settings.auth.challenge_response.session_max_duration
