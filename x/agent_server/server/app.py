@@ -47,8 +47,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     def _mount_static(path: str, directory: Path, name: str) -> None:
         if not directory.exists():
             if require_static_assets:
-                msg = f"Static directory missing: {directory}. Build Agent UI assets before running."
-                raise RuntimeError(msg)
+                raise RuntimeError(f"Static directory missing: {directory}. Build Agent UI assets before running.")
             logger.warning(
                 "Skipping mount for missing static directory", extra={"path": path, "directory": str(directory)}
             )
@@ -159,8 +158,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         file_path = STATIC_DIR / "index.html"
         if not file_path.exists():
             if require_static_assets:
-                msg = f"Missing UI file: {file_path}"
-                raise RuntimeError(msg)
+                raise RuntimeError(f"Missing UI file: {file_path}")
             return Response(content="Agent UI assets not built", media_type="text/plain", status_code=200)
         return FileResponse(file_path)
 

@@ -101,8 +101,7 @@ def _resolve_real_binary() -> str:
     if env_path:
         path = Path(env_path)
         if not path.exists():
-            msg = f"{ENV_BAZELISK_PATH}={env_path} does not exist"
-            raise FileNotFoundError(msg)
+            raise FileNotFoundError(f"{ENV_BAZELISK_PATH}={env_path} does not exist")
         return env_path
 
     # CLI mode: find the real binary matching our invocation name
@@ -115,8 +114,7 @@ def _resolve_real_binary() -> str:
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)
 
-    msg = f"No {invoked_as} found on PATH"
-    raise FileNotFoundError(msg)
+    raise FileNotFoundError(f"No {invoked_as} found on PATH")
 
 
 def _refresh_proxy_creds(paths: SessionPaths) -> str:
@@ -126,8 +124,7 @@ def _refresh_proxy_creds(paths: SessionPaths) -> str:
     """
     https_proxy = get_upstream_proxy_url()
     if not https_proxy:
-        msg = "No HTTPS_PROXY environment variable set"
-        raise AuthProxyError(msg)
+        raise AuthProxyError("No HTTPS_PROXY environment variable set")
     try:
         return update_proxy_creds(https_proxy, paths)
     except OSError as e:
@@ -160,8 +157,7 @@ def main() -> None:
     """Main entry point."""
     session_dir_str = os.environ.get(ENV_SESSION_DIR)
     if not session_dir_str:
-        msg = f"{ENV_SESSION_DIR} environment variable is required"
-        raise RuntimeError(msg)
+        raise RuntimeError(f"{ENV_SESSION_DIR} environment variable is required")
     session_id = Path(session_dir_str).name
     paths = SessionPaths.from_env(session_id, dict(os.environ))
 

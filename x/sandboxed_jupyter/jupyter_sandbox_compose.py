@@ -145,20 +145,17 @@ def compose_from_config_raw(raw_text: str) -> None:
     try:
         cfg: ComposerConfig = ComposerConfig.model_validate(raw)
     except ValidationError as e:
-        msg = f"Invalid composer config: {e}"
-        raise SystemExit(msg) from e
+        raise SystemExit(f"Invalid composer config: {e}") from e
 
     if cfg.version != 1:
-        msg = f"unsupported composer config version: {cfg.version}"
-        raise SystemExit(msg)
+        raise SystemExit(f"unsupported composer config version: {cfg.version}")
 
     bundle_dir = Path(cfg.bundle_dir).resolve()
     runtime_dir = Path(cfg.runtime_dir).resolve()
 
     kernel = cfg.kernel
     if not kernel.argv_base:
-        msg = "kernel.argv_base must be a non-empty list"
-        raise SystemExit(msg)
+        raise SystemExit("kernel.argv_base must be a non-empty list")
     kernel_exec = str(kernel.argv_base[0])
 
     jupyter_cfg = cfg.jupyter or JupyterConfig()

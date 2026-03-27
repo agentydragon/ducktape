@@ -115,8 +115,7 @@ async def test_refresh_loop_continues_on_error(provider: GenericOAuth2Provider) 
     async def failing_refresh(refresh_token: str) -> TokenData:
         nonlocal call_count
         call_count += 1
-        msg = "network error"
-        raise RuntimeError(msg)
+        raise RuntimeError("network error")
 
     with patch.object(provider, "refresh_tokens", side_effect=failing_refresh):
         await _run_loop_briefly({"test": provider}, mock_store, "test-ns", sleep=0.1)

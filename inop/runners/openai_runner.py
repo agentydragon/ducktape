@@ -105,8 +105,7 @@ class OpenAIRunner(AgentRunner):
 
     def _build_mcp_server_factories(self, setup) -> dict[str, Callable[..., FastMCP]]:
         if not self.workspace_path:
-            msg = "Workspace not initialised"
-            raise RuntimeError(msg)
+            raise RuntimeError("Workspace not initialised")
 
         if setup and setup.docker:
             binds: list[BindMount] = [
@@ -148,8 +147,7 @@ class OpenAIRunner(AgentRunner):
             if sandbox_enabled:
                 if os.name == "posix" and sys.platform == "linux":
                     return BwrapExecServer(default_cwd=self.workspace_path)
-                msg = "Sandbox (bubblewrap) required but not available on this platform"
-                raise RuntimeError(msg)
+                raise RuntimeError("Sandbox (bubblewrap) required but not available on this platform")
             # Explicitly unsandboxed path allowed via config/env override
             return DirectExecServer(default_cwd=self.workspace_path)
 
@@ -157,8 +155,7 @@ class OpenAIRunner(AgentRunner):
 
     async def run_task(self, task: TaskDefinition, agent_instructions: str) -> Rollout:
         if not self._agent:
-            msg = "Runner not initialised; call setup() first"
-            raise RuntimeError(msg)
+            raise RuntimeError("Runner not initialised; call setup() first")
 
         self._agent.process_message(SystemMessage.text(agent_instructions))
         self._agent.process_message(UserMessage.text(task.prompt))

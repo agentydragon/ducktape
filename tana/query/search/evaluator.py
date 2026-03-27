@@ -95,8 +95,7 @@ class SearchEvaluator:
 
         doc_type = type_map.get(type_node_id)
         if not doc_type:
-            msg = f"Unknown system type: {type_node_id}"
-            raise ValueError(msg)
+            raise ValueError(f"Unknown system type: {type_node_id}")
 
         def matches_type(node: BaseNode) -> bool:
             return node.props.doc_type == doc_type
@@ -223,8 +222,7 @@ class SearchEvaluator:
 @singledispatch
 def _evaluate_dispatch(expression: SearchExpression, evaluator: SearchEvaluator) -> Iterator[BaseNode]:
     """Dispatch search expression evaluation based on type."""
-    msg = f"Unknown expression type: {type(expression)}"
-    raise ValueError(msg)
+    raise ValueError(f"Unknown expression type: {type(expression)}")
 
 
 @_evaluate_dispatch.register(TagSearch)

@@ -113,8 +113,7 @@ class AgentRunner(ABC):
 
             if exit_code != 0:
                 self.logger.error("Git command failed", command=" ".join(cmd), exit_code=exit_code, stderr=stderr)
-                msg = f"Failed to run {' '.join(cmd)}: {stderr}"
-                raise RuntimeError(msg)
+                raise RuntimeError(f"Failed to run {' '.join(cmd)}: {stderr}")
 
         self.logger.info("Repository cloned successfully")
 
@@ -132,5 +131,4 @@ class AgentRunner(ABC):
         Returns:
             Tuple of (exit_code, stdout, stderr)
         """
-        msg = "Subclass must implement _run_docker_command if using Docker"
-        raise NotImplementedError(msg)
+        raise NotImplementedError("Subclass must implement _run_docker_command if using Docker")

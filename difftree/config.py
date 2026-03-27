@@ -33,8 +33,7 @@ def parse_columns(columns_str: str) -> list[Column]:
             column_list.append(Column(col_stripped.lower()))
         except ValueError:
             valid_options = ", ".join(c.value for c in Column)
-            msg = f"Unknown column '{col_stripped}'. Valid options: {valid_options}"
-            raise ValueError(msg) from None
+            raise ValueError(f"Unknown column '{col_stripped}'. Valid options: {valid_options}") from None
     return column_list
 
 

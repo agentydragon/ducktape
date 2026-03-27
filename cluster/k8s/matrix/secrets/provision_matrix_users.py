@@ -68,8 +68,7 @@ def register_admin(registration_secret: str, admin_password: str) -> None:
         if e.code == 400 and "M_USER_IN_USE" in body:
             print(f"Phase 1: Admin @{ADMIN_USERNAME}:{SERVER_NAME} already exists, skipping")
             return
-        msg = f"Phase 1 failed: HTTP {e.code} - {body}"
-        raise RuntimeError(msg) from e
+        raise RuntimeError(f"Phase 1 failed: HTTP {e.code} - {body}") from e
 
 
 def _admin_user_url(encoded_mxid: str) -> str:

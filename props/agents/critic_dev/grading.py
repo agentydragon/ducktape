@@ -53,8 +53,7 @@ def get_grading_status_from_db(critic_run_id: UUID, db: Database) -> GradingStat
 
         critic_run = session.get(AgentRun, critic_run_id)
         if not critic_run:
-            msg = f"Critic run {critic_run_id} not found"
-            raise ValueError(msg)
+            raise ValueError(f"Critic run {critic_run_id} not found")
 
         critic_config = critic_run.critic_config()
         snapshot = session.query(Snapshot).filter_by(slug=critic_config.example.snapshot_slug).one()
@@ -82,8 +81,7 @@ async def wait_until_graded(
     with db.session() as session:
         critic_run = session.get(AgentRun, critic_run_id)
         if critic_run is None:
-            msg = f"Critic run {critic_run_id} not found"
-            raise ValueError(msg)
+            raise ValueError(f"Critic run {critic_run_id} not found")
 
         if critic_run.status == AgentRunStatus.IN_PROGRESS:
             msg = (

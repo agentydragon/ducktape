@@ -142,8 +142,7 @@ class ClaudeCodeHookBase:
                 elif isinstance(request, PreCompactRequest):
                     outcome = hook_instance.pre_compact(request)
                 else:
-                    msg = f"Unknown request type: {type(request)}"
-                    raise ValueError(msg)
+                    raise ValueError(f"Unknown request type: {type(request)}")
 
                 # Convert to response once for both logging and return
                 response = outcome.to_claude_response()

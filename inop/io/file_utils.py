@@ -99,8 +99,7 @@ class WorkspaceFileProvider:
             with filepath.open(encoding="utf-8") as f:
                 return f.read()
         except (UnicodeDecodeError, OSError) as e:
-            msg = f"Cannot read file {path}"
-            raise ValueError(msg) from e
+            raise ValueError(f"Cannot read file {path}") from e
 
 
 class DockerFileProvider:
@@ -117,8 +116,7 @@ class DockerFileProvider:
     def get_file_content(self, path: str) -> str:
         """Get content of a file."""
         if path not in self._files:
-            msg = f"File not found: {path}"
-            raise ValueError(msg)
+            raise ValueError(f"File not found: {path}")
         return self._files[path]
 
     def _should_include_file(self, path: str) -> bool:

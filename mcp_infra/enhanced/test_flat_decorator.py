@@ -174,8 +174,7 @@ class StrictModel(OpenAIStrictModeBaseModel):
     @classmethod
     def check_positive(cls, v):
         if v <= 0:
-            msg = "must be positive"
-            raise ValueError(msg)
+            raise ValueError("must be positive")
         return v
 
 

@@ -31,12 +31,10 @@ def validate_and_encode_image(data: bytes, path: str | os.PathLike[str]) -> mcp_
     """
     mime_type, _ = mimetypes.guess_type(path)
     if not mime_type or not mime_type.startswith("image/"):
-        msg = f"Not a supported image type: {path}"
-        raise ValueError(msg)
+        raise ValueError(f"Not a supported image type: {path}")
 
     if len(data) > MAX_IMAGE_BYTES:
-        msg = f"Image too large: {len(data)} bytes (limit: {MAX_IMAGE_BYTES})"
-        raise ValueError(msg)
+        raise ValueError(f"Image too large: {len(data)} bytes (limit: {MAX_IMAGE_BYTES})")
 
     encoded = base64.standard_b64encode(data).decode("ascii")
     return mcp_types.ImageContent(type="image", mimeType=mime_type, data=encoded)

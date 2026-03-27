@@ -86,8 +86,7 @@ def _load_payload(spec: str) -> dict[str, Any]:
 
 async def _run(config: ReporterConfig) -> None:
     if not config.battery_enabled:
-        msg = "no reporters enabled in config"
-        raise RuntimeError(msg)
+        raise RuntimeError("no reporters enabled in config")
     while True:
         if config.battery_enabled:
             result = await send_battery_status(config.url, config.integration, token=config.token)

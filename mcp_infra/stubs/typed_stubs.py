@@ -14,8 +14,7 @@ from mcp_infra.flat_tool import FlatTool
 def _structured_content(result: FastMCPCallToolResult, *, tool_name: str) -> dict[str, Any]:
     sc = result.structured_content
     if sc is None:
-        msg = f"{tool_name!r} did not return structured_content; tests require structured outputs"
-        raise RuntimeError(msg)
+        raise RuntimeError(f"{tool_name!r} did not return structured_content; tests require structured outputs")
     return TypeAdapter(dict[str, Any]).validate_python(sc)
 
 
@@ -40,8 +39,7 @@ class ToolStub[T_Out]:
             return TypeAdapter(self._out_type).validate_python(content)
 
         # Fallback: no structured output
-        msg = f"{self._name!r} did not return structured_content; tests require structured outputs"
-        raise RuntimeError(msg)
+        raise RuntimeError(f"{self._name!r} did not return structured_content; tests require structured outputs")
 
 
 def _resolve_output_type(hinted_output: object, out_model: object) -> type[Any]:
@@ -134,18 +132,15 @@ class TypedClient:
 
         async def _err(payload: BaseModel) -> str:
             if models.Input is not None and not isinstance(payload, models.Input):
-                msg = f"{name} expects {models.Input.__name__}, got {type(payload).__name__}"
-                raise TypeError(msg)
+                raise TypeError(f"{name} expects {models.Input.__name__}, got {type(payload).__name__}")
             args_dict = payload.model_dump(exclude_none=False)
             try:
                 result = await session.call_tool(name=name, arguments=args_dict)
             except Exception as exc:
                 return str(exc)
             if not result.is_error:
-                msg = "expected tool error"
-                raise AssertionError(msg)
-            msg = f"expected exception from {name}, got is_error=True result instead"
-            raise AssertionError(msg)
+                raise AssertionError("expected tool error")
+            raise AssertionError(f"expected exception from {name}, got is_error=True result instead")
 
         return _err
 

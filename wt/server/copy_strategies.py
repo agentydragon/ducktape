@@ -154,8 +154,7 @@ def _get_strategy_for_method(cow_method) -> CopyStrategy:
     if cow_method == CowMethod.REFLINK:
         if _test_reflink_support():
             return ReflinkCopyStrategy()
-        msg = "Reflink copy is not supported on this system"
-        raise RuntimeError(msg)
+        raise RuntimeError("Reflink copy is not supported on this system")
 
     if cow_method == CowMethod.COPY:
         # "copy" maps to clonefile on macOS, reflink elsewhere
@@ -167,9 +166,7 @@ def _get_strategy_for_method(cow_method) -> CopyStrategy:
 
     if cow_method == CowMethod.RSYNC:
         if not shutil.which("rsync"):
-            msg = "rsync is not available on this system"
-            raise RuntimeError(msg)
+            raise RuntimeError("rsync is not available on this system")
         return RsyncCopyStrategy()
 
-    msg = f"Unknown copy method: {cow_method}"
-    raise RuntimeError(msg)
+    raise RuntimeError(f"Unknown copy method: {cow_method}")

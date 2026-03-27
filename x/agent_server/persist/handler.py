@@ -52,8 +52,7 @@ class RunPersistenceHandler(BaseHandler):
         if errors:
             # Summarize unique error types for clarity
             kinds = sorted({type(e).__name__ for e in errors})
-            msg = f"persistence_drain_failed: {', '.join(kinds)}"
-            raise RuntimeError(msg)
+            raise RuntimeError(f"persistence_drain_failed: {', '.join(kinds)}")
 
     def _record_event(
         self, evt: UserText | AssistantText | ToolCall | ToolCallOutput | Response | ReasoningItem

@@ -56,8 +56,9 @@ def test_status_lists_multiple_worktrees(real_temp_repo, wt_cli):
 
     ok = wait_until(_both_ok, timeout_seconds=5.0, interval_seconds=0.2)
     if not ok:
-        msg = f"Status did not reach clean/running with hex commit for both worktrees.\nLast output:\n{last['out']}"
-        raise AssertionError(msg)
+        raise AssertionError(
+            f"Status did not reach clean/running with hex commit for both worktrees.\nLast output:\n{last['out']}"
+        )
 
 
 if __name__ == "__main__":

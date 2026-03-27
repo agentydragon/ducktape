@@ -256,12 +256,12 @@ def rewrite_system_with_template(system_text: str, template_path: Path) -> str:
             env=env,
         )
     except FileNotFoundError as e:
-        msg = "Node.js ('node') not found in PATH; install Node or adjust PATH to use system rewrite"
-        raise RuntimeError(msg) from e
+        raise RuntimeError(
+            "Node.js ('node') not found in PATH; install Node or adjust PATH to use system rewrite"
+        ) from e
     if proc.returncode != 0:
         sys.stderr.write(proc.stderr.decode("utf-8", errors="ignore"))
-        msg = f"system rewrite failed with code {proc.returncode}"
-        raise RuntimeError(msg)
+        raise RuntimeError(f"system rewrite failed with code {proc.returncode}")
     return proc.stdout.decode("utf-8")
 
 
@@ -317,16 +317,14 @@ def parse_grade_from_responses(response: ResponsesResult) -> Grade:
     Extracts the 'grade' tool call from the response output and validates it as a Grade model.
     """
     if not response.output:
-        msg = "No output in responses"
-        raise RuntimeError(msg)
+        raise RuntimeError("No output in responses")
 
     for item in response.output:
         if isinstance(item, FunctionCallItem) and item.name == "grade":
             if item.arguments is None:
                 return cast(Grade, Grade.model_validate({}))
             return cast(Grade, Grade.model_validate_json(item.arguments))
-    msg = "No grade tool call in responses output"
-    raise RuntimeError(msg)
+    raise RuntimeError("No grade tool call in responses output")
 
 
 def responses_prev_assistant_index(inp: Any) -> int | None:
@@ -539,8 +537,7 @@ async def run_eval(
 
     # client is injected by caller (no implicit AsyncOpenAI() here)
     if client is None:
-        msg = "run_eval requires a non-None AsyncOpenAI client injected by caller"
-        raise ValueError(msg)
+        raise ValueError("run_eval requires a non-None AsyncOpenAI client injected by caller")
     sem = asyncio.Semaphore(max(1, int(concurrency)))
 
     async def process(item: Sample) -> tuple[EvalSampleRecord | None, EvalGradeRecord | None]:

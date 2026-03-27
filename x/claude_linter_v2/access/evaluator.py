@@ -35,16 +35,14 @@ class PredicateEvaluator:
             logger.error("Failed to evaluate predicate function: %s", e)
             # Include first line of predicate for context
             first_line = predicate.strip().split("\n")[0][:50]
-            msg = f"Invalid predicate function starting with '{first_line}...': {e}"
-            raise ValueError(msg) from e
+            raise ValueError(f"Invalid predicate function starting with '{first_line}...': {e}") from e
 
     def _validate_and_extract_function(self, predicate_code: str) -> Callable:
         """Parse and validate that predicate is exactly one function."""
         try:
             tree = ast.parse(predicate_code.strip())
         except SyntaxError as e:
-            msg = f"Invalid Python syntax: {e}"
-            raise ValueError(msg) from e
+            raise ValueError(f"Invalid Python syntax: {e}") from e
 
         # Must contain exactly one function definition at top level
         functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)]
@@ -54,8 +52,9 @@ class PredicateEvaluator:
             node for node in tree.body if not isinstance(node, ast.FunctionDef | ast.Import | ast.ImportFrom)
         ]
         if non_function_statements:
-            msg = "Predicate can only contain one function definition and imports. No other statements allowed."
-            raise ValueError(msg)
+            raise ValueError(
+                "Predicate can only contain one function definition and imports. No other statements allowed."
+            )
 
         func_node = one(functions)
 
@@ -69,12 +68,10 @@ class PredicateEvaluator:
         # Return the function
         func_name = func_node.name
         if func_name not in namespace:
-            msg = f"Function '{func_name}' not found after execution"
-            raise ValueError(msg)
+            raise ValueError(f"Function '{func_name}' not found after execution")
 
         func = namespace[func_name]
         if not callable(func):
-            msg = f"'{func_name}' is not callable"
-            raise ValueError(msg)
+            raise ValueError(f"'{func_name}' is not callable")
 
         return func

@@ -84,14 +84,12 @@ class EditorSubmitServer(EnhancedFastMCP):
 
         def submit_success(input: SubmitSuccessInput) -> None:
             if not isinstance(self._state, SubmitStatePending):
-                msg = "submit already called"
-                raise ToolError(msg)
+                raise ToolError("submit already called")
             self._state = SubmitStateSuccess(content=input.content, message=input.message)
 
         def submit_failure(input: SubmitFailureInput) -> None:
             if not isinstance(self._state, SubmitStatePending):
-                msg = "submit already called"
-                raise ToolError(msg)
+                raise ToolError("submit already called")
             self._state = SubmitStateFailure(message=input.message)
 
         self.submit_success_tool = self.flat_model()(submit_success)

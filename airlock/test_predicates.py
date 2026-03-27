@@ -60,8 +60,7 @@ def test_load_predicate_syntax_error_raises(tmp_path: Path):
 
 def test_call_predicate_catches_runtime_exception():
     def bad_predicate(server_namespace: str, tool_name: str, arguments: dict):
-        msg = "predicate crashed!"
-        raise RuntimeError(msg)
+        raise RuntimeError("predicate crashed!")
 
     result = call_predicate(bad_predicate, "test", "tool", {})
     assert isinstance(result, NeedsHumanDecision)

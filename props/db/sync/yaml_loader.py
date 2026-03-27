@@ -86,8 +86,7 @@ class YAMLOccurrence(BaseModel):
     def validate_match_file_restriction(cls, v: list[str] | None) -> list[str] | None:
         """Reject empty list - must be null or non-empty."""
         if v is not None and len(v) == 0:
-            msg = "match_file_restriction must be null or non-empty (got empty list)"
-            raise ValueError(msg)
+            raise ValueError("match_file_restriction must be null or non-empty (got empty list)")
         return v
 
     @field_validator("files", mode="before")
@@ -114,34 +113,29 @@ class YAMLOccurrence(BaseModel):
             elif isinstance(spec, dict):
                 # Dict format: {start_line: 42, end_line: 42, note: "..."}
                 if "start_line" not in spec:
-                    msg = f"Dict format for {file_path} requires 'start_line' field"
-                    raise ValueError(msg)
+                    raise ValueError(f"Dict format for {file_path} requires 'start_line' field")
                 if "end_line" not in spec:
-                    msg = f"Dict format for {file_path} requires 'end_line' field"
-                    raise ValueError(msg)
+                    raise ValueError(f"Dict format for {file_path} requires 'end_line' field")
                 normalized[file_path] = [
                     LineRange(start_line=spec["start_line"], end_line=spec["end_line"], note=spec.get("note"))
                 ]
             elif isinstance(spec, list):
                 if not spec:
-                    msg = f"Empty list not allowed for {file_path} (use null for no lines)"
-                    raise ValueError(msg)
+                    raise ValueError(f"Empty list not allowed for {file_path} (use null for no lines)")
 
                 # Check first element to determine format
                 first = spec[0]
                 if isinstance(first, int):
                     # Range: [10, 20] → [LineRange(10, 20)]
                     if len(spec) != 2:
-                        msg = f"Line range for {file_path} must have exactly 2 elements, got {len(spec)}"
-                        raise ValueError(msg)
+                        raise ValueError(f"Line range for {file_path} must have exactly 2 elements, got {len(spec)}")
                     normalized[file_path] = [LineRange(start_line=spec[0], end_line=spec[1])]
                 elif isinstance(first, list):
                     # Multiple ranges: [[10, 15], [20, 25]] → [LineRange(10, 15), LineRange(20, 25)]
                     ranges = []
                     for r in spec:
                         if not isinstance(r, list) or len(r) != 2 or not all(isinstance(x, int) for x in r):
-                            msg = f"Invalid range in {file_path}: {r} (must be [start, end])"
-                            raise ValueError(msg)
+                            raise ValueError(f"Invalid range in {file_path}: {r} (must be [start, end])")
                         ranges.append(LineRange(start_line=r[0], end_line=r[1]))
                     normalized[file_path] = ranges
                 elif isinstance(first, dict):
@@ -149,16 +143,13 @@ class YAMLOccurrence(BaseModel):
                     ranges = []
                     for r in spec:
                         if not isinstance(r, dict):
-                            msg = f"Mixed types in {file_path} (expected all dicts)"
-                            raise ValueError(msg)
+                            raise ValueError(f"Mixed types in {file_path} (expected all dicts)")
                         if "start_line" not in r or "end_line" not in r:
-                            msg = f"Dict in {file_path} requires start_line and end_line: {r}"
-                            raise ValueError(msg)
+                            raise ValueError(f"Dict in {file_path} requires start_line and end_line: {r}")
                         ranges.append(LineRange(start_line=r["start_line"], end_line=r["end_line"], note=r.get("note")))
                     normalized[file_path] = ranges
                 else:
-                    msg = f"Invalid list element type in {file_path}: {type(first).__name__}"
-                    raise ValueError(msg)
+                    raise ValueError(f"Invalid list element type in {file_path}: {type(first).__name__}")
             else:
                 msg = (
                     f"Invalid line spec for {file_path}: {spec} (type: {type(spec).__name__}). "
@@ -174,8 +165,9 @@ class YAMLOccurrence(BaseModel):
     def to_tp_occurrence(self) -> TruePositiveOccurrence:
         """Expand to canonical TruePositiveOccurrence."""
         if self.critic_scopes_expected_to_recall is None:
-            msg = "critic_scopes_expected_to_recall required for TP occurrence (should be auto-inferred by validator)"
-            raise ValueError(msg)
+            raise ValueError(
+                "critic_scopes_expected_to_recall required for TP occurrence (should be auto-inferred by validator)"
+            )
 
         return TruePositiveOccurrence(
             occurrence_id=self.occurrence_id,
@@ -192,8 +184,7 @@ class YAMLOccurrence(BaseModel):
     def to_fp_occurrence(self) -> FalsePositiveOccurrence:
         """Expand to canonical FalsePositiveOccurrence."""
         if self.relevant_files is None:
-            msg = "relevant_files required for FP occurrence (should be auto-inferred by validator)"
-            raise ValueError(msg)
+            raise ValueError("relevant_files required for FP occurrence (should be auto-inferred by validator)")
 
         return FalsePositiveOccurrence(
             occurrence_id=self.occurrence_id,
@@ -256,8 +247,7 @@ class YAMLIssue(BaseModel):
     def to_true_positive(self, tp_id: str, snapshot_slug: SnapshotSlug) -> SyncTruePositive:
         """Expand to sync TruePositive model (intermediate YAML→ORM type)."""
         if not self.should_flag:
-            msg = "Cannot convert FP (should_flag=false) to TruePositive"
-            raise ValueError(msg)
+            raise ValueError("Cannot convert FP (should_flag=false) to TruePositive")
 
         return SyncTruePositive(
             tp_id=tp_id,
@@ -269,8 +259,7 @@ class YAMLIssue(BaseModel):
     def to_false_positive(self, fp_id: str, snapshot_slug: SnapshotSlug) -> SyncFalsePositive:
         """Expand to sync FalsePositive model (intermediate YAML→ORM type)."""
         if self.should_flag:
-            msg = "Cannot convert TP (should_flag=true) to FalsePositive"
-            raise ValueError(msg)
+            raise ValueError("Cannot convert TP (should_flag=true) to FalsePositive")
 
         return SyncFalsePositive(
             fp_id=fp_id,

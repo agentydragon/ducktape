@@ -147,8 +147,7 @@ async def run_backend(deps: BackendDeps, port: int, host: str = "0.0.0.0") -> As
         await asyncio.sleep(0.01)
         if task.done():
             exc = task.exception()
-            msg = f"Backend server failed to start: {exc}"
-            raise RuntimeError(msg)
+            raise RuntimeError(f"Backend server failed to start: {exc}")
 
     logger.info("Backend started on port %d", port)
 

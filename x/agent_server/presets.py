@@ -51,8 +51,7 @@ def load_presets_from_dir(root: Path) -> dict[str, AgentPreset]:
         if data is None:
             data = {}
         if not isinstance(data, dict):
-            msg = f"preset must be a mapping: {p}"
-            raise ValueError(msg)
+            raise ValueError(f"preset must be a mapping: {p}")
         # Default name from filename when missing in YAML
         if "name" not in data or not data.get("name"):
             data["name"] = p.stem
@@ -132,8 +131,7 @@ async def create_agent_from_preset(
     requested_name = preset_name or "default"
     if requested_name not in presets:
         available = ", ".join(sorted(presets.keys()))
-        msg = f"Unknown preset '{requested_name}'. Available presets: {available}"
-        raise ValueError(msg)
+        raise ValueError(f"Unknown preset '{requested_name}'. Available presets: {available}")
     preset = presets[requested_name]
 
     # Merge preset MCP config with base config

@@ -275,8 +275,7 @@ class BaseResponse(CamelCaseModel):
     @classmethod
     def validate_stop_reason(cls, v: str | None, info: ValidationInfo) -> str | None:
         if v and info.data and info.data.get("continue_", True):
-            msg = "stopReason only valid when continue=False"
-            raise ValueError(msg)
+            raise ValueError("stopReason only valid when continue=False")
         return v
 
 
@@ -297,8 +296,7 @@ class PreToolResponse(BaseResponse):
     @classmethod
     def validate_reason(cls, v: str | None, info: ValidationInfo) -> str | None:
         if info.data and info.data.get("decision") == HookDecision.BLOCK and not v:
-            msg = "reason required when decision=block"
-            raise ValueError(msg)
+            raise ValueError("reason required when decision=block")
         return v
 
 
@@ -333,8 +331,7 @@ class StopResponse(BaseResponse):
     @classmethod
     def validate_reason(cls, v: str | None, info: ValidationInfo) -> str | None:
         if info.data and info.data.get("decision") == "block" and not v:
-            msg = "reason required when decision=block"
-            raise ValueError(msg)
+            raise ValueError("reason required when decision=block")
         return v
 
 

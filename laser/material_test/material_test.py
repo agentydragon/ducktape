@@ -251,8 +251,7 @@ class GridConfig(BaseModel):
         seen: dict[CutParam, str] = {}
         for name, param in axes:
             if param in seen:
-                msg = f"{name}.param and {seen[param]}.param must be different; both are {param!r}"
-                raise ValueError(msg)
+                raise ValueError(f"{name}.param and {seen[param]}.param must be different; both are {param!r}")
             seen[param] = name
         return self
 
@@ -297,8 +296,7 @@ def _get_param(cut: CutSetting, param: CutParam) -> float:
         return cut.z_per_pass
     if param == CutParam.NUM_PASSES:
         return float(cut.num_passes)
-    msg = f"Unknown param: {param!r}"
-    raise ValueError(msg)  # unreachable with enum
+    raise ValueError(f"Unknown param: {param!r}")  # unreachable with enum
 
 
 def _auto_subtitle(config: GridConfig) -> str:

@@ -51,8 +51,7 @@ class AgentRegistry:
             return c
         row = await self.persistence.get_agent(agent_id)
         if row is None:
-            msg = f"agent not found: {agent_id}"
-            raise KeyError(msg)
+            raise KeyError(f"agent not found: {agent_id}")
         return await self.create(agent_id, row.mcp_config, with_ui=with_ui)
 
     def remove(self, agent_id: str) -> None:

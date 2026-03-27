@@ -100,8 +100,7 @@ def parse_aliexpress_subject(subject: str) -> AliExpressEmail:
         if pattern_text in subject_lower:
             return AliExpressEmail(order_id=order_id, status=status)
 
-    msg = f"Unrecognized AliExpress email subject: {subject}"
-    raise AliExpressParseError(msg)
+    raise AliExpressParseError(f"Unrecognized AliExpress email subject: {subject}")
 
 
 DISPUTE_WINDOW_DAYS = 15  # AliExpress allows 15 days after confirmation to dispute

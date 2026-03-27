@@ -160,19 +160,18 @@ class WtClient:
                 )
 
                 if handshake_msg.protocol_version != 1:
-                    msg = f"Incompatible daemon protocol version {handshake_msg.protocol_version}, expected 1"
-                    raise RuntimeError(msg)
+                    raise RuntimeError(
+                        f"Incompatible daemon protocol version {handshake_msg.protocol_version}, expected 1"
+                    )
 
                 if handshake_msg.success and handshake_msg.ready:
                     logger.info("Daemon startup handshake ok (ready)")
                     return
                 if not handshake_msg.success:
                     error_message = handshake_msg.error or "Unknown startup error"
-                    msg = f"Daemon startup failed:\n{error_message}"
-                    raise RuntimeError(msg)
+                    raise RuntimeError(f"Daemon startup failed:\n{error_message}")
                 # Guard: success without ready indicates premature closure; treat as error to avoid races
-                msg = "Daemon startup did not signal ready"
-                raise RuntimeError(msg)
+                raise RuntimeError("Daemon startup did not signal ready")
 
             except TimeoutError as e:
                 timeout_secs = self.config.startup_timeout.total_seconds()
@@ -249,8 +248,7 @@ class WtClient:
         Returns the terminal message.
         """
         if not self._handshake_pipe:
-            msg = "No handshake pipe available"
-            raise RuntimeError(msg)
+            raise RuntimeError("No handshake pipe available")
 
         # Create async stream reader from file descriptor
         loop = asyncio.get_running_loop()
@@ -385,8 +383,7 @@ class WtClient:
             # Not an event - must be the final JSON-RPC response
             return obj, hook_stdout, hook_stderr
 
-        msg = "Stream ended without receiving JSON-RPC response"
-        raise RuntimeError(msg)
+        raise RuntimeError("Stream ended without receiving JSON-RPC response")
 
     def _validate_post_hook(self, post: HookRunResult) -> None:
         """Validate and surface post-creation hook outcome; raise RuntimeError on failure."""
@@ -401,24 +398,19 @@ class WtClient:
         if (ec := post.exit_code) not in (None, 0):
             if not streamed:
                 _echo_io()
-            msg = f"Post-creation script failed with exit code {ec}"
-            raise RuntimeError(msg)
+            raise RuntimeError(f"Post-creation script failed with exit code {ec}")
         if err := post.error:
             if not streamed:
                 _echo_io()
             if err == "timeout":
                 if (ts := post.timeout_secs) is not None:
-                    msg = f"Post-creation script timed out after {ts:.1f}s"
-                    raise RuntimeError(msg)
-                msg = "Post-creation script timed out"
-                raise RuntimeError(msg)
-            msg = f"Post-creation script error: {err}"
-            raise RuntimeError(msg)
+                    raise RuntimeError(f"Post-creation script timed out after {ts:.1f}s")
+                raise RuntimeError("Post-creation script timed out")
+            raise RuntimeError(f"Post-creation script error: {err}")
         if not post.ran:
             if not streamed:
                 _echo_io()
-            msg = "Post-creation script did not run"
-            raise RuntimeError(msg)
+            raise RuntimeError("Post-creation script did not run")
 
     async def create_worktree(
         self, name: str, source_wtid: WorktreeID | None = None, source_branch: str | None = None
@@ -451,8 +443,7 @@ class WtClient:
 
                 (response_json, _hook_stdout, _hook_stderr) = await self._read_jsonrpc_with_events(reader)
                 if not response_json:
-                    msg = "No response from daemon for worktree_create"
-                    raise RuntimeError(msg)
+                    raise RuntimeError("No response from daemon for worktree_create")
             finally:
                 writer.close()
                 with contextlib.suppress(Exception):
@@ -469,14 +460,12 @@ class WtClient:
                 return result
             except (json.JSONDecodeError, ValidationError, TypeError, ValueError) as e:
                 logger.exception("Failed to parse daemon worktree_create response")
-                msg = "Failed to parse daemon worktree_create response"
-                raise RuntimeError(msg) from e
+                raise RuntimeError("Failed to parse daemon worktree_create response") from e
 
         except (TimeoutError, ConnectionError, FileNotFoundError, OSError) as e:
             if self.verbose:
                 logger.exception("Failed to communicate with daemon for worktree_create")
-            msg = "Daemon worktree_create communication failed"
-            raise RuntimeError(msg) from e
+            raise RuntimeError("Daemon worktree_create communication failed") from e
 
     async def delete_worktree(self, wtid: WorktreeID, *, force: bool = False) -> WorktreeDeleteResult:
         await self._start_daemon_if_needed()
@@ -510,8 +499,7 @@ class WtClient:
                 if self.config.daemon_socket_path.exists():
                     break
             else:
-                msg = "Daemon socket not available"
-                raise RuntimeError(msg)
+                raise RuntimeError("Daemon socket not available")
         req = Request(method=method, params=params_model.model_dump(), id=uuid.uuid4())
         try:
             reader, writer = await asyncio.open_unix_connection(self.config.daemon_socket_path)
@@ -581,8 +569,7 @@ class WtClient:
     async def require_worktree_exists(self, name: str) -> Path:
         res = await self.get_worktree_by_name(name)
         if not res.exists or not res.absolute_path:
-            msg = f"Worktree '{name}' not found"
-            raise RuntimeError(msg)
+            raise RuntimeError(f"Worktree '{name}' not found")
         return res.absolute_path
 
     async def create_worktree_convenience(
@@ -592,15 +579,13 @@ class WtClient:
         if source_name:
             src = await self.get_worktree_by_name(source_name)
             if not src.exists or not src.wtid:
-                msg = f"Worktree '{source_name}' not found"
-                raise RuntimeError(msg)
+                raise RuntimeError(f"Worktree '{source_name}' not found")
             result = await self.create_worktree(name, source_wtid=src.wtid, source_branch=from_branch)
             return result.absolute_path
         if from_default:
             result = await self.create_worktree(name, source_branch=from_branch)
             return result.absolute_path
-        msg = "Invalid create_worktree request: no source and from_default=False"
-        raise RuntimeError(msg)
+        raise RuntimeError("Invalid create_worktree request: no source and from_default=False")
 
     async def remove_worktree_by_name(self, name: str, *, force: bool = False) -> None:
         listing = await self.list_worktrees()
@@ -610,6 +595,5 @@ class WtClient:
                 target = wt.wtid
                 break
         if target is None:
-            msg = f"Worktree '{name}' not found"
-            raise RuntimeError(msg)
+            raise RuntimeError(f"Worktree '{name}' not found")
         await self.delete_worktree(target, force=force)

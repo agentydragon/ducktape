@@ -259,8 +259,7 @@ async def setup_container_runtime(
         SkipError: If setup_docker is False.
     """
     if not settings.setup_docker:
-        msg = "Docker setup disabled (setup_docker=False)"
-        raise SkipError(msg)
+        raise SkipError("Docker setup disabled (setup_docker=False)")
 
     spec = _configure_docker(paths, tmpfs_mounted)
 

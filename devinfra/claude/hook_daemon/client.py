@@ -60,8 +60,7 @@ def update_proxy_creds(https_proxy: str, paths: SessionPaths) -> str:
     body = response.read()
     conn.close()
     if response.status != 200:
-        msg = f"Daemon returned HTTP {response.status} for update-proxy-creds: {body.decode()}"
-        raise OSError(msg)
+        raise OSError(f"Daemon returned HTTP {response.status} for update-proxy-creds: {body.decode()}")
     return UpdateProxyCredsResponse.model_validate_json(body).proxy_url
 
 
@@ -311,10 +310,10 @@ def _wait_for_sock(
         # so if it exists, the new daemon created it.  An unlocked pidfile means
         # the daemon died after creating the file but before (or after) binding.
         if pidfile.exists() and not _is_pidfile_locked(pidfile):
-            msg = f"Daemon died during startup.\n{_read_daemon_error_log(daemon_dir)}"
-            raise DaemonStartError(msg)
+            raise DaemonStartError(f"Daemon died during startup.\n{_read_daemon_error_log(daemon_dir)}")
 
         time.sleep(0.1)
     logger.warning("Daemon socket did not appear within %.1fs at %s", timeout_secs, sock_path)
-    msg = f"Daemon socket did not appear within {timeout_secs}s.\n{_read_daemon_error_log(daemon_dir)}"
-    raise DaemonStartError(msg)
+    raise DaemonStartError(
+        f"Daemon socket did not appear within {timeout_secs}s.\n{_read_daemon_error_log(daemon_dir)}"
+    )

@@ -232,8 +232,7 @@ class AirlockServer(EnhancedFastMCP):
             key = ActionKey(session_key=session_key, action_seq=action_seq)
             action = await self.req_storage.get_action(key)
             if action is None:
-                msg = f"Action not found: {session_key}/{action_seq}"
-                raise ValueError(msg)
+                raise ValueError(f"Action not found: {session_key}/{action_seq}")
             return action.model_dump_json()
 
         @self.resource("resource://sessions/{session_key}/log_hwm")
@@ -246,8 +245,7 @@ class AirlockServer(EnhancedFastMCP):
             """A specific log entry."""
             entry = await self.req_storage.get_log_entry(session_key, entry_id)
             if entry is None:
-                msg = f"Log entry not found: {session_key}/{entry_id}"
-                raise ValueError(msg)
+                raise ValueError(f"Log entry not found: {session_key}/{entry_id}")
             return entry.model_dump_json()
 
         mcp_server = self._mcp_server
@@ -286,8 +284,7 @@ class AirlockServer(EnhancedFastMCP):
     @property
     def req_storage(self) -> ActionStorage:
         if self._storage is None:
-            msg = "storage not initialised — gate not started"
-            raise RuntimeError(msg)
+            raise RuntimeError("storage not initialised — gate not started")
         return self._storage
 
     # ── Wrapped tool registration ─────────────────────────────────────────────
@@ -386,8 +383,7 @@ class AirlockServer(EnhancedFastMCP):
                 await self._update_and_notify(key, ExecutingState(), ExecutionStartedDetail(started_at=started_at))
                 client = self._backend_clients.get(namespace)
                 if client is None:
-                    msg = f"backend client not connected for namespace: {namespace!r}"
-                    raise RuntimeError(msg)
+                    raise RuntimeError(f"backend client not connected for namespace: {namespace!r}")
                 outcome = await client.call_tool_mcp(tool_name, input)
                 await self._update_and_notify(key, DoneState(outcome=outcome), ExecutionFinishedDetail(outcome=outcome))
             case DenyDecision(reason=reason):
@@ -425,15 +421,12 @@ class AirlockServer(EnhancedFastMCP):
         """
         action = await self.req_storage.get_action(key)
         if action is None:
-            msg = f"Action not found: {key.session_key}/{key.action_seq}"
-            raise ValueError(msg)
+            raise ValueError(f"Action not found: {key.session_key}/{key.action_seq}")
         if not isinstance(action.state, PendingState):
-            msg = f"Action {key.session_key}/{key.action_seq} is not pending ({action.state.status=})"
-            raise ValueError(msg)
+            raise ValueError(f"Action {key.session_key}/{key.action_seq} is not pending ({action.state.status=})")
         fut = self._pending_decisions.get(key)
         if fut is None or fut.done():
-            msg = f"Action {key.session_key}/{key.action_seq} is not awaiting a human decision"
-            raise ValueError(msg)
+            raise ValueError(f"Action {key.session_key}/{key.action_seq} is not awaiting a human decision")
         fut.set_result(decision)
 
     async def withdraw(self, key: ActionKey) -> Action:
@@ -443,11 +436,9 @@ class AirlockServer(EnhancedFastMCP):
         """
         action = await self.req_storage.get_action(key)
         if action is None:
-            msg = f"Action not found: {key.session_key}/{key.action_seq}"
-            raise ValueError(msg)
+            raise ValueError(f"Action not found: {key.session_key}/{key.action_seq}")
         if not isinstance(action.state, PendingState):
-            msg = f"Action {key.session_key}/{key.action_seq} is not pending ({action.state.status=})"
-            raise ValueError(msg)
+            raise ValueError(f"Action {key.session_key}/{key.action_seq} is not pending ({action.state.status=})")
         result = await self._update_and_notify(key, WithdrawnState(), WithdrawnDetail())
         fut = self._pending_decisions.pop(key, None)
         if fut is not None and not fut.done():

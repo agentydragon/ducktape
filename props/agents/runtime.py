@@ -52,8 +52,7 @@ def get_current_agent_run(session: Session) -> AgentRun:
     agent_run_id = get_current_agent_run_id(session)
     agent_run = get_agent_run(session, agent_run_id)
     if agent_run.status == AgentRunStatus.EXITED:
-        msg = f"Agent run {agent_run.agent_run_id} already exited"
-        raise ValueError(msg)
+        raise ValueError(f"Agent run {agent_run.agent_run_id} already exited")
     return agent_run
 
 

@@ -217,5 +217,4 @@ def resolve_label_id(name: str, label_map: dict[str, str]) -> str:
         return name
     if name in label_map:
         return label_map[name]
-    msg = f"Label '{name}' not found. Create it first."
-    raise ValueError(msg)
+    raise ValueError(f"Label '{name}' not found. Create it first.")

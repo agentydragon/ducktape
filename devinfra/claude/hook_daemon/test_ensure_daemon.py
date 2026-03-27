@@ -44,8 +44,7 @@ def _wait_for_pid_death(pid: int, timeout: float = 10) -> None:
         except ProcessLookupError:
             return
         time.sleep(0.1)
-    msg = f"Process {pid} still alive after {timeout}s"
-    raise AssertionError(msg)
+    raise AssertionError(f"Process {pid} still alive after {timeout}s")
 
 
 def test_ensure_daemon_starts_fresh(daemon_paths: SessionPaths) -> None:

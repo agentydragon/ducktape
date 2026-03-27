@@ -110,8 +110,7 @@ def request_console_credentials(server_name: str, token: str | None = None) -> t
     if token is None:
         token = os.environ.get("HCLOUD_TOKEN")
         if not token:
-            msg = "HCLOUD_TOKEN environment variable not set and no --token provided"
-            raise ValueError(msg)
+            raise ValueError("HCLOUD_TOKEN environment variable not set and no --token provided")
     logger.debug("Token length: %s", len(token))
 
     logger.debug("Creating hcloud Client...")
@@ -120,8 +119,7 @@ def request_console_credentials(server_name: str, token: str | None = None) -> t
     servers = client.servers.get_all(name=server_name)
     logger.debug("Found %s servers", len(servers))
     if not servers:
-        msg = f"Server '{server_name}' not found"
-        raise ValueError(msg)
+        raise ValueError(f"Server '{server_name}' not found")
 
     logger.debug("Requesting console from Hetzner API...")
     response = client.servers.request_console(servers[0])

@@ -202,8 +202,7 @@ def _make_strict_function_tool(tool_name: str, description: str, input_schema: d
 def _require_call_id(function_call: FunctionCallItem) -> str:
     call_id = function_call.call_id
     if not call_id:
-        msg = "FunctionCallItem missing call_id"
-        raise RuntimeError(msg)
+        raise RuntimeError("FunctionCallItem missing call_id")
     return call_id
 
 
@@ -221,8 +220,7 @@ MAX_TOOL_RESULT_BYTES = 10 * 1024 * 1024  # 10 MiB
 
 def _check_size(result: str) -> None:
     if len(result) > MAX_TOOL_RESULT_BYTES:
-        msg = f"Tool output too large: {len(result)} > {MAX_TOOL_RESULT_BYTES}"
-        raise RuntimeError(msg)
+        raise RuntimeError(f"Tool output too large: {len(result)} > {MAX_TOOL_RESULT_BYTES}")
 
 
 def _content_is_redundant(content: list[ResultContent], sc: ToolOutputData) -> bool:
@@ -265,8 +263,9 @@ def _tool_result_to_openai(result: ToolResult) -> str:
             if isinstance(block, TextContent):
                 parts.append(block.text)
             elif isinstance(block, ImageContent):
-                msg = f"Image content ({block.mime_type}) cannot be serialized as a function call output string"
-                raise NotImplementedError(msg)
+                raise NotImplementedError(
+                    f"Image content ({block.mime_type}) cannot be serialized as a function call output string"
+                )
         text = "\n".join(parts)
         _check_size(text)
         return text
@@ -306,8 +305,7 @@ def _tool_choice_from_policy(policy: ToolPolicy) -> ToolChoice:
         return "none"
     if isinstance(policy, RequireSpecific):
         return ToolChoiceFunction(name=one(policy.names))
-    msg = f"Unknown ToolPolicy: {type(policy).__name__}"
-    raise TypeError(msg)
+    raise TypeError(f"Unknown ToolPolicy: {type(policy).__name__}")
 
 
 type Message = UserMessage | AssistantMessage | SystemMessage
@@ -468,8 +466,7 @@ class Agent:
                 h.on_system_text_event(evt)
 
         else:
-            msg = f"Unhandled transcript item type: {type(item).__name__}"
-            raise TypeError(msg)
+            raise TypeError(f"Unhandled transcript item type: {type(item).__name__}")
 
     def process_message(self, message: Message) -> None:
         """Add a message to the transcript and notify handlers.
@@ -604,8 +601,7 @@ class Agent:
             if isinstance(first, AssistantMessageOut):
                 return first.text
 
-        msg = "Summary generation failed: LLM response missing assistant message"
-        raise RuntimeError(msg)
+        raise RuntimeError("Summary generation failed: LLM response missing assistant message")
 
     async def step(self) -> StepResult:
         """Run one iteration of the agent loop (one LLM call + tool resolution).
@@ -726,8 +722,7 @@ class Agent:
             outcome = results.get(call_id)
             if outcome is None:
                 if not abort_triggered:
-                    msg = f"Missing tool output for call_id={call_id!r}"
-                    raise RuntimeError(msg)
+                    raise RuntimeError(f"Missing tool output for call_id={call_id!r}")
                 outcome = ToolCallOutcome(result=_abort_result(), was_aborted=True)
             self._emit_tool_result(function_call, outcome.result)
             if outcome.was_aborted:
@@ -798,8 +793,7 @@ class Agent:
             if isinstance(item, ToolCallOutput):
                 items.append(FunctionCallOutputItem(call_id=item.call_id, output=_tool_result_to_openai(item.result)))
                 continue
-            msg = f"Unsupported transcript item for OpenAI input: {type(item)}"
-            raise TypeError(msg)
+            raise TypeError(f"Unsupported transcript item for OpenAI input: {type(item)}")
         return items
 
     async def _run_one_phase(self):
@@ -862,8 +856,7 @@ class Agent:
         if isinstance(decision, NoAction):
             should_sample_llm = True
         else:
-            msg = f"Unsupported loop decision: {type(decision).__name__}"
-            raise TypeError(msg)
+            raise TypeError(f"Unsupported loop decision: {type(decision).__name__}")
 
         if should_sample_llm:
             tool_choice = _tool_choice_from_policy(self._tool_policy)
@@ -949,13 +942,11 @@ class Agent:
             elif isinstance(item, FunctionCallOutputItem):
                 # Convert API output type to transcript type
                 if item.output is None:
-                    msg = "FunctionCallOutputItem.output is None"
-                    raise ValueError(msg)
+                    raise ValueError("FunctionCallOutputItem.output is None")
                 result = _openai_to_tool_result(item.output)
                 original_call_id = item.call_id
                 if not isinstance(original_call_id, str) or not original_call_id:
-                    msg = f"FunctionCallOutputItem has invalid call_id: {original_call_id!r}"
-                    raise ValueError(msg)
+                    raise ValueError(f"FunctionCallOutputItem has invalid call_id: {original_call_id!r}")
                 tool_output = ToolCallOutput(call_id=original_call_id, result=result)
                 handled_call_ids.add(original_call_id)
                 self._transcript.append(tool_output)
@@ -978,8 +969,7 @@ class Agent:
                 self.pending_function_calls.append(item)
             else:
                 # Crash fast on unknown items to surface mismatches early
-                msg = f"Unsupported Responses output item: {type(item)}"
-                raise TypeError(msg)
+                raise TypeError(f"Unsupported Responses output item: {type(item)}")
 
     @classmethod
     async def create(

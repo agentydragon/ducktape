@@ -91,11 +91,9 @@ def find_tool_result_typed[T: BaseModel](events: list[ScriptEvent], call_id: str
     """Find and parse typed structured content for a call_id."""
     result = find_tool_result(events, call_id)
     if result.is_error:
-        msg = f"Tool returned error: {call_id=}, {result=}"
-        raise ScriptError(msg)
+        raise ScriptError(f"Tool returned error: {call_id=}, {result=}")
     if not result.structured_content:
-        msg = f"Tool returned no structured content: {call_id=}"
-        raise ScriptError(msg)
+        raise ScriptError(f"Tool returned no structured content: {call_id=}")
     return TypeAdapter(output_type).validate_python(result.structured_content)
 
 
@@ -139,8 +137,7 @@ class ScriptHandler(BaseHandler):
         # Prime: advance to first yield and assert it's None
         prime = next(self._gen)
         if prime is not None:
-            msg = "ScriptGen first yield must be None (prime yield)"
-            raise RuntimeError(msg)
+            raise RuntimeError("ScriptGen first yield must be None (prime yield)")
 
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
         if not self._exhausted:

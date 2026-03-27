@@ -136,8 +136,7 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
             try:
                 await asyncio.wait_for(round_1_complete.wait(), timeout=90)
             except TimeoutError:
-                msg = "Round 1 did not complete within timeout"
-                raise AssertionError(msg)
+                raise AssertionError("Round 1 did not complete within timeout")
 
             # Verify round 1 TP edges
             with db.session() as session:
@@ -179,8 +178,7 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
             try:
                 await asyncio.wait_for(round_2_complete.wait(), timeout=90)
             except TimeoutError:
-                msg = "Round 2 did not complete within timeout"
-                raise AssertionError(msg)
+                raise AssertionError("Round 2 did not complete within timeout")
 
         # Verify both edges exist with correct credits
         with db.session() as session:

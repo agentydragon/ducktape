@@ -43,8 +43,7 @@ def resolve_bazelisk() -> Path:
     bazel = shutil.which("bazel")
     if bazel:
         return Path(bazel)
-    msg = "bazelisk not found on PATH (expected from Nix web-session package)"
-    raise RuntimeError(msg)
+    raise RuntimeError("bazelisk not found on PATH (expected from Nix web-session package)")
 
 
 _WRAPPER_RUNTIME_LINES = (

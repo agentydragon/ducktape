@@ -137,8 +137,7 @@ def coerce_prdata(src: Any) -> PRData:
         st = src.get("pr_state")
         raw_state = st if st is not None else src.get("state")
         if raw_state is None:
-            msg = "state"
-            raise KeyError(msg)
+            raise KeyError("state")
         state = raw_state if isinstance(raw_state, PRState) else PRState(str(raw_state))
         return PRData(
             pr_number=int(num),
@@ -149,8 +148,7 @@ def coerce_prdata(src: Any) -> PRData:
             additions=src.get("additions"),
             deletions=src.get("deletions"),
         )
-    msg = "Unsupported PR data type"
-    raise TypeError(msg)
+    raise TypeError("Unsupported PR data type")
 
 
 @runtime_checkable

@@ -69,12 +69,10 @@ class ActionModule(ActionBase):
 
         args = self._task.args
         if "key" not in args:
-            msg = "'key' is required"
-            raise AnsibleError(msg)
+            raise AnsibleError("'key' is required")
 
         if "add" not in args and "remove" not in args:
-            msg = "'add' and/or 'remove' parameter must be supplied"
-            raise AnsibleError(msg)
+            raise AnsibleError("'add' and/or 'remove' parameter must be supplied")
 
         def _normalise(v) -> list[str]:
             if v is None:

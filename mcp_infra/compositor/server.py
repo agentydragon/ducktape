@@ -351,22 +351,19 @@ class BaseCompositor(FastMCP):
         # Check state
         async with self._state_lock:
             if self._state == CompositorState.CLOSED:
-                msg = f"Cannot mount server - compositor '{self.name}' is closed"
-                raise RuntimeError(msg)
+                raise RuntimeError(f"Cannot mount server - compositor '{self.name}' is closed")
 
         # Validate mount prefix (MCPMountPrefix constructor validates automatically)
         try:
             validated_prefix = MCPMountPrefix(name)
         except ValidationError as e:
             error_msg = e.errors()[0]["msg"] if e.errors() else str(e)
-            msg = f"Invalid mount prefix {name!r}: {error_msg}"
-            raise ValueError(msg) from e
+            raise ValueError(f"Invalid mount prefix {name!r}: {error_msg}") from e
 
         # Check for duplicate under lock
         async with self._mount_lock:
             if validated_prefix in self._mounts:
-                msg = f"Server '{validated_prefix}' is already mounted"
-                raise ValueError(msg)
+                raise ValueError(f"Server '{validated_prefix}' is already mounted")
 
         # Create mount and setup (exception-safe internally)
         mount = Mount(prefix=validated_prefix, pinned=pinned, spec=spec)
@@ -398,14 +395,12 @@ class BaseCompositor(FastMCP):
         # Check state
         async with self._state_lock:
             if self._state == CompositorState.CLOSED:
-                msg = f"Cannot mount server - compositor '{self.name}' is closed"
-                raise RuntimeError(msg)
+                raise RuntimeError(f"Cannot mount server - compositor '{self.name}' is closed")
 
         # Check for duplicate under lock
         async with self._mount_lock:
             if prefix in self._mounts:
-                msg = f"Server '{prefix}' is already mounted"
-                raise ValueError(msg)
+                raise ValueError(f"Server '{prefix}' is already mounted")
 
         # Create mount and setup (exception-safe internally)
         mount = Mount(prefix=prefix, pinned=pinned, spec=None)
@@ -462,20 +457,19 @@ class BaseCompositor(FastMCP):
         # Defensive check: prevent unmount when closed
         async with self._state_lock:
             if self._state == CompositorState.CLOSED:
-                msg = f"Cannot unmount server - compositor '{self.name}' is closed"
-                raise RuntimeError(msg)
+                raise RuntimeError(f"Cannot unmount server - compositor '{self.name}' is closed")
 
         # Get mount under lock
         async with self._mount_lock:
             mount = self._mounts.get(prefix)
 
             if mount is None:
-                msg = f"Server '{prefix}' is not mounted"
-                raise ValueError(msg)
+                raise ValueError(f"Server '{prefix}' is not mounted")
 
             if mount.pinned and not _allow_pinned:
-                msg = f"Cannot unmount pinned server '{prefix}'. Pinned servers remain for the compositor's lifetime."
-                raise RuntimeError(msg)
+                raise RuntimeError(
+                    f"Cannot unmount pinned server '{prefix}'. Pinned servers remain for the compositor's lifetime."
+                )
 
         # Defensive check: warn if mount is in unexpected state
         if not mount.is_active and not mount.is_failed:
@@ -544,8 +538,7 @@ class BaseCompositor(FastMCP):
                 )
                 raise RuntimeError(msg)
             if self._state == CompositorState.CLOSED:
-                msg = f"BaseCompositor '{self.name}' is already closed. Cannot reuse a closed compositor."
-                raise RuntimeError(msg)
+                raise RuntimeError(f"BaseCompositor '{self.name}' is already closed. Cannot reuse a closed compositor.")
 
             self._state = CompositorState.ACTIVE
 
@@ -602,8 +595,7 @@ class BaseCompositor(FastMCP):
             ExceptionGroup: If any servers failed to unmount (Python 3.11+)
         """
         if self._state == CompositorState.CLOSED:
-            msg = f"BaseCompositor '{self.name}' is already closed"
-            raise RuntimeError(msg)
+            raise RuntimeError(f"BaseCompositor '{self.name}' is already closed")
 
         # Snapshot non-pinned servers under lock
         async with self._mount_lock:
@@ -677,8 +669,7 @@ class BaseCompositor(FastMCP):
             return StreamableHttpTransport(spec.url, headers=headers)
         if isinstance(spec, StdioMCPServer | TransformingStdioMCPServer):
             return StdioTransport(spec.command, args=list(spec.args or []), env=spec.env, cwd=spec.cwd)
-        msg = "unsupported transport for fastmcp client"
-        raise ValueError(msg)
+        raise ValueError("unsupported transport for fastmcp client")
 
     def get_child_client(self, server: MCPMountPrefix) -> Client:
         """Return the persistent child client for a mounted server.
@@ -693,8 +684,7 @@ class BaseCompositor(FastMCP):
         """
         mount = self._mounts.get(server)
         if mount is None:
-            msg = f"Server '{server}' is not mounted"
-            raise ValueError(msg)
+            raise ValueError(f"Server '{server}' is not mounted")
 
         # Use mount's property which validates state
         return mount.child_client

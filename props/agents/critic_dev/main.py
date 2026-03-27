@@ -52,8 +52,7 @@ def _setup_crane_auth(config: DatabaseConfig) -> None:
     """Write ~/.docker/config.json so crane can push/pull via Basic auth."""
     backend_url = os.environ.get("PROPS_BACKEND_URL")
     if not backend_url:
-        msg = "PROPS_BACKEND_URL must be set for crane auth setup"
-        raise RuntimeError(msg)
+        raise RuntimeError("PROPS_BACKEND_URL must be set for crane auth setup")
 
     registry = urlparse(backend_url).netloc
     auth_token = config.basic_auth_token

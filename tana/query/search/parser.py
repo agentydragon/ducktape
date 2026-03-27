@@ -40,8 +40,7 @@ def parse_search_expression(store: TanaGraph, search_node: BaseNode) -> SearchEx
         SearchParseError: If the expression cannot be parsed
     """
     if search_node.props.doc_type != "search":
-        msg = f"Node {search_node.id} is not a search node"
-        raise SearchParseError(msg)
+        raise SearchParseError(f"Node {search_node.id} is not a search node")
 
     # Get metadata node
     if not search_node.props.meta_node_id:
@@ -49,8 +48,7 @@ def parse_search_expression(store: TanaGraph, search_node: BaseNode) -> SearchEx
 
     metadata = store.get(search_node.props.meta_node_id)
     if not metadata:
-        msg = f"Metadata node {search_node.props.meta_node_id} not found"
-        raise SearchParseError(msg)
+        raise SearchParseError(f"Metadata node {search_node.props.meta_node_id} not found")
 
     # Find search expression tuple in metadata children
     for child in store.child_nodes(metadata):
@@ -134,8 +132,7 @@ def _parse_tuple_operator(store: TanaGraph, node: TupleNode) -> SearchExpression
         return TextSearch(text=f"<{operator_node.name}>")
 
     # Unknown operator
-    msg = f"Unknown operator in search expression tuple: {operator_id}"
-    raise SearchParseError(msg)
+    raise SearchParseError(f"Unknown operator in search expression tuple: {operator_id}")
 
 
 def _parse_single_component(store: TanaGraph, node_id: NodeId) -> SearchExpression | None:

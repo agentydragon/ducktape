@@ -78,8 +78,7 @@ class MatrixClient:
     ) -> MatrixClient:
         resolved_base_url = base_url or os.environ.get("MATRIX_BASE_URL")
         if not resolved_base_url:
-            msg = "MATRIX_BASE_URL must be set (e.g. https://matrix.example.org)"
-            raise RuntimeError(msg)
+            raise RuntimeError("MATRIX_BASE_URL must be set (e.g. https://matrix.example.org)")
 
         secret = access_token_secret or ProjectedSecret(name="matrix_access_token", env_var="MATRIX_ACCESS_TOKEN")
 
@@ -102,8 +101,7 @@ class MatrixClient:
 
     async def start(self) -> None:
         if not self.configured:
-            msg = "Matrix client is not configured correctly"
-            raise RuntimeError(msg)
+            raise RuntimeError("Matrix client is not configured correctly")
         if self._sync_task and not self._sync_task.done():
             return
 
@@ -167,8 +165,7 @@ class MatrixClient:
     async def send_text_message(self, room_id: RoomID | str, body: str, *, msgtype: str = "m.notice") -> None:
         """Send a text message to a Matrix room."""
         if self._client is None:  # pragma: no cover - defensive
-            msg = "Matrix client is not running; call start() first"
-            raise RuntimeError(msg)
+            raise RuntimeError("Matrix client is not running; call start() first")
 
         resolved_room = await self._ensure_room_id(room_id)
         await self._client.room_send(
@@ -180,8 +177,7 @@ class MatrixClient:
     def client(self) -> AsyncClient:
         """Access the underlying nio AsyncClient. For advanced usage only."""
         if self._client is None:  # pragma: no cover - defensive
-            msg = "Matrix client not initialised"
-            raise RuntimeError(msg)
+            raise RuntimeError("Matrix client not initialised")
         return self._client
 
     async def _initialise_control_rooms(self) -> set[RoomID]:
@@ -313,8 +309,7 @@ class MatrixClient:
         """Send typing notifications for the given rooms."""
 
         if self._client is None:
-            msg = "Matrix client not initialised"
-            raise RuntimeError(msg)
+            raise RuntimeError("Matrix client not initialised")
 
         for room_id in room_ids:
             try:
@@ -363,8 +358,7 @@ class MatrixClient:
 
     async def _mark_read(self, room_id: RoomID, event_id: str) -> None:
         if self._client is None:
-            msg = "Matrix client not initialised"
-            raise RuntimeError(msg)
+            raise RuntimeError("Matrix client not initialised")
         try:
             await self._client.room_read_markers(str(room_id), fully_read_event=event_id, read_event=event_id)
         except Exception as exc:
@@ -375,23 +369,19 @@ class MatrixClient:
         if identifier.startswith("!"):
             return RoomID(identifier)
         if self._client is None:
-            msg = "Matrix client not initialised"
-            raise RuntimeError(msg)
+            raise RuntimeError("Matrix client not initialised")
         alias = RoomAlias(identifier)
         response = await self._client.room_resolve_alias(str(alias))
         if isinstance(response, RoomResolveAliasError):
-            msg = f"Failed to resolve Matrix alias {alias}: {response.message}"
-            raise RuntimeError(msg)
+            raise RuntimeError(f"Failed to resolve Matrix alias {alias}: {response.message}")
         if not isinstance(response, RoomResolveAliasResponse) or not response.room_id:
-            msg = f"Matrix alias {alias} returned no room_id"
-            raise RuntimeError(msg)
+            raise RuntimeError(f"Matrix alias {alias} returned no room_id")
         return RoomID(response.room_id)
 
     async def _create_client(self) -> AsyncClient:
         base_url = self._settings.base_url
         if base_url is None:
-            msg = "Matrix base URL and access token must be configured"
-            raise RuntimeError(msg)
+            raise RuntimeError("Matrix base URL and access token must be configured")
 
         homeserver = base_url.rstrip("/")
         self._store_dir.mkdir(parents=True, exist_ok=True)
@@ -406,11 +396,9 @@ class MatrixClient:
 
         whoami = await client.whoami()
         if isinstance(whoami, WhoamiError):
-            msg = f"Matrix whoami failed: {whoami.message}"
-            raise RuntimeError(msg)
+            raise RuntimeError(f"Matrix whoami failed: {whoami.message}")
         if not isinstance(whoami, WhoamiResponse) or not whoami.user_id:
-            msg = "Matrix whoami response missing user_id"
-            raise RuntimeError(msg)
+            raise RuntimeError("Matrix whoami response missing user_id")
 
         self._user_id = whoami.user_id
         client.user_id = whoami.user_id
@@ -448,8 +436,7 @@ class MatrixClient:
     def _read_access_token(self) -> str:
         token = self._token_secret.value()
         if token is None:
-            msg = "Matrix access token is not configured"
-            raise RuntimeError(msg)
+            raise RuntimeError("Matrix access token is not configured")
         return token
 
     def _apply_access_token(self) -> None:

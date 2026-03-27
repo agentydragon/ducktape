@@ -90,8 +90,7 @@ def get_location_id(part: BasePart) -> int:
             return LOC_0603
         case "0805":
             return LOC_0805
-    msg = f"Unknown package '{pkg}'"
-    raise ValueError(msg)
+    raise ValueError(f"Unknown package '{pkg}'")
 
 
 def get_quantity(part: BasePart) -> int:
@@ -124,8 +123,7 @@ def get_quantity(part: BasePart) -> int:
                 return 50
             return 25
 
-        msg = f"No resistor rules for package {part.package}"
-        raise ValueError(msg)
+        raise ValueError(f"No resistor rules for package {part.package}")
 
     # It's a capacitor
     val_pf = part.capacitance.to(pf).magnitude
@@ -152,8 +150,7 @@ def get_quantity(part: BasePart) -> int:
         # C0805 => 50
         return 50
 
-    msg = f"No capacitor rules for package {part.package}"
-    raise ValueError(msg)
+    raise ValueError(f"No capacitor rules for package {part.package}")
 
 
 # ---------- Building final data ----------
@@ -352,8 +349,7 @@ def main():
     # Check that each needed template is present
     for nt in needed_templates:
         if nt not in tmpl_map:
-            msg = f"Missing ParameterTemplate '{nt}' in InvenTree. Please create it first."
-            raise RuntimeError(msg)
+            raise RuntimeError(f"Missing ParameterTemplate '{nt}' in InvenTree. Please create it first.")
 
     # 2) Retrieve all existing "autogen" parts to check what we already have
     #    We'll search by "keywords={ANCHOR}" for quick filtering

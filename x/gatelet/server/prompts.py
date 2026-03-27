@@ -21,5 +21,4 @@ def generate_access_prompt(
         return f"Go to: {base_url}/k/{auth_key.key_value}/"
     if isinstance(config, ChallengeResponseAuthSettings):
         return f"Go to: {base_url}/cr/{auth_key.id}"
-    msg = f"Unsupported authentication configuration: {type(config)}"
-    raise ValueError(msg)
+    raise ValueError(f"Unsupported authentication configuration: {type(config)}")

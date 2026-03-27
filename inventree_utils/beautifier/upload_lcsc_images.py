@@ -33,8 +33,7 @@ def scrape_lcsc_image_url(lcsc_id: str) -> str:
             assert isinstance(content, str), f"Expected str, got {type(content)}"
             return content
 
-    msg = f"No og:image found on LCSC page for {lcsc_id}"
-    raise ValueError(msg)
+    raise ValueError(f"No og:image found on LCSC page for {lcsc_id}")
 
 
 def upload_lcsc_images(api: InvenTreeAPI):

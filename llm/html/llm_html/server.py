@@ -88,8 +88,7 @@ def load_page_titles():
             if hasattr(md, "Meta") and "title" in md.Meta:
                 PAGE_TITLES[page] = md.Meta["title"][0]
             else:
-                msg = f"Missing required 'title' in frontmatter for {page}.md"
-                raise ValueError(msg)
+                raise ValueError(f"Missing required 'title' in frontmatter for {page}.md")
         except Exception as e:
             logger.error("Error loading title for %s.md: %s", page, e)
             raise
@@ -174,8 +173,7 @@ for page_name in MARKDOWN_PAGES:
 
             # Get title from frontmatter (required)
             if not hasattr(md, "Meta") or "title" not in md.Meta:
-                msg = f"Missing required 'title' in frontmatter for {page}.md"
-                raise ValueError(msg)
+                raise ValueError(f"Missing required 'title' in frontmatter for {page}.md")
             title = md.Meta["title"][0]
 
             # Render with menu

@@ -14,12 +14,10 @@ _RUNFILES = runfiles.Create()
 def _get_wt_cli_path() -> str:
     """Get path to wt_cli binary via Bazel runfiles."""
     if _RUNFILES is None:
-        msg = "Runfiles not available - must run under Bazel"
-        raise RuntimeError(msg)
+        raise RuntimeError("Runfiles not available - must run under Bazel")
     path = _RUNFILES.Rlocation("_main/wt/wt_cli")
     if path is None:
-        msg = "wt_cli binary not found in runfiles"
-        raise RuntimeError(msg)
+        raise RuntimeError("wt_cli binary not found in runfiles")
     return path
 
 
@@ -54,8 +52,7 @@ def wait_until(predicate: Callable[[], bool], *, timeout_seconds: float = 5.0, i
     def _check() -> bool:
         result = predicate()
         if not result:
-            msg = "predicate not yet true"
-            raise RuntimeError(msg)
+            raise RuntimeError("predicate not yet true")
         return result
 
     try:

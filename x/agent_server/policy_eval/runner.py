@@ -46,8 +46,7 @@ async def run_policy_source(
     try:
         await docker_client.images.inspect(img)
     except aiodocker.DockerError as e:
-        msg = f"policy eval image not found: {img}"
-        raise RuntimeError(msg) from e
+        raise RuntimeError(f"policy eval image not found: {img}") from e
 
     # Avoid attach_socket/stdin I/O (flaky on some Docker backends e.g., Colima).
     # Inject the request JSON and the policy source via environment variables,
@@ -86,8 +85,7 @@ async def run_policy_source(
         while True:
             elapsed = asyncio.get_event_loop().time() - start_time
             if elapsed > tmo:
-                msg = "policy eval timeout"
-                raise RuntimeError(msg)
+                raise RuntimeError("policy eval timeout")
 
             info = await container.show()
             status = info["State"]["Status"]
@@ -111,16 +109,14 @@ async def run_policy_source(
             stderr_bytes = _normalize_logs(stderr_raw)
             combined = logs_bytes + stderr_bytes
             text = combined.decode("utf-8", errors="replace")
-            msg = f"policy eval failed (exit={exit_code}): {text.strip()}"
-            raise RuntimeError(msg)
+            raise RuntimeError(f"policy eval failed (exit={exit_code}): {text.strip()}")
 
         # Parse response
         try:
             return PolicyResponse.model_validate_json(logs_bytes.strip())
         except Exception as e:
             text = logs_bytes.decode("utf-8", errors="replace")
-            msg = f"invalid JSON from policy eval: {e}; output={text!r}"
-            raise RuntimeError(msg) from e
+            raise RuntimeError(f"invalid JSON from policy eval: {e}; output={text!r}") from e
 
     finally:
         if container:

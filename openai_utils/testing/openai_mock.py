@@ -60,8 +60,7 @@ class FakeOpenAIModel(OpenAIModelProto):
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         if not isinstance(req, ResponsesRequest):
-            msg = "responses_create expects a ResponsesRequest instance"
-            raise TypeError(msg)
+            raise TypeError("responses_create expects a ResponsesRequest instance")
         if self.calls >= len(self._outputs):
             last_messages = []
             if isinstance(req.input, list):
@@ -111,5 +110,4 @@ class NoopOpenAIClient(OpenAIModelProto):
         self.model = "noop-model"
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
-        msg = "NoopOpenAIClient should not be called in SyntheticAction path"
-        raise NotImplementedError(msg)
+        raise NotImplementedError("NoopOpenAIClient should not be called in SyntheticAction path")

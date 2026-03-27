@@ -150,8 +150,7 @@ class _MatrixClient:
             c.api.token = self.cfg.access_token
         else:
             if not self.cfg.password:
-                msg = "Matrix password or access_token required"
-                raise RuntimeError(msg)
+                raise RuntimeError("Matrix password or access_token required")
             await c.login(password=self.cfg.password, device_name="adgn-matrix-mcp")
 
         room = self.cfg.room
@@ -167,8 +166,7 @@ class _MatrixClient:
                 try:
                     resolved = await c.resolve_room_alias(RoomAlias(room))
                 except Exception as resolve_exc:
-                    msg = f"Matrix alias {room} could not be resolved"
-                    raise RuntimeError(msg) from resolve_exc
+                    raise RuntimeError(f"Matrix alias {room} could not be resolved") from resolve_exc
                 canonical_room_id = RoomID(resolved.room_id)
             else:
                 canonical_room_id = RoomID(room)
@@ -229,8 +227,7 @@ class _MatrixClient:
         c = self._client
         rid = self._room_id
         if c is None or rid is None:
-            msg = "Matrix client not started or room not resolved"
-            raise RuntimeError(msg)
+            raise RuntimeError("Matrix client not started or room not resolved")
         event_id = await c.send_text(rid, text=content)
         return {"ok": True, "event_id": str(event_id)}
 
@@ -289,8 +286,7 @@ class MatrixServer(EnhancedFastMCP):
             """Send a plaintext message to the configured room."""
             if (mc := client_holder.get("client")) is None:
                 # Surface as tool error; FastMCP converts to protocol-level error
-                msg = "matrix client not running"
-                raise ToolError(msg)
+                raise ToolError("matrix client not running")
             res = await mc.send_text(input.content)
             return MessageSendResult(ok=True, event_id=str(res.get("event_id")))
 

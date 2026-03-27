@@ -48,8 +48,7 @@ class FakeRegistry:
 
     async def resolve_image(self, agent_type: Any, tag: str) -> ResolvedImage:
         if self.image is None:
-            msg = "no image"
-            raise ImageResolutionError(msg)
+            raise ImageResolutionError("no image")
         return self.image
 
     async def start_snapshot_grader(

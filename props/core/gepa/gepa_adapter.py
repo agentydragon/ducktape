@@ -67,8 +67,9 @@ logger = logging.getLogger(__name__)
 
 def _gepa_not_implemented() -> None:
     """Raise NotImplementedError for GEPA - called at runtime entrypoints."""
-    msg = "GEPA is broken: run_critic_legacy() has been removed. GEPA needs migration to definition-based run_critic()."
-    raise NotImplementedError(msg)
+    raise NotImplementedError(
+        "GEPA is broken: run_critic_legacy() has been removed. GEPA needs migration to definition-based run_critic()."
+    )
 
 
 # =============================================================================
@@ -211,8 +212,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
         with self.db.session() as session:
             critic_run = session.get(AgentRun, critic_run_id)
             if critic_run is None:
-                msg = f"AgentRun {critic_run_id} not found"
-                raise ValueError(msg)
+                raise ValueError(f"AgentRun {critic_run_id} not found")
             critic_status = critic_run.status
             critic_image_digest = critic_run.image_digest
             critic_model = critic_run.model
@@ -421,8 +421,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
     ) -> EvaluationResult:
         """Implementation of single specimen evaluation (called under semaphore)."""
         _gepa_not_implemented()
-        msg = "unreachable"
-        raise AssertionError(msg)
+        raise AssertionError("unreachable")
 
     async def _evaluate_async(
         self, batch: list[Example], candidate: dict[str, str], capture_traces: bool, docker_client: aiodocker.Docker
@@ -463,8 +462,9 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
         # Validate that we only received supported components
         unsupported = [c for c in components_to_update if c != "system_prompt"]
         if unsupported:
-            msg = f"Unsupported components for optimization: {unsupported}. Only 'system_prompt' is supported."
-            raise ValueError(msg)
+            raise ValueError(
+                f"Unsupported components for optimization: {unsupported}. Only 'system_prompt' is supported."
+            )
 
         # GEPA always calls this with capture_traces=True, so trajectories must exist
         assert eval_batch.trajectories is not None, "make_reflective_dataset requires trajectories"

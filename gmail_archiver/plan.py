@@ -115,8 +115,7 @@ class Plan:
     def merge(plans: list[Plan]) -> Plan:
         """Merge multiple plans into one. Raises ValueError on conflicts."""
         if not plans:
-            msg = "Cannot merge empty list of plans"
-            raise ValueError(msg)
+            raise ValueError("Cannot merge empty list of plans")
 
         # Create merged plan using proper constructor (no specific planner owner)
         merged = Plan(planner_name=None)

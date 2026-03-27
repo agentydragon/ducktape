@@ -291,8 +291,7 @@ Choose action:"""
             self.conversation_history.append(Message(role="assistant", content=action_str))
             return action
 
-        msg = f"LLM returned invalid action {action} (must be 0-{action_space_size - 1})"
-        raise ValueError(msg)
+        raise ValueError(f"LLM returned invalid action {action} (must be 0-{action_space_size - 1})")
 
     def reset(self):
         """Reset conversation history for new episode."""

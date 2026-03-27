@@ -105,23 +105,19 @@ class Configuration:
         config_path = wt_dir / "config.yaml"
 
         if not config_path.exists():
-            msg = f"Config file not found: {config_path}"
-            raise ConfigError(msg)
+            raise ConfigError(f"Config file not found: {config_path}")
 
         try:
             config_file = ConfigFile.model_validate(yaml.safe_load(config_path.read_text()))
         except ValidationError as e:
-            msg = "Configuration validation errors"
-            raise ConfigError(msg) from e
+            raise ConfigError("Configuration validation errors") from e
 
         # Resolve and validate all paths NOW
         main_repo = Path(config_file.main_repo).expanduser().resolve()
         if not main_repo.exists():
-            msg = f"Main repo not found: {main_repo}"
-            raise ConfigError(msg)
+            raise ConfigError(f"Main repo not found: {main_repo}")
         if not (main_repo / ".git").exists():
-            msg = f"Not a git repository: {main_repo}"
-            raise ConfigError(msg)
+            raise ConfigError(f"Not a git repository: {main_repo}")
 
         worktrees_dir = Path(config_file.worktrees_dir).expanduser().resolve()
 

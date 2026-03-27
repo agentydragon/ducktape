@@ -153,8 +153,7 @@ def create_tool_provider(state: LoopState, http_client: httpx.AsyncClient, db: D
             with db.session() as session:
                 run = session.get(AgentRun, args.critic_run_id)
                 if run is None:
-                    msg = f"Critic run {args.critic_run_id} not found"
-                    raise ValueError(msg)
+                    raise ValueError(f"Critic run {args.critic_run_id} not found")
                 if run.status != AgentRunStatus.IN_PROGRESS:
                     logger.info("Critic completed: %s, status=%s", args.critic_run_id, run.status)
                     return CriticRunStatus(
@@ -162,8 +161,7 @@ def create_tool_provider(state: LoopState, http_client: httpx.AsyncClient, db: D
                     )
             await asyncio.sleep(poll_interval)
 
-        msg = f"Critic run {args.critic_run_id} did not complete within {args.timeout_seconds}s"
-        raise TimeoutError(msg)
+        raise TimeoutError(f"Critic run {args.critic_run_id} did not complete within {args.timeout_seconds}s")
 
     @provider.tool
     async def wait_until_graded_tool(args: WaitUntilGradedToolArgs) -> GradingStatusResponse:

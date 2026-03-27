@@ -47,8 +47,7 @@ def _start_uvicorn_in_thread(sock_path: Path, daemon_dir: Path) -> uvicorn.Serve
             except (ConnectionRefusedError, OSError):
                 pass
         time.sleep(0.1)
-    msg = "Uvicorn did not start within 10s"
-    raise TimeoutError(msg)
+    raise TimeoutError("Uvicorn did not start within 10s")
 
 
 def _make_request() -> HookRequest:

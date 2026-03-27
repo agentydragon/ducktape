@@ -107,8 +107,7 @@ class PolicyEnforcer:
             try:
                 await asyncio.wait_for(self._connected.wait(), timeout=10.0)
             except TimeoutError:
-                msg = "HA WebSocket not available for registry refresh"
-                raise ConnectionError(msg)
+                raise ConnectionError("HA WebSocket not available for registry refresh")
 
         client = self._client
         assert client is not None

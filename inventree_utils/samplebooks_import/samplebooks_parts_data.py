@@ -196,8 +196,7 @@ def format_value(part):
     elif isinstance(part, Capacitor):
         value = part.capacitance
     else:
-        msg = f"Unknown part type: {type(part)}"
-        raise ValueError(msg)
+        raise ValueError(f"Unknown part type: {type(part)}")
     value = value.to_compact()  # type: ignore[assignment]
 
     # Extract the numeric magnitude and round to 3 significant figures

@@ -65,8 +65,7 @@ class BindMount:
                 continue
             parts = entry.split(":")
             if len(parts) < 2:
-                msg = f"Invalid bind mount spec '{entry}'. Use host:container[:mode]."
-                raise ValueError(msg)
+                raise ValueError(f"Invalid bind mount spec '{entry}'. Use host:container[:mode].")
             host, container, *mode_parts = parts
             result.append(
                 cls(
@@ -431,8 +430,7 @@ async def run_session_container(
     """Run command in per-session container using aiodocker exec."""
     container_id = s.container_id
     if container_id is None:
-        msg = "No per-session container available"
-        raise RuntimeError(msg)
+        raise RuntimeError("No per-session container available")
 
     logger.debug("Executing command in container {container_id[:12]}: {cmd!r} (timeout_ms=%s)", input.timeout_ms)
 
@@ -488,8 +486,7 @@ async def run_session_container(
                 pass
             logger.debug("Killed exec process PID %s in container {container_id[:12]}", pid)
         else:
-            msg = f"Could not get PID for timed-out exec in container {container_id[:12]}"
-            raise RuntimeError(msg)
+            raise RuntimeError(f"Could not get PID for timed-out exec in container {container_id[:12]}")
     else:
         # Command completed normally - inspect exec for exit code
         t_inspect_begin = loop.time()

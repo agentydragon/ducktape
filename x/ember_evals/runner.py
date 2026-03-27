@@ -71,8 +71,7 @@ def get_suite_option(key: str) -> SuiteOption:
         return SUITE_REGISTRY[key]
     except KeyError as exc:
         allowed = ", ".join(suite_keys())
-        msg = f"Unknown evaluation suite '{key}'. Available suites: {allowed}"
-        raise CommandError(msg) from exc
+        raise CommandError(f"Unknown evaluation suite '{key}'. Available suites: {allowed}") from exc
 
 
 def ensure_tools_available(build_required: bool) -> None:
@@ -81,8 +80,7 @@ def ensure_tools_available(build_required: bool) -> None:
         tools.append("docker")
     for tool in tools:
         if shutil.which(tool) is None:
-            msg = f"{tool} not found in PATH"
-            raise RuntimeError(msg)
+            raise RuntimeError(f"{tool} not found in PATH")
 
 
 def sanitize_for_k8s(value: str, fallback: str) -> str:
@@ -172,12 +170,10 @@ def load_base_values() -> dict[str, object]:
 
 def split_image_ref(image: str) -> tuple[str, str]:
     if ":" not in image:
-        msg = f"Image reference '{image}' must include a tag"
-        raise CommandError(msg)
+        raise CommandError(f"Image reference '{image}' must include a tag")
     repository, tag = image.rsplit(":", 1)
     if not repository or not tag:
-        msg = f"Invalid image reference '{image}'"
-        raise CommandError(msg)
+        raise CommandError(f"Invalid image reference '{image}'")
     return repository, tag
 
 
@@ -346,11 +342,9 @@ def plan_runs(
     pad_width = len(str(args.runs))
 
     if args.runs > 1 and (args.namespace or args.release):
-        msg = "Cannot override namespace/release when running multiple evaluations."
-        raise ValueError(msg)
+        raise ValueError("Cannot override namespace/release when running multiple evaluations.")
     if args.runs > 1 and args.matrix_room_id:
-        msg = "Cannot reuse a fixed Matrix room when running multiple evaluations."
-        raise ValueError(msg)
+        raise ValueError("Cannot reuse a fixed Matrix room when running multiple evaluations.")
     repository = GiteaRepository.parse(args.gitea_repo)
 
     for index in range(args.runs):
@@ -396,11 +390,9 @@ def plan_runs(
 
 async def run_eval_async(args: argparse.Namespace) -> None:
     if args.runs < 1:
-        msg = "runs must be >= 1"
-        raise ValueError(msg)
+        raise ValueError("runs must be >= 1")
     if args.parallel < 1:
-        msg = "parallel must be >= 1"
-        raise ValueError(msg)
+        raise ValueError("parallel must be >= 1")
 
     build_required = args.image_tag is None
     ensure_tools_available(build_required)
@@ -431,8 +423,7 @@ async def run_eval_async(args: argparse.Namespace) -> None:
             print(f"[ember-eval] Run {request.run_id} failed: {result}", file=sys.stderr)
 
     if failures:
-        msg = f"{len(failures)} evaluation run(s) failed."
-        raise CommandError(msg)
+        raise CommandError(f"{len(failures)} evaluation run(s) failed.")
 
     print("[ember-eval] All evaluation runs completed successfully.")
 
@@ -469,8 +460,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--parallel", type=int, default=1, help="Maximum number of runs to execute in parallel")
     suite_choices = list(suite_keys())
     if not suite_choices:
-        msg = "No evaluation suites registered"
-        raise RuntimeError(msg)
+        raise RuntimeError("No evaluation suites registered")
     parser.add_argument(
         "--suite", default=suite_choices[0], choices=suite_choices, help="Evaluation scenario suite to run"
     )

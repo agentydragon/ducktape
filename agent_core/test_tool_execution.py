@@ -80,8 +80,7 @@ class ValidationServer(EnhancedFastMCP):
         def send_message(input: SendMessageInput) -> dict[str, Any]:
             """Send a message with mime type validation."""
             if input.mime == "text/plain":
-                msg = "Validation error: Only text/markdown is supported, not text/plain"
-                raise ToolError(msg)
+                raise ToolError("Validation error: Only text/markdown is supported, not text/plain")
             return {"ok": True, "message": input.content}
 
         self.send_message_tool = self.flat_model()(send_message)

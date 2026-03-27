@@ -261,21 +261,17 @@ class AgentRegistry:
             async with httpx.AsyncClient() as client:
                 resp = await client.head(manifest_url, headers=headers, auth=auth, timeout=10)
         except httpx.HTTPError as e:
-            msg = f"Failed to resolve tag {repository}:{ref}: {e}"
-            raise ImageResolutionError(msg)
+            raise ImageResolutionError(f"Failed to resolve tag {repository}:{ref}: {e}")
 
         if resp.status_code == 404:
-            msg = f"Image not found: {repository}:{ref}"
-            raise ImageResolutionError(msg)
+            raise ImageResolutionError(f"Image not found: {repository}:{ref}")
 
         if resp.status_code != 200:
-            msg = f"Proxy returned error {resp.status_code} for {repository}:{ref}: {resp.text}"
-            raise ImageResolutionError(msg)
+            raise ImageResolutionError(f"Proxy returned error {resp.status_code} for {repository}:{ref}: {resp.text}")
 
         digest = resp.headers.get("Docker-Content-Digest")
         if not digest:
-            msg = f"Proxy didn't return Docker-Content-Digest header for {repository}:{ref}"
-            raise ImageResolutionError(msg)
+            raise ImageResolutionError(f"Proxy didn't return Docker-Content-Digest header for {repository}:{ref}")
 
         logger.info("Resolved %s:%s → %s", repository, ref, digest)
         return str(digest)
@@ -347,8 +343,7 @@ class AgentRegistry:
             found_run = session.get(AgentRun, agent_run_id)
             assert found_run is not None, f"Agent run {agent_run_id} not found in database"
             if found_run.status != AgentRunStatus.IN_PROGRESS:
-                msg = f"Agent run {agent_run_id} expected IN_PROGRESS but found {found_run.status}"
-                raise RuntimeError(msg)
+                raise RuntimeError(f"Agent run {agent_run_id} expected IN_PROGRESS but found {found_run.status}")
             found_run.status = status
             found_run.container_exit_code = container_exit_code
             session.commit()
@@ -383,8 +378,7 @@ class AgentRegistry:
         with self._db.session() as session:
             status = session.get(AgentRunBudgetStatus, parent_run_id)
             if status is None:
-                msg = f"Parent run {parent_run_id} not found"
-                raise BudgetExceededError(msg)
+                raise BudgetExceededError(f"Parent run {parent_run_id} not found")
 
             if child_budget_usd > status.remaining_usd:
                 msg = (
@@ -571,8 +565,7 @@ class AgentRegistry:
         Returns agent run ID. Query DB for final status.
         """
         if not examples:
-            msg = "examples must not be empty"
-            raise ValueError(msg)
+            raise ValueError("examples must not be empty")
 
         if output_dir is None:
             output_dir = Path(tempfile.mkdtemp(prefix="improve_agent_"))

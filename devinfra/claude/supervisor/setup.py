@@ -144,17 +144,14 @@ async def start(paths: SessionPaths, settings: HookSettings) -> SupervisorSetup:
 
     # Validate config file is readable
     if not supervisor_conf.is_file():
-        msg = f"Config file not found or not a file: {supervisor_conf}"
-        raise SupervisorError(msg)
+        raise SupervisorError(f"Config file not found or not a file: {supervisor_conf}")
     try:
         config_parser = configparser.ConfigParser()
         config_parser.read(supervisor_conf)
         if not config_parser.has_section("supervisord"):
-            msg = f"Invalid config: missing [supervisord] section in {supervisor_conf}"
-            raise SupervisorError(msg)
+            raise SupervisorError(f"Invalid config: missing [supervisord] section in {supervisor_conf}")
     except Exception as e:
-        msg = f"Invalid config file {supervisor_conf}: {e}"
-        raise SupervisorError(msg) from e
+        raise SupervisorError(f"Invalid config file {supervisor_conf}: {e}") from e
 
     # Start supervisord using Python module to ensure it's on the right Python path
     # Use Popen with start_new_session to fully detach the daemon process
@@ -199,8 +196,7 @@ async def start(paths: SessionPaths, settings: HookSettings) -> SupervisorSetup:
             raise SupervisorError("\n".join(error_parts))
         logger.info("supervisord process spawned (pid=%s)", process.pid)
     except OSError as e:
-        msg = f"Failed to spawn supervisord: {e}"
-        raise SupervisorError(msg) from e
+        raise SupervisorError(f"Failed to spawn supervisord: {e}") from e
 
     # Wait for supervisor to be ready (up to 5 seconds)
     for i in range(20):
@@ -215,5 +211,4 @@ async def start(paths: SessionPaths, settings: HookSettings) -> SupervisorSetup:
     # Gather comprehensive debug info for the error
     debug_info = _dump_supervisor_debug_info(paths, settings)
 
-    msg = f"supervisord did not start in time\n{debug_info}"
-    raise SupervisorError(msg)
+    raise SupervisorError(f"supervisord did not start in time\n{debug_info}")

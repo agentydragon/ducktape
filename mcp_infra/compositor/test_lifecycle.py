@@ -195,8 +195,7 @@ async def test_exception_in_body_still_cleans_up(make_simple_mcp):
             assert "backend" in entries
 
             # Raise exception
-            msg = "test exception"
-            raise ValueError(msg)
+            raise ValueError("test exception")
     except ValueError:
         pass
 
@@ -214,8 +213,7 @@ async def test_mount_failure_does_not_leak(compositor):
 
     # Mock the Mount.setup_inproc to simulate failure
     async def failing_setup(self, server, handler_factory=None):
-        msg = "Simulated mount failure"
-        raise RuntimeError(msg)
+        raise RuntimeError("Simulated mount failure")
 
     with (
         patch.object(Mount, "setup_inproc", failing_setup),
@@ -243,8 +241,7 @@ async def test_close_continues_on_per_server_failure(make_simple_mcp):
         mount1 = comp._mounts[MCPMountPrefix("backend1")]
 
         async def failing_cleanup():
-            msg = "Simulated cleanup failure"
-            raise RuntimeError(msg)
+            raise RuntimeError("Simulated cleanup failure")
 
         mount1.cleanup = failing_cleanup  # type: ignore[method-assign]
 

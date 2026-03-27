@@ -77,8 +77,7 @@ def start_screencast(bus: Gio.DBusConnection, fps: int, output_path: Path) -> st
     success = result.get_child_value(0).get_boolean()
     filename = result.get_child_value(1).get_string()
     if not success:
-        msg = "Failed to start GNOME screencast"
-        raise RuntimeError(msg)
+        raise RuntimeError("Failed to start GNOME screencast")
     return filename
 
 
@@ -114,8 +113,7 @@ _MARKER_POOL = list("acdefghjkmnpqrtuvwxyACDEFGHJKLMNPQRTUVWXY3467")
 def _pick_markers(n: int) -> list[str]:
     """Pick n unique shuffled markers from the pool."""
     if n > len(_MARKER_POOL):
-        msg = f"Max {len(_MARKER_POOL)} samples supported (requested {n})"
-        raise ValueError(msg)
+        raise ValueError(f"Max {len(_MARKER_POOL)} samples supported (requested {n})")
     return random.sample(_MARKER_POOL, n)
 
 
@@ -149,8 +147,7 @@ def main():
 
     for tool in ["ydotool", "ffmpeg"]:
         if not shutil.which(tool):
-            msg = f"{tool} not found in PATH"
-            raise RuntimeError(msg)
+            raise RuntimeError(f"{tool} not found in PATH")
 
     ydotool_socket = Path("/tmp/.ydotool_socket")
     if not ydotool_socket.exists():
@@ -162,8 +159,7 @@ def main():
 
     uinput = Path("/dev/uinput")
     if uinput.exists() and not os.access(uinput, os.W_OK):
-        msg = "/dev/uinput not writable by current user\nFix with: sudo chmod 0666 /dev/uinput"
-        raise RuntimeError(msg)
+        raise RuntimeError("/dev/uinput not writable by current user\nFix with: sudo chmod 0666 /dev/uinput")
 
     work_dir = args.output_dir or Path(tempfile.mkdtemp(prefix="spice_latency_"))
     work_dir.mkdir(parents=True, exist_ok=True)

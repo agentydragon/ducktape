@@ -145,8 +145,7 @@ def assert_function_call_output_structured(
 def assert_items_include_instances(items: Sequence[Any], *types: type[object]) -> None:
     """Assert that items contains instances of each provided type."""
     if not types:
-        msg = "at least one type is required"
-        raise ValueError(msg)
+        raise ValueError("at least one type is required")
     matchers = [instance_of(tp) for tp in types]
     assert_that(items, has_items(*matchers))
 

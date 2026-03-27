@@ -360,8 +360,7 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
             )
         else:
             if not config.wheel_name:
-                msg = f"wheel_name must be set for wheel package {name!r}"
-                raise ValueError(msg)
+                raise ValueError(f"wheel_name must be set for wheel package {name!r}")
             wheel_name = config.wheel_name
             release_steps.extend(
                 [

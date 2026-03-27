@@ -27,12 +27,10 @@ class GiteaRepository(BaseModel):
             return value
         assert isinstance(value, str)  # Type narrowing for mypy
         if "/" not in value:
-            msg = "Gitea repository must be in 'owner/name' format"
-            raise ValueError(msg)
+            raise ValueError("Gitea repository must be in 'owner/name' format")
         owner, name = value.split("/", 1)
         if not owner or not name:
-            msg = "Invalid Gitea repository value"
-            raise ValueError(msg)
+            raise ValueError("Invalid Gitea repository value")
         return cls(owner=owner, name=name)
 
     @property
@@ -64,8 +62,7 @@ class GiteaBranchInfo(BaseModel):
     def sha(self) -> str:
         value = self.commit.get("sha")
         if not isinstance(value, str):
-            msg = "Branch commit missing sha"
-            raise GiteaError(msg)
+            raise GiteaError("Branch commit missing sha")
         return value
 
 
@@ -110,8 +107,7 @@ class GiteaClient:
         content = data.get("content")
         encoding = data.get("encoding", "")
         if not isinstance(content, str):
-            msg = f"File {path} response missing content"
-            raise GiteaError(msg)
+            raise GiteaError(f"File {path} response missing content")
         if encoding == "base64":
             return base64.b64decode(content).decode("utf-8")
         return content
@@ -119,8 +115,7 @@ class GiteaClient:
     def _resolve_repo(self, repo: str | GiteaRepository | None) -> GiteaRepository:
         if repo is None:
             if not self._default_repo:
-                msg = "No repository specified"
-                raise GiteaError(msg)
+                raise GiteaError("No repository specified")
             return self._default_repo
         return GiteaRepository.parse(repo)
 
@@ -133,10 +128,8 @@ class GiteaClient:
     def _request_json(self, method: str, url: str) -> Any:
         response = self._session.request(method, url, timeout=30)
         if response.status_code >= 400:
-            msg = f"Gitea API {method} {url} failed: {response.status_code} {response.text}"
-            raise GiteaError(msg)
+            raise GiteaError(f"Gitea API {method} {url} failed: {response.status_code} {response.text}")
         try:
             return response.json()
         except json.JSONDecodeError as exc:
-            msg = f"Failed to decode JSON from {url}"
-            raise GiteaError(msg) from exc
+            raise GiteaError(f"Failed to decode JSON from {url}") from exc

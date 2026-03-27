@@ -53,8 +53,9 @@ class HabitifyClient:
         self.base_url = os.getenv("HABITIFY_API_BASE_URL", "https://api.habitify.me")
 
         if not self.api_key:
-            msg = "Habitify API key is required. Set HABITIFY_API_KEY environment variable or pass to constructor."
-            raise HabitifyError(msg)
+            raise HabitifyError(
+                "Habitify API key is required. Set HABITIFY_API_KEY environment variable or pass to constructor."
+            )
 
         headers = {
             "Authorization": self.api_key,  # No 'Bearer' prefix based on examples
@@ -101,8 +102,7 @@ class HabitifyClient:
             The same habit ID unchanged
         """
         if not habit_id:
-            msg = "Habit ID is required"
-            raise HabitifyError(msg)
+            raise HabitifyError("Habit ID is required")
 
         return habit_id
 
@@ -274,8 +274,7 @@ class HabitifyClient:
             Habit status with timezone-aware datetime
         """
         if not status:
-            msg = "Status is required"
-            raise HabitifyError(msg)
+            raise HabitifyError("Status is required")
 
         habit_id = self._validate_habit_id(habit_id)
         target_date = format_date_for_api(date)

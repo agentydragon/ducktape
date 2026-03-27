@@ -48,8 +48,7 @@ async def test_trigger_mirror_sync_success(
             return _DummyResponse(201)
         if url.endswith("/mirror-sync"):
             return _DummyResponse(200)
-        msg = f"Unexpected POST {url}"
-        raise AssertionError(msg)
+        raise AssertionError(f"Unexpected POST {url}")
 
     monkeypatch.setattr(server.requests, "post", fake_post)
     monkeypatch.setattr(server, "_resolve_owner", lambda *_: "mirror-user")
@@ -71,15 +70,13 @@ async def test_trigger_sync_bubbles_mirror_error(
     def fake_post(url: str, **kwargs: Any):
         if url.endswith("/repos/migrate"):
             return _DummyResponse(500, text="boom")
-        msg = "mirror-sync should not be called"
-        raise AssertionError(msg)
+        raise AssertionError("mirror-sync should not be called")
 
     monkeypatch.setattr(server.requests, "post", fake_post)
     monkeypatch.setattr(server, "_resolve_owner", lambda *_: "mirror-user")
 
     def unexpected_get(*_, **__):  # pragma: no cover - helper
-        msg = "GET not expected"
-        raise AssertionError(msg)
+        raise AssertionError("GET not expected")
 
     monkeypatch.setattr(server.requests, "get", unexpected_get)
 

@@ -66,11 +66,9 @@ class ToolResult(BaseModel):
         Raises ValueError if result is an error or lacks structured content.
         """
         if self.is_error:
-            msg = f"Cannot extract from error result: {self}"
-            raise ValueError(msg)
+            raise ValueError(f"Cannot extract from error result: {self}")
         if self.structured_content is None:
-            msg = f"ToolResult missing structured content: {self}"
-            raise ValueError(msg)
+            raise ValueError(f"ToolResult missing structured content: {self}")
         return TypeAdapter(output_type).validate_python(self.structured_content)
 
 
@@ -129,8 +127,7 @@ class CompositeToolProvider:
         for provider in self._providers:
             for tool in await provider.list_tools():
                 if tool.name in index:
-                    msg = f"Duplicate tool '{tool.name}' across providers"
-                    raise ValueError(msg)
+                    raise ValueError(f"Duplicate tool '{tool.name}' across providers")
                 index[tool.name] = provider
         self._tool_index = index
         return index

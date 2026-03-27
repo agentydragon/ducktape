@@ -76,8 +76,7 @@ def _to_sdk_output_item(item: ResponseOutItem) -> _SDKOutputItem:
                 for part in item.content
             ],
         )
-    msg = f"Unexpected output item type: {type(item)}"
-    raise ValueError(msg)
+    raise ValueError(f"Unexpected output item type: {type(item)}")
 
 
 def result_to_sdk_response(result: ResponsesResult, *, model: str = DEFAULT_TEST_MODEL) -> OpenAIResponse:
@@ -127,15 +126,13 @@ class FakeOpenAIServer:
     @property
     def url(self) -> str:
         if self._actual_port is None:
-            msg = "Server not started"
-            raise RuntimeError(msg)
+            raise RuntimeError("Server not started")
         return f"http://{self._host}:{self._actual_port}"
 
     @property
     def port(self) -> int:
         if self._actual_port is None:
-            msg = "Server not started"
-            raise RuntimeError(msg)
+            raise RuntimeError("Server not started")
         return self._actual_port
 
     def capture_error(self, error: BaseException) -> None:
@@ -200,8 +197,7 @@ class FakeOpenAIServer:
             await asyncio.sleep(0.01)
             if self._task.done():
                 exc = self._task.exception()
-                msg = f"Server failed to start: {exc}"
-                raise RuntimeError(msg)
+                raise RuntimeError(f"Server failed to start: {exc}")
 
         for server in self._server.servers:
             for socket in server.sockets:

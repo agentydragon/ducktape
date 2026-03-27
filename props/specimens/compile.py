@@ -13,13 +13,11 @@ def _compile_code_tar(args: argparse.Namespace) -> None:
     files_to_add: dict[Path, Path] = {}  # arcname -> src_path
     for src_path in args.sources:
         if not src_path.exists():
-            msg = f"Source file does not exist: {src_path}"
-            raise FileNotFoundError(msg)
+            raise FileNotFoundError(f"Source file does not exist: {src_path}")
 
         rel_path = src_path.relative_to(args.strip_prefix)
         if not rel_path.parts:
-            msg = f"Source {src_path} resolved to empty path after stripping {args.strip_prefix}"
-            raise ValueError(msg)
+            raise ValueError(f"Source {src_path} resolved to empty path after stripping {args.strip_prefix}")
 
         # Restore original filenames from .specimen renames
         if src_path.suffix == ".specimen":
@@ -49,21 +47,18 @@ def _compile_data_blob(args: argparse.Namespace) -> None:
     merged_issues = {}
     for issue_file in args.issue_files:
         if not issue_file:
-            msg = "Empty string in issue_files list"
-            raise ValueError(msg)
+            raise ValueError("Empty string in issue_files list")
 
         issue_path = Path(issue_file)
         issue_id = issue_path.stem
 
         if issue_id in merged_issues:
-            msg = f"Duplicate issue ID: {issue_id}"
-            raise ValueError(msg)
+            raise ValueError(f"Duplicate issue ID: {issue_id}")
 
         with issue_path.open() as f:
             issue_data = yaml.safe_load(f)
             if not issue_data:
-                msg = f"Empty or invalid YAML in {issue_file}"
-                raise ValueError(msg)
+                raise ValueError(f"Empty or invalid YAML in {issue_file}")
             merged_issues[issue_id] = issue_data
 
     specimen_data = SpecimenData(snapshot_slug=args.slug, split=args.split, issues=merged_issues)

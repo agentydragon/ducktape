@@ -25,8 +25,7 @@ def build_mcp_function(server: MCPMountPrefix, tool: str) -> str:
         ValueError: If tool name is invalid
     """
     if not tool:
-        msg = "Tool name must be non-empty"
-        raise ValueError(msg)
+        raise ValueError("Tool name must be non-empty")
 
     return f"{server}_{tool}"
 

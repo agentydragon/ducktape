@@ -82,8 +82,7 @@ async def crane_push(
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
-            msg = f"crane push failed for {dest}: {stderr.decode()}"
-            raise RuntimeError(msg)
+            raise RuntimeError(f"crane push failed for {dest}: {stderr.decode()}")
         digest = _parse_crane_digest(stdout.decode().strip(), dest)
         logger.info("Pushed %s: %s", dest, digest)
         return digest
@@ -97,8 +96,7 @@ def _parse_crane_digest(stdout: str, dest: str) -> str:
     """
     if "@sha256:" in stdout:
         return "sha256:" + stdout.split("@sha256:", 1)[1].split()[0]
-    msg = f"crane push did not return digest for {dest}: {stdout!r}"
-    raise RuntimeError(msg)
+    raise RuntimeError(f"crane push did not return digest for {dest}: {stdout!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -126,12 +124,10 @@ def load_image(tarball_rlocation: str) -> None:
 def _docker_load(tarball_path: Path, tarball_rlocation: str) -> None:
     cmd = shutil.which("docker") or shutil.which("podman")
     if not cmd:
-        msg = "Neither docker nor podman CLI found"
-        raise RuntimeError(msg)
+        raise RuntimeError("Neither docker nor podman CLI found")
     result = subprocess.run([cmd, "load", "-i", str(tarball_path)], check=False, capture_output=True, text=True)
     if result.returncode != 0:
-        msg = f"Failed to load image from {tarball_rlocation}: {result.stderr}"
-        raise RuntimeError(msg)
+        raise RuntimeError(f"Failed to load image from {tarball_rlocation}: {result.stderr}")
 
 
 def load_bazel_image(load_script_path: str, image_tag: str) -> str:
@@ -161,7 +157,6 @@ def load_bazel_image(load_script_path: str, image_tag: str) -> str:
         env={**os.environ, "DOCKER_CLI_EXPERIMENTAL": "enabled"},
     )
     if result.returncode != 0:
-        msg = f"Failed to load image {image_tag}: {result.stderr}"
-        raise RuntimeError(msg)
+        raise RuntimeError(f"Failed to load image {image_tag}: {result.stderr}")
 
     return image_tag

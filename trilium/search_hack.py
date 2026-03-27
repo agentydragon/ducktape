@@ -136,8 +136,7 @@ def index():
                     continue
 
                 print(attribute)
-                msg = f"Unsupported attribute: {attribute!r}"
-                raise RuntimeError(msg)
+                raise RuntimeError(f"Unsupported attribute: {attribute!r}")
 
             if note_content:
                 content += "\n" + note_content

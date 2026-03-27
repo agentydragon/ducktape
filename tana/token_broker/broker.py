@@ -62,8 +62,7 @@ class _TanaNotReadyError(Exception):
 async def _wait_for_tana(http: httpx.AsyncClient, tana_url: str) -> None:
     resp = await http.get(f"{tana_url}/health")
     if resp.status_code != 200:
-        msg = f"health returned {resp.status_code}"
-        raise _TanaNotReadyError(msg)
+        raise _TanaNotReadyError(f"health returned {resp.status_code}")
     logger.info("Tana MCP server is healthy")
 
 

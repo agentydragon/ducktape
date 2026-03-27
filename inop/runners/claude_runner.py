@@ -100,8 +100,7 @@ class ClaudeRunner(AgentRunner):
             Rollout with trajectory and files
         """
         if not self.workspace_path:
-            msg = "Workspace not set up. Call setup() first."
-            raise RuntimeError(msg)
+            raise RuntimeError("Workspace not set up. Call setup() first.")
 
         # Create a SeedTask for TaskClaude compatibility
         seed_task = SeedTask(

@@ -186,8 +186,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
     elif feedback_mode == FeedbackMode.FULL_ROLLOUTS:
         feedback_provider = FullRolloutsFeedbackProvider()
     else:
-        msg = f"Invalid {feedback_mode = }."
-        raise ValueError(msg)
+        raise ValueError(f"Invalid {feedback_mode = }.")
 
     # Deps to run rollouts for a given prompt
     class _Deps:
@@ -210,8 +209,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
                 )
                 # Prepare task-type specific setup
                 if t.type not in args.task_types:
-                    msg = f"Unknown task type: {t.type}"
-                    raise ValueError(msg)
+                    raise ValueError(f"Unknown task type: {t.type}")
                 task_type_config = args.task_types[t.type]
                 await runner.setup(t, task_type_config)
 
@@ -222,8 +220,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
                 # Grade rollout
                 _, grading_config = t.resolve_config(args.task_types)
                 if grading_config is None:
-                    msg = "grading_config is required for grade_rollout"
-                    raise ValueError(msg)
+                    raise ValueError("grading_config is required for grade_rollout")
                 grade = await grade_rollout(
                     rollout=rollout,
                     task=t,

@@ -24,8 +24,7 @@ def build_mcp_config(mcp_configs: list[Path]) -> MCPConfig:
         servers.update(base.mcpServers)
     for p in mcp_configs:
         if not p.exists():
-            msg = f"--mcp-config not found: {p}"
-            raise FileNotFoundError(msg)
+            raise FileNotFoundError(f"--mcp-config not found: {p}")
         cfg = load_mcp_file(p)
         servers.update(cfg.mcpServers)
     return MCPConfig.model_validate({"mcpServers": servers})

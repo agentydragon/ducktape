@@ -92,8 +92,7 @@ def ensure_fork_remote(github_token: str, project_dir: Path) -> ForkRemoteSetup:
     username = _introspect_github_user(github_token)
     repo_name = _get_repo_name_from_origin(project_dir)
     if repo_name is None:
-        msg = "Could not determine repo name from git origin remote"
-        raise RuntimeError(msg)
+        raise RuntimeError("Could not determine repo name from git origin remote")
 
     if not _check_fork_exists(username, repo_name, github_token):
         logger.warning("Fork not found at https://github.com/%s/%s — create it there first", username, repo_name)

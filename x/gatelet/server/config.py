@@ -44,8 +44,7 @@ class BearerAuth(BaseModel):
     @classmethod
     def token_not_empty(cls, v):
         if not v:
-            msg = "Token must not be empty"
-            raise ValueError(msg)
+            raise ValueError("Token must not be empty")
         return v
 
 
@@ -143,19 +142,16 @@ class WebhookSettings(BaseModel):
         for name in v:
             # Check for URL-safe names
             if not re.match(r"^[a-zA-Z0-9_-]+$", name):
-                msg = f"Integration name '{name}' not only letters, numbers, underscores, and hyphens."
-                raise ValueError(msg)
+                raise ValueError(f"Integration name '{name}' not only letters, numbers, underscores, and hyphens.")
             if len(name) > MAX_INTEGRATION_NAME_LEN:
-                msg = f"Integration name '{name}' too long (max {MAX_INTEGRATION_NAME_LEN} characters)"
-                raise ValueError(msg)
+                raise ValueError(f"Integration name '{name}' too long (max {MAX_INTEGRATION_NAME_LEN} characters)")
         return v
 
     @field_validator("default_page_size")
     @classmethod
     def validate_page_size(cls, v):
         if v < 1 or v > MAX_PAGE_SIZE:
-            msg = f"default_page_size must be between 1 and {MAX_PAGE_SIZE}"
-            raise ValueError(msg)
+            raise ValueError(f"default_page_size must be between 1 and {MAX_PAGE_SIZE}")
         return v
 
 

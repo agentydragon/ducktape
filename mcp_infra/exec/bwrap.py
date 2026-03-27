@@ -21,11 +21,9 @@ ALLOW_UNSHARE_NET = os.getenv("DUCK_UNSHARE_NET", "0") == "1"
 
 async def _run_in_bwrap(cmd: list[str], timeout_s: float, cwd: Path | None, stdin_text: str | None) -> ExecOutcome:
     if sys.platform != "linux":
-        msg = "NOT_LINUX: bubblewrap sandbox available only on Linux"
-        raise ToolError(msg)
+        raise ToolError("NOT_LINUX: bubblewrap sandbox available only on Linux")
     if which(BWRAP) is None:
-        msg = "BWRAP_NOT_FOUND: bubblewrap (bwrap) not found in PATH"
-        raise ToolError(msg)
+        raise ToolError("BWRAP_NOT_FOUND: bubblewrap (bwrap) not found in PATH")
 
     cwd_val = str(cwd or Path.cwd())
 
@@ -83,8 +81,7 @@ class BwrapExecServer(EnhancedFastMCP):
         async def exec(input: BwrapExecArgs) -> BaseExecResult:
             """Execute a command inside a bubblewrap sandbox (Linux only)."""
             if not input.cmd or not all(isinstance(x, str) for x in input.cmd):
-                msg = "INVALID_CMD: cmd must be a non-empty list[str]"
-                raise ToolError(msg)
+                raise ToolError("INVALID_CMD: cmd must be a non-empty list[str]")
             cwd_val: Path | None = Path(input.cwd) if input.cwd else None
             if cwd_val is None and default_cwd_val is not None:
                 cwd_val = default_cwd_val
@@ -100,8 +97,7 @@ class BwrapExecServer(EnhancedFastMCP):
             # TODO: should respect bwrap sandbox boundaries
             p = Path(input.path)
             if not p.is_file():
-                msg = f"Not a file: {input.path}"
-                raise ValueError(msg)
+                raise ValueError(f"Not a file: {input.path}")
             return [validate_and_encode_image(p.read_bytes(), input.path)]
 
         self.read_image_tool = self.flat_model()(read_image)

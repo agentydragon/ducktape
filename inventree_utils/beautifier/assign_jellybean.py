@@ -67,8 +67,7 @@ def parse_file_lines(lines):
         # work.
         tokens = re.split(r"\s+", line, maxsplit=2)
         if len(tokens) < 3:
-            msg = f"Line has too few tokens: {line!r}"
-            raise UserSyntaxError(msg)
+            raise UserSyntaxError(f"Line has too few tokens: {line!r}")
 
         yield tokens
 
@@ -83,17 +82,14 @@ def parse_jellybean_editor_file(part_lookup, file_path):
 
     for url, jellybean_pn, part_name in parsed:
         if not (part := part_lookup.get(url)):
-            msg = f"Unknown part URL: {url}"
-            raise UserSyntaxError(msg)
+            raise UserSyntaxError(f"Unknown part URL: {url}")
 
         # Let's ensure the line ends with the correct part name
         if part_name != part.name:
-            msg = f"Part name mismatch: {part_name=} !={part.name=}"
-            raise UserSyntaxError(msg)
+            raise UserSyntaxError(f"Part name mismatch: {part_name=} !={part.name=}")
 
         if not jellybean_pn:
-            msg = f"Invalid jellybean P/N '{jellybean_pn}'"
-            raise UserSyntaxError(msg)
+            raise UserSyntaxError(f"Invalid jellybean P/N '{jellybean_pn}'")
 
         yield (part, jellybean_pn)
 

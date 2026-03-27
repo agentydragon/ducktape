@@ -186,8 +186,7 @@ class BinaryInstall(GitHubInstaller):
     def validate(self) -> None:
         super().validate()
         if not self.dest_path:
-            msg = "dest_path is required for binary installation"
-            raise ActionError(msg)
+            raise ActionError("dest_path is required for binary installation")
 
 
 ARCHIVES = (".tar.gz", ".tgz", ".tar.bz2", ".tar.xz", ".tar.zst", ".zip")
@@ -223,11 +222,9 @@ class ArchiveInstall(GitHubInstaller):
     def validate(self) -> None:
         super().validate()
         if not self.dest_path:
-            msg = "dest_path is required for archive installation"
-            raise ActionError(msg)
+            raise ActionError("dest_path is required for archive installation")
         if self.extract_file and self.creates_file:
-            msg = "creates_file cannot be used with extract_file"
-            raise ActionError(msg)
+            raise ActionError("creates_file cannot be used with extract_file")
 
     def get_additional_info(self, asset_url: str) -> dict[str, Any]:
         """Determine extracted directory name and pattern from asset URL."""

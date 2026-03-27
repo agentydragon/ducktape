@@ -242,8 +242,7 @@ class HookHandler:
             return self._handle_subagent_stop(request, session_id)
         if hook_type == "Notification" and isinstance(request, NotificationRequest):
             return self._handle_notification(request, session_id)
-        msg = f"Invalid hook type: {hook_type}"
-        raise HookBugError(msg)
+        raise HookBugError(f"Invalid hook type: {hook_type}")
 
     def _handle_pre_hook(self, request: PreToolUseRequest, session_id: SessionID) -> HookOutcome:
         """Handle PreToolUse with early bailout pattern."""

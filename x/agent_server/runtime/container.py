@@ -270,8 +270,7 @@ class AgentContainer:
     def get_session(self) -> AgentSession:
         """Get the agent session, raising ToolError if not initialized."""
         if self.session is None:
-            msg = "Agent session not initialized"
-            raise ToolError(msg)
+            raise ToolError("Agent session not initialized")
         return self.session
 
     def make_control_server(self) -> EnhancedFastMCP:
@@ -406,8 +405,7 @@ class AgentContainer:
             tuple: (session, agent)
         """
         if self._cm is None:
-            msg = "connection manager not initialized"
-            raise RuntimeError(msg)
+            raise RuntimeError("connection manager not initialized")
         manager = self._cm
 
         # Create session
@@ -489,8 +487,7 @@ class AgentContainer:
             case _CloseMsg():
                 return await self._op_close()
             case _:
-                msg = f"unsupported actor message: {type(msg).__name__}"
-                raise TypeError(msg)
+                raise TypeError(f"unsupported actor message: {type(msg).__name__}")
 
     def _ensure_actor(self) -> None:
         if self._actor_task is None:

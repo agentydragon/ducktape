@@ -77,27 +77,23 @@ class BazelLabel:
         if s.startswith(_CANONICAL_SIGIL):
             rest_after_sigil = s.removeprefix(_CANONICAL_SIGIL)
             if _PKG_SEP not in rest_after_sigil:
-                msg = f"Invalid Bazel label (no {_PKG_SEP!r} after {_CANONICAL_SIGIL!r}): {s!r}"
-                raise ValueError(msg)
+                raise ValueError(f"Invalid Bazel label (no {_PKG_SEP!r} after {_CANONICAL_SIGIL!r}): {s!r}")
             repo, rest = rest_after_sigil.split(_PKG_SEP, 1)
         elif s.startswith(_REPO_SIGIL):
             rest_after_sigil = s.removeprefix(_REPO_SIGIL)
             if _PKG_SEP not in rest_after_sigil:
-                msg = f"Invalid Bazel label (no {_PKG_SEP!r} after {_REPO_SIGIL!r}): {s!r}"
-                raise ValueError(msg)
+                raise ValueError(f"Invalid Bazel label (no {_PKG_SEP!r} after {_REPO_SIGIL!r}): {s!r}")
             repo, rest = rest_after_sigil.split(_PKG_SEP, 1)
         elif s.startswith(_PKG_SEP):
             repo, rest = "", s.removeprefix(_PKG_SEP)
         else:
-            msg = f"Invalid Bazel label (must start with {_PKG_SEP!r} or {_REPO_SIGIL!r}): {s!r}"
-            raise ValueError(msg)
+            raise ValueError(f"Invalid Bazel label (must start with {_PKG_SEP!r} or {_REPO_SIGIL!r}): {s!r}")
 
         if _TARGET_SEP not in rest:
             # Short form: //pkg means //pkg:pkg (name = last component)
             package = rest
             if not package:
-                msg = f"Invalid Bazel label (no {_TARGET_SEP!r} separator and empty package): {s!r}"
-                raise ValueError(msg)
+                raise ValueError(f"Invalid Bazel label (no {_TARGET_SEP!r} separator and empty package): {s!r}")
             name = Path(package).name
             return cls(repo=repo, package=Path(package), name=name)
 

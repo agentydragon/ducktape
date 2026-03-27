@@ -677,11 +677,9 @@ def parse_request(data: str) -> Request:
         raw_data = json.loads(data)
         return cast(Request, Request.model_validate(raw_data))
     except json.JSONDecodeError as e:
-        msg = f"Invalid JSON (parse error): {e}"
-        raise ValueError(msg) from e
+        raise ValueError(f"Invalid JSON (parse error): {e}") from e
     except ValidationError as e:
-        msg = f"Invalid JSON-RPC request schema: {e}"
-        raise ValueError(msg) from e
+        raise ValueError(f"Invalid JSON-RPC request schema: {e}") from e
 
 
 class NoParams(BaseModel):

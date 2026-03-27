@@ -86,5 +86,4 @@ async def create_executor(
             namespace=executor_config.namespace,
             image_pull_secret=executor_config.image_pull_secret,
         )
-    msg = f"Unknown executor config type: {type(executor_config)}"
-    raise TypeError(msg)
+    raise TypeError(f"Unknown executor config type: {type(executor_config)}")

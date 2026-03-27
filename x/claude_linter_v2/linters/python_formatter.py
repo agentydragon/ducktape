@@ -20,8 +20,7 @@ class PythonFormatter:
         formatting_tools = [t for t in tools if t not in self._NON_FORMATTING_TOOLS]
         for tool in formatting_tools:
             if tool != "ruff":
-                msg = f"Unknown formatting tool: {tool!r}. Only 'ruff' is supported."
-                raise RuntimeError(msg)
+                raise RuntimeError(f"Unknown formatting tool: {tool!r}. Only 'ruff' is supported.")
         self._use_ruff = "ruff" in formatting_tools
         if self._use_ruff:
             ruff_bin = find_ruff_binary()

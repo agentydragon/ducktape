@@ -186,8 +186,7 @@ def verify_clusterip_routing(v1: client.CoreV1Api, timeout: int = 300, interval:
                 break
 
             if time.monotonic() > deadline:
-                msg = f"ClusterIP routing failed from {', '.join(failed)} after {timeout}s"
-                raise SystemExit(msg)
+                raise SystemExit(f"ClusterIP routing failed from {', '.join(failed)} after {timeout}s")
 
             logger.info(
                 "  ClusterIP unreachable from %d/%d nodes (%s) — retrying in %ds",
@@ -242,8 +241,7 @@ def _wait_for_pods_running(v1: client.CoreV1Api, namespace: str, pod_names: list
             return
 
         if time.monotonic() > deadline:
-            msg = f"ClusterIP test pods not Running after {timeout}s: {', '.join(not_running)}"
-            raise SystemExit(msg)
+            raise SystemExit(f"ClusterIP test pods not Running after {timeout}s: {', '.join(not_running)}")
 
         time.sleep(5)
 

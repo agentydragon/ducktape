@@ -364,8 +364,7 @@ class LightBurnProject:
         """Build the complete <LightBurnProject> Element tree."""
         n = len(self.cut_settings)
         if n > MAX_LAYERS:
-            msg = f"LightBurn supports at most {MAX_LAYERS} layers, got {n}"
-            raise ValueError(msg)
+            raise ValueError(f"LightBurn supports at most {MAX_LAYERS} layers, got {n}")
 
         root = ET.Element(
             "LightBurnProject",

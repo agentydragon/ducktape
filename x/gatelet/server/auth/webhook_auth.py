@@ -68,11 +68,9 @@ def create_auth_handler(config: WebhookAuthConfig | dict[str, Any]) -> WebhookAu
             return NoAuthHandler(NoAuth())
         if auth_type == AuthType.BEARER:
             return BearerAuthHandler(BearerAuth(token=config.get("token", "")))
-        msg = f"Unknown authentication type in dict: {auth_type}"
-        raise ValueError(msg)
+        raise ValueError(f"Unknown authentication type in dict: {auth_type}")
     if isinstance(config, NoAuth):
         return NoAuthHandler(config)
     if isinstance(config, BearerAuth):
         return BearerAuthHandler(config)
-    msg = f"Unknown authentication type: {type(config)}"
-    raise ValueError(msg)
+    raise ValueError(f"Unknown authentication type: {type(config)}")

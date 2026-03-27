@@ -38,8 +38,7 @@ def _resolve_base_model(
             )
             raise NotImplementedError(msg) from exc
     if not (isinstance(cand, type) and issubclass(cand, BaseModel)):
-        msg = f"{error_prefix} must be a Pydantic BaseModel subclass"
-        raise TypeError(msg)
+        raise TypeError(f"{error_prefix} must be a Pydantic BaseModel subclass")
     return cand
 
 
@@ -47,8 +46,7 @@ def _ensure_model_rebuild(model: type[BaseModel], *, kind: str) -> None:
     try:
         model.model_rebuild()
     except AttributeError as exc:
-        msg = f"{kind} model must be a Pydantic BaseModel with model_rebuild()"
-        raise TypeError(msg) from exc
+        raise TypeError(f"{kind} model must be a Pydantic BaseModel with model_rebuild()") from exc
     except Exception as exc:
         logger.debug("model_rebuild() on %s failed: %s", kind, exc)
 
@@ -58,8 +56,7 @@ def _extract_signature_params(fn: Callable[..., Any]) -> tuple[inspect.Parameter
     sig = inspect.signature(fn)
     params = list(sig.parameters.values())
     if len(params) not in (0, 1, 2):
-        msg = "@flat_model expects 0 parameters (no-arg), payload model parameter, or payload + Context"
-        raise TypeError(msg)
+        raise TypeError("@flat_model expects 0 parameters (no-arg), payload model parameter, or payload + Context")
     if len(params) == 0:
         return None, None
     payload_param = params[0]
@@ -67,8 +64,7 @@ def _extract_signature_params(fn: Callable[..., Any]) -> tuple[inspect.Parameter
     if len(params) == 2:
         context_param = params[1]
         if context_param.kind not in (inspect.Parameter.KEYWORD_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD):
-            msg = "@flat_model context parameter must be positional-or-keyword or keyword-only"
-            raise TypeError(msg)
+            raise TypeError("@flat_model context parameter must be positional-or-keyword or keyword-only")
         context_name = context_param.name
     return payload_param, context_name
 
@@ -115,8 +111,7 @@ class FlatModelMixin(FastMCP):
             fn: Callable[[], OutputT] | Callable[[InputModelT], OutputT] | Callable[[InputModelT, Any], OutputT],
         ) -> FlatTool[InputModelT, OutputT]:
             if not inspect.isfunction(fn):
-                msg = "@flat_model requires a plain function (not a callable object)"
-                raise TypeError(msg)
+                raise TypeError("@flat_model requires a plain function (not a callable object)")
 
             # Extract signature and resolve input model
             payload_param, context_name = _extract_signature_params(fn)

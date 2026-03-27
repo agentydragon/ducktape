@@ -93,8 +93,7 @@ class InfrastructureRegistry:
     def _ensure_compositor(self) -> Compositor:
         """Return global compositor or raise CompositorNotInitializedError."""
         if (comp := self.global_compositor) is None:
-            msg = "Global compositor not initialized"
-            raise CompositorNotInitializedError(msg)
+            raise CompositorNotInitializedError("Global compositor not initialized")
         return comp
 
     async def _register_and_mount_agent(self, container: AgentContainer, *, external: bool) -> None:
@@ -110,8 +109,7 @@ class InfrastructureRegistry:
 
         # Mount agent compositor to global
         if container.compositor is None:
-            msg = f"Agent container {container.agent_id} has no compositor after build"
-            raise RuntimeError(msg)
+            raise RuntimeError(f"Agent container {container.agent_id} has no compositor after build")
 
         mount_prefix = agent_mount_prefix(container.agent_id)
         await comp.mount_inproc(mount_prefix, container.compositor)
@@ -122,8 +120,7 @@ class InfrastructureRegistry:
         Only for internal agents - provides send_prompt and abort tools.
         """
         if container.compositor is None:
-            msg = f"Agent container {container.agent_id} has no compositor for agent_control mount"
-            raise RuntimeError(msg)
+            raise RuntimeError(f"Agent container {container.agent_id} has no compositor for agent_control mount")
 
         control_server = container.make_control_server()
         await container.compositor.mount_inproc(AGENT_CONTROL_MOUNT_PREFIX, control_server)
@@ -216,8 +213,7 @@ class InfrastructureRegistry:
                 return existing
 
             if (row := await self.persistence.get_agent(agent_id)) is None:
-                msg = f"Agent not found: {agent_id}"
-                raise KeyError(msg)
+                raise KeyError(f"Agent not found: {agent_id}")
 
             container = await self._create_container(agent_id, mcp_config=row.mcp_config, external=False)
             await self._register_and_mount_agent(container, external=False)
@@ -271,8 +267,7 @@ class InfrastructureRegistry:
 
         async with self._lock:
             if agent_id not in self._agents:
-                msg = f"Agent not running: {agent_id}"
-                raise KeyError(msg)
+                raise KeyError(f"Agent not running: {agent_id}")
 
             # Unmount from global
             try:

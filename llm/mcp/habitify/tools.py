@@ -10,8 +10,7 @@ from habitify.utils.habit_resolver import resolve_habit
 def _require_habit_identifier(*, id: str | None, name: str | None, action: str = "use") -> None:
     """Validate that either an ID or name is provided."""
     if not id and not name:
-        msg = f"Either a habit ID or habit name is required to {action} a habit."
-        raise HabitifyError(msg)
+        raise HabitifyError(f"Either a habit ID or habit name is required to {action} a habit.")
 
 
 async def get_habits(client: HabitifyClient, *, include_archived: bool = False) -> HabitsResult:
@@ -36,8 +35,7 @@ async def get_habit(client: HabitifyClient, *, id: str | None = None, name: str 
     matching_habits = [h for h in habits if habit_name in h.name.lower()]
 
     if not matching_habits:
-        msg = f'No habit found with name containing "{name}"'
-        raise HabitifyError(msg)
+        raise HabitifyError(f'No habit found with name containing "{name}"')
 
     exact_match = next((h for h in matching_habits if h.name.lower() == habit_name), None)
     if exact_match:
@@ -47,8 +45,7 @@ async def get_habit(client: HabitifyClient, *, id: str | None = None, name: str 
         return HabitResult(habit=matching_habits[0], match_type="partial")
 
     matches = ", ".join(f"{h.name} ({h.id})" for h in matching_habits[:5])
-    msg = f'Multiple habits found matching "{name}": {matches}'
-    raise HabitifyError(msg)
+    raise HabitifyError(f'Multiple habits found matching "{name}": {matches}')
 
 
 async def get_habit_status(

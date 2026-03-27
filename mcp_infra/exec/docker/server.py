@@ -54,8 +54,7 @@ def resolve_cwd(policy: CwdPolicy, tool_input: Any) -> str | None:
         case ModelChooses():
             return str(tool_input.cwd)
         case _:
-            msg = f"Unknown CwdPolicy: {policy!r}"
-            raise TypeError(msg)
+            raise TypeError(f"Unknown CwdPolicy: {policy!r}")
 
 
 def _make_exec_input_model(*, allow_user: bool, allow_env: bool, cwd_policy: CwdPolicy) -> type:
@@ -255,8 +254,7 @@ class ContainerExecServer(EnhancedFastMCP):
             """Read file at absolute path from container."""
             s = session_state_from_ctx(ctx)
             if s.container_id is None:
-                msg = "No container available"
-                raise RuntimeError(msg)
+                raise RuntimeError("No container available")
             container = s.docker_client.containers.container(s.container_id)
             # get_archive returns a TarFile directly (not an async iterable)
             tar = await container.get_archive(path)
@@ -265,8 +263,7 @@ class ContainerExecServer(EnhancedFastMCP):
             member = tar.getmember(member_name)
             f = tar.extractfile(member)
             if f is None:
-                msg = f"{path} is not a regular file"
-                raise RuntimeError(msg)
+                raise RuntimeError(f"{path} is not a regular file")
             return f.read().decode("utf-8")
 
         read_container_file.__annotations__["ctx"] = Context
@@ -282,8 +279,7 @@ class ContainerExecServer(EnhancedFastMCP):
             """Read an image file from the container and return it for the model to see."""
             s = session_state_from_ctx(ctx)
             if s.container_id is None:
-                msg = "No container available"
-                raise RuntimeError(msg)
+                raise RuntimeError("No container available")
             container = s.docker_client.containers.container(s.container_id)
             # Pull file from container via Docker API
             tar = await container.get_archive(input.path)
@@ -291,8 +287,7 @@ class ContainerExecServer(EnhancedFastMCP):
             member = tar.getmember(member_name)
             f = tar.extractfile(member)
             if f is None:
-                msg = f"{input.path} is not a regular file"
-                raise ValueError(msg)
+                raise ValueError(f"{input.path} is not a regular file")
             return [validate_and_encode_image(f.read(), input.path)]
 
         self.read_image_tool = self.flat_model()(read_image)

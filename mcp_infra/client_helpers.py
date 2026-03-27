@@ -18,8 +18,6 @@ async def call_simple_ok(client: Client, *, name: str, arguments: dict) -> None:
     except ToolError:
         raise
     except Exception as exc:
-        msg = f"{name} failed: {exc}"
-        raise RuntimeError(msg) from exc
+        raise RuntimeError(f"{name} failed: {exc}") from exc
     if bool(res.is_error):
-        msg = f"{name} failed (is_error=True)"
-        raise RuntimeError(msg)
+        raise RuntimeError(f"{name} failed (is_error=True)")

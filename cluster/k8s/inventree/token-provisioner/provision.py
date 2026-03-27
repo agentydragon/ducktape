@@ -85,8 +85,7 @@ def provision_token(api: InvenTreeAPI, user_pk: int, existing: dict | None) -> s
     response = api.post("user/tokens/", data={"user": user_pk, "name": TOKEN_NAME})
     token_key = response.get("token")
     if not token_key:
-        msg = f"Token creation response missing 'token' field: {response}"
-        raise RuntimeError(msg)
+        raise RuntimeError(f"Token creation response missing 'token' field: {response}")
     print(f"Created token '{TOKEN_NAME}' for user pk={user_pk}")
     return str(token_key)
 

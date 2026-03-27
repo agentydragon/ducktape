@@ -126,8 +126,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
     @GraderMock.mock(check_consumed=False)
     def grader_mock(m: GraderMock) -> PlayGen:
         yield None  # First request (waits for drift)
-        msg = "Grader should not be woken when critic submits 0 issues"
-        raise AssertionError(msg)
+        raise AssertionError("Grader should not be woken when critic submits 0 issues")
 
     mocks = {
         ORCHESTRATION_OPTIMIZER_MODEL: optimizer_mock,

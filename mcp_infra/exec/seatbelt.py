@@ -79,8 +79,7 @@ class SeatbeltExecServer(EnhancedFastMCP):
         """
         # Refuse to instantiate on non-darwin
         if sys.platform != "darwin":
-            msg = "seatbelt_exec is macOS-only (requires sandbox-exec)"
-            raise RuntimeError(msg)
+            raise RuntimeError("seatbelt_exec is macOS-only (requires sandbox-exec)")
 
         super().__init__(
             "Seatbelt Exec MCP Server",
@@ -91,8 +90,7 @@ class SeatbeltExecServer(EnhancedFastMCP):
             """Execute a command via macOS seatbelt (sandbox-exec). Provide a full SBPL policy per call."""
             # Platform precheck
             if sys.platform != "darwin":
-                msg = "NOT_DARWIN: sandbox available only on macOS"
-                raise ToolError(msg)
+                raise ToolError("NOT_DARWIN: sandbox available only on macOS")
 
             # Pydantic has already validated argv min length and max_bytes range
             max_b = input.max_bytes
@@ -222,8 +220,7 @@ class SeatbeltExecServer(EnhancedFastMCP):
                 )
             except FileNotFoundError as e:
                 # sandbox-exec missing
-                msg = f"SANDBOX_EXEC_MISSING: {e}"
-                raise ToolError(msg) from e
+                raise ToolError(f"SANDBOX_EXEC_MISSING: {e}") from e
             except Exception as e:
                 raise ToolError(str(e)) from e
 
@@ -234,8 +231,7 @@ class SeatbeltExecServer(EnhancedFastMCP):
             # TODO: should respect seatbelt sandbox boundaries
             p = Path(input.path)
             if not p.is_file():
-                msg = f"Not a file: {input.path}"
-                raise ValueError(msg)
+                raise ValueError(f"Not a file: {input.path}")
             return [validate_and_encode_image(p.read_bytes(), input.path)]
 
         self.read_image_tool = self.flat_model()(read_image)

@@ -269,8 +269,7 @@ class PreCommitAutoFixerHook(PostToolUseHook):
         git_path = pygit2.discover_repository(str(search_dir))
         if git_path is None:
             self.logger.info("Not in git repo: %s", search_dir)
-            msg = f"Not in a git repository: {search_dir}"
-            raise RuntimeError(msg)
+            raise RuntimeError(f"Not in a git repository: {search_dir}")
 
         repo = pygit2.Repository(git_path)
         repo_root = Path(repo.workdir).resolve()
@@ -279,8 +278,7 @@ class PreCommitAutoFixerHook(PostToolUseHook):
             self.logger.info("Found pre-commit config at: %s", repo_root / PRECOMMIT_CONFIG_FILE)
             return repo_root
 
-        msg = f"No pre-commit config in git repo root: {repo_root}"
-        raise RuntimeError(msg)
+        raise RuntimeError(f"No pre-commit config in git repo root: {repo_root}")
 
 
 def main():

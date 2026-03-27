@@ -38,8 +38,7 @@ def get_github_token(token_arg: str | None = None, *, timeout_secs: float = 10.0
         return None
     except (OSError, PermissionError) as e:
         # Unexpected system errors should be visible to operator
-        msg = "Failed to execute GitHub CLI"
-        raise RuntimeError(msg) from e
+        raise RuntimeError("Failed to execute GitHub CLI") from e
 
 
 class GitHubInterface:
@@ -58,8 +57,7 @@ class GitHubInterface:
             except Exception as e:
                 # Boundary: wrap provider/library errors; log for diagnostics.
                 logger.exception("Failed to access GitHub repo %s", self.github_repo)
-                msg = f"Cannot access GitHub repo {self.github_repo}"
-                raise GitHubUnavailableError(msg) from e
+                raise GitHubUnavailableError(f"Cannot access GitHub repo {self.github_repo}") from e
         return self._repo
 
     @handle_github_errors

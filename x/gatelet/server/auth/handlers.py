@@ -200,5 +200,4 @@ def create_auth_dependency(auth_type: AuthType) -> Callable:
         return session_auth
     if auth_type == AuthType.ADMIN:
         return admin_auth
-    msg = f"Unsupported {auth_type = }"
-    raise ValueError(msg)
+    raise ValueError(f"Unsupported {auth_type = }")

@@ -49,8 +49,7 @@ def parse_upstream_url(url: str) -> UpstreamConfig:
     """Parse upstream proxy URL into config with auth header."""
     parsed = urlparse(url)
     if not parsed.hostname:
-        msg = f"Invalid upstream URL: {url}"
-        raise ValueError(msg)
+        raise ValueError(f"Invalid upstream URL: {url}")
 
     host = parsed.hostname
     port = parsed.port or 80
@@ -105,8 +104,7 @@ class AuthForwardingProxy:
         with self._creds_lock:
             url = self._upstream_url
         if url is None:
-            msg = "Proxy credentials not set"
-            raise ValueError(msg)
+            raise ValueError("Proxy credentials not set")
         return parse_upstream_url(url)
 
     def start(self) -> None:
@@ -327,8 +325,7 @@ class UdsRemoteProxy:
         with self._creds_lock:
             url = self._upstream_url
         if url is None:
-            msg = "Proxy credentials not set"
-            raise ValueError(msg)
+            raise ValueError("Proxy credentials not set")
         return parse_upstream_url(url)
 
     def start(self) -> None:

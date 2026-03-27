@@ -143,8 +143,7 @@ def main(_):
     with gnucash_util.gnucash_session(config["reconcile"]["gnucash_book_path"]) as session:
         for reconcile_config in config["reconcile"]["mappings"]:
             if "gnucash_account_path" not in reconcile_config:
-                msg = "no gnucash_account_path"
-                raise Exception(msg)
+                raise Exception("no gnucash_account_path")
 
             gnucash_account_path = reconcile_config["gnucash_account_path"]
             print("Reconciling", gnucash_account_path)
@@ -159,8 +158,7 @@ def main(_):
                 prefix = "splitwise"
                 id_regex = "([0-9]+)"
             else:
-                msg = f"no way to reconcile: {reconcile_config}"
-                raise Exception(msg)
+                raise Exception(f"no way to reconcile: {reconcile_config}")
 
             # 'start_date' sets date at which mapping starts
             if "start_date" in reconcile_config:
@@ -224,8 +222,7 @@ def main(_):
                 # >>> t.GetCurrency().get_fullname() --> 'Swiss Franc'
 
             if errors > 0:
-                msg = f"{errors} errors"
-                raise Exception(msg)
+                raise Exception(f"{errors} errors")
 
             unmatched_ids = set(external_transaction_by_external_id.keys()) - matched_external_ids
             print()

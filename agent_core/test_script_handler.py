@@ -77,8 +77,7 @@ def test_generator_exception_propagates():
     @script_handler
     def script() -> ScriptGen:
         yield None
-        msg = "script failed"
-        raise ValueError(msg)
+        raise ValueError("script failed")
 
     handler = script()
     with pytest.raises(ValueError, match="script failed"):

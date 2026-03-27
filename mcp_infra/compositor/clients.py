@@ -27,8 +27,7 @@ class CompositorMetaClient:
             isinstance(transport := self._client.transport, FastMCPTransport)
             and isinstance(comp := transport.server, Compositor)
         ):
-            msg = "CompositorMetaClient requires an in-process Compositor transport"
-            raise RuntimeError(msg)
+            raise RuntimeError("CompositorMetaClient requires an in-process Compositor transport")
         return cast(dict[str, ServerEntry], await comp.server_entries())
 
 

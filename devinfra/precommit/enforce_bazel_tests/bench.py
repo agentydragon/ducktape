@@ -47,8 +47,7 @@ def _assert_index_clean(repo: pygit2.Repository) -> None:
         if flags & (pygit2.GIT_STATUS_INDEX_NEW | pygit2.GIT_STATUS_INDEX_MODIFIED | pygit2.GIT_STATUS_INDEX_DELETED)
     }
     if staged:
-        msg = f"git index is not clean ({len(staged)} staged files). Commit or stash first."
-        raise RuntimeError(msg)
+        raise RuntimeError(f"git index is not clean ({len(staged)} staged files). Commit or stash first.")
 
 
 def _read_session_startup_flags() -> tuple[str, ...]:
@@ -135,8 +134,7 @@ def main() -> int:
     main_ws = BazelWorkspace(root=repo_root)
     label = main_ws.file_to_label(_TARGET_FILE)
     if label is None:
-        msg = f"No BUILD file found for {_TARGET_FILE}"
-        raise ValueError(msg)
+        raise ValueError(f"No BUILD file found for {_TARGET_FILE}")
 
     # Bench workspace with separate output base to avoid lock contention.
     bench_ws = BazelWorkspace(

@@ -19,8 +19,7 @@ class ServiceManager:
 
     async def start(self) -> None:
         if self.proc:
-            msg = "service already running"
-            raise RuntimeError(msg)
+            raise RuntimeError("service already running")
         script = Path(__file__).with_name("dbus_service.py")
         self.proc = await asyncio.create_subprocess_exec(
             sys.executable, script, self.bus_address, **self._subprocess_kwargs

@@ -165,7 +165,6 @@ def run_bazel_diff(
             text=True,
         )
     except subprocess.CalledProcessError as e:
-        msg = f"bazel-diff get-impacted-targets failed with exit code {e.returncode}"
-        raise BazelDiffError(msg) from e
+        raise BazelDiffError(f"bazel-diff get-impacted-targets failed with exit code {e.returncode}") from e
 
     return {BazelLabel.parse(t) for t in result.stdout.strip().split("\n") if t}

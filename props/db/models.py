@@ -295,16 +295,14 @@ class Snapshot(Base):
     def get(cls, slug: SnapshotSlug) -> Snapshot | None:
         session = Session.object_session(cls)
         if session is None:
-            msg = "Model not bound to session"
-            raise RuntimeError(msg)
+            raise RuntimeError("Model not bound to session")
         return session.execute(select(cls).where(cls.slug == slug)).scalar_one_or_none()
 
     @classmethod
     def get_by_split(cls, split: str) -> list[Snapshot]:
         session = Session.object_session(cls)
         if session is None:
-            msg = "Model not bound to session"
-            raise RuntimeError(msg)
+            raise RuntimeError("Model not bound to session")
         return list(session.execute(select(cls).where(cls.split == split)).scalars().all())
 
     def files_with_issues(self) -> set[Path]:
@@ -356,8 +354,7 @@ class TruePositive(Base):
     def get(cls, snapshot_slug: SnapshotSlug, tp_id: str) -> TruePositive | None:
         session = Session.object_session(cls)
         if session is None:
-            msg = "Model not bound to session"
-            raise RuntimeError(msg)
+            raise RuntimeError("Model not bound to session")
         return session.execute(
             select(cls).where(cls.snapshot_slug == snapshot_slug, cls.tp_id == tp_id)
         ).scalar_one_or_none()
@@ -366,8 +363,7 @@ class TruePositive(Base):
     def get_for_snapshot(cls, snapshot_slug: SnapshotSlug) -> list[TruePositive]:
         session = Session.object_session(cls)
         if session is None:
-            msg = "Model not bound to session"
-            raise RuntimeError(msg)
+            raise RuntimeError("Model not bound to session")
         return list(session.execute(select(cls).where(cls.snapshot_slug == snapshot_slug)).scalars().all())
 
 
@@ -405,8 +401,7 @@ class FalsePositive(Base):
     def get(cls, snapshot_slug: SnapshotSlug, fp_id: str) -> FalsePositive | None:
         session = Session.object_session(cls)
         if session is None:
-            msg = "Model not bound to session"
-            raise RuntimeError(msg)
+            raise RuntimeError("Model not bound to session")
         return session.execute(
             select(cls).where(cls.snapshot_slug == snapshot_slug, cls.fp_id == fp_id)
         ).scalar_one_or_none()
@@ -415,8 +410,7 @@ class FalsePositive(Base):
     def get_for_snapshot(cls, snapshot_slug: SnapshotSlug) -> list[FalsePositive]:
         session = Session.object_session(cls)
         if session is None:
-            msg = "Model not bound to session"
-            raise RuntimeError(msg)
+            raise RuntimeError("Model not bound to session")
         return list(session.execute(select(cls).where(cls.snapshot_slug == snapshot_slug)).scalars().all())
 
 
@@ -920,8 +914,7 @@ class GradingEdge(Base):
                 f"FP grading edge {self.critique_issue_id} missing fp_occurrence_id"
             )
             return FpTarget(fp_id=self.fp_id, occurrence_id=self.fp_occurrence_id, credit=self.credit)
-        msg = f"Grading edge {self.critique_issue_id} has no target (DB constraint violation)"
-        raise ValueError(msg)
+        raise ValueError(f"Grading edge {self.critique_issue_id} has no target (DB constraint violation)")
 
 
 class IssueCluster(Base):
@@ -1531,29 +1524,24 @@ class AgentRun(Base):
     def critic_config(self) -> CriticTypeConfig:
         if isinstance(self.type_config, CriticTypeConfig):
             return self.type_config
-        msg = f"Expected CriticTypeConfig, got {type(self.type_config).__name__}"
-        raise ValueError(msg)
+        raise ValueError(f"Expected CriticTypeConfig, got {type(self.type_config).__name__}")
 
     def grader_config(self) -> GraderTypeConfig:
         if isinstance(self.type_config, GraderTypeConfig):
             return self.type_config
-        msg = f"Expected GraderTypeConfig, got {type(self.type_config).__name__}"
-        raise ValueError(msg)
+        raise ValueError(f"Expected GraderTypeConfig, got {type(self.type_config).__name__}")
 
     def critic_dev_improve_config(self) -> CriticDevImproveTypeConfig:
         if isinstance(self.type_config, CriticDevImproveTypeConfig):
             return self.type_config
-        msg = f"Expected CriticDevImproveTypeConfig, got {type(self.type_config).__name__}"
-        raise ValueError(msg)
+        raise ValueError(f"Expected CriticDevImproveTypeConfig, got {type(self.type_config).__name__}")
 
     def critic_dev_optimize_config(self) -> CriticDevOptimizeTypeConfig:
         if isinstance(self.type_config, CriticDevOptimizeTypeConfig):
             return self.type_config
-        msg = f"Expected CriticDevOptimizeTypeConfig, got {type(self.type_config).__name__}"
-        raise ValueError(msg)
+        raise ValueError(f"Expected CriticDevOptimizeTypeConfig, got {type(self.type_config).__name__}")
 
     def freeform_config(self) -> FreeformTypeConfig:
         if isinstance(self.type_config, FreeformTypeConfig):
             return self.type_config
-        msg = f"Expected FreeformTypeConfig, got {type(self.type_config).__name__}"
-        raise ValueError(msg)
+        raise ValueError(f"Expected FreeformTypeConfig, got {type(self.type_config).__name__}")

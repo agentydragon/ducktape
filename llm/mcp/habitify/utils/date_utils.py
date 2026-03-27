@@ -27,8 +27,7 @@ def parse_date(date_string: str | None = None) -> datetime.datetime:
             # Try to parse as YYYY-MM-DD
             return datetime.datetime.strptime(date_string, "%Y-%m-%d").replace(tzinfo=datetime.UTC)
         except ValueError:
-            msg = f"Invalid date format: {date_string}. Please use YYYY-MM-DD."
-            raise ValueError(msg)
+            raise ValueError(f"Invalid date format: {date_string}. Please use YYYY-MM-DD.")
 
 
 def _normalize_date(date: str | datetime.date | datetime.datetime | None = None) -> datetime.datetime:

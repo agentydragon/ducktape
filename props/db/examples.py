@@ -90,11 +90,9 @@ class Example(Base):
             return WholeSnapshotExample(snapshot_slug=self.snapshot_slug)
         if self.example_kind == ExampleKind.FILE_SET:
             if self.files_hash is None:
-                msg = f"Example {self.snapshot_slug} has example_kind=file_set but files_hash is NULL"
-                raise ValueError(msg)
+                raise ValueError(f"Example {self.snapshot_slug} has example_kind=file_set but files_hash is NULL")
             return SingleFileSetExample(snapshot_slug=self.snapshot_slug, files_hash=self.files_hash)
-        msg = f"Unknown example_kind: {self.example_kind}"
-        raise ValueError(msg)
+        raise ValueError(f"Unknown example_kind: {self.example_kind}")
 
     @classmethod
     def _query_by_spec(cls, session: Session, spec: ExampleSpec) -> Query[Example]:

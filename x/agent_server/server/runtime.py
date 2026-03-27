@@ -82,8 +82,7 @@ class UiEventHandler(BaseHandler):
         self._spawn(self._send_and_reduce(UiUserText(text=evt.text)))
 
     def on_assistant_text_event(self, evt: AssistantText) -> None:
-        msg = "assistant_text not allowed in UI mode; use ui.send_message tool instead"
-        raise RuntimeError(msg)
+        raise RuntimeError("assistant_text not allowed in UI mode; use ui.send_message tool instead")
 
     def on_tool_call_event(self, evt: ToolCall) -> None:
         self._spawn(self._send_and_reduce(UiToolCall(name=evt.name, args_json=evt.args_json, call_id=evt.call_id)))

@@ -111,8 +111,7 @@ def export_node_with_tracking(store: TrackingGraph, node_id: NodeId) -> tuple[st
     """
     # Get the target node
     if node_id not in store:
-        msg = f"Node {node_id} not found in store"
-        raise ValueError(msg)
+        raise ValueError(f"Node {node_id} not found in store")
 
     node = store[node_id]
 

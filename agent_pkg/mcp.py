@@ -58,8 +58,7 @@ async def mcp_client_from_env() -> AsyncIterator[tuple[Client, InitializeResult]
     async with Client(url, auth=token) as client:
         init_result = client.initialize_result
         if init_result is None:
-            msg = "Client did not initialize properly"
-            raise RuntimeError(msg)
+            raise RuntimeError("Client did not initialize properly")
         yield client, init_result
 
 

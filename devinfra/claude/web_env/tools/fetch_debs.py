@@ -225,8 +225,7 @@ def fetch_debs(work_dir: Path) -> None:
     """
     versions_file = work_dir / "live-dpkg-versions.txt"
     if not versions_file.exists():
-        msg = f"{versions_file} not found"
-        raise FileNotFoundError(msg)
+        raise FileNotFoundError(f"{versions_file} not found")
 
     live_pkgs = parse_versions_file(versions_file)
     base_pkgs = get_base_image_packages()
@@ -261,8 +260,7 @@ def fetch_debs(work_dir: Path) -> None:
         logger.error("Cannot find %d packages in any configured source:", len(missing))
         for m in sorted(missing):
             logger.error("  %s", m)
-        msg = f"{len(missing)} packages not found in any repository. See errors above."
-        raise RuntimeError(msg)
+        raise RuntimeError(f"{len(missing)} packages not found in any repository. See errors above.")
 
     logger.info("All %d packages resolved to download URLs", len(resolved))
 
@@ -291,8 +289,7 @@ def fetch_debs(work_dir: Path) -> None:
                 failed.append(pkg)
 
     if failed:
-        msg = f"Failed to download {len(failed)} packages: {', '.join(sorted(failed))}"
-        raise RuntimeError(msg)
+        raise RuntimeError(f"Failed to download {len(failed)} packages: {', '.join(sorted(failed))}")
 
     deb_count = len(list(debs_dir.glob("*.deb")))
     total_size_mb = sum(f.stat().st_size for f in debs_dir.glob("*.deb")) / (1024 * 1024)

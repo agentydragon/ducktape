@@ -210,8 +210,7 @@ def _normalize_parts(
             base = p.blob  # base64 string per MCP spec
             norm.append(BlobPart(mime=p.mimeType, raw_str=str(base)))
             continue
-        msg = f"Unsupported resource content type: {type(p).__name__}"
-        raise TypeError(msg)
+        raise TypeError(f"Unsupported resource content type: {type(p).__name__}")
     return norm
 
 
@@ -517,8 +516,7 @@ class ResourcesServer(EnhancedFastMCP):
                     is_text = False
                     block_bytes = b""  # Not used for blobs
                 else:
-                    msg = f"Unsupported content type: {type(block).__name__}"
-                    raise TypeError(msg)
+                    raise TypeError(f"Unsupported content type: {type(block).__name__}")
 
                 # Determine slice range for this block
                 slice_start = input.start_offset if block_idx == input.start_block else 0
@@ -775,11 +773,9 @@ class ResourcesServer(EnhancedFastMCP):
         entries = await self._compositor.server_entries()
         entry = entries.get(server)
         if entry is None:
-            msg = f"Unknown server '{server}'"
-            raise ToolError(msg)
+            raise ToolError(f"Unknown server '{server}'")
         if not isinstance(entry, RunningServerEntry):
-            msg = f"Server '{server}' is not running (state={entry.state})"
-            raise ToolError(msg)
+            raise ToolError(f"Server '{server}' is not running (state={entry.state})")
         return entry
 
     async def _ensure_capability(self, server: MCPMountPrefix, *, feature: ResourceCapabilityFeature) -> None:
@@ -794,12 +790,10 @@ class ResourcesServer(EnhancedFastMCP):
             caps = entry.initialize.capabilities
             res_caps = caps.resources
         except AttributeError as e:
-            msg = f"Server '{server}' does not advertise resources capabilities"
-            raise ToolError(msg) from e
+            raise ToolError(f"Server '{server}' does not advertise resources capabilities") from e
 
         if res_caps is None:
-            msg = f"Server '{server}' does not advertise resources capabilities"
-            raise ToolError(msg)
+            raise ToolError(f"Server '{server}' does not advertise resources capabilities")
 
         if feature is ResourceCapabilityFeature.SUBSCRIBE:
             ok = bool(res_caps.subscribe)
@@ -808,9 +802,7 @@ class ResourcesServer(EnhancedFastMCP):
             ok = bool(res_caps.listChanged)
             needed = "resources.listChanged"
         else:
-            msg = f"Unknown capability feature: {feature}"
-            raise ToolError(msg)
+            raise ToolError(f"Unknown capability feature: {feature}")
 
         if not ok:
-            msg = f"Server '{server}' does not support {needed}"
-            raise ToolError(msg)
+            raise ToolError(f"Server '{server}' does not support {needed}")

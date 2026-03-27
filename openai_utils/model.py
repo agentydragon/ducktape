@@ -274,8 +274,7 @@ ResponseOutItem = Annotated[
 
 @singledispatch
 def response_out_item_to_input(item: BaseModel) -> InputItem:
-    msg = f"Unsupported response item type: {type(item)!r}"
-    raise TypeError(msg)
+    raise TypeError(f"Unsupported response item type: {type(item)!r}")
 
 
 def _identity(item: InputItem) -> InputItem:
@@ -304,8 +303,7 @@ def _message_output_to_assistant(message: ResponseOutputMessage) -> AssistantMes
         if isinstance(content_item, ResponseOutputText)
     ]
     if not parts:
-        msg = "ResponseOutputMessage has no text parts"
-        raise ValueError(msg)
+        raise ValueError("ResponseOutputMessage has no text parts")
     # Preserve id - OpenAI requires it when the message follows a reasoning item
     return AssistantMessageOut(content=parts, id=message.id)
 
@@ -343,8 +341,7 @@ class ResponsesResult(BaseModel):
             elif isinstance(item, ResponseOutputMessage):
                 out_items.append(_message_output_to_assistant(item))
             else:
-                msg = f"Unsupported output item type: {type(item)}"
-                raise NotImplementedError(msg)
+                raise NotImplementedError(f"Unsupported output item type: {type(item)}")
         usage = ResponseUsage.from_sdk(sdk_resp.usage) if sdk_resp.usage else None
         return cls(id=sdk_resp.id, usage=usage, output=out_items)
 

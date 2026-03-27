@@ -11,21 +11,18 @@ async def resolve_habit(client: HabitifyClient, id: str | None = None, name: str
     """
     if id:
         if not isinstance(id, str):
-            msg = "Habit ID must be a string."
-            raise HabitifyError(msg)
+            raise HabitifyError("Habit ID must be a string.")
         return ResolvedHabit(habit_id=id if id.startswith("-") else f"-{id}")
 
     if not name:
-        msg = "Either id or name must be provided."
-        raise HabitifyError(msg)
+        raise HabitifyError("Either id or name must be provided.")
 
     habits = await client.get_habits()
     habit_name = name.lower().strip()
     matching_habits = [h for h in habits if habit_name in h.name.lower()]
 
     if not matching_habits:
-        msg = f'No habit found with name containing "{name}"'
-        raise HabitifyError(msg)
+        raise HabitifyError(f'No habit found with name containing "{name}"')
 
     if len(matching_habits) > 1:
         exact_match = next((h for h in matching_habits if h.name.lower() == habit_name), None)
@@ -33,8 +30,7 @@ async def resolve_habit(client: HabitifyClient, id: str | None = None, name: str
             return ResolvedHabit(habit_id=exact_match.id, habit_name=exact_match.name, match_type="exact")
 
         matches = ", ".join(f"{h.name} ({h.id})" for h in matching_habits[:5])
-        msg = f'Multiple habits found matching "{name}": {matches}'
-        raise HabitifyError(msg)
+        raise HabitifyError(f'Multiple habits found matching "{name}": {matches}')
 
     return ResolvedHabit(
         habit_id=matching_habits[0].id,

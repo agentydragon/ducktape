@@ -124,8 +124,7 @@ async def test_grader_clusters_novel_issues_from_two_critiques(
             try:
                 await asyncio.wait_for(clustering_done.wait(), timeout=90)
             except TimeoutError:
-                msg = "Clustering did not complete within timeout"
-                raise AssertionError(msg)
+                raise AssertionError("Clustering did not complete within timeout")
 
         # Assert cluster was created with 2 members
         with db.session() as session:

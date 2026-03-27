@@ -130,21 +130,19 @@ class ScenarioExecutor:
         url = f"http://127.0.0.1:{port}{normalized_path}"
         result = await self.run_in_container(container, ["curl", "-sS", "-o", "-", "-w", "\\n%{http_code}", url])
         if result.returncode != 0 or not result.stdout:
-            msg = f"HTTP probe failed: {result.stderr.strip() if result.stderr else result.stdout}"
-            raise ScenarioExecutionError(msg)
+            raise ScenarioExecutionError(
+                f"HTTP probe failed: {result.stderr.strip() if result.stderr else result.stdout}"
+            )
         stdout = result.stdout
         body, _, status_line = stdout.rpartition("\n")
         try:
             status = int(status_line.strip())
         except ValueError as exc:
-            msg = f"Unexpected status line from curl: {status_line!r}"
-            raise ScenarioExecutionError(msg) from exc
+            raise ScenarioExecutionError(f"Unexpected status line from curl: {status_line!r}") from exc
         if status != expect_status:
-            msg = f"Status {status} != expected {expect_status}"
-            raise ScenarioExecutionError(msg)
+            raise ScenarioExecutionError(f"Status {status} != expected {expect_status}")
         if expect_body_includes and expect_body_includes not in body:
-            msg = f"Body missing expected content: {expect_body_includes!r}"
-            raise ScenarioExecutionError(msg)
+            raise ScenarioExecutionError(f"Body missing expected content: {expect_body_includes!r}")
         return ProbeHttpResult(
             port=port, path=normalized_path, http_status=status, body_excerpt=body[:500] if body else None
         )
@@ -161,8 +159,7 @@ class ScenarioExecutor:
     async def verify_file_contents(self, path: str, expected: str) -> VerifyFileContentsResult:
         contents = await self._read_file(path)
         if contents != expected:
-            msg = f"{path} contents did not match expected text"
-            raise ScenarioExecutionError(msg)
+            raise ScenarioExecutionError(f"{path} contents did not match expected text")
         return VerifyFileContentsResult(path=path)
 
     async def verify_file_contains(
@@ -171,18 +168,15 @@ class ScenarioExecutor:
         contents = await self._read_file(path)
         missing = [value for value in includes if value not in contents]
         if missing:
-            msg = f"{path} missing expected contents: {missing}"
-            raise ScenarioExecutionError(msg)
+            raise ScenarioExecutionError(f"{path} missing expected contents: {missing}")
         if min_size_bytes is not None and len(contents.encode("utf-8")) < min_size_bytes:
-            msg = f"{path} smaller than {min_size_bytes} bytes"
-            raise ScenarioExecutionError(msg)
+            raise ScenarioExecutionError(f"{path} smaller than {min_size_bytes} bytes")
         return VerifyFileContainsResult(path=path, includes=list(includes), min_size_bytes=min_size_bytes)
 
     async def kill_process(self, *, container: str, pattern: str) -> KillProcessResult:
         result = await self.run_in_container(container, ["pkill", "-f", pattern])
         if result.returncode not in (0, 1):
-            msg = f"pkill failed: {result.stderr.strip() if result.stderr else result.stdout}"
-            raise ScenarioExecutionError(msg)
+            raise ScenarioExecutionError(f"pkill failed: {result.stderr.strip() if result.stderr else result.stdout}")
         return KillProcessResult(container=container, pattern=pattern)
 
     # ------------------------------------------------------------------ #
@@ -236,16 +230,16 @@ class ScenarioExecutor:
     # ------------------------------------------------------------------ #
     def _require_last_message(self) -> MatrixMessage:
         if self._last_matrix_message is None:
-            msg = "No Matrix message recorded yet"
-            raise ScenarioExecutionError(msg)
+            raise ScenarioExecutionError("No Matrix message recorded yet")
         return self._last_matrix_message
 
     async def _read_file(self, path: str) -> str:
         command = ["/bin/sh", "-c", f"cat {shlex.quote(path)}"]
         result = await self.run_in_container("emberd", command)
         if result.returncode != 0:
-            msg = f"Failed to read file {path}: {result.stderr.strip() if result.stderr else result.stdout}"
-            raise ScenarioExecutionError(msg)
+            raise ScenarioExecutionError(
+                f"Failed to read file {path}: {result.stderr.strip() if result.stderr else result.stdout}"
+            )
         return result.stdout
 
 

@@ -293,8 +293,7 @@ async def analyze_vision(
 def extract_frames(video_path: Path, frame_dir: Path) -> int:
     """Extract all frames from video as PNGs. Returns frame count."""
     if not shutil.which("ffmpeg"):
-        msg = "ffmpeg not found in PATH"
-        raise RuntimeError(msg)
+        raise RuntimeError("ffmpeg not found in PATH")
     frame_dir.mkdir(exist_ok=True)
     subprocess.run(
         ["ffmpeg", "-y", "-i", str(video_path), "-vsync", "0", str(frame_dir / "frame_%05d.png")],

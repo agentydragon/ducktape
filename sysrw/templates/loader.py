@@ -44,11 +44,9 @@ def validate_template_text(text: str) -> None:
 def validate_template_file(template_path: Path) -> None:
     """Fail fast if template file is unreadable or invalid."""
     if not isinstance(template_path, Path):
-        msg = "template_path must be a pathlib.Path"
-        raise ValueError(msg)
+        raise ValueError("template_path must be a pathlib.Path")
     if not template_path.exists() or not template_path.is_file():
-        msg = f"Template not found or not a file: {template_path}"
-        raise FileNotFoundError(msg)
+        raise FileNotFoundError(f"Template not found or not a file: {template_path}")
     text = template_path.read_text(encoding="utf-8")
     validate_template_text(text)
 

@@ -118,8 +118,7 @@ async def test_grader_picks_up_drift(e2e_stack, test_snapshot, all_files_scope, 
             try:
                 await asyncio.wait_for(grading_done.wait(), timeout=90)
             except TimeoutError:
-                msg = "Grading did not complete within timeout"
-                raise AssertionError(msg)
+                raise AssertionError("Grading did not complete within timeout")
 
         # Assert grading happened
         with db.session() as session:

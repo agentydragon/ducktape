@@ -30,8 +30,7 @@ def create_runner(
         ValueError: If runner type is unknown
     """
     if runner_name not in runner_configs:
-        msg = f"Unknown runner: {runner_name}"
-        raise ValueError(msg)
+        raise ValueError(f"Unknown runner: {runner_name}")
 
     runner_config = runner_configs[runner_name]
     runner_type = runner_config["type"]
@@ -42,13 +41,10 @@ def create_runner(
         return ClaudeRunner(runner_id=runner_name, config=config)
     if runner_type == "openai_runner":
         if openai_model is None:
-            msg = "OpenAIRunner requires openai_model"
-            raise ValueError(msg)
+            raise ValueError("OpenAIRunner requires openai_model")
         if docker_client is None:
-            msg = "OpenAIRunner requires docker_client"
-            raise ValueError(msg)
+            raise ValueError("OpenAIRunner requires docker_client")
         return OpenAIRunner(
             runner_id=runner_name, config=config, openai_model=openai_model, docker_client=docker_client
         )
-    msg = f"Unknown runner type: {runner_type}"
-    raise ValueError(msg)
+    raise ValueError(f"Unknown runner type: {runner_type}")

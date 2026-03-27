@@ -299,8 +299,7 @@ def kill_daemon_at_wt_dir(wt_dir: Path) -> None:
         result = run_cli_command(["sh", "kill-daemon"], env=env, timeout=timedelta(seconds=5))
     except Exception as e:
         # Don't attempt any PID-based killing here; surface error
-        msg = f"kill-daemon invocation failed for {wt_dir}: {e}"
-        raise AssertionError(msg) from e
+        raise AssertionError(f"kill-daemon invocation failed for {wt_dir}: {e}") from e
 
     # Wait up to ~1s for files to be removed by daemon shutdown
     removed = wait_until(
@@ -587,8 +586,9 @@ def shell_runner(tmp_path: Path):
             # Find the Bazel-built wt_cli binary - tests require it for proper environment setup
             wt_cli_path = _find_wt_cli_binary()
             if not wt_cli_path:
-                msg = "wt_cli binary not found in runfiles. Ensure //wt:wt_cli is in the test's data dependencies."
-                raise RuntimeError(msg)
+                raise RuntimeError(
+                    "wt_cli binary not found in runfiles. Ensure //wt:wt_cli is in the test's data dependencies."
+                )
             wt_fn = _generate_wt_function_for_binary(wt_cli_path)
 
             full_script = f"""#!/bin/bash

@@ -91,8 +91,7 @@ class Github:
         return []
 """
     else:
-        msg = "unknown variant"
-        raise ValueError(msg)
+        raise ValueError("unknown variant")
     (mock_pkg / "__init__.py").write_text(body)
 
 
@@ -107,8 +106,7 @@ def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict[str, Any])
             f.flush()
             line = f.readline()
             if not line:
-                msg = "No response from daemon"
-                raise AssertionError(msg)
+                raise AssertionError("No response from daemon")
             result: dict[str, Any] = json.loads(line.decode())
             return result
 

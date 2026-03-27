@@ -70,8 +70,7 @@ class WorktreeService:
         if config.post_creation_script:
             script = config.post_creation_script
             if not script.exists() or not script.is_file():
-                msg = f"Post-creation script {script} is not a file"
-                raise FileNotFoundError(msg)
+                raise FileNotFoundError(f"Post-creation script {script} is not a file")
 
     def _wtid_to_path(self, config: Configuration, wtid: WorktreeID) -> Path:
         return wtid_to_path(config, wtid)
@@ -85,8 +84,7 @@ class WorktreeService:
         worktree_path: Path = config.worktrees_dir / name
 
         if worktree_path.exists():
-            msg = f"Worktree '{name}' already exists at {worktree_path}"
-            raise RuntimeError(msg)
+            raise RuntimeError(f"Worktree '{name}' already exists at {worktree_path}")
 
         # Ensure worktrees directory exists
         config.worktrees_dir.mkdir(parents=True, exist_ok=True)
@@ -105,8 +103,7 @@ class WorktreeService:
                 if source_worktree:
                     logger.info("Hydrating new worktree in %s from %s.", worktree_path, source_worktree)
                     if not source_worktree.exists():
-                        msg = f"Source worktree does not exist: {source_worktree}"
-                        raise RuntimeError(msg)
+                        raise RuntimeError(f"Source worktree does not exist: {source_worktree}")
                     self._hydrate_worktree(config, source_worktree, worktree_path)
                 else:
                     logger.info("Hydrating new worktree in %s by checking out %s.", worktree_path, branch_name)
@@ -135,8 +132,7 @@ class WorktreeService:
         """Require that a worktree exists and return its path."""
         worktree_path = self.get_worktree_path(config, name)
         if not worktree_path.exists():
-            msg = f"Worktree '{name}' does not exist"
-            raise RuntimeError(msg)
+            raise RuntimeError(f"Worktree '{name}' does not exist")
         return worktree_path
 
     def _hydrate_worktree(self, config: Configuration, src: Path, dst: Path) -> None:

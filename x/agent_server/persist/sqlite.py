@@ -326,8 +326,7 @@ WHERE agent_id = ? AND id = ?
         ):
             row = await cur.fetchone()
             if not row:
-                msg = "proposal_not_found"
-                raise KeyError(msg)
+                raise KeyError("proposal_not_found")
             content = cast(str, row["content"])
         # Persist as active policy and mark proposal approved in one transaction
         async with self.open() as db:
@@ -373,8 +372,7 @@ WHERE agent_id = ? AND id = ?
         # Use pydantic_core.to_json for proper serialization of nested Pydantic models
         s = pydantic_core.to_json(payload, fallback=str).decode("utf-8")
         if len(s.encode("utf-8")) > MAX_EVENT_PAYLOAD_BYTES:
-            msg = f"event payload exceeds {MAX_EVENT_PAYLOAD_BYTES} bytes"
-            raise ValueError(msg)
+            raise ValueError(f"event payload exceeds {MAX_EVENT_PAYLOAD_BYTES} bytes")
         async with self.open() as db:
             await db.execute(
                 "INSERT INTO events (agent_id, seq, ts, type, payload, call_id, tool_key) VALUES (?, ?, ?, ?, ?, ?, ?)",

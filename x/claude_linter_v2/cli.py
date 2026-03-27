@@ -162,8 +162,7 @@ def hook(request_json: str | None) -> None:
         _try_send_crash_notification("Claude Linter Hook Crashed", f"Unknown hook type: {hook_type}")
 
         # DO NOT output JSON - just crash
-        msg = f"Unknown hook type: {hook_type}"
-        raise ValueError(msg)
+        raise ValueError(f"Unknown hook type: {hook_type}")
 
     try:
         request = request_class(**request_data)

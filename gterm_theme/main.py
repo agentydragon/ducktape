@@ -61,11 +61,9 @@ class ProfileDConf:
                 return value
             if isinstance(value, list) and all(isinstance(x, str) for x in value):
                 return value
-            msg = f"Unsupported dconf value type: {type(value)}"
-            raise TypeError(msg)
+            raise TypeError(f"Unsupported dconf value type: {type(value)}")
         except subprocess.CalledProcessError as e:
-            msg = f"Reading '{property_name}' from {self.profile_uuid} failed"
-            raise KeyError(msg) from e
+            raise KeyError(f"Reading '{property_name}' from {self.profile_uuid} failed") from e
 
     @property
     def visible_name(self) -> str:
@@ -90,8 +88,7 @@ class ProfileDConf:
         elif isinstance(value, list) and all(isinstance(x, str) for x in value):
             v = repr(value)
         else:
-            msg = f"Unsupported value type: {type(value)}. Must be bool, str, or list[str]."
-            raise TypeError(msg)
+            raise TypeError(f"Unsupported value type: {type(value)}. Must be bool, str, or list[str].")
         subprocess.check_call(["dconf", "write", self._path(property_name), v])
 
 
@@ -156,8 +153,7 @@ def create_or_update_auto_profile(source_profile_name: str, gsettings_profiles: 
     # Check if auto profile exists
     auto = [name for name in uuid_by_name if name.startswith(AUTO_PROFILE_NAME)]
     if len(auto) > 1:
-        msg = f"Multiple Auto profiles found: {auto}"
-        raise ValueError(msg)
+        raise ValueError(f"Multiple Auto profiles found: {auto}")
     if len(auto) == 1:
         auto_uuid = uuid_by_name[auto[0]]
         logging.info(f"Found existing Auto profile: {auto_uuid}")

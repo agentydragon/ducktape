@@ -536,8 +536,7 @@ class WtDaemon:
 
         # Start filesystem watcher for worktrees directory
         if not self.config.worktrees_dir.exists():
-            msg = f"Worktrees directory does not exist: {self.config.worktrees_dir}"
-            raise RuntimeError(msg)
+            raise RuntimeError(f"Worktrees directory does not exist: {self.config.worktrees_dir}")
         self._worktree_observer = start_watcher(self.store, self.config.worktrees_dir)
 
         self._discovery_kick = asyncio.create_task(self._run_discovery_once())

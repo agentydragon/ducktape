@@ -16,8 +16,7 @@ ROOM_ID_ENV: Final[str] = "EMBER_MATRIX_ROOM_ID"
 async def main() -> None:
     room_id = os.environ.get(ROOM_ID_ENV)
     if not room_id:
-        msg = f"Set {ROOM_ID_ENV} to the Matrix room (e.g. !abc123:example.org)"
-        raise SystemExit(msg)
+        raise SystemExit(f"Set {ROOM_ID_ENV} to the Matrix room (e.g. !abc123:example.org)")
 
     client = MatrixClient.from_projected_secrets()
     async with client.session() as matrix:

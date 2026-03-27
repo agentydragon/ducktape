@@ -275,8 +275,7 @@ class GitRoServer(SimpleFastMCP):
             elif isinstance(obj_any, pygit2.Commit):
                 obj = obj_any
             else:
-                msg = f"Expected commit or tag, got {type(obj_any).__name__} for {objspec!r}"
-                raise TypeError(msg)
+                raise TypeError(f"Expected commit or tag, got {type(obj_any).__name__} for {objspec!r}")
 
             # Build commit diff against first parent (or empty tree)
             if obj.parents:
@@ -341,8 +340,7 @@ class GitRoServer(SimpleFastMCP):
                     entry = conflict_entries.get(stage)
 
                 if entry is None:
-                    msg = f"Index entry not found: {objspec}"
-                    raise FileNotFoundError(msg)
+                    raise FileNotFoundError(f"Index entry not found: {objspec}")
                 blob = state[entry.id].peel(pygit2.Blob)
                 text = blob.data.decode("utf-8")
                 return apply_text_slice(text, input.slice)
@@ -374,8 +372,7 @@ class GitRoServer(SimpleFastMCP):
                         blob = state[tree_entry.id].peel(pygit2.Blob)
                         text = blob.data.decode("utf-8")
                         return apply_text_slice(text, input.slice)
-                msg = f"Path not found in tree: {path}"
-                raise FileNotFoundError(msg)
+                raise FileNotFoundError(f"Path not found in tree: {path}")
 
             # Raw OID or other ref - read object directly
             obj = state.revparse_single(objspec)
@@ -397,8 +394,7 @@ class GitRoServer(SimpleFastMCP):
                 # List tree entries
                 lines = [f"{e.filemode:06o} {e.type_str} {e.id}\t{e.name}" for e in obj]
                 return apply_text_slice("\n".join(lines), input.slice)
-            msg = f"Unsupported object type: {type(obj).__name__}"
-            raise TypeError(msg)
+            raise TypeError(f"Unsupported object type: {type(obj).__name__}")
 
         self.cat_file_tool = self.flat_model()(cat_file)
 

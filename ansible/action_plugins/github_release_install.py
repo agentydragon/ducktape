@@ -188,8 +188,7 @@ class ActionModule(ActionBase):
         # Pass all arguments to the installer class, which will extract what it needs
         # The installer class constructor is responsible for validating required params
         if not (method := args.get("method")):
-            msg = "Missing required parameter: method"
-            raise ActionError(msg)
+            raise ActionError("Missing required parameter: method")
 
         if isinstance(method, str):
             method_name, method_args = method, {}
@@ -197,12 +196,10 @@ class ActionModule(ActionBase):
             method_name, method_args = method.get("name"), method.copy()
             method_args.pop("name")
         else:
-            msg = f"Invalid {type(method) = }."
-            raise ActionError(msg)
+            raise ActionError(f"Invalid {type(method) = }.")
         assert isinstance(method_name, str)
         if not (klass := INSTALL_METHODS.get(method_name)):
-            msg = f"Invalid {method = }. Expected one of: {', '.join(INSTALL_METHODS.keys())}"
-            raise ActionError(msg)
+            raise ActionError(f"Invalid {method = }. Expected one of: {', '.join(INSTALL_METHODS.keys())}")
         installer = klass(**method_args)
         installer.validate()
         return installer

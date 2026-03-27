@@ -37,8 +37,7 @@ def make_policy(
     decision_expr examples: 'ApprovalDecision.DENY_CONTINUE', 'ApprovalDecision.ASK'
     """
     if default not in {ApprovalDecision.ASK, ApprovalDecision.ALLOW}:
-        msg = f"default must be ASK or ALLOW, got {default}"
-        raise ValueError(msg)
+        raise ValueError(f"default must be ASK or ALLOW, got {default}")
     default_expr = "ApprovalDecision.ASK" if default == ApprovalDecision.ASK else "ApprovalDecision.ALLOW"
     doc = doc or f"policy for {server}.{tool} returns explicit decision; default {default.value}"
     header = (

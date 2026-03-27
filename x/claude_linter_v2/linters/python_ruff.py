@@ -39,8 +39,7 @@ class PythonRuffLinter:
         self.force_select = force_select or []
         ruff_bin = find_ruff_binary()
         if not ruff_bin:
-            msg = "ruff binary not found. Set RUFF_BIN env var or add ruff to PATH."
-            raise RuntimeError(msg)
+            raise RuntimeError("ruff binary not found. Set RUFF_BIN env var or add ruff to PATH.")
         self._ruff_bin: str = ruff_bin
 
     def check_code(self, code: str, file_path: Path, critical_only: bool = True) -> list[Violation]:

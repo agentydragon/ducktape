@@ -212,8 +212,7 @@ class ResponsesDB:
 
     def _require_db_url(self) -> str:
         if not self._db_url:
-            msg = "ADGN_RESP_DB_URL must be set to a Postgres connection string"
-            raise RuntimeError(msg)
+            raise RuntimeError("ADGN_RESP_DB_URL must be set to a Postgres connection string")
         return self._db_url
 
     async def close(self) -> None:
@@ -232,8 +231,7 @@ class ResponsesDB:
 
     async def create_api_key(self, name: str, alias: str = "default") -> tuple[str, APIKeyRecord]:
         if self._session_factory is None:
-            msg = "Database not initialized"
-            raise RuntimeError(msg)
+            raise RuntimeError("Database not initialized")
         token_core = secrets.token_hex(24)
         token = f"sk-rsp_{token_core}"
         prefix = token_core[:8]
@@ -251,8 +249,7 @@ class ResponsesDB:
 
     async def list_api_keys(self) -> Sequence[ClientAPIKey]:
         if self._session_factory is None:
-            msg = "Database not initialized"
-            raise RuntimeError(msg)
+            raise RuntimeError("Database not initialized")
         async with self._session_factory() as session:
             stmt = select(ClientAPIKey).order_by(ClientAPIKey.created_at.desc())
             result = await session.execute(stmt)
@@ -260,8 +257,7 @@ class ResponsesDB:
 
     async def revoke_api_key(self, key_id: uuid.UUID) -> bool:
         if self._session_factory is None:
-            msg = "Database not initialized"
-            raise RuntimeError(msg)
+            raise RuntimeError("Database not initialized")
         async with self._session_factory() as session:
             result = await session.execute(
                 update(ClientAPIKey)
@@ -277,8 +273,7 @@ class ResponsesDB:
 
     async def verify_api_key(self, token: str) -> APIKeyRecord | None:
         if self._session_factory is None:
-            msg = "Database not initialized"
-            raise RuntimeError(msg)
+            raise RuntimeError("Database not initialized")
         if not token.startswith("sk-rsp_"):
             return None
         core = token[len("sk-rsp_") :]
@@ -303,8 +298,7 @@ class ResponsesDB:
 
     async def claim_key(self, key: str, model: str, request_body: dict[str, Any], api_key: APIKeyRecord | None) -> bool:
         if self._session_factory is None:
-            msg = "Database not initialized"
-            raise RuntimeError(msg)
+            raise RuntimeError("Database not initialized")
         now = datetime.now(UTC)
         stmt = (
             pg_insert(Response)
@@ -331,8 +325,7 @@ class ResponsesDB:
 
     async def mark_in_progress(self, key: str, response_id: str | None) -> None:
         if self._session_factory is None:
-            msg = "Database not initialized"
-            raise RuntimeError(msg)
+            raise RuntimeError("Database not initialized")
         async with self._session_factory() as session:
             update_result = await session.execute(
                 update(Response)
@@ -350,8 +343,7 @@ class ResponsesDB:
 
     async def append_frame(self, key: str, frame_obj: ResponseStreamEvent, *, response_id: str | None = None) -> int:
         if self._session_factory is None:
-            msg = "Database not initialized"
-            raise RuntimeError(msg)
+            raise RuntimeError("Database not initialized")
         response = response_from_event(frame_obj)
         derived_response_id = response.id if response is not None else None
         if response_id is None and derived_response_id is not None:
@@ -391,8 +383,7 @@ class ResponsesDB:
         token_usage: ResponseUsage | None,
     ) -> None:
         if self._session_factory is None:
-            msg = "Database not initialized"
-            raise RuntimeError(msg)
+            raise RuntimeError("Database not initialized")
         async with self._session_factory() as session:
             await session.execute(
                 update(Response)
@@ -417,8 +408,7 @@ class ResponsesDB:
         self, key: str, *, error_reason: str | None, response_id: str | None, error: ErrorPayload | None
     ) -> None:
         if self._session_factory is None:
-            msg = "Database not initialized"
-            raise RuntimeError(msg)
+            raise RuntimeError("Database not initialized")
         async with self._session_factory() as session:
             await session.execute(
                 update(Response)
@@ -442,8 +432,7 @@ class ResponsesDB:
 
     async def list_responses(self, *, limit: int, offset: int = 0) -> tuple[list[Response], int]:
         if self._session_factory is None:
-            msg = "Database not initialized"
-            raise RuntimeError(msg)
+            raise RuntimeError("Database not initialized")
         async with self._session_factory() as session:
             stmt = (
                 select(Response)
@@ -459,8 +448,7 @@ class ResponsesDB:
 
     async def get_response(self, identifier: str) -> Response | None:
         if self._session_factory is None:
-            msg = "Database not initialized"
-            raise RuntimeError(msg)
+            raise RuntimeError("Database not initialized")
         async with self._session_factory() as session:
             column = Response.response_id if identifier.startswith("resp_") else Response.cache_key
             result = await session.execute(
@@ -474,8 +462,7 @@ class ResponsesDB:
         self, identifier: str, *, limit: int | None = None, after_sequence_number: int | None = None
     ) -> list[ResponseFrame]:
         if self._session_factory is None:
-            msg = "Database not initialized"
-            raise RuntimeError(msg)
+            raise RuntimeError("Database not initialized")
         async with self._session_factory() as session:
             key_stmt = select(Response.cache_key).where(
                 Response.response_id == identifier
@@ -525,8 +512,7 @@ class ResponsesDB:
 
     async def get_cached_response_payload(self, key: str) -> OpenAIResponse | None:
         if self._session_factory is None:
-            msg = "Database not initialized"
-            raise RuntimeError(msg)
+            raise RuntimeError("Database not initialized")
         async with self._session_factory() as session:
             snapshot = await session.get(ResponseSnapshot, key)
             if snapshot is None:
@@ -538,8 +524,7 @@ class ResponsesDB:
 
     async def get_response_detail(self, identifier: str) -> ResponseDetail | None:
         if self._session_factory is None:
-            msg = "Database not initialized"
-            raise RuntimeError(msg)
+            raise RuntimeError("Database not initialized")
         async with self._session_factory() as session:
             if identifier.startswith("resp_"):
                 result = await session.execute(
@@ -601,8 +586,7 @@ class ResponsesDB:
 
     async def ensure_event_listener(self) -> None:
         if self._engine is None:
-            msg = "Database not initialized"
-            raise RuntimeError(msg)
+            raise RuntimeError("Database not initialized")
         if self._listener_conn is not None:
             return
         self._listener_conn = await asyncpg.connect(self._asyncpg_dsn())
