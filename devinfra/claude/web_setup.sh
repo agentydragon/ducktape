@@ -121,6 +121,9 @@ nix show-config 2>/dev/null | grep -E "max-jobs|sandbox|build-users" || true
 echo "---"
 
 echo "[$(date -Iseconds)] Installing web session tools..."
+echo "  FLAKE=${FLAKE}"
+echo "  pwd=$(pwd)"
+echo "  flake.nix exists: $(test -f flake.nix && echo yes || echo no)"
 # Pass --max-jobs explicitly to override any nix.conf misconfiguration.
 nix profile install --max-jobs auto "${FLAKE}#web-session"
 echo "[$(date -Iseconds)] Web session tools installed."
