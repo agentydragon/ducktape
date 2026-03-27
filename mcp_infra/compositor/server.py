@@ -54,13 +54,13 @@ class ChildNotificationHandler(MessageHandler):
         self._server_prefix = server_prefix
 
     async def on_resource_list_changed(self, message: mcp_types.ResourceListChangedNotification) -> None:
-        self._compositor._pending_resource_list_changes.add(self._server_prefix)
+        self._compositor.pending_resource_list_changes.add(self._server_prefix)
         # No forwarding here; child client handles forwarding via proxy
-        await self._compositor._notify_resource_list_change(self._server_prefix)
+        await self._compositor.notify_resource_list_change(self._server_prefix)
 
     async def on_resource_updated(self, message: mcp_types.ResourceUpdatedNotification) -> None:
         # Forward to listeners with origin attribution
-        await self._compositor._notify_resource_updated(self._server_prefix, str(message.params.uri))
+        await self._compositor.notify_resource_updated(self._server_prefix, str(message.params.uri))
 
 
 class CompositorState(Enum):
@@ -130,7 +130,7 @@ class BaseCompositor(FastMCP):
         self._mount_listeners: list[Callable[[MCPMountPrefix, MountEvent], Awaitable[None] | None]] = []
 
         # Resource change tracking
-        self._pending_resource_list_changes: set[MCPMountPrefix] = set()
+        self.pending_resource_list_changes: set[MCPMountPrefix] = set()
         self._resource_list_change_listeners: list[Callable[[MCPMountPrefix], Awaitable[None] | None]] = []
         self._resource_updated_listeners: list[Callable[[MCPMountPrefix, str], Awaitable[None] | None]] = []
 
@@ -157,7 +157,7 @@ class BaseCompositor(FastMCP):
         """
         self._resource_list_change_listeners.append(cb)
 
-    async def _notify_resource_list_change(self, prefix: MCPMountPrefix) -> None:
+    async def notify_resource_list_change(self, prefix: MCPMountPrefix) -> None:
         for cb in list(self._resource_list_change_listeners):
             res = cb(prefix)
             if asyncio.iscoroutine(res):
@@ -171,7 +171,7 @@ class BaseCompositor(FastMCP):
         """
         self._resource_updated_listeners.append(cb)
 
-    async def _notify_resource_updated(self, prefix: MCPMountPrefix, uri: str) -> None:
+    async def notify_resource_updated(self, prefix: MCPMountPrefix, uri: str) -> None:
         for cb in list(self._resource_updated_listeners):
             res = cb(prefix, uri)
             if asyncio.iscoroutine(res):
@@ -181,8 +181,8 @@ class BaseCompositor(FastMCP):
 
     def pop_recent_resource_list_changes(self) -> list[MCPMountPrefix]:
         """Return and clear servers that recently reported resource list changes."""
-        names = sorted(self._pending_resource_list_changes)
-        self._pending_resource_list_changes.clear()
+        names = sorted(self.pending_resource_list_changes)
+        self.pending_resource_list_changes.clear()
         return names
 
     async def server_entries(self) -> dict[MCPMountPrefix, ServerEntry]:
@@ -474,7 +474,7 @@ class BaseCompositor(FastMCP):
         # Defensive check: warn if mount is in unexpected state
         if not mount.is_active and not mount.is_failed:
             logger.warning(
-                f"Unmounting server '{prefix}' in unexpected state: {mount.state.name}. Cleanup will proceed anyway."
+                "Unmounting server '%s' in unexpected state: %s. Cleanup will proceed anyway.", prefix, mount.state.name
             )
 
         # Cleanup (exception-safe, idempotent)
@@ -482,7 +482,7 @@ class BaseCompositor(FastMCP):
         try:
             await mount.cleanup()
         except Exception as e:
-            logger.exception(f"Error cleaning up mount '{prefix}' (server will still be unmounted)", exc_info=e)
+            logger.exception("Error cleaning up mount '%s' (server will still be unmounted)", prefix, exc_info=e)
 
         # Remove from dict (always, even if cleanup failed)
         async with self._mount_lock:
@@ -572,14 +572,15 @@ class BaseCompositor(FastMCP):
                     await self.unmount_server(name, _allow_pinned=True)
                 except Exception as e:
                     exceptions.append(e)
-                    logger.exception(f"Failed to unmount pinned server '{name}' during exit", exc_info=e)
+                    logger.exception("Failed to unmount pinned server '%s' during exit", name, exc_info=e)
         finally:
             async with self._state_lock:
                 self._state = CompositorState.CLOSED
 
         # Raise collected exceptions as a group
         if exceptions:
-            raise ExceptionGroup("Failed to unmount one or more servers during compositor exit", exceptions)
+            msg = "Failed to unmount one or more servers during compositor exit"
+            raise ExceptionGroup(msg, exceptions)
 
         return False  # Don't suppress exceptions
 
@@ -606,11 +607,12 @@ class BaseCompositor(FastMCP):
                 await self.unmount_server(name)
             except Exception as e:
                 exceptions.append(e)
-                logger.exception(f"Failed to unmount server '{name}' during cleanup", exc_info=e)
+                logger.exception("Failed to unmount server '%s' during cleanup", name, exc_info=e)
 
         # Raise collected exceptions as a group
         if exceptions:
-            raise ExceptionGroup("Failed to unmount one or more non-pinned servers", exceptions)
+            msg = "Failed to unmount one or more non-pinned servers"
+            raise ExceptionGroup(msg, exceptions)
 
     def __del__(self):
         """Warn if compositor is garbage collected without proper cleanup.
@@ -651,7 +653,7 @@ class BaseCompositor(FastMCP):
         print(msg, file=sys.stderr)
 
     # ---- Internals ----------------------------------------------------------
-    async def _mount_names(self) -> list[str]:
+    async def mount_names(self) -> list[str]:
         async with self._mount_lock:
             return list(self._mounts.keys())
 

@@ -91,17 +91,17 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
             )
         )
         critic_run_id = start_output.critic_run_id
-        logger.info(f"PO got critic_run_id: {critic_run_id}")
+        logger.info("PO got critic_run_id: %s", critic_run_id)
 
         # Wait for critic container to finish
         completed: CriticRunStatus = yield from m.wait_until_critic_completed_roundtrip(
             critic_run_id, timeout_seconds=120
         )
-        logger.info(f"Critic completed: status={completed.status}")
+        logger.info("Critic completed: status=%s", completed.status)
 
         # Wait for grading (polls database directly inside container)
         wait_output: GradingStatusResponse = yield from m.wait_until_graded_roundtrip(critic_run_id, timeout_seconds=60)
-        logger.info(f"PO got grading: total_credit={wait_output.total_credit}")
+        logger.info("PO got grading: total_credit=%s", wait_output.total_credit)
 
         # Report success
         yield m.report_success()
@@ -117,7 +117,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         assert "critic" in system_text.lower(), (
             f"Expected system message to mention 'critic'. Got: {system_text[:200]}..."
         )
-        logger.info(f"Critic received system message ({len(system_text)} chars)")
+        logger.info("Critic received system message (%s chars)", len(system_text))
 
         # Submit zero issues
         yield m.submit(issues_count=0, summary="Critic completed")
@@ -268,7 +268,7 @@ async def test_po_creates_custom_critic_image(
         assert_that(result, exited_successfully())
         stdout = result.stdout if isinstance(result.stdout, str) else result.stdout.truncated_text
         new_digest = stdout.strip().split("\n")[-1]  # Last line is the digest
-        logger.info(f"Custom image digest: {new_digest}")
+        logger.info("Custom image digest: %s", new_digest)
 
         # Start the custom critic image (non-blocking)
         example = WholeSnapshotExample(kind=ExampleKind.WHOLE_SNAPSHOT, snapshot_slug=snapshot_slug)
@@ -282,17 +282,17 @@ async def test_po_creates_custom_critic_image(
             )
         )
         critic_run_id = start_output.critic_run_id
-        logger.info(f"Custom critic run: {critic_run_id}")
+        logger.info("Custom critic run: %s", critic_run_id)
 
         # Wait for critic container to finish
         completed: CriticRunStatus = yield from m.wait_until_critic_completed_roundtrip(
             critic_run_id, timeout_seconds=120
         )
-        logger.info(f"Critic completed: status={completed.status}")
+        logger.info("Critic completed: status=%s", completed.status)
 
         # Wait for grading to complete
         wait_output: GradingStatusResponse = yield from m.wait_until_graded_roundtrip(critic_run_id, timeout_seconds=60)
-        logger.info(f"Grading complete: total_credit={wait_output.total_credit}")
+        logger.info("Grading complete: total_credit=%s", wait_output.total_credit)
 
         yield m.report_success()
 
@@ -381,8 +381,8 @@ async def test_critic_cannot_push_images(e2e_stack, synced_db: Database, all_fil
         )
         stdout = result.stdout if hasattr(result, "stdout") else ""
         stderr = result.stderr if hasattr(result, "stderr") else ""
-        logger.info(f"Critic push attempt stdout: {stdout}")
-        logger.info(f"Critic push attempt stderr: {stderr}")
+        logger.info("Critic push attempt stdout: %s", stdout)
+        logger.info("Critic push attempt stderr: %s", stderr)
 
         # Submit zero issues (expected behavior: push failed, critic still completes)
         yield m.submit(issues_count=0, summary="Push attempt completed (expected to fail)")

@@ -150,7 +150,7 @@ class ClaudeCodeHookBase:
 
             except Exception:
                 # Log the exception
-                logger.error("Hook execution failed", exc_info=True)
+                logger.exception("Hook execution failed")
                 raise
 
             _emit_and_exit(response)

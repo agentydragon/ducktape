@@ -750,8 +750,8 @@ class ResourcesServer(EnhancedFastMCP):
 
     async def _present_servers(self) -> set[str]:
         # Include all mounted servers, including in-proc mounts without typed specs.
-        # Use compositor._mount_names() directly; do not swallow errors.
-        names = await self._compositor._mount_names()
+        # Use compositor.mount_names() directly; do not swallow errors.
+        names = await self._compositor.mount_names()
         return set(names)
 
     def _get_or_create_sub(self, server: str, uri: str) -> SubscriptionRecord:

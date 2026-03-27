@@ -101,12 +101,12 @@ class WorktreeService:
             # Hydrate with dirty state if source provided
             if config.hydrate_worktrees:
                 if source_worktree:
-                    logger.info(f"Hydrating new worktree in {worktree_path} from {source_worktree}.")
+                    logger.info("Hydrating new worktree in %s from %s.", worktree_path, source_worktree)
                     if not source_worktree.exists():
                         raise RuntimeError(f"Source worktree does not exist: {source_worktree}")
                     self._hydrate_worktree(config, source_worktree, worktree_path)
                 else:
-                    logger.info(f"Hydrating new worktree in {worktree_path} by checking out {branch_name}.")
+                    logger.info("Hydrating new worktree in %s by checking out %s.", worktree_path, branch_name)
                     repo = pygit2.Repository(worktree_path)
                     repo.set_head(f"refs/heads/{branch_name}")
                     repo.checkout_head(strategy=pygit2.GIT_CHECKOUT_FORCE)

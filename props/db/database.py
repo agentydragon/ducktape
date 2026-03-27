@@ -63,45 +63,45 @@ class Database:
         call dispose() when done.
         """
         db = cls.__new__(cls)
-        db._config = config
-        db._engine = create_engine(config.url, echo=False, poolclass=NullPool)
+        db.config = config
+        db.engine = create_engine(config.url, echo=False, poolclass=NullPool)
 
-        @event.listens_for(db._engine, "checkout")
+        @event.listens_for(db.engine, "checkout")
         def _register_composite_types(
             dbapi_connection: Any, connection_record: ConnectionPoolEntry, connection_proxy: Any
         ) -> None:
             try:
                 register_composite("stats_with_ci", dbapi_connection, globally=False)
             except Exception as e:
-                logger.debug(f"Could not register stats_with_ci composite type: {e}")
+                logger.debug("Could not register stats_with_ci composite type: %s", e)
 
-        db._scoped_factory = scoped_session(sessionmaker(bind=db._engine))
+        db.scoped_factory = scoped_session(sessionmaker(bind=db.engine))
         return db
 
     def __init__(self, config: DatabaseConfig) -> None:
-        self._config = config
+        self.config = config
         url = config.url
 
-        logger.info(f"Connecting to database: {config.host}:{config.port}/{config.database}")
-        self._engine: Engine = create_engine(url, echo=False, poolclass=NullPool)
+        logger.info("Connecting to database: %s:%s/%s", config.host, config.port, config.database)
+        self.engine: Engine = create_engine(url, echo=False, poolclass=NullPool)
 
         # Register composite type adapter on each checkout.
         # NullPool creates a fresh connection per checkout, so this runs on every use.
-        @event.listens_for(self._engine, "checkout")
+        @event.listens_for(self.engine, "checkout")
         def _register_composite_types(
             dbapi_connection: Any, connection_record: ConnectionPoolEntry, connection_proxy: Any
         ) -> None:
             try:
                 register_composite("stats_with_ci", dbapi_connection, globally=False)
             except Exception as e:
-                logger.debug(f"Could not register stats_with_ci composite type: {e}")
+                logger.debug("Could not register stats_with_ci composite type: %s", e)
 
         self._verify_connection()
-        self._scoped_factory = scoped_session(sessionmaker(bind=self._engine))
+        self.scoped_factory = scoped_session(sessionmaker(bind=self.engine))
 
     def _verify_connection(self, timeout_secs: int = 2) -> None:
         test_engine = create_engine(
-            self._engine.url.render_as_string(hide_password=False),
+            self.engine.url.render_as_string(hide_password=False),
             echo=False,
             connect_args={"connect_timeout": timeout_secs},
         )
@@ -118,7 +118,7 @@ class Database:
 
         Commits on successful exit, rolls back on exception.
         """
-        session = self._scoped_factory()
+        session = self.scoped_factory()
         try:
             yield session
             session.commit()
@@ -126,21 +126,13 @@ class Database:
             session.rollback()
             raise
         finally:
-            self._scoped_factory.remove()
+            self.scoped_factory.remove()
 
     def recreate(self) -> None:
         """Recreate database from scratch (drop all + schema via Alembic)."""
-        recreate_database(self._engine)
+        recreate_database(self.engine)
 
     def dispose(self) -> None:
         """Dispose engine and session factory."""
-        self._scoped_factory.remove()
-        self._engine.dispose()
-
-    @property
-    def config(self) -> DatabaseConfig:
-        return self._config
-
-    @property
-    def engine(self) -> Engine:
-        return self._engine
+        self.scoped_factory.remove()
+        self.engine.dispose()

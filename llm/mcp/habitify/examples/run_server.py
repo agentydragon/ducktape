@@ -56,15 +56,15 @@ def main() -> int:
             logger.info("Starting server with stdio transport...")
             server.run(transport="stdio")
         else:
-            logger.info(f"Starting server with SSE transport on port {args.port}...")
+            logger.info("Starting server with SSE transport on port %s...", args.port)
             server.run(transport="sse", port=args.port)
 
         return 0
     except KeyboardInterrupt:
         logger.info("Server stopped by keyboard interrupt")
         return 0
-    except Exception as e:
-        logger.error(f"Error running server: {e}", exc_info=True)
+    except Exception:
+        logger.exception("Error running server")
         return 1
 
 

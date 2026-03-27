@@ -48,7 +48,7 @@ class UiEventHandler(BaseHandler):
 
     async def _send_and_reduce(self, payload: ServerMessage) -> None:
         assert self._session is not None
-        await self._session._apply_ui_event(payload)
+        await self._session.apply_ui_event(payload)
 
     async def _emit_ui_bus_messages(self) -> None:
         assert self._session is not None
@@ -125,7 +125,7 @@ class AgentSession:
     def set_persist_handler(self, handler: RunPersistenceHandler) -> None:
         self._persist_handler = handler
 
-    async def _apply_ui_event(self, evt: ServerMessage) -> None:
+    async def apply_ui_event(self, evt: ServerMessage) -> None:
         self.ui_state = self._reducer.reduce(self.ui_state, evt)
 
     async def run(self, prompt: str) -> None:
@@ -165,9 +165,9 @@ class AgentSession:
             except asyncio.CancelledError:
                 # Error now logged, not sent via dead send_payload
                 logger.debug("agent_run_cancelled")
-            except Exception as e:
+            except Exception:
                 # Error now logged, not sent via dead send_payload
-                logger.error(f"agent_run_exception: {e}", exc_info=True)
+                logger.exception("agent_run_exception")
             finally:
                 await self._manager.flush()
                 if self._persist_handler is not None:

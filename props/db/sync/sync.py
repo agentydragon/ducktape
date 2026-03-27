@@ -146,7 +146,7 @@ def sync_snapshot_files_to_db(session: Session, slug: SnapshotSlug, archive_byte
     deleted = len(orphaned)
     total = len(seen_keys)
     session.flush()
-    logger.info(f"Snapshot files synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={total} total")
+    logger.info("Snapshot files synced: +%s added, ~%s updated, -%s deleted, =%s total", added, updated, deleted, total)
     return SyncStats(total=total, added=added, updated=updated, deleted=deleted)
 
 
@@ -357,7 +357,7 @@ def _sync_critic_scopes_for_specimen(
         true_positives: List of parsed true positives with occurrences
         false_positives: List of parsed false positives with occurrences
     """
-    logger.debug(f"Syncing critic scopes for {slug}: {len(true_positives)} TPs, {len(false_positives)} FPs")
+    logger.debug("Syncing critic scopes for %s: %s TPs, %s FPs", slug, len(true_positives), len(false_positives))
     # Collect desired critic scopes from occurrence data
     desired_triggers: set[tuple[SnapshotSlug, str, str, str]] = set()
 
@@ -369,7 +369,7 @@ def _sync_critic_scopes_for_specimen(
                 assert files_hash is not None  # trigger_files is not None, so hash shouldn't be None
                 desired_triggers.add((slug, tp.tp_id, occurrence.occurrence_id, files_hash))
 
-    logger.debug(f"Collected {len(desired_triggers)} desired critic scopes for {slug}")
+    logger.debug("Collected %s desired critic scopes for %s", len(desired_triggers), slug)
 
     # Current critic scopes from DB
     existing_triggers: set[tuple[SnapshotSlug, str, str, str]] = {
@@ -464,7 +464,7 @@ def sync_specimen(session: Session, bundle: SpecimenBundle) -> None:
         seen_issue_keys.add(key)
 
         if key not in existing_issues:
-            logger.debug(f"Adding issue: {tp.snapshot_slug}/{tp.tp_id}")
+            logger.debug("Adding issue: %s/%s", tp.snapshot_slug, tp.tp_id)
             orm_issue = TruePositive(snapshot_slug=tp.snapshot_slug, tp_id=tp.tp_id, rationale=tp.rationale)
             session.add(orm_issue)
             for occ in tp.occurrences:
@@ -479,7 +479,7 @@ def sync_specimen(session: Session, bundle: SpecimenBundle) -> None:
         seen_fp_keys.add(fp_key)
 
         if fp_key not in existing_fps:
-            logger.debug(f"Adding false positive: {fp.snapshot_slug}/{fp.fp_id}")
+            logger.debug("Adding false positive: %s/%s", fp.snapshot_slug, fp.fp_id)
             orm_fp = FalsePositive(snapshot_slug=fp.snapshot_slug, fp_id=fp.fp_id, rationale=fp.rationale)
             session.add(orm_fp)
             for fp_occ in fp.occurrences:
@@ -502,7 +502,7 @@ def sync_specimen(session: Session, bundle: SpecimenBundle) -> None:
 
     _sync_critic_scopes_for_specimen(session, slug, true_positives, false_positives)
 
-    logger.info(f"Synced specimen from bundle: {slug}")
+    logger.info("Synced specimen from bundle: %s", slug)
 
 
 def refresh_examples_matview(session: Session) -> None:

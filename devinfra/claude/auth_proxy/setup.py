@@ -347,7 +347,7 @@ async def setup_auth_proxy(
     # Create combined CA bundle (for tools like uv that use SSL_CERT_FILE)
     _create_combined_ca_bundle(paths)
 
-    status = (f"running (port {port})" if proxy._running else "configured") if proxy is not None else "uds-only"
+    status = (f"running (port {port})" if proxy.running else "configured") if proxy is not None else "uds-only"
     ca_status = "custom CA" if combined_ca.exists() else "system"
 
     logger.info("Auth proxy setup complete")

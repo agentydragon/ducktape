@@ -107,7 +107,7 @@ def extract_agent_run_id_from_username(username: str) -> UUID | None:
     try:
         return UUID(username[len(prefix) :])
     except ValueError:
-        logger.warning(f"Invalid UUID in agent username: {username}")
+        logger.warning("Invalid UUID in agent username: %s", username)
         return None
 
 
@@ -130,7 +130,7 @@ def validate_postgres_credentials(username: str, password: str, db_config: Datab
         ):
             pass
     except psycopg.OperationalError as e:
-        logger.warning(f"Postgres auth failed for user {username}: {e}")
+        logger.warning("Postgres auth failed for user %s: %s", username, e)
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     return agent_run_id

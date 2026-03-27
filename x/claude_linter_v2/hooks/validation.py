@@ -48,7 +48,7 @@ def validate_hook_outcome(hook_type: HookEventName, outcome: HookOutcome) -> Non
     # Semantic checks
     _validate_outcome_semantics(hook_type, outcome)
 
-    logger.debug(f"✓ Valid {hook_type} outcome: {type(outcome).__name__}")
+    logger.debug("✓ Valid %s outcome: %s", hook_type, type(outcome).__name__)
 
 
 def _validate_outcome_semantics(hook_type: HookEventName, outcome: HookOutcome) -> None:
@@ -93,4 +93,4 @@ def validate_final_response(hook_type: HookEventName, response_data: dict[str, A
     if hook_type == HookEventName.PRE_TOOL_USE and response_data.get("decision") not in [None, "approve", "block"]:
         raise HookBugError(f"Invalid PreToolUse decision: {response_data.get('decision')}")
 
-    logger.debug(f"✓ Final response valid for {hook_type.value}")
+    logger.debug("✓ Final response valid for %s", hook_type.value)

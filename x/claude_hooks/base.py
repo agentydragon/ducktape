@@ -77,7 +77,7 @@ class HookBase[InputT: BaseHookInput, OutputT: HookAction](ABC):
         try:
             # Read and log input
             raw_input = sys.stdin.read()
-            self.logger.info(f"Raw input (first 200 chars): {raw_input[:200]}...")
+            self.logger.info("Raw input (first 200 chars): %s...", raw_input[:200])
 
             # Parse input
             input_data = json.loads(raw_input)
@@ -93,11 +93,11 @@ class HookBase[InputT: BaseHookInput, OutputT: HookAction](ABC):
                 return obj
 
             truncated_data = truncate_strings(input_data, 100)
-            self.logger.info(f"Parsed JSON: {json.dumps(truncated_data, indent=2)}")
+            self.logger.info("Parsed JSON: %s", json.dumps(truncated_data, indent=2))
 
             hook_input = self.INPUT_MODEL.model_validate(input_data)
             # TODO: should know what type hook_input is, not use defensive programming
-            self.logger.info(f"Parsed input - event: {hook_input.hook_event_name}")
+            self.logger.info("Parsed input - event: %s", hook_input.hook_event_name)
 
             # Create context from hook input (use hook_event_name from JSON)
             context = HookContext(
@@ -111,12 +111,12 @@ class HookBase[InputT: BaseHookInput, OutputT: HookAction](ABC):
             set_hook_context(invocation_id=context.invocation_id, name=self.hook_name, session_id=context.session_id)
 
             action = self.execute(hook_input, context)
-            self.logger.info(f"Hook executed: {action}")
+            self.logger.info("Hook executed: %s", action)
 
             # Convert to protocol JSON and exit
             protocol_dict = action.to_protocol()
             output_json = json.dumps(protocol_dict)
-            self.logger.info(f"Output JSON: {output_json}")
+            self.logger.info("Output JSON: %s", output_json)
             print(output_json)
             sys.exit(0)
         except Exception:

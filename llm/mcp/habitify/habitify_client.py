@@ -331,7 +331,7 @@ class HabitifyClient:
             except Exception as json_error:
                 # Instead of silently setting data to None, log what happened
                 logger.warning(
-                    f"Failed to parse error response JSON: {json_error}. Response text: {response.text[:100]}..."
+                    "Failed to parse error response JSON: %s. Response text: %s...", json_error, response.text[:100]
                 )
 
             # Check for common errors with helpful messages

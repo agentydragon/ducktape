@@ -148,7 +148,7 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
                 )
                 assert tp_edge_1 is not None, "No TP edge with credit>0 for round 1"
                 assert tp_edge_1.credit == pytest.approx(0.1)
-                logger.info(f"Round 1 TP edge verified: credit={tp_edge_1.credit}")
+                logger.info("Round 1 TP edge verified: credit=%s", tp_edge_1.credit)
 
             # --- Insert critic-2 while grader is sleeping (triggers pg_notify) ---
             critic_2_id = uuid4()

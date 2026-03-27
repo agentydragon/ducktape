@@ -267,7 +267,7 @@ class BaseResponse(CamelCaseModel):
     """
 
     # continue_ needs explicit alias since to_camel("continue_") -> "continue_" not "continue"
-    continue_: bool = Field(True, alias="continue")
+    continue_: bool = Field(default=True, alias="continue")
     stop_reason: str | None = Field(None, description="Message shown to USER when continue is false")
     suppress_output: bool | None = None
 

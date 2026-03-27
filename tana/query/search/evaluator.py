@@ -67,7 +67,7 @@ class SearchEvaluator:
 
         yield from results
 
-    def _evaluate_tag(self, tag_node_id: NodeId) -> Iterator[BaseNode]:
+    def evaluate_tag(self, tag_node_id: NodeId) -> Iterator[BaseNode]:
         """
         Find all nodes with a specific tag.
 
@@ -85,7 +85,7 @@ class SearchEvaluator:
         # Use the existing filter_by_tag function
         yield from filter_by_tag(self.store, tag_node.name, skip_trash=self.skip_trash, skip_deleted=self.skip_deleted)
 
-    def _evaluate_type(self, type_node_id: NodeId) -> Iterator[BaseNode]:
+    def evaluate_type(self, type_node_id: NodeId) -> Iterator[BaseNode]:
         """
         Find all nodes of a specific system type.
 
@@ -107,7 +107,7 @@ class SearchEvaluator:
 
         yield from filter_nodes(self.store, matches_type, skip_trash=self.skip_trash, skip_deleted=self.skip_deleted)
 
-    def _evaluate_text(self, text: str) -> Iterator[BaseNode]:
+    def evaluate_text(self, text: str) -> Iterator[BaseNode]:
         """
         Find nodes matching text criteria.
 
@@ -130,7 +130,7 @@ class SearchEvaluator:
 
         yield from filter_nodes(self.store, matches_text, skip_trash=self.skip_trash, skip_deleted=self.skip_deleted)
 
-    def _evaluate_field(self, field_name: str, values: list[str]) -> Iterator[BaseNode]:
+    def evaluate_field(self, field_name: str, values: list[str]) -> Iterator[BaseNode]:
         """
         Find nodes with specific field values.
 
@@ -157,7 +157,7 @@ class SearchEvaluator:
             skip_deleted=self.skip_deleted,
         )
 
-    def _evaluate_boolean(self, operator: BooleanOperator, operands: list[SearchExpression]) -> Iterator[BaseNode]:
+    def evaluate_boolean(self, operator: BooleanOperator, operands: list[SearchExpression]) -> Iterator[BaseNode]:
         """
         Evaluate a boolean expression.
 
@@ -234,24 +234,24 @@ def _evaluate_dispatch(expression: SearchExpression, evaluator: SearchEvaluator)
 
 @_evaluate_dispatch.register(TagSearch)
 def _(expression: TagSearch, evaluator: SearchEvaluator) -> Iterator[BaseNode]:
-    yield from evaluator._evaluate_tag(expression.tag_id)
+    yield from evaluator.evaluate_tag(expression.tag_id)
 
 
 @_evaluate_dispatch.register(TypeSearch)
 def _(expression: TypeSearch, evaluator: SearchEvaluator) -> Iterator[BaseNode]:
-    yield from evaluator._evaluate_type(expression.type_id)
+    yield from evaluator.evaluate_type(expression.type_id)
 
 
 @_evaluate_dispatch.register(TextSearch)
 def _(expression: TextSearch, evaluator: SearchEvaluator) -> Iterator[BaseNode]:
-    yield from evaluator._evaluate_text(expression.text)
+    yield from evaluator.evaluate_text(expression.text)
 
 
 @_evaluate_dispatch.register(FieldSearch)
 def _(expression: FieldSearch, evaluator: SearchEvaluator) -> Iterator[BaseNode]:
-    yield from evaluator._evaluate_field(expression.field_name, expression.values)
+    yield from evaluator.evaluate_field(expression.field_name, expression.values)
 
 
 @_evaluate_dispatch.register(BooleanSearch)
 def _(expression: BooleanSearch, evaluator: SearchEvaluator) -> Iterator[BaseNode]:
-    yield from evaluator._evaluate_boolean(expression.operator, expression.operands)
+    yield from evaluator.evaluate_boolean(expression.operator, expression.operands)

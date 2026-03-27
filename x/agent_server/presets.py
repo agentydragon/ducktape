@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -58,10 +58,13 @@ def load_presets_from_dir(root: Path) -> dict[str, AgentPreset]:
         preset = AgentPreset.model_validate(data)
         stat = p.stat()  # Fail fast on OS errors
         preset.file_path = str(p)
-        preset.modified_at = datetime.fromtimestamp(stat.st_mtime).isoformat()
+        preset.modified_at = datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat()
         if preset.name in out:
             logger.warning(
-                f"Preset name collision: '{preset.name}' from {p} overrides preset from {out[preset.name].file_path}"
+                "Preset name collision: '%s' from %s overrides preset from %s",
+                preset.name,
+                p,
+                out[preset.name].file_path,
             )
         out[preset.name] = preset
     return out
@@ -99,7 +102,10 @@ def discover_presets(*, override_dir: str | Path | None = None) -> dict[str, Age
                 out[name] = preset
             else:
                 logger.warning(
-                    f"Preset name collision: '{name}' from {preset.file_path} skipped (already loaded from {out[name].file_path})"
+                    "Preset name collision: '%s' from %s skipped (already loaded from %s)",
+                    name,
+                    preset.file_path,
+                    out[name].file_path,
                 )
     # Always include a built-in default if none present
     if "default" not in out:

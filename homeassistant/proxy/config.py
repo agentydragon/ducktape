@@ -76,7 +76,7 @@ class Settings(BaseModel):
 
     @classmethod
     def from_file(cls, path: Path) -> "Settings":
-        logger.info(f"Loading settings from {path.absolute()}")
+        logger.info("Loading settings from %s", path.absolute())
         with path.open() as f:
             data = yaml.safe_load(f)
         if not isinstance(data, dict):

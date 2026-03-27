@@ -63,7 +63,7 @@ def upload_lcsc_images(api: InvenTreeAPI):
         # Gather LCSC from single supplier
         sp_lcsc = [sp for sp in all_supplier_parts if sp.part == p.pk and sp.supplier == lcsc.pk]
         if len(sp_lcsc) != 1:
-            log.info(f"Skip, {len(sp_lcsc)} LCSC SupplierParts.")
+            log.info("Skip, %s LCSC SupplierParts.", len(sp_lcsc))
             continue
         lcsc_from_supplier = sp_lcsc[0].SKU
 
@@ -71,7 +71,8 @@ def upload_lcsc_images(api: InvenTreeAPI):
         if lcsc_from_link and lcsc_from_supplier:
             # If both are present, assert they match
             if lcsc_from_link != lcsc_from_supplier:
-                raise ValueError(f"Conflicting LCSC IDs: {lcsc_from_link=} != {lcsc_from_supplier=}", log._context)
+                msg = f"Conflicting LCSC IDs: {lcsc_from_link=} != {lcsc_from_supplier=}"
+                raise ValueError(msg, log._context)
             # Both match => use either one
             lcsc_id = lcsc_from_link
         elif lcsc_from_link or lcsc_from_supplier:

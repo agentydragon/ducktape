@@ -119,7 +119,7 @@ class HookHandler:
                 file_handler.setLevel(level_value)
             except (AttributeError, KeyError):
                 file_handler.setLevel(logging.INFO)
-                logger.warning(f"Invalid log level '{log_level}', using INFO")
+                logger.warning("Invalid log level '%s', using INFO", log_level)
 
             file_formatter = logging.Formatter(
                 "%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s"
@@ -130,7 +130,7 @@ class HookHandler:
             # Set root logger to the lowest level to let handlers filter
             root_logger.setLevel(logging.DEBUG)
 
-            logger.info(f"Logging configured: level={log_level}, file={log_file}")
+            logger.info("Logging configured: level={log_level}, file=%s", log_file)
 
     def _log_hook_call(
         self, session_id: SessionID, hook_type: str, request: BaseHookRequest, outcome: Any, response: Any
@@ -183,7 +183,7 @@ class HookHandler:
         self._track_session(request, session_id)
 
         # Log the incoming request
-        logger.info(f"Hook call: {hook_type} for session {session_id}")
+        logger.info("Hook call: {hook_type} for session %s", session_id)
 
         # Dispatch to typed handler
         outcome = self._dispatch_hook(hook_type, request, session_id)
@@ -233,7 +233,7 @@ class HookHandler:
         file_path = tool_call.file_path if isinstance(tool_call, FilePathToolCall) else None
         content = tool_call.content if isinstance(tool_call, WriteToolCall) else None
 
-        logger.info(f"Pre-hook for {tool_name} in session {session_id}")
+        logger.info("Pre-hook for {tool_name} in session %s", session_id)
 
         # Clear any existing notification for this session
         self._clear_notification(session_id)
@@ -328,7 +328,7 @@ class HookHandler:
         tool_name = tool_call.tool_name
         file_path = tool_call.file_path if isinstance(tool_call, FilePathToolCall) else None
 
-        logger.info(f"Post-hook for {tool_name} in session {session_id}")
+        logger.info("Post-hook for {tool_name} in session %s", session_id)
 
         # Clear any existing notification for this session
         self._clear_notification(session_id)
@@ -376,18 +376,18 @@ class HookHandler:
 
     def _handle_stop_hook(self, request: StopRequest, session_id: SessionID) -> HookOutcome:
         """Handle Stop hook (Claude ending its turn)."""
-        logger.info(f"Stop hook for session {session_id}")
+        logger.info("Stop hook for session %s", session_id)
         return StopAllow()
 
     def _handle_subagent_stop(self, request: SubagentStopRequest, session_id: SessionID) -> HookOutcome:
         """Handle SubagentStop."""
-        logger.info(f"SubagentStop hook for session {session_id}")
+        logger.info("SubagentStop hook for session %s", session_id)
         # For now, always allow subagent to stop
         return SubagentStopAllow()
 
     def _handle_notification(self, request: NotificationRequest, session_id: SessionID) -> HookOutcome:
         """Handle Notification."""
-        logger.info(f"Notification hook for session {session_id}")
+        logger.info("Notification hook for session %s", session_id)
 
         # Get notification hook config
         config = self.config_loader.config
@@ -425,11 +425,14 @@ class HookHandler:
             self.session_manager.set_notification_id(session_id, notification_id)
 
             logger.info(
-                f"Sent D-Bus notification for session {session_id}: {title} "
-                f"(ID: {notification_id}, replaced: {replaces_id})"
+                "Sent D-Bus notification for session %s: %s (ID: %s, replaced: %s)",
+                session_id,
+                title,
+                notification_id,
+                replaces_id,
             )
-        except (OSError, ImportError, AttributeError) as e:
-            logger.error(f"Failed to send D-Bus notification: {e}", exc_info=True)
+        except (OSError, ImportError, AttributeError):
+            logger.exception("Failed to send D-Bus notification")
 
     def _clear_notification(self, session_id: SessionID) -> None:
         """Clear any existing notification for this session."""
@@ -443,9 +446,9 @@ class HookHandler:
                     close_desktop_notification(notification_id)
 
                 self.session_manager.clear_notification_id(session_id)
-                logger.debug(f"Cleared notification {notification_id} for session {session_id}")
+                logger.debug("Cleared notification {notification_id} for session %s", session_id)
             except (OSError, ImportError, AttributeError) as e:
-                logger.debug(f"Failed to clear notification for session {session_id}: {e}")
+                logger.debug("Failed to clear notification for session {session_id}: %s", e)
 
     # Helper methods
     def _check_access_control(self, request: PreToolUseRequest, session_id: SessionID) -> tuple[RuleAction, str | None]:

@@ -107,7 +107,7 @@ async def wait_until_graded(
             return status
 
         if last_pending_count != status.pending_count:
-            logger.debug(f"Waiting for grading: {status.pending_count} edges pending")
+            logger.debug("Waiting for grading: %s edges pending", status.pending_count)
             last_pending_count = status.pending_count
 
         await asyncio.sleep(poll_interval_seconds)

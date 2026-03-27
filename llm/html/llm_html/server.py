@@ -90,7 +90,7 @@ def load_page_titles():
             else:
                 raise ValueError(f"Missing required 'title' in frontmatter for {page}.md")
         except Exception:
-            logger.exception(f"Error loading title for {page}.md")
+            logger.exception("Error loading title for %s.md", page)
             raise
 
 
@@ -116,9 +116,9 @@ def handle_page_rendering_error(error: Exception, page_name: str = "page") -> No
         HTTPException: Always raises with appropriate status code
     """
     if isinstance(error, FileNotFoundError):
-        logger.error(f"{page_name} not found")
+        logger.error("%s not found", page_name)
         raise HTTPException(status_code=404, detail="Document not found")
-    logger.error(f"Error rendering {page_name}: {error}")
+    logger.error("Error rendering %s: %s", page_name, error)
     raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -216,7 +216,7 @@ async def analyze_page_tokens(
         tokens = count_tokens_for_models(final_markdown)
         return {"page": page_id, "title": title, "url": url, **tokens}
     except Exception:
-        logger.exception(f"Error analyzing {page_id} page")
+        logger.exception("Error analyzing %s page", page_id)
         return None
 
 
@@ -300,11 +300,11 @@ async def verify_token(request: Request, token: str = ""):
 
             ts.verify_token(token)
             result = {"status": "success", "message": "Token is valid ✅"}
-            logger.info(f"Token verification succeeded for: {token[:20]}...")
+            logger.info("Token verification succeeded for: %s...", token[:20])
         except VerificationError as exc:
             result = {"status": "failed", "errors": exc.issues}
             issues_str = " | ".join(f"✗ {issue}" for issue in exc.issues)
-            logger.exception(f"Token verification FAILED: {issues_str}")
+            logger.exception("Token verification FAILED: %s", issues_str)
         except FileNotFoundError:
             logger.exception("index.md not found for token verification")
             result = {"status": "failed", "errors": ["Source document not found"]}
@@ -323,7 +323,7 @@ def main():
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "9000"))
 
-    logger.info(f"Starting FastAPI server on http://{host}:{port}")
+    logger.info("Starting FastAPI server on http://%s:%s", host, port)
     uvicorn.run(app, host=host, port=port, log_config=None)  # None to use our logging config
 
 

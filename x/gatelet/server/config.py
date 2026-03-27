@@ -180,7 +180,7 @@ class Settings(BaseModel):
     @classmethod
     def from_file(cls, path: Path) -> "Settings":
         """Load settings from file at path."""
-        logger.info(f"Loading settings from {path.absolute()}")
+        logger.info("Loading settings from %s", path.absolute())
         with path.open("rb") as f:
             config_dict = tomllib.load(f)
         return cls.model_validate(config_dict)

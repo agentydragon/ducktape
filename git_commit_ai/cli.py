@@ -108,12 +108,12 @@ async def commit(
     timeout_secs: int | None = typer.Option(
         None, "--timeout-secs", help="Maximum seconds for the AI request; 0 disables timeout"
     ),
-    stage_all: bool = typer.Option(False, "-a", "--all", help="Stage all tracked changes"),
-    no_verify: bool = typer.Option(False, "--no-verify", help="Skip pre-commit hooks"),
-    amend: bool = typer.Option(False, "--amend", help="Amend previous commit"),
-    accept_ai: bool = typer.Option(False, "--accept-ai", help="Commit with AI message, skip editor"),
-    verbose: bool = typer.Option(False, "-v", help="Verbose git commit"),
-    debug: bool = typer.Option(False, "--debug", help="Show logger output"),
+    stage_all: bool = typer.Option(default=False, help="Stage all tracked changes"),
+    no_verify: bool = typer.Option(default=False, help="Skip pre-commit hooks"),
+    amend: bool = typer.Option(default=False, help="Amend previous commit"),
+    accept_ai: bool = typer.Option(default=False, help="Commit with AI message, skip editor"),
+    verbose: bool = typer.Option(default=False, help="Verbose git commit"),
+    debug: bool = typer.Option(default=False, help="Show logger output"),
 ):
     """Run the git-commit-ai process."""
     repo = pygit2.Repository(get_build_workspace_directory())

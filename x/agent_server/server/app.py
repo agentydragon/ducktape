@@ -119,7 +119,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         config = TokensConfig.from_yaml_file()
         for agent_id in config.agent_tokens().values():
             await app.state.mcp_registry.create_external_agent(agent_id)
-            logger.info(f"Created external agent from token: {agent_id}")
+            logger.info("Created external agent from token: %s", agent_id)
 
         # Multi-agent: agents should be created via API after startup
         app.state.ready.set()
@@ -144,8 +144,8 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         # Legacy registry path for backwards compatibility
         for container in app.state.registry.list():
             # Flush legacy UI manager
-            if container._ui_manager:
-                await container._ui_manager.flush()
+            if ui_mgr := getattr(container, "ui_manager", None):
+                await ui_mgr.flush()
         await app.state.registry.close_all()
 
         # Close async Docker client

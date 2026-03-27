@@ -157,13 +157,13 @@ class ApiReferenceCollector:
         Raises:
             SystemExit: If expected_status is specified and doesn't match actual status
         """
-        logger.info(f"Making request: {name} ({method} {endpoint})")
+        logger.info("Making request: %s (%s %s)", name, method, endpoint)
 
         response = self.client.request(method=method, url=endpoint, params=params, json=json_data)
 
         # If expected status is provided, validate it
         if response.status_code != expected_status:
-            logger.error(f"Expected status {expected_status} but got {response.status_code}")
+            logger.error("Expected status %s but got %s", expected_status, response.status_code)
             sys.exit(1)
 
         # Create reference data structure
@@ -187,12 +187,12 @@ class ApiReferenceCollector:
         # Save to file in YAML format
         path = REFERENCE_DIR / f"{name.lower().replace(' ', '_')}.yaml"
         if path.exists():
-            logger.warning(f"Overwriting existing file: {path}")
+            logger.warning("Overwriting existing file: %s", path)
 
         with path.open("w") as f:
             yaml.dump(reference, f, sort_keys=False, indent=2, default_flow_style=False)
 
-        logger.info(f"Saved reference example to {path}")
+        logger.info("Saved reference example to %s", path)
 
         return response.json()
 
@@ -224,7 +224,7 @@ class ApiReferenceCollector:
         # Use the first habit for further API calls
         habit = habits[0]
         habit_id = habit["id"]
-        logger.info(f"Using habit with ID: {habit_id} and masked name: {self._mask_name(habit['name'])}")
+        logger.info("Using habit with ID: %s and masked name: %s", habit_id, self._mask_name(habit["name"]))
 
         # Get details for a specific habit by ID
         self._make_request_and_save(

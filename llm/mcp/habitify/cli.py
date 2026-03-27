@@ -8,7 +8,7 @@ import os
 import signal
 import subprocess
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -65,8 +65,8 @@ def mcp(
     api_key: str | None = typer.Option(
         None, "--api-key", "-k", help="Habitify API key (overrides environment variable)"
     ),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Disable debug output"),
-    debug: bool = typer.Option(False, "--debug", "-d", help="Enable debug logging"),
+    quiet: bool = typer.Option(default=False, help="Disable debug output"),
+    debug: bool = typer.Option(default=False, help="Enable debug logging"),
 ) -> None:
     """Start the Habitify MCP server with the specified transport."""
     # Configure logging
@@ -121,7 +121,7 @@ def mcp(
     except KeyboardInterrupt:
         err_console.print("\n[yellow]Keyboard interrupt received.[/] Shutting down...")
     except Exception as e:
-        logger.error(f"Error running server: {e}", exc_info=True)
+        logger.exception("Error running server")
         err_console.print(f"[bold red]Error:[/] {e!s}")
         raise typer.Exit(code=1)
 
@@ -172,7 +172,7 @@ def install(
 
 @app.command("list")
 def list_habits(
-    include_archived: bool = typer.Option(False, "--include-archived", "-a", help="Include archived habits"),
+    include_archived: bool = typer.Option(default=False, help="Include archived habits"),
     api_key: str | None = typer.Option(
         None, "--api-key", "-k", help="Habitify API key (overrides environment variable)"
     ),
@@ -331,7 +331,7 @@ async def _log_async(
             elif date:
                 formatted_date = datetime.fromisoformat(date).strftime("%B %d, %Y")
             else:
-                formatted_date = datetime.now().strftime("%B %d, %Y")
+                formatted_date = datetime.now(tz=UTC).strftime("%B %d, %Y")
 
             # Success message with color based on status
             status_color = get_status_color(status)

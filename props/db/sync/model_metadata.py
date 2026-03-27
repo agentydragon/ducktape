@@ -55,7 +55,7 @@ def sync_model_metadata_with_session(session: Session, config: PropsConfig | Non
             )
 
     # Full sync: make DB exactly match source
-    logger.info(f"Syncing model_metadata table (source: {len(source_models)} models)...")
+    logger.info("Syncing model_metadata table (source: %s models)...", len(source_models))
 
     db_models = {m.model_id: m for m in session.query(ModelMetadata).all()}
     source_model_ids = set(source_models.keys())
@@ -67,7 +67,7 @@ def sync_model_metadata_with_session(session: Session, config: PropsConfig | Non
 
     # Delete orphaned models (in DB but not in source)
     for model_id in db_model_ids - source_model_ids:
-        logger.info(f"  Deleting orphaned model: {model_id}")
+        logger.info("  Deleting orphaned model: %s", model_id)
         session.delete(db_models[model_id])
         deleted += 1
 
@@ -76,7 +76,7 @@ def sync_model_metadata_with_session(session: Session, config: PropsConfig | Non
         is_new = model_id not in db_model_ids
         session.merge(model_meta)
         if is_new:
-            logger.debug(f"  Adding model: {model_id}")
+            logger.debug("  Adding model: %s", model_id)
             added += 1
         else:
             # Note: merge() updates if changed; count all as updated for stats
@@ -85,6 +85,10 @@ def sync_model_metadata_with_session(session: Session, config: PropsConfig | Non
     session.flush()
 
     logger.info(
-        f"Model metadata synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={len(source_models)} total"
+        "Model metadata synced: +%s added, ~%s updated, -%s deleted, =%s total",
+        added,
+        updated,
+        deleted,
+        len(source_models),
     )
     return SyncStats(added=added, updated=updated, deleted=deleted, total=len(source_models))

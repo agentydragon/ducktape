@@ -403,7 +403,8 @@ class TaskClaude:
         cmd_args = [str(setup_script), c.id, self.task_id, str(self._output_dir)]
         script_stat = await asyncio.to_thread(setup_script.stat)
         self._logger.info(
-            f"Running {script_type.lower()} script",
+            "%s script running",
+            script_type.lower(),
             script=str(setup_script),
             container_id=c.id,
             task_id=self.task_id,
@@ -445,13 +446,14 @@ class TaskClaude:
 
         if exit_code != 0:
             self._logger.error(
-                f"{script_type} script failed - CONTAINER LEFT RUNNING FOR DEBUG",
+                "%s script failed - CONTAINER LEFT RUNNING FOR DEBUG",
+                script_type,
                 container_id=c.id,
                 exit_code=exit_code,
                 debug_hint=f"Run: docker logs {c.id}",
             )
             raise RuntimeError(f"{script_type} script failed with exit code {exit_code}")
-        self._logger.info(f"{script_type} script completed successfully", container_id=c.id)
+        self._logger.info("%s script completed successfully", script_type, container_id=c.id)
 
     async def _run_pre_task_always_setup(self):
         """Run always pre-task setup script (runs before every task)."""

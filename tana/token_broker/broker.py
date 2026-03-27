@@ -57,7 +57,7 @@ class _TanaNotReadyError(Exception):
     retry=retry_if_exception_type((_TanaNotReadyError, httpx.ConnectError, httpx.HTTPError)),
     wait=wait_exponential(multiplier=1, min=2, max=60),
     stop=stop_never,
-    before_sleep=lambda rs: logger.info(f"Tana not ready, retry attempt {rs.attempt_number}"),
+    before_sleep=lambda rs: logger.info("Tana not ready, retry attempt %s", rs.attempt_number),
 )
 async def _wait_for_tana(http: httpx.AsyncClient, tana_url: str) -> None:
     resp = await http.get(f"{tana_url}/health")
@@ -74,7 +74,7 @@ async def _register_client(http: httpx.AsyncClient, tana_url: str, redirect_uri:
     resp.raise_for_status()
     data = resp.json()
     client_id: str = data["client_id"]
-    logger.info(f"Registered OAuth client {client_id=}")
+    logger.info("Registered OAuth client %s", client_id)
     return client_id
 
 
@@ -227,11 +227,11 @@ async def _write_secret(api: client.CoreV1Api, cfg: BrokerConfig, token: TokenRe
     try:
         await api.read_namespaced_secret(cfg.secret_name, cfg.namespace)
         await api.replace_namespaced_secret(cfg.secret_name, cfg.namespace, secret)
-        logger.info(f"Updated secret {cfg.namespace}/{cfg.secret_name}")
+        logger.info("Updated secret %s/%s", cfg.namespace, cfg.secret_name)
     except ApiException as e:
         if e.status == 404:
             await api.create_namespaced_secret(cfg.namespace, secret)
-            logger.info(f"Created secret {cfg.namespace}/{cfg.secret_name}")
+            logger.info("Created secret %s/%s", cfg.namespace, cfg.secret_name)
         else:
             raise
 
@@ -302,7 +302,7 @@ async def run_broker(cfg: BrokerConfig) -> None:
                 )
                 token = await _exchange_code(http, cfg.tana_url, client_id, auth_code, code_verifier, redirect_uri)
                 await _write_secret(k8s_api, cfg, token)
-                logger.info(f"Token written, expires_at={token.expires_at}")
+                logger.info("Token written, expires_at=%s", token.expires_at)
 
                 # Sleep until refresh needed
                 await _sleep_until_refresh(token, cfg.refresh_margin_seconds)
@@ -322,5 +322,5 @@ async def _sleep_until_refresh(token: TokenResult, margin_seconds: int) -> None:
 
     refresh_at = expires_at - margin_seconds
     sleep_seconds = max(refresh_at - time.time(), 60)
-    logger.info(f"Sleeping {sleep_seconds:.0f}s until next refresh")
+    logger.info("Sleeping %.0fs until next refresh", sleep_seconds)
     await asyncio.sleep(sleep_seconds)

@@ -243,7 +243,7 @@ class AgentRegistry:
             ImageResolutionError: If tag doesn't exist or proxy returns error
         """
         if is_digest(ref):
-            logger.debug(f"Reference {ref} is already a digest, returning as-is")
+            logger.debug("Reference %s is already a digest, returning as-is", ref)
             return ref
 
         repository = str(agent_type)
@@ -257,7 +257,7 @@ class AgentRegistry:
         }
         auth = httpx.BasicAuth(self._db_config.user, self._db_config.password)
 
-        logger.info(f"Resolving tag {repository}:{ref} via proxy at {proxy_url}")
+        logger.info("Resolving tag %s:%s via proxy at %s", repository, ref, proxy_url)
 
         try:
             async with httpx.AsyncClient() as client:
@@ -275,7 +275,7 @@ class AgentRegistry:
         if not digest:
             raise ImageResolutionError(f"Proxy didn't return Docker-Content-Digest header for {repository}:{ref}")
 
-        logger.info(f"Resolved {repository}:{ref} → {digest}")
+        logger.info("Resolved %s:%s → %s", repository, ref, digest)
         return str(digest)
 
     async def resolve_image(self, agent_type: AgentType, ref: str) -> ResolvedImage:
@@ -349,7 +349,7 @@ class AgentRegistry:
             found_run.status = status
             found_run.container_exit_code = container_exit_code
             session.commit()
-            logger.info(f"Updated {agent_run_id} status to {status}")
+            logger.info("Updated %s status to %s", agent_run_id, status)
         return status
 
     async def _start_agent(

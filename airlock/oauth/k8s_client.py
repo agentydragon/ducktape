@@ -52,11 +52,11 @@ class K8sTokenStore:
         try:
             await self._api.read_namespaced_secret(secret_name, namespace)
             await self._api.replace_namespaced_secret(secret_name, namespace, secret)
-            logger.info(f"Updated secret {namespace}/{secret_name}")
+            logger.info("Updated secret %s/%s", namespace, secret_name)
         except ApiException as e:
             if e.status == 404:
                 await self._api.create_namespaced_secret(namespace, secret)
-                logger.info(f"Created secret {namespace}/{secret_name}")
+                logger.info("Created secret %s/%s", namespace, secret_name)
             else:
                 raise
 
@@ -68,7 +68,7 @@ class K8sTokenStore:
             name = secret.metadata.name
             if name not in known_names:
                 await self._api.delete_namespaced_secret(name, namespace)
-                logger.info(f"Deleted orphaned secret {namespace}/{name}")
+                logger.info("Deleted orphaned secret %s/%s", namespace, name)
 
     async def read_token(self, secret_name: str, namespace: str) -> TokenData | None:
         try:

@@ -108,23 +108,23 @@ class InfrastructureRegistry:
             await self._mount_agent_control(container)
 
         # Mount agent compositor to global
-        if container._compositor is None:
+        if container.compositor is None:
             raise RuntimeError(f"Agent container {container.agent_id} has no compositor after build")
 
         mount_prefix = agent_mount_prefix(container.agent_id)
-        await comp.mount_inproc(mount_prefix, container._compositor)
+        await comp.mount_inproc(mount_prefix, container.compositor)
 
     async def _mount_agent_control(self, container: AgentContainer) -> None:
         """Mount agent_control server on container's compositor.
 
         Only for internal agents - provides send_prompt and abort tools.
         """
-        if container._compositor is None:
+        if container.compositor is None:
             raise RuntimeError(f"Agent container {container.agent_id} has no compositor for agent_control mount")
 
         control_server = container.make_control_server()
-        await container._compositor.mount_inproc(AGENT_CONTROL_MOUNT_PREFIX, control_server)
-        logger.debug(f"Mounted agent_control for internal agent: {container.agent_id}")
+        await container.compositor.mount_inproc(AGENT_CONTROL_MOUNT_PREFIX, control_server)
+        logger.debug("Mounted agent_control for internal agent: %s", container.agent_id)
 
     async def _create_container(
         self,
@@ -253,7 +253,7 @@ class InfrastructureRegistry:
             container = await self._create_container(agent_id, mcp_config=mcp_config, external=True)
             await self._register_and_mount_agent(container, external=True)
 
-            logger.info(f"Created external agent: {agent_id}")
+            logger.info("Created external agent: %s", agent_id)
             return container
 
     async def shutdown_agent(self, agent_id: AgentID) -> None:
@@ -274,7 +274,7 @@ class InfrastructureRegistry:
                 mount_prefix = agent_mount_prefix(agent_id)
                 await comp.unmount_server(mount_prefix)
             except KeyError:
-                logger.debug(f"Agent {agent_id} already unmounted")
+                logger.debug("Agent %s already unmounted", agent_id)
 
             # Close container
             container = self._agents.pop(agent_id)
@@ -283,7 +283,7 @@ class InfrastructureRegistry:
             # Clean up external tracking
             self._external_agents.discard(agent_id)
 
-            logger.info(f"Shutdown agent: {agent_id}")
+            logger.info("Shutdown agent: %s", agent_id)
 
     async def shutdown_all(self) -> None:
         """Shutdown all agents.

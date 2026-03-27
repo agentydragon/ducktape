@@ -92,10 +92,10 @@ class GraderSupervisor:
         if self._shutdown:
             return
         if not isinstance(payload, str):
-            logger.error(f"pg_notify payload is not a string: {type(payload)}")
+            logger.error("pg_notify payload is not a string: %s", type(payload))
             return
         notification = SnapshotCreatedNotification.model_validate_json(payload)
-        logger.info(f"Snapshot created: {notification.snapshot_slug}")
+        logger.info("Snapshot created: %s", notification.snapshot_slug)
         self._launch_background(self.reconcile(), name="reconcile-snapshot-created")
 
     def _grader_definition_changed_callback(
@@ -104,10 +104,10 @@ class GraderSupervisor:
         if self._shutdown:
             return
         if not isinstance(payload, str):
-            logger.error(f"pg_notify payload is not a string: {type(payload)}")
+            logger.error("pg_notify payload is not a string: %s", type(payload))
             return
         notification = GraderDefinitionChangedNotification.model_validate_json(payload)
-        logger.info(f"Grader definition changed: {notification.tag} -> {notification.digest}")
+        logger.info("Grader definition changed: %s -> %s", notification.tag, notification.digest)
         self._launch_background(self.reconcile(restart_existing=True), name="reconcile-definition-changed")
 
     # --- Lifecycle ---
@@ -153,7 +153,7 @@ class GraderSupervisor:
         # Kill graders for snapshots that no longer exist.
         for slug in list(self._handles.keys()):
             if slug not in desired:
-                logger.info(f"Snapshot {slug} removed, killing grader")
+                logger.info("Snapshot %s removed, killing grader", slug)
                 await self._kill_grader(slug)
 
         # Spawn missing graders.
@@ -164,7 +164,9 @@ class GraderSupervisor:
                 spawned += 1
 
         if spawned or restart_existing:
-            logger.info(f"Reconciled: {len(self._handles)} graders running ({spawned} spawned, {len(desired)} desired)")
+            logger.info(
+                "Reconciled: %s graders running (%s spawned, %s desired)", len(self._handles), spawned, len(desired)
+            )
 
     # --- Internal helpers ---
 
@@ -174,7 +176,7 @@ class GraderSupervisor:
         await self._listener_conn.add_listener(
             GRADER_DEFINITION_CHANGED_CHANNEL, self._grader_definition_changed_callback
         )
-        logger.info(f"Listening on channels '{SNAPSHOT_CREATED_CHANNEL}', '{GRADER_DEFINITION_CHANGED_CHANNEL}'")
+        logger.info("Listening on channels '%s', '%s'", SNAPSHOT_CREATED_CHANNEL, GRADER_DEFINITION_CHANGED_CHANNEL)
 
     async def _stop_listener(self) -> None:
         if self._listener_conn:
@@ -185,19 +187,19 @@ class GraderSupervisor:
                 )
                 await self._listener_conn.close()
             except Exception as e:
-                logger.warning(f"Error closing listener connection: {e}")
+                logger.warning("Error closing listener connection: %s", e)
             self._listener_conn = None
 
     async def _spawn_grader(self, snapshot_slug: SnapshotSlug, *, image: ResolvedImage) -> None:
         try:
-            logger.info(f"Starting grader for {snapshot_slug}")
+            logger.info("Starting grader for %s", snapshot_slug)
             handle = await self._registry.start_snapshot_grader(
                 image=image, snapshot_slug=snapshot_slug, model=self._model
             )
             self._handles[snapshot_slug] = handle
-            logger.info(f"Grader container {handle.name} running for {snapshot_slug}")
+            logger.info("Grader container %s running for %s", handle.name, snapshot_slug)
         except Exception:
-            logger.exception(f"Failed to start grader for {snapshot_slug}")
+            logger.exception("Failed to start grader for %s", snapshot_slug)
 
     async def _kill_grader(self, snapshot_slug: SnapshotSlug) -> None:
         handle = self._handles.pop(snapshot_slug, None)

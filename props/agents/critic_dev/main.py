@@ -306,9 +306,10 @@ class ImprovementReminderHandler(BaseHandler):
 
         if isinstance(result, TerminationSuccess):
             logger.info(
-                f"Critic developer terminating: "
-                f"definition '{result.definition_id}' with {result.total_credit:.1f} credit "
-                f"beats baseline avg {result.baseline_avg:.1f}"
+                "Critic developer terminating: definition '%s' with %.1f credit beats baseline avg %.1f",
+                result.definition_id,
+                result.total_credit,
+                result.baseline_avg,
             )
             return Abort()
 

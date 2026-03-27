@@ -109,7 +109,7 @@ async def test_grader_clusters_novel_issues_from_two_critiques(
                 )
             session.commit()
 
-        logger.info(f"Created 2 critic runs: {critic_1_id}, {critic_2_id}")
+        logger.info("Created 2 critic runs: %s, %s", critic_1_id, critic_2_id)
 
         # Precondition: verify grading_pending has rows
         assert get_drift(test_snapshot, db).grading, "grading_pending should have rows"

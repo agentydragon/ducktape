@@ -116,17 +116,17 @@ async def _extract_image_metadata(manifest_body: bytes, repository: str) -> _Ima
                 display_name: str | None = labels.get("org.opencontainers.image.title")
 
                 if base_digest:
-                    logger.info(f"Extracted base_digest from annotation: {base_digest}")
+                    logger.info("Extracted base_digest from annotation: %s", base_digest)
                 if display_name:
-                    logger.info(f"Extracted display_name from annotation: {display_name}")
+                    logger.info("Extracted display_name from annotation: %s", display_name)
                 return _ImageMetadata(base_digest=base_digest, display_name=display_name)
 
             except (httpx.RequestError, json.JSONDecodeError) as e:
-                logger.warning(f"Error fetching/parsing config blob: {e}")
+                logger.warning("Error fetching/parsing config blob: %s", e)
                 return _ImageMetadata(base_digest=None, display_name=None)
 
     except (json.JSONDecodeError, KeyError) as e:
-        logger.warning(f"Error parsing manifest for image metadata extraction: {e}")
+        logger.warning("Error parsing manifest for image metadata extraction: %s", e)
         return _ImageMetadata(base_digest=None, display_name=None)
 
 
@@ -145,7 +145,7 @@ async def _record_manifest_push(
     with db.session() as session:
         existing = session.get(AgentDefinition, digest)
         if existing:
-            logger.info(f"Agent definition {digest} already exists, skipping")
+            logger.info("Agent definition %s already exists, skipping", digest)
             return
 
         metadata = await _extract_image_metadata(manifest_body, repository)
@@ -160,9 +160,13 @@ async def _record_manifest_push(
         session.commit()
 
         logger.info(
-            f"Recorded agent definition: {repository}@{digest} "
-            f"(type={agent_type}, created_by={agent_run_id}, "
-            f"base={metadata.base_digest or 'none'}, display_name={metadata.display_name or 'none'})"
+            "Recorded agent definition: %s@%s (type=%s, created_by=%s, base=%s, display_name=%s)",
+            repository,
+            digest,
+            agent_type,
+            agent_run_id,
+            metadata.base_digest or "none",
+            metadata.display_name or "none",
         )
 
 
@@ -222,7 +226,7 @@ async def put_manifest(request: Request, repo: str, ref: str, admin_db: AdminDb,
                     {"channel": GRADER_DEFINITION_CHANGED_CHANNEL, "payload": notification.model_dump_json()},
                 )
                 session.commit()
-            logger.info(f"Notified grader definition changed: {repo}:{ref} -> {manifest_digest}")
+            logger.info("Notified grader definition changed: %s:%s -> %s", repo, ref, manifest_digest)
 
     return response
 

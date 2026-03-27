@@ -67,14 +67,14 @@ SPECIMENS_DIR = Path("/specimens")
 def _sync_all_specimens(db: Database) -> None:
     """Scan /specimens/ directory and sync each specimen to the database."""
     if not SPECIMENS_DIR.exists():
-        logger.warning(f"Specimens directory {SPECIMENS_DIR} not found, skipping sync")
+        logger.warning("Specimens directory %s not found, skipping sync", SPECIMENS_DIR)
         return
 
     synced = 0
     for data_yaml in sorted(SPECIMENS_DIR.rglob("specimen_data.yaml")):
         code_tar = data_yaml.parent / "specimen_code.tar"
         if not code_tar.exists():
-            logger.warning(f"Missing code tar for {data_yaml}, skipping")
+            logger.warning("Missing code tar for %s, skipping", data_yaml)
             continue
         bundle = SpecimenBundle.from_paths(code_tar, data_yaml)
         with db.session() as session:
@@ -82,7 +82,7 @@ def _sync_all_specimens(db: Database) -> None:
             session.commit()
         synced += 1
 
-    logger.info(f"Synced {synced} specimens from {SPECIMENS_DIR}")
+    logger.info("Synced %s specimens from %s", synced, SPECIMENS_DIR)
 
     # Refresh the materialized view (reads committed specimen data)
     with db.session() as session:
@@ -107,7 +107,7 @@ def _make_lifespan(deps: BackendDeps):
         with db.session() as session:
             stats = sync_model_metadata_with_session(session, deps.config)
             if stats.added or stats.deleted:
-                logger.info(f"Model metadata synced: +{stats.added} added, -{stats.deleted} deleted")
+                logger.info("Model metadata synced: +%s added, -%s deleted", stats.added, stats.deleted)
 
         if deps.config.auto_sync_specimens:
             _sync_all_specimens(db)
@@ -132,15 +132,15 @@ def _make_lifespan(deps: BackendDeps):
                 registry=app.state.registry, db_config=db_config, model=deps.grader_model, db=db
             )
             await app.state.grader_supervisor.start()
-            logger.info(f"Grader supervisor started (model: {deps.grader_model})")
+            logger.info("Grader supervisor started (model: %s)", deps.grader_model)
         else:
             app.state.grader_supervisor = None
             logger.info("Grader supervisor disabled (grader_model not set in config)")
 
         admin_token = db_config.basic_auth_token
         protocol = "https" if deps.port == 443 else "http"
-        logger.info(f"Admin token: {admin_token}")
-        logger.info(f"Admin URL: {protocol}://{deps.host}:{deps.port}/?token={admin_token}")
+        logger.info("Admin token: %s", admin_token)
+        logger.info("Admin URL: %s://%s:%s/?token=%s", protocol, deps.host, deps.port, admin_token)
         logger.info("Props backend ready")
         yield
 

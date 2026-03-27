@@ -50,12 +50,12 @@ class WebSocketStreamAdapter:
             try:
                 logger.debug("Waiting for websocket recv()...")
                 data = await self.ws.recv()
-                logger.debug(f"Received {len(data)} bytes: {data[:50]}...")
+                logger.debug("Received %s bytes: %s...", len(data), data[:50])
                 if isinstance(data, str):
                     data = data.encode()
                 self._buffer.extend(data)
             except websockets.exceptions.ConnectionClosed as e:
-                logger.debug(f"Connection closed: {e}")
+                logger.debug("Connection closed: %s", e)
                 result = bytes(self._buffer)
                 self._buffer.clear()
                 return result
@@ -63,7 +63,7 @@ class WebSocketStreamAdapter:
         idx = self._buffer.index(b"\n") + 1
         result = bytes(self._buffer[:idx])
         del self._buffer[:idx]
-        logger.debug(f"readline() returning: {result!r}")
+        logger.debug("readline() returning: %r", result)
         return result
 
     async def read(self, n: int) -> bytes:
@@ -97,7 +97,7 @@ class WebSocketStreamAdapter:
         if self._pending_write:
             data = self._pending_write
             self._pending_write = b""
-            logger.debug(f"Sending {len(data)} bytes")
+            logger.debug("Sending %s bytes", len(data))
             await self.ws.send(data)
 
     async def drain(self):
@@ -106,30 +106,30 @@ class WebSocketStreamAdapter:
 
 def request_console_credentials(server_name: str, token: str | None = None) -> tuple[str, str]:
     """Request VNC console credentials from Hetzner Cloud API."""
-    logger.debug(f"Requesting console for server '{server_name}'")
+    logger.debug("Requesting console for server '%s'", server_name)
     if token is None:
         token = os.environ.get("HCLOUD_TOKEN")
         if not token:
             raise ValueError("HCLOUD_TOKEN environment variable not set and no --token provided")
-    logger.debug(f"Token length: {len(token)}")
+    logger.debug("Token length: %s", len(token))
 
     logger.debug("Creating hcloud Client...")
     client = Client(token=token)
     logger.debug("Fetching servers...")
     servers = client.servers.get_all(name=server_name)
-    logger.debug(f"Found {len(servers)} servers")
+    logger.debug("Found %s servers", len(servers))
     if not servers:
         raise ValueError(f"Server '{server_name}' not found")
 
     logger.debug("Requesting console from Hetzner API...")
     response = client.servers.request_console(servers[0])
-    logger.debug(f"Got console URL: {response.wss_url[:50]}...")
+    logger.debug("Got console URL: %s...", response.wss_url[:50])
     return response.wss_url, response.password
 
 
 async def vnc_screenshot(wss_url: str, password: str, output_path: str = "screenshot.png"):
     """Connect to VNC over WebSocket and capture a screenshot."""
-    logger.debug(f"Connecting to {wss_url[:60]}...")
+    logger.debug("Connecting to %s...", wss_url[:60])
 
     logger.debug("Opening websocket connection...")
     async with websockets.connect(wss_url, subprotocols=[websockets.Subprotocol("binary")]) as ws:
@@ -143,13 +143,13 @@ async def vnc_screenshot(wss_url: str, password: str, output_path: str = "screen
             password=password,
         )
 
-        logger.info(f"Connected. Screen: {client.video.width}x{client.video.height}")
+        logger.info("Connected. Screen: %sx%s", client.video.width, client.video.height)
         logger.debug("Taking screenshot...")
         pixels = await client.screenshot()
         logger.debug("Converting to image...")
         img = Image.fromarray(pixels)
         img.save(output_path)
-        logger.info(f"Screenshot saved to {output_path}")
+        logger.info("Screenshot saved to %s", output_path)
 
 
 app = typer.Typer(help="Hetzner VNC console screenshot tool")
@@ -177,14 +177,16 @@ def main(
 
     if server:
         if url or password:
-            raise typer.BadParameter("Cannot use --url/--password with server name argument")
-        logger.info(f"Fetching console credentials for server '{server}'...")
+            msg = "Cannot use --url/--password with server name argument"
+            raise typer.BadParameter(msg)
+        logger.info("Fetching console credentials for server '%s'...", server)
         wss_url, vnc_password = request_console_credentials(server, token)
         logger.info("Got console credentials")
     elif url and password:
         wss_url, vnc_password = url, password
     else:
-        raise typer.BadParameter("Provide either server name or both --url and --password")
+        msg = "Provide either server name or both --url and --password"
+        raise typer.BadParameter(msg)
 
     asyncio.run(vnc_screenshot(wss_url, vnc_password, str(output)))
 

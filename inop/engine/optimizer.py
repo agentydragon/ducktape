@@ -525,10 +525,10 @@ Examples:
     seed_tasks = [t for t in all_tasks if t.type == task_type_enum.value]
 
     if not seed_tasks:
-        logger.error(f"No tasks found with type '{task_type_enum.value}' in {seeds_path}")
+        logger.error("No tasks found with type '%s' in %s", task_type_enum.value, seeds_path)
         sys.exit(1)
 
-    logger.info(f"Loaded {len(seed_tasks)} {task_type_enum.value} tasks from {len(all_tasks)} total tasks")
+    logger.info("Loaded %d %s tasks from %d total tasks", len(seed_tasks), task_type_enum.value, len(all_tasks))
 
     # Load grading criteria from YAML
     logger.info("Loading grading criteria")

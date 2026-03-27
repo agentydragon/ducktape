@@ -130,12 +130,12 @@ def create_app(settings: Settings, *, include_static: bool = True) -> FastAPI:
     @app.get("/api/actions")
     async def list_actions(status: str | None = None, limit: int = 100, offset: int = 0) -> list[Action]:
         status_enum = ActionStatus(status) if status else None
-        return await gate._req_storage.list_actions(status_enum, limit=limit, offset=offset)
+        return await gate.req_storage.list_actions(status_enum, limit=limit, offset=offset)
 
     @app.get("/api/actions/{session_key}/{action_seq}")
     async def get_action(session_key: str, action_seq: int) -> Action:
         key = ActionKey(session_key=session_key, action_seq=action_seq)
-        action = await gate._req_storage.get_action(key)
+        action = await gate.req_storage.get_action(key)
         if action is None:
             raise HTTPException(status_code=404, detail="Action not found")
         return action

@@ -92,7 +92,7 @@ def create_oauth_router(providers: dict[str, Provider], k8s_store: K8sTokenStore
             annotations=provider.config.access_secret.annotations or None,
             fields=ACCESS_TOKEN_FIELDS,
         )
-        logger.info(f"Stored tokens for {provider_name} (expires {token.expires_at})")
+        logger.info("Stored tokens for %s (expires %s)", provider_name, token.expires_at)
         return RedirectResponse("/#/oauth")
 
     @router.post("/callback/{provider_name}")
@@ -117,7 +117,7 @@ def create_oauth_router(providers: dict[str, Provider], k8s_store: K8sTokenStore
             annotations=provider.config.access_secret.annotations or None,
             fields=ACCESS_TOKEN_FIELDS,
         )
-        logger.info(f"Stored Plaid tokens for {provider_name}")
+        logger.info("Stored Plaid tokens for %s", provider_name)
         return RedirectResponse("/#/oauth", status_code=303)
 
     return router

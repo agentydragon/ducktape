@@ -125,7 +125,7 @@ class GraderState:
         if notification.snapshot_slug != self.snapshot_slug:
             return  # Not for us
 
-        logger.debug(f"Notification for {self.snapshot_slug}: {notification.operation} {notification.item.table}")
+        logger.debug("Notification for %s: %s %s", self.snapshot_slug, notification.operation, notification.item.table)
         self.notification_queue.append(notification)
         self.wake_event.set()
 
@@ -489,7 +489,7 @@ async def _run_grader_loop(snapshot_slug: SnapshotSlug, system_prompt: str, db: 
 
     listener_conn = await db.config.asyncpg_connect()
     await listener_conn.add_listener(GRADING_PENDING_CHANNEL, state.notification_callback)
-    logger.info(f"Listening on channel '{GRADING_PENDING_CHANNEL}' for {snapshot_slug}")
+    logger.info("Listening on channel '%s' for %s", GRADING_PENDING_CHANNEL, snapshot_slug)
 
     try:
         while True:
