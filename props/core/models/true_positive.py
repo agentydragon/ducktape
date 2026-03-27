@@ -23,9 +23,11 @@ class LineRange(BaseModel):
     @model_validator(mode="after")
     def _validate_range(self) -> LineRange:
         if self.start_line < 1:
-            raise ValueError("start_line must be >= 1")
+            msg = "start_line must be >= 1"
+            raise ValueError(msg)
         if self.end_line is not None and self.end_line < self.start_line:
-            raise ValueError("end_line must be >= start_line when provided")
+            msg = "end_line must be >= start_line when provided"
+            raise ValueError(msg)
         return self
 
     def format(self) -> str:
@@ -127,9 +129,11 @@ class TruePositiveOccurrence(BaseModel):
     @model_validator(mode="after")
     def validate_non_empty(self) -> TruePositiveOccurrence:
         if not self.critic_scopes_expected_to_recall:
-            raise ValueError("critic_scopes_expected_to_recall must be non-empty")
+            msg = "critic_scopes_expected_to_recall must be non-empty"
+            raise ValueError(msg)
         if self.match_file_restriction is not None and not self.match_file_restriction:
-            raise ValueError("match_file_restriction must be None or non-empty")
+            msg = "match_file_restriction must be None or non-empty"
+            raise ValueError(msg)
         return self
 
     model_config = ConfigDict(extra="forbid")
@@ -167,9 +171,11 @@ class FalsePositiveOccurrence(BaseModel):
     @model_validator(mode="after")
     def validate_non_empty(self) -> FalsePositiveOccurrence:
         if not self.relevant_files:
-            raise ValueError("relevant_files must be non-empty")
+            msg = "relevant_files must be non-empty"
+            raise ValueError(msg)
         if self.match_file_restriction is not None and not self.match_file_restriction:
-            raise ValueError("match_file_restriction must be None or non-empty")
+            msg = "match_file_restriction must be None or non-empty"
+            raise ValueError(msg)
         return self
 
     model_config = ConfigDict(extra="forbid")

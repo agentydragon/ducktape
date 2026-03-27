@@ -59,7 +59,7 @@ class ConversationTracker:
         self.total_output_tokens = 0
         self.total_reasoning_tokens = 0
         self.total_cost = 0.0
-        self.start_time = datetime.now()
+        self.start_time = datetime.now(tz=datetime.UTC)
 
     def add_usage(self, usage):
         """Track token usage from API response"""
@@ -77,7 +77,7 @@ class ConversationTracker:
 
     def print_stats(self):
         """Print usage statistics"""
-        duration = (datetime.now() - self.start_time).seconds
+        duration = (datetime.now(tz=datetime.UTC) - self.start_time).seconds
         print("\n📊 Session Statistics:")
         print(f"Duration: {duration}s")
         print(f"Input tokens: {self.total_input_tokens:,}")
@@ -140,7 +140,7 @@ def main():
     logs_dir.mkdir(exist_ok=True)
 
     # Create session log file
-    session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    session_id = datetime.now(tz=datetime.UTC).strftime("%Y%m%d_%H%M%S")
     log_file = logs_dir / f"session_{session_id}.jsonl"
     print(f"\n📝 Logging to: {log_file}")
 

@@ -49,7 +49,8 @@ def parse_upstream_url(url: str) -> UpstreamConfig:
     """Parse upstream proxy URL into config with auth header."""
     parsed = urlparse(url)
     if not parsed.hostname:
-        raise ValueError(f"Invalid upstream URL: {url}")
+        msg = f"Invalid upstream URL: {url}"
+        raise ValueError(msg)
 
     host = parsed.hostname
     port = parsed.port or 80
@@ -88,7 +89,7 @@ class AuthForwardingProxy:
         self._upstream_url: str | None = None
         self._creds_lock = threading.Lock()
         self.server_socket: socket.socket | None = None
-        self._running = False
+        self.running = False
         self._thread: threading.Thread | None = None
         self._executor: ThreadPoolExecutor | None = None
         self._connections: list[socket.socket] = []
@@ -104,7 +105,8 @@ class AuthForwardingProxy:
         with self._creds_lock:
             url = self._upstream_url
         if url is None:
-            raise ValueError("Proxy credentials not set")
+            msg = "Proxy credentials not set"
+            raise ValueError(msg)
         return parse_upstream_url(url)
 
     def start(self) -> None:
@@ -118,7 +120,7 @@ class AuthForwardingProxy:
         self.server_socket.settimeout(0.5)
 
         self._executor = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="proxy")
-        self._running = True
+        self.running = True
         self._thread = threading.Thread(target=self._serve, daemon=True)
         self._thread.start()
 
@@ -126,7 +128,7 @@ class AuthForwardingProxy:
 
     def stop(self) -> None:
         """Stop the proxy server."""
-        self._running = False
+        self.running = False
         if self._thread:
             self._thread.join(timeout=2)
         if self._executor:
@@ -140,7 +142,7 @@ class AuthForwardingProxy:
 
     def _serve(self) -> None:
         """Main server loop."""
-        while self._running:
+        while self.running:
             try:
                 client_sock, _ = self.server_socket.accept()  # type: ignore[union-attr]
                 self._connections.append(client_sock)
@@ -309,7 +311,7 @@ class UdsRemoteProxy:
         self._upstream_url: str | None = None
         self._creds_lock = threading.Lock()
         self.server_socket: socket.socket | None = None
-        self._running = False
+        self.running = False
         self._thread: threading.Thread | None = None
         self._executor: ThreadPoolExecutor | None = None
         self._connections: list[socket.socket] = []
@@ -325,7 +327,8 @@ class UdsRemoteProxy:
         with self._creds_lock:
             url = self._upstream_url
         if url is None:
-            raise ValueError("Proxy credentials not set")
+            msg = "Proxy credentials not set"
+            raise ValueError(msg)
         return parse_upstream_url(url)
 
     def start(self) -> None:
@@ -341,7 +344,7 @@ class UdsRemoteProxy:
         self.server_socket.settimeout(0.5)
 
         self._executor = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="uds-proxy")
-        self._running = True
+        self.running = True
         self._thread = threading.Thread(target=self._serve, daemon=True)
         self._thread.start()
 
@@ -349,7 +352,7 @@ class UdsRemoteProxy:
 
     def stop(self) -> None:
         """Stop the UDS proxy server."""
-        self._running = False
+        self.running = False
         if self._thread:
             self._thread.join(timeout=2)
         if self._executor:
@@ -365,7 +368,7 @@ class UdsRemoteProxy:
 
     def _serve(self) -> None:
         """Main server loop."""
-        while self._running:
+        while self.running:
             try:
                 client_sock, _ = self.server_socket.accept()  # type: ignore[union-attr]
                 self._connections.append(client_sock)

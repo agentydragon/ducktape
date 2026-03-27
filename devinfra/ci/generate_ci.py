@@ -360,7 +360,8 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
             )
         else:
             if not config.wheel_name:
-                raise ValueError(f"wheel_name must be set for wheel package {name!r}")
+                msg = f"wheel_name must be set for wheel package {name!r}"
+                raise ValueError(msg)
             wheel_name = config.wheel_name
             release_steps.extend(
                 [
@@ -428,7 +429,8 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
                 file_pattern = f"{name}.tar"
             else:
                 if not config.wheel_name:
-                    raise ValueError(f"wheel_name must be set for wheel package {name!r}")
+                    msg = f"wheel_name must be set for wheel package {name!r}"
+                raise ValueError(msg)
                 file_pattern = config.wheel_name
             if target.flake_input:
                 sed_lines += (

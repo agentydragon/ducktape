@@ -210,7 +210,8 @@ def _normalize_parts(
             base = p.blob  # base64 string per MCP spec
             norm.append(BlobPart(mime=p.mimeType, raw_str=str(base)))
             continue
-        raise TypeError(f"Unsupported resource content type: {type(p).__name__}")
+        msg = f"Unsupported resource content type: {type(p).__name__}"
+        raise TypeError(msg)
     return norm
 
 
@@ -514,7 +515,8 @@ class ResourcesServer(EnhancedFastMCP):
                     is_text = False
                     block_bytes = b""  # Not used for blobs
                 else:
-                    raise TypeError(f"Unsupported content type: {type(block).__name__}")
+                    msg = f"Unsupported content type: {type(block).__name__}"
+                    raise TypeError(msg)
 
                 # Determine slice range for this block
                 slice_start = input.start_offset if block_idx == input.start_block else 0
@@ -750,8 +752,8 @@ class ResourcesServer(EnhancedFastMCP):
 
     async def _present_servers(self) -> set[str]:
         # Include all mounted servers, including in-proc mounts without typed specs.
-        # Use compositor._mount_names() directly; do not swallow errors.
-        names = await self._compositor._mount_names()
+        # Use compositor.mount_names() directly; do not swallow errors.
+        names = await self._compositor.mount_names()
         return set(names)
 
     def _get_or_create_sub(self, server: str, uri: str) -> SubscriptionRecord:
@@ -771,9 +773,11 @@ class ResourcesServer(EnhancedFastMCP):
         entries = await self._compositor.server_entries()
         entry = entries.get(server)
         if entry is None:
-            raise ToolError(f"Unknown server '{server}'")
+            msg = f"Unknown server '{server}'"
+            raise ToolError(msg)
         if not isinstance(entry, RunningServerEntry):
-            raise ToolError(f"Server '{server}' is not running (state={entry.state})")
+            msg = f"Server '{server}' is not running (state={entry.state})"
+            raise ToolError(msg)
         return entry
 
     async def _ensure_capability(self, server: MCPMountPrefix, *, feature: ResourceCapabilityFeature) -> None:
@@ -788,10 +792,12 @@ class ResourcesServer(EnhancedFastMCP):
             caps = entry.initialize.capabilities
             res_caps = caps.resources
         except AttributeError as e:
-            raise ToolError(f"Server '{server}' does not advertise resources capabilities") from e
+            msg = f"Server '{server}' does not advertise resources capabilities"
+            raise ToolError(msg) from e
 
         if res_caps is None:
-            raise ToolError(f"Server '{server}' does not advertise resources capabilities")
+            msg = f"Server '{server}' does not advertise resources capabilities"
+            raise ToolError(msg)
 
         if feature is ResourceCapabilityFeature.SUBSCRIBE:
             ok = bool(res_caps.subscribe)
@@ -800,7 +806,9 @@ class ResourcesServer(EnhancedFastMCP):
             ok = bool(res_caps.listChanged)
             needed = "resources.listChanged"
         else:
-            raise ToolError(f"Unknown capability feature: {feature}")
+            msg = f"Unknown capability feature: {feature}"
+            raise ToolError(msg)
 
         if not ok:
-            raise ToolError(f"Server '{server}' does not support {needed}")
+            msg = f"Server '{server}' does not support {needed}"
+            raise ToolError(msg)

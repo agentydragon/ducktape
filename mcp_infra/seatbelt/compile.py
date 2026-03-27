@@ -23,7 +23,8 @@ def _render_path_filter(pf) -> str:
     if isinstance(pf, Subpath):
         return f'(subpath "{_q(pf.subpath)}")'
     # Should be unreachable due to typing
-    raise ValueError(f"unsupported PathFilter type: {type(pf).__name__}")
+    msg = f"unsupported PathFilter type: {type(pf).__name__}"
+    raise ValueError(msg)
 
 
 def _render_file_rule(fr: FileRule) -> Iterable[str]:

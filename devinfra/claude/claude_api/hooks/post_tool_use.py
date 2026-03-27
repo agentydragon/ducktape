@@ -38,5 +38,6 @@ class PostToolUseOutput(HookOutputBase):
     @model_validator(mode="after")
     def _validate_stop_reason(self) -> PostToolUseOutput:
         if self.stop_reason is not None and self.continue_:
-            raise ValueError("stop_reason requires continue=false")
+            msg = "stop_reason requires continue=false"
+            raise ValueError(msg)
         return self

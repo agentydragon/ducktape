@@ -20,10 +20,12 @@ class OutOfDateError(Exception):
 def check_workflow(path, expected: Workflow) -> None:
     """Check if a workflow file is semantically up to date."""
     if not path.exists():
-        raise FileNotFoundError(f"{path} does not exist")
+        msg = f"{path} does not exist"
+        raise FileNotFoundError(msg)
     current = Workflow.model_validate(yaml.safe_load(path.read_text()))
     if current != expected:
-        raise OutOfDateError(f"{path} is out of date. Run 'bazel run //devinfra/ci:generate_ci_bin' to update.")
+        msg = f"{path} is out of date. Run 'bazel run //devinfra/ci:generate_ci_bin' to update."
+        raise OutOfDateError(msg)
 
 
 def test_ci_yml_up_to_date() -> None:
@@ -42,7 +44,8 @@ def test_release_yml_up_to_date() -> None:
     try:
         check_workflow(path, expected)
     except (FileNotFoundError, OutOfDateError) as exc:
-        raise AssertionError("release.yml is out of date") from exc
+        msg = "release.yml is out of date"
+        raise AssertionError(msg) from exc
 
 
 if __name__ == "__main__":

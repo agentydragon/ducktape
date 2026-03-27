@@ -65,7 +65,8 @@ class BindMount:
                 continue
             parts = entry.split(":")
             if len(parts) < 2:
-                raise ValueError(f"Invalid bind mount spec '{entry}'. Use host:container[:mode].")
+                msg = f"Invalid bind mount spec '{entry}'. Use host:container[:mode]."
+                raise ValueError(msg)
             host, container, *mode_parts = parts
             result.append(
                 cls(
@@ -224,9 +225,9 @@ async def _create_and_start_container(client: aiodocker.Docker, opts: ContainerO
         # Container created but start failed - clean it up before re-raising
         try:
             await container.delete(force=True)
-            logger.debug(f"Cleaned up failed container {container_id}")
+            logger.debug("Cleaned up failed container %s", container_id)
         except Exception as cleanup_error:
-            logger.error(f"Failed to cleanup container {container_id}: {cleanup_error}")
+            logger.error("Failed to cleanup container %s: %s", container_id, cleanup_error)
         raise
 
 
@@ -261,14 +262,14 @@ async def scoped_container(client: aiodocker.Docker, opts: ContainerOptions):
                 status = info["State"]["Status"]
                 if status == "running":
                     await container.kill()
-                    logger.debug(f"Container {container_id} killed")
+                    logger.debug("Container %s killed", container_id)
                 else:
-                    logger.debug(f"Container {container_id} already stopped (status: {status})")
+                    logger.debug("Container %s already stopped (status: %s)", container_id, status)
 
                 await container.delete(force=True)
-                logger.debug(f"Container {container_id} cleaned up successfully")
+                logger.debug("Container %s cleaned up successfully", container_id)
             except Exception as e:
-                logger.error(f"Container cleanup failed for {container_id}: {e}")
+                logger.error("Container cleanup failed for %s: %s", container_id, e)
 
 
 # ---- Lifespan factory (per-session container) ----
@@ -382,10 +383,10 @@ def _normalize_docker_logs_to_bytes(logs) -> bytes:
             elif isinstance(chunk, str):
                 result.extend(chunk.encode("utf-8"))
             else:
-                logger.warning(f"Unexpected chunk type in logs list: {type(chunk)}")
+                logger.warning("Unexpected chunk type in logs list: %s", type(chunk))
         return bytes(result)
 
-    logger.warning(f"Unexpected logs type: {type(logs)}, returning empty bytes")
+    logger.warning("Unexpected logs type: %s, returning empty bytes", type(logs))
     return b""
 
 
@@ -398,7 +399,7 @@ async def _collect_from_exec_stream(stream, stdout_buf: bytearray, stderr_buf: b
 
         data = chunk.data
         if not isinstance(data, bytes):
-            logger.warning(f"Expected bytes from exec stream, got {type(data)}, converting")
+            logger.warning("Expected bytes from exec stream, got %s, converting", type(data))
             data = data.encode("utf-8") if isinstance(data, str) else bytes(data)
 
         if chunk.stream == STREAM_TYPE_STDOUT:
@@ -406,7 +407,7 @@ async def _collect_from_exec_stream(stream, stdout_buf: bytearray, stderr_buf: b
         elif chunk.stream == STREAM_TYPE_STDERR:
             stderr_buf.extend(data)
         else:
-            logger.warning(f"Unknown stream type {chunk.stream}, defaulting to stdout")
+            logger.warning("Unknown stream type %s, defaulting to stdout", chunk.stream)
             stdout_buf.extend(data)
 
 
@@ -430,9 +431,10 @@ async def run_session_container(
     """Run command in per-session container using aiodocker exec."""
     container_id = s.container_id
     if container_id is None:
-        raise RuntimeError("No per-session container available")
+        msg = "No per-session container available"
+        raise RuntimeError(msg)
 
-    logger.debug(f"Executing command in container {container_id[:12]}: {cmd!r} (timeout_ms={input.timeout_ms})")
+    logger.debug("Executing command in container {container_id[:12]}: {cmd!r} (timeout_ms=%s)", input.timeout_ms)
 
     docker_client = s.docker_client
     container_instance = await docker_client.containers.get(container_id)
@@ -471,7 +473,7 @@ async def run_session_container(
 
     if timed_out:
         # External timeout - kill the exec process, not the container
-        logger.debug(f"Command timed out after {input.timeout_ms}ms in container {container_id[:12]}")
+        logger.debug("Command timed out after %sms in container {container_id[:12]}", input.timeout_ms)
         exit_code = None
 
         # Get the PID of the exec process and kill it
@@ -484,9 +486,10 @@ async def run_session_container(
             # Drain the stream to ensure the kill command completes
             while await kill_stream.read_out() is not None:
                 pass
-            logger.debug(f"Killed exec process PID {pid} in container {container_id[:12]}")
+            logger.debug("Killed exec process PID %s in container {container_id[:12]}", pid)
         else:
-            raise RuntimeError(f"Could not get PID for timed-out exec in container {container_id[:12]}")
+            msg = f"Could not get PID for timed-out exec in container {container_id[:12]}"
+            raise RuntimeError(msg)
     else:
         # Command completed normally - inspect exec for exit code
         t_inspect_begin = loop.time()

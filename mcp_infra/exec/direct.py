@@ -51,7 +51,8 @@ class DirectExecServer(EnhancedFastMCP):
             """Read an image file and return it for the model to see."""
             p = Path(input.path)
             if not p.is_file():
-                raise ValueError(f"Not a file: {input.path}")
+                msg = f"Not a file: {input.path}"
+                raise ValueError(msg)
             return [validate_and_encode_image(p.read_bytes(), input.path)]
 
         self.read_image_tool = self.flat_model()(read_image)

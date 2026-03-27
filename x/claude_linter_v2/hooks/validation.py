@@ -35,20 +35,22 @@ VALID_OUTCOMES: dict[HookEventName, tuple[type[HookOutcome], ...]] = {
 def validate_hook_outcome(hook_type: HookEventName, outcome: HookOutcome) -> None:
     """Validate outcome is appropriate for hook type."""
     if hook_type not in VALID_OUTCOMES:
-        raise HookBugError(f"Unknown hook type: {hook_type}")
+        msg = f"Unknown hook type: {hook_type}"
+        raise HookBugError(msg)
 
     valid_types = VALID_OUTCOMES[hook_type]
     if not isinstance(outcome, valid_types):
-        raise HookBugError(
+        msg = (
             f"Invalid outcome type for {hook_type.value}: "
             f"got {type(outcome).__name__}, "
             f"expected one of {[t.__name__ for t in valid_types]}"
         )
+        raise HookBugError(msg)
 
     # Semantic checks
     _validate_outcome_semantics(hook_type, outcome)
 
-    logger.debug(f"✓ Valid {hook_type} outcome: {type(outcome).__name__}")
+    logger.debug("✓ Valid %s outcome: %s", hook_type, type(outcome).__name__)
 
 
 def _validate_outcome_semantics(hook_type: HookEventName, outcome: HookOutcome) -> None:

@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 def _iter_tools(server: FastMCP) -> list[Tool]:
     """Get tools from FastMCP server via sync internal access."""
-    return [c for c in server._local_provider._components.values() if isinstance(c, Tool)]
+    return [c for c in server._local_provider._components.values() if isinstance(c, Tool)]  # noqa: SLF001
 
 
 def extract_tool_schemas(servers: dict[MCPMountPrefix, FastMCP]) -> dict[tuple[MCPMountPrefix, str], type[BaseModel]]:

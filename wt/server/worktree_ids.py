@@ -23,7 +23,8 @@ def parse_worktree_id(wtid: WorktreeID) -> str:
     """Server-only: Extract directory name from WorktreeID."""
     s = str(wtid)
     if not s.startswith("wtid:"):
-        raise ValueError(f"Invalid worktree ID format: {wtid}")
+        msg = f"Invalid worktree ID format: {wtid}"
+        raise ValueError(msg)
     return s.removeprefix("wtid:")
 
 

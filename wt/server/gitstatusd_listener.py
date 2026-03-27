@@ -237,13 +237,15 @@ class GitStatusdProtocol:
             # Remove record separator and split on unit separator
             response_data = raw_response.rstrip("\x1e")
             if not response_data:
-                raise GitStatusdParseError("Empty response from gitstatusd")
+                msg = "Empty response from gitstatusd"
+                raise GitStatusdParseError(msg)
 
             fields = response_data.split("\x1f")
 
             # Validate minimum field count
             if len(fields) < 2:
-                raise GitStatusdParseError(f"Invalid response: expected at least 2 fields, got {len(fields)}")
+                msg = f"Invalid response: expected at least 2 fields, got {len(fields)}"
+                raise GitStatusdParseError(msg)
 
             # Parse core fields
             request_id = fields[0]
@@ -251,7 +253,8 @@ class GitStatusdProtocol:
             try:
                 is_git_repository = int(fields[1]) == 1
             except (ValueError, IndexError) as e:
-                raise GitStatusdValidationError(f"Invalid git repository flag: {e}") from e
+                msg = f"Invalid git repository flag: {e}"
+                raise GitStatusdValidationError(msg) from e
 
             # If not a git repository, return minimal response
             if not is_git_repository:
@@ -260,10 +263,11 @@ class GitStatusdProtocol:
 
             # For git repositories, validate we have enough fields
             if len(fields) < GitStatusdProtocol.MIN_GIT_REPO_FIELDS:
-                raise GitStatusdParseError(
+                msg = (
                     f"Incomplete git repository response: expected {GitStatusdProtocol.MIN_GIT_REPO_FIELDS} fields, "
                     f"got {len(fields)}"
                 )
+                raise GitStatusdParseError(msg)
 
             # Invariant: after this point, `fields` has at least MIN_GIT_REPO_FIELDS entries.
             # Helper accessors (_safe_get_*) therefore may assume the indexed positions exist;
@@ -306,7 +310,8 @@ class GitStatusdProtocol:
         except (GitStatusdParseError, GitStatusdValidationError):
             raise
         except Exception as e:
-            raise GitStatusdParseError(f"Unexpected error parsing gitstatusd response: {e}") from e
+            msg = f"Unexpected error parsing gitstatusd response: {e}"
+            raise GitStatusdParseError(msg) from e
 
     @staticmethod
     def _safe_get_string(fields: list[str], index: int) -> str:
@@ -314,10 +319,12 @@ class GitStatusdProtocol:
         try:
             value = fields[index]
             if not value:
-                raise GitStatusdValidationError(f"Required field {index} is empty")
+                msg = f"Required field {index} is empty"
+                raise GitStatusdValidationError(msg)
             return value
         except IndexError:
-            raise GitStatusdValidationError(f"Missing required field {index}") from None
+            msg = f"Missing required field {index}"
+            raise GitStatusdValidationError(msg) from None
 
     @staticmethod
     def _safe_get_optional_string(fields: list[str], index: int) -> str | None:
@@ -334,7 +341,8 @@ class GitStatusdProtocol:
         try:
             return int(value)
         except ValueError as e:
-            raise GitStatusdValidationError(f"Invalid integer in field {index}: {e}") from e
+            msg = f"Invalid integer in field {index}: {e}"
+            raise GitStatusdValidationError(msg) from e
 
     @staticmethod
     def _safe_get_commit_hash(fields: list[str], index: int) -> str | None:
@@ -345,7 +353,8 @@ class GitStatusdProtocol:
 
         # Validate commit hash format (40 hex characters)
         if len(value) != SHA_HEX_LEN or not all(c in "0123456789abcdef" for c in value.lower()):
-            raise GitStatusdValidationError(f"Invalid commit hash format: {value}")
+            msg = f"Invalid commit hash format: {value}"
+            raise GitStatusdValidationError(msg)
 
         return value
 
@@ -355,7 +364,8 @@ class GitStatusdProtocol:
         try:
             value = fields[index]
         except IndexError as e:
-            raise GitStatusdValidationError("Missing repository state field") from e
+            msg = "Missing repository state field"
+            raise GitStatusdValidationError(msg) from e
 
         if value == "":
             # Empty string denotes NORMAL repository state per protocol
@@ -367,7 +377,8 @@ class GitStatusdProtocol:
                 return state
 
         # Unknown state: treat as validation error
-        raise GitStatusdValidationError(f"Unknown repository state: {value}")
+        msg = f"Unknown repository state: {value}"
+        raise GitStatusdValidationError(msg)
 
 
 def find_gitstatusd_in_runfiles() -> str | None:
@@ -489,7 +500,8 @@ class GitstatusdListener:
             )
             request_data = gitstatusd_request.to_wire_format()
             if not (self.process and self.process.stdin and self.process.stdout):
-                raise RuntimeError("gitstatusd process is not ready")
+                msg = "gitstatusd process is not ready"
+                raise RuntimeError(msg)
             self.process.stdin.write(request_data.encode())
             await self.process.stdin.drain()
             response = await self.process.stdout.readuntil(b"\x1e")

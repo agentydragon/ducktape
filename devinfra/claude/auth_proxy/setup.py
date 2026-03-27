@@ -110,7 +110,8 @@ def _find_system_file(candidates: list[Path], description: str) -> Path:
     for path in candidates:
         if path.exists():
             return path
-    raise FileNotFoundError(f"Could not find {description}")
+    msg = f"Could not find {description}"
+    raise FileNotFoundError(msg)
 
 
 def _get_java_cacerts_candidates() -> list[Path]:
@@ -160,12 +161,14 @@ def _extract_proxy_ca(paths: SessionPaths) -> None:
     ca_file = Path(ca_path) if ca_path else ANTHROPIC_CA_PREINSTALLED
 
     if not ca_file.exists():
-        raise CaExtractionError(f"Anthropic CA not found at {ca_file}")
+        msg = f"Anthropic CA not found at {ca_file}"
+        raise CaExtractionError(msg)
 
     ca_pem = ca_file.read_text()
     cert = x509.load_pem_x509_certificate(ca_pem.encode())
     if not _is_anthropic_tls_inspection_ca(cert):
-        raise CaExtractionError(f"CA at {ca_file} is not an Anthropic TLS Inspection CA")
+        msg = f"CA at {ca_file} is not an Anthropic TLS Inspection CA"
+        raise CaExtractionError(msg)
 
     logger.info("Loaded Anthropic CA from filesystem: %s", ca_file)
     paths.auth_proxy_dir.mkdir(parents=True, exist_ok=True)
@@ -197,7 +200,8 @@ async def _create_java_truststore(paths: SessionPaths) -> None:
     truststore = paths.auth_proxy_truststore
 
     if not ca_file.exists():
-        raise TruststoreError("No CA file to add to truststore")
+        msg = "No CA file to add to truststore"
+        raise TruststoreError(msg)
 
     system_cacerts: Path | None = None
     try:
@@ -240,12 +244,14 @@ async def _create_java_truststore(paths: SessionPaths) -> None:
         _, stderr = await process.communicate()
 
         if process.returncode != 0:
-            raise TruststoreError(f"keytool failed: {stderr.decode()}")
+            msg = f"keytool failed: {stderr.decode()}"
+            raise TruststoreError(msg)
 
         logger.info("Created custom Java truststore at %s", truststore)
 
     except OSError as e:
-        raise TruststoreError(f"Failed to create truststore: {e}") from e
+        msg = f"Failed to create truststore: {e}"
+        raise TruststoreError(msg) from e
 
 
 async def _wait_for_proxy_port(port: int) -> None:
@@ -257,7 +263,8 @@ async def _wait_for_proxy_port(port: int) -> None:
     try:
         await async_wait_for_port("127.0.0.1", port, timeout_secs=5.0)
     except TimeoutError as e:
-        raise ProxyServiceError(f"Auth proxy port {port} not listening after 5s") from e
+        msg = f"Auth proxy port {port} not listening after 5s"
+        raise ProxyServiceError(msg) from e
 
 
 @tracer.start_as_current_span("proxy_create_bundle")
@@ -277,7 +284,8 @@ def _create_combined_ca_bundle(paths: SessionPaths) -> None:
     # using the pre-installed file would bypass that override.
     ca_file = ca_file_path if ca_file_path.exists() else ANTHROPIC_CA_PREINSTALLED
     if not ca_file.exists():
-        raise CaBundleError("No CA file to add to bundle")
+        msg = "No CA file to add to bundle"
+        raise CaBundleError(msg)
 
     logger.info("Using CA from %s", ca_file)
 
@@ -324,7 +332,8 @@ async def setup_auth_proxy(
 
     https_proxy = get_upstream_proxy_url()
     if not https_proxy:
-        raise ProxyServiceError("No https_proxy environment variable set")
+        msg = "No https_proxy environment variable set"
+        raise ProxyServiceError(msg)
 
     # TCP mode: set credentials on the in-process TCP proxy and verify it's listening
     port: int | None = None
@@ -347,7 +356,7 @@ async def setup_auth_proxy(
     # Create combined CA bundle (for tools like uv that use SSL_CERT_FILE)
     _create_combined_ca_bundle(paths)
 
-    status = (f"running (port {port})" if proxy._running else "configured") if proxy is not None else "uds-only"
+    status = (f"running (port {port})" if proxy.running else "configured") if proxy is not None else "uds-only"
     ca_status = "custom CA" if combined_ca.exists() else "system"
 
     logger.info("Auth proxy setup complete")

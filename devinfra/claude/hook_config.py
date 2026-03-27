@@ -60,7 +60,8 @@ class K8sSecretsConfig(BaseModel):
         for entry in self.secrets:
             for env_var in entry.data.values():
                 if env_var in seen:
-                    raise ValueError(f"Duplicate env var {env_var!r} in secrets {seen[env_var]!r} and {entry.name!r}")
+                    msg = f"Duplicate env var {env_var!r} in secrets {seen[env_var]!r} and {entry.name!r}"
+                    raise ValueError(msg)
                 seen[env_var] = entry.name
         return self
 

@@ -84,4 +84,5 @@ def derive_origin_server(uri: str, mount_names: Iterable[str]) -> str:
         if has_resource_prefix(uri, name):
             return name
 
-    raise ValueError(f"Could not derive origin server for URI {uri!r}. Available servers: {sorted_names}")
+    msg = f"Could not derive origin server for URI {uri!r}. Available servers: {sorted_names}"
+    raise ValueError(msg)

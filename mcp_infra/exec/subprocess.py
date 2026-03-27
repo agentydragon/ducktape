@@ -105,7 +105,8 @@ def _parse_env_list(env_list: list[str] | None) -> dict[str, str] | None:
     for entry in env_list:
         name, sep, value = entry.partition("=")
         if not sep:
-            raise ValueError(f"invalid env var (missing '='): {entry!r}")
+            msg = f"invalid env var (missing '='): {entry!r}"
+            raise ValueError(msg)
         result[name] = value
     return result
 

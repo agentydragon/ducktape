@@ -141,14 +141,16 @@ class Mount:
     def proxy(self) -> FastMCPProxy:
         """Get proxy. Raises if mount not active."""
         if not isinstance(self._state_data, _MountActive):
-            raise RuntimeError(f"Mount '{self._prefix}' not active (state: {self._state_data.kind.name})")
+            msg = f"Mount '{self._prefix}' not active (state: {self._state_data.kind.name})"
+            raise RuntimeError(msg)
         return self._state_data.proxy
 
     @property
     def child_client(self) -> Client:
         """Get child client. Raises if mount not active."""
         if not isinstance(self._state_data, _MountActive):
-            raise RuntimeError(f"Mount '{self._prefix}' not active (state: {self._state_data.kind.name})")
+            msg = f"Mount '{self._prefix}' not active (state: {self._state_data.kind.name})"
+            raise RuntimeError(msg)
         return self._state_data.child_client
 
     # Setup methods
@@ -170,7 +172,8 @@ class Mount:
             Exception: If setup fails (after cleanup)
         """
         if not isinstance(self._state_data, _MountPending):
-            raise RuntimeError(f"Mount '{self._prefix}' already setup")
+            msg = f"Mount '{self._prefix}' already setup"
+            raise RuntimeError(msg)
 
         stack = AsyncExitStack()
         try:
@@ -196,7 +199,7 @@ class Mount:
                 _ = child_client.initialize_result
                 self._state_data = _MountActive(stack=stack, proxy=proxy, child_client=child_client)
             except Exception as e:
-                logger.warning(f"Failed to get initialize result for '{self._prefix}': {e}")
+                logger.warning("Failed to get initialize result for '%s': %s", self._prefix, e)
                 self._state_data = _MountFailed(exception=e, stack=stack)
                 # Don't raise - mount is registered but failed
 
@@ -227,7 +230,8 @@ class Mount:
             Exception: If setup fails (after cleanup)
         """
         if not isinstance(self._state_data, _MountPending):
-            raise RuntimeError(f"Mount '{self._prefix}' already setup")
+            msg = f"Mount '{self._prefix}' already setup"
+            raise RuntimeError(msg)
 
         stack = AsyncExitStack()
         try:
@@ -245,7 +249,7 @@ class Mount:
                 _ = base_client.initialize_result
                 self._state_data = _MountActive(stack=stack, proxy=proxy, child_client=base_client)
             except Exception as e:
-                logger.warning(f"Failed to get initialize result for '{self._prefix}': {e}")
+                logger.warning("Failed to get initialize result for '%s': %s", self._prefix, e)
                 self._state_data = _MountFailed(exception=e, stack=stack)
                 # Don't raise - mount is registered but failed
 
@@ -268,8 +272,8 @@ class Mount:
         # Defensive check: warn if already closing
         if isinstance(self._state_data, _MountPending):
             logger.warning(
-                f"Cleaning up mount '{self._prefix}' that was never initialized "
-                "(state: PENDING). This is safe but unexpected."
+                "Cleaning up mount '%s' that was never initialized (state: PENDING). This is safe but unexpected.",
+                self._prefix,
             )
 
         # Get stack to close (from Active or Failed state)
@@ -281,6 +285,6 @@ class Mount:
             try:
                 await stack.aclose()
             except Exception as e:
-                logger.exception(f"Error during cleanup for '{self._prefix}'", exc_info=e)
+                logger.exception("Error during cleanup for '%s'", self._prefix, exc_info=e)
 
         self._state_data = _MountClosed()

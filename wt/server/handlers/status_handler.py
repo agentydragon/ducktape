@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from wt.server.git_manager import GitManager, NoSuchRefError
@@ -94,7 +94,7 @@ async def _compute_worktree_status(
                     branch_name=branch_name or "",
                     dirty_files_lower_bound=0,
                     untracked_files_lower_bound=0,
-                    last_updated_at=datetime.now(),
+                    last_updated_at=datetime.now(tz=UTC),
                     is_cached=False,
                     cache_age_ms=None,
                     is_stale=False,
@@ -121,7 +121,7 @@ async def _compute_worktree_status(
         else:
             dirty_count, untracked_count = 0, 0
             cache_age_ms = None
-            last_updated_at = datetime.now()
+            last_updated_at = datetime.now(tz=UTC)
             task = asyncio.create_task(gs_client.update_working_status())
             task.add_done_callback(_log_task_exception)
 

@@ -42,17 +42,17 @@ class NotificationsMixin(FastMCP):
         **kwargs: Any,
     ) -> None:
         super().__init__(name=name, instructions=instructions, lifespan=lifespan, auth=auth, **kwargs)
-        self._sessions: WeakSet[ServerSession] = WeakSet()
+        self.sessions: WeakSet[ServerSession] = WeakSet()
         self._pending_uris: list[str] = []
         self._pending_list_changed: bool = False
 
     async def broadcast_resource_updated(self, uri: AnyUrl | str) -> None:
         """Broadcast ResourceUpdatedNotification to all sessions."""
         # If no sessions yet, queue and return
-        if not self._sessions:
+        if not self.sessions:
             self._pending_uris.append(str(uri))
             return
-        sessions = [s for s in self._sessions if s is not None]
+        sessions = [s for s in self.sessions if s is not None]
         # Send to all current sessions; prune failures
         logger.debug("broadcast_resource_updated: uri=%s sessions=%d", uri, len(sessions))
         uri_value = uri if isinstance(uri, AnyUrl) else ANY_URL.validate_python(uri)
@@ -62,13 +62,13 @@ class NotificationsMixin(FastMCP):
         for s, r in zip(sessions, results, strict=False):
             if isinstance(r, Exception):
                 logger.warning("send_resource_updated failed: %s", r)
-                self._sessions.discard(s)
+                self.sessions.discard(s)
 
     async def flush_pending(self) -> None:
         """Send any queued URIs to current sessions (if any)."""
-        if not self._sessions:
+        if not self.sessions:
             return
-        sessions = [s for s in self._sessions if s is not None]
+        sessions = [s for s in self.sessions if s is not None]
         uris = self._pending_uris[:]
         self._pending_uris.clear()
         tasks: list[Awaitable[Any]] = [
@@ -81,7 +81,7 @@ class NotificationsMixin(FastMCP):
 
     async def broadcast_resource_list_changed(self) -> None:
         """Notify clients that the server's resource list changed."""
-        sessions = [s for s in list(self._sessions) if s is not None]
+        sessions = [s for s in list(self.sessions) if s is not None]
         if not sessions:
             self._pending_list_changed = True
             return
@@ -90,4 +90,4 @@ class NotificationsMixin(FastMCP):
         for s, r in zip(sessions, results, strict=False):
             if isinstance(r, Exception):
                 logger.warning("send_resource_list_changed failed: %s", r)
-                self._sessions.discard(s)
+                self.sessions.discard(s)

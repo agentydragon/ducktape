@@ -36,7 +36,8 @@ def parse_system_notification_payload(message: str | UserMessage) -> dict:
     if isinstance(message, UserMessage):
         parts = list(_iter_text_parts(message))
         if not parts:
-            raise ValueError("Message has no text parts to inspect")
+            msg = "Message has no text parts to inspect"
+            raise ValueError(msg)
         text = "\n".join(parts)
     else:
         text = message
@@ -46,11 +47,13 @@ def parse_system_notification_payload(message: str | UserMessage) -> dict:
     start = text.find(start_tag)
     end = text.find(end_tag)
     if start == -1 or end == -1 or end <= start:
-        raise ValueError("Not a tagged system notification message")
+        msg = "Not a tagged system notification message"
+        raise ValueError(msg)
     payload_str = text[start + len(start_tag) : end].strip()
     result = json.loads(payload_str)
     if not isinstance(result, dict):
-        raise ValueError("Payload is not a JSON object")
+        msg = "Payload is not a JSON object"
+        raise ValueError(msg)
     return result
 
 
@@ -64,7 +67,8 @@ def enable_resources_caps(server: Any, *, subscribe: bool | None = None, list_ch
     """
     mcp_server = getattr(server, "_mcp_server", None)
     if mcp_server is None:
-        raise RuntimeError("Server has no _mcp_server to patch")
+        msg = "Server has no _mcp_server to patch"
+        raise RuntimeError(msg)
     base_create = mcp_server.create_initialization_options
     base_get_caps = mcp_server.get_capabilities
 
@@ -125,7 +129,8 @@ def install_subscription_recorder(server: Any) -> SubscriptionRecorder:
     """Register lightweight subscribe/unsubscribe handlers that record URIs."""
     mcp_server = getattr(server, "_mcp_server", None)
     if mcp_server is None:
-        raise RuntimeError("Server has no _mcp_server to patch")
+        msg = "Server has no _mcp_server to patch"
+        raise RuntimeError(msg)
     recorder = SubscriptionRecorder()
 
     @mcp_server.subscribe_resource()

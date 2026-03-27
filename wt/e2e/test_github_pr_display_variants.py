@@ -6,7 +6,7 @@ import re
 import socket
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -149,7 +149,7 @@ def test_github_pr_variants(variant, expects, github_pr_env: "GithubPrEnv"):
             state=PRState.OPEN if variant == "open_mergeable" else PRState.CLOSED,
             draft=False,
             mergeable=variant in {"open_mergeable", "merged"},
-            merged_at=None if variant != "merged" else datetime.now(tz=datetime.UTC).isoformat(),
+            merged_at=None if variant != "merged" else datetime.now(tz=UTC).isoformat(),
             additions=10
             if variant == "open_mergeable"
             else 3

@@ -151,7 +151,8 @@ class DisplayEventsHandler(BaseHandler):
     def _render_tool_call(self, tc: ToolCall) -> str:
         # Require a valid namespaced tool name; do not synthesize placeholders
         if not tc.name:
-            raise ValueError("ToolCall.name must be a non-empty namespaced tool name")
+            msg = "ToolCall.name must be a non-empty namespaced tool name"
+            raise ValueError(msg)
         name = tc.name
         parsed: Any | None = parse_json_or_none(tc.args_json)
         args = parsed if parsed is not None else ({"_raw": tc.args_json} if tc.args_json else {})

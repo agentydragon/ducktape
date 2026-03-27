@@ -91,7 +91,8 @@ class GitManager:
             return dirty_files, untracked_files
 
         except (pygit2.GitError, OSError) as e:
-            raise GitError("Failed to get working directory status") from e
+            msg = "Failed to get working directory status"
+            raise GitError(msg) from e
 
     def get_repo(self, path: Path | None = None) -> pygit2.Repository:
         if path is None or path == self.config.main_repo:
@@ -113,7 +114,8 @@ class GitManager:
             resolved = repo.resolve_refish(ref)
             commit = resolved[0]
         except KeyError as e:
-            raise NoSuchRefError(f"Cannot get commit object for {ref}: {e}") from e
+            msg = f"Cannot get commit object for {ref}: {e}"
+            raise NoSuchRefError(msg) from e
 
         message = commit.message
         if isinstance(message, bytes):
@@ -132,7 +134,8 @@ class GitManager:
             resolved = self._main_repo.resolve_refish(ref)
             return str(resolved[0].id)
         except KeyError as e:
-            raise NoSuchRefError(f"Reference does not exist: {ref}") from e
+            msg = f"Reference does not exist: {ref}"
+            raise NoSuchRefError(msg) from e
 
     # Worktree operations
     def list_worktrees(self) -> list[WorktreeInfo]:
@@ -165,19 +168,23 @@ class GitManager:
 
         # Validate path doesn't already exist
         if path_obj.exists():
-            raise WorktreeCreateError(f"Path {path} already exists")
+            msg = f"Path {path} already exists"
+            raise WorktreeCreateError(msg)
 
         # Validate branch name format (basic check)
         if not branch or not branch.strip():
-            raise WorktreeCreateError("Branch name cannot be empty")
+            msg = "Branch name cannot be empty"
+            raise WorktreeCreateError(msg)
 
         # Check if branch name contains valid characters only
         if not re.match(r"^[a-zA-Z0-9._/-]+$", branch):
-            raise WorktreeCreateError(f"Branch name '{branch}' contains invalid characters")
+            msg = f"Branch name '{branch}' contains invalid characters"
+            raise WorktreeCreateError(msg)
 
         # Check if worktree already exists for this path
         if any(info.path == path_obj for info in self.list_worktrees()):
-            raise WorktreeCreateError(f"Worktree already exists at {path}")
+            msg = f"Worktree already exists at {path}"
+            raise WorktreeCreateError(msg)
 
         # Ensure branch exists; if not, create it off upstream
         if self._main_repo.lookup_branch(branch) is None:
@@ -190,7 +197,8 @@ class GitManager:
         try:
             git_run(["worktree", "add", "--no-checkout", path_obj, branch], cwd=self.config.main_repo)
         except subprocess.CalledProcessError as e:
-            raise WorktreeCreateError(f"git worktree add failed: {e.stderr.decode(errors='replace').strip()}") from e
+            msg = f"git worktree add failed: {e.stderr.decode(errors='replace').strip()}"
+            raise WorktreeCreateError(msg) from e
 
     def worktree_remove(self, path: Path, force: bool = False) -> None:
         path_obj = path
@@ -201,12 +209,12 @@ class GitManager:
         try:
             git_run(args, cwd=self.config.main_repo)
         except subprocess.CalledProcessError as e:
-            raise WorktreeDeleteError(
-                f"Failed to remove worktree at {path}: {e.stderr.decode(errors='replace').strip()}"
-            ) from e
+            msg = f"Failed to remove worktree at {path}: {e.stderr.decode(errors='replace').strip()}"
+            raise WorktreeDeleteError(msg) from e
 
     def verify_branch_exists(self, branch: str) -> str:
         try:
             return self.verify_ref_exists(f"refs/heads/{branch}")
         except NoSuchRefError as e:
-            raise NoSuchBranchError(f"Branch {branch} does not exist") from e
+            msg = f"Branch {branch} does not exist"
+            raise NoSuchBranchError(msg) from e

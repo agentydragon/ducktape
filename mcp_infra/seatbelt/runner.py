@@ -81,7 +81,8 @@ def collect_unified_sandbox_denies(artifacts_dir: Path, window: str = "5m") -> t
     ]
     res = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if res.returncode != 0:
-        raise RuntimeError(f"log show failed rc={res.returncode}: {res.stderr!r}")
+        msg = f"log show failed rc={res.returncode}: {res.stderr!r}"
+        raise RuntimeError(msg)
     text = res.stdout or ""
     dest = artifacts_dir / "unified_sandbox_deny.log"
     dest.write_text(text)
@@ -164,7 +165,8 @@ async def run_sandboxed_async(
     """Async one-shot runner. If stdout/stderr are PIPE, uses communicate(); otherwise waits."""
     sx = sandbox_exec or shutil.which("sandbox-exec")
     if not sx:
-        raise FileNotFoundError("sandbox-exec not found on PATH; macOS-only")
+        msg = "sandbox-exec not found on PATH; macOS-only"
+        raise FileNotFoundError(msg)
 
     artifacts_dir = Path(tempfile.mkdtemp(prefix="seatbelt-run-"))
     _policy, policy_file, trace_file, policy_text = _prepare_policy(
@@ -323,7 +325,8 @@ async def apopen(
     """
     sx = shutil.which("sandbox-exec")
     if not sx:
-        raise FileNotFoundError("sandbox-exec not found on PATH; macOS-only")
+        msg = "sandbox-exec not found on PATH; macOS-only"
+        raise FileNotFoundError(msg)
 
     artifacts_dir = Path(tempfile.mkdtemp(prefix="seatbelt-apopen-"))
     # Configure trace path on a deep copy if requested and write policy

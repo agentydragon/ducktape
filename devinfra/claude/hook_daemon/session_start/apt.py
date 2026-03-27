@@ -44,7 +44,8 @@ async def install_packages(packages: list[str]) -> AptSetup:
     )
     _, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
     if process.returncode != 0:
-        raise RuntimeError(f"apt-get install failed: {stderr.decode()}")
+        msg = f"apt-get install failed: {stderr.decode()}"
+        raise RuntimeError(msg)
 
     logger.info("System packages installed successfully")
     return AptSetup(packages_installed=list(packages))

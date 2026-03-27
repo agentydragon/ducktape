@@ -15,7 +15,8 @@ def parse_proxy_url(proxy_url: str) -> ParseResult:
     """Parse proxy URL, raising ValueError if invalid."""
     parsed = urlparse(proxy_url)
     if not parsed.hostname:
-        raise ValueError(f"Could not parse host from {proxy_url}")
+        msg = f"Could not parse host from {proxy_url}"
+        raise ValueError(msg)
     return parsed
 
 

@@ -14,7 +14,8 @@ from mcp_infra.flat_tool import FlatTool
 def _structured_content(result: FastMCPCallToolResult, *, tool_name: str) -> dict[str, Any]:
     sc = result.structured_content
     if sc is None:
-        raise RuntimeError(f"{tool_name!r} did not return structured_content; tests require structured outputs")
+        msg = f"{tool_name!r} did not return structured_content; tests require structured outputs"
+        raise RuntimeError(msg)
     return TypeAdapter(dict[str, Any]).validate_python(sc)
 
 
@@ -22,13 +23,13 @@ class ToolStub[T_Out]:
     """Awaitable callable bound to a (session, tool_name, out_type)."""
 
     def __init__(self, session: Client, name: str, out_type: type[T_Out]) -> None:
-        self._session = session
+        self.session = session
         self._name = name
         self._out_type = out_type
 
     async def __call__[T_In: BaseModel](self, payload: T_In) -> T_Out:
         args = payload.model_dump(exclude_none=False)
-        result = await self._session.call_tool(name=self._name, arguments=args)
+        result = await self.session.call_tool(name=self._name, arguments=args)
 
         if result.structured_content is not None:
             content = result.structured_content
@@ -39,7 +40,8 @@ class ToolStub[T_Out]:
             return TypeAdapter(self._out_type).validate_python(content)
 
         # Fallback: no structured output
-        raise RuntimeError(f"{self._name!r} did not return structured_content; tests require structured outputs")
+        msg = f"{self._name!r} did not return structured_content; tests require structured outputs"
+        raise RuntimeError(msg)
 
 
 def _resolve_output_type(hinted_output: object, out_model: object) -> type[Any]:
@@ -84,7 +86,7 @@ class TypedClient:
         self._models: dict[str, ToolModels] = {}
 
     def stub[T_Out](self, name: str, out_type: type[T_Out]) -> ToolStub[T_Out]:
-        return ToolStub(self._session, name, out_type)
+        return ToolStub(self.session, name, out_type)
 
     @property
     def models(self) -> dict[str, ToolModels]:
@@ -97,7 +99,7 @@ class TypedClient:
         Requires a server created via FastMCP. Introspects FlatTool instances
         for input_model and return type annotations.
         """
-        components = server._local_provider._components
+        components = server._local_provider._components  # noqa: SLF001
 
         client = cls(session)
         for component in components.values():
@@ -128,7 +130,7 @@ class TypedClient:
         models = self._models.get(name)
         if not models:
             raise AttributeError(name)
-        session = self._session
+        session = self.session
 
         async def _err(payload: BaseModel) -> str:
             if models.Input is not None and not isinstance(payload, models.Input):
@@ -139,7 +141,8 @@ class TypedClient:
             except Exception as exc:
                 return str(exc)
             if not result.is_error:
-                raise AssertionError("expected tool error")
+                msg = "expected tool error"
+                raise AssertionError(msg)
             raise AssertionError(f"expected exception from {name}, got is_error=True result instead")
 
         return _err

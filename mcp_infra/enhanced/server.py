@@ -37,7 +37,7 @@ class _SessionCapturingMiddleware(Middleware):
         if context.fastmcp_context is not None and context.fastmcp_context.session is not None:
             session = context.fastmcp_context.session
             if isinstance(session, ServerSession):
-                self._enhanced._sessions.add(session)
+                self._enhanced.sessions.add(session)
                 await self._enhanced.flush_pending()
         return result
 

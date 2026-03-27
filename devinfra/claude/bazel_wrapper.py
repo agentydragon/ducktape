@@ -101,7 +101,8 @@ def _resolve_real_binary() -> str:
     if env_path:
         path = Path(env_path)
         if not path.exists():
-            raise FileNotFoundError(f"{ENV_BAZELISK_PATH}={env_path} does not exist")
+            msg = f"{ENV_BAZELISK_PATH}={env_path} does not exist"
+            raise FileNotFoundError(msg)
         return env_path
 
     # CLI mode: find the real binary matching our invocation name
@@ -114,7 +115,8 @@ def _resolve_real_binary() -> str:
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)
 
-    raise FileNotFoundError(f"No {invoked_as} found on PATH")
+    msg = f"No {invoked_as} found on PATH"
+    raise FileNotFoundError(msg)
 
 
 def _refresh_proxy_creds(paths: SessionPaths) -> str:
@@ -124,13 +126,15 @@ def _refresh_proxy_creds(paths: SessionPaths) -> str:
     """
     https_proxy = get_upstream_proxy_url()
     if not https_proxy:
-        raise AuthProxyError("No HTTPS_PROXY environment variable set")
+        msg = "No HTTPS_PROXY environment variable set"
+        raise AuthProxyError(msg)
     try:
         return update_proxy_creds(https_proxy, paths)
     except OSError as e:
-        raise AuthProxyError(
+        msg = (
             f"Auth proxy RPC failed: {e}. The hook daemon may not be running. Try restarting your Claude Code session."
-        ) from e
+        )
+        raise AuthProxyError(msg) from e
 
 
 def _run(paths: SessionPaths) -> None:
@@ -156,7 +160,8 @@ def main() -> None:
     """Main entry point."""
     session_dir_str = os.environ.get(ENV_SESSION_DIR)
     if not session_dir_str:
-        raise RuntimeError(f"{ENV_SESSION_DIR} environment variable is required")
+        msg = f"{ENV_SESSION_DIR} environment variable is required"
+        raise RuntimeError(msg)
     session_id = Path(session_dir_str).name
     paths = SessionPaths.from_env(session_id, dict(os.environ))
 

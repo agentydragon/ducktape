@@ -66,7 +66,8 @@ def convert_mcp_server_types_to_spec(mcp_spec: MCPServerTypes) -> ServerSpec:
     if isinstance(mcp_spec, RemoteMCPServer):
         headers_list = [KeyValue(key=k, value=v) for k, v in mcp_spec.headers.items()] if mcp_spec.headers else None
         return HttpServerSpec(type="http", url=mcp_spec.url, headers=headers_list)
-    raise TypeError(f"Unsupported MCP server type: {type(mcp_spec)}")
+    msg = f"Unsupported MCP server type: {type(mcp_spec)}"
+    raise TypeError(msg)
 
 
 class CompositorAdminServer(EnhancedFastMCP):

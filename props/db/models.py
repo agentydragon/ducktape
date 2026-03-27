@@ -295,14 +295,16 @@ class Snapshot(Base):
     def get(cls, slug: SnapshotSlug) -> Snapshot | None:
         session = Session.object_session(cls)
         if session is None:
-            raise RuntimeError("Model not bound to session")
+            msg = "Model not bound to session"
+            raise RuntimeError(msg)
         return session.execute(select(cls).where(cls.slug == slug)).scalar_one_or_none()
 
     @classmethod
     def get_by_split(cls, split: str) -> list[Snapshot]:
         session = Session.object_session(cls)
         if session is None:
-            raise RuntimeError("Model not bound to session")
+            msg = "Model not bound to session"
+            raise RuntimeError(msg)
         return list(session.execute(select(cls).where(cls.split == split)).scalars().all())
 
     def files_with_issues(self) -> set[Path]:

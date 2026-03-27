@@ -130,11 +130,11 @@ class HookHandler:
             # Set log level from config
             log_level = config.log_level
             try:
-                level_value = logging._nameToLevel.get(log_level.upper(), logging.INFO)
+                level_value = logging.getLevelName(log_level.upper())
                 file_handler.setLevel(level_value)
             except (AttributeError, KeyError):
                 file_handler.setLevel(logging.INFO)
-                logger.warning(f"Invalid log level '{log_level}', using INFO")
+                logger.warning("Invalid log level '%s', using INFO", log_level)
 
             file_formatter = logging.Formatter(
                 "%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s"
@@ -145,7 +145,7 @@ class HookHandler:
             # Set root logger to the lowest level to let handlers filter
             root_logger.setLevel(logging.DEBUG)
 
-            logger.info(f"Logging configured: level={log_level}, file={log_file}")
+            logger.info("Logging configured: level=%s, file=%s", log_level, log_file)
 
     def _log_hook_call(
         self, session_id: SessionID, hook_type: str, request: BaseHookRequest, outcome: Any, response: Any
@@ -153,7 +153,7 @@ class HookHandler:
         """Log detailed hook information to session log file."""
         log_file = self.log_dir / f"{session_id}.log"
 
-        timestamp = datetime.now().isoformat()
+        timestamp = datetime.now(tz=datetime.UTC).isoformat()
 
         # Build log entry
         log_entry = {
@@ -182,7 +182,11 @@ class HookHandler:
         """Log a specific decision point."""
         log_file = self.log_dir / f"{session_id}.log"
 
-        log_entry = {"timestamp": datetime.now().isoformat(), "decision_point": decision_point, "details": details}
+        log_entry = {
+            "timestamp": datetime.now(tz=datetime.UTC).isoformat(),
+            "decision_point": decision_point,
+            "details": details,
+        }
 
         with log_file.open("a") as f:
             f.write(f"DECISION: {json.dumps(log_entry)}\n")
@@ -198,7 +202,7 @@ class HookHandler:
         self._track_session(request, session_id)
 
         # Log the incoming request
-        logger.info(f"Hook call: {hook_type} for session {session_id}")
+        logger.info("Hook call: %s for session %s", hook_type, session_id)
 
         # Dispatch to typed handler
         outcome = self._dispatch_hook(hook_type, request, session_id)
@@ -238,7 +242,8 @@ class HookHandler:
             return self._handle_subagent_stop(request, session_id)
         if hook_type == "Notification" and isinstance(request, NotificationRequest):
             return self._handle_notification(request, session_id)
-        raise HookBugError(f"Invalid hook type: {hook_type}")
+        msg = f"Invalid hook type: {hook_type}"
+        raise HookBugError(msg)
 
     def _handle_pre_hook(self, request: PreToolUseRequest, session_id: SessionID) -> HookOutcome:
         """Handle PreToolUse with early bailout pattern."""
@@ -248,7 +253,7 @@ class HookHandler:
         file_path = tool_call.file_path if isinstance(tool_call, FilePathToolCall) else None
         content = tool_call.content if isinstance(tool_call, WriteToolCall) else None
 
-        logger.info(f"Pre-hook for {tool_name} in session {session_id}")
+        logger.info("Pre-hook for %s in session %s", tool_name, session_id)
 
         # Clear any existing notification for this session
         self._clear_notification(session_id)
@@ -365,7 +370,7 @@ class HookHandler:
         tool_name = tool_call.tool_name
         file_path = tool_call.file_path if isinstance(tool_call, FilePathToolCall) else None
 
-        logger.info(f"Post-hook for {tool_name} in session {session_id}")
+        logger.info("Post-hook for %s in session %s", tool_name, session_id)
 
         # Clear any existing notification for this session
         self._clear_notification(session_id)
@@ -436,7 +441,7 @@ class HookHandler:
         """
         config = self.config_loader.config
 
-        logger.info(f"Stop hook for session {session_id}")
+        logger.info("Stop hook for session %s", session_id)
 
         stop_hook_config = config.hooks.get("stop")
         if isinstance(stop_hook_config, StopHookConfig) and not stop_hook_config.quality_gate:
@@ -456,7 +461,7 @@ class HookHandler:
         # Find all Python files in the working directory that are tracked by git
         # This respects .gitignore and won't scan node_modules, venv, etc.
         python_files = get_git_tracked_files(working_dir, "*.py")
-        logger.info(f"Stop hook: Found {len(python_files)} git-tracked Python files in {working_dir}")
+        logger.info("Stop hook: Found %s git-tracked Python files in %s", len(python_files), working_dir)
 
         for py_file in python_files:
             if not py_file.exists():
@@ -465,7 +470,7 @@ class HookHandler:
             try:
                 file_content = py_file.read_text()
             except (OSError, UnicodeDecodeError) as e:
-                logger.debug(f"Could not read {py_file}: {e}")
+                logger.debug("Could not read %s: %s", py_file, e)
                 continue
 
             # Use the pure function to check for violations
@@ -476,20 +481,20 @@ class HookHandler:
                 critical_only=False,  # Stop hook checks all violations
             )
 
-            logger.info(f"Stop hook: Checked {py_file}, found {len(violations)} violations")
+            logger.info("Stop hook: Checked %s, found %s violations", py_file, len(violations))
             if violations:
                 for v in violations:
-                    logger.info(f"  - Violation: {v.rule} at line {v.line}: {v.message}")
+                    logger.info("  - Violation: %s at line %s: %s", v.rule, v.line, v.message)
 
             if violations:
                 # Only track violations that block stop hooks for quality gate
                 blocking_violations = filter_violations(violations, config, "stop")
-                logger.info(f"Stop hook: {len(blocking_violations)} are blocking violations")
+                logger.info("Stop hook: %s are blocking violations", len(blocking_violations))
                 if blocking_violations:
                     files_with_errors[str(py_file)] = blocking_violations
                     all_violations.extend(blocking_violations)
 
-        logger.info(f"Stop hook: Total error violations: {len(all_violations)}")
+        logger.info("Stop hook: Total error violations: %s", len(all_violations))
         # If no errors found, allow stop
         if not all_violations:
             return StopAllow()
@@ -526,13 +531,13 @@ class HookHandler:
 
     def _handle_subagent_stop(self, request: SubagentStopRequest, session_id: SessionID) -> HookOutcome:
         """Handle SubagentStop."""
-        logger.info(f"SubagentStop hook for session {session_id}")
+        logger.info("SubagentStop hook for session %s", session_id)
         # For now, always allow subagent to stop
         return SubagentStopAllow()
 
     def _handle_notification(self, request: NotificationRequest, session_id: SessionID) -> HookOutcome:
         """Handle Notification."""
-        logger.info(f"Notification hook for session {session_id}")
+        logger.info("Notification hook for session %s", session_id)
 
         # Get notification hook config
         config = self.config_loader.config
@@ -570,11 +575,14 @@ class HookHandler:
             self.session_manager.set_notification_id(session_id, notification_id)
 
             logger.info(
-                f"Sent D-Bus notification for session {session_id}: {title} "
-                f"(ID: {notification_id}, replaced: {replaces_id})"
+                "Sent D-Bus notification for session %s: %s (ID: %s, replaced: %s)",
+                session_id,
+                title,
+                notification_id,
+                replaces_id,
             )
         except (OSError, ImportError, AttributeError) as e:
-            logger.error(f"Failed to send D-Bus notification: {e}", exc_info=True)
+            logger.exception("Failed to send D-Bus notification: %s", e)
 
     def _clear_notification(self, session_id: SessionID) -> None:
         """Clear any existing notification for this session."""
@@ -588,9 +596,9 @@ class HookHandler:
                     close_desktop_notification(notification_id)
 
                 self.session_manager.clear_notification_id(session_id)
-                logger.debug(f"Cleared notification {notification_id} for session {session_id}")
+                logger.debug("Cleared notification %s for session %s", notification_id, session_id)
             except (OSError, ImportError, AttributeError) as e:
-                logger.debug(f"Failed to clear notification for session {session_id}: {e}")
+                logger.debug("Failed to clear notification for session %s: %s", session_id, e)
 
     # Helper methods
     def _check_access_control(self, request: PreToolUseRequest, session_id: SessionID) -> tuple[RuleAction, str | None]:
@@ -602,7 +610,9 @@ class HookHandler:
             "old_string": tool_call.old_string if isinstance(tool_call, EditToolCall) else None,
             "command": tool_call.command if isinstance(tool_call, BashToolCall) else None,
         }
-        context = PredicateContext(tool=tool_call.tool_name, args=args, session_id=session_id, timestamp=datetime.now())
+        context = PredicateContext(
+            tool=tool_call.tool_name, args=args, session_id=session_id, timestamp=datetime.now(tz=datetime.UTC)
+        )
 
         return self.rule_engine.evaluate_access(context, session_id)
 
@@ -670,10 +680,10 @@ class HookHandler:
 
         try:
             tool_call.file_path.write_text(formatted_code)
-            logger.info(f"Applied autofix to {tool_call.file_path}: {changes}")
+            logger.info("Applied autofix to %s: %s", tool_call.file_path, changes)
             return f"Autofix applied: {', '.join(changes)}"
         except (OSError, PermissionError, UnicodeDecodeError) as e:
-            logger.error(f"Failed to apply autofix: {e}")
+            logger.error("Failed to apply autofix: %s", e)
             return f"Autofix failed: {e}"
 
     def _update_violation_tracking(self, request: PostToolUseRequest, session_id: SessionID) -> None:

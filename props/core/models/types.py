@@ -66,13 +66,16 @@ def _validate_specimen_relative_path(v: Any, handler: Any, info: ValidationInfo)
 
     # Format validation (always required)
     if not p.parts:
-        raise ValueError("Path cannot be empty")
+        msg = "Path cannot be empty"
+        raise ValueError(msg)
 
     if p.is_absolute():
-        raise ValueError(f"Path must be relative, got absolute: {p}")
+        msg = f"Path must be relative, got absolute: {p}"
+        raise ValueError(msg)
 
     if ".." in p.parts:
-        raise ValueError(f"Path cannot contain parent references (..): {p}")
+        msg = f"Path cannot contain parent references (..): {p}"
+        raise ValueError(msg)
 
     # Existence validation (only when snapshots is available)
     # Critiques parsed standalone (no context) skip this validation
@@ -80,10 +83,12 @@ def _validate_specimen_relative_path(v: Any, handler: Any, info: ValidationInfo)
         ctx = info.context["snapshots"]
 
         if p not in ctx.all_discovered_files:
-            raise ValueError(f"Path not found in snapshot: {p}")
+            msg = f"Path not found in snapshot: {p}"
+            raise ValueError(msg)
 
         if ctx.all_discovered_files[p] != FileType.REGULAR:
-            raise ValueError(f"Path must be a regular file, got {ctx.all_discovered_files[p].value}: {p}")
+            msg = f"Path must be a regular file, got {ctx.all_discovered_files[p].value}: {p}"
+            raise ValueError(msg)
 
     return p
 
