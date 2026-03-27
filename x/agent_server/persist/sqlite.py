@@ -31,14 +31,14 @@ class SQLitePersistence(Persistence):
 
     # Centralized connection helpers to keep row_factory consistent
     @asynccontextmanager
-    async def _open(self):
+    async def open_db(self):
         async with aiosqlite.connect(self.db_path) as db:
             # Enforce FK cascades on every connection
             await db.execute("PRAGMA foreign_keys = ON;")
             yield db
 
     @asynccontextmanager
-    async def _open_row(self):
+    async def open_db_row(self):
         async with aiosqlite.connect(self.db_path) as db:
             # Enforce FK cascades on every connection
             await db.execute("PRAGMA foreign_keys = ON;")
@@ -52,7 +52,7 @@ class SQLitePersistence(Persistence):
         schema changes, recreate the database or manage data migration outside
         this helper.
         """
-        async with self._open() as db:
+        async with self.open_db() as db:
             await db.execute("PRAGMA foreign_keys = ON;")
             # executescript allows multiple statements in one call
             await db.executescript(
@@ -126,7 +126,7 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
         # Generate agent_id compatible with MCPMountPrefix pattern: ^[a-z][a-z0-9_]*$
         # Prefix with 'a' to ensure it starts with a letter; UUID hex is [0-9a-f] which fits the pattern
         agent_id = f"a{uuid.uuid4().hex}"
-        async with self._open() as db:
+        async with self.open_db() as db:
             # Persist only user-configured servers (exclude default auto-attached)
             spec_json = filter_persistable_servers(mcp_config).model_dump(mode="json")
             await db.execute(
@@ -142,7 +142,7 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
         return agent_id
 
     async def update_agent_specs(self, agent_id: AgentID, *, mcp_config: MCPConfig) -> None:
-        async with self._open() as db:
+        async with self.open_db() as db:
             spec_json = filter_persistable_servers(mcp_config).model_dump(mode="json")
             await db.execute(
                 "UPDATE agents SET specs = ? WHERE id = ?",
@@ -168,7 +168,7 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
         return out
 
     async def get_agent(self, agent_id: AgentID) -> AgentRow | None:
-        async with self._open_row() as db:
+        async with self.open_db_row() as db:
             db.row_factory = aiosqlite.Row
             cur = await db.execute("SELECT id, created_at, specs, metadata FROM agents WHERE id = ?", (agent_id,))
             r = await cur.fetchone()
@@ -190,7 +190,7 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
         """
         out: dict[str, datetime | None] = {}
         async with (
-            self._open_row() as db,
+            self.open_db_row() as db,
             db.execute(
                 """
 SELECT a.id as agent_id,
@@ -211,7 +211,7 @@ GROUP BY a.id
 
         Cascades to events, approvals, policies, and proposals.
         """
-        async with self._open() as db:
+        async with self.open_db() as db:
             await db.execute("DELETE FROM agents WHERE id = ?", (agent_id,))
             await db.commit()
 
@@ -219,7 +219,7 @@ GROUP BY a.id
     async def get_latest_policy(self, agent_id: AgentID) -> tuple[str, int] | None:
         """Return (content, version) of the latest approval policy for the agent, or None."""
         async with (
-            self._open_row() as db,
+            self.open_db_row() as db,
             db.execute(
                 """
 SELECT content, version
@@ -238,7 +238,7 @@ LIMIT 1
 
     async def set_policy(self, agent_id: AgentID, *, content: str) -> int:
         """Persist a new policy version for agent; returns assigned version."""
-        async with self._open() as db:
+        async with self.open_db() as db:
             await db.execute(
                 "INSERT INTO approval_policies (agent_id, content, created_at) VALUES (?, ?, ?)",
                 (agent_id, content, _now().isoformat()),
@@ -251,7 +251,7 @@ LIMIT 1
 
     # ---- Policy proposals (single-store: SQLite) ----------------------------
     async def create_policy_proposal(self, agent_id: AgentID, *, proposal_id: str, content: str) -> None:
-        async with self._open() as db:
+        async with self.open_db() as db:
             await db.execute(
                 """
 INSERT INTO policy_proposals (id, agent_id, content, status, created_at, decided_at)
@@ -263,7 +263,7 @@ VALUES (?, ?, ?, 'pending', ?, NULL)
 
     async def list_policy_proposals(self, agent_id: AgentID) -> list[PolicyProposal]:
         async with (
-            self._open_row() as db,
+            self.open_db_row() as db,
             db.execute(
                 """
 SELECT id, status, created_at, decided_at
@@ -288,7 +288,7 @@ ORDER BY created_at DESC
 
     async def get_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> PolicyProposal | None:
         async with (
-            self._open_row() as db,
+            self.open_db_row() as db,
             db.execute(
                 """
 SELECT id, status, created_at, decided_at, content
@@ -316,7 +316,7 @@ WHERE agent_id = ? AND id = ?
         """
         # Read proposal content
         async with (
-            self._open_row() as db,
+            self.open_db_row() as db,
             db.execute(
                 "SELECT content FROM policy_proposals WHERE agent_id = ? AND id = ?", (agent_id, proposal_id)
             ) as cur,
@@ -326,7 +326,7 @@ WHERE agent_id = ? AND id = ?
                 raise KeyError("proposal_not_found")
             content = cast(str, row["content"])
         # Persist as active policy and mark proposal approved in one transaction
-        async with self._open() as db:
+        async with self.open_db() as db:
             await db.execute(
                 "INSERT INTO approval_policies (agent_id, content, created_at) VALUES (?, ?, ?)",
                 (agent_id, content, _now().isoformat()),
@@ -341,7 +341,7 @@ WHERE agent_id = ? AND id = ?
             return int(row[0]) if row and row[0] is not None else 0
 
     async def reject_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> None:
-        async with self._open() as db:
+        async with self.open_db() as db:
             await db.execute(
                 "UPDATE policy_proposals SET status = 'rejected', decided_at = ? WHERE agent_id = ? AND id = ?",
                 (_now().isoformat(), agent_id, proposal_id),
@@ -349,7 +349,7 @@ WHERE agent_id = ? AND id = ?
             await db.commit()
 
     async def delete_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> None:
-        async with self._open() as db:
+        async with self.open_db() as db:
             await db.execute("DELETE FROM policy_proposals WHERE agent_id = ? AND id = ?", (agent_id, proposal_id))
             await db.commit()
 
@@ -370,7 +370,7 @@ WHERE agent_id = ? AND id = ?
         s = pydantic_core.to_json(payload, fallback=str).decode("utf-8")
         if len(s.encode("utf-8")) > MAX_EVENT_PAYLOAD_BYTES:
             raise ValueError(f"event payload exceeds {MAX_EVENT_PAYLOAD_BYTES} bytes")
-        async with self._open() as db:
+        async with self.open_db() as db:
             await db.execute(
                 "INSERT INTO events (agent_id, seq, ts, type, payload, call_id, tool_key) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (agent_id, seq, ts.isoformat(), str(event_type), s, call_id, tool_key),
@@ -387,7 +387,7 @@ WHERE agent_id = ? AND id = ?
         decided_at: datetime,
         details: dict[str, JsonValue] | None = None,
     ) -> None:
-        async with self._open() as db:
+        async with self.open_db() as db:
             await db.execute(
                 """
 INSERT OR REPLACE INTO approvals (call_id, agent_id, tool_key, outcome, decided_at, details)

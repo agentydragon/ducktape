@@ -167,7 +167,7 @@ class FakeOpenAIServer:
             except Exception as e:
                 raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
 
-            mock = server_self._resolve_mock(body)
+            mock = server_self._resolve_mock(body)  # noqa: SLF001
 
             try:
                 req = ResponsesRequest.model_validate(body)
@@ -179,7 +179,7 @@ class FakeOpenAIServer:
                 result = await mock.responses_create(req)
             except Exception as e:
                 logger.exception("Mock raised exception")
-                server_self._capture_error(e)
+                server_self._capture_error(e)  # noqa: SLF001
                 raise HTTPException(status_code=500, detail=f"Mock error: {e}")
 
             sdk_response = result_to_sdk_response(result, model=body["model"])

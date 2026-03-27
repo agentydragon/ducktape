@@ -63,10 +63,10 @@ class Database:
         call dispose() when done.
         """
         db = cls.__new__(cls)
-        db._config = config
-        db._engine = create_engine(config.url, echo=False, poolclass=NullPool)
+        db._config = config  # noqa: SLF001
+        db._engine = create_engine(config.url, echo=False, poolclass=NullPool)  # noqa: SLF001
 
-        @event.listens_for(db._engine, "checkout")
+        @event.listens_for(db._engine, "checkout")  # noqa: SLF001
         def _register_composite_types(
             dbapi_connection: Any, connection_record: ConnectionPoolEntry, connection_proxy: Any
         ) -> None:
@@ -75,7 +75,7 @@ class Database:
             except Exception as e:
                 logger.debug(f"Could not register stats_with_ci composite type: {e}")
 
-        db._scoped_factory = scoped_session(sessionmaker(bind=db._engine))
+        db._scoped_factory = scoped_session(sessionmaker(bind=db._engine))  # noqa: SLF001
         return db
 
     def __init__(self, config: DatabaseConfig) -> None:

@@ -71,7 +71,7 @@ def upload_lcsc_images(api: InvenTreeAPI):
         if lcsc_from_link and lcsc_from_supplier:
             # If both are present, assert they match
             if lcsc_from_link != lcsc_from_supplier:
-                raise ValueError(f"Conflicting LCSC IDs: {lcsc_from_link=} != {lcsc_from_supplier=}", log._context)
+                raise ValueError(f"Conflicting LCSC IDs: {lcsc_from_link=} != {lcsc_from_supplier=}", log._context)  # noqa: SLF001
             # Both match => use either one
             lcsc_id = lcsc_from_link
         elif lcsc_from_link or lcsc_from_supplier:

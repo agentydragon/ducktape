@@ -88,7 +88,7 @@ class AuthForwardingProxy:
         self._upstream_url: str | None = None
         self._creds_lock = threading.Lock()
         self.server_socket: socket.socket | None = None
-        self._running = False
+        self.running = False
         self._thread: threading.Thread | None = None
         self._executor: ThreadPoolExecutor | None = None
         self._connections: list[socket.socket] = []
@@ -118,7 +118,7 @@ class AuthForwardingProxy:
         self.server_socket.settimeout(0.5)
 
         self._executor = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="proxy")
-        self._running = True
+        self.running = True
         self._thread = threading.Thread(target=self._serve, daemon=True)
         self._thread.start()
 
@@ -126,7 +126,7 @@ class AuthForwardingProxy:
 
     def stop(self) -> None:
         """Stop the proxy server."""
-        self._running = False
+        self.running = False
         if self._thread:
             self._thread.join(timeout=2)
         if self._executor:
@@ -140,7 +140,7 @@ class AuthForwardingProxy:
 
     def _serve(self) -> None:
         """Main server loop."""
-        while self._running:
+        while self.running:
             try:
                 client_sock, _ = self.server_socket.accept()  # type: ignore[union-attr]
                 self._connections.append(client_sock)
@@ -309,7 +309,7 @@ class UdsRemoteProxy:
         self._upstream_url: str | None = None
         self._creds_lock = threading.Lock()
         self.server_socket: socket.socket | None = None
-        self._running = False
+        self.running = False
         self._thread: threading.Thread | None = None
         self._executor: ThreadPoolExecutor | None = None
         self._connections: list[socket.socket] = []
@@ -341,7 +341,7 @@ class UdsRemoteProxy:
         self.server_socket.settimeout(0.5)
 
         self._executor = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="uds-proxy")
-        self._running = True
+        self.running = True
         self._thread = threading.Thread(target=self._serve, daemon=True)
         self._thread.start()
 
@@ -349,7 +349,7 @@ class UdsRemoteProxy:
 
     def stop(self) -> None:
         """Stop the UDS proxy server."""
-        self._running = False
+        self.running = False
         if self._thread:
             self._thread.join(timeout=2)
         if self._executor:
@@ -365,7 +365,7 @@ class UdsRemoteProxy:
 
     def _serve(self) -> None:
         """Main server loop."""
-        while self._running:
+        while self.running:
             try:
                 client_sock, _ = self.server_socket.accept()  # type: ignore[union-attr]
                 self._connections.append(client_sock)

@@ -115,7 +115,7 @@ class HookHandler:
             # Set log level from config
             log_level = config.log_level
             try:
-                level_value = logging._nameToLevel.get(log_level.upper(), logging.INFO)
+                level_value = logging.getLevelNamesMapping().get(log_level.upper(), logging.INFO)
                 file_handler.setLevel(level_value)
             except (AttributeError, KeyError):
                 file_handler.setLevel(logging.INFO)

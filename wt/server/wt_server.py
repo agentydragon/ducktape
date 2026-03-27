@@ -32,10 +32,10 @@ from wt.server.gitstatusd_listener import GitstatusdListener
 
 # Force import of handlers to register RPC methods
 from wt.server.handlers import (
-    path_handler,  # noqa: F401
-    pr_handler,  # noqa: F401
-    status_handler,  # noqa: F401
-    worktree_handler,  # noqa: F401
+    path_handler,
+    pr_handler,
+    status_handler,
+    worktree_handler,
 )
 from wt.server.repo_status import RepoStatus
 from wt.server.rpc import ServiceDependencies, rpc
@@ -428,7 +428,7 @@ class WtDaemon:
     async def _handle_shutdown_request(self, request: Request, start_time: datetime | None = None) -> Response:
         """Handle shutdown JSON-RPC method."""
         logger.info("Received shutdown request")
-        self._shutdown_task = asyncio.create_task(self.stop())
+        self.shutdown_task = asyncio.create_task(self.stop())
         return self._create_success_response("shutting down", request.id)
 
     async def _ensure_git_watcher(self, worktree_info: DiscoveredWorktree) -> None:
@@ -602,7 +602,7 @@ async def run_daemon(config) -> None:
     # Signal handling
     def signal_handler():
         logger.info("Received shutdown signal")
-        daemon._shutdown_task = asyncio.create_task(daemon.stop())
+        daemon.shutdown_task = asyncio.create_task(daemon.stop())
 
     signal.signal(signal.SIGTERM, lambda s, f: signal_handler())
     signal.signal(signal.SIGINT, lambda s, f: signal_handler())

@@ -94,9 +94,9 @@ class MCPRoutingMiddleware(BaseHTTPMiddleware):
             container = self.registry.get(agent_id)
             if container is None:
                 return Response(content=f"Agent not found: {agent_id}", status_code=404)
-            if container._compositor is None:
+            if container.compositor is None:
                 return Response(content=f"Agent compositor not ready: {agent_id}", status_code=503)
-            request.state.mcp_target = container._compositor
+            request.state.mcp_target = container.compositor
         else:
             return Response(content=f"Unknown identity type: {identity}", status_code=400)
 

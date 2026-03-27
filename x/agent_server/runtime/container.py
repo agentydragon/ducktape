@@ -237,10 +237,10 @@ class AgentContainer:
     _closed: asyncio.Event = field(default_factory=asyncio.Event, init=False)
     _stack: AsyncExitStack = field(default_factory=AsyncExitStack, init=False)
     # Internal helpers/state
-    _cm: UiEventHandler | None = field(default=None, init=False)
+    cm: UiEventHandler | None = field(default=None, init=False)
     _ui_bus: ServerBus | None = field(default=None, init=False)
     # Compositor instance (AgentContainerCompositor with all agent-specific servers)
-    _compositor: AgentContainerCompositor | None = field(default=None, init=False)
+    compositor: AgentContainerCompositor | None = field(default=None, init=False)
     # Front-door MCP client (FastMCP Client connected to the compositor with policy middleware)
     _compositor_client: Client | None = field(default=None, init=False)
 
@@ -253,9 +253,9 @@ class AgentContainer:
     def runtime_server(self):
         """Get the runtime server instance (if compositor is started and runtime is mounted)."""
 
-        if self._compositor is None or self._compositor.runtime is None:
+        if self.compositor is None or self.compositor.runtime is None:
             return None
-        return self._compositor.runtime.server
+        return self.compositor.runtime.server
 
     async def list_mcp_entries(self) -> dict[str, ServerEntry]:
         """Return full per-server entries via compositor_meta resources.
@@ -267,7 +267,7 @@ class AgentContainer:
         meta = CompositorMetaClient(self._compositor_client)
         return cast(dict[str, ServerEntry], await meta.list_states())
 
-    def _get_session(self) -> AgentSession:
+    def get_session(self) -> AgentSession:
         """Get the agent session, raising ToolError if not initialized."""
         if self.session is None:
             raise ToolError("Agent session not initialized")
@@ -289,14 +289,14 @@ class AgentContainer:
         @mcp.flat_model()
         async def send_prompt(input: SendPromptInput) -> str:
             """Send a prompt to the agent."""
-            session = container._get_session()
+            session = container.get_session()
             await session.run(input.prompt)
             return "Prompt sent successfully"
 
         @mcp.flat_model()
         async def abort() -> str:
             """Abort the currently active agent."""
-            session = container._get_session()
+            session = container.get_session()
             await session.cancel_active_run()
             return "Agent aborted successfully"
 
@@ -353,7 +353,7 @@ class AgentContainer:
             tuple: (compositor, mcp_client, notifications_buffer)
         """
         # Session & manager
-        self._cm = UiEventHandler()
+        self.cm = UiEventHandler()
 
         # Initialize AsyncExitStack and enter contexts through it
         await self._stack.__aenter__()
@@ -368,25 +368,25 @@ class AgentContainer:
             persistence=self.persistence,
             agent_id=self.agent_id,
         )
-        self._compositor = await self._stack.enter_async_context(compositor)
-        assert self._compositor is not None  # Type narrowing for mypy
+        self.compositor = await self._stack.enter_async_context(compositor)
+        assert self.compositor is not None  # Type narrowing for mypy
 
         # Mount external servers from config (compositor is in ACTIVE state)
-        await self._compositor.mount_servers_from_config(mcp_config)
+        await self.compositor.mount_servers_from_config(mcp_config)
 
         # Notifications buffer for MCP events
-        notif_buffer = NotificationsBuffer(compositor=self._compositor)
+        notif_buffer = NotificationsBuffer(compositor=self.compositor)
 
         # In-proc client to the compositor with policy middleware
-        mcp_client = Client(self._compositor, message_handler=notif_buffer.handler)
+        mcp_client = Client(self.compositor, message_handler=notif_buffer.handler)
         await self._stack.enter_async_context(mcp_client)
         self._compositor_client = mcp_client
         self._notif_buffer = notif_buffer
 
         # Install policy gateway middleware from engine
-        self._compositor.add_middleware(approval_engine.gateway)
+        self.compositor.add_middleware(approval_engine.gateway)
 
-        return (self._compositor, mcp_client, notif_buffer)
+        return (self.compositor, mcp_client, notif_buffer)
 
     async def _setup_agent_runtime(
         self, mcp_client: Client, notifications: NotificationsBuffer, approval_engine: PolicyEngine
@@ -404,9 +404,9 @@ class AgentContainer:
         Returns:
             tuple: (session, agent)
         """
-        if self._cm is None:
+        if self.cm is None:
             raise RuntimeError("connection manager not initialized")
-        manager = self._cm
+        manager = self.cm
 
         # Create session
         sess = AgentSession(
@@ -415,7 +415,7 @@ class AgentContainer:
             agent_id=self.agent_id,
             approval_engine=approval_engine,
             ui_bus=self._ui_bus if self.with_ui else None,
-            ui_mount=self._compositor.ui if self.with_ui and self._compositor else None,
+            ui_mount=self.compositor.ui if self.with_ui and self.compositor else None,
         )
 
         # LLM client
@@ -427,7 +427,7 @@ class AgentContainer:
             manager=manager,
             persistence=self.persistence,
             agent_id=self.agent_id,
-            compositor=self._compositor,
+            compositor=self.compositor,
             ui_bus=self._ui_bus if self.with_ui else None,
         )
         sess.set_persist_handler(persist_handler)
@@ -435,14 +435,14 @@ class AgentContainer:
         # Compose base system text and provide a dynamic provider that recomputes
         # grouped MCP instructions/capabilities on each sampling.
         base_system = self.system_override or str(get_ui_system_message())
-        assert self._compositor is not None
+        assert self.compositor is not None
 
         # Start agent
         agent = await Agent.create(
             tool_provider=MCPToolProvider(mcp_client),
             client=client,
             handlers=handlers,
-            dynamic_instructions=self._compositor.render_agent_dynamic_instructions,
+            dynamic_instructions=self.compositor.render_agent_dynamic_instructions,
             tool_policy=RequireAnyTool(),
         )
         agent.process_message(SystemMessage.text(base_system))
@@ -470,7 +470,7 @@ class AgentContainer:
                 self.approval_engine = await self._setup_approval_infrastructure()
 
                 # Phase 2: MCP infrastructure
-                (self._compositor, self._compositor_client, self._notif_buffer) = await self._setup_mcp_infrastructure(
+                (self.compositor, self._compositor_client, self._notif_buffer) = await self._setup_mcp_infrastructure(
                     self.approval_engine, mcp_cfg
                 )
 
@@ -481,9 +481,9 @@ class AgentContainer:
 
                 return None
             case _SamplingSnapshotMsg():
-                if self._compositor is None:
+                if self.compositor is None:
                     return None
-                return await self._compositor.sampling_snapshot()
+                return await self.compositor.sampling_snapshot()
             case _CloseMsg():
                 return await self._op_close()
             case _:

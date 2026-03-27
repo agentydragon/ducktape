@@ -97,7 +97,7 @@ class TypedClient:
         Requires a server created via FastMCP. Introspects FlatTool instances
         for input_model and return type annotations.
         """
-        components = server._local_provider._components
+        components = server._local_provider._components  # noqa: SLF001
 
         client = cls(session)
         for component in components.values():

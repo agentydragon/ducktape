@@ -36,10 +36,10 @@ class _ResourceNotificationHandler(MessageHandler):
 
     # Override with narrower types than base MessageHandler (which accepts Any)
     async def on_resource_updated(self, message: mcp_types.ResourceUpdatedNotification) -> None:
-        await self._buffer._on_updated(message)
+        await self._buffer.on_updated(message)
 
     async def on_resource_list_changed(self, message: mcp_types.ResourceListChangedNotification) -> None:
-        await self._buffer._on_list_changed(message)
+        await self._buffer.on_list_changed(message)
 
 
 class NotificationsBuffer:
@@ -77,13 +77,13 @@ class NotificationsBuffer:
         self._servers.clear()
         return batch
 
-    async def _on_updated(self, message: mcp_types.ResourceUpdatedNotification) -> None:
+    async def on_updated(self, message: mcp_types.ResourceUpdatedNotification) -> None:
         # Add URI to the server's update set
         uri_str = str(message.params.uri)
         server = await self._derive_server(uri_str)
         self._servers.setdefault(server, _ServerNoticeAccumulator()).updated.add(uri_str)
 
-    async def _on_list_changed(self, message: mcp_types.ResourceListChangedNotification) -> None:
+    async def on_list_changed(self, message: mcp_types.ResourceListChangedNotification) -> None:
         # Attribute origin using compositor-captured child notifications when available
         names = list(self._compositor.pop_recent_resource_list_changes())
         for name in names:
@@ -91,7 +91,7 @@ class NotificationsBuffer:
 
     async def _derive_server(self, uri: str) -> str:
         """Derive origin server from resource URI using all compositor mounts."""
-        mount_names = await self._compositor._mount_names()
+        mount_names = await self._compositor.mount_names()
         return derive_origin_server(uri, mount_names)
 
     async def _on_resource_listener(self, name: str, uri: str) -> None:

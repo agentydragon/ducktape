@@ -70,10 +70,10 @@ class EmberRuntime:
         This is the primary way to create a runtime - handles all async initialization.
         """
         runtime = cls.__new__(cls)
-        runtime._settings = settings
-        runtime._task = None
-        runtime._stop_event = asyncio.Event()
-        await runtime._initialize()
+        runtime._settings = settings  # noqa: SLF001
+        runtime._task = None  # noqa: SLF001
+        runtime._stop_event = asyncio.Event()  # noqa: SLF001
+        await runtime._initialize()  # noqa: SLF001
         return runtime
 
     async def _initialize(self) -> None:

@@ -108,22 +108,22 @@ class InfrastructureRegistry:
             await self._mount_agent_control(container)
 
         # Mount agent compositor to global
-        if container._compositor is None:
+        if container.compositor is None:
             raise RuntimeError(f"Agent container {container.agent_id} has no compositor after build")
 
         mount_prefix = agent_mount_prefix(container.agent_id)
-        await comp.mount_inproc(mount_prefix, container._compositor)
+        await comp.mount_inproc(mount_prefix, container.compositor)
 
     async def _mount_agent_control(self, container: AgentContainer) -> None:
         """Mount agent_control server on container's compositor.
 
         Only for internal agents - provides send_prompt and abort tools.
         """
-        if container._compositor is None:
+        if container.compositor is None:
             raise RuntimeError(f"Agent container {container.agent_id} has no compositor for agent_control mount")
 
         control_server = container.make_control_server()
-        await container._compositor.mount_inproc(AGENT_CONTROL_MOUNT_PREFIX, control_server)
+        await container.compositor.mount_inproc(AGENT_CONTROL_MOUNT_PREFIX, control_server)
         logger.debug(f"Mounted agent_control for internal agent: {container.agent_id}")
 
     async def _create_container(

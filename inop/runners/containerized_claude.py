@@ -86,7 +86,7 @@ def _monkey_patch_claude_sdk_for_containerization():
             raise RuntimeError("claude_binary not set in options")
         return bin_path
 
-    SubprocessCLITransport._find_cli = _patched_find_cli  # type: ignore[method-assign]
+    SubprocessCLITransport._find_cli = _patched_find_cli  # type: ignore[method-assign]  # noqa: SLF001
 
 
 # Apply monkeypatch once at module level

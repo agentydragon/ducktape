@@ -144,8 +144,8 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         # Legacy registry path for backwards compatibility
         for container in app.state.registry.list():
             # Flush legacy UI manager
-            if container._ui_manager:
-                await container._ui_manager.flush()
+            if container.cm:
+                await container.cm.flush()
         await app.state.registry.close_all()
 
         # Close async Docker client

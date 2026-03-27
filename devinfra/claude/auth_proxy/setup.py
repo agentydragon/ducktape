@@ -65,7 +65,7 @@ def _resolve_rlocation(rlocation_path: str) -> Path | None:
     bazel_wrapper subprocess (which runs outside Bazel runfiles).
     """
     try:
-        from util.bazel.runfiles import get_required_path  # noqa: PLC0415
+        from util.bazel.runfiles import get_required_path
 
         return get_required_path(rlocation_path)
     except RuntimeError:
@@ -347,7 +347,7 @@ async def setup_auth_proxy(
     # Create combined CA bundle (for tools like uv that use SSL_CERT_FILE)
     _create_combined_ca_bundle(paths)
 
-    status = (f"running (port {port})" if proxy._running else "configured") if proxy is not None else "uds-only"
+    status = (f"running (port {port})" if proxy.running else "configured") if proxy is not None else "uds-only"
     ca_status = "custom CA" if combined_ca.exists() else "system"
 
     logger.info("Auth proxy setup complete")
