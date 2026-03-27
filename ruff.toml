@@ -173,6 +173,3 @@ split-on-trailing-comma = false
 # conftest.py re-exports fixtures for pytest discovery — imports are "unused" by design
 # and fixture parameters naturally shadow the imported fixture names (F811)
 "**/conftest.py" = ["F401", "F811"]
-# Shebangs required: Ansible module (direct execution) and Docker entrypoint
-"ansible/library/autostart_entry.py" = ["EXE001"]
-"devinfra/rbe_image/dockerd_wrapper.py" = ["EXE001"]
