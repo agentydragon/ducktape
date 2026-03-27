@@ -10,7 +10,7 @@
 # fails. Failures are logged to /tmp/web-setup.log and uploaded to ix.io.
 #
 # Usage (Claude Code web UI setup command):
-#   curl -fsSL https://raw.githubusercontent.com/agentydragon/ducktape/devel/devinfra/claude/web_setup.sh | bash
+#   bash /home/user/ducktape/devinfra/claude/web_setup.sh
 
 LOG_FILE="/tmp/web-setup.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
@@ -36,7 +36,7 @@ trap on_exit EXIT
 
 set -euo pipefail
 
-FLAKE="path:$(pwd)"
+FLAKE="path:$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # --- Step 1: Install Nix ---
 # Write nix.conf BEFORE the installer runs. The installer internally runs

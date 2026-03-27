@@ -312,14 +312,8 @@ Rotation: bump `rotation_version` in the TF module.
 To use this repository with Claude Code on the web, configure the following setup script in the Claude Code web UI:
 
 ```bash
-#!/bin/bash
-curl -fsSL https://raw.githubusercontent.com/agentydragon/ducktape/680d78946bf72e5e3601cdb69299546b495cab1b/devinfra/claude/web_setup.sh | bash
+bash /home/user/ducktape/devinfra/claude/web_setup.sh
 ```
-
-**Note**: Use a pinned commit SHA, not the `devel` branch ref — Anthropic caches
-the setup script at configuration time (when saved in the web UI). Changing the
-URL triggers a re-fetch; updating `devel` alone does not. Update the SHA when
-`web_setup.sh` changes (see <docs/web-setup-debug.md> for history).
 
 This runs <web_setup.sh> which installs:
 
