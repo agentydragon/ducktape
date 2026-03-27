@@ -6,15 +6,34 @@ subprocess (double-forked), exercising the actual pidfile flock and UDS
 health endpoint.
 """
 
+import multiprocessing
+import multiprocessing.sharedctypes
+import multiprocessing.synchronize
 import os
 import signal
 import threading
 import time
+from pathlib import Path
 
 import pytest_bazel
 
 from devinfra.claude.hook_daemon.client import _ensure_daemon, _kill_daemon_by_pidfile, check_health, read_pidfile
 from devinfra.claude.session_paths import SessionPaths
+
+
+def _cold_start_worker(
+    paths: SessionPaths,
+    barrier: multiprocessing.synchronize.Barrier,
+    results: multiprocessing.sharedctypes.SynchronizedArray,
+    idx: int,
+) -> None:
+    """Worker for test_parallel_cold_start: wait at barrier then call _ensure_daemon."""
+    barrier.wait()
+    try:
+        _ensure_daemon(paths)
+        results[idx] = 0
+    except Exception:
+        results[idx] = 1
 
 
 def _wait_for_pid_death(pid: int, timeout: float = 10) -> None:
@@ -43,6 +62,32 @@ def test_ensure_daemon_noop_when_healthy(daemon_paths: SessionPaths) -> None:
 
     assert read_pidfile(daemon_paths.hook_daemon_pidfile) == original_pid
     assert check_health(daemon_paths.hook_daemon_sock)
+
+
+def test_parallel_cold_start(short_tmp: Path) -> None:
+    """N processes all call _ensure_daemon simultaneously from cold start — exactly one daemon starts.
+
+    Exercises the cross-process FileLock in _ensure_daemon. Reproduces the TOCTOU
+    race from 2026-03 where 5 concurrent hook processes each spawned their own daemon.
+    """
+    session_id = f"td-pcs-{os.urandom(4).hex()}"
+    paths = SessionPaths(session_id=session_id, home=short_tmp, xdg_cache_home=short_tmp / "cache")
+    (short_tmp / "cache").mkdir()
+
+    n = 5
+    barrier: multiprocessing.synchronize.Barrier = multiprocessing.Barrier(n)
+    results: multiprocessing.sharedctypes.SynchronizedArray = multiprocessing.Array("i", n)
+
+    procs = [multiprocessing.Process(target=_cold_start_worker, args=(paths, barrier, results, i)) for i in range(n)]
+    for p in procs:
+        p.start()
+    for p in procs:
+        p.join(timeout=60)
+
+    failed = [i for i in range(n) if results[i] != 0]
+    assert not failed, f"Workers {failed} raised exceptions"
+    assert check_health(paths.hook_daemon_sock)
+    assert read_pidfile(paths.hook_daemon_pidfile) > 0
 
 
 def test_concurrent_ensure_daemon(daemon_paths: SessionPaths) -> None:
