@@ -199,30 +199,27 @@ class MatrixClient:
         return {RoomID(room_id) for room_id in (response.rooms or [])}
 
     async def _sync_loop(self) -> None:
-        try:
-            while not self._stop_event.is_set():
-                if (response := await self._sync_once()) is None:
-                    await asyncio.sleep(5)
-                    continue
+        while not self._stop_event.is_set():
+            if (response := await self._sync_once()) is None:
+                await asyncio.sleep(5)
+                continue
 
-                await self._process_sync_with_client(response)
+            await self._process_sync_with_client(response)
 
-                logger.debug(
-                    "Matrix sync succeeded; next_batch=%s, joined=%d, invite=%d, leave=%d",
-                    response.next_batch,
-                    len(response.rooms.join or {}),
-                    len(response.rooms.invite or {}),
-                    len(response.rooms.leave or {}),
-                )
+            logger.debug(
+                "Matrix sync succeeded; next_batch=%s, joined=%d, invite=%d, leave=%d",
+                response.next_batch,
+                len(response.rooms.join or {}),
+                len(response.rooms.invite or {}),
+                len(response.rooms.leave or {}),
+            )
 
-                self._since = response.next_batch
-                self._persist_since_token(response.next_batch)
-                await self._handle_invites(response)
-                await self._handle_joined_rooms(response)
-                await self._handle_left_rooms(response)
-                await self._crypto_housekeeping()
-        except asyncio.CancelledError:
-            raise
+            self._since = response.next_batch
+            self._persist_since_token(response.next_batch)
+            await self._handle_invites(response)
+            await self._handle_joined_rooms(response)
+            await self._handle_left_rooms(response)
+            await self._crypto_housekeeping()
 
     async def _handle_invites(self, response: SyncResponse) -> None:
         if not (invites := response.rooms.invite):

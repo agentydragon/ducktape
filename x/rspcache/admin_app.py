@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import os
 from collections.abc import AsyncIterator
 from datetime import datetime
@@ -214,11 +213,8 @@ async def get_frames(
 @admin_app.get("/api/responses/live")
 async def live_updates(db: Db) -> StreamingResponse:
     async def event_generator() -> AsyncIterator[str]:
-        try:
-            async for event in db.subscribe_events():
-                yield f"data: {event.model_dump_json()}\n\n"
-        except asyncio.CancelledError:
-            raise
+        async for event in db.subscribe_events():
+            yield f"data: {event.model_dump_json()}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

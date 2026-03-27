@@ -36,11 +36,7 @@ def test_ui_abort_sampling(e2e_page, run_server, responses_factory):
         # Simulate a long-running first sampling call that should be cancelled by Abort
         state["i"] += 1
         if state["i"] == 1:
-            try:
-                await asyncio.sleep(5.0)
-            except asyncio.CancelledError:
-                # Propagate cancellation so the agent treats this as aborted
-                raise
+            await asyncio.sleep(5.0)
             # If not cancelled (unexpected), return a message
             return responses_factory.make_assistant_message("too-late")
         return responses_factory.make_assistant_message("done")
