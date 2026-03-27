@@ -121,7 +121,7 @@ async def test_optimizer_orchestrates_critic(
     Uses multi-model FakeOpenAIServer to route optimizer and critic to different mocks.
     """
     snapshot_slug = test_snapshot
-    logger.info(f"Running orchestration test with snapshot: {snapshot_slug}")
+    logger.info("Running orchestration test with snapshot: %s", snapshot_slug)
 
     # Mutable container filled after image push but before mock runs
     digests: dict[str, str] = {}
@@ -142,13 +142,13 @@ async def test_optimizer_orchestrates_critic(
             )
         )
         critic_run_id = start_response.critic_run_id
-        logger.info(f"Orchestration optimizer got critic_run_id: {critic_run_id}")
+        logger.info("Orchestration optimizer got critic_run_id: %s", critic_run_id)
 
         # Wait for critic container to finish
         completed: CriticRunStatus = yield from m.wait_until_critic_completed_roundtrip(
             critic_run_id, timeout_seconds=120
         )
-        logger.info(f"Critic completed: status={completed.status}")
+        logger.info("Critic completed: status=%s", completed.status)
 
         # Wait for grading (polls database directly inside container)
         grading_response: GradingStatusResponse = yield from m.wait_until_graded_roundtrip(
@@ -157,7 +157,7 @@ async def test_optimizer_orchestrates_critic(
         total_credit = grading_response.total_credit or 0.0
         max_credit = grading_response.max_credit or 0
         recall = total_credit / max_credit if max_credit > 0 else 0.0
-        logger.info(f"Orchestration optimizer got grading: total_credit={total_credit}, recall={recall:.2%}")
+        logger.info("Orchestration optimizer got grading: total_credit=%s, recall=%.2f%%", total_credit, recall * 100)
 
         # Report success
         yield m.report_success()
@@ -223,7 +223,7 @@ async def test_optimizer_orchestrates_critic(
                 timeout_seconds=120,
             )
 
-            logger.info(f"Orchestration test: critic-dev optimizer completed with run_id={run_id}")
+            logger.info("Orchestration test: critic-dev optimizer completed with run_id=%s", run_id)
 
             # Verify optimizer run status
             with synced_db.session() as session:
@@ -254,7 +254,7 @@ async def test_optimizer_orchestrates_critic(
             with synced_db.session() as session:
                 for crid in critic_run_ids:
                     edges = session.query(GradingEdge).filter_by(critique_run_id=crid).all()
-                    logger.info(f"Critic {crid} has {len(edges)} grading edges")
+                    logger.info("Critic %s has %s grading edges", crid, len(edges))
                     # The critic mock creates 1 issue, and fill_remaining creates edges for each GT occurrence
                     assert len(edges) >= 0, "Grading edges should be created"
 

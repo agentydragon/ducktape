@@ -53,7 +53,8 @@ def get_grading_status_from_db(critic_run_id: UUID, db: Database) -> GradingStat
 
         critic_run = session.get(AgentRun, critic_run_id)
         if not critic_run:
-            raise ValueError(f"Critic run {critic_run_id} not found")
+            msg = f"Critic run {critic_run_id} not found"
+            raise ValueError(msg)
 
         critic_config = critic_run.critic_config()
         snapshot = session.query(Snapshot).filter_by(slug=critic_config.example.snapshot_slug).one()
@@ -81,20 +82,23 @@ async def wait_until_graded(
     with db.session() as session:
         critic_run = session.get(AgentRun, critic_run_id)
         if critic_run is None:
-            raise ValueError(f"Critic run {critic_run_id} not found")
+            msg = f"Critic run {critic_run_id} not found"
+            raise ValueError(msg)
 
         if critic_run.status == AgentRunStatus.IN_PROGRESS:
-            raise ValueError(
+            msg = (
                 f"Critic run {critic_run_id} is still in progress (status: {critic_run.status}). "
                 f"wait_until_graded only works on finished runs."
             )
+            raise ValueError(msg)
 
         current_agent_id = get_current_agent_run_id(session)
         if critic_run.parent_agent_run_id != current_agent_id:
-            raise ValueError(
+            msg = (
                 f"Critic run {critic_run_id} was not started by this agent. "
                 f"Expected parent {current_agent_id}, got {critic_run.parent_agent_run_id}."
             )
+            raise ValueError(msg)
 
     start_time = time.monotonic()
     deadline = start_time + timeout_seconds
@@ -107,12 +111,13 @@ async def wait_until_graded(
             return status
 
         if last_pending_count != status.pending_count:
-            logger.debug(f"Waiting for grading: {status.pending_count} edges pending")
+            logger.debug("Waiting for grading: %s edges pending", status.pending_count)
             last_pending_count = status.pending_count
 
         await asyncio.sleep(poll_interval_seconds)
 
-    raise TimeoutError(
+    msg = (
         f"Timeout waiting for critic run {critic_run_id} to be graded. "
         f"Waited {timeout_seconds} seconds, {last_pending_count} edges still pending."
     )
+    raise TimeoutError(msg)

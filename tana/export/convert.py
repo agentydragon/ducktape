@@ -31,7 +31,7 @@ def _journal_headline(name: str) -> str:
     # pattern: YYYY-MM-DD - Weekday
     try:
         date_str = name.split(" ", maxsplit=1)[0]  # "2025-05-06"
-        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=datetime.UTC)
         # TODO: detect day more robustly
         return dt.strftime("%a, %b %-d")  # "Tue, May 6"
     except (ValueError, IndexError):

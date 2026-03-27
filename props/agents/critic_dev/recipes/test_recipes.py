@@ -69,21 +69,21 @@ async def test_recipes_in_container(
         assert any(s["slug"] == snapshot for s in gt_data["train_snapshots"])
         assert len(gt_data["true_positives"]) >= 1
         assert all(tp["num_occurrences"] >= 1 for tp in gt_data["true_positives"])
-        logger.info(f"ground_truth: {gt_data}")
+        logger.info("ground_truth: %s", gt_data)
 
         ex_data = yield from _run_recipe(m, "examples_and_scopes")
         assert len(ex_data["train_examples"]) >= 1
         assert all(e["recall_denominator"] >= 0 for e in ex_data["train_examples"])
-        logger.info(f"examples_and_scopes: {ex_data}")
+        logger.info("examples_and_scopes: %s", ex_data)
 
         rm_data = yield from _run_recipe(m, "recall_metrics")
         assert len(rm_data["leaderboard"]) >= 1, f"Expected non-empty leaderboard: {rm_data}"
         assert all(row["recall_denominator"] >= 1 for row in rm_data["leaderboard"])
-        logger.info(f"recall_metrics: {rm_data}")
+        logger.info("recall_metrics: %s", rm_data)
 
         ra_data = yield from _run_recipe(m, "run_analysis", snapshot)
         assert len(ra_data["recent_runs"]) >= 1, f"Expected non-empty runs: {ra_data}"
-        logger.info(f"run_analysis: {ra_data}")
+        logger.info("run_analysis: %s", ra_data)
 
         yield m.report_failure("Recipe verification done — exiting via report_failure")
 

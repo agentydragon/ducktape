@@ -174,7 +174,8 @@ def _create_tool_provider(exit_state: ExitState, db: Database) -> DirectToolProv
         with db.session() as session:
             issue = session.query(ReportedIssue).filter_by(issue_id=args.issue_id).first()
             if issue is None:
-                raise ValueError(f"Issue not found: {args.issue_id}")
+                msg = f"Issue not found: {args.issue_id}"
+                raise ValueError(msg)
             session.delete(issue)
         return f"Deleted issue: {args.issue_id}"
 
@@ -210,9 +211,8 @@ def _create_tool_provider(exit_state: ExitState, db: Database) -> DirectToolProv
 
             actual_issues_count = len(issues)
             if args.issues_count != actual_issues_count:
-                raise ValueError(
-                    f"Issues count mismatch: expected {args.issues_count} but found {actual_issues_count} in database"
-                )
+                msg = f"Issues count mismatch: expected {args.issues_count} but found {actual_issues_count} in database"
+                raise ValueError(msg)
 
             total_occurrences = 0
             for issue in issues:
@@ -223,10 +223,11 @@ def _create_tool_provider(exit_state: ExitState, db: Database) -> DirectToolProv
                 )
 
                 if len(occurrences) == 0:
-                    raise ValueError(
+                    msg = (
                         f"Issue '{issue.issue_id}' has no occurrences. "
                         f"Every issue must have at least one occurrence showing where it occurs in the code."
                     )
+                    raise ValueError(msg)
 
                 total_occurrences += len(occurrences)
 
@@ -258,15 +259,18 @@ def _create_tool_provider(exit_state: ExitState, db: Database) -> DirectToolProv
 def _validate_occurrence(occ: ReportedIssueOccurrence) -> None:
     """Validate a single occurrence. Raises ValueError if invalid."""
     if not occ.locations or len(occ.locations) == 0:
-        raise ValueError(f"Occurrence {occ.id} must have at least one location")
+        msg = f"Occurrence {occ.id} must have at least one location"
+        raise ValueError(msg)
 
     for i, loc in enumerate(occ.locations):
         if loc.start_line is not None:
             if loc.start_line <= 0:
-                raise ValueError(f"Location {i}: start_line must be > 0, got {loc.start_line}")
+                msg = f"Location {i}: start_line must be > 0, got {loc.start_line}"
+                raise ValueError(msg)
 
             if loc.end_line is not None and loc.end_line < loc.start_line:
-                raise ValueError(f"Location {i}: end_line ({loc.end_line}) must be >= start_line ({loc.start_line})")
+                msg = f"Location {i}: end_line ({loc.end_line}) must be >= start_line ({loc.start_line})"
+                raise ValueError(msg)
 
 
 async def _run_agent_loop(system_prompt: str, db: Database) -> int:

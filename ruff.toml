@@ -63,6 +63,9 @@ select = [
     "N",     # naming
     "PERF",  # perflint
     "FAST",  # FastAPI best practices
+    "G",     # logging format (lazy % over f-strings)
+    "DTZ",   # datetime timezone
+    "SLF",   # private member access
     "RUF"    # ruff-specific
 ]
 # Keep these off globally; handled case-by-case or via constants
@@ -159,3 +162,5 @@ split-on-trailing-comma = false
 # conftest.py re-exports fixtures for pytest discovery — imports are "unused" by design
 # and fixture parameters naturally shadow the imported fixture names (F811)
 "**/conftest.py" = ["F401", "F811"]
+# Tests routinely access private members for assertions
+"**/test_*.py" = ["SLF001"]

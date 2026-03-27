@@ -40,7 +40,8 @@ def parse_search_expression(store: TanaGraph, search_node: BaseNode) -> SearchEx
         SearchParseError: If the expression cannot be parsed
     """
     if search_node.props.doc_type != "search":
-        raise SearchParseError(f"Node {search_node.id} is not a search node")
+        msg = f"Node {search_node.id} is not a search node"
+        raise SearchParseError(msg)
 
     # Get metadata node
     if not search_node.props.meta_node_id:
@@ -48,7 +49,8 @@ def parse_search_expression(store: TanaGraph, search_node: BaseNode) -> SearchEx
 
     metadata = store.get(search_node.props.meta_node_id)
     if not metadata:
-        raise SearchParseError(f"Metadata node {search_node.props.meta_node_id} not found")
+        msg = f"Metadata node {search_node.props.meta_node_id} not found"
+        raise SearchParseError(msg)
 
     # Find search expression tuple in metadata children
     for child in store.child_nodes(metadata):

@@ -44,7 +44,8 @@ def fastmcp_result_to_tool_result(fastmcp_result: FastMCPCallToolResult) -> Tool
         elif isinstance(block, mcp_types.ImageContent):
             content.append(ImageContent(mime_type=block.mimeType, data=block.data))
         else:
-            raise TypeError(f"Unhandled MCP content block type: {type(block)}")
+            msg = f"Unhandled MCP content block type: {type(block)}"
+            raise TypeError(msg)
 
     return ToolResult(
         content=content, structured_content=fastmcp_result.structured_content, is_error=bool(fastmcp_result.is_error)

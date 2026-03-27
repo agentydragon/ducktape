@@ -57,7 +57,8 @@ def get_template(api):
     try:
         return next(t for t in templates if t.name == template_name)
     except StopIteration:
-        raise ValueError(f"No label template named '{template_name}' found")
+        msg = f"No label template named '{template_name}' found"
+        raise ValueError(msg)
 
 
 def all_part_ids(api):

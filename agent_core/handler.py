@@ -229,7 +229,8 @@ class CaptureTextHandler(BaseHandler):
                 or aborted for another reason).
         """
         if self._captured is None:
-            raise ValueError("No text captured (agent may have exited before producing text)")
+            msg = "No text captured (agent may have exited before producing text)"
+            raise ValueError(msg)
         text = self._captured
         self._captured = None
         return text

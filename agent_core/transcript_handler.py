@@ -17,7 +17,8 @@ class TranscriptHandler(BaseHandler):
         self._path = events_path
         # Fail fast if a transcript already exists at destination
         if self._path.exists():
-            raise FileExistsError(f"Transcript already exists: {self._path}")
+            msg = f"Transcript already exists: {self._path}"
+            raise FileExistsError(msg)
 
     def _write_event(self, evt: TranscriptEvent) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)

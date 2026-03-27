@@ -60,7 +60,8 @@ class FakeOpenAIModel(OpenAIModelProto):
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         if not isinstance(req, ResponsesRequest):
-            raise TypeError("responses_create expects a ResponsesRequest instance")
+            msg = "responses_create expects a ResponsesRequest instance"
+            raise TypeError(msg)
         if self.calls >= len(self._outputs):
             last_messages = []
             if isinstance(req.input, list):
@@ -75,10 +76,11 @@ class FakeOpenAIModel(OpenAIModelProto):
                 last_messages.append(f"  (string input): {req.input[:500]}")
 
             msg_preview = "\n".join(last_messages) if last_messages else "(no messages)"
-            raise RuntimeError(
+            msg = (
                 f"Mock exhausted: {self.calls} calls made but only {len(self._outputs)} responses provided. "
                 f"Add more mock responses or reduce max_turns.\n\nLast 2 messages in request:\n{msg_preview}"
             )
+            raise RuntimeError(msg)
         result = self._outputs[self.calls]
         self.calls += 1
         return result
@@ -109,4 +111,5 @@ class NoopOpenAIClient(OpenAIModelProto):
         self.model = "noop-model"
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
-        raise NotImplementedError("NoopOpenAIClient should not be called in SyntheticAction path")
+        msg = "NoopOpenAIClient should not be called in SyntheticAction path"
+        raise NotImplementedError(msg)

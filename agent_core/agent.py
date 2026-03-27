@@ -120,34 +120,38 @@ def _validate_schema_strict_compatible(schema: dict[str, Any], tool_name: str) -
             # OpenAI strict mode: all objects must have additionalProperties: false
             # No exemptions for patternProperties or map-like objects
             if "patternProperties" in subschema:
-                raise RuntimeError(
+                msg = (
                     f"Tool '{tool_name}' at {path}: object uses 'patternProperties' which is not allowed in strict mode. "
                     f"Refactor dict[str, T] fields to list[{{key: str, value: T}}] or similar fixed structure."
                 )
+                raise RuntimeError(msg)
 
             if "additionalProperties" not in subschema:
-                raise RuntimeError(
+                msg = (
                     f"Tool '{tool_name}' at {path}: object missing 'additionalProperties'. "
                     f"Add 'model_config = ConfigDict(extra=\"forbid\")' to the Pydantic model."
                 )
+                raise RuntimeError(msg)
 
             additional_props = subschema.get("additionalProperties")
             if additional_props is not False:
-                raise RuntimeError(
+                msg = (
                     f"Tool '{tool_name}' at {path}: 'additionalProperties' must be false, got {additional_props}. "
                     f"If this is a dict field, refactor to a list of objects with fixed schema."
                 )
+                raise RuntimeError(msg)
 
             # Check required properties
             properties = subschema.get("properties", {})
             required = set(subschema.get("required", []))
             if properties and set(properties.keys()) != required:
                 missing = set(properties.keys()) - required
-                raise RuntimeError(
+                msg = (
                     f"Tool '{tool_name}' at {path}: all properties must be in 'required'. "
                     f"Missing: {missing}. "
                     f"Fix: Remove Field(default=...) or Field(default_factory=...) from Pydantic model."
                 )
+                raise RuntimeError(msg)
 
             # Recursively check nested properties
             for prop_name, prop_schema in properties.items():
@@ -198,7 +202,8 @@ def _make_strict_function_tool(tool_name: str, description: str, input_schema: d
 def _require_call_id(function_call: FunctionCallItem) -> str:
     call_id = function_call.call_id
     if not call_id:
-        raise RuntimeError("FunctionCallItem missing call_id")
+        msg = "FunctionCallItem missing call_id"
+        raise RuntimeError(msg)
     return call_id
 
 
@@ -216,7 +221,8 @@ MAX_TOOL_RESULT_BYTES = 10 * 1024 * 1024  # 10 MiB
 
 def _check_size(result: str) -> None:
     if len(result) > MAX_TOOL_RESULT_BYTES:
-        raise RuntimeError(f"Tool output too large: {len(result)} > {MAX_TOOL_RESULT_BYTES}")
+        msg = f"Tool output too large: {len(result)} > {MAX_TOOL_RESULT_BYTES}"
+        raise RuntimeError(msg)
 
 
 def _content_is_redundant(content: list[ResultContent], sc: ToolOutputData) -> bool:
@@ -259,9 +265,8 @@ def _tool_result_to_openai(result: ToolResult) -> str:
             if isinstance(block, TextContent):
                 parts.append(block.text)
             elif isinstance(block, ImageContent):
-                raise NotImplementedError(
-                    f"Image content ({block.mime_type}) cannot be serialized as a function call output string"
-                )
+                msg = f"Image content ({block.mime_type}) cannot be serialized as a function call output string"
+                raise NotImplementedError(msg)
         text = "\n".join(parts)
         _check_size(text)
         return text
@@ -301,7 +306,8 @@ def _tool_choice_from_policy(policy: ToolPolicy) -> ToolChoice:
         return "none"
     if isinstance(policy, RequireSpecific):
         return ToolChoiceFunction(name=one(policy.names))
-    raise TypeError(f"Unknown ToolPolicy: {type(policy).__name__}")
+    msg = f"Unknown ToolPolicy: {type(policy).__name__}"
+    raise TypeError(msg)
 
 
 type Message = UserMessage | AssistantMessage | SystemMessage
@@ -387,7 +393,7 @@ class Agent:
         # Handler list for event notification and loop control
         self._handlers = list(handlers)
         if not self._handlers:
-            raise ValueError(
+            msg = (
                 "At least one handler required to control the agent loop. "
                 "Without handlers, the agent will loop indefinitely. "
                 "Add a handler:\n"
@@ -397,6 +403,7 @@ class Agent:
                 "  • SequenceHandler([...]) - for fixed action sequences\n"
                 "  • Custom handler - subclass BaseHandler for specialized control"
             )
+            raise ValueError(msg)
 
     @property
     def model(self) -> str:
@@ -461,7 +468,8 @@ class Agent:
                 h.on_system_text_event(evt)
 
         else:
-            raise TypeError(f"Unhandled transcript item type: {type(item).__name__}")
+            msg = f"Unhandled transcript item type: {type(item).__name__}"
+            raise TypeError(msg)
 
     def process_message(self, message: Message) -> None:
         """Add a message to the transcript and notify handlers.
@@ -596,7 +604,8 @@ class Agent:
             if isinstance(first, AssistantMessageOut):
                 return first.text
 
-        raise RuntimeError("Summary generation failed: LLM response missing assistant message")
+        msg = "Summary generation failed: LLM response missing assistant message"
+        raise RuntimeError(msg)
 
     async def step(self) -> StepResult:
         """Run one iteration of the agent loop (one LLM call + tool resolution).
@@ -717,7 +726,8 @@ class Agent:
             outcome = results.get(call_id)
             if outcome is None:
                 if not abort_triggered:
-                    raise RuntimeError(f"Missing tool output for call_id={call_id!r}")
+                    msg = f"Missing tool output for call_id={call_id!r}"
+                    raise RuntimeError(msg)
                 outcome = ToolCallOutcome(result=_abort_result(), was_aborted=True)
             self._emit_tool_result(function_call, outcome.result)
             if outcome.was_aborted:
@@ -788,7 +798,8 @@ class Agent:
             if isinstance(item, ToolCallOutput):
                 items.append(FunctionCallOutputItem(call_id=item.call_id, output=_tool_result_to_openai(item.result)))
                 continue
-            raise TypeError(f"Unsupported transcript item for OpenAI input: {type(item)}")
+            msg = f"Unsupported transcript item for OpenAI input: {type(item)}"
+            raise TypeError(msg)
         return items
 
     async def _run_one_phase(self):
@@ -807,10 +818,11 @@ class Agent:
             # ReasoningItems cannot be reused outside their original response context,
             # so compaction must not be triggered if the last transcript item is a ReasoningItem
             if self._transcript and isinstance(self._transcript[-1], ReasoningItem):
-                raise RuntimeError(
+                msg = (
                     "Cannot compact transcript when last item is a ReasoningItem. "
                     "Handlers must not return Compact() after receiving reasoning output."
                 )
+                raise RuntimeError(msg)
             result = await self.compact_transcript(keep_recent_turns=decision.keep_recent_turns)
             if result.compacted:
                 logger.info(
@@ -850,7 +862,8 @@ class Agent:
         if isinstance(decision, NoAction):
             should_sample_llm = True
         else:
-            raise TypeError(f"Unsupported loop decision: {type(decision).__name__}")
+            msg = f"Unsupported loop decision: {type(decision).__name__}"
+            raise TypeError(msg)
 
         if should_sample_llm:
             tool_choice = _tool_choice_from_policy(self._tool_policy)
@@ -936,11 +949,13 @@ class Agent:
             elif isinstance(item, FunctionCallOutputItem):
                 # Convert API output type to transcript type
                 if item.output is None:
-                    raise ValueError("FunctionCallOutputItem.output is None")
+                    msg = "FunctionCallOutputItem.output is None"
+                    raise ValueError(msg)
                 result = _openai_to_tool_result(item.output)
                 original_call_id = item.call_id
                 if not isinstance(original_call_id, str) or not original_call_id:
-                    raise ValueError(f"FunctionCallOutputItem has invalid call_id: {original_call_id!r}")
+                    msg = f"FunctionCallOutputItem has invalid call_id: {original_call_id!r}"
+                    raise ValueError(msg)
                 tool_output = ToolCallOutput(call_id=original_call_id, result=result)
                 handled_call_ids.add(original_call_id)
                 self._transcript.append(tool_output)
@@ -963,7 +978,8 @@ class Agent:
                 self.pending_function_calls.append(item)
             else:
                 # Crash fast on unknown items to surface mismatches early
-                raise TypeError(f"Unsupported Responses output item: {type(item)}")
+                msg = f"Unsupported Responses output item: {type(item)}"
+                raise TypeError(msg)
 
     @classmethod
     async def create(

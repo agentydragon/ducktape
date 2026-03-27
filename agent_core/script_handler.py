@@ -91,9 +91,11 @@ def find_tool_result_typed[T: BaseModel](events: list[ScriptEvent], call_id: str
     """Find and parse typed structured content for a call_id."""
     result = find_tool_result(events, call_id)
     if result.is_error:
-        raise ScriptError(f"Tool returned error: {call_id=}, {result=}")
+        msg = f"Tool returned error: {call_id=}, {result=}"
+        raise ScriptError(msg)
     if not result.structured_content:
-        raise ScriptError(f"Tool returned no structured content: {call_id=}")
+        msg = f"Tool returned no structured content: {call_id=}"
+        raise ScriptError(msg)
     return TypeAdapter(output_type).validate_python(result.structured_content)
 
 
@@ -137,7 +139,8 @@ class ScriptHandler(BaseHandler):
         # Prime: advance to first yield and assert it's None
         prime = next(self._gen)
         if prime is not None:
-            raise RuntimeError("ScriptGen first yield must be None (prime yield)")
+            msg = "ScriptGen first yield must be None (prime yield)"
+            raise RuntimeError(msg)
 
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
         if not self._exhausted:
@@ -194,8 +197,9 @@ class ScriptBuilder(ItemFactory):
         result = find_tool_result_typed(events, call.call_id, BaseExecResult)
         if not (isinstance(result.exit, Exited) and result.exit.exit_code == 0):
             cmd_preview = " ".join(cmd[:4])
-            raise ScriptError(
+            msg = (
                 f"Command failed ({cmd_preview}): {result.exit.model_dump()}"
                 f"\nstdout: {result.stdout}\nstderr: {result.stderr}"
             )
+            raise ScriptError(msg)
         return result

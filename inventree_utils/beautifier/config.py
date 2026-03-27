@@ -19,15 +19,18 @@ class InstanceConfig:
 def prompt_for_config() -> InstanceConfig:
     server_url = input("InvenTree instance (e.g. https://inventree.mycompany.com): ").strip()
     if not server_url:
-        raise ValueError("No server URL provided.")
+        msg = "No server URL provided."
+        raise ValueError(msg)
 
     username = input("Username: ").strip()
     if not username:
-        raise ValueError("No username provided.")
+        msg = "No username provided."
+        raise ValueError(msg)
 
     password = getpass.getpass("Password (input hidden): ")
     if not password:
-        raise ValueError("No password provided.")
+        msg = "No password provided."
+        raise ValueError(msg)
 
     # Write to file
     return InstanceConfig(server_url=server_url, username=username, password=password)

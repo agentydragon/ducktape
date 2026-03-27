@@ -35,19 +35,22 @@ def get_last_function_output[T: BaseModel](req: ResponsesRequest, output_type: t
         ValueError: If structured content is missing or result is an error
     """
     if isinstance(req.input, str):
-        raise RuntimeError("Cannot extract from string input")
+        msg = "Cannot extract from string input"
+        raise RuntimeError(msg)
 
     # Find last FunctionCallOutputItem with output
     for item in reversed(req.input):
         if isinstance(item, FunctionCallOutputItem):
             if not item.output:
-                raise RuntimeError(f"FunctionCallOutputItem has no output: {item}")
+                msg = f"FunctionCallOutputItem has no output: {item}"
+                raise RuntimeError(msg)
 
             # Convert OpenAI output format to ToolResult
             result = _openai_to_tool_result(item.output)
             return result.extract_structured(output_type)
 
-    raise RuntimeError(f"No FunctionCallOutputItem found in request input for {output_type.__name__}")
+    msg = f"No FunctionCallOutputItem found in request input for {output_type.__name__}"
+    raise RuntimeError(msg)
 
 
 def assert_last_call(req: ResponsesRequest, expected_tool: str) -> None:
@@ -81,7 +84,8 @@ def extract_output[T: BaseModel](req: ResponsesRequest, output_type: type[T]) ->
         logger.error("Full request dump:")
         logger.error(json.dumps(req.model_dump(mode="json"), indent=2))
         pytest.fail(f"Failed to extract {output_type.__name__}: {e}. See log for full request.")
-        raise AssertionError("unreachable")
+        msg = "unreachable"
+        raise AssertionError(msg)
 
 
 def assert_and_extract[T: BaseModel](req: ResponsesRequest, expected_tool: str, output_type: type[T]) -> T:

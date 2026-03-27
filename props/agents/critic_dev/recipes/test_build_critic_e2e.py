@@ -63,7 +63,7 @@ async def test_build_critic_sh_via_agent(
         assert_that(result, exited_successfully())
         stdout = result.stdout if isinstance(result.stdout, str) else result.stdout.truncated_text
         new_digest = stdout.strip().split("\n")[-1]
-        logger.info(f"build_critic.sh produced digest: {new_digest}")
+        logger.info("build_critic.sh produced digest: %s", new_digest)
         assert new_digest.startswith("sha256:"), f"Expected sha256 digest, got: {new_digest!r}"
 
         # Start the custom critic image
@@ -78,17 +78,17 @@ async def test_build_critic_sh_via_agent(
             )
         )
         critic_run_id = start_output.critic_run_id
-        logger.info(f"Custom critic run: {critic_run_id}")
+        logger.info("Custom critic run: %s", critic_run_id)
 
         # Wait for critic to finish
         completed: CriticRunStatus = yield from m.wait_until_critic_completed_roundtrip(
             critic_run_id, timeout_seconds=120
         )
-        logger.info(f"Critic completed: status={completed.status}")
+        logger.info("Critic completed: status=%s", completed.status)
 
         # Wait for grading
         wait_output: GradingStatusResponse = yield from m.wait_until_graded_roundtrip(critic_run_id, timeout_seconds=60)
-        logger.info(f"Grading complete: total_credit={wait_output.total_credit}")
+        logger.info("Grading complete: total_credit=%s", wait_output.total_credit)
 
         yield m.report_success()
 

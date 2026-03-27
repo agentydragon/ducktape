@@ -129,11 +129,11 @@ def create_tool_provider(state: LoopState, http_client: httpx.AsyncClient, db: D
         After calling this, use wait_until_critic_completed to wait for the critic to
         finish, then use wait_until_graded to wait for grading results.
         """
-        logger.info(f"Starting critic: definition={args.definition_id}, example={args.example}")
+        logger.info("Starting critic: definition=%s, example=%s", args.definition_id, args.example)
         resp = await http_client.post("/api/runs/critic", json=args.model_dump(mode="json"))
         resp.raise_for_status()
         response = StartCriticResponse.model_validate(resp.json())
-        logger.info(f"Critic started: {response.critic_run_id}")
+        logger.info("Critic started: %s", response.critic_run_id)
         return response
 
     @provider.tool
@@ -145,7 +145,7 @@ def create_tool_provider(state: LoopState, http_client: httpx.AsyncClient, db: D
 
         Raises TimeoutError if the critic does not complete within timeout_seconds.
         """
-        logger.info(f"Waiting for critic to complete: {args.critic_run_id}")
+        logger.info("Waiting for critic to complete: %s", args.critic_run_id)
         deadline = time.monotonic() + args.timeout_seconds
         poll_interval = 5.0
 
@@ -153,15 +153,17 @@ def create_tool_provider(state: LoopState, http_client: httpx.AsyncClient, db: D
             with db.session() as session:
                 run = session.get(AgentRun, args.critic_run_id)
                 if run is None:
-                    raise ValueError(f"Critic run {args.critic_run_id} not found")
+                    msg = f"Critic run {args.critic_run_id} not found"
+                    raise ValueError(msg)
                 if run.status != AgentRunStatus.IN_PROGRESS:
-                    logger.info(f"Critic completed: {args.critic_run_id}, status={run.status}")
+                    logger.info("Critic completed: %s, status=%s", args.critic_run_id, run.status)
                     return CriticRunStatus(
                         critic_run_id=args.critic_run_id, status=run.status, container_exit_code=run.container_exit_code
                     )
             await asyncio.sleep(poll_interval)
 
-        raise TimeoutError(f"Critic run {args.critic_run_id} did not complete within {args.timeout_seconds}s")
+        msg = f"Critic run {args.critic_run_id} did not complete within {args.timeout_seconds}s"
+        raise TimeoutError(msg)
 
     @provider.tool
     async def wait_until_graded_tool(args: WaitUntilGradedToolArgs) -> GradingStatusResponse:
@@ -170,11 +172,11 @@ def create_tool_provider(state: LoopState, http_client: httpx.AsyncClient, db: D
         Polls the database directly until grading is complete or timeout.
         The critic run must have already completed (use wait_until_critic_completed first).
         """
-        logger.info(f"Waiting for grading: {args.critic_run_id}")
+        logger.info("Waiting for grading: %s", args.critic_run_id)
         response = await wait_until_graded(
             args.critic_run_id, db, timeout_seconds=args.timeout_seconds, poll_interval_seconds=5
         )
-        logger.info(f"Grading complete: total_credit={response.total_credit}, max_credit={response.max_credit}")
+        logger.info("Grading complete: total_credit=%s, max_credit=%s", response.total_credit, response.max_credit)
         return response
 
     @provider.tool

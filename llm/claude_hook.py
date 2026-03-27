@@ -142,7 +142,8 @@ class ClaudeCodeHookBase:
                 elif isinstance(request, PreCompactRequest):
                     outcome = hook_instance.pre_compact(request)
                 else:
-                    raise ValueError(f"Unknown request type: {type(request)}")
+                    msg = f"Unknown request type: {type(request)}"
+                    raise ValueError(msg)
 
                 # Convert to response once for both logging and return
                 response = outcome.to_claude_response()
@@ -150,7 +151,7 @@ class ClaudeCodeHookBase:
 
             except Exception:
                 # Log the exception
-                logger.error("Hook execution failed", exc_info=True)
+                logger.exception("Hook execution failed")
                 raise
 
             _emit_and_exit(response)

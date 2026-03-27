@@ -119,12 +119,14 @@ class DirectToolProvider:
                 first_param = params[0]
                 param_type_hint = hints.get(first_param.name)
                 if param_type_hint is None:
-                    raise TypeError(f"Tool {tool_name} parameter '{first_param.name}' must have a type annotation")
+                    msg = f"Tool {tool_name} parameter '{first_param.name}' must have a type annotation"
+                    raise TypeError(msg)
                 if not (isinstance(param_type_hint, type) and issubclass(param_type_hint, BaseModel)):
-                    raise TypeError(
+                    msg = (
                         f"Tool {tool_name} parameter '{first_param.name}' must be a Pydantic BaseModel, "
                         f"got {param_type_hint}"
                     )
+                    raise TypeError(msg)
                 param_type = param_type_hint
 
             self._tools[tool_name] = RegisteredTool(

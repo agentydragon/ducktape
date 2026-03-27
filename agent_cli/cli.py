@@ -77,7 +77,7 @@ async def run(
 
     # Setup transcript path (always write transcript)
     if transcript is None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(tz=datetime.UTC).strftime("%Y%m%d_%H%M%S")
         transcript = Path(f"/tmp/adgn-agent-transcript-{timestamp}.jsonl")
     console.print(f"[dim]Writing transcript to: {transcript}[/dim]")
 

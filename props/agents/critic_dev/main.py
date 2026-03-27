@@ -52,7 +52,8 @@ def _setup_crane_auth(config: DatabaseConfig) -> None:
     """Write ~/.docker/config.json so crane can push/pull via Basic auth."""
     backend_url = os.environ.get("PROPS_BACKEND_URL")
     if not backend_url:
-        raise RuntimeError("PROPS_BACKEND_URL must be set for crane auth setup")
+        msg = "PROPS_BACKEND_URL must be set for crane auth setup"
+        raise RuntimeError(msg)
 
     registry = urlparse(backend_url).netloc
     auth_token = config.basic_auth_token
@@ -306,9 +307,10 @@ class ImprovementReminderHandler(BaseHandler):
 
         if isinstance(result, TerminationSuccess):
             logger.info(
-                f"Critic developer terminating: "
-                f"definition '{result.definition_id}' with {result.total_credit:.1f} credit "
-                f"beats baseline avg {result.baseline_avg:.1f}"
+                "Critic developer terminating: definition '%s' with %.1f credit beats baseline avg %.1f",
+                result.definition_id,
+                result.total_credit,
+                result.baseline_avg,
             )
             return Abort()
 

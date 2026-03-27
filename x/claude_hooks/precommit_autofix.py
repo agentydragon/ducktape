@@ -135,7 +135,10 @@ class PreCommitAutoFixerHook(PostToolUseHook):
 
     def execute(self, hook_input: PostToolInput, context: HookContext) -> PostToolAction:
         self.logger.info(
-            f"Config: enabled={self.autofixer_config.enabled}, dry_run={self.autofixer_config.dry_run}, tools={self.autofixer_config.tools}"
+            "Config: enabled=%s, dry_run=%s, tools=%s",
+            self.autofixer_config.enabled,
+            self.autofixer_config.dry_run,
+            self.autofixer_config.tools,
         )
 
         if not self.autofixer_config.enabled:
@@ -143,7 +146,7 @@ class PreCommitAutoFixerHook(PostToolUseHook):
             return PostToolContinue()
 
         if hook_input.tool_name not in self.autofixer_config.tools:
-            self.logger.info(f"Tool {hook_input.tool_name} not in tools list")
+            self.logger.info("Tool %s not in tools list", hook_input.tool_name)
             return PostToolContinue()
 
         file_path = extract_file_path(hook_input.tool_input)
@@ -152,15 +155,15 @@ class PreCommitAutoFixerHook(PostToolUseHook):
             return PostToolContinue()
 
         if not file_path.exists():
-            self.logger.info(f"File does not exist: {file_path}")
+            self.logger.info("File does not exist: %s", file_path)
             return PostToolContinue()
 
-        self.logger.info(f"Processing file: {file_path}")
+        self.logger.info("Processing file: %s", file_path)
 
         # Check Python syntax before running pre-commit
         is_valid, syntax_error = check_python_syntax(file_path)
         if not is_valid:
-            self.logger.warning(f"Skipping pre-commit due to syntax error: {syntax_error}")
+            self.logger.warning("Skipping pre-commit due to syntax error: %s", syntax_error)
             return PostToolFeedbackToClaude(feedback_to_claude=f"⚠️ Fix {syntax_error}.")
 
         try:

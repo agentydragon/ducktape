@@ -22,7 +22,8 @@ def configure_logging(log_output: str = "stderr", log_level: str = "WARNING") ->
     # Validate log level
     log_level_upper = log_level.upper()
     if log_level_upper not in VALID_LOG_LEVELS:
-        raise ValueError(f"Invalid log level: {log_level}. Must be one of {', '.join(VALID_LOG_LEVELS)}")
+        msg = f"Invalid log level: {log_level}. Must be one of {', '.join(VALID_LOG_LEVELS)}"
+        raise ValueError(msg)
 
     # Determine handler configuration based on log_output
     if log_output == "none":

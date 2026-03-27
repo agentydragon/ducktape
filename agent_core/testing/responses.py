@@ -114,14 +114,16 @@ class GeneratorRunner(OpenAIModelProto):
         try:
             result = self._gen.send(req)
         except StopIteration:
-            raise RuntimeError("Mock exhausted: generator ended but received another request") from None
+            msg = "Mock exhausted: generator ended but received another request"
+            raise RuntimeError(msg) from None
 
         return self._wrap(result)
 
     def _wrap(self, result: ResponsesResult | ResponseOutItem | list[ResponseOutItem] | None) -> ResponsesResult:
         """Auto-wrap yielded values to ResponsesResult."""
         if result is None:
-            raise RuntimeError("Generator yielded None when response expected")
+            msg = "Generator yielded None when response expected"
+            raise RuntimeError(msg)
         if isinstance(result, ResponsesResult):
             return result
         if isinstance(result, list):
@@ -164,9 +166,11 @@ def extract_call_output[T](req: ResponsesRequest, call: FunctionCallItem, output
     matches = [item for item in req.input if isinstance(item, FunctionCallOutputItem) and item.call_id == call.call_id]
 
     if len(matches) == 0:
-        raise ValueError(f"No output found for call_id={call.call_id}")
+        msg = f"No output found for call_id={call.call_id}"
+        raise ValueError(msg)
     if len(matches) > 1:
-        raise ValueError(f"Multiple outputs found for call_id={call.call_id}: expected exactly 1, got {len(matches)}")
+        msg = f"Multiple outputs found for call_id={call.call_id}: expected exactly 1, got {len(matches)}"
+        raise ValueError(msg)
 
     return TypeAdapter(output_type).validate_python(json.loads(matches[0].output))
 
@@ -218,21 +222,24 @@ class GeneratorMock(ItemFactory, OpenAIModelProto):
     def assert_consumed(self) -> None:
         """Assert generator was fully consumed (no more yields pending)."""
         if not self._consumed:
-            raise AssertionError("Mock has unconsumed steps - generator did not complete")
+            msg = "Mock has unconsumed steps - generator did not complete"
+            raise AssertionError(msg)
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         """Send request to generator, return wrapped response."""
         try:
             result = self._gen.send(req)
         except StopIteration:
-            raise RuntimeError("Mock exhausted: generator ended but received another request") from None
+            msg = "Mock exhausted: generator ended but received another request"
+            raise RuntimeError(msg) from None
 
         return self._wrap_result(result)
 
     def _wrap_result(self, result: ResponseOutItem | list[ResponseOutItem] | None) -> ResponsesResult:
         """Auto-wrap yielded values to ResponsesResult."""
         if result is None:
-            raise RuntimeError("Generator yielded None when response expected")
+            msg = "Generator yielded None when response expected"
+            raise RuntimeError(msg)
         if isinstance(result, list):
             return self._make(*result)
         return self._make(result)

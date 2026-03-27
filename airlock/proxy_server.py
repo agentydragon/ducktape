@@ -197,7 +197,7 @@ class AirlockServer(EnhancedFastMCP):
         Without this, decide() would fail for any PENDING action from a prior run because
         _pending_decisions only lives in memory and is empty on startup.
         """
-        pending = await self._req_storage.list_actions(ActionStatus.PENDING)
+        pending = await self.req_storage.list_actions(ActionStatus.PENDING)
         for action in pending:
             namespace = MCPMountPrefix(action.call.server_namespace)
             self._spawn(self._await_human_decision(action.key, namespace, action.call.tool_name, action.call.arguments))
@@ -230,22 +230,24 @@ class AirlockServer(EnhancedFastMCP):
         async def action_resource(session_key: str, action_seq: int) -> str:
             """Current state of a deferred action."""
             key = ActionKey(session_key=session_key, action_seq=action_seq)
-            action = await self._req_storage.get_action(key)
+            action = await self.req_storage.get_action(key)
             if action is None:
-                raise ValueError(f"Action not found: {session_key}/{action_seq}")
+                msg = f"Action not found: {session_key}/{action_seq}"
+                raise ValueError(msg)
             return action.model_dump_json()
 
         @self.resource("resource://sessions/{session_key}/log_hwm")
         async def log_hwm_resource(session_key: str) -> str:
             """The entry_id of the last log entry for this session."""
-            return str(await self._req_storage.get_log_hwm(session_key))
+            return str(await self.req_storage.get_log_hwm(session_key))
 
         @self.resource("resource://sessions/{session_key}/log/{entry_id}")
         async def log_entry_resource(session_key: str, entry_id: int) -> str:
             """A specific log entry."""
-            entry = await self._req_storage.get_log_entry(session_key, entry_id)
+            entry = await self.req_storage.get_log_entry(session_key, entry_id)
             if entry is None:
-                raise ValueError(f"Log entry not found: {session_key}/{entry_id}")
+                msg = f"Log entry not found: {session_key}/{entry_id}"
+                raise ValueError(msg)
             return entry.model_dump_json()
 
         mcp_server = self._mcp_server
@@ -264,7 +266,7 @@ class AirlockServer(EnhancedFastMCP):
         @self.tool(auth=require_scopes(READ_SCOPE))
         async def list_actions(status: ActionStatus | None = None, limit: int = 100, offset: int = 0) -> list[Action]:
             """List queued/processed actions, optionally filtered by status."""
-            return await self._req_storage.list_actions(status, limit=limit, offset=offset)
+            return await self.req_storage.list_actions(status, limit=limit, offset=offset)
 
         @self.tool(auth=require_scopes(DECIDE_SCOPE))
         async def approve_action(key: ActionKey) -> None:
@@ -282,9 +284,10 @@ class AirlockServer(EnhancedFastMCP):
             return await self.withdraw(key)
 
     @property
-    def _req_storage(self) -> ActionStorage:
+    def req_storage(self) -> ActionStorage:
         if self._storage is None:
-            raise RuntimeError("storage not initialised — gate not started")
+            msg = "storage not initialised — gate not started"
+            raise RuntimeError(msg)
         return self._storage
 
     # ── Wrapped tool registration ─────────────────────────────────────────────
@@ -305,7 +308,7 @@ class AirlockServer(EnhancedFastMCP):
             wait_mode: WaitMode | None = None,
         ) -> Action:
             call = ToolCall(server_namespace=namespace, tool_name=tool_name, arguments=input)
-            action = await self._req_storage.create_action(
+            action = await self.req_storage.create_action(
                 session_key=session_key, call=call, justification=justification
             )
             key = action.key
@@ -322,7 +325,7 @@ class AirlockServer(EnhancedFastMCP):
                 with anyio.move_on_after(effective_timeout):
                     await asyncio.shield(pipeline)
 
-            result = await self._req_storage.get_action(key)
+            result = await self.req_storage.get_action(key)
             assert result is not None
             return result
 
@@ -383,7 +386,8 @@ class AirlockServer(EnhancedFastMCP):
                 await self._update_and_notify(key, ExecutingState(), ExecutionStartedDetail(started_at=started_at))
                 client = self._backend_clients.get(namespace)
                 if client is None:
-                    raise RuntimeError(f"backend client not connected for namespace: {namespace!r}")
+                    msg = f"backend client not connected for namespace: {namespace!r}"
+                    raise RuntimeError(msg)
                 outcome = await client.call_tool_mcp(tool_name, input)
                 await self._update_and_notify(key, DoneState(outcome=outcome), ExecutionFinishedDetail(outcome=outcome))
             case DenyDecision(reason=reason):
@@ -393,7 +397,7 @@ class AirlockServer(EnhancedFastMCP):
 
     async def _append_log_and_notify(self, key: ActionKey, detail: LogEventDetail) -> None:
         """Append a log entry and notify subscribed sessions of action + HWM changes."""
-        await self._req_storage.append_log_entry(session_key=key.session_key, action_seq=key.action_seq, detail=detail)
+        await self.req_storage.append_log_entry(session_key=key.session_key, action_seq=key.action_seq, detail=detail)
         await self._notify_subscribers(f"resource://sessions/{key.session_key}/actions/{key.action_seq}")
         await self._notify_subscribers(f"resource://sessions/{key.session_key}/log_hwm")
 
@@ -419,14 +423,17 @@ class AirlockServer(EnhancedFastMCP):
         Raises ValueError if the action does not exist, is not pending, or is not
         awaiting a human decision (e.g. still processing an auto-predicate).
         """
-        action = await self._req_storage.get_action(key)
+        action = await self.req_storage.get_action(key)
         if action is None:
-            raise ValueError(f"Action not found: {key.session_key}/{key.action_seq}")
+            msg = f"Action not found: {key.session_key}/{key.action_seq}"
+            raise ValueError(msg)
         if not isinstance(action.state, PendingState):
-            raise ValueError(f"Action {key.session_key}/{key.action_seq} is not pending ({action.state.status=})")
+            msg = f"Action {key.session_key}/{key.action_seq} is not pending ({action.state.status=})"
+            raise ValueError(msg)
         fut = self._pending_decisions.get(key)
         if fut is None or fut.done():
-            raise ValueError(f"Action {key.session_key}/{key.action_seq} is not awaiting a human decision")
+            msg = f"Action {key.session_key}/{key.action_seq} is not awaiting a human decision"
+            raise ValueError(msg)
         fut.set_result(decision)
 
     async def withdraw(self, key: ActionKey) -> Action:
@@ -434,11 +441,13 @@ class AirlockServer(EnhancedFastMCP):
 
         Raises ValueError if the action does not exist or is not pending.
         """
-        action = await self._req_storage.get_action(key)
+        action = await self.req_storage.get_action(key)
         if action is None:
-            raise ValueError(f"Action not found: {key.session_key}/{key.action_seq}")
+            msg = f"Action not found: {key.session_key}/{key.action_seq}"
+            raise ValueError(msg)
         if not isinstance(action.state, PendingState):
-            raise ValueError(f"Action {key.session_key}/{key.action_seq} is not pending ({action.state.status=})")
+            msg = f"Action {key.session_key}/{key.action_seq} is not pending ({action.state.status=})"
+            raise ValueError(msg)
         result = await self._update_and_notify(key, WithdrawnState(), WithdrawnDetail())
         fut = self._pending_decisions.pop(key, None)
         if fut is not None and not fut.done():
@@ -454,7 +463,7 @@ class AirlockServer(EnhancedFastMCP):
 
     async def _update_and_notify(self, key: ActionKey, new_state: ActionState, detail: LogEventDetail) -> Action:
         """Update action state and append log entry atomically, then notify subscribers."""
-        action, _ = await self._req_storage.update_state_and_log(key, new_state, detail)
+        action, _ = await self.req_storage.update_state_and_log(key, new_state, detail)
         await self._notify_subscribers(f"resource://sessions/{key.session_key}/actions/{key.action_seq}")
         await self._notify_subscribers(f"resource://sessions/{key.session_key}/log_hwm")
         self._broadcast_sse({"type": "action_updated", "session_key": key.session_key, "action_seq": key.action_seq})

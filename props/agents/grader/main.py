@@ -118,14 +118,15 @@ class GraderState:
     ) -> None:
         """Handle incoming pg_notify notifications."""
         if not isinstance(payload, str):
-            raise TypeError(f"Expected string payload, got {type(payload)}")
+            msg = f"Expected string payload, got {type(payload)}"
+            raise TypeError(msg)
 
         notification = GradingPendingNotification.model_validate_json(payload)
 
         if notification.snapshot_slug != self.snapshot_slug:
             return  # Not for us
 
-        logger.debug(f"Notification for {self.snapshot_slug}: {notification.operation} {notification.item.table}")
+        logger.debug("Notification for %s: %s %s", self.snapshot_slug, notification.operation, notification.item.table)
         self.notification_queue.append(notification)
         self.wake_event.set()
 
@@ -163,7 +164,8 @@ def _create_grader_tool_provider(
         with db.session() as session:
             issue = session.query(ReportedIssue).filter_by(agent_run_id=args.run, issue_id=args.issue_id).first()
             if not issue:
-                raise ValueError(f"Issue not found: {args.run}/{args.issue_id}")
+                msg = f"Issue not found: {args.run}/{args.issue_id}"
+                raise ValueError(msg)
 
             occs = (
                 session.query(ReportedIssueOccurrence)
@@ -184,7 +186,8 @@ def _create_grader_tool_provider(
         with db.session() as session:
             tp = session.query(TruePositive).filter_by(snapshot_slug=snapshot_slug, tp_id=args.tp_id).first()
             if not tp:
-                raise ValueError(f"TP not found: {args.tp_id}")
+                msg = f"TP not found: {args.tp_id}"
+                raise ValueError(msg)
 
             occ = (
                 session.query(TruePositiveOccurrenceORM)
@@ -192,7 +195,8 @@ def _create_grader_tool_provider(
                 .first()
             )
             if not occ:
-                raise ValueError(f"TP occurrence not found: {args.tp_id}/{args.occurrence_id}")
+                msg = f"TP occurrence not found: {args.tp_id}/{args.occurrence_id}"
+                raise ValueError(msg)
 
             files_dict = {str(r.file_path): (r.start_line, r.end_line) for r in occ.ranges}
             gt_ref = TPRef(tp_id=args.tp_id, occurrence_id=args.occurrence_id)
@@ -204,7 +208,8 @@ def _create_grader_tool_provider(
         with db.session() as session:
             fp = session.query(FalsePositive).filter_by(snapshot_slug=snapshot_slug, fp_id=args.fp_id).first()
             if not fp:
-                raise ValueError(f"FP not found: {args.fp_id}")
+                msg = f"FP not found: {args.fp_id}"
+                raise ValueError(msg)
 
             occ = (
                 session.query(FalsePositiveOccurrenceORM)
@@ -212,7 +217,8 @@ def _create_grader_tool_provider(
                 .first()
             )
             if not occ:
-                raise ValueError(f"FP occurrence not found: {args.fp_id}/{args.occurrence_id}")
+                msg = f"FP occurrence not found: {args.fp_id}/{args.occurrence_id}"
+                raise ValueError(msg)
 
             files_dict = {str(r.file_path): (r.start_line, r.end_line) for r in occ.ranges}
             gt_ref = FPRef(fp_id=args.fp_id, occurrence_id=args.occurrence_id)
@@ -270,7 +276,8 @@ def _create_grader_tool_provider(
             pending = list(session.scalars(query))
 
             if len(pending) != args.expected_count:
-                raise ValueError(f"Expected {args.expected_count} pending edges but found {len(pending)}")
+                msg = f"Expected {args.expected_count} pending edges but found {len(pending)}"
+                raise ValueError(msg)
 
             for p in pending:
                 edge = GradingEdge(
@@ -316,11 +323,11 @@ def _create_grader_tool_provider(
         """
         drift = get_drift_fn(snapshot_slug, db)
         if drift.grading:
-            raise ValueError(f"There are {len(drift.grading)} pending grading edges. Continue grading before sleeping.")
+            msg = f"There are {len(drift.grading)} pending grading edges. Continue grading before sleeping."
+            raise ValueError(msg)
         if drift.clustering:
-            raise ValueError(
-                f"There are {len(drift.clustering)} issues needing clustering. Cluster unmatched issues before sleeping."
-            )
+            msg = f"There are {len(drift.clustering)} issues needing clustering. Cluster unmatched issues before sleeping."
+            raise ValueError(msg)
         logger.info("Sleep requested: %s", args.summary)
         while True:
             state.wake_event.clear()
@@ -355,7 +362,8 @@ def _create_grader_tool_provider(
                 session.query(IssueCluster).filter_by(snapshot_slug=snapshot_slug, cluster_id=args.cluster_id).first()
             )
             if not cluster:
-                raise ValueError(f"Cluster not found: {args.cluster_id}")
+                msg = f"Cluster not found: {args.cluster_id}"
+                raise ValueError(msg)
             return ClusterDetails(
                 cluster_id=cluster.cluster_id,
                 rationale=cluster.rationale,
@@ -402,7 +410,8 @@ def _create_grader_tool_provider(
                 session.query(IssueCluster).filter_by(snapshot_slug=snapshot_slug, cluster_id=args.cluster_id).first()
             )
             if not cluster:
-                raise ValueError(f"Cluster not found: {args.cluster_id}")
+                msg = f"Cluster not found: {args.cluster_id}"
+                raise ValueError(msg)
             for member in args.members:
                 session.add(
                     IssueClusterMember(
@@ -431,7 +440,8 @@ def _create_grader_tool_provider(
                 .delete()
             )
             if count == 0:
-                raise ValueError(f"Member not found: {args.run}/{args.issue_id} in cluster '{args.cluster_id}'")
+                msg = f"Member not found: {args.run}/{args.issue_id} in cluster '{args.cluster_id}'"
+                raise ValueError(msg)
         return f"Removed {args.run}/{args.issue_id} from cluster '{args.cluster_id}'"
 
     @provider.tool
@@ -442,7 +452,8 @@ def _create_grader_tool_provider(
                 session.query(IssueCluster).filter_by(snapshot_slug=snapshot_slug, cluster_id=args.cluster_id).delete()
             )
             if count == 0:
-                raise ValueError(f"Cluster not found: {args.cluster_id}")
+                msg = f"Cluster not found: {args.cluster_id}"
+                raise ValueError(msg)
         return f"Deleted cluster '{args.cluster_id}'"
 
     return provider
@@ -489,7 +500,7 @@ async def _run_grader_loop(snapshot_slug: SnapshotSlug, system_prompt: str, db: 
 
     listener_conn = await db.config.asyncpg_connect()
     await listener_conn.add_listener(GRADING_PENDING_CHANNEL, state.notification_callback)
-    logger.info(f"Listening on channel '{GRADING_PENDING_CHANNEL}' for {snapshot_slug}")
+    logger.info("Listening on channel '%s' for %s", GRADING_PENDING_CHANNEL, snapshot_slug)
 
     try:
         while True:

@@ -80,13 +80,15 @@ def _monkey_patch_claude_sdk_for_containerization():
 
     def _patched_find_cli(self) -> str:
         if not isinstance(self._options, ContainerizedClaudeCodeOptions):
-            raise RuntimeError("No claude_binary in options")
+            msg = "No claude_binary in options"
+            raise RuntimeError(msg)
         bin_path = self._options.claude_binary
         if not bin_path:
-            raise RuntimeError("claude_binary not set in options")
+            msg = "claude_binary not set in options"
+            raise RuntimeError(msg)
         return bin_path
 
-    SubprocessCLITransport._find_cli = _patched_find_cli  # type: ignore[method-assign]
+    SubprocessCLITransport._find_cli = _patched_find_cli  # type: ignore[method-assign]  # noqa: SLF001
 
 
 # Apply monkeypatch once at module level
@@ -136,7 +138,8 @@ class TaskClaude:
         # Find docker path for wrapper creation
         docker_path = shutil.which("docker")
         if not docker_path:
-            raise RuntimeError("Docker binary not found in PATH")
+            msg = "Docker binary not found in PATH"
+            raise RuntimeError(msg)
         self._docker_path: str = docker_path
 
     @property
@@ -148,14 +151,17 @@ class TaskClaude:
     def _ensure_container_ready(self):
         """Runtime safety check - call before any container operations."""
         if not self._container:
-            raise RuntimeError("Container not started - TaskClaude must be used as context manager")
+            msg = "Container not started - TaskClaude must be used as context manager"
+            raise RuntimeError(msg)
 
     def _container_or_raise(self) -> Container:
         c = self._container
         if c is None:
-            raise RuntimeError("Container not started")
+            msg = "Container not started"
+            raise RuntimeError(msg)
         if c.id is None:
-            raise RuntimeError("Container created but has no ID")
+            msg = "Container created but has no ID"
+            raise RuntimeError(msg)
         return c
 
     def _get_container_volumes(self, git_readonly: bool) -> dict:
@@ -195,7 +201,8 @@ class TaskClaude:
         consistent settings across initial and remounted containers.
         """
         if self._docker_image is None:
-            raise RuntimeError("Docker image not set")
+            msg = "Docker image not set"
+            raise RuntimeError(msg)
         return self._docker_client.containers.create(
             self._docker_image,
             command=["/usr/bin/tini", "--", "sleep", "infinity"],  # Use tini as PID 1 to reap zombies
@@ -215,10 +222,12 @@ class TaskClaude:
             if c.status != "running":
                 logs = c.logs().decode("utf-8", errors="replace")
                 self._logger.error("Container not running - logs:", container_id=c.id, status=c.status, logs=logs)
-                raise RuntimeError(f"Container {c.id} is not running, status: {c.status}")
+                msg = f"Container {c.id} is not running, status: {c.status}"
+                raise RuntimeError(msg)
         except Exception as e:
             cid = self._container.id if self._container else "<none>"
-            raise RuntimeError(f"Container {cid} check failed: {e}") from e
+            msg = f"Container {cid} check failed: {e}"
+            raise RuntimeError(msg) from e
 
         c = self._container_or_raise()
         self._logger.info("Query starting", container_id=c.id, container_status=c.status)
@@ -296,7 +305,8 @@ class TaskClaude:
     def _setup_docker_image(self):
         """Validate docker image from task configuration."""
         if not self._docker_image:
-            raise ValueError(f"Task '{self.task_id}' has no docker_image specified")
+            msg = f"Task '{self.task_id}' has no docker_image specified"
+            raise ValueError(msg)
         self._logger.info("Using Docker image", docker_image=self._docker_image)
 
     def _get_docker_exec_wrapper_path(self) -> str:
@@ -311,7 +321,8 @@ class TaskClaude:
         # Use committed wrapper script from repo
         wrapper_script = Path(__file__).parent.parent.parent.parent / "scripts" / "claude_docker_wrapper"
         if not wrapper_script.exists():
-            raise RuntimeError(f"Claude docker wrapper script not found: {wrapper_script}")
+            msg = f"Claude docker wrapper script not found: {wrapper_script}"
+            raise RuntimeError(msg)
 
         self._logger.debug("Using committed Claude docker wrapper", wrapper_path=str(wrapper_script), container_id=c.id)
         return str(wrapper_script)
@@ -348,7 +359,8 @@ class TaskClaude:
                         logs=logs,
                         debug_hint=f"Run: docker logs {c.id}",
                     )
-                    raise RuntimeError(f"Container {c.id} died during startup: {c.status}")
+                    msg = f"Container {c.id} died during startup: {c.status}"
+                    raise RuntimeError(msg)
 
                 await asyncio.sleep(1)
 
@@ -363,7 +375,8 @@ class TaskClaude:
                     debug_hint=f"Run: docker logs {c.id}",
                 )
 
-                raise RuntimeError(f"Container {c.id} failed to start within {max_wait}s: {c.status}")
+                msg = f"Container {c.id} failed to start within {max_wait}s: {c.status}"
+                raise RuntimeError(msg)
 
             self._logger.info("Initial container running", container_id=c.id, status=c.status)
 
@@ -396,14 +409,16 @@ class TaskClaude:
         """Run a setup script with streaming output and error handling."""
         setup_script = Path(script_path)
         if not await asyncio.to_thread(setup_script.exists):
-            raise FileNotFoundError(f"{script_type} script not found: {setup_script}")
+            msg = f"{script_type} script not found: {setup_script}"
+            raise FileNotFoundError(msg)
 
         # Debug: Log the exact command being executed
         c = self._container_or_raise()
         cmd_args = [str(setup_script), c.id, self.task_id, str(self._output_dir)]
         script_stat = await asyncio.to_thread(setup_script.stat)
         self._logger.info(
-            f"Running {script_type.lower()} script",
+            "Running %s script",
+            script_type.lower(),
             script=str(setup_script),
             container_id=c.id,
             task_id=self.task_id,
@@ -423,7 +438,8 @@ class TaskClaude:
 
         # Stream output in real-time
         if process.stdout is None:
-            raise RuntimeError("Setup script process has no stdout pipe")
+            msg = "Setup script process has no stdout pipe"
+            raise RuntimeError(msg)
         while line := await process.stdout.readline():
             try:
                 line_text = line.decode("utf-8", errors="replace").rstrip()
@@ -445,13 +461,15 @@ class TaskClaude:
 
         if exit_code != 0:
             self._logger.error(
-                f"{script_type} script failed - CONTAINER LEFT RUNNING FOR DEBUG",
+                "%s script failed - CONTAINER LEFT RUNNING FOR DEBUG",
+                script_type,
                 container_id=c.id,
                 exit_code=exit_code,
                 debug_hint=f"Run: docker logs {c.id}",
             )
-            raise RuntimeError(f"{script_type} script failed with exit code {exit_code}")
-        self._logger.info(f"{script_type} script completed successfully", container_id=c.id)
+            msg = f"{script_type} script failed with exit code {exit_code}"
+            raise RuntimeError(msg)
+        self._logger.info("%s script completed successfully", script_type, container_id=c.id)
 
     async def _run_pre_task_always_setup(self):
         """Run always pre-task setup script (runs before every task)."""
@@ -487,7 +505,8 @@ class TaskClaude:
 
         # Stream output in real-time
         if process.stdout is None:
-            raise RuntimeError("Pre-task commands process has no stdout pipe")
+            msg = "Pre-task commands process has no stdout pipe"
+            raise RuntimeError(msg)
         while True:
             try:
                 line = await process.stdout.readline()
@@ -504,7 +523,8 @@ class TaskClaude:
 
         if exit_code != 0:
             self._logger.error("Pre-task commands failed", container_id=c.id, exit_code=exit_code)
-            raise RuntimeError(f"Pre-task commands failed with exit code {exit_code}")
+            msg = f"Pre-task commands failed with exit code {exit_code}"
+            raise RuntimeError(msg)
         self._logger.info("Pre-task commands completed successfully", container_id=c.id)
 
     async def _remount_git_readonly(self):
@@ -559,7 +579,8 @@ class TaskClaude:
                     logs=logs,
                     debug_hint=f"Run: docker logs {c.id}",
                 )
-                raise RuntimeError(f"Remounted container {c.id} died during startup: {c.status}")
+                msg = f"Remounted container {c.id} died during startup: {c.status}"
+                raise RuntimeError(msg)
 
             await asyncio.sleep(1)
 
@@ -574,7 +595,8 @@ class TaskClaude:
                 logs=logs,
                 debug_hint=f"Run: docker logs {c.id}",
             )
-            raise RuntimeError(f"Remounted container {c.id} failed to start within {max_wait}s: {c.status}")
+            msg = f"Remounted container {c.id} failed to start within {max_wait}s: {c.status}"
+            raise RuntimeError(msg)
 
         self._logger.info("Remounted container running", container_id=c.id, status=c.status)
 
@@ -598,7 +620,8 @@ class TaskClaude:
                 cid = "<none>"
                 with suppress(Exception):
                     cid = str(self._container_or_raise().id)
-                raise RuntimeError(f"Failed to remove container {cid}: {e}") from e
+                msg = f"Failed to remove container {cid}: {e}"
+                raise RuntimeError(msg) from e
             finally:
                 self._container = None
 

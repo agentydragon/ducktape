@@ -243,14 +243,16 @@ class GridConfig(BaseModel):
             axes.append(("rows", self.rows.param))
         for name, param in axes:
             if param in (CutParam.POWER_MIN_PCT, CutParam.POWER_MAX_PCT):
-                raise ValueError(
+                msg = (
                     f"{name}.param={param!r} is not allowed as an axis parameter; "
                     f"use 'power_pct' instead to vary min and max power together"
                 )
+                raise ValueError(msg)
         seen: dict[CutParam, str] = {}
         for name, param in axes:
             if param in seen:
-                raise ValueError(f"{name}.param and {seen[param]}.param must be different; both are {param!r}")
+                msg = f"{name}.param and {seen[param]}.param must be different; both are {param!r}"
+                raise ValueError(msg)
             seen[param] = name
         return self
 
@@ -295,7 +297,8 @@ def _get_param(cut: CutSetting, param: CutParam) -> float:
         return cut.z_per_pass
     if param == CutParam.NUM_PASSES:
         return float(cut.num_passes)
-    raise ValueError(f"Unknown param: {param!r}")  # unreachable with enum
+    msg = f"Unknown param: {param!r}"
+    raise ValueError(msg)  # unreachable with enum
 
 
 def _auto_subtitle(config: GridConfig) -> str:
