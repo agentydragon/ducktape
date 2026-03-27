@@ -36,7 +36,7 @@ trap on_exit EXIT
 
 set -euo pipefail
 
-FLAKE="github:agentydragon/ducktape"
+FLAKE="path:$(pwd)"
 
 # --- Step 1: Install Nix ---
 # Write nix.conf BEFORE the installer runs. The installer internally runs
