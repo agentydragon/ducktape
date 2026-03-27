@@ -36,7 +36,8 @@ class NoopOpenAIClient(OpenAIModelProto):
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         # This should never be called when using SyntheticAction path
-        raise NotImplementedError("NoopOpenAIClient should not be called in SyntheticAction path")
+        msg = "NoopOpenAIClient should not be called in SyntheticAction path"
+        raise NotImplementedError(msg)
 
 
 def strip_system_notification_wrapper(text: str) -> str:
@@ -66,7 +67,8 @@ def start_uvicorn_app(
     # Wait until app startup has completed (ready Event set) or timeout
     while not getattr(app.state, "ready", None) or not app.state.ready.is_set():
         if time.time() - started > 10:
-            raise RuntimeError("server failed to start within 10s")
+            msg = "server failed to start within 10s"
+            raise RuntimeError(msg)
         time.sleep(0.05)
 
     def _stop() -> None:

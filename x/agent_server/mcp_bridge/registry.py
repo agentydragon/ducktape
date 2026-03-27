@@ -93,7 +93,8 @@ class InfrastructureRegistry:
     def _ensure_compositor(self) -> Compositor:
         """Return global compositor or raise CompositorNotInitializedError."""
         if (comp := self.global_compositor) is None:
-            raise CompositorNotInitializedError("Global compositor not initialized")
+            msg = "Global compositor not initialized"
+            raise CompositorNotInitializedError(msg)
         return comp
 
     async def _register_and_mount_agent(self, container: AgentContainer, *, external: bool) -> None:
@@ -108,23 +109,25 @@ class InfrastructureRegistry:
             await self._mount_agent_control(container)
 
         # Mount agent compositor to global
-        if container._compositor is None:
-            raise RuntimeError(f"Agent container {container.agent_id} has no compositor after build")
+        if container.compositor is None:
+            msg = f"Agent container {container.agent_id} has no compositor after build"
+            raise RuntimeError(msg)
 
         mount_prefix = agent_mount_prefix(container.agent_id)
-        await comp.mount_inproc(mount_prefix, container._compositor)
+        await comp.mount_inproc(mount_prefix, container.compositor)
 
     async def _mount_agent_control(self, container: AgentContainer) -> None:
         """Mount agent_control server on container's compositor.
 
         Only for internal agents - provides send_prompt and abort tools.
         """
-        if container._compositor is None:
-            raise RuntimeError(f"Agent container {container.agent_id} has no compositor for agent_control mount")
+        if container.compositor is None:
+            msg = f"Agent container {container.agent_id} has no compositor for agent_control mount"
+            raise RuntimeError(msg)
 
         control_server = container.make_control_server()
-        await container._compositor.mount_inproc(AGENT_CONTROL_MOUNT_PREFIX, control_server)
-        logger.debug(f"Mounted agent_control for internal agent: {container.agent_id}")
+        await container.compositor.mount_inproc(AGENT_CONTROL_MOUNT_PREFIX, control_server)
+        logger.debug("Mounted agent_control for internal agent: %s", container.agent_id)
 
     async def _create_container(
         self,
@@ -213,7 +216,8 @@ class InfrastructureRegistry:
                 return existing
 
             if (row := await self.persistence.get_agent(agent_id)) is None:
-                raise KeyError(f"Agent not found: {agent_id}")
+                msg = f"Agent not found: {agent_id}"
+                raise KeyError(msg)
 
             container = await self._create_container(agent_id, mcp_config=row.mcp_config, external=False)
             await self._register_and_mount_agent(container, external=False)
@@ -253,7 +257,7 @@ class InfrastructureRegistry:
             container = await self._create_container(agent_id, mcp_config=mcp_config, external=True)
             await self._register_and_mount_agent(container, external=True)
 
-            logger.info(f"Created external agent: {agent_id}")
+            logger.info("Created external agent: %s", agent_id)
             return container
 
     async def shutdown_agent(self, agent_id: AgentID) -> None:
@@ -267,14 +271,15 @@ class InfrastructureRegistry:
 
         async with self._lock:
             if agent_id not in self._agents:
-                raise KeyError(f"Agent not running: {agent_id}")
+                msg = f"Agent not running: {agent_id}"
+                raise KeyError(msg)
 
             # Unmount from global
             try:
                 mount_prefix = agent_mount_prefix(agent_id)
                 await comp.unmount_server(mount_prefix)
             except KeyError:
-                logger.debug(f"Agent {agent_id} already unmounted")
+                logger.debug("Agent %s already unmounted", agent_id)
 
             # Close container
             container = self._agents.pop(agent_id)
@@ -283,7 +288,7 @@ class InfrastructureRegistry:
             # Clean up external tracking
             self._external_agents.discard(agent_id)
 
-            logger.info(f"Shutdown agent: {agent_id}")
+            logger.info("Shutdown agent: %s", agent_id)
 
     async def shutdown_all(self) -> None:
         """Shutdown all agents.

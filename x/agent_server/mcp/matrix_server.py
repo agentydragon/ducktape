@@ -289,7 +289,8 @@ class MatrixServer(EnhancedFastMCP):
             """Send a plaintext message to the configured room."""
             if (mc := client_holder.get("client")) is None:
                 # Surface as tool error; FastMCP converts to protocol-level error
-                raise ToolError("matrix client not running")
+                msg = "matrix client not running"
+                raise ToolError(msg)
             res = await mc.send_text(input.content)
             return MessageSendResult(ok=True, event_id=str(res.get("event_id")))
 

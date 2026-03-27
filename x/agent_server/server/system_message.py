@@ -50,4 +50,4 @@ def get_ui_system_message() -> str:
     Pure function; no environment or storage reads. Update constants above to
     change behavior.
     """
-    return "\n\n".join([_BASE, _OUTPUT_STYLE, _HOUSE_RULES])
+    return f"{_BASE}\n\n{_OUTPUT_STYLE}\n\n{_HOUSE_RULES}"

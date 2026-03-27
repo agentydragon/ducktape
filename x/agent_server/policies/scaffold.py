@@ -22,15 +22,18 @@ def run(
         for idx, (req, expected) in enumerate(tests):
             resp = decide(req)
             if not isinstance(resp, PolicyResponse):
-                raise TypeError("decide() must return a PolicyResponse during preflight")
+                msg = "decide() must return a PolicyResponse during preflight"
+                raise TypeError(msg)
             if resp.decision is not expected:
-                raise RuntimeError(f"preflight_failed: index={idx} expected={expected} got={resp.decision}")
+                msg = f"preflight_failed: index={idx} expected={expected} got={resp.decision}"
+                raise RuntimeError(msg)
 
     text = sys.stdin.read()
     req = PolicyRequest.model_validate_json(text)
     resp = decide(req)
     if not isinstance(resp, PolicyResponse):
-        raise TypeError("decide() must return a PolicyResponse")
+        msg = "decide() must return a PolicyResponse"
+        raise TypeError(msg)
     print(resp.model_dump_json())
     return 0
 

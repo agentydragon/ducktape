@@ -48,7 +48,7 @@ class UiEventHandler(BaseHandler):
 
     async def _send_and_reduce(self, payload: ServerMessage) -> None:
         assert self._session is not None
-        await self._session._apply_ui_event(payload)
+        await self._session.apply_ui_event(payload)
 
     async def _emit_ui_bus_messages(self) -> None:
         assert self._session is not None
@@ -82,7 +82,8 @@ class UiEventHandler(BaseHandler):
         self._spawn(self._send_and_reduce(UiUserText(text=evt.text)))
 
     def on_assistant_text_event(self, evt: AssistantText) -> None:
-        raise RuntimeError("assistant_text not allowed in UI mode; use ui.send_message tool instead")
+        msg = "assistant_text not allowed in UI mode; use ui.send_message tool instead"
+        raise RuntimeError(msg)
 
     def on_tool_call_event(self, evt: ToolCall) -> None:
         self._spawn(self._send_and_reduce(UiToolCall(name=evt.name, args_json=evt.args_json, call_id=evt.call_id)))
@@ -125,7 +126,7 @@ class AgentSession:
     def set_persist_handler(self, handler: RunPersistenceHandler) -> None:
         self._persist_handler = handler
 
-    async def _apply_ui_event(self, evt: ServerMessage) -> None:
+    async def apply_ui_event(self, evt: ServerMessage) -> None:
         self.ui_state = self._reducer.reduce(self.ui_state, evt)
 
     async def run(self, prompt: str) -> None:
@@ -167,7 +168,7 @@ class AgentSession:
                 logger.debug("agent_run_cancelled")
             except Exception as e:
                 # Error now logged, not sent via dead send_payload
-                logger.error(f"agent_run_exception: {e}", exc_info=True)
+                logger.exception("agent_run_exception: %s", e)
             finally:
                 await self._manager.flush()
                 if self._persist_handler is not None:

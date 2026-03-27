@@ -240,7 +240,7 @@ class AgentContainer:
     _cm: UiEventHandler | None = field(default=None, init=False)
     _ui_bus: ServerBus | None = field(default=None, init=False)
     # Compositor instance (AgentContainerCompositor with all agent-specific servers)
-    _compositor: AgentContainerCompositor | None = field(default=None, init=False)
+    compositor: AgentContainerCompositor | None = field(default=None, init=False)
     # Front-door MCP client (FastMCP Client connected to the compositor with policy middleware)
     _compositor_client: Client | None = field(default=None, init=False)
 
@@ -270,7 +270,8 @@ class AgentContainer:
     def _get_session(self) -> AgentSession:
         """Get the agent session, raising ToolError if not initialized."""
         if self.session is None:
-            raise ToolError("Agent session not initialized")
+            msg = "Agent session not initialized"
+            raise ToolError(msg)
         return self.session
 
     def make_control_server(self) -> EnhancedFastMCP:
@@ -405,7 +406,8 @@ class AgentContainer:
             tuple: (session, agent)
         """
         if self._cm is None:
-            raise RuntimeError("connection manager not initialized")
+            msg = "connection manager not initialized"
+            raise RuntimeError(msg)
         manager = self._cm
 
         # Create session
@@ -487,7 +489,8 @@ class AgentContainer:
             case _CloseMsg():
                 return await self._op_close()
             case _:
-                raise TypeError(f"unsupported actor message: {type(msg).__name__}")
+                msg = f"unsupported actor message: {type(msg).__name__}"
+                raise TypeError(msg)
 
     def _ensure_actor(self) -> None:
         if self._actor_task is None:

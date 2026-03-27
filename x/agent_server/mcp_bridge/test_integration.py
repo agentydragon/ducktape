@@ -46,7 +46,7 @@ def mock_container():
     """Create mock agent container for verifying close calls."""
     container = MagicMock()
     container.agent_id = "testagent1"
-    container._compositor = MagicMock()
+    container.compositor = MagicMock()
     container.session = None  # For agent_control tests
     container.close = AsyncMock()
 
@@ -386,12 +386,12 @@ class TestInfrastructureRegistry:
         # Add multiple mock containers
         container1 = MagicMock()
         container1.agent_id = "agent1"
-        container1._compositor = MagicMock()
+        container1.compositor = MagicMock()
         container1.close = AsyncMock()
 
         container2 = MagicMock()
         container2.agent_id = "agent2"
-        container2._compositor = MagicMock()
+        container2.compositor = MagicMock()
         container2.close = AsyncMock()
 
         registry._agents["agent1"] = container1
@@ -448,7 +448,7 @@ class TestInfrastructureRegistry:
         # Patch build_container to return a mock
         container = MagicMock()
         container.agent_id = "externalagent"
-        container._compositor = MagicMock()
+        container.compositor = MagicMock()
         monkeypatch.setattr("x.agent_server.mcp_bridge.registry.build_container", AsyncMock(return_value=container))
 
         await registry.create_external_agent("externalagent")

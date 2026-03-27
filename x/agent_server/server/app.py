@@ -47,7 +47,8 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     def _mount_static(path: str, directory: Path, name: str) -> None:
         if not directory.exists():
             if require_static_assets:
-                raise RuntimeError(f"Static directory missing: {directory}. Build Agent UI assets before running.")
+                msg = f"Static directory missing: {directory}. Build Agent UI assets before running."
+                raise RuntimeError(msg)
             logger.warning(
                 "Skipping mount for missing static directory", extra={"path": path, "directory": str(directory)}
             )
@@ -119,7 +120,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         config = TokensConfig.from_yaml_file()
         for agent_id in config.agent_tokens().values():
             await app.state.mcp_registry.create_external_agent(agent_id)
-            logger.info(f"Created external agent from token: {agent_id}")
+            logger.info("Created external agent from token: %s", agent_id)
 
         # Multi-agent: agents should be created via API after startup
         app.state.ready.set()
@@ -144,8 +145,8 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         # Legacy registry path for backwards compatibility
         for container in app.state.registry.list():
             # Flush legacy UI manager
-            if container._ui_manager:
-                await container._ui_manager.flush()
+            if ui_mgr := getattr(container, "ui_manager", None):
+                await ui_mgr.flush()
         await app.state.registry.close_all()
 
         # Close async Docker client
@@ -158,7 +159,8 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         file_path = STATIC_DIR / "index.html"
         if not file_path.exists():
             if require_static_assets:
-                raise RuntimeError(f"Missing UI file: {file_path}")
+                msg = f"Missing UI file: {file_path}"
+                raise RuntimeError(msg)
             return Response(content="Agent UI assets not built", media_type="text/plain", status_code=200)
         return FileResponse(file_path)
 
