@@ -480,7 +480,7 @@ class BaseCompositor(FastMCP):
         # Defensive check: warn if mount is in unexpected state
         if not mount.is_active and not mount.is_failed:
             logger.warning(
-                f"Unmounting server '{prefix}' in unexpected state: {mount.state.name}. Cleanup will proceed anyway."
+                "Unmounting server '%s' in unexpected state: %s. Cleanup will proceed anyway.", prefix, mount.state.name
             )
 
         # Cleanup (exception-safe, idempotent)
@@ -488,7 +488,7 @@ class BaseCompositor(FastMCP):
         try:
             await mount.cleanup()
         except Exception as e:
-            logger.exception(f"Error cleaning up mount '{prefix}' (server will still be unmounted)", exc_info=e)
+            logger.exception("Error cleaning up mount '%s' (server will still be unmounted)", prefix, exc_info=e)
 
         # Remove from dict (always, even if cleanup failed)
         async with self._mount_lock:
@@ -538,10 +538,11 @@ class BaseCompositor(FastMCP):
         """
         async with self._state_lock:
             if self._state == CompositorState.ACTIVE:
-                raise RuntimeError(
+                msg = (
                     f"BaseCompositor '{self.name}' is already in an active context manager! "
                     "Cannot enter the same compositor twice."
                 )
+                raise RuntimeError(msg)
             if self._state == CompositorState.CLOSED:
                 msg = f"BaseCompositor '{self.name}' is already closed. Cannot reuse a closed compositor."
                 raise RuntimeError(msg)
@@ -579,14 +580,15 @@ class BaseCompositor(FastMCP):
                     await self.unmount_server(name, _allow_pinned=True)
                 except Exception as e:
                     exceptions.append(e)
-                    logger.exception(f"Failed to unmount pinned server '{name}' during exit", exc_info=e)
+                    logger.exception("Failed to unmount pinned server '%s' during exit", name, exc_info=e)
         finally:
             async with self._state_lock:
                 self._state = CompositorState.CLOSED
 
         # Raise collected exceptions as a group
         if exceptions:
-            raise ExceptionGroup("Failed to unmount one or more servers during compositor exit", exceptions)
+            msg = "Failed to unmount one or more servers during compositor exit"
+            raise ExceptionGroup(msg, exceptions)
 
         return False  # Don't suppress exceptions
 
@@ -614,11 +616,12 @@ class BaseCompositor(FastMCP):
                 await self.unmount_server(name)
             except Exception as e:
                 exceptions.append(e)
-                logger.exception(f"Failed to unmount server '{name}' during cleanup", exc_info=e)
+                logger.exception("Failed to unmount server '%s' during cleanup", name, exc_info=e)
 
         # Raise collected exceptions as a group
         if exceptions:
-            raise ExceptionGroup("Failed to unmount one or more non-pinned servers", exceptions)
+            msg = "Failed to unmount one or more non-pinned servers"
+            raise ExceptionGroup(msg, exceptions)
 
     def __del__(self):
         """Warn if compositor is garbage collected without proper cleanup.

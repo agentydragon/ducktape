@@ -13,5 +13,6 @@ def get_agent_run(session: Session, agent_run_id: UUID) -> AgentRun:
     """Get agent run by ID. Raises ValueError if not found."""
     agent_run = session.get(AgentRun, agent_run_id)
     if agent_run is None:
-        raise ValueError(f"AgentRun not found: {agent_run_id}")
+        msg = f"AgentRun not found: {agent_run_id}"
+        raise ValueError(msg)
     return agent_run

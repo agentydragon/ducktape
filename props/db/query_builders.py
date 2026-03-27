@@ -79,10 +79,12 @@ def query_recall_by_example(
             example_spec: ExampleSpec = WholeSnapshotExample(snapshot_slug=r.snapshot_slug)
         elif r.example_kind == ExampleKind.FILE_SET:
             if r.files_hash is None:
-                raise ValueError(f"example_kind=file_set but files_hash is NULL for {r.snapshot_slug}")
+                msg = f"example_kind=file_set but files_hash is NULL for {r.snapshot_slug}"
+                raise ValueError(msg)
             example_spec = SingleFileSetExample(snapshot_slug=r.snapshot_slug, files_hash=r.files_hash)
         else:
-            raise ValueError(f"Unknown example_kind: {r.example_kind}")
+            msg = f"Unknown example_kind: {r.example_kind}"
+            raise ValueError(msg)
 
         rows.append(
             RecallByExampleRow(

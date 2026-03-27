@@ -26,7 +26,8 @@ def _parse_labels(label_values: list[str] | None) -> dict[str, str] | None:
     labels: dict[str, str] = {}
     for raw_label in label_values:
         if "=" not in raw_label:
-            raise typer.BadParameter(f"Invalid label '{raw_label}'. Expected key=value format.")
+            msg = f"Invalid label '{raw_label}'. Expected key=value format."
+            raise typer.BadParameter(msg)
         key, value = raw_label.split("=", 1)
         labels[key] = value
     return labels

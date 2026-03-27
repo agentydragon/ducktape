@@ -32,10 +32,11 @@ def _resolve_base_model(
         try:
             cand = globals_ns[cand]
         except Exception as exc:
-            raise NotImplementedError(
+            msg = (
                 f"mcp_flat_model requires real types for {error_prefix}; string annotations not resolved. "
                 "Move models to module scope to allow resolution."
-            ) from exc
+            )
+            raise NotImplementedError(msg) from exc
     if not (isinstance(cand, type) and issubclass(cand, BaseModel)):
         msg = f"{error_prefix} must be a Pydantic BaseModel subclass"
         raise TypeError(msg)
@@ -57,7 +58,8 @@ def _extract_signature_params(fn: Callable[..., Any]) -> tuple[inspect.Parameter
     sig = inspect.signature(fn)
     params = list(sig.parameters.values())
     if len(params) not in (0, 1, 2):
-        raise TypeError("@flat_model expects 0 parameters (no-arg), payload model parameter, or payload + Context")
+        msg = "@flat_model expects 0 parameters (no-arg), payload model parameter, or payload + Context"
+        raise TypeError(msg)
     if len(params) == 0:
         return None, None
     payload_param = params[0]
@@ -139,19 +141,21 @@ class FlatModelMixin(FastMCP):
             output_type = hints.get("return", sig.return_annotation)
 
             if structured_output and output_type is inspect.Signature.empty:
-                raise TypeError(
+                msg = (
                     "Return annotation is required for flat-model tools with structured_output=True. "
                     f"Function {fn.__name__!r} has no return type annotation."
                 )
+                raise TypeError(msg)
 
             if isinstance(output_type, str):
                 try:
                     output_type = globs[output_type]
                 except Exception as exc:
-                    raise NotImplementedError(
+                    msg = (
                         "flat_model requires real types for output; string annotations not resolved. "
                         "Move models to module scope."
-                    ) from exc
+                    )
+                    raise NotImplementedError(msg) from exc
 
             # Rebuild input model to resolve forward references
             _ensure_model_rebuild(model_in, kind="Input")

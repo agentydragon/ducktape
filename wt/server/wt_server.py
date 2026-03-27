@@ -19,7 +19,7 @@ import signal
 import subprocess
 import time
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -363,7 +363,7 @@ class WtDaemon:
 
     async def handle_client_request(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """Handle a client request using JSON-RPC 2.0 protocol."""
-        start_time = datetime.now()
+        start_time = datetime.now(tz=UTC)
 
         try:
             # Read request line
@@ -428,7 +428,7 @@ class WtDaemon:
     async def _handle_shutdown_request(self, request: Request, start_time: datetime | None = None) -> Response:
         """Handle shutdown JSON-RPC method."""
         logger.info("Received shutdown request")
-        self._shutdown_task = asyncio.create_task(self.stop())
+        self.shutdown_task = asyncio.create_task(self.stop())
         return self._create_success_response("shutting down", request.id)
 
     async def _ensure_git_watcher(self, worktree_info: DiscoveredWorktree) -> None:
@@ -536,7 +536,8 @@ class WtDaemon:
 
         # Start filesystem watcher for worktrees directory
         if not self.config.worktrees_dir.exists():
-            raise RuntimeError(f"Worktrees directory does not exist: {self.config.worktrees_dir}")
+            msg = f"Worktrees directory does not exist: {self.config.worktrees_dir}"
+            raise RuntimeError(msg)
         self._worktree_observer = start_watcher(self.store, self.config.worktrees_dir)
 
         self._discovery_kick = asyncio.create_task(self._run_discovery_once())
@@ -602,7 +603,7 @@ async def run_daemon(config) -> None:
     # Signal handling
     def signal_handler():
         logger.info("Received shutdown signal")
-        daemon._shutdown_task = asyncio.create_task(daemon.stop())
+        daemon.shutdown_task = asyncio.create_task(daemon.stop())
 
     signal.signal(signal.SIGTERM, lambda s, f: signal_handler())
     signal.signal(signal.SIGINT, lambda s, f: signal_handler())

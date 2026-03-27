@@ -25,9 +25,11 @@ def fetch_snapshot_to_path(slug: str, output: Path, db: Database) -> None:
     with db.session() as session:
         snapshot = session.query(Snapshot).filter_by(slug=slug).first()
         if snapshot is None:
-            raise ValueError(f"Snapshot not found: {slug}")
+            msg = f"Snapshot not found: {slug}"
+            raise ValueError(msg)
         if snapshot.content is None:
-            raise ValueError(f"Snapshot has no content: {slug}")
+            msg = f"Snapshot has no content: {slug}"
+            raise ValueError(msg)
 
         archive_bytes = snapshot.content
 

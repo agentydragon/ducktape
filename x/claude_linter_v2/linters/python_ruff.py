@@ -39,7 +39,8 @@ class PythonRuffLinter:
         self.force_select = force_select or []
         ruff_bin = find_ruff_binary()
         if not ruff_bin:
-            raise RuntimeError("ruff binary not found. Set RUFF_BIN env var or add ruff to PATH.")
+            msg = "ruff binary not found. Set RUFF_BIN env var or add ruff to PATH."
+            raise RuntimeError(msg)
         self._ruff_bin: str = ruff_bin
 
     def check_code(self, code: str, file_path: Path, critical_only: bool = True) -> list[Violation]:
@@ -83,12 +84,12 @@ class PythonRuffLinter:
                             )
                             violations.append(violation)
                     except json.JSONDecodeError:
-                        logger.error(f"Failed to parse ruff output: {result.stdout}")
+                        logger.error("Failed to parse ruff output: %s", result.stdout)
             else:
-                logger.error(f"ruff failed with code {result.returncode}: {result.stderr}")
+                logger.error("ruff failed with code %s: %s", result.returncode, result.stderr)
 
         except subprocess.SubprocessError as e:
-            logger.error(f"ruff error: {e}")
+            logger.error("ruff error: %s", e)
 
         return violations
 

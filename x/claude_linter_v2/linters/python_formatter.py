@@ -20,15 +20,17 @@ class PythonFormatter:
         formatting_tools = [t for t in tools if t not in self._NON_FORMATTING_TOOLS]
         for tool in formatting_tools:
             if tool != "ruff":
-                raise RuntimeError(f"Unknown formatting tool: {tool!r}. Only 'ruff' is supported.")
+                msg = f"Unknown formatting tool: {tool!r}. Only 'ruff' is supported."
+                raise RuntimeError(msg)
         self._use_ruff = "ruff" in formatting_tools
         if self._use_ruff:
             ruff_bin = find_ruff_binary()
             if not ruff_bin:
-                raise RuntimeError(
+                msg = (
                     "ruff is configured as a formatting tool but the binary was not found. "
                     "Set RUFF_BIN env var or add ruff to PATH, or remove 'ruff' from python_tools config."
                 )
+                raise RuntimeError(msg)
             self._ruff_bin: str = ruff_bin
 
     def format_code(
@@ -75,11 +77,11 @@ class PythonFormatter:
                 if result.stdout != code:
                     return result.stdout, ["Applied ruff formatting"]
                 return code, []
-            logger.warning(f"Ruff formatting failed: {result.stderr}")
+            logger.warning("Ruff formatting failed: %s", result.stderr)
             return code, []
 
         except subprocess.SubprocessError as e:
-            logger.error(f"Ruff error: {e}")
+            logger.error("Ruff error: %s", e)
             return code, []
 
     def _fix_imports(self, code: str, file_path: Path) -> tuple[str, list[str]]:
@@ -107,6 +109,6 @@ class PythonFormatter:
                 return result.stdout, ["Fixed import ordering and removed unused imports"]
 
         except subprocess.SubprocessError as e:
-            logger.error(f"Ruff import fix error: {e}")
+            logger.error("Ruff import fix error: %s", e)
 
         return code, []

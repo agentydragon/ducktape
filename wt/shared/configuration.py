@@ -105,19 +105,23 @@ class Configuration:
         config_path = wt_dir / "config.yaml"
 
         if not config_path.exists():
-            raise ConfigError(f"Config file not found: {config_path}")
+            msg = f"Config file not found: {config_path}"
+            raise ConfigError(msg)
 
         try:
             config_file = ConfigFile.model_validate(yaml.safe_load(config_path.read_text()))
         except ValidationError as e:
-            raise ConfigError("Configuration validation errors") from e
+            msg = "Configuration validation errors"
+            raise ConfigError(msg) from e
 
         # Resolve and validate all paths NOW
         main_repo = Path(config_file.main_repo).expanduser().resolve()
         if not main_repo.exists():
-            raise ConfigError(f"Main repo not found: {main_repo}")
+            msg = f"Main repo not found: {main_repo}"
+            raise ConfigError(msg)
         if not (main_repo / ".git").exists():
-            raise ConfigError(f"Not a git repository: {main_repo}")
+            msg = f"Not a git repository: {main_repo}"
+            raise ConfigError(msg)
 
         worktrees_dir = Path(config_file.worktrees_dir).expanduser().resolve()
 
@@ -160,11 +164,12 @@ class Configuration:
                 return p.resolve().is_relative_to(temp_root)
 
             if not (_under_tmp(cfg.wt_dir) and _under_tmp(cfg.main_repo) and _under_tmp(cfg.worktrees_dir)):
-                raise ConfigError(
+                msg = (
                     "WT_TEST_MODE is set, but WT_DIR/main_repo/worktrees_dir are not under the system temp directory.\n"
                     f"  WT_DIR={cfg.wt_dir}\n  main_repo={cfg.main_repo}\n  worktrees_dir={cfg.worktrees_dir}\n"
                     "Refusing to run tests against a non-isolated real environment."
                 )
+                raise ConfigError(msg)
         return cfg
 
 

@@ -58,17 +58,21 @@ def _validate_outcome_semantics(hook_type: HookEventName, outcome: HookOutcome) 
     # PreTool validations
     if isinstance(outcome, PreToolDeny):
         if not outcome.llm_message:
-            raise HookBugError("PreToolDeny must have llm_message")
+            msg = "PreToolDeny must have llm_message"
+            raise HookBugError(msg)
         if len(outcome.llm_message) < 10:
-            raise HookBugError(f"PreToolDeny message too short: '{outcome.llm_message}'")
+            msg = f"PreToolDeny message too short: '{outcome.llm_message}'"
+            raise HookBugError(msg)
 
     # PostTool validations
     if isinstance(outcome, PostToolNotifyLLM) and not outcome.llm_message:
-        raise HookBugError("PostToolNotifyLLM must have llm_message")
+        msg = "PostToolNotifyLLM must have llm_message"
+        raise HookBugError(msg)
 
     # Stop validations
     if isinstance(outcome, StopPrevent) and not outcome.llm_message:
-        raise HookBugError("StopPrevent must explain what Claude needs to do")
+        msg = "StopPrevent must explain what Claude needs to do"
+        raise HookBugError(msg)
 
     # Check for old terminology
     if (
@@ -86,13 +90,16 @@ def validate_final_response(hook_type: HookEventName, response_data: dict[str, A
     """Final validation before sending to Claude."""
     # Check required fields based on hook type and response
     if response_data.get("decision") == "block" and not response_data.get("reason"):
-        raise HookBugError(f"{hook_type.value}: decision=block requires reason")
+        msg = f"{hook_type.value}: decision=block requires reason"
+        raise HookBugError(msg)
 
     if response_data.get("stopReason") and response_data.get("continue", True):
-        raise HookBugError(f"{hook_type.value}: stopReason only valid when continue=False")
+        msg = f"{hook_type.value}: stopReason only valid when continue=False"
+        raise HookBugError(msg)
 
     # Hook-specific validation
     if hook_type == HookEventName.PRE_TOOL_USE and response_data.get("decision") not in [None, "approve", "block"]:
-        raise HookBugError(f"Invalid PreToolUse decision: {response_data.get('decision')}")
+        msg = f"Invalid PreToolUse decision: {response_data.get('decision')}"
+        raise HookBugError(msg)
 
-    logger.debug(f"✓ Final response valid for {hook_type.value}")
+    logger.debug("✓ Final response valid for %s", hook_type.value)
