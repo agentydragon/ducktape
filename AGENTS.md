@@ -15,7 +15,7 @@ and other tooling. Symptoms of failure: certificate errors, `bazel: command not 
 
 **Recovery: read the implementation and replicate it manually.**
 
-1. Read <devinfra/claude/hook_daemon/session_start.py> (`_setup_web()`) for the full setup sequence
+1. Read <devinfra/claude/hook_daemon/session_start/handler.py> (`_setup_web()`) for the full setup sequence
 2. Read <devinfra/claude/README.md> for architecture context
 3. Read `.claude_hooks/config.yaml` for k8s server, namespace, secret mappings
 4. Read <devinfra/claude/config/bazelrc.mako> for the session bazelrc template
@@ -27,6 +27,60 @@ and other tooling. Symptoms of failure: certificate errors, `bazel: command not 
 - **BuildBuddy setup** (`devinfra/setup_buildbuddy.sh`) provides remote cache/execution.
 
 Check the hook daemon log first: `tail -100 ~/.claude/session-env/<session_id>/hook-daemon/daemon.log`
+
+### Quick Recovery: Reuse a Previous Session
+
+If a previous session completed successfully, you can bootstrap from its files:
+
+1. **Find the active daemon**: `ps aux | grep hook_daemon` — note the session ID from the `--sock` argument
+2. **Find a previous working session**: look for `sessionstart-hook-0.sh` under `~/.claude/session-env/*/`
+3. **Trigger SessionStart on the live daemon** via `curl --unix-socket /tmp/claude-hd/<live_session_id>/d.sock`:
+   ```bash
+   LIVE=<live_session_id>
+   SOCK=/tmp/claude-hd/$LIVE/d.sock
+   # Build JSON with hook={hook_event_name: SessionStart, session_id: $LIVE, ...} and env=os.environ
+   python3 -c "
+   import json, os
+   env = dict(os.environ)
+   env['CLAUDE_ENV_FILE'] = f'/root/.claude/session-env/$LIVE/sessionstart-hook-0.sh'
+   env['CLAUDE_PROJECT_DIR'] = '/home/user/ducktape'
+   env['CLAUDE_CODE_REMOTE'] = 'true'
+   print(json.dumps({'hook': {'hook_event_name': 'SessionStart', 'session_id': '$LIVE',
+     'cwd': '/home/user/ducktape', 'transcript_path': '/tmp/transcript.json',
+     'source': 'startup'}, 'env': env}))
+   " | curl -s --max-time 300 --unix-socket $SOCK http://localhost/hook -X POST \
+     -H 'Content-Type: application/json' -d @-
+   ```
+4. If the hook completes, `source ~/.claude/session-env/$LIVE/sessionstart-hook-0.sh`
+5. If the hook 500s (e.g. k8s secrets timeout), manually assemble from partial results:
+   - The daemon typically creates `bin/bazel` (wrapper), `auth-proxy/` (CA certs, truststore), and starts supervisor+docker before failing
+   - Write the `bazelrc` manually from <devinfra/claude/config/bazelrc.mako> — key vars: `remote_proxy_sock` = `/tmp/claude-hd/$LIVE/remote-proxy.sock`, `truststore_path` = `$SD/auth-proxy/cacerts.jks`, `combined_ca_path` = `$SD/auth-proxy/combined_ca.pem`
+   - Copy secrets (`GITHUB_TOKEN`, `BUILDBUDDY_API_KEY`) from a previous session's env file
+   - Write and source a minimal env file (see below)
+   - Patch the bazel wrapper's `DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR` if it was copied from another session
+
+### Minimal env file template
+
+```bash
+SD=~/.claude/session-env/<session_id>
+cat > "$SD/sessionstart-hook-0.sh" << 'EOF'
+export PATH="<session_dir>/bin:$PATH"
+export SESSION_BAZELRC="<session_dir>/bazelrc"
+export BAZELISK_PATH="~/.cache/claude-hooks/bin/bazelisk"
+export DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR="<session_dir>"
+export DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT="19001"
+export SSL_CERT_FILE="<session_dir>/auth-proxy/combined_ca.pem"
+export REQUESTS_CA_BUNDLE="<session_dir>/auth-proxy/combined_ca.pem"
+export CURL_CA_BUNDLE="<session_dir>/auth-proxy/combined_ca.pem"
+export NODE_EXTRA_CA_CERTS="<session_dir>/auth-proxy/combined_ca.pem"
+export DOCKER_HOST="unix:///var/run/docker.sock"
+export GITHUB_TOKEN="<from old session or k8s>"
+export BUILDBUDDY_API_KEY="<from old session or k8s>"
+export DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS="0"
+export NO_PROXY="localhost,127.0.0.1,169.254.169.254,metadata.google.internal,*.svc.cluster.local,*.local"
+export no_proxy="$NO_PROXY"
+EOF
+```
 
 **Do NOT** bypass certificate/proxy errors with `--noverify`, `SSL_VERIFY=false`, etc. The root cause is always a missing/broken session start hook. Notify the user.
 
