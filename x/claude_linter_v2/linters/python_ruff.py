@@ -87,8 +87,8 @@ class PythonRuffLinter:
             else:
                 logger.error(f"ruff failed with code {result.returncode}: {result.stderr}")
 
-        except subprocess.SubprocessError as e:
-            logger.exception(f"ruff error: {e}")
+        except subprocess.SubprocessError:
+            logger.exception("ruff error")
 
         return violations
 

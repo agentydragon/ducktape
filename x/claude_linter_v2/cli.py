@@ -139,7 +139,7 @@ def hook(request_json: str | None) -> None:
         request_data = json.loads(request_json)
     except json.JSONDecodeError as e:
         # Log the actual error
-        logger.exception(f"FATAL: JSON parse error: {e}")
+        logger.exception("FATAL: JSON parse error")
 
         # Send desktop notification
         _try_send_crash_notification("Claude Linter Hook Crashed", f"JSON parse error: {e!s}")
@@ -190,7 +190,7 @@ def hook(request_json: str | None) -> None:
         raise
     except Exception as e:
         # Unexpected error - log it
-        logger.exception("FATAL: Unexpected hook processing error: %s", e)
+        logger.exception("FATAL: Unexpected hook processing error")
 
         # Send desktop notification
         _try_send_crash_notification("Claude Linter Hook Crashed", f"Unexpected error in {hook_type}: {e!s}")

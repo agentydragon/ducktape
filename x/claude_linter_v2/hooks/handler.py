@@ -673,7 +673,7 @@ class HookHandler:
             logger.info(f"Applied autofix to {tool_call.file_path}: {changes}")
             return f"Autofix applied: {', '.join(changes)}"
         except (OSError, PermissionError, UnicodeDecodeError) as e:
-            logger.exception(f"Failed to apply autofix: {e}")
+            logger.exception("Failed to apply autofix")
             return f"Autofix failed: {e}"
 
     def _update_violation_tracking(self, request: PostToolUseRequest, session_id: SessionID) -> None:

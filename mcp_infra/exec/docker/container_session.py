@@ -225,8 +225,8 @@ async def _create_and_start_container(client: aiodocker.Docker, opts: ContainerO
         try:
             await container.delete(force=True)
             logger.debug(f"Cleaned up failed container {container_id}")
-        except Exception as cleanup_error:
-            logger.exception(f"Failed to cleanup container {container_id}: {cleanup_error}")
+        except Exception:
+            logger.exception(f"Failed to cleanup container {container_id}")
         raise
 
 
@@ -267,8 +267,8 @@ async def scoped_container(client: aiodocker.Docker, opts: ContainerOptions):
 
                 await container.delete(force=True)
                 logger.debug(f"Container {container_id} cleaned up successfully")
-            except Exception as e:
-                logger.exception(f"Container cleanup failed for {container_id}: {e}")
+            except Exception:
+                logger.exception(f"Container cleanup failed for {container_id}")
 
 
 # ---- Lifespan factory (per-session container) ----

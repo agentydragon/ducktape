@@ -89,8 +89,8 @@ def load_page_titles():
                 PAGE_TITLES[page] = md.Meta["title"][0]
             else:
                 raise ValueError(f"Missing required 'title' in frontmatter for {page}.md")
-        except Exception as e:
-            logger.exception(f"Error loading title for {page}.md: {e}")
+        except Exception:
+            logger.exception(f"Error loading title for {page}.md")
             raise
 
 
@@ -215,8 +215,8 @@ async def analyze_page_tokens(
         # Step 5: Count tokens on the final markdown
         tokens = count_tokens_for_models(final_markdown)
         return {"page": page_id, "title": title, "url": url, **tokens}
-    except Exception as e:
-        logger.exception(f"Error analyzing {page_id} page: {e}")
+    except Exception:
+        logger.exception(f"Error analyzing {page_id} page")
         return None
 
 
@@ -308,8 +308,8 @@ async def verify_token(request: Request, token: str = ""):
         except FileNotFoundError:
             logger.exception("index.md not found for token verification")
             result = {"status": "failed", "errors": ["Source document not found"]}
-        except Exception as e:
-            logger.exception(f"Unexpected error during token verification: {e}")
+        except Exception:
+            logger.exception("Unexpected error during token verification")
             result = {"status": "failed", "errors": ["Internal error during verification"]}
 
     # Render the verification page

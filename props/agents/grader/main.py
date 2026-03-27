@@ -538,8 +538,8 @@ async def main() -> int:
     logger.info("Starting grader loop")
     try:
         await _run_grader_loop(snapshot_slug, system_prompt, db)
-    except GraderAbortError as e:
-        logger.exception("Grading failed: %s", e)
+    except GraderAbortError:
+        logger.exception("Grading failed")
         return 1
     return 0
 

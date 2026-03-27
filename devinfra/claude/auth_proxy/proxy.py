@@ -243,8 +243,8 @@ class AuthForwardingProxy:
             _tunnel_bidirectional(client_sock, upstream_sock)
             logger.info("[conn %d] Tunnel completed for %s", conn_id, target)
 
-        except (OSError, ValueError) as e:
-            logger.exception("[conn %d] Error handling client: %s", conn_id, e)
+        except (OSError, ValueError):
+            logger.exception("[conn %d] Error handling client", conn_id)
             with contextlib.suppress(OSError):
                 client_sock.sendall(b"HTTP/1.1 502 Bad Gateway\r\n\r\n")
         finally:
@@ -420,8 +420,8 @@ class UdsRemoteProxy:
             _tunnel_bidirectional(client_sock, upstream_sock)
             logger.debug("[uds %d] Tunnel completed", conn_id)
 
-        except (OSError, ValueError) as e:
-            logger.exception("[uds %d] Error: %s", conn_id, e)
+        except (OSError, ValueError):
+            logger.exception("[uds %d] Error", conn_id)
         finally:
             for sock in [client_sock, upstream_sock]:
                 if sock:

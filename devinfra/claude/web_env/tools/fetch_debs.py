@@ -284,8 +284,8 @@ def fetch_debs(work_dir: Path) -> None:
                 downloaded += 1
                 if downloaded % 50 == 0:
                     logger.info("  %d/%d downloaded...", downloaded, len(resolved))
-            except Exception as e:
-                logger.exception("Failed to download %s: %s", pkg, e)
+            except Exception:
+                logger.exception("Failed to download %s", pkg)
                 failed.append(pkg)
 
     if failed:

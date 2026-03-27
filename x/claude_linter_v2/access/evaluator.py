@@ -32,7 +32,7 @@ class PredicateEvaluator:
             result = func(context)
             return bool(result)
         except Exception as e:
-            logger.exception(f"Failed to evaluate predicate function: {e}")
+            logger.exception("Failed to evaluate predicate function")
             # Include first line of predicate for context
             first_line = predicate.strip().split("\n")[0][:50]
             raise ValueError(f"Invalid predicate function starting with '{first_line}...': {e}") from e

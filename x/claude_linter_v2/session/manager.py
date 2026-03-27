@@ -69,8 +69,8 @@ class SessionManager:
         if session_file.exists():
             try:
                 return SessionData.model_validate_json(session_file.read_text())
-            except (json.JSONDecodeError, OSError, ValueError) as e:
-                logger.exception(f"Failed to load session {session_id}: {e}")
+            except (json.JSONDecodeError, OSError, ValueError):
+                logger.exception(f"Failed to load session {session_id}")
 
         # Return default session data
         return SessionData(id=session_id, created=datetime.now())
@@ -80,8 +80,8 @@ class SessionManager:
         session_file = self._session_file(session_id)
         try:
             session_file.write_text(session_data.model_dump_json(indent=2))
-        except (OSError, TypeError) as e:
-            logger.exception(f"Failed to save session {session_id}: {e}")
+        except (OSError, TypeError):
+            logger.exception(f"Failed to save session {session_id}")
 
     def track_session(self, session_id: SessionID, working_dir: Path) -> None:
         """

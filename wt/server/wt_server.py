@@ -501,7 +501,7 @@ class WtDaemon:
                 protocol_version=1,
                 daemon_log_path=self.config.daemon_log_file,
             )
-            logger.exception("Socket bind failed: %s", e)
+            logger.exception("Socket bind failed")
             # Ensure clean shutdown of any partial state
             with contextlib.suppress(Exception):
                 await self.stop()

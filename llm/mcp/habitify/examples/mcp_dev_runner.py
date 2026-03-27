@@ -89,8 +89,8 @@ def main() -> int:
 
         subprocess.run(cmd, check=True)
         return 0
-    except subprocess.CalledProcessError as e:
-        logger.exception(f"Error running MCP dev: {e}")
+    except subprocess.CalledProcessError:
+        logger.exception("Error running MCP dev")
         return 1
     except FileNotFoundError:
         logger.exception("Error: 'mcp' command not found. Make sure the MCP SDK is installed.")
