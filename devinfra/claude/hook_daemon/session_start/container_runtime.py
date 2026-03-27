@@ -86,7 +86,7 @@ async def _snapshot_status(supervisor: SupervisorClient, service_name: str) -> s
 
 async def _is_service_healthy(supervisor: SupervisorClient, service_name: str, socket_path: Path) -> bool:
     """Return True if the service is running in supervisor and its socket exists."""
-    if not await asyncio.to_thread(socket_path.exists):
+    if not socket_path.exists():  # noqa: ASYNC240 — sync stat is fine here
         return False
     try:
         return await supervisor.is_service_running(service_name)
@@ -101,7 +101,7 @@ async def _is_docker_socket_responsive(socket_path: Path) -> bool:
     (e.g. the Claude Code web sandbox starts with one) that is not managed
     by this session's supervisor instance.
     """
-    if not await asyncio.to_thread(socket_path.exists):
+    if not socket_path.exists():  # noqa: ASYNC240 — sync stat is fine here
         return False
     try:
         async with httpx.AsyncClient(transport=httpx.AsyncHTTPTransport(uds=str(socket_path)), timeout=1.0) as client:
