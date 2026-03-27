@@ -186,7 +186,7 @@ async def admin_auth(session_token: str, db_session: AsyncSession) -> AdminAuthC
     """Authenticate using admin session token."""
     query = select(AdminSession).where(AdminSession.session_token == session_token)
     admin_session = (await db_session.execute(query)).scalar_one_or_none()
-    if not admin_session or admin_session.expires_at <= datetime.now():
+    if not admin_session or admin_session.expires_at <= datetime.now(tz=datetime.UTC):
         raise AuthHandlerError
 
     return AdminAuthContext(admin_session)
@@ -200,4 +200,5 @@ def create_auth_dependency(auth_type: AuthType) -> Callable:
         return session_auth
     if auth_type == AuthType.ADMIN:
         return admin_auth
-    raise ValueError(f"Unsupported {auth_type = }")
+    msg = f"Unsupported {auth_type = }"
+    raise ValueError(msg)
