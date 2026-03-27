@@ -382,7 +382,7 @@ class TaskClaude:
 
         except Exception as e:
             if self._container:
-                self._logger.error(
+                self._logger.exception(
                     "Container setup failed - CONTAINER LEFT RUNNING FOR DEBUG",
                     container_id=self._container.id,
                     error=str(e),
@@ -431,7 +431,7 @@ class TaskClaude:
                     self._logger.info(log_prefix.lower(), container_id=c.id, output=line_text)
             except UnicodeDecodeError as e:
                 stack_trace = traceback.format_exc()
-                self._logger.error(
+                self._logger.exception(
                     "Unicode decode error in setup script output",
                     error=str(e),
                     line_bytes=line.hex() if line else "None",
@@ -497,7 +497,9 @@ class TaskClaude:
                 if line_text:
                     self._logger.info("pre-task-cmd", container_id=c.id, output=line_text)
             except UnicodeDecodeError as e:
-                self._logger.error("Unicode decode error in pre-task commands output", error=str(e), container_id=c.id)
+                self._logger.exception(
+                    "Unicode decode error in pre-task commands output", error=str(e), container_id=c.id
+                )
                 continue
 
         exit_code = await process.wait()
@@ -621,6 +623,6 @@ class TaskClaude:
         try:
             await self._cleanup()
         except Exception as e:
-            self._logger.error(
+            self._logger.exception(
                 "Error during cleanup", error=str(e), container_id=self._container.id if self._container else None
             )

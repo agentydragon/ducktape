@@ -37,7 +37,7 @@ class DockerContainerHandle:
             logger.info("Container %s exited with code %d", self.name, exit_code)
             exit_status: Exited | TimedOut = Exited(exit_code=exit_code)
         except TimeoutError:
-            logger.error("Container %s timed out after %d seconds", self.name, timeout_seconds)
+            logger.exception("Container %s timed out after %d seconds", self.name, timeout_seconds)
             try:
                 await container.kill()
             except aiodocker.DockerError as e:

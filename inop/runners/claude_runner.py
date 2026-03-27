@@ -186,7 +186,7 @@ class ClaudeRunner(AgentRunner):
         except Exception as e:
             success = False
             error_message = str(e)
-            logger.error("Claude execution failed", error=str(e))
+            logger.exception("Claude execution failed", error=str(e))
             files = {}
 
         duration = time.perf_counter() - start_time

@@ -83,12 +83,12 @@ class PythonRuffLinter:
                             )
                             violations.append(violation)
                     except json.JSONDecodeError:
-                        logger.error(f"Failed to parse ruff output: {result.stdout}")
+                        logger.exception(f"Failed to parse ruff output: {result.stdout}")
             else:
                 logger.error(f"ruff failed with code {result.returncode}: {result.stderr}")
 
         except subprocess.SubprocessError as e:
-            logger.error(f"ruff error: {e}")
+            logger.exception(f"ruff error: {e}")
 
         return violations
 

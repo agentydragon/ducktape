@@ -58,7 +58,7 @@ class LLMAnalyzer:
             return is_ok, message, violations
 
         except (json.JSONDecodeError, KeyError, ValueError) as e:
-            logger.error(f"LLM analysis failed: {e}")
+            logger.exception(f"LLM analysis failed: {e}")
             # On error, don't block the operation
             return True, None, []
 
@@ -140,5 +140,5 @@ class LLMAnalyzer:
             return is_ok, message, violations
 
         except (json.JSONDecodeError, KeyError, ValueError) as e:
-            logger.error(f"Failed to parse LLM result: {e}")
+            logger.exception(f"Failed to parse LLM result: {e}")
             return True, None, []

@@ -79,7 +79,7 @@ class PythonFormatter:
             return code, []
 
         except subprocess.SubprocessError as e:
-            logger.error(f"Ruff error: {e}")
+            logger.exception(f"Ruff error: {e}")
             return code, []
 
     def _fix_imports(self, code: str, file_path: Path) -> tuple[str, list[str]]:
@@ -107,6 +107,6 @@ class PythonFormatter:
                 return result.stdout, ["Fixed import ordering and removed unused imports"]
 
         except subprocess.SubprocessError as e:
-            logger.error(f"Ruff import fix error: {e}")
+            logger.exception(f"Ruff import fix error: {e}")
 
         return code, []

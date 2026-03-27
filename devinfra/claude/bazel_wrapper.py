@@ -167,8 +167,7 @@ def main() -> None:
     try:
         _run(paths)
     except AuthProxyError as e:
-        logger.error("%s", e)
-        logger.info("The hook daemon may need restarting — start a new session or re-trigger hooks")
+        logger.exception("%s. The hook daemon may need restarting — start a new session or re-trigger hooks", e)
         raise SystemExit(1) from e
 
 

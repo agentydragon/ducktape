@@ -72,7 +72,7 @@ async def _proxy_to_upstream(request: Request) -> Response:
                 method=request.method, url=upstream_url, headers=headers, content=body, timeout=30.0
             )
         except httpx.RequestError as e:
-            logger.error(f"Upstream request failed: {e}")
+            logger.exception(f"Upstream request failed: {e}")
             raise HTTPException(status_code=502, detail=f"Upstream error: {e}")
 
         return Response(

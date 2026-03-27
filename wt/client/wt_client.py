@@ -517,7 +517,7 @@ class WtClient:
             resp = Response.model_validate(obj)
             return result_adapter.validate_python(resp.result)
         except (TimeoutError, ConnectionError, FileNotFoundError, OSError, json.JSONDecodeError, ValidationError) as e:
-            logger.error("RPC %s failed: %s", method, e)
+            logger.exception("RPC %s failed: %s", method, e)
             diag = self._collect_daemon_diagnostics()
             base = f"RPC {method} failed ({e.code}): {e}" if isinstance(e, RpcError) else f"RPC {method} failed: {e}"
             if diag:

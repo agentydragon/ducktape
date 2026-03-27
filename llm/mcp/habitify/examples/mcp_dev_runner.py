@@ -90,11 +90,11 @@ def main() -> int:
         subprocess.run(cmd, check=True)
         return 0
     except subprocess.CalledProcessError as e:
-        logger.error(f"Error running MCP dev: {e}")
+        logger.exception(f"Error running MCP dev: {e}")
         return 1
     except FileNotFoundError:
-        logger.error("Error: 'mcp' command not found. Make sure the MCP SDK is installed.")
-        logger.error('You can install it with: pip install "mcp[cli]"')
+        logger.exception("Error: 'mcp' command not found. Make sure the MCP SDK is installed.")
+        logger.exception('You can install it with: pip install "mcp[cli]"')
         return 1
     except KeyboardInterrupt:
         logger.info("\nMCP dev environment stopped.")

@@ -312,7 +312,7 @@ class ScoreEvolutionTracker:
             plotter = ScoreEvolutionPlotter(self.iterations_data)
             plot_paths = plotter.generate_plots(run_dir)
         except Exception as e:
-            logger.error("Failed to generate plots", error=str(e))
+            logger.exception("Failed to generate plots", error=str(e))
             # Plot generation failure is not critical for the core optimization process
             # so we continue but log the error prominently
 

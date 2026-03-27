@@ -41,7 +41,7 @@ class PythonASTAnalyzer:
             with file_path.open(encoding="utf-8") as f:
                 content = f.read()
         except (OSError, UnicodeDecodeError) as e:
-            logger.error(f"Failed to read {file_path}: {e}")
+            logger.exception(f"Failed to read {file_path}: {e}")
             return []
 
         return self.analyze_code(content, file_path)

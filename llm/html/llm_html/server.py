@@ -90,7 +90,7 @@ def load_page_titles():
             else:
                 raise ValueError(f"Missing required 'title' in frontmatter for {page}.md")
         except Exception as e:
-            logger.error(f"Error loading title for {page}.md: {e}")
+            logger.exception(f"Error loading title for {page}.md: {e}")
             raise
 
 
@@ -216,7 +216,7 @@ async def analyze_page_tokens(
         tokens = count_tokens_for_models(final_markdown)
         return {"page": page_id, "title": title, "url": url, **tokens}
     except Exception as e:
-        logger.error(f"Error analyzing {page_id} page: {e}")
+        logger.exception(f"Error analyzing {page_id} page: {e}")
         return None
 
 
@@ -304,12 +304,12 @@ async def verify_token(request: Request, token: str = ""):
         except VerificationError as exc:
             result = {"status": "failed", "errors": exc.issues}
             issues_str = " | ".join(f"✗ {issue}" for issue in exc.issues)
-            logger.error(f"Token verification FAILED: {issues_str}")
+            logger.exception(f"Token verification FAILED: {issues_str}")
         except FileNotFoundError:
-            logger.error("index.md not found for token verification")
+            logger.exception("index.md not found for token verification")
             result = {"status": "failed", "errors": ["Source document not found"]}
         except Exception as e:
-            logger.error(f"Unexpected error during token verification: {e}")
+            logger.exception(f"Unexpected error during token verification: {e}")
             result = {"status": "failed", "errors": ["Internal error during verification"]}
 
     # Render the verification page

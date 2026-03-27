@@ -55,7 +55,7 @@ class K8sPodHandle:
             else:
                 phase = await _wait_for_terminal()
         except TimeoutError:
-            logger.error("Pod %s timed out after %d seconds", self.name, timeout_seconds)
+            logger.exception("Pod %s timed out after %d seconds", self.name, timeout_seconds)
             try:
                 await v1.delete_namespaced_pod(name=self.name, namespace=self.namespace, grace_period_seconds=0)
             except ApiException as e:

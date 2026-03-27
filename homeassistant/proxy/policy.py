@@ -70,7 +70,7 @@ class PolicyEnforcer:
                 self._connected.set()
                 await self._client.start_listening()
             except AuthenticationFailed:
-                logger.error("HA authentication failed -- stopping connection loop")
+                logger.exception("HA authentication failed -- stopping connection loop")
                 self._connected.clear()
                 return
             except (CannotConnect, ConnectionFailed, NotConnected, OSError) as exc:

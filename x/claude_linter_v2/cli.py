@@ -9,7 +9,6 @@ import logging
 import shutil
 import subprocess
 import sys
-import traceback
 from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import UUID
@@ -140,7 +139,7 @@ def hook(request_json: str | None) -> None:
         request_data = json.loads(request_json)
     except json.JSONDecodeError as e:
         # Log the actual error
-        logger.error(f"FATAL: JSON parse error: {e}")
+        logger.exception(f"FATAL: JSON parse error: {e}")
 
         # Send desktop notification
         _try_send_crash_notification("Claude Linter Hook Crashed", f"JSON parse error: {e!s}")
@@ -191,8 +190,7 @@ def hook(request_json: str | None) -> None:
         raise
     except Exception as e:
         # Unexpected error - log it
-        logger.error(f"FATAL: Unexpected hook processing error: {e}")
-        logger.error(traceback.format_exc())
+        logger.exception("FATAL: Unexpected hook processing error: %s", e)
 
         # Send desktop notification
         _try_send_crash_notification("Claude Linter Hook Crashed", f"Unexpected error in {hook_type}: {e!s}")

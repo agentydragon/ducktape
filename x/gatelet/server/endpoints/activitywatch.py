@@ -77,7 +77,7 @@ async def fetch_recent_activity(aw_settings: ActivityWatchSettings, minutes: int
                 ],
             }
         except Exception as exc:  # pragma: no cover - network errors
-            logger.error("Failed to fetch ActivityWatch data: %s", exc)
+            logger.exception("Failed to fetch ActivityWatch data: %s", exc)
             return None
 
     return await asyncio.to_thread(_query)

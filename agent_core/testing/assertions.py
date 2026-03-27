@@ -78,8 +78,8 @@ def extract_output[T: BaseModel](req: ResponsesRequest, output_type: type[T]) ->
     try:
         return get_last_function_output(req, output_type)
     except Exception as e:
-        logger.error("Full request dump:")
-        logger.error(json.dumps(req.model_dump(mode="json"), indent=2))
+        logger.exception("Full request dump:")
+        logger.exception(json.dumps(req.model_dump(mode="json"), indent=2))
         pytest.fail(f"Failed to extract {output_type.__name__}: {e}. See log for full request.")
         raise AssertionError("unreachable")
 

@@ -136,7 +136,7 @@ Return a JSON object with:
     try:
         parsed = json.loads(call.arguments or "{}")
     except json.JSONDecodeError as e:
-        logger.error("Failed to parse comparison grading", task_id=task.id, error=str(e))
+        logger.exception("Failed to parse comparison grading", task_id=task.id, error=str(e))
         raise RuntimeError("Failed to parse comparison grading") from e
 
     # Convert percentage to 0-10 scale for consistency with other grades
@@ -239,7 +239,7 @@ async def _grade_with_criteria(
         arguments_str = call.arguments or ""
         parsed = json.loads(arguments_str or "{}")
     except json.JSONDecodeError as e:
-        logger.error("Failed to parse grades", task_id=task.id, error=str(e))
+        logger.exception("Failed to parse grades", task_id=task.id, error=str(e))
         raise RuntimeError("Failed to parse grades") from e
 
     # Build Grade object
