@@ -51,7 +51,7 @@ def load_presets_from_dir(root: Path) -> dict[str, AgentPreset]:
         if data is None:
             data = {}
         if not isinstance(data, dict):
-            raise ValueError(f"preset must be a mapping: {p}")
+            raise TypeError(f"preset must be a mapping: {p}")
         # Default name from filename when missing in YAML
         if "name" not in data or not data.get("name"):
             data["name"] = p.stem

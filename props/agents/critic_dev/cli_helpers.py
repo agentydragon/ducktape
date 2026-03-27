@@ -122,7 +122,7 @@ def show_execution_traces(db: Database, limit: int = 5, parent_agent_run_id: UUI
             if isinstance(cr.type_config, CriticTypeConfig):
                 snapshot_slug = cr.type_config.example.snapshot_slug
             else:
-                raise ValueError(f"Expected CriticTypeConfig, got {type(cr.type_config)}")
+                raise TypeError(f"Expected CriticTypeConfig, got {type(cr.type_config)}")
             llm_request_count = session.query(LLMRequest).filter(LLMRequest.agent_run_id == cr.agent_run_id).count()
             summaries.append(
                 CriticRunSummary(

@@ -43,7 +43,7 @@ class YamlLoader:
             models: list[SeedTask] = []
             for item in data:
                 if not isinstance(item, dict):
-                    raise ValueError("Each seed task must be a mapping")
+                    raise TypeError("Each seed task must be a mapping")
                 models.append(SeedTask(**item))
             self._seeds_models = models
         return self._seeds_models

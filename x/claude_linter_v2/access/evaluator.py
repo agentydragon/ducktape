@@ -72,6 +72,6 @@ class PredicateEvaluator:
 
         func = namespace[func_name]
         if not callable(func):
-            raise ValueError(f"'{func_name}' is not callable")
+            raise TypeError(f"'{func_name}' is not callable")
 
         return func

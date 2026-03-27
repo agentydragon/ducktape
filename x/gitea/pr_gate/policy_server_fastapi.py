@@ -70,7 +70,7 @@ DURATION = Histogram("pr_quota_request_seconds", "PR quota check latency in seco
 def get_resources(request: Request) -> AppResources:
     resources = getattr(request.app.state, "resources", None)
     if not isinstance(resources, AppResources):
-        raise RuntimeError("App resources not initialized")
+        raise TypeError("App resources not initialized")
     return resources
 
 

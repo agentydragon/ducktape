@@ -63,6 +63,7 @@ select = [
     "N",     # naming
     "PERF",  # perflint
     "FAST",  # FastAPI best practices
+    "TRY004", # prefer TypeError for type checks
     "RUF"    # ruff-specific
 ]
 # Keep these off globally; handled case-by-case or via constants

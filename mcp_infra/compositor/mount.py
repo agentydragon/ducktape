@@ -141,14 +141,14 @@ class Mount:
     def proxy(self) -> FastMCPProxy:
         """Get proxy. Raises if mount not active."""
         if not isinstance(self._state_data, _MountActive):
-            raise RuntimeError(f"Mount '{self._prefix}' not active (state: {self._state_data.kind.name})")
+            raise TypeError(f"Mount '{self._prefix}' not active (state: {self._state_data.kind.name})")
         return self._state_data.proxy
 
     @property
     def child_client(self) -> Client:
         """Get child client. Raises if mount not active."""
         if not isinstance(self._state_data, _MountActive):
-            raise RuntimeError(f"Mount '{self._prefix}' not active (state: {self._state_data.kind.name})")
+            raise TypeError(f"Mount '{self._prefix}' not active (state: {self._state_data.kind.name})")
         return self._state_data.child_client
 
     # Setup methods
@@ -170,7 +170,7 @@ class Mount:
             Exception: If setup fails (after cleanup)
         """
         if not isinstance(self._state_data, _MountPending):
-            raise RuntimeError(f"Mount '{self._prefix}' already setup")
+            raise TypeError(f"Mount '{self._prefix}' already setup")
 
         stack = AsyncExitStack()
         try:
@@ -227,7 +227,7 @@ class Mount:
             Exception: If setup fails (after cleanup)
         """
         if not isinstance(self._state_data, _MountPending):
-            raise RuntimeError(f"Mount '{self._prefix}' already setup")
+            raise TypeError(f"Mount '{self._prefix}' already setup")
 
         stack = AsyncExitStack()
         try:

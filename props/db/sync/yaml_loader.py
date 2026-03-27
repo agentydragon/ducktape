@@ -143,7 +143,7 @@ class YAMLOccurrence(BaseModel):
                     ranges = []
                     for r in spec:
                         if not isinstance(r, dict):
-                            raise ValueError(f"Mixed types in {file_path} (expected all dicts)")
+                            raise TypeError(f"Mixed types in {file_path} (expected all dicts)")
                         if "start_line" not in r or "end_line" not in r:
                             raise ValueError(f"Dict in {file_path} requires start_line and end_line: {r}")
                         ranges.append(LineRange(start_line=r["start_line"], end_line=r["end_line"], note=r.get("note")))

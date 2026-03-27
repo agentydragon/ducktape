@@ -50,7 +50,7 @@ def parse_system_notification_payload(message: str | UserMessage) -> dict:
     payload_str = text[start + len(start_tag) : end].strip()
     result = json.loads(payload_str)
     if not isinstance(result, dict):
-        raise ValueError("Payload is not a JSON object")
+        raise TypeError("Payload is not a JSON object")
     return result
 
 

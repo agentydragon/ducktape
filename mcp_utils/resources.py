@@ -18,5 +18,5 @@ def extract_single_text_content(res: list[mcp_types.TextResourceContents | mcp_t
     """Return the text from the single TextResourceContents part, or raise."""
     item = one(res)
     if not isinstance(item, mcp_types.TextResourceContents):
-        raise RuntimeError(f"expected TextResourceContents, got {type(item).__name__}")
+        raise TypeError(f"expected TextResourceContents, got {type(item).__name__}")
     return item.text

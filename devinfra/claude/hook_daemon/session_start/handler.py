@@ -341,9 +341,7 @@ async def _setup_web(
     if isinstance(precommit_result, BaseException):
         logger.warning("Failed to install git pre-commit: %s", precommit_result)
     if isinstance(bazelisk_result, BaseException):
-        raise RuntimeError(
-            "Bazel wrapper setup failed (is bazelisk on PATH from Nix web-session?)"
-        ) from bazelisk_result
+        raise TypeError("Bazel wrapper setup failed (is bazelisk on PATH from Nix web-session?)") from bazelisk_result
     if isinstance(tmpfs_result, BaseException):
         logger.warning("Failed to set up tmpfs caches: %s", tmpfs_result)
     if isinstance(mkcert_result, SkipError):
@@ -365,7 +363,7 @@ async def _setup_web(
     # Proxy setup is required - propagate failure with clear error message
     if isinstance(auth_proxy_result, BaseException):
         logger.error("Proxy setup failed: %s", auth_proxy_result)
-        raise RuntimeError(f"Proxy setup failed: {auth_proxy_result}") from auth_proxy_result
+        raise TypeError(f"Proxy setup failed: {auth_proxy_result}") from auth_proxy_result
 
     combined_ca = paths.auth_proxy_combined_ca
 

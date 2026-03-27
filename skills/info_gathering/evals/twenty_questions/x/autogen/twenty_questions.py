@@ -118,7 +118,7 @@ async def _run_simulator(
     result = await model_client.create(sim_history, tools=sim_tool_schemas, tool_choice="required")
 
     if isinstance(result.content, str):
-        raise RuntimeError(f"Simulator returned text instead of tool call: {result.content!r}")
+        raise TypeError(f"Simulator returned text instead of tool call: {result.content!r}")
 
     function_calls = result.content
     sim_history.append(AssistantMessage(content=function_calls, source="simulator"))
