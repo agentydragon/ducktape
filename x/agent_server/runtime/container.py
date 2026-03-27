@@ -22,7 +22,8 @@ from mcp_infra.compositor.clients import CompositorMetaClient
 from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.compositor.notifications_buffer import NotificationsBuffer
 from mcp_infra.enhanced.server import EnhancedFastMCP
-from mcp_infra.exec.docker.container_session import ContainerOptions
+from mcp_infra.constants import WORKING_DIR
+from mcp_infra.exec.docker.container_session import ContainerOptions, DefaultValue
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.snapshots import SamplingSnapshot, ServerEntry
 from openai_utils.client_factory import build_client
@@ -127,7 +128,9 @@ class AgentContainerCompositor(Compositor):
                 },
             )
             self.runtime = await self.mount_inproc(
-                MCPMountPrefix("runtime"), RuntimeServer(self._async_docker_client, opts), pinned=True
+                MCPMountPrefix("runtime"),
+                RuntimeServer(self._async_docker_client, opts, cwd_policy=DefaultValue(value=WORKING_DIR)),
+                pinned=True,
             )
 
             # Attach persisted chat servers

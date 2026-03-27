@@ -255,7 +255,9 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
+        ":docker",
         ":models",
+        "@pypi//fastmcp",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",

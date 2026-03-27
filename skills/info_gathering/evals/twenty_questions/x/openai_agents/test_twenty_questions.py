@@ -6,13 +6,13 @@ Only the LLM is mocked — all real game logic runs unmodified.
 """
 
 import json
-from collections.abc import Iterator
-from typing import Any
+from collections.abc import AsyncIterator, Iterator
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest_bazel
 from agents import ToolCallOutputItem, set_tracing_disabled
-from agents.items import ModelResponse, TResponseInputItem
+from agents.items import ModelResponse, TResponseInputItem, TResponseOutputItem, TResponseStreamEvent
 from agents.models.interface import Model, ModelTracing
 from agents.tool import Tool
 
@@ -50,12 +50,25 @@ class ScriptedModel(Model):
             "arguments": json.dumps(args),
         }
         return ModelResponse(
-            output=[tool_call_item],
+            output=cast(list[TResponseOutputItem], [tool_call_item]),  # type: ignore[arg-type]
             usage=MagicMock(input_tokens=0, output_tokens=0, total_tokens=0),
             response_id="fake",
         )
 
-    async def stream_response(self, *args: Any, **kwargs: Any) -> Any:
+    def stream_response(  # type: ignore[override]
+        self,
+        system_instructions: str | None,
+        input: str | list[TResponseInputItem],
+        model_settings: Any,
+        tools: list[Tool],
+        output_schema: Any,
+        handoffs: Any,
+        tracing: ModelTracing,
+        *,
+        previous_response_id: str | None = None,
+        conversation_id: str | None = None,
+        prompt: Any = None,
+    ) -> AsyncIterator[TResponseStreamEvent]:
         raise NotImplementedError
 
 
