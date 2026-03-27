@@ -48,7 +48,7 @@ def print_error(console: Console, message: str) -> None:
 
 
 @app.command()
-def autoclean_inbox(dry_run: DryRunDefaultTrueOption = True, token_file: TokenFileOption = None):
+def autoclean_inbox(dry_run: DryRunDefaultTrueOption = True, token_file: TokenFileOption = None):  # noqa: FBT002
     """Automatically clean up old emails from inbox.
 
     Adds 'gmail-archiver/inbox-auto-cleaned' label and removes from inbox.
@@ -153,7 +153,7 @@ def download_matching(
         int,
         typer.Option("--batch-size", "-b", help="Number of emails to fetch per batch (reduce if hitting rate limits)"),
     ] = 10,
-    yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation prompt")] = False,
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation prompt")] = False,  # noqa: FBT002
     token_file: TokenFileOption = None,
 ):
     """Download all emails matching a Gmail search query.
@@ -378,7 +378,7 @@ def download_email(
 @app.command()
 def classify_event(
     eml_file: Annotated[Path, typer.Argument(help="Path to .eml file to classify", exists=True)],
-    no_cache: Annotated[bool, typer.Option("--no-cache", help="Skip cache and re-classify")] = False,
+    no_cache: Annotated[bool, typer.Option("--no-cache", help="Skip cache and re-classify")] = False,  # noqa: FBT002
 ):
     """Recognize email template and extract structured data using OpenAI.
 

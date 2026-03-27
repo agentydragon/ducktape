@@ -162,7 +162,7 @@ def main(
     password: Annotated[str | None, typer.Option(help="VNC password")] = None,
     token: Annotated[str | None, typer.Option(help="Hetzner API token (default: HCLOUD_TOKEN env)")] = None,
     output: Annotated[Path, typer.Option(help="Output image path")] = Path("screenshot.png"),
-    verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Enable debug logging")] = False,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Enable debug logging")] = False,  # noqa: FBT002
 ):
     """Capture a screenshot from Hetzner Cloud VNC console.
 

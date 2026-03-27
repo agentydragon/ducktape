@@ -24,7 +24,7 @@ def create_habitify(api_key: str | None = None) -> FastMCP:
         return client
 
     @server.tool()
-    async def get_habits(ctx: Context, include_archived: bool = False) -> HabitsResult:
+    async def get_habits(ctx: Context, include_archived: bool = False) -> HabitsResult:  # noqa: FBT002
         return await tools.get_habits(get_client(ctx), include_archived=include_archived)
 
     @server.tool()

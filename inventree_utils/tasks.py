@@ -24,7 +24,7 @@ def _ssh(c, cmd):
 
 
 @task
-def logs(c, since="24h", hide_http_logs=True):
+def logs(c, since="24h", hide_http_logs=True):  # noqa: FBT002
     """Show server logs."""
     remote_command = f"docker logs -f --since {since} inventree-server"
     if hide_http_logs:
