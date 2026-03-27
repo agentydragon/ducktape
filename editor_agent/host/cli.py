@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Annotated
 
 import aiodocker
+import anyio
 import typer
 
 from editor_agent.host.agent_runner import run_editor_docker_agent
@@ -68,7 +69,7 @@ async def edit(
     if prompt is None:
         raise typer.BadParameter("PROMPT argument is required")
     file = file.resolve()
-    if not file.is_file():
+    if not await anyio.Path(file).is_file():
         raise typer.BadParameter(f"Not a file: {file}")
 
     model_client = build_client(model, enable_debug_logging=True)

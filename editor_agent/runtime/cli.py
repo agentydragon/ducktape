@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Annotated
 
+import anyio
 import typer
 
 from agent_pkg.mcp import mcp_client_from_env, read_text_resource
@@ -57,8 +58,8 @@ async def materialize(
     async with mcp_client_from_env() as (client, _init_result):
         filename = await _get_filename()
         content = await read_text_resource(client, EDIT_RESOURCE_URI)
-    target_path = directory / filename
-    target_path.write_text(content, encoding="utf-8")
+    target_path = anyio.Path(directory) / filename
+    await target_path.write_text(content, encoding="utf-8")
     print(target_path)
 
 
@@ -69,7 +70,7 @@ async def submit_success(
     file: Annotated[Path, typer.Option("--file", "-f", help="Path to file with edited content")],
 ) -> None:
     """Submit successful edit with the file content."""
-    content = file.read_text(encoding="utf-8")
+    content = await anyio.Path(file).read_text(encoding="utf-8")
     async with mcp_client_from_env() as (client, _init_result):
         await client.call_tool("submit_success", {"message": message, "content": content})
 

@@ -14,6 +14,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+import anyio
 from opentelemetry import trace
 
 from devinfra.claude.session_paths import SessionPaths
@@ -61,18 +62,18 @@ async def setup_mkcert(paths: SessionPaths, combined_ca: Path | None) -> MkcertS
     appends the root CA to the combined CA bundle so Python/curl/Node trust
     it via SSL_CERT_FILE.
     """
-    mkcert_dir = _get_mkcert_dir(paths)
-    mkcert_dir.mkdir(parents=True, exist_ok=True)
+    mkcert_dir = anyio.Path(_get_mkcert_dir(paths))
+    await mkcert_dir.mkdir(parents=True, exist_ok=True)
 
     ca_root = mkcert_dir / "ca"
-    ca_root.mkdir(parents=True, exist_ok=True)
+    await ca_root.mkdir(parents=True, exist_ok=True)
 
     cert_path = mkcert_dir / "localhost.pem"
     key_path = mkcert_dir / "localhost-key.pem"
 
     env = {**os.environ, "CAROOT": str(ca_root)}
 
-    if not cert_path.exists() or not key_path.exists():
+    if not await cert_path.exists() or not await key_path.exists():
         mkcert_bin = shutil.which("mkcert")
         if not mkcert_bin:
             raise RuntimeError("mkcert not found on PATH (expected from Nix web-session package)")
@@ -82,9 +83,9 @@ async def setup_mkcert(paths: SessionPaths, combined_ca: Path | None) -> MkcertS
             proc = await asyncio.create_subprocess_exec(
                 mkcert_bin,
                 "-cert-file",
-                cert_path,
+                str(cert_path),
                 "-key-file",
-                key_path,
+                str(key_path),
                 "localhost",
                 "127.0.0.1",
                 "::1",
@@ -98,7 +99,9 @@ async def setup_mkcert(paths: SessionPaths, combined_ca: Path | None) -> MkcertS
         logger.info("Generated localhost cert: %s", cert_path)
 
     with tracer.start_as_current_span("mkcert_append_bundle"):
-        if combined_ca and await asyncio.to_thread(os.path.exists, combined_ca):
-            append_mkcert_ca_to_bundle(ca_root, combined_ca)
+        if combined_ca and await anyio.Path(combined_ca).exists():
+            append_mkcert_ca_to_bundle(Path(ca_root), combined_ca)
 
-    return MkcertSetup(cert_path=cert_path, key_path=key_path, ca_root=ca_root, status=f"installed ({cert_path})")
+    return MkcertSetup(
+        cert_path=Path(cert_path), key_path=Path(key_path), ca_root=Path(ca_root), status=f"installed ({cert_path})"
+    )
