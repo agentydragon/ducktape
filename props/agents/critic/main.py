@@ -223,11 +223,10 @@ def _create_tool_provider(exit_state: ExitState, db: Database) -> DirectToolProv
                 )
 
                 if len(occurrences) == 0:
-                    msg = (
+                    raise ValueError(
                         f"Issue '{issue.issue_id}' has no occurrences. "
                         f"Every issue must have at least one occurrence showing where it occurs in the code."
                     )
-                    raise ValueError(msg)
 
                 total_occurrences += len(occurrences)
 

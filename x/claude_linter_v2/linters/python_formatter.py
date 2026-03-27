@@ -25,11 +25,10 @@ class PythonFormatter:
         if self._use_ruff:
             ruff_bin = find_ruff_binary()
             if not ruff_bin:
-                msg = (
+                raise RuntimeError(
                     "ruff is configured as a formatting tool but the binary was not found. "
                     "Set RUFF_BIN env var or add ruff to PATH, or remove 'ruff' from python_tools config."
                 )
-                raise RuntimeError(msg)
             self._ruff_bin: str = ruff_bin
 
     def format_code(

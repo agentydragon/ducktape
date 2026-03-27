@@ -41,11 +41,10 @@ class ShutdownResponse(BaseModel):
 def _settings() -> EmberSettings:
     settings = load_settings()
     if not settings.matrix.configured:
-        msg = (
+        raise RuntimeError(
             "Matrix settings incomplete; set MATRIX_BASE_URL and provide a Matrix access token "
             "(env MATRIX_ACCESS_TOKEN or /var/run/ember/secrets/matrix_access_token)"
         )
-        raise RuntimeError(msg)
     return settings
 
 

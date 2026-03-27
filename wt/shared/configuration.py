@@ -160,12 +160,11 @@ class Configuration:
                 return p.resolve().is_relative_to(temp_root)
 
             if not (_under_tmp(cfg.wt_dir) and _under_tmp(cfg.main_repo) and _under_tmp(cfg.worktrees_dir)):
-                msg = (
+                raise ConfigError(
                     "WT_TEST_MODE is set, but WT_DIR/main_repo/worktrees_dir are not under the system temp directory.\n"
                     f"  WT_DIR={cfg.wt_dir}\n  main_repo={cfg.main_repo}\n  worktrees_dir={cfg.worktrees_dir}\n"
                     "Refusing to run tests against a non-isolated real environment."
                 )
-                raise ConfigError(msg)
         return cfg
 
 

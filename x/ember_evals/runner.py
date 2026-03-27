@@ -37,11 +37,10 @@ def _get_repo_root() -> Path:
         if (parent / "k8s" / "helm" / "ember").exists():
             return parent
 
-    msg = (
+    raise RuntimeError(
         "Cannot locate ducktape repository root. Set DUCKTAPE_REPO_ROOT environment variable "
         "or ensure this runs from within the ducktape repository."
     )
-    raise RuntimeError(msg)
 
 
 REPO_ROOT = _get_repo_root()

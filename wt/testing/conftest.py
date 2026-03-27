@@ -310,11 +310,10 @@ def kill_daemon_at_wt_dir(wt_dir: Path) -> None:
 
     # If still present, declare failure (leak); do not unlink to preserve evidence
     details = (result.stdout or "") + ("\n" + (result.stderr or ""))
-    msg = (
+    raise AssertionError(
         f"Daemon did not shut down cleanly for {wt_dir}. Leftovers: "
         f"pid_exists={pid_file.exists()} sock_exists={sock_file.exists()}\n{details}"
     )
-    raise AssertionError(msg)
 
 
 def create_integration_test_config_file(repo_path: Path) -> Path:

@@ -36,11 +36,10 @@ def get_current_agent_run_id(session: Session) -> UUID:
     result = session.execute(text("SELECT current_agent_run_id()"))
     agent_run_id = result.scalar()
     if agent_run_id is None:
-        msg = (
+        raise RuntimeError(
             "current_agent_run_id() returned NULL — not connected as an agent user. "
             "Make sure you're using agent credentials (e.g., agent_{uuid})."
         )
-        raise RuntimeError(msg)
     return UUID(str(agent_run_id))
 
 

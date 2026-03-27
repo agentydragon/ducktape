@@ -203,11 +203,10 @@ class ResponsesDB:
         db_url = self._require_db_url()
         prefix = "postgresql+asyncpg://"
         if not db_url.startswith(prefix):
-            msg = (
+            raise RuntimeError(
                 "ADGN_RESP_DB_URL must use the postgresql+asyncpg:// scheme "
                 "(e.g. postgresql+asyncpg://user:pass@host:5432/dbname)"
             )
-            raise RuntimeError(msg)
         return "postgresql://" + db_url[len(prefix) :]
 
     def _require_db_url(self) -> str:

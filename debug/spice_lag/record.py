@@ -126,12 +126,11 @@ def type_marker(char: str) -> str:
     ts = _now_str()
     result = subprocess.run(["ydotool", "type", char], check=False, capture_output=True)
     if result.returncode != 0:
-        msg = (
+        raise RuntimeError(
             f"ydotool failed (exit {result.returncode}):\n"
             f"  stdout: {result.stdout.decode(errors='replace')}\n"
             f"  stderr: {result.stderr.decode(errors='replace')}"
         )
-        raise RuntimeError(msg)
     return ts
 
 
@@ -151,11 +150,10 @@ def main():
 
     ydotool_socket = Path("/tmp/.ydotool_socket")
     if not ydotool_socket.exists():
-        msg = (
+        raise RuntimeError(
             "ydotoold not running (/tmp/.ydotool_socket not found)\n"
             "Start it with: sudo ydotoold --socket-path=/tmp/.ydotool_socket --socket-perm=0666"
         )
-        raise RuntimeError(msg)
 
     uinput = Path("/dev/uinput")
     if uinput.exists() and not os.access(uinput, os.W_OK):

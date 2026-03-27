@@ -151,11 +151,10 @@ class YAMLOccurrence(BaseModel):
                 else:
                     raise ValueError(f"Invalid list element type in {file_path}: {type(first).__name__}")
             else:
-                msg = (
+                raise ValueError(
                     f"Invalid line spec for {file_path}: {spec} (type: {type(spec).__name__}). "
                     "Expected [start, end], [[r1_start, r1_end], ...], dict, or null"
                 )
-                raise ValueError(msg)
         return normalized
 
     def _build_files_dict(self) -> dict[Path, list[LineRange] | None]:
@@ -217,11 +216,10 @@ class YAMLIssue(BaseModel):
         if len(self.occurrences) > 1:
             for occ in self.occurrences:
                 if occ.note is None:
-                    msg = (
+                    raise ValueError(
                         f"Occurrence {occ.occurrence_id} missing required note "
                         "(multi-occurrence issues must have notes on all occurrences)"
                     )
-                    raise ValueError(msg)
         return self
 
     @model_validator(mode="after")

@@ -194,9 +194,8 @@ class ScriptBuilder(ItemFactory):
         result = find_tool_result_typed(events, call.call_id, BaseExecResult)
         if not (isinstance(result.exit, Exited) and result.exit.exit_code == 0):
             cmd_preview = " ".join(cmd[:4])
-            msg = (
+            raise ScriptError(
                 f"Command failed ({cmd_preview}): {result.exit.model_dump()}"
                 f"\nstdout: {result.stdout}\nstderr: {result.stderr}"
             )
-            raise ScriptError(msg)
         return result

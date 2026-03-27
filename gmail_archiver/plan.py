@@ -101,11 +101,10 @@ class Plan:
         # Check for collision
         if message_id in self.actions:
             existing = self.actions[message_id]
-            msg = (
+            raise ValueError(
                 f"Message {message_id} already claimed by {existing.planner_name}, "
                 f"cannot also be claimed by {self.planner_name}"
             )
-            raise ValueError(msg)
 
         # Add planned action
         assert self.planner_name is not None  # Must be set in __init__
@@ -125,11 +124,10 @@ class Plan:
             for message_id, planned_action in plan.actions.items():
                 if message_id in merged.actions:
                     existing = merged.actions[message_id]
-                    msg = (
+                    raise ValueError(
                         f"Message {message_id} claimed by both "
                         f"{existing.planner_name} and {planned_action.planner_name}"
                     )
-                    raise ValueError(msg)
                 merged.actions[message_id] = planned_action
 
             # Merge planner-specific messages with headers

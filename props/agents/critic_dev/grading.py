@@ -84,19 +84,17 @@ async def wait_until_graded(
             raise ValueError(f"Critic run {critic_run_id} not found")
 
         if critic_run.status == AgentRunStatus.IN_PROGRESS:
-            msg = (
+            raise ValueError(
                 f"Critic run {critic_run_id} is still in progress (status: {critic_run.status}). "
                 f"wait_until_graded only works on finished runs."
             )
-            raise ValueError(msg)
 
         current_agent_id = get_current_agent_run_id(session)
         if critic_run.parent_agent_run_id != current_agent_id:
-            msg = (
+            raise ValueError(
                 f"Critic run {critic_run_id} was not started by this agent. "
                 f"Expected parent {current_agent_id}, got {critic_run.parent_agent_run_id}."
             )
-            raise ValueError(msg)
 
     start_time = time.monotonic()
     deadline = start_time + timeout_seconds
@@ -114,8 +112,7 @@ async def wait_until_graded(
 
         await asyncio.sleep(poll_interval_seconds)
 
-    msg = (
+    raise TimeoutError(
         f"Timeout waiting for critic run {critic_run_id} to be graded. "
         f"Waited {timeout_seconds} seconds, {last_pending_count} edges still pending."
     )
-    raise TimeoutError(msg)

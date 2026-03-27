@@ -75,11 +75,10 @@ class FakeOpenAIModel(OpenAIModelProto):
                 last_messages.append(f"  (string input): {req.input[:500]}")
 
             msg_preview = "\n".join(last_messages) if last_messages else "(no messages)"
-            msg = (
+            raise RuntimeError(
                 f"Mock exhausted: {self.calls} calls made but only {len(self._outputs)} responses provided. "
                 f"Add more mock responses or reduce max_turns.\n\nLast 2 messages in request:\n{msg_preview}"
             )
-            raise RuntimeError(msg)
         result = self._outputs[self.calls]
         self.calls += 1
         return result

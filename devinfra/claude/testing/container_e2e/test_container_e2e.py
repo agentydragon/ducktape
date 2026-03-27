@@ -115,12 +115,11 @@ def _exec(
         logger.info("stderr: %s", stderr.decode(errors="replace"))
 
     if check and exit_code != 0:
-        msg = (
+        raise AssertionError(
             f"Command {cmd} failed (rc={exit_code}):\n"
             f"stdout:\n{stdout.decode(errors='replace')}\n"
             f"stderr:\n{stderr.decode(errors='replace')}"
         )
-        raise AssertionError(msg)
 
     return exit_code, bytes(stdout), bytes(stderr)
 

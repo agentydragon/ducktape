@@ -39,12 +39,11 @@ def validate_hook_outcome(hook_type: HookEventName, outcome: HookOutcome) -> Non
 
     valid_types = VALID_OUTCOMES[hook_type]
     if not isinstance(outcome, valid_types):
-        msg = (
+        raise HookBugError(
             f"Invalid outcome type for {hook_type.value}: "
             f"got {type(outcome).__name__}, "
             f"expected one of {[t.__name__ for t in valid_types]}"
         )
-        raise HookBugError(msg)
 
     # Semantic checks
     _validate_outcome_semantics(hook_type, outcome)

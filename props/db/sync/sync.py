@@ -122,10 +122,9 @@ def sync_snapshot_files_to_db(session: Session, slug: SnapshotSlug, archive_byte
     if not file_rows:
         with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r") as diag_tar:
             member_count = len(diag_tar.getmembers())
-        msg = (
+        raise ValueError(
             f"No files found in snapshot archive for {slug} (archive_size={len(archive_bytes)}, members={member_count})"
         )
-        raise ValueError(msg)
 
     # Bulk upsert all files in one statement.
     stmt = insert(SnapshotFile).values(file_rows)
@@ -172,11 +171,10 @@ def _reconstruct_occ_common(
         )
         restriction = {Path(m.file_path) for m in members}
         if not restriction:
-            msg = (
+            raise ValueError(
                 f"FileSet {db_occ.snapshot_slug}/{db_occ.match_file_restriction} has no members "
                 f"(referenced by occurrence {db_occ.occurrence_id})"
             )
-            raise ValueError(msg)
 
     return files, restriction
 

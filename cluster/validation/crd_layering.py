@@ -74,8 +74,7 @@ def check_crd_layering(result: KustomizeBuildResult) -> None:
     if has_helmrelease and crd_instances:
         kust_name = result.kustomization_path.parent.name
         unique_crds = sorted({f"{k} (needs {op})" for k, op in crd_instances})
-        msg = (
+        raise CrdLayeringViolationError(
             f"{kust_name}: mixes HelmRelease with CRD instances: {', '.join(unique_crds)}. "
             f"Split into a separate '{kust_name}-secrets/' Kustomization."
         )
-        raise CrdLayeringViolationError(msg)

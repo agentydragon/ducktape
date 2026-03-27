@@ -381,12 +381,11 @@ class AgentRegistry:
                 raise BudgetExceededError(f"Parent run {parent_run_id} not found")
 
             if child_budget_usd > status.remaining_usd:
-                msg = (
+                raise BudgetExceededError(
                     f"Cannot spawn child with ${child_budget_usd:.2f} budget: "
                     f"parent has ${status.remaining_usd:.2f} remaining "
                     f"(${status.tree_spent_usd:.2f} spent of ${status.budget_usd:.2f})"
                 )
-                raise BudgetExceededError(msg)
 
     def _create_run(
         self,

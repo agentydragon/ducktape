@@ -260,11 +260,10 @@ class GitStatusdProtocol:
 
             # For git repositories, validate we have enough fields
             if len(fields) < GitStatusdProtocol.MIN_GIT_REPO_FIELDS:
-                msg = (
+                raise GitStatusdParseError(
                     f"Incomplete git repository response: expected {GitStatusdProtocol.MIN_GIT_REPO_FIELDS} fields, "
                     f"got {len(fields)}"
                 )
-                raise GitStatusdParseError(msg)
 
             # Invariant: after this point, `fields` has at least MIN_GIT_REPO_FIELDS entries.
             # Helper accessors (_safe_get_*) therefore may assume the indexed positions exist;

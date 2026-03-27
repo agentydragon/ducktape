@@ -359,12 +359,11 @@ class GitRoServer(SimpleFastMCP):
                         entries_here = sorted(e.name for e in cur if e.name is not None)
                         at_root = not traversed
                         location = "repository root" if at_root else f"'{'/'.join(traversed)}'"
-                        msg = (
+                        raise FileNotFoundError(
                             f"'{part}' not found at {location}. "
                             f"Path must be relative to repository root. "
                             f"Entries at {location}: {entries_here}"
-                        )
-                        raise FileNotFoundError(msg) from None
+                        ) from None
                     traversed.append(part)
                     if tree_entry.filemode == pygit2.GIT_FILEMODE_TREE:
                         cur = state[tree_entry.id].peel(pygit2.Tree)

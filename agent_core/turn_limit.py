@@ -29,9 +29,8 @@ class MaxTurnsHandler(BaseHandler):
         """Track sampling attempts and enforce turn limit."""
         self._turn_count += 1
         if self._turn_count > self.max_turns:
-            msg = (
+            raise MaxTurnsExceededError(
                 f"Agent exceeded maximum allowed turns ({self.max_turns}). "
                 f"This likely indicates the agent is stuck in a loop or not following instructions."
             )
-            raise MaxTurnsExceededError(msg)
         return NoAction()

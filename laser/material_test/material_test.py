@@ -243,11 +243,10 @@ class GridConfig(BaseModel):
             axes.append(("rows", self.rows.param))
         for name, param in axes:
             if param in (CutParam.POWER_MIN_PCT, CutParam.POWER_MAX_PCT):
-                msg = (
+                raise ValueError(
                     f"{name}.param={param!r} is not allowed as an axis parameter; "
                     f"use 'power_pct' instead to vary min and max power together"
                 )
-                raise ValueError(msg)
         seen: dict[CutParam, str] = {}
         for name, param in axes:
             if param in seen:

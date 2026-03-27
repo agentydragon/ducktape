@@ -120,38 +120,34 @@ def _validate_schema_strict_compatible(schema: dict[str, Any], tool_name: str) -
             # OpenAI strict mode: all objects must have additionalProperties: false
             # No exemptions for patternProperties or map-like objects
             if "patternProperties" in subschema:
-                msg = (
+                raise RuntimeError(
                     f"Tool '{tool_name}' at {path}: object uses 'patternProperties' which is not allowed in strict mode. "
                     f"Refactor dict[str, T] fields to list[{{key: str, value: T}}] or similar fixed structure."
                 )
-                raise RuntimeError(msg)
 
             if "additionalProperties" not in subschema:
-                msg = (
+                raise RuntimeError(
                     f"Tool '{tool_name}' at {path}: object missing 'additionalProperties'. "
                     f"Add 'model_config = ConfigDict(extra=\"forbid\")' to the Pydantic model."
                 )
-                raise RuntimeError(msg)
 
             additional_props = subschema.get("additionalProperties")
             if additional_props is not False:
-                msg = (
+                raise RuntimeError(
                     f"Tool '{tool_name}' at {path}: 'additionalProperties' must be false, got {additional_props}. "
                     f"If this is a dict field, refactor to a list of objects with fixed schema."
                 )
-                raise RuntimeError(msg)
 
             # Check required properties
             properties = subschema.get("properties", {})
             required = set(subschema.get("required", []))
             if properties and set(properties.keys()) != required:
                 missing = set(properties.keys()) - required
-                msg = (
+                raise RuntimeError(
                     f"Tool '{tool_name}' at {path}: all properties must be in 'required'. "
                     f"Missing: {missing}. "
                     f"Fix: Remove Field(default=...) or Field(default_factory=...) from Pydantic model."
                 )
-                raise RuntimeError(msg)
 
             # Recursively check nested properties
             for prop_name, prop_schema in properties.items():
@@ -391,7 +387,7 @@ class Agent:
         # Handler list for event notification and loop control
         self._handlers = list(handlers)
         if not self._handlers:
-            msg = (
+            raise ValueError(
                 "At least one handler required to control the agent loop. "
                 "Without handlers, the agent will loop indefinitely. "
                 "Add a handler:\n"
@@ -401,7 +397,6 @@ class Agent:
                 "  • SequenceHandler([...]) - for fixed action sequences\n"
                 "  • Custom handler - subclass BaseHandler for specialized control"
             )
-            raise ValueError(msg)
 
     @property
     def model(self) -> str:
@@ -812,11 +807,10 @@ class Agent:
             # ReasoningItems cannot be reused outside their original response context,
             # so compaction must not be triggered if the last transcript item is a ReasoningItem
             if self._transcript and isinstance(self._transcript[-1], ReasoningItem):
-                msg = (
+                raise RuntimeError(
                     "Cannot compact transcript when last item is a ReasoningItem. "
                     "Handlers must not return Compact() after receiving reasoning output."
                 )
-                raise RuntimeError(msg)
             result = await self.compact_transcript(keep_recent_turns=decision.keep_recent_turns)
             if result.compacted:
                 logger.info(

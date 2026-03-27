@@ -459,11 +459,10 @@ class ResourcesServer(EnhancedFastMCP):
             try:
                 contents = await self._compositor.read_resource_contents(uri_value)
             except McpError as e:
-                msg = (
+                raise ToolError(
                     f"The MCP server '{input.server}' does not provide the resource '{input.uri}'. "
                     f"Use list_resources to see available resources. Original error: {e}"
-                )
-                raise ToolError(msg) from e
+                ) from e
             max_bytes = input.max_bytes if input.max_bytes is not None else DEFAULT_MAX_BYTES
             return _build_window_payload(contents, input.start_offset, max_bytes)
 
@@ -489,11 +488,10 @@ class ResourcesServer(EnhancedFastMCP):
             try:
                 contents = await self._compositor.read_resource_contents(uri_value)
             except McpError as e:
-                msg = (
+                raise ToolError(
                     f"The MCP server '{input.server}' does not provide the resource '{input.uri}'. "
                     f"Use list_resources to see available resources. Original error: {e}"
-                )
-                raise ToolError(msg) from e
+                ) from e
 
             max_bytes = input.max_bytes if input.max_bytes is not None else DEFAULT_MAX_BYTES
             result_blocks: list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents | TruncatedBlock] = []

@@ -176,11 +176,10 @@ async def _query_frame(client: openai.AsyncOpenAI, frame_file: Path, sem: asynci
         )
     content = resp.choices[0].message.content
     if content is None:
-        msg = (
+        raise RuntimeError(
             f"API returned no content for {frame_file.name}: "
             f"finish_reason={resp.choices[0].finish_reason}, refusal={resp.choices[0].message.refusal}"
         )
-        raise RuntimeError(msg)
     return json.loads(content)
 
 

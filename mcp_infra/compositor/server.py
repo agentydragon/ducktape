@@ -532,11 +532,10 @@ class BaseCompositor(FastMCP):
         """
         async with self._state_lock:
             if self._state == CompositorState.ACTIVE:
-                msg = (
+                raise RuntimeError(
                     f"BaseCompositor '{self.name}' is already in an active context manager! "
                     "Cannot enter the same compositor twice."
                 )
-                raise RuntimeError(msg)
             if self._state == CompositorState.CLOSED:
                 raise RuntimeError(f"BaseCompositor '{self.name}' is already closed. Cannot reuse a closed compositor.")
 

@@ -60,12 +60,11 @@ def _inline_refs_with_siblings(schema: dict[str, Any]) -> None:
             if key == "$ref":
                 continue
             if key in resolved and resolved[key] != value and key not in _ALLOWED_REF_SIBLING_KEYS:
-                msg = (
+                raise ValueError(
                     f"$ref inlining conflict at {path}: "
                     f"sibling key {key!r} has value {value!r} but "
                     f"$defs/{def_name} already has {resolved[key]!r}"
                 )
-                raise ValueError(msg)
             resolved[key] = value
         return resolve(resolved, path)
 
