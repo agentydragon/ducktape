@@ -1,20 +1,20 @@
 # Verification Report: environment-manager 495ea204
 
-## Critical Finding: Identical Binary
+## Binary Identity
 
-**The binary at `/tmp/environment-manager-495ea204` is byte-for-byte identical to the
-reference binary used for the `64bc4dc1` RE work.**
+| Property       | Value                                                           |
+| -------------- | --------------------------------------------------------------- |
+| ELF BuildID    | `495ea204294a4d78ef9d6d3ef7cd2d433486514b`                      |
+| Version string | `release-d84d76b7-ext`                                          |
+| Size           | 51,859,504 bytes                                                |
+| Format         | ELF 64-bit LSB executable, x86-64, dynamically linked, stripped |
+| Previous RE    | `64bc4dc1` (version `release-9f4ec76fbc-ext`, 49.8 MB)          |
 
-| Property    | Value                                                              |
-| ----------- | ------------------------------------------------------------------ |
-| SHA-256     | `a81291c79b9a25b98a469abed0e0cad49eb108f71e987f6b7e89db8ee17e6b34` |
-| ELF BuildID | `495ea204294a4d78ef9d6d3ef7cd2d433486514b`                         |
-| Size        | 51,859,504 bytes                                                   |
-| Format      | ELF 64-bit LSB executable, x86-64, dynamically linked, stripped    |
-
-The `64bc4dc1` identifier used in the existing RE directory was likely a Go build ID
-or garble content hash, while `495ea204` is the ELF `.note.gnu.build-id` (GNU BuildID).
-Both refer to the same binary. No actual version change occurred.
+**Note:** This verification agent incorrectly concluded the binaries were identical
+because it compared the live binary against the reference file that had already been
+updated to the new version. See `BINDIFF_RESULTS.md` for the actual differences
+between the old (64bc4dc1) and new (495ea204) binaries. The struct tag verification
+below remains valid — it documents what's confirmed present in this binary version.
 
 ## Verification Method
 
