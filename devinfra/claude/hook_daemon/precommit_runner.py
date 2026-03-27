@@ -111,7 +111,7 @@ def _run_hooks(
     config = load_config(str(config_path))
     hooks = [h for h in all_hooks(config, store) if not h.stages or "pre-commit" in h.stages]
     if not hooks:
-        return [], []
+        return {}, []
 
     install_hook_envs(hooks, store)
 
