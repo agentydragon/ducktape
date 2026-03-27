@@ -28,7 +28,7 @@ func artifactCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			artifacts, err := listArtifacts(c, args[0])
+			artifacts, err := listArtifactsResolved(c, args[0])
 			if err != nil {
 				return err
 			}
@@ -67,6 +67,34 @@ func downloadArtifact(c *client, artifacts []artifact, substr string) error {
 		}
 	}
 	if len(matches) == 0 {
+		// Show a few available artifacts as hints
+		seen := map[string]bool{}
+		count := 0
+		fmt.Fprintf(os.Stderr, "No artifacts matching %q\n", substr)
+		if len(artifacts) > 0 {
+			fmt.Fprintf(os.Stderr, "\nAvailable labels (first 5):\n")
+			for _, a := range artifacts {
+				if !seen[a.Label] {
+					seen[a.Label] = true
+					fmt.Fprintf(os.Stderr, "  %s\n", a.Label)
+					count++
+					if count >= 5 {
+						remaining := 0
+						for _, a2 := range artifacts {
+							if !seen[a2.Label] {
+								seen[a2.Label] = true
+								remaining++
+							}
+						}
+						if remaining > 0 {
+							fmt.Fprintf(os.Stderr, "  ... (%d more labels)\n", remaining)
+						}
+						break
+					}
+				}
+			}
+			fmt.Fprintf(os.Stderr, "\nHint: match is against \"label/name\" (e.g., \"test_handlers/test.log\")\n")
+		}
 		return fmt.Errorf("no artifacts matching %q", substr)
 	}
 	if len(matches) > 1 {
@@ -84,6 +112,23 @@ func downloadArtifact(c *client, artifacts []artifact, substr string) error {
 	}
 	_, err = os.Stdout.Write(data)
 	return err
+}
+
+// listArtifactsResolved lists artifacts, auto-resolving workflow invocations to children.
+func listArtifactsResolved(c *client, invocationID string) ([]artifact, error) {
+	ids, err := resolveInvocationIDs(c, invocationID)
+	if err != nil {
+		return nil, err
+	}
+	var all []artifact
+	for _, id := range ids {
+		arts, err := listArtifacts(c, id)
+		if err != nil {
+			return nil, fmt.Errorf("list artifacts for %s: %w", id, err)
+		}
+		all = append(all, arts...)
+	}
+	return all, nil
 }
 
 func listArtifacts(c *client, invocationID string) ([]artifact, error) {

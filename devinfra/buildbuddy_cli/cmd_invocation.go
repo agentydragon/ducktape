@@ -6,10 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
-
 	eventlogpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	invocationpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	"github.com/spf13/cobra"
 )
 
 func invocationCmd() *cobra.Command {
@@ -57,6 +56,18 @@ func invocationCmd() *cobra.Command {
 					fmt.Printf("CAS Hits:    %d\n", cs.GetCasCacheHits())
 					fmt.Printf("DL bytes:    %d\n", cs.GetTotalDownloadSizeBytes())
 					fmt.Printf("UL bytes:    %d\n", cs.GetTotalUploadSizeBytes())
+				}
+				// Show child invocation IDs (for workflow invocations)
+				for _, ev := range inv.GetEvent() {
+					be := ev.GetBuildEvent()
+					if be == nil {
+						continue
+					}
+					for _, child := range be.GetChildren() {
+						if cid := child.GetChildInvocationCompleted(); cid != nil && cid.GetInvocationId() != "" {
+							fmt.Printf("Child:       %s\n", cid.GetInvocationId())
+						}
+					}
 				}
 			}
 			return nil
@@ -148,4 +159,46 @@ func invocationLogCmd() *cobra.Command {
 	}
 	cmd.Flags().Int32Var(&minLines, "lines", 500, "Minimum lines to fetch")
 	return cmd
+}
+
+// getChildInvocationIDs returns child invocation IDs for a workflow invocation.
+// Returns nil if the invocation has no children (i.e., is not a workflow wrapper).
+func getChildInvocationIDs(c *client, invocationID string) ([]string, error) {
+	req := &invocationpb.GetInvocationRequest{
+		Lookup: &invocationpb.InvocationLookup{InvocationId: invocationID},
+	}
+	resp := &invocationpb.GetInvocationResponse{}
+	if err := c.call("GetInvocation", req, resp); err != nil {
+		return nil, err
+	}
+	var children []string
+	for _, inv := range resp.GetInvocation() {
+		for _, ev := range inv.GetEvent() {
+			be := ev.GetBuildEvent()
+			if be == nil {
+				continue
+			}
+			for _, child := range be.GetChildren() {
+				if cid := child.GetChildInvocationCompleted(); cid != nil && cid.GetInvocationId() != "" {
+					children = append(children, cid.GetInvocationId())
+				}
+			}
+		}
+	}
+	return children, nil
+}
+
+// resolveInvocationIDs returns the invocation ID(s) to query for artifacts/targets.
+// For workflow invocations (which have children), returns child IDs.
+// For regular invocations, returns the original ID.
+func resolveInvocationIDs(c *client, invocationID string) ([]string, error) {
+	children, err := getChildInvocationIDs(c, invocationID)
+	if err != nil {
+		return nil, err
+	}
+	if len(children) > 0 {
+		fmt.Fprintf(os.Stderr, "Workflow invocation, using child: %s\n", strings.Join(children, ", "))
+		return children, nil
+	}
+	return []string{invocationID}, nil
 }
