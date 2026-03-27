@@ -288,7 +288,7 @@ class DecoratorMock(GeneratorMock):
         def decorator(fn: Callable[[T], PlayGen]) -> T:
             # fn: Callable[[T], ...] stored as Callable[[DecoratorMock], ...] - safe
             # because play() only calls it with self (which is T at runtime)
-            return cls(fn, check_consumed, *args, **kwargs)  # type: ignore[arg-type]
+            return cls(fn, *args, check_consumed=check_consumed, **kwargs)  # type: ignore[arg-type]
 
         return decorator
 
