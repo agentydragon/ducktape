@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Unit tests for Claude Code pre-tool-use hook."""
 
 import json

@@ -1,4 +1,3 @@
-#!/usr/bin/python3
 """
 Record SPICE latency measurement data (Wayland/GNOME).
 

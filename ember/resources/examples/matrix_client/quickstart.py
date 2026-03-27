@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Demonstration of bootstrapping Ember's Matrix client."""
 
 from __future__ import annotations

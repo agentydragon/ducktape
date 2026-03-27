@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Claude Linter v2 - Main CLI entry point.
 

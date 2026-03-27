@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Check domain availability using RDAP (Registration Data Access Protocol).
 

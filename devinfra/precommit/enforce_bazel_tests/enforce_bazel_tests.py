@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Pre-commit hook: verify affected Bazel tests are cached and passing.
 
 Uses pygit2 for fast staged file discovery, then:

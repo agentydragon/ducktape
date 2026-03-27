@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """TEMPORARY ONE-OFF quick test with reduced parameters.
 
 Can delete after: Verification complete

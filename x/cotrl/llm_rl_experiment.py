@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Test language models as RL agents with raw numerical data."""
 
 import asyncio

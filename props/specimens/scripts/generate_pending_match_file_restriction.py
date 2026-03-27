@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Generate markdown listing TP/FP occurrences missing match_file_restriction.
 
 Uses props' existing Pydantic models (YAMLIssue, YAMLOccurrence, LineRange)

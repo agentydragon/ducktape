@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Ultra Long 2-Level Chain of Thought for o4-mini
 - Optimized for reasoning models

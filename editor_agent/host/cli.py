@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Docker-based editor CLI.
 
 Runs an LLM agent to edit a single file inside an isolated Docker container.

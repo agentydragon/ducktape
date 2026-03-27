@@ -1,4 +1,3 @@
-#!/usr/bin/python3
 """
 Analyze SPICE latency measurement recordings.
 

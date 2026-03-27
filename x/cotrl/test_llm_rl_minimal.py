@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """TEMPORARY ONE-OFF minimal test of LLM RL setup.
 
 Can delete after: Main experiment validation complete

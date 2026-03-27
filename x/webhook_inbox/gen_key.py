@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Print a fresh 44-char Fernet key to stdout."""
 
 from cryptography.fernet import Fernet

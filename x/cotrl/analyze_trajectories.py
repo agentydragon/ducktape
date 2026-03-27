@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """TEMPORARY ONE-OFF to analyze LLM RL trajectories.
 
 Can delete after: Trajectory analysis complete

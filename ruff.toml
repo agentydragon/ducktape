@@ -64,6 +64,7 @@ select = [
     "PERF",  # perflint
     "FAST",  # FastAPI best practices
     "TRY004", # prefer TypeError for type checks
+    "EXE",   # shebang/executable consistency
     "RUF"    # ruff-specific
 ]
 # Keep these off globally; handled case-by-case or via constants
@@ -160,3 +161,6 @@ split-on-trailing-comma = false
 # conftest.py re-exports fixtures for pytest discovery — imports are "unused" by design
 # and fixture parameters naturally shadow the imported fixture names (F811)
 "**/conftest.py" = ["F401", "F811"]
+# Shebangs required: Ansible module (direct execution) and Docker entrypoint
+"ansible/library/autostart_entry.py" = ["EXE001"]
+"devinfra/rbe_image/dockerd_wrapper.py" = ["EXE001"]

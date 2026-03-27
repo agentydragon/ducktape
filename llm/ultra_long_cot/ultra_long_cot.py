@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Ultra Long 2-Level Chain of Thought
 - User enters a message

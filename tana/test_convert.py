@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Tests for convert.py - Tana JSON to Markdown/TanaPaste conversion."""
 
 from __future__ import annotations
