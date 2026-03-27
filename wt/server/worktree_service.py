@@ -148,14 +148,19 @@ class WorktreeService:
         sink: (Callable[[str, str], Awaitable[None]] | Callable[[str, str], None] | None) = None,
         deadline: float = 60.0,
     ) -> dict:
-        script = Path(script_path).expanduser().resolve()
-        if not script.exists() or not script.is_file():
+        def _resolve_script() -> Path:
+            return Path(script_path).expanduser().resolve()
+
+        script = await asyncio.to_thread(_resolve_script)
+        script_exists = await asyncio.to_thread(script.exists)
+        script_is_file = await asyncio.to_thread(script.is_file) if script_exists else False
+        if not script_exists or not script_is_file:
             return {
                 "ran": False,
                 "exit_code": None,
                 "stdout": None,
                 "stderr": None,
-                "error": "not_found" if not script.exists() else "not_file",
+                "error": "not_found" if not script_exists else "not_file",
             }
 
         proc = await asyncio.create_subprocess_exec(

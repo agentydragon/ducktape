@@ -98,7 +98,7 @@ async def setup_mkcert(paths: SessionPaths, combined_ca: Path | None) -> MkcertS
         logger.info("Generated localhost cert: %s", cert_path)
 
     with tracer.start_as_current_span("mkcert_append_bundle"):
-        if combined_ca and combined_ca.exists():
+        if combined_ca and await asyncio.to_thread(combined_ca.exists):
             append_mkcert_ca_to_bundle(ca_root, combined_ca)
 
     return MkcertSetup(cert_path=cert_path, key_path=key_path, ca_root=ca_root, status=f"installed ({cert_path})")

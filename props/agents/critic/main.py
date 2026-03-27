@@ -337,7 +337,8 @@ async def main() -> int:
     prompt_override = os.environ.get("PROMPT_TEMPLATE_PATH")
     if prompt_override:
         logger.info("Using variant prompt from %s", prompt_override)
-        system_prompt = render_template_string(Path(prompt_override).read_text(), db, helpers)
+        prompt_text = await asyncio.to_thread(Path(prompt_override).read_text)
+        system_prompt = render_template_string(prompt_text, db, helpers)
     else:
         system_prompt = render_system_prompt("props/agents/critic/prompt.md.mako", db, helpers)
 

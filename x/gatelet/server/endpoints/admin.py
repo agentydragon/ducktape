@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -247,9 +248,10 @@ async def view_logs(
 ) -> HTMLResponse:
     """Display the last ``lines`` lines of the server log file."""
     log_path = Path(settings.server.log_file)
-    if log_path.exists():
+    if await asyncio.to_thread(log_path.exists):
         try:
-            log_text = "\n".join(log_path.read_text(encoding="utf-8").splitlines()[-lines:])
+            content = await asyncio.to_thread(log_path.read_text, encoding="utf-8")
+            log_text = "\n".join(content.splitlines()[-lines:])
         except Exception:  # pragma: no cover - unexpected read error
             log_text = "<unable to read log file>"
     else:
