@@ -431,7 +431,6 @@ manifest:
     pyperclip: pyperclip
     pypika: pypika
     pyproject_hooks: pyproject_hooks
-    pyrage: pyrage
     pytest: pytest
     pytest_asyncio: pytest_asyncio
     pytest_base_url: pytest_base_url
@@ -588,4 +587,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: d35ec6207796ddab1cdc1f0d4f2561dd65ac1d21fd241b71bb3e2d895b1a0c5d
+integrity: 69f0d887ab103378c372d5eb5713326f5c6639dc4918d5ec29929d2edf298d36
