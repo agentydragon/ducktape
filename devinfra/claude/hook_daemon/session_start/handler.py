@@ -10,7 +10,6 @@ and install a bazel wrapper that injects --bazelrc=<session-bazelrc>.
 import asyncio
 import logging
 import logging.handlers
-import shutil
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -222,7 +221,7 @@ async def _setup_web(
         with tracer.start_as_current_span("supervisor_start", context=root_ctx):
             return await supervisor_setup.start(paths, settings)
 
-    # Start supervisor (required by proxy and podman)
+    # Start supervisor (required by proxy and docker)
     supervisor_task = asyncio.create_task(traced_supervisor_start())
 
     async def mount_tmpfs_at(path: Path) -> bool:
@@ -241,14 +240,11 @@ async def _setup_web(
             return await proxy_setup.setup_auth_proxy(paths, settings, proxy=proxy)
 
     async def setup_container_runtime_task() -> container_runtime.ContainerRuntimeSetup:
-        """Set up configured container runtime (depends on supervisor + apt for podman)."""
+        """Set up Docker (depends on supervisor)."""
         with tracer.start_as_current_span("setup_container_runtime", context=root_ctx):
             storage_dir = container_runtime.get_storage_dir(paths, settings)
             if storage_dir is None:
-                raise SkipError(f"Container runtime disabled (container_runtime={settings.container_runtime})")
-            # Podman needs apt packages installed first.
-            if settings.container_runtime == "podman":
-                await apt_task
+                raise SkipError("Docker setup disabled (setup_docker=False)")
             supervisor_result = await supervisor_task
             # tmpfs failure is non-fatal — runtime falls back to VFS on 9p
             tmpfs_mounted = await mount_tmpfs_at(storage_dir)
@@ -274,19 +270,16 @@ async def _setup_web(
     # Dependency graph:
     #   apt_task (no deps — runs immediately)
     #   proxy_task (in-process, no supervisor dependency)
-    #   supervisor_task + apt_task ── setup_container_runtime (Docker or Podman)
-    #                                 (each runtime mounts its own tmpfs internally)
+    #   supervisor_task ── setup_container_runtime (Docker)
+    #                      (mounts its own tmpfs internally)
     #   setup_bazel_on_tmpfs mounts its own tmpfs independently
     logger.info("Starting parallel installations...")
 
-    # Consolidated apt install: native dev headers (if enabled) + podman (if needed).
     apt_packages: list[str] = []
     if settings.install_apt_packages:
         apt_packages.extend(apt.NATIVE_DEV_PACKAGES)
     else:
         logger.info("Skipping native apt packages (install_apt_packages=False)")
-    if settings.container_runtime == "podman" and shutil.which("podman") is None:
-        apt_packages.extend(apt.PODMAN_PACKAGES)
 
     @tracer.start_as_current_span("install_apt_packages", context=root_ctx)
     async def traced_apt():

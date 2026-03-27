@@ -80,8 +80,7 @@ Nix formatting uses `nixfmt` from the Nix devShell / web-session package.
 
 ### Environment Configuration
 
-12. Configures podman for gVisor compatibility
-13. Sets up environment variables in `CLAUDE_ENV_FILE`
+12. Sets up environment variables in `CLAUDE_ENV_FILE`
 
 See `.claude/settings.json` for hook configuration.
 
@@ -154,13 +153,13 @@ See <docs/proxy_alternatives.md> for analysis of why alternatives don't work.
 
 All settings use [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) with the `DUCKTAPE_CLAUDE_HOOKS_` prefix:
 
-| Environment Variable                      | Default                    | Description                                       |
-| ----------------------------------------- | -------------------------- | ------------------------------------------------- |
-| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_DIR`    | `<session_dir>/supervisor` | Supervisor config directory                       |
-| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT`   | `19001`                    | Supervisor TCP port                               |
-| `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_DIR`    | `<session_dir>/auth-proxy` | Proxy cache directory                             |
-| `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_PORT`   | `18081`                    | Auth proxy port                                   |
-| `DUCKTAPE_CLAUDE_HOOKS_CONTAINER_RUNTIME` | `docker`                   | Container runtime (`podman`, `docker`, or `none`) |
+| Environment Variable                    | Default                    | Description                           |
+| --------------------------------------- | -------------------------- | ------------------------------------- |
+| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_DIR`  | `<session_dir>/supervisor` | Supervisor config directory           |
+| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT` | `19001`                    | Supervisor TCP port                   |
+| `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_DIR`  | `<session_dir>/auth-proxy` | Proxy cache directory                 |
+| `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_PORT` | `18081`                    | Auth proxy port                       |
+| `DUCKTAPE_CLAUDE_HOOKS_SETUP_DOCKER`    | `true`                     | Set up Docker daemon under supervisor |
 
 `<session_dir>` = `~/.claude/session-env/<session_id>/` — a per-session directory managed by Claude Code.
 

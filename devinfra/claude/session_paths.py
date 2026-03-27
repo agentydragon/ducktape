@@ -111,10 +111,6 @@ class SessionPaths:
         return self.session_dir / "mkcert"
 
     @property
-    def podman_dir(self) -> Path:
-        return self.session_dir / "podman"
-
-    @property
     def docker_dir(self) -> Path:
         return self.session_dir / "docker"
 

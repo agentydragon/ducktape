@@ -21,7 +21,7 @@ async def wait_for_service_socket(
 
     Args:
         supervisor: Supervisor client
-        service_name: Name of the supervisor service (e.g., "dockerd", "podman")
+        service_name: Name of the supervisor service (e.g., "dockerd")
         socket_path: Path to the Unix socket
         on_failure: Callback to log failure details (called before raising)
 

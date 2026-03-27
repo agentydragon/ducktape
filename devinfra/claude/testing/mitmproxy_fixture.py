@@ -68,9 +68,9 @@ class MitmproxyFixture:
          listens on port 80 (HTTP default).
     """
 
-    # TODO: test_integration and test_session_start_podman run the auth proxy on the
-    # host and need url (127.0.0.1:port). Consider converting them to container tests
-    # so url can be dropped and container_url is the only access path.
+    # TODO: test_integration runs the auth proxy on the host and needs url
+    # (127.0.0.1:port). Consider converting to a container test so url can be
+    # dropped and container_url is the only access path.
     url: str
     container_url: str
     ca_cert_pem: bytes

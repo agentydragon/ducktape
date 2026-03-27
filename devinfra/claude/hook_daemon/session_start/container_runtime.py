@@ -1,37 +1,25 @@
-"""Container runtime management (Docker or Podman) for gVisor environments.
+"""Container runtime management (Docker) for gVisor environments.
 
-Unified setup for Docker and Podman under supervisor.  Both runtimes expose a
-Docker-compatible Unix socket.  Docker is the preferred runtime:
+Unified setup for Docker under supervisor, exposing a Docker-compatible Unix
+socket.  Docker is the preferred (and only supported) runtime:
 
 - No runtime wrapper needed (runc handles gVisor better than crun)
 - No registry/policy configuration needed
 - BuildKit handles large output better than buildah
 
-Podman is available as an alternative with additional gVisor workarounds:
-
-- crun-gvisor-wrapper for setgroups/freezer compatibility
-- Extra config files (containers.conf, registries.conf, policy.json)
-- CONTAINERS_* env vars to point at the session-local config
-
 Key findings from Docker evaluation (2026-02-17):
-- Works with just 4 daemon.json settings vs Podman's 8+ config files
+- Works with just 4 daemon.json settings
 - Layer limit: ~35 layers (kernel mount option page size, not Docker-specific)
 - Disable iptables, use tmpfs data-root, disable bridge networking
 """
 
 import asyncio
-import hashlib
-import importlib.resources
 import json
 import logging
 import os
-import shutil
-import stat
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from importlib.resources.abc import Traversable
 from pathlib import Path
-from typing import Literal
 
 import httpx
 
@@ -47,15 +35,13 @@ from devinfra.claude.supervisor.service_utils import log_service_failure, wait_f
 logger = logging.getLogger(__name__)
 
 DOCKER_SERVICE = "dockerd"
-PODMAN_SERVICE = "podman"
 DEFAULT_DOCKER_SOCKET = Path("/var/run/docker.sock")
 
 
 @dataclass
 class ContainerRuntimeSetup:
-    """Result of container runtime setup (Docker or Podman)."""
+    """Result of Docker runtime setup."""
 
-    runtime: Literal["docker", "podman"]
     socket_url: str
     status: str
     storage_driver: str
@@ -72,11 +58,9 @@ class _RuntimeSpec:
     service_name: str
     socket_path: Path
     supervisor_command: str
-    # Env vars exported to the session env file (DOCKER_HOST, CONTAINERS_*, etc.)
+    # Env vars exported to the session env file (DOCKER_HOST, etc.)
     client_env_vars: dict[str, str]
     # Extra env vars injected into the daemon process beyond proxy vars.
-    # For podman: CONTAINERS_* (daemon needs them to find its config).
-    # For docker: empty (only proxy vars are needed).
     daemon_extra_env: dict[str, str]
     storage_driver: str
 
@@ -102,7 +86,7 @@ async def _snapshot_status(supervisor: SupervisorClient, service_name: str) -> s
 
 async def _is_service_healthy(supervisor: SupervisorClient, service_name: str, socket_path: Path) -> bool:
     """Return True if the service is running in supervisor and its socket exists."""
-    if not socket_path.exists():
+    if not socket_path.exists():  # noqa: ASYNC240 — sync stat is fine here
         return False
     try:
         return await supervisor.is_service_running(service_name)
@@ -117,7 +101,7 @@ async def _is_docker_socket_responsive(socket_path: Path) -> bool:
     (e.g. the Claude Code web sandbox starts with one) that is not managed
     by this session's supervisor instance.
     """
-    if not socket_path.exists():
+    if not socket_path.exists():  # noqa: ASYNC240 — sync stat is fine here
         return False
     try:
         async with httpx.AsyncClient(transport=httpx.AsyncHTTPTransport(uds=str(socket_path)), timeout=1.0) as client:
@@ -188,108 +172,13 @@ def _configure_docker(paths: SessionPaths, tmpfs_mounted: bool) -> _RuntimeSpec:
 
 
 # ============================================================================
-# Podman
-# ============================================================================
-
-
-class PodmanNotFoundError(Exception):
-    """Raised when podman is not available after apt setup."""
-
-
-def _get_podman_socket_path(paths: SessionPaths) -> Path:
-    """Return the podman Unix socket path.
-
-    Unix sockets have a 108-character path limit (UNIX_PATH_MAX).  When
-    XDG_CACHE_HOME is deeply nested (e.g. in Bazel test environments) the
-    natural path can exceed this limit, so we use a short /tmp path with a
-    hash for uniqueness.
-    """
-    dir_hash = hashlib.sha256(str(paths.podman_dir).encode()).hexdigest()[:12]
-    return Path(f"/tmp/claude-podman-{dir_hash}.sock")
-
-
-def _install_crun_wrapper(podman_dir: Path, podman_config: Traversable) -> Path:
-    wrapper_path = podman_dir / "crun-gvisor-wrapper"
-    write_config(wrapper_path, podman_config.joinpath("crun_gvisor_wrapper.py").read_text(), "crun-gvisor-wrapper")
-    wrapper_path.chmod(wrapper_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-    return wrapper_path
-
-
-def _configure_podman(paths: SessionPaths, tmpfs_mounted: bool) -> _RuntimeSpec:
-    """Write podman config files and return the runtime spec.
-
-    Writes containers.conf, registries.conf, policy.json, storage.conf, and the
-    crun-gvisor-wrapper under session_dir/podman/.  Uses CONTAINERS_* env vars
-    to isolate podman from any system config.
-
-    gVisor sandbox restrictions require:
-    1. Overlay on tmpfs (preferred): supports xattr, enables layer caching.
-       Falls back to VFS on 9p if tmpfs is unavailable.
-    2. Host user namespace (userns = "host")
-    3. run.oci.keep_original_groups=1 annotation (via crun-gvisor-wrapper)
-    """
-    podman_dir = paths.podman_dir
-    podman_dir.mkdir(parents=True, exist_ok=True)
-
-    podman_config: Traversable = importlib.resources.files("devinfra.claude.config.podman")
-
-    storage_root = paths.container_storage_dir
-    driver = "overlay" if tmpfs_mounted else "vfs"
-    storage_dir = storage_root / "storage"
-    runroot_dir = storage_root / "run"
-    storage_dir.mkdir(parents=True, exist_ok=True)
-    runroot_dir.mkdir(parents=True, exist_ok=True)
-    logger.info("Using %s storage at %s", driver, storage_dir)
-
-    write_config(
-        podman_dir / "storage.conf",
-        f'[storage]\ndriver = "{driver}"\nrunroot = "{runroot_dir}"\ngraphroot = "{storage_dir}"\n',
-        "storage.conf",
-    )
-
-    wrapper_path = _install_crun_wrapper(podman_dir, podman_config)
-    containers_conf = (
-        podman_config.joinpath("containers.conf").read_text().format(crun_gvisor_wrapper_path=wrapper_path)
-    )
-    write_config(podman_dir / "containers.conf", containers_conf, "containers.conf")
-    write_config(
-        podman_dir / "registries.conf", podman_config.joinpath("registries.conf").read_text(), "registries.conf"
-    )
-    write_config(
-        podman_dir / "policy.json", podman_config.joinpath("policy.json").read_text(), "policy.json", canary=False
-    )
-
-    socket_path = _get_podman_socket_path(paths)
-    socket_path.parent.mkdir(parents=True, exist_ok=True)
-    socket_url = f"unix://{socket_path}"
-
-    containers_env = {
-        "CONTAINERS_STORAGE_CONF": str(podman_dir / "storage.conf"),
-        "CONTAINERS_CONF": str(podman_dir / "containers.conf"),
-        "CONTAINERS_REGISTRIES_CONF": str(podman_dir / "registries.conf"),
-        "CONTAINERS_POLICY_PATH": str(podman_dir / "policy.json"),
-        # OCI isolation avoids read-only /dev/null from chroot mode's devtmpfs
-        "BUILDAH_ISOLATION": "oci",
-    }
-    return _RuntimeSpec(
-        service_name=PODMAN_SERVICE,
-        socket_path=socket_path,
-        supervisor_command=f"podman system service --time=0 {socket_url}",
-        client_env_vars={"DOCKER_HOST": socket_url, **containers_env},
-        # Daemon also needs CONTAINERS_* so it finds its isolated config
-        daemon_extra_env=containers_env,
-        storage_driver=driver,
-    )
-
-
-# ============================================================================
 # Unified entry point
 # ============================================================================
 
 
 def get_storage_dir(paths: SessionPaths, settings: HookSettings) -> Path | None:
     """Return the shared container storage directory for tmpfs mounting, or None if disabled."""
-    if settings.container_runtime == "none":
+    if not settings.setup_docker:
         return None
     return paths.container_storage_dir
 
@@ -361,25 +250,18 @@ def _cleanup_stale_docker_pid() -> None:
 async def setup_container_runtime(
     paths: SessionPaths, settings: HookSettings, supervisor: SupervisorClient, tmpfs_mounted: bool
 ) -> ContainerRuntimeSetup:
-    """Set up the configured container runtime (Docker or Podman) under supervisor.
+    """Set up Docker under supervisor.
 
     Idempotent: if the service is already running, skips the start step and
     returns the current state.
 
     Raises:
-        SkipError: If container_runtime is "none".
-        PodmanNotFoundError: If podman is not on PATH (should be installed by apt_setup).
+        SkipError: If setup_docker is False.
     """
-    runtime = settings.container_runtime
+    if not settings.setup_docker:
+        raise SkipError("Docker setup disabled (setup_docker=False)")
 
-    if runtime == "podman":
-        if shutil.which("podman") is None:
-            raise PodmanNotFoundError("podman not found on PATH (apt_setup should have installed it)")
-        spec = _configure_podman(paths, tmpfs_mounted)
-    elif runtime == "docker":
-        spec = _configure_docker(paths, tmpfs_mounted)
-    else:
-        raise SkipError(f"Container runtime disabled (container_runtime={runtime})")
+    spec = _configure_docker(paths, tmpfs_mounted)
 
     socket_url = f"unix://{spec.socket_path}"
 
@@ -387,19 +269,14 @@ async def setup_container_runtime(
         logger.info("%s service already running, skipping setup", spec.service_name)
         status = await _snapshot_status(supervisor, spec.service_name)
         return ContainerRuntimeSetup(
-            runtime=runtime,
-            socket_url=socket_url,
-            status=status,
-            storage_driver=spec.storage_driver,
-            env_vars=spec.client_env_vars,
+            socket_url=socket_url, status=status, storage_driver=spec.storage_driver, env_vars=spec.client_env_vars
         )
 
     # Check for a pre-existing daemon not managed by this supervisor (e.g. the
     # Claude Code web sandbox injects a dockerd before the hook runs).
-    if runtime == "docker" and await _is_docker_socket_responsive(spec.socket_path):
+    if await _is_docker_socket_responsive(spec.socket_path):
         logger.info("Pre-existing dockerd responsive on %s, using it", spec.socket_path)
         return ContainerRuntimeSetup(
-            runtime=runtime,
             socket_url=socket_url,
             status="pre-existing",
             storage_driver=spec.storage_driver,
@@ -409,29 +286,14 @@ async def setup_container_runtime(
     # Clean up stale /var/run/docker.pid before attempting start.  A leftover
     # pid file whose PID has been reused by a non-dockerd process (e.g.
     # supervisord) causes dockerd to abort with "process still running".
-    if runtime == "docker":
-        _cleanup_stale_docker_pid()
+    _cleanup_stale_docker_pid()
 
     logger.info("Configuring %s...", spec.service_name)
 
-    def on_podman_failure(info: ProcessInfo) -> None:
-        log_service_failure("Podman", info)
-        podman_dir = paths.podman_dir
-        logger.error(
-            "Common cause: storage driver mismatch. "
-            "If podman was previously used with a different driver, run: rm -rf %s %s",
-            podman_dir / "storage",
-            podman_dir / "runroot",
-        )
-
-    await _start_service(spec, supervisor, on_failure=on_podman_failure if runtime == "podman" else None)
+    await _start_service(spec, supervisor)
 
     logger.info("%s service started: DOCKER_HOST=%s", spec.service_name, socket_url)
     status = await _snapshot_status(supervisor, spec.service_name)
     return ContainerRuntimeSetup(
-        runtime=runtime,
-        socket_url=socket_url,
-        status=status,
-        storage_driver=spec.storage_driver,
-        env_vars=spec.client_env_vars,
+        socket_url=socket_url, status=status, storage_driver=spec.storage_driver, env_vars=spec.client_env_vars
     )

@@ -1,7 +1,7 @@
 """Shared test helpers for session_start hook e2e tests.
 
 Provides isolated directory setup, environment configuration, and hook execution
-utilities used by both the main session_start tests and the podman integration tests.
+utilities used by the session_start e2e tests.
 """
 
 import asyncio
@@ -75,16 +75,9 @@ def setup_hook_env(
     isolated_dirs: IsolatedDirs,
     mock_proxy: MitmproxyFixture,
     *,
-    container_runtime: str = "none",
+    setup_docker: bool = False,
 ) -> None:
-    """Set up environment variables for running session start hook via monkeypatch.
-
-    Args:
-        monkeypatch: pytest monkeypatch fixture
-        isolated_dirs: Test isolation directories
-        mock_proxy: mitmproxy fixture simulating Anthropic's proxy
-        container_runtime: Container runtime to use ("none", "podman", "docker")
-    """
+    """Set up environment variables for running session start hook via monkeypatch."""
     # Create combined CA bundle with system CAs + mock proxy CA
     # This allows bazelisk and other TLS clients to trust the mock proxy
     system_ca_path = next((p for p in SYSTEM_CA_BUNDLES if p.exists()), None)
@@ -125,7 +118,7 @@ def setup_hook_env(
     mock_ca_path.write_bytes(mock_proxy.ca_cert_pem)
     monkeypatch.setenv("ANTHROPIC_CA_PATH", str(mock_ca_path))
 
-    monkeypatch.setenv(settings.ENV_CONTAINER_RUNTIME, container_runtime)
+    monkeypatch.setenv(settings.ENV_SETUP_DOCKER, str(setup_docker))
 
 
 def make_hook_input(project_dir: Path, source: HookSource = HookSource.STARTUP) -> str:

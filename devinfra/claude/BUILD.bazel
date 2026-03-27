@@ -54,10 +54,6 @@ py_library(
     srcs = ["settings.py"],
     data = [
         "config/bazelrc.mako",
-        "//devinfra/claude/config/podman:containers.conf",
-        "//devinfra/claude/config/podman:crun_gvisor_wrapper.py",
-        "//devinfra/claude/config/podman:policy.json",
-        "//devinfra/claude/config/podman:registries.conf",
     ],
     imports = ["../.."],
     visibility = ["//visibility:public"],

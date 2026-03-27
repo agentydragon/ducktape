@@ -13,12 +13,11 @@ import importlib.resources
 import os
 from enum import StrEnum
 from importlib.resources.abc import Traversable
-from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Config files bundled with the package (infrastructure config: bazelrc, env, podman)
+# Config files bundled with the package (infrastructure config: bazelrc, env)
 CONFIG_FILES: Traversable = importlib.resources.files("devinfra.claude.config")
 
 # TODO: Rename prefix to DUCKTAPE_CLAUDE_ to match new dir name.
@@ -34,7 +33,7 @@ def _env_name(field: str) -> str:
 # Environment variable names (used by tests and env_file.py)
 ENV_SUPERVISOR_PORT = _env_name("supervisor_port")
 ENV_AUTH_PROXY_PORT = _env_name("auth_proxy_port")
-ENV_CONTAINER_RUNTIME = _env_name("container_runtime")
+ENV_SETUP_DOCKER = _env_name("setup_docker")
 ENV_SESSION_DIR = _env_name("session_dir")
 
 
@@ -66,9 +65,7 @@ class HookSettings(BaseSettings):
     # Feature flags (enable/disable installations)
     install_mkcert: bool = Field(default=True, description="Install mkcert and generate localhost TLS cert")
     install_apt_packages: bool = True
-    container_runtime: Literal["podman", "docker", "none"] = Field(
-        default="docker", description="Container runtime to set up (podman, docker, or none)"
-    )
+    setup_docker: bool = Field(default=True, description="Set up Docker daemon under supervisor")
 
     k8s_token: str | None = Field(default=None, description="K8s SA token for reading secrets from cluster")
 
