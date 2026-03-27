@@ -1,13 +1,13 @@
 """Tool input models for Claude Code tools."""
 
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class GrepOutputMode(str, Enum):
+class GrepOutputMode(StrEnum):
     CONTENT = "content"
     FILES_WITH_MATCHES = "files_with_matches"
     COUNT = "count"

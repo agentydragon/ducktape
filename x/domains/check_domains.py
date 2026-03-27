@@ -160,7 +160,7 @@ class DomainCache:
 
 def check_domain_rdap(domain: str) -> Status:
     """Check domain availability via RDAP."""
-    tld = domain.split(".")[-1]
+    tld = domain.rsplit(".", maxsplit=1)[-1]
 
     # Build list of RDAP URLs to try
     urls = []

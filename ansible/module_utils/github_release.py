@@ -228,7 +228,7 @@ class ArchiveInstall(GitHubInstaller):
 
     def get_additional_info(self, asset_url: str) -> dict[str, Any]:
         """Determine extracted directory name and pattern from asset URL."""
-        filename = asset_url.split("/")[-1]
+        filename = asset_url.rsplit("/", maxsplit=1)[-1]
         # Extract base name without extension(s)
         for ext in ARCHIVES:
             if filename.endswith(ext):

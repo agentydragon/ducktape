@@ -6,7 +6,7 @@ only x/-specific extensions (typed tool inputs via TOOL_INPUT_MAP, HookContext) 
 """
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID, uuid4
@@ -39,7 +39,7 @@ TOOL_INPUT_MAP: dict[str, type[BaseModel]] = {
 }
 
 
-class CompactTrigger(str, Enum):
+class CompactTrigger(StrEnum):
     """Trigger type for compaction (manual or auto-triggered)."""
 
     MANUAL = "manual"

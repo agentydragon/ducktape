@@ -95,7 +95,7 @@ class SeatbeltExecServer(EnhancedFastMCP):
             # Pydantic has already validated argv min length and max_bytes range
             max_b = input.max_bytes
 
-            cwd_path = Path(input.cwd).resolve() if input.cwd else None
+            cwd_path = await anyio.Path(input.cwd).resolve() if input.cwd else None
 
             # Stateless: require inline policy (validated by Pydantic)
             policy = input.policy

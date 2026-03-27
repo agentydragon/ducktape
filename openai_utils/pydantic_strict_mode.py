@@ -155,7 +155,7 @@ def validate_openai_strict_mode_schema(schema: dict[str, Any], model_name: str =
                 # $defs creates a new schema context, so count properties from after the last $defs
                 if ".$defs." in path:
                     # Schema inside $defs - count properties from after the defs entry
-                    path_after_defs = path.split(".$defs.")[-1]
+                    path_after_defs = path.rsplit(".$defs.", maxsplit=1)[-1]
                     properties_count = path_after_defs.count(".properties.")
                 else:
                     properties_count = path.count(".properties.")

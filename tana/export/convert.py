@@ -30,7 +30,7 @@ from tana.render.inline_refs import parse_inline_date
 def _journal_headline(name: str) -> str:
     # pattern: YYYY-MM-DD - Weekday
     try:
-        date_str = name.split(" ")[0]  # "2025-05-06"
+        date_str = name.split(" ", maxsplit=1)[0]  # "2025-05-06"
         dt = datetime.strptime(date_str, "%Y-%m-%d")
         # TODO: detect day more robustly
         return dt.strftime("%a, %b %-d")  # "Tue, May 6"
@@ -339,7 +339,7 @@ def _roots(store: TanaGraph) -> list[BaseNode]:
                 and not isinstance(n, TupleNode)  # tuples never roots
             )
         ],
-        key=lambda n: (n.props.created or 0),
+        key=lambda n: n.props.created or 0,
     )
 
 

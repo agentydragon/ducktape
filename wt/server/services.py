@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
@@ -136,15 +137,19 @@ async def scan_worktrees(worktrees_dir: Path) -> set[DiscoveredWorktree]:
     Keeps a simple rule: include direct subdirectories that contain a `.git/`.
     Returns a set of DiscoveredWorktree with ids derived from directory names.
     """
-    if not worktrees_dir.exists():
-        return set()
-    current: set[DiscoveredWorktree] = set()
-    for path in worktrees_dir.iterdir():
-        if not path.is_dir():
-            continue
-        if (path / ".git").exists():
-            current.add(DiscoveredWorktree(path, path.name, make_worktree_id(path.name)))
-    return current
+
+    def _scan() -> set[DiscoveredWorktree]:
+        if not worktrees_dir.exists():
+            return set()
+        current: set[DiscoveredWorktree] = set()
+        for path in worktrees_dir.iterdir():
+            if not path.is_dir():
+                continue
+            if (path / ".git").exists():
+                current.add(DiscoveredWorktree(path, path.name, make_worktree_id(path.name)))
+        return current
+
+    return await asyncio.to_thread(_scan)
 
 
 @runtime_checkable

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from enum import Enum, StrEnum
+from enum import StrEnum
 from importlib import resources
 from typing import Any
 
@@ -18,7 +18,7 @@ class ApprovalRequest(BaseModel):
     tool_call: ApprovalToolCall
 
 
-class PolicyDecision(str, Enum):
+class PolicyDecision(StrEnum):
     """Policy decision outcomes for approval evaluation."""
 
     ALLOW = "allow"

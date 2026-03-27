@@ -71,7 +71,7 @@ async def read_daemon_pid(pid_path: Path) -> int | None:
     Returns:
         PID as int if file exists and contains valid PID, None otherwise.
     """
-    if not pid_path.exists():
+    if not await asyncio.to_thread(pid_path.exists):
         return None
 
     try:

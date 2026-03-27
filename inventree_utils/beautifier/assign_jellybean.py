@@ -30,7 +30,7 @@ def build_editor_file(api, edited_parts):
         Naive guess for a "jellybean" P/N. e.g.: "74HC164, SOIC-14" -> "74HC164"
         """
         proposed = part.name.split()[0][:20].strip(",")
-        return proposed if proposed else "JELLYBEAN"
+        return proposed or "JELLYBEAN"
 
     rows = [(part_url(api, part), _propose_jellybean(part), part.name) for part in edited_parts]
     table = build_table(rows)

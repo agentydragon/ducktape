@@ -395,20 +395,21 @@ class TaskClaude:
     async def _run_setup_script(self, script_path: str, script_type: str, log_prefix: str):
         """Run a setup script with streaming output and error handling."""
         setup_script = Path(script_path)
-        if not setup_script.exists():
+        if not await asyncio.to_thread(setup_script.exists):
             raise FileNotFoundError(f"{script_type} script not found: {setup_script}")
 
         # Debug: Log the exact command being executed
         c = self._container_or_raise()
         cmd_args = [str(setup_script), c.id, self.task_id, str(self._output_dir)]
+        script_stat = await asyncio.to_thread(setup_script.stat)
         self._logger.info(
             f"Running {script_type.lower()} script",
             script=str(setup_script),
             container_id=c.id,
             task_id=self.task_id,
             cmd_args=cmd_args,
-            script_permissions=oct(setup_script.stat().st_mode),
-            script_size=setup_script.stat().st_size,
+            script_permissions=oct(script_stat.st_mode),
+            script_size=script_stat.st_size,
         )
 
         process = await asyncio.create_subprocess_exec(

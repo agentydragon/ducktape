@@ -3,6 +3,7 @@ from __future__ import annotations
 import secrets
 from pathlib import Path
 
+import anyio
 import pytest
 import pytest_bazel
 from fastmcp.client import Client
@@ -113,7 +114,7 @@ async def test_sandbox_exec_write_denied(seatbelt_session) -> None:
     assert isinstance(res.stderr, str)  # Short error should not be truncated
     assert res.stderr != ""
     # File should not exist (write was denied)
-    assert not Path(out_path).exists()
+    assert not await anyio.Path(out_path).exists()
     # Trace collection remains flaky across versions; rely on stderr for now
     # TODO(mpokorny): Revisit trace enablement and policy for reliable capture
 

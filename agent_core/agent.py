@@ -412,7 +412,7 @@ class Agent:
         """
         # UserMessage.content is always present (list[InputTextPart])
         # AssistantMessage.content can be None or list[OutputTextPart]
-        content = msg.content if msg.content else []
+        content = msg.content or []
         return "\n".join(part.text for part in content)
 
     def _notify_user_text(self, text: str) -> None:

@@ -323,7 +323,7 @@ class GitStatusdProtocol:
     def _safe_get_optional_string(fields: list[str], index: int) -> str | None:
         """Get optional string field, returning None for empty strings."""
         value = fields[index]
-        return value if value else None
+        return value or None
 
     @staticmethod
     def _safe_get_int(fields: list[str], index: int) -> int | None:

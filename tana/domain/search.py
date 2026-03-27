@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from enum import Enum, StrEnum
+from enum import StrEnum
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -18,7 +18,7 @@ class SearchKind(StrEnum):
     BOOLEAN = "boolean"
 
 
-class BooleanOperator(str, Enum):
+class BooleanOperator(StrEnum):
     AND = "AND"
     OR = "OR"
     NOT = "NOT"

@@ -1,7 +1,7 @@
 """Configuration models for Claude Linter v2 using Pydantic."""
 
 import re
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -18,7 +18,7 @@ class Violation(BaseModel):
     file_path: str | None = Field(None, description="File path where violation occurs")
 
 
-class HookType(str, Enum):
+class HookType(StrEnum):
     """Types of Claude Code hooks."""
 
     PRE = "pre"
@@ -26,7 +26,7 @@ class HookType(str, Enum):
     STOP = "stop"
 
 
-class RuleAction(str, Enum):
+class RuleAction(StrEnum):
     """Actions that can be taken by rules."""
 
     ALLOW = "allow"
@@ -34,7 +34,7 @@ class RuleAction(str, Enum):
     WARN = "warn"
 
 
-class AutofixCategory(str, Enum):
+class AutofixCategory(StrEnum):
     """Categories of autofixes."""
 
     FORMATTING = "formatting"

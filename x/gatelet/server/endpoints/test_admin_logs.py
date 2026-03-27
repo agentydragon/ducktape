@@ -1,3 +1,4 @@
+import asyncio
 import re
 from http import HTTPStatus
 from pathlib import Path
@@ -26,7 +27,7 @@ async def test_view_logs(client: AsyncClient, test_settings: Settings):
     # test_settings fixture already injects settings via dependency override
     # Write test content to the log file configured in test_settings
     log_file = Path(test_settings.server.log_file)
-    log_file.write_text("line1\nline2\nline3\n", encoding="utf-8")
+    await asyncio.to_thread(log_file.write_text, "line1\nline2\nline3\n", encoding="utf-8")
 
     session = await _login(client)
     response = await client.get("/admin/logs/", cookies={"admin_session": session})

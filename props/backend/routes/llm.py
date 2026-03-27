@@ -90,7 +90,7 @@ def _get_upstream_route(model_id: str, session: Session, config: PropsConfig) ->
     api_key = os.environ.get(upstream_config.api_key_env, "")
 
     # Determine model name to send (NULL = use model_id)
-    model_name = metadata.upstream_model if metadata.upstream_model else model_id
+    model_name = metadata.upstream_model or model_id
 
     return UpstreamRoute(url=upstream_url, api_key=api_key, model_name=model_name)
 

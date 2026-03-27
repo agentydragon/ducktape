@@ -52,7 +52,7 @@ def _assert_column_before(result: str, filename: str, first: str, second: str, f
 
     first_pos = line.find(first) if first in line else -1
 
-    second_pos = _find_tree_pos(line) if second in ["tree_char"] else line.find(second) if second in line else -1
+    second_pos = _find_tree_pos(line) if second == "tree_char" else line.find(second) if second in line else -1
 
     if first_pos != -1 and second_pos != -1:
         assert first_pos < second_pos, (

@@ -156,8 +156,8 @@ class WtDaemon:
         # Build DI services
         self.index_service = WorktreeIndexService(
             get_index=lambda: self.worktree_index,
-            rebuild_index=lambda: self.rebuild_index(),
-            run_discovery_once=lambda: self._run_discovery_once(),
+            rebuild_index=self.rebuild_index,
+            run_discovery_once=self._run_discovery_once,
         )
 
         # Helper to fetch known worktree info without repeated membership checks
@@ -165,18 +165,18 @@ class WtDaemon:
             return self.known_worktrees.get(p)
 
         self.gitstatusd_service = GitstatusdService(
-            get_client=lambda p: (self.gitstatusd_clients.get(wt.wtid) if (wt := get_known_worktree(p)) else None),
+            get_client=lambda p: self.gitstatusd_clients.get(wt.wtid) if (wt := get_known_worktree(p)) else None,
             iter_client_paths=lambda: list(self.known_worktrees.keys()),
             ensure_watcher_for_path=lambda p: (
                 self._ensure_git_watcher(get_known_worktree(p)) if get_known_worktree(p) else asyncio.sleep(0)
             ),
             list_watchers=lambda: list(self.git_watchers.values()),
-            clear_watchers=lambda: self.git_watchers.clear(),
+            clear_watchers=self.git_watchers.clear,
         )
         self.discovery_service = DiscoveryService(
             lambda: self.discovery_scanning,
-            periodic=lambda: self._periodic_discovery_wrapper(),
-            cancel_periodic=lambda: self._cancel_periodic_discovery(),
+            periodic=self._periodic_discovery_wrapper,
+            cancel_periodic=self._cancel_periodic_discovery,
         )
         # WtDaemon implements WorktreeCoordinator protocol directly
 

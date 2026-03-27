@@ -89,7 +89,7 @@ def _cache_path(frame_file: Path) -> Path:
 
 def _parse_clock(clock_str: str) -> datetime.datetime:
     """Parse HH:MM:SS.mmm clock string."""
-    padded = clock_str + "000" if len(clock_str.split(".")[-1]) == 3 else clock_str
+    padded = clock_str + "000" if len(clock_str.rsplit(".", maxsplit=1)[-1]) == 3 else clock_str
     return datetime.datetime.strptime(padded, "%H:%M:%S.%f")
 
 
@@ -151,7 +151,8 @@ def analyze_pixeldiff(
 
 async def _query_frame(client: openai.AsyncOpenAI, frame_file: Path, sem: asyncio.Semaphore) -> dict:
     """Query vision API for a single frame. Returns parsed result dict."""
-    image_b64 = base64.b64encode(frame_file.read_bytes()).decode()
+    raw = await asyncio.to_thread(frame_file.read_bytes)
+    image_b64 = base64.b64encode(raw).decode()
     async with sem:
         resp = await client.chat.completions.create(
             model="gpt-4o",
