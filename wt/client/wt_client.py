@@ -519,7 +519,7 @@ class WtClient:
         except (TimeoutError, ConnectionError, FileNotFoundError, OSError, json.JSONDecodeError, ValidationError) as e:
             logger.exception("RPC %s failed", method)
             diag = self._collect_daemon_diagnostics()
-            base = f"RPC {method} failed ({e.code}): {e}" if isinstance(e, RpcError) else f"RPC {method} failed: {e}"
+            base = f"RPC {method} failed: {e}"
             if diag:
                 base = base + "\n" + diag
             raise RuntimeError(base) from e
