@@ -243,7 +243,7 @@ class AgentRegistry:
             ImageResolutionError: If tag doesn't exist or proxy returns error
         """
         if is_digest(ref):
-            logger.debug(f"Reference {ref} is already a digest, returning as-is")
+            logger.debug("Reference %s is already a digest, returning as-is", ref)
             return ref
 
         repository = str(agent_type)
@@ -251,31 +251,33 @@ class AgentRegistry:
         proxy_url = self._registry_config.proxy_url
         manifest_url = f"{proxy_url}/v2/{repository}/manifests/{ref}"
         headers = {
-            "Accept": ", ".join(
-                ["application/vnd.docker.distribution.manifest.v2+json", "application/vnd.oci.image.manifest.v1+json"]
-            )
+            "Accept": "application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json"
         }
         auth = httpx.BasicAuth(self._db_config.user, self._db_config.password)
 
-        logger.info(f"Resolving tag {repository}:{ref} via proxy at {proxy_url}")
+        logger.info("Resolving tag %s:%s via proxy at %s", repository, ref, proxy_url)
 
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.head(manifest_url, headers=headers, auth=auth, timeout=10)
         except httpx.HTTPError as e:
-            raise ImageResolutionError(f"Failed to resolve tag {repository}:{ref}: {e}")
+            msg = f"Failed to resolve tag {repository}:{ref}: {e}"
+            raise ImageResolutionError(msg)
 
         if resp.status_code == 404:
-            raise ImageResolutionError(f"Image not found: {repository}:{ref}")
+            msg = f"Image not found: {repository}:{ref}"
+            raise ImageResolutionError(msg)
 
         if resp.status_code != 200:
-            raise ImageResolutionError(f"Proxy returned error {resp.status_code} for {repository}:{ref}: {resp.text}")
+            msg = f"Proxy returned error {resp.status_code} for {repository}:{ref}: {resp.text}"
+            raise ImageResolutionError(msg)
 
         digest = resp.headers.get("Docker-Content-Digest")
         if not digest:
-            raise ImageResolutionError(f"Proxy didn't return Docker-Content-Digest header for {repository}:{ref}")
+            msg = f"Proxy didn't return Docker-Content-Digest header for {repository}:{ref}"
+            raise ImageResolutionError(msg)
 
-        logger.info(f"Resolved {repository}:{ref} → {digest}")
+        logger.info("Resolved %s:%s → %s", repository, ref, digest)
         return str(digest)
 
     async def resolve_image(self, agent_type: AgentType, ref: str) -> ResolvedImage:
@@ -345,11 +347,12 @@ class AgentRegistry:
             found_run = session.get(AgentRun, agent_run_id)
             assert found_run is not None, f"Agent run {agent_run_id} not found in database"
             if found_run.status != AgentRunStatus.IN_PROGRESS:
-                raise RuntimeError(f"Agent run {agent_run_id} expected IN_PROGRESS but found {found_run.status}")
+                msg = f"Agent run {agent_run_id} expected IN_PROGRESS but found {found_run.status}"
+                raise RuntimeError(msg)
             found_run.status = status
             found_run.container_exit_code = container_exit_code
             session.commit()
-            logger.info(f"Updated {agent_run_id} status to {status}")
+            logger.info("Updated %s status to %s", agent_run_id, status)
         return status
 
     async def _start_agent(
@@ -380,14 +383,16 @@ class AgentRegistry:
         with self._db.session() as session:
             status = session.get(AgentRunBudgetStatus, parent_run_id)
             if status is None:
-                raise BudgetExceededError(f"Parent run {parent_run_id} not found")
+                msg = f"Parent run {parent_run_id} not found"
+                raise BudgetExceededError(msg)
 
             if child_budget_usd > status.remaining_usd:
-                raise BudgetExceededError(
+                msg = (
                     f"Cannot spawn child with ${child_budget_usd:.2f} budget: "
                     f"parent has ${status.remaining_usd:.2f} remaining "
                     f"(${status.tree_spent_usd:.2f} spent of ${status.budget_usd:.2f})"
                 )
+                raise BudgetExceededError(msg)
 
     def _create_run(
         self,
@@ -566,7 +571,8 @@ class AgentRegistry:
         Returns agent run ID. Query DB for final status.
         """
         if not examples:
-            raise ValueError("examples must not be empty")
+            msg = "examples must not be empty"
+            raise ValueError(msg)
 
         if output_dir is None:
             output_dir = Path(tempfile.mkdtemp(prefix="improve_agent_"))

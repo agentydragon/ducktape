@@ -50,17 +50,17 @@ def find_ruff_binary() -> str | None:
     if env_val := os.environ.get(_RUFF_BIN_ENV):
         # Try as rlocation first
         if resolved := _resolve_rlocation(env_val):
-            logger.debug(f"Resolved ruff via RUFF_BIN rlocation: {resolved}")
+            logger.debug("Resolved ruff via RUFF_BIN rlocation: %s", resolved)
             return resolved
         # Try as direct path
         if Path(env_val).exists():
-            logger.debug(f"Resolved ruff via RUFF_BIN path: {env_val}")
+            logger.debug("Resolved ruff via RUFF_BIN path: %s", env_val)
             return env_val
-        logger.warning(f"RUFF_BIN set to {env_val!r} but could not resolve")
+        logger.warning("RUFF_BIN set to %r but could not resolve", env_val)
 
     # 2. PATH lookup
     if which_path := shutil.which("ruff"):
-        logger.debug(f"Found ruff on PATH: {which_path}")
+        logger.debug("Found ruff on PATH: %s", which_path)
         return which_path
 
     return None

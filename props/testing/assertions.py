@@ -13,4 +13,5 @@ def assert_no_pending(snapshot_slug: str, db: Database) -> None:
     """
     drift = get_drift(snapshot_slug, db)
     if drift.grading or drift.clustering:
-        raise AssertionError(f"Expected no pending work for {snapshot_slug}. drift={drift}")
+        msg = f"Expected no pending work for {snapshot_slug}. drift={drift}"
+        raise AssertionError(msg)

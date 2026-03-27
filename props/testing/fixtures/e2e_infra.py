@@ -98,7 +98,7 @@ def _delete_all_manifests(registry_url: str) -> None:
 
             # Delete by digest
             httpx.delete(f"{registry_url}/v2/{repo}/manifests/{digest}", timeout=5.0).raise_for_status()
-            logger.debug(f"Deleted {repo}:{tag} ({digest})")
+            logger.debug("Deleted %s:%s (%s)", repo, tag, digest)
 
 
 @pytest.fixture

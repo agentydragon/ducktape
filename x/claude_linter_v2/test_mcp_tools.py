@@ -289,7 +289,7 @@ class TestMCPToolLogging:
             tool_input={
                 "event": "user_action",
                 "properties": {"action": "click", "target": "button"},
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(tz=datetime.UTC).isoformat(),
             },
             tool_result={"tracked": True},
         )

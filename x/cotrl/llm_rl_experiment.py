@@ -155,7 +155,7 @@ class ExperimentLogger:
     """Handles online logging of experiment data."""
 
     def __init__(self, experiment_name: str):
-        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.timestamp = datetime.now(tz=datetime.UTC).strftime("%Y%m%d_%H%M%S")
         self.log_dir = Path(f"logs/{experiment_name}_{self.timestamp}")
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -165,7 +165,7 @@ class ExperimentLogger:
         self.summary_log = self.log_dir / "summary.json"
 
         # Track experiment start time
-        self.start_time = datetime.now()
+        self.start_time = datetime.now(tz=datetime.UTC)
 
     async def log_episode(self, model: str, env_name: str, run_num: int, episode_num: int, episode: Episode):
         """Log episode data as it completes."""
@@ -208,7 +208,7 @@ class ExperimentLogger:
         """Log experiment summary."""
         summary = SummaryData(
             experiment_start=self.start_time,
-            duration_seconds=(datetime.now() - self.start_time).total_seconds(),
+            duration_seconds=(datetime.now(tz=datetime.UTC) - self.start_time).total_seconds(),
             models=MODELS,
             environments=ENVIRONMENTS,
             episodes_per_run=EPISODES_PER_RUN,
@@ -291,7 +291,8 @@ Choose action:"""
             self.conversation_history.append(Message(role="assistant", content=action_str))
             return action
 
-        raise ValueError(f"LLM returned invalid action {action} (must be 0-{action_space_size - 1})")
+        msg = f"LLM returned invalid action {action} (must be 0-{action_space_size - 1})"
+        raise ValueError(msg)
 
     def reset(self):
         """Reset conversation history for new episode."""
@@ -464,7 +465,7 @@ def plot_results(all_runs: list[Run]):
     plt.tight_layout()
 
     # Save plot
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(tz=datetime.UTC).strftime("%Y%m%d_%H%M%S")
     plt.savefig(f"llm_rl_results_{timestamp}.png", dpi=300, bbox_inches="tight")
     plt.savefig(f"llm_rl_results_{timestamp}.pdf", bbox_inches="tight")
     print(f"\nPlots saved as llm_rl_results_{timestamp}.png/.pdf")
@@ -521,7 +522,7 @@ async def main():
             all_runs.append(result)
 
     # Save raw results with full trajectories
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(tz=datetime.UTC).strftime("%Y%m%d_%H%M%S")
     results_file = f"llm_rl_results_{timestamp}.json"
     trajectories_file = f"llm_rl_trajectories_{timestamp}.jsonl"
 
@@ -589,7 +590,7 @@ async def main():
     plot_results(all_runs)
 
     # Save plots to log directory too
-    plot_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    plot_timestamp = datetime.now(tz=datetime.UTC).strftime("%Y%m%d_%H%M%S")
     plt.savefig(logger.log_dir / f"llm_rl_results_{plot_timestamp}.png", dpi=300, bbox_inches="tight")
     plt.savefig(logger.log_dir / f"llm_rl_results_{plot_timestamp}.pdf", bbox_inches="tight")
 

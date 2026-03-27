@@ -48,7 +48,7 @@ class ViolationTracker:
             "message": message,
             "severity": severity,
             "rule": rule,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(tz=datetime.UTC).isoformat(),
             "fixed": False,
         }
 

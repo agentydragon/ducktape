@@ -269,7 +269,7 @@ class _PolicyGatewayMiddleware(Middleware):
         evaluate_policy: Callable[[PolicyRequest], Awaitable[PolicyResponse]],
         record_outcome: Callable[[str, str, ApprovalOutcome], Awaitable[None]] | None = None,
     ) -> None:
-        self._hub = hub
+        self.hub = hub
         self._evaluate = evaluate_policy
         self._record = record_outcome
         self._inflight: dict[str, str] = {}
@@ -288,14 +288,14 @@ class _PolicyGatewayMiddleware(Middleware):
         tool_key = name
 
         # Evaluate policy
-        logger.warning(f"[POLICY_MW] Evaluating policy for tool: {name}")
+        logger.warning("[POLICY_MW] Evaluating policy for tool: %s", name)
         try:
             decision_res = await self._evaluate(
                 PolicyRequest(name=name, arguments_json=_serialize_arguments_json(arguments))
             )
             decision = decision_res.decision
             rationale = decision_res.rationale
-            logger.warning(f"[POLICY_MW] Decision for {name}: {decision} ({rationale})")
+            logger.warning("[POLICY_MW] Decision for %s: %s (%s)", name, decision, rationale)
         except Exception as e:
             logger.warning("policy evaluator error", exc_info=e)
             raise McpError(
@@ -353,7 +353,7 @@ class _PolicyGatewayMiddleware(Middleware):
             tool_key=tool_key,
             tool_call=ApprovalToolCall(name=name, call_id=call_id, args_json=_serialize_arguments_json(arguments)),
         )
-        decision_obj = await self._hub.await_decision(call_id, req)
+        decision_obj = await self.hub.await_decision(call_id, req)
 
         if isinstance(decision_obj, ContinueDecision):
             if self._record is not None:
@@ -442,7 +442,7 @@ class PolicyReaderServer(EnhancedFastMCP):
                         tool_key=req.tool_key,
                         args_json=req.tool_call.args_json if req.tool_call else None,
                     )
-                    for call_id, req in engine._hub.pending.items()
+                    for call_id, req in engine.hub.pending.items()
                 ]
             )
             return response.model_dump_json()
@@ -452,7 +452,7 @@ class PolicyReaderServer(EnhancedFastMCP):
         # Register tool with typed attribute
         async def evaluate_policy(input: PolicyRequest) -> PolicyResponse:
             """Evaluate a policy decision for a single tool call via Docker-backed evaluator."""
-            return await engine._evaluate_policy(input)
+            return await engine.evaluate_policy(input)
 
         self.evaluate_policy_tool = self.flat_model()(evaluate_policy)
 
@@ -511,13 +511,13 @@ class PolicyAdminServer(EnhancedFastMCP):
             decision = input.decision
 
             if decision == CallDecision.APPROVE:
-                engine._hub.resolve(call_id, ContinueDecision())
+                engine.hub.resolve(call_id, ContinueDecision())
             elif decision == CallDecision.DENY_ABORT:
-                engine._hub.resolve(call_id, AbortTurnDecision(reason="user_denied"))
+                engine.hub.resolve(call_id, AbortTurnDecision(reason="user_denied"))
             elif decision == CallDecision.DENY_CONTINUE:
                 # Continue without executing - resolve with continue decision
                 # The call is skipped but turn continues
-                engine._hub.resolve(call_id, ContinueDecision())
+                engine.hub.resolve(call_id, ContinueDecision())
             return SimpleOk()
 
         async def decide_proposal(input: DecideProposalArgs) -> SimpleOk:
@@ -572,7 +572,7 @@ class PolicyEngine:
         self._bg_tasks: set[asyncio.Task] = set()
 
         # Create hub with on_change callback that broadcasts pending://calls
-        self._hub = _ApprovalHub(on_change=self._on_hub_change)
+        self.hub = _ApprovalHub(on_change=self._on_hub_change)
 
         # Create owned servers (now using extracted server classes)
         self.reader = PolicyReaderServer(self)
@@ -581,7 +581,7 @@ class PolicyEngine:
 
         # Protocol-level resource subscriptions on reader
         self._session_subscriptions: defaultdict[ServerSession, set[AnyUrl]] = defaultdict(set)
-        mcp_server = self.reader._mcp_server
+        mcp_server = self.reader.mcp_server
 
         def _subscriptions() -> set[AnyUrl]:
             return self._session_subscriptions[mcp_server.request_context.session]
@@ -596,7 +596,7 @@ class PolicyEngine:
 
         # Create gateway middleware (uses internal evaluate method)
         self._gateway = _PolicyGatewayMiddleware(
-            hub=self._hub, evaluate_policy=self._evaluate_policy, record_outcome=self._record_outcome
+            hub=self.hub, evaluate_policy=self.evaluate_policy, record_outcome=self._record_outcome
         )
 
         # Internal reader client for gateway (created lazily)
@@ -615,13 +615,13 @@ class PolicyEngine:
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
 
-    async def _evaluate_policy(self, request: PolicyRequest) -> PolicyResponse:
+    async def evaluate_policy(self, request: PolicyRequest) -> PolicyResponse:
         """Evaluate policy for a tool call via Docker-backed evaluator (uses injected client)."""
-        logger.warning(f"[EVAL_START] Starting policy evaluation for {request.name}")
+        logger.warning("[EVAL_START] Starting policy evaluation for %s", request.name)
         evaluator = ContainerPolicyEvaluator(agent_id=self.agent_id, docker_client=self._docker_client, engine=self)
         logger.warning("[EVAL_EVALUATOR] Evaluator created, calling decide")
         result = await evaluator.decide(request)
-        logger.warning(f"[EVAL_RESULT] Got result: {result.decision}")
+        logger.warning("[EVAL_RESULT] Got result: %s", result.decision)
         return result
 
     async def _record_outcome(self, call_id: str, tool_key: str, outcome: ApprovalOutcome) -> None:

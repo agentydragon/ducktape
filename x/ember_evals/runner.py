@@ -37,10 +37,11 @@ def _get_repo_root() -> Path:
         if (parent / "k8s" / "helm" / "ember").exists():
             return parent
 
-    raise RuntimeError(
+    msg = (
         "Cannot locate ducktape repository root. Set DUCKTAPE_REPO_ROOT environment variable "
         "or ensure this runs from within the ducktape repository."
     )
+    raise RuntimeError(msg)
 
 
 REPO_ROOT = _get_repo_root()
@@ -70,7 +71,8 @@ def get_suite_option(key: str) -> SuiteOption:
         return SUITE_REGISTRY[key]
     except KeyError as exc:
         allowed = ", ".join(suite_keys())
-        raise CommandError(f"Unknown evaluation suite '{key}'. Available suites: {allowed}") from exc
+        msg = f"Unknown evaluation suite '{key}'. Available suites: {allowed}"
+        raise CommandError(msg) from exc
 
 
 def ensure_tools_available(build_required: bool) -> None:
@@ -79,7 +81,8 @@ def ensure_tools_available(build_required: bool) -> None:
         tools.append("docker")
     for tool in tools:
         if shutil.which(tool) is None:
-            raise RuntimeError(f"{tool} not found in PATH")
+            msg = f"{tool} not found in PATH"
+            raise RuntimeError(msg)
 
 
 def sanitize_for_k8s(value: str, fallback: str) -> str:
@@ -132,7 +135,7 @@ def write_values_file(path: Path, payload: Mapping[str, object]) -> None:
 def make_base_run_id(explicit: str | None) -> str:
     if explicit:
         return sanitize_for_k8s(explicit, "eval")
-    timestamp = datetime.datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%d-%H%M%S")
     return f"eval-{timestamp}"
 
 
@@ -141,7 +144,7 @@ async def git_output(*args: str) -> str:
 
 
 async def compute_image_tag() -> str:
-    timestamp = datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    timestamp = datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%d%H%M%S")
     try:
         short_sha = await git_output("git", "rev-parse", "--short", "HEAD")
     except CommandError:
@@ -169,10 +172,12 @@ def load_base_values() -> dict[str, object]:
 
 def split_image_ref(image: str) -> tuple[str, str]:
     if ":" not in image:
-        raise CommandError(f"Image reference '{image}' must include a tag")
+        msg = f"Image reference '{image}' must include a tag"
+        raise CommandError(msg)
     repository, tag = image.rsplit(":", 1)
     if not repository or not tag:
-        raise CommandError(f"Invalid image reference '{image}'")
+        msg = f"Invalid image reference '{image}'"
+        raise CommandError(msg)
     return repository, tag
 
 
@@ -235,7 +240,7 @@ async def execute_run_async(request: EvalRunRequest) -> EvalRunMetadata:
         suite_version=request.suite.version,
         labels=request.labels,
         secrets=request.secrets,
-        started_at=datetime.datetime.utcnow().isoformat() + "Z",
+        started_at=datetime.datetime.now(tz=datetime.UTC).isoformat() + "Z",
         status="deploying",
     )
 
@@ -295,7 +300,7 @@ async def execute_run_async(request: EvalRunRequest) -> EvalRunMetadata:
                 print("[ember-eval] No scenarios provided; skipping scenario execution.")
 
         metadata.status = "ready"
-        metadata.ready_at = datetime.datetime.utcnow().isoformat() + "Z"
+        metadata.ready_at = datetime.datetime.now(tz=datetime.UTC).isoformat() + "Z"
         write_artifact(artifact_dir / "metadata.json", metadata.model_dump())
         if transcript.events:
             write_artifact(artifact_dir / "matrix_transcript.json", transcript.model_dump())
@@ -306,7 +311,7 @@ async def execute_run_async(request: EvalRunRequest) -> EvalRunMetadata:
         return metadata
     except Exception as exc:
         metadata.status = "failed"
-        metadata.failed_at = datetime.datetime.utcnow().isoformat() + "Z"
+        metadata.failed_at = datetime.datetime.now(tz=datetime.UTC).isoformat() + "Z"
         metadata.error = str(exc)
         if transcript.events:
             write_artifact(artifact_dir / "matrix_transcript.json", transcript.model_dump())
@@ -341,9 +346,11 @@ def plan_runs(
     pad_width = len(str(args.runs))
 
     if args.runs > 1 and (args.namespace or args.release):
-        raise ValueError("Cannot override namespace/release when running multiple evaluations.")
+        msg = "Cannot override namespace/release when running multiple evaluations."
+        raise ValueError(msg)
     if args.runs > 1 and args.matrix_room_id:
-        raise ValueError("Cannot reuse a fixed Matrix room when running multiple evaluations.")
+        msg = "Cannot reuse a fixed Matrix room when running multiple evaluations."
+        raise ValueError(msg)
     repository = GiteaRepository.parse(args.gitea_repo)
 
     for index in range(args.runs):
@@ -389,9 +396,11 @@ def plan_runs(
 
 async def run_eval_async(args: argparse.Namespace) -> None:
     if args.runs < 1:
-        raise ValueError("runs must be >= 1")
+        msg = "runs must be >= 1"
+        raise ValueError(msg)
     if args.parallel < 1:
-        raise ValueError("parallel must be >= 1")
+        msg = "parallel must be >= 1"
+        raise ValueError(msg)
 
     build_required = args.image_tag is None
     ensure_tools_available(build_required)
@@ -422,7 +431,8 @@ async def run_eval_async(args: argparse.Namespace) -> None:
             print(f"[ember-eval] Run {request.run_id} failed: {result}", file=sys.stderr)
 
     if failures:
-        raise CommandError(f"{len(failures)} evaluation run(s) failed.")
+        msg = f"{len(failures)} evaluation run(s) failed."
+        raise CommandError(msg)
 
     print("[ember-eval] All evaluation runs completed successfully.")
 
@@ -459,7 +469,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--parallel", type=int, default=1, help="Maximum number of runs to execute in parallel")
     suite_choices = list(suite_keys())
     if not suite_choices:
-        raise RuntimeError("No evaluation suites registered")
+        msg = "No evaluation suites registered"
+        raise RuntimeError(msg)
     parser.add_argument(
         "--suite", default=suite_choices[0], choices=suite_choices, help="Evaluation scenario suite to run"
     )

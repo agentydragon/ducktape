@@ -57,10 +57,10 @@ class IsoDateResponseScenario(Scenario):
         if not re.fullmatch(pattern, body):
             self.fail(f"Response '{body}' did not match required ISO format")
         try:
-            parsed = datetime.strptime(body, "%Y-%m-%d").date()
+            parsed = datetime.strptime(body, "%Y-%m-%d").replace(tzinfo=datetime.UTC).date()
         except ValueError:
             self.fail(f"Response '{body}' is not a valid calendar date")
-        today = datetime.utcnow().date()
+        today = datetime.now(tz=datetime.UTC).date()
         if abs((parsed - today).days) > 1:
             self.fail(f"Date {body} outside tolerance of 1 day (today={today.isoformat()})")
         self.record(self.ok(description="Validated ISO 8601 response", body=body))

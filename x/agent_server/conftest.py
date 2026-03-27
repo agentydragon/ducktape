@@ -99,7 +99,8 @@ async def _mount_servers(comp: Compositor, servers: McpServerSpecs) -> None:
     """
     for name, srv in servers.items():
         if not isinstance(srv, FastMCP):
-            raise TypeError(f"invalid server for {name!r}: {type(srv).__name__}")
+            msg = f"invalid server for {name!r}: {type(srv).__name__}"
+            raise TypeError(msg)
         await comp.mount_inproc(MCPMountPrefix(name), srv)
 
 

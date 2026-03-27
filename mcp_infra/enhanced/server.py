@@ -80,3 +80,7 @@ class EnhancedFastMCP(OpenAIStrictModeMixin, FlatModelMixin, NotificationsMixin,
             return caps
 
         mcp_server.get_capabilities = _patched_get_capabilities  # type: ignore[method-assign]
+
+    @property
+    def mcp_server(self) -> Any:
+        return self._mcp_server

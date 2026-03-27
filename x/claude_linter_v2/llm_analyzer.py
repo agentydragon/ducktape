@@ -36,7 +36,7 @@ class LLMAnalyzer:
 
         # Check cost limit
         if self._cost_tracker >= self.config.daily_cost_limit:
-            logger.warning(f"LLM analysis cost limit reached: ${self._cost_tracker}")
+            logger.warning("LLM analysis cost limit reached: $%s", self._cost_tracker)
             return True, None, []
 
         try:
@@ -58,7 +58,7 @@ class LLMAnalyzer:
             return is_ok, message, violations
 
         except (json.JSONDecodeError, KeyError, ValueError) as e:
-            logger.error(f"LLM analysis failed: {e}")
+            logger.error("LLM analysis failed: %s", e)
             # On error, don't block the operation
             return True, None, []
 
@@ -110,7 +110,7 @@ class LLMAnalyzer:
         """
         # TODO: Implement actual LLM API call
         # For now, return a mock response
-        logger.info(f"Would call LLM with model {self.config.model}")
+        logger.info("Would call LLM with model %s", self.config.model)
 
         # Estimate cost (rough approximation)
         prompt_tokens = len(prompt) / 4  # Rough token estimate
@@ -140,5 +140,5 @@ class LLMAnalyzer:
             return is_ok, message, violations
 
         except (json.JSONDecodeError, KeyError, ValueError) as e:
-            logger.error(f"Failed to parse LLM result: {e}")
+            logger.error("Failed to parse LLM result: %s", e)
             return True, None, []

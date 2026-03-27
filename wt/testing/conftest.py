@@ -7,7 +7,7 @@ import shutil
 import socket
 import subprocess
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -251,7 +251,7 @@ def sample_status_result(sample_commit_info):
         behind_count=0,
         pr_info=PRInfoDisabled(),
         commit_info=sample_commit_info,
-        last_updated_at=datetime.now(),
+        last_updated_at=datetime.now(tz=UTC),
         dirty_files_lower_bound=0,
         untracked_files_lower_bound=0,
     )
@@ -299,7 +299,8 @@ def kill_daemon_at_wt_dir(wt_dir: Path) -> None:
         result = run_cli_command(["sh", "kill-daemon"], env=env, timeout=timedelta(seconds=5))
     except Exception as e:
         # Don't attempt any PID-based killing here; surface error
-        raise AssertionError(f"kill-daemon invocation failed for {wt_dir}: {e}") from e
+        msg = f"kill-daemon invocation failed for {wt_dir}: {e}"
+        raise AssertionError(msg) from e
 
     # Wait up to ~1s for files to be removed by daemon shutdown
     removed = wait_until(
@@ -310,10 +311,11 @@ def kill_daemon_at_wt_dir(wt_dir: Path) -> None:
 
     # If still present, declare failure (leak); do not unlink to preserve evidence
     details = (result.stdout or "") + ("\n" + (result.stderr or ""))
-    raise AssertionError(
+    msg = (
         f"Daemon did not shut down cleanly for {wt_dir}. Leftovers: "
         f"pid_exists={pid_file.exists()} sock_exists={sock_file.exists()}\n{details}"
     )
+    raise AssertionError(msg)
 
 
 def create_integration_test_config_file(repo_path: Path) -> Path:
@@ -585,9 +587,8 @@ def shell_runner(tmp_path: Path):
             # Find the Bazel-built wt_cli binary - tests require it for proper environment setup
             wt_cli_path = _find_wt_cli_binary()
             if not wt_cli_path:
-                raise RuntimeError(
-                    "wt_cli binary not found in runfiles. Ensure //wt:wt_cli is in the test's data dependencies."
-                )
+                msg = "wt_cli binary not found in runfiles. Ensure //wt:wt_cli is in the test's data dependencies."
+                raise RuntimeError(msg)
             wt_fn = _generate_wt_function_for_binary(wt_cli_path)
 
             full_script = f"""#!/bin/bash

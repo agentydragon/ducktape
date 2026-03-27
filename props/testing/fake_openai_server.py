@@ -76,7 +76,8 @@ def _to_sdk_output_item(item: ResponseOutItem) -> _SDKOutputItem:
                 for part in item.content
             ],
         )
-    raise ValueError(f"Unexpected output item type: {type(item)}")
+    msg = f"Unexpected output item type: {type(item)}"
+    raise ValueError(msg)
 
 
 def result_to_sdk_response(result: ResponsesResult, *, model: str = DEFAULT_TEST_MODEL) -> OpenAIResponse:
@@ -126,16 +127,18 @@ class FakeOpenAIServer:
     @property
     def url(self) -> str:
         if self._actual_port is None:
-            raise RuntimeError("Server not started")
+            msg = "Server not started"
+            raise RuntimeError(msg)
         return f"http://{self._host}:{self._actual_port}"
 
     @property
     def port(self) -> int:
         if self._actual_port is None:
-            raise RuntimeError("Server not started")
+            msg = "Server not started"
+            raise RuntimeError(msg)
         return self._actual_port
 
-    def _capture_error(self, error: BaseException) -> None:
+    def capture_error(self, error: BaseException) -> None:
         """Capture an error for later re-raising. Only captures the first error."""
         if self._captured_error is None:
             self._captured_error = error
@@ -145,7 +148,7 @@ class FakeOpenAIServer:
         if self._captured_error is not None:
             raise self._captured_error
 
-    def _resolve_mock(self, body: dict[str, Any]) -> OpenAIModelProto:
+    def resolve_mock(self, body: dict[str, Any]) -> OpenAIModelProto:
         """Resolve the mock for a request body by model name."""
         model = body.get("model")
         if not model:
@@ -167,7 +170,7 @@ class FakeOpenAIServer:
             except Exception as e:
                 raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
 
-            mock = server_self._resolve_mock(body)
+            mock = server_self.resolve_mock(body)
 
             try:
                 req = ResponsesRequest.model_validate(body)
@@ -179,7 +182,7 @@ class FakeOpenAIServer:
                 result = await mock.responses_create(req)
             except Exception as e:
                 logger.exception("Mock raised exception")
-                server_self._capture_error(e)
+                server_self.capture_error(e)
                 raise HTTPException(status_code=500, detail=f"Mock error: {e}")
 
             sdk_response = result_to_sdk_response(result, model=body["model"])
@@ -197,7 +200,8 @@ class FakeOpenAIServer:
             await asyncio.sleep(0.01)
             if self._task.done():
                 exc = self._task.exception()
-                raise RuntimeError(f"Server failed to start: {exc}")
+                msg = f"Server failed to start: {exc}"
+                raise RuntimeError(msg)
 
         for server in self._server.servers:
             for socket in server.sockets:

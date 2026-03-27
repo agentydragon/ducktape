@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import IntEnum, StrEnum
 from pathlib import Path
 from typing import Annotated, Literal, NewType, cast
@@ -270,11 +270,11 @@ class Collector[T](BaseModel):
 
     def ok(self, value: T) -> Collector[T]:
         """Record a success, preserving last_error."""
-        return Collector(last_ok=SourceOk(at=datetime.now(), value=value), last_error=self.last_error)
+        return Collector(last_ok=SourceOk(at=datetime.now(tz=UTC), value=value), last_error=self.last_error)
 
     def error(self, err: str) -> Collector[T]:
         """Record an error, preserving last_ok."""
-        return Collector(last_ok=self.last_ok, last_error=SourceError(at=datetime.now(), error=err))
+        return Collector(last_ok=self.last_ok, last_error=SourceError(at=datetime.now(tz=UTC), error=err))
 
     def exception(self, exc: BaseException) -> Collector[T]:
         """Record an exception as an error, preserving last_ok.
@@ -677,9 +677,11 @@ def parse_request(data: str) -> Request:
         raw_data = json.loads(data)
         return cast(Request, Request.model_validate(raw_data))
     except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON (parse error): {e}") from e
+        msg = f"Invalid JSON (parse error): {e}"
+        raise ValueError(msg) from e
     except ValidationError as e:
-        raise ValueError(f"Invalid JSON-RPC request schema: {e}") from e
+        msg = f"Invalid JSON-RPC request schema: {e}"
+        raise ValueError(msg) from e
 
 
 class NoParams(BaseModel):

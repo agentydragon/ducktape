@@ -70,10 +70,10 @@ class SessionManager:
             try:
                 return SessionData.model_validate_json(session_file.read_text())
             except (json.JSONDecodeError, OSError, ValueError) as e:
-                logger.error(f"Failed to load session {session_id}: {e}")
+                logger.error("Failed to load session %s: %s", session_id, e)
 
         # Return default session data
-        return SessionData(id=session_id, created=datetime.now())
+        return SessionData(id=session_id, created=datetime.now(tz=datetime.UTC))
 
     def _save_session(self, session_id: SessionID, session_data: SessionData) -> None:
         """Save a single session to disk."""
@@ -81,7 +81,7 @@ class SessionManager:
         try:
             session_file.write_text(session_data.model_dump_json(indent=2))
         except (OSError, TypeError) as e:
-            logger.error(f"Failed to save session {session_id}: {e}")
+            logger.error("Failed to save session %s: %s", session_id, e)
 
     def track_session(self, session_id: SessionID, working_dir: Path) -> None:
         """
@@ -92,7 +92,7 @@ class SessionManager:
             working_dir: Current working directory for the session
         """
         session_data = self._load_session(session_id)
-        session_data.last_seen = datetime.now()
+        session_data.last_seen = datetime.now(tz=datetime.UTC)
         session_data.directory = working_dir.resolve()
         self._save_session(session_id, session_data)
 
@@ -125,7 +125,7 @@ class SessionManager:
         directory = directory or Path.cwd()
         directory_str = str(directory.resolve())
 
-        rule = Rule(predicate=predicate, action=action, created=datetime.now(), expires=expires)
+        rule = Rule(predicate=predicate, action=action, created=datetime.now(tz=datetime.UTC), expires=expires)
 
         affected = 0
 
@@ -179,7 +179,7 @@ class SessionManager:
         session_data = self._load_session(session_id)
 
         # Filter out expired rules
-        now = datetime.now()
+        now = datetime.now(tz=datetime.UTC)
         active_rules = []
 
         for rule in session_data.rules:

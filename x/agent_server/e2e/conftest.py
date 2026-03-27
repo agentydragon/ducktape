@@ -79,7 +79,8 @@ class E2EPageHelper:
         qs = parse_qs(urlparse(self.page.url).query)
         agent_id: str | None = qs.get("agent_id", [None])[0]
         if not agent_id:
-            raise ValueError("No agent_id in URL")
+            msg = "No agent_id in URL"
+            raise ValueError(msg)
         return agent_id
 
     def create_agent_via_ui(self) -> None:

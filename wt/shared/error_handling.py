@@ -28,18 +28,22 @@ def handle_github_errors[T](func: Callable[..., T]) -> Callable[..., T]:
             return func(*args, **kwargs)
         except GitHubError as e:
             logger.warning("GitHub API error in %s: %s", func.__name__, e)
-            raise GitHubUnavailableError(f"GitHub API failed: {e}") from e
+            msg = f"GitHub API failed: {e}"
+            raise GitHubUnavailableError(msg) from e
 
     return wrapper
 
 
 def validate_worktree_name(name: str) -> None:
     if not name:
-        raise WorktreeManagerError("Worktree name cannot be empty")
+        msg = "Worktree name cannot be empty"
+        raise WorktreeManagerError(msg)
     if name in RESERVED_NAMES:
-        raise WorktreeManagerError(f"Cannot use reserved name: {name}")
+        msg = f"Cannot use reserved name: {name}"
+        raise WorktreeManagerError(msg)
     if "/" in name or "\\" in name:
-        raise WorktreeManagerError(f"Worktree name cannot contain path separators: {name}")
+        msg = f"Worktree name cannot contain path separators: {name}"
+        raise WorktreeManagerError(msg)
 
 
 def log_operation_error(operation: str, worktree_name: str, error: Exception, **context: Any) -> None:

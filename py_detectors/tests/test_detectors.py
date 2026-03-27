@@ -32,7 +32,8 @@ def _get_expected_property(detector_name: str) -> str:
     for spec in all_detectors():
         if spec.name == detector_name:
             return spec.target_property
-    raise ValueError(f"Unknown detector: {detector_name}")
+    msg = f"Unknown detector: {detector_name}"
+    raise ValueError(msg)
 
 
 BAD_CASES = _discover_fixtures("tests.fixtures.bad")

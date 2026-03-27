@@ -29,7 +29,8 @@ class ConfigFactory:
         elif hasattr(ConfigPresets, preset):
             base_config = getattr(ConfigPresets, preset)
         else:
-            raise ValueError(f"Unknown preset: {preset}. Available: {self._available_presets()}")
+            msg = f"Unknown preset: {preset}. Available: {self._available_presets()}"
+            raise ValueError(msg)
 
         # Set up WT_DIR
         if wt_dir is None:

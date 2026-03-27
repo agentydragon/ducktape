@@ -46,10 +46,11 @@ def _quote_ident(identifier: str) -> str:
         ValueError: If identifier contains characters outside [a-zA-Z0-9_-]
     """
     if not re.match(r"^[a-zA-Z0-9_-]+$", identifier):
-        raise ValueError(
+        msg = (
             f"Identifier contains invalid characters: {identifier!r}. "
             f"Only alphanumeric, underscore, and hyphen allowed."
         )
+        raise ValueError(msg)
     escaped = identifier.replace('"', '""')
     return f'"{escaped}"'
 

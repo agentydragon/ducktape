@@ -52,7 +52,7 @@ def send_desktop_notification(title: str, message: str, urgency: str = "critical
         )
         return notification_id
     except Exception as e:
-        logger.debug(f"Failed to send notification: {e}")
+        logger.debug("Failed to send notification: %s", e)
         return 0
 
 
@@ -81,4 +81,4 @@ def close_desktop_notification(notification_id: int) -> None:
         # Close notification
         notify_iface.CloseNotification(notification_id)
     except Exception as e:
-        logger.debug(f"Failed to close notification {notification_id}: {e}")
+        logger.debug("Failed to close notification %s: %s", notification_id, e)
