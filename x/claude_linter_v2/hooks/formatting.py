@@ -29,9 +29,7 @@ Run 'cl2 check' locally to verify all issues are resolved.""")
 
 def format_violations_list(violations: list[Violation], max_show: int = 3) -> str:
     """Format a list of violations."""
-    lines = []
-    for v in violations[:max_show]:
-        lines.append(f"Line {v.line}: {v.message}")
+    lines = [f"Line {v.line}: {v.message}" for v in violations[:max_show]]
 
     if len(violations) > max_show:
         remaining = len(violations) - max_show

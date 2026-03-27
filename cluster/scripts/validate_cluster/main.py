@@ -98,8 +98,7 @@ async def main() -> int:
 
     # Check CRD layering
     for result in cluster.build_results:
-        for error in check_crd_layering(result):
-            kust_errors.append((result.kustomization_path, error))
+        kust_errors.extend((result.kustomization_path, error) for error in check_crd_layering(result))
 
     # Check orphaned files
     global_errors.extend(find_orphaned_files(cluster, root))

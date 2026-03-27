@@ -23,8 +23,7 @@ def _discover_fixtures(base_package: str) -> list[tuple[str, str]]:
         if not detector_dir.is_dir():
             continue
         detector_name = detector_dir.name
-        for item in iter_children(detector_dir):
-            cases.append((f"{detector_name}/{item.name}", detector_name))
+        cases.extend((f"{detector_name}/{item.name}", detector_name) for item in iter_children(detector_dir))
     return sorted(cases)
 
 

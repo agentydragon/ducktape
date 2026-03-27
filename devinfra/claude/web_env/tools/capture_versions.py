@@ -214,8 +214,7 @@ def yaml_dump(data: dict, indent: int = 0) -> str:
             lines.append(yaml_dump(value, indent + 1))
         elif isinstance(value, list):
             lines.append(f"{prefix}{key}:")
-            for item in value:
-                lines.append(f"{prefix}  - {item}")
+            lines.extend(f"{prefix}  - {item}" for item in value)
         else:
             # Quote strings with special chars
             display = value

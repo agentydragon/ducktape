@@ -265,10 +265,9 @@ def generate(
     table = format_rich_table(flat_rows)
 
     # Collect error reprs for any invalid templates
-    errors: list[str] = []
-    for r in flat_rows:
-        if r.template_error:
-            errors.append(f"{r.run}: {_relpath(r.template_label)} — {r.template_error_exc}")
+    errors: list[str] = [
+        f"{r.run}: {_relpath(r.template_label)} — {r.template_error_exc}" for r in flat_rows if r.template_error
+    ]
 
     return table, errors, missing_templates
 

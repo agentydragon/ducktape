@@ -125,18 +125,17 @@ class LLMAnalyzer:
             is_ok = result.get("ok", True)
             message = result.get("message")
 
-            violations = []
-            for v in result.get("violations", []):
-                violations.append(
-                    Violation(
-                        rule=v.get("rule", "LLM:unknown"),
-                        line=v.get("line", 1),
-                        column=v.get("column", 0),
-                        message=v.get("message", "LLM detected issue"),
-                        fixable=False,  # LLM issues are not auto-fixable
-                        file_path=None,
-                    )
+            violations = [
+                Violation(
+                    rule=v.get("rule", "LLM:unknown"),
+                    line=v.get("line", 1),
+                    column=v.get("column", 0),
+                    message=v.get("message", "LLM detected issue"),
+                    fixable=False,
+                    file_path=None,
                 )
+                for v in result.get("violations", [])
+            ]
 
             return is_ok, message, violations
 

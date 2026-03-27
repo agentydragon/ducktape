@@ -127,7 +127,7 @@ dependencies = [
     # ducktape-llm-common
     "humanize>=4.0.0",
     "pytimeparse>=1.1.8",
-    "ruff>=0.5",
+    "ruff>=0.15.8",
     "pre-commit>=3.5",
 
     # finance

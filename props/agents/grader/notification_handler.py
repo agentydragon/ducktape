@@ -23,10 +23,11 @@ logger = logging.getLogger(__name__)
 
 def _format_notifications(notifications: list[GradingPendingNotification]) -> UserMessage:
     """Format drained notifications as a single UserMessage."""
-    lines = [f"{len(notifications)} new grading notification(s):"]
-    for n in notifications:
-        lines.append(f"  - {n.operation} on {n.item.table}")
-    lines.append("Check list_pending for updated work.")
+    lines = [
+        f"{len(notifications)} new grading notification(s):",
+        *[f"  - {n.operation} on {n.item.table}" for n in notifications],
+        "Check list_pending for updated work.",
+    ]
     return UserMessage.text("\n".join(lines))
 
 

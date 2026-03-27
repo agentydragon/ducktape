@@ -88,42 +88,35 @@ class PythonASTAnalyzer:
 
     def _check_bare_except(self, tree: ast.AST) -> list[Violation]:
         """Check for bare except clauses."""
-        violations = []
-
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ExceptHandler) and node.type is None:
-                violations.append(
-                    Violation(
-                        line=node.lineno,
-                        column=node.col_offset,
-                        message="Bare except clause is not allowed. Use specific exception types.",
-                        rule="bare_except",
-                        fixable=False,
-                        file_path=None,
-                    )
-                )
-
-        return violations
+        return [
+            Violation(
+                line=node.lineno,
+                column=node.col_offset,
+                message="Bare except clause is not allowed. Use specific exception types.",
+                rule="bare_except",
+                fixable=False,
+                file_path=None,
+            )
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ExceptHandler) and node.type is None
+        ]
 
     def _check_getattr_setattr(self, tree: ast.AST) -> list[Violation]:
         """Check for hasattr/getattr/setattr usage."""
-        violations = []
         banned_functions = {"hasattr", "getattr", "setattr"}
 
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in banned_functions:
-                violations.append(
-                    Violation(
-                        line=node.lineno,
-                        column=node.col_offset,
-                        message=f"Use of {node.func.id} is not allowed. Use proper type checking instead.",
-                        rule="getattr_setattr",
-                        fixable=False,
-                        file_path=None,
-                    )
-                )
-
-        return violations
+        return [
+            Violation(
+                line=node.lineno,
+                column=node.col_offset,
+                message=f"Use of {node.func.id} is not allowed. Use proper type checking instead.",
+                rule="getattr_setattr",
+                fixable=False,
+                file_path=None,
+            )
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in banned_functions
+        ]
 
     def _check_barrel_init(self, tree: ast.AST, code: str) -> list[Violation]:
         """
@@ -135,21 +128,18 @@ class PythonASTAnalyzer:
         - from .module import Class; __all__ = ['Class']
         - Multiple imports that are immediately re-exported
         """
-        violations = []
-
-        # Check for star imports
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and any(alias.name == "*" for alias in node.names):
-                violations.append(
-                    Violation(
-                        line=node.lineno,
-                        column=node.col_offset,
-                        message="Barrel __init__.py with star imports is not allowed. Keep __init__.py minimal.",
-                        rule="barrel_init",
-                        fixable=False,
-                        file_path=None,
-                    )
-                )
+        violations = [
+            Violation(
+                line=node.lineno,
+                column=node.col_offset,
+                message="Barrel __init__.py with star imports is not allowed. Keep __init__.py minimal.",
+                rule="barrel_init",
+                fixable=False,
+                file_path=None,
+            )
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and any(alias.name == "*" for alias in node.names)
+        ]
 
         # Check for re-export pattern
         imports: set[str] = set()

@@ -146,10 +146,7 @@ class ClaudeRunner(AgentRunner):
                             text = content
                         elif isinstance(content, list):
                             # Extract text from content blocks (only TextBlock has .text)
-                            text_parts: list[str] = []
-                            for block in content:
-                                if isinstance(block, TextBlock):
-                                    text_parts.append(block.text)
+                            text_parts: list[str] = [block.text for block in content if isinstance(block, TextBlock)]
                             text = "\n".join(text_parts)
 
                         if text:

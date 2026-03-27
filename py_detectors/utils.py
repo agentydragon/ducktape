@@ -63,7 +63,5 @@ def read_snippet(path: Path, start: int, end: int | None, context: int = 0) -> s
     s = max(1, start - context)
     e = min(len(lines), (end or start) + context)
     # 1-based indexing for display
-    out = []
-    for i in range(s, e + 1):
-        out.append(f"{i:>5}: {lines[i - 1]}")
+    out = [f"{i:>5}: {lines[i - 1]}" for i in range(s, e + 1)]
     return "\n".join(out)

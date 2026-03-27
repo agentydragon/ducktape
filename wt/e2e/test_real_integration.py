@@ -66,7 +66,7 @@ def test_real_daemon_startup_and_communication(real_temp_repo, wt_cli):
     assert daemon_dir.exists()
     pid_file = daemon_dir / "daemon.pid"
 
-    ok = wait_until(lambda: pid_file.exists(), timeout_seconds=2.0, interval_seconds=0.05)
+    ok = wait_until(pid_file.exists, timeout_seconds=2.0, interval_seconds=0.05)
     assert ok, "daemon.pid not created in time"
     pid = int(pid_file.read_text().strip())
     try:

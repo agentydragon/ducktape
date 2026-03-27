@@ -58,7 +58,7 @@ class K8sSecretsConfig(BaseModel):
     def _validate_no_duplicate_env_vars(self) -> K8sSecretsConfig:
         seen: dict[str, str] = {}
         for entry in self.secrets:
-            for _data_key, env_var in entry.data.items():
+            for env_var in entry.data.values():
                 if env_var in seen:
                     raise ValueError(f"Duplicate env var {env_var!r} in secrets {seen[env_var]!r} and {entry.name!r}")
                 seen[env_var] = entry.name

@@ -507,10 +507,7 @@ def install(dry_run: bool, config: Path) -> None:
     hooks = dict.fromkeys(all_hook_types, hook_config)
 
     # Check if hooks already exist
-    existing_hooks = []
-    for hook_name in hooks:
-        if hook_name in claude_config.get("hooks", {}):
-            existing_hooks.append(hook_name)
+    existing_hooks = [hook_name for hook_name in hooks if hook_name in claude_config.get("hooks", {})]
 
     if existing_hooks and not dry_run:
         click.echo(f"⚠️  Warning: The following hooks already exist: {', '.join(existing_hooks)}")
@@ -522,7 +519,7 @@ def install(dry_run: bool, config: Path) -> None:
     click.echo("\n📋 Hook Configuration:")
     click.echo(f"   Command: {cl2_path}")
     click.echo("   Events:")
-    for hook_name, _ in hooks.items():
+    for hook_name in hooks:
         status = "✅ exists" if hook_name in claude_config.get("hooks", {}) else "+ new"
         click.echo(f"     - {hook_name} [{status}]")
 

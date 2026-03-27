@@ -81,8 +81,7 @@ def compile_sbpl(policy: SBPLPolicy) -> str:
         lines.extend(_render_file_rule(fr))
 
     # Network rules
-    for nr in policy.network:
-        lines.append(_render_network_rule(nr))
+    lines.extend(_render_network_rule(nr) for nr in policy.network)
 
     # System toggles
     if policy.system.system_socket:
@@ -97,23 +96,22 @@ def compile_sbpl(policy: SBPLPolicy) -> str:
         lines.append("(allow sysctl-read)")
     elif policy.system.sysctl_names or policy.system.sysctl_prefixes:
         lines.append("(allow sysctl-read")
-        for name in policy.system.sysctl_names:
-            lines.append(f'  (sysctl-name "{_q(name)}")')
-        for pfx in policy.system.sysctl_prefixes:
-            lines.append(f'  (sysctl-name-prefix "{_q(pfx)}")')
+        lines.extend(f'  (sysctl-name "{_q(name)}")' for name in policy.system.sysctl_names)
+        lines.extend(f'  (sysctl-name-prefix "{_q(pfx)}")' for pfx in policy.system.sysctl_prefixes)
         lines.append(")")
 
     # Mach lookup
-    for name in policy.mach.global_names:
-        lines.append(f'(allow mach-lookup (global-name "{_q(name)}"))')
+    lines.extend(f'(allow mach-lookup (global-name "{_q(name)}"))' for name in policy.mach.global_names)
 
     # IOKit open
     for io in policy.iokit:
         if not io.registry_entry_classes:
             lines.append(f"({io.action.value} iokit-open)")
         else:
-            for cls in io.registry_entry_classes:
-                lines.append(f'({io.action.value} iokit-open (iokit-registry-entry-class "{_q(cls)}"))')
+            lines.extend(
+                f'({io.action.value} iokit-open (iokit-registry-entry-class "{_q(cls)}"))'
+                for cls in io.registry_entry_classes
+            )
 
     lines.append("")
     return "\n".join(lines)

@@ -385,7 +385,7 @@ npm_activitywatch.npm_translate_lock(
 )
 use_repo(npm_activitywatch, "npm_aw_webui")
 
-# Custom multitool lockfile with newer ruff (0.14.0 vs 0.8.3 in aspect_rules_lint)
+# Custom multitool lockfile with newer ruff (0.15.8 vs 0.8.3 in aspect_rules_lint)
 multitool = use_extension("@rules_multitool//multitool:extension.bzl", "multitool")
 multitool.hub(lockfile = "//devinfra:lockfile.json")
 use_repo(multitool, "multitool")

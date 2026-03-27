@@ -262,9 +262,9 @@ VALUES (?, ?, ?, 'pending', ?, NULL)
             await db.commit()
 
     async def list_policy_proposals(self, agent_id: AgentID) -> list[PolicyProposal]:
-        async with self._open_row() as db:
-            out: list[PolicyProposal] = []
-            async with db.execute(
+        async with (
+            self._open_row() as db,
+            db.execute(
                 """
 SELECT id, status, created_at, decided_at
 FROM policy_proposals
@@ -272,19 +272,18 @@ WHERE agent_id = ?
 ORDER BY created_at DESC
                 """,
                 (agent_id,),
-            ) as cur:
-                async for row in cur:
-                    out.append(
-                        PolicyProposal(
-                            id=str(row["id"]),
-                            status=ProposalStatus(str(row["status"])),
-                            created_at=datetime.fromisoformat(cast(str, row["created_at"])),
-                            decided_at=(
-                                datetime.fromisoformat(cast(str, row["decided_at"])) if row["decided_at"] else None
-                            ),
-                            content="",  # content not selected in list; leave empty
-                        )
-                    )
+            ) as cur,
+        ):
+            out: list[PolicyProposal] = [
+                PolicyProposal(
+                    id=str(row["id"]),
+                    status=ProposalStatus(str(row["status"])),
+                    created_at=datetime.fromisoformat(cast(str, row["created_at"])),
+                    decided_at=(datetime.fromisoformat(cast(str, row["decided_at"])) if row["decided_at"] else None),
+                    content="",
+                )
+                async for row in cur
+            ]
         return out
 
     async def get_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> PolicyProposal | None:

@@ -485,11 +485,12 @@ async def main():
     print(f"\nLogging to: {logger.get_log_directory()}")
 
     # Create experiment parameters
-    experiments = []
-    for model in MODELS:
-        for env_name in ENVIRONMENTS:
-            for run_num in range(RUNS_PER_EXPERIMENT):
-                experiments.append((model, env_name, run_num))
+    experiments = [
+        (model, env_name, run_num)
+        for model in MODELS
+        for env_name in ENVIRONMENTS
+        for run_num in range(RUNS_PER_EXPERIMENT)
+    ]
 
     print(f"\nRunning {len(experiments)} experiments...")
     print(f"(3 models x {len(ENVIRONMENTS)} environments x {RUNS_PER_EXPERIMENT} runs)")

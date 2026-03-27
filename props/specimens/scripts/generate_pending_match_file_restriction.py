@@ -426,8 +426,7 @@ def generate_markdown(result: ScanResult, specimens_root: Path) -> str:
             rationale = occ.issue.rationale.strip()
             if rationale:
                 lines.append("")
-                for rationale_line in rationale.split("\n"):
-                    lines.append(f"> {rationale_line}")
+                lines.extend(f"> {rationale_line}" for rationale_line in rationale.split("\n"))
 
             # Occurrence-level note
             if occ.occurrence.note:

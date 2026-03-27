@@ -65,28 +65,28 @@ class RuleEngine:
         matches: list[RuleMatch] = []
 
         # 1. Check path-based access control rules (lowest precedence)
-        for access_rule in self.config.access_control:
-            if self._match_access_control_rule(access_rule, context):
-                matches.append(
-                    RuleMatch(
-                        action=access_rule.action,
-                        source=RuleSource.CONFIG_ACCESS_CONTROL,
-                        message=access_rule.message,
-                        rule_description=f"Path rule: {', '.join(access_rule.paths)}",
-                    )
-                )
+        matches.extend(
+            RuleMatch(
+                action=access_rule.action,
+                source=RuleSource.CONFIG_ACCESS_CONTROL,
+                message=access_rule.message,
+                rule_description=f"Path rule: {', '.join(access_rule.paths)}",
+            )
+            for access_rule in self.config.access_control
+            if self._match_access_control_rule(access_rule, context)
+        )
 
         # 2. Check repo-wide predicate rules
-        for predicate_rule in self.config.repo_rules:
-            if self.evaluator.evaluate(predicate_rule.predicate, context):
-                matches.append(
-                    RuleMatch(
-                        action=predicate_rule.action,
-                        source=RuleSource.CONFIG_REPO_RULES,
-                        message=predicate_rule.message,
-                        rule_description=f"Repo rule: {predicate_rule.predicate}",
-                    )
-                )
+        matches.extend(
+            RuleMatch(
+                action=predicate_rule.action,
+                source=RuleSource.CONFIG_REPO_RULES,
+                message=predicate_rule.message,
+                rule_description=f"Repo rule: {predicate_rule.predicate}",
+            )
+            for predicate_rule in self.config.repo_rules
+            if self.evaluator.evaluate(predicate_rule.predicate, context)
+        )
 
         # 3. Check session-specific rules (highest precedence)
         session_rules = self.session_manager.get_session_rules(session_id)

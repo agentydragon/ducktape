@@ -47,13 +47,11 @@ class WorktreeService:
     def list_worktrees(self, config: Configuration) -> list[tuple[str, Path, bool]]:
         """List all managed worktrees with their existence status."""
         worktree_infos = self.git_manager.list_worktrees()
-        worktrees = []
-
-        for info in worktree_infos:
-            if self._is_managed_worktree(info.path, config) and not info.is_main:
-                worktrees.append((info.path.name, info.path, info.exists))
-
-        return worktrees
+        return [
+            (info.path.name, info.path, info.exists)
+            for info in worktree_infos
+            if self._is_managed_worktree(info.path, config) and not info.is_main
+        ]
 
     def _is_managed_worktree(self, path: Path, config: Configuration) -> bool:
         """Check if this worktree should be managed by our tool."""

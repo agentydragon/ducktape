@@ -86,9 +86,7 @@ async def test_responses_streaming_live(tmp_path):
 
     stream = await client.responses.create(model=model, input=cast(ResponseInputParam, inp), stream=True)
 
-    items: list[dict[str, Any]] = []
-    async for event in stream:
-        items.append(event.model_dump(exclude_none=True))
+    items: list[dict[str, Any]] = [event.model_dump(exclude_none=True) async for event in stream]
 
     assert items, "No stream events received"
 

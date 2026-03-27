@@ -79,7 +79,4 @@ def load_known_templates() -> dict[str, str]:
 
     Values look like "current_effective_template.txt" or "proposals/foo.txt".
     """
-    mapping: dict[str, str] = {}
-    for rel_name, text in iter_templates():
-        mapping[text] = rel_name
-    return mapping
+    return {text: rel_name for rel_name, text in iter_templates()}

@@ -45,11 +45,7 @@ def load_yaml_filters(filters_file: Path, console: Console) -> list[NormalizedFi
         return []
 
     ruleset = FilterRuleSet.from_yaml_list(yaml_list)
-    normalized = []
-    for rule in ruleset.rules:
-        if isinstance(rule, FilterRule) and not rule.ignore:
-            normalized.append(normalize_yaml_rule(rule))
-    return normalized
+    return [normalize_yaml_rule(rule) for rule in ruleset.rules if isinstance(rule, FilterRule) and not rule.ignore]
 
 
 def load_gmail_filters(client: GmailClient) -> tuple[list[NormalizedFilter], LabelMaps]:

@@ -11,9 +11,9 @@ logger = logging.getLogger(__name__)
 
 
 def load_summaries(results_dir: Path) -> list[RunSummary]:
-    summaries: list[RunSummary] = []
-    for path in sorted(results_dir.rglob("*_summary.json")):
-        summaries.append(RunSummary.model_validate_json(path.read_text()))
+    summaries: list[RunSummary] = [
+        RunSummary.model_validate_json(path.read_text()) for path in sorted(results_dir.rglob("*_summary.json"))
+    ]
     return summaries
 
 

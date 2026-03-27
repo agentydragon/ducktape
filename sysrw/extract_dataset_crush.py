@@ -115,10 +115,7 @@ def _extract_chat_messages(payload: dict[str, Any]) -> tuple[list[dict[str, Any]
             text = content
         elif isinstance(content, list):
             # list of parts: {type: "text", text: "..."}
-            texts: list[str] = []
-            for c in content:
-                if isinstance(c, dict) and isinstance(c.get("text"), str):
-                    texts.append(c["text"])
+            texts: list[str] = [c["text"] for c in content if isinstance(c, dict) and isinstance(c.get("text"), str)]
             text = "\n".join(texts) if texts else ""
         else:
             text = ""
@@ -198,8 +195,7 @@ def find_wire_logs(roots: list[Path]) -> list[Path]:
         if not root.exists():
             continue
         for pat in patterns:
-            for p in root.glob(pat):
-                found.append(p)
+            found.extend(root.glob(pat))
     # Dedup and sort
     return sorted({p.resolve() for p in found})
 

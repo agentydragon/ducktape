@@ -236,9 +236,7 @@ def tokens_for_chat_messages(msgs: Any) -> int:
         if text := chat_param_message_content_as_text(message):
             parts.append(text)
         if tool_calls := chat_param_message_tool_calls(message):
-            for call in tool_calls:
-                if args := call["function"]["arguments"]:
-                    parts.append(args)
+            parts.extend(args for call in tool_calls if (args := call["function"]["arguments"]))
     return estimate_tokens("\n".join(parts))
 
 

@@ -123,10 +123,9 @@ def _parse_tuple_operator(store: TanaGraph, node: TupleNode) -> SearchExpression
     operator_node = store.get(operator_id)
     if operator_node and operator_node.name:
         # Collect field values
-        values = []
-        for value_id in node.children[1:]:
-            if (value_node := store.get(value_id)) and value_node.name:
-                values.append(value_node.name)
+        values = [
+            value_node.name for value_id in node.children[1:] if (value_node := store.get(value_id)) and value_node.name
+        ]
 
         if values:
             return FieldSearch(field_name=operator_node.name, values=values)

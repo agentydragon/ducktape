@@ -16,11 +16,8 @@ from more_itertools import first
 
 def load_trajectories(filename):
     """Load trajectories from JSONL file."""
-    trajectories = []
     with Path(filename).open(encoding="utf-8") as f:
-        for line in f:
-            trajectories.append(json.loads(line))
-    return trajectories
+        return [json.loads(line) for line in f]
 
 
 def analyze_action_distribution(trajectories):

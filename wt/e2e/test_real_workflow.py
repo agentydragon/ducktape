@@ -186,7 +186,7 @@ def test_real_daemon_startup_and_kill(real_temp_repo, real_env, wt_cli):
 
     pid_file = daemon_dir / "daemon.pid"
     # Wait for daemon to start up
-    assert wait_until(lambda: pid_file.exists(), timeout_seconds=2.0, interval_seconds=0.05)
+    assert wait_until(pid_file.exists, timeout_seconds=2.0, interval_seconds=0.05)
 
     # Step 3: Verify daemon is actually running
     assert pid_file.exists(), "Daemon PID file not created"

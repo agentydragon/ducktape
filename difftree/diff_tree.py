@@ -52,9 +52,7 @@ class DiffTree:
 
         # Parse the rendered output into lines
         tree_output = temp_output.getvalue()
-        tree_lines = []
-        for line in tree_output.rstrip("\n").split("\n"):
-            tree_lines.append(Text.from_ansi(line))
+        tree_lines = [Text.from_ansi(line) for line in tree_output.rstrip("\n").split("\n")]
 
         nodes_in_order = self._flatten_tree(self.root, depth=0)
 

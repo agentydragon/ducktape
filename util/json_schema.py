@@ -19,11 +19,7 @@ def inline_refs(schema: dict[str, Any], defs: dict[str, Any] | None = None) -> d
             def_name = ref[len(_DEFS_REF_PREFIX) :]
             resolved = defs.get(def_name, schema)
             # Merge sibling keys (e.g. default) with the resolved definition
-            merged = {**inline_refs(resolved, defs)}
-            for k, v in schema.items():
-                if k != "$ref":
-                    merged[k] = v
-            return merged
+            return {**inline_refs(resolved, defs), **{k: v for k, v in schema.items() if k != "$ref"}}
         return schema
     result: dict[str, Any] = {}
     for k, v in schema.items():

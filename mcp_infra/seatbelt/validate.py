@@ -81,11 +81,11 @@ def validate(policy: SBPLPolicy, ctx: ValidationContext | None = None) -> list[s
             )
 
     # Network note: if any non-local network allow is present, remind of egress risk
-    for nr in policy.network:
-        if nr.action == Action.ALLOW and not nr.local_only:
-            msgs.append(
-                f"note: network rule '{nr.op.value}' without local_only allows broader traffic; ensure this is intended"
-            )
+    msgs.extend(
+        f"note: network rule '{nr.op.value}' without local_only allows broader traffic; ensure this is intended"
+        for nr in policy.network
+        if nr.action == Action.ALLOW and not nr.local_only
+    )
 
     # Mach lookup hygiene
     if policy.mach.global_names:

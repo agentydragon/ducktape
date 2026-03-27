@@ -89,9 +89,7 @@ def _validate_specimen_relative_path(v: Any, handler: Any, info: ValidationInfo)
 
 
 SnapshotRelativePath = Annotated[
-    Path,
-    WrapValidator(_validate_specimen_relative_path),
-    PlainSerializer(lambda x: str(x), return_type=str, when_used="json"),
+    Path, WrapValidator(_validate_specimen_relative_path), PlainSerializer(str, return_type=str, when_used="json")
 ]
 """Path type for snapshot-relative paths with strict validation.
 

@@ -226,8 +226,7 @@ class ChatStorePersisted(ChatStore):
                 sql += " LIMIT ?"
                 params.append(cap)
             async with db.execute(sql, tuple(params)) as cur:
-                async for r in cur:
-                    msgs.append(_row_to_message(r))
+                msgs = [_row_to_message(r) async for r in cur]
 
         if msgs:
             async with self._persistence._open() as db:

@@ -49,9 +49,7 @@ def merge_configs(user_cfg: dict[str, Any], local_cfg: dict[str, Any], fix: bool
         merged["repos"].append(repo)
 
     # Copy any other top-level pre-commit config keys
-    for key, value in local_cfg.items():
-        if key != "repos":
-            merged[key] = value
+    merged.update({key: value for key, value in local_cfg.items() if key != "repos"})
 
     return merged
 

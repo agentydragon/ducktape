@@ -441,8 +441,7 @@ class ResourcesServer(EnhancedFastMCP):
                 # Query this server's templates
                 child_client = self._compositor.get_child_client(server_prefix)
                 templates = await child_client.list_resource_templates()
-                for template in templates:
-                    out.append(ResourceTemplateEntry(server=server_prefix, template=template))
+                out.extend(ResourceTemplateEntry(server=server_prefix, template=template) for template in templates)
             return ResourceTemplatesListResult(templates=out)
 
         self.list_templates_tool = self.flat_model()(list_resource_templates)

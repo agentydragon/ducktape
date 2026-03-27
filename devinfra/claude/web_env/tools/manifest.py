@@ -102,19 +102,12 @@ class Exclusions(BaseModel):
 
     def all_patterns(self) -> list[tuple[str, str]]:
         """All (category, pattern) pairs across all exclusion categories."""
-        result: list[tuple[str, str]] = []
-        for p in self.skip_paths:
-            result.append(("skip_paths", p))
-        for p in self.volatile_paths:
-            result.append(("volatile_paths", p))
-        for p in self.hash_may_differ:
-            result.append(("hash_may_differ", p))
-        for p in self.only_in_live:
-            result.append(("only_in_live", p))
-        for p in self.session_hook_artifacts:
-            result.append(("session_hook_artifacts", p))
-        for p in self.only_in_built:
-            result.append(("only_in_built", p))
+        result: list[tuple[str, str]] = [("skip_paths", p) for p in self.skip_paths]
+        result.extend(("volatile_paths", p) for p in self.volatile_paths)
+        result.extend(("hash_may_differ", p) for p in self.hash_may_differ)
+        result.extend(("only_in_live", p) for p in self.only_in_live)
+        result.extend(("session_hook_artifacts", p) for p in self.session_hook_artifacts)
+        result.extend(("only_in_built", p) for p in self.only_in_built)
         return result
 
 

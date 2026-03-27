@@ -535,9 +535,9 @@ Examples:
     yaml_loader = load_yaml_files(seeds_path, graders_path)
 
     # Load grading criteria
-    criteria = []
-    for grader_data in yaml_loader.graders_data:
-        criteria.append(Criterion(name=grader_data.id, description=grader_data.description))
+    criteria = [
+        Criterion(name=grader_data.id, description=grader_data.description) for grader_data in yaml_loader.graders_data
+    ]
 
     run_prefix = datetime.now(UTC).strftime("%Y-%m-%d-%H%M%S")
     base_dir = (Path("./agent_output") / run_prefix).resolve()

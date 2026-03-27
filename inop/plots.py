@@ -123,14 +123,13 @@ class ScoreEvolutionPlotter:
     def generate_plots(self, run_dir: Path) -> tuple[Path, Path]:
         """Generate score evolution plots using plotnine."""
 
-        plot_data: list[PlotDataPoint] = []
-        for iter_data in self.iterations_data:
-            plot_data.append(create_plot_data_point(iter_data, "overall"))
+        plot_data: list[PlotDataPoint] = [
+            create_plot_data_point(iter_data, "overall") for iter_data in self.iterations_data
+        ]
 
         if self.iterations_data and self.iterations_data[0].facets:
             for facet_name in self.iterations_data[0].facets:
-                for iter_data in self.iterations_data:
-                    plot_data.append(create_plot_data_point(iter_data, facet_name))
+                plot_data.extend(create_plot_data_point(iter_data, facet_name) for iter_data in self.iterations_data)
 
         plot_df = pd.DataFrame([p.model_dump() for p in plot_data])
 

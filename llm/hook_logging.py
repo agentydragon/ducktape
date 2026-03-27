@@ -57,25 +57,23 @@ class JSONFormatter(logging.Formatter):
             log_entry[field] = getattr(record, field)
 
         # Add any extra fields under 'extra' key to avoid conflicts
-        extra_fields = {}
-        for key, value in record.__dict__.items():
-            if key not in [
-                "name",
-                "msg",
-                "args",
-                "levelname",
-                "levelno",
-                "created",
-                "msecs",
-                "relativeCreated",
-                "getMessage",
-                "exc_info",
-                "exc_text",
-                "stack_info",
-                "message",
-                *standard_fields,
-            ]:
-                extra_fields[key] = value
+        excluded_keys = {
+            "name",
+            "msg",
+            "args",
+            "levelname",
+            "levelno",
+            "created",
+            "msecs",
+            "relativeCreated",
+            "getMessage",
+            "exc_info",
+            "exc_text",
+            "stack_info",
+            "message",
+            *standard_fields,
+        }
+        extra_fields = {key: value for key, value in record.__dict__.items() if key not in excluded_keys}
 
         if extra_fields:
             log_entry["extra"] = extra_fields
