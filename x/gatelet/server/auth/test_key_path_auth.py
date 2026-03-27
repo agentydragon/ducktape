@@ -23,7 +23,7 @@ async def test_key_path_auth_success(db_session: AsyncSession, test_settings: Se
     unique_id = uuid.uuid4().hex[:8]
     key_value = f"test-key-{unique_id}"
 
-    key = AuthKey(key_value=key_value, description=f"Test key {unique_id}", created_at=datetime.now())
+    key = AuthKey(key_value=key_value, description=f"Test key {unique_id}", created_at=datetime.now(tz=datetime.UTC))
 
     # Add and commit
     db_session.add(key)

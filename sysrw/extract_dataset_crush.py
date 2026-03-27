@@ -115,7 +115,7 @@ def _extract_chat_messages(payload: dict[str, Any]) -> tuple[list[dict[str, Any]
             text = content
         elif isinstance(content, list):
             # list of parts: {type: "text", text: "..."}
-            texts: list[str] = [c["text"] for c in content if isinstance(c, dict) and isinstance(c.get("text"), str)]
+            texts = [t for c in content if isinstance(c, dict) and isinstance(t := c.get("text"), str)]
             text = "\n".join(texts) if texts else ""
         else:
             text = ""

@@ -48,13 +48,16 @@ class BearerAuthHandler(WebhookAuthHandler):
         bearer_headers = {"WWW-Authenticate": "Bearer"}
 
         if not credentials:
-            raise AuthError("Missing Authorization header", headers=bearer_headers)
+            msg = "Missing Authorization header"
+            raise AuthError(msg, headers=bearer_headers)
 
         if credentials.scheme.lower() != "bearer":
-            raise AuthError("Invalid authentication scheme", headers=bearer_headers)
+            msg = "Invalid authentication scheme"
+            raise AuthError(msg, headers=bearer_headers)
 
         if credentials.credentials != self.config.token:
-            raise AuthError("Invalid token", headers=bearer_headers)
+            msg = "Invalid token"
+            raise AuthError(msg, headers=bearer_headers)
 
 
 def create_auth_handler(config: WebhookAuthConfig | dict[str, Any]) -> WebhookAuthHandler:
@@ -65,9 +68,11 @@ def create_auth_handler(config: WebhookAuthConfig | dict[str, Any]) -> WebhookAu
             return NoAuthHandler(NoAuth())
         if auth_type == AuthType.BEARER:
             return BearerAuthHandler(BearerAuth(token=config.get("token", "")))
-        raise ValueError(f"Unknown authentication type in dict: {auth_type}")
+        msg = f"Unknown authentication type in dict: {auth_type}"
+        raise ValueError(msg)
     if isinstance(config, NoAuth):
         return NoAuthHandler(config)
     if isinstance(config, BearerAuth):
         return BearerAuthHandler(config)
-    raise ValueError(f"Unknown authentication type: {type(config)}")
+    msg = f"Unknown authentication type: {type(config)}"
+    raise ValueError(msg)

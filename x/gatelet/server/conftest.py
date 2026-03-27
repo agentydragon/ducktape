@@ -198,7 +198,9 @@ async def test_auth_key(db_session: AsyncSession) -> AuthKey:
 
     unique_id = uuid4().hex[:8]
     key = AuthKey(
-        key_value=f"test-key-{unique_id}", description=f"Test auth key {unique_id}", created_at=datetime.now()
+        key_value=f"test-key-{unique_id}",
+        description=f"Test auth key {unique_id}",
+        created_at=datetime.now(tz=datetime.UTC),
     )
     return await persist(db_session, key)
 
@@ -211,9 +213,9 @@ async def test_auth_session(db_session: AsyncSession, test_auth_key: AuthKey) ->
     session = AuthCRSession(
         session_token=f"test-session-{unique_id}",
         auth_key_id=test_auth_key.id,
-        created_at=datetime.now(),
-        expires_at=datetime.now() + timedelta(hours=1),
-        last_activity_at=datetime.now(),
+        created_at=datetime.now(tz=datetime.UTC),
+        expires_at=datetime.now(tz=datetime.UTC) + timedelta(hours=1),
+        last_activity_at=datetime.now(tz=datetime.UTC),
     )
     return await persist(db_session, session)
 
@@ -223,10 +225,10 @@ async def _stub_data(monkeypatch):
     """Stub external data fetchers for all tests."""
 
     async def _states(*_args, **_kwargs):
-        return [{"entity_id": "sensor.test", "state": "on", "last_changed": datetime(2020, 1, 1)}]
+        return [{"entity_id": "sensor.test", "state": "on", "last_changed": datetime(2020, 1, 1, tzinfo=datetime.UTC)}]
 
     async def _payloads(*_args, **_kwargs):
-        return [PayloadSummary(id=1, integration_name="test", received_at=datetime(2020, 1, 1))]
+        return [PayloadSummary(id=1, integration_name="test", received_at=datetime(2020, 1, 1, tzinfo=datetime.UTC))]
 
     monkeypatch.setattr("x.gatelet.server.endpoints.homeassistant.fetch_states", _states)
     monkeypatch.setattr("x.gatelet.server.endpoints.webhook_view.get_latest_payloads", _payloads)

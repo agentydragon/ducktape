@@ -44,7 +44,8 @@ class BearerAuth(BaseModel):
     @classmethod
     def token_not_empty(cls, v):
         if not v:
-            raise ValueError("Token must not be empty")
+            msg = "Token must not be empty"
+            raise ValueError(msg)
         return v
 
 
@@ -142,16 +143,19 @@ class WebhookSettings(BaseModel):
         for name in v:
             # Check for URL-safe names
             if not re.match(r"^[a-zA-Z0-9_-]+$", name):
-                raise ValueError(f"Integration name '{name}' not only letters, numbers, underscores, and hyphens.")
+                msg = f"Integration name '{name}' not only letters, numbers, underscores, and hyphens."
+                raise ValueError(msg)
             if len(name) > MAX_INTEGRATION_NAME_LEN:
-                raise ValueError(f"Integration name '{name}' too long (max {MAX_INTEGRATION_NAME_LEN} characters)")
+                msg = f"Integration name '{name}' too long (max {MAX_INTEGRATION_NAME_LEN} characters)"
+                raise ValueError(msg)
         return v
 
     @field_validator("default_page_size")
     @classmethod
     def validate_page_size(cls, v):
         if v < 1 or v > MAX_PAGE_SIZE:
-            raise ValueError(f"default_page_size must be between 1 and {MAX_PAGE_SIZE}")
+            msg = f"default_page_size must be between 1 and {MAX_PAGE_SIZE}"
+            raise ValueError(msg)
         return v
 
 
@@ -180,7 +184,7 @@ class Settings(BaseModel):
     @classmethod
     def from_file(cls, path: Path) -> "Settings":
         """Load settings from file at path."""
-        logger.info(f"Loading settings from {path.absolute()}")
+        logger.info("Loading settings from %s", path.absolute())
         with path.open("rb") as f:
             config_dict = tomllib.load(f)
         return cls.model_validate(config_dict)
