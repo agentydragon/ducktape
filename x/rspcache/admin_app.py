@@ -5,10 +5,11 @@ import os
 from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
+from typing import Annotated
 from uuid import UUID
 
 from asyncpg import UniqueViolationError
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from openai.types.responses import ResponseStreamEvent
@@ -16,18 +17,13 @@ from pydantic import BaseModel, Field
 from pydantic.config import ConfigDict
 
 from openai_utils.model import ResponsesRequest
+from x.rspcache.dependencies import Db, get_db
 from x.rspcache.models import FinalResponseSnapshot, ResponseStatus
-from x.rspcache.responses_db import APIKeyRecord, ClientAPIKey, Response, ResponsesDB
+from x.rspcache.responses_db import APIKeyRecord, ClientAPIKey, Response
 
 DEFAULT_LIST_LIMIT = 50
 MAX_LIST_LIMIT = 200
 DEFAULT_FRAME_LIMIT = 200
-
-_db = ResponsesDB()
-
-
-def get_db() -> ResponsesDB:
-    return _db
 
 
 def _load_upstream_keys() -> list[str]:
@@ -140,14 +136,16 @@ ADMIN_APP = admin_app
 
 @admin_app.on_event("startup")
 async def _startup() -> None:
-    await _db.init()
-    await _db.ensure_event_listener()
+    db = get_db()
+    await db.init()
+    await db.ensure_event_listener()
 
 
 @admin_app.on_event("shutdown")
 async def _shutdown() -> None:
-    await _db.stop_event_listener()
-    await _db.close()
+    db = get_db()
+    await db.stop_event_listener()
+    await db.close()
 
 
 def _to_response_model(record: Response) -> ResponseRecordModel:
@@ -182,9 +180,9 @@ def _to_api_key_model(record: ClientAPIKey | APIKeyRecord) -> APIKeyModel:
 
 @admin_app.get("/api/responses", response_model=ResponseListModel)
 async def list_responses(
-    limit: int = Query(DEFAULT_LIST_LIMIT, ge=1, le=MAX_LIST_LIMIT),
-    offset: int = Query(0, ge=0),
-    db: ResponsesDB = Depends(get_db),
+    db: Db,
+    limit: Annotated[int, Query(ge=1, le=MAX_LIST_LIMIT)] = DEFAULT_LIST_LIMIT,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ResponseListModel:
     items, total = await db.list_responses(limit=limit, offset=offset)
     return ResponseListModel(
@@ -193,7 +191,7 @@ async def list_responses(
 
 
 @admin_app.get("/api/responses/{identifier}", response_model=ResponseRecordModel)
-async def get_response(identifier: str, db: ResponsesDB = Depends(get_db)) -> ResponseRecordModel:
+async def get_response(identifier: str, db: Db) -> ResponseRecordModel:
     detail = await db.get_response_detail(identifier)
     if detail is None:
         raise HTTPException(status_code=404, detail="Response not found")
@@ -203,9 +201,9 @@ async def get_response(identifier: str, db: ResponsesDB = Depends(get_db)) -> Re
 @admin_app.get("/api/responses/{identifier}/frames", response_model=FrameListModel)
 async def get_frames(
     identifier: str,
-    limit: int | None = Query(DEFAULT_FRAME_LIMIT, ge=1, le=1000),
-    after: int | None = Query(None, ge=0),
-    db: ResponsesDB = Depends(get_db),
+    db: Db,
+    limit: Annotated[int | None, Query(ge=1, le=1000)] = DEFAULT_FRAME_LIMIT,
+    after: Annotated[int | None, Query(ge=0)] = None,
 ) -> FrameListModel:
     frames = await db.get_frames(identifier, limit=limit, after_sequence_number=after)
     return FrameListModel(
@@ -214,7 +212,7 @@ async def get_frames(
 
 
 @admin_app.get("/api/responses/live")
-async def live_updates(db: ResponsesDB = Depends(get_db)) -> StreamingResponse:
+async def live_updates(db: Db) -> StreamingResponse:
     async def event_generator() -> AsyncIterator[str]:
         try:
             async for event in db.subscribe_events():
@@ -226,13 +224,13 @@ async def live_updates(db: ResponsesDB = Depends(get_db)) -> StreamingResponse:
 
 
 @admin_app.get("/api/keys", response_model=APIKeyListModel)
-async def list_keys(db: ResponsesDB = Depends(get_db)) -> APIKeyListModel:
+async def list_keys(db: Db) -> APIKeyListModel:
     items = await db.list_api_keys()
     return APIKeyListModel(items=[_to_api_key_model(item) for item in items], count=len(items))
 
 
 @admin_app.post("/api/keys", response_model=CreateKeyResponse)
-async def create_key(payload: CreateKeyRequest, db: ResponsesDB = Depends(get_db)) -> CreateKeyResponse:
+async def create_key(payload: CreateKeyRequest, db: Db) -> CreateKeyResponse:
     try:
         token, record = await db.create_api_key(payload.name, alias=payload.alias)
     except UniqueViolationError as exc:
@@ -241,7 +239,7 @@ async def create_key(payload: CreateKeyRequest, db: ResponsesDB = Depends(get_db
 
 
 @admin_app.post("/api/keys/{key_id}/revoke", response_model=RevokeKeyResponse)
-async def revoke_key(key_id: UUID, db: ResponsesDB = Depends(get_db)) -> RevokeKeyResponse:
+async def revoke_key(key_id: UUID, db: Db) -> RevokeKeyResponse:
     success = await db.revoke_api_key(key_id)
     if not success:
         raise HTTPException(status_code=404, detail="API key not found or already revoked")

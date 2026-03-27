@@ -8,8 +8,9 @@ from datetime import timedelta
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
+from fastapi import Depends
 from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
@@ -199,3 +200,6 @@ def get_settings() -> Settings:
     For tests, monkeypatch this function to return test settings.
     """
     return Settings.from_env()
+
+
+SettingsDep = Annotated[Settings, Depends(get_settings)]

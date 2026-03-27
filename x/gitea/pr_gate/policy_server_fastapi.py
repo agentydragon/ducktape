@@ -5,6 +5,7 @@ import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from http import HTTPStatus
+from typing import Annotated
 
 import httpx
 import structlog
@@ -145,7 +146,7 @@ def log_decision(
 
 
 @app.get("/validate")
-async def validate(request: Request, resources: AppResources = Depends(get_resources)) -> Response:  # noqa: B008
+async def validate(request: Request, resources: Annotated[AppResources, Depends(get_resources)]) -> Response:
     # Headers forwarded by nginx internal location
     orig_uri = request.headers.get("X-Original-URI", "")
     cookie = request.headers.get("Cookie", "")

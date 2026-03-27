@@ -7,14 +7,14 @@ import inspect
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from x.gatelet.server.auth.handlers import AuthHandlerError
-from x.gatelet.server.config import Settings, get_settings
-from x.gatelet.server.database import get_db_session
+from x.gatelet.server.config import Settings, SettingsDep
+from x.gatelet.server.database import DbSession
 from x.gatelet.server.models import AuthCRSession, AuthKey, AuthNonce
 
 MAX_OPTIONS = 256
@@ -44,8 +44,6 @@ def _create_options(num_options: int) -> list[str]:
 
 router = APIRouter(tags=["auth"])
 
-DB_SESSION = Depends(get_db_session)
-
 
 async def _validate_key(key_id: int, db_session: AsyncSession, settings: Settings) -> AuthKey:
     stmt = select(AuthKey).where(AuthKey.id == key_id)
@@ -70,9 +68,7 @@ async def _new_challenge(key: AuthKey, db_session: AsyncSession, settings: Setti
 
 
 @router.get("/cr/{key_id}", response_class=HTMLResponse)
-async def start_challenge(
-    key_id: int, request: Request, db_session: AsyncSession = DB_SESSION, settings: Settings = Depends(get_settings)
-):
+async def start_challenge(key_id: int, request: Request, db_session: DbSession, settings: SettingsDep):
     key = await _validate_key(key_id, db_session, settings)
     nonce, _, options = await _new_challenge(key, db_session, settings)
     return request.app.state.templates.TemplateResponse(
@@ -109,12 +105,7 @@ async def _render_new_challenge(
 
 @router.get("/cr/{key_id}/{nonce_value}/{answer}", response_class=HTMLResponse)
 async def answer_challenge(
-    key_id: int,
-    nonce_value: str,
-    answer: str,
-    request: Request,
-    db_session: AsyncSession = DB_SESSION,
-    settings: Settings = Depends(get_settings),
+    key_id: int, nonce_value: str, answer: str, request: Request, db_session: DbSession, settings: SettingsDep
 ):
     key = await _validate_key(key_id, db_session, settings)
     stmt = select(AuthNonce).where(AuthNonce.nonce_value == nonce_value)

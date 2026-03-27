@@ -4,11 +4,11 @@ import logging
 from typing import Any
 
 import homeassistant_api
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from x.gatelet.server.auth.dependencies import Auth
-from x.gatelet.server.config import Settings, get_settings
+from x.gatelet.server.config import Settings, SettingsDep
 from x.gatelet.server.shared import make_ha_history_url
 
 logger = logging.getLogger(__name__)
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["homeassistant"])
 
 
-async def fetch_states(settings: Settings = Depends(get_settings)) -> list[dict[str, Any]]:
+async def fetch_states(settings: Settings) -> list[dict[str, Any]]:
     """Fetch states for configured entities."""
     if not settings.home_assistant.enabled:
         return []
@@ -38,7 +38,7 @@ async def fetch_states(settings: Settings = Depends(get_settings)) -> list[dict[
 
 
 @router.get("/ha/", response_class=HTMLResponse)
-async def list_entities(request: Request, auth: Auth, settings: Settings = Depends(get_settings)) -> HTMLResponse:
+async def list_entities(request: Request, auth: Auth, settings: SettingsDep) -> HTMLResponse:
     """List configured Home Assistant entity states."""
     states = await fetch_states(settings)
     is_human = auth.auth_type == "admin"
@@ -57,9 +57,7 @@ async def list_entities(request: Request, auth: Auth, settings: Settings = Depen
 
 
 @router.get("/ha/{entity_id}", response_class=HTMLResponse)
-async def entity_details(
-    request: Request, entity_id: str, auth: Auth, settings: Settings = Depends(get_settings)
-) -> HTMLResponse:
+async def entity_details(request: Request, entity_id: str, auth: Auth, settings: SettingsDep) -> HTMLResponse:
     """Display details for a single entity."""
     states = await fetch_states(settings)
     entity = next((s for s in states if s["entity_id"] == entity_id), None)

@@ -8,15 +8,16 @@ import json
 import os
 import time
 from collections.abc import AsyncIterator
-from typing import Any, NewType
+from typing import Annotated, Any, NewType
 
 import canonicaljson
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from openai.types.responses import Response as OpenAIResponse, ResponseCreateParams, ResponseStreamEvent, ResponseUsage
 from pydantic import TypeAdapter
 
+from x.rspcache.dependencies import Db, get_db
 from x.rspcache.models import ErrorPayload, ResponseStatus, response_from_event
 from x.rspcache.responses_db import APIKeyRecord, ResponsesDB
 
@@ -110,12 +111,6 @@ class StreamingContext:
 
 HTTP_ERROR_MIN = 400
 SSE_PREFIX = "data:"
-
-_db = ResponsesDB()
-
-
-def get_db() -> ResponsesDB:
-    return _db
 
 
 def _require_api_keys() -> bool:
@@ -213,12 +208,12 @@ APP = proxy_app
 
 @proxy_app.on_event("startup")
 async def _startup() -> None:
-    await _db.init()
+    await get_db().init()
 
 
 @proxy_app.on_event("shutdown")
 async def _shutdown() -> None:
-    await _db.close()
+    await get_db().close()
 
 
 @proxy_app.get("/health")
@@ -293,9 +288,9 @@ def _relay_error_response(resp: httpx.Response) -> Response:
 @proxy_app.post("/v1/responses")
 async def responses_endpoint(
     request: Request,
-    authorization: str | None = Header(None),
-    x_api_key: str | None = Header(None, convert_underscores=False),
-    db: ResponsesDB = Depends(get_db),  # noqa: B008
+    db: Db,
+    authorization: Annotated[str | None, Header()] = None,
+    x_api_key: Annotated[str | None, Header(convert_underscores=False)] = None,
 ) -> Response:
     try:
         body = await request.json()
