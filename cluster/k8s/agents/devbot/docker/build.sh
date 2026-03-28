@@ -15,16 +15,16 @@ fi
 
 # Build desktop image
 echo "Building desktop image..."
-docker build -t ${DESKTOP_TAG} ./desktop/
+docker build -t "${DESKTOP_TAG}" ./desktop/
 
 # Build MCP server image
 echo "Building MCP server image..."
-docker build -t ${MCP_TAG} ./mcp-server/
+docker build -t "${MCP_TAG}" ./mcp-server/
 
 if [ "$PUSH" = "true" ]; then
   echo "Pushing images to ${REGISTRY}..."
-  docker push ${DESKTOP_TAG}
-  docker push ${MCP_TAG}
+  docker push "${DESKTOP_TAG}"
+  docker push "${MCP_TAG}"
   echo "Done! Images pushed to ${REGISTRY}."
 else
   echo "Done! Images built locally."

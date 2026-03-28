@@ -14,7 +14,7 @@ RESOLUTION=${RESOLUTION:-1920x1080}
 
 # Start VNC server
 exec vncserver :0 \
-  -geometry $RESOLUTION \
+  -geometry "$RESOLUTION" \
   -depth 24 \
   -localhost no \
   -SecurityTypes VncAuth \
