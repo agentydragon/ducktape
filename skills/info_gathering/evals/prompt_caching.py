@@ -11,12 +11,12 @@ See function_learning/debug/prompt_caching.md for the full investigation.
 
 import json
 import logging
-from collections.abc import Sequence
-from typing import Any
+from collections.abc import Mapping, Sequence
+from typing import Any, Literal
 
 from anthropic.types import Usage
 from autogen_core import CancellationToken
-from autogen_core.models import CreateResult, FunctionCall, FunctionExecutionResultMessage, RequestUsage
+from autogen_core.models import CreateResult, FunctionCall, FunctionExecutionResultMessage, LLMMessage, RequestUsage
 from autogen_core.tools import Tool, ToolSchema
 from autogen_ext.models.anthropic import AnthropicChatCompletionClient
 from autogen_ext.models.anthropic._anthropic_client import (
@@ -25,6 +25,7 @@ from autogen_ext.models.anthropic._anthropic_client import (
     normalize_stop_reason,
     to_anthropic_type,
 )
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +42,8 @@ _ANTHROPIC_MODEL_INFO: dict[str, Any] = {
 class CachedCreateResult(CreateResult):
     """CreateResult extended with Anthropic prompt-caching token counts."""
 
-    cache_read_tokens: int = 0
-    cache_creation_tokens: int = 0
+    cache_read_tokens: int | None
+    cache_creation_tokens: int | None
 
 
 class CachedAnthropicClient(AnthropicChatCompletionClient):
@@ -71,12 +72,12 @@ class CachedAnthropicClient(AnthropicChatCompletionClient):
 
     async def create(
         self,
-        messages: Any,
+        messages: Sequence[LLMMessage],
         *,
         tools: Sequence[Tool | ToolSchema] = (),
-        tool_choice: Any = "auto",
-        json_output: Any = None,
-        extra_create_args: Any = None,
+        tool_choice: Tool | Literal["auto", "required", "none"] = "auto",
+        json_output: bool | type[BaseModel] | None = None,
+        extra_create_args: Mapping[str, Any] | None = None,
         cancellation_token: CancellationToken | None = None,
     ) -> CachedCreateResult:
         system_message = None
@@ -94,6 +95,7 @@ class CachedAnthropicClient(AnthropicChatCompletionClient):
 
         request_args: dict[str, Any] = {
             **self._create_args,
+            **(extra_create_args or {}),
             "messages": anthropic_messages,
             "max_tokens": self._create_args.get("max_tokens", 4096),
             "cache_control": {"type": "ephemeral"},
@@ -137,10 +139,6 @@ class CachedAnthropicClient(AnthropicChatCompletionClient):
             content=content,
             usage=usage,
             cached=False,
-            cache_read_tokens=response.usage.cache_read_input_tokens
-            if response.usage.cache_read_input_tokens is not None
-            else 0,
-            cache_creation_tokens=response.usage.cache_creation_input_tokens
-            if response.usage.cache_creation_input_tokens is not None
-            else 0,
+            cache_read_tokens=response.usage.cache_read_input_tokens,
+            cache_creation_tokens=response.usage.cache_creation_input_tokens,
         )

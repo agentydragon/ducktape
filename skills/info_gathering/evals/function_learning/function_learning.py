@@ -41,7 +41,7 @@ from skills.info_gathering.evals.function_learning.result_types import (
     TurnResult,
 )
 from skills.info_gathering.evals.function_learning.scoring import EVAL_TIMEOUT_S, evaluate_program
-from skills.info_gathering.evals.prompt_caching import CachedAnthropicClient
+from skills.info_gathering.evals.prompt_caching import CachedAnthropicClient, CachedCreateResult
 from skills.info_gathering.evals.twenty_questions.prompts import load_skill_prompt
 from skills.info_gathering.evals.twenty_questions.x.shared.output import run_output_paths
 
@@ -77,8 +77,8 @@ class LlmResponseLog(BaseModel):
     tool_calls: list[FunctionCallLog] | None
     input_tokens: int
     output_tokens: int
-    cache_read_tokens: int
-    cache_creation_tokens: int
+    cache_read_tokens: int | None
+    cache_creation_tokens: int | None
 
 
 class ToolResultLog(BaseModel):
@@ -260,13 +260,12 @@ async def run_game(
                 break
 
             result = await model_client.create(history, tools=tool_schemas, tool_choice="required")
+            assert isinstance(result, CachedCreateResult), f"expected CachedCreateResult, got {type(result)}"
 
-            cache_read = getattr(result, "cache_read_tokens", 0)
-            cache_creation = getattr(result, "cache_creation_tokens", 0)
             game.total_input_tokens += result.usage.prompt_tokens
             game.total_output_tokens += result.usage.completion_tokens
-            game.total_cache_read_tokens += cache_read
-            game.total_cache_creation_tokens += cache_creation
+            game.total_cache_read_tokens += result.cache_read_tokens or 0
+            game.total_cache_creation_tokens += result.cache_creation_tokens or 0
 
             if isinstance(result.content, str):
                 game.log(
@@ -276,8 +275,10 @@ async def run_game(
                         tool_calls=None,
                         input_tokens=result.usage.prompt_tokens,
                         output_tokens=result.usage.completion_tokens,
-                        cache_read_tokens=cache_read,
-                        cache_creation_tokens=cache_creation,
+                        cache_read_tokens=result.cache_read_tokens if isinstance(result, CachedCreateResult) else None,
+                        cache_creation_tokens=result.cache_creation_tokens
+                        if isinstance(result, CachedCreateResult)
+                        else None,
                     )
                 )
                 history.append(AssistantMessage(content=result.content, source="agent"))
@@ -294,8 +295,8 @@ async def run_game(
                     ],
                     input_tokens=result.usage.prompt_tokens,
                     output_tokens=result.usage.completion_tokens,
-                    cache_read_tokens=cache_read,
-                    cache_creation_tokens=cache_creation,
+                    cache_read_tokens=result.cache_read_tokens,
+                    cache_creation_tokens=result.cache_creation_tokens,
                 )
             )
             history.append(AssistantMessage(content=function_calls, source="agent"))
