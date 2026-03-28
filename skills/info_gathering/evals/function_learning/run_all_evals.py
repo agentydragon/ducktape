@@ -24,6 +24,7 @@ class RunRecord(BaseModel):
     function: str
     arm: str  # "skill" or "no_skill"
     run_idx: int
+    model: str
     total_hamming_loss: int
     per_turn_losses: list[int]
     solved_at_turn: int | None
@@ -65,6 +66,7 @@ async def run_one(
                 function=function_name,
                 arm=arm,
                 run_idx=run_idx,
+                model=summary.model,
                 total_hamming_loss=summary.result.total_hamming_loss,
                 per_turn_losses=summary.result.per_turn_losses,
                 solved_at_turn=summary.result.solved_at_turn,
