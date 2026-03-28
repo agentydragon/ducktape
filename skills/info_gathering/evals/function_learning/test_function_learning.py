@@ -12,6 +12,7 @@ import aiodocker
 import pytest_bazel
 from autogen_core import FunctionCall
 from autogen_core.models import CreateResult, RequestUsage
+from autogen_core.tools import FunctionTool
 from autogen_ext.models.replay import ReplayChatCompletionClient
 
 from skills.info_gathering.evals.function_learning.function_learning import run_game
@@ -20,6 +21,15 @@ from skills.info_gathering.evals.function_learning.result_types import RunSummar
 
 _ZERO_USAGE = RequestUsage(prompt_tokens=0, completion_tokens=0)
 _TEST_TURNS = 3
+
+
+def _dummy_exec_tool() -> FunctionTool:
+    """Exec tool that is never called — replay client only issues play_turn calls."""
+
+    async def exec(cmd: list[str], timeout_ms: int = 30000) -> str:
+        raise RuntimeError("exec should not be called in replay tests")
+
+    return FunctionTool(exec, name="exec", description="dummy")
 
 
 def _play_turn_call(query: int, program: str) -> CreateResult:
@@ -37,7 +47,8 @@ async def _run_with_replay(
     *,
     completions: list[CreateResult],
     tmp_path: Path,
-    variant_name: str = "parity_groups",
+    function_name: str = "parity_groups",
+    hint: bool = True,
     turn_limit: int = _TEST_TURNS,
 ) -> RunSummary:
     client = ReplayChatCompletionClient(
@@ -57,10 +68,12 @@ async def _run_with_replay(
         )
         try:
             return await run_game(
-                variant_name=variant_name,
+                function_name=function_name,
+                hint=hint,
                 model="test-model",
                 api="openai",
                 output_dir=tmp_path,
+                exec_tool=_dummy_exec_tool(),
                 model_client=client,
                 scoring_container=container,
                 turn_limit=turn_limit,

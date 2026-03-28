@@ -31,7 +31,7 @@ from fastmcp.client import Client
 from mcp.types import TextContent
 
 from skills.info_gathering.evals.docker_exec import scratch_exec_server
-from skills.info_gathering.evals.function_learning.functions import VARIANTS, SecretFunction
+from skills.info_gathering.evals.function_learning.functions import FUNCTIONS, SecretFunction
 from skills.info_gathering.evals.function_learning.prompts import build_system_prompt, first_user_message
 from skills.info_gathering.evals.function_learning.result_types import (
     FunctionLearningResult,
@@ -151,24 +151,28 @@ def _build_model_client(*, api: str, model: str) -> ChatCompletionClient:
     raise ValueError(f"Unsupported API: {api!r}")
 
 
+_NO_HINT = "The function class is unknown. You must discover its structure from queries alone."
+
+
 async def run_game(
     *,
-    variant_name: str,
+    function_name: str,
+    hint: bool,
     turn_limit: int,
     model: str,
     api: str,
     output_dir: Path,
-    exec_tool: FunctionTool | None = None,
+    exec_tool: FunctionTool,
     scoring_container: aiodocker.docker.DockerContainer,
     model_client: ChatCompletionClient | None = None,
     no_skill: bool = False,
 ) -> RunSummary:
     """Execute one function learning game and persist results."""
-    variant = VARIANTS[variant_name]
-    secret_fn = variant.function
+    secret_fn = FUNCTIONS[function_name]
+    description = secret_fn.description if hint else _NO_HINT
 
-    system = build_system_prompt(skill="" if no_skill else load_skill_prompt(), has_scratch=exec_tool is not None)
-    opening = first_user_message(secret_fn, turn_limit, variant.function_description, eval_timeout_s=EVAL_TIMEOUT_S)
+    system = build_system_prompt(skill="" if no_skill else load_skill_prompt(), has_scratch=True)
+    opening = first_user_message(secret_fn, turn_limit, description, eval_timeout_s=EVAL_TIMEOUT_S)
 
     owns_client = model_client is None
     if model_client is None:
@@ -176,11 +180,8 @@ async def run_game(
 
     game = GameContext(turn_limit=turn_limit)
 
-    # Tools: play_turn (game) + optional exec (scratch).
     play_turn_tool = _make_play_turn_tool(game, secret_fn, scoring_container)
-    all_tools: list[FunctionTool] = [play_turn_tool]
-    if exec_tool:
-        all_tools.append(exec_tool)
+    all_tools = [play_turn_tool, exec_tool]
     tool_schemas = [t.schema for t in all_tools]
     tool_map = {t.name: t for t in all_tools}
 
@@ -235,7 +236,7 @@ async def run_game(
         total_hamming_loss=total_hamming, per_turn_losses=per_turn, solved_at_turn=game.turn if game.solved else None
     )
 
-    calls_path, summary_path = run_output_paths(f"fl_{variant_name}", output_dir)
+    calls_path, summary_path = run_output_paths(f"fl_{function_name}_{'hint' if hint else 'nohint'}", output_dir)
     with calls_path.open("w") as f:
         for entry in game.log_entries:
             f.write(json.dumps(entry) + "\n")
@@ -243,7 +244,7 @@ async def run_game(
             f.write(tr.model_dump_json() + "\n")
 
     summary = RunSummary(
-        eval_name=variant_name,
+        eval_name=function_name,
         framework="autogen",
         model=model,
         api=api,
@@ -282,7 +283,8 @@ async def _async_main(args: argparse.Namespace) -> None:
             )
             try:
                 summary = await run_game(
-                    variant_name=args.variant,
+                    function_name=args.function,
+                    hint=not args.no_hint,
                     model=args.model,
                     api=args.api,
                     output_dir=output_dir,
@@ -299,7 +301,8 @@ async def _async_main(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Function Learning Eval — AutoGen")
-    parser.add_argument("--variant", choices=list(VARIANTS), required=True)
+    parser.add_argument("--function", choices=list(FUNCTIONS), required=True)
+    parser.add_argument("--no-hint", action="store_true")
     parser.add_argument("--model", required=True)
     parser.add_argument("--api", choices=["openai", "anthropic"], default="anthropic")
     parser.add_argument("--output-dir", default=None)
