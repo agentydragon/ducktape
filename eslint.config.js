@@ -105,12 +105,6 @@ export default [
 
   // ── Per-project overrides ──────────────────────────────────────────────
 
-  // Props frontend: Node.js globals for SSR
-  {
-    files: ["props/frontend/src/**/*.{ts,svelte}"],
-    languageOptions: { globals: { ...globals.node } },
-  },
-
   // RSPCache admin UI: React/JSX
   {
     files: ["x/rspcache/admin_ui/src/**/*.{ts,tsx}"],
