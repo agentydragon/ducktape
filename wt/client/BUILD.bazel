@@ -45,6 +45,7 @@ py_library(
         "@pypi//click",
         "@pypi//more_itertools",
         "@pypi//psutil",
+        "@pypi//types_psutil",
     ],
 )
 
@@ -79,6 +80,7 @@ py_library(
         "@pypi//psutil",
         "@pypi//pydantic",
         "@pypi//pygit2",
+        "@pypi//types_psutil",
     ],
 )
 

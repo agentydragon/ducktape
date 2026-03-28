@@ -106,7 +106,10 @@ py_library(
     srcs = ["tmpfs.py"],
     imports = ["../../../.."],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//psutil"],
+    deps = [
+        "@pypi//psutil",
+        "@pypi//types_psutil",
+    ],
 )
 
 py_library(

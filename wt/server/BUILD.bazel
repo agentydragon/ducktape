@@ -196,6 +196,7 @@ py_library(
         "//wt/shared:protocol",
         "@pypi//psutil",
         "@pypi//pygit2",
+        "@pypi//types_psutil",
     ],
 )
 

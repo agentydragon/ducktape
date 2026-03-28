@@ -13,6 +13,7 @@ py_library(
         "@pypi//psutil",
         "@pypi//pydantic",
         "@pypi//tomlkit",
+        "@pypi//types_psutil",
     ],
 )
 
