@@ -22,7 +22,10 @@ py_library(
     srcs = ["docker.py"],
     imports = [".."],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//aiodocker"],
+    deps = [
+        "@pypi//aiodocker",
+        "@pypi//docker",
+    ],
 )
 
 py_library(

@@ -34,11 +34,12 @@ def normalize_proxy_url(proxy_url: str) -> tuple[str, dict[str, str]]:
     parsed = urlparse(proxy_url)
     if not parsed.username:
         return proxy_url, {}
+    if not parsed.hostname:
+        raise ValueError(f"Invalid proxy URL {proxy_url!r}: has credentials but missing hostname")
     password = parsed.password or ""
     auth = base64.b64encode(f"{parsed.username}:{password}".encode()).decode()
     proxy_headers = {"Proxy-Authorization": f"Basic {auth}"}
-    hostname = parsed.hostname or ""
-    netloc = hostname if parsed.port is None else f"{hostname}:{parsed.port}"
+    netloc = parsed.hostname if parsed.port is None else f"{parsed.hostname}:{parsed.port}"
     clean_url = parsed._replace(netloc=netloc).geturl()
     return clean_url, proxy_headers
 

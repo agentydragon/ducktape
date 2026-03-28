@@ -71,6 +71,7 @@ def mock_k8s_server(tmp_path: Path, proxy_net: docker.models.networks.Network) -
     key_file.write_bytes(key_pem)
 
     tls_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    tls_ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     tls_ctx.load_cert_chain(str(cert_file), str(key_file))
 
     server = http.server.HTTPServer(("0.0.0.0", port), _K8sHandler)
@@ -80,12 +81,21 @@ def mock_k8s_server(tmp_path: Path, proxy_net: docker.models.networks.Network) -
     thread.start()
     wait_for_port("127.0.0.1", port, timeout_secs=5)
 
-    yield MockK8sServer(url=f"https://{gateway}:{port}")
-    server.shutdown()
+    try:
+        yield MockK8sServer(url=f"https://{gateway}:{port}")
+    finally:
+        server.shutdown()
+
+
+@pytest.fixture
+def ca_file(tmp_path: Path, mitmproxy_proxy: MitmproxyFixture) -> Path:
+    path = tmp_path / "combined_ca.pem"
+    path.write_bytes(mitmproxy_proxy.ca_cert_pem)
+    return path
 
 
 def test_k8s_secrets_via_egress_proxy_uds_mode(
-    tmp_path: Path, mitmproxy_proxy: MitmproxyFixture, mock_k8s_server: MockK8sServer
+    tmp_path: Path, ca_file: Path, mitmproxy_proxy: MitmproxyFixture, mock_k8s_server: MockK8sServer
 ) -> None:
     """setup_k8s_secrets succeeds through the egress proxy without a TCP auth proxy.
 
@@ -94,9 +104,6 @@ def test_k8s_secrets_via_egress_proxy_uds_mode(
     as an explicit Proxy-Authorization header so that urllib3 v2 sends them on the
     HTTPS CONNECT tunnel; without this the proxy returns 403.
     """
-    ca_file = tmp_path / "combined_ca.pem"
-    ca_file.write_bytes(mitmproxy_proxy.ca_cert_pem)
-
     config = HookConfig(
         k8s=K8sConfig(
             server=mock_k8s_server.url,

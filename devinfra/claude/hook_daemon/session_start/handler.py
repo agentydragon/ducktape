@@ -143,14 +143,13 @@ def _render_extra_context(
     return result.rstrip("\n")
 
 
-def _build_otlp_session(caller_env: dict[str, str], ca_path: Path | None) -> requests.Session:
-    """Build a requests.Session for OTLP with proxy and CA from the caller's environment.
+def _build_otlp_session(proxy_url: str | None, ca_path: Path | None) -> requests.Session:
+    """Build a requests.Session for OTLP.
 
     requests derives Proxy-Authorization from embedded proxy URL credentials automatically,
     unlike raw urllib3 which requires explicit headers on HTTPS CONNECT tunnels.
     """
     session = requests.Session()
-    proxy_url = get_proxy_url(caller_env)
     if proxy_url:
         session.proxies = {"https": proxy_url, "http": proxy_url}
     if ca_path and ca_path.exists():
@@ -429,6 +428,7 @@ async def run_session(
     # These run in both web and CLI modes. Web mode provides auth_proxy (with
     # proxy_url and combined_ca); CLI mode has auth_proxy=None.
     combined_ca = setup.auth_proxy.combined_ca if setup.auth_proxy else None
+    proxy_url = (setup.auth_proxy.proxy_url if setup.auth_proxy else None) or get_proxy_url(ctx.caller_env)
     if settings.k8s_token and hook_config:
         try:
             with tracer.start_as_current_span("setup_k8s_secrets", context=root_ctx):
@@ -437,7 +437,7 @@ async def run_session(
                     session_dir=paths.session_dir,
                     combined_ca_path=combined_ca,
                     config=hook_config,
-                    proxy=(setup.auth_proxy.proxy_url if setup.auth_proxy else None) or get_proxy_url(ctx.caller_env),
+                    proxy=proxy_url,
                 )
         except Exception as e:
             logger.warning("K8s secrets fetch failed (non-fatal, continuing without secrets): %s", e)
@@ -470,7 +470,7 @@ async def run_session(
         otel_token = setup.secrets.otel_bearer_token if setup.secrets else None
         if otel_token:
             otel_config = OtelConfig(endpoint=otel_config.endpoint, bearer_token=otel_token)
-        otlp_session = _build_otlp_session(ctx.caller_env, combined_ca)
+        otlp_session = _build_otlp_session(proxy_url, combined_ca)
         otlp_exporter.configure(otel_config, session=otlp_session)
 
     # Render session bazelrc

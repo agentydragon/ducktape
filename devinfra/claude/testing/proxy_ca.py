@@ -20,10 +20,16 @@ def generate_server_cert(host: str) -> tuple[bytes, bytes]:
     Uses --ssl-insecure compatible format: mitmproxy won't verify the upstream
     server cert, so no trusted CA is needed on the server side.
 
+    `host` may be an IP address string or a DNS name; the SAN is set accordingly.
+
     Returns (cert_pem, key_pem).
     """
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, host)])
+    try:
+        san: x509.GeneralName = x509.IPAddress(ipaddress.ip_address(host))
+    except ValueError:
+        san = x509.DNSName(host)
     cert = (
         x509.CertificateBuilder()
         .subject_name(subject)
@@ -33,7 +39,7 @@ def generate_server_cert(host: str) -> tuple[bytes, bytes]:
         .not_valid_before(datetime.now(UTC))
         .not_valid_after(datetime.now(UTC) + timedelta(days=365))
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
-        .add_extension(x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address(host))]), critical=False)
+        .add_extension(x509.SubjectAlternativeName([san]), critical=False)
         .sign(key, hashes.SHA256())
     )
     cert_pem = cert.public_bytes(serialization.Encoding.PEM)

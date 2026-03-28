@@ -16,7 +16,7 @@ import yaml
 from kubernetes import client as k8s_client
 from kubernetes.client import Configuration, CoreV1Api
 
-from devinfra.claude.auth_proxy.vars import get_upstream_proxy_url, normalize_proxy_url
+from devinfra.claude.auth_proxy.vars import normalize_proxy_url
 from devinfra.claude.hook_config import HookConfig, K8sSecretRef
 
 logger = logging.getLogger(__name__)
@@ -81,7 +81,7 @@ def setup_k8s_secrets(
     from the configured namespace, maps data keys to env var names, and
     writes a kubeconfig file for kubectl CLI use.
 
-    Proxy priority: explicit `proxy` arg > get_upstream_proxy_url() env vars.
+    Pass `proxy` explicitly; callers must supply fresh credentials per hook invocation.
     """
     result = K8sSecretsResult()
     if not config.k8s or not config.k8s_secrets:
@@ -97,10 +97,8 @@ def setup_k8s_secrets(
         client_config.ssl_ca_cert = str(combined_ca_path)
     else:
         client_config.verify_ssl = True
-    effective_proxy = proxy or get_upstream_proxy_url()
-    clean_proxy: str | None = None
-    if effective_proxy:
-        clean_proxy, proxy_headers = normalize_proxy_url(effective_proxy)
+    if proxy:
+        clean_proxy, proxy_headers = normalize_proxy_url(proxy)
         client_config.proxy = clean_proxy
         if proxy_headers:
             client_config.proxy_headers = proxy_headers
@@ -137,7 +135,7 @@ def setup_k8s_secrets(
 
     # Write kubeconfig with the full proxy URL (credentials are needed by kubectl).
     kubeconfig = _build_kubeconfig(
-        token, k8s_cfg.server, k8s_cfg.service_account, k8s_cfg.namespace, combined_ca_path, proxy_url=effective_proxy
+        token, k8s_cfg.server, k8s_cfg.service_account, k8s_cfg.namespace, combined_ca_path, proxy_url=proxy
     )
     kubeconfig_path = session_dir / "kubeconfig"
     kubeconfig_path.write_text(yaml.dump(kubeconfig, default_flow_style=False))

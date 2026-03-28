@@ -25,10 +25,15 @@ def session() -> requests.Session:
     return s
 
 
-def test_configure_does_not_crash_on_export_failure(session: requests.Session) -> None:
+@pytest.fixture
+def span() -> ReadableSpan:
+    return ReadableSpan(name="test-span")
+
+
+def test_configure_does_not_crash_on_export_failure(session: requests.Session, span: ReadableSpan) -> None:
     """configure() logs a warning and continues if the initial span flush fails."""
     exporter = DeferredOtlpExporter()
-    exporter.export([ReadableSpan(name="test-span")])
+    exporter.export([span])
 
     exporter.configure(OtelConfig(endpoint=_ENDPOINT), session=session)
 
@@ -46,15 +51,14 @@ def test_configure_idempotent(session: requests.Session) -> None:
     assert exporter._inner is inner
 
 
-def test_configure_no_endpoint_is_noop() -> None:
+def test_configure_no_endpoint_is_noop(session: requests.Session) -> None:
     exporter = DeferredOtlpExporter()
-    exporter.configure(OtelConfig(endpoint=None), session=requests.Session())
+    exporter.configure(OtelConfig(endpoint=None), session=session)
     assert exporter._inner is None
 
 
-def test_export_buffers_before_configure() -> None:
+def test_export_buffers_before_configure(span: ReadableSpan) -> None:
     exporter = DeferredOtlpExporter()
-    span = ReadableSpan(name="test-span")
     assert exporter.export([span]) == SpanExportResult.SUCCESS
     assert exporter._buffer == [span]
 
