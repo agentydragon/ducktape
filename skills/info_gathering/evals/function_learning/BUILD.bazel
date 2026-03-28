@@ -76,6 +76,7 @@ py_library(
     deps = [
         ":function_learning",
         "@pypi//aiodocker",
+        "@pypi//anyio",
         "@pypi//fastmcp",
     ],
 )

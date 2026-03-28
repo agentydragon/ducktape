@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import aiodocker
+import anyio
 from fastmcp.client import Client
 
 from skills.info_gathering.evals.docker_exec import scratch_exec_server
@@ -242,7 +243,7 @@ def _generate_report(cells: list[CellStats], model: str, runs_per_cell: int) -> 
 
 async def _async_main(args: argparse.Namespace) -> None:
     output_dir = Path(args.output_dir)
-    Path.mkdir(output_dir, parents=True, exist_ok=True)
+    await anyio.Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     sem = asyncio.Semaphore(args.concurrency)
 
