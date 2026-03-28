@@ -47,7 +47,36 @@ For each linter found:
 1. **Read the config** to understand what's enabled, ignored, and per-file-ignored
 2. **Check for documented exclusions** — comments explaining why rules are off
 3. **Check for version pins** — are they current?
-4. **Check for stale exclusions** — run the excluded rules to see if they'd now pass (0 violations = exclusion can be removed)
+4. **Verify every suppression against the code it targets** — any config that
+   disables, weakens, or overrides default checker behavior for a subset of code
+   must be validated against that code. This applies across ALL checkers and
+   languages. The principle: if the reason for the suppression no longer exists
+   in the code, the suppression is stale and should be removed.
+
+   For each suppression found, grep/run the affected files to confirm the
+   suppressed pattern still exists. Types of suppressions to check:
+
+   **Rule-level exclusions** (all checkers):
+   - ruff `per-file-ignores`, `ignore` list → run the rule on those files, 0 violations = stale
+   - mypy `ignore_errors`, `ignore_missing_imports` per-module → check if the package/module still has the stated problem
+   - eslint per-file rule disables, inline `// eslint-disable` → check if the triggering pattern still exists
+   - clippy `#[allow(...)]` attributes → run the lint on that code
+   - shellcheck `# shellcheck disable=` directives → check if the flagged pattern remains
+   - `.shellcheckrc` global disables → count violations, 0 = stale
+   - tflint disabled rules → check if the reason still applies
+
+   **Environment/config overrides** (ESLint, tsconfig, etc.):
+   - Node.js globals on browser code → grep for `process.`, `Buffer`, `__dirname`, `require(`
+   - JSX parser options → grep for JSX syntax in matched files
+   - SSR/prerender flags → check framework config (e.g., `svelte.config.js`)
+   - Environment-specific plugins → verify the framework is used in that directory
+
+   **Broad exclusions** (all checkers):
+   - Entire directories excluded from linting → check if the directory still contains the kind of code that justified exclusion
+   - `exclude` patterns in ruff.toml, mypy.ini, `.pre-commit-config.yaml` → verify the excluded paths still exist and still need exclusion
+
+   Report every stale suppression in Category A.
+
 5. **Check for misconfigurations** — duplicate entries, conflicting settings, invalid TOML/YAML, rules that don't exist in the current version
 6. **Find existing cleanup PRs** — search open PRs for lint/check-related changes
 
@@ -69,8 +98,9 @@ value:
 
 - Version bumps available (current vs latest)
 - Invalid/duplicate config entries
-- Stale exclusions (rule excluded but 0 violations — can be removed)
-- Stale per-file-ignores (file no longer triggers the rule)
+- Stale suppressions (any rule exclusion, per-file ignore, inline disable, directory
+  exclusion, or config override whose justification no longer holds — verified by running
+  the suppressed check or grepping for the pattern that motivated it)
 - Conflicting settings between tools
 
 ### Category B: Free guardrails
