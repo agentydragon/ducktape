@@ -20,7 +20,6 @@ from autogen_core.models import CreateResult, FunctionCall, FunctionExecutionRes
 from autogen_core.tools import Tool, ToolSchema
 from autogen_ext.models.anthropic import AnthropicChatCompletionClient
 from autogen_ext.models.anthropic._anthropic_client import (
-    _add_usage,
     convert_tool_choice_anthropic,
     convert_tools,
     normalize_stop_reason,
@@ -131,16 +130,17 @@ class CachedAnthropicClient(AnthropicChatCompletionClient):
         else:
             content = "".join(b.text for b in response.content if b.type == "text")
 
-        usage = RequestUsage(prompt_tokens=response.usage.input_tokens, completion_tokens=response.usage.output_tokens)
-        self._total_usage = _add_usage(self._total_usage, usage)
-        self._actual_usage = _add_usage(self._actual_usage, usage)
-
         assert isinstance(response.usage, Usage)
+        usage = RequestUsage(prompt_tokens=response.usage.input_tokens, completion_tokens=response.usage.output_tokens)
         return CachedCreateResult(
             finish_reason=normalize_stop_reason(response.stop_reason),
             content=content,
             usage=usage,
             cached=False,
-            cache_read_tokens=response.usage.cache_read_input_tokens or 0,
-            cache_creation_tokens=response.usage.cache_creation_input_tokens or 0,
+            cache_read_tokens=response.usage.cache_read_input_tokens
+            if response.usage.cache_read_input_tokens is not None
+            else 0,
+            cache_creation_tokens=response.usage.cache_creation_input_tokens
+            if response.usage.cache_creation_input_tokens is not None
+            else 0,
         )
