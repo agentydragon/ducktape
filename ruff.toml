@@ -98,6 +98,7 @@ extend-ignore = ["COM812"]
 # ISC  — implicit string concat is fine; explicit + is sometimes clearer
 # FLY  — 2-element join is fine and consistent with longer joins
 # Q    — conflicts with ruff-format's quote handling and would cause unnecessary formatter/linter churn
+# TC006 — quoting cast() type expressions to avoid runtime eval is not worth the readability cost
 
 # Allow mathematical symbols in strings
 allowed-confusables = ["σ"]
