@@ -2,11 +2,13 @@
 
 autogen's AnthropicChatCompletionClient doesn't forward cache_control to the
 Anthropic API. This module provides a subclass that injects a top-level
-cache_control marker and surfaces cache token counts through RequestUsage.
+cache_control marker, disables parallel tool use (so each turn has exactly one
+tool call), and surfaces cache token counts in a typed CreateResult subclass.
 
 See function_learning/debug/prompt_caching.md for the full investigation.
 """
 
+import asyncio
 import logging
 from collections.abc import Sequence
 from typing import Any
@@ -28,17 +30,22 @@ _ANTHROPIC_MODEL_INFO: dict[str, Any] = {
 }
 
 
+class CachedCreateResult(CreateResult):
+    """CreateResult extended with Anthropic prompt-caching token counts."""
+
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+
+
 class CachedAnthropicClient(AnthropicChatCompletionClient):
-    """AnthropicChatCompletionClient with prompt caching enabled.
+    """AnthropicChatCompletionClient with prompt caching and single-tool-call enforcement.
 
-    Injects top-level cache_control={"type":"ephemeral"} on every request so
-    the Anthropic API automatically places the cache breakpoint at the last
-    cacheable block and moves it forward as the conversation grows.
-
-    Also captures cache_creation_input_tokens and cache_read_input_tokens from
-    the raw Anthropic response and attaches them to the returned RequestUsage
-    as dynamic attributes (cache_creation_tokens, cache_read_tokens), since
-    autogen's RequestUsage dataclass only has prompt_tokens/completion_tokens.
+    - Injects top-level cache_control={"type":"ephemeral"} so the API places
+      the cache breakpoint at the last cacheable block each turn.
+    - Sets disable_parallel_tool_use=True on tool_choice so the model emits
+      exactly one tool call per turn.
+    - Returns CachedCreateResult with typed cache_read_tokens /
+      cache_creation_tokens instead of attaching dynamic attributes.
 
     Caching behavior confirmed via live API testing (2026-03-28):
     - Anthropic does NOT auto-cache without cache_control (unlike OpenAI)
@@ -50,8 +57,9 @@ class CachedAnthropicClient(AnthropicChatCompletionClient):
     def __init__(self, *, model: str, **kwargs: Any) -> None:
         kwargs.setdefault("model_info", _ANTHROPIC_MODEL_INFO)
         super().__init__(model=model, **kwargs)
-        self._last_cache_read: int = 0
-        self._last_cache_creation: int = 0
+        # Queue receives (cache_read, cache_creation) from the interceptor before
+        # create() returns, so get_nowait() is always safe after super().create().
+        self._cache_token_queue: asyncio.Queue[tuple[int, int]] = asyncio.Queue()
         self._wrap_messages_create()
 
     def _wrap_messages_create(self) -> None:
@@ -59,13 +67,18 @@ class CachedAnthropicClient(AnthropicChatCompletionClient):
         if raw_client is None:
             return
         original_create = raw_client.messages.create
+        queue = self._cache_token_queue
 
         async def cached_create(*, model: str, messages: list[dict], max_tokens: int, **rest: Any) -> object:
             rest["cache_control"] = {"type": "ephemeral"}
+            # Disable parallel tool use so the model emits exactly one tool call.
+            tc = rest.get("tool_choice")
+            if isinstance(tc, dict) and tc.get("type") == "any":
+                rest["tool_choice"] = {**tc, "disable_parallel_tool_use": True}
             response = await original_create(model=model, messages=messages, max_tokens=max_tokens, **rest)
-            # Capture cache tokens from the raw Anthropic Message.usage.
-            self._last_cache_read = getattr(response.usage, "cache_read_input_tokens", 0) or 0
-            self._last_cache_creation = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
+            cache_read = getattr(response.usage, "cache_read_input_tokens", 0) or 0
+            cache_creation = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
+            await queue.put((cache_read, cache_creation))
             return response
 
         raw_client.messages.create = cached_create
@@ -79,7 +92,7 @@ class CachedAnthropicClient(AnthropicChatCompletionClient):
         json_output: Any = None,
         extra_create_args: Any = None,
         cancellation_token: CancellationToken | None = None,
-    ) -> CreateResult:
+    ) -> CachedCreateResult:
         result = await super().create(
             messages,
             tools=tools,
@@ -88,8 +101,7 @@ class CachedAnthropicClient(AnthropicChatCompletionClient):
             extra_create_args=extra_create_args or {},
             cancellation_token=cancellation_token,
         )
-        # Attach cache counts as dynamic attrs on the RequestUsage dataclass so
-        # callers can use getattr(result.usage, "cache_read_tokens", 0).
-        result.usage.cache_read_tokens = self._last_cache_read  # type: ignore[attr-defined]
-        result.usage.cache_creation_tokens = self._last_cache_creation  # type: ignore[attr-defined]
-        return result
+        cache_read, cache_creation = self._cache_token_queue.get_nowait()
+        return CachedCreateResult(
+            **result.model_dump(), cache_read_tokens=cache_read, cache_creation_tokens=cache_creation
+        )

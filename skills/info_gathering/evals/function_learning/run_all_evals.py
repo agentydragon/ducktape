@@ -12,7 +12,7 @@ from fastmcp.client import Client
 from pydantic import BaseModel
 
 from skills.info_gathering.evals.docker_exec import scratch_exec_server
-from skills.info_gathering.evals.function_learning.function_learning import _make_exec_tool, run_game
+from skills.info_gathering.evals.function_learning.function_learning import make_exec_tool, run_game
 from skills.info_gathering.evals.function_learning.functions import FUNCTIONS
 
 logger = logging.getLogger(__name__)
@@ -94,7 +94,7 @@ async def _async_main(args: argparse.Namespace) -> None:
     sem = asyncio.Semaphore(args.concurrency)
 
     async with scratch_exec_server() as scratch_server, Client(scratch_server) as scratch_client:
-        exec_tool = _make_exec_tool(scratch_client)
+        exec_tool = make_exec_tool(scratch_client)
 
         async with aiodocker.Docker() as docker:
             container_name = f"fl-scoring-{uuid.uuid4().hex[:8]}"
