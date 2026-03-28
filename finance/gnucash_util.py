@@ -12,7 +12,7 @@ def account_from_path(top_account, account_path, original_path=None):
 
     account = top_account.lookup_by_name(account)
     if account is None:
-        raise Exception("path " + "".join(original_path) + " could not be found")
+        raise LookupError("path " + "".join(original_path) + " could not be found")
     if len(account_path) > 0:
         return account_from_path(account, account_path, original_path)
     return account
@@ -24,7 +24,7 @@ def gnc_numeric_to_python_decimal(numeric):
     copy = gnucash.GncNumeric(numeric.num(), numeric.denom())
     result = copy.to_decimal(None)
     if not result:
-        raise Exception(f"gnc numeric value {copy.to_string()} can't be converted to decimal")
+        raise ValueError(f"gnc numeric value {copy.to_string()} can't be converted to decimal")
     digit_tuple = tuple(int(char) for char in str(copy.num()) if char != "-")
     denominator = copy.denom()
     exponent = int(math.log10(denominator))

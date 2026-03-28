@@ -70,6 +70,7 @@ select = [
     # TRY004 blindly converts these to TypeError, which is semantically wrong —
     # a mount being in the wrong lifecycle state is a RuntimeError, not a type error.
     "EXE",   # shebang/executable consistency
+    "TRY002", # raise vanilla Exception — use specific exception types
     "TRY401", # redundant exception object in logging.exception
     "TRY203", # useless try-except (just re-raises)
     "TRY400", # logging.error in except → logging.exception

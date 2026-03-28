@@ -96,7 +96,7 @@ def get_trilium_papers():
             elif finished_reading == "false":
                 finished_reading = False
             else:
-                raise Exception(f"{finished_reading=}")
+                raise ValueError(f"{finished_reading=}")
         except KeyError:
             finished_reading = False
 
