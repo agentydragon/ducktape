@@ -37,6 +37,9 @@ class FunctionLearningResult(BaseModel):
     kind: Literal["completed"] = "completed"
     total_hamming_loss: int
     per_turn_losses: list[int]
+    solved_at_turn: int | None = Field(
+        default=None, description="Turn on which 0 loss was first achieved; None if never solved"
+    )
 
 
 class TokenUsage(BaseModel):
