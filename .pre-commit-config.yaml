@@ -78,6 +78,16 @@ repos:
         language: system
         files: "\\.nix$"
 
+  # Statix - Nix anti-pattern linter — statix provided by devShell / web-session via Nix
+  - repo: local
+    hooks:
+      - id: statix
+        name: statix
+        entry: statix check
+        language: system
+        files: "\\.nix$"
+        pass_filenames: false
+
   # Markdown linting (scoped to match .markdownlint-cli2.jsonc globs)
   - repo: https://github.com/DavidAnson/markdownlint-cli2
     rev: v0.22.0

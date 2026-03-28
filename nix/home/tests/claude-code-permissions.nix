@@ -4,7 +4,7 @@
 
 let
   pkgs = import <nixpkgs> { };
-  lib = pkgs.lib;
+  inherit (pkgs) lib;
 
   # Import SSOTs
   inspection = import ../../lib/inspection-commands.nix { inherit lib; };

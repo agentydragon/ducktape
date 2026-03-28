@@ -93,7 +93,7 @@ in
   config = lib.mkIf cfg.enable {
     services.timekpr = {
       enable = true;
-      package = cfg.package;
+      inherit (cfg) package;
     };
 
     # Autostart the client (tray icon + countdown notifications) in GNOME sessions

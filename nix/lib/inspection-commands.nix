@@ -781,7 +781,7 @@ let
       cmdStr = if entry ? args then "${entry.cmd} ${entry.args}" else entry.cmd;
     in
     {
-      type = entry.type;
+      inherit (entry) type;
       cmd = cmdStr;
     };
 
@@ -794,7 +794,7 @@ let
       stringified = stringifyCommand entry;
     in
     {
-      type = stringified.type;
+      inherit (stringified) type;
       cmd = "sudo ${stringified.cmd}";
     };
 in

@@ -4,7 +4,7 @@
 
 let
   pkgs = import <nixpkgs> { };
-  lib = pkgs.lib;
+  inherit (pkgs) lib;
 
   # Mock minimal home-manager config structure
   config = {

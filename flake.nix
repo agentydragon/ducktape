@@ -70,12 +70,12 @@
             _name: spec:
             if spec.fetch == "unpack" then
               builtins.fetchTarball {
-                url = spec.url;
+                inherit (spec) url;
                 sha256 = spec.hash;
               }
             else
               builtins.fetchurl {
-                url = spec.url;
+                inherit (spec) url;
                 sha256 = spec.hash;
               };
         in
@@ -313,6 +313,7 @@
               pkgs.pre-commit
               pkgs.bazelisk # TODO: ensure binary name matches what session start hook expects (no unconventional symlinks/aliases)
               pkgs.nixfmt-rfc-style
+              pkgs.statix
               pkgs.mkcert
               pkgs.ruff
               pkgs.shfmt

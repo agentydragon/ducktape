@@ -399,11 +399,11 @@ in
     enable = true;
     package = pkgsUnstable.claude-code; # Use unstable for faster updates
 
-    commands = commands;
+    inherit commands;
 
     pluginSources.claude-plugins-official = {
       src = claude-plugins-official;
-      rev = claude-plugins-official.rev;
+      inherit (claude-plugins-official) rev;
     };
 
     plugins = [
