@@ -104,7 +104,7 @@ class GameEndLog(BaseModel):
 @dataclass
 class GameContext:
     turn_limit: int
-    _log_file: IO[str] | None = field(default=None, init=False)
+    log_file: IO[str]
     turn: int = 0
     solved: bool = False
     turn_results: list[TurnResult] = field(default_factory=list)
@@ -117,13 +117,9 @@ class GameContext:
     def finished(self) -> bool:
         return self.turn >= self.turn_limit or self.solved
 
-    def attach_log(self, f: IO[str]) -> None:
-        self._log_file = f
-
     def log(self, entry: BaseModel) -> None:
-        if self._log_file is not None:
-            self._log_file.write(entry.model_dump_json() + "\n")
-            self._log_file.flush()
+        self.log_file.write(entry.model_dump_json() + "\n")
+        self.log_file.flush()
 
 
 def _now() -> str:
@@ -234,17 +230,14 @@ async def run_game(
     if model_client is None:
         model_client = _build_model_client(api=api, model=model)
 
-    game = GameContext(turn_limit=turn_limit)
-
-    play_turn_tool = _make_play_turn_tool(game, secret_fn, scoring_container)
-    all_tools = [play_turn_tool, exec_tool]
-    tool_schemas = [t.schema for t in all_tools]
-    tool_map = {t.name: t for t in all_tools}
-
     calls_path, summary_path = run_output_paths(f"fl_{function_name}_{'hint' if hint else 'nohint'}", output_dir)
 
     with calls_path.open("w") as log_f:
-        game.attach_log(log_f)
+        game = GameContext(turn_limit=turn_limit, log_file=log_f)
+        play_turn_tool = _make_play_turn_tool(game, secret_fn, scoring_container)
+        all_tools = [play_turn_tool, exec_tool]
+        tool_schemas = [t.schema for t in all_tools]
+        tool_map = {t.name: t for t in all_tools}
         game.log(
             GameStartLog(
                 timestamp=_now(),
