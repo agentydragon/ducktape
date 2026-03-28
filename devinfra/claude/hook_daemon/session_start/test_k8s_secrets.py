@@ -112,17 +112,14 @@ def test_kubeconfig_no_proxy_url_when_unset(
     assert "proxy-url" not in kubeconfig["clusters"][0]["cluster"]
 
 
-def test_kubeconfig_proxy_url_from_env(
-    tmp_path: Path, mock_k8s_api: MagicMock, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """When no explicit proxy is given but HTTPS_PROXY is set, kubeconfig should use it."""
+def test_kubeconfig_proxy_url_explicit(tmp_path: Path, mock_k8s_api: MagicMock) -> None:
+    """Explicit proxy arg is written to the kubeconfig proxy-url."""
     config = _make_config([])
     mock_k8s_api.read_namespaced_secret.side_effect = []
-    for var in PROXY_ENV_VARS:
-        monkeypatch.delenv(var, raising=False)
-    monkeypatch.setenv("HTTPS_PROXY", "http://egress-proxy:15004")
 
-    result = setup_k8s_secrets(token="tok", session_dir=tmp_path, combined_ca_path=None, config=config)
+    result = setup_k8s_secrets(
+        token="tok", session_dir=tmp_path, combined_ca_path=None, config=config, proxy="http://egress-proxy:15004"
+    )
 
     assert result.kubeconfig_path is not None
     kubeconfig = yaml.safe_load(result.kubeconfig_path.read_text())
