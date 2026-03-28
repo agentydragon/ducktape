@@ -43,6 +43,7 @@ export default [
     },
     rules: {
       "prefer-const": "error",
+      "@typescript-eslint/consistent-type-imports": "error",
       "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
   },
@@ -65,6 +66,7 @@ export default [
     rules: {
       ...sveltePlugin.configs.recommended.rules,
       "prefer-const": "error",
+      "@typescript-eslint/consistent-type-imports": "error",
       "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
   },
@@ -87,6 +89,7 @@ export default [
     rules: {
       ...sveltePlugin.configs.recommended.rules,
       "prefer-const": "error",
+      "@typescript-eslint/consistent-type-imports": "error",
       "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
   },
@@ -123,6 +126,7 @@ export default [
       "import/no-duplicates": "error",
 
       // TypeScript
+      "@typescript-eslint/consistent-type-imports": "error",
       "@typescript-eslint/no-unused-vars": [
         "warn",
         {
@@ -218,6 +222,7 @@ export default [
     },
     rules: {
       "react/react-in-jsx-scope": "off", // Not needed in React 17+
+      "@typescript-eslint/consistent-type-imports": "error",
       "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
       "no-unused-vars": "off",
       "prefer-const": "error",
