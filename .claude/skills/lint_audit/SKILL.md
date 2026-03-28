@@ -207,4 +207,33 @@ After all PRs are created:
 - **Verify config diffs** — after every rebase, check the config file hasn't
   accumulated duplicates or lost existing rules
 - **Test before pushing** — run the check to verify 0 violations before committing
+
+## Ruff-specific gotchas
+
+### Testing stale per-file-ignores
+
+**WRONG**: `ruff check --select RULE path/ --config ruff.toml` — if ruff.toml already
+contains a per-file-ignore for that path+rule, this will always pass. You are testing
+with the suppression active, which makes it look like 0 violations even if violations
+exist.
+
+**CORRECT**: To check whether a per-file-ignore is truly stale, you must test _without_
+it. Either temporarily remove the entry from ruff.toml and run, or use
+`ruff check --select RULE path/` with an inline `--config` that excludes the
+per-file-ignore.
+
+### `--select` replaces the config's rule set (affects RUF100 and similar)
+
+`ruff check --select RULE --config ruff.toml` **replaces** the full `select` list with
+just `RULE`. It does NOT add `RULE` to the existing select. Consequence:
+
+- `ruff check --select RUF100 --config ruff.toml` will show many "unused noqa" violations
+  for `# noqa: F403`, `# noqa: RUF012` etc., because those rules are "non-enabled" in
+  the single-rule context. But in the real full run (all rules active), those noqa
+  comments ARE suppressing real violations — so the `--select RUF100` output is misleading.
+- **Always verify with the full config run** (`ruff check --config ruff.toml` with no
+  `--select` override) as the ground truth for whether violations actually exist.
+- Corollary: if `ruff check --config ruff.toml` returns 0 errors and includes `RUF` in
+  select, then RUF100 is already working correctly — there is nothing to "enable".
+
 ```
