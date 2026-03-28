@@ -1,22 +1,13 @@
-#!/usr/bin/env -S uv run
-# /// script
-# requires-python = ">=3.12"
-# dependencies = ["pydantic", "PyGithub"]
-# ///
-# Run standalone: uv run --project . devinfra/ci/sync_pins.py
 """Sync npins/sources.json with the latest GitHub Release for each package.
 
 For each pinned package, finds the latest release tag, compares the URL
 against the current pin, and updates npins/sources.json if the pin is stale.
 
-Expects: GH_TOKEN env var.
+Expects: GH_TOKEN env var. For fetch=unpack artifacts, requires nix in PATH.
 """
 
 import os
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+import subprocess
 
 from github import Auth, Github
 
@@ -24,6 +15,22 @@ from devinfra.ci.artifacts import ARTIFACTS, SOURCES_PATH, Sources, url_sha256
 
 REPO = "agentydragon/ducktape"
 BASE = f"https://github.com/{REPO}/releases/download"
+
+
+def nix_unpack_hash(url: str) -> str:
+    """Return the NAR hash for a tarball URL (for fetch=unpack pins in flake.nix)."""
+    raw = subprocess.run(
+        ["nix-prefetch-url", "--unpack", url], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    return subprocess.run(
+        ["nix", "hash", "to-sri", f"sha256:{raw}"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
+def fetch_hash(url: str, fetch: str) -> str:
+    if fetch == "unpack":
+        return nix_unpack_hash(url)
+    return url_sha256(url)
 
 
 def main() -> None:
@@ -42,15 +49,16 @@ def main() -> None:
             continue
 
         url = f"{BASE}/{tag}/{artifact.filename}"
-        if url == sources.pins[artifact.pkg].url:
+        pin = sources.pins[artifact.pkg]
+        if url == pin.url:
             print(f"{artifact.pkg}: up to date ({tag})")
             continue
 
         print(f"{artifact.pkg}: updating to {tag}")
-        sha256 = url_sha256(url)
-        sources.pins[artifact.pkg].url = url
-        sources.pins[artifact.pkg].sha256 = sha256
-        print(f"{artifact.pkg}: {sha256}")
+        new_hash = fetch_hash(url, pin.fetch)
+        pin.url = url
+        pin.hash = new_hash
+        print(f"{artifact.pkg}: {new_hash}")
         updated.append(artifact.pkg)
 
     if not updated:
