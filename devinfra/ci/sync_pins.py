@@ -40,7 +40,7 @@ def main() -> None:
         print(f"{artifact.pkg}: updating to {tag}")
         new_hash = url_sha256(url)
         pin.url = url
-        pin.hash = new_hash
+        pin.sha256 = new_hash
         print(f"{artifact.pkg}: {new_hash}")
         updated.append(artifact.pkg)
 
