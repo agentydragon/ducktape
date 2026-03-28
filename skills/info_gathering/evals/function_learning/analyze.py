@@ -32,6 +32,12 @@ def load_records(path: Path) -> list[RunRecord]:
 
 
 def print_stats(records: list[RunRecord]) -> None:
+    models = sorted({r.model for r in records})
+    if len(models) > 1:
+        print(f"Models: {', '.join(models)}\n")
+    else:
+        print(f"Model: {models[0]}\n")
+
     cells: dict[tuple[str, str], list[RunRecord]] = defaultdict(list)
     for r in records:
         cells[(r.function, r.arm)].append(r)
@@ -78,13 +84,28 @@ def _print_cost(records: list[RunRecord]) -> None:
     out = sum(r.output_tokens for r in records)
     cr = sum(r.cache_read_tokens for r in records)
     cw = sum(r.cache_creation_tokens for r in records)
+    print(f"  tokens: inp={inp:,} out={out:,} cache_write={cw:,} cache_read={cr:,}\n")
 
-    print(f"{'Model':<30} {'Cost':>8}")
-    print("-" * 40)
+    # Actual cost per model used in this run (grouped by model)
+    by_model: dict[str, list[RunRecord]] = defaultdict(list)
+    for r in records:
+        by_model[r.model].append(r)
+
+    print(f"{'Model':<30} {'Actual':>8}  (projected)")
+    print("-" * 55)
     for model, (ir, or_, cwr, crr) in _PRICING.items():
-        cost = inp / 1e6 * ir + out / 1e6 * or_ + cw / 1e6 * cwr + cr / 1e6 * crr
-        print(f"{model:<30} ${cost:>7.3f}")
-    print(f"\n  tokens: inp={inp:,} out={out:,} cache_write={cw:,} cache_read={cr:,}")
+        actual_records = by_model.get(model, [])
+        if actual_records:
+            ai = sum(r.input_tokens for r in actual_records)
+            ao = sum(r.output_tokens for r in actual_records)
+            acr = sum(r.cache_read_tokens for r in actual_records)
+            acw = sum(r.cache_creation_tokens for r in actual_records)
+            actual = ai / 1e6 * ir + ao / 1e6 * or_ + acw / 1e6 * cwr + acr / 1e6 * crr
+            projected = inp / 1e6 * ir + out / 1e6 * or_ + cw / 1e6 * cwr + cr / 1e6 * crr
+            print(f"{model:<30} ${actual:>7.3f}  (${projected:.3f})")
+        else:
+            projected = inp / 1e6 * ir + out / 1e6 * or_ + cw / 1e6 * cwr + cr / 1e6 * crr
+            print(f"{model:<30} {'—':>8}  (${projected:.3f})")
 
 
 def write_report(records: list[RunRecord], path: Path) -> None:
