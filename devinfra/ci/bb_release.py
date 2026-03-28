@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pygit2
 from github import Auth, Github
+from more_itertools import one
 
 from devinfra.ci.artifacts import ARTIFACTS, SOURCES_PATH, Sources, file_sha256
 
@@ -19,13 +20,11 @@ REPO = "agentydragon/ducktape"
 
 def copy_artifact_to_dist(src_glob: str, dest: str) -> Path:
     src_path = Path(src_glob)
-    matches = sorted(src_path.parent.glob(src_path.name))
-    if not matches:
-        raise FileNotFoundError(f"No files matching: {src_glob}")
+    match = one(src_path.parent.glob(src_path.name))
     dest_path = Path(dest)
     if dest_path.is_dir():
-        dest_path = dest_path / matches[0].name
-    shutil.copy2(matches[0], dest_path)
+        dest_path = dest_path / match.name
+    shutil.copy2(match, dest_path)
     return dest_path
 
 

@@ -3,10 +3,9 @@
 import base64
 import hashlib
 import urllib.request
-from dataclasses import dataclass
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 SOURCES_PATH = Path("npins/sources.json")
 
@@ -21,14 +20,13 @@ class Sources(BaseModel):
     pins: dict[str, Pin]
 
 
-@dataclass(frozen=True)
-class Artifact:
-    pkg: str
-    bazel_target: str
-    src_glob: str  # path glob under bazel-bin/
-    dest: str  # destination path or directory under dist/
-    notes: str  # GitHub release body
-    filename: str  # artifact filename attached to the GitHub release
+class Artifact(BaseModel, frozen=True):
+    pkg: str = Field(description="npins package name")
+    bazel_target: str = Field(description="Bazel target that builds this artifact")
+    src_glob: str = Field(description="Path glob under bazel-bin/")
+    dest: str = Field(description="Destination path or directory under dist/")
+    notes: str = Field(description="GitHub release body")
+    filename: str = Field(description="Artifact filename attached to the GitHub release")
 
 
 ARTIFACTS = [
