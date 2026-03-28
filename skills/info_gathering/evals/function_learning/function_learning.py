@@ -154,6 +154,7 @@ def _build_model_client(*, api: str, model: str) -> ChatCompletionClient:
 async def run_game(
     *,
     variant_name: str,
+    turn_limit: int,
     model: str,
     api: str,
     output_dir: Path,
@@ -161,23 +162,19 @@ async def run_game(
     scoring_container: aiodocker.docker.DockerContainer,
     model_client: ChatCompletionClient | None = None,
     no_skill: bool = False,
-    turn_limit: int | None = None,
 ) -> RunSummary:
     """Execute one function learning game and persist results."""
     variant = VARIANTS[variant_name]
     secret_fn = variant.function
-    effective_turn_limit = turn_limit if turn_limit is not None else variant.turn_limit
 
     system = build_system_prompt(skill="" if no_skill else load_skill_prompt(), has_scratch=exec_tool is not None)
-    opening = first_user_message(
-        secret_fn, effective_turn_limit, variant.function_description, eval_timeout_s=EVAL_TIMEOUT_S
-    )
+    opening = first_user_message(secret_fn, turn_limit, variant.function_description, eval_timeout_s=EVAL_TIMEOUT_S)
 
     owns_client = model_client is None
     if model_client is None:
         model_client = _build_model_client(api=api, model=model)
 
-    game = GameContext(turn_limit=effective_turn_limit)
+    game = GameContext(turn_limit=turn_limit)
 
     # Tools: play_turn (game) + optional exec (scratch).
     play_turn_tool = _make_play_turn_tool(game, secret_fn, scoring_container)
@@ -232,7 +229,7 @@ async def run_game(
     # Build result. Pad with zeros for turns saved by early termination so
     # per_turn_losses always has length == turn_limit.
     per_turn = [tr.score.hamming_loss for tr in game.turn_results]
-    per_turn += [0] * (effective_turn_limit - len(per_turn))
+    per_turn += [0] * (turn_limit - len(per_turn))
     total_hamming = sum(per_turn)
     fl_result = FunctionLearningResult(
         total_hamming_loss=total_hamming, per_turn_losses=per_turn, solved_at_turn=game.turn if game.solved else None
@@ -307,7 +304,7 @@ def main() -> None:
     parser.add_argument("--api", choices=["openai", "anthropic"], default="anthropic")
     parser.add_argument("--output-dir", default=None)
     parser.add_argument("--no-skill", action="store_true")
-    parser.add_argument("--turn-limit", type=int, default=None, help="Override variant turn limit")
+    parser.add_argument("--turn-limit", type=int, required=True)
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")

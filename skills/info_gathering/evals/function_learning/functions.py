@@ -151,7 +151,6 @@ _NO_HINT = "The function class is unknown. You must discover its structure from 
 @dataclass(frozen=True)
 class Variant:
     function: SecretFunction
-    turn_limit: int
     description_override: str | None = None
 
     @property
@@ -391,28 +390,28 @@ AES_FIELD_AFFINE = AESFieldAffine()
 
 VARIANTS: dict[str, Variant] = {
     # 8-bit, with hints.
-    "linear_simple": Variant(function=LINEAR_SIMPLE, turn_limit=12),
-    "junta_3": Variant(function=JUNTA_3, turn_limit=12),
-    "parity_groups": Variant(function=PARITY_GROUPS, turn_limit=12),
+    "linear_simple": Variant(function=LINEAR_SIMPLE),
+    "junta_3": Variant(function=JUNTA_3),
+    "parity_groups": Variant(function=PARITY_GROUPS),
     # 8-bit, without hints.
-    "linear_nohint": Variant(function=LINEAR_SIMPLE, turn_limit=12, description_override=_NO_HINT),
-    "junta_nohint": Variant(function=JUNTA_3, turn_limit=12, description_override=_NO_HINT),
-    "parity_nohint": Variant(function=PARITY_GROUPS, turn_limit=12, description_override=_NO_HINT),
+    "linear_nohint": Variant(function=LINEAR_SIMPLE, description_override=_NO_HINT),
+    "junta_nohint": Variant(function=JUNTA_3, description_override=_NO_HINT),
+    "parity_nohint": Variant(function=PARITY_GROUPS, description_override=_NO_HINT),
     # 7-bit (128 inputs), with hints.
-    "linear_7": Variant(function=LINEAR_7, turn_limit=30),
-    "junta_7": Variant(function=JUNTA_7, turn_limit=30),
-    "parity_7": Variant(function=PARITY_7, turn_limit=30),
+    "linear_7": Variant(function=LINEAR_7),
+    "junta_7": Variant(function=JUNTA_7),
+    "parity_7": Variant(function=PARITY_7),
     # 7-bit, without hints.
-    "linear_7_nohint": Variant(function=LINEAR_7, turn_limit=30, description_override=_NO_HINT),
-    "junta_7_nohint": Variant(function=JUNTA_7, turn_limit=30, description_override=_NO_HINT),
-    "parity_7_nohint": Variant(function=PARITY_7, turn_limit=30, description_override=_NO_HINT),
+    "linear_7_nohint": Variant(function=LINEAR_7, description_override=_NO_HINT),
+    "junta_7_nohint": Variant(function=JUNTA_7, description_override=_NO_HINT),
+    "parity_7_nohint": Variant(function=PARITY_7, description_override=_NO_HINT),
     # 7-bit degree-3 Reed-Muller polynomial (harder: linear probing does not suffice).
-    "rm3_7": Variant(function=REED_MULLER_3, turn_limit=30),
-    "rm3_7_nohint": Variant(function=REED_MULLER_3, turn_limit=30, description_override=_NO_HINT),
+    "rm3_7": Variant(function=REED_MULLER_3),
+    "rm3_7_nohint": Variant(function=REED_MULLER_3, description_override=_NO_HINT),
     # 8-bit vectorial bent function (hard: maximally nonlinear, multiplicative structure).
-    "bent": Variant(function=BENT_INNER_PRODUCT, turn_limit=30),
-    "bent_nohint": Variant(function=BENT_INNER_PRODUCT, turn_limit=30, description_override=_NO_HINT),
+    "bent": Variant(function=BENT_INNER_PRODUCT),
+    "bent_nohint": Variant(function=BENT_INNER_PRODUCT, description_override=_NO_HINT),
     # 8-bit GF(2^8) affine function (medium: affine over GF(2) but compact GF(2^8) structure).
-    "aes_affine": Variant(function=AES_FIELD_AFFINE, turn_limit=20),
-    "aes_affine_nohint": Variant(function=AES_FIELD_AFFINE, turn_limit=20, description_override=_NO_HINT),
+    "aes_affine": Variant(function=AES_FIELD_AFFINE),
+    "aes_affine_nohint": Variant(function=AES_FIELD_AFFINE, description_override=_NO_HINT),
 }
