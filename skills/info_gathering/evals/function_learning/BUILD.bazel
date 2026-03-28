@@ -97,7 +97,7 @@ py_library(
     deps = [
         ":run_all_evals_lib",
         "@pypi//pandas",
-        "@pypi//pandas-stubs",
+        "@pypi//pandas_stubs",
     ],
 )
 
