@@ -139,6 +139,7 @@ py_library(
         "//devinfra/claude:settings",
         "//devinfra/claude/auth_proxy:proxy",
         "//devinfra/claude/auth_proxy:setup",
+        "//devinfra/claude/auth_proxy:vars",
         "//devinfra/claude/claude_api/hooks:session_start",
         "//devinfra/claude/hook_daemon:tracing",
         "//devinfra/claude/supervisor:setup",

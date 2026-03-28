@@ -43,12 +43,14 @@ def normalize_proxy_url(proxy_url: str) -> tuple[str, dict[str, str]]:
     return clean_url, proxy_headers
 
 
-def get_upstream_proxy_url() -> str | None:
-    """Get the upstream proxy URL from environment.
-
-    Walks PROXY_ENV_VARS in priority order and returns the first non-empty value.
-    """
+def get_proxy_url(env: dict[str, str]) -> str | None:
+    """Get the proxy URL from env dict, walking PROXY_ENV_VARS in priority order."""
     for var in PROXY_ENV_VARS:
-        if value := os.environ.get(var):
+        if value := env.get(var):
             return value
     return None
+
+
+def get_upstream_proxy_url() -> str | None:
+    """Get the upstream proxy URL from os.environ."""
+    return get_proxy_url(dict(os.environ))

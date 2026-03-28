@@ -23,6 +23,7 @@ from opentelemetry import trace
 from devinfra.claude import env_file
 from devinfra.claude.auth_proxy import setup as proxy_setup
 from devinfra.claude.auth_proxy.proxy import AuthForwardingProxy
+from devinfra.claude.auth_proxy.vars import get_proxy_url
 from devinfra.claude.claude_api.hooks.session_start import (
     SessionStartHookInput,
     SessionStartHookSpecificOutput,
@@ -149,7 +150,7 @@ def _build_otlp_session(caller_env: dict[str, str], ca_path: Path | None) -> req
     unlike raw urllib3 which requires explicit headers on HTTPS CONNECT tunnels.
     """
     session = requests.Session()
-    proxy_url = caller_env.get("HTTPS_PROXY") or caller_env.get("https_proxy")
+    proxy_url = get_proxy_url(caller_env)
     if proxy_url:
         session.proxies = {"https": proxy_url, "http": proxy_url}
     if ca_path and ca_path.exists():
@@ -436,9 +437,7 @@ async def run_session(
                     session_dir=paths.session_dir,
                     combined_ca_path=combined_ca,
                     config=hook_config,
-                    proxy=(setup.auth_proxy.proxy_url if setup.auth_proxy else None)
-                    or ctx.caller_env.get("HTTPS_PROXY")
-                    or ctx.caller_env.get("https_proxy"),
+                    proxy=(setup.auth_proxy.proxy_url if setup.auth_proxy else None) or get_proxy_url(ctx.caller_env),
                 )
         except Exception as e:
             logger.warning("K8s secrets fetch failed (non-fatal, continuing without secrets): %s", e)
