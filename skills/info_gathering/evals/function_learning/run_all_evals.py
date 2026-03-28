@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 
 import aiodocker
-from anyio.path import Path as AsyncPath
+import anyio
 from fastmcp.client import Client
 from pydantic import BaseModel
 
@@ -87,7 +87,7 @@ async def run_one(
 
 async def _async_main(args: argparse.Namespace) -> None:
     output_dir = Path(args.output_dir)
-    await AsyncPath(output_dir).mkdir(parents=True, exist_ok=True)
+    await anyio.Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     sem = asyncio.Semaphore(args.concurrency)
 
