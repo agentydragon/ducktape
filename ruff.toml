@@ -97,7 +97,7 @@ extend-ignore = ["COM812"]
 # EM   — extracting exception messages to variables adds boilerplate without sufficient value
 # ISC  — implicit string concat is fine; explicit + is sometimes clearer
 # FLY  — 2-element join is fine and consistent with longer joins
-# Q    — quote style is already enforced by ruff-format; adding the lint rule would be redundant
+# Q    — conflicts with ruff-format's quote handling and would cause unnecessary formatter/linter churn
 
 # Allow mathematical symbols in strings
 allowed-confusables = ["σ"]
