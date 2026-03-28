@@ -53,6 +53,7 @@ _MAX_STEPS = 200
 class GameContext:
     turn_limit: int
     turn: int = 0
+    solved: bool = False
     turn_results: list[TurnResult] = field(default_factory=list)
     log_entries: list[dict[str, object]] = field(default_factory=list)
     total_input_tokens: int = 0
@@ -62,7 +63,7 @@ class GameContext:
 
     @property
     def finished(self) -> bool:
-        return self.turn >= self.turn_limit
+        return self.turn >= self.turn_limit or self.solved
 
     def record(self, player: Literal["agent", "scaffold"], content: str) -> None:
         self.log_entries.append({"timestamp": datetime.now(UTC).isoformat(), "player": player, "content": content})
@@ -91,6 +92,9 @@ def _make_play_turn_tool(
         scoring = await evaluate_program(scoring_container, program, secret_fn)
         score = scoring.score
 
+        if score.hamming_loss == 0:
+            game.solved = True
+
         game.turn_results.append(TurnResult(turn=game.turn, query=query, query_result=query_result, score=score))
         game.record(
             "scaffold", f"Turn {game.turn}: hamming_loss={score.hamming_loss} (eval {scoring.total_eval_s:.1f}s)"
@@ -104,6 +108,8 @@ def _make_play_turn_tool(
             "hamming_loss": score.hamming_loss,
             "total_possible_loss": (secret_fn.max_input + 1) * secret_fn.m,
         }
+        if game.solved:
+            response["game_over"] = "Solved! Your program is correct for all inputs."
         if score.has_errors:
             response["error_summary"] = {
                 "parse_errors": score.parse_errors,
@@ -223,10 +229,14 @@ async def run_game(
             exec_results.append(FunctionExecutionResult(call_id=fc.id, content=content, name=fc.name))
         history.append(FunctionExecutionResultMessage(content=exec_results))
 
-    # Build result.
+    # Build result. Pad with zeros for turns saved by early termination so
+    # per_turn_losses always has length == turn_limit.
     per_turn = [tr.score.hamming_loss for tr in game.turn_results]
+    per_turn += [0] * (effective_turn_limit - len(per_turn))
     total_hamming = sum(per_turn)
-    fl_result = FunctionLearningResult(total_hamming_loss=total_hamming, per_turn_losses=per_turn)
+    fl_result = FunctionLearningResult(
+        total_hamming_loss=total_hamming, per_turn_losses=per_turn, solved_at_turn=game.turn if game.solved else None
+    )
 
     calls_path, summary_path = run_output_paths(f"fl_{variant_name}", output_dir)
     with calls_path.open("w") as f:
