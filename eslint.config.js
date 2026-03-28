@@ -16,7 +16,7 @@ const projectGlobs = [
   "props/frontend/src/**",
   "x/agent_server/web/src/**",
   "x/rspcache/admin_ui/src/**",
-  "airlock/frontend/src/**",
+  "airlock/frontend/**",
 ];
 
 const tsFiles = projectGlobs.map((g) => `${g}/*.{ts,tsx}`);
