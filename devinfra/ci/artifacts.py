@@ -3,7 +3,6 @@
 import base64
 import hashlib
 import urllib.request
-from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -14,7 +13,8 @@ SOURCES_PATH = Path("npins/sources.json")
 
 class Pin(BaseModel):
     url: str
-    sha256: str
+    hash: str  # SRI format: "sha256-<base64>"
+    fetch: str = "file"
 
 
 class Sources(BaseModel):
@@ -75,18 +75,19 @@ ARTIFACTS = [
 ]
 
 
-def _sha256_of_chunks(chunks: Iterable[bytes]) -> str:
-    h = hashlib.sha256()
-    for chunk in chunks:
-        h.update(chunk)
-    return base64.b64encode(h.digest()).decode()
-
-
 def file_sha256(path: Path) -> str:
+    """Return SRI-format SHA-256 hash of a local file."""
+    h = hashlib.sha256()
     with path.open("rb") as f:
-        return _sha256_of_chunks(iter(lambda: f.read(65536), b""))
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return "sha256-" + base64.b64encode(h.digest()).decode()
 
 
 def url_sha256(url: str) -> str:
+    """Return SRI-format SHA-256 hash of a URL's raw content."""
+    h = hashlib.sha256()
     with urllib.request.urlopen(url) as response:
-        return _sha256_of_chunks(iter(lambda: response.read(65536), b""))
+        while chunk := response.read(65536):
+            h.update(chunk)
+    return "sha256-" + base64.b64encode(h.digest()).decode()
