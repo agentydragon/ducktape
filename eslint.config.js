@@ -11,6 +11,17 @@ import importPlugin from "eslint-plugin-import";
 import react from "eslint-plugin-react";
 import globals from "globals";
 
+// Shared rules applied to all project config blocks
+const sharedRules = {
+  "prefer-const": "error",
+  eqeqeq: ["error", "always", { null: "ignore" }],
+};
+
+// Shared rules for blocks with @typescript-eslint plugin
+const tsRules = {
+  "@typescript-eslint/consistent-type-imports": "error",
+};
+
 export default [
   // Global ignores - must be a standalone config object
   {
@@ -42,8 +53,8 @@ export default [
       "@typescript-eslint": tseslint,
     },
     rules: {
-      "prefer-const": "error",
-      "@typescript-eslint/consistent-type-imports": "error",
+      ...sharedRules,
+      ...tsRules,
       "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
   },
@@ -65,8 +76,8 @@ export default [
     },
     rules: {
       ...sveltePlugin.configs.recommended.rules,
-      "prefer-const": "error",
-      "@typescript-eslint/consistent-type-imports": "error",
+      ...sharedRules,
+      ...tsRules,
       "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
   },
@@ -88,8 +99,8 @@ export default [
     },
     rules: {
       ...sveltePlugin.configs.recommended.rules,
-      "prefer-const": "error",
-      "@typescript-eslint/consistent-type-imports": "error",
+      ...sharedRules,
+      ...tsRules,
       "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
   },
@@ -126,7 +137,7 @@ export default [
       "import/no-duplicates": "error",
 
       // TypeScript
-      "@typescript-eslint/consistent-type-imports": "error",
+      ...tsRules,
       "@typescript-eslint/no-unused-vars": [
         "warn",
         {
@@ -137,7 +148,7 @@ export default [
       "no-unused-vars": "off", // Use @typescript-eslint version instead
 
       // General code quality
-      "prefer-const": "error",
+      ...sharedRules,
       "no-console": ["warn", { allow: ["warn", "error"] }],
       "no-multiple-empty-lines": ["error", { max: 1 }],
     },
@@ -182,7 +193,7 @@ export default [
       "svelte/no-unused-svelte-ignore": "warn",
 
       // General code quality
-      "prefer-const": "error",
+      ...sharedRules,
       "no-unused-vars": [
         "error",
         {
@@ -222,10 +233,10 @@ export default [
     },
     rules: {
       "react/react-in-jsx-scope": "off", // Not needed in React 17+
-      "@typescript-eslint/consistent-type-imports": "error",
+      ...sharedRules,
+      ...tsRules,
       "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
       "no-unused-vars": "off",
-      "prefer-const": "error",
       "no-console": ["warn", { allow: ["warn", "error"] }],
     },
   },
