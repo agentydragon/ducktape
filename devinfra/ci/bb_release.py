@@ -50,7 +50,7 @@ def main() -> None:
     for artifact in ARTIFACTS:
         dist_path = copy_artifact_to_dist(artifact.src_glob, artifact.dest)
         pin = sources.pins.get(artifact.pkg)
-        if pin and file_sha256(dist_path) == pin.hash:
+        if pin and file_sha256(dist_path) == pin.sha256:
             print(f"{artifact.pkg}: unchanged, skipping")
             continue
         tag = f"{artifact.pkg}-{short_sha}"
