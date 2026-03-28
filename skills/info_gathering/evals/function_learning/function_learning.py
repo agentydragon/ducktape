@@ -183,7 +183,7 @@ def _make_play_turn_tool(
     )
 
 
-def _make_exec_tool(mcp_client: Client) -> FunctionTool:
+def make_exec_tool(mcp_client: Client) -> FunctionTool:
     async def exec(cmd: list[str], timeout_ms: int = 30000) -> str:
         """Run a command in a scratch container for computation."""
         arguments: dict[str, object] = {"cmd": cmd, "timeout_ms": timeout_ms}
@@ -261,8 +261,8 @@ async def run_game(
 
             result = await model_client.create(history, tools=tool_schemas, tool_choice="required")
 
-            cache_read = getattr(result.usage, "cache_read_tokens", 0)
-            cache_creation = getattr(result.usage, "cache_creation_tokens", 0)
+            cache_read = getattr(result, "cache_read_tokens", 0)
+            cache_creation = getattr(result, "cache_creation_tokens", 0)
             game.total_input_tokens += result.usage.prompt_tokens
             game.total_output_tokens += result.usage.completion_tokens
             game.total_cache_read_tokens += cache_read
@@ -284,6 +284,7 @@ async def run_game(
                 continue
 
             function_calls = result.content
+            assert len(function_calls) == 1, f"expected 1 tool call, got {len(function_calls)}"
             game.log(
                 LlmResponseLog(
                     timestamp=_now(),
@@ -302,7 +303,7 @@ async def run_game(
             exec_results: list[FunctionExecutionResult] = []
             for fc in function_calls:
                 tool = tool_map.get(fc.name)
-                args = json.loads(fc.arguments) if isinstance(fc.arguments, str) else fc.arguments
+                args = json.loads(fc.arguments)
                 if tool is None:
                     content = f"Error: unknown tool '{fc.name}'"
                     logger.warning("Unknown tool name: %s", fc.name)
@@ -366,7 +367,7 @@ async def _async_main(args: argparse.Namespace) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     async with scratch_exec_server() as scratch_server, Client(scratch_server) as scratch_client:
-        exec_tool = _make_exec_tool(scratch_client)
+        exec_tool = make_exec_tool(scratch_client)
 
         container_name = f"fl-scoring-{uuid.uuid4().hex[:8]}"
         async with aiodocker.Docker() as docker:
