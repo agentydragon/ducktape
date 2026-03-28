@@ -2,10 +2,10 @@
 
 import base64
 import hashlib
-import urllib.request
 from collections.abc import Iterable
 from pathlib import Path
 
+import requests
 from pydantic import BaseModel, Field
 
 SOURCES_PATH = Path("npins/sources.json")
@@ -86,5 +86,6 @@ def file_sha256(path: Path) -> str:
 
 
 def url_sha256(url: str) -> str:
-    with urllib.request.urlopen(url) as response:
-        return _sha256_of_chunks(iter(lambda: response.read(65536), b""))
+    with requests.get(url, stream=True) as response:
+        response.raise_for_status()
+        return _sha256_of_chunks(response.iter_content(65536))

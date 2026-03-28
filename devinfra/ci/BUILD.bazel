@@ -103,7 +103,10 @@ py_library(
     srcs = ["artifacts.py"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//requests",
+    ],
 )
 
 py_library(
