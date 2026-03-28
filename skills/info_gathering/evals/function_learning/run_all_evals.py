@@ -265,7 +265,7 @@ async def _async_main(args: argparse.Namespace) -> None:
                         sem,
                         model=args.model,
                         turn_limit=args.turn_limit,
-                        output_dir=output_dir,
+                        output_dir=output_dir / fn_name / ("no_skill" if no_skill else "skill") / f"run_{run_idx}",
                     )
                     for fn_name in FUNCTIONS_LIST
                     for no_skill in [False, True]
