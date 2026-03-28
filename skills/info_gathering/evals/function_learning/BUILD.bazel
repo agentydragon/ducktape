@@ -95,9 +95,9 @@ py_library(
     srcs = ["analyze.py"],
     imports = ["../../../.."],
     deps = [
-        ":functions",
         ":run_all_evals_lib",
-        "@pypi//numpy",
+        "@pypi//pandas",
+        "@pypi//pandas-stubs",
     ],
 )
 
