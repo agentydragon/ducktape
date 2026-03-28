@@ -1,6 +1,6 @@
 // @ts-check
-// Workspace-level ESLint configuration for all JS/TS projects
-// Uses flat config with per-project file patterns
+// Workspace-level ESLint configuration for all JS/TS projects.
+// Uses flat config cascading: broad configs first, narrow overrides after.
 
 import js from "@eslint/js";
 import tseslint from "@typescript-eslint/eslint-plugin";
@@ -11,19 +11,46 @@ import importPlugin from "eslint-plugin-import";
 import react from "eslint-plugin-react";
 import globals from "globals";
 
-// Shared rules applied to all project config blocks
-const sharedRules = {
-  "prefer-const": "error",
-  eqeqeq: ["error", "always", { null: "ignore" }],
+// All project source directories (add new TS/Svelte projects here)
+const projectGlobs = [
+  "props/frontend/src/**",
+  "x/agent_server/web/src/**",
+  "x/rspcache/admin_ui/src/**",
+  "airlock/frontend/src/**",
+];
+
+const tsFiles = projectGlobs.map((g) => `${g}/*.{ts,tsx}`);
+const svelteFiles = projectGlobs.map((g) => `${g}/*.svelte`);
+const svelteTsFiles = projectGlobs.map((g) => `${g}/*.svelte.ts`);
+
+// Import ordering (TS equivalent of ruff's isort)
+const importRules = {
+  "import/first": "error",
+  "import/order": [
+    "error",
+    {
+      groups: ["builtin", "external", "internal", ["parent", "sibling"], "index", "type"],
+      "newlines-between": "always",
+      alphabetize: { order: "asc", caseInsensitive: true },
+    },
+  ],
+  "import/newline-after-import": "error",
+  "import/no-duplicates": "error",
 };
 
-// Shared rules for blocks with @typescript-eslint plugin
-const tsRules = {
+// Shared quality + TS rules applied everywhere
+const coreRules = {
+  "prefer-const": "error",
+  eqeqeq: ["error", "always", { null: "ignore" }],
+  "no-console": ["warn", { allow: ["warn", "error"] }],
   "@typescript-eslint/consistent-type-imports": "error",
+  "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+  "no-unused-vars": "off",
+  ...importRules,
 };
 
 export default [
-  // Global ignores - must be a standalone config object
+  // Global ignores
   {
     ignores: [
       "**/node_modules/**",
@@ -31,213 +58,65 @@ export default [
       "**/build/**",
       "**/.svelte-kit/**",
       "**/playwright-report/**",
-      // Build scripts (Node.js tooling, not app code)
       "**/*.config.mjs",
     ],
   },
 
   js.configs.recommended,
 
-  // Props frontend (SvelteKit) - TypeScript files (excluding .svelte.ts)
+  // ── All TypeScript files ───────────────────────────────────────────────
   {
-    files: ["props/frontend/**/*.ts"],
-    ignores: ["props/frontend/**/*.svelte.ts"],
+    files: tsFiles,
+    ignores: svelteTsFiles,
     languageOptions: {
       parser: tsparser,
-      globals: {
-        ...globals.browser,
-        ...globals.node,
-      },
-    },
-    plugins: {
-      "@typescript-eslint": tseslint,
-    },
-    rules: {
-      ...sharedRules,
-      ...tsRules,
-      "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
-    },
-  },
-
-  // Props frontend (SvelteKit) - Svelte TypeScript files (*.svelte.ts)
-  {
-    files: ["props/frontend/**/*.svelte.ts"],
-    languageOptions: {
-      parser: svelteParser,
-      parserOptions: { parser: tsparser },
-      globals: {
-        ...globals.browser,
-        ...globals.node,
-      },
-    },
-    plugins: {
-      svelte: sveltePlugin,
-      "@typescript-eslint": tseslint,
-    },
-    rules: {
-      ...sveltePlugin.configs.recommended.rules,
-      ...sharedRules,
-      ...tsRules,
-      "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
-    },
-  },
-
-  // Props frontend (SvelteKit) - Svelte files
-  {
-    files: ["props/frontend/**/*.svelte"],
-    languageOptions: {
-      parser: svelteParser,
-      parserOptions: { parser: tsparser },
-      globals: {
-        ...globals.browser,
-        ...globals.node,
-      },
-    },
-    plugins: {
-      svelte: sveltePlugin,
-      "@typescript-eslint": tseslint,
-    },
-    rules: {
-      ...sveltePlugin.configs.recommended.rules,
-      ...sharedRules,
-      ...tsRules,
-      "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
-    },
-  },
-
-  // Agent server web (Svelte+Vite) - with import plugin
-  {
-    files: ["x/agent_server/web/src/**/*.ts"],
-    languageOptions: {
-      parser: tsparser,
-      parserOptions: {
-        ecmaVersion: "latest",
-        sourceType: "module",
-      },
-      globals: {
-        ...globals.browser,
-      },
+      parserOptions: { ecmaVersion: "latest", sourceType: "module" },
+      globals: { ...globals.browser },
     },
     plugins: {
       "@typescript-eslint": tseslint,
       import: importPlugin,
     },
-    rules: {
-      // Import ordering and placement
-      "import/first": "error",
-      "import/order": [
-        "error",
-        {
-          groups: ["builtin", "external", "internal", ["parent", "sibling"], "index", "type"],
-          "newlines-between": "always",
-          alphabetize: { order: "asc", caseInsensitive: true },
-        },
-      ],
-      "import/newline-after-import": "error",
-      "import/no-duplicates": "error",
-
-      // TypeScript
-      ...tsRules,
-      "@typescript-eslint/no-unused-vars": [
-        "warn",
-        {
-          argsIgnorePattern: "^_",
-          varsIgnorePattern: "^_",
-        },
-      ],
-      "no-unused-vars": "off", // Use @typescript-eslint version instead
-
-      // General code quality
-      ...sharedRules,
-      "no-console": ["warn", { allow: ["warn", "error"] }],
-      "no-multiple-empty-lines": ["error", { max: 1 }],
-    },
+    rules: coreRules,
   },
 
-  // Agent server web (Svelte files)
+  // ── All Svelte files ───────────────────────────────────────────────────
+  // Svelte plugin recommended config (scoped to our projects)
   ...sveltePlugin.configs["flat/recommended"].map((config) => ({
     ...config,
-    files: ["x/agent_server/web/src/**/*.svelte"],
+    files: svelteFiles,
   })),
   {
-    files: ["x/agent_server/web/src/**/*.svelte"],
+    files: [...svelteFiles, ...svelteTsFiles],
     languageOptions: {
       parser: svelteParser,
-      parserOptions: {
-        parser: tsparser,
-        ecmaVersion: "latest",
-        sourceType: "module",
-      },
-      globals: {
-        ...globals.browser,
-      },
+      parserOptions: { parser: tsparser, ecmaVersion: "latest", sourceType: "module" },
+      globals: { ...globals.browser },
     },
     plugins: {
+      "@typescript-eslint": tseslint,
       import: importPlugin,
     },
     rules: {
-      // Import ordering and placement
-      "import/first": "error",
-      "import/order": [
-        "error",
-        {
-          groups: ["builtin", "external", "internal", ["parent", "sibling"], "index", "type"],
-          "newlines-between": "always",
-          alphabetize: { order: "asc", caseInsensitive: true },
-        },
-      ],
-      "import/newline-after-import": "error",
-      "import/no-duplicates": "error",
-
-      // Svelte-specific
+      ...coreRules,
       "svelte/no-unused-svelte-ignore": "warn",
-
-      // General code quality
-      ...sharedRules,
-      "no-unused-vars": [
-        "error",
-        {
-          argsIgnorePattern: "^_",
-          varsIgnorePattern: "^_",
-        },
-      ],
-      "no-console": ["warn", { allow: ["warn", "error"] }],
-      "no-multiple-empty-lines": ["error", { max: 1 }],
     },
   },
 
-  // RSPCache admin UI (React)
+  // ── Per-project overrides ──────────────────────────────────────────────
+
+  // Props frontend: Node.js globals for SSR
   {
-    files: ["x/rspcache/admin_ui/**/*.{ts,tsx}"],
-    languageOptions: {
-      parser: tsparser,
-      parserOptions: {
-        ecmaVersion: "latest",
-        sourceType: "module",
-        ecmaFeatures: {
-          jsx: true,
-        },
-      },
-      globals: {
-        ...globals.browser,
-      },
-    },
-    plugins: {
-      react,
-      "@typescript-eslint": tseslint,
-    },
-    settings: {
-      react: {
-        version: "18.3",
-      },
-    },
-    rules: {
-      "react/react-in-jsx-scope": "off", // Not needed in React 17+
-      ...sharedRules,
-      ...tsRules,
-      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
-      "no-unused-vars": "off",
-      "no-console": ["warn", { allow: ["warn", "error"] }],
-    },
+    files: ["props/frontend/src/**/*.{ts,svelte}"],
+    languageOptions: { globals: { ...globals.node } },
+  },
+
+  // RSPCache admin UI: React/JSX
+  {
+    files: ["x/rspcache/admin_ui/src/**/*.{ts,tsx}"],
+    languageOptions: { parserOptions: { ecmaFeatures: { jsx: true } } },
+    plugins: { react },
+    settings: { react: { version: "18.3" } },
+    rules: { "react/react-in-jsx-scope": "off" },
   },
 ];
