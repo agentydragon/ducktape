@@ -1,0 +1,25 @@
+{
+  "eval_name": "parity_7",
+  "framework": "autogen",
+  "model": "claude-haiku-4-5-20251001",
+  "api": "anthropic",
+  "turns": 17,
+  "result": {
+    "kind": "completed",
+    "total_hamming_loss": 3708,
+    "per_turn_losses": [
+      192, 256, 256, 256, 192, 192, 256, 192, 168, 256, 256, 212, 256, 64, 192, 512, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ],
+    "solved_at_turn": 17
+  },
+  "function_name": "parity_7",
+  "n_bits": 7,
+  "m_bits": 4,
+  "usage": {
+    "input_tokens": 261,
+    "output_tokens": 10887,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0
+  }
+}

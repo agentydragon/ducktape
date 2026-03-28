@@ -1,0 +1,26 @@
+{
+  "eval_name": "aes_affine",
+  "framework": "autogen",
+  "model": "claude-haiku-4-5-20251001",
+  "api": "anthropic",
+  "turns": 50,
+  "result": {
+    "kind": "completed",
+    "total_hamming_loss": 24898,
+    "per_turn_losses": [
+      512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
+      512, 512, 512, 512, 512, 472, 1024, 475, 475, 472, 472, 495, 458, 458, 452, 452, 449, 449, 448, 444, 443, 441,
+      440, 441, 436, 436, 430
+    ],
+    "solved_at_turn": null
+  },
+  "function_name": "aes_affine",
+  "n_bits": 8,
+  "m_bits": 4,
+  "usage": {
+    "input_tokens": 325,
+    "output_tokens": 37433,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0
+  }
+}

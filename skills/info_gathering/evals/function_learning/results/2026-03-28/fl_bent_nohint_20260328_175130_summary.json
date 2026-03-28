@@ -1,0 +1,26 @@
+{
+  "eval_name": "bent",
+  "framework": "autogen",
+  "model": "claude-haiku-4-5-20251001",
+  "api": "anthropic",
+  "turns": 50,
+  "result": {
+    "kind": "completed",
+    "total_hamming_loss": 22039,
+    "per_turn_losses": [
+      480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480,
+      421, 432, 432, 428, 428, 426, 424, 422, 419, 419, 417, 408, 406, 404, 403, 400, 399, 397, 396, 394, 394, 394, 392,
+      390, 388, 384, 382
+    ],
+    "solved_at_turn": null
+  },
+  "function_name": "bent",
+  "n_bits": 8,
+  "m_bits": 4,
+  "usage": {
+    "input_tokens": 289,
+    "output_tokens": 41298,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0
+  }
+}

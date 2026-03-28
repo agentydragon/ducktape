@@ -1,0 +1,150 @@
+{"timestamp": "2026-03-28T17:49:00.567777+00:00", "player": "agent", "content": "Turn 1: query=0"}
+{"timestamp": "2026-03-28T17:49:00.640424+00:00", "player": "scaffold", "content": "Turn 1: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:49:04.457002+00:00", "player": "agent", "content": "Turn 2: query=1"}
+{"timestamp": "2026-03-28T17:49:04.522556+00:00", "player": "scaffold", "content": "Turn 2: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:49:05.254314+00:00", "player": "agent", "content": "Turn 3: query=2"}
+{"timestamp": "2026-03-28T17:49:05.308363+00:00", "player": "scaffold", "content": "Turn 3: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:49:06.104724+00:00", "player": "agent", "content": "Turn 4: query=255"}
+{"timestamp": "2026-03-28T17:49:06.155711+00:00", "player": "scaffold", "content": "Turn 4: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:49:07.510771+00:00", "player": "agent", "content": "Turn 5: query=127"}
+{"timestamp": "2026-03-28T17:49:07.569770+00:00", "player": "scaffold", "content": "Turn 5: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:49:08.556043+00:00", "player": "agent", "content": "Turn 6: query=128"}
+{"timestamp": "2026-03-28T17:49:08.612469+00:00", "player": "scaffold", "content": "Turn 6: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:49:13.885125+00:00", "player": "agent", "content": "Turn 7: query=4"}
+{"timestamp": "2026-03-28T17:49:13.953034+00:00", "player": "scaffold", "content": "Turn 7: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:49:14.654464+00:00", "player": "agent", "content": "Turn 8: query=8"}
+{"timestamp": "2026-03-28T17:49:14.720864+00:00", "player": "scaffold", "content": "Turn 8: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:49:15.655475+00:00", "player": "agent", "content": "Turn 9: query=16"}
+{"timestamp": "2026-03-28T17:49:15.720886+00:00", "player": "scaffold", "content": "Turn 9: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:49:16.436240+00:00", "player": "agent", "content": "Turn 10: query=32"}
+{"timestamp": "2026-03-28T17:49:16.497651+00:00", "player": "scaffold", "content": "Turn 10: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:49:17.146752+00:00", "player": "agent", "content": "Turn 11: query=64"}
+{"timestamp": "2026-03-28T17:49:17.205766+00:00", "player": "scaffold", "content": "Turn 11: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:49:24.530854+00:00", "player": "agent", "content": "Turn 12: query=3"}
+{"timestamp": "2026-03-28T17:49:24.597813+00:00", "player": "scaffold", "content": "Turn 12: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:49:25.265549+00:00", "player": "agent", "content": "Turn 13: query=5"}
+{"timestamp": "2026-03-28T17:49:25.328379+00:00", "player": "scaffold", "content": "Turn 13: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:49:38.396711+00:00", "player": "agent", "content": "Turn 14: query=6"}
+{"timestamp": "2026-03-28T17:49:38.465197+00:00", "player": "scaffold", "content": "Turn 14: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:49:39.179594+00:00", "player": "agent", "content": "Turn 15: query=9"}
+{"timestamp": "2026-03-28T17:49:39.231951+00:00", "player": "scaffold", "content": "Turn 15: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:49:40.202333+00:00", "player": "agent", "content": "Turn 16: query=10"}
+{"timestamp": "2026-03-28T17:49:40.263139+00:00", "player": "scaffold", "content": "Turn 16: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:49:56.281464+00:00", "player": "agent", "content": "Turn 17: query=63"}
+{"timestamp": "2026-03-28T17:49:56.342028+00:00", "player": "scaffold", "content": "Turn 17: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:49:57.101703+00:00", "player": "agent", "content": "Turn 18: query=191"}
+{"timestamp": "2026-03-28T17:49:57.185045+00:00", "player": "scaffold", "content": "Turn 18: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:50:02.756893+00:00", "player": "agent", "content": "Turn 19: query=192"}
+{"timestamp": "2026-03-28T17:50:02.817491+00:00", "player": "scaffold", "content": "Turn 19: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:50:03.780493+00:00", "player": "agent", "content": "Turn 20: query=129"}
+{"timestamp": "2026-03-28T17:50:03.842124+00:00", "player": "scaffold", "content": "Turn 20: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:50:08.750226+00:00", "player": "agent", "content": "Turn 21: query=65"}
+{"timestamp": "2026-03-28T17:50:08.805575+00:00", "player": "scaffold", "content": "Turn 21: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:50:09.559665+00:00", "player": "agent", "content": "Turn 22: query=130"}
+{"timestamp": "2026-03-28T17:50:09.612492+00:00", "player": "scaffold", "content": "Turn 22: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:50:10.293577+00:00", "player": "agent", "content": "Turn 23: query=193"}
+{"timestamp": "2026-03-28T17:50:10.358585+00:00", "player": "scaffold", "content": "Turn 23: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:50:11.058421+00:00", "player": "agent", "content": "Turn 24: query=11"}
+{"timestamp": "2026-03-28T17:50:11.113314+00:00", "player": "scaffold", "content": "Turn 24: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:50:31.251384+00:00", "player": "agent", "content": "Turn 25: query=7"}
+{"timestamp": "2026-03-28T17:50:31.305915+00:00", "player": "scaffold", "content": "Turn 25: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:50:32.405732+00:00", "player": "agent", "content": "Turn 26: query=12"}
+{"timestamp": "2026-03-28T17:50:32.464702+00:00", "player": "scaffold", "content": "Turn 26: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:50:33.894395+00:00", "player": "agent", "content": "Turn 27: query=15"}
+{"timestamp": "2026-03-28T17:50:33.957539+00:00", "player": "scaffold", "content": "Turn 27: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:50:39.074503+00:00", "player": "agent", "content": "Turn 28: query=31"}
+{"timestamp": "2026-03-28T17:50:39.131940+00:00", "player": "scaffold", "content": "Turn 28: hamming_loss=512 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:51:02.812156+00:00", "player": "agent", "content": "Turn 29: query=100"}
+{"timestamp": "2026-03-28T17:51:02.876294+00:00", "player": "scaffold", "content": "Turn 29: hamming_loss=472 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:51:09.967140+00:00", "player": "agent", "content": "Turn 30: query=80"}
+{"timestamp": "2026-03-28T17:51:10.037964+00:00", "player": "scaffold", "content": "Turn 30: hamming_loss=1024 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:51:12.346572+00:00", "player": "agent", "content": "Turn 31: query=80"}
+{"timestamp": "2026-03-28T17:51:12.406782+00:00", "player": "scaffold", "content": "Turn 31: hamming_loss=475 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:51:14.954650+00:00", "player": "agent", "content": "Turn 32: query=96"}
+{"timestamp": "2026-03-28T17:51:15.011314+00:00", "player": "scaffold", "content": "Turn 32: hamming_loss=475 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:51:26.434595+00:00", "player": "agent", "content": "Turn 33: query=81"}
+{"timestamp": "2026-03-28T17:51:26.537911+00:00", "player": "scaffold", "content": "Turn 33: hamming_loss=472 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:51:29.224507+00:00", "player": "agent", "content": "Turn 34: query=97"}
+{"timestamp": "2026-03-28T17:51:29.294043+00:00", "player": "scaffold", "content": "Turn 34: hamming_loss=472 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:51:53.156982+00:00", "player": "agent", "content": "Turn 35: query=13"}
+{"timestamp": "2026-03-28T17:51:53.238095+00:00", "player": "scaffold", "content": "Turn 35: hamming_loss=495 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:52:01.520630+00:00", "player": "agent", "content": "Turn 36: query=14"}
+{"timestamp": "2026-03-28T17:52:01.582890+00:00", "player": "scaffold", "content": "Turn 36: hamming_loss=458 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:52:05.405236+00:00", "player": "agent", "content": "Turn 37: query=20"}
+{"timestamp": "2026-03-28T17:52:05.467968+00:00", "player": "scaffold", "content": "Turn 37: hamming_loss=458 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:52:09.313545+00:00", "player": "agent", "content": "Turn 38: query=40"}
+{"timestamp": "2026-03-28T17:52:09.372922+00:00", "player": "scaffold", "content": "Turn 38: hamming_loss=452 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:52:13.150030+00:00", "player": "agent", "content": "Turn 39: query=160"}
+{"timestamp": "2026-03-28T17:52:13.226204+00:00", "player": "scaffold", "content": "Turn 39: hamming_loss=452 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:52:21.563283+00:00", "player": "agent", "content": "Turn 40: query=161"}
+{"timestamp": "2026-03-28T17:52:21.624826+00:00", "player": "scaffold", "content": "Turn 40: hamming_loss=449 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:52:25.890669+00:00", "player": "agent", "content": "Turn 41: query=224"}
+{"timestamp": "2026-03-28T17:52:25.968060+00:00", "player": "scaffold", "content": "Turn 41: hamming_loss=449 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:52:34.940204+00:00", "player": "agent", "content": "Turn 42: query=225"}
+{"timestamp": "2026-03-28T17:52:35.020297+00:00", "player": "scaffold", "content": "Turn 42: hamming_loss=448 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:52:39.254420+00:00", "player": "agent", "content": "Turn 43: query=50"}
+{"timestamp": "2026-03-28T17:52:39.319298+00:00", "player": "scaffold", "content": "Turn 43: hamming_loss=444 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:52:43.768448+00:00", "player": "agent", "content": "Turn 44: query=48"}
+{"timestamp": "2026-03-28T17:52:43.838260+00:00", "player": "scaffold", "content": "Turn 44: hamming_loss=443 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:52:48.039100+00:00", "player": "agent", "content": "Turn 45: query=49"}
+{"timestamp": "2026-03-28T17:52:48.132722+00:00", "player": "scaffold", "content": "Turn 45: hamming_loss=441 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:52:52.494830+00:00", "player": "agent", "content": "Turn 46: query=51"}
+{"timestamp": "2026-03-28T17:52:52.559968+00:00", "player": "scaffold", "content": "Turn 46: hamming_loss=440 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:52:57.102335+00:00", "player": "agent", "content": "Turn 47: query=52"}
+{"timestamp": "2026-03-28T17:52:57.158537+00:00", "player": "scaffold", "content": "Turn 47: hamming_loss=441 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:53:01.689836+00:00", "player": "agent", "content": "Turn 48: query=53"}
+{"timestamp": "2026-03-28T17:53:01.746523+00:00", "player": "scaffold", "content": "Turn 48: hamming_loss=436 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:53:06.077313+00:00", "player": "agent", "content": "Turn 49: query=54"}
+{"timestamp": "2026-03-28T17:53:06.144231+00:00", "player": "scaffold", "content": "Turn 49: hamming_loss=436 (eval 0.1s)"}
+{"timestamp": "2026-03-28T17:53:10.612906+00:00", "player": "agent", "content": "Turn 50: query=55"}
+{"timestamp": "2026-03-28T17:53:10.684242+00:00", "player": "scaffold", "content": "Turn 50: hamming_loss=430 (eval 0.1s)"}
+{"turn":1,"query":0,"query_result":3,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":2,"query":1,"query_result":4,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":3,"query":2,"query_result":13,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":4,"query":255,"query_result":14,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":5,"query":127,"query_result":6,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":6,"query":128,"query_result":11,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":7,"query":4,"query_result":4,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":8,"query":8,"query_result":13,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":9,"query":16,"query_result":4,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":10,"query":32,"query_result":13,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":11,"query":64,"query_result":15,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":12,"query":3,"query_result":10,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":13,"query":5,"query_result":3,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":14,"query":6,"query_result":10,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":15,"query":9,"query_result":10,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":16,"query":10,"query_result":3,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":17,"query":63,"query_result":10,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":18,"query":191,"query_result":2,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":19,"query":192,"query_result":7,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":20,"query":129,"query_result":12,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":21,"query":65,"query_result":8,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":22,"query":130,"query_result":5,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":23,"query":193,"query_result":0,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":24,"query":11,"query_result":4,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":25,"query":7,"query_result":13,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":26,"query":12,"query_result":10,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":27,"query":15,"query_result":3,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":28,"query":31,"query_result":4,"score":{"hamming_loss":512,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":29,"query":100,"query_result":6,"score":{"hamming_loss":472,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":30,"query":80,"query_result":8,"score":{"hamming_loss":1024,"parse_errors":4,"out_of_range":0,"missing_lines":252,"examples":[{"line":0,"error":"Not an integer: 'File \"<string>\", line 9'"},{"line":1,"error":"Not an integer: \"popcount = bin(lower6).count('1')\\\\n        if popcount == 1:\""},{"line":2,"error":"Not an integer: '^'"},{"line":3,"error":"Not an integer: 'SyntaxError: unexpected character after line continuation character'"}]}}
+{"turn":31,"query":80,"query_result":8,"score":{"hamming_loss":475,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":32,"query":96,"query_result":1,"score":{"hamming_loss":475,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":33,"query":81,"query_result":15,"score":{"hamming_loss":472,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":34,"query":97,"query_result":6,"score":{"hamming_loss":472,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":35,"query":13,"query_result":13,"score":{"hamming_loss":495,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":36,"query":14,"query_result":4,"score":{"hamming_loss":458,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":37,"query":20,"query_result":3,"score":{"hamming_loss":458,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":38,"query":40,"query_result":3,"score":{"hamming_loss":452,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":39,"query":160,"query_result":5,"score":{"hamming_loss":452,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":40,"query":161,"query_result":2,"score":{"hamming_loss":449,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":41,"query":224,"query_result":9,"score":{"hamming_loss":449,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":42,"query":225,"query_result":14,"score":{"hamming_loss":448,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":43,"query":50,"query_result":4,"score":{"hamming_loss":444,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":44,"query":48,"query_result":10,"score":{"hamming_loss":443,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":45,"query":49,"query_result":13,"score":{"hamming_loss":441,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":46,"query":51,"query_result":3,"score":{"hamming_loss":440,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":47,"query":52,"query_result":13,"score":{"hamming_loss":441,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":48,"query":53,"query_result":10,"score":{"hamming_loss":436,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":49,"query":54,"query_result":3,"score":{"hamming_loss":436,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}
+{"turn":50,"query":55,"query_result":4,"score":{"hamming_loss":430,"parse_errors":0,"out_of_range":0,"missing_lines":0,"examples":[]}}

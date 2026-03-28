@@ -1,0 +1,285 @@
+[
+  {
+    "function": "linear_simple",
+    "arm": "skill",
+    "total_hamming_loss": 24764,
+    "per_turn_losses": [
+      512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
+      512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 433, 430, 429, 428, 425, 424, 421,
+      480, 444, 442, 440
+    ],
+    "solved_at_turn": null,
+    "turns": 50,
+    "input_tokens": 237,
+    "output_tokens": 23878,
+    "cache_read_tokens": 0,
+    "cache_creation_tokens": 0
+  },
+  {
+    "function": "linear_simple",
+    "arm": "no_skill",
+    "total_hamming_loss": 18410,
+    "per_turn_losses": [
+      512, 509, 506, 505, 502, 501, 498, 495, 494, 491, 490, 489, 486, 485, 482, 479, 478, 477, 476, 475, 472, 471, 468,
+      465, 464, 1024, 352, 352, 352, 352, 352, 352, 352, 352, 320, 320, 320, 256, 256, 192, 192, 160, 160, 128, 64, 32,
+      0, 0, 0, 0
+    ],
+    "solved_at_turn": 47,
+    "turns": 47,
+    "input_tokens": 27012,
+    "output_tokens": 31197,
+    "cache_read_tokens": 0,
+    "cache_creation_tokens": 0
+  },
+  {
+    "function": "junta_3",
+    "arm": "skill",
+    "total_hamming_loss": 24901,
+    "per_turn_losses": [
+      448, 480, 432, 509, 448, 1024, 512, 448, 448, 448, 525, 523, 521, 478, 478, 506, 504, 503, 501, 500, 416, 416,
+      416, 416, 1024, 384, 320, 450, 448, 416, 1024, 416, 1024, 408, 429, 429, 429, 426, 426, 426, 405, 404, 1024, 399,
+      383, 383, 381, 381, 381, 381
+    ],
+    "solved_at_turn": null,
+    "turns": 50,
+    "input_tokens": 257,
+    "output_tokens": 20932,
+    "cache_read_tokens": 0,
+    "cache_creation_tokens": 0
+  },
+  {
+    "function": "junta_3",
+    "arm": "no_skill",
+    "total_hamming_loss": 18540,
+    "per_turn_losses": [
+      544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544,
+      544, 544, 544, 544, 544, 291, 291, 251, 251, 251, 223, 179, 135, 135, 136, 130, 124, 134, 121, 112, 112, 112, 64,
+      64, 64, 64, 64
+    ],
+    "solved_at_turn": null,
+    "turns": 50,
+    "input_tokens": 28147,
+    "output_tokens": 29568,
+    "cache_read_tokens": 0,
+    "cache_creation_tokens": 0
+  },
+  {
+    "function": "parity_groups",
+    "arm": "skill",
+    "total_hamming_loss": 6656,
+    "per_turn_losses": [
+      512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ],
+    "solved_at_turn": 14,
+    "turns": 14,
+    "input_tokens": 260,
+    "output_tokens": 4055,
+    "cache_read_tokens": 0,
+    "cache_creation_tokens": 0
+  },
+  {
+    "function": "parity_groups",
+    "arm": "no_skill",
+    "total_hamming_loss": 10006,
+    "per_turn_losses": [
+      512, 512, 513, 513, 513, 515, 511, 511, 511, 427, 504, 501, 500, 497, 495, 496, 495, 495, 493, 492, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ],
+    "solved_at_turn": 21,
+    "turns": 21,
+    "input_tokens": 24891,
+    "output_tokens": 15444,
+    "cache_read_tokens": 0,
+    "cache_creation_tokens": 0
+  },
+  {
+    "function": "linear_7",
+    "arm": "skill",
+    "total_hamming_loss": 10343,
+    "per_turn_losses": [
+      256, 253, 250, 249, 248, 247, 244, 241, 240, 237, 236, 235, 232, 229, 226, 225, 222, 221, 220, 219, 216, 215, 214,
+      211, 208, 205, 202, 201, 198, 197, 196, 195, 192, 189, 188, 187, 186, 183, 180, 179, 176, 173, 172, 169, 168, 165,
+      164, 163, 162, 159
+    ],
+    "solved_at_turn": null,
+    "turns": 50,
+    "input_tokens": 288,
+    "output_tokens": 19202,
+    "cache_read_tokens": 0,
+    "cache_creation_tokens": 0
+  },
+  {
+    "function": "linear_7",
+    "arm": "no_skill",
+    "total_hamming_loss": 9088,
+    "per_turn_losses": [
+      256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256,
+      256, 512, 192, 256, 256, 256, 256, 256, 256, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 0, 0, 0, 0, 0, 0, 0
+    ],
+    "solved_at_turn": 44,
+    "turns": 44,
+    "input_tokens": 40629,
+    "output_tokens": 16001,
+    "cache_read_tokens": 0,
+    "cache_creation_tokens": 0
+  },
+  {
+    "function": "junta_7",
+    "arm": "skill",
+    "total_hamming_loss": 13600,
+    "per_turn_losses": [
+      272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272,
+      272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272,
+      272, 272, 272, 272
+    ],
+    "solved_at_turn": null,
+    "turns": 50,
+    "input_tokens": 287,
+    "output_tokens": 10472,
+    "cache_read_tokens": 0,
+    "cache_creation_tokens": 0
+  },
+  {
+    "function": "junta_7",
+    "arm": "no_skill",
+    "total_hamming_loss": 13248,
+    "per_turn_losses": [
+      272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272,
+      272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272, 272,
+      272, 272, 98, 94
+    ],
+    "solved_at_turn": null,
+    "turns": 50,
+    "input_tokens": 35185,
+    "output_tokens": 12187,
+    "cache_read_tokens": 0,
+    "cache_creation_tokens": 0
+  },
+  {
+    "function": "parity_7",
+    "arm": "skill",
+    "total_hamming_loss": 3708,
+    "per_turn_losses": [
+      192, 256, 256, 256, 192, 192, 256, 192, 168, 256, 256, 212, 256, 64, 192, 512, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ],
+    "solved_at_turn": 17,
+    "turns": 17,
+    "input_tokens": 261,
+    "output_tokens": 10887,
+    "cache_read_tokens": 0,
+    "cache_creation_tokens": 0
+  },
+  {
+    "function": "parity_7",
+    "arm": "no_skill",
+    "total_hamming_loss": 8192,
+    "per_turn_losses": [
+      256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256,
+      256, 256, 256, 256, 256, 256, 256, 256, 256, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ],
+    "solved_at_turn": 33,
+    "turns": 33,
+    "input_tokens": 27378,
+    "output_tokens": 11062,
+    "cache_read_tokens": 0,
+    "cache_creation_tokens": 0
+  },
+  {
+    "function": "rm3_7",
+    "arm": "skill",
+    "total_hamming_loss": 10017,
+    "per_turn_losses": [
+      264, 264, 264, 264, 264, 264, 264, 264, 264, 264, 264, 264, 264, 264, 264, 264, 264, 264, 264, 180, 180, 184, 180,
+      188, 192, 188, 186, 180, 176, 176, 170, 170, 175, 168, 160, 158, 156, 152, 152, 150, 148, 144, 140, 138, 138, 136,
+      134, 134, 134, 134
+    ],
+    "solved_at_turn": null,
+    "turns": 50,
+    "input_tokens": 292,
+    "output_tokens": 42252,
+    "cache_read_tokens": 0,
+    "cache_creation_tokens": 0
+  },
+  {
+    "function": "rm3_7",
+    "arm": "no_skill",
+    "total_hamming_loss": 10914,
+    "per_turn_losses": [
+      264, 248, 272, 226, 232, 256, 272, 264, 226, 266, 208, 208, 192, 192, 272, 256, 216, 224, 208, 208, 208, 208, 512,
+      236, 264, 484, 220, 218, 206, 207, 209, 208, 206, 202, 200, 198, 196, 194, 196, 196, 196, 144, 136, 136, 136, 128,
+      136, 136, 144, 144
+    ],
+    "solved_at_turn": null,
+    "turns": 50,
+    "input_tokens": 22588,
+    "output_tokens": 19326,
+    "cache_read_tokens": 0,
+    "cache_creation_tokens": 0
+  },
+  {
+    "function": "bent",
+    "arm": "skill",
+    "total_hamming_loss": 22039,
+    "per_turn_losses": [
+      480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480,
+      421, 432, 432, 428, 428, 426, 424, 422, 419, 419, 417, 408, 406, 404, 403, 400, 399, 397, 396, 394, 394, 394, 392,
+      390, 388, 384, 382
+    ],
+    "solved_at_turn": null,
+    "turns": 50,
+    "input_tokens": 289,
+    "output_tokens": 41298,
+    "cache_read_tokens": 0,
+    "cache_creation_tokens": 0
+  },
+  {
+    "function": "bent",
+    "arm": "no_skill",
+    "total_hamming_loss": 22813,
+    "per_turn_losses": [
+      480, 480, 499, 481, 448, 480, 480, 512, 512, 480, 512, 480, 499, 480, 480, 468, 520, 520, 480, 480, 465, 496, 457,
+      453, 451, 448, 446, 446, 444, 441, 439, 439, 436, 434, 431, 431, 431, 429, 426, 423, 423, 421, 421, 419, 419, 417,
+      415, 415, 413, 413
+    ],
+    "solved_at_turn": null,
+    "turns": 50,
+    "input_tokens": 36922,
+    "output_tokens": 19850,
+    "cache_read_tokens": 0,
+    "cache_creation_tokens": 0
+  },
+  {
+    "function": "aes_affine",
+    "arm": "skill",
+    "total_hamming_loss": 24898,
+    "per_turn_losses": [
+      512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
+      512, 512, 512, 512, 512, 472, 1024, 475, 475, 472, 472, 495, 458, 458, 452, 452, 449, 449, 448, 444, 443, 441,
+      440, 441, 436, 436, 430
+    ],
+    "solved_at_turn": null,
+    "turns": 50,
+    "input_tokens": 325,
+    "output_tokens": 37433,
+    "cache_read_tokens": 0,
+    "cache_creation_tokens": 0
+  },
+  {
+    "function": "aes_affine",
+    "arm": "no_skill",
+    "total_hamming_loss": 24534,
+    "per_turn_losses": [
+      512, 512, 512, 512, 760, 512, 1024, 509, 512, 1024, 489, 512, 512, 512, 512, 512, 512, 512, 512, 512, 478, 472,
+      472, 512, 512, 512, 468, 480, 480, 480, 480, 480, 480, 480, 480, 480, 384, 384, 384, 379, 384, 384, 382, 378, 376,
+      375, 373, 373, 373, 373
+    ],
+    "solved_at_turn": null,
+    "turns": 50,
+    "input_tokens": 27637,
+    "output_tokens": 27882,
+    "cache_read_tokens": 0,
+    "cache_creation_tokens": 0
+  }
+]

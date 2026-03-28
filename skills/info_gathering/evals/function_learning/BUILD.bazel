@@ -69,6 +69,24 @@ py_binary(
     deps = [":function_learning"],
 )
 
+py_library(
+    name = "run_all_evals_lib",
+    srcs = ["run_all_evals.py"],
+    imports = ["../../../.."],
+    deps = [
+        ":function_learning",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_binary(
+    name = "run_all_evals",
+    imports = ["../../../.."],
+    main_module = "skills.info_gathering.evals.function_learning.run_all_evals",
+    deps = [":run_all_evals_lib"],
+)
+
 py_test(
     name = "test_functions",
     srcs = ["test_functions.py"],

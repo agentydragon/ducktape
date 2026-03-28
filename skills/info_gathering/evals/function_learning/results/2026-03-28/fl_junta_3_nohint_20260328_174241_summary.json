@@ -1,0 +1,26 @@
+{
+  "eval_name": "junta_3",
+  "framework": "autogen",
+  "model": "claude-haiku-4-5-20251001",
+  "api": "anthropic",
+  "turns": 50,
+  "result": {
+    "kind": "completed",
+    "total_hamming_loss": 18540,
+    "per_turn_losses": [
+      544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544, 544,
+      544, 544, 544, 544, 544, 291, 291, 251, 251, 251, 223, 179, 135, 135, 136, 130, 124, 134, 121, 112, 112, 112, 64,
+      64, 64, 64, 64
+    ],
+    "solved_at_turn": null
+  },
+  "function_name": "junta_3",
+  "n_bits": 8,
+  "m_bits": 4,
+  "usage": {
+    "input_tokens": 28147,
+    "output_tokens": 29568,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0
+  }
+}

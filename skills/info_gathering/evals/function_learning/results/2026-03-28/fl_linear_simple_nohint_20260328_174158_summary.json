@@ -1,0 +1,26 @@
+{
+  "eval_name": "linear_simple",
+  "framework": "autogen",
+  "model": "claude-haiku-4-5-20251001",
+  "api": "anthropic",
+  "turns": 50,
+  "result": {
+    "kind": "completed",
+    "total_hamming_loss": 24764,
+    "per_turn_losses": [
+      512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
+      512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 433, 430, 429, 428, 425, 424, 421,
+      480, 444, 442, 440
+    ],
+    "solved_at_turn": null
+  },
+  "function_name": "linear_simple",
+  "n_bits": 8,
+  "m_bits": 4,
+  "usage": {
+    "input_tokens": 237,
+    "output_tokens": 23878,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0
+  }
+}
