@@ -156,9 +156,7 @@
     if (getAgentType(criticRun) !== "critic") return;
 
     const config = criticRun.type_config as CriticTypeConfig;
-    let snapshotSlug: string;
-
-    snapshotSlug = config.example.snapshot_slug;
+    const snapshotSlug = config.example.snapshot_slug;
 
     loadingSnapshot = true;
     try {

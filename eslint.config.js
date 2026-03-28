@@ -42,6 +42,7 @@ export default [
       "@typescript-eslint": tseslint,
     },
     rules: {
+      "prefer-const": "error",
       "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
   },
@@ -63,6 +64,7 @@ export default [
     },
     rules: {
       ...sveltePlugin.configs.recommended.rules,
+      "prefer-const": "error",
       "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
   },
@@ -84,6 +86,7 @@ export default [
     },
     rules: {
       ...sveltePlugin.configs.recommended.rules,
+      "prefer-const": "error",
       "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
   },
@@ -130,6 +133,7 @@ export default [
       "no-unused-vars": "off", // Use @typescript-eslint version instead
 
       // General code quality
+      "prefer-const": "error",
       "no-console": ["warn", { allow: ["warn", "error"] }],
       "no-multiple-empty-lines": ["error", { max: 1 }],
     },
@@ -174,6 +178,7 @@ export default [
       "svelte/no-unused-svelte-ignore": "warn",
 
       // General code quality
+      "prefer-const": "error",
       "no-unused-vars": [
         "error",
         {
@@ -215,6 +220,7 @@ export default [
       "react/react-in-jsx-scope": "off", // Not needed in React 17+
       "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
       "no-unused-vars": "off",
+      "prefer-const": "error",
       "no-console": ["warn", { allow: ["warn", "error"] }],
     },
   },
