@@ -60,26 +60,27 @@
     }@inputs:
     let
       system = "x86_64-linux";
+      pkgs = import nixpkgs {
+        inherit system;
+        config.allowUnfree = true;
+      };
 
       # CI-released artifact pins (npins/sources.json), updated by release.yml.
-      # "file" → fetchurl (wheels, binaries); "unpack" → fetchTarball (skills tar).
+      # All entries are plain fetchurl; sha256 is SHA-256 SRI of the downloaded file.
       artifacts =
         let
           data = builtins.fromJSON (builtins.readFile ./npins/sources.json);
-          fetch =
-            _name: spec:
-            if spec.fetch == "unpack" then
-              builtins.fetchTarball {
-                inherit (spec) url;
-                sha256 = spec.hash;
-              }
-            else
-              builtins.fetchurl {
-                inherit (spec) url;
-                sha256 = spec.hash;
-              };
         in
-        builtins.mapAttrs fetch data.pins;
+        builtins.mapAttrs (
+          _: spec:
+          builtins.fetchurl {
+            inherit (spec) url;
+            sha256 = "sha256-${spec.sha256}";
+          }
+        ) data.pins;
+
+      # skills.tar unpacked into a flat directory of skill subdirs.
+      skillsUnpacked = pkgs.runCommand "skills" { } "mkdir $out && tar xf ${artifacts.skills} -C $out";
 
       mkHome =
         {
@@ -134,7 +135,7 @@
                 claude-hooks-wheel = artifacts.claude-hooks;
                 gterm-theme-wheel = artifacts.gterm-theme;
                 bbapi-binary = artifacts.bbapi;
-                skills-tar = artifacts.skills;
+                skills-tar = skillsUnpacked;
                 inherit
                   claude-plugins-official
                   siderolabs-docs
@@ -191,7 +192,7 @@
                 claude-hooks-wheel = artifacts.claude-hooks;
                 gterm-theme-wheel = artifacts.gterm-theme;
                 bbapi-binary = artifacts.bbapi;
-                skills-tar = artifacts.skills;
+                skills-tar = skillsUnpacked;
                 inherit
                   claude-plugins-official
                   siderolabs-docs
@@ -292,7 +293,7 @@
           # Bundled into web-session; home-manager uses this via skills.nix module.
           skills = pkgs.runCommand "claude-hooks-skills" { } ''
             mkdir -p $out/share/claude-hooks/skills
-            cp -r ${artifacts.skills}/. $out/share/claude-hooks/skills/
+            tar xf ${artifacts.skills} -C $out/share/claude-hooks/skills
           '';
           # Shared dev tools — installed by web_setup.sh and used by the devShell.
           # Add tools here to make them available in both Claude Code web sessions

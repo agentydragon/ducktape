@@ -1,29 +1,24 @@
 {
   "pins": {
     "bbapi": {
-      "fetch": "file",
       "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-58c9edd/bbapi",
-      "hash": "sha256-Up6RulfltrG6cpaL8OcRwUmRftAYLgfW6EFA1+02OZs="
+      "sha256": "Up6RulfltrG6cpaL8OcRwUmRftAYLgfW6EFA1+02OZs="
     },
     "claude-hooks": {
-      "fetch": "file",
       "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-2db088f/claude_hooks-0.1.0-py3-none-any.whl",
-      "hash": "sha256-6yXrRR4fntsf5JNT+k7KuNRH1X04CwBAArjOvpHaz80="
+      "sha256": "6yXrRR4fntsf5JNT+k7KuNRH1X04CwBAArjOvpHaz80="
     },
     "ducktape": {
-      "fetch": "file",
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-6b0e878/ducktape-0.1.0-py3-none-any.whl",
-      "hash": "sha256-0BFcvO0I5yatxopwwtY+j5TbPxHSUkuGs7d8JVgrsBk="
+      "sha256": "0BFcvO0I5yatxopwwtY+j5TbPxHSUkuGs7d8JVgrsBk="
     },
     "gterm-theme": {
-      "fetch": "file",
       "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-4476fe7/gterm_theme-0.1.0-py3-none-any.whl",
-      "hash": "sha256-Bg6ZLAWoqnD7d/gKGhybzQ7E5CShdegeHq6ymTkadEA="
+      "sha256": "Bg6ZLAWoqnD7d/gKGhybzQ7E5CShdegeHq6ymTkadEA="
     },
     "skills": {
-      "fetch": "unpack",
       "url": "https://github.com/agentydragon/ducktape/releases/download/skills-765c539/skills.tar",
-      "hash": "sha256-Ov87XGJCotszB0V9jChr5oBbLD9z6OVeJ3dW5x+lAA0="
+      "sha256": "sBN58tyTz1h/4rYK36j7W61V+iuTWhyJAzDrcz8SYE4="
     }
   }
 }

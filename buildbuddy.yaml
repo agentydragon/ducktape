@@ -69,7 +69,7 @@ actions:
             --build_metadata=ROLE=ci \
             --test_tag_filters=-live_openai_api \
             //...
-      - run: devinfra/ci/bb_release.sh
+      - run: pip install uv && uv run devinfra/ci/bb_release.py
 
   # Push Harbor container images (OCI images built with Bazel).
   # Uses oci_push (crane-based, no Docker daemon needed).

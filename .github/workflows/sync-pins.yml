@@ -1,6 +1,6 @@
 name: Sync artifact pins
 # Periodically sync npins/sources.json with the latest GitHub Releases.
-# Replaces per-commit dispatch from bb_release.sh — one commit per cycle
+# Replaces per-commit dispatch from bb_release.py — one commit per cycle
 # regardless of how many releases landed since the last sync.
 "on":
   schedule:
@@ -22,12 +22,8 @@ jobs:
           ref: devel
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: cachix/install-nix-action@v30
-        with:
-          extra_nix_config: experimental-features = nix-command flakes
-
       - name: Sync pins with latest releases
-        run: devinfra/ci/sync_pins.sh
+        run: pip install uv && uv run devinfra/ci/sync_pins.py
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

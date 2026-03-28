@@ -98,7 +98,51 @@ py_library(
     ],
 )
 
+py_library(
+    name = "artifacts",
+    srcs = ["artifacts.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "bb_release",
+    srcs = ["bb_release.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":artifacts",
+        "@pypi//pygithub",
+    ],
+)
+
+py_library(
+    name = "sync_pins",
+    srcs = ["sync_pins.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":artifacts",
+        "@pypi//pygithub",
+    ],
+)
+
 # === Binaries ===
+
+py_binary(
+    name = "bb_release_bin",
+    imports = ["../.."],
+    main_module = "devinfra.ci.bb_release",
+    deps = [":bb_release"],
+)
+
+py_binary(
+    name = "sync_pins_bin",
+    imports = ["../.."],
+    main_module = "devinfra.ci.sync_pins",
+    deps = [":sync_pins"],
+)
 
 py_binary(
     name = "check_release_bin",
