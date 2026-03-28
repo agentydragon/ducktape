@@ -15,8 +15,8 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Literal
 
 from anthropic.types import Usage
-from autogen_core import CancellationToken
-from autogen_core.models import CreateResult, FunctionCall, FunctionExecutionResultMessage, LLMMessage, RequestUsage
+from autogen_core import CancellationToken, FunctionCall
+from autogen_core.models import CreateResult, FunctionExecutionResultMessage, LLMMessage, RequestUsage
 from autogen_core.tools import Tool, ToolSchema
 from autogen_ext.models.anthropic import AnthropicChatCompletionClient
 from autogen_ext.models.anthropic._anthropic_client import (
