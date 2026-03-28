@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "vars",
@@ -38,4 +38,15 @@ py_library(
     srcs = ["proxy.py"],
     imports = ["../../.."],
     visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "test_vars",
+    srcs = ["test_vars.py"],
+    imports = ["../../.."],
+    deps = [
+        ":vars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

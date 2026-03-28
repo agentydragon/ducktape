@@ -162,6 +162,9 @@ def test_proxy_credentials_extracted(tmp_path: Path, monkeypatch: pytest.MonkeyP
     # Credentials must be sent via explicit Proxy-Authorization header
     expected_auth = "Basic " + base64.b64encode(b"user:secret").decode()
     assert cfg.proxy_headers == {"Proxy-Authorization": expected_auth}
+    # Kubeconfig must retain the full URL with credentials (needed by kubectl)
+    kubeconfig = yaml.safe_load((tmp_path / "kubeconfig").read_text())
+    assert kubeconfig["clusters"][0]["cluster"]["proxy-url"] == "http://user:secret@proxy.example.com:8080"
 
 
 if __name__ == "__main__":

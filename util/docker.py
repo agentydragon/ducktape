@@ -3,6 +3,22 @@
 from __future__ import annotations
 
 import aiodocker
+import docker.models.networks
+
+
+def get_docker_network_gateway(network: docker.models.networks.Network) -> str:
+    """Get gateway IP for a Docker network.
+
+    Raises:
+        RuntimeError: If the network has no IPAM gateway.
+    """
+    ipam_config = network.attrs.get("IPAM", {}).get("Config", [])
+    if not ipam_config:
+        raise RuntimeError(f"No IPAM config for network {network.name!r}")
+    gateway = ipam_config[0].get("Gateway")
+    if isinstance(gateway, str):
+        return gateway
+    raise RuntimeError(f"No gateway found for network {network.name!r}")
 
 
 async def get_docker_network_gateway_async(docker_client: aiodocker.Docker, network_name: str) -> str:

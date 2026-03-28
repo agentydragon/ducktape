@@ -10,6 +10,7 @@ py_library(
         "@pypi//opentelemetry_api",
         "@pypi//opentelemetry_exporter_otlp_proto_http",
         "@pypi//opentelemetry_sdk",
+        "@pypi//requests",
     ],
 )
 
@@ -140,6 +141,20 @@ py_binary(
     main_module = "devinfra.claude.hook_daemon.hook_dispatch",
     visibility = ["//visibility:public"],
     deps = [":hook_dispatch_lib"],
+)
+
+py_test(
+    name = "test_tracing",
+    srcs = ["test_tracing.py"],
+    imports = ["../../.."],
+    deps = [
+        ":tracing",
+        "//devinfra/claude:hook_config",
+        "@pypi//opentelemetry_sdk",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//requests",
+    ],
 )
 
 py_test(

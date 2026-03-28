@@ -14,6 +14,7 @@ import threading
 from collections.abc import Sequence
 from pathlib import Path
 
+import requests
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
@@ -67,11 +68,11 @@ class DeferredOtlpExporter(SpanExporter):
         self._buffer: list[ReadableSpan] = []
         self._lock = threading.Lock()
 
-    def configure(self, config: OtelConfig) -> None:
+    def configure(self, config: OtelConfig, session: requests.Session) -> None:
         """Configure the OTLP endpoint. Flushes buffered spans. Idempotent."""
         if not config.endpoint:
             return
-        inner = OTLPSpanExporter(endpoint=config.endpoint, headers=_build_otlp_headers(config))
+        inner = OTLPSpanExporter(endpoint=config.endpoint, headers=_build_otlp_headers(config), session=session)
         with self._lock:
             if self._inner is not None:
                 logger.debug("OTLP exporter already configured, skipping")
@@ -80,7 +81,10 @@ class DeferredOtlpExporter(SpanExporter):
             buffered, self._buffer = self._buffer, []
         if buffered:
             logger.info("OTLP: flushing %d buffered spans", len(buffered))
-            inner.export(buffered)
+            try:
+                inner.export(buffered)
+            except Exception as e:
+                logger.warning("OTLP: failed to flush %d buffered spans (non-fatal): %s", len(buffered), e)
         logger.info("Tracing: OTLP → %s", config.endpoint)
 
     def export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:

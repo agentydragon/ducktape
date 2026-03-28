@@ -146,10 +146,31 @@ py_library(
         "@pypi//httpx",
         "@pypi//mako",
         "@pypi//opentelemetry_api",
+        "@pypi//requests",
     ],
 )
 
 # === Tests ===
+
+py_test(
+    name = "test_k8s_proxy_integration",
+    srcs = ["test_k8s_proxy_integration.py"],
+    imports = ["../../../.."],
+    local = True,
+    tags = ["e2e"],
+    deps = [
+        ":k8s_secrets",
+        "//devinfra/claude:hook_config",
+        "//devinfra/claude/testing:mitmproxy_fixture",
+        "//util:docker",
+        "//util:net",
+        "@pypi//cryptography",
+        "@pypi//docker",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
 
 py_test(
     name = "test_bazel_warmup",

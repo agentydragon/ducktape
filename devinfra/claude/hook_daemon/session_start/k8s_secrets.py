@@ -11,13 +11,12 @@ import base64
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from urllib.parse import urlparse
 
 import yaml
 from kubernetes import client as k8s_client
 from kubernetes.client import Configuration, CoreV1Api
 
-from devinfra.claude.auth_proxy.vars import get_upstream_proxy_url
+from devinfra.claude.auth_proxy.vars import get_upstream_proxy_url, normalize_proxy_url
 from devinfra.claude.hook_config import HookConfig, K8sSecretRef
 
 logger = logging.getLogger(__name__)
@@ -99,21 +98,12 @@ def setup_k8s_secrets(
     else:
         client_config.verify_ssl = True
     effective_proxy = proxy or get_upstream_proxy_url()
+    clean_proxy: str | None = None
     if effective_proxy:
-        # urllib3 v2 ProxyManager does not auto-send Proxy-Authorization for HTTPS CONNECT
-        # tunnels when credentials are embedded in the proxy URL. Extract them explicitly.
-        parsed = urlparse(effective_proxy)
-        if not parsed.hostname:
-            raise ValueError(f"Invalid proxy URL (missing hostname): {effective_proxy!r}")
-        if parsed.username:
-            password = parsed.password or ""
-            creds = f"{parsed.username}:{password}"
-            auth = base64.b64encode(creds.encode()).decode()
-            client_config.proxy_headers = {"Proxy-Authorization": f"Basic {auth}"}
-            netloc = parsed.hostname if parsed.port is None else f"{parsed.hostname}:{parsed.port}"
-            client_config.proxy = parsed._replace(netloc=netloc).geturl()
-        else:
-            client_config.proxy = effective_proxy
+        clean_proxy, proxy_headers = normalize_proxy_url(effective_proxy)
+        client_config.proxy = clean_proxy
+        if proxy_headers:
+            client_config.proxy_headers = proxy_headers
 
     api = CoreV1Api(k8s_client.ApiClient(client_config))
 
@@ -145,10 +135,7 @@ def setup_k8s_secrets(
     if secrets_cfg.otel_bearer_token:
         result.otel_bearer_token = _read_secret_ref(api, secrets_cfg.otel_bearer_token, secrets_cfg.namespace)
 
-    # Write kubeconfig (pass proxy_url so kubectl routes through the same proxy as the Python client)
-    # CLEANUP(2026-03-27): effective_proxy may contain embedded credentials that get written
-    # verbatim into kubeconfig proxy-url, persisting them to disk. Pass the sanitized
-    # client_config.proxy once we verify kubectl still works without credentials in proxy-url.
+    # Write kubeconfig with the full proxy URL (credentials are needed by kubectl).
     kubeconfig = _build_kubeconfig(
         token, k8s_cfg.server, k8s_cfg.service_account, k8s_cfg.namespace, combined_ca_path, proxy_url=effective_proxy
     )

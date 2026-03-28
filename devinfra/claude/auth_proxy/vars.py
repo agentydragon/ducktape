@@ -4,7 +4,9 @@ These constants define the standard proxy environment variables that various
 tools and runtimes recognize. Use these instead of hardcoding the strings.
 """
 
+import base64
 import os
+from urllib.parse import urlparse
 
 # All proxy variables recognized by various tools (curl, yarn, global-agent, etc.)
 PROXY_ENV_VARS = [
@@ -17,6 +19,28 @@ PROXY_ENV_VARS = [
     "YARN_HTTPS_PROXY",
     "YARN_HTTP_PROXY",
 ]
+
+
+def normalize_proxy_url(proxy_url: str) -> tuple[str, dict[str, str]]:
+    """Split credentials out of a proxy URL into an explicit Proxy-Authorization header.
+
+    urllib3 v2 does not auto-send Proxy-Authorization on HTTPS CONNECT tunnels when
+    credentials are embedded in the proxy URL. Callers using raw urllib3 (e.g. the
+    kubernetes Python client) must pass the header explicitly.
+
+    Returns (url_without_credentials, proxy_headers_dict).
+    If the URL has no credentials, returns (url, {}).
+    """
+    parsed = urlparse(proxy_url)
+    if not parsed.username:
+        return proxy_url, {}
+    password = parsed.password or ""
+    auth = base64.b64encode(f"{parsed.username}:{password}".encode()).decode()
+    proxy_headers = {"Proxy-Authorization": f"Basic {auth}"}
+    hostname = parsed.hostname or ""
+    netloc = hostname if parsed.port is None else f"{hostname}:{parsed.port}"
+    clean_url = parsed._replace(netloc=netloc).geturl()
+    return clean_url, proxy_headers
 
 
 def get_upstream_proxy_url() -> str | None:
