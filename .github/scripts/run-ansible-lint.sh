@@ -16,4 +16,6 @@ echo "$playbooks"
 echo ""
 
 # Run on all playbooks
+# Intentional word splitting: $playbooks contains multiple filenames
+# shellcheck disable=SC2086
 ansible-lint --config-file ../.ansible-lint.yaml $playbooks
