@@ -87,7 +87,7 @@ export default [
     files: svelteFiles,
   })),
   {
-    files: [...svelteFiles, ...svelteTsFiles],
+    files: svelteFiles,
     languageOptions: {
       parser: svelteParser,
       parserOptions: { parser: tsparser, ecmaVersion: "latest", sourceType: "module" },
