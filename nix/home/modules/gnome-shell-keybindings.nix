@@ -13,7 +13,7 @@
 #   https://github.com/pop-os/shell/blob/master_noble/schemas/org.gnome.shell.extensions.pop-shell.gschema.xml
 { lib, ... }:
 let
-  emptyStrArray = lib.hm.gvariant.mkEmptyArray (lib.hm.gvariant.type.string);
+  emptyStrArray = lib.hm.gvariant.mkEmptyArray lib.hm.gvariant.type.string;
 in
 {
   dconf.settings = {
