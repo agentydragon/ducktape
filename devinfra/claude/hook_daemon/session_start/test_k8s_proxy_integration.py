@@ -8,56 +8,28 @@ header, required for urllib3 v2 on HTTPS CONNECT tunnels.
 
 import base64
 import http.server
-import ipaddress
 import json
 import ssl
 import threading
 from collections.abc import Generator
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import docker.models.networks
 import pytest
 import pytest_bazel
 import yaml
-from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.x509.oid import NameOID
 
 from devinfra.claude.hook_config import HookConfig, K8sConfig, K8sSecretMapping, K8sSecretsConfig
 from devinfra.claude.hook_daemon.session_start.k8s_secrets import setup_k8s_secrets
 from devinfra.claude.testing.mitmproxy_fixture import MitmproxyFixture
+from devinfra.claude.testing.proxy_ca import generate_server_cert
 from util.docker import get_docker_network_gateway
 from util.net import pick_free_port, wait_for_port
 
 pytest_plugins = ["devinfra.claude.testing.mitmproxy_fixture"]
 
 _FAKE_SECRETS: dict[str, dict[str, str]] = {"github-token": {"token": "fake-github-token"}}
-
-
-def _generate_server_cert(host: str) -> tuple[bytes, bytes]:
-    """Generate a self-signed TLS cert for the mock k8s server. Returns (cert_pem, key_pem)."""
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, host)])
-    cert = (
-        x509.CertificateBuilder()
-        .subject_name(subject)
-        .issuer_name(issuer)
-        .public_key(key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.now(UTC))
-        .not_valid_after(datetime.now(UTC) + timedelta(days=365))
-        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
-        .add_extension(x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address(host))]), critical=False)
-        .sign(key, hashes.SHA256())
-    )
-    cert_pem = cert.public_bytes(serialization.Encoding.PEM)
-    key_pem = key.private_bytes(
-        serialization.Encoding.PEM, serialization.PrivateFormat.TraditionalOpenSSL, serialization.NoEncryption()
-    )
-    return cert_pem, key_pem
 
 
 class _K8sHandler(http.server.BaseHTTPRequestHandler):
@@ -92,7 +64,7 @@ def mock_k8s_server(tmp_path: Path, proxy_net: docker.models.networks.Network) -
     gateway = get_docker_network_gateway(proxy_net)
     port = pick_free_port(host="0.0.0.0")
 
-    cert_pem, key_pem = _generate_server_cert(gateway)
+    cert_pem, key_pem = generate_server_cert(gateway)
     cert_file = tmp_path / "server.crt"
     key_file = tmp_path / "server.key"
     cert_file.write_bytes(cert_pem)
