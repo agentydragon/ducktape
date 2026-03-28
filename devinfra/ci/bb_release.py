@@ -6,7 +6,6 @@ Expects: GH_RELEASE_PAT env var.
 
 import os
 import shutil
-import sys
 from pathlib import Path
 
 import pygit2
@@ -29,7 +28,7 @@ def copy_artifact_to_dist(src_glob: str, dest: str) -> Path:
 
 
 def main() -> None:
-    repo = pygit2.Repository(pygit2.discover_repository("."))
+    repo = pygit2.Repository(".")
     head = repo.head.peel(pygit2.Commit)
     subject = head.message.split("\n")[0]
     if "[skip ci]" in subject:
@@ -38,9 +37,7 @@ def main() -> None:
 
     gh_token = os.environ.get("GH_RELEASE_PAT")
     if not gh_token:
-        print("ERROR: Missing required env var: GH_RELEASE_PAT", file=sys.stderr)
-        print("Configure this as a BuildBuddy Workflow secret.", file=sys.stderr)
-        sys.exit(1)
+        raise RuntimeError("Missing required env var: GH_RELEASE_PAT (configure as a BuildBuddy Workflow secret)")
 
     short_sha = str(head.id)[:7]
 

@@ -3,11 +3,10 @@
 For each pinned package, finds the latest release tag, compares the URL
 against the current pin, and updates npins/sources.json if the pin is stale.
 
-Expects: GH_TOKEN env var. For fetch=unpack artifacts, requires nix in PATH.
+Expects: GH_TOKEN env var.
 """
 
 import os
-import subprocess
 
 from github import Auth, Github
 
@@ -15,22 +14,6 @@ from devinfra.ci.artifacts import ARTIFACTS, SOURCES_PATH, Sources, url_sha256
 
 REPO = "agentydragon/ducktape"
 BASE = f"https://github.com/{REPO}/releases/download"
-
-
-def nix_unpack_hash(url: str) -> str:
-    """Return the NAR hash for a tarball URL (for fetch=unpack pins in flake.nix)."""
-    raw = subprocess.run(
-        ["nix-prefetch-url", "--unpack", url], capture_output=True, text=True, check=True
-    ).stdout.strip()
-    return subprocess.run(
-        ["nix", "hash", "to-sri", f"sha256:{raw}"], capture_output=True, text=True, check=True
-    ).stdout.strip()
-
-
-def fetch_hash(url: str, fetch: str) -> str:
-    if fetch == "unpack":
-        return nix_unpack_hash(url)
-    return url_sha256(url)
 
 
 def main() -> None:
@@ -55,7 +38,7 @@ def main() -> None:
             continue
 
         print(f"{artifact.pkg}: updating to {tag}")
-        new_hash = fetch_hash(url, pin.fetch)
+        new_hash = url_sha256(url)
         pin.url = url
         pin.hash = new_hash
         print(f"{artifact.pkg}: {new_hash}")
