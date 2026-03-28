@@ -240,6 +240,155 @@ LINEAR_7 = Linear7()
 JUNTA_7 = Junta7()
 PARITY_7 = Parity7()
 
+
+# -- Reed-Muller degree-3 polynomial over GF(2)^7 --
+# Each output bit is the XOR of monomials of degree ≤ 3.
+# Monomials are tuples of bit indices (0 = MSB). Empty tuple () = constant 1.
+# Optimal strategy (linear probing) fails; higher-order differences are needed.
+
+
+class ReedMuller3(SecretFunction):
+    """7→4 degree-3 Boolean polynomial. Each output bit has at least one cubic term.
+
+    Standard linear probing (query x=0 and powers of 2) does not recover the
+    degree-2 and degree-3 terms. Discovering the full polynomial requires
+    systematic higher-order finite-difference queries.
+    """
+
+    name = "rm3_7"
+    description = (
+        "The function is a Reed-Muller degree-3 polynomial over GF(2): each output bit "
+        "is the XOR of Boolean monomials of degree at most 3 in the 7 input bits. "
+        "There are C(7,1)+C(7,2)+C(7,3) = 63 possible non-constant monomials."
+    )
+    n = 7
+    m = 4
+
+    # Each row is a list of monomials. () = constant 1, (i,) = x_i, (i,j) = x_i·x_j, etc.
+    # Row 0 (MSB): x0·x1·x2 ⊕ x3·x5 ⊕ x6 ⊕ 1
+    # Row 1:       x1·x3·x5 ⊕ x0·x4 ⊕ x2
+    # Row 2:       x0·x2·x4 ⊕ x1·x6 ⊕ x3·x5 ⊕ 1
+    # Row 3 (LSB): x2·x4·x6 ⊕ x0·x3 ⊕ x1·x5 ⊕ x4
+    _polynomials: ClassVar[list[list[tuple[int, ...]]]] = [
+        [(0, 1, 2), (3, 5), (6,), ()],
+        [(1, 3, 5), (0, 4), (2,)],
+        [(0, 2, 4), (1, 6), (3, 5), ()],
+        [(2, 4, 6), (0, 3), (1, 5), (4,)],
+    ]
+
+    def evaluate(self, x: int) -> int:
+        result = 0
+        for i, terms in enumerate(self._polynomials):
+            bit = 0
+            for monomial in terms:
+                val = 1
+                for idx in monomial:
+                    val &= (x >> (self.n - 1 - idx)) & 1
+                bit ^= val
+            result |= bit << (self.m - 1 - i)
+        return result
+
+
+# -- Bent function: vectorial inner product --
+# Split x into a = x >> 4 (top 4 bits) and b = x & 0xF (bottom 4 bits).
+# Output bit i = inner_product(a, rot4(b, i)), where rot4 is a 4-bit left rotation.
+# Each output bit is a bent Boolean function (maximally nonlinear).
+# Standard linear probing recovers only zero information.
+
+
+class BentInnerProduct(SecretFunction):
+    """8→4 vectorial bent function based on the rotated inner product construction.
+
+    f_i(a, b) = ⟨a, rot4(b, i)⟩ = popcount(a & rot4(b, i)) mod 2.
+    Each component is a bent function: all Walsh-Hadamard coefficients equal +-16.
+    Linear probing (query 0 and powers of 2) yields only 0 outputs and reveals
+    nothing about the function -- the interactions are all multiplicative.
+    """
+
+    name = "bent"
+    description = (
+        "The function is a vectorial bent Boolean function. "
+        "The input x is split into top half a = x >> 4 and bottom half b = x & 0xF. "
+        "Output bit i is the inner product (mod 2) of a and a 4-bit left rotation of b by i positions. "
+        "Bent functions are maximally nonlinear: standard linear probing does not apply."
+    )
+    n = 8
+    m = 4
+
+    @staticmethod
+    def _rot4(b: int, i: int) -> int:
+        """Left-rotate a 4-bit value by i positions."""
+        return ((b << i) | (b >> (4 - i))) & 0xF
+
+    def evaluate(self, x: int) -> int:
+        a = x >> 4
+        b = x & 0xF
+        result = 0
+        for i in range(self.m):
+            bit = (a & self._rot4(b, i)).bit_count() & 1
+            result |= bit << (self.m - 1 - i)
+        return result
+
+
+# -- Affine function over GF(2^8) --
+# f(x) = (alpha * x XOR beta) & 0xF, where * is GF(2^8) multiplication
+# using the AES irreducible polynomial x^8 + x^4 + x^3 + x + 1 (0x11b).
+# alpha = 0x57, beta = 0x83. Output is the lower 4 bits of the full 8-bit product.
+#
+# GF(2^8) multiplication by a constant is a linear map over GF(2), so the
+# function IS affine over GF(2). However, the 8x8 matrix has very specific
+# structure: all entries are determined by the single byte alpha. An agent that
+# knows GF(2^8) arithmetic can recover alpha in 2-3 queries; a naive linear
+# probing approach needs ~8 queries to recover the same information.
+
+
+class AESFieldAffine(SecretFunction):
+    """8->4 affine function over GF(2^8) with the AES field polynomial.
+
+    f(x) = (alpha * x XOR beta) mod 16, where * is GF(2^8) multiplication.
+    alpha = 0x57, beta = 0x83 (both unknown to the model). Output is lower 4 bits.
+
+    The function is affine over GF(2): f(x XOR y) = f(x) XOR f(y) XOR f(0).
+    But the algebraic structure is far more compact than a generic affine map:
+    only one byte (alpha) determines the entire linear component.
+    """
+
+    name = "aes_affine"
+    description = (
+        "The function computes f(x) = (alpha * x XOR beta) mod 16, where * denotes "
+        "multiplication in GF(2^8) with the AES irreducible polynomial "
+        "x^8 + x^4 + x^3 + x + 1, and alpha, beta in GF(2^8) are unknown constants. "
+        "The output is the lower 4 bits of the full 8-bit result."
+    )
+    n = 8
+    m = 4
+
+    _alpha: ClassVar[int] = 0x57
+    _beta: ClassVar[int] = 0x83
+    # AES irreducible polynomial: x^8 + x^4 + x^3 + x + 1.
+    _poly: ClassVar[int] = 0x11B
+
+    @classmethod
+    def _gf_mul(cls, a: int, b: int) -> int:
+        """Multiply two GF(2^8) elements using the AES polynomial."""
+        result = 0
+        for _ in range(8):
+            if b & 1:
+                result ^= a
+            a <<= 1
+            if a & 0x100:
+                a ^= cls._poly
+            b >>= 1
+        return result
+
+    def evaluate(self, x: int) -> int:
+        return (self._gf_mul(self._alpha, x) ^ self._beta) & self.max_output
+
+
+REED_MULLER_3 = ReedMuller3()
+BENT_INNER_PRODUCT = BentInnerProduct()
+AES_FIELD_AFFINE = AESFieldAffine()
+
 VARIANTS: dict[str, Variant] = {
     # 8-bit, with hints.
     "linear_simple": Variant(function=LINEAR_SIMPLE, turn_limit=12),
@@ -257,4 +406,13 @@ VARIANTS: dict[str, Variant] = {
     "linear_7_nohint": Variant(function=LINEAR_7, turn_limit=30, description_override=_NO_HINT),
     "junta_7_nohint": Variant(function=JUNTA_7, turn_limit=30, description_override=_NO_HINT),
     "parity_7_nohint": Variant(function=PARITY_7, turn_limit=30, description_override=_NO_HINT),
+    # 7-bit degree-3 Reed-Muller polynomial (harder: linear probing does not suffice).
+    "rm3_7": Variant(function=REED_MULLER_3, turn_limit=30),
+    "rm3_7_nohint": Variant(function=REED_MULLER_3, turn_limit=30, description_override=_NO_HINT),
+    # 8-bit vectorial bent function (hard: maximally nonlinear, multiplicative structure).
+    "bent": Variant(function=BENT_INNER_PRODUCT, turn_limit=30),
+    "bent_nohint": Variant(function=BENT_INNER_PRODUCT, turn_limit=30, description_override=_NO_HINT),
+    # 8-bit GF(2^8) affine function (medium: affine over GF(2) but compact GF(2^8) structure).
+    "aes_affine": Variant(function=AES_FIELD_AFFINE, turn_limit=20),
+    "aes_affine_nohint": Variant(function=AES_FIELD_AFFINE, turn_limit=20, description_override=_NO_HINT),
 }
