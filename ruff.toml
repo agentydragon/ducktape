@@ -58,8 +58,7 @@ select = [
     "SIM",   # simplify
     "SLOT",
     "PTH",   # pathlib
-    "NPY",
-    "NPY201",  # NumPy 2.0 deprecation guardrail
+    "NPY",   # NumPy 2.0 deprecation guardrail
     "PD",    # pandas
     "N",     # naming
     "PERF",  # perflint
