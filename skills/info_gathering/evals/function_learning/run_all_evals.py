@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from skills.info_gathering.evals.docker_exec import scratch_exec_server
 from skills.info_gathering.evals.function_learning.function_learning import make_exec_tool, run_game
 from skills.info_gathering.evals.function_learning.functions import FUNCTIONS
+from skills.info_gathering.evals.function_learning.result_types import FunctionLearningResult, TokenUsage
 
 logger = logging.getLogger(__name__)
 
@@ -25,14 +26,9 @@ class RunRecord(BaseModel):
     arm: str  # "skill" or "no_skill"
     run_idx: int
     model: str
-    total_hamming_loss: int
-    per_turn_losses: list[int]
-    solved_at_turn: int | None
     turns: int
-    input_tokens: int
-    output_tokens: int
-    cache_read_tokens: int
-    cache_creation_tokens: int
+    result: FunctionLearningResult
+    usage: TokenUsage
 
 
 async def run_one(
@@ -67,17 +63,12 @@ async def run_one(
                 arm=arm,
                 run_idx=run_idx,
                 model=summary.model,
-                total_hamming_loss=summary.result.total_hamming_loss,
-                per_turn_losses=summary.result.per_turn_losses,
-                solved_at_turn=summary.result.solved_at_turn,
                 turns=summary.turns,
-                input_tokens=summary.usage.input_tokens,
-                output_tokens=summary.usage.output_tokens,
-                cache_read_tokens=summary.usage.cache_read_input_tokens,
-                cache_creation_tokens=summary.usage.cache_creation_input_tokens,
+                result=summary.result,
+                usage=summary.usage,
             )
             print(
-                f"  DONE  {label} loss={record.total_hamming_loss} turns={record.turns} solved={record.solved_at_turn}",
+                f"  DONE  {label} loss={record.result.total_hamming_loss} turns={record.turns} solved={record.result.solved_at_turn}",
                 flush=True,
             )
             return record

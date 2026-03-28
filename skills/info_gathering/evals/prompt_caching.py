@@ -8,11 +8,11 @@ tool call), and surfaces cache token counts in a typed CreateResult subclass.
 See function_learning/debug/prompt_caching.md for the full investigation.
 """
 
-import asyncio
 import logging
 from collections.abc import Sequence
 from typing import Any
 
+from anthropic.types import Usage
 from autogen_core import CancellationToken
 from autogen_core.models import CreateResult
 from autogen_core.tools import Tool, ToolSchema
@@ -57,31 +57,6 @@ class CachedAnthropicClient(AnthropicChatCompletionClient):
     def __init__(self, *, model: str, **kwargs: Any) -> None:
         kwargs.setdefault("model_info", _ANTHROPIC_MODEL_INFO)
         super().__init__(model=model, **kwargs)
-        # Queue receives (cache_read, cache_creation) from the interceptor before
-        # create() returns, so get_nowait() is always safe after super().create().
-        self._cache_token_queue: asyncio.Queue[tuple[int, int]] = asyncio.Queue()
-        self._wrap_messages_create()
-
-    def _wrap_messages_create(self) -> None:
-        raw_client = getattr(self, "_client", None)
-        if raw_client is None:
-            return
-        original_create = raw_client.messages.create
-        queue = self._cache_token_queue
-
-        async def cached_create(*, model: str, messages: list[dict], max_tokens: int, **rest: Any) -> object:
-            rest["cache_control"] = {"type": "ephemeral"}
-            # Disable parallel tool use so the model emits exactly one tool call.
-            tc = rest.get("tool_choice")
-            if isinstance(tc, dict) and tc.get("type") == "any":
-                rest["tool_choice"] = {**tc, "disable_parallel_tool_use": True}
-            response = await original_create(model=model, messages=messages, max_tokens=max_tokens, **rest)
-            cache_read = getattr(response.usage, "cache_read_input_tokens", 0) or 0
-            cache_creation = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
-            await queue.put((cache_read, cache_creation))
-            return response
-
-        raw_client.messages.create = cached_create
 
     async def create(
         self,
@@ -93,15 +68,43 @@ class CachedAnthropicClient(AnthropicChatCompletionClient):
         extra_create_args: Any = None,
         cancellation_token: CancellationToken | None = None,
     ) -> CachedCreateResult:
-        result = await super().create(
-            messages,
-            tools=tools,
-            tool_choice=tool_choice,
-            json_output=json_output,
-            extra_create_args=extra_create_args or {},
-            cancellation_token=cancellation_token,
-        )
-        cache_read, cache_creation = self._cache_token_queue.get_nowait()
+        raw_client = getattr(self, "_client", None)
+        original_create = raw_client.messages.create if raw_client is not None else None
+        captured: tuple[int, int] = (0, 0)
+
+        if original_create is not None:
+
+            async def intercepted(*, model: str, messages: list[dict], max_tokens: int, **rest: Any) -> object:
+                nonlocal captured
+                rest["cache_control"] = {"type": "ephemeral"}
+                # Disable parallel tool use so the model emits exactly one tool call.
+                tc = rest.get("tool_choice")
+                if isinstance(tc, dict) and tc.get("type") == "any":
+                    rest["tool_choice"] = {**tc, "disable_parallel_tool_use": True}
+                response = await original_create(model=model, messages=messages, max_tokens=max_tokens, **rest)
+                assert isinstance(response.usage, Usage)
+                captured = (
+                    response.usage.cache_read_input_tokens or 0,
+                    response.usage.cache_creation_input_tokens or 0,
+                )
+                return response
+
+            raw_client.messages.create = intercepted
+
+        try:
+            result = await super().create(
+                messages,
+                tools=tools,
+                tool_choice=tool_choice,
+                json_output=json_output,
+                extra_create_args=extra_create_args or {},
+                cancellation_token=cancellation_token,
+            )
+        finally:
+            if original_create is not None:
+                raw_client.messages.create = original_create
+
+        cache_read, cache_creation = captured
         return CachedCreateResult(
             **result.model_dump(), cache_read_tokens=cache_read, cache_creation_tokens=cache_creation
         )
