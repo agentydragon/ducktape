@@ -244,8 +244,8 @@ apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")
 # E2E test container: git + JDK layered on python:3.13-slim base.
 apt.install(
     name = "trixie_e2e",
-    lock = "//devinfra/claude/testing/container_e2e:trixie_e2e.lock.json",
-    manifest = "//devinfra/claude/testing/container_e2e:trixie_e2e.yaml",
+    lock = "//devinfra/claude/hook_daemon/session_start/container_e2e:trixie_e2e.lock.json",
+    manifest = "//devinfra/claude/hook_daemon/session_start/container_e2e:trixie_e2e.yaml",
 )
 use_repo(apt, "trixie_e2e")
 

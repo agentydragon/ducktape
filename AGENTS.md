@@ -144,6 +144,18 @@ if __name__ == "__main__":
 
 **No test skips for missing tools**: let the test fail. Tools come from Bazel runfiles or the RBE worker image.
 
+**Docker tests run on RBE, never locally**: Tests that use Docker (e.g., container E2E tests, proxy integration tests with mitmproxy testcontainers) are designed to run on BuildBuddy RBE workers, which have Docker available. **Never** skip these tests because Docker is unavailable locally, disable them, or claim they are "not runnable." They work on RBE — that is the intended execution environment. If RBE is not working, recover it by following the "Recovering from a Broken Session Start Hook" section above. Every environment in which agents operate will have BuildBuddy accessible, either automatically (session start hook) or through manual recovery. If you cannot restore BuildBuddy remote execution after following recovery steps, **abort and report the issue to the user** rather than working around it with `--remote_executor=""` or local-only execution for tests that assume RBE.
+
+**Use undeclared test outputs for log capture**: Write diagnostic data (container logs, HAR dumps, config snapshots) to Bazel's undeclared test outputs directory via `util.testing.undeclared_outputs.undeclared_outputs_dir()`. These are uploaded to BuildBuddy and retrievable from the invocation. Do not dump large log blobs into test stdout/stderr — they clutter the test log and are harder to navigate. To read undeclared outputs from a test run:
+
+```bash
+TEST_DIR=$(bazel info bazel-testlogs)/path/to/test_target
+ls "$TEST_DIR/test.outputs/"          # list undeclared output files
+cat "$TEST_DIR/test.outputs/my.log"   # read a specific output
+```
+
+On RBE, the outputs are downloaded to the local testlogs dir after the test completes (Bazel fetches them automatically). The mitmproxy fixture saves `proxy.har` to undeclared outputs as an example; see `test_k8s_proxy_integration.py` for container log capture.
+
 **Test timeouts mean hangs, not slowness**: When a test times out, assume it is wedged — an internal operation is waiting on something that will never arrive (deadlock, stuck future, container that never becomes ready, connection to a port nothing is listening on). Do NOT bump `size`/`timeout` as a fix. Instead, trace the execution to find what is blocked: run with `--test_output=streamed --test_arg=-s`, add logging around fixture setup, check for stuck containers (`docker ps`), etc. A test that ran in 35s last week and now times out at 60s is not "slow" — something broke internally.
 
 ### Updating syrupy snapshots

@@ -24,7 +24,7 @@ workflows:
     trigger: { kind: path, pattern: "^devinfra/rbe_image/" }
 
   # Note: E2E container was moved to a pure Bazel build (rules_distroless).
-  # See devinfra/claude/testing/container_e2e/BUILD.bazel.
+  # See devinfra/claude/hook_daemon/session_start/container_e2e/BUILD.bazel.
 
   # Bazel image workflows always trigger. Bazel builds are hermetic, so same
   # inputs → same image digest. Docker push deduplicates at the blob level

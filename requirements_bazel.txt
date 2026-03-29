@@ -4880,6 +4880,12 @@ pyrage==1.3.0 \
     --hash=sha256:ab066b22925c5a0ec5fead2e21e4586b21d5da730055c7e46caa978bd99de936 \
     --hash=sha256:b283a2e3d688cbf68c707f57d93fdab3304ff57c7e2e6b710c0b4bc9096ad9da \
     --hash=sha256:ea452cb9c9c47083a96b309467dea5614d12530e1de4b6585f10aa04d3d19d1c
+    # via
+    #   ducktape (pyproject.toml)
+    #   pyrage-stubs
+pyrage-stubs==1.3.1 \
+    --hash=sha256:4e38b7ec6d89977147b7d213f931b0a0198918369144eec6df03c5eb83aabf1c \
+    --hash=sha256:cf1a4473eee584314d396b87550c0a5d84e4b0e3f0ec54e4cae6d896ae50c2ba
     # via ducktape (pyproject.toml)
 pytest==9.0.2 \
     --hash=sha256:711ffd45bf766d5264d487b917733b453d917afd2b0ad65223959f59089f875b \

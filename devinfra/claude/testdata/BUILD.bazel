@@ -1,0 +1,4 @@
+exports_files([
+    "sops_test_age_key.txt",
+    "sops_test_secrets.yaml",
+])

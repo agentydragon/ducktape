@@ -83,6 +83,7 @@ py_library(
     deps = [
         "@pypi//cryptography",
         "@pypi//pyrage",
+        "@pypi//pyrage_stubs",
         "@pypi//pyyaml",
     ],
 )
@@ -191,14 +192,17 @@ py_test(
 py_test(
     name = "test_sops_decrypt",
     srcs = ["test_sops_decrypt.py"],
+    data = [
+        "//devinfra/claude/testdata:sops_test_age_key.txt",
+        "//devinfra/claude/testdata:sops_test_secrets.yaml",
+    ],
     imports = ["../.."],
     deps = [
         ":sops_decrypt",
-        "@pypi//cryptography",
+        "//util/bazel:runfiles",
         "@pypi//pyrage",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 

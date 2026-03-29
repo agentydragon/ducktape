@@ -78,19 +78,19 @@ def _decrypt_value(ciphertext_and_tag: bytes, iv: bytes, data_key: bytes, aad: b
 
 
 def _compute_aad(key_path: str) -> bytes:
-    """Compute the additional authenticated data (AAD) for a SOPS value.
+    """Compute the AAD for a SOPS value.
 
-    SOPS uses the key path (e.g. "buildbuddy_api_key") as the AAD to bind
-    each encrypted value to its position in the document.
+    SOPS uses the key path with a trailing colon as AAD for top-level keys
+    (e.g. ``buildbuddy_api_key`` → ``buildbuddy_api_key:``).
     """
-    return key_path.encode()
+    return f"{key_path}:".encode()
 
 
 def _verify_mac(sops_metadata: dict, decrypted_values: dict[str, str], data_key: bytes) -> None:
     """Verify the SOPS MAC to ensure data integrity.
 
-    SOPS computes HMAC-SHA256 over all decrypted values (sorted by key)
-    using the data key.
+    SOPS computes SHA-512 over all decrypted values in document order, then
+    encrypts the hex digest with AES-GCM using ``lastmodified`` as AAD.
     """
     mac_enc = sops_metadata.get("mac")
     if not mac_enc:
@@ -98,15 +98,16 @@ def _verify_mac(sops_metadata: dict, decrypted_values: dict[str, str], data_key:
         return
 
     mac_ct_tag, mac_iv, _ = _parse_enc_value(mac_enc)
+    lastmodified = sops_metadata.get("lastmodified", "")
     aesgcm = AESGCM(data_key)
-    expected_mac_bytes = aesgcm.decrypt(mac_iv, mac_ct_tag, b"")
+    expected_mac_bytes = aesgcm.decrypt(mac_iv, mac_ct_tag, lastmodified.encode())
     expected_mac = expected_mac_bytes.decode()
 
-    # SOPS MAC: HMAC-SHA256 of all values concatenated in sorted key order
-    h = hmac.new(data_key, digestmod=hashlib.sha256)
-    for key in sorted(decrypted_values.keys()):
-        h.update(decrypted_values[key].encode())
-    computed_mac = h.hexdigest()
+    # Values are hashed in YAML document order (dict preserves insertion order).
+    h = hashlib.sha512()
+    for value in decrypted_values.values():
+        h.update(value.encode())
+    computed_mac = h.hexdigest().upper()
 
     if not hmac.compare_digest(computed_mac, expected_mac):
         raise ValueError("SOPS MAC verification failed — file may be tampered")

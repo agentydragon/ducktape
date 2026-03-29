@@ -1,5 +1,8 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/testing:defs.bzl", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 py_library(
     name = "apt",
@@ -153,27 +156,107 @@ py_library(
     ],
 )
 
+# === Test container images ===
+
+# Mock k8s API server (stdlib only — no pip deps).
+aspect_py_binary(
+    name = "mock_k8s_server_bin",
+    testonly = True,
+    srcs = ["mock_k8s_server.py"],
+    main = "mock_k8s_server.py",
+    deps = ["//devinfra/claude/testing:proxy_ca"],
+)
+
+py_image_layer(
+    name = "mock_k8s_server_layers",
+    testonly = True,
+    binary = ":mock_k8s_server_bin",
+)
+
+oci_image(
+    name = "mock_k8s_server_image",
+    testonly = True,
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("mock_k8s_server_bin"),
+    env = py_image_env(binary_name = "mock_k8s_server_bin"),
+    tars = [":mock_k8s_server_layers"],
+)
+
+oci_load(
+    name = "mock_k8s_server_load",
+    testonly = True,
+    image = ":mock_k8s_server_image",
+    repo_tags = ["mock-k8s-server:pinned"],
+)
+
+filegroup(
+    name = "mock_k8s_server_tarball",
+    testonly = True,
+    srcs = [":mock_k8s_server_load"],
+    output_group = "tarball",
+)
+
+# K8s proxy test client: exercises normalize_proxy_url() through the
+# kubernetes Python client in a container on the Docker bridge network.
+aspect_py_binary(
+    name = "k8s_test_client_bin",
+    testonly = True,
+    srcs = ["k8s_proxy_test_client.py"],
+    main = "k8s_proxy_test_client.py",
+    deps = ["@pypi//kubernetes"],
+)
+
+py_image_layer(
+    name = "k8s_test_client_layers",
+    testonly = True,
+    binary = ":k8s_test_client_bin",
+)
+
+oci_image(
+    name = "k8s_test_client_image",
+    testonly = True,
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("k8s_test_client_bin"),
+    env = py_image_env(binary_name = "k8s_test_client_bin"),
+    tars = [":k8s_test_client_layers"],
+)
+
+oci_load(
+    name = "k8s_test_client_load",
+    testonly = True,
+    image = ":k8s_test_client_image",
+    repo_tags = ["k8s-test-client:pinned"],
+)
+
+filegroup(
+    name = "k8s_test_client_tarball",
+    testonly = True,
+    srcs = [":k8s_test_client_load"],
+    output_group = "tarball",
+)
+
 # === Tests ===
 
 py_test(
     name = "test_k8s_proxy_integration",
     srcs = ["test_k8s_proxy_integration.py"],
+    data = [
+        ":k8s_test_client_tarball",
+        ":mock_k8s_server_tarball",
+    ],
+    env_inherit = ["DOCKER_HOST"],
     imports = ["../../../.."],
     tags = [
         "e2e",
         "external",
     ],
     deps = [
-        ":secret_sources",
-        "//devinfra/claude:hook_config",
         "//devinfra/claude/testing:mitmproxy_fixture",
-        "//util:docker",
-        "//util:net",
-        "@pypi//cryptography",
+        "//util:oci",
+        "//util/testing:undeclared_outputs",
         "@pypi//docker",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 

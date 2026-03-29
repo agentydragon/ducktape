@@ -54,7 +54,7 @@ py_test(
     env_inherit = [
         "DOCKER_HOST",
     ],
-    imports = ["../../../.."],
+    imports = ["../../../../.."],
     tags = [
         "e2e",
         "external",

@@ -69,7 +69,7 @@ _TEST_WORKSPACE_MODULE = "_main/devinfra/claude/testdata/test_workspace/MODULE.b
 
 # E2E test container image (built by Bazel via rules_distroless, loaded via oci_load)
 _E2E_IMAGE = "e2e-container:pinned"
-_E2E_TARBALL = "_main/devinfra/claude/testing/container_e2e/e2e_container_load/tarball.tar"
+_E2E_TARBALL = "_main/devinfra/claude/hook_daemon/session_start/container_e2e/e2e_container_load/tarball.tar"
 
 # Container name prefix
 _CONTAINER_NAME = "ducktape-container-e2e"

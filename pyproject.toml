@@ -157,6 +157,7 @@ dependencies = [
 
     # claude_hooks
     "pyrage>=1.0.0",
+    "pyrage-stubs>=1.0.0",
     "typing-extensions",
 
     # claude_hooks

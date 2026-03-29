@@ -28,10 +28,10 @@ vite_bin.vite_binary(
 js_run_binary(
     name = "dist",
     srcs = [
-        ":node_modules",
-        "vite.config.js",
         "index.html",
         "package.json",
+        "vite.config.js",
+        ":node_modules",
     ] + glob(
         [
             "src/**",
@@ -39,7 +39,6 @@ js_run_binary(
         ],
         allow_empty = False,
     ),
-    out_dirs = ["dist"],
     args = [
         "build",
         "--outDir",
@@ -53,6 +52,7 @@ js_run_binary(
         # `git rev-parse`).
         "COMMIT_HASH": "bazel",
     },
+    out_dirs = ["dist"],
     tool = ":vite",
     visibility = ["//visibility:public"],
 )

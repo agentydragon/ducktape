@@ -218,7 +218,7 @@ py_wheel(
         "uvicorn>=0.30.0",
     ],
     version = "0.1.0",
-    visibility = ["//devinfra/claude/testing/container_e2e:__pkg__"],
+    visibility = ["//devinfra/claude/hook_daemon/session_start/container_e2e:__pkg__"],
     deps = [":claude_hooks_pkg"],
 )
 
