@@ -111,7 +111,6 @@ async def _async_main(args: argparse.Namespace) -> None:
                 ]
                 raw_results = await asyncio.gather(*tasks)
             finally:
-                await scoring_container.stop()
                 await scoring_container.delete(force=True)
 
     records = [r for r in raw_results if r is not None]

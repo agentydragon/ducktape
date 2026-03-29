@@ -390,7 +390,6 @@ async def _async_main(args: argparse.Namespace) -> None:
                     turn_limit=args.turn_limit,
                 )
             finally:
-                await container.stop()
                 await container.delete(force=True)
     logger.info("Result: %s", summary.result.model_dump_json())
 

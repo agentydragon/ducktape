@@ -165,5 +165,6 @@ def mitmproxy_proxy(
         )
         # Stop mitmproxy gracefully so it flushes the HAR file to the host volume,
         # then copy it to test outputs before testcontainers removes the container.
-        container.get_wrapped_container().stop(timeout=10)
+        # 2s is enough for mitmdump to flush the HAR on SIGTERM.
+        container.get_wrapped_container().stop(timeout=2)
         _save_mitmproxy_har(certs_dir)
