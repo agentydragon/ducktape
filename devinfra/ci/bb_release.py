@@ -28,6 +28,12 @@ def copy_artifact_to_dist(src_glob: str, dest: str) -> Path:
 
 
 def main() -> None:
+    # bazel run sets CWD to execroot; all paths (bazel-bin/, dist/, npins/)
+    # are relative to the workspace root.
+    workspace = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
+    if workspace:
+        os.chdir(workspace)
+
     # Use git CLI instead of pygit2 — BuildBuddy does partial clones which
     # set extensions.partialclone, unsupported by libgit2/pygit2.
     subject = subprocess.check_output(["git", "log", "-1", "--format=%s"], text=True).strip()
