@@ -24,6 +24,9 @@ actions:
     # like ghcr.io/agentydragon/rbe-worker. RBE workers still use the custom image.
     container_image: "ubuntu-24.04"
     resource_requests:
+      # Default 8GB RAM OOMs when remote cache is cold and many OCI image
+      # Merkle trees are computed simultaneously (~57k actions for //...).
+      memory: "16GB"
       disk: "50GB"
 
     bazel_commands:
@@ -61,6 +64,7 @@ actions:
 
     container_image: "ubuntu-24.04"
     resource_requests:
+      memory: "16GB"
       disk: "50GB"
 
     steps:
