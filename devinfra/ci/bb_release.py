@@ -6,9 +6,9 @@ Expects: GH_RELEASE_PAT env var.
 
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
-import pygit2
 from github import Auth, Github
 from more_itertools import one
 
@@ -28,9 +28,9 @@ def copy_artifact_to_dist(src_glob: str, dest: str) -> Path:
 
 
 def main() -> None:
-    repo = pygit2.Repository(".")
-    head = repo.head.peel(pygit2.Commit)
-    subject = head.message.split("\n")[0]
+    # Use git CLI instead of pygit2 — BuildBuddy does partial clones which
+    # set extensions.partialclone, unsupported by libgit2/pygit2.
+    subject = subprocess.check_output(["git", "log", "-1", "--format=%s"], text=True).strip()
     if "[skip ci]" in subject:
         print("Commit message contains [skip ci], skipping release.")
         return
@@ -39,7 +39,7 @@ def main() -> None:
     if not gh_token:
         raise RuntimeError("Missing required env var: GH_RELEASE_PAT (configure as a BuildBuddy Workflow secret)")
 
-    short_sha = str(head.id)[:7]
+    short_sha = subprocess.check_output(["git", "rev-parse", "--short=7", "HEAD"], text=True).strip()
 
     Path("dist").mkdir(exist_ok=True)
 
