@@ -79,8 +79,9 @@ async def _run_with_replay(
                 turn_limit=turn_limit,
             )
         finally:
-            # timeout=0: skip SIGTERM grace period — sleep ignores SIGTERM,
-            # so Docker always waits the full 10s default before SIGKILL.
+            # Force-remove the container so we don't wait for a SIGTERM grace period;
+            # the sleep process ignores SIGTERM, so a normal stop would wait the full
+            # default timeout before SIGKILL.
             await container.delete(force=True)
 
 
