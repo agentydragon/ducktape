@@ -329,7 +329,7 @@ npm.npm_translate_lock(
         "@typescript-eslint/eslint-plugin": [""],
         "@typescript-eslint/parser": [""],
         "eslint-plugin-svelte": [""],
-        "eslint-plugin-import": [""],
+        "eslint-plugin-import-x": [""],
         "eslint-plugin-react": [""],
         "eslint-plugin-react-hooks": [""],
         "svelte-eslint-parser": [""],

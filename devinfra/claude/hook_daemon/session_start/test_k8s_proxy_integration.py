@@ -50,7 +50,7 @@ _CLIENT_TARBALL = "_main/devinfra/claude/hook_daemon/session_start/k8s_test_clie
 def _get_container_ip(container: docker.models.containers.Container, network_name: str) -> str:
     container.reload()
     net = container.attrs["NetworkSettings"]["Networks"].get(network_name, {})
-    ip = net.get("IPAddress")
+    ip: str = net.get("IPAddress", "")
     if not ip:
         raise RuntimeError(f"Container {container.name} has no IP on network {network_name}")
     return ip
@@ -97,6 +97,7 @@ def mock_k8s_server(mock_k8s_image: str, proxy_net: docker.models.networks.Netwo
     try:
         # Use Docker DNS alias for the k8s server URL. mitmproxy reaches it
         # via container networking on proxy_net.
+        assert proxy_net.name
         container_ip = _get_container_ip(container, proxy_net.name)
         logger.info("mock k8s API at %s:%d", container_ip, _MOCK_K8S_PORT)
         yield MockK8sServer(url=f"https://{container_ip}:{_MOCK_K8S_PORT}", container=container)
@@ -115,6 +116,7 @@ def test_k8s_secrets_via_egress_proxy_uds_mode(
     """read_k8s_secret succeeds through the egress proxy without a TCP auth proxy."""
     docker_client = docker.from_env()
     proxy_container = mitmproxy_proxy.container.get_wrapped_container()
+    assert proxy_net.name
     proxy_ip = _get_container_ip(proxy_container, proxy_net.name)
     proxy_url = f"http://{_PROXY_CREDENTIALS}@{proxy_ip}:80"
 

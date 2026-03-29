@@ -28,6 +28,7 @@ def main() -> None:
     # Duplicated here (not imported) because this runs in a standalone container.
     parsed = urlparse(proxy_url)
     if parsed.username:
+        assert parsed.hostname, f"Proxy URL has credentials but no hostname: {proxy_url!r}"
         password = parsed.password or ""
         auth = base64.b64encode(f"{parsed.username}:{password}".encode()).decode()
         proxy_headers = {"Proxy-Authorization": f"Basic {auth}"}

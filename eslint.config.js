@@ -7,7 +7,7 @@ import tseslint from "@typescript-eslint/eslint-plugin";
 import tsparser from "@typescript-eslint/parser";
 import sveltePlugin from "eslint-plugin-svelte";
 import svelteParser from "svelte-eslint-parser";
-import importPlugin from "eslint-plugin-import";
+import importPlugin from "eslint-plugin-import-x";
 import react from "eslint-plugin-react";
 import globals from "globals";
 
@@ -99,9 +99,8 @@ export default [
     },
     rules: {
       ...coreRules,
-      // eslint-plugin-import's import/order crashes on .svelte files with
-      // "The 'path' argument must be of type string. Received null" because
-      // the plugin can't resolve Svelte file paths through svelte-eslint-parser.
+      // import/order crashes under Bazel's sandboxed execution (null file path
+      // in getFilePackagePath). Affects both eslint-plugin-import and import-x.
       "import/order": "off",
       "svelte/no-unused-svelte-ignore": "warn",
     },

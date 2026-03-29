@@ -19,7 +19,7 @@ from pathlib import Path
 
 import yaml
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from pyrage import decrypt, x25519  # type: ignore[attr-defined]  # PyO3 extension, no stubs
+from pyrage import decrypt, x25519
 
 logger = logging.getLogger(__name__)
 

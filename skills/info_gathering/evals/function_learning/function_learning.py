@@ -260,12 +260,12 @@ async def run_game(
                 break
 
             result = await model_client.create(history, tools=tool_schemas, tool_choice="required")
-            assert isinstance(result, CachedCreateResult), f"expected CachedCreateResult, got {type(result)}"
 
             game.total_input_tokens += result.usage.prompt_tokens
             game.total_output_tokens += result.usage.completion_tokens
-            game.total_cache_read_tokens += result.cache_read_tokens or 0
-            game.total_cache_creation_tokens += result.cache_creation_tokens or 0
+            if isinstance(result, CachedCreateResult):
+                game.total_cache_read_tokens += result.cache_read_tokens or 0
+                game.total_cache_creation_tokens += result.cache_creation_tokens or 0
 
             if isinstance(result.content, str):
                 game.log(
@@ -295,8 +295,10 @@ async def run_game(
                     ],
                     input_tokens=result.usage.prompt_tokens,
                     output_tokens=result.usage.completion_tokens,
-                    cache_read_tokens=result.cache_read_tokens,
-                    cache_creation_tokens=result.cache_creation_tokens,
+                    cache_read_tokens=result.cache_read_tokens if isinstance(result, CachedCreateResult) else None,
+                    cache_creation_tokens=result.cache_creation_tokens
+                    if isinstance(result, CachedCreateResult)
+                    else None,
                 )
             )
             history.append(AssistantMessage(content=function_calls, source="agent"))
