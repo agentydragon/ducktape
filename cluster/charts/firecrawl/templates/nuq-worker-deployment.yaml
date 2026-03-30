@@ -30,6 +30,13 @@ spec:
               value: "nuq-worker"
             - name: NUQ_WORKER_PORT
               value: "3006"
+            {{- if .Values.externalDatabase.enabled }}
+            - name: NUQ_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.externalDatabase.existingSecret }}
+                  key: uri
+            {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ include "firecrawl.fullname" . }}-config

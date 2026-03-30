@@ -29,6 +29,13 @@ spec:
           env:
             - name: FLY_PROCESS_GROUP
               value: "app"
+            {{- if .Values.externalDatabase.enabled }}
+            - name: NUQ_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.externalDatabase.existingSecret }}
+                  key: uri
+            {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ include "firecrawl.fullname" . }}-config

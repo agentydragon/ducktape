@@ -1,0 +1,29 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: firecrawl-db
+  namespace: firecrawl
+spec:
+  instances: 1
+
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/region: proxmox
+
+  storage:
+    storageClass: proxmox-csi-retain
+    size: 5Gi
+
+  monitoring:
+    enablePodMonitor: true
+
+  bootstrap:
+    initdb:
+      database: firecrawl
+      owner: firecrawl
+      # CNPG auto-generates credentials in secret firecrawl-db-app

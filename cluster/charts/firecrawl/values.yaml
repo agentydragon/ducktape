@@ -11,6 +11,7 @@ nuqWorker:
       cpu: "1000m"
 
 nuqPostgres:
+  enabled: true
   replicaCount: 1
   image:
     repository: ghcr.io/firecrawl/nuq-postgres
@@ -56,6 +57,11 @@ service:
   redis:
     type: ClusterIP
     port: 6379
+
+externalDatabase:
+  enabled: false
+  # CNPG secret name containing a "uri" key with the full connection string
+  existingSecret: ""
 
 config:
   NUM_WORKERS_PER_QUEUE: "8"

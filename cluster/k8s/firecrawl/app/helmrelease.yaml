@@ -1,9 +1,4 @@
 ---
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: firecrawl
----
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -38,25 +33,14 @@ spec:
           memory: "2Gi"
           cpu: "500m"
 
-    # NUQ PostgreSQL configuration
+    # Disable bundled PostgreSQL — using external CNPG cluster (firecrawl-db)
     nuqPostgres:
-      replicaCount: 1
-      image:
-        repository: ghcr.io/firecrawl/nuq-postgres
-        tag: latest
-        pullPolicy: Always
-      auth:
-        username: postgres
-        database: postgres
-      resources:
-        requests:
-          memory: "256Mi"
-          cpu: "100m"
-        limits:
-          memory: "512Mi"
-          cpu: "250m"
-      persistence:
-        enabled: false # Using ephemeral storage for now
+      enabled: false
+
+    # External database (CNPG)
+    externalDatabase:
+      enabled: true
+      existingSecret: firecrawl-db-app
 
     # Main Firecrawl image
     image:
@@ -100,7 +84,7 @@ spec:
       PLAYWRIGHT_MICROSERVICE_URL: "http://firecrawl-firecrawl-playwright:3000"
       USE_DB_AUTHENTICATION: "false"
       HDX_NODE_BETA_MODE: "1"
-      NUQ_DATABASE_URL: "postgresql://postgres:password@firecrawl-firecrawl-nuq-postgres:5432/postgres"
+      # NUQ_DATABASE_URL omitted — injected from CNPG secret via externalDatabase
 
     # Playwright configuration
     playwrightConfig:
