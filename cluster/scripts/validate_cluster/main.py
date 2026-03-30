@@ -96,8 +96,12 @@ async def main() -> int:
     # Check duplicate external-secrets
     global_errors.extend(check_duplicate_external_secrets(cluster.build_results))
 
-    # Check CRD layering
+    # Check CRD layering (only active flux kustomizations — suspended are excluded
+    # by flux_kust_resources which filters via active_flux_kustomizations).
+    active_dirs = {spec.local_dir(root) for spec in cluster.active_flux_kustomizations.values()}
     for result in cluster.build_results:
+        if result.kustomization_path.parent.resolve() not in active_dirs:
+            continue
         kust_errors.extend((result.kustomization_path, error) for error in check_crd_layering(result))
 
     # Check orphaned files
