@@ -1,0 +1,80 @@
+---
+# Flux Receiver: GitHub package events → immediate ImageRepository rescan
+#
+# When GitHub sends a `package` webhook (triggered by GHCR image publish),
+# Flux immediately rescans all GHCR ImageRepositories instead of waiting
+# for the 5-minute poll interval.
+#
+# TODO: Provision the token and register the GitHub webhook:
+#
+#   1. Generate a random token:
+#        TOKEN=$(openssl rand -hex 20)
+#
+#   2. Store in Vault:
+#        vault kv put kv/ghcr/webhook-token token="$TOKEN"
+#
+#   3. Wait for ESO to sync (or force-sync):
+#        kubectl annotate externalsecret ghcr-webhook-token -n flux-system \
+#          force-sync=$(date +%s) --overwrite
+#
+#   4. Get the webhook path from the Receiver status:
+#        kubectl get receiver ghcr -n flux-system -o jsonpath='{.status.webhookPath}'
+#
+#   5. Register the GitHub webhook:
+#        gh api repos/agentydragon/ducktape/hooks --method POST \
+#          -f "config[url]=https://flux-webhook.allegedly.works$(kubectl get receiver ghcr -n flux-system -o jsonpath='{.status.webhookPath}')" \
+#          -f "config[secret]=$TOKEN" \
+#          -f "config[content_type]=json" \
+#          -f "events[]=package"
+apiVersion: notification.toolkit.fluxcd.io/v1
+kind: Receiver
+metadata:
+  name: ghcr
+  namespace: flux-system
+spec:
+  type: github
+  events:
+    - package
+  secretRef:
+    name: ghcr-webhook-token
+  resources:
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: props-backend
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: airlock
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: auth-proxy
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: openclaw-exec
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: openclaw-matrix
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: activitywatch
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: homeassistant-proxy
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: tana-mcp
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: tana-token-broker
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: token-provisioner
+      namespace: flux-system

@@ -5,6 +5,8 @@ resources:
   - github-webhook-token-secret.yaml
   - harbor-webhook-receiver.yaml
   - harbor-webhook-token-secret.yaml
+  - ghcr-webhook-receiver.yaml
+  - ghcr-webhook-token-secret.yaml
   - flux-webhook-httproute.yaml
   - allow-gateway-webhook-ingress.yaml
   - ntfy-alerts.yaml
