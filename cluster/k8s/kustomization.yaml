@@ -118,6 +118,7 @@ resources:
 
   # --- harbor ---
   - harbor/namespace/flux-kustomization.yaml
+  - harbor/db/flux-kustomization.yaml
   - harbor/app/flux-kustomization.yaml
   - harbor/secrets/flux-kustomization.yaml
   - harbor/proxy-cache/flux-kustomization.yaml
@@ -126,6 +127,11 @@ resources:
   - harbor/pull-secret/flux-kustomization.yaml
   - harbor/webhook/flux-kustomization.yaml
   - harbor/oidc-config/flux-kustomization.yaml
+
+  # --- firecrawl ---
+  - firecrawl/namespace/flux-kustomization.yaml
+  - firecrawl/db/flux-kustomization.yaml
+  - firecrawl/app/flux-kustomization.yaml
 
   # --- gitea ---
   - gitea/namespace/flux-kustomization.yaml
@@ -137,6 +143,7 @@ resources:
 
   # --- matrix ---
   - matrix/namespace/flux-kustomization.yaml
+  - matrix/db/flux-kustomization.yaml
   - matrix/app/flux-kustomization.yaml
   - matrix/secrets/flux-kustomization.yaml
 
@@ -155,6 +162,7 @@ resources:
   # --- inventree ---
   - inventree/namespace/flux-kustomization.yaml
   - inventree/secrets/flux-kustomization.yaml
+  - inventree/db/flux-kustomization.yaml
   - inventree/app/flux-kustomization.yaml
   - inventree/token-provisioner/flux-kustomization.yaml
 
