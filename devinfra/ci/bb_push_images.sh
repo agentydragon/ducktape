@@ -28,9 +28,14 @@ cat >~/.docker/config.json <<ENDJSON
 {"auths":{"ghcr.io":{"auth":"${AUTH}"}}}
 ENDJSON
 
-# Build crane from Bazel cache (already cached from CI action).
+# Resolve crane binary to an absolute path.
+# bazel cquery --output=files returns a path relative to the execution root;
+# bazel info execution_root gives the absolute prefix.
 bazel build --config=rbe --remote_download_toplevel @crane
-CRANE=$(bazel cquery --output=files @crane 2>/dev/null)
+EXEC_ROOT="$(bazel info execution_root 2>/dev/null)"
+CRANE="${EXEC_ROOT}/$(bazel cquery --output=files @crane 2>/dev/null)"
+echo "Using crane at: $CRANE"
+"$CRANE" version
 
 # Push images sequentially. bazel run builds (hitting RBE cache
 # from the CI action) then executes crane push with :latest.
