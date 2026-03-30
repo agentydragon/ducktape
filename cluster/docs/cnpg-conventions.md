@@ -48,10 +48,6 @@ pinned DBs or vice versa. This prevents cross-site write latency.
 
 ## Current Compliance
 
-**Note**: Some clusters on `devel` still use `proxmox-csi-retain` — the `local-path`
-migration is tracked in PR #1112. The table below reflects the target state after all
-in-flight PRs land.
-
 | Cluster       | Profile        | Compliant | Notes                                                                      |
 | ------------- | -------------- | --------- | -------------------------------------------------------------------------- |
 | authentik-db  | VPS-HA         | Yes       |                                                                            |
@@ -62,12 +58,13 @@ in-flight PRs land.
 | inventree-db  | Proxmox-single | Yes       |                                                                            |
 | harbor-db     | Proxmox-single | Yes       |                                                                            |
 | gitea-db      | Proxmox-single | Yes       |                                                                            |
-| props-db      | Proxmox-single | **No**    | Missing Proxmox `nodeSelector`                                             |
+| props-db      | Proxmox-single | Yes       |                                                                            |
+| matrix-db     | Proxmox-single | Yes       |                                                                            |
+| firecrawl-db  | Proxmox-single | Yes       |                                                                            |
 | attic-db      | —              | **No**    | 1 instance on Hetzner (documented exception: blocked on containerd 2.2.3+) |
 
 ## TODO
 
-- [ ] Fix `props-db`: add Proxmox `nodeSelector`
 - [ ] Fix `attic-db`: upgrade to VPS-HA (2 instances) once the Hetzner pin is
       appropriate, or move to Proxmox-single once containerd blocker resolves
 - [ ] Set up off-site backups for Proxmox-single clusters (see "CNPG Backup
