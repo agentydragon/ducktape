@@ -270,7 +270,7 @@
             inherit system;
             config.allowUnfree = true;
           };
-          lib = pkgs.lib;
+          inherit (pkgs) lib;
         in
         rec {
           tana = pkgs.callPackage ./nix/home/packages/tana.nix { };

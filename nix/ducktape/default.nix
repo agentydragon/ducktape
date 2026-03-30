@@ -38,13 +38,13 @@ let
         buildInputs
         ;
       doCheck = false;
-      meta =
-        {
-          inherit description;
-          homepage = "https://github.com/agentydragon/ducktape";
-          license = lib.licenses.agpl3Only;
-        }
-        // lib.optionalAttrs (mainProgram != null) { inherit mainProgram; };
+      dontUsePytestCheck = true;
+      meta = {
+        inherit description;
+        homepage = "https://github.com/agentydragon/ducktape";
+        license = lib.licenses.agpl3Only;
+      }
+      // lib.optionalAttrs (mainProgram != null) { inherit mainProgram; };
     };
 
   compact-json = pkgs.callPackage ./compact-json.nix { };
@@ -101,33 +101,35 @@ in
     wheelFilename = "claude_hooks-0.1.0-py3-none-any.whl";
     description = "Claude Code session hooks (statusline, session-start, auth proxy)";
     mainProgram = "claude-hook";
-    propagatedBuildInputs = with pkgs.python3Packages; [
-      anyio
-      cryptography
-      fastapi
-      httpx
-      kubernetes
-      mako
-      opentelemetry-api
-      opentelemetry-exporter-otlp-proto-http
-      opentelemetry-sdk
-      platformdirs
-      psutil
-      pydantic
-      pydantic-settings
-      pygit2
-      pyjwt
-      pyyaml
-      rich
-      structlog
-      supervisor
-      tenacity
-      uvicorn
-    ]
-    ++ [
-      pkgs.pre-commit
-      pyrage
-    ];
+    propagatedBuildInputs =
+      with pkgs.python3Packages;
+      [
+        anyio
+        cryptography
+        fastapi
+        httpx
+        kubernetes
+        mako
+        opentelemetry-api
+        opentelemetry-exporter-otlp-proto-http
+        opentelemetry-sdk
+        platformdirs
+        psutil
+        pydantic
+        pydantic-settings
+        pygit2
+        pyjwt
+        pyyaml
+        rich
+        structlog
+        supervisor
+        tenacity
+        uvicorn
+      ]
+      ++ [
+        pkgs.pre-commit
+        pyrage
+      ];
   };
 
   gterm-theme = mkDucktapeWheel {
