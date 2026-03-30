@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# BB Push Harbor Images step: authenticate, push OCI images, tag for Flux.
+# BB Push GHCR Images step: authenticate, push OCI images, tag for Flux.
 #
-# Expects: HARBOR_ROBOT_USERNAME, HARBOR_ROBOT_TOKEN env vars.
+# Expects: GHCR_USERNAME, GHCR_TOKEN env vars.
 set -euo pipefail
 
 # Honor [skip ci] — BuildBuddy Workflows doesn't natively support it.
@@ -12,20 +12,20 @@ fi
 
 # Validate required secrets.
 missing=()
-[[ -z "${HARBOR_ROBOT_USERNAME:-}" ]] && missing+=(HARBOR_ROBOT_USERNAME)
-[[ -z "${HARBOR_ROBOT_TOKEN:-}" ]] && missing+=(HARBOR_ROBOT_TOKEN)
+[[ -z "${GHCR_USERNAME:-}" ]] && missing+=(GHCR_USERNAME)
+[[ -z "${GHCR_TOKEN:-}" ]] && missing+=(GHCR_TOKEN)
 if [[ ${#missing[@]} -gt 0 ]]; then
   echo "ERROR: Missing required env vars: ${missing[*]}" >&2
   echo "Configure these as BuildBuddy Workflow secrets." >&2
   exit 1
 fi
 
-# Authenticate crane to Harbor registry.
+# Authenticate crane to GHCR.
 # oci_push reads ~/.docker/config.json for credentials.
 mkdir -p ~/.docker
-AUTH=$(echo -n "${HARBOR_ROBOT_USERNAME}:${HARBOR_ROBOT_TOKEN}" | base64 -w0)
+AUTH=$(echo -n "${GHCR_USERNAME}:${GHCR_TOKEN}" | base64 -w0)
 cat >~/.docker/config.json <<ENDJSON
-{"auths":{"registry.allegedly.works":{"auth":"${AUTH}"}}}
+{"auths":{"ghcr.io":{"auth":"${AUTH}"}}}
 ENDJSON
 
 # Build crane from Bazel cache (already cached from CI action).
@@ -49,13 +49,13 @@ push_and_tag() {
   $CRANE tag "${repo}:latest" "${PINNED_TAG}"
 }
 
-push_and_tag //cluster/k8s/inventree/token-provisioner:push registry.allegedly.works/ducktape/token-provisioner
-push_and_tag //props/backend:push registry.allegedly.works/ducktape/props-backend
-push_and_tag //airlock:push registry.allegedly.works/ducktape/airlock
-push_and_tag //airlock/auth_proxy:push registry.allegedly.works/ducktape/auth-proxy
-push_and_tag //mcp_infra/exec:direct_push registry.allegedly.works/ducktape/exec-backend
-push_and_tag //openclaw/exec:push registry.allegedly.works/ducktape/openclaw-exec
-push_and_tag //homeassistant/proxy:push registry.allegedly.works/ducktape/homeassistant-proxy
-push_and_tag //inventree_utils/rai_plugin:push registry.allegedly.works/ducktape/inventree
-push_and_tag //tana/token_broker:push registry.allegedly.works/ducktape/tana-token-broker
-push_and_tag //third_party/activitywatch:push registry.allegedly.works/ducktape/aw-server
+push_and_tag //cluster/k8s/inventree/token-provisioner:push ghcr.io/agentydragon/token-provisioner
+push_and_tag //props/backend:push ghcr.io/agentydragon/props-backend
+push_and_tag //airlock:push ghcr.io/agentydragon/airlock
+push_and_tag //airlock/auth_proxy:push ghcr.io/agentydragon/auth-proxy
+push_and_tag //mcp_infra/exec:direct_push ghcr.io/agentydragon/exec-backend
+push_and_tag //openclaw/exec:push ghcr.io/agentydragon/openclaw-exec
+push_and_tag //homeassistant/proxy:push ghcr.io/agentydragon/homeassistant-proxy
+push_and_tag //inventree_utils/rai_plugin:push ghcr.io/agentydragon/inventree
+push_and_tag //tana/token_broker:push ghcr.io/agentydragon/tana-token-broker
+push_and_tag //third_party/activitywatch:push ghcr.io/agentydragon/aw-server

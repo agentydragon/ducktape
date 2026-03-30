@@ -1,9 +1,9 @@
-name: Harbor Build and Push
-description: Compute image tags, login to Harbor, and build+push a Docker image.
+name: GHCR Build and Push
+description: Compute image tags, login to GHCR, and build+push a Docker image.
 
 inputs:
   image:
-    description: Full image name (e.g. registry.allegedly.works/foo/bar)
+    description: Full image name (e.g. ghcr.io/agentydragon/foo)
     required: true
   context:
     description: Docker build context path
@@ -12,11 +12,8 @@ inputs:
     description: Path to Dockerfile (optional; defaults to {context}/Dockerfile)
     required: false
     default: ""
-  harbor_robot_username:
-    description: Harbor robot account username
-    required: true
-  harbor_robot_token:
-    description: Harbor robot account token
+  github_token:
+    description: GitHub token for GHCR authentication
     required: true
 
 outputs:
@@ -44,12 +41,12 @@ runs:
         echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
         echo "semver_tag=$PINNED_TAG" >> "$GITHUB_OUTPUT"
 
-    - name: Login to Harbor
+    - name: Login to GHCR
       uses: docker/login-action@v3
       with:
-        registry: registry.allegedly.works
-        username: ${{ inputs.harbor_robot_username }}
-        password: ${{ inputs.harbor_robot_token }}
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ inputs.github_token }}
 
     - name: Build and push
       uses: docker/build-push-action@v6

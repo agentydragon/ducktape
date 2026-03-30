@@ -85,11 +85,11 @@ actions:
             //devinfra/buildbuddy_cli:bbapi
           bazel run //devinfra/ci:bb_release_bin
 
-  # Push Harbor container images (OCI images built with Bazel).
+  # Push GHCR container images (OCI images built with Bazel).
   # Uses oci_push (crane-based, no Docker daemon needed).
   # The CI action's `bazel build //...` populates the remote cache;
   # bazel run here fetches built images from cache and pushes via crane.
-  - name: "Push Harbor Images"
+  - name: "Push GHCR Images"
     triggers:
       push:
         branches:

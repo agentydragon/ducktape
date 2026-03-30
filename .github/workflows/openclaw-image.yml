@@ -1,4 +1,4 @@
-# Build and push the custom OpenClaw+matrix container image to Harbor.
+# Build and push the custom OpenClaw+matrix container image to GHCR.
 #
 # Derives from upstream ghcr.io/openclaw/openclaw with the matrix channel
 # plugin and its native crypto binary pre-installed.
@@ -18,6 +18,7 @@ concurrency:
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
   build-and-push:
@@ -33,10 +34,9 @@ jobs:
       - name: Stage plugin tar for Docker
         run: cp bazel-bin/airlock/openclaw/plugin_tar.tar openclaw/airlock-plugin.tar
 
-      - uses: ./.github/actions/harbor-build-push
+      - uses: ./.github/actions/ghcr-build-push
         with:
-          image: registry.allegedly.works/ducktape/openclaw-matrix
+          image: ghcr.io/${{ github.repository_owner }}/openclaw-matrix
           context: .
           file: openclaw/Dockerfile
-          harbor_robot_username: ${{ secrets.HARBOR_ROBOT_USERNAME }}
-          harbor_robot_token: ${{ secrets.HARBOR_ROBOT_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}

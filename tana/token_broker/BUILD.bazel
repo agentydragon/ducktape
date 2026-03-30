@@ -77,7 +77,7 @@ oci_push(
     name = "push",
     image = ":image",
     remote_tags = ["latest"],
-    repository = "registry.allegedly.works/ducktape/tana-token-broker",
+    repository = "ghcr.io/agentydragon/tana-token-broker",
 )
 
 # =============================================================================

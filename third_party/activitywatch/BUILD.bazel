@@ -67,5 +67,5 @@ oci_push(
     name = "push",
     image = ":image",
     remote_tags = ["latest"],
-    repository = "registry.allegedly.works/ducktape/aw-server",
+    repository = "ghcr.io/agentydragon/aw-server",
 )
