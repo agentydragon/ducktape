@@ -20,3 +20,5 @@ resources:
   - tana-mcp-image-policy.yaml
   - tana-token-broker-image-repository.yaml
   - tana-token-broker-image-policy.yaml
+  - token-provisioner-image-repository.yaml
+  - token-provisioner-image-policy.yaml

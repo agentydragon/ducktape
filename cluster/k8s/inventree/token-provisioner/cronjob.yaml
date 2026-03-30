@@ -21,11 +21,9 @@ spec:
         spec:
           restartPolicy: OnFailure
           serviceAccountName: inventree-token-provisioner
-          imagePullSecrets:
-            - name: harbor-pull-robot
           containers:
             - name: provisioner
-              image: registry.allegedly.works/ducktape/token-provisioner:latest
+              image: ghcr.io/agentydragon/token-provisioner:latest # {"$imagepolicy": "flux-system:token-provisioner"}
               imagePullPolicy: Always
               env:
                 - name: INVENTREE_ADMIN_USER
