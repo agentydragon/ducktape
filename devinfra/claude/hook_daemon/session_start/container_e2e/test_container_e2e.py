@@ -61,6 +61,10 @@ pytest_plugins = ["devinfra.claude.testing.mitmproxy_fixture"]
 _WHEEL_RLOCATION = "_main/claude_hooks-0.1.0-py3-none-any.whl"
 _WHEEL_FILENAME = _WHEEL_RLOCATION.rsplit("/", 1)[-1]
 
+# Rlocation for the ducktape_util wheel (built by //util:wheel, runtime dep of claude_hooks)
+_UTIL_WHEEL_RLOCATION = "_main/util/ducktape_util-0.1.0-py3-none-any.whl"
+_UTIL_WHEEL_FILENAME = _UTIL_WHEEL_RLOCATION.rsplit("/", 1)[-1]
+
 # Rlocation for bazelisk binary (mirrors what Nix web-session provides on PATH in prod)
 _BAZELISK_RLOCATION = "bazelisk_linux_amd64/file/bazelisk"
 
@@ -180,6 +184,8 @@ def test_container_e2e(
     staging.mkdir()
     staged_wheel = staging / _WHEEL_FILENAME
     shutil.copy2(wheel_path, staged_wheel)
+    staged_util_wheel = staging / _UTIL_WHEEL_FILENAME
+    shutil.copy2(get_required_path(_UTIL_WHEEL_RLOCATION), staged_util_wheel)
     staged_bazelisk = staging / "bazelisk"
     shutil.copy2(bazelisk_path, staged_bazelisk)
     staged_bazelisk.chmod(0o755)
@@ -227,6 +233,7 @@ def test_container_e2e(
         network=isolated_net.name,
         volumes={
             str(staged_wheel): {"bind": f"/wheel/{_WHEEL_FILENAME}", "mode": "ro"},
+            str(staged_util_wheel): {"bind": f"/wheel/{_UTIL_WHEEL_FILENAME}", "mode": "ro"},
             # TODO: Mount as the exact binary name the nix flake provides (bazelisk),
             # not as an alias. Don't create unconventional symlinks in the test container.
             # The session start hook should work starting from the nix flake dev shell env.
@@ -250,7 +257,10 @@ def test_container_e2e(
         # TODO(container-e2e): Install via uv by reading .claude/settings.json
         # hook definition and piping the JSON into sh, instead of raw pip.
         logger.info("Installing wheel")
-        _exec(container, ["pip", "install", "--break-system-packages", f"/wheel/{_WHEEL_FILENAME}"])
+        _exec(
+            container,
+            ["pip", "install", "--break-system-packages", "--find-links", "/wheel/", f"/wheel/{_WHEEL_FILENAME}"],
+        )
 
         # Run session start hook
         logger.info("Running claude-hook (session start)")
