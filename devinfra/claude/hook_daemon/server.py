@@ -105,7 +105,7 @@ def _save_session_env(env: dict[str, str]) -> None:
 
 
 @app.post("/hook")
-async def handle_hook(req: HookRequest) -> HookResponse:
+async def handle_hook(req: HookRequest) -> Response:
     app.state.last_request_time = time.monotonic()
 
     tracer = trace.get_tracer(__name__)

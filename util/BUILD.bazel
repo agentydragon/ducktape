@@ -116,5 +116,6 @@ py_wheel(
     python_requires = ">=3.13",
     requires = ["tenacity"],
     version = "0.1.0",
+    visibility = ["//devinfra/claude/hook_daemon/session_start/container_e2e:__pkg__"],
     deps = [":util_pkg"],
 )
