@@ -51,9 +51,17 @@ class KustomizeFile(_CamelCaseModel):
     def resolved_patches(self) -> list[Path]:
         return [self._resolve(p.path) for p in self.patches if p.path]
 
+    @staticmethod
+    def _strip_configmap_key(p: Path) -> Path:
+        """Handle `key=filename` format in configMapGenerator files entries."""
+        name = str(p)
+        if "=" in name:
+            return Path(name.split("=", 1)[1])
+        return p
+
     @property
     def resolved_generator_files(self) -> list[Path]:
-        return [self._resolve(f) for entry in self.config_map_generator for f in entry.files]
+        return [self._resolve(self._strip_configmap_key(f)) for entry in self.config_map_generator for f in entry.files]
 
     @property
     def all_referenced_files(self) -> set[Path]:
