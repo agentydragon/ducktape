@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import Response
 from opentelemetry import trace
 from pydantic import BaseModel
 
@@ -145,12 +146,17 @@ async def handle_hook(req: HookRequest) -> HookResponse:
                 pass  # All other hooks: noop
 
         resp = HookResponse(output=output)
+        # exclude_none: the client may run an older version of the models
+        # (e.g. Nix-installed claude-hook) that uses extra="forbid" on
+        # CamelModel. New Optional fields default to None; if serialized
+        # as null they become unknown extras on the old client → ValidationError.
+        # Omitting None fields keeps the wire format forward-compatible.
         resp_json = resp.model_dump_json(by_alias=True, exclude_none=True)
 
         span.set_attribute("hook.output", resp_json)
         logger.info("hook %s → %s", hook_name, resp_json)
 
-        return resp
+        return Response(content=resp_json, media_type="application/json")
 
 
 class _UpdateProxyCredsRequest(BaseModel):

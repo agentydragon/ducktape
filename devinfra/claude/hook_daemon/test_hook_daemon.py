@@ -102,6 +102,36 @@ class TestHandleHook:
         saved = json.loads(env_file.read_text())
         assert saved["MY_VAR"] == "my_value"
 
+    async def test_response_excludes_none_fields(self, client: AsyncClient, env: dict[str, str]) -> None:
+        """Response JSON omits None-valued fields for forward compatibility.
+
+        The daemon may run newer code than the client (e.g. daemon from source
+        tree, client from Nix package). CamelModel uses extra="forbid", so any
+        new Optional field serialized as null breaks older clients with a
+        ValidationError. Verify that /hook responses never contain null values.
+        """
+        hook_input = PreToolUseInput(
+            **_COMMON,
+            hook_event_name="PreToolUse",
+            tool_use_id="toolu_test",
+            tool_name="Bash",
+            tool_input={"command": "ls"},
+        )
+        req = HookRequest(hook=hook_input, env=env)
+        resp = await client.post("/hook", content=req.model_dump_json(), headers=_JSON_HEADERS)
+        assert resp.status_code == 200
+
+        def _assert_no_nulls(obj: object, path: str = "") -> None:
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    assert v is not None, f"Null value at {path}.{k} — use exclude_none=True"
+                    _assert_no_nulls(v, f"{path}.{k}")
+            elif isinstance(obj, list):
+                for i, v in enumerate(obj):
+                    _assert_no_nulls(v, f"{path}[{i}]")
+
+        _assert_no_nulls(resp.json())
+
 
 class TestHealth:
     async def test_health_returns_ok(self, client: AsyncClient) -> None:
