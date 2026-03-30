@@ -48,6 +48,10 @@ pinned DBs or vice versa. This prevents cross-site write latency.
 
 ## Current Compliance
 
+**Note**: Some clusters on `devel` still use `proxmox-csi-retain` — the `local-path`
+migration is tracked in PR #1112. The table below reflects the target state after all
+in-flight PRs land.
+
 | Cluster       | Profile        | Compliant | Notes                                                                      |
 | ------------- | -------------- | --------- | -------------------------------------------------------------------------- |
 | authentik-db  | VPS-HA         | Yes       |                                                                            |
