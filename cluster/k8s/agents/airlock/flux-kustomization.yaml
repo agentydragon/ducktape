@@ -20,3 +20,5 @@ spec:
       namespace: airlock
   dependsOn:
     - name: gateway
+    - name: sealed-secrets
+    - name: external-secrets-config

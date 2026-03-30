@@ -18,4 +18,6 @@ spec:
       kind: Deployment
       name: homeassistant-proxy
       namespace: homeassistant-proxy
-  dependsOn: []
+  dependsOn:
+    - name: sealed-secrets
+    - name: external-secrets-config
