@@ -15,6 +15,9 @@ class PermissionMode(StrEnum):
     PLAN = "plan"
     ACCEPT_EDITS = "acceptEdits"
     DONT_ASK = "dontAsk"
+    AUTO = "auto"
+    # CLEANUP(2026-03-30): bypassPermissions removed from v2.1.87 Zod schema
+    # but kept for backwards compat with older versions.
     BYPASS_PERMISSIONS = "bypassPermissions"
 
 
@@ -43,4 +46,12 @@ class HookInputBase(BaseModel):
     cwd: Path
     permission_mode: PermissionMode | None = Field(
         default=None, description="Not sent by Claude Code Web for some SessionStart events"
+    )
+    agent_id: str | None = Field(
+        default=None, description="Subagent identifier. Present only when the hook fires from within a subagent."
+    )
+    parent_session_id: str | None = Field(default=None, description="Parent session ID when running as a subagent.")
+    agent_type: str | None = Field(
+        default=None,
+        description="Agent type name. Present in subagent context (with agent_id) or on main thread with --agent.",
     )

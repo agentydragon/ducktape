@@ -21,6 +21,7 @@ class InstructionsLoadReason(StrEnum):
     NESTED_TRAVERSAL = "nested_traversal"
     PATH_GLOB_MATCH = "path_glob_match"
     INCLUDE = "include"
+    COMPACT = "compact"
 
 
 class InstructionsLoadedInput(HookInputBase):

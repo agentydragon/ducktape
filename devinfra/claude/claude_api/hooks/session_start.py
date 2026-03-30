@@ -26,7 +26,6 @@ class SessionStartHookInput(HookInputBase):
     model: str | None = Field(default=None, description="Not always sent by Claude Code")
     hook_event_name: Literal["SessionStart"] = "SessionStart"
     source: HookSource
-    agent_type: str | None = Field(default=None, description="Present only when started with --agent")
 
 
 class SessionStartHookSpecificOutput(CamelModel):
