@@ -325,7 +325,8 @@ Minimize Hetzner volumes; generous on Proxmox.
 | VPS      | Vault, Authentik, Gateway, DNS, cert-mgr       | Always-on, critical path          |
 | Home     | Harbor, Gitea, Loki, Grafana, media, Nix cache | Storage-heavy, tolerates downtime |
 
-CNPG: individual clusters per app (Authentik, PowerDNS) on `local-path` for fault isolation.
+CNPG: individual clusters per app, all on `local-path`. Two profiles: VPS-HA
+(2 instances, Hetzner) and Proxmox-single (1 instance). See <cnpg-conventions.md>.
 
 ## Related Documentation
 

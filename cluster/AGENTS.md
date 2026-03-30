@@ -149,6 +149,10 @@ Add `metadata.annotations.description` to any resource where name + namespace do
 make the purpose obvious. Skip for obvious cases (sole deployment under a named
 kustomization, SSO client secrets under `authentik/blueprints/`).
 
+## CNPG (CloudNativePG)
+
+@docs/cnpg-conventions.md
+
 ## Troubleshooting
 
 @docs/troubleshooting.md
