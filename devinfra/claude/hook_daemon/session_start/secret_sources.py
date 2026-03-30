@@ -58,6 +58,11 @@ def read_k8s_secret(api: CoreV1Api, namespace: str, secret_name: str, key: str) 
         logger.warning("Key %r not found in secret %s/%s", key, namespace, secret_name)
     except k8s_client.ApiException as e:
         logger.warning("Failed to read secret %s/%s: %s", namespace, secret_name, e.reason)
+    except Exception as e:
+        # Network-level errors (e.g. proxy tunnel 403, connection refused) are not
+        # wrapped in ApiException by the k8s client — catch them here so a stale
+        # or unreachable k8s API doesn't crash the session start hook.
+        logger.warning("Failed to read secret %s/%s (network error): %s", namespace, secret_name, e)
     return None
 
 
