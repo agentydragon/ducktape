@@ -1,4 +1,5 @@
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/testing:defs.bzl", "py_test")
 
 # Apt manifest + lockfile for rules_distroless (referenced from MODULE.bazel).
@@ -6,6 +7,18 @@ exports_files([
     "trixie_e2e.yaml",
     "trixie_e2e.lock.json",
 ])
+
+# Wheels baked into the container image at /wheel/ so the test can
+# `pip install --find-links /wheel/` without bind-mounting from runfiles.
+pkg_tar(
+    name = "e2e_wheels",
+    testonly = True,
+    srcs = [
+        "//:claude_hooks_wheel",
+        "//util:wheel",
+    ],
+    package_dir = "/wheel",
+)
 
 # E2E test container: python:3.13-slim base + git + JDK from rules_distroless.
 # See trixie_e2e.yaml for the deb manifest.
@@ -24,6 +37,7 @@ oci_image(
     },
     tars = [
         "@trixie_e2e//:flat",
+        ":e2e_wheels",
     ],
 )
 
@@ -47,9 +61,7 @@ py_test(
     srcs = ["test_container_e2e.py"],
     data = [
         ":e2e_container_tarball",
-        "//:claude_hooks_wheel",
         "//devinfra/claude/testdata/test_workspace:workspace_files",
-        "//util:wheel",
         "@bazelisk_linux_amd64//file",
     ],
     env_inherit = [

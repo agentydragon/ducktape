@@ -6,9 +6,9 @@ all external connectivity).
 
 Architecture:
     Host side:
-        - Builds the claude_hooks wheel via Bazel
+        - Builds the claude_hooks wheel via Bazel (baked into e2e_container image)
         - Loads mitmproxy:11 OCI image into Docker
-        - Loads e2e-container image (python:3.13-slim + git + JDK, built by Bazel)
+        - Loads e2e-container image (python:3.13-slim + git + JDK + wheels, built by Bazel)
         - Creates two Docker networks:
           - e2e-proxy (bridge): proxy container has internet access
           - e2e-isolated (internal bridge): test container <-> proxy container only
@@ -18,7 +18,8 @@ Architecture:
         - Drives test steps via docker exec calls
 
     Container side (via docker exec):
-        - Installs claude_hooks wheel (pip through proxy -> mitmproxy container)
+        - Installs claude_hooks wheel from /wheel/ (baked into image, deps fetched
+          through proxy -> mitmproxy container)
         - Runs claude-hook (session start hook) which sets up:
           auth proxy, supervisor, bazel wrapper, CA bundles, env file
         - Runs bazel build through the full proxy chain
@@ -57,13 +58,9 @@ logger = logging.getLogger(__name__)
 
 pytest_plugins = ["devinfra.claude.testing.mitmproxy_fixture"]
 
-# Rlocation for the claude_hooks wheel (built by //:claude_hooks_wheel)
-_WHEEL_RLOCATION = "_main/claude_hooks-0.1.0-py3-none-any.whl"
-_WHEEL_FILENAME = _WHEEL_RLOCATION.rsplit("/", 1)[-1]
-
-# Rlocation for the ducktape_util wheel (built by //util:wheel, runtime dep of claude_hooks)
-_UTIL_WHEEL_RLOCATION = "_main/util/ducktape_util-0.1.0-py3-none-any.whl"
-_UTIL_WHEEL_FILENAME = _UTIL_WHEEL_RLOCATION.rsplit("/", 1)[-1]
+# Wheels are baked into the e2e_container image at /wheel/ via pkg_tar layer
+# (see BUILD.bazel). pip install uses --find-links to resolve local deps.
+_WHEEL_DIR = "/wheel"
 
 # Rlocation for bazelisk binary (mirrors what Nix web-session provides on PATH in prod)
 _BAZELISK_RLOCATION = "bazelisk_linux_amd64/file/bazelisk"
@@ -134,12 +131,6 @@ def _exec(
 
 
 @pytest.fixture
-def wheel_path() -> Path:
-    """Resolve the built ducktape wheel from runfiles."""
-    return get_required_path(_WHEEL_RLOCATION)
-
-
-@pytest.fixture
 def bazelisk_path() -> Path:
     """Resolve the bazelisk binary from runfiles."""
     return get_required_path(_BAZELISK_RLOCATION)
@@ -165,7 +156,6 @@ def e2e_image() -> str:
 
 def test_container_e2e(
     tmp_path: Path,
-    wheel_path: Path,
     bazelisk_path: Path,
     test_workspace_path: Path,
     mitmproxy_proxy: MitmproxyFixture,
@@ -182,10 +172,6 @@ def test_container_e2e(
     # (runfiles may be symlinks that Docker cannot resolve in gVisor)
     staging = tmp_path / "staging"
     staging.mkdir()
-    staged_wheel = staging / _WHEEL_FILENAME
-    shutil.copy2(wheel_path, staged_wheel)
-    staged_util_wheel = staging / _UTIL_WHEEL_FILENAME
-    shutil.copy2(get_required_path(_UTIL_WHEEL_RLOCATION), staged_util_wheel)
     staged_bazelisk = staging / "bazelisk"
     shutil.copy2(bazelisk_path, staged_bazelisk)
     staged_bazelisk.chmod(0o755)
@@ -215,7 +201,6 @@ def test_container_e2e(
         "DUCKTAPE_CLAUDE_HOOKS_INSTALL_APT_PACKAGES": "false",
         "DUCKTAPE_CLAUDE_HOOKS_CONTAINER_RUNTIME": "none",
         "ANTHROPIC_CA_PATH": "/certs/mock_ca.pem",
-        "WHEEL_PATH": f"/wheel/{_WHEEL_FILENAME}",
         # /tools is on PATH in the container; bazelisk is bind-mounted there.
         "PATH": "/tools:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"
         ":/usr/lib/jvm/java-21-openjdk-amd64/bin",
@@ -232,8 +217,6 @@ def test_container_e2e(
         environment=env,
         network=isolated_net.name,
         volumes={
-            str(staged_wheel): {"bind": f"/wheel/{_WHEEL_FILENAME}", "mode": "ro"},
-            str(staged_util_wheel): {"bind": f"/wheel/{_UTIL_WHEEL_FILENAME}", "mode": "ro"},
             # TODO: Mount as the exact binary name the nix flake provides (bazelisk),
             # not as an alias. Don't create unconventional symlinks in the test container.
             # The session start hook should work starting from the nix flake dev shell env.
@@ -253,14 +236,12 @@ def test_container_e2e(
         assert rc != 0, "Container should have no external internet access on --internal network"
         logger.info("Network isolation verified: container cannot reach internet directly")
 
-        # Install ducktape wheel
+        # Install claude_hooks wheel (baked into image at /wheel/).
+        # --find-links resolves ducktape-util locally; other deps fetched from PyPI via proxy.
         # TODO(container-e2e): Install via uv by reading .claude/settings.json
         # hook definition and piping the JSON into sh, instead of raw pip.
         logger.info("Installing wheel")
-        _exec(
-            container,
-            ["pip", "install", "--break-system-packages", "--find-links", "/wheel/", f"/wheel/{_WHEEL_FILENAME}"],
-        )
+        _exec(container, ["pip", "install", "--break-system-packages", "--find-links", _WHEEL_DIR, "claude-hooks"])
 
         # Run session start hook
         logger.info("Running claude-hook (session start)")
