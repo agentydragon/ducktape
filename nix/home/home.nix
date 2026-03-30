@@ -80,9 +80,21 @@ let
   zshInit = builtins.readFile ./shell/zsh-init.zsh;
 
   ducktapePackages = import ../ducktape {
-    inherit lib pkgs ducktape-wheel claude-hooks-wheel gterm-theme-wheel ducktape-util-wheel;
+    inherit
+      lib
+      pkgs
+      ducktape-wheel
+      claude-hooks-wheel
+      gterm-theme-wheel
+      ducktape-util-wheel
+      ;
   };
-  inherit (ducktapePackages) ducktape-util ducktape claude-hooks gterm-theme;
+  inherit (ducktapePackages)
+    ducktape-util
+    ducktape
+    claude-hooks
+    gterm-theme
+    ;
 
   # bbapi - BuildBuddy API CLI
   bbapi = pkgs.callPackage ./packages/bbapi.nix { inherit bbapi-binary; };
