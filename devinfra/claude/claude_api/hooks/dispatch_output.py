@@ -1,8 +1,9 @@
 """Discriminated union of all Claude Code hook outputs.
 
 Mirrors dispatch_input.py but for output types. Not all hooks have output
-models — 8 hooks are input-only (PreCompact, PostCompact, SessionEnd,
-InstructionsLoaded, WorktreeCreate, WorktreeRemove, TeammateIdle, TaskCompleted).
+models — hooks with pass-through HookOutputBase are input-only (PreCompact,
+PostCompact, SessionEnd, InstructionsLoaded, WorktreeCreate, WorktreeRemove,
+TeammateIdle, TaskCompleted, StopFailure, TaskCreated).
 
 Output models don't have a top-level discriminator field like inputs do
 (hook_event_name is on hook_specific_output, not on the output itself).
@@ -10,7 +11,9 @@ This module provides a plain Union type for type-checking and documentation.
 """
 
 from devinfra.claude.claude_api.hooks.config_change import ConfigChangeOutput
+from devinfra.claude.claude_api.hooks.cwd_changed import CwdChangedOutput
 from devinfra.claude.claude_api.hooks.elicitation import ElicitationOutput, ElicitationResultOutput
+from devinfra.claude.claude_api.hooks.file_changed import FileChangedOutput
 from devinfra.claude.claude_api.hooks.notification import NotificationOutput
 from devinfra.claude.claude_api.hooks.permission_request import PermissionRequestOutput
 from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseOutput
@@ -38,4 +41,6 @@ AnyHookOutput = (
     | ElicitationOutput
     | ElicitationResultOutput
     | ConfigChangeOutput
+    | CwdChangedOutput
+    | FileChangedOutput
 )

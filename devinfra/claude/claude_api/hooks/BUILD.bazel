@@ -216,13 +216,53 @@ py_library(
 )
 
 py_library(
+    name = "stop_failure",
+    srcs = ["stop_failure.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [":common"],
+)
+
+py_library(
+    name = "task_created",
+    srcs = ["task_created.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [":common"],
+)
+
+py_library(
+    name = "cwd_changed",
+    srcs = ["cwd_changed.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "file_changed",
+    srcs = ["file_changed.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "dispatch_output",
     srcs = ["dispatch_output.py"],
     imports = ["../../../.."],
     visibility = ["//visibility:public"],
     deps = [
         ":config_change",
+        ":cwd_changed",
         ":elicitation",
+        ":file_changed",
         ":notification",
         ":permission_request",
         ":post_tool_use",
@@ -244,7 +284,9 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":config_change",
+        ":cwd_changed",
         ":elicitation",
+        ":file_changed",
         ":instructions_loaded",
         ":notification",
         ":permission_request",
@@ -257,9 +299,11 @@ py_library(
         ":session_start",
         ":setup",
         ":stop",
+        ":stop_failure",
         ":subagent_start",
         ":subagent_stop",
         ":task_completed",
+        ":task_created",
         ":teammate_idle",
         ":user_prompt_submit",
         ":worktree_create",

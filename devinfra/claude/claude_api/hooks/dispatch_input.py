@@ -9,7 +9,9 @@ from typing import Annotated
 from pydantic import Discriminator
 
 from devinfra.claude.claude_api.hooks.config_change import ConfigChangeInput
+from devinfra.claude.claude_api.hooks.cwd_changed import CwdChangedInput
 from devinfra.claude.claude_api.hooks.elicitation import ElicitationInput, ElicitationResultInput
+from devinfra.claude.claude_api.hooks.file_changed import FileChangedInput
 from devinfra.claude.claude_api.hooks.instructions_loaded import InstructionsLoadedInput
 from devinfra.claude.claude_api.hooks.notification import NotificationInput
 from devinfra.claude.claude_api.hooks.permission_request import PermissionRequestInput
@@ -22,11 +24,11 @@ from devinfra.claude.claude_api.hooks.session_end import SessionEndInput
 from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput
 from devinfra.claude.claude_api.hooks.setup import SetupInput
 from devinfra.claude.claude_api.hooks.stop import StopInput
-
-# TODO: Add StopFailure hook model and dispatch entry when schema is confirmed
+from devinfra.claude.claude_api.hooks.stop_failure import StopFailureInput
 from devinfra.claude.claude_api.hooks.subagent_start import SubagentStartInput
 from devinfra.claude.claude_api.hooks.subagent_stop import SubagentStopInput
 from devinfra.claude.claude_api.hooks.task_completed import TaskCompletedInput
+from devinfra.claude.claude_api.hooks.task_created import TaskCreatedInput
 from devinfra.claude.claude_api.hooks.teammate_idle import TeammateIdleInput
 from devinfra.claude.claude_api.hooks.user_prompt_submit import UserPromptSubmitInput
 from devinfra.claude.claude_api.hooks.worktree_create import WorktreeCreateInput
@@ -54,6 +56,10 @@ AnyHookInput = Annotated[
     | WorktreeRemoveInput
     | SessionEndInput
     | TeammateIdleInput
-    | TaskCompletedInput,
+    | TaskCompletedInput
+    | StopFailureInput
+    | TaskCreatedInput
+    | CwdChangedInput
+    | FileChangedInput,
     Discriminator("hook_event_name"),
 ]
