@@ -4,8 +4,8 @@
 
 - **Hook daemon logs** (includes session start): `~/.claude/session-env/<session_id>/hook-daemon/daemon.log`
 - **Supervisor logs**: `~/.claude/session-env/<session_id>/supervisor/supervisord.log` (supervisor daemon, used for container runtime)
-- **Firecracker environment**: Claude Code web runs on Firecracker microVMs with a real Linux kernel (not gVisor). Root filesystem is ext4 on virtio disk, not 9p. See <web_env/docs/container_spec.md> for details.
-- **Supervisor uses TCP socket**: `127.0.0.1:19001` (historical: originally to avoid 9p hard link issues, retained for simplicity).
+- **Platform detection**: Claude Code web runs on Firecracker microVMs (ext4 root, real Linux kernel). The session start hook detects the platform at runtime via `platform_detect.py`. See <web_env/docs/container_spec.md> for specs and IO benchmarks.
+- **Supervisor uses TCP**: `127.0.0.1:19001` instead of Unix socket (historical: 9p hard link issues on gVisor, kept for compatibility).
 
 ## Debugging Commands
 

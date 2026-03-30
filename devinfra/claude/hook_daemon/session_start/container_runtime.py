@@ -140,19 +140,18 @@ async def _start_service(
 # ============================================================================
 
 
-def _configure_docker(paths: SessionPaths, tmpfs_mounted: bool) -> _RuntimeSpec:
+def _configure_docker(paths: SessionPaths, tmpfs_mounted: bool, root_supports_overlay: bool) -> _RuntimeSpec:
     """Write daemon.json and return the runtime spec for Docker.
 
-    Configuration requirements for gVisor:
-    1. Disable iptables (gVisor doesn't support nftables)
-    2. Use tmpfs for data-root (9p doesn't support overlay mounts)
-    3. Disable bridge networking (only host networking works in gVisor)
+    Storage driver selection (see container_spec.md for platform details):
+    - Firecracker (ext4 root): overlay works natively on disk, no tmpfs needed
+    - gVisor (9p root): overlay requires tmpfs; falls back to vfs without it
     """
     docker_dir = paths.docker_dir
     docker_dir.mkdir(parents=True, exist_ok=True)
 
     data_root = paths.container_storage_dir
-    driver = "overlay" if tmpfs_mounted else "vfs"
+    driver = "overlay" if (tmpfs_mounted or root_supports_overlay) else "vfs"
     data_root.mkdir(parents=True, exist_ok=True)
     logger.info("Using %s storage at %s", driver, data_root)
 
@@ -248,7 +247,11 @@ def _cleanup_stale_docker_pid() -> None:
 
 
 async def setup_container_runtime(
-    paths: SessionPaths, settings: HookSettings, supervisor: SupervisorClient, tmpfs_mounted: bool
+    paths: SessionPaths,
+    settings: HookSettings,
+    supervisor: SupervisorClient,
+    tmpfs_mounted: bool,
+    root_supports_overlay: bool,
 ) -> ContainerRuntimeSetup:
     """Set up Docker under supervisor.
 
@@ -261,7 +264,7 @@ async def setup_container_runtime(
     if not settings.setup_docker:
         raise SkipError("Docker setup disabled (setup_docker=False)")
 
-    spec = _configure_docker(paths, tmpfs_mounted)
+    spec = _configure_docker(paths, tmpfs_mounted, root_supports_overlay=root_supports_overlay)
 
     socket_url = f"unix://{spec.socket_path}"
 

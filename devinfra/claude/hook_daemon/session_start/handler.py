@@ -46,6 +46,7 @@ from devinfra.claude.hook_daemon.session_start import buildbuddy
 from devinfra.claude.hook_daemon.session_start import container_runtime
 from devinfra.claude.hook_daemon.session_start import fork_remote
 from devinfra.claude.hook_daemon.session_start import mkcert
+from devinfra.claude.hook_daemon.session_start import platform_detect
 from devinfra.claude.hook_daemon.session_start import precommit
 from devinfra.claude.hook_daemon.session_start import secret_sources
 from devinfra.claude.hook_daemon.session_start import tmpfs
@@ -123,6 +124,7 @@ class PlatformSetup:
     """
 
     # Platform-specific results
+    platform: platform_detect.PlatformInfo
     auth_proxy: proxy_setup.ProxySetup | None = None
     container: container_runtime.ContainerRuntimeSetup | None = None
     precommit_result: precommit.PrecommitSetup | None = None
@@ -230,11 +232,15 @@ async def _setup_web(
     tracer: trace.Tracer,
     root_ctx: trace.Context,
     proxy: AuthForwardingProxy | None,
+    platform: platform_detect.PlatformInfo,
 ) -> PlatformSetup:
     """Web mode: supervisor, proxy, containers, parallel installs.
 
     Returns a PlatformSetup with platform-specific results. K8s secrets,
     BuildBuddy, and fork remote are handled in the unified run_session() path.
+
+    Platform drives tmpfs, Docker storage driver, and JVM heap decisions
+    (see platform_detect.py, container_spec.md).
     """
     logger.info("Setting up dev environment...")
 
@@ -246,8 +252,16 @@ async def _setup_web(
     supervisor_task = asyncio.create_task(traced_supervisor_start())
 
     async def mount_tmpfs_at(path: Path) -> bool:
-        """Mount a tmpfs at the given path. Returns True on success, False on failure."""
+        """Mount a tmpfs at the given path. Returns True on success, False on failure.
+
+        On Firecracker (ext4 root), tmpfs is unnecessary — disk I/O is
+        adequate (seq write 98 MB/s, seq read 241 MB/s, 4K write 92 MB/s)
+        and tmpfs would waste RAM. See container_spec.md IO benchmarks.
+        """
         await anyio.Path(path).mkdir(parents=True, exist_ok=True)
+        if not platform.needs_tmpfs_for_io:
+            logger.info("Skipping tmpfs mount at %s (root_fstype=%s supports fast I/O)", path, platform.root_fstype)
+            return False
         try:
             await run_in_thread(tmpfs.ensure_tmpfs_mounted, path)
             return True
@@ -261,16 +275,25 @@ async def _setup_web(
             return await proxy_setup.setup_auth_proxy(paths, settings, proxy=proxy)
 
     async def setup_container_runtime_task() -> container_runtime.ContainerRuntimeSetup:
-        """Set up Docker (depends on supervisor)."""
+        """Set up Docker (depends on supervisor).
+
+        Storage driver selection follows from platform detection:
+        - Firecracker (ext4): overlay works natively, skip tmpfs
+        - gVisor (9p): mount tmpfs first, then overlay on tmpfs
+        - gVisor without tmpfs: fall back to vfs
+        """
         with tracer.start_as_current_span("setup_container_runtime", context=root_ctx):
             storage_dir = container_runtime.get_storage_dir(paths, settings)
             if storage_dir is None:
                 raise SkipError("Docker setup disabled (setup_docker=False)")
             supervisor_result = await supervisor_task
-            # tmpfs failure is non-fatal — runtime falls back to VFS on 9p
             tmpfs_mounted = await mount_tmpfs_at(storage_dir)
             return await container_runtime.setup_container_runtime(
-                paths, settings, supervisor_result.client, tmpfs_mounted=tmpfs_mounted
+                paths,
+                settings,
+                supervisor_result.client,
+                tmpfs_mounted=tmpfs_mounted,
+                root_supports_overlay=platform.root_supports_overlay,
             )
 
     async def setup_bazel_on_tmpfs() -> tmpfs.TmpfsSetup:
@@ -383,6 +406,7 @@ async def _setup_web(
     logger.info("Container: %s", container_result)
 
     return PlatformSetup(
+        platform=platform,
         auth_proxy=auth_proxy_result,
         container=None if isinstance(container_result, BaseException) else container_result,
         precommit_result=None if isinstance(precommit_result, BaseException) else precommit_result,
@@ -434,11 +458,14 @@ async def run_session(
     # Load hook config (general config file, not gated on k8s_token).
     hook_config = HookConfig.load_from_repo(project_dir)
 
+    # Detect platform early (safe in both modes — reads /proc + psutil).
+    platform = platform_detect.detect()
+
     # Platform-specific setup (proxy, containers, certs, etc.)
     if ctx.web_mode:
-        setup = await _setup_web(paths, settings, project_dir, tracer, root_ctx, proxy=proxy)
+        setup = await _setup_web(paths, settings, project_dir, tracer, root_ctx, proxy=proxy, platform=platform)
     else:
-        setup = PlatformSetup(with_direnv=True)
+        setup = PlatformSetup(platform=platform, with_direnv=True)
 
     # -- Shared steps: secrets, BuildBuddy, fork remote --
     combined_ca = setup.auth_proxy.combined_ca if setup.auth_proxy else None
@@ -533,6 +560,7 @@ async def run_session(
             buildbuddy_configured=setup.buildbuddy_configured,
             buildbuddy_bazelrc=buildbuddy.BUILDBUDDY_BAZELRC,
             bazel_cache_dir=setup.bazel_cache_dir,
+            platform=setup.platform,
         )
         session_bazelrc = paths.session_dir / "bazelrc"
         write_config(session_bazelrc, bazelrc_content, "session bazelrc")

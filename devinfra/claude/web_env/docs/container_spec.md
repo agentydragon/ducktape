@@ -34,22 +34,41 @@ parts that aren't captured there.
 The Bazel cache (`~/.claude/session-env/<id>/bazel-cache`) lives on the ext4
 root disk. There are **no tmpfs mounts** for Bazel cache or container storage.
 
+### IO Benchmarks (2026-03-30)
+
+Measured with `dd` on a Firecracker microVM (4 vCPU, 16Gi RAM).
+
+| Location      | FS Type | Seq Write | Seq Read | 4K Write (IOPS) |
+| ------------- | ------- | --------- | -------- | --------------- |
+| `/` (disk)    | ext4    | 98 MB/s   | 241 MB/s | 92 MB/s         |
+| `/dev/shm`    | tmpfs   | 345 MB/s  | 2.4 GB/s | 1.3 GB/s        |
+| `/tmp` (disk) | ext4    | 118 MB/s  | 422 MB/s | 94 MB/s         |
+
+Disk I/O is adequate for Bazel cache (sequential reads dominate). tmpfs is
+~3-10x faster but consumes RAM. On the old gVisor/9p root, disk was ~10x
+slower, making tmpfs essential. On Firecracker ext4, tmpfs is unnecessary.
+
 ### Historical Note: gVisor → Firecracker Migration
 
 As of 2026-03-30, the environment runs on **Firecracker microVMs with a real
 Linux kernel**, not gVisor. The root filesystem is ext4 on a virtio block
-device, not 9p. Many gVisor-specific constraints documented elsewhere in this
-repo (no overlay, 9p slowness, `FUSE_CAP_READDIRPLUS`, PTY race conditions)
-may no longer apply. The session start hook's tmpfs mount code
-(`hook_daemon/session_start/tmpfs.py`) targets the old gVisor/9p layout and
-does not activate in this environment.
+device, not 9p. The session start hook detects the platform at runtime
+(`hook_daemon/session_start/platform_detect.py`) and adapts:
+
+- **Firecracker**: skips tmpfs mounts, uses overlay Docker storage driver
+  natively, sizes JVM heap to 8Gi for full-monorepo Skyframe analysis.
+- **gVisor** (legacy): mounts tmpfs for fast I/O, uses overlay-on-tmpfs or
+  vfs fallback, uses 4Gi JVM heap to leave room for tmpfs.
+- **Unknown platform**: logs a warning asking the agent to notify the user,
+  uses conservative defaults (no tmpfs, 4Gi heap).
 
 ### Bazel JVM Heap
 
 Java auto-sizes max heap to ~25% of physical memory (~4Gi). For full-monorepo
 `bazel query` operations (6000+ packages), this is insufficient — the Skyframe
-analysis cache alone needs ~4Gi. Add `startup --host_jvm_args=-Xmx8g` to the
-session bazelrc for workloads that load the full package graph.
+analysis cache alone needs ~4Gi. The session bazelrc template sets `-Xmx8g` on
+Firecracker (where disk-backed cache doesn't compete for RAM) and `-Xmx4g` on
+gVisor (where tmpfs eats into available memory).
 
 ## Anthropic-Specific Components
 

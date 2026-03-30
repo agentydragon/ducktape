@@ -106,6 +106,17 @@ py_library(
 )
 
 py_library(
+    name = "platform_detect",
+    srcs = ["platform_detect.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//psutil",
+        "@pypi//types_psutil",
+    ],
+)
+
+py_library(
     name = "tmpfs",
     srcs = ["tmpfs.py"],
     imports = ["../../../.."],
@@ -130,6 +141,7 @@ py_library(
         ":container_runtime",
         ":fork_remote",
         ":mkcert",
+        ":platform_detect",
         ":precommit",
         ":secret_sources",
         ":tmpfs",
