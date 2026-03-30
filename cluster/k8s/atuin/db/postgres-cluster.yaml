@@ -13,12 +13,8 @@ spec:
       isolationCheck:
         enabled: false
 
-  affinity:
-    nodeSelector:
-      topology.kubernetes.io/region: proxmox
-
   storage:
-    storageClass: proxmox-csi-retain
+    storageClass: local-path
     size: 2Gi
 
   monitoring:

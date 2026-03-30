@@ -16,4 +16,4 @@ spec:
   dependsOn:
     - name: langfuse-namespace
     - name: cnpg
-    - name: proxmox-csi
+    - name: local-path-provisioner
