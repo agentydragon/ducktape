@@ -4,7 +4,5 @@ metadata:
   name: activitywatch
   namespace: flux-system
 spec:
-  image: registry.allegedly.works/ducktape/aw-server
+  image: ghcr.io/agentydragon/aw-server
   interval: 5m
-  secretRef:
-    name: harbor-pull-robot

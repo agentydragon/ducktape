@@ -19,5 +19,4 @@ spec:
       name: airlock
       namespace: airlock
   dependsOn:
-    - name: harbor-pull-secret
     - name: gateway

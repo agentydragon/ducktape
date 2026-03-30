@@ -4,7 +4,5 @@ metadata:
   name: openclaw-matrix
   namespace: flux-system
 spec:
-  image: registry.allegedly.works/ducktape/openclaw-matrix
+  image: ghcr.io/agentydragon/openclaw-matrix
   interval: 5m
-  secretRef:
-    name: harbor-pull-robot

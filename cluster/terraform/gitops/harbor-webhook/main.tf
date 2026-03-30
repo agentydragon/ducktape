@@ -1,5 +1,9 @@
 # Harbor webhook notification → Flux Receiver
 #
+# CLEANUP(2026-03-30): Ducktape project images migrated to GHCR. This webhook
+# is no longer needed for ducktape images (Flux now watches GHCR directly).
+# Keep alive until props also migrates, then suspend/remove.
+#
 # Configures the Harbor `ducktape` project to send push_artifact events to the
 # Flux webhook receiver, eliminating the 5-minute ImageRepository poll lag.
 #

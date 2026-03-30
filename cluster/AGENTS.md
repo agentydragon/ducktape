@@ -159,13 +159,16 @@ kustomization, SSO client secrets under `authentik/blueprints/`).
 
 @docs/lessons_learned/2025-11-28-eso-password-generator-desync.md
 
-## Harbor CI
+## Container Images
 
-Single `ducktape` project at `registry.allegedly.works/ducktape/<image>`.
-Managed by `terraform/gitops/harbor-ci/main.tf`.
+Ducktape project images are published to GHCR at `ghcr.io/agentydragon/<image>`.
+CI pushes via BuildBuddy Workflows (`devinfra/ci/bb_push_images.sh`) and GitHub
+Actions (openclaw-image, tana-mcp-image workflows). GHCR packages are public (no
+pull credentials needed).
 
-**Gotcha -- removing Harbor projects**: Use `removed` blocks with `lifecycle { destroy = false }`
-to orphan from state (can't destroy projects with repositories without `force_destroy`).
+Props agent images are still published to Harbor (`registry.allegedly.works`).
+The Harbor Terraform (`terraform/gitops/harbor-ci/`) and pull robot credentials
+remain active for props.
 
 **Gotcha -- Flux image automation race**: When renaming image paths, push at least one
 image to the new path before updating `ImageRepository` resources. Otherwise Flux reverts

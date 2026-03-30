@@ -4,7 +4,5 @@ metadata:
   name: auth-proxy
   namespace: flux-system
 spec:
-  image: registry.allegedly.works/ducktape/auth-proxy
+  image: ghcr.io/agentydragon/auth-proxy
   interval: 5m
-  secretRef:
-    name: harbor-pull-robot

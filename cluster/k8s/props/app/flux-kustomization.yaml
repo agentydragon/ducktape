@@ -15,10 +15,8 @@ spec:
   dependsOn:
     - name: props-namespace
     - name: props-secrets
-    - name: harbor-pull-secret
     - name: props-db
     - name: gateway
-    - name: harbor # Props image hosted on registry.allegedly.works
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment

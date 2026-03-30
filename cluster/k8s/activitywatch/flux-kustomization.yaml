@@ -14,6 +14,4 @@ spec:
   prune: true
   wait: true
   dependsOn:
-    - name: harbor-pull-secret
     - name: proxmox-csi
-    - name: harbor # Image hosted on registry.allegedly.works

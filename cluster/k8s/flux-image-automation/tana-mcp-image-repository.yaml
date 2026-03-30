@@ -4,7 +4,5 @@ metadata:
   name: tana-mcp
   namespace: flux-system
 spec:
-  image: registry.allegedly.works/ducktape/tana-desktop
+  image: ghcr.io/agentydragon/tana-desktop
   interval: 5m
-  secretRef:
-    name: harbor-pull-robot

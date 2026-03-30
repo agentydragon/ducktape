@@ -18,6 +18,4 @@ spec:
       kind: Deployment
       name: tana-mcp
       namespace: tana-mcp
-  dependsOn:
-    - name: harbor-pull-secret
-    - name: harbor # Image hosted on registry.allegedly.works
+  dependsOn: []

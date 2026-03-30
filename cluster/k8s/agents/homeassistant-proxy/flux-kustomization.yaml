@@ -18,6 +18,4 @@ spec:
       kind: Deployment
       name: homeassistant-proxy
       namespace: homeassistant-proxy
-  dependsOn:
-    - name: harbor-pull-secret
-    - name: harbor # Image hosted on registry.allegedly.works
+  dependsOn: []

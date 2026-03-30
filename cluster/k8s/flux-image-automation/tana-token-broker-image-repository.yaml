@@ -4,7 +4,5 @@ metadata:
   name: tana-token-broker
   namespace: flux-system
 spec:
-  image: registry.allegedly.works/ducktape/tana-token-broker
+  image: ghcr.io/agentydragon/tana-token-broker
   interval: 5m
-  secretRef:
-    name: harbor-pull-robot

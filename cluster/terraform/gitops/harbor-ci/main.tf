@@ -1,8 +1,13 @@
 # Harbor CI infrastructure
 #
+# CLEANUP(2026-03-30): Ducktape project images migrated to GHCR. The CI robot
+# account is no longer used for pushing. The pull robot is still needed by props
+# (agent images pulled from Harbor). Once props also migrates off Harbor, suspend
+# this Terraform resource and orphan with `removed` blocks.
+#
 # Creates:
 #   - ducktape project (private, single project for all CI-pushed images)
-#   - ci robot account with push+pull on the ducktape project (CI push)
+#   - ci robot account with push+pull on the ducktape project (CI push) — NO LONGER USED
 #   - pull robot account with read-only access (imagePullSecrets in app namespaces)
 #   - webhook token for the Flux harbor Receiver
 #   - github webhook token for the Flux github Receiver

@@ -15,7 +15,5 @@ spec:
     - name: openclaw-operator
     - name: openclaw-gateway-namespace
     - name: openclaw-gateway-secrets
-    - name: harbor-pull-secret
     - name: openclaw-mitmproxy
     - name: authentik # Wait for Authentik worker to apply SSO blueprints
-    - name: harbor # Images hosted on registry.allegedly.works

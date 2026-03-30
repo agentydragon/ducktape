@@ -203,8 +203,8 @@ paths, heap limits, crypto binary download).
   `--ignore-scripts` so the crypto native binary downloads automatically via postinstall.
   Skips `plugins install` entirely to avoid HOME path issues (`USER root` → HOME=/root,
   operator overrides HOME=/home/openclaw at runtime — neither matches /home/node).
-- **CI**: `.github/workflows/openclaw-image.yml` — builds and pushes to Harbor
-- **Registry**: `registry.allegedly.works/openclaw/openclaw-matrix`
+- **CI**: `.github/workflows/openclaw-image.yml` — builds and pushes to GHCR
+- **Registry**: `ghcr.io/agentydragon/openclaw-matrix`
 - **Auto-update**: Flux ImagePolicy + ImageUpdateAutomation updates tag in
   `openclawinstance.yaml` when CI pushes a new image
 

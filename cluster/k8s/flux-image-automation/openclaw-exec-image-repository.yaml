@@ -4,7 +4,5 @@ metadata:
   name: openclaw-exec
   namespace: flux-system
 spec:
-  image: registry.allegedly.works/ducktape/openclaw-exec
+  image: ghcr.io/agentydragon/openclaw-exec
   interval: 5m
-  secretRef:
-    name: harbor-pull-robot

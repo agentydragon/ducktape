@@ -23,7 +23,6 @@ spec:
     - name: inventree-namespace
     - name: inventree-db
     - name: inventree-secrets
-    - name: harbor-pull-secret
     - name: authentik-blueprint-inventree-secret
     - name: gateway
     - name: external-dns

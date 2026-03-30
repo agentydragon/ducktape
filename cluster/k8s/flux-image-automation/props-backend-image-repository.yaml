@@ -4,7 +4,5 @@ metadata:
   name: props-backend
   namespace: flux-system
 spec:
-  image: registry.allegedly.works/ducktape/props-backend
+  image: ghcr.io/agentydragon/props-backend
   interval: 5m
-  secretRef:
-    name: harbor-pull-robot

@@ -125,7 +125,7 @@ No built-in auth; Nebula mesh membership is the trust boundary.
 
 - **Server**: `aw-server-rust` on Proxmox, SQLite on `proxmox-csi-retain` (1Gi PVC)
 - **Sidecar**: Nebula container joins the mesh (`10.42.0.40`, cert name `activitywatch`)
-- **Image**: `registry.allegedly.works/ducktape/aw-server`, pushed via BuildBuddy Workflows (`buildbuddy.yaml`)
+- **Image**: `ghcr.io/agentydragon/aw-server`, pushed via BuildBuddy Workflows (`buildbuddy.yaml`)
 - **Certs**: SealedSecret from `terraform/main/nebula-activitywatch-sealed.tf`
 - **Read-only proxy**: nginx sidecar on port 5601 (Service `activitywatch-readonly`),
   allows GET + POST `/api/0/query` only. `openclaw-sandbox` and `claude-sandbox` namespaces
