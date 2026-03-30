@@ -1,0 +1,19 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: harbor-db
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./cluster/k8s/harbor/db
+  prune: true
+  wait: true
+  dependsOn:
+    - name: harbor-namespace
+    - name: cnpg
+    - name: proxmox-csi

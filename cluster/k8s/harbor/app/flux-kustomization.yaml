@@ -21,6 +21,7 @@ spec:
       namespace: harbor
   dependsOn:
     - name: harbor-namespace
+    - name: harbor-db
     - name: gateway
     - name: harbor-secrets
     - name: monitoring-stack

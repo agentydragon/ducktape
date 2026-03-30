@@ -67,8 +67,6 @@ spec:
         jobservice:
           storageClass: longhorn
           size: 1Gi
-        database:
-          size: 1Gi
         redis:
           storageClass: longhorn
           size: 1Gi
@@ -121,18 +119,14 @@ spec:
           cpu: 200m
 
     database:
-      type: internal
-      internal:
-        nodeSelector:
-          topology.kubernetes.io/region: proxmox
-        password: "changeit"
-        resources:
-          requests:
-            memory: 128Mi
-            cpu: 35m
-          limits:
-            memory: 512Mi
-            cpu: 200m
+      type: external
+      external:
+        host: harbor-db-rw
+        port: "5432"
+        username: harbor
+        coreDatabase: registry
+        existingSecret: harbor-db-app
+        # CNPG auto-generates this secret; Harbor chart reads "password" key
 
     redis:
       type: internal
