@@ -13,6 +13,10 @@ spec:
       isolationCheck:
         enabled: false
 
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/region: proxmox
+
   storage:
     storageClass: local-path
     size: 10Gi

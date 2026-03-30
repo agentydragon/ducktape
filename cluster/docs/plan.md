@@ -215,6 +215,18 @@ Via `inventree-token-provisioner` Job. TF module -> Vault -> Job execs into pod,
 creates user via Django ORM -> `inventree-api-token` Secret in `openclaw-sandbox`
 and `claude-sandbox`.
 
+### CNPG Backup Strategy
+
+Single-instance Proxmox CNPG clusters (atuin, langfuse, inventree, harbor, props) rely
+on Proxmox ZFS for local reliability (checksums, snapshots). Off-site disaster recovery
+needed:
+
+- [ ] Generalize the `tofu-state` pg_dump CronJob pattern to all Proxmox CNPG clusters
+      (write dumps to VPS-hosted PVC or object storage)
+- [ ] Longer term: CNPG `ScheduledBackup` + Barman to S3-compatible store (MinIO on VPS
+      or cloud bucket) for continuous WAL archiving and point-in-time recovery
+- [ ] Verify Proxmox ZFS auto-snapshot schedule covers CNPG data directories
+
 ### Velero PVC Backup
 
 Scheduled backups of PVCs (Harbor, Gitea, Loki, Postgres). No backup strategy currently.
