@@ -25,7 +25,7 @@ from cluster.scripts.validate_cluster.checks import (
     find_orphaned_files,
 )
 from cluster.scripts.validate_cluster.kustomize import run_kustomize_build
-from cluster.validation.cluster import _K8S_PREFIX, ParsedCluster, parse_cluster
+from cluster.validation.cluster import ParsedCluster, parse_cluster
 from cluster.validation.dependencies import validate_dependencies
 from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
 from cluster.validation.kustomize import KustomizeBuildResult
@@ -39,13 +39,9 @@ def k8s_dir() -> Path:
     return get_required_path(_K8S_ROOT_KUSTOMIZATION).parent
 
 
-def _local_flux_kust_names(parsed: ParsedCluster) -> set[str]:
-    """Flux kustomization names whose spec.path points into the local cluster/k8s tree."""
-    return {
-        name
-        for name, spec in parsed.flux_kustomizations.items()
-        if spec.path.removeprefix("./").startswith(_K8S_PREFIX)
-    }
+def _local_flux_kust_names(parsed: ParsedCluster, k8s_dir: Path) -> set[str]:
+    """Active flux kustomization names whose spec.path points into the local cluster/k8s tree."""
+    return {name for name, spec in parsed.active_flux_kustomizations.items() if spec.local_dir(k8s_dir)}
 
 
 @pytest.fixture(scope="session")
@@ -53,12 +49,9 @@ def cluster(k8s_dir: Path) -> ParsedCluster:
     """Parse cluster and build flux-referenced kustomizations (hard failure on any build error)."""
     parsed = parse_cluster(k8s_dir)
 
-    # Only build kustomizations that a flux kustomization points to.
-    local_dirs = {
-        (k8s_dir / spec.path.removeprefix("./")[len(_K8S_PREFIX) :]).resolve()
-        for spec in parsed.flux_kustomizations.values()
-        if spec.path.removeprefix("./").startswith(_K8S_PREFIX)
-    }
+    # Build all local flux-referenced kustomizations (including suspended — kustomize
+    # build should still succeed). Only validation checks filter suspended.
+    local_dirs = {d for spec in parsed.flux_kustomizations.values() if (d := spec.local_dir(k8s_dir))}
     kust_files = [k for k in parsed.kustomize_files if k.parent.resolve() in local_dirs]
 
     async def _build_all() -> list[KustomizeBuildResult]:
@@ -71,7 +64,7 @@ def cluster(k8s_dir: Path) -> ParsedCluster:
 def test_all_local_flux_kustomizations_have_build_results(cluster: ParsedCluster, k8s_dir: Path) -> None:
     """Every flux kustomization pointing to a local path must have a build result."""
     covered = set(cluster.flux_kust_resources(k8s_dir))
-    expected = _local_flux_kust_names(cluster)
+    expected = _local_flux_kust_names(cluster, k8s_dir)
     missing = sorted(expected - covered)
     assert not missing, "Flux kustomizations with no build result:\n" + "\n".join(f"  {m}" for m in missing)
 

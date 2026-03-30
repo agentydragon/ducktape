@@ -38,6 +38,15 @@ class FluxKustomizationSpec(BaseModel):
     health_checks: list[HealthCheck] = []
     retry_interval: str | None = None
     wait: bool = False
+    suspend: bool = False
+
+    def local_dir(self, k8s_dir: Path, k8s_subpath: str = "cluster/k8s") -> Path | None:
+        """Resolve spec.path to a local directory under k8s_dir, or None if external."""
+        rel = self.path.removeprefix("./")
+        prefix = k8s_subpath + "/"
+        if not rel.startswith(prefix):
+            return None
+        return (k8s_dir / rel[len(prefix) :]).resolve()
 
 
 class _ObjectMeta(BaseModel):

@@ -43,7 +43,7 @@ def check_controller_health_checks(cluster: ParsedCluster, k8s_dir: Path) -> lis
 def check_retry_policy(cluster: ParsedCluster) -> None:
     """Enforce retryInterval on async Flux Kustomizations."""
     errors: list[str] = []
-    for name, spec in cluster.flux_kustomizations.items():
+    for name, spec in cluster.active_flux_kustomizations.items():
         needs_retry = _has_async_health_checks(cluster, name) or spec.wait
         if not needs_retry:
             continue

@@ -57,6 +57,8 @@ def check_required_dependencies(cluster: ParsedCluster) -> list[str]:
         for dependent in rule.must_come_before:
             if dependent not in cluster.flux_kustomizations:
                 continue
+            if cluster.flux_kustomizations[dependent].suspend:
+                continue
             if not nx.has_path(g, dependent, rule.prerequisite):
                 errors.append(f"{dependent} should depend on {rule.prerequisite} ({rule.reason})")
 

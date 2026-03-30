@@ -39,7 +39,7 @@ from cluster.scripts.validate_cluster.checks import (
 from cluster.scripts.validate_cluster.flux import validate_flux_build
 from cluster.scripts.validate_cluster.helm_templates import validate_helm_templates
 from cluster.scripts.validate_cluster.kustomize import KustomizeBuildError, run_kustomize_build
-from cluster.validation.cluster import _K8S_SUBPATH, parse_cluster
+from cluster.validation.cluster import parse_cluster
 from cluster.validation.dependencies import validate_dependencies
 from cluster.validation.health_checks import check_controller_health_checks
 from cluster.validation.kustomize import KustomizeBuildResult
@@ -69,7 +69,7 @@ async def main() -> int:
     parser.add_argument("--skip-dependencies", action="store_true", help="Skip dependency graph validation")
     args = parser.parse_args()
 
-    root = args.root or (get_build_workspace_directory() / _K8S_SUBPATH)
+    root = args.root or (get_build_workspace_directory() / "cluster/k8s")
 
     # Parse all files once
     cluster = parse_cluster(root)

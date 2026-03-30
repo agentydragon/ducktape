@@ -11,11 +11,7 @@ from cluster.validation.flux import FluxKustomizationSpec, parse_flux_kustomizat
 from cluster.validation.k8s import K8sResource, parse_k8s_resource_file
 from cluster.validation.kustomize import KustomizeBuildResult, KustomizeFile, parse_kustomize_file
 
-# Flux kustomization spec.path values are relative to the git repo root.
-# k8s_dir sits at this subpath within the repo.
 _K8S_SUBPATH = Path("cluster/k8s")
-
-_K8S_PREFIX = str(_K8S_SUBPATH) + "/"
 
 
 @dataclass
@@ -40,18 +36,19 @@ class ParsedCluster:
                 g.add_edge(name, dep.name)
         self.graph = g
 
+    @property
+    def active_flux_kustomizations(self) -> dict[str, FluxKustomizationSpec]:
+        """Flux kustomizations that are not suspended."""
+        return {name: spec for name, spec in self.flux_kustomizations.items() if not spec.suspend}
+
     def flux_kust_resources(self, k8s_dir: Path) -> dict[str, list[K8sResource]]:
-        """Map flux kustomization name -> built resources from build_results."""
+        """Map active flux kustomization name -> built resources from build_results."""
         build_by_dir: dict[Path, list[K8sResource]] = {
             r.kustomization_path.parent.resolve(): r.resources for r in self.build_results
         }
         result: dict[str, list[K8sResource]] = {}
-        for name, spec in self.flux_kustomizations.items():
-            path = spec.path.removeprefix("./")
-            if not path.startswith(_K8S_PREFIX):
-                continue
-            kust_dir = (k8s_dir / path[len(_K8S_PREFIX) :]).resolve()
-            if kust_dir in build_by_dir:
+        for name, spec in self.active_flux_kustomizations.items():
+            if (kust_dir := spec.local_dir(k8s_dir)) and kust_dir in build_by_dir:
                 result[name] = build_by_dir[kust_dir]
         return result
 
