@@ -44,6 +44,28 @@ def test_python_env_uses_sys_path_when_no_pythonpath():
         assert {p for p in sys.path if p} <= result_paths
 
 
+def test_python_env_sets_safe_path():
+    """PYTHONSAFEPATH=1 prevents subprocesses from importing from CWD."""
+    env = python_env(inherit=False)
+    assert env.get("PYTHONSAFEPATH") == "1"
+
+
+def test_subprocess_does_not_import_from_cwd(tmp_path: Path):
+    """Subprocess launched via run_python_module cannot import from CWD.
+
+    Regression test: without PYTHONSAFEPATH, `python -m module` prepends ''
+    (CWD) to sys.path, causing it to shadow installed packages with source
+    tree modules — e.g. the hook daemon imported from the git checkout
+    instead of the Nix wheel.
+    """
+    # Create a decoy module in a temp dir that would shadow a stdlib module
+    (tmp_path / "json.py").write_text("raise RuntimeError('imported from CWD!')\n")
+    result = run_python_module("json.tool", "--help", capture_output=True, text=True, check=False, cwd=tmp_path)
+    # json.tool --help should succeed (exit 0) using the real stdlib json,
+    # not the decoy. Without PYTHONSAFEPATH, it would import the decoy and crash.
+    assert result.returncode == 0, f"Subprocess imported from CWD: {result.stderr}"
+
+
 def test_run_python_module_basic():
     result = run_python_module("sys", capture_output=True, text=True, check=False)
     # python -m sys doesn't exist as runnable, but the command should execute

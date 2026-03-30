@@ -37,6 +37,12 @@ def python_env(*, inherit: bool = True) -> dict[str, str]:
             seen.add(p)
             merged.append(p)
     env["PYTHONPATH"] = os.pathsep.join(merged)
+    # Prevent Python from prepending CWD to sys.path (equivalent to -P flag).
+    # Without this, `python -m module` adds '' to sys.path[0], causing the
+    # subprocess to import from the working directory instead of PYTHONPATH —
+    # e.g. the hook daemon picks up source-tree modules instead of the
+    # Nix-installed wheel, creating client/server version skew.
+    env["PYTHONSAFEPATH"] = "1"
     return env
 
 
