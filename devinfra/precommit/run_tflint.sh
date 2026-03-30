@@ -11,7 +11,7 @@ if [[ "${CLAUDE_CODE_REMOTE:-false}" == "true" ]]; then
   exit 0
 fi
 
-REPO_ROOT="$(pwd)"
+REPO_ROOT="$(git rev-parse --show-toplevel)"
 CONFIG="${REPO_ROOT}/cluster/.tflint.hcl"
 
 # Initialize plugins (downloads to ~/.tflint.d/plugins/)
