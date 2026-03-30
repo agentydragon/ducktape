@@ -15,3 +15,4 @@ spec:
     - name: litellm-secrets
     - name: gateway
     - name: cert-manager-environment
+    - name: monitoring-stack
