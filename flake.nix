@@ -325,6 +325,7 @@
               pkgs.shfmt
               pkgs.buildifier
               pkgs.gofumpt
+              pkgs.ansible
               # Infrastructure tools
               pkgs.gh
               pkgs.kubectl

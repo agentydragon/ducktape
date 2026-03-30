@@ -35,15 +35,6 @@ jobs:
       - uses: ./.github/actions/bazel-repo-cache
         id: bazel-cache
 
-      # Use full 'ansible' package instead of 'ansible-core' to get bundled collections.
-      # This avoids Ansible Galaxy API calls entirely - Galaxy has known reliability issues:
-      # - Intermittent 500 errors (github.com/ansible/galaxy/issues/2954)
-      # - No official status page (github.com/ansible/galaxy/issues/3508)
-      # All required collections (community.docker, community.general, community.crypto,
-      # ansible.netcommon, ansible.posix) are included in the ansible package.
-      - name: Install Ansible
-        run: pip install "ansible>=10"
-
       # Cache Ansible Galaxy roles (required for syntax check - meta/main.yml dependencies)
       - name: Restore Ansible Galaxy roles cache
         id: cache-ansible-roles-restore
