@@ -50,14 +50,14 @@ spec:
         - name: INVENTREE_DB_USER
           value: "inventree"
         - name: INVENTREE_DB_HOST
-          value: "inventree-postgres"
+          value: "inventree-db-rw"
         - name: INVENTREE_DB_PORT
           value: "5432"
         - name: INVENTREE_DB_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: inventree-db-password
-              key: db_password
+              name: inventree-db-app
+              key: password
 
       ssoConfig:
         backends:
