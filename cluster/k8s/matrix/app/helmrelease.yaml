@@ -104,32 +104,16 @@ spec:
         enabled: true
         port: 8448
 
-    # PostgreSQL configuration with bundled chart
+    # PostgreSQL via external CNPG cluster (matrix-db)
     postgresql:
-      enabled: true
-      auth:
-        username: synapse
-        database: synapse
-        # PostgreSQL chart auto-generates password
-      global:
-        storageClass: "proxmox-csi-retain"
-      primary:
-        # Requests right-sized from observed usage — see docs/operations/2026-02-22-memory-request-rightsizing.md
-        resources:
-          requests:
-            memory: 128Mi
-            cpu: 100m
-        persistence:
-          enabled: true
-          storageClass: "proxmox-csi-retain"
-          size: 10Gi
-        # PostgreSQL 16 compatible settings
-        extendedConfiguration: |
-          max_connections = 200
-          shared_buffers = 256MB
-        # Synapse requires C collation - set via initdb args
-        initdb:
-          args: "--locale=C"
+      enabled: false
+    externalPostgresql:
+      host: matrix-db-rw
+      port: 5432
+      username: synapse
+      database: synapse
+      existingSecret: matrix-db-app
+      existingSecretPasswordKey: password
 
     # Redis (required by chart even for single-instance setup)
     redis:
@@ -157,18 +141,3 @@ spec:
     # Service account
     serviceAccount:
       create: true
----
-# ConfigMap for PostgreSQL initialization with proper collation
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: synapse-postgres-initdb
-  namespace: matrix
-data:
-  00-init.sh: |
-    #!/bin/bash
-    set -e
-    # Ensure database has correct collation for Synapse
-    # Note: This runs as postgres user, after database creation
-    # The collation must be set during database creation instead
-    echo "Database collation check script (collation should be set during CREATE DATABASE)"

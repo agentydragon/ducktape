@@ -1,0 +1,31 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: matrix-db
+  namespace: matrix
+spec:
+  instances: 1
+
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/region: proxmox
+
+  storage:
+    storageClass: proxmox-csi-retain
+    size: 10Gi
+
+  monitoring:
+    enablePodMonitor: true
+
+  bootstrap:
+    initdb:
+      database: synapse
+      owner: synapse
+      localeCType: C
+      localeCollate: C
+      # CNPG auto-generates credentials in secret matrix-db-app

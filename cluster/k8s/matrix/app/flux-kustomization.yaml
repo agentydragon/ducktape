@@ -21,6 +21,7 @@ spec:
       namespace: matrix
   dependsOn:
     - name: matrix-namespace
+    - name: matrix-db
     - name: gateway
     - name: cert-manager
     - name: authentik # Wait for Authentik worker to apply SSO blueprints
