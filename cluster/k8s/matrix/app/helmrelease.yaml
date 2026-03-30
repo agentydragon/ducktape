@@ -55,6 +55,10 @@ spec:
     # The chart derives public_baseurl as https://<publicServerName>.
     publicServerName: matrix.allegedly.works
 
+    # Pin to Proxmox nodes
+    nodeSelector:
+      topology.kubernetes.io/region: proxmox
+
     # Resources
     resources:
       limits:
