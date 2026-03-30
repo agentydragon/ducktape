@@ -322,6 +322,7 @@
               pkgs.statix
               pkgs.mkcert
               pkgs.ruff
+              pkgs.shellcheck
               pkgs.shfmt
               pkgs.buildifier
               pkgs.gofumpt

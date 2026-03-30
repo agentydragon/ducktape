@@ -1,0 +1,39 @@
+# ShellCheck configuration
+# https://www.shellcheck.net/wiki/
+
+# --- False positives / inapplicable ---
+
+# SC1090/SC1091: Can't follow non-constant/unspecified source.
+# Expected for sourced configs and dynamically-constructed paths.
+disable=SC1090,SC1091
+
+# Default shell: many sourced snippets are bash (no shebang).
+# This avoids mis-linting bash-specific code as /bin/sh.
+shell=bash
+
+# SC2034: Variable appears unused.
+# Many scripts set vars consumed by sourcing scripts or subsequent commands.
+disable=SC2034
+
+# --- Low-value style suggestions ---
+
+# SC2004: $/${} unnecessary on arithmetic variables.
+disable=SC2004
+
+# SC2029: Unescaped variable expands on SSH client side.
+# Intentional in scripts passing variables to remote hosts.
+disable=SC2029
+
+# --- TODO: tighten these after fixing existing violations ---
+
+# SC2086: Double quote to prevent globbing (2 violations in debug scripts)
+# SC2046: Quote to prevent word splitting (7 in bash-init.sh — fixed in separate PR)
+# SC2035: Use ./*glob* to avoid dash-prefixed filenames (6 in llm/html)
+# SC2162: read without -r mangles backslashes (2 in debug scripts)
+# SC2001: See if you can use ${var//search/replace} (2 in debug/recipes)
+# SC2012: Use find instead of ls (2 in comfyui)
+# SC2126: Consider grep -c instead of grep|wc -l (1)
+# SC2129: Consider { cmd1; cmd2; } >> file (1)
+# SC2124: Assigning array to string (1 in ansible)
+# SC2009: Consider pgrep instead of grepping ps (1)
+disable=SC2086,SC2046,SC2035,SC2162,SC2001,SC2012,SC2126,SC2129,SC2124,SC2009
