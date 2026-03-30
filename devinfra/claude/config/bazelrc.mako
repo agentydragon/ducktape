@@ -2,6 +2,9 @@
 % if bazel_cache_dir:
 startup --output_user_root=${bazel_cache_dir | sh}
 % endif
+## 8Gi heap: full-monorepo `bazel query` loads 6000+ packages into Skyframe,
+## which exceeds Java's default ~4Gi auto-sized heap on 16Gi machines.
+startup --host_jvm_args=-Xmx8g
 % if web_proxy:
 startup --host_jvm_args=-Djavax.net.ssl.trustStore=${truststore_path | sh}
 startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=${truststore_password | sh}

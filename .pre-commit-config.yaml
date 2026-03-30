@@ -207,10 +207,10 @@ repos:
         pass_filenames: true
         # Triggers on: test files (pytest-main), cluster files (validations), terraform (centralization)
         files: |
-          (?x)^(
-            .*\\.(py|tf)$|
-            cluster/
-          )$
+          (?x)(
+            \\.(py|tf)$|
+            ^cluster/
+          )
         exclude: |
           (?x)^(
             # Authentik blueprints are not K8s manifests, skip validation
