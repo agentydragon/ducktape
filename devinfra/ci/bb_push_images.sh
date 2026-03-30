@@ -28,18 +28,9 @@ cat >~/.docker/config.json <<ENDJSON
 {"auths":{"ghcr.io":{"auth":"${AUTH}"}}}
 ENDJSON
 
-# Resolve crane binary to an absolute path.
-# bazel cquery --output=files returns a path relative to the execution root;
-# bazel info execution_root gives the absolute prefix.
-bazel build --config=rbe --remote_download_toplevel @crane
-EXEC_ROOT="$(bazel info execution_root 2>/dev/null)"
-CRANE="${EXEC_ROOT}/$(bazel cquery --output=files @crane 2>/dev/null)"
-echo "Using crane at: $CRANE"
-"$CRANE" version
-
 # Push images sequentially. bazel run builds (hitting RBE cache
 # from the CI action) then executes crane push with :latest.
-# After each push, crane tags with {branch}-YYYYMMDDHHMMSS-{sha7}
+# After each push, `bazel run @crane -- tag` adds the pinned tag
 # so Flux ImagePolicy can track deployable versions.
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 TS=$(date -u +%Y%m%d%H%M%S)
@@ -51,7 +42,7 @@ push_and_tag() {
   echo "Pushing $target"
   bazel run --config=rbe --remote_download_toplevel "$target"
   echo "Tagging ${repo}:latest -> ${repo}:${PINNED_TAG}"
-  $CRANE tag "${repo}:latest" "${PINNED_TAG}"
+  bazel run --config=rbe --remote_download_toplevel @crane -- tag "${repo}:latest" "${PINNED_TAG}"
 }
 
 push_and_tag //cluster/k8s/inventree/token-provisioner:push ghcr.io/agentydragon/token-provisioner
