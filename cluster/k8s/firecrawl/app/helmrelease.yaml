@@ -19,6 +19,10 @@ spec:
         namespace: flux-system
       reconcileStrategy: Revision
   values:
+    # Pin to Proxmox nodes
+    nodeSelector:
+      topology.kubernetes.io/region: proxmox
+
     # Replicas
     replicaCount: 1
 

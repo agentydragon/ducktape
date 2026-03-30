@@ -1,5 +1,7 @@
 replicaCount: 1
 
+nodeSelector: {}
+
 nuqWorker:
   replicaCount: 5
   resources:

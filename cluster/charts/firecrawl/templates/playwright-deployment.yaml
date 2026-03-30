@@ -18,6 +18,10 @@ spec:
       imagePullSecrets:
         {{- toYaml .Values.imagePullSecrets | nindent 8 }}
       {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: playwright-service
           image: "{{ .Values.playwright.repository }}:{{ .Values.playwright.tag }}"
