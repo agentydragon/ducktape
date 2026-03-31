@@ -129,8 +129,8 @@ def compute_deadline(message: Email) -> datetime | None:
     if delivered := extract_delivered_date(message.get_text()):
         return delivered + timedelta(days=DISPUTE_WINDOW_DAYS)
 
-    # Fallback: internal_date + 30 days
-    return message.internal_date.replace(tzinfo=None) + timedelta(days=30)
+    # Fallback: internal_date + 30 days (keep timezone-aware)
+    return message.internal_date + timedelta(days=30)
 
 
 def parse_aliexpress(message: Email, should_compute_deadline: bool = False) -> AliExpressEmail:
