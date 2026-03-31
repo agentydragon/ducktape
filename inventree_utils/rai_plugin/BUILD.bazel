@@ -1,7 +1,7 @@
 # gazelle:ignore
 # InvenTree plugin - requires Django from InvenTree environment (not in @pypi)
 
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_python//python:packaging.bzl", "py_wheel")
 
@@ -60,11 +60,4 @@ oci_load(
     image = ":image",
     repo_tags = ["inventree-custom:latest"],
     visibility = ["//visibility:public"],
-)
-
-oci_push(
-    name = "push",
-    image = ":image",
-    remote_tags = ["latest"],
-    repository = "ghcr.io/agentydragon/inventree",
 )

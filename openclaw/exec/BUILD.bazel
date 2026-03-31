@@ -11,7 +11,7 @@
 # No private registry pull is needed at build time: the base image is
 # referenced as a Bazel target, not pulled from registry.allegedly.works.
 
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 # ── kubectl layer ─────────────────────────────────────────────────────────────
@@ -55,11 +55,4 @@ oci_load(
     image = ":image",
     repo_tags = ["openclaw-exec:latest"],
     visibility = ["//visibility:public"],
-)
-
-oci_push(
-    name = "push",
-    image = ":image",
-    remote_tags = ["latest"],
-    repository = "ghcr.io/agentydragon/openclaw-exec",
 )

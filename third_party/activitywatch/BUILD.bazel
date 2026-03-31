@@ -4,15 +4,12 @@ The Rust binary (aw-server) embeds the web UI at compile time via rust-embed's
 interpolate-folder-path feature: build.rs reads AW_WEBUI_DIR and emits
 cargo:rustc-env=AW_WEBUI_DIR=<path> so the proc macro can embed all files.
 
-Build and push:
-  bazel run //third_party/activitywatch:push
-
 Load for local testing:
   bazel run //third_party/activitywatch:load
   docker run --rm -p 5600:5600 -v /tmp/aw-data:/data aw-server:latest
 """
 
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
@@ -61,11 +58,4 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["aw-server:latest"],
-)
-
-oci_push(
-    name = "push",
-    image = ":image",
-    remote_tags = ["latest"],
-    repository = "ghcr.io/agentydragon/aw-server",
 )

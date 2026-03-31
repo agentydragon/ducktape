@@ -1,5 +1,5 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//devinfra/testing:defs.bzl", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
@@ -56,13 +56,6 @@ oci_load(
     image = ":image",
     repo_tags = ["airlock-auth-proxy:latest"],
     visibility = ["//visibility:public"],
-)
-
-oci_push(
-    name = "push",
-    image = ":image",
-    remote_tags = ["latest"],
-    repository = "ghcr.io/agentydragon/auth-proxy",
 )
 
 # ── Tests ─────────────────────────────────────────────────────────────────────

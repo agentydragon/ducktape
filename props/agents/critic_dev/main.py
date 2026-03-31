@@ -54,7 +54,7 @@ def _setup_crane_auth(config: DatabaseConfig) -> None:
         raise RuntimeError("PROPS_BACKEND_URL must be set for crane auth setup")
 
     registry = urlparse(backend_url).netloc
-    write_docker_auth(registry, config.user, config.password)
+    write_docker_auth(registry, config.user, config.password, overwrite=True)
     logger.info("Crane auth configured for registry %s", registry)
 
 

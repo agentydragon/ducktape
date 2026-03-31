@@ -13,9 +13,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from util.bazel.workspace import BazelLabel, get_bazel_bin
-from util.crane import get_crane
+from util.crane import Crane
 from util.env import get_required_env
-from util.oci import read_oci_layout_digest, write_docker_auth
+from util.oci import read_oci_layout_digest
 
 
 @dataclass(frozen=True)
@@ -40,29 +40,6 @@ IMAGES = [
 
 def _git(*args: str) -> str:
     return subprocess.check_output(["git", *args], text=True).strip()
-
-
-class Crane:
-    """Typed wrapper around the crane CLI."""
-
-    def __init__(self, crane_path: Path) -> None:
-        self._path = crane_path
-
-    def _run(self, *args: str) -> str:
-        result = subprocess.run([str(self._path), *args], check=True, capture_output=True, text=True)
-        return result.stdout.strip()
-
-    def digest(self, image_ref: str) -> str:
-        return self._run("digest", image_ref)
-
-    def ls(self, repo: str) -> list[str]:
-        return self._run("ls", repo).splitlines()
-
-    def push(self, image_dir: Path, ref: str) -> None:
-        self._run("push", str(image_dir), ref)
-
-    def tag(self, ref: str, tag: str) -> None:
-        self._run("tag", ref, tag)
 
 
 class ImagePusher:
@@ -110,8 +87,6 @@ def main() -> None:
         print("Commit message contains [skip ci], skipping image push.")
         return
 
-    write_docker_auth("ghcr.io", get_required_env("GHCR_USERNAME"), get_required_env("GHCR_TOKEN"))
-
     targets = [img.image_target for img in IMAGES]
     print(f"Building {len(targets)} image targets...")
     subprocess.run(["bazel", "build", "--config=rbe", "--remote_download_toplevel", *targets], check=True)
@@ -123,7 +98,12 @@ def main() -> None:
     sha = _git("rev-parse", "--short=7", "HEAD")
 
     pusher = ImagePusher(
-        crane=Crane(get_crane()), bazel_bin=bazel_bin, branch=branch, pinned_tag=f"{branch}-{ts}-{sha}"
+        crane=Crane(
+            registry="ghcr.io", username=get_required_env("GHCR_USERNAME"), password=get_required_env("GHCR_TOKEN")
+        ),
+        bazel_bin=bazel_bin,
+        branch=branch,
+        pinned_tag=f"{branch}-{ts}-{sha}",
     )
     for img in IMAGES:
         pusher.push_and_tag(img)

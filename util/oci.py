@@ -24,11 +24,14 @@ def docker_auth_config(registry: str, username: str, password: str) -> dict[str,
     return {"auths": {registry: {"auth": auth}}}
 
 
-def write_docker_auth(registry: str, username: str, password: str, config_dir: Path | None = None) -> None:
-    """Write a Docker config.json with registry credentials."""
-    config_dir = config_dir or Path.home() / ".docker"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "config.json").write_text(json.dumps(docker_auth_config(registry, username, password)))
+def write_docker_auth(registry: str, username: str, password: str, *, overwrite: bool = False) -> None:
+    """Write ~/.docker/config.json with registry credentials."""
+    docker_dir = Path.home() / ".docker"
+    docker_dir.mkdir(parents=True, exist_ok=True)
+    config_path = docker_dir / "config.json"
+    if config_path.exists() and not overwrite:
+        raise FileExistsError(f"{config_path} already exists (pass overwrite=True to replace)")
+    config_path.write_text(json.dumps(docker_auth_config(registry, username, password)))
 
 
 # ---------------------------------------------------------------------------
