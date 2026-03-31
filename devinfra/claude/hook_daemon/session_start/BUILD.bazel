@@ -251,6 +251,7 @@ filegroup(
 
 py_test(
     name = "test_k8s_proxy_integration",
+    size = "medium",
     srcs = ["test_k8s_proxy_integration.py"],
     data = [
         ":k8s_test_client_tarball",
