@@ -4,6 +4,7 @@ metadata:
   name: gitea-servicemonitor
   namespace: flux-system
 spec:
+  suspend: true
   interval: 10m
   path: ./cluster/k8s/gitea/servicemonitor
   prune: true

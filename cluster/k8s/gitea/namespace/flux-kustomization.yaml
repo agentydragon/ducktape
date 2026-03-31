@@ -4,6 +4,7 @@ metadata:
   name: gitea-namespace
   namespace: flux-system
 spec:
+  suspend: true
   interval: 1h
   path: ./cluster/k8s/gitea/namespace
   prune: false

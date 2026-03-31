@@ -4,6 +4,7 @@ metadata:
   name: gitea-admin-token
   namespace: flux-system
 spec:
+  suspend: true
   retryInterval: 1m
   interval: 10m
   timeout: 5m
