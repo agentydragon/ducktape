@@ -3,4 +3,3 @@ kind: Kustomization
 resources:
   - alloy-otlp-bearer-token-externalsecret.yaml
   - claude-web-age-key-sealed.yaml
-  - github-token-sealed.yaml

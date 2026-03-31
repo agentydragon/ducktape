@@ -1,0 +1,20 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: github-token
+  namespace: claude-sandbox
+spec:
+  encryptedData:
+    token: AgCUV73OmheQOz5ZAzhuCPScdxMexFcxCwqtHeanXbGLh4K0VjToPcnELgZo3hOuaJiJOqCiQPo6Hc4rn64eReomJVpK5qf/l9w/xRXr10MwCWGVuR9Ebwwu6/+6kLDsmJynL+1+8QluL87EBkVYneCzzrTIs3fsL1Gp+RkWraW8PSbiMvNTKE/p+xz8hV+ipqYjp7b31dIohmth8vC4FEZEslShrVGUJlg1hOkpU2FeXJIA5o5Be8Ji6JsanU2vbb7YsewdGAmDGKL3puMlX6LFZzdtTj3Z/OHHHOf0DK6DedaKSZhFriV0kXqoozIiux+mwB8tK82mubQQUKyV5uZtpkJUS2uX8OGQqRx8Fk3/IJO4QlR3mRcZGuo7wyaYpKIoCBZoP5Z5PcUnl6LSKFe4f4pd7OBODjJubvtofUa8EFktH+/nv+h5PxL6gRUI44bwPILoU5jC6ocbspb3slCk2huhRw3FKo1Qfpl7ZPc4M+3fk2+b4eLMyoRSJYjTcwsZo+JEq8o73/yyaWymyb2xoQ9haBhK831WKZJqkGMUIzH/tGB2dxmvCb0jbgI8kSZQZUTtHXlwj3frHHVfJ0Z3R/Eb3esETzeGGsXZQDLuHYflf/s9mF3OR74O4zs186Z2+rEr6uVKjOQupBOtYfSooLEIYklsTfj7gtD8KfFUAJZlw6EKbfh13nvzD3wwJ9KHgzbGwRpSwYVrCpbiWJVsLZFNUX/2HWAblTUDb5mcRDf3Zw07rSK7
+  template:
+    metadata:
+      annotations:
+        description: GitHub PAT for agentydragon-agent (same value as secrets/github-pat-agentydragon-agent.yaml)
+        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-gateway
+        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: openclaw-gateway
+      name: github-token
+      namespace: claude-sandbox
+    type: Opaque

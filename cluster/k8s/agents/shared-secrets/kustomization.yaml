@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - attic-push-token-sealed.yaml
   - buildbuddy-api-key-claude-sandbox-sealed.yaml
+  - github-token-sealed.yaml

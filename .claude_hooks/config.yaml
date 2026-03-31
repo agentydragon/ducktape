@@ -31,9 +31,9 @@ secrets:
     sops_file: secrets/buildbuddy.yaml
     key: buildbuddy_api_key
   github_token:
-    kind: k8s
-    secret_name: github-token
-    key: token
+    kind: sops
+    sops_file: secrets/github-pat-agentydragon-agent.yaml
+    key: github_token
   otel_bearer_token:
     kind: k8s
     secret_name: alloy-otlp-bearer-token

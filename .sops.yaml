@@ -53,3 +53,12 @@ creation_rules:
           - *rugged
           - *atlas
           - *claude-web
+  # GitHub PAT for agentydragon-agent machine user (Claude Code, OpenClaw)
+  - path_regex: secrets/github-pat-agentydragon-agent\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2
+          - *rugged
+          - *atlas
+          - *claude-web
