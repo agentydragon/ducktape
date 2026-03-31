@@ -12,6 +12,9 @@ All components run as containers on Docker bridge networks:
 
 Host→container networking is unreliable on Firecracker microVMs (RBE workers)
 due to missing iptables support, so everything runs container-to-container.
+
+mock_k8s and test_client share a single combined image to avoid duplicate
+interpreter layers (~112 MB each from py_image_layer). See BUILD.bazel.
 """
 
 import json
@@ -39,12 +42,9 @@ _FAKE_SECRETS: dict[str, dict[str, str]] = {"github-token": {"token": "fake-gith
 _MOCK_K8S_PORT = 6444
 _PROXY_CREDENTIALS = "proxy_user:test_jwt_token"
 
-_MOCK_K8S_IMAGE = "mock-k8s-server:pinned"
-_MOCK_K8S_TARBALL = "_main/devinfra/claude/hook_daemon/session_start/mock_k8s_server_load/tarball.tar"
-_MOCK_K8S_ALIAS = "mock-k8s"
-
-_CLIENT_IMAGE = "k8s-test-client:pinned"
-_CLIENT_TARBALL = "_main/devinfra/claude/hook_daemon/session_start/k8s_test_client_load/tarball.tar"
+# Combined test tools image: mock k8s server + k8s test client in one image.
+_TOOLS_IMAGE = "k8s-proxy-test-tools:pinned"
+_TOOLS_TARBALL = "_main/devinfra/claude/hook_daemon/session_start/k8s_proxy_test_tools_load/tarball.tar"
 
 
 def _get_container_ip(container: docker.models.containers.Container, network_name: str) -> str:
@@ -69,25 +69,22 @@ class MockK8sServer:
 
 
 @pytest.fixture
-def mock_k8s_image() -> str:
-    load_image(_MOCK_K8S_TARBALL)
-    return _MOCK_K8S_IMAGE
+def tools_image() -> str:
+    """Load the combined test tools OCI image into Docker."""
+    load_image(_TOOLS_TARBALL)
+    return _TOOLS_IMAGE
 
 
 @pytest.fixture
-def client_image() -> str:
-    load_image(_CLIENT_TARBALL)
-    return _CLIENT_IMAGE
-
-
-@pytest.fixture
-def mock_k8s_server(mock_k8s_image: str, proxy_net: docker.models.networks.Network) -> Generator[MockK8sServer]:
+def mock_k8s_server(tools_image: str, proxy_net: docker.models.networks.Network) -> Generator[MockK8sServer]:
     """Run mock k8s API as a container on proxy_net."""
     docker_client = docker.from_env()
     secrets_json = json.dumps(_FAKE_SECRETS)
 
+    # The combined image's entrypoint is the mock_k8s_server binary.
+    # Pass secrets and port as arguments.
     container = docker_client.containers.run(
-        mock_k8s_image,
+        tools_image,
         command=[secrets_json, str(_MOCK_K8S_PORT)],
         name=f"mock-k8s-{os.getpid()}",
         network=proxy_net.name,
@@ -95,8 +92,6 @@ def mock_k8s_server(mock_k8s_image: str, proxy_net: docker.models.networks.Netwo
     )
 
     try:
-        # Use Docker DNS alias for the k8s server URL. mitmproxy reaches it
-        # via container networking on proxy_net.
         assert proxy_net.name
         container_ip = _get_container_ip(container, proxy_net.name)
         logger.info("mock k8s API at %s:%d", container_ip, _MOCK_K8S_PORT)
@@ -111,7 +106,7 @@ def test_k8s_secrets_via_egress_proxy_uds_mode(
     mitmproxy_proxy: MitmproxyFixture,
     proxy_net: docker.models.networks.Network,
     mock_k8s_server: MockK8sServer,
-    client_image: str,
+    tools_image: str,
 ) -> None:
     """read_k8s_secret succeeds through the egress proxy without a TCP auth proxy."""
     docker_client = docker.from_env()
@@ -124,11 +119,19 @@ def test_k8s_secrets_via_egress_proxy_uds_mode(
     ca_path.write_bytes(mitmproxy_proxy.ca_cert_pem)
 
     container_name = f"k8s-proxy-test-client-{os.getpid()}"
+    # Run the client script from the combined image using python -m.
+    # The image's PYTHONPATH includes the runfiles _main/ directory,
+    # so our modules are importable.
     container = docker_client.containers.run(
-        client_image,
+        tools_image,
         name=container_name,
         network=proxy_net.name,
-        environment={"PROXY_URL": proxy_url, "K8S_SERVER": mock_k8s_server.url, "CA_FILE": "/certs/ca.pem"},
+        environment={
+            "K8S_PROXY_TEST_ROLE": "k8s_proxy_test_client",
+            "PROXY_URL": proxy_url,
+            "K8S_SERVER": mock_k8s_server.url,
+            "CA_FILE": "/certs/ca.pem",
+        },
         volumes={str(ca_path): {"bind": "/certs/ca.pem", "mode": "ro"}},
         detach=True,
     )
