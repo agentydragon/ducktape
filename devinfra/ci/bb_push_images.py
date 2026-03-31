@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from util.bazel.workspace import BazelLabel, get_bazel_bin
+from util.bazel.workspace import BazelLabel, get_bazel_bin, get_build_workspace_directory
 from util.crane import Crane
 from util.env import get_required_env
 from util.oci import read_oci_layout_digest
@@ -79,9 +79,7 @@ class ImagePusher:
 
 
 def main() -> None:
-    workspace = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
-    if workspace:
-        os.chdir(workspace)
+    os.chdir(get_build_workspace_directory())
 
     if "[skip ci]" in _git("log", "-1", "--format=%s"):
         print("Commit message contains [skip ci], skipping image push.")

@@ -2,14 +2,17 @@
 
 import base64
 import hashlib
-import os
 from collections.abc import Iterable
 from pathlib import Path
 
 import requests
 from pydantic import BaseModel, Field
 
-SOURCES_PATH = Path(os.environ.get("BUILD_WORKSPACE_DIRECTORY", ".")) / "npins" / "sources.json"
+from util.bazel.workspace import get_build_workspace_directory
+
+
+def sources_path() -> Path:
+    return get_build_workspace_directory() / "npins" / "sources.json"
 
 
 class Pin(BaseModel):

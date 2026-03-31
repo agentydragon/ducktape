@@ -104,6 +104,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//util/bazel:workspace",
         "@pypi//pydantic",
         "@pypi//requests",
     ],
@@ -116,6 +117,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":artifacts",
+        "//util/bazel:workspace",
         "@pypi//more_itertools",
         "@pypi//pygithub",
     ],

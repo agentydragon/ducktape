@@ -21,7 +21,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from github import Auth, Github
 
-from devinfra.ci.artifacts import ARTIFACTS, SOURCES_PATH, Sources, url_sha256
+from devinfra.ci.artifacts import ARTIFACTS, Sources, sources_path, url_sha256
 
 REPO = "agentydragon/ducktape"
 BASE = f"https://github.com/{REPO}/releases/download"
@@ -33,7 +33,7 @@ def main() -> None:
 
     all_tags = [r.tag_name for r in repo.get_releases() if not r.draft and not r.prerelease][:200]
 
-    sources = Sources.model_validate_json(SOURCES_PATH.read_text())
+    sources = Sources.model_validate_json(sources_path().read_text())
 
     updated = []
     for artifact in ARTIFACTS:
@@ -59,7 +59,7 @@ def main() -> None:
         print("All pins up to date")
         return
 
-    SOURCES_PATH.write_text(sources.model_dump_json(indent=2) + "\n")
+    sources_path().write_text(sources.model_dump_json(indent=2) + "\n")
     print(f"Updated: {' '.join(updated)}")
 
 

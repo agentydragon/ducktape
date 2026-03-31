@@ -12,7 +12,8 @@ from pathlib import Path
 from github import Auth, Github
 from more_itertools import one
 
-from devinfra.ci.artifacts import ARTIFACTS, SOURCES_PATH, Sources, file_sha256
+from devinfra.ci.artifacts import ARTIFACTS, Sources, file_sha256, sources_path
+from util.bazel.workspace import get_build_workspace_directory
 
 REPO = "agentydragon/ducktape"
 
@@ -28,11 +29,7 @@ def copy_artifact_to_dist(src_glob: str, dest: str) -> Path:
 
 
 def main() -> None:
-    # bazel run sets CWD to execroot; all paths (bazel-bin/, dist/, npins/)
-    # are relative to the workspace root.
-    workspace = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
-    if workspace:
-        os.chdir(workspace)
+    os.chdir(get_build_workspace_directory())
 
     # Use git CLI instead of pygit2 — BuildBuddy does partial clones which
     # set extensions.partialclone, unsupported by libgit2/pygit2.
@@ -49,7 +46,7 @@ def main() -> None:
 
     Path("dist").mkdir(exist_ok=True)
 
-    sources = Sources.model_validate_json(SOURCES_PATH.read_text())
+    sources = Sources.model_validate_json(sources_path().read_text())
     gh_repo = Github(auth=Auth.Token(gh_token)).get_repo(REPO)
 
     changed = []
