@@ -12,7 +12,9 @@ resources:
   - tofu-controller/flux-kustomization.yaml
   - reloader/flux-kustomization.yaml
   - coredns-custom/flux-kustomization.yaml
-  - proxmox-csi/flux-kustomization.yaml
+  - proxmox-csi/namespace/flux-kustomization.yaml
+  - proxmox-csi/secrets/flux-kustomization.yaml
+  - proxmox-csi/app/flux-kustomization.yaml
   - hcloud-csi/flux-kustomization.yaml
   - talos-cloud-controller-manager/flux-kustomization.yaml
   - local-path-provisioner/flux-kustomization.yaml

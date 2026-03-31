@@ -25,7 +25,7 @@
 
 **Layer 1 — SealedSecrets** (git repo → cluster)
 
-- `k8s/proxmox-csi/proxmox-csi-sealed.yaml`
+- `k8s/proxmox-csi/secrets/proxmox-csi-sealed.yaml`
 - `k8s/nix-cache/app/signing-key-sealed.yaml`
 - `k8s/nix-cache/app/jwt-token-sealed.yaml`
 - Sealed with keypair from Layer 0, deployed by Flux, decrypted by sealed-secrets controller
@@ -67,12 +67,12 @@ existing ones). `seal-secret.sh` reads this file directly.
 
 ## SealedSecrets in Repository
 
-| File                                             | Purpose                 | Namespace   |
-| ------------------------------------------------ | ----------------------- | ----------- |
-| `k8s/proxmox-csi/proxmox-csi-sealed.yaml`        | CSI driver credentials  | csi-proxmox |
-| `k8s/nix-cache/app/signing-key-sealed.yaml`      | Nix cache signing       | nix-cache   |
-| `k8s/nix-cache/app/jwt-token-sealed.yaml`        | Attic JWT token         | nix-cache   |
-| `k8s/dns-automation/aws-credentials-sealed.yaml` | AWS Route 53 API access | flux-system |
+| File                                              | Purpose                 | Namespace   |
+| ------------------------------------------------- | ----------------------- | ----------- |
+| `k8s/proxmox-csi/secrets/proxmox-csi-sealed.yaml` | CSI driver credentials  | csi-proxmox |
+| `k8s/nix-cache/app/signing-key-sealed.yaml`       | Nix cache signing       | nix-cache   |
+| `k8s/nix-cache/app/jwt-token-sealed.yaml`         | Attic JWT token         | nix-cache   |
+| `k8s/dns-automation/aws-credentials-sealed.yaml`  | AWS Route 53 API access | flux-system |
 
 ## Common Failure Modes
 
@@ -137,7 +137,7 @@ If keypair mismatch occurs:
 
 ```bash
 cd terraform/main && tofu apply
-git add k8s/proxmox-csi/proxmox-csi-sealed.yaml
+git add k8s/proxmox-csi/secrets/proxmox-csi-sealed.yaml
 git commit -m "chore: re-seal secrets with current keypair"
 git push
 ```

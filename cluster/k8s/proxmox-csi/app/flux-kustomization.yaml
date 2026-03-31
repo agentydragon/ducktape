@@ -10,11 +10,12 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: "./cluster/k8s/proxmox-csi"
+  path: "./cluster/k8s/proxmox-csi/app"
   prune: true
   wait: true
   dependsOn:
-    - name: sealed-secrets
+    - name: proxmox-csi-namespace
+    - name: proxmox-csi-secrets
   # Note: CNI (Cilium) now managed by Terraform, not Flux
   # Storage components deploy after cluster networking is ready
   # Verify Proxmox CSI controller is ready
