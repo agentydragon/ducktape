@@ -38,6 +38,14 @@ let
       punch = true;
       respond = true;
     };
+    logging = {
+      level = "info";
+      format = "json";
+    };
+    timers = {
+      connection_alive_interval = 5;
+      pending_deletion_interval = 10;
+    };
     tun = {
       dev = "nebula1";
     };

@@ -60,6 +60,11 @@ locals {
       listen   = { host = "0.0.0.0", port = 4242 }
       punchy   = { punch = true, respond = true }
       tun      = { dev = "nebula1" }
+      logging  = { level = "info", format = "json" }
+      timers = {
+        connection_alive_interval = 5
+        pending_deletion_interval = 10
+      }
       firewall = local.nebula_firewall
     }
     vps1 = {
@@ -75,6 +80,11 @@ locals {
       listen   = { host = "0.0.0.0", port = 4242 }
       punchy   = { punch = true, respond = true }
       tun      = { dev = "nebula1" }
+      logging  = { level = "info", format = "json" }
+      timers = {
+        connection_alive_interval = 5
+        pending_deletion_interval = 10
+      }
       firewall = local.nebula_firewall
     }
     # Proxmox home node: not a lighthouse, uses VPS relays for NAT traversal
@@ -90,6 +100,11 @@ locals {
       listen   = { host = "0.0.0.0", port = 4242 }
       punchy   = { punch = true, respond = true }
       tun      = { dev = "nebula1" }
+      logging  = { level = "info", format = "json" }
+      timers = {
+        connection_alive_interval = 5
+        pending_deletion_interval = 10
+      }
       firewall = local.nebula_firewall
     }
   }
