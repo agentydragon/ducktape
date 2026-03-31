@@ -49,6 +49,8 @@ let
 
   compact-json = pkgs.callPackage ./compact-json.nix { };
   pyrage = pkgs.callPackage ./pyrage.nix { };
+  keysymdef = pkgs.callPackage ./keysymdef.nix { };
+  asyncvnc = pkgs.callPackage ./asyncvnc.nix { inherit keysymdef; };
 in
 {
   ducktape-util = mkDucktapeWheel {
@@ -91,7 +93,11 @@ in
       python-dateutil
       pyyaml
       compact-json
+      # skills deps (hetzner-vnc-screenshot)
+      hcloud
       pillow
+      websockets
+      asyncvnc
     ];
   };
 
