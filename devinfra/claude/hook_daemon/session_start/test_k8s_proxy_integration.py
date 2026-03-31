@@ -17,7 +17,9 @@ due to missing iptables support, so everything runs container-to-container.
 import json
 import logging
 import os
+import time
 from collections.abc import Generator
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -56,6 +58,18 @@ def _get_container_ip(container: docker.models.containers.Container, network_nam
     return ip
 
 
+_timing_log: list[str] = []
+_t0 = time.monotonic()
+
+
+def _mark(label: str) -> None:
+    """Record a timing checkpoint to the timing log."""
+    elapsed = time.monotonic() - _t0
+    entry = f"{elapsed:7.2f}s  {label}"
+    _timing_log.append(entry)
+    logger.warning("TIMING: %s", entry)
+
+
 def _save_output(name: str, content: str) -> None:
     out_dir = undeclared_outputs_dir() / "k8s-proxy-integration"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -68,21 +82,36 @@ class MockK8sServer:
     container: docker.models.containers.Container
 
 
+@pytest.fixture(scope="module")
+def _preloaded_images() -> None:
+    """Load all OCI images once per module (not per test).
+
+    docker load is the bottleneck: 388 MB of compressed tarballs → ~800 MB
+    uncompressed, taking 30-40s sequentially on RBE workers. Parallelizing
+    the loads and running them once per module avoids redundant work.
+    """
+    _mark("parallel load_image start")
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(load_image, _MOCK_K8S_TARBALL), pool.submit(load_image, _CLIENT_TARBALL)]
+        for f in futures:
+            f.result()
+    _mark("parallel load_image done")
+
+
 @pytest.fixture
-def mock_k8s_image() -> str:
-    load_image(_MOCK_K8S_TARBALL)
+def mock_k8s_image(_preloaded_images: None) -> str:
     return _MOCK_K8S_IMAGE
 
 
 @pytest.fixture
-def client_image() -> str:
-    load_image(_CLIENT_TARBALL)
+def client_image(_preloaded_images: None) -> str:
     return _CLIENT_IMAGE
 
 
 @pytest.fixture
 def mock_k8s_server(mock_k8s_image: str, proxy_net: docker.models.networks.Network) -> Generator[MockK8sServer]:
     """Run mock k8s API as a container on proxy_net."""
+    _mark("mock_k8s_server fixture start")
     docker_client = docker.from_env()
     secrets_json = json.dumps(_FAKE_SECRETS)
 
@@ -93,17 +122,17 @@ def mock_k8s_server(mock_k8s_image: str, proxy_net: docker.models.networks.Netwo
         network=proxy_net.name,
         detach=True,
     )
+    _mark("mock_k8s_server container started")
 
     try:
-        # Use Docker DNS alias for the k8s server URL. mitmproxy reaches it
-        # via container networking on proxy_net.
         assert proxy_net.name
         container_ip = _get_container_ip(container, proxy_net.name)
-        logger.info("mock k8s API at %s:%d", container_ip, _MOCK_K8S_PORT)
+        _mark(f"mock_k8s_server ready at {container_ip}:{_MOCK_K8S_PORT}")
         yield MockK8sServer(url=f"https://{container_ip}:{_MOCK_K8S_PORT}", container=container)
     finally:
         _save_output("mock-k8s-logs.log", container.logs().decode(errors="replace"))
         container.remove(force=True)
+        _mark("mock_k8s_server teardown done")
 
 
 def test_k8s_secrets_via_egress_proxy_uds_mode(
@@ -114,6 +143,7 @@ def test_k8s_secrets_via_egress_proxy_uds_mode(
     client_image: str,
 ) -> None:
     """read_k8s_secret succeeds through the egress proxy without a TCP auth proxy."""
+    _mark("test body start")
     docker_client = docker.from_env()
     proxy_container = mitmproxy_proxy.container.get_wrapped_container()
     assert proxy_net.name
@@ -124,6 +154,7 @@ def test_k8s_secrets_via_egress_proxy_uds_mode(
     ca_path.write_bytes(mitmproxy_proxy.ca_cert_pem)
 
     container_name = f"k8s-proxy-test-client-{os.getpid()}"
+    _mark("starting test client container")
     container = docker_client.containers.run(
         client_image,
         name=container_name,
@@ -132,9 +163,11 @@ def test_k8s_secrets_via_egress_proxy_uds_mode(
         volumes={str(ca_path): {"bind": "/certs/ca.pem", "mode": "ro"}},
         detach=True,
     )
+    _mark("test client container started, waiting for exit")
 
     try:
         result = container.wait(timeout=120)
+        _mark("test client container exited")
         stdout = container.logs(stdout=True, stderr=False).decode(errors="replace")
         stderr = container.logs(stdout=False, stderr=True).decode(errors="replace")
         _save_output("client-stdout.log", stdout)
@@ -149,6 +182,8 @@ def test_k8s_secrets_via_egress_proxy_uds_mode(
         assert output["token"] == "fake-github-token"
     finally:
         container.remove(force=True)
+        _mark("test cleanup done")
+        _save_output("timing.log", "\n".join(_timing_log) + "\n")
 
 
 if __name__ == "__main__":
