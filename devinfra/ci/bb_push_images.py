@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from util.bazel.workspace import BazelLabel, get_bazel_bin
 from util.crane import get_crane
 from util.env import get_required_env
 from util.oci import read_oci_layout_digest, write_docker_auth
@@ -41,49 +42,63 @@ def _git(*args: str) -> str:
     return subprocess.check_output(["git", *args], text=True).strip()
 
 
-def _image_output_dir(image_target: str, bazel_bin: Path) -> Path:
-    """Convert //foo/bar:name to bazel-bin/foo/bar/name."""
-    label = image_target.lstrip("/")
-    pkg, name = label.split(":")
-    return bazel_bin / pkg / name
+class Crane:
+    """Typed wrapper around the crane CLI."""
+
+    def __init__(self, crane_path: Path) -> None:
+        self._path = crane_path
+
+    def _run(self, *args: str) -> str:
+        result = subprocess.run([str(self._path), *args], check=True, capture_output=True, text=True)
+        return result.stdout.strip()
+
+    def digest(self, image_ref: str) -> str:
+        return self._run("digest", image_ref)
+
+    def ls(self, repo: str) -> list[str]:
+        return self._run("ls", repo).splitlines()
+
+    def push(self, image_dir: Path, ref: str) -> None:
+        self._run("push", str(image_dir), ref)
+
+    def tag(self, ref: str, tag: str) -> None:
+        self._run("tag", ref, tag)
 
 
 class ImagePusher:
-    def __init__(self, crane_path: Path, bazel_bin: Path, branch: str, pinned_tag: str) -> None:
-        self.crane_path = crane_path
+    def __init__(self, crane: Crane, bazel_bin: Path, branch: str, pinned_tag: str) -> None:
+        self.crane = crane
         self.bazel_bin = bazel_bin
         self.branch = branch
         self.pinned_tag = pinned_tag
 
-    def crane(self, *args: str) -> str:
-        result = subprocess.run([str(self.crane_path), *args], check=True, capture_output=True, text=True)
-        return result.stdout.strip()
+    def _image_output_dir(self, image_target: str) -> Path:
+        label = BazelLabel.parse(image_target)
+        return self.bazel_bin / label.package / label.name
 
-    def latest_pinned_tag(self, repo: str) -> str | None:
+    def _latest_pinned_tag(self, repo: str) -> str | None:
         try:
-            tags = self.crane("ls", repo).splitlines()
+            tags = self.crane.ls(repo)
         except subprocess.CalledProcessError:
             return None
         branch_tags = sorted(t for t in tags if t.startswith(f"{self.branch}-"))
         return branch_tags[-1] if branch_tags else None
 
     def push_and_tag(self, img: GhcrImage) -> None:
-        image_dir = _image_output_dir(img.image_target, self.bazel_bin)
+        image_dir = self._image_output_dir(img.image_target)
         local_digest = read_oci_layout_digest(image_dir)
         ref = f"{img.repository}@{local_digest}"
 
-        current_tag = self.latest_pinned_tag(img.repository)
-        if current_tag:
-            current_digest = self.crane("digest", f"{img.repository}:{current_tag}")
-            if local_digest == current_digest:
-                print(f"{img.repository}: digest unchanged ({local_digest[:19]}), skipping")
-                return
+        current_tag = self._latest_pinned_tag(img.repository)
+        if current_tag and local_digest == self.crane.digest(f"{img.repository}:{current_tag}"):
+            print(f"{img.repository}: digest unchanged ({local_digest[:19]}), skipping")
+            return
 
         print(f"{img.repository}: pushing {local_digest[:19]}")
-        self.crane("push", str(image_dir), ref)
-        self.crane("tag", ref, "latest")
+        self.crane.push(image_dir, ref)
+        self.crane.tag(ref, "latest")
         print(f"{img.repository}: tagging {self.pinned_tag}")
-        self.crane("tag", ref, self.pinned_tag)
+        self.crane.tag(ref, self.pinned_tag)
 
 
 def main() -> None:
@@ -101,13 +116,15 @@ def main() -> None:
     print(f"Building {len(targets)} image targets...")
     subprocess.run(["bazel", "build", "--config=rbe", "--remote_download_toplevel", *targets], check=True)
 
-    bazel_bin = Path(subprocess.check_output(["bazel", "info", "bazel-bin"], text=True).strip())
+    bazel_bin = get_bazel_bin()
 
     branch = _git("rev-parse", "--abbrev-ref", "HEAD")
     ts = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
     sha = _git("rev-parse", "--short=7", "HEAD")
 
-    pusher = ImagePusher(crane_path=get_crane(), bazel_bin=bazel_bin, branch=branch, pinned_tag=f"{branch}-{ts}-{sha}")
+    pusher = ImagePusher(
+        crane=Crane(get_crane()), bazel_bin=bazel_bin, branch=branch, pinned_tag=f"{branch}-{ts}-{sha}"
+    )
     for img in IMAGES:
         pusher.push_and_tag(img)
 

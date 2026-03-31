@@ -37,6 +37,11 @@ def get_build_working_directory() -> Path:
     return Path.cwd()
 
 
+def get_bazel_bin() -> Path:
+    """Return the absolute path to bazel-bin via ``bazel info``."""
+    return Path(subprocess.check_output(["bazel", "info", "bazel-bin"], text=True).strip())
+
+
 @dataclasses.dataclass(frozen=True)
 class BazelLabel:
     """A structured Bazel label with explicit repo, package and name fields.
