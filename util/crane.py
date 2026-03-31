@@ -105,14 +105,6 @@ class Crane:
         return digest
 
 
-async def crane_push(
-    image: BazelImage, registry_url: str, tag: str, *, username: str | None = None, password: str | None = None
-) -> str:
-    """Convenience: push a BazelImage with optional credentials."""
-    crane = Crane(registry=registry_url, username=username, password=password)
-    return await crane.push_bazel_image(image, registry_url, tag, insecure=True)
-
-
 def _parse_crane_digest(stdout: str, dest: str) -> str:
     if "@sha256:" in stdout:
         return "sha256:" + stdout.split("@sha256:", 1)[1].split()[0]
