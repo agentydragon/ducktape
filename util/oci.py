@@ -1,40 +1,21 @@
-"""Container image utilities: load, push, and manage OCI images.
-
-Combines Docker image loading (via load.sh scripts and tarballs) and OCI push
-utilities (via crane) previously spread across test_util.docker, test_util.oci,
-and test_util.image_loader.
-"""
+"""OCI container image utilities: auth, digest reading, image loading."""
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import json
-import logging
 import os
 import shutil
 import subprocess
-import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 
 from opentelemetry import trace
 
 from util.bazel import runfiles
 
-logger = logging.getLogger(__name__)
-
-_CRANE_RLOCATION = "crane/crane"
-
-
 # ---------------------------------------------------------------------------
-# Common OCI utilities
+# Docker auth
 # ---------------------------------------------------------------------------
-
-
-def get_crane() -> Path:
-    """Resolve the crane binary from Bazel runfiles."""
-    return runfiles.get_required_path(_CRANE_RLOCATION)
 
 
 def docker_auth_config(registry: str, username: str, password: str) -> dict[str, object]:
@@ -50,81 +31,16 @@ def write_docker_auth(registry: str, username: str, password: str, config_dir: P
     (config_dir / "config.json").write_text(json.dumps(docker_auth_config(registry, username, password)))
 
 
+# ---------------------------------------------------------------------------
+# OCI layout
+# ---------------------------------------------------------------------------
+
+
 def read_oci_layout_digest(image_dir: Path) -> str:
     """Read the image manifest digest from an OCI layout's index.json."""
     index = json.loads((image_dir / "index.json").read_text())
     digest: str = index["manifests"][0]["digest"]
     return digest
-
-
-# ---------------------------------------------------------------------------
-# OCI image push via crane
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class BazelImage:
-    """OCI image built by Bazel, available as an OCI layout directory.
-
-    image_rlocation: Runfiles-relative path to the oci_image output directory.
-    repo_name: OCI repository name (e.g., "critic", "grader").
-    """
-
-    repo_name: str
-    image_rlocation: str
-
-
-async def crane_push(
-    image: BazelImage, registry_url: str, tag: str, *, username: str | None = None, password: str | None = None
-) -> str:
-    """Push an OCI layout directory to a registry via crane.
-
-    Uses asyncio subprocess to avoid blocking the event loop while uvicorn
-    serves registry proxy requests on the same loop.
-
-    When username/password are provided, a temporary Docker config is created
-    so crane authenticates with the registry proxy.
-
-    Returns the digest (sha256:...) of the pushed image.
-    """
-    crane = get_crane()
-    image_path = runfiles.get_required_path(image.image_rlocation)
-    dest = f"{registry_url}/{image.repo_name}:{tag}"
-
-    env: dict[str, str] | None = None
-    with tempfile.TemporaryDirectory(prefix="crane_auth_") as config_dir_str:
-        if username and password:
-            write_docker_auth(registry_url, username, password, Path(config_dir_str))
-            env = {**os.environ, "DOCKER_CONFIG": config_dir_str}
-
-        logger.info("Pushing %s -> %s via crane", image_path, dest)
-        proc = await asyncio.create_subprocess_exec(
-            crane,
-            "push",
-            str(image_path),
-            dest,
-            "--insecure",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
-        )
-        stdout, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            raise RuntimeError(f"crane push failed for {dest}: {stderr.decode()}")
-        digest = _parse_crane_digest(stdout.decode().strip(), dest)
-        logger.info("Pushed %s: %s", dest, digest)
-        return digest
-
-
-def _parse_crane_digest(stdout: str, dest: str) -> str:
-    """Extract digest from crane push output.
-
-    crane push prints the full reference with digest, e.g.:
-    'localhost:12345/critic@sha256:abc123...'
-    """
-    if "@sha256:" in stdout:
-        return "sha256:" + stdout.split("@sha256:", 1)[1].split()[0]
-    raise RuntimeError(f"crane push did not return digest for {dest}: {stdout!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -136,12 +52,7 @@ tracer = trace.get_tracer(__name__)
 
 
 def load_image(tarball_rlocation: str) -> None:
-    """Load a Docker image tarball into the container runtime.
-
-    Args:
-        tarball_rlocation: Runfiles-relative path to the tarball
-            (e.g., "_main/third_party/containers/postgres_18_load/tarball.tar").
-    """
+    """Load a Docker image tarball into the container runtime."""
     tarball_name = tarball_rlocation.rsplit("/", 1)[-1]
     with tracer.start_as_current_span(f"load_image({tarball_name})"):
         with tracer.start_as_current_span("resolve_runfiles_path"):
@@ -159,22 +70,7 @@ def _docker_load(tarball_path: Path, tarball_rlocation: str) -> None:
 
 
 def load_bazel_image(load_script_path: str, image_tag: str) -> str:
-    """Load an OCI image from a Bazel oci_load target via the generated load.sh script.
-
-    Args:
-        load_script_path: Relative path to the load.sh script (e.g., "third_party/debian_slim/load.sh")
-        image_tag: The expected image tag after loading (e.g., "debian-slim:test")
-
-    Returns:
-        The image tag that was loaded.
-
-    Raises:
-        RuntimeError: If loading the image fails.
-
-    Note: The generated load.sh uses bash process substitution (<(...)) which requires
-    /dev/fd/ support. Prefer load_image() with an oci_load tarball output_group instead
-    when running in environments that lack /dev/fd/ (e.g. gVisor).
-    """
+    """Load an OCI image from a Bazel oci_load target via the generated load.sh script."""
     load_script = runfiles.get_required_path(f"_main/{load_script_path}")
 
     result = subprocess.run(

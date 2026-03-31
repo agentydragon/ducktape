@@ -67,8 +67,8 @@ py_library(
         "//props/orchestration:docker_executor",
         "//props/testing:constants",
         "//props/testing:fake_openai_server",
+        "//util:crane",
         "//util:net",
-        "//util:oci",
         "@pypi//aiodocker",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -87,6 +87,7 @@ py_library(
     deps = [
         "//props/db:models",
         "//third_party/containers:rlocations",
+        "//util:crane",
         "//util:oci",
         "@pypi//httpx",
         "@pypi//opentelemetry_api",

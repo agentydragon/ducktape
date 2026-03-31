@@ -138,6 +138,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//util:crane",
         "//util:env",
         "//util:oci",
     ],

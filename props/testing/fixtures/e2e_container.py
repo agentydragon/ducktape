@@ -64,8 +64,8 @@ from props.orchestration.docker_env import PROPS_NETWORK_NAME
 from props.orchestration.docker_executor import DockerExecutor
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fake_openai_server import FakeOpenAIServer
+from util.crane import BazelImage, crane_push
 from util.net import pick_free_port
-from util.oci import BazelImage, crane_push
 
 logger = logging.getLogger(__name__)
 

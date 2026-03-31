@@ -12,8 +12,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from util.crane import get_crane
 from util.env import get_required_env
-from util.oci import get_crane, read_oci_layout_digest, write_docker_auth
+from util.oci import read_oci_layout_digest, write_docker_auth
 
 
 @dataclass(frozen=True)

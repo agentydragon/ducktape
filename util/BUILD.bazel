@@ -64,12 +64,23 @@ py_library(
 py_library(
     name = "oci",
     srcs = ["oci.py"],
-    data = ["@crane"],
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "//util/bazel:runfiles",
         "@pypi//opentelemetry_api",
+    ],
+)
+
+py_library(
+    name = "crane",
+    srcs = ["crane.py"],
+    data = ["@crane"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":oci",
+        "//util/bazel:runfiles",
     ],
 )
 
