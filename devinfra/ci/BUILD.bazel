@@ -137,6 +137,7 @@ py_library(
     srcs = ["bb_push_images.py"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
+    deps = ["//util:env"],
 )
 
 # === Binaries ===

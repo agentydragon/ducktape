@@ -8,9 +8,10 @@ import base64
 import json
 import os
 import subprocess
-import sys
 from datetime import UTC, datetime
 from pathlib import Path
+
+from util.env import get_required_env
 
 _BAZEL_RUN = ["bazel", "run", "--config=rbe", "--remote_download_toplevel"]
 
@@ -80,13 +81,7 @@ def main() -> None:
         print("Commit message contains [skip ci], skipping image push.")
         return
 
-    missing = [v for v in ("GHCR_USERNAME", "GHCR_TOKEN") if not os.environ.get(v)]
-    if missing:
-        print(f"ERROR: Missing required env vars: {', '.join(missing)}", file=sys.stderr)
-        print("Configure these as BuildBuddy Workflow secrets.", file=sys.stderr)
-        sys.exit(1)
-
-    setup_ghcr_auth(os.environ["GHCR_USERNAME"], os.environ["GHCR_TOKEN"])
+    setup_ghcr_auth(get_required_env("GHCR_USERNAME"), get_required_env("GHCR_TOKEN"))
 
     branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], text=True).strip()
     ts = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
