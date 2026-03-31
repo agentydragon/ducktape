@@ -97,4 +97,5 @@ def main() -> None:
         push_and_tag(target, repo, pinned_tag, branch)
 
 
-main()
+if __name__ == "__main__":
+    main()
