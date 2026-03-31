@@ -58,6 +58,15 @@ class Crane:
         result = subprocess.run([str(self._path), *args], check=True, capture_output=True, text=True, env=self._env)
         return result.stdout.strip()
 
+    async def _arun(self, *args: str) -> str:
+        proc = await asyncio.create_subprocess_exec(
+            str(self._path), *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=self._env
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise RuntimeError(f"crane {args[0]} failed: {stderr.decode()}")
+        return stdout.decode().strip()
+
     def digest(self, image_ref: str) -> str:
         return self._run("digest", image_ref)
 
@@ -66,6 +75,13 @@ class Crane:
 
     def push(self, image_dir: Path, ref: str) -> None:
         self._run("push", str(image_dir), ref)
+
+    async def apush(self, image_dir: Path, ref: str, *, insecure: bool = False) -> str:
+        """Async push. Returns the pushed image reference."""
+        args = ["push", str(image_dir), ref]
+        if insecure:
+            args.append("--insecure")
+        return await self._arun(*args)
 
     def tag(self, ref: str, tag: str) -> None:
         self._run("tag", ref, tag)
@@ -79,45 +95,23 @@ class BazelImage:
     image_rlocation: str
 
 
-def _write_temp_docker_config(config_dir: str, registry_url: str, username: str, password: str) -> None:
-    Path(config_dir, "config.json").write_text(json.dumps(docker_auth_config(registry_url, username, password)))
-
-
 async def crane_push(
     image: BazelImage, registry_url: str, tag: str, *, username: str | None = None, password: str | None = None
 ) -> str:
     """Push an OCI layout directory to a registry via crane (async).
 
-    Uses asyncio subprocess to avoid blocking the event loop.
     Returns the digest (sha256:...) of the pushed image.
     """
-    crane = get_crane()
     image_path = runfiles.get_required_path(image.image_rlocation)
     dest = f"{registry_url}/{image.repo_name}:{tag}"
 
-    env: dict[str, str] | None = None
-    with tempfile.TemporaryDirectory(prefix="crane_auth_") as config_dir_str:
-        if username and password:
-            _write_temp_docker_config(config_dir_str, registry_url, username, password)
-            env = {**os.environ, "DOCKER_CONFIG": config_dir_str}
+    crane = Crane(registry=registry_url, username=username, password=password)
 
-        logger.info("Pushing %s -> %s via crane", image_path, dest)
-        proc = await asyncio.create_subprocess_exec(
-            crane,
-            "push",
-            str(image_path),
-            dest,
-            "--insecure",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
-        )
-        stdout, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            raise RuntimeError(f"crane push failed for {dest}: {stderr.decode()}")
-        digest = _parse_crane_digest(stdout.decode().strip(), dest)
-        logger.info("Pushed %s: %s", dest, digest)
-        return digest
+    logger.info("Pushing %s -> %s via crane", image_path, dest)
+    stdout = await crane.apush(image_path, dest, insecure=True)
+    digest = _parse_crane_digest(stdout, dest)
+    logger.info("Pushed %s: %s", dest, digest)
+    return digest
 
 
 def _parse_crane_digest(stdout: str, dest: str) -> str:
