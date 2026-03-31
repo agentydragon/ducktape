@@ -89,6 +89,7 @@ py_library(
         "//props:config",
         "//props/core:oci_utils",
         "//props/db:config",
+        "//util:oci",
         "@pypi//aiodocker",
         "@pypi//kubernetes_asyncio",
     ],

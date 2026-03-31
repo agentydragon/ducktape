@@ -78,6 +78,7 @@ py_library(
         "//props/core/models:examples",
         "//props/db:config",
         "//props/db:database",
+        "//util:oci",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",

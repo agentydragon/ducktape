@@ -17,6 +17,7 @@ from props.orchestration.docker_env import PROPS_NETWORK_NAME
 from props.orchestration.docker_executor import DockerExecutor
 from props.orchestration.executor import ContainerExecutor
 from props.orchestration.k8s_executor import K8sExecutor
+from util.oci import docker_auth_config
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +26,8 @@ async def _ensure_image_pull_secret(
     core_v1: CoreV1Api, *, namespace: str, secret_name: str, registry_host: str, username: str, password: str
 ) -> None:
     """Create or update a dockerconfigjson imagePullSecret for the registry."""
-    auth = base64.b64encode(f"{username}:{password}".encode()).decode()
-    docker_config = {"auths": {registry_host: {"auth": auth}}}
-    data = {".dockerconfigjson": base64.b64encode(json.dumps(docker_config).encode()).decode()}
+    config = docker_auth_config(registry_host, username, password)
+    data = {".dockerconfigjson": base64.b64encode(json.dumps(config).encode()).decode()}
 
     secret = V1Secret(
         metadata=V1ObjectMeta(name=secret_name, namespace=namespace), type="kubernetes.io/dockerconfigjson", data=data

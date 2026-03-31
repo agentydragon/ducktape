@@ -28,6 +28,36 @@ _CRANE_RLOCATION = "crane/crane"
 
 
 # ---------------------------------------------------------------------------
+# Common OCI utilities
+# ---------------------------------------------------------------------------
+
+
+def get_crane() -> Path:
+    """Resolve the crane binary from Bazel runfiles."""
+    return runfiles.get_required_path(_CRANE_RLOCATION)
+
+
+def docker_auth_config(registry: str, username: str, password: str) -> dict[str, object]:
+    """Build a Docker auth config dict for a single registry."""
+    auth = base64.b64encode(f"{username}:{password}".encode()).decode()
+    return {"auths": {registry: {"auth": auth}}}
+
+
+def write_docker_auth(registry: str, username: str, password: str, config_dir: Path | None = None) -> None:
+    """Write a Docker config.json with registry credentials."""
+    config_dir = config_dir or Path.home() / ".docker"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "config.json").write_text(json.dumps(docker_auth_config(registry, username, password)))
+
+
+def read_oci_layout_digest(image_dir: Path) -> str:
+    """Read the image manifest digest from an OCI layout's index.json."""
+    index = json.loads((image_dir / "index.json").read_text())
+    digest: str = index["manifests"][0]["digest"]
+    return digest
+
+
+# ---------------------------------------------------------------------------
 # OCI image push via crane
 # ---------------------------------------------------------------------------
 
@@ -57,16 +87,14 @@ async def crane_push(
 
     Returns the digest (sha256:...) of the pushed image.
     """
-    crane = runfiles.get_required_path(_CRANE_RLOCATION)
+    crane = get_crane()
     image_path = runfiles.get_required_path(image.image_rlocation)
     dest = f"{registry_url}/{image.repo_name}:{tag}"
 
     env: dict[str, str] | None = None
     with tempfile.TemporaryDirectory(prefix="crane_auth_") as config_dir_str:
         if username and password:
-            config_dir = Path(config_dir_str)
-            token = base64.b64encode(f"{username}:{password}".encode()).decode()
-            (config_dir / "config.json").write_text(json.dumps({"auths": {registry_url: {"auth": token}}}))
+            write_docker_auth(registry_url, username, password, Path(config_dir_str))
             env = {**os.environ, "DOCKER_CONFIG": config_dir_str}
 
         logger.info("Pushing %s -> %s via crane", image_path, dest)

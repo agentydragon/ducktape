@@ -6,16 +6,14 @@ tag (branch-YYYYMMDDHHMMSS-sha7) when the image digest actually changed,
 preventing spurious Flux repins.
 """
 
-import base64
-import json
 import os
 import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from util.bazel import runfiles
 from util.env import get_required_env
+from util.oci import get_crane, read_oci_layout_digest, write_docker_auth
 
 
 @dataclass(frozen=True)
@@ -49,12 +47,6 @@ def _image_output_dir(image_target: str, bazel_bin: Path) -> Path:
     return bazel_bin / pkg / name
 
 
-def _read_local_digest(image_dir: Path) -> str:
-    index = json.loads((image_dir / "index.json").read_text())
-    digest: str = index["manifests"][0]["digest"]
-    return digest
-
-
 class ImagePusher:
     def __init__(self, crane_path: Path, bazel_bin: Path, branch: str, pinned_tag: str) -> None:
         self.crane_path = crane_path
@@ -76,7 +68,7 @@ class ImagePusher:
 
     def push_and_tag(self, img: GhcrImage) -> None:
         image_dir = _image_output_dir(img.image_target, self.bazel_bin)
-        local_digest = _read_local_digest(image_dir)
+        local_digest = read_oci_layout_digest(image_dir)
         ref = f"{img.repository}@{local_digest}"
 
         current_tag = self.latest_pinned_tag(img.repository)
@@ -102,11 +94,7 @@ def main() -> None:
         print("Commit message contains [skip ci], skipping image push.")
         return
 
-    username, token = get_required_env("GHCR_USERNAME"), get_required_env("GHCR_TOKEN")
-    docker_dir = Path.home() / ".docker"
-    docker_dir.mkdir(exist_ok=True)
-    auth = base64.b64encode(f"{username}:{token}".encode()).decode()
-    (docker_dir / "config.json").write_text(json.dumps({"auths": {"ghcr.io": {"auth": auth}}}))
+    write_docker_auth("ghcr.io", get_required_env("GHCR_USERNAME"), get_required_env("GHCR_TOKEN"))
 
     targets = [img.image_target for img in IMAGES]
     print(f"Building {len(targets)} image targets...")
@@ -118,12 +106,7 @@ def main() -> None:
     ts = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
     sha = _git("rev-parse", "--short=7", "HEAD")
 
-    pusher = ImagePusher(
-        crane_path=runfiles.get_required_path("crane/crane"),
-        bazel_bin=bazel_bin,
-        branch=branch,
-        pinned_tag=f"{branch}-{ts}-{sha}",
-    )
+    pusher = ImagePusher(crane_path=get_crane(), bazel_bin=bazel_bin, branch=branch, pinned_tag=f"{branch}-{ts}-{sha}")
     for img in IMAGES:
         pusher.push_and_tag(img)
 

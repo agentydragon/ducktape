@@ -9,12 +9,10 @@ discriminant determines behavior:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import sys
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlparse
 from uuid import UUID
@@ -39,6 +37,7 @@ from props.core.models.examples import SingleFileSetExample
 from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.models import GradingPending
+from util.oci import write_docker_auth
 
 logger = logging.getLogger(__name__)
 
@@ -55,12 +54,7 @@ def _setup_crane_auth(config: DatabaseConfig) -> None:
         raise RuntimeError("PROPS_BACKEND_URL must be set for crane auth setup")
 
     registry = urlparse(backend_url).netloc
-    auth_token = config.basic_auth_token
-    docker_config = {"auths": {registry: {"auth": auth_token}}}
-
-    config_dir = Path.home() / ".docker"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "config.json").write_text(json.dumps(docker_config))
+    write_docker_auth(registry, config.user, config.password)
     logger.info("Crane auth configured for registry %s", registry)
 
 
