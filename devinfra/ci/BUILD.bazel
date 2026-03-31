@@ -135,9 +135,13 @@ py_library(
 py_library(
     name = "bb_push_images",
     srcs = ["bb_push_images.py"],
+    data = ["@crane"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
-    deps = ["//util:env"],
+    deps = [
+        "//util:env",
+        "//util/bazel:runfiles",
+    ],
 )
 
 # === Binaries ===
