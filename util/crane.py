@@ -29,6 +29,14 @@ def get_crane() -> Path:
     return runfiles.get_required_path(_CRANE_RLOCATION)
 
 
+@dataclass(frozen=True)
+class BazelImage:
+    """OCI image built by Bazel, available as an OCI layout directory."""
+
+    repo_name: str
+    image_rlocation: str
+
+
 class Crane:
     """Typed wrapper around the crane CLI.
 
@@ -77,7 +85,7 @@ class Crane:
         self._run("push", str(image_dir), ref)
 
     async def apush(self, image_dir: Path, ref: str, *, insecure: bool = False) -> str:
-        """Async push. Returns the pushed image reference."""
+        """Async push. Returns the crane output (image reference with digest)."""
         args = ["push", str(image_dir), ref]
         if insecure:
             args.append("--insecure")
@@ -86,32 +94,23 @@ class Crane:
     def tag(self, ref: str, tag: str) -> None:
         self._run("tag", ref, tag)
 
-
-@dataclass(frozen=True)
-class BazelImage:
-    """OCI image built by Bazel, available as an OCI layout directory."""
-
-    repo_name: str
-    image_rlocation: str
+    async def push_bazel_image(self, image: BazelImage, registry_url: str, tag: str, *, insecure: bool = False) -> str:
+        """Push a Bazel-built OCI image to a registry. Returns the digest."""
+        image_path = runfiles.get_required_path(image.image_rlocation)
+        dest = f"{registry_url}/{image.repo_name}:{tag}"
+        logger.info("Pushing %s -> %s via crane", image_path, dest)
+        stdout = await self.apush(image_path, dest, insecure=insecure)
+        digest = _parse_crane_digest(stdout, dest)
+        logger.info("Pushed %s: %s", dest, digest)
+        return digest
 
 
 async def crane_push(
     image: BazelImage, registry_url: str, tag: str, *, username: str | None = None, password: str | None = None
 ) -> str:
-    """Push an OCI layout directory to a registry via crane (async).
-
-    Returns the digest (sha256:...) of the pushed image.
-    """
-    image_path = runfiles.get_required_path(image.image_rlocation)
-    dest = f"{registry_url}/{image.repo_name}:{tag}"
-
+    """Convenience: push a BazelImage with optional credentials."""
     crane = Crane(registry=registry_url, username=username, password=password)
-
-    logger.info("Pushing %s -> %s via crane", image_path, dest)
-    stdout = await crane.apush(image_path, dest, insecure=True)
-    digest = _parse_crane_digest(stdout, dest)
-    logger.info("Pushed %s: %s", dest, digest)
-    return digest
+    return await crane.push_bazel_image(image, registry_url, tag, insecure=True)
 
 
 def _parse_crane_digest(stdout: str, dest: str) -> str:
