@@ -49,6 +49,52 @@ with the parent `bazel run` server. Propagates session bazelrc startup flags
 (proxy, TLS CA) to the bench's separate Bazel server. Results (stdout/stderr,
 elapsed times, target lists) are saved to `/tmp/enforce_bazel_tests_bench/runs/<timestamp>/`.
 
+## Benchmark results (2026-04-01, Bazel 8.6.0, RBE via BuildBuddy)
+
+Target file: `util/bazel/workspace.py` (`//util/bazel:workspace.py`)
+
+### Cold start (server shut down before each query)
+
+| Query                                 | Time    | Targets |
+| ------------------------------------- | ------- | ------- |
+| `kind("py_test", //...)`              | 80.64s  | 305     |
+| `kind("go_test", //...)`              | 11.88s  | 3       |
+| `kind(".*_test", //...)`              | 10.52s  | 429     |
+| `tests(//...)`                        | 10.69s  | 429     |
+| `kind("py_test", <scoped>)`           | FAILED  | —       |
+| `kind(".*_test", <scoped>)`           | FAILED  | —       |
+| `tests(<scoped>)`                     | FAILED  | —       |
+| `//...` (enumerate all)               | 10.82s  | 8503    |
+| `rdeps(//..., label)`                 | 223.35s | FAILED  |
+| `somepath(kind(".*_test", //...), l)` | 147.89s | FAILED  |
+| `allrdeps(label)`                     | 4.70s   | FAILED  |
+
+### Warm server (no shutdown between queries)
+
+| Query                    | Time   | Targets |
+| ------------------------ | ------ | ------- |
+| `kind("py_test", //...)` | 4.90s  | 305     |
+| `kind(".*_test", //...)` | 0.30s  | 429     |
+| `tests(//...)`           | 0.29s  | 429     |
+| `rdeps(//..., label)`    | FAILED | —       |
+| `allrdeps(label)`        | FAILED | —       |
+
+### Notes
+
+- The first `kind("py_test", //...)` cold query is ~80s because it pays both JVM
+  startup and full package loading. Subsequent cold queries are ~10s (JVM startup
+  only; package loading is cached on disk).
+- Warm `kind(".*_test")` and `tests()` are sub-second (~0.3s) after the first warm
+  `kind("py_test")` query warms the package graph.
+- **Scoped universe queries failed** with `no targets found beneath 'bazel-ducktape'` —
+  the `bazel-ducktape` convenience symlink in the repo root is picked up by
+  `build_universe()` as a directory. The symlink should be filtered out (it starts
+  with `bazel-`).
+- **`rdeps(//..., ...)` is unusable** (~223s cold, ~141s warm) because `//...`
+  transitively loads broken external packages (gymnasium).
+- **`allrdeps` is not a valid Bazel query function** — it was incorrectly included
+  in the benchmark.
+
 ## Known issues from development
 
 - **Files not in BUILD srcs** cause query errors. Fixed by validating
@@ -59,3 +105,6 @@ elapsed times, target lists) are saved to `/tmp/enforce_bazel_tests_bench/runs/<
   to ~3s.
 - **Root package label `//:*`** rejected by Bazel ("empty target name").
   Use `//:all` instead.
+- **`bazel-*` convenience symlinks** in the repo root are traversed by
+  `build_universe()`, causing `no targets found beneath 'bazel-ducktape'`
+  errors in scoped queries. These should be filtered out.
