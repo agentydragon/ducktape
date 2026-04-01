@@ -83,6 +83,10 @@ py_library(
 py_library(
     name = "sealed_secrets",
     srcs = ["sealed_secrets.py"],
+    data = [
+        "@multitool//tools/kubeseal",
+        "@multitool//tools/tofu",
+    ],
     imports = ["../.."],
     deps = [
         ":cluster",

@@ -238,10 +238,10 @@ cd terraform/main && tofu apply
 git add ../../k8s/**/*sealed*.yaml && git commit -m "chore: re-seal secrets"
 ```
 
-**Offline validation** (no cluster needed):
+**Offline validation** (no cluster needed, runs as part of unified pre-commit):
 
 ```bash
-bazel run //cluster/scripts/validate_cluster:validate_sealed_secrets
+bazel run //devinfra/precommit
 ```
 
 **Keypair verification** (serial numbers should match):

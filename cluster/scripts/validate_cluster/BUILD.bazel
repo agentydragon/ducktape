@@ -1,15 +1,8 @@
 # gazelle:ignore
-# Cluster validation binary — thin wrapper around //cluster/validation library.
-#
-# Two binaries:
-#   validate_cluster — kustomizations + helm templates (unified, fast local checks)
-#   validate_sealed_secrets — sealed secret decryption (separate, needs terraform state)
-#
-# Usage:
-#   bazel run //cluster/scripts/validate_cluster
-#   bazel run //cluster/scripts/validate_cluster:validate_sealed_secrets
+# Cluster validation libraries — used by //devinfra/precommit and
+# //cluster/validation:test_cluster_integration.
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:defs.bzl", "py_library")
 
 package(default_visibility = [
     "//cluster:__subpackages__",
@@ -19,6 +12,7 @@ package(default_visibility = [
 py_library(
     name = "kustomize",
     srcs = ["kustomize.py"],
+    data = ["@multitool//tools/kustomize"],
     imports = ["../../.."],
     deps = [
         "//cluster/validation:k8s",
@@ -31,6 +25,7 @@ py_library(
 py_library(
     name = "flux",
     srcs = ["flux.py"],
+    data = ["@multitool//tools/flux"],
     imports = ["../../.."],
     deps = [
         "//cluster/validation:k8s",
@@ -55,6 +50,10 @@ py_library(
 py_library(
     name = "helm_templates",
     srcs = ["helm_templates.py"],
+    data = [
+        "//cluster/terraform/main:cilium-values.yaml",
+        "@multitool//tools/helm",
+    ],
     imports = ["../../.."],
     deps = ["//util/bazel:runfiles"],
 )
@@ -70,31 +69,7 @@ py_library(
         ":kustomize",
         "//cluster/validation:cluster",
         "//cluster/validation:dependencies",
+        "//cluster/validation:health_checks",
         "//cluster/validation:kustomize",
-        "//util/bazel:workspace",
     ],
-)
-
-py_binary(
-    name = "validate_cluster",
-    data = [
-        "//cluster/terraform/main:cilium-values.yaml",
-        "@multitool//tools/flux",
-        "@multitool//tools/helm",
-        "@multitool//tools/kustomize",
-    ],
-    imports = ["../../.."],
-    main_module = "cluster.scripts.validate_cluster.main",
-    deps = [":main"],
-)
-
-py_binary(
-    name = "validate_sealed_secrets",
-    data = [
-        "@multitool//tools/kubeseal",
-        "@multitool//tools/tofu",
-    ],
-    imports = ["../../.."],
-    main_module = "cluster.validation.sealed_secrets",
-    deps = ["//cluster/validation:sealed_secrets"],
 )

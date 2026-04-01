@@ -23,16 +23,16 @@ import asyncio
 import os
 import sys
 import time
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 import pygit2
 
+from cluster.scripts.validate_cluster.main import validate as validate_cluster
+from cluster.validation.sealed_secrets import validate_all as validate_sealed_secrets
 from devinfra.check_pytest_main import BazelPyTestIndex, build_bazel_index, check_files_async
 from devinfra.precommit.check_filename_conventions import check_filename_conventions
 from devinfra.precommit.check_terraform_centralization import find_violations
-from util.bazel.runfiles import get_required_path
 from util.bazel.workspace import get_build_workspace_directory
 
 _LINT_IGNORED_ATTRS = ("linguist-generated", "gitlab-generated", "rules-lint-ignored")
@@ -74,9 +74,7 @@ def is_cluster_validated(p: Path) -> bool:
 
 
 def is_sealed_secret(p: Path) -> bool:
-    return (p.is_relative_to("cluster/k8s") and "sealed" in p.parts) or p.is_relative_to(
-        "cluster/terraform/00-persistent-auth"
-    )
+    return p.is_relative_to("cluster/k8s") and "sealed" in p.parts
 
 
 def is_terraform_module(p: Path) -> bool:
@@ -113,31 +111,36 @@ async def run_pytest_main_check(
     return ValidationResult(name, Passed(elapsed))
 
 
-async def run_subprocess_validation(
-    name: str,
-    bin_rlocation: str,
-    files: list[Path],
-    file_filter: Callable[[Path], bool],
-    repo_root: Path,
-    extra_args: list[str] | None = None,
-) -> ValidationResult:
-    """Run a subprocess validation if any files match the filter."""
-    if not any(file_filter(f) for f in files):
+async def run_cluster_validate(files: list[Path], repo_root: Path) -> ValidationResult:
+    """Run cluster kustomization/helm/dependency validation."""
+    name = "cluster-validate"
+    if not any(is_cluster_validated(f) for f in files):
         return ValidationResult(name, Skipped())
 
     start = time.perf_counter()
-    validate_bin = get_required_path(bin_rlocation)
-    cmd = [validate_bin] + (extra_args or [])
-    proc = await asyncio.create_subprocess_exec(
-        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=repo_root
-    )
-    stdout, stderr = await proc.communicate()
+    kust_errors, global_errors = await validate_cluster(repo_root / "cluster/k8s", skip_flux_build=True)
     elapsed = time.perf_counter() - start
 
-    output = (stdout + stderr).decode()
-    if proc.returncode == 0:
-        return ValidationResult(name, Passed(elapsed))
-    return ValidationResult(name, Failed(elapsed, output))
+    if kust_errors or global_errors:
+        lines = [f"  {k.parent}: {err.strip()}" for k, err in kust_errors]
+        lines.extend(f"  {err.strip()}" for err in global_errors)
+        return ValidationResult(name, Failed(elapsed, "\n".join(lines)))
+    return ValidationResult(name, Passed(elapsed))
+
+
+async def run_sealed_secrets_validate(files: list[Path]) -> ValidationResult:
+    """Validate SealedSecrets can be decrypted with tofu keypair."""
+    name = "sealed-secrets"
+    if not any(is_sealed_secret(f) for f in files):
+        return ValidationResult(name, Skipped())
+
+    start = time.perf_counter()
+    errors = await validate_sealed_secrets()
+    elapsed = time.perf_counter() - start
+
+    if errors:
+        return ValidationResult(name, Failed(elapsed, "\n".join(errors)))
+    return ValidationResult(name, Passed(elapsed))
 
 
 async def run_terraform_centralization_check(files: list[Path], repo_root: Path) -> ValidationResult:
@@ -175,24 +178,8 @@ async def run_validate(
             run_pytest_main_check(files, repo_root, repo, bazel_index),
             run_terraform_centralization_check(files, repo_root),
             run_filename_convention_check(repo),
-            # Unified cluster validation: kustomize + helm + CRD layering + deps
-            # TODO: validate_cluster is now a runfiles binary — check whether --skip-flux-build
-            # is still needed or if flux build is now stable enough to run in pre-commit.
-            run_subprocess_validation(
-                "cluster-validate",
-                "_main/cluster/scripts/validate_cluster/validate_cluster",
-                files,
-                is_cluster_validated,
-                repo_root,
-                extra_args=["--skip-flux-build"],
-            ),
-            run_subprocess_validation(
-                "sealed-secrets",
-                "_main/cluster/scripts/validate_cluster/validate_sealed_secrets",
-                files,
-                is_sealed_secret,
-                repo_root,
-            ),
+            run_cluster_validate(files, repo_root),
+            run_sealed_secrets_validate(files),
         )
     )
 

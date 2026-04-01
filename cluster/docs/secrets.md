@@ -99,7 +99,8 @@ Pre-commit hook validates all SealedSecrets can be decrypted with tofu keypair:
 
 ```bash
 # Validation uses kubeseal --recovery-unseal (works offline, no cluster needed)
-bazel run //cluster/scripts/validate_cluster:validate_sealed_secrets
+# Runs as part of the unified pre-commit hook:
+bazel run //devinfra/precommit
 ```
 
 ## Adding New SealedSecrets
