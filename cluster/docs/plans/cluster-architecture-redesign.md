@@ -842,9 +842,89 @@ and web console).
 | PVC mobility | Within replica set              | Any node with FUSE client        |
 | Complexity   | One operator                    | JuiceFS CSI + MinIO + HAProxy    |
 
+### Alternative: Rook/Ceph
+
+Leaning toward Ceph despite the resource overhead. It is the standard
+answer for "nodes should be cattle, not pets" — the same property
+that makes cloud K8s work (EBS, Persistent Disk). Without distributed
+storage, PVCs pin pods to nodes and every node becomes a pet.
+
+**What Ceph gives us that nothing else does well:**
+
+- PVCs that follow pods to any node, no babysitting
+- CephFS for full POSIX RWX (native, not FUSE)
+- RBD for block storage with sync replication within a site
+- rbd-mirror for async cross-site DR
+- CRUSH rules for topology-aware placement (keep replicas local
+  to a site, avoid cross-site sync penalty)
+- Battle-tested (CNCF graduated, 20+ years of Ceph, massive community)
+- One system for everything (block, filesystem, object via RGW)
+
+**The resource concern:**
+
+Ceph MON+OSD+MGR+MDS needs 1.5-3 GB/node minimum. On 8 GB CCX13
+nodes that's 20-40% of RAM. But: if we're dropping Longhorn (500-700
+MB + hidden overhead), Vault (~500 MB), and switching to Authelia
+(~50 MB vs Authentik ~1 GB), we reclaim ~2 GB — enough to absorb
+Ceph's overhead.
+
+**Needs validation before committing.** Resource overhead numbers
+are estimates from docs. Actual usage on a small 4-node cluster may
+differ. Test before adopting in production.
+
+#### Ceph Validation Plan
+
+Test in a disposable cluster before adopting in production. Each
+phase gates the next.
+
+Phase 0 — Disposable test cluster:
+
+1. Provision 3-4 small Talos VMs (Proxmox or Hetzner, cheap/temporary)
+2. Install Rook operator + Ceph cluster with minimal config
+3. Measure actual resource usage (MON, OSD, MGR, MDS) on small nodes
+4. Document: how much RAM does Ceph actually use on 8 GB nodes with
+   ~100 GB total storage? Is there enough headroom for workloads?
+
+Phase 1 — Basic block storage (RBD):
+
+5. Create a CephBlockPool with `size: 2` (2 replicas)
+6. Create StorageClass, provision PVCs, run test pods
+7. Kill a node, verify pod reschedules and PVC reattaches on another
+8. Measure write latency and IOPS vs local-path baseline
+
+Phase 2 — CephFS (POSIX RWX):
+
+9. Create a CephFilesystem, deploy MDS
+10. Mount from multiple pods simultaneously, verify RWX semantics
+11. Measure MDS resource overhead
+
+Phase 3 — Cross-site topology (the hard part):
+
+12. Add nodes from a second site (VPS or separate Proxmox host)
+13. Configure CRUSH rules to keep replicas within a site
+14. Verify writes don't incur cross-site latency
+15. Set up rbd-mirror for async cross-site replication
+16. Test site failover: kill all nodes at one site, verify data
+    accessible from the other after rbd-mirror promotion
+
+Phase 4 — Observability stack on Ceph:
+
+17. Deploy Loki + Tempo with Ceph RGW (S3-compatible) as backend
+18. Deploy VictoriaMetrics with CephFS or RBD for TSDB storage
+19. Verify monitoring stack survives node replacement
+
+Phase 5 — Production migration plan:
+
+20. Document node provisioning with OSD auto-setup
+21. Plan Longhorn → Ceph PVC migration (data copy strategy)
+22. Size production Ceph for the actual workload
+23. Determine if CCX13 (8 GB) is sufficient or need CCX23 (16 GB)
+
 ### Proposed Storage Architecture
 
-**Provisional decision**: JuiceFS on top of replicated MinIO + CNPG.
+**Provisional decision**: Evaluate Rook/Ceph first (validation plan
+above). Fall back to JuiceFS + MinIO if Ceph resource overhead is too
+high for 8 GB nodes.
 
 **MinIO topology**: Two separate MinIO instances (one per site),
 synchronized via MinIO site replication (async, bidirectional). NOT
