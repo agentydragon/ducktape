@@ -308,15 +308,15 @@ copy is a nice-to-have, not critical — metrics are rebuildable.
 
 ### Misc
 
-| Service             | Current  | Proposed            | Storage          | Notes                        |
-| ------------------- | -------- | ------------------- | ---------------- | ---------------------------- |
-| Headlamp            | ?        | TBD                 | none             |                              |
-| Scanner             | Proxmox  | **Proxmox**         |                  | Hard: needs home LAN access  |
-| ActivityWatch       | Proxmox  | TBD                 | proxmox-csi (1G) |                              |
-| Grocy               | ?        | **Proxmox (wyrm2)** | local-path       | Nice-to-have, not critical   |
-| Website             | VPS      | **VPS only**        | none (stateless) | VPS-only resilience          |
-| Proxmox-proxy       | Proxmox  | **Proxmox**         | none             | Hard: needs VLAN to 10.2.0.2 |
-| BuildBuddy executor | scaled 0 | TBD                 |                  |                              |
+| Service             | Current  | Proposed            | Storage          | Notes                             |
+| ------------------- | -------- | ------------------- | ---------------- | --------------------------------- |
+| Headlamp            | ?        | TBD                 | none             |                                   |
+| Scanner             | Proxmox  | TBD                 |                  | NFS for printer scans, behind SSO |
+| ActivityWatch       | Proxmox  | TBD                 | proxmox-csi (1G) |                                   |
+| Grocy               | ?        | **Proxmox (wyrm2)** | local-path       | Nice-to-have, not critical        |
+| Website             | VPS      | **VPS only**        | none (stateless) | VPS-only resilience               |
+| Proxmox-proxy       | Proxmox  | **Proxmox**         | none             | Hard: needs VLAN to 10.2.0.2      |
+| BuildBuddy executor | scaled 0 | TBD                 |                  |                                   |
 
 ### Suspended Services (decide: revive, drop, or keep suspended?)
 
