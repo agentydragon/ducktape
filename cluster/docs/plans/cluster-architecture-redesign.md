@@ -311,7 +311,7 @@ copy is a nice-to-have, not critical — metrics are rebuildable.
 | Service             | Current  | Proposed            | Storage          | Notes                        |
 | ------------------- | -------- | ------------------- | ---------------- | ---------------------------- |
 | Headlamp            | ?        | TBD                 | none             |                              |
-| Scanner             | ?        | TBD                 |                  |                              |
+| Scanner             | Proxmox  | **Proxmox**         |                  | Hard: needs home LAN access  |
 | ActivityWatch       | Proxmox  | TBD                 | proxmox-csi (1G) |                              |
 | Grocy               | ?        | **Proxmox (wyrm2)** | local-path       | Nice-to-have, not critical   |
 | Website             | VPS      | **VPS only**        | none (stateless) | VPS-only resilience          |
