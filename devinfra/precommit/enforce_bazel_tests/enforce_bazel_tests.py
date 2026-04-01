@@ -98,7 +98,7 @@ def build_universe(repo_root: Path) -> list[str]:
 
     dirs: list[str] = []
     for entry in sorted(repo_root.iterdir()):
-        if not entry.is_dir() or entry.name.startswith("."):
+        if not entry.is_dir() or entry.name.startswith((".", "bazel-")):
             continue
         if entry.name in top_level_excluded:
             continue
