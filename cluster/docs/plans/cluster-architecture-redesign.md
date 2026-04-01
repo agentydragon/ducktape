@@ -518,7 +518,61 @@ Key question: **Is "log in with Google" a hard requirement?**
   **Zitadel** (Go, lighter than Authentik, has upstream federation
   - Terraform provider). Dex+Authelia combo is possible but complex.
 
-Decision: TBD.
+Decision: **Try Authelia.** Run in parallel with Authentik, migrate
+app-by-app, turn off Authentik + Vault once fully migrated.
+
+#### Authelia Service Account / M2M Capabilities
+
+| Capability                    | Authentik                           | Authelia                                    |
+| ----------------------------- | ----------------------------------- | ------------------------------------------- |
+| Client credentials grant      | Full, UI-managed                    | Supported in YAML config                    |
+| JWT access tokens             | Default                             | Opaque by default; opt-in per client        |
+| Service account tokens        | Native SA objects, API-managed      | Not supported; use client_credentials       |
+| Token rotation                | Blueprints (delete+recreate)        | Standard OAuth expiry (cleaner)             |
+| Per-client group restrictions | Policy bindings (expression engine) | `authorization_policies` (group/user match) |
+| Custom token claims           | Property mappings (flexible)        | Limited `claims_policies`                   |
+
+**Alloy OTLP** (currently: long-lived bearer token, rotated every 60 min
+via Authentik blueprint): Switch to `client_credentials` grant. Alloy
+calls Authelia's token endpoint, gets a JWT, uses it as Bearer. Standard
+OAuth token expiry replaces the manual delete+recreate pattern. Cleaner.
+
+**OpenClaw Agent** (currently: `client_credentials` grant): Works
+directly — same grant type, same flow, just different issuer URL.
+
+**Per-client access control**: Authelia `authorization_policies` support
+`group:admins` / `user:agentydragon` matching. Less expressive than
+Authentik's policy engine but covers our use case (admin-only access).
+
+#### Migration Strategy: Authelia + Authentik in Parallel
+
+Deploy Authelia alongside Authentik. Migrate apps one at a time. Each
+app gets a new client secret in Authelia's YAML config (SOPS-encrypted)
+and a corresponding SOPS-encrypted K8s Secret in its namespace. The old
+Authentik secret stays in Vault/ESO until Authentik is fully turned off.
+
+**Dual-provider support per app:**
+
+- Grafana, Matrix, Vault: support multiple OIDC providers simultaneously
+  (safe rollback during migration)
+- Harbor, Headlamp, Gatus, Inventree: single OIDC config (one provider
+  at a time, must flip)
+- Proxy-mode apps (11): the HTTPRoute decides which provider does
+  forward-auth — flip the route, not the app
+
+**Migration order:**
+
+1. Deploy Authelia (tiny: single pod ~50 MB, optional Redis)
+2. Native OIDC apps first (change issuer URL + client config):
+   start with low-risk (Headlamp, Goldilocks, Gatus)
+3. Proxy-mode apps second (rewire HTTPRoutes to Authelia ExtAuthz):
+   Longhorn, Hubble, Scanner, etc.
+4. Service accounts last (OpenClaw Agent, Alloy OTLP): verify
+   client_credentials grant + JWT validation
+5. Once all apps migrated: suspend Authentik, then Vault + ESO
+6. After validation period: delete Authentik, Vault, ESO, and
+   tofu-controller secret resources. Keep TF resources that call
+   external APIs (Harbor, DNS).
 
 ## Remaining Decisions
 
