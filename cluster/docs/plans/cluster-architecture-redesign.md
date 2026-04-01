@@ -233,15 +233,50 @@ Legend: **bold** = decision made, normal = current state / TBD.
 
 ### Monitoring & Observability
 
-| Service      | Current      | Proposed | Storage         | CSI                | Replication | Notes                              |
-| ------------ | ------------ | -------- | --------------- | ------------------ | ----------- | ---------------------------------- |
-| Prometheus   | wyrm2 (6 Gi) | TBD      | PVC             | longhorn?          | None        | Emergency pin, needs re-evaluation |
-| Grafana      | ?            | TBD      |                 |                    |             |                                    |
-| Loki         | Proxmox      | TBD      | proxmox-csi PVC | proxmox-csi-retain | None        | Needs re-evaluation                |
-| Alloy        | ?            | TBD      |                 |                    |             |                                    |
-| Tempo        | ?            | TBD      |                 |                    |             |                                    |
-| AlertManager | ?            | TBD      |                 |                    |             |                                    |
-| Gatus        | ?            | TBD      |                 |                    |             |                                    |
+| Service         | Current      | Proposed                    | Storage    | Replication         | Notes                             |
+| --------------- | ------------ | --------------------------- | ---------- | ------------------- | --------------------------------- |
+| Prometheus      | wyrm2 (6 Gi) | **Replace with VM cluster** | —          | —                   | See VictoriaMetrics section below |
+| VictoriaMetrics | —            | **VPS workers**             | local-path | Built-in (factor=2) | 2x vmstorage on VPS workers       |
+| Grafana         | ?            | VPS workers                 | local-path | None                | Stateless-ish, rebuildable        |
+| Loki            | Proxmox      | TBD                         | JuiceFS?   | Via MinIO           | Needs re-evaluation               |
+| Alloy           | ?            | Any                         |            |                     | DaemonSet, stateless              |
+| Tempo           | ?            | VPS workers                 | local-path | None                | Rebuildable                       |
+| AlertManager    | ?            | VPS workers                 | local-path | None                |                                   |
+| Gatus           | ?            | VPS workers                 | local-path | None                |                                   |
+
+#### VictoriaMetrics Cluster (replaces Prometheus)
+
+Replace Prometheus with VictoriaMetrics cluster mode. ~3-10x less RAM
+for the same data. Built-in replication, PromQL-compatible, Grafana
+works as-is (Prometheus datasource type).
+
+**Components:**
+
+- `vmstorage` (x2): One per VPS worker, local-path storage,
+  `replicationFactor=2` — each metric written to both nodes
+- `vminsert` (x1): Receives remote-write from scrapers, distributes
+  to storage nodes. Lightweight, can run anywhere.
+- `vmselect` (x1): Serves PromQL queries, merges/deduplicates from
+  both storage nodes. Lightweight, can run anywhere.
+
+**Why this works:**
+
+- Each vmstorage on local-path — no distributed storage needed
+- replicationFactor=2 means both storage nodes have all data
+- If one VPS worker dies, vmselect reads from the survivor
+- RAM: ~1-2 Gi total vs Prometheus 6 Gi
+- MetricsQL is a PromQL superset — existing Grafana dashboards and
+  alert rules work without modification
+- Helm chart available (`victoria-metrics-k8s-stack` or individual
+  component charts)
+
+**Migration path:**
+
+1. Deploy VM cluster alongside Prometheus
+2. Configure dual remote-write (Alloy/Prometheus writes to both)
+3. Verify dashboards work against vmselect
+4. Switch Grafana datasource to vmselect
+5. Remove Prometheus
 
 ### Agent / AI Services
 
