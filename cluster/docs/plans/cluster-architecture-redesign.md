@@ -791,12 +791,33 @@ and web console).
 | PVC mobility | Within replica set              | Any node with FUSE client        |
 | Complexity   | One operator                    | JuiceFS CSI + MinIO + HAProxy    |
 
-### Proposed Storage Architecture (TBD)
+### Proposed Storage Architecture
 
-| Use Case                                 | Storage                       | Notes                                       |
-| ---------------------------------------- | ----------------------------- | ------------------------------------------- |
-| Databases (CNPG)                         | local-path                    | App-level replication, per CNPG conventions |
-| Bulk data (Harbor registry, Loki, media) | proxmox-csi-retain or JuiceFS | Durable, large                              |
-| Ephemeral (Prometheus, Grafana, Tempo)   | local-path                    | Rebuildable, not precious                   |
-| Shared multi-writer                      | JuiceFS (if adopted)          | RWX POSIX                                   |
-| Vault                                    | Goes away                     | Dropping Vault                              |
+**Provisional decision**: JuiceFS on top of replicated MinIO + CNPG.
+
+| Use Case                        | Storage    | Notes                                       |
+| ------------------------------- | ---------- | ------------------------------------------- |
+| Databases (CNPG)                | local-path | App-level replication, per CNPG conventions |
+| Replicated / multi-writer       | JuiceFS    | MinIO site replication + CNPG metadata      |
+| Bulk data (Harbor, Loki, media) | JuiceFS    | Unpinned, durable                           |
+| Ephemeral (Prometheus, Grafana) | local-path | Rebuildable, not precious                   |
+| Vault                           | Goes away  | Dropping Vault                              |
+
+**MinIO access pattern**: HAProxy DaemonSet on each node prefers
+local MinIO, falls back to remote. JuiceFS connects to `localhost:9000`.
+
+**Open items to figure out:**
+
+- JuiceFS metadata reads: route RO PostgreSQL queries to CNPG read
+  replicas (`-ro` service) to reduce load on primary. JuiceFS may not
+  support separate RO/RW connection strings natively — may need a PgBouncer
+  or HAProxy layer that splits read/write traffic.
+- MinIO multi-drive requirement: site replication needs "distributed
+  deployment" (single-node-multi-drive minimum). VPS side needs multiple
+  hcloud volumes; Proxmox side is easy (ZFS).
+- Talos FUSE support: verify JuiceFS CSI extension works on current
+  Talos version. Known open issue #1083 (auth-file metadata connections).
+- JuiceFS mount pod resource tuning: default 512 Mi per PVC may be
+  excessive for small volumes. Tune per StorageClass.
+- Migration plan: move existing Longhorn PVCs to JuiceFS (data copy
+  via rsync Job or similar).
