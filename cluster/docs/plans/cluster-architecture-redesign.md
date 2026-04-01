@@ -703,8 +703,93 @@ Pods (any node) → JuiceFS FUSE client → metadata (CNPG PostgreSQL)
 
 - FUSE performance for database workloads? (Probably still use
   local-path for CNPG, JuiceFS for everything else)
-- MinIO on Proxmox vs cloud S3 bucket for data backend?
 - Talos FUSE support? (Talos supports FUSE via system extensions)
+- JuiceFS CSI has a known open issue with Talos (#1083, auth-file
+  metadata connections). Verify before committing.
+
+### Option: JuiceFS + MinIO Site Replication
+
+Full architecture for site-independent, unpinned RWX storage.
+
+**Components:**
+
+- JuiceFS CSI driver (Helm chart: controller StatefulSet + DaemonSet)
+- JuiceFS metadata: dedicated database in CNPG (VPS-HA, 2 instances).
+  PostgreSQL is a supported metadata engine. Just `CREATE DATABASE
+juicefs` in an existing CNPG cluster.
+- MinIO at Proxmox: data backend, storage on proxmox-csi-retain
+- MinIO at VPS: data backend, storage on hcloud volume
+- MinIO site replication: active-active async between both instances
+- HAProxy or DNS-based failover: each site prefers local MinIO
+
+**MinIO site replication details:**
+
+- Truly active-active: both sites accept writes simultaneously
+- Async by default (configurable to sync, but async recommended at
+  20ms RTT). Writes complete locally, replicate in background.
+- Conflict resolution: last-write-wins (fine for JuiceFS — objects are
+  content-addressed chunks, not user-editable files)
+- Recovery after outage: background scanner detects missing objects and
+  re-queues when the site comes back. For extended outages run
+  `mc admin replicate resync`. No data loss for writes to the
+  surviving site.
+- MinIO docs say site replication requires "distributed deployments"
+  (single-node-multi-drive minimum, not single-drive). Each site needs
+  multiple drives/partitions for erasure coding.
+
+**JuiceFS failover caveat:** JuiceFS connects to a single S3 endpoint.
+It does not natively failover between MinIO instances. Need an external
+mechanism (HAProxy per site preferring local MinIO, or DNS-based
+failover).
+
+**Data flow:**
+
+```text
+Pod on VPS → JuiceFS FUSE → metadata: CNPG (VPS-HA)
+                           → data: HAProxy → MinIO-VPS (local)
+                                    ↕ async site replication ↕
+Pod on Proxmox → JuiceFS FUSE → metadata: CNPG (over Nebula)
+                               → data: HAProxy → MinIO-Proxmox (local)
+```
+
+**Cost:** MinIO itself is lightweight (~100 MB RAM per instance). VPS
+storage via hcloud volumes at EUR 0.044/GB/mo. For ~100 GB = ~EUR
+4.40/mo.
+
+**JuiceFS CSI overhead:** Per-node DaemonSet (lightweight). Per-PVC
+mount pod (default 100m CPU / 512 Mi). Mount pods scale with PVC
+count, not node count.
+
+**JuiceFS project health:** 13.4k GitHub stars, Apache 2.0, actively
+maintained (releases every 2-4 weeks). CSI driver at 289 stars but
+frequent releases. Not CNCF, backed by Juicedata Inc. Community
+edition is fully sufficient (enterprise adds managed metadata engine
+and web console).
+
+**Good workloads for JuiceFS:**
+
+- Harbor registry storage (30G, bulk read-heavy)
+- Loki log storage (20G, append-heavy)
+- Tempo trace storage (10G)
+- Grafana dashboards/config (2G)
+- Shared data across pods (CI caches, media)
+- Anything that should move VPS↔Proxmox without data migration
+
+**Bad workloads (keep on local-path):**
+
+- CNPG databases (high IOPS, use app-level replication)
+- Latency-sensitive transactional workloads
+
+**Comparison to Longhorn:**
+
+| Aspect       | Longhorn                        | JuiceFS + MinIO                  |
+| ------------ | ------------------------------- | -------------------------------- |
+| Replication  | Sync only (all replicas ack)    | Async site replication via MinIO |
+| Cross-site   | 20ms write penalty per op       | Local writes, async background   |
+| RWX          | NFS hack (fragile)              | Native POSIX                     |
+| Overhead     | 500-700 MB global + hidden pods | ~100 MB MinIO + 512 Mi per PVC   |
+| PVC mobility | Within replica set              | Any node with FUSE client        |
+| Complexity   | One operator                    | JuiceFS CSI + MinIO + HAProxy    |
 
 ### Proposed Storage Architecture (TBD)
 
