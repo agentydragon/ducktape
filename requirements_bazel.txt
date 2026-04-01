@@ -746,6 +746,10 @@ click==8.3.1 \
     #   litellm
     #   typer
     #   uvicorn
+cloudpickle==3.1.2 \
+    --hash=sha256:7fda9eb655c9c230dab534f1983763de5835249750e85fbcef43aaa30a9a2414 \
+    --hash=sha256:9acb47f6afd73f60dc1df93bb801b472f05ff42fa6c84167d25cb206be1fbf4a
+    # via gymnasium
 colorama==0.4.6 \
     --hash=sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44 \
     --hash=sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6
@@ -1234,6 +1238,10 @@ executing==2.2.1 \
     --hash=sha256:3632cc370565f6648cc328b32435bd120a1e4ebb20c77e3fdde9a13cd1e533c4 \
     --hash=sha256:760643d3452b4d777d295bb167ccc74c64a81df23fb5e08eff250c425a4b2017
     # via stack-data
+farama-notifications==0.0.4 \
+    --hash=sha256:13fceff2d14314cf80703c8266462ebf3733c7d165336eee998fc58e545efd18 \
+    --hash=sha256:14de931035a41961f7c056361dc7f980762a143d05791ef5794a751a2caf05ae
+    # via gymnasium
 fastapi==0.135.1 \
     --hash=sha256:46e2fc5745924b7c840f71ddd277382af29ce1cdb7d5eab5bf697e3fb9999c9e \
     --hash=sha256:d04115b508d936d254cea545b7312ecaa58a7b3a0f84952535b4c9afae7668cd
@@ -1736,6 +1744,10 @@ grpcio==1.78.0 \
     # via
     #   chromadb
     #   opentelemetry-exporter-otlp-proto-grpc
+gymnasium==1.2.3 \
+    --hash=sha256:2b2cb5b5fbbbdf3afb9f38ca952cc48aa6aa3e26561400d940747fda3ad42509 \
+    --hash=sha256:e6314bba8f549c7fdcc8677f7cd786b64908af6e79b57ddaa5ce1825bffb5373
+    # via ducktape (pyproject.toml)
 h11==0.16.0 \
     --hash=sha256:4e35b956cf45792e4caa5885e69fba00bdbc6ffafbfa020300e549b208ee5ff1 \
     --hash=sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86
@@ -3254,6 +3266,7 @@ numpy==2.4.2 \
     #   asyncvnc
     #   chromadb
     #   contourpy
+    #   gymnasium
     #   matplotlib
     #   mizani
     #   onnxruntime
@@ -6252,6 +6265,7 @@ typing-extensions==4.15.0 \
     #   flexcache
     #   flexparser
     #   grpcio
+    #   gymnasium
     #   huggingface-hub
     #   jupyter-kernel-client
     #   jupyter-mimetypes

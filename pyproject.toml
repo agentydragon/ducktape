@@ -198,6 +198,9 @@ dependencies = [
     # dbus_fast_example
     "dbus-fast>=4.0.0",
 
+    # x/cotrl
+    "gymnasium>=1.0.0",
+
     # inventree_utils
     "django>=4.0",
     "inventree>=0.15",
