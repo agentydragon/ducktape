@@ -581,6 +581,7 @@ Authentik secret stays in Vault/ESO until Authentik is fully turned off.
 1. **Longhorn: keep or drop?** Affects Prometheus storage, VPS CP memory
    (Longhorn sidecars are heavy), and whether we need hcloud-csi for VPS
    workers. Strong arguments for dropping (memory hog, problems on wyrm2).
+   See "Storage Strategy" section below.
 2. **Vault: keep or drop?** SOPS+age handles secrets. If we also go
    Authelia, Vault's only remaining use is `vault-oidc-auth` TF resource
    (which goes away with Vault). Harbor TF resources don't need Vault.
@@ -617,3 +618,100 @@ Authentik secret stays in Vault/ESO until Authentik is fully turned off.
     suspended, revive, or drop entirely?
 14. **CNPG backup strategy.** Standardize pg_dump CronJobs across all
     Proxmox CNPG clusters.
+
+## Storage Strategy
+
+### Current Longhorn Usage
+
+All Longhorn PVCs (checked 2026-04-01):
+
+| Namespace  | PVC                             | Size | Notes                      |
+| ---------- | ------------------------------- | ---- | -------------------------- |
+| gitea      | data-gitea-postgresql-0         | 10G  | Legacy, suspended          |
+| harbor     | data-harbor-redis-0             | 1G   |                            |
+| harbor     | data-harbor-trivy-0             | 5G   |                            |
+| harbor     | database-data-harbor-database-0 | 1G   | Legacy (migrated to CNPG?) |
+| harbor     | harbor-jobservice               | 1G   |                            |
+| harbor     | harbor-registry                 | 30G  |                            |
+| loki       | storage-loki-stack-0            | 20G  |                            |
+| monitoring | db-alertmanager-monitoring-0    | 1G   |                            |
+| monitoring | db-prometheus-monitoring-0      | 20G  |                            |
+| monitoring | grafana                         | 2G   |                            |
+| monitoring | storage-tempo-0                 | 10G  |                            |
+| vault      | vault-raft-instance-{0,1,2}     | 2G   | Goes away if Vault drops   |
+
+None of these benefit from Longhorn's cross-node replication:
+
+- Harbor, Loki: Proxmox-pinned (proxmox-csi would work)
+- Vault: Has its own Raft replication. Goes away if dropped.
+- Monitoring (Prometheus, Grafana, Tempo, AlertManager): Ephemeral /
+  rebuildable. local-path is fine.
+- Gitea: Suspended.
+
+Cross-site sync replication (Proxmox ↔ VPS over Nebula) would add
+~20ms write latency per operation — too slow for databases.
+
+### Distributed Storage Options Considered
+
+Goal: replicated storage so workloads aren't pinned to specific nodes,
+POSIX multi-writer (RWX) mounting, optionally async replication across
+sites for DR.
+
+| Solution           | RAM/node    | RWX / POSIX        | Async WAN  | Fit                                              |
+| ------------------ | ----------- | ------------------ | ---------- | ------------------------------------------------ |
+| Longhorn (current) | 500-700 MB  | NFS (fragile)      | S3 backup  | Bad: memory hog, issues on wyrm2                 |
+| Rook/Ceph          | 1.5-3 GB    | CephFS (native)    | rbd-mirror | Bad: too heavy for 8 GB nodes                    |
+| Piraeus/LINSTOR    | 150-300 MB  | RWO only           | DRBD-A     | OK but no RWX; needs DRBD kernel module on Talos |
+| OpenEBS Mayastor   | 500 MB-1 GB | RWO only           | No         | Bad: hugepages, no async                         |
+| Kadalu (GlusterFS) | 300-500 MB  | Native POSIX       | Geo-rep    | Bad: GlusterFS abandoned by Red Hat              |
+| **JuiceFS**        | 200-300 MB  | **Full POSIX RWX** | **Yes**    | **Best fit — investigate**                       |
+| SeaweedFS          | 300-500 MB  | FUSE (POSIX-ish)   | Yes        | More object store than FS                        |
+| MinIO              | 300-500 MB  | S3 only            | Yes        | Not a filesystem                                 |
+
+### JuiceFS (investigate)
+
+JuiceFS is a FUSE-based distributed filesystem that separates metadata
+and data storage:
+
+- **Metadata**: Redis, PostgreSQL, TiKV, or SQLite. We already have
+  CNPG — could use a dedicated CNPG cluster for JuiceFS metadata.
+- **Data**: Any S3-compatible backend, or local disk. Could use MinIO
+  on Proxmox, or a cloud S3 bucket for off-site DR.
+- **Full POSIX RWX**: Multiple pods can mount the same volume
+  read-write simultaneously. Real POSIX semantics (locking, etc).
+- **CSI driver**: Exists and is reasonably mature.
+- **Light client**: ~200-300 MB overhead (FUSE client per node).
+- **Async replication**: Data backend handles replication (S3
+  cross-region, MinIO site replication, etc).
+- **Caching**: Built-in client-side caching for read-heavy workloads.
+
+**Architecture for our cluster:**
+
+```text
+Pods (any node) → JuiceFS FUSE client → metadata (CNPG PostgreSQL)
+                                       → data (MinIO on Proxmox or S3)
+```
+
+**What this enables:**
+
+- PVCs that can follow pods to any node (not pinned to storage location)
+- Shared filesystems for multi-pod workloads
+- Proxmox storage with VPS-accessible data (via metadata + S3)
+- Backup story: S3 backend handles durability
+
+**Open questions:**
+
+- FUSE performance for database workloads? (Probably still use
+  local-path for CNPG, JuiceFS for everything else)
+- MinIO on Proxmox vs cloud S3 bucket for data backend?
+- Talos FUSE support? (Talos supports FUSE via system extensions)
+
+### Proposed Storage Architecture (TBD)
+
+| Use Case                                 | Storage                       | Notes                                       |
+| ---------------------------------------- | ----------------------------- | ------------------------------------------- |
+| Databases (CNPG)                         | local-path                    | App-level replication, per CNPG conventions |
+| Bulk data (Harbor registry, Loki, media) | proxmox-csi-retain or JuiceFS | Durable, large                              |
+| Ephemeral (Prometheus, Grafana, Tempo)   | local-path                    | Rebuildable, not precious                   |
+| Shared multi-writer                      | JuiceFS (if adopted)          | RWX POSIX                                   |
+| Vault                                    | Goes away                     | Dropping Vault                              |
