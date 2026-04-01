@@ -1053,3 +1053,174 @@ Phase 5 — Migrate workloads:
   excessive for small volumes.
 - Loki replication_factor in Simple Scalable mode: do we need ingester
   replication if MinIO already handles data durability?
+
+## Storage Policy
+
+### Why Region-Explicit Storage
+
+No distributed storage system can provide fast local writes AND
+cross-site durability simultaneously. This is a consequence of the
+CAP theorem: if two sites are separated by latency, you must choose:
+
+- **Wait for remote ack** (consistency) → every write pays the
+  cross-site round-trip (~20ms VPS↔Proxmox over Nebula)
+- **Don't wait** (availability) → risk losing data written since last
+  successful replication if the writing site dies
+
+This applies equally to Longhorn, Ceph, DRBD, or any synchronous
+replication system. Async-first systems (JuiceFS+MinIO) avoid the
+write penalty but accept a durability risk window.
+
+Therefore: **every PVC must explicitly declare its region.** No
+"magic" storage class that works everywhere without tradeoffs.
+
+### Storage Classes
+
+Remove the generic `local-path` default. Replace with region-explicit
+classes. No default StorageClass — PVCs without an explicit class fail
+at creation time rather than silently landing on a random node.
+
+| StorageClass         | Provisioner               | Region  | Use Case                       |
+| -------------------- | ------------------------- | ------- | ------------------------------ |
+| `local-path-hetzner` | rancher.io/local-path     | Hetzner | CNPG VPS-HA, ephemeral VPS     |
+| `local-path-proxmox` | rancher.io/local-path     | Proxmox | CNPG Proxmox, ephemeral PVE    |
+| `proxmox-csi-retain` | csi.proxmox.sinextra.dev  | Proxmox | Durable Proxmox data           |
+| `hcloud-volumes`     | csi.hcloud.cloud          | Hetzner | Durable VPS data               |
+| (future) distributed | ceph-rbd / juicefs / etc. | TBD     | If validated, site-local pools |
+
+### Rules
+
+1. **Every PVC must specify `storageClassName` explicitly.** No default
+   StorageClass. Enforced by removing the `is-default-class` annotation.
+2. **Apps must be pinned to the same region as their storage.** Extends
+   CNPG R4 to all storage, not just databases.
+3. **No cross-site synchronous replication.** Storage classes replicate
+   within a site only. Cross-site protection is async backup/mirror.
+4. **CNPG stays on `local-path-{region}`.** App-level replication
+   handles durability. See `cnpg-conventions.md`.
+5. **Ephemeral data is explicitly marked.** Prometheus, Grafana, Tempo
+   on `local-path-{region}` — rebuildable, not precious.
+
+### PVC Backup / Async Cross-Site Replication
+
+Per-workload backup strategy (no one-size-fits-all):
+
+| Data Type                       | Backup Method                                          | Cross-Site?     |
+| ------------------------------- | ------------------------------------------------------ | --------------- |
+| CNPG databases                  | pg_dump CronJob to remote site PVC (existing pattern)  | Yes             |
+| CNPG databases                  | (future) CNPG `ScheduledBackup` + Barman to S3/MinIO   | Yes             |
+| CNPG databases                  | (future) CNPG read-only replica cluster at remote site | Yes (see below) |
+| Loki/Tempo (if on MinIO)        | MinIO site replication (async)                         | Yes             |
+| Harbor registry                 | MinIO site replication (if migrated) or rsync CronJob  | Possible        |
+| Ephemeral (Prometheus, Grafana) | No backup needed — rebuildable                         | No              |
+| etcd                            | talos-backup CronJob to S3 with age encryption         | Yes             |
+
+### CNPG Cross-Site Read Replica
+
+CNPG convention R2 says "all instances in one region" because CNPG
+applies affinity uniformly and a cross-region failover would move the
+primary to the wrong site. But CNPG supports **replica clusters** — a
+separate `Cluster` CRD with `replica.source` pointing to the primary
+cluster via streaming replication.
+
+A replica cluster is a **separate CNPG Cluster** that:
+
+- Streams WAL from the primary cluster continuously
+- Is always read-only (cannot be promoted automatically)
+- Can have its own `nodeSelector` (different region)
+- Can be manually promoted to primary in a disaster (explicit action)
+
+This gives us async cross-site backup for databases without violating
+R2. The replica cluster on Proxmox has near-real-time data but never
+auto-promotes. If VPS dies, you can manually promote it.
+
+Example: PowerDNS VPS-HA primary (2 instances on VPS) + read-only
+replica cluster (1 instance on Proxmox). Normal operations: reads
+can go to either. VPS dies: manually promote Proxmox replica.
+
+TBD: validate this works with CNPG `replica` mode and whether the
+streaming replication across Nebula (20ms) causes any issues.
+
+## Migration Checklist
+
+Sequence for moving the current cluster to the target state. Steps
+are roughly ordered but some can be parallelized.
+
+### Phase 1: Foundation (no workload disruption)
+
+1. Remove default StorageClass annotation from `longhorn`
+2. Create `local-path-hetzner` and `local-path-proxmox` StorageClasses
+   with appropriate `nodeAffinity`
+3. Deploy Kyverno policy: reject PVCs without explicit `storageClassName`
+4. Update `cnpg-conventions.md`: replace `local-path` references with
+   `local-path-{region}`
+5. Update existing CNPG clusters to use `local-path-hetzner` /
+   `local-path-proxmox` (StorageClass is immutable on existing PVCs —
+   new clusters only, or recreate)
+
+### Phase 2: VPS Node Restructure
+
+6. Provision 2x CCX13 VPS workers in Hetzner (Terraform)
+7. Provision 2x CCX13 VPS CPs in Hetzner (Terraform)
+8. Join new workers to cluster
+9. Join new CPs to cluster, add to etcd (rolling, maintain quorum)
+10. Migrate workloads off old CPX31 CPs (drain, cordon)
+11. Remove old CPX31 CPs from etcd, tear down
+12. Verify etcd health, cluster stability
+
+### Phase 3: Workload Placement
+
+13. Pin Proxmox workloads with hard `nodeSelector` (prevent VPS flood):
+    Gitea, Harbor, nix-cache, Atuin, Props, Matrix, Inventree, Grocy,
+    Scanner, Proxmox-proxy, OpenClaw, Ollama, LiteLLM
+14. Pin VPS-critical workloads: PowerDNS (any Hetzner), Gateway,
+    Website, kube-api-proxy, Nebula lighthouses
+15. Move Authentik to VPS workers (off CPs)
+16. Move Flux controllers to VPS workers
+17. Deploy PriorityClasses (system-critical for DNS/ingress/auth,
+    lower for non-critical workloads)
+18. Verify VPS CPs are near-pure (only system components + light
+    services like Kyverno, PowerDNS)
+
+### Phase 4: SSO Migration (Authentik → Authelia)
+
+19. Deploy Authelia alongside Authentik (single pod, ~50 MB)
+20. Set up SOPS + age for secrets (Flux native decryption)
+21. Migrate first low-risk native OIDC app (Headlamp or Gatus)
+22. Migrate remaining native OIDC apps one by one
+23. Migrate proxy-mode apps (rewire HTTPRoutes to Authelia ExtAuthz)
+24. Migrate service accounts (OpenClaw Agent, Alloy OTLP)
+25. Verify all apps work on Authelia
+26. Suspend Authentik
+27. Suspend Vault + ESO
+28. Migrate remaining 29 TF secret resources to SOPS
+29. After validation period: delete Authentik, Vault, ESO code
+
+### Phase 5: Monitoring Migration (Prometheus → VictoriaMetrics)
+
+30. Deploy VictoriaMetrics cluster (2x vmstorage on VPS workers,
+    vminsert + vmselect)
+31. Configure dual remote-write (Alloy writes to both Prometheus
+    and VictoriaMetrics)
+32. Verify Grafana dashboards work against vmselect
+33. Switch Grafana datasource to vmselect
+34. Remove Prometheus
+
+### Phase 6: Storage (evaluate and migrate)
+
+35. Evaluate MinIO site replication (validation phases 1-2 from
+    storage section above)
+36. If MinIO works: migrate Loki + Tempo to MinIO backend
+37. Evaluate JuiceFS on MinIO (validation phases 3-4)
+38. OR evaluate Rook/Ceph (validation plan in Ceph section)
+39. Migrate remaining Longhorn PVCs to chosen solution
+40. Decommission Longhorn
+
+### Phase 7: Cleanup
+
+41. Remove Longhorn operator and CRDs
+42. Remove Vault operator, ESO, tofu-controller secret resources
+43. Remove Authentik namespace and all related resources
+44. Remove old StorageClass definitions
+45. Update cluster docs (README, AGENTS.md, plan.md) to reflect
+    new architecture
