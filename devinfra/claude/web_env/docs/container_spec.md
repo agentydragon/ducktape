@@ -4,7 +4,7 @@ Runtime context for the Claude Code web environment. The reproducible container
 definition lives in the [Dockerfile](../Dockerfile); this file documents the
 parts that aren't captured there.
 
-**Captured**: 2026-03-30.
+**Captured**: 2026-03-30 (storage details updated 2026-04-01).
 
 ## Runtime Environment
 
@@ -24,15 +24,43 @@ parts that aren't captured there.
 
 ### Storage Layout
 
-| Mountpoint         | Source     | FS Type  | Size  | Purpose                  |
-| ------------------ | ---------- | -------- | ----- | ------------------------ |
-| `/`                | `/dev/vda` | ext4     | 252G  | Root filesystem          |
-| `/opt/claude-code` | `/dev/vdb` | squashfs | 60.8M | Claude Code binary (ro)  |
-| `/opt/env-runner`  | `/dev/vdc` | squashfs | 17.5M | Environment manager (ro) |
-| `/dev/shm`         | tmpfs      | tmpfs    | 7.9G  | Shared memory            |
+| Mountpoint         | Source     | FS Type  | Size  | Usable | Purpose                  |
+| ------------------ | ---------- | -------- | ----- | ------ | ------------------------ |
+| `/`                | `/dev/vda` | ext4     | 256G  | ~41G   | Root filesystem          |
+| `/opt/claude-code` | `/dev/vdb` | squashfs | 60.8M | —      | Claude Code binary (ro)  |
+| `/opt/env-runner`  | `/dev/vdc` | squashfs | 17.5M | —      | Environment manager (ro) |
+| `/dev/shm`         | tmpfs      | tmpfs    | 7.9G  | 7.9G   | Shared memory            |
+
+The root ext4 filesystem has **84% of blocks reserved** (56.3M of 67.1M blocks
+reserved for UID/GID 65534 — `nobody:nogroup`). Since the container runs as root,
+only ~41 GiB of the 256 GiB disk is usable. This is the effective storage budget
+for the repo, Bazel cache, Nix store, session data, and all caches.
 
 The Bazel cache (`~/.claude/session-env/<id>/bazel-cache`) lives on the ext4
 root disk. There are **no tmpfs mounts** for Bazel cache or container storage.
+
+### Typical Disk Usage (observed 2026-04-01)
+
+| Path                         | Size | Notes                          |
+| ---------------------------- | ---- | ------------------------------ |
+| `/root/.claude/session-env/` | 16G  | Bazel caches across sessions   |
+| `/tmp/`                      | 7.6G | Benchmark data (reclaimable)   |
+| `/root/.cache/`              | 4.7G | Bazel install, playwright, pip |
+| `/usr/`                      | 3.6G | System packages                |
+| `/nix/`                      | 2.9G | Nix store                      |
+| `/root/.rustup/`             | 601M | Rust toolchains                |
+| `/root/.npm/`                | 316M | npm cache                      |
+| `/home/user/ducktape/`       | 264M | Repo checkout                  |
+| **Total used**               | ~38G | Out of ~41G usable             |
+
+Old session Bazel caches (`session-env/<old-id>/bazel-cache`) are the primary
+source of disk pressure. Each session's Bazel output base is 2–12 GiB depending
+on query/build activity. With multiple sessions, the disk fills up quickly —
+the `rdeps(//..., ...)` benchmark exhausted disk space fetching 3000+ npm repos.
+
+### Inode Budget
+
+16.8M inodes total, ~1M used (6%). Inodes are not a constraint.
 
 ### IO Benchmarks (2026-03-30)
 
