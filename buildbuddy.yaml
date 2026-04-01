@@ -102,5 +102,24 @@ actions:
     resource_requests:
       disk: "50GB"
 
-    steps:
-      - run: bazel run --config=rbe //devinfra/ci:bb_push_images_bin
+    bazel_commands:
+      # Build all OCI image targets first (as a top-level bazel command so
+      # BuildBuddy injects the API key — nested bazel from `bazel run` won't
+      # have it).
+      - >
+        build
+        --config=rbe
+        --remote_download_toplevel
+        //cluster/k8s/inventree/token-provisioner:image
+        //props/backend:image
+        //airlock:image
+        //airlock/auth_proxy:image
+        //mcp_infra/exec:direct_image
+        //openclaw/exec:image
+        //homeassistant/proxy:image
+        //inventree_utils/rai_plugin:image
+        //tana/token_broker:image
+        //third_party/activitywatch:image
+
+      # Push pre-built images to GHCR (no nested bazel build needed).
+      - run --config=rbe //devinfra/ci:bb_push_images_bin

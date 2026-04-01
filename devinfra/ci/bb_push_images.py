@@ -1,9 +1,11 @@
 """Push Bazel-built OCI images to GHCR and tag for Flux.
 
-Builds all OCI image targets in a single bazel build, then uses crane directly
-(from runfiles) to push, tag, and compare digests. Only creates a new pinned
-tag (branch-YYYYMMDDHHMMSS-sha7) when the image digest actually changed,
-preventing spurious Flux repins.
+Uses crane directly (from runfiles) to push, tag, and compare digests. Only
+creates a new pinned tag (branch-YYYYMMDDHHMMSS-sha7) when the image digest
+actually changed, preventing spurious Flux repins.
+
+Image targets must be pre-built (the BuildBuddy workflow builds them in a
+separate bazel step so the API key is available).
 """
 
 import os
@@ -84,10 +86,6 @@ def main() -> None:
     if "[skip ci]" in _git("log", "-1", "--format=%s"):
         print("Commit message contains [skip ci], skipping image push.")
         return
-
-    targets = [img.image_target for img in IMAGES]
-    print(f"Building {len(targets)} image targets...")
-    subprocess.run(["bazel", "build", "--config=rbe", "--remote_download_toplevel", *targets], check=True)
 
     bazel_bin = get_bazel_bin()
 
