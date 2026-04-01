@@ -270,6 +270,22 @@ works as-is (Prometheus datasource type).
 - Helm chart available (`victoria-metrics-k8s-stack` or individual
   component charts)
 
+**Cross-site replication problem:** `vminsert` writes to
+`replicationFactor` nodes synchronously, picking targets by consistent
+hashing with no topology awareness. If vmstorage nodes span VPS +
+Proxmox, some writes will cross the 20ms Nebula link synchronously.
+You can't control which metrics go where. Options:
+
+- Keep all vmstorage on VPS only (no cross-site penalty, but no
+  Proxmox copy — metrics lost if both VPS workers die)
+- Accept mixed latency (some writes 20ms, tolerable for metrics
+  ingestion but annoying)
+- Investigate whether vminsert supports topology-aware placement
+  or zone-local write preference (unclear from docs)
+
+For now, plan for **vmstorage on VPS only** with 2 nodes. Proxmox
+copy is a nice-to-have, not critical — metrics are rebuildable.
+
 **Migration path:**
 
 1. Deploy VM cluster alongside Prometheus
