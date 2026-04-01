@@ -50,6 +50,7 @@ from devinfra.claude.hook_daemon.session_start import platform_detect
 from devinfra.claude.hook_daemon.session_start import precommit
 from devinfra.claude.hook_daemon.session_start import secret_sources
 from devinfra.claude.hook_daemon.session_start import tmpfs
+from devinfra.claude.hook_daemon.session_start import tune_rootfs
 
 # isort: on
 from devinfra.claude.hook_daemon.tracing import DeferredOtlpExporter
@@ -364,6 +365,7 @@ async def _setup_web(
         setup_bazel_on_tmpfs(),
         mkcert_append_bundle(),
         apt_task,
+        run_in_thread(tune_rootfs.reduce_reserved_blocks),
         return_exceptions=True,
     )
     # Unpack with explicit type annotations for mypy
@@ -373,8 +375,11 @@ async def _setup_web(
     tmpfs_result: tmpfs.TmpfsSetup | BaseException = results[3]
     mkcert_result: mkcert.MkcertSetup | BaseException = results[4]
     apt_result: apt.AptSetup | BaseException = results[5]
+    tune_result: None | BaseException = results[6]
 
     # Log non-critical failures
+    if isinstance(tune_result, BaseException):
+        logger.warning("Failed to reduce reserved blocks: %s", tune_result)
     if isinstance(precommit_result, BaseException):
         logger.warning("Failed to install git pre-commit: %s", precommit_result)
     if isinstance(tmpfs_result, BaseException):

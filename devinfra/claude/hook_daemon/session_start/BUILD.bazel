@@ -117,6 +117,13 @@ py_library(
 )
 
 py_library(
+    name = "tune_rootfs",
+    srcs = ["tune_rootfs.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "tmpfs",
     srcs = ["tmpfs.py"],
     imports = ["../../../.."],
@@ -145,6 +152,7 @@ py_library(
         ":precommit",
         ":secret_sources",
         ":tmpfs",
+        ":tune_rootfs",
         "//devinfra/claude:bazel_wrapper_lib",
         "//devinfra/claude:debug",
         "//devinfra/claude:env_file",
