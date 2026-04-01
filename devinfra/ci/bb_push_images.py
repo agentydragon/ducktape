@@ -8,11 +8,14 @@ Image targets must be pre-built (the BuildBuddy workflow builds them in a
 separate bazel step so the API key is available).
 """
 
+import argparse
 import os
 import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+
+from more_itertools import one
 
 from util.bazel.workspace import BazelLabel, get_bazel_bin, get_build_workspace_directory
 from util.crane import Crane
@@ -81,11 +84,17 @@ class ImagePusher:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Push OCI images to GHCR")
+    parser.add_argument("--image", help="Push only the image with this Bazel target label")
+    args = parser.parse_args()
+
     os.chdir(get_build_workspace_directory())
 
     if "[skip ci]" in _git("log", "-1", "--format=%s"):
         print("Commit message contains [skip ci], skipping image push.")
         return
+
+    images = [one(img for img in IMAGES if img.image_target == args.image)] if args.image else list(IMAGES)
 
     bazel_bin = get_bazel_bin()
 
@@ -101,7 +110,7 @@ def main() -> None:
         branch=branch,
         pinned_tag=f"{branch}-{ts}-{sha}",
     )
-    for img in IMAGES:
+    for img in images:
         pusher.push_and_tag(img)
 
 

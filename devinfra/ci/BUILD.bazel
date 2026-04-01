@@ -144,6 +144,20 @@ py_library(
         "//util:env",
         "//util:oci",
         "//util/bazel:workspace",
+        "@pypi//more_itertools",
+    ],
+)
+
+py_library(
+    name = "generate_buildbuddy",
+    srcs = ["generate_buildbuddy.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":bb_push_images",
+        "//devinfra:prettier",
+        "//util/bazel:workspace",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -185,6 +199,13 @@ py_binary(
 )
 
 py_binary(
+    name = "generate_buildbuddy_bin",
+    imports = ["../.."],
+    main_module = "devinfra.ci.generate_buildbuddy",
+    deps = [":generate_buildbuddy"],
+)
+
+py_binary(
     name = "bb_push_images_bin",
     imports = ["../.."],
     main_module = "devinfra.ci.bb_push_images",
@@ -192,6 +213,18 @@ py_binary(
 )
 
 # === Tests ===
+
+py_test(
+    name = "test_generate_buildbuddy",
+    srcs = ["test_generate_buildbuddy.py"],
+    data = ["//:buildbuddy.yaml"],
+    imports = ["../.."],
+    deps = [
+        ":generate_buildbuddy",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
 
 py_test(
     name = "test_generate_ci",
