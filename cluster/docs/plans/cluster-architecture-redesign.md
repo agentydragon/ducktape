@@ -830,29 +830,91 @@ and web console).
 
 **Provisional decision**: JuiceFS on top of replicated MinIO + CNPG.
 
-| Use Case                        | Storage    | Notes                                       |
-| ------------------------------- | ---------- | ------------------------------------------- |
-| Databases (CNPG)                | local-path | App-level replication, per CNPG conventions |
-| Replicated / multi-writer       | JuiceFS    | MinIO site replication + CNPG metadata      |
-| Bulk data (Harbor, Loki, media) | JuiceFS    | Unpinned, durable                           |
-| Ephemeral (Prometheus, Grafana) | local-path | Rebuildable, not precious                   |
-| Vault                           | Goes away  | Dropping Vault                              |
+**MinIO topology**: Two separate MinIO instances (one per site),
+synchronized via MinIO site replication (async, bidirectional). NOT
+one distributed cluster across sites. Each is an independent server
+with its own storage.
+
+```text
+VPS:     MinIO-VPS (hcloud volume storage)
+           ↕ async site replication (bidirectional)
+Proxmox: MinIO-Proxmox (proxmox-csi storage)
+```
 
 **MinIO access pattern**: HAProxy DaemonSet on each node prefers
-local MinIO, falls back to remote. JuiceFS connects to `localhost:9000`.
+local MinIO, falls back to remote. All consumers (JuiceFS, Loki,
+Tempo) connect to `localhost:9000`.
+
+| Use Case                    | Storage            | Notes                                       |
+| --------------------------- | ------------------ | ------------------------------------------- |
+| Databases (CNPG)            | local-path         | App-level replication, per CNPG conventions |
+| Metrics (VictoriaMetrics)   | local-path         | Built-in replication (factor=2)             |
+| Logs (Loki Simple Scalable) | MinIO (direct)     | Native S3 backend, replication via MinIO    |
+| Traces (Tempo)              | MinIO (direct)     | Native S3 backend, replication via MinIO    |
+| Replicated / multi-writer   | JuiceFS (on MinIO) | POSIX RWX, metadata in CNPG                 |
+| Bulk data (Harbor registry) | JuiceFS (on MinIO) | Unpinned, durable                           |
+| Ephemeral (Grafana)         | local-path         | Rebuildable, not precious                   |
+| Vault                       | Goes away          | Dropping Vault                              |
+
+Loki and Tempo support S3/MinIO natively — they talk to MinIO
+directly via the HAProxy, no JuiceFS layer needed. JuiceFS is for
+workloads that need POSIX filesystem semantics (Harbor registry,
+shared data, etc).
+
+#### Validation Plan
+
+Validate the MinIO + HAProxy foundation before building JuiceFS and
+migrating workloads on top. Each phase gates the next.
+
+Phase 1 — MinIO site replication:
+
+1. Deploy MinIO on Proxmox (proxmox-csi storage)
+2. Deploy MinIO on VPS worker (hcloud volume)
+3. Configure site replication (`mc admin replicate add`)
+4. Write objects from both sites, verify they appear on both
+5. Verify MinIO multi-drive requirement — test with SNMD (single-node
+   multi-drive) at each site
+
+Phase 2 — HAProxy failover:
+
+6. Deploy HAProxy DaemonSet with health checks and local-preference
+7. Write via HAProxy from both sites, verify routing to local MinIO
+8. Kill MinIO-VPS, verify HAProxy falls back to MinIO-Proxmox
+9. Bring MinIO-VPS back, verify resync completes
+10. Kill MinIO-Proxmox, verify HAProxy falls back to MinIO-VPS
+
+Phase 3 — Loki + Tempo on MinIO (low-risk, native S3 support):
+
+11. Reconfigure Loki to use MinIO backend (Simple Scalable mode)
+12. Reconfigure Tempo to use MinIO backend
+13. Verify log/trace ingestion and querying works
+14. Verify data survives a MinIO-site failover
+
+Phase 4 — JuiceFS on MinIO:
+
+15. Deploy JuiceFS CSI driver, create CNPG metadata database
+16. Verify Talos FUSE support (known issue #1083)
+17. Create test PVC, mount from pods on both sites
+18. Write from both sites simultaneously (RWX validation)
+19. Kill one MinIO, verify JuiceFS reads still work via HAProxy
+20. Performance test: sequential/random I/O, metadata operations
+
+Phase 5 — Migrate workloads:
+
+21. Migrate Harbor registry storage to JuiceFS
+22. Migrate remaining Longhorn PVCs
+23. Decommission Longhorn
 
 **Open items to figure out:**
 
 - JuiceFS metadata reads: route RO PostgreSQL queries to CNPG read
   replicas (`-ro` service) to reduce load on primary. JuiceFS may not
-  support separate RO/RW connection strings natively — may need a PgBouncer
-  or HAProxy layer that splits read/write traffic.
+  support separate RO/RW connection strings natively — may need a
+  PgBouncer or HAProxy layer that splits read/write traffic.
 - MinIO multi-drive requirement: site replication needs "distributed
-  deployment" (single-node-multi-drive minimum). VPS side needs multiple
-  hcloud volumes; Proxmox side is easy (ZFS).
-- Talos FUSE support: verify JuiceFS CSI extension works on current
-  Talos version. Known open issue #1083 (auth-file metadata connections).
+  deployment" (single-node-multi-drive minimum). VPS side needs
+  multiple hcloud volumes; Proxmox side is easy (ZFS).
 - JuiceFS mount pod resource tuning: default 512 Mi per PVC may be
-  excessive for small volumes. Tune per StorageClass.
-- Migration plan: move existing Longhorn PVCs to JuiceFS (data copy
-  via rsync Job or similar).
+  excessive for small volumes.
+- Loki replication_factor in Simple Scalable mode: do we need ingester
+  replication if MinIO already handles data durability?
