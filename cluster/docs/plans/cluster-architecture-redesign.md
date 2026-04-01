@@ -272,9 +272,9 @@ Legend: **bold** = decision made, normal = current state / TBD.
 | Service   | Reason                     | Decision                                            |
 | --------- | -------------------------- | --------------------------------------------------- |
 | Inventree | VPS OOM (2026-03-17)       | **Proxmox (wyrm2)** when unsuspended. Nice-to-have. |
-| Kagent    | ?                          | TBD                                                 |
-| Langfuse  | Degraded Longhorn on wyrm2 | TBD                                                 |
-| Firecrawl | ?                          | TBD                                                 |
+| Kagent    | ?                          | Keep suspended                                      |
+| Langfuse  | Degraded Longhorn on wyrm2 | Keep suspended                                      |
+| Firecrawl | ?                          | Keep suspended                                      |
 
 ## Secrets & SSO Architecture Options
 
@@ -520,22 +520,46 @@ Key question: **Is "log in with Google" a hard requirement?**
 
 Decision: TBD.
 
-## Open Architecture Questions
+## Remaining Decisions
 
-### Storage Strategy
+### Tier 1: Blocking (decide before executing the plan)
 
-1. **Longhorn**: Keep as default replicated storage? It had issues on wyrm2.
-   Alternative: drop Longhorn, use proxmox-csi + local-path only?
-2. **Hcloud CSI**: Currently deployed but unused. Remove or use for VPS
-   workers?
-3. **CNPG backup strategy**: pg_dump CronJobs exist for some DBs. Standardize?
+1. **Longhorn: keep or drop?** Affects Prometheus storage, VPS CP memory
+   (Longhorn sidecars are heavy), and whether we need hcloud-csi for VPS
+   workers. Strong arguments for dropping (memory hog, problems on wyrm2).
+2. **Vault: keep or drop?** SOPS+age handles secrets. If we also go
+   Authelia, Vault's only remaining use is `vault-oidc-auth` TF resource
+   (which goes away with Vault). Harbor TF resources don't need Vault.
+3. **SSO provider: Authentik or Authelia?** Affects worker RAM needs
+   (~1 GB vs ~50 MB), operator count, entire secrets flow.
+4. **Prometheus + Loki long-term placement.** Currently emergency-pinned
+   to wyrm2 / proxmox-csi. Where do they live after the restructure?
+   Depends on Longhorn decision and worker sizing.
 
-### Light Services on Control Planes
+### Tier 2: Should decide (but won't break if deferred)
 
-Which services are acceptable to keep on VPS CPs despite the "near-pure CP"
-goal? Current candidates:
+5. **Monitoring stack placement** (Grafana, Alloy, Tempo, AlertManager,
+   Gatus). Currently unassigned. Most are lightweight, can go anywhere.
+6. **Harbor placement.** Uses proxmox-csi, effectively Proxmox-pinned.
+   Just needs the explicit decision.
+7. **tofu-state DB.** Currently VPS-HA CNPG. Stays on VPS workers?
+8. **Light services on CPs.** Which services are acceptable on the
+   "near-pure" CPs? Current candidates: PowerDNS, kube-api-proxy,
+   Gateway/Ingress, Kyverno, CoreDNS, system DaemonSets.
+9. **Hcloud CSI.** Currently deployed but unused. Remove or use for
+   VPS worker storage?
 
-- PowerDNS (very light, critical for DNS)
-- kube-api-proxy (DaemonSet, minimal)
-- Gateway/Ingress (Cilium, already on CPs)
-- CoreDNS customization
+### Tier 3: Low risk (can default or defer)
+
+10. **Stateless core infra** (sealed-secrets, reloader, cert-manager,
+    external-dns, metrics-server, vpa, goldilocks, descheduler,
+    node-feature-discovery, reflector, cnpg operator, coredns-custom,
+    hubble-ui, dns-automation). All stateless, small. Default: run
+    anywhere, prefer workers.
+11. **Agent services** (google-workspace-mcp, tana-mcp,
+    homeassistant-proxy). Lightweight, Proxmox-preferred.
+12. **Misc** (Headlamp, Scanner, ActivityWatch, BuildBuddy executor).
+13. **Suspended services** (Kagent, Langfuse, Firecrawl). Keep
+    suspended, revive, or drop entirely?
+14. **CNPG backup strategy.** Standardize pg_dump CronJobs across all
+    Proxmox CNPG clusters.
