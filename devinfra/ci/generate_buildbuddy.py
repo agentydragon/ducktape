@@ -93,15 +93,22 @@ def generate_buildbuddy_config() -> dict[str, Any]:
 
     for img in IMAGES:
         repo_name = img.repository.rsplit("/", 1)[-1]
+        # Single shell step: build + push in the same shell so (1) BuildBuddy's
+        # bazel wrapper injects the API key for both commands and (2) the image
+        # tree artifacts from `bazel build` persist for `bazel run`.
         actions.append(
             {
                 "name": f"Push {repo_name}",
                 "triggers": push_triggers,
                 "container_image": "ubuntu-24.04",
                 "resource_requests": push_resources,
-                "bazel_commands": [
-                    f"build --config=rbe --remote_download_toplevel {img.image_target}",
-                    f"run --config=rbe //devinfra/ci:bb_push_images_bin -- --image {img.image_target}",
+                "steps": [
+                    {
+                        "run": (
+                            f"bazel build --config=rbe --remote_download_toplevel {img.image_target}\n"
+                            f"bazel run --config=rbe //devinfra/ci:bb_push_images_bin -- --image {img.image_target}\n"
+                        )
+                    }
                 ],
             }
         )

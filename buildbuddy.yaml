@@ -50,69 +50,79 @@ actions:
     container_image: ubuntu-24.04
     resource_requests: &id002
       disk: 50GB
-    bazel_commands:
-      - build --config=rbe --remote_download_toplevel //cluster/k8s/inventree/token-provisioner:image
-      - run --config=rbe //devinfra/ci:bb_push_images_bin -- --image //cluster/k8s/inventree/token-provisioner:image
+    steps:
+      - run: |
+          bazel build --config=rbe --remote_download_toplevel //cluster/k8s/inventree/token-provisioner:image
+          bazel run --config=rbe //devinfra/ci:bb_push_images_bin -- --image //cluster/k8s/inventree/token-provisioner:image
   - name: Push props-backend
     triggers: *id001
     container_image: ubuntu-24.04
     resource_requests: *id002
-    bazel_commands:
-      - build --config=rbe --remote_download_toplevel //props/backend:image
-      - run --config=rbe //devinfra/ci:bb_push_images_bin -- --image //props/backend:image
+    steps:
+      - run: |
+          bazel build --config=rbe --remote_download_toplevel //props/backend:image
+          bazel run --config=rbe //devinfra/ci:bb_push_images_bin -- --image //props/backend:image
   - name: Push airlock
     triggers: *id001
     container_image: ubuntu-24.04
     resource_requests: *id002
-    bazel_commands:
-      - build --config=rbe --remote_download_toplevel //airlock:image
-      - run --config=rbe //devinfra/ci:bb_push_images_bin -- --image //airlock:image
+    steps:
+      - run: |
+          bazel build --config=rbe --remote_download_toplevel //airlock:image
+          bazel run --config=rbe //devinfra/ci:bb_push_images_bin -- --image //airlock:image
   - name: Push auth-proxy
     triggers: *id001
     container_image: ubuntu-24.04
     resource_requests: *id002
-    bazel_commands:
-      - build --config=rbe --remote_download_toplevel //airlock/auth_proxy:image
-      - run --config=rbe //devinfra/ci:bb_push_images_bin -- --image //airlock/auth_proxy:image
+    steps:
+      - run: |
+          bazel build --config=rbe --remote_download_toplevel //airlock/auth_proxy:image
+          bazel run --config=rbe //devinfra/ci:bb_push_images_bin -- --image //airlock/auth_proxy:image
   - name: Push exec-backend
     triggers: *id001
     container_image: ubuntu-24.04
     resource_requests: *id002
-    bazel_commands:
-      - build --config=rbe --remote_download_toplevel //mcp_infra/exec:direct_image
-      - run --config=rbe //devinfra/ci:bb_push_images_bin -- --image //mcp_infra/exec:direct_image
+    steps:
+      - run: |
+          bazel build --config=rbe --remote_download_toplevel //mcp_infra/exec:direct_image
+          bazel run --config=rbe //devinfra/ci:bb_push_images_bin -- --image //mcp_infra/exec:direct_image
   - name: Push openclaw-exec
     triggers: *id001
     container_image: ubuntu-24.04
     resource_requests: *id002
-    bazel_commands:
-      - build --config=rbe --remote_download_toplevel //openclaw/exec:image
-      - run --config=rbe //devinfra/ci:bb_push_images_bin -- --image //openclaw/exec:image
+    steps:
+      - run: |
+          bazel build --config=rbe --remote_download_toplevel //openclaw/exec:image
+          bazel run --config=rbe //devinfra/ci:bb_push_images_bin -- --image //openclaw/exec:image
   - name: Push homeassistant-proxy
     triggers: *id001
     container_image: ubuntu-24.04
     resource_requests: *id002
-    bazel_commands:
-      - build --config=rbe --remote_download_toplevel //homeassistant/proxy:image
-      - run --config=rbe //devinfra/ci:bb_push_images_bin -- --image //homeassistant/proxy:image
+    steps:
+      - run: |
+          bazel build --config=rbe --remote_download_toplevel //homeassistant/proxy:image
+          bazel run --config=rbe //devinfra/ci:bb_push_images_bin -- --image //homeassistant/proxy:image
   - name: Push inventree
     triggers: *id001
     container_image: ubuntu-24.04
     resource_requests: *id002
-    bazel_commands:
-      - build --config=rbe --remote_download_toplevel //inventree_utils/rai_plugin:image
-      - run --config=rbe //devinfra/ci:bb_push_images_bin -- --image //inventree_utils/rai_plugin:image
+    steps:
+      - run: |
+          bazel build --config=rbe --remote_download_toplevel //inventree_utils/rai_plugin:image
+          bazel run --config=rbe //devinfra/ci:bb_push_images_bin -- --image //inventree_utils/rai_plugin:image
   - name: Push tana-token-broker
     triggers: *id001
     container_image: ubuntu-24.04
     resource_requests: *id002
-    bazel_commands:
-      - build --config=rbe --remote_download_toplevel //tana/token_broker:image
-      - run --config=rbe //devinfra/ci:bb_push_images_bin -- --image //tana/token_broker:image
+    steps:
+      - run: |
+          bazel build --config=rbe --remote_download_toplevel //tana/token_broker:image
+          bazel run --config=rbe //devinfra/ci:bb_push_images_bin -- --image //tana/token_broker:image
   - name: Push aw-server
     triggers: *id001
     container_image: ubuntu-24.04
     resource_requests: *id002
-    bazel_commands:
-      - build --config=rbe --remote_download_toplevel //third_party/activitywatch:image
-      - run --config=rbe //devinfra/ci:bb_push_images_bin -- --image //third_party/activitywatch:image
+    steps:
+      - run: |
+          bazel build --config=rbe --remote_download_toplevel //third_party/activitywatch:image
+          bazel run --config=rbe //devinfra/ci:bb_push_images_bin -- --image //third_party/activitywatch:image
