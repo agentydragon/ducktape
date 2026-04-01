@@ -855,10 +855,49 @@ storage, PVCs pin pods to nodes and every node becomes a pet.
 - CephFS for full POSIX RWX (native, not FUSE)
 - RBD for block storage with sync replication within a site
 - rbd-mirror for async cross-site DR
-- CRUSH rules for topology-aware placement (keep replicas local
-  to a site, avoid cross-site sync penalty)
 - Battle-tested (CNCF graduated, 20+ years of Ceph, massive community)
 - One system for everything (block, filesystem, object via RGW)
+
+**Cross-site write latency problem (same as Longhorn):**
+
+One of the main reasons for switching off Longhorn is its cross-site
+write latency (every write waits for all replicas across Nebula).
+Ceph with cross-site replicas has the **same fundamental problem.**
+
+With a pool spanning VPS + Proxmox (size=3: 2 VPS + 1 Proxmox,
+min_size=2): every write must wait for at least 2 replica acks.
+Regardless of which site the pod is on, at least one ack crosses
+the 20ms Nebula link. A pod on Proxmox writing to a VPS primary
+pays ~40ms (round-trip to primary + back). A pod on VPS writing
+to a local primary pays ~20ms (waiting for one ack, which may
+come from the VPS replica in <1ms if lucky, but CRUSH can't
+guarantee which replica acks first).
+
+Setting `min_size: 1` removes the cross-site penalty (local ack
+only) but weakens durability — data could be lost if the primary
+dies before replicating.
+
+**This means**: A single "works everywhere" pool with cross-site
+replicas does NOT solve the Longhorn latency problem. To get fast
+writes, you still need site-local pools (replicas only within one
+site), which reintroduces the per-site storage class babysitting.
+
+**Options:**
+
+1. Site-local pools only (fast writes, no cross-site copy) — nodes
+   are cattle within each site but not across sites. Cross-site DR
+   via rbd-mirror (async, separate operation). Still need separate
+   StorageClasses per site.
+2. Single cross-site pool, accept 20ms writes — simpler ops, but
+   same latency as Longhorn for cross-site replicas.
+3. `min_size: 1` cross-site pool — fast local ack, weaker durability.
+   Ceph still replicates, just doesn't block the write on it.
+
+None of these give "one storage class, fast writes everywhere, cross-
+site durability." That combination doesn't exist in any synchronous
+replication system. Only JuiceFS+MinIO (async site replication with
+local writes to object store) or similar async-first architectures
+avoid this tradeoff.
 
 **The resource concern:**
 
