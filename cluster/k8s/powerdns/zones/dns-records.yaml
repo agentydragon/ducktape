@@ -1,0 +1,104 @@
+---
+# Nebula lighthouse A records — resolve lighthouse cert names to VPS public IPs.
+# Used by non-lighthouse nodes (wyrm2, rugged) to find lighthouses before joining
+# the mesh. IPs substituted by Flux postBuild from cluster-info ConfigMap.
+apiVersion: dns.cav.enablers.ob/v1alpha2
+kind: ClusterRRset
+metadata:
+  name: nebula-talos-vps-cp-0
+spec:
+  zoneRef:
+    kind: ClusterZone
+    name: allegedly.works
+  name: talos-vps-cp-0.nebula.allegedly.works.
+  type: A
+  ttl: 3600
+  records:
+    - "${vps_ip_vps0}"
+---
+apiVersion: dns.cav.enablers.ob/v1alpha2
+kind: ClusterRRset
+metadata:
+  name: nebula-talos-vps-cp-1
+spec:
+  zoneRef:
+    kind: ClusterZone
+    name: allegedly.works
+  name: talos-vps-cp-1.nebula.allegedly.works.
+  type: A
+  ttl: 3600
+  records:
+    - "${vps_ip_vps1}"
+---
+apiVersion: dns.cav.enablers.ob/v1alpha2
+kind: ClusterRRset
+metadata:
+  name: nebula-talos-vps-worker-0
+spec:
+  zoneRef:
+    kind: ClusterZone
+    name: allegedly.works
+  name: talos-vps-worker-0.nebula.allegedly.works.
+  type: A
+  ttl: 3600
+  records:
+    - "${vps_ip_vps_worker0}"
+---
+apiVersion: dns.cav.enablers.ob/v1alpha2
+kind: ClusterRRset
+metadata:
+  name: nebula-talos-vps-worker-1
+spec:
+  zoneRef:
+    kind: ClusterZone
+    name: allegedly.works
+  name: talos-vps-worker-1.nebula.allegedly.works.
+  type: A
+  ttl: 3600
+  records:
+    - "${vps_ip_vps_worker1}"
+---
+# Nameserver A records (within the zone)
+apiVersion: dns.cav.enablers.ob/v1alpha2
+kind: ClusterRRset
+metadata:
+  name: ns1
+spec:
+  zoneRef:
+    kind: ClusterZone
+    name: allegedly.works
+  name: ns1.allegedly.works.
+  type: A
+  ttl: 3600
+  records:
+    - "${vps_ip_vps0}"
+---
+apiVersion: dns.cav.enablers.ob/v1alpha2
+kind: ClusterRRset
+metadata:
+  name: ns2
+spec:
+  zoneRef:
+    kind: ClusterZone
+    name: allegedly.works
+  name: ns2.allegedly.works.
+  type: A
+  ttl: 3600
+  records:
+    - "${vps_ip_vps1}"
+---
+# Kubernetes API endpoint (round-robin to CP nodes)
+apiVersion: dns.cav.enablers.ob/v1alpha2
+kind: ClusterRRset
+metadata:
+  name: api
+spec:
+  zoneRef:
+    kind: ClusterZone
+    name: allegedly.works
+  name: api.allegedly.works.
+  type: A
+  ttl: 300
+  records:
+    - "${vps_ip_vps0}"
+    - "${vps_ip_vps1}"

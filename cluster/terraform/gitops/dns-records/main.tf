@@ -1,3 +1,12 @@
+# Route 53 glue records and domain registration.
+#
+# PowerDNS zone records (NS, nebula lighthouse, API endpoint) are managed
+# declaratively as ClusterRRset CRDs in k8s/powerdns/zones/dns-records.yaml
+# with IPs substituted by Flux from the cluster-info ConfigMap.
+#
+# This module handles only the AWS side: glue records at the registrar level
+# and nameserver delegation, which require the AWS API (not PowerDNS).
+
 terraform {
   required_version = ">= 1.0"
 
@@ -5,10 +14,6 @@ terraform {
     aws = {
       source  = "hashicorp/aws"
       version = "~> 5.0"
-    }
-    powerdns = {
-      source  = "pan-net/powerdns"
-      version = "~> 1.5"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
@@ -18,7 +23,6 @@ terraform {
 }
 
 # Read VPS IPs from ConfigMap created by infrastructure terraform
-# Note: ConfigMap is in kube-system (always exists during infra layer)
 data "kubernetes_config_map" "cluster_info" {
   metadata {
     name      = "cluster-info"
@@ -27,13 +31,9 @@ data "kubernetes_config_map" "cluster_info" {
 }
 
 locals {
-  # CP nodes — for NS records, API endpoint, nameserver registration
   vps_cp_nodes = jsondecode(data.kubernetes_config_map.cluster_info.data["vps_cp_nodes"])
-  # All VPS nodes — for Nebula lighthouse DNS
-  vps_nodes = jsondecode(data.kubernetes_config_map.cluster_info.data["vps_nodes"])
-  domain    = "allegedly.works"
+  domain       = "allegedly.works"
 
-  # Map CP nodes to nameserver numbers: vps0 -> ns1, vps1 -> ns2, etc.
   ns_records = {
     for k, v in local.vps_cp_nodes : k => {
       ns_name = "ns${tonumber(substr(k, 3, -1)) + 1}" # vps0 -> ns1, vps1 -> ns2
@@ -46,12 +46,6 @@ locals {
 provider "aws" {
   region = var.aws_region
   # AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY from environment
-}
-
-# PowerDNS provider
-provider "powerdns" {
-  server_url = var.powerdns_url
-  api_key    = var.powerdns_api_key
 }
 
 # Route 53 glue records (at registrar level)
@@ -67,38 +61,6 @@ resource "aws_route53_record" "ns_glue" {
   ttl             = 300
   records         = [each.value.ip]
   allow_overwrite = true
-}
-
-# PowerDNS NS A records (within the zone)
-resource "powerdns_record" "ns" {
-  for_each = local.ns_records
-
-  zone    = "${local.domain}."
-  name    = "${each.value.ns_name}.${local.domain}."
-  type    = "A"
-  ttl     = 3600
-  records = [each.value.ip]
-}
-
-# Nebula lighthouse DNS records — all VPS nodes (CPs + workers) are lighthouses.
-# Uses node names: talos-vps-cp-0.nebula.allegedly.works, talos-vps-worker-0.nebula.allegedly.works
-resource "powerdns_record" "nebula_lighthouse" {
-  for_each = local.vps_nodes
-
-  zone    = "${local.domain}."
-  name    = "${each.value.name}.nebula.${local.domain}."
-  type    = "A"
-  ttl     = 3600
-  records = [each.value.ip]
-}
-
-# Kubernetes API endpoint (round-robin to CP nodes only)
-resource "powerdns_record" "api" {
-  zone    = "${local.domain}."
-  name    = "api.${local.domain}."
-  type    = "A"
-  ttl     = 300
-  records = [for k, v in local.vps_cp_nodes : v.ip]
 }
 
 # Import: domain registration persists across cluster lifecycles.

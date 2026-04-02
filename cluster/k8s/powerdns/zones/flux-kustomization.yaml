@@ -13,6 +13,10 @@ spec:
     kind: GitRepository
     name: flux-system
   wait: true
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cluster-info
   # Health check ensures DNS zone is created before external-dns tries to manage records
   healthChecks:
     - apiVersion: dns.k8s.codesink.net/v1alpha1
@@ -20,4 +24,5 @@ spec:
       name: allegedly-works
   dependsOn:
     - name: powerdns-operator
+    - name: reflector
   timeout: 5m

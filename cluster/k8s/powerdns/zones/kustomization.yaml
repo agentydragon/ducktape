@@ -4,4 +4,4 @@ kind: Kustomization
 resources:
   - clusterzone.yaml
   - soa-record.yaml
-  # nameserver-glue-records.yaml removed - now managed by dns-automation tofu-controller
+  - dns-records.yaml

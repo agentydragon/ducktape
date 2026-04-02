@@ -19,5 +19,3 @@ spec:
   dependsOn:
     - name: tofu-controller
     - name: sealed-secrets # aws-credentials-sealed.yaml
-    - name: powerdns # PowerDNS must be running (API endpoint)
-    - name: reflector # Reflector must copy powerdns-api-key to flux-system

@@ -24,16 +24,6 @@ spec:
   vars:
     - name: route53_zone_id
       value: "Z02901943N8ZFQFOD9P5I"
-    - name: powerdns_url
-      value: "http://powerdns-api.dns-system:8081"
-
-  # Secrets - PowerDNS API key from existing secret
-  varsFrom:
-    - kind: Secret
-      name: powerdns-api-key
-      varsKeys:
-        - powerdns_api_key
-      optional: false
 
   # AWS credentials as environment variables
   runnerPodTemplate:
