@@ -28,6 +28,7 @@ resources:
   - reflector/flux-kustomization.yaml
   - node-feature-discovery/flux-kustomization.yaml
   - nvidia-device-plugin/flux-kustomization.yaml
+  - kvm-device-plugin/flux-kustomization.yaml
   - hubble-ui/flux-kustomization.yaml
   - dns-automation/flux-kustomization.yaml
   - kube-api-proxy/flux-kustomization.yaml
