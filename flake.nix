@@ -280,6 +280,10 @@
           # Build: nix build .#lxc-k8s-test-lxc
           # Upload: scp result/*.tar.xz root@atlas:/var/lib/vz/template/cache/
           lxc-k8s-test-lxc = self.nixosConfigurations.lxc-k8s-test.config.system.build.tarball;
+          # Firecracker dev VM rootfs (ext4) and kernel (vmlinux).
+          # Build: nix build .#fc-dev-rootfs  /  nix build .#fc-dev-kernel
+          fc-dev-rootfs = self.nixosConfigurations.fc-dev.config.system.build.ext4;
+          fc-dev-kernel = self.nixosConfigurations.fc-dev.config.boot.kernelPackages.kernel;
         };
 
       homeConfigurations = {
@@ -382,6 +386,13 @@
             ./nix/nixos/hosts/bazel-test
             home-manager.nixosModules.home-manager
           ];
+        };
+
+        # Firecracker dev VM — NixOS rootfs for Bazel development.
+        # Not a real host — produces ext4 image for Firecracker microVMs.
+        fc-dev = nixpkgs.lib.nixosSystem {
+          inherit system;
+          modules = [ ./nix/nixos/hosts/fc_dev ];
         };
       };
     };
