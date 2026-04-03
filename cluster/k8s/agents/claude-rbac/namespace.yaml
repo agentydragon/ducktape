@@ -5,3 +5,4 @@ metadata:
   labels:
     name: claude-sandbox
     environment: development
+    goldilocks.fairwinds.com/enabled: "true"

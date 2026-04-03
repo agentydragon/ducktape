@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: firecracker-manager
+  namespace: claude-sandbox
+  annotations:
+    description: >-
+      Firecracker VM manager. Creates VM pods (PVC + pod), then drives
+      boot/restore via the Firecracker API proxy on each pod.
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: firecracker-manager
+  template:
+    metadata:
+      labels:
+        app: firecracker-manager
+    spec:
+      serviceAccountName: firecracker-manager
+      nodeSelector:
+        kubernetes.io/hostname: wyrm2
+      containers:
+        - name: manager
+          image: ghcr.io/agentydragon/firecracker-manager:latest
+          args:
+            - /etc/firecracker-manager/config.yaml
+          ports:
+            - containerPort: 8080
+              name: api
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          env:
+            - name: FC_MANAGER_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: firecracker-manager-auth-token
+                  key: token
+          volumeMounts:
+            - name: config
+              mountPath: /etc/firecracker-manager
+      volumes:
+        - name: config
+          configMap:
+            name: firecracker-manager-config
