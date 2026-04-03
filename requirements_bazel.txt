@@ -4902,6 +4902,10 @@ pyrage-stubs==1.3.1 \
     --hash=sha256:4e38b7ec6d89977147b7d213f931b0a0198918369144eec6df03c5eb83aabf1c \
     --hash=sha256:cf1a4473eee584314d396b87550c0a5d84e4b0e3f0ec54e4cae6d896ae50c2ba
     # via ducktape (pyproject.toml)
+pyroute2==0.9.5 \
+    --hash=sha256:a198ccbe545b031b00b10da4b44df33d548db04af944be8107c05a215ba03872 \
+    --hash=sha256:e7d485ce8274cbf473e9092fa65585faf8a3df5fe05ecf497cb9c5b1516ba09f
+    # via ducktape (pyproject.toml)
 pytest==9.0.2 \
     --hash=sha256:711ffd45bf766d5264d487b917733b453d917afd2b0ad65223959f59089f875b \
     --hash=sha256:75186651a92bd89611d1d9fc20f0b4345fd827c41ccd5c299a868a05d70edf11

@@ -1,0 +1,98 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/ghcr_push:push.bzl", "ghcr_push")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+# Apt manifest + lockfile for rules_distroless (referenced from MODULE.bazel).
+exports_files([
+    "bookworm_fc_vm_pod.yaml",
+    "bookworm_fc_vm_pod.lock.json",
+])
+
+py_library(
+    name = "networking",
+    srcs = ["networking.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pyroute2"],
+)
+
+py_library(
+    name = "firecracker_process",
+    srcs = ["firecracker_process.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "proxy",
+    srcs = ["proxy.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "entrypoint_lib",
+    srcs = ["entrypoint.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":config",
+        ":firecracker_process",
+        ":networking",
+        ":proxy",
+    ],
+)
+
+py_binary(
+    name = "entrypoint",
+    imports = ["../../.."],
+    main_module = "devinfra.firecracker.vm_pod.entrypoint",
+    deps = [":entrypoint_lib"],
+)
+
+# ── OCI Image ────────────────────────────────────────────────────────────────
+
+aspect_py_binary(
+    name = "entrypoint_bin",
+    imports = ["../../.."],
+    main = "entrypoint.py",
+    deps = [":entrypoint_lib"],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":entrypoint_bin",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("entrypoint_bin"),
+    env = py_image_env(binary_name = "entrypoint_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [
+        "@bookworm_fc_vm_pod//:flat",
+        ":layers",
+        "//devinfra/firecracker:firecracker_layer",
+        "//devinfra/firecracker/initramfs:initramfs_layer",
+    ],
+)
+
+ghcr_push(
+    name = "push_ghcr",
+    image = ":image",
+    repository = "ghcr.io/agentydragon/fc-vm-pod",
+)

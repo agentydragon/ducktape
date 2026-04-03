@@ -56,6 +56,9 @@ dependencies = [
     # Docker
     "docker>=7.0.0",
 
+    # Firecracker VM pod networking (TAP/IP via netlink)
+    "pyroute2>=0.9.0",
+
     # Data
     "pandas>=2.2.0",
     "PyYAML>=6.0",

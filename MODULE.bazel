@@ -249,7 +249,14 @@ apt.install(
     lock = "//devinfra/claude/hook_daemon/session_start/container_e2e:trixie_e2e.lock.json",
     manifest = "//devinfra/claude/hook_daemon/session_start/container_e2e:trixie_e2e.yaml",
 )
-use_repo(apt, "trixie_e2e")
+
+# Firecracker VM pod: iproute2, iptables, mount, procps, openssh-client on debian:bookworm-slim.
+apt.install(
+    name = "bookworm_fc_vm_pod",
+    lock = "//devinfra/firecracker/vm_pod:bookworm_fc_vm_pod.lock.json",
+    manifest = "//devinfra/firecracker/vm_pod:bookworm_fc_vm_pod.yaml",
+)
+use_repo(apt, "bookworm_fc_vm_pod", "trixie_e2e")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
@@ -712,6 +719,16 @@ http_file(
     executable = True,
     sha256 = "fd8fdff418a1758887520fa42da7e6ae39aefc788cf5e7f7bb8db6934d279fc4",
     urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-linux-amd64"],
+)
+
+# Firecracker v1.12.1 — microVM VMM binary for Firecracker dev VMs on wyrm2.
+# The tarball contains the firecracker binary + jailer + tools. We extract
+# just the firecracker binary in devinfra/firecracker/BUILD.bazel.
+http_archive(
+    name = "firecracker_release",
+    build_file_content = 'exports_files(["release-v1.12.1-x86_64/firecracker-v1.12.1-x86_64"])',
+    sha256 = "0a75e67ef6e4c540a2cf248b06822b0be9820cbba9fe19f9e0321200fe76ff6b",
+    urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.12.1/firecracker-v1.12.1-x86_64.tgz"],
 )
 
 # Node.js v22.11.0 LTS linux-x64 — provides the 'node' binary for the

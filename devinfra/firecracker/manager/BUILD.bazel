@@ -1,0 +1,125 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/ghcr_push:push.bzl", "ghcr_push")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "clients",
+    srcs = ["clients.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "k8s_client",
+    srcs = ["k8s_client.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":models",
+        "@pypi//kubernetes",
+    ],
+)
+
+py_library(
+    name = "protocol",
+    srcs = ["protocol.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "process_api_client",
+    srcs = ["process_api_client.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":protocol",
+        "@pypi//websockets",
+    ],
+)
+
+py_library(
+    name = "snapshots",
+    srcs = ["snapshots.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [":clients"],
+)
+
+py_library(
+    name = "service_lib",
+    srcs = ["service.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":clients",
+        ":config",
+        ":k8s_client",
+        ":models",
+        ":snapshots",
+        "@pypi//fastapi",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "service",
+    imports = ["../../.."],
+    main_module = "devinfra.firecracker.manager.service",
+    deps = [":service_lib"],
+)
+
+# ── OCI Image ────────────────────────────────────────────────────────────────
+
+aspect_py_binary(
+    name = "service_bin",
+    imports = ["../../.."],
+    main = "service.py",
+    deps = [":service_lib"],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":service_bin",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("service_bin"),
+    env = py_image_env(binary_name = "service_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":layers"],
+)
+
+ghcr_push(
+    name = "push_ghcr",
+    image = ":image",
+    repository = "ghcr.io/agentydragon/firecracker-manager",
+)

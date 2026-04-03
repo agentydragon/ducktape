@@ -1,0 +1,22 @@
+# Deb packages layered on debian:bookworm-slim for the Firecracker VM pod.
+#
+# Most system tools are replaced by pure Python (pyroute2 for TAP/IP,
+# ctypes for mount/umount, socket for SSH readiness). Only nftables
+# is needed as a binary for the NAT MASQUERADE rule.
+#
+# Regenerate the lock file after any change:
+#   bazel run @bookworm_fc_vm_pod//:lock
+version: 1
+
+sources:
+  - channel: bookworm main
+    url: https://snapshot.debian.org/archive/debian/20260301T000000Z
+  - channel: bookworm-security main
+    url: https://snapshot.debian.org/archive/debian-security/20260301T000000Z
+
+archs:
+  - "amd64"
+
+packages:
+  # nft CLI — NAT MASQUERADE rule for guest networking
+  - "nftables"

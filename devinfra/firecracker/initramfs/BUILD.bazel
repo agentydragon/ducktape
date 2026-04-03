@@ -1,0 +1,27 @@
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+# Build a cpio initramfs containing the RE process_api as /init.
+# Firecracker boots the kernel with this initramfs; process_api (PID 1)
+# mounts /dev/vda (NixOS rootfs), pivot_roots, and starts the WebSocket +
+# HTTP control server.
+genrule(
+    name = "initramfs",
+    srcs = ["//devinfra/claude/web_env/re/process_api/91c789ff:process_api_re"],
+    outs = ["initramfs.cpio"],
+    cmd = """
+        WORK=$$(mktemp -d)
+        cp $(location //devinfra/claude/web_env/re/process_api/91c789ff:process_api_re) $$WORK/init
+        chmod 755 $$WORK/init
+        (cd $$WORK && find . | cpio -o -H newc --quiet) > $@
+        rm -rf $$WORK
+    """,
+    visibility = ["//devinfra/firecracker:__subpackages__"],
+)
+
+# Tar layer for the VM pod OCI image — places the initramfs at a known path.
+pkg_tar(
+    name = "initramfs_layer",
+    srcs = [":initramfs"],
+    package_dir = "/opt/firecracker",
+    visibility = ["//devinfra/firecracker:__subpackages__"],
+)

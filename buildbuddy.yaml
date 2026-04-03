@@ -67,6 +67,20 @@ actions:
     steps:
       - run: |
           bazel run --config=rbe --remote_download_toplevel //cluster/k8s/inventree/token-provisioner:push_ghcr
+  - name: Push //devinfra/firecracker/manager:push_ghcr
+    triggers: *id001
+    container_image: ubuntu-24.04
+    resource_requests: *id002
+    steps:
+      - run: |
+          bazel run --config=rbe --remote_download_toplevel //devinfra/firecracker/manager:push_ghcr
+  - name: Push //devinfra/firecracker/vm_pod:push_ghcr
+    triggers: *id001
+    container_image: ubuntu-24.04
+    resource_requests: *id002
+    steps:
+      - run: |
+          bazel run --config=rbe --remote_download_toplevel //devinfra/firecracker/vm_pod:push_ghcr
   - name: Push //homeassistant/proxy:push_ghcr
     triggers: *id001
     container_image: ubuntu-24.04
