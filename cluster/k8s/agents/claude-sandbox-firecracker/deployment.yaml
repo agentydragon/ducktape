@@ -37,6 +37,16 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: api
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: api
+            periodSeconds: 30
           env:
             - name: FC_MANAGER_AUTH_TOKEN
               valueFrom:

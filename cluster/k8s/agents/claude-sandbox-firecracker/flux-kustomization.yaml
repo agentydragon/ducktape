@@ -13,4 +13,5 @@ spec:
   timeout: 2m
   dependsOn:
     - name: claude-rbac
+    - name: claude-sandbox-secrets
     - name: kvm-device-plugin

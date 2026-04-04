@@ -67,14 +67,14 @@ CloudNativePG `local-path`. See <changelog.md> for history.
       loss caused `sso-secrets` to regenerate all `random_password` resources. Fix by
       force re-applying all SSO blueprints (clear `last_applied_hash` via `ak shell`) so
       the DB picks up the current env var values.
-- [ ] OpenEBS LVM on VPS nodes: Partition each VPS node's 160GB NVMe to carve out
-      ~60GB for an LVM volume group (`openebs-vps-vg`). Use Talos `machine.disks` or
-      `machine.volumes` (1.9+) to create the partition and VG. Expand OpenEBS LVM
-      HelmRelease `lvmNode.nodeSelector` to include VPS nodes (`region: hil`). Add a
-      `lvm-vps` StorageClass. Rolling update: drain + destroy + recreate each VPS node
-      one at a time to repartition. This gives VPS nodes a local non-replicated storage
-      option (faster than Longhorn for single-node workloads like CNPG `local-path`
-      replacements). Pairs well with CPX41 upgrade (240GB → more headroom).
+- [ ] OpenEBS LVM on Talos nodes: Currently deployed on wyrm2 (NixOS) for
+      Firecracker VM storage (thin provisioning, `volumeMode: Block` cloning).
+      If it works well on wyrm2, expand to Talos nodes: - **VPS nodes**: Partition each 160GB NVMe to carve out ~60GB for a VG
+      (`openebs-vps-vg`). Use Talos `machine.disks` or `machine.volumes`
+      (1.9+). Add `lvm-vps` StorageClass. Rolling update: drain + destroy +
+      recreate each VPS node. Gives VPS a local non-replicated option
+      (faster than Longhorn for CNPG `local-path` replacements). - **Proxmox CP**: Similar approach if needed for local storage. - Expand OpenEBS LVM HelmRelease `lvmNode.nodeSelector` to include
+      target regions. Pairs well with CPX41 upgrade (240GB → more headroom).
 - [ ] Longhorn node tags: Kyverno mutate policy sets `node.longhorn.io/default-node-tags`
       annotation, but only fires at Node admission time — nodes created before Kyverno is
       deployed (i.e., bootstrap) never get tagged. Currently patched manually. Options:
