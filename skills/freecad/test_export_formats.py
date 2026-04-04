@@ -1,23 +1,31 @@
-"""Test SVG and PDF export from parametric_rect.py in FreeCAD Docker container."""
+"""Golden-file test: parametric rectangle exports to DXF, SVG, and PDF."""
 
-import shutil
 from pathlib import Path
 
+import pytest
 import pytest_bazel
 
+from skills.freecad.compare_dxf import compare_dxf_files
+from skills.freecad.compare_pdf import compare_pdf_files
+from skills.freecad.compare_svg import compare_svg_files
 from util.bazel.runfiles import get_required_path
 from util.oci import load_image
 from util.testing.container_logs import LoggedContainer
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 _IMAGE_TAG = "freecad-test:pinned"
 _TARBALL = "_main/skills/freecad/freecad_test_load/tarball.tar"
 _SCRIPT = "_main/skills/freecad/parametric_rect.py"
+_GOLDEN_DXF = "_main/skills/freecad/golden/rect.dxf"
+_GOLDEN_SVG = "_main/skills/freecad/golden/rect.svg"
+_GOLDEN_PDF = "_main/skills/freecad/golden/rect.pdf"
 
 
-def test_export_svg_and_pdf(tmp_path: Path) -> None:
+@pytest.fixture(scope="module")
+def export_outputs(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Run parametric_rect.py once and return the output directory."""
     load_image(_TARBALL)
     script = get_required_path(_SCRIPT)
+    tmp_path = tmp_path_factory.mktemp("freecad-export")
 
     with LoggedContainer(
         _IMAGE_TAG,
@@ -33,33 +41,31 @@ def test_export_svg_and_pdf(tmp_path: Path) -> None:
         print(output)
         assert result.exit_code == 0, f"freecadcmd failed (exit {result.exit_code}): {output[:500]}"
 
-    # Verify all three export formats were generated
-    dxf = tmp_path / "rect.dxf"
-    svg = tmp_path / "rect.svg"
-    pdf = tmp_path / "rect.pdf"
+    return tmp_path
 
-    assert dxf.exists(), "DXF not generated"
-    assert svg.exists(), "SVG not generated"
-    assert pdf.exists(), "PDF not generated"
 
-    print(f"DXF: {dxf.stat().st_size} bytes")
-    print(f"SVG: {svg.stat().st_size} bytes")
-    print(f"PDF: {pdf.stat().st_size} bytes")
+def test_dxf_golden(export_outputs: Path) -> None:
+    actual = export_outputs / "rect.dxf"
+    assert actual.exists(), "DXF not generated"
+    diff = compare_dxf_files(actual, get_required_path(_GOLDEN_DXF))
+    if diff is not None:
+        pytest.fail(f"DXF mismatch:\n{diff[:500]}")
 
-    # SVG should be valid XML containing svg tag
-    svg_content = svg.read_text()
-    assert "<svg" in svg_content, "SVG file doesn't contain <svg tag"
-    assert svg.stat().st_size > 100, "SVG file suspiciously small"
 
-    # PDF should start with %PDF header
-    pdf_header = pdf.read_bytes()[:5]
-    assert pdf_header == b"%PDF-", f"PDF file doesn't start with %PDF- header, got {pdf_header!r}"
-    assert pdf.stat().st_size > 100, "PDF file suspiciously small"
+def test_svg_golden(export_outputs: Path) -> None:
+    actual = export_outputs / "rect.svg"
+    assert actual.exists(), "SVG not generated"
+    diff = compare_svg_files(actual, get_required_path(_GOLDEN_SVG))
+    if diff is not None:
+        pytest.fail(f"SVG mismatch:\n{diff[:500]}")
 
-    # Save to undeclared outputs for golden file extraction
-    out_dir = undeclared_outputs_dir()
-    for name in ("rect.svg", "rect.pdf"):
-        shutil.copy2(tmp_path / name, out_dir / name)
+
+def test_pdf_golden(export_outputs: Path) -> None:
+    actual = export_outputs / "rect.pdf"
+    assert actual.exists(), "PDF not generated"
+    diff = compare_pdf_files(actual, get_required_path(_GOLDEN_PDF))
+    if diff is not None:
+        pytest.fail(f"PDF mismatch:\n{diff}")
 
 
 if __name__ == "__main__":

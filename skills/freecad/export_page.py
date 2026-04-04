@@ -1,12 +1,12 @@
 """
-Export FCStd TechDraw page to DXF, SVG, or PDF.
+Export FCStd TechDraw page to DXF, SVG, and PDF.
 
 All formats require GUI mode (xvfb) for TechDraw view computation.
 
 Usage:
-  xvfb-run -a -s "-screen 0 1024x768x24" freecadcmd export_page.py <input.FCStd> <output.{dxf,svg,pdf}>
+  xvfb-run -a -s "-screen 0 1024x768x24" freecadcmd export_page.py <input.FCStd> <output_dir>
 
-The output format is determined by the file extension.
+Produces <output_dir>/page.dxf, <output_dir>/page.svg, <output_dir>/page.pdf.
 """
 
 import os
@@ -16,12 +16,7 @@ from pathlib import Path
 
 args = list(sys.argv[1:])
 fcstd_path = args[0] if len(args) > 0 else "input.FCStd"
-output_path = args[1] if len(args) > 1 else "output.dxf"
-
-suffix = Path(output_path).suffix.lower()
-if suffix not in (".dxf", ".svg", ".pdf"):
-    print(f"ERROR: Unsupported format {suffix!r}. Use .dxf, .svg, or .pdf")
-    sys.exit(1)
+outdir = args[1] if len(args) > 1 else "."
 
 import FreeCAD as App  # noqa: E402 — must parse args before FreeCAD import
 import FreeCADGui as Gui  # noqa: E402
@@ -68,13 +63,17 @@ for obj in doc.Objects:
     if "DrawViewPart" in obj.TypeId:
         print(f"{obj.Name}: {len(obj.getVisibleEdges())} edges")
 
-if suffix == ".dxf":
-    TechDraw.writeDXFPage(page, output_path)
-elif suffix == ".svg":
-    TechDrawGui.exportPageAsSvg(page, output_path)
-elif suffix == ".pdf":
-    TechDrawGui.exportPageAsPdf(page, output_path)
+# Export all three formats
+dxf_path = os.path.join(outdir, "page.dxf")  # noqa: PTH118 — FreeCAD API expects str
+TechDraw.writeDXFPage(page, dxf_path)
+print(f"DXF: {Path(dxf_path).stat().st_size} bytes")
 
-print(f"Exported: {output_path} ({Path(output_path).stat().st_size} bytes)")
+svg_path = os.path.join(outdir, "page.svg")  # noqa: PTH118 — FreeCAD API expects str
+TechDrawGui.exportPageAsSvg(page, svg_path)
+print(f"SVG: {Path(svg_path).stat().st_size} bytes")
+
+pdf_path = os.path.join(outdir, "page.pdf")  # noqa: PTH118 — FreeCAD API expects str
+TechDrawGui.exportPageAsPdf(page, pdf_path)
+print(f"PDF: {Path(pdf_path).stat().st_size} bytes")
 
 os._exit(0)  # Skip Qt cleanup to avoid segfault under xvfb

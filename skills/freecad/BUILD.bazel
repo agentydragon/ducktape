@@ -43,6 +43,20 @@ py_library(
     imports = ["../.."],
 )
 
+py_library(
+    name = "compare_svg",
+    testonly = True,
+    srcs = ["compare_svg.py"],
+    imports = ["../.."],
+)
+
+py_library(
+    name = "compare_pdf",
+    testonly = True,
+    srcs = ["compare_pdf.py"],
+    imports = ["../.."],
+)
+
 oci_load(
     name = "freecad_test_load",
     testonly = True,
@@ -117,33 +131,17 @@ py_test(
     size = "medium",
     srcs = ["test_export_formats.py"],
     data = [
-        "parametric_rect.py",
-        ":freecad_test_tarball",
-    ],
-    requires_docker = True,
-    deps = [
-        "//util:oci",
-        "//util/bazel:runfiles",
-        "//util/testing:container_logs",
-        "//util/testing:undeclared_outputs",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//testcontainers",
-    ],
-)
-
-py_test(
-    name = "test_parametric_rect",
-    size = "medium",
-    srcs = ["test_parametric_rect.py"],
-    data = [
         "golden/rect.dxf",
+        "golden/rect.pdf",
+        "golden/rect.svg",
         "parametric_rect.py",
         ":freecad_test_tarball",
     ],
     requires_docker = True,
     deps = [
         ":compare_dxf",
+        ":compare_pdf",
+        ":compare_svg",
         "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:container_logs",

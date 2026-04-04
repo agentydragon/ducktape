@@ -152,13 +152,9 @@ See <render_fcstd.py> for the full script.
 
 Three export formats are supported natively: DXF, SVG, and PDF. All require xvfb for TechDraw view computation.
 
-**DXF:** `xvfb-run freecadcmd export_page.py input.FCStd output.dxf`
+`xvfb-run -a -s "-screen 0 1024x768x24" freecadcmd export_page.py input.FCStd output_dir/`
 
-**SVG:** `xvfb-run freecadcmd export_page.py input.FCStd output.svg`
-
-**PDF:** `xvfb-run freecadcmd export_page.py input.FCStd output.pdf`
-
-The output format is determined by the file extension. See <export_page.py> for the unified export script.
+Produces `page.dxf`, `page.svg`, and `page.pdf` in the output directory. See <export_page.py>.
 
 **DXF → PNG rendering:** `python3 render_dxf.py output.dxf output.png` (or `python3 -m ezdxf draw --background WHITE --dpi 200 -f -o output.png output.dxf`). See <render_dxf.py>.
 
