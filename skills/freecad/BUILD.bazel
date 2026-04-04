@@ -9,9 +9,11 @@ skill_package(
         "01_sketch_and_parts.py",
         "02_techdraw_and_dims.py",
         "SKILL.md",
+        "build_bracket.py",
         "build_cube_with_hole.py",
         "export_page.py",
         "parametric_rect.py",
+        "render_bracket.py",
         "render_dxf.py",
         "render_fcstd.py",
     ],
@@ -103,6 +105,29 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:container_logs",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pillow",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_render_bracket",
+    size = "medium",
+    srcs = ["test_render_bracket.py"],
+    data = [
+        "build_bracket.py",
+        "golden/bracket_front.png",
+        "golden/bracket_rear.png",
+        "render_bracket.py",
+        ":freecad_test",
+    ],
+    requires_docker = True,
+    deps = [
         "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:container_logs",

@@ -21,3 +21,11 @@
 - [ ] Raytraced renders: Coin3D shading works but is basic. Investigate FreeCAD Render workbench for POV-Ray/LuxRender output.
 - [ ] Multi-view drawings: front/side/top views on one TechDraw page for 3D objects.
 - [ ] Assemblies: multi-part models with positioning.
+
+## PartDesign bracket example
+
+- [ ] Add PartDesign::Pocket on a side face (slot in wall). FreeCAD 0.21 Pocket fails on Y/X-normal faces with "shape is invalid" — face normals are inverted, causing the cut direction to be wrong. Needs investigation: try FreeCAD 1.0+ (rework of PartDesign), or use Part::Cut boolean as workaround.
+- [ ] Add reinforcement rib (Sketch on side face → Pad). Same face-normal issue blocks this.
+- [ ] Add external geometry references (`addExternal`) once side-face sketches work.
+- [ ] Fix existing Docker tests (`test_render_3d`, `test_container_primitives`, `test_export_formats`) that use the old `load_image` API (renamed to `load_oci_image` with `OciImage` dataclass).
+- [ ] Investigate `crane push daemon://` failures on RBE — all Docker-based freecad tests fail with crane unable to push to local Docker daemon on BuildBuddy workers.

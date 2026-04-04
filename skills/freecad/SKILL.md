@@ -109,6 +109,122 @@ page_x = view.X + (sketch_x - scx) * view.Scale
 page_y = view.Y - (sketch_y - scy) * view.Scale
 ```
 
+## PartDesign Workbench (Parametric Solid Modeling)
+
+The PartDesign workbench provides the standard parametric modeling workflow: sketch → pad → sketch on face → pocket → fillet. This is distinct from the `Part` module's boolean operations. See `build_bracket.py` for a complete worked example.
+
+### Body and Spreadsheet setup
+
+```python
+body = doc.addObject("PartDesign::Body", "Body")
+sheet = doc.addObject("Spreadsheet::Sheet", "Params")
+sheet.set("B1", "80.0")
+sheet.setAlias("B1", "base_length")
+```
+
+### Sketch attachment to faces
+
+Attach sketches to the XY plane or to faces created by earlier operations:
+
+```python
+# XY plane (index 3 in Origin features: 0-2 are axes, 3-5 are planes)
+sk.Support = [(body.Origin.OriginFeatures[3], "")]
+sk.MapMode = "FlatFace"
+
+# Face of a previous feature
+sk.Support = [(pad_base, "Face6")]  # Use find_face_index() to get the right face
+sk.MapMode = "FlatFace"
+```
+
+**The property is `Support`, not `AttachmentSupport`.** FreeCAD 0.21 uses `Support`.
+
+### Finding faces programmatically
+
+After padding, find the correct face by normal direction and position:
+
+```python
+for i, f in enumerate(pad.Shape.Faces):
+    n = f.Surface.Axis  # face normal
+    if n.isEqual(App.Vector(0, 0, 1), 0.01) and f.CenterOfMass.z > 7:
+        face_name = f"Face{i + 1}"
+        break
+```
+
+**Critical gotcha**: Face normals may be inverted in PartDesign. A face at Y=0 (which you'd expect to have outward normal (0,-1,0)) may report normal (0,+1,0). Always filter by position (CenterOfMass) in addition to normal direction.
+
+**Critical gotcha**: After padding a base plate, both the top face (Z=thickness) and bottom face (Z=0) have +Z normals. A filter like `com.z < 9` will match Z=0 first. Always use `0.1 < com.z < 9` to exclude the bottom face.
+
+### Pad (extrude)
+
+```python
+pad = body.newObject("PartDesign::Pad", "Pad_Base")
+pad.Profile = sk1
+pad.Length = 8.0
+pad.setExpression("Length", "Params.base_thickness")  # Spreadsheet-driven
+doc.recompute()
+```
+
+### Pocket (cut)
+
+```python
+pocket = body.newObject("PartDesign::Pocket", "Pocket_Holes")
+pocket.Profile = sk_holes
+pocket.Type = 1  # Through All
+doc.recompute()
+```
+
+**Critical limitation (FreeCAD 0.21)**: PartDesign Pocket only works reliably on Z-normal faces (top/bottom). Pockets on Y-normal or X-normal side faces fail with "Recompute failed!" / "shape is invalid" due to face normal direction issues. The pocket computes the cut direction from the face normal, and inverted normals cause it to cut in the wrong direction (out of the body). **Workaround**: Sketch on a Z-normal face and use fixed depth, or use `Part::Cut` boolean operations for side-face cuts.
+
+### Spreadsheet expressions for constraints
+
+```python
+c_idx = sk.addConstraint(Sketcher.Constraint("DistanceX", 0, 1, 0, 2, 80.0))
+sk.setExpression(f"Constraints[{c_idx}]", "Params.base_length")
+```
+
+Always capture the return value of `addConstraint` — it's the constraint index needed for `setExpression`. Never hardcode constraint indices.
+
+### Fillet
+
+```python
+fillet = body.newObject("PartDesign::Fillet", "Fillet_Corner")
+fillet.Base = (previous_feature, ["Edge12"])
+fillet.Radius = 5.0
+fillet.setExpression("Radius", "Params.fillet_radius")
+```
+
+Find the correct edge by iterating `feature.Shape.Edges` and matching by midpoint position and length.
+
+### Iterative modeling workflow
+
+When building PartDesign models, work in a visual feedback loop:
+
+1. Write/edit the build script
+2. Run in Docker: `docker run --rm -v build_bracket.py:/work/build_bracket.py:ro -v /tmp/out:/output ghcr.io/agentydragon/freecad-test:latest bash -c "OUTDIR=/output freecadcmd /work/build_bracket.py"`
+3. Render: `docker run --rm -v render_bracket.py:/work/render_bracket.py:ro -v /tmp/out:/output ... xvfb-run ... freecadcmd /work/render_bracket.py`
+4. Visually inspect the rendered PNG
+5. Fix issues and repeat from step 2
+6. Once correct, commit goldens and run `bazel test`
+
+For Bazel test debugging, inspect undeclared outputs:
+
+```bash
+ls $(bazel info bazel-testlogs)/skills/freecad/test_render_bracket/test.outputs/
+```
+
+### PartDesign gotchas
+
+| Issue                                   | Fix                                                                                         |
+| --------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `AttachmentSupport` not found           | Use `Support` property instead (FreeCAD 0.21 API)                                           |
+| Face normals inverted                   | Filter faces by CenterOfMass position, not just normal direction                            |
+| Bottom face matches Z-position filter   | Use `0.1 < com.z < max` to exclude Z=0 bottom face                                          |
+| Pocket fails on side faces (Y/X normal) | Use Z-normal faces only, or Part::Cut for side cuts                                         |
+| Pocket Through All cuts wrong direction | Direction follows face normal; inverted normals → wrong cut                                 |
+| `os._exit(0)` swallows print output     | Add `flush=True` to all `print()` calls, or `sys.stdout.flush()` before `os._exit(0)`       |
+| Render fails on sketches with "Shaded"  | Check `vo.listDisplayModes()` before setting `DisplayMode`; sketches don't support "Shaded" |
+| Part same color as background           | Use distinct ShapeColor like `(0.55, 0.60, 0.70)`, not near-white `(0.75, 0.75, 0.80)`      |
+
 ## 3D Modeling and Rendering
 
 ### Building 3D models
