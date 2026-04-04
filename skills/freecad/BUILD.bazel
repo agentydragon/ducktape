@@ -10,7 +10,6 @@ skill_package(
         "02_techdraw_and_dims.py",
         "SKILL.md",
         "build_cube_with_hole.py",
-        "export_dxf.py",
         "export_page.py",
         "parametric_rect.py",
         "render_dxf.py",
@@ -110,6 +109,7 @@ py_test(
     size = "medium",
     srcs = ["test_export_formats.py"],
     data = [
+        "export_page.py",
         "golden/rect.dxf",
         "golden/rect.pdf",
         "golden/rect.svg",

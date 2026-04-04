@@ -1,8 +1,9 @@
 """
-Create a parameterized 10x20 cm rectangle with TechDraw dimensions and export to DXF, SVG, and PDF.
+Create a parameterized 10x20 cm rectangle with TechDraw dimensions.
 
 Runs inside freecadcmd under xvfb (needs Qt event pump for TechDraw view computation).
 Output directory is read from OUTDIR env var (default: current directory).
+Produces rect.FCStd. Use export_page.py to export to DXF/SVG/PDF.
 
 Usage:
   OUTDIR=/tmp/out xvfb-run -a -s "-screen 0 1024x768x24" freecadcmd parametric_rect.py
@@ -139,19 +140,9 @@ if d2:
 doc.recompute(None, True, True)
 pump(1)
 
-# === Export ===
-import TechDrawGui  # noqa: E402 — must import after Gui.showMainWindow()
-
-dxf_path = os.path.join(outdir, "rect.dxf")  # noqa: PTH118 — FreeCAD API expects str
-TechDraw.writeDXFPage(page, dxf_path)
-print(f"DXF: {Path(dxf_path).stat().st_size} bytes")
-
-svg_path = os.path.join(outdir, "rect.svg")  # noqa: PTH118 — FreeCAD API expects str
-TechDrawGui.exportPageAsSvg(page, svg_path)
-print(f"SVG: {Path(svg_path).stat().st_size} bytes")
-
-pdf_path = os.path.join(outdir, "rect.pdf")  # noqa: PTH118 — FreeCAD API expects str
-TechDrawGui.exportPageAsPdf(page, pdf_path)
-print(f"PDF: {Path(pdf_path).stat().st_size} bytes")
+# === Save ===
+fcstd_path = os.path.join(outdir, "rect.FCStd")  # noqa: PTH118 — FreeCAD API expects str
+doc.saveAs(fcstd_path)
+print(f"FCStd: {Path(fcstd_path).stat().st_size} bytes")
 
 os._exit(0)  # Skip Qt cleanup to avoid potential segfault under xvfb

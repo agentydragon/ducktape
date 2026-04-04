@@ -11,6 +11,7 @@
 
 ## FreeCAD scripting
 
+- [ ] Use `more_itertools.one()` for TechDraw page lookup in `export_page.py` (requires adding `more-itertools` to FreeCAD container image).
 - [ ] Entity-referenced dimensions: `DrawViewDimension.References2D = [(view, 'Edge0')]` should allow dimensions that reference specific projected edges and auto-update when sketch changes. Current working approach uses `makeDistanceDim` with computed points — functional but not entity-bound.
 - [ ] Annotation anchoring: annotations are absolute-positioned on the page. Investigate if TechDraw has leaders/balloons that anchor to view geometry.
 - [ ] DXF layer styling: set line colors/weights per DXF layer so `ezdxf draw` renders with visual hierarchy (walls thick/dark, furniture light).
