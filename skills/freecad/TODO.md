@@ -5,6 +5,14 @@
 - [ ] Fix DXF rendering quality: corner lines extend beyond intersection points. Investigate whether `parametric_rect.py` produces a correctly constrained sketch or if the TechDraw projection is introducing artifacts.
 - [ ] Rotate vertical dimension text 90deg once the ezdxf DXF->PNG renderer supports rotated TEXT entities in dimension blocks. Currently it ignores rotation, so we keep text horizontal and offset it right of the dimension line.
 
+## Export formats
+
+SVG and PDF export now work via `TechDrawGui.exportPageAsSvg()` and `TechDrawGui.exportPageAsPdf()`. Both require GUI mode (xvfb), which was already part of the pipeline.
+
+- [x] SVG export: `TechDrawGui.exportPageAsSvg(page, path)` — vector output with template, viewable in browsers.
+- [x] PDF export: `TechDrawGui.exportPageAsPdf(page, path)` — print-ready output via Qt `QPrinter`.
+- [ ] Consider making SVG the primary intermediate format for PNG rendering (avoids ezdxf font discovery issues).
+
 ## FreeCAD scripting
 
 - [ ] Entity-referenced dimensions: `DrawViewDimension.References2D = [(view, 'Edge0')]` should allow dimensions that reference specific projected edges and auto-update when sketch changes. Current working approach uses `makeDistanceDim` with computed points — functional but not entity-bound.

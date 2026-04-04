@@ -148,17 +148,29 @@ Key steps in the render script:
 
 See <render_fcstd.py> for the full script.
 
-## Export: FCStd → DXF → PNG
+## Export
 
-Two standard tools, no custom rendering.
+Three export formats are supported natively: DXF, SVG, and PDF. All require xvfb for TechDraw view computation.
 
-**Step 1:** `xvfb-run freecadcmd export_dxf.py input.FCStd output.dxf`
+**DXF:** `xvfb-run freecadcmd export_page.py input.FCStd output.dxf`
 
-**Step 2:** `python3 render_dxf.py output.dxf output.png`
+**SVG:** `xvfb-run freecadcmd export_page.py input.FCStd output.svg`
 
-Or directly via ezdxf CLI: `python3 -m ezdxf draw --background WHITE --dpi 200 -f -o output.png output.dxf`
+**PDF:** `xvfb-run freecadcmd export_page.py input.FCStd output.pdf`
 
-See <export_dxf.py> for the DXF export script and <render_dxf.py> for the PNG renderer.
+The output format is determined by the file extension. See <export_page.py> for the unified export script.
+
+**DXF → PNG rendering:** `python3 render_dxf.py output.dxf output.png` (or `python3 -m ezdxf draw --background WHITE --dpi 200 -f -o output.png output.dxf`). See <render_dxf.py>.
+
+### Format comparison
+
+| Format | API                                       | Strengths                                                       | Limitations                                           |
+| ------ | ----------------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------- |
+| DXF    | `TechDraw.writeDXFPage(page, path)`       | CAD-compatible, editable in other CAD tools                     | R12/R14 only, font rendering depends on ezdxf for PNG |
+| SVG    | `TechDrawGui.exportPageAsSvg(page, path)` | Vector, viewable in browsers, preserves template/fonts natively | Hatch patterns not exported (Qt SVG limitation)       |
+| PDF    | `TechDrawGui.exportPageAsPdf(page, path)` | Print-ready, universal viewer support                           | Largest file size                                     |
+
+The legacy `export_dxf.py` script is still available for DXF-only workflows.
 
 ### View computation: the processEvents discovery
 

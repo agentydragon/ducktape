@@ -11,6 +11,7 @@ skill_package(
         "SKILL.md",
         "build_cube_with_hole.py",
         "export_dxf.py",
+        "export_page.py",
         "parametric_rect.py",
         "render_dxf.py",
         "render_fcstd.py",
@@ -108,6 +109,26 @@ py_test(
         "@pypi//pillow",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_export_formats",
+    size = "medium",
+    srcs = ["test_export_formats.py"],
+    data = [
+        "parametric_rect.py",
+        ":freecad_test_tarball",
+    ],
+    requires_docker = True,
+    deps = [
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:container_logs",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//testcontainers",
     ],
 )
 
