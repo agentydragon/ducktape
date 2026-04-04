@@ -1,5 +1,6 @@
 """Golden-file test: parametric_rect.py → export_page.py → DXF/SVG/PDF."""
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ from skills.freecad.testing.compare import assert_dxf_equal, assert_pdf_equal, a
 from util.bazel.runfiles import get_required_path
 from util.oci import load_image
 from util.testing.container_logs import LoggedContainer
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 _IMAGE_TAG = "freecad-test:pinned"
 _TARBALL = "_main/skills/freecad/freecad_test_load/tarball.tar"
@@ -47,6 +49,14 @@ def export_outputs(tmp_path_factory: pytest.TempPathFactory) -> Path:
     ) as container:
         _exec(container, f'bash -c "OUTDIR=/output {_XVFB} freecadcmd /work/parametric_rect.py"')
         _exec(container, f'bash -c "INPUT=/output/rect.FCStd OUTDIR=/output {_XVFB} freecadcmd /work/export_page.py"')
+
+    # Save actual outputs for golden file updates
+    out_dir = undeclared_outputs_dir() / "export-formats"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for f in ("rect.dxf", "rect.svg", "rect.pdf"):
+        src = tmp_path / f
+        if src.exists():
+            shutil.copy2(src, out_dir / f)
 
     return tmp_path
 
