@@ -28,7 +28,7 @@ import pytest
 import pytest_bazel
 
 from devinfra.claude.testing.mitmproxy_fixture import MitmproxyFixture
-from util.oci import load_image
+from util.oci import OciImage, load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 pytest_plugins = ["devinfra.claude.testing.mitmproxy_fixture"]
@@ -39,12 +39,10 @@ _FAKE_SECRETS: dict[str, dict[str, str]] = {"github-token": {"token": "fake-gith
 _MOCK_K8S_PORT = 6444
 _PROXY_CREDENTIALS = "proxy_user:test_jwt_token"
 
-_MOCK_K8S_IMAGE = "mock-k8s-server:pinned"
-_MOCK_K8S_TARBALL = "_main/devinfra/claude/hook_daemon/session_start/mock_k8s_server_load/tarball.tar"
+_MOCK_K8S = OciImage("_main/devinfra/claude/hook_daemon/session_start/mock_k8s_server.rloc", "mock-k8s-server:pinned")
 _MOCK_K8S_ALIAS = "mock-k8s"
 
-_CLIENT_IMAGE = "k8s-test-client:pinned"
-_CLIENT_TARBALL = "_main/devinfra/claude/hook_daemon/session_start/k8s_test_client_load/tarball.tar"
+_CLIENT = OciImage("_main/devinfra/claude/hook_daemon/session_start/k8s_test_client.rloc", "k8s-test-client:pinned")
 
 
 def _get_container_ip(container: docker.models.containers.Container, network_name: str) -> str:
@@ -70,14 +68,12 @@ class MockK8sServer:
 
 @pytest.fixture
 def mock_k8s_image() -> str:
-    load_image(_MOCK_K8S_TARBALL)
-    return _MOCK_K8S_IMAGE
+    return load_oci_image(_MOCK_K8S)
 
 
 @pytest.fixture
 def client_image() -> str:
-    load_image(_CLIENT_TARBALL)
-    return _CLIENT_IMAGE
+    return load_oci_image(_CLIENT)
 
 
 @pytest.fixture

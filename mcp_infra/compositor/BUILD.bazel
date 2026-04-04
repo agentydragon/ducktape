@@ -137,7 +137,7 @@ py_library(
         "//agent_core/testing:responses",
         "//mcp_infra/testing:docker_fixtures",
         "//mcp_infra/testing:fixtures",
-        "//third_party/debian_slim:fixtures",
+        "//third_party/containers:fixtures",
         "@pypi//pytest",
     ],
 )
@@ -260,7 +260,7 @@ py_test(
 py_test(
     name = "test_resources_flow",
     srcs = ["test_resources_flow.py"],
-    data = ["//third_party/debian_slim:load"],
+    data = ["//third_party/containers:debian_slim"],
     imports = ["../.."],
     requires_docker = True,
     deps = [

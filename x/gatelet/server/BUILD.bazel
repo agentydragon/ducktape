@@ -150,6 +150,7 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
+    data = ["//third_party/containers:postgres_18"],
     imports = ["../../.."],
     visibility = ["//x/gatelet:__subpackages__"],
     deps = [
@@ -158,6 +159,8 @@ py_library(
         ":database",
         ":models",
         ":security",
+        "//third_party/containers:rlocations",
+        "//util:oci",
         "//x/gatelet/server/endpoints:webhook_view",
         "//x/gatelet/server/tests:utils",
         "@pypi//asgi_lifespan",

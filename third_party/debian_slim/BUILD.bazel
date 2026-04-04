@@ -1,38 +1,10 @@
 load("@rules_oci//oci:defs.bzl", "oci_load")
-load("@rules_python//python:defs.bzl", "py_library")
-
-py_library(
-    name = "rlocations",
-    srcs = ["rlocations.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
-    name = "fixtures",
-    testonly = True,
-    srcs = ["fixtures.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":rlocations",
-        "//util:oci",
-        "@pypi//pytest",
-    ],
-)
 
 # Load debian-slim base image into local Docker daemon.
-# Targets that need this should add data = ["//third_party/debian_slim:tarball"]
+# bazel run //third_party/debian_slim:load for manual loading.
 oci_load(
     name = "load",
     image = "@debian_slim_linux_amd64",
     repo_tags = ["debian-slim:test"],
-    visibility = ["//visibility:public"],
-)
-
-filegroup(
-    name = "tarball",
-    srcs = [":load"],
-    output_group = "tarball",
     visibility = ["//visibility:public"],
 )

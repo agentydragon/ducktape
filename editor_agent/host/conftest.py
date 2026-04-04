@@ -4,10 +4,9 @@ import pytest
 
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
 from mcp_infra.testing.fixtures import *  # noqa: F403
-from util.oci import load_bazel_image
+from util.oci import OciImage, load_oci_image
 
-EDITOR_IMAGE_TAG = "adgn-editor:latest"
-EDITOR_LOAD_SCRIPT = "editor_agent/runtime/load.sh"
+_EDITOR = OciImage("_main/editor_agent/runtime/image_info.rloc", "adgn-editor:latest")
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -17,5 +16,5 @@ def pytest_configure(config: pytest.Config) -> None:
 
 @pytest.fixture(scope="session")
 def editor_image_id():
-    """Load editor agent image from Bazel :load target."""
-    return load_bazel_image(EDITOR_LOAD_SCRIPT, EDITOR_IMAGE_TAG)
+    """Load editor agent image and return its tag."""
+    return load_oci_image(_EDITOR)

@@ -1,5 +1,6 @@
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/oci:defs.bzl", "oci_tarball")
 load("//devinfra/testing:defs.bzl", "py_test")
 
 # Apt manifest + lockfile for rules_distroless (referenced from MODULE.bazel).
@@ -36,7 +37,7 @@ pkg_tar(
 # (reverse-engineered container snapshot) so the E2E test exercises a
 # realistic environment.
 oci_image(
-    name = "e2e_container",
+    name = "e2e_container_image",
     testonly = True,
     base = "@python_3_13_slim_linux_amd64",
     # JDK update-alternatives postinst doesn't run in rules_distroless, so
@@ -51,18 +52,11 @@ oci_image(
     ],
 )
 
-oci_load(
-    name = "e2e_container_load",
+oci_tarball(
+    name = "e2e_container",
     testonly = True,
-    image = ":e2e_container",
+    image = ":e2e_container_image",
     repo_tags = ["e2e-container:pinned"],
-)
-
-filegroup(
-    name = "e2e_container_tarball",
-    testonly = True,
-    srcs = [":e2e_container_load"],
-    output_group = "tarball",
 )
 
 py_test(
@@ -70,7 +64,7 @@ py_test(
     size = "large",
     srcs = ["test_container_e2e.py"],
     data = [
-        ":e2e_container_tarball",
+        ":e2e_container",
         "//devinfra/claude/testdata/test_workspace:workspace_files",
     ],
     env_inherit = [

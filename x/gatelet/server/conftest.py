@@ -22,6 +22,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
+from third_party.containers.rlocations import POSTGRES_18
+from util.oci import load_oci_image
 from x.gatelet.server.app import app
 from x.gatelet.server.config import (
     AdminSettings,
@@ -72,13 +74,17 @@ class PostgresConfig:
         return f"{scheme}://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _preload_postgres() -> None:
+    load_oci_image(POSTGRES_18)
+
+
 @pytest.fixture(scope="session")
 def postgres_container() -> Generator[PostgresContainer]:
-    """Session-scoped PostgreSQL container.
-
-    Starts a fresh PostgreSQL 16 container for the entire test session.
-    """
-    with PostgresContainer(image="postgres:16", username="postgres", password="postgres", dbname="gatelet") as postgres:
+    """Session-scoped PostgreSQL container."""
+    with PostgresContainer(
+        image=POSTGRES_18.tag, username="postgres", password="postgres", dbname="gatelet"
+    ) as postgres:
         yield postgres
 
 

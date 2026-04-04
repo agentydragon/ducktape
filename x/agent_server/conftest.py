@@ -17,8 +17,8 @@ from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.mcp_types import McpServerSpecs
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
-from third_party.debian_slim.fixtures import debian_slim_image
-from util.oci import load_bazel_image
+from third_party.containers.fixtures import debian_slim_image
+from util.oci import OciImage, load_oci_image
 from x.agent_server.approvals import load_default_policy_source
 from x.agent_server.mcp.approval_policy.engine import PolicyEngine
 from x.agent_server.persist.sqlite import SQLitePersistence
@@ -28,9 +28,7 @@ from x.agent_server.policies.policy_types import ApprovalDecision, PolicyRequest
 from x.agent_server.policy_eval.container import ContainerPolicyEvaluator
 from x.agent_server.runtime.container import AgentContainerCompositor
 
-# Image tags and load scripts for Bazel-loaded images
-RUNTIME_IMAGE_TAG = "adgn-runtime:latest"
-RUNTIME_LOAD_SCRIPT = "x/agent_server/load.sh"
+_RUNTIME = OciImage("_main/x/agent_server/image_info.rloc", "adgn-runtime:latest")
 
 # Test server mount name used in fixtures
 TEST_BACKEND_SERVER_NAME = "backend"
@@ -60,8 +58,8 @@ def docker_client():
 
 @pytest.fixture(scope="session")
 def runtime_image():
-    """Load agent server runtime image from Bazel :load target."""
-    return load_bazel_image(RUNTIME_LOAD_SCRIPT, RUNTIME_IMAGE_TAG)
+    """Load agent server runtime image and return its tag."""
+    return load_oci_image(_RUNTIME)
 
 
 @pytest.fixture

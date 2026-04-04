@@ -1,5 +1,5 @@
-load("@rules_oci//oci:defs.bzl", "oci_load")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/oci:defs.bzl", "oci_tarball")
 load("//devinfra/testing:defs.bzl", "py_test")
 load("//skills:defs.bzl", "skill_package")
 
@@ -35,18 +35,11 @@ py_binary(
     deps = [":render_dxf"],
 )
 
-oci_load(
-    name = "freecad_test_load",
+oci_tarball(
+    name = "freecad_test",
     testonly = True,
     image = "@freecad_test_linux_amd64",
     repo_tags = ["freecad-test:pinned"],
-)
-
-filegroup(
-    name = "freecad_test_tarball",
-    testonly = True,
-    srcs = [":freecad_test_load"],
-    output_group = "tarball",
 )
 
 py_test(
@@ -54,14 +47,17 @@ py_test(
     size = "medium",
     srcs = ["test_container_primitives.py"],
     data = [
-        ":freecad_test_tarball",
-        "//third_party/debian_slim:tarball",
+        ":freecad_test",
+        "//third_party/containers:debian_slim",
     ],
     requires_docker = True,
     deps = [
-        "//third_party/debian_slim:rlocations",
+        "//third_party/containers:rlocations",
         "//util:oci",
+        "//util/bazel:runfiles",
         "//util/testing:container_logs",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pillow",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -90,7 +86,7 @@ py_test(
         "build_cube_with_hole.py",
         "golden/cube_with_hole.png",
         "render_fcstd.py",
-        ":freecad_test_tarball",
+        ":freecad_test",
     ],
     requires_docker = True,
     deps = [
@@ -114,7 +110,7 @@ py_test(
         "golden/rect.pdf",
         "golden/rect.svg",
         "parametric_rect.py",
-        ":freecad_test_tarball",
+        ":freecad_test",
     ],
     requires_docker = True,
     deps = [

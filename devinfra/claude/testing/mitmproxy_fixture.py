@@ -24,14 +24,12 @@ import pytest
 from testcontainers.core.container import DockerContainer
 
 from devinfra.claude.testing.proxy_ca import generate_mock_ca
+from third_party.containers.rlocations import MITMPROXY
 from util.net import wait_for_port
-from util.oci import load_image
+from util.oci import load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
-
-_MITMPROXY_IMAGE = "mitmproxy:11"
-_MITMPROXY_TARBALL = "_main/devinfra/claude/testing/mitmproxy_load/tarball.tar"
 
 _PROXY_LISTEN_PORT = 80
 _PROXY_CREDENTIALS = "proxy_user:test_jwt_token"
@@ -138,11 +136,11 @@ def mitmproxy_proxy(
     - url: http://creds@127.0.0.1:{host_port} (for tests running on the host)
     - container_url: http://creds@mitmproxy-proxy (for containers on isolated_net)
     """
-    load_image(_MITMPROXY_TARBALL)
+    mitmproxy_image = load_oci_image(MITMPROXY)
     cert_pem, certs_dir = _setup_mitmproxy_certs(tmp_path)
 
     container = (
-        DockerContainer(_MITMPROXY_IMAGE)
+        DockerContainer(mitmproxy_image)
         .with_command(_MITMPROXY_CMD)
         .with_volume_mapping(str(certs_dir), "/certs", "rw")
         .with_exposed_ports(_PROXY_LISTEN_PORT)

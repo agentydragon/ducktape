@@ -6,7 +6,7 @@ load("//devinfra/testing:defs.bzl", "py_test")
 py_library(
     name = "cli",
     srcs = ["cli.py"],
-    data = ["//editor_agent/runtime:load"],
+    data = ["//editor_agent/runtime:image_info"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
@@ -34,7 +34,7 @@ py_binary(
 py_test(
     name = "test_runner_session",
     srcs = ["test_runner_session.py"],
-    data = ["//editor_agent/runtime:load"],
+    data = ["//editor_agent/runtime:image_info"],
     imports = ["../.."],
     requires_docker = True,
     deps = [
@@ -50,7 +50,7 @@ py_test(
 py_test(
     name = "test_editor_e2e_steps",
     srcs = ["test_editor_e2e_steps.py"],
-    data = ["//editor_agent/runtime:load"],
+    data = ["//editor_agent/runtime:image_info"],
     imports = ["../.."],
     requires_docker = True,
     deps = [

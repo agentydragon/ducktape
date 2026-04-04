@@ -1,0 +1,2 @@
+# OCI build helpers for this repository.
+# See defs.bzl for the oci_tarball macro.

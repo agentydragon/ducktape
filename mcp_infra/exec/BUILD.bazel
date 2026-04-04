@@ -251,7 +251,7 @@ py_test(
 py_test(
     name = "test_docker",
     srcs = ["test_docker.py"],
-    data = ["//third_party/debian_slim:load"],
+    data = ["//third_party/containers:debian_slim"],
     main = "test_docker.py",
     requires_docker = True,
     deps = [
@@ -293,7 +293,7 @@ py_library(
         "//mcp_infra/testing:docker_fixtures",
         "//mcp_infra/testing:fixtures",
         "//openai_utils/testing:fixtures",
-        "//third_party/debian_slim:fixtures",
+        "//third_party/containers:fixtures",
         "@pypi//pytest",
     ],
 )
@@ -301,7 +301,7 @@ py_library(
 py_test(
     name = "test_docker_unit",
     srcs = ["test_docker_unit.py"],
-    data = ["//third_party/debian_slim:load"],
+    data = ["//third_party/containers:debian_slim"],
     requires_docker = True,
     deps = [
         ":conftest",
@@ -318,7 +318,7 @@ py_test(
 live_openai_py_test(
     name = "test_exec_roundtrip",
     srcs = ["test_exec_roundtrip.py"],
-    data = ["//third_party/debian_slim:load"],
+    data = ["//third_party/containers:debian_slim"],
     imports = ["../.."],
     requires_docker = True,
     deps = [
@@ -345,7 +345,7 @@ live_openai_py_test(
 py_test(
     name = "test_mcp_integration",
     srcs = ["test_mcp_integration.py"],
-    data = ["//third_party/debian_slim:load"],
+    data = ["//third_party/containers:debian_slim"],
     imports = ["../.."],
     requires_docker = True,
     deps = [

@@ -28,9 +28,9 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
 from props.db.models import AgentType
-from third_party.containers.rlocations import REGISTRY_2_TARBALL, RYUK_TARBALL
+from third_party.containers.rlocations import REGISTRY_2, RYUK
 from util.crane import BazelImage
-from util.oci import load_image
+from util.oci import load_oci_image
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -42,8 +42,8 @@ tracer = trace.get_tracer(__name__)
 @pytest.fixture(scope="session", autouse=True)
 def _preload_registry_images() -> None:
     """Preload registry:2 image once per session so per-test container startup is fast."""
-    load_image(RYUK_TARBALL)
-    load_image(REGISTRY_2_TARBALL)
+    load_oci_image(RYUK)
+    load_oci_image(REGISTRY_2)
 
 
 @pytest.fixture(scope="session")
@@ -55,7 +55,7 @@ def _e2e_registry_container() -> Generator[DockerContainer]:
     with tracer.start_as_current_span("e2e_registry startup"):
         with tracer.start_as_current_span("configure container"):
             registry = (
-                DockerContainer("registry:2")
+                DockerContainer(REGISTRY_2.tag)
                 .with_exposed_ports(5000)
                 .with_env("REGISTRY_HTTP_RELATIVEURLS", "true")
                 .with_env("REGISTRY_STORAGE_DELETE_ENABLED", "true")

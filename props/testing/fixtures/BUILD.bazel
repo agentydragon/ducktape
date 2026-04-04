@@ -16,8 +16,8 @@ py_library(
         "//props/testing/fixtures/testdata/specimens/test-fixtures/valid1:specimen_data_blob",
         "//props/testing/fixtures/testdata/specimens/test-fixtures/valid2:specimen_code_tar",
         "//props/testing/fixtures/testdata/specimens/test-fixtures/valid2:specimen_data_blob",
-        "//third_party/containers:postgres_18_tarball",
-        "//third_party/containers:ryuk_tarball",
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
     ],
     visibility = ["//props:__subpackages__"],
     deps = [
@@ -80,8 +80,8 @@ py_library(
     name = "e2e_infra",
     srcs = ["e2e_infra.py"],
     data = [
-        "//third_party/containers:registry_2_tarball",
-        "//third_party/containers:ryuk_tarball",
+        "//third_party/containers:registry_2",
+        "//third_party/containers:ryuk",
     ],
     visibility = ["//props:__subpackages__"],
     deps = [

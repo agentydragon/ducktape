@@ -107,8 +107,8 @@ py_test(
     size = "medium",
     srcs = ["test_notifications_handler.py"],
     data = [
-        "//third_party/debian_slim:load",
-        "//x/agent_server:load",
+        "//third_party/containers:debian_slim",
+        "//x/agent_server:image_info",
     ],
     imports = ["../../.."],
     requires_docker = True,

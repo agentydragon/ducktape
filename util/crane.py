@@ -8,6 +8,7 @@ written to ~/.docker.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -17,7 +18,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from util.bazel import runfiles
-from util.oci import docker_auth_config
 
 logger = logging.getLogger(__name__)
 
@@ -57,9 +57,9 @@ class Crane:
         self._config_dir: tempfile.TemporaryDirectory[str] | None = None
         if registry and username and password:
             self._config_dir = tempfile.TemporaryDirectory(prefix="crane_auth_")
-            Path(self._config_dir.name, "config.json").write_text(
-                json.dumps(docker_auth_config(registry, username, password))
-            )
+            auth = base64.b64encode(f"{username}:{password}".encode()).decode()
+            config = {"auths": {registry: {"auth": auth}}}
+            Path(self._config_dir.name, "config.json").write_text(json.dumps(config))
             self._env = {**os.environ, "DOCKER_CONFIG": self._config_dir.name}
 
     def _run(self, *args: str) -> str:
@@ -107,5 +107,10 @@ class Crane:
 
 def _parse_crane_digest(stdout: str, dest: str) -> str:
     if "@sha256:" in stdout:
-        return "sha256:" + stdout.split("@sha256:", 1)[1].split()[0]
+        return "sha256:" + stdout.split("@sha256:", 1)[1].split(maxsplit=1)[0]
     raise RuntimeError(f"crane push did not return digest for {dest}: {stdout!r}")
+
+
+def push_to_daemon(oci_layout: Path, tag: str) -> None:
+    """Push an OCI layout directory into the local Docker daemon via crane."""
+    Crane().push(oci_layout, f"daemon://{tag}")

@@ -22,7 +22,7 @@ py_test(
 py_test(
     name = "test_integration",
     srcs = ["test_integration.py"],
-    data = ["//third_party/debian_slim:load"],
+    data = ["//third_party/containers:debian_slim"],
     imports = ["../../.."],
     requires_docker = True,
     deps = [

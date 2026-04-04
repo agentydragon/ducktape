@@ -54,7 +54,7 @@ py_library(
 py_binary(
     name = "twenty_questions_bin",
     data = [
-        "//third_party/debian_slim:tarball",
+        "//third_party/containers:debian_slim",
     ],
     imports = ["../../../.."],
     main_module = "skills.info_gathering.evals.twenty_questions.twenty_questions",

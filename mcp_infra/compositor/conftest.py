@@ -9,7 +9,7 @@ from mcp_infra.testing.docker_fixtures import docker_exec_server
 
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
 from mcp_infra.testing.fixtures import *  # noqa: F403
-from third_party.debian_slim.fixtures import debian_slim_image
+from third_party.containers.fixtures import debian_slim_image
 
 
 def pytest_configure(config: pytest.Config) -> None:

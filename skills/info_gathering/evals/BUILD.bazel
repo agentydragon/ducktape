@@ -53,7 +53,7 @@ py_library(
     deps = [
         ":docker_exec",
         "//agent_core:mcp_provider",
-        "//third_party/debian_slim:rlocations",
+        "//third_party/containers:rlocations",
         "//util:oci",
         "@pypi//fastmcp",
     ],

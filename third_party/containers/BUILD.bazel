@@ -1,72 +1,77 @@
 # Pre-built container images for Testcontainers-based tests.
 #
 # These images are bundled as Bazel deps so hermetic tests don't need Docker Hub
-# access. Test fixtures use `docker load -i <tarball>` to pre-load them before
-# Testcontainers starts the containers.
+# access. Test fixtures use crane to push OCI layout dirs into the Docker daemon.
 #
 # Usage in BUILD.bazel data deps:
-#     data = ["//third_party/containers:postgres_18_tarball"]
+#     data = ["//third_party/containers:postgres_18"]
 
-load("@rules_oci//oci:defs.bzl", "oci_load")
 load("@rules_python//python:defs.bzl", "py_library")
-
-package(default_testonly = True)
+load("//devinfra/oci:defs.bzl", "oci_layout_rloc", "oci_tarball")
 
 py_library(
     name = "rlocations",
     srcs = ["rlocations.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
+    deps = ["//util:oci"],
 )
 
-oci_load(
-    name = "postgres_18_load",
+py_library(
+    name = "fixtures",
+    testonly = True,
+    srcs = ["fixtures.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":rlocations",
+        "//util:oci",
+        "@pypi//pytest",
+    ],
+)
+
+oci_tarball(
+    name = "postgres_18",
+    testonly = True,
     image = "@postgres_18_linux_amd64",
     repo_tags = ["postgres:18"],
-)
-
-filegroup(
-    name = "postgres_18_tarball",
-    srcs = [":postgres_18_load"],
-    output_group = "tarball",
     visibility = ["//visibility:public"],
 )
 
-oci_load(
-    name = "registry_2_load",
+oci_tarball(
+    name = "registry_2",
+    testonly = True,
     image = "@registry_2_linux_amd64",
     repo_tags = ["registry:2"],
-)
-
-filegroup(
-    name = "registry_2_tarball",
-    srcs = [":registry_2_load"],
-    output_group = "tarball",
     visibility = ["//visibility:public"],
 )
 
-oci_load(
-    name = "ryuk_load",
+oci_tarball(
+    name = "ryuk",
+    testonly = True,
     image = "@ryuk_linux_amd64",
     repo_tags = ["testcontainers/ryuk:0.8.1"],
-)
-
-filegroup(
-    name = "ryuk_tarball",
-    srcs = [":ryuk_load"],
-    output_group = "tarball",
     visibility = ["//visibility:public"],
 )
 
-oci_load(
-    name = "python_3_13_slim_load",
+oci_tarball(
+    name = "python_3_13_slim",
+    testonly = True,
     image = "@python_3_13_slim_linux_amd64",
     repo_tags = ["python:3.13-slim"],
+    visibility = ["//visibility:public"],
 )
 
-filegroup(
-    name = "python_3_13_slim_tarball",
-    srcs = [":python_3_13_slim_load"],
-    output_group = "tarball",
+oci_tarball(
+    name = "mitmproxy",
+    testonly = True,
+    image = "@mitmproxy_linux_amd64",
+    repo_tags = ["mitmproxy:11"],
+    visibility = ["//visibility:public"],
+)
+
+oci_layout_rloc(
+    name = "debian_slim",
+    image = "@debian_slim_linux_amd64",
     visibility = ["//visibility:public"],
 )

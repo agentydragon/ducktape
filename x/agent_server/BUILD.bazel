@@ -2,6 +2,7 @@
 
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 exports_files(["conftest.py"])
@@ -26,7 +27,7 @@ py_library(
         "//mcp_infra/compositor",
         "//mcp_infra/testing:fixtures",
         "//openai_utils/testing:fixtures",
-        "//third_party/debian_slim:fixtures",
+        "//third_party/containers:fixtures",
         "//util:oci",
         "//x/agent_server/mcp/approval_policy:engine",
         "//x/agent_server/persist:sqlite",
@@ -137,6 +138,12 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["adgn-runtime:latest"],
+    visibility = ["//x/agent_server:__subpackages__"],
+)
+
+oci_layout_rloc(
+    name = "image_info",
+    image = ":image",
     visibility = ["//x/agent_server:__subpackages__"],
 )
 

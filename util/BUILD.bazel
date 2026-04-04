@@ -67,6 +67,7 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
+        ":crane",
         "//util/bazel:runfiles",
         "@pypi//opentelemetry_api",
     ],
@@ -79,7 +80,6 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        ":oci",
         "//util/bazel:runfiles",
     ],
 )

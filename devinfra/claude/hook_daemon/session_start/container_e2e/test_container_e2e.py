@@ -51,7 +51,7 @@ from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
 from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS, get_upstream_proxy_url
 from devinfra.claude.testing.mitmproxy_fixture import MitmproxyFixture
 from util.bazel.runfiles import get_required_path
-from util.oci import load_image
+from util.oci import OciImage, load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
@@ -65,9 +65,10 @@ _WHEEL_DIR = "/wheel"
 # Rlocation for a file in the test workspace (used to derive directory path)
 _TEST_WORKSPACE_MODULE = "_main/devinfra/claude/testdata/test_workspace/MODULE.bazel"
 
-# E2E test container image (built by Bazel via rules_distroless, loaded via oci_load)
-_E2E_IMAGE = "e2e-container:pinned"
-_E2E_TARBALL = "_main/devinfra/claude/hook_daemon/session_start/container_e2e/e2e_container_load/tarball.tar"
+# E2E test container image (built by Bazel via rules_distroless, loaded via oci_image_info)
+_E2E = OciImage(
+    "_main/devinfra/claude/hook_daemon/session_start/container_e2e/e2e_container.rloc", "e2e-container:pinned"
+)
 
 # Container name prefix
 _CONTAINER_NAME = "ducktape-container-e2e"
@@ -136,8 +137,7 @@ def test_workspace_path() -> Path:
 @pytest.fixture
 def e2e_image() -> str:
     """Load the e2e container OCI image into Docker."""
-    load_image(_E2E_TARBALL)
-    return _E2E_IMAGE
+    return load_oci_image(_E2E)
 
 
 # ---------------------------------------------------------------------------
