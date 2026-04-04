@@ -7,10 +7,6 @@
 
 ## Export formats
 
-SVG and PDF export now work via `TechDrawGui.exportPageAsSvg()` and `TechDrawGui.exportPageAsPdf()`. Both require GUI mode (xvfb), which was already part of the pipeline.
-
-- [x] SVG export: `TechDrawGui.exportPageAsSvg(page, path)` — vector output with template, viewable in browsers.
-- [x] PDF export: `TechDrawGui.exportPageAsPdf(page, path)` — print-ready output via Qt `QPrinter`.
 - [ ] Consider making SVG the primary intermediate format for PNG rendering (avoids ezdxf font discovery issues).
 
 ## FreeCAD scripting

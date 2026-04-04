@@ -1,0 +1,10 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+package(default_testonly = True)
+
+py_library(
+    name = "compare",
+    srcs = ["compare.py"],
+    imports = ["../../.."],
+    visibility = ["//skills/freecad:__pkg__"],
+)

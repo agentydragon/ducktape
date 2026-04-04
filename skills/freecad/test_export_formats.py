@@ -5,9 +5,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from skills.freecad.compare_dxf import compare_dxf_files
-from skills.freecad.compare_pdf import compare_pdf_files
-from skills.freecad.compare_svg import compare_svg_files
+from skills.freecad.testing.compare import assert_dxf_equal, assert_pdf_equal, assert_svg_equal
 from util.bazel.runfiles import get_required_path
 from util.oci import load_image
 from util.testing.container_logs import LoggedContainer
@@ -47,25 +45,19 @@ def export_outputs(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def test_dxf_golden(export_outputs: Path) -> None:
     actual = export_outputs / "rect.dxf"
     assert actual.exists(), "DXF not generated"
-    diff = compare_dxf_files(actual, get_required_path(_GOLDEN_DXF))
-    if diff is not None:
-        pytest.fail(f"DXF mismatch:\n{diff[:500]}")
+    assert_dxf_equal(actual, get_required_path(_GOLDEN_DXF))
 
 
 def test_svg_golden(export_outputs: Path) -> None:
     actual = export_outputs / "rect.svg"
     assert actual.exists(), "SVG not generated"
-    diff = compare_svg_files(actual, get_required_path(_GOLDEN_SVG))
-    if diff is not None:
-        pytest.fail(f"SVG mismatch:\n{diff[:500]}")
+    assert_svg_equal(actual, get_required_path(_GOLDEN_SVG))
 
 
 def test_pdf_golden(export_outputs: Path) -> None:
     actual = export_outputs / "rect.pdf"
     assert actual.exists(), "PDF not generated"
-    diff = compare_pdf_files(actual, get_required_path(_GOLDEN_PDF))
-    if diff is not None:
-        pytest.fail(f"PDF mismatch:\n{diff}")
+    assert_pdf_equal(actual, get_required_path(_GOLDEN_PDF))
 
 
 if __name__ == "__main__":

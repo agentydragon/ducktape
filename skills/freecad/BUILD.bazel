@@ -36,27 +36,6 @@ py_binary(
     deps = [":render_dxf"],
 )
 
-py_library(
-    name = "compare_dxf",
-    testonly = True,
-    srcs = ["compare_dxf.py"],
-    imports = ["../.."],
-)
-
-py_library(
-    name = "compare_svg",
-    testonly = True,
-    srcs = ["compare_svg.py"],
-    imports = ["../.."],
-)
-
-py_library(
-    name = "compare_pdf",
-    testonly = True,
-    srcs = ["compare_pdf.py"],
-    imports = ["../.."],
-)
-
 oci_load(
     name = "freecad_test_load",
     testonly = True,
@@ -139,9 +118,7 @@ py_test(
     ],
     requires_docker = True,
     deps = [
-        ":compare_dxf",
-        ":compare_pdf",
-        ":compare_svg",
+        "//skills/freecad/testing:compare",
         "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:container_logs",
