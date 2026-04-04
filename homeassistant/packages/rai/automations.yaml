@@ -59,31 +59,22 @@ automation:
     triggers:
       - trigger: time
         at: "09:40:00"
-    conditions:
-      - condition: state
-        entity_id: person.rai
-        state: home
-      - condition: state
-        entity_id: input_boolean.skip_morning_lights
-        state: "off"
+    conditions: []
     actions:
-      - action: light.turn_on
-        target:
-          entity_id: light.rai_s_room_ceiling_lights
-        data:
-          brightness_pct: 1
-    mode: single
-
-  - id: "rai_reset_skip_morning_lights"
-    alias: "Rai room: reset skip morning lights @ 10:00 AM"
-    triggers:
-      - trigger: time
-        at: "10:00:00"
-    conditions:
-      - condition: state
-        entity_id: input_boolean.skip_morning_lights
-        state: "on"
-    actions:
+      - choose:
+          - conditions:
+              - condition: state
+                entity_id: person.rai
+                state: home
+              - condition: state
+                entity_id: input_boolean.skip_morning_lights
+                state: "off"
+            sequence:
+              - action: light.turn_on
+                target:
+                  entity_id: light.rai_s_room_ceiling_lights
+                data:
+                  brightness_pct: 1
       - action: input_boolean.turn_off
         target:
           entity_id: input_boolean.skip_morning_lights
