@@ -1,5 +1,5 @@
 """
-Create a parameterized 10x20 cm rectangle with TechDraw dimensions and export to DXF.
+Create a parameterized 10x20 cm rectangle with TechDraw dimensions and export to DXF, SVG, and PDF.
 
 Runs inside freecadcmd under xvfb (needs Qt event pump for TechDraw view computation).
 Output directory is read from OUTDIR env var (default: current directory).
