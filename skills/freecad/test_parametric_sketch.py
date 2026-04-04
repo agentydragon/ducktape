@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from skills.freecad.conftest import FREECAD_TEST
+from skills.freecad.conftest import FREECAD_TEST, freecad_exec, freecad_setup_fonts
 from skills.freecad.testing.compare import assert_dxf_equal, assert_pdf_equal, assert_svg_equal
 from util.bazel.runfiles import get_required_path
 from util.oci import load_oci_image
@@ -19,13 +19,6 @@ _GOLDEN_SVG = "_main/skills/freecad/golden/bracket.svg"
 _GOLDEN_PDF = "_main/skills/freecad/golden/bracket.pdf"
 
 _XVFB = 'xvfb-run -a -s \\"-screen 0 1024x768x24\\"'
-
-
-def _exec(container: LoggedContainer, cmd: str) -> None:
-    result = container.exec(cmd)
-    output = result.output.decode(errors="replace")
-    print(output)
-    assert result.exit_code == 0, f"Command failed (exit {result.exit_code}): {output[:500]}"
 
 
 @pytest.fixture(scope="module")
@@ -46,8 +39,9 @@ def export_outputs(tmp_path_factory: pytest.TempPathFactory) -> Path:
         ],
         docker_client_kw={"timeout": 120},
     ) as container:
-        _exec(container, f'bash -c "OUTDIR=/output {_XVFB} freecadcmd /work/parametric_sketch.py"')
-        _exec(
+        freecad_setup_fonts(container)
+        freecad_exec(container, f'bash -c "OUTDIR=/output {_XVFB} freecadcmd /work/parametric_sketch.py"')
+        freecad_exec(
             container, f'bash -c "INPUT=/output/bracket.FCStd OUTDIR=/output {_XVFB} freecadcmd /work/export_page.py"'
         )
 

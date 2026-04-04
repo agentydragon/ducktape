@@ -15,3 +15,9 @@ ENV FONTCONFIG_PATH="/etc/fonts"
 ENV QT_QPA_PLATFORM="xcb"
 ENV SSL_CERT_FILE="/opt/squashfs-root/usr/ssl/cacert.pem"
 ENV PATH="/opt/squashfs-root/usr/bin:$PATH"
+
+# Register FreeCAD's bundled osifont with system fontconfig for deterministic TechDraw exports.
+# Without this, TechDraw uses whichever system font Qt resolves first, which varies
+# across workers and produces non-deterministic PDF exports.
+RUN ln -sf /opt/squashfs-root/usr/Mod/TechDraw/Resources/fonts /usr/local/share/fonts/techdraw && \
+    fc-cache -f
