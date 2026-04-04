@@ -1,6 +1,6 @@
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/oci:defs.bzl", "oci_tarball")
+load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/testing:defs.bzl", "py_test")
 
 # Apt manifest + lockfile for rules_distroless (referenced from MODULE.bazel).
@@ -52,11 +52,10 @@ oci_image(
     ],
 )
 
-oci_tarball(
+oci_layout_rloc(
     name = "e2e_container",
     testonly = True,
     image = ":e2e_container_image",
-    repo_tags = ["e2e-container:pinned"],
 )
 
 py_test(

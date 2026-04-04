@@ -1,7 +1,7 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/oci:defs.bzl", "oci_tarball")
+load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/testing:defs.bzl", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
@@ -203,11 +203,10 @@ oci_image(
     tars = [":mock_k8s_server_layers"],
 )
 
-oci_tarball(
+oci_layout_rloc(
     name = "mock_k8s_server",
     testonly = True,
     image = ":mock_k8s_server_image",
-    repo_tags = ["mock-k8s-server:pinned"],
 )
 
 # K8s proxy test client: exercises normalize_proxy_url() through the
@@ -235,11 +234,10 @@ oci_image(
     tars = [":k8s_test_client_layers"],
 )
 
-oci_tarball(
+oci_layout_rloc(
     name = "k8s_test_client",
     testonly = True,
     image = ":k8s_test_client_image",
-    repo_tags = ["k8s-test-client:pinned"],
 )
 
 # === Tests ===

@@ -7,7 +7,7 @@
 #     data = ["//third_party/containers:postgres_18"]
 
 load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/oci:defs.bzl", "oci_layout_rloc", "oci_tarball")
+load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 
 py_library(
     name = "rlocations",
@@ -30,43 +30,38 @@ py_library(
     ],
 )
 
-oci_tarball(
+oci_layout_rloc(
     name = "postgres_18",
     testonly = True,
     image = "@postgres_18_linux_amd64",
-    repo_tags = ["postgres:18"],
     visibility = ["//visibility:public"],
 )
 
-oci_tarball(
+oci_layout_rloc(
     name = "registry_2",
     testonly = True,
     image = "@registry_2_linux_amd64",
-    repo_tags = ["registry:2"],
     visibility = ["//visibility:public"],
 )
 
-oci_tarball(
+oci_layout_rloc(
     name = "ryuk",
     testonly = True,
     image = "@ryuk_linux_amd64",
-    repo_tags = ["testcontainers/ryuk:0.8.1"],
     visibility = ["//visibility:public"],
 )
 
-oci_tarball(
+oci_layout_rloc(
     name = "python_3_13_slim",
     testonly = True,
     image = "@python_3_13_slim_linux_amd64",
-    repo_tags = ["python:3.13-slim"],
     visibility = ["//visibility:public"],
 )
 
-oci_tarball(
+oci_layout_rloc(
     name = "mitmproxy",
     testonly = True,
     image = "@mitmproxy_linux_amd64",
-    repo_tags = ["mitmproxy:11"],
     visibility = ["//visibility:public"],
 )
 

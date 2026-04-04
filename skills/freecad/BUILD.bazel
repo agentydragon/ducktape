@@ -1,5 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//devinfra/oci:defs.bzl", "oci_tarball")
+load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/testing:defs.bzl", "py_test")
 load("//skills:defs.bzl", "skill_package")
 
@@ -35,11 +35,10 @@ py_binary(
     deps = [":render_dxf"],
 )
 
-oci_tarball(
+oci_layout_rloc(
     name = "freecad_test",
     testonly = True,
     image = "@freecad_test_linux_amd64",
-    repo_tags = ["freecad-test:pinned"],
 )
 
 py_test(
