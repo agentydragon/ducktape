@@ -14,25 +14,43 @@ from xml.etree import ElementTree
 # --- DXF ---
 
 _DXF_STRIP_PATTERNS = re.compile(r"^\$TD(CREATE|UPDATE)|^\$VERSIONSTRING$")
+_DXF_FLOAT_RE = re.compile(r"^[- ]?\d*\.?\d+([eE][+-]?\d+)?$")
+
+
+def _normalize_dxf_value(line: str) -> str:
+    """Normalize floating-point values: snap near-zero to 0, round to 6 decimals."""
+    stripped = line.strip()
+    if not _DXF_FLOAT_RE.match(stripped):
+        return line
+    try:
+        val = float(stripped)
+    except ValueError:
+        return line
+    if abs(val) < 1e-9:
+        val = 0.0
+    # Round to 6 significant decimals to absorb FP drift across runs
+    normalized = f"{val:.6f}".rstrip("0").rstrip(".")
+    # Preserve original line ending
+    ending = line[len(line.rstrip()) :]
+    return normalized + ending
 
 
 def _normalize_dxf(text: str) -> list[str]:
-    """Strip non-deterministic lines from DXF text."""
+    """Strip non-deterministic lines and normalize floats in DXF text."""
     lines = text.splitlines(keepends=True)
     result = []
-    i = 0
-    while i < len(lines):
-        line = lines[i].rstrip("\n")
-        # Group code 999 = comment: skip this line and the next (value)
-        if line.strip() == "999":
-            i += 2
+    skip_next = False
+    for line in lines:
+        if skip_next:
+            skip_next = False
             continue
-        # Header variables that change between versions/runs
-        if _DXF_STRIP_PATTERNS.match(line.strip()):
-            i += 2
+        stripped = line.rstrip("\n").strip()
+        # DXF group code 999 = comment, or header vars that change between runs.
+        # These are key-value pairs: skip this line (key) and the next (value).
+        if stripped == "999" or _DXF_STRIP_PATTERNS.match(stripped):
+            skip_next = True
             continue
-        result.append(lines[i])
-        i += 1
+        result.append(_normalize_dxf_value(line))
     return result
 
 
@@ -88,10 +106,16 @@ def assert_svg_equal(actual_path: Path, golden_path: Path) -> None:
 _CREATION_DATE_RE = re.compile(rb"/CreationDate \(D:\d{14}Z?\)")
 _CREATION_DATE_REPLACEMENT = b"/CreationDate (D:00000000000000Z)"
 
+# Font names in embedded PDFs are non-deterministic: subset prefix varies (e.g., QNAAAA+)
+# and the font itself may differ across workers (DejaVuSans vs osifont).
+_FONT_NAME_RE = re.compile(rb"/FontName /[A-Z]{6}\+\S+")
+_FONT_NAME_REPLACEMENT = b"/FontName /AAAAAA+NormalizedFont"
+
 
 def _normalize_pdf(data: bytes) -> bytes:
     """Replace non-deterministic PDF metadata with fixed values."""
-    return _CREATION_DATE_RE.sub(_CREATION_DATE_REPLACEMENT, data)
+    data = _CREATION_DATE_RE.sub(_CREATION_DATE_REPLACEMENT, data)
+    return _FONT_NAME_RE.sub(_FONT_NAME_REPLACEMENT, data)
 
 
 def assert_pdf_equal(actual_path: Path, golden_path: Path) -> None:
