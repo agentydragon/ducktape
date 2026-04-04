@@ -22,9 +22,13 @@
 - [ ] Multi-view drawings: front/side/top views on one TechDraw page for 3D objects.
 - [ ] Assemblies: multi-part models with positioning.
 
+## Docker test image
+
+- [ ] Upgrade FreeCAD from 0.21.2 to 1.1 (latest stable, released 2026-03-25). The 1.0 release included a major PartDesign rework that likely fixes the side-face pocket failures we hit. Update `Dockerfile.test` PPA source or switch to the official FreeCAD PPA/snap. This unblocks the slot, rib, and external geometry features for the bracket example.
+
 ## PartDesign bracket example
 
-- [ ] Add PartDesign::Pocket on a side face (slot in wall). FreeCAD 0.21 Pocket fails on Y/X-normal faces with "shape is invalid" — face normals are inverted, causing the cut direction to be wrong. Needs investigation: try FreeCAD 1.0+ (rework of PartDesign), or use Part::Cut boolean as workaround.
+- [ ] Add PartDesign::Pocket on a side face (slot in wall). FreeCAD 0.21 Pocket fails on Y/X-normal faces with "shape is invalid" — face normals are inverted, causing the cut direction to be wrong. Likely fixed in FreeCAD 1.0+ — try after upgrading the test image.
 - [ ] Add reinforcement rib (Sketch on side face → Pad). Same face-normal issue blocks this.
 - [ ] Add external geometry references (`addExternal`) once side-face sketches work.
 - [ ] Fix existing Docker tests (`test_render_3d`, `test_container_primitives`, `test_export_formats`) that use the old `load_image` API (renamed to `load_oci_image` with `OciImage` dataclass).
