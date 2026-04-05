@@ -1,0 +1,34 @@
+load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/freecad_appimage:defs.bzl", "freecad_appimage_rloc")
+load("//devinfra/testing:defs.bzl", "py_test")
+
+freecad_appimage_rloc(
+    name = "freecad_appimage",
+    testonly = True,
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    data = [":freecad_appimage"],
+    imports = ["../../.."],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_rect",
+    size = "medium",
+    srcs = ["test_rect.py"],
+    data = ["rect.py"],
+    imports = ["../../.."],
+    deps = [
+        ":conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

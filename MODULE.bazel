@@ -249,6 +249,11 @@ image_pins = use_extension("//devinfra:image_pins.bzl", "image_pins")
 image_pins.from_file(lockfile = "//devinfra:image_pins.json")
 use_repo(image_pins, "freecad_test", "freecad_test_linux_amd64", "image_pins")
 
+# FreeCAD AppImage: extracted squashfs-root for direct (non-Docker) FreeCAD tests.
+# The repository_rule downloads FreeCAD 1.1.0 AppImage and extracts it on first use.
+freecad_appimage = use_extension("//devinfra/freecad_appimage:defs.bzl", "freecad_appimage_ext")
+use_repo(freecad_appimage, "freecad_appimage")
+
 # Hermetic deb packages for container images (rules_distroless).
 # Replaces Dockerfile apt-get with lockfile-pinned deb extraction.
 apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")
