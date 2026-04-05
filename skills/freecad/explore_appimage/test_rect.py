@@ -20,8 +20,14 @@ def test_rect_dxf(freecad_run) -> None:
             f"stderr: {result.stderr[:500]}"
         )
 
+        # Always print freecadcmd output to aid debugging (visible in --test_output=all)
+        print("--- freecadcmd stdout ---")
+        print(result.stdout)
+        print("--- freecadcmd stderr ---")
+        print(result.stderr)
+
         dxf = Path(outdir) / "rect.dxf"
-        assert dxf.exists(), "rect.dxf not produced"
+        assert dxf.exists(), f"rect.dxf not produced\nstdout: {result.stdout}\nstderr: {result.stderr}"
         assert dxf.stat().st_size > 100
 
         content = dxf.read_text()
