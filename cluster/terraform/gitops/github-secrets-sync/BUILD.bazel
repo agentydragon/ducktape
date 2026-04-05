@@ -1,0 +1,19 @@
+load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
+
+tf_providers_versions(
+    name = "providers",
+    providers = {
+        "github": "integrations/github:~>6.6",
+        "kubernetes": "hashicorp/kubernetes:~>2.35",
+    },
+    tf_version = "1.9.8",
+)
+
+tf_module(
+    name = "github-secrets-sync",
+    providers = [
+        "github",
+        "kubernetes",
+    ],
+    providers_versions = ":providers",
+)

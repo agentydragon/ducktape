@@ -31,7 +31,7 @@ from devinfra.claude.claude_api.hooks.session_start import (
 )
 from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.errors import SkipError
-from devinfra.claude.hook_config import HOOKS_DOTDIR, HookConfig, OtelConfig, SecretSource
+from devinfra.claude.hook_config import HOOKS_DOTDIR, HookConfig, OtelConfig, SecretSource, SopsSecretSource
 from devinfra.claude.sops_decrypt import discover_age_identities
 
 # isort: off
@@ -477,41 +477,56 @@ async def run_session(
     proxy_url = (setup.auth_proxy.proxy_url if setup.auth_proxy else None) or get_proxy_url(ctx.caller_env)
 
     # Resolve secrets from tagged-union config (each field resolved independently).
+    # Two-phase resolution: SOPS secrets first (no K8s client needed), then K8s secrets.
+    # This allows the K8s token itself to come from SOPS, with env var fallback.
     with tracer.start_as_current_span("resolve_secrets", context=root_ctx):
         secrets_cfg = hook_config.secrets if hook_config else None
         age_identities = discover_age_identities()
-        k8s_api = None
         k8s_namespace = hook_config.k8s.namespace if hook_config and hook_config.k8s else None
-        if settings.k8s_token and hook_config and hook_config.k8s:
+
+        def resolve_sops(source: SecretSource) -> str | None:
+            """Resolve a secret only if it's a SOPS source (no K8s client needed)."""
+            if not isinstance(source, SopsSecretSource):
+                return None
+            return secret_sources.resolve_secret(
+                source, project_dir=project_dir, age_identities=age_identities, k8s_api=None, k8s_namespace=None
+            )
+
+        # Phase 1: Resolve SOPS-only secrets (including k8s_token).
+        setup.secrets = secret_sources.SecretsResult()
+        if secrets_cfg:
+            if secrets_cfg.k8s_token:
+                setup.secrets.k8s_token = resolve_sops(secrets_cfg.k8s_token)
+            if secrets_cfg.buildbuddy_api_key:
+                setup.secrets.buildbuddy_api_key = resolve_sops(secrets_cfg.buildbuddy_api_key)
+            if secrets_cfg.github_token:
+                setup.secrets.github_token = resolve_sops(secrets_cfg.github_token)
+
+        # Phase 2: K8s client setup (SOPS-derived token preferred, env var fallback).
+        k8s_token = setup.secrets.k8s_token or settings.k8s_token
+        k8s_api = None
+        if k8s_token and hook_config and hook_config.k8s:
             try:
                 k8s_api = secret_sources.setup_k8s_client(
-                    token=settings.k8s_token, k8s_cfg=hook_config.k8s, combined_ca_path=combined_ca, proxy=proxy_url
+                    token=k8s_token, k8s_cfg=hook_config.k8s, combined_ca_path=combined_ca, proxy=proxy_url
                 )
             except Exception as e:
                 logger.warning("K8s client setup failed: %s", e)
 
-        def resolve(source: SecretSource) -> str | None:
-            return secret_sources.resolve_secret(
-                source,
+        # Phase 3: Resolve K8s-sourced secrets (requires K8s client).
+        if secrets_cfg and secrets_cfg.otel_bearer_token:
+            setup.secrets.otel_bearer_token = secret_sources.resolve_secret(
+                secrets_cfg.otel_bearer_token,
                 project_dir=project_dir,
                 age_identities=age_identities,
                 k8s_api=k8s_api,
                 k8s_namespace=k8s_namespace,
             )
 
-        setup.secrets = secret_sources.SecretsResult()
-        if secrets_cfg:
-            if secrets_cfg.buildbuddy_api_key:
-                setup.secrets.buildbuddy_api_key = resolve(secrets_cfg.buildbuddy_api_key)
-            if secrets_cfg.github_token:
-                setup.secrets.github_token = resolve(secrets_cfg.github_token)
-            if secrets_cfg.otel_bearer_token:
-                setup.secrets.otel_bearer_token = resolve(secrets_cfg.otel_bearer_token)
-
         # Write kubeconfig when k8s client is available.
-        if k8s_api and settings.k8s_token and hook_config and hook_config.k8s:
+        if k8s_api and k8s_token and hook_config and hook_config.k8s:
             setup.secrets.kubeconfig_path = secret_sources.write_kubeconfig(
-                token=settings.k8s_token,
+                token=k8s_token,
                 k8s_cfg=hook_config.k8s,
                 session_dir=paths.session_dir,
                 combined_ca_path=combined_ca,

@@ -1,0 +1,54 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: claude-token-rotation
+  namespace: default
+  annotations:
+    description: >-
+      Rotates the Claude web K8s token by reading a projected SA token,
+      SOPS-encrypting it, and pushing to git. Runs as claude-code-web SA.
+spec:
+  schedule: "0 0 1,15 * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          serviceAccountName: claude-code-web
+          restartPolicy: OnFailure
+          volumes:
+            - name: sa-token
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      path: token
+                      expirationSeconds: 2592000 # 30 days
+                      audience: https://kubernetes.default.svc
+            - name: github-pat
+              secret:
+                secretName: github-secrets-sync-pat
+            - name: rotate-script
+              configMap:
+                name: claude-token-rotation-script
+          containers:
+            - name: rotate
+              image: ghcr.io/agentydragon/claude-token-rotation:latest # {"$imagepolicy": "flux-system:claude-token-rotation"}
+              command: ["/bin/bash", "/scripts/rotate.sh"]
+              volumeMounts:
+                - name: sa-token
+                  mountPath: /var/run/secrets/sa-token
+                  readOnly: true
+                - name: github-pat
+                  mountPath: /var/run/secrets/github-pat
+                  readOnly: true
+                - name: rotate-script
+                  mountPath: /scripts
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi

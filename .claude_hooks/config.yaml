@@ -26,6 +26,10 @@ extra_env_script: |
   export DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=0
 
 secrets:
+  k8s_token:
+    kind: sops
+    sops_file: secrets/claude-web-k8s-token.yaml
+    key: k8s_token
   buildbuddy_api_key:
     kind: sops
     sops_file: secrets/buildbuddy.yaml

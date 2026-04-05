@@ -37,6 +37,7 @@ resources:
   - agents/shared-secrets/flux-kustomization.yaml
   - agents/claude-rbac/flux-kustomization.yaml
   - agents/claude-sandbox-secrets/flux-kustomization.yaml
+  - agents/claude-token-rotation/flux-kustomization.yaml
   - agents/claude-sandbox-firecracker/flux-kustomization.yaml
   - agents/airlock/flux-kustomization.yaml
   - agents/google-workspace-mcp/flux-kustomization.yaml
@@ -229,6 +230,10 @@ resources:
   - arc/namespace/flux-kustomization.yaml
   - arc/secrets/flux-kustomization.yaml
   - arc/app/flux-kustomization.yaml
+
+  # --- github-secrets-sync ---
+  - github-secrets-sync/secrets/flux-kustomization.yaml
+  - github-secrets-sync/flux-kustomization.yaml
 
   # --- standalone applications ---
   - buildbuddy-executor/flux-kustomization.yaml

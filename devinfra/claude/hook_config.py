@@ -55,6 +55,7 @@ SecretSource = Annotated[SopsSecretSource | K8sSecretSource, Field(discriminator
 class SecretsConfig(BaseModel):
     """Named secrets with tagged-union sources describing how to fetch each one."""
 
+    k8s_token: SecretSource | None = None
     buildbuddy_api_key: SecretSource | None = None
     github_token: SecretSource | None = None
     otel_bearer_token: SecretSource | None = None

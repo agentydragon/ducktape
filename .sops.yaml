@@ -110,6 +110,12 @@ creation_rules:
           - *user-rugged
           - *user-iguana
           - *atlas
+  # Claude web K8s token (auto-rotated by in-cluster CronJob)
+  - path_regex: secrets/claude-web-k8s-token\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *claude-web
   # Shared secrets (all hosts + claude-web agent)
   - path_regex: secrets/buildbuddy\.yaml$
     key_groups:

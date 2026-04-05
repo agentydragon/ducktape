@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 class SecretsResult:
     """Resolved secrets with explicit named fields."""
 
+    k8s_token: str | None = None
     buildbuddy_api_key: str | None = None
     github_token: str | None = None
     otel_bearer_token: str | None = None

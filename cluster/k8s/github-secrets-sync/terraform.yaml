@@ -1,0 +1,23 @@
+---
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: github-secrets-sync
+  namespace: flux-system
+spec:
+  interval: 15m
+  path: ./cluster/terraform/gitops/github-secrets-sync
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+
+  serviceAccountName: tf-runner
+  approvePlan: "auto"
+
+  backendConfig:
+    customConfiguration: |
+      backend "kubernetes" {
+        secret_suffix = "github-secrets-sync"
+        namespace     = "flux-system"
+      }
