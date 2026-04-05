@@ -102,7 +102,9 @@ def _run_export():
     else:
         log("ERROR: PDF file not created")
 
-    doc.Modified = False
+    # Suppress the "unsaved changes" dialog. FreeCAD 1.1.0 has no doc.Modified
+    # attribute; setClosable(True) bypasses the save dialog on closeDocument().
+    doc.setClosable(True)
     App.closeDocument(doc.Name)
     log("Document closed")
     pump(qapp, 0.5)
