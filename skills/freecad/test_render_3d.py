@@ -65,9 +65,15 @@ def test_render_3d(tmp_path: Path) -> None:
             docker_client_kw={"timeout": 120},
         ) as container,
     ):
+        # Use the freecad GUI binary (not freecadcmd) so QApplication::exec() runs,
+        # giving render_fcstd.py a proper event loop and clean exit. xvfb-run hangs
+        # with the GUI binary, so Xvfb is started manually.
         result = container.exec(
-            'bash -c "INPUT=/work/cube_with_hole.FCStd OUTDIR=/output '
-            'xvfb-run -a -s \\"-screen 0 1024x768x24\\" freecadcmd /work/render_fcstd.py"'
+            "bash -c '"
+            "Xvfb :99 -screen 0 1024x768x24 -nolisten tcp & sleep 2 && "
+            "DISPLAY=:99 INPUT=/work/cube_with_hole.FCStd OUTDIR=/output "
+            "freecad /work/render_fcstd.py"
+            "'"
         )
         assert result.exit_code == 0, (
             f"render failed (exit {result.exit_code}): {result.output.decode(errors='replace')[:500]}"
@@ -76,7 +82,6 @@ def test_render_3d(tmp_path: Path) -> None:
     actual_png = tmp_path / "cube_with_hole.png"
     assert actual_png.exists(), "PNG not generated — check container logs"
 
-    # Save rendered output for debugging
     out_dir = undeclared_outputs_dir() / "render-3d"
     out_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy(actual_png, out_dir / "actual.png")
