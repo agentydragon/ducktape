@@ -18,6 +18,7 @@ _GOLDEN_DXF = "_main/skills/freecad/golden/bracket.dxf"
 _GOLDEN_SVG = "_main/skills/freecad/golden/bracket.svg"
 _GOLDEN_PDF = "_main/skills/freecad/golden/bracket.pdf"
 
+_ENV = "export LANG=C.UTF-8 LC_ALL=C.UTF-8;"
 _XVFB = 'xvfb-run -a -s \\"-screen 0 1024x768x24\\"'
 
 
@@ -39,9 +40,10 @@ def export_outputs(tmp_path_factory: pytest.TempPathFactory) -> Path:
         ],
         docker_client_kw={"timeout": 120},
     ) as container:
-        freecad_exec(container, f'bash -c "OUTDIR=/output {_XVFB} freecadcmd /work/parametric_sketch.py"')
+        freecad_exec(container, f'bash -c "{_ENV} OUTDIR=/output {_XVFB} freecadcmd /work/parametric_sketch.py"')
         freecad_exec(
-            container, f'bash -c "INPUT=/output/bracket.FCStd OUTDIR=/output {_XVFB} freecadcmd /work/export_page.py"'
+            container,
+            f'bash -c "{_ENV} INPUT=/output/bracket.FCStd OUTDIR=/output {_XVFB} freecadcmd /work/export_page.py"',
         )
 
     return out_dir

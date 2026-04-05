@@ -2,6 +2,8 @@ FROM ubuntu:24.04
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates wget xvfb fontconfig && \
     rm -rf /var/lib/apt/lists/*
+ENV LANG="C.UTF-8"
+ENV LC_ALL="C.UTF-8"
 RUN wget -q "https://github.com/FreeCAD/FreeCAD/releases/download/1.1.0/FreeCAD_1.1.0-Linux-x86_64-py311.AppImage" \
     -O /opt/FreeCAD.AppImage && \
     chmod +x /opt/FreeCAD.AppImage && \

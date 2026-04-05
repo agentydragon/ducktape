@@ -178,7 +178,7 @@ feat.Shape = bracket_face
 doc.recompute()
 
 # === TechDraw Page ===
-tmpl_path = os.path.join(App.getResourceDir(), "Mod", "TechDraw", "Templates", "A4_Landscape_blank.svg")  # noqa: PTH118
+tmpl_path = os.path.join(App.getResourceDir(), "Mod", "TechDraw", "Templates", "ISO", "A4_Landscape_blank.svg")  # noqa: PTH118
 page = doc.addObject("TechDraw::DrawPage", "Page")
 tmpl = doc.addObject("TechDraw::DrawSVGTemplate", "Template")
 tmpl.Template = tmpl_path
