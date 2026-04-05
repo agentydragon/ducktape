@@ -13,7 +13,6 @@ third-party content never lands in `ansible/roles` or `ansible/collections`.
 
 ```bash
 cd ansible
-ansible-playbook agentydragon.yaml --ask-become-pass
 ansible-playbook vps.yaml
 ```
 
@@ -26,18 +25,6 @@ assign task particularly with that in mind... :/
 cd ansible
 ansible-playbook gpd.yaml --ask-become-pass
 ```
-
-## Manual laptop installation steps
-
-These parts can't be done by Ansible:
-
-- `ssh-keygen`
-- Add key to GitHub/GitLab
-- `apt install git ansible`
-- `git clone git@gitlab.com:agentydragon/ducktape`
-- `ansible-playbook agentydragon.yaml --ask-become-pass`
-- Add `~/.config/bazelrc.secrets` - see the `bazelrc` dotfile. Global `bazelrc` imports this file, it's supposed to contain the path (and
-  password) to the Bazel cache on the VPS.
 
 ## Manual VM/Remote Machine Setup
 

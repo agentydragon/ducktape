@@ -2,8 +2,6 @@ all:
   hosts:
     vps:
       ansible_host: agentydragon.com
-    agentydragon:
-      ansible_connection: local
     gpd:
       ansible_connection: local
     atlas:
