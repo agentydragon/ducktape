@@ -1,0 +1,4 @@
+---
+# Default trusted users for Nix
+# Can be overridden per host or in playbook
+nix_trusted_users: "{{ my_user | default(ansible_user_id) }}"

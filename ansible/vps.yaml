@@ -124,45 +124,6 @@
           - "adgn.link"
           - "www.adgn.link"
 
-    # CLEANUP(2026-03-22): Remove this block once headscale has been confirmed absent
-    #   from the VPS across several deployments (headscale moved to Nebula/cluster).
-    - name: Uninstall headscale server
-      tags: [headscale]
-      block:
-        - name: Stop and disable headscale service
-          ansible.builtin.systemd:
-            name: headscale
-            state: stopped
-            enabled: false
-          become: true
-          failed_when: false
-
-        - name: Remove headscale files and directories
-          ansible.builtin.file:
-            path: "{{ item }}"
-            state: absent
-          become: true
-          loop:
-            - /etc/systemd/system/headscale.service
-            - /usr/local/bin/headscale
-            - /etc/headscale
-            - /var/lib/headscale
-            - /etc/letsencrypt/renewal-hooks/post/restart-headscale.sh
-          notify: Reload systemd daemon
-
-        - name: Remove headscale user
-          ansible.builtin.user:
-            name: headscale
-            state: absent
-            remove: true
-          become: true
-
-        - name: Remove headscale group
-          ansible.builtin.group:
-            name: headscale
-            state: absent
-          become: true
-
     - name: Uninstall legacy VPN services
       ansible.builtin.import_role:
         name: legacy_vpn_uninstall
@@ -205,21 +166,6 @@
             src: /etc/nginx/sites-available/{{ item }}
             dest: /etc/nginx/sites-enabled/{{ item }}
           loop: "{{ nginx_sites }}"
-          notify:
-            - Reload nginx
-
-    # CLEANUP(2026-03-22): Remove once legacy nginx stream directories are confirmed
-    #   absent from VPS across several deployments.
-    - name: Remove legacy nginx stream configs (test cluster)
-      tags: [nginx]
-      block:
-        - name: Remove legacy stream config directories
-          ansible.builtin.file:
-            path: "/etc/nginx/{{ item }}"
-            state: absent
-          loop:
-            - streams-enabled
-            - streams-available
           notify:
             - Reload nginx
 
