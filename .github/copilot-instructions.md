@@ -19,10 +19,34 @@ For detailed repository guidance, see: [AGENTS.md](../AGENTS.md) and [STYLE.md](
 **Bazel** is the unified build system. Always use Bazel, never direct `pytest` or `python`:
 
 ```bash
-bazel run //tools:gazelle            # Update BUILD files
+bazel run //devinfra:gazelle         # Update BUILD files
 ```
 
-Python 3.12+. Dependencies in `requirements_bazel.txt`.
+Python 3.13+. Dependencies in `requirements_bazel.txt`.
+
+### Terraform via Bazel
+
+Terraform/OpenTofu modules are managed by Bazel (`@rules_tf`). Each module has a
+`BUILD.bazel` with `tf_providers_versions` and `tf_module` rules. **There are no
+hand-written `terraform.tf` or `required_providers` blocks** — Bazel generates them
+from `tf_providers_versions`. Do not suggest adding `terraform { required_providers }`
+blocks manually.
+
+### Flux Kustomization Wiring
+
+Flux `Kustomization` resources (`flux-kustomization.yaml`) are applied from the **root**
+`cluster/k8s/kustomization.yaml`, not from local `kustomization.yaml` files in each
+directory. A directory's `kustomization.yaml` should only list the manifests that Flux
+applies at `spec.path` (e.g., `terraform.yaml`, `*.sops.yaml`). **Do not include
+`flux-kustomization.yaml` in local `kustomization.yaml` resources** — it causes
+redundant application.
+
+### Container Images
+
+Container images are built with Bazel (`rules_oci`, `rules_distroless`), not Dockerfiles.
+Images are pushed to GHCR via `ghcr_push` targets, triggered by BuildBuddy CI. The RBE
+worker image and a few upstream-derived images (OpenClaw, Tana MCP) still use Dockerfiles
+with GitHub Actions workflows, but all new images should use `oci_image` + `ghcr_push`.
 
 ## Verification (Required)
 
