@@ -18,15 +18,16 @@ import importDXF
 
 
 def _fix_freecad_stub_modules() -> None:
-    """Reload FreeCAD C extensions that are shadowed by Bazel-generated stubs.
+    """Reload FreeCAD C extensions that are shadowed by empty Python stubs.
 
-    On RBE, Bazel auto-generates __init__.py stub files for directories in the
-    runfiles tree. This causes Python to load the stubs (e.g. usr/Mod/Part/)
-    instead of the C extensions (usr/lib/Part.so), leaving C-only APIs like
-    Part.makePolygon and Import.writeDXFObject unavailable.
+    FreeCAD's init system creates empty __init__.py files in usr/Mod/XYZ/
+    directories (e.g. Part, Import, Mesh) to make them importable as packages.
+    With usr/Mod/ in sys.path, Python finds these empty stubs and loads them
+    instead of the C extensions in usr/lib/ — leaving makePolygon,
+    writeDXFObject, etc. unavailable.
 
-    Fix: for each *.so in usr/lib/ that has a corresponding sys.modules entry
-    loaded from a /Mod/ stub path, remove the stub and reload the C extension.
+    Fix: for each *.so in usr/lib/ whose sys.modules entry came from a /Mod/
+    stub, remove the stub and reload the real C extension via importlib.
     """
     prefix = Path(os.environ.get("PYTHONHOME", "")) / "lib"
     for so_path in sorted(prefix.glob("*.so")):
