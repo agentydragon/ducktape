@@ -11,6 +11,7 @@ skill_package(
         "build_bearing_block_techdraw.py",
         "build_compound.py",
         "build_cube_with_hole.py",
+        "debug/qt_shutdown_segfault.md",
         "export_page.py",
         "freecad_helpers.py",
         "parametric_sketch.py",

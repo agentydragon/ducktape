@@ -538,7 +538,7 @@ Key steps in the render script:
 2. Open the FCStd, set objects to `Shaded` display mode with `Two side` lighting
 3. `view.viewIsometric()` + `view.fitAll()` for camera setup
 4. `view.saveImage(path, 800, 600, "Current")` to capture
-5. `os._exit(0)` to avoid Qt cleanup segfault
+5. `os._exit(0)` — required for all GUI scripts; see <debug/qt_shutdown_segfault.md>
 
 See <render_fcstd.py> for the full script.
 

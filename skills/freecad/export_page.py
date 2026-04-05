@@ -86,4 +86,4 @@ pdf_path = os.path.join(outdir, f"{stem}.pdf")  # noqa: PTH118 — FreeCAD API e
 TechDrawGui.exportPageAsPdf(page, pdf_path)
 log(f"PDF: {Path(pdf_path).stat().st_size} bytes — done")
 
-os._exit(0)  # Skip Qt cleanup to avoid segfault under xvfb
+os._exit(0)  # Qt6 TLS crash during shutdown — see debug/qt_shutdown_segfault.md

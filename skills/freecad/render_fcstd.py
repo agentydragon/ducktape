@@ -99,4 +99,4 @@ output_path = os.path.join(outdir, output_name)  # noqa: PTH118 — FreeCAD API 
 view.saveImage(output_path, 800, 600, "Current")
 log(f"rendered: {output_path} — done")
 
-os._exit(0)  # Skip Qt cleanup to avoid potential segfault under xvfb
+os._exit(0)  # Qt6 TLS crash during shutdown — see debug/qt_shutdown_segfault.md

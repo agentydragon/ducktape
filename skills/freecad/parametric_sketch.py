@@ -328,4 +328,4 @@ fcstd_path = os.path.join(outdir, "bracket.FCStd")  # noqa: PTH118 — FreeCAD A
 doc.saveAs(fcstd_path)
 log(f"FCStd: {Path(fcstd_path).stat().st_size} bytes — done")
 
-os._exit(0)
+os._exit(0)  # Qt6 TLS crash during shutdown — see debug/qt_shutdown_segfault.md
