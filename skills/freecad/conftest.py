@@ -128,8 +128,10 @@ def freecad_headless(freecad_appimage_path: Path):
             run_env["OUTDIR"] = str(outdir)
         if env:
             run_env.update(env)
+        # Pass -platform offscreen as CLI arg: the AppImage's AppRun script overrides
+        # QT_QPA_PLATFORM, but the CLI arg takes precedence over the env var.
         return subprocess.run(
-            [str(freecad_appimage_path), "freecadcmd", str(script)],
+            [str(freecad_appimage_path), "freecadcmd", "-platform", "offscreen", str(script)],
             env=run_env,
             capture_output=True,
             text=True,
