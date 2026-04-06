@@ -495,7 +495,7 @@ manifest:
     strict_rfc3339: strict_rfc3339
     structlog: structlog
     supervisor: supervisor
-    svgwrite: svgwrite
+    svg: svg_py
     sympy: sympy
     syrupy: syrupy
     tabulate: tabulate
@@ -600,4 +600,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 13d12ae44680c34a66e37d5a368bdd39e3289f7e9b9a6498df7c8df249928c3b
+integrity: b18fff7346f7f29f0b0317dffe9aa49915bfcd6d62378850a0cca47e27b140f8
