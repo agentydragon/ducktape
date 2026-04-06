@@ -1,0 +1,113 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tandoor
+  namespace: tandoor
+  labels:
+    app: tandoor
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tandoor
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: tandoor
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      containers:
+        - name: tandoor
+          image: ghcr.io/tandoorrecipes/recipes:1.5.34
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: DB_ENGINE
+              value: django.db.backends.postgresql
+            - name: POSTGRES_HOST
+              value: tandoor-db-rw
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_DB
+              value: tandoor
+            - name: POSTGRES_USER
+              value: tandoor
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: tandoor-db-app
+                  key: password
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: tandoor-db-app
+                  key: password
+            - name: REMOTE_USER_AUTH
+              value: "1"
+            - name: PROXY_HEADER
+              value: HTTP_X_AUTHENTIK_USERNAME
+            - name: ENABLE_SIGNUP
+              value: "0"
+            - name: TZ
+              value: UTC
+          volumeMounts:
+            - name: media
+              mountPath: /opt/recipes/mediafiles
+            - name: static
+              mountPath: /opt/recipes/staticfiles
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /accounts/login/
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /accounts/login/
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports:
+            - containerPort: 80
+              name: http-nginx
+          volumeMounts:
+            - name: media
+              mountPath: /media
+              readOnly: true
+            - name: static
+              mountPath: /static
+              readOnly: true
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+      volumes:
+        - name: media
+          persistentVolumeClaim:
+            claimName: tandoor-media
+        - name: static
+          emptyDir: {}
+        - name: nginx-config
+          configMap:
+            name: tandoor-nginx

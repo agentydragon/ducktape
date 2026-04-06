@@ -12,3 +12,4 @@ resources:
   - google-workspace-mcp-httproute.yaml
   - longhorn-httproute.yaml
   - goldilocks-httproute.yaml
+  - tandoor-httproute.yaml

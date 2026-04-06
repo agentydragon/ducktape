@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tandoor-ingress
+  namespace: tandoor
+spec:
+  podSelector:
+    matchLabels:
+      app: tandoor
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: authentik
+          podSelector:
+            matchLabels:
+              goauthentik.io/outpost-name: shared-proxy-outpost
+      ports:
+        - port: 80
+          protocol: TCP

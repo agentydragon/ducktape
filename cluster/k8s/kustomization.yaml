@@ -226,6 +226,11 @@ resources:
   # --- grocy ---
   - grocy/flux-kustomization.yaml
 
+  # --- tandoor ---
+  - tandoor/namespace/flux-kustomization.yaml
+  - tandoor/db/flux-kustomization.yaml
+  - tandoor/app/flux-kustomization.yaml
+
   # --- proxmox-proxy ---
   - proxmox-proxy/flux-kustomization.yaml
 

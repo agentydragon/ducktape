@@ -27,6 +27,7 @@ configMapGenerator:
       - blueprints/kagent-sso.yaml
       - blueprints/headlamp-sso.yaml
       - blueprints/grocy-sso.yaml
+      - blueprints/tandoor-sso.yaml
       - blueprints/filebrowser-sso.yaml
       - blueprints/openclaw-mitmproxy-sso.yaml
       - blueprints/proxmox-sso.yaml

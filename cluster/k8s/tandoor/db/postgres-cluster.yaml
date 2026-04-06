@@ -1,0 +1,29 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: tandoor-db
+  namespace: tandoor
+spec:
+  instances: 1
+
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/region: proxmox
+
+  storage:
+    storageClass: local-path
+    size: 2Gi
+
+  monitoring:
+    enablePodMonitor: true
+
+  bootstrap:
+    initdb:
+      database: tandoor
+      owner: tandoor
+      # CNPG auto-generates credentials in secret tandoor-db-app
