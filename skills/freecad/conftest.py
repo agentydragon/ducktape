@@ -98,7 +98,7 @@ def freecad_gui(freecad_appimage_path: Path, xvfb_display: str):
         if env:
             run_env.update(env)
         return subprocess.run(
-            [str(freecad_appimage_path), "freecad", str(script)],
+            [freecad_appimage_path, "freecad", script],
             env=run_env,
             capture_output=True,
             text=True,
@@ -128,10 +128,13 @@ def freecad_headless(freecad_appimage_path: Path):
             run_env["OUTDIR"] = str(outdir)
         if env:
             run_env.update(env)
-        # Pass -platform offscreen as CLI arg: the AppImage's AppRun script overrides
-        # QT_QPA_PLATFORM, but the CLI arg takes precedence over the env var.
+        # Use the freecad binary (not freecadcmd) with -platform offscreen and -c (console
+        # mode). The freecad binary passes Qt args before FreeCAD's own arg parser, so
+        # -platform reaches Qt. freecadcmd's arg parser rejects -platform. The AppImage's
+        # AppRun script overrides QT_QPA_PLATFORM env var, so the CLI arg is required.
+        # -c runs in console mode (no GUI window), equivalent to freecadcmd behavior.
         return subprocess.run(
-            [str(freecad_appimage_path), "freecadcmd", "-platform", "offscreen", str(script)],
+            [freecad_appimage_path, "freecad", "-platform", "offscreen", "-c", script],
             env=run_env,
             capture_output=True,
             text=True,
