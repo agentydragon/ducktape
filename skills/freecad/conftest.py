@@ -3,6 +3,7 @@
 import os
 import subprocess
 import time
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -61,7 +62,7 @@ def freecad_appimage_path() -> Path:
 
 
 @pytest.fixture(scope="session")
-def xvfb_display() -> pytest.FixtureRequest:
+def xvfb_display() -> Generator[str]:
     """Start a session-scoped Xvfb server. Yields the DISPLAY string (e.g. ':99')."""
     display = ":99"
     proc = subprocess.Popen(
@@ -111,11 +112,16 @@ def freecad_gui(freecad_appimage_path: Path, xvfb_display: str):
 
 @pytest.fixture(scope="session")
 def freecad_headless(freecad_appimage_path: Path):
-    """Run a FreeCAD script via freecadcmd (no display required). Returns a callable.
+    """Run a FreeCAD script via xvfb-run freecadcmd. Returns a callable.
 
-    Suitable for all TechDraw scripts (DXF/SVG/PDF/FCStd exports) and geometry-only
-    scripts. Scripts must call Gui.showMainWindow() and end with os._exit(0) to
-    bypass the Qt6 TLS shutdown crash — see debug/qt_shutdown_segfault.md.
+    Suitable for TechDraw scripts (DXF/SVG/PDF/FCStd exports). Wraps freecadcmd
+    with xvfb-run so that the TechDraw HLR thread gets an OpenGL context (the
+    offscreen Qt platform lacks one and causes the HLR thread to hang). Scripts
+    must call Gui.showMainWindow() and end with os._exit(0) to bypass the Qt6
+    TLS shutdown crash — see debug/qt_shutdown_segfault.md.
+
+    Requires xvfb-run on the PATH (provided by the xvfb package, present on RBE
+    workers via devinfra/rbe_image/Dockerfile).
 
     Usage: result = freecad_headless(script, outdir=Path(...), env={...})
     """
@@ -123,24 +129,19 @@ def freecad_headless(freecad_appimage_path: Path):
     def _run(
         script: Path, outdir: Path | None = None, env: dict | None = None, timeout: int = 120
     ) -> subprocess.CompletedProcess:
-        run_env = {**os.environ, "QT_QPA_PLATFORM": "offscreen"}
+        run_env = {**os.environ}
         if outdir is not None:
             run_env["OUTDIR"] = str(outdir)
         if env:
             run_env.update(env)
-        # Enable Qt plugin debug logging and Qt platform debug messages so we can
-        # see which platform plugin is loaded and why (helpful for diagnosing AppRun
-        # env var overrides and plugin failures).
-        run_env["QT_DEBUG_PLUGINS"] = "1"
-        run_env["QT_LOGGING_RULES"] = "qt.qpa.*=true"
-        # Scripts set os.environ["QT_QPA_PLATFORM"] = "offscreen" before Gui.showMainWindow().
-        # If QApplication is created lazily (by Gui.showMainWindow()), this ensures offscreen
-        # is used regardless of what AppRun put in the process env.
         freecad_log = str(outdir / "freecad.log") if outdir is not None else None
-        cmd = [freecad_appimage_path, "freecadcmd"]
+        # xvfb-run -a auto-selects an available display number.
+        # The AppImage's AppRun detects DISPLAY and sets QT_QPA_PLATFORM=xcb,
+        # which gives the TechDraw HLR thread a working OpenGL context.
+        cmd: list[str] = ["xvfb-run", "-a", str(freecad_appimage_path), "freecadcmd"]
         if freecad_log:
             cmd += ["--log-file", freecad_log]
-        cmd.append(script)
+        cmd.append(str(script))
         return subprocess.run(cmd, env=run_env, capture_output=True, text=True, timeout=timeout, check=False)
 
     return _run

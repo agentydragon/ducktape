@@ -8,15 +8,14 @@ Demonstrates:
 - Entity-referenced TechDraw dimensions that auto-update when parameters change
 - Single compound, single TechDraw view (preserves relative positions)
 
-Runs under freecadcmd (headless, no display required). TechDraw HLR runs on a
-background thread; processEvents() pumps the signal that delivers the result.
-Ends with os._exit(0) to bypass the Qt6 TLS crash in QApplication::~QApplication()
-— see debug/qt_shutdown_segfault.md for details.
+Runs under freecadcmd wrapped with xvfb-run. The TechDraw HLR thread needs an
+OpenGL context provided by Xvfb. Ends with os._exit(0) to bypass the Qt6 TLS
+crash in QApplication::~QApplication() — see debug/qt_shutdown_segfault.md.
 
 Output directory is read from OUTDIR env var (default: current directory).
 
 Usage:
-  OUTDIR=/tmp/out freecadcmd build_compound.py
+  OUTDIR=/tmp/out xvfb-run -a freecadcmd build_compound.py
 """
 
 import os
@@ -24,11 +23,6 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-
-# Override QT_QPA_PLATFORM before Gui.showMainWindow() creates QApplication.
-# The AppImage's AppRun may set QT_QPA_PLATFORM=xcb in the process environment;
-# resetting it here ensures the offscreen plugin is used (no display required).
-os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 import FreeCAD as App
 import FreeCADGui as Gui

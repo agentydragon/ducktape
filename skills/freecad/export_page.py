@@ -1,14 +1,13 @@
 """
 Export all TechDraw pages from an FCStd to DXF, SVG, and PDF.
 
-Runs under freecadcmd (headless, no display required). TechDraw HLR runs on a
-background thread; processEvents() pumps the signal that delivers the result.
-Ends with os._exit(0) to bypass the Qt6 TLS crash in QApplication::~QApplication()
-— see debug/qt_shutdown_segfault.md for details.
+Runs under freecadcmd wrapped with xvfb-run. The TechDraw HLR thread needs an
+OpenGL context provided by Xvfb. Ends with os._exit(0) to bypass the Qt6 TLS
+crash in QApplication::~QApplication() — see debug/qt_shutdown_segfault.md.
 
 Arguments via env vars (freecadcmd treats CLI args as files to open):
 
-  INPUT=rect.FCStd OUTDIR=./out freecadcmd export_page.py
+  INPUT=rect.FCStd OUTDIR=./out xvfb-run -a freecadcmd export_page.py
 
 Produces <stem>.dxf, <stem>.svg, <stem>.pdf in OUTDIR,
 where <stem> is the input filename without extension (e.g. rect.FCStd → rect.{dxf,svg,pdf}).
@@ -19,11 +18,6 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-
-# Override QT_QPA_PLATFORM before Gui.showMainWindow() creates QApplication.
-# The AppImage's AppRun may set QT_QPA_PLATFORM=xcb in the process environment;
-# resetting it here ensures the offscreen plugin is used (no display required).
-os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 fcstd_path = os.environ.get("INPUT")
 outdir = os.environ.get("OUTDIR")

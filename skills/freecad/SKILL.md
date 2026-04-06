@@ -33,62 +33,36 @@ Alternatively, use the system package (may be older): `apt-get install -y freeca
 
 FreeCAD has two binaries with very different lifecycle models:
 
-| Binary       | Event loop    | Use for                                             |
-| ------------ | ------------- | --------------------------------------------------- |
-| `freecad`    | `exec()` runs | TechDraw, 3D rendering — anything needing the GUI   |
-| `freecadcmd` | No `exec()`   | Headless solid geometry, DXF-only (no TechDraw GUI) |
+| Binary       | Event loop    | Use for                                                             |
+| ------------ | ------------- | ------------------------------------------------------------------- |
+| `freecadcmd` | No `exec()`   | TechDraw + geometry scripts under `xvfb-run` (module-level pattern) |
+| `freecad`    | `exec()` runs | 3D rendering (Coin3D/OpenGL), QTimer.singleShot pattern             |
 
-**Always use `freecad` (GUI binary) for scripts that use `FreeCADGui`, `TechDraw`, or any Qt event pump.** The GUI binary enters `QApplication::exec()` cleanly and exits without crashing. `freecadcmd` never calls `exec()`, and its `QApplication` teardown triggers a Qt6 TLS use-after-free segfault on exit for any script that initialized the GUI. See <debug/qt_shutdown_segfault.md> for the full root cause analysis.
+### TechDraw invocation (freecadcmd + xvfb-run)
 
-### GUI binary invocation pattern
-
-Scripts run under the GUI binary must defer all work until after `exec()` starts, because module-level code runs during `processCmdLineFiles()` — before the event loop is live:
-
-```python
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent))  # find freecad_helpers.py alongside this script
-
-import FreeCAD as App
-import FreeCADGui as Gui
-from freecad_helpers import init_gui, log, pump, wait_for_view
-
-try:
-    from PySide6.QtCore import QTimer
-except ImportError:
-    from PySide2.QtCore import QTimer
-
-qapp = init_gui()
-
-
-def _work() -> None:
-    # ... all script logic here ...
-    doc.setClosable(True)        # suppress GUI save dialog on close
-    App.closeDocument(doc.Name)
-    Gui.getMainWindow().close()  # triggers clean QApplication exit
-
-
-QTimer.singleShot(0, _work)     # deferred: fires immediately after exec() starts
-```
-
-### What needs a real display (Xvfb) vs offscreen
-
-| Operation                                                      | Needs real X/Xvfb? | Notes                                                                            |
-| -------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------- |
-| TechDraw DXF export (`writeDXFPage`)                           | No                 | Headless, no Qt paint device needed                                              |
-| TechDraw SVG/PDF export (`exportPageAsSvg`, `exportPageAsPdf`) | No                 | Uses Qt `QPainter` → offscreen works                                             |
-| TechDraw HLR computation (`wait_for_view`)                     | No                 | Qt threads + `processEvents()` → offscreen works                                 |
-| 3D render via Coin3D/pivy (`render_fcstd.py`)                  | **Yes**            | Coin3D needs an OpenGL context; `QT_QPA_PLATFORM=offscreen` does not provide one |
-| Part Design solid geometry (no rendering)                      | No                 | Pure geometry, no Qt display needed                                              |
-
-**For TechDraw scripts** (parametric_sketch, export_page, build_compound): run with `-platform offscreen` to skip X11 dependency. Pass it as a CLI arg — the AppImage's `AppRun` script may override the `QT_QPA_PLATFORM` env var, but Qt's own CLI parsing (inside the AppImage) takes precedence:
+**TechDraw scripts** (`parametric_sketch.py`, `export_page.py`, `build_compound.py`) run under `freecadcmd` wrapped with `xvfb-run`. The TechDraw HLR (Hidden Line Removal) thread requires an OpenGL context that the Qt offscreen platform does not provide — Xvfb's X11 display satisfies this requirement:
 
 ```bash
-OUTDIR=/tmp/out /opt/FreeCAD.AppImage freecad -platform offscreen parametric_sketch.py
+# Install Xvfb if not present
+apt-get install -y xvfb
+
+OUTDIR=/tmp/out xvfb-run -a /opt/FreeCAD.AppImage freecadcmd parametric_sketch.py
+INPUT=/tmp/bracket.FCStd OUTDIR=/tmp/out xvfb-run -a /opt/FreeCAD.AppImage freecadcmd export_page.py
 ```
 
-**For 3D rendering** (render_fcstd.py, render_multi_angle.py): Xvfb is required because Coin3D needs an OpenGL context. Start Xvfb manually — `xvfb-run` hangs with the `freecad` GUI binary:
+Scripts use module-level code, call `Gui.showMainWindow()`, and end with `os._exit(0)` to bypass the Qt6 TLS crash — see <debug/qt_shutdown_segfault.md>.
+
+### What needs Xvfb vs offscreen
+
+| Operation                                                      | Needs Xvfb? | Notes                                                                                 |
+| -------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------- |
+| TechDraw HLR computation (`wait_for_view`)                     | **Yes**     | HLR thread needs an OpenGL context; Qt offscreen platform doesn't provide one         |
+| TechDraw DXF export (`writeDXFPage`)                           | **Yes**     | Requires completed HLR; see above                                                     |
+| TechDraw SVG/PDF export (`exportPageAsSvg`, `exportPageAsPdf`) | **Yes**     | Requires completed HLR; see above                                                     |
+| 3D render via Coin3D/pivy (`render_fcstd.py`)                  | **Yes**     | Coin3D needs an OpenGL context; use `freecad` binary with direct Xvfb (not xvfb-run)  |
+| Part Design solid geometry (no rendering)                      | No          | Pure geometry, no Qt display needed — use freecadcmd with `QT_QPA_PLATFORM=offscreen` |
+
+**For 3D rendering** (render_fcstd.py, render_multi_angle.py): use `freecad` GUI binary with Xvfb started manually. Do NOT use `xvfb-run` with the `freecad` binary — it can hang:
 
 ```bash
 Xvfb :99 -screen 0 1024x768x24 -nolisten tcp &
@@ -96,9 +70,9 @@ sleep 1
 DISPLAY=:99 INPUT=/tmp/model.FCStd OUTDIR=/tmp/out /opt/FreeCAD.AppImage freecad render_fcstd.py
 ```
 
-### Headless invocation (freecadcmd)
+### Headless invocation (freecadcmd, no display)
 
-Scripts that only do solid geometry (no `FreeCADGui`, no TechDraw) can run under `freecadcmd` with `QT_QPA_PLATFORM=offscreen` — no Xvfb, no `-platform` needed:
+Scripts that only do solid geometry (no `FreeCADGui`, no TechDraw) can run under `freecadcmd` without Xvfb:
 
 ```bash
 QT_QPA_PLATFORM=offscreen OUTDIR=/tmp/out /opt/FreeCAD.AppImage freecadcmd build_cube.py
