@@ -77,7 +77,14 @@ def xvfb_display() -> pytest.FixtureRequest:
 
 @pytest.fixture(scope="session")
 def freecad_gui(freecad_appimage_path: Path, xvfb_display: str):
-    """Run a FreeCAD script under the GUI binary with Xvfb. Returns a callable.
+    """Run a FreeCAD script under the GUI binary with a real Xvfb display.
+
+    Requires Xvfb (provided by the xvfb_display session fixture). Use this for
+    scripts that need OpenGL/Coin3D 3D rendering. For TechDraw-only scripts
+    (DXF/SVG/PDF exports), prefer freecad_headless (freecadcmd, no display needed).
+
+    Scripts must use the QTimer.singleShot(0, ...) + run_gui_script() pattern to
+    defer work until after QApplication::exec() starts, and must NOT call os._exit().
 
     Usage: result = freecad_gui(script, outdir=Path(...), env={...})
     """
@@ -104,9 +111,12 @@ def freecad_gui(freecad_appimage_path: Path, xvfb_display: str):
 
 @pytest.fixture(scope="session")
 def freecad_headless(freecad_appimage_path: Path):
-    """Run a FreeCAD script headlessly via freecadcmd (no Xvfb needed). Returns a callable.
+    """Run a FreeCAD script via freecadcmd (no display required). Returns a callable.
 
-    Works for scripts that don't use TechDraw GUI exports or OpenGL rendering.
+    Suitable for all TechDraw scripts (DXF/SVG/PDF/FCStd exports) and geometry-only
+    scripts. Scripts must call Gui.showMainWindow() and end with os._exit(0) to
+    bypass the Qt6 TLS shutdown crash — see debug/qt_shutdown_segfault.md.
+
     Usage: result = freecad_headless(script, outdir=Path(...), env={...})
     """
 

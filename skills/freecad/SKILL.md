@@ -72,33 +72,37 @@ def _work() -> None:
 QTimer.singleShot(0, _work)     # deferred: fires immediately after exec() starts
 ```
 
-To run with Xvfb:
+### What needs a real display (Xvfb) vs offscreen
+
+| Operation                                                      | Needs real X/Xvfb? | Notes                                                                            |
+| -------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------- |
+| TechDraw DXF export (`writeDXFPage`)                           | No                 | Headless, no Qt paint device needed                                              |
+| TechDraw SVG/PDF export (`exportPageAsSvg`, `exportPageAsPdf`) | No                 | Uses Qt `QPainter` → offscreen works                                             |
+| TechDraw HLR computation (`wait_for_view`)                     | No                 | Qt threads + `processEvents()` → offscreen works                                 |
+| 3D render via Coin3D/pivy (`render_fcstd.py`)                  | **Yes**            | Coin3D needs an OpenGL context; `QT_QPA_PLATFORM=offscreen` does not provide one |
+| Part Design solid geometry (no rendering)                      | No                 | Pure geometry, no Qt display needed                                              |
+
+**For TechDraw scripts** (parametric_sketch, export_page, build_compound): run with `-platform offscreen` to skip X11 dependency. Pass it as a CLI arg — the AppImage's `AppRun` script may override the `QT_QPA_PLATFORM` env var, but Qt's own CLI parsing (inside the AppImage) takes precedence:
+
+```bash
+OUTDIR=/tmp/out /opt/FreeCAD.AppImage freecad -platform offscreen parametric_sketch.py
+```
+
+**For 3D rendering** (render_fcstd.py, render_multi_angle.py): Xvfb is required because Coin3D needs an OpenGL context. Start Xvfb manually — `xvfb-run` hangs with the `freecad` GUI binary:
 
 ```bash
 Xvfb :99 -screen 0 1024x768x24 -nolisten tcp &
 sleep 1
-DISPLAY=:99 OUTDIR=/tmp/out /opt/FreeCAD.AppImage freecad parametric_sketch.py
+DISPLAY=:99 INPUT=/tmp/model.FCStd OUTDIR=/tmp/out /opt/FreeCAD.AppImage freecad render_fcstd.py
 ```
-
-**Do not use `xvfb-run -a ... freecad script.py`** — `xvfb-run` hangs waiting for the GUI binary to exit in a way it never will cleanly.
 
 ### Headless invocation (freecadcmd)
 
-Scripts that only do solid geometry (no `FreeCADGui`, no TechDraw) can run under `freecadcmd` with `QT_QPA_PLATFORM=offscreen` — no Xvfb needed:
+Scripts that only do solid geometry (no `FreeCADGui`, no TechDraw) can run under `freecadcmd` with `QT_QPA_PLATFORM=offscreen` — no Xvfb, no `-platform` needed:
 
 ```bash
 QT_QPA_PLATFORM=offscreen OUTDIR=/tmp/out /opt/FreeCAD.AppImage freecadcmd build_cube.py
 ```
-
-### Bazel test fixtures
-
-Tests use session-scoped fixtures from `conftest.py`:
-
-- `freecad_gui(script, outdir, env)` — runs `freecad` binary with Xvfb (Xvfb started by `xvfb_display` fixture)
-- `freecad_headless(script, outdir, env)` — runs `freecadcmd` with `QT_QPA_PLATFORM=offscreen`
-- `xvfb_display` — session-scoped Xvfb process, yields display string (e.g. `":99"`)
-
-No Docker is needed for scripts that use the AppImage directly.
 
 ### Fonts
 

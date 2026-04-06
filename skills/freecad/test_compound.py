@@ -17,13 +17,24 @@ _GOLDEN_SVG = "_main/skills/freecad/golden/compound.svg"
 _GOLDEN_PDF = "_main/skills/freecad/golden/compound.pdf"
 
 
+def _save_logs(uo: Path, name: str, result) -> None:
+    """Write subprocess stdout/stderr to undeclared outputs for post-mortem debugging."""
+    if result.stdout:
+        (uo / f"{name}.stdout").write_text(result.stdout)
+    if result.stderr:
+        (uo / f"{name}.stderr").write_text(result.stderr)
+
+
 @pytest.fixture(scope="module")
-def compound_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_gui) -> Path:
+def compound_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_headless) -> Path:
     """Build compound shape and export all formats."""
     out_dir = tmp_path_factory.mktemp("compound")
+    uo = undeclared_outputs_dir() / "compound"
+    uo.mkdir(parents=True, exist_ok=True)
 
     build_script = get_required_path(_BUILD_SCRIPT)
-    result = freecad_gui(build_script, outdir=out_dir)
+    result = freecad_headless(build_script, outdir=out_dir)
+    _save_logs(uo, "build_compound", result)
     assert result.returncode == 0, (
         f"build_compound.py failed (exit {result.returncode}):\n"
         f"stdout: {result.stdout[:1000]}\nstderr: {result.stderr[:1000]}"
@@ -33,15 +44,13 @@ def compound_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_gui) -> P
     assert fcstd.exists(), f"compound.FCStd not produced\nstderr: {result.stderr[:500]}"
 
     export_script = get_required_path(_EXPORT_SCRIPT)
-    result2 = freecad_gui(export_script, outdir=out_dir, env={"INPUT": str(fcstd)})
+    result2 = freecad_headless(export_script, outdir=out_dir, env={"INPUT": str(fcstd)})
+    _save_logs(uo, "export_page", result2)
     assert result2.returncode == 0, (
         f"export_page.py failed (exit {result2.returncode}):\n"
         f"stdout: {result2.stdout[:1000]}\nstderr: {result2.stderr[:1000]}"
     )
 
-    # Copy to undeclared outputs for BuildBuddy inspection
-    uo = undeclared_outputs_dir() / "compound"
-    uo.mkdir(parents=True, exist_ok=True)
     for ext in ("dxf", "svg", "pdf", "FCStd"):
         src = out_dir / f"compound.{ext}"
         if src.exists():

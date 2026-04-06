@@ -17,13 +17,24 @@ _GOLDEN_SVG = "_main/skills/freecad/golden/bracket.svg"
 _GOLDEN_PDF = "_main/skills/freecad/golden/bracket.pdf"
 
 
+def _save_logs(uo: Path, name: str, result) -> None:
+    """Write subprocess stdout/stderr to undeclared outputs for post-mortem debugging."""
+    if result.stdout:
+        (uo / f"{name}.stdout").write_text(result.stdout)
+    if result.stderr:
+        (uo / f"{name}.stderr").write_text(result.stderr)
+
+
 @pytest.fixture(scope="module")
-def export_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_gui) -> Path:
+def export_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_headless) -> Path:
     """Run parametric_sketch.py then export_page.py and return the output directory."""
     out_dir = tmp_path_factory.mktemp("parametric-sketch")
+    uo = undeclared_outputs_dir() / "parametric-sketch"
+    uo.mkdir(parents=True, exist_ok=True)
 
     script = get_required_path(_PARAMETRIC_SKETCH)
-    result = freecad_gui(script, outdir=out_dir)
+    result = freecad_headless(script, outdir=out_dir)
+    _save_logs(uo, "parametric_sketch", result)
     assert result.returncode == 0, (
         f"parametric_sketch.py failed (exit {result.returncode}):\n"
         f"stdout: {result.stdout[:1000]}\nstderr: {result.stderr[:1000]}"
@@ -33,15 +44,13 @@ def export_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_gui) -> Pat
     assert fcstd.exists(), f"bracket.FCStd not produced\nstderr: {result.stderr[:500]}"
 
     export_script = get_required_path(_EXPORT_PAGE)
-    result2 = freecad_gui(export_script, outdir=out_dir, env={"INPUT": str(fcstd)})
+    result2 = freecad_headless(export_script, outdir=out_dir, env={"INPUT": str(fcstd)})
+    _save_logs(uo, "export_page", result2)
     assert result2.returncode == 0, (
         f"export_page.py failed (exit {result2.returncode}):\n"
         f"stdout: {result2.stdout[:1000]}\nstderr: {result2.stderr[:1000]}"
     )
 
-    # Copy to undeclared outputs for BuildBuddy inspection
-    uo = undeclared_outputs_dir() / "parametric-sketch"
-    uo.mkdir(parents=True, exist_ok=True)
     for ext in ("dxf", "svg", "pdf", "FCStd"):
         src = out_dir / f"bracket.{ext}"
         if src.exists():
