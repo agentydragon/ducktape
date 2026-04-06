@@ -19,7 +19,7 @@ def freecad_run():
 
     def _run(script: Path, outdir: Path, timeout: int = 120) -> subprocess.CompletedProcess:
         return subprocess.run(
-            [str(appimage), "freecadcmd", str(script)],
+            [appimage, "freecadcmd", script],
             env={**os.environ, "QT_QPA_PLATFORM": "offscreen", "OUTDIR": str(outdir)},
             capture_output=True,
             text=True,
