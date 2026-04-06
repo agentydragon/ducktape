@@ -28,12 +28,16 @@ stem = Path(fcstd_path).stem
 
 import FreeCAD as App  # noqa: E402 — must parse args before FreeCAD import
 import FreeCADGui as Gui  # noqa: E402
-import TechDraw  # noqa: E402
-import TechDrawGui  # noqa: E402
 from freecad_helpers import init_gui, log, pump, wait_for_view  # noqa: E402
 
 Gui.showMainWindow()
 qapp = init_gui()
+
+# TechDraw/TechDrawGui must be imported after Gui.showMainWindow()+init_gui():
+# importing them before GUI initialization causes "Cannot load Gui module in
+# console application" in freecadcmd.
+import TechDraw  # noqa: E402
+import TechDrawGui  # noqa: E402
 
 log("opening document")
 doc = App.openDocument(fcstd_path)
