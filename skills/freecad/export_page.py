@@ -20,6 +20,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+# Override QT_QPA_PLATFORM before Gui.showMainWindow() creates QApplication.
+# The AppImage's AppRun may set QT_QPA_PLATFORM=xcb in the process environment;
+# resetting it here ensures the offscreen plugin is used (no display required).
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+
 fcstd_path = os.environ.get("INPUT")
 outdir = os.environ.get("OUTDIR")
 if not fcstd_path or not outdir:

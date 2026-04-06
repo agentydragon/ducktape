@@ -51,10 +51,10 @@ def export_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_headless) -
         f"stdout: {result2.stdout[:1000]}\nstderr: {result2.stderr[:1000]}"
     )
 
-    for ext in ("dxf", "svg", "pdf", "FCStd"):
-        src = out_dir / f"bracket.{ext}"
+    for ext in ("dxf", "svg", "pdf", "FCStd", "log"):
+        src = out_dir / f"bracket.{ext}" if ext != "log" else out_dir / "freecad.log"
         if src.exists():
-            shutil.copy2(src, uo / f"bracket.{ext}")
+            shutil.copy2(src, uo / src.name)
 
     return out_dir
 

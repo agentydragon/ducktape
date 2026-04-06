@@ -51,10 +51,10 @@ def compound_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_headless)
         f"stdout: {result2.stdout[:1000]}\nstderr: {result2.stderr[:1000]}"
     )
 
-    for ext in ("dxf", "svg", "pdf", "FCStd"):
-        src = out_dir / f"compound.{ext}"
+    for ext in ("dxf", "svg", "pdf", "FCStd", "log"):
+        src = out_dir / f"compound.{ext}" if ext != "log" else out_dir / "freecad.log"
         if src.exists():
-            shutil.copy2(src, uo / f"compound.{ext}")
+            shutil.copy2(src, uo / src.name)
 
     return out_dir
 

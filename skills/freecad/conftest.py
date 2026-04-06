@@ -128,19 +128,20 @@ def freecad_headless(freecad_appimage_path: Path):
             run_env["OUTDIR"] = str(outdir)
         if env:
             run_env.update(env)
-        # Use the freecad binary (not freecadcmd) with -platform offscreen and -c (console
-        # mode). The freecad binary passes Qt args before FreeCAD's own arg parser, so
-        # -platform reaches Qt. freecadcmd's arg parser rejects -platform. The AppImage's
-        # AppRun script overrides QT_QPA_PLATFORM env var, so the CLI arg is required.
-        # -c runs in console mode (no GUI window), equivalent to freecadcmd behavior.
-        return subprocess.run(
-            [freecad_appimage_path, "freecad", "-platform", "offscreen", "-c", script],
-            env=run_env,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
+        # Enable Qt plugin debug logging and Qt platform debug messages so we can
+        # see which platform plugin is loaded and why (helpful for diagnosing AppRun
+        # env var overrides and plugin failures).
+        run_env["QT_DEBUG_PLUGINS"] = "1"
+        run_env["QT_LOGGING_RULES"] = "qt.qpa.*=true"
+        # Scripts set os.environ["QT_QPA_PLATFORM"] = "offscreen" before Gui.showMainWindow().
+        # If QApplication is created lazily (by Gui.showMainWindow()), this ensures offscreen
+        # is used regardless of what AppRun put in the process env.
+        freecad_log = str(outdir / "freecad.log") if outdir is not None else None
+        cmd = [freecad_appimage_path, "freecadcmd"]
+        if freecad_log:
+            cmd += ["--log-file", freecad_log]
+        cmd.append(script)
+        return subprocess.run(cmd, env=run_env, capture_output=True, text=True, timeout=timeout, check=False)
 
     return _run
 
