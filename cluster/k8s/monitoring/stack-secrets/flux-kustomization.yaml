@@ -11,13 +11,5 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  healthChecks:
-    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
-      kind: Terraform
-      name: grafana-admin
-      namespace: flux-system
   dependsOn:
     - name: monitoring-namespace
-    - name: external-secrets-config
-    - name: tofu-controller
-    - name: vault

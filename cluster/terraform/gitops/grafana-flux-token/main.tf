@@ -2,10 +2,6 @@ terraform {
   required_version = ">= 1.0"
 
   required_providers {
-    vault = {
-      source  = "hashicorp/vault"
-      version = "~> 5.7.0"
-    }
     grafana = {
       source  = "grafana/grafana"
       version = "~> 3.22.0"
@@ -22,23 +18,16 @@ terraform {
   }
 }
 
-provider "vault" {
-  address = var.vault_address
-  auth_login_jwt {
-    mount = "kubernetes"
-    role  = "tf-runner"
-    jwt   = fileexists("/var/run/secrets/kubernetes.io/serviceaccount/token") ? file("/var/run/secrets/kubernetes.io/serviceaccount/token") : "not-in-cluster"
+data "kubernetes_secret" "grafana_admin" {
+  metadata {
+    name      = "grafana-admin-password"
+    namespace = "monitoring"
   }
-}
-
-data "vault_kv_secret_v2" "grafana_admin" {
-  mount = "kv"
-  name  = "grafana/admin"
 }
 
 provider "grafana" {
   url  = var.grafana_url
-  auth = "admin:${data.vault_kv_secret_v2.grafana_admin.data["admin_password"]}"
+  auth = "admin:${data.kubernetes_secret.grafana_admin.data["admin-password"]}"
 }
 
 resource "grafana_service_account" "flux" {

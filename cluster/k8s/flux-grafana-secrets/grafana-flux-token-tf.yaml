@@ -19,7 +19,5 @@ spec:
         namespace        = "flux-system"
       }
   vars:
-    - name: vault_address
-      value: "http://instance.vault.svc.cluster.local:8200"
     - name: grafana_url
       value: "https://grafana.allegedly.works"

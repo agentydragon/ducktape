@@ -19,5 +19,5 @@ spec:
   timeout: 5m
   dependsOn:
     - name: monitoring-stack
+    - name: monitoring-stack-secrets
     - name: tofu-controller
-    - name: vault
