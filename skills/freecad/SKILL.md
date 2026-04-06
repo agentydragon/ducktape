@@ -19,10 +19,8 @@ The FCStd is the artifact; images are derived previews. Work iteratively: open, 
 # Recommended: FreeCAD 1.1.0 AppImage (self-contained, no system package conflicts)
 wget -q "https://github.com/FreeCAD/FreeCAD/releases/download/1.1.0/FreeCAD_1.1.0-Linux-x86_64-py311.AppImage" -O /opt/FreeCAD.AppImage
 chmod +x /opt/FreeCAD.AppImage
-cd /opt && /opt/FreeCAD.AppImage --appimage-extract && rm /opt/FreeCAD.AppImage
-export PATH="/opt/squashfs-root/usr/bin:$PATH"
 
-# Also need Xvfb for headless TechDraw/rendering
+# Also need Xvfb for headless GUI/TechDraw/rendering
 apt-get install -y xvfb
 
 # For DXF→PNG rendering (outside FreeCAD)
@@ -30,6 +28,77 @@ pip install ezdxf[draw] --break-system-packages
 ```
 
 Alternatively, use the system package (may be older): `apt-get install -y freecad-python3 xvfb` with `sys.path.insert(0, '/usr/lib/freecad-python3/lib')`.
+
+## Script Execution Model
+
+FreeCAD has two binaries with very different lifecycle models:
+
+| Binary       | Event loop    | Use for                                             |
+| ------------ | ------------- | --------------------------------------------------- |
+| `freecad`    | `exec()` runs | TechDraw, 3D rendering — anything needing the GUI   |
+| `freecadcmd` | No `exec()`   | Headless solid geometry, DXF-only (no TechDraw GUI) |
+
+**Always use `freecad` (GUI binary) for scripts that use `FreeCADGui`, `TechDraw`, or any Qt event pump.** The GUI binary enters `QApplication::exec()` cleanly and exits without crashing. `freecadcmd` never calls `exec()`, and its `QApplication` teardown triggers a Qt6 TLS use-after-free segfault on exit for any script that initialized the GUI. See <debug/qt_shutdown_segfault.md> for the full root cause analysis.
+
+### GUI binary invocation pattern
+
+Scripts run under the GUI binary must defer all work until after `exec()` starts, because module-level code runs during `processCmdLineFiles()` — before the event loop is live:
+
+```python
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))  # find freecad_helpers.py alongside this script
+
+import FreeCAD as App
+import FreeCADGui as Gui
+from freecad_helpers import init_gui, log, pump, wait_for_view
+
+try:
+    from PySide6.QtCore import QTimer
+except ImportError:
+    from PySide2.QtCore import QTimer
+
+qapp = init_gui()
+
+
+def _work() -> None:
+    # ... all script logic here ...
+    doc.setClosable(True)        # suppress GUI save dialog on close
+    App.closeDocument(doc.Name)
+    Gui.getMainWindow().close()  # triggers clean QApplication exit
+
+
+QTimer.singleShot(0, _work)     # deferred: fires immediately after exec() starts
+```
+
+To run with Xvfb:
+
+```bash
+Xvfb :99 -screen 0 1024x768x24 -nolisten tcp &
+sleep 1
+DISPLAY=:99 OUTDIR=/tmp/out /opt/FreeCAD.AppImage freecad parametric_sketch.py
+```
+
+**Do not use `xvfb-run -a ... freecad script.py`** — `xvfb-run` hangs waiting for the GUI binary to exit in a way it never will cleanly.
+
+### Headless invocation (freecadcmd)
+
+Scripts that only do solid geometry (no `FreeCADGui`, no TechDraw) can run under `freecadcmd` with `QT_QPA_PLATFORM=offscreen` — no Xvfb needed:
+
+```bash
+QT_QPA_PLATFORM=offscreen OUTDIR=/tmp/out /opt/FreeCAD.AppImage freecadcmd build_cube.py
+```
+
+### Bazel test fixtures
+
+Tests use session-scoped fixtures from `conftest.py`:
+
+- `freecad_gui(script, outdir, env)` — runs `freecad` binary with Xvfb (Xvfb started by `xvfb_display` fixture)
+- `freecad_headless(script, outdir, env)` — runs `freecadcmd` with `QT_QPA_PLATFORM=offscreen`
+- `xvfb_display` — session-scoped Xvfb process, yields display string (e.g. `":99"`)
+
+No Docker is needed for scripts that use the AppImage directly.
 
 ### Fonts
 
@@ -476,8 +545,8 @@ When edge-finding predicates fail or you need to understand the geometry of a Te
 `render_debug_edges.py` draws each visible edge in a TechDraw view with a unique color and labels it with its index, curve type, and dimensions. One PNG per view.
 
 ```bash
-INPUT=/work/model.FCStd OUTDIR=/output \
-  xvfb-run -a -s "-screen 0 1024x768x24" freecadcmd render_debug_edges.py
+Xvfb :99 -screen 0 1024x768x24 -nolisten tcp & sleep 1
+DISPLAY=:99 INPUT=/work/model.FCStd OUTDIR=/output /opt/FreeCAD.AppImage freecad render_debug_edges.py
 # Produces: FrontView_debug_edges.png, TopView_debug_edges.png, etc.
 ```
 
@@ -488,8 +557,8 @@ Use this to visually map Edge indices to geometric features before writing `find
 `render_debug_faces.py` colors each face of a Part Design body with a unique color (golden-ratio hue spacing) and logs the face index, surface type, area, and center-of-mass. One isometric PNG output.
 
 ```bash
-INPUT=/work/model.FCStd OUTDIR=/output \
-  xvfb-run -a -s "-screen 0 1024x768x24" freecadcmd render_debug_faces.py
+Xvfb :99 -screen 0 1024x768x24 -nolisten tcp & sleep 1
+DISPLAY=:99 INPUT=/work/model.FCStd OUTDIR=/output /opt/FreeCAD.AppImage freecad render_debug_faces.py
 # Produces: debug_faces.png + stderr log with Face1..FaceN details
 ```
 
@@ -525,33 +594,35 @@ See <build_cube_with_hole.py> for a complete example.
 
 ### Rendering FCStd to PNG
 
-Use FreeCAD's GUI viewport under Xvfb for offscreen 3D rendering with perspective and lighting:
+Use FreeCAD's GUI viewport under Xvfb for offscreen 3D rendering with perspective and lighting.
+Runs under the GUI binary (needs OpenGL/Coin for the 3D viewport):
 
 ```bash
-INPUT=/work/model.FCStd OUTDIR=/output \
-  xvfb-run -a -s "-screen 0 1024x768x24" freecadcmd render_fcstd.py
+Xvfb :99 -screen 0 1024x768x24 -nolisten tcp &
+sleep 1
+DISPLAY=:99 INPUT=/tmp/model.FCStd OUTDIR=/tmp/out /opt/FreeCAD.AppImage freecad render_fcstd.py
 ```
 
-Key steps in the render script:
+Key steps in the render script (see <render_fcstd.py>):
 
-1. `FreeCADGui.showMainWindow()` — initialize offscreen GUI
-2. Open the FCStd, set objects to `Shaded` display mode with `Two side` lighting
-3. `view.viewIsometric()` + `view.fitAll()` for camera setup
-4. `view.saveImage(path, 800, 600, "Current")` to capture
-5. `os._exit(0)` — required for all GUI scripts; see <debug/qt_shutdown_segfault.md>
-
-See <render_fcstd.py> for the full script.
+1. `init_gui()` — get `QApplication.instance()` (GUI binary initializes it automatically)
+2. Open the FCStd, set `Part::Feature` objects to `Shaded` display mode
+3. Set perspective camera position and add a directional light
+4. `view.fitAll()` + `view.saveImage(path, 800, 600, "Current")` to capture
+5. `doc.setClosable(True); App.closeDocument(doc.Name); Gui.getMainWindow().close()` — clean exit
 
 ## Export
 
-Example scripts produce FCStd files. Use `export_page.py` to export to DXF, SVG, and PDF:
+Example scripts produce FCStd files. Use `export_page.py` to export to DXF, SVG, and PDF.
+Both scripts use the GUI binary (TechDraw requires the Qt event loop):
 
 ```bash
-OUTDIR=. xvfb-run -a -s "-screen 0 1024x768x24" freecadcmd parametric_sketch.py  # → bracket.FCStd
-INPUT=bracket.FCStd OUTDIR=. xvfb-run -a -s "-screen 0 1024x768x24" freecadcmd export_page.py  # → bracket.{dxf,svg,pdf}
+Xvfb :99 -screen 0 1024x768x24 -nolisten tcp & sleep 1
+DISPLAY=:99 OUTDIR=. /opt/FreeCAD.AppImage freecad parametric_sketch.py   # → bracket.FCStd
+DISPLAY=:99 INPUT=bracket.FCStd OUTDIR=. /opt/FreeCAD.AppImage freecad export_page.py  # → bracket.{dxf,svg,pdf}
 ```
 
-Arguments are passed via env vars (`INPUT`, `OUTDIR`) because `freecadcmd` treats CLI args as files to open. See <export_page.py>. Output filenames derive from the input FCStd stem.
+Arguments are passed via env vars (`INPUT`, `OUTDIR`) because the `freecad` binary also treats CLI args as files to open. See <export_page.py>. Output filenames derive from the input FCStd stem.
 
 **DXF → PNG rendering:** `python3 render_dxf.py output.dxf output.png`. See <render_dxf.py>.
 
@@ -617,7 +688,7 @@ always require event pumping.
 | TechDraw 0 edges                     | Poll `getVisibleEdges()` with `processEvents()` in a loop (see `wait_for_view()` above)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Open Wire / loose edges              | Use Faces only — open topology crashes HLR projector                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Multiple views lose positions        | Single compound, single view                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| FreeCAD import                       | `sys.path.insert(0, '/usr/lib/freecad-python3/lib')`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| FreeCAD import (system pkg)          | `sys.path.insert(0, '/usr/lib/freecad-python3/lib')` — AppImage sets up paths automatically via AppRun                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `getConstruction` typo               | Correct API name                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Property "mm" suffix                 | `re.sub(r'\s*mm$', '', str(val))` before numeric use                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Under-constrained sketch             | Add constraints until `FullyConstrained == True`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
@@ -632,7 +703,7 @@ always require event pumping.
 | Angle constraint on one line         | `Constraint("Angle", line_idx, radians)` constrains angle from X axis. For two-line angles, both lines must share a point                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Angle expression needs `deg` unit    | `setExpression("Constraints[N]", "Params.Angle * 1 deg")` — raw radian values without unit annotation are treated as dimensionless, producing wrong angles                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | TechDraw edge Y is inverted          | `getVisibleEdges()` returns view-local coords with Y inverted (edge_y = cy - sketch_y). Match edges by geometric properties (slope, radius) not raw coordinates                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `print()` invisible in freecadcmd    | freecadcmd may buffer stdout; use `print(msg, file=sys.stderr, flush=True)` for debug output visible in Docker logs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `print()` invisible in freecadcmd    | freecadcmd may buffer stdout; use `print(msg, file=sys.stderr, flush=True)` for debug output captured in subprocess stderr                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | PDF font subset names                | PDF exports embed fonts with non-deterministic subset prefixes (e.g., `QNAAAA+DejaVuSans`). Golden files must come from the same environment (RBE) as tests                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Annotation Y direction               | Page Y increases **upward** (Y=0 is bottom). Use `view.Y + (sketch_y - cy) * scale`, NOT `view.Y - ...`. The minus formula in old docs is wrong                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Quantity unit mismatch               | `view.X`, `view.Y`, `view.Scale` return FreeCAD Quantity objects. Cast to `float()` before mixing with plain Python floats in arithmetic                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |

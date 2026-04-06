@@ -1,16 +1,13 @@
-"""Golden-file test: parametric_sketch.py -> export_page.py -> DXF/SVG/PDF."""
+"""Golden-file test: parametric_sketch.py -> export_page.py -> DXF/SVG/PDF via AppImage."""
 
+import shutil
 from pathlib import Path
 
 import pytest
 import pytest_bazel
-from opentelemetry import trace
 
-from skills.freecad.conftest import FREECAD_HELPERS, FREECAD_TEST, XVFB_CMD, freecad_exec
 from skills.freecad.testing.compare import assert_dxf_equal, assert_pdf_equal, assert_svg_equal
 from util.bazel.runfiles import get_required_path
-from util.oci import load_oci_image
-from util.testing.container_logs import LoggedContainer
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 _PARAMETRIC_SKETCH = "_main/skills/freecad/parametric_sketch.py"
@@ -19,37 +16,36 @@ _GOLDEN_DXF = "_main/skills/freecad/golden/bracket.dxf"
 _GOLDEN_SVG = "_main/skills/freecad/golden/bracket.svg"
 _GOLDEN_PDF = "_main/skills/freecad/golden/bracket.pdf"
 
-tracer = trace.get_tracer(__name__)
-
 
 @pytest.fixture(scope="module")
-def export_outputs(tmp_path_factory: pytest.TempPathFactory) -> Path:
+def export_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_gui) -> Path:
     """Run parametric_sketch.py then export_page.py and return the output directory."""
-    with tracer.start_as_current_span("load_oci_image"):
-        load_oci_image(FREECAD_TEST)
-    out_dir = undeclared_outputs_dir() / "parametric-sketch"
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = tmp_path_factory.mktemp("parametric-sketch")
 
-    with (
-        tracer.start_as_current_span("container_lifecycle"),
-        LoggedContainer(
-            FREECAD_TEST.tag,
-            test_name="freecad-parametric-sketch",
-            command="sleep infinity",
-            volumes=[
-                (str(get_required_path(FREECAD_HELPERS)), "/work/freecad_helpers.py", "ro"),
-                (str(get_required_path(_PARAMETRIC_SKETCH)), "/work/parametric_sketch.py", "ro"),
-                (str(get_required_path(_EXPORT_PAGE)), "/work/export_page.py", "ro"),
-                (str(out_dir), "/output", "rw"),
-            ],
-            docker_client_kw={"timeout": 120},
-        ) as container,
-    ):
-        freecad_exec(container, f'bash -c "OUTDIR=/output {XVFB_CMD} freecadcmd /work/parametric_sketch.py"')
-        freecad_exec(
-            container,
-            f'bash -c "INPUT=/output/bracket.FCStd OUTDIR=/output {XVFB_CMD} freecadcmd /work/export_page.py"',
-        )
+    script = get_required_path(_PARAMETRIC_SKETCH)
+    result = freecad_gui(script, outdir=out_dir)
+    assert result.returncode == 0, (
+        f"parametric_sketch.py failed (exit {result.returncode}):\n"
+        f"stdout: {result.stdout[:1000]}\nstderr: {result.stderr[:1000]}"
+    )
+
+    fcstd = out_dir / "bracket.FCStd"
+    assert fcstd.exists(), f"bracket.FCStd not produced\nstderr: {result.stderr[:500]}"
+
+    export_script = get_required_path(_EXPORT_PAGE)
+    result2 = freecad_gui(export_script, outdir=out_dir, env={"INPUT": str(fcstd)})
+    assert result2.returncode == 0, (
+        f"export_page.py failed (exit {result2.returncode}):\n"
+        f"stdout: {result2.stdout[:1000]}\nstderr: {result2.stderr[:1000]}"
+    )
+
+    # Copy to undeclared outputs for BuildBuddy inspection
+    uo = undeclared_outputs_dir() / "parametric-sketch"
+    uo.mkdir(parents=True, exist_ok=True)
+    for ext in ("dxf", "svg", "pdf", "FCStd"):
+        src = out_dir / f"bracket.{ext}"
+        if src.exists():
+            shutil.copy2(src, uo / f"bracket.{ext}")
 
     return out_dir
 

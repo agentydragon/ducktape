@@ -1,4 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/freecad_appimage:defs.bzl", "freecad_appimage_rloc")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/testing:defs.bzl", "py_test")
 load("//skills:defs.bzl", "skill_package")
@@ -41,6 +42,12 @@ py_binary(
     deps = [":render_dxf"],
 )
 
+# FreeCAD AppImage for subprocess-based tests (no Docker required)
+freecad_appimage_rloc(
+    name = "freecad_appimage",
+    testonly = True,
+)
+
 oci_layout_rloc(
     name = "freecad_test",
     testonly = True,
@@ -51,9 +58,11 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
+    data = [":freecad_appimage"],
     imports = ["../.."],
     deps = [
         "//util:oci",
+        "//util/bazel:runfiles",
         "//util/testing:container_logs",
         "//util/testing:otel_tracing",
         "@pypi//opentelemetry_api",
@@ -91,17 +100,13 @@ py_test(
         "freecad_helpers.py",
         "golden/cube_with_hole.png",
         "render_fcstd.py",
-        ":freecad_test",
+        ":freecad_appimage",
     ],
-    requires_docker = True,
     deps = [
         ":conftest",
         "//skills/freecad/testing:compare",
-        "//util:oci",
         "//util/bazel:runfiles",
-        "//util/testing:container_logs",
         "//util/testing:undeclared_outputs",
-        "@pypi//opentelemetry_api",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -118,17 +123,13 @@ py_test(
         "golden/bracket.pdf",
         "golden/bracket.svg",
         "parametric_sketch.py",
-        ":freecad_test",
+        ":freecad_appimage",
     ],
-    requires_docker = True,
     deps = [
         ":conftest",
         "//skills/freecad/testing:compare",
-        "//util:oci",
         "//util/bazel:runfiles",
-        "//util/testing:container_logs",
         "//util/testing:undeclared_outputs",
-        "@pypi//opentelemetry_api",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -145,17 +146,13 @@ py_test(
         "golden/compound.dxf",
         "golden/compound.pdf",
         "golden/compound.svg",
-        ":freecad_test",
+        ":freecad_appimage",
     ],
-    requires_docker = True,
     deps = [
         ":conftest",
         "//skills/freecad/testing:compare",
-        "//util:oci",
         "//util/bazel:runfiles",
-        "//util/testing:container_logs",
         "//util/testing:undeclared_outputs",
-        "@pypi//opentelemetry_api",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

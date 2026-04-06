@@ -1,17 +1,13 @@
-"""Golden-file test: compound shape (walls + table) -> TechDraw -> DXF/SVG/PDF export."""
+"""Golden-file test: build_compound.py -> export_page.py -> DXF/SVG/PDF via AppImage."""
 
 import shutil
 from pathlib import Path
 
 import pytest
 import pytest_bazel
-from opentelemetry import trace
 
-from skills.freecad.conftest import FREECAD_HELPERS, FREECAD_TEST, XVFB_CMD, freecad_exec
 from skills.freecad.testing.compare import assert_dxf_equal, assert_pdf_equal, assert_svg_equal
 from util.bazel.runfiles import get_required_path
-from util.oci import load_oci_image
-from util.testing.container_logs import LoggedContainer
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 _BUILD_SCRIPT = "_main/skills/freecad/build_compound.py"
@@ -20,45 +16,38 @@ _GOLDEN_DXF = "_main/skills/freecad/golden/compound.dxf"
 _GOLDEN_SVG = "_main/skills/freecad/golden/compound.svg"
 _GOLDEN_PDF = "_main/skills/freecad/golden/compound.pdf"
 
-tracer = trace.get_tracer(__name__)
-
 
 @pytest.fixture(scope="module")
-def compound_outputs(tmp_path_factory: pytest.TempPathFactory) -> Path:
+def compound_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_gui) -> Path:
     """Build compound shape and export all formats."""
-    with tracer.start_as_current_span("load_oci_image"):
-        tag = load_oci_image(FREECAD_TEST)
-    tmp_path = tmp_path_factory.mktemp("freecad-compound")
+    out_dir = tmp_path_factory.mktemp("compound")
 
-    with (
-        tracer.start_as_current_span("container_lifecycle"),
-        LoggedContainer(
-            tag,
-            test_name="freecad-compound",
-            command="sleep infinity",
-            volumes=[
-                (str(get_required_path(FREECAD_HELPERS)), "/work/freecad_helpers.py", "ro"),
-                (str(get_required_path(_BUILD_SCRIPT)), "/work/build_compound.py", "ro"),
-                (str(get_required_path(_EXPORT_SCRIPT)), "/work/export_page.py", "ro"),
-                (str(tmp_path), "/output", "rw"),
-            ],
-            docker_client_kw={"timeout": 120},
-        ) as container,
-    ):
-        freecad_exec(container, f'bash -c "OUTDIR=/output {XVFB_CMD} freecadcmd /work/build_compound.py"')
-        freecad_exec(
-            container,
-            f'bash -c "INPUT=/output/compound.FCStd OUTDIR=/output {XVFB_CMD} freecadcmd /work/export_page.py"',
-        )
+    build_script = get_required_path(_BUILD_SCRIPT)
+    result = freecad_gui(build_script, outdir=out_dir)
+    assert result.returncode == 0, (
+        f"build_compound.py failed (exit {result.returncode}):\n"
+        f"stdout: {result.stdout[:1000]}\nstderr: {result.stderr[:1000]}"
+    )
 
-    out_dir = undeclared_outputs_dir() / "compound"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    for f in ("compound.dxf", "compound.svg", "compound.pdf"):
-        src = tmp_path / f
+    fcstd = out_dir / "compound.FCStd"
+    assert fcstd.exists(), f"compound.FCStd not produced\nstderr: {result.stderr[:500]}"
+
+    export_script = get_required_path(_EXPORT_SCRIPT)
+    result2 = freecad_gui(export_script, outdir=out_dir, env={"INPUT": str(fcstd)})
+    assert result2.returncode == 0, (
+        f"export_page.py failed (exit {result2.returncode}):\n"
+        f"stdout: {result2.stdout[:1000]}\nstderr: {result2.stderr[:1000]}"
+    )
+
+    # Copy to undeclared outputs for BuildBuddy inspection
+    uo = undeclared_outputs_dir() / "compound"
+    uo.mkdir(parents=True, exist_ok=True)
+    for ext in ("dxf", "svg", "pdf", "FCStd"):
+        src = out_dir / f"compound.{ext}"
         if src.exists():
-            shutil.copy2(src, out_dir / f)
+            shutil.copy2(src, uo / f"compound.{ext}")
 
-    return tmp_path
+    return out_dir
 
 
 def test_dxf_golden(compound_outputs: Path) -> None:
