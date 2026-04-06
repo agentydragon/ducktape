@@ -5,5 +5,13 @@ resources:
   - deployment.yaml
   - service.yaml
   - pvc.yaml
-  - nginx-configmap.yaml
   - networkpolicy.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+configMapGenerator:
+  - name: tandoor-nginx
+    files:
+      - default.conf
+    namespace: tandoor
