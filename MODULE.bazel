@@ -251,7 +251,7 @@ use_repo(image_pins, "freecad_test", "freecad_test_linux_amd64", "image_pins")
 
 # FreeCAD AppImage: extracted squashfs-root for direct (non-Docker) FreeCAD tests.
 # The repository_rule downloads FreeCAD 1.1.0 AppImage and extracts it on first use.
-freecad_appimage = use_extension("//devinfra/freecad_appimage:defs.bzl", "freecad_appimage_ext")
+freecad_appimage = use_extension("//third_party/freecad_appimage:defs.bzl", "freecad_appimage_ext")
 use_repo(freecad_appimage, "freecad_appimage")
 
 # Hermetic deb packages for container images (rules_distroless).

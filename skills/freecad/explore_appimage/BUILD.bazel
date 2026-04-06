@@ -1,6 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/freecad_appimage:defs.bzl", "freecad_appimage_rloc")
 load("//devinfra/testing:defs.bzl", "py_test")
+load("//third_party/freecad_appimage:defs.bzl", "freecad_appimage_rloc")
 
 freecad_appimage_rloc(
     name = "freecad_appimage",
