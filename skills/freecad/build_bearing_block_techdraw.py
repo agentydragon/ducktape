@@ -18,6 +18,8 @@ import sys
 import traceback
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+
 import FreeCAD as App
 import FreeCADGui as Gui
 import Part

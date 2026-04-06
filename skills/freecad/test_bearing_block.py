@@ -6,18 +6,14 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from skills.freecad.conftest import FREECAD_TEST
 from skills.freecad.testing.compare import assert_dxf_equal, assert_pdf_equal, assert_png_equal, assert_svg_equal
 from util.bazel.runfiles import get_required_path
-from util.oci import load_oci_image
-from util.testing.container_logs import LoggedContainer
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 _BUILD_SCRIPT = "_main/skills/freecad/build_bearing_block.py"
 _TECHDRAW_SCRIPT = "_main/skills/freecad/build_bearing_block_techdraw.py"
 _RENDER_SCRIPT = "_main/skills/freecad/render_multi_angle.py"
 _EXPORT_SCRIPT = "_main/skills/freecad/export_page.py"
-_HELPERS_SCRIPT = "_main/skills/freecad/freecad_helpers.py"
 
 _GOLDEN_DXF = "_main/skills/freecad/golden/bearing_block.dxf"
 _GOLDEN_SVG = "_main/skills/freecad/golden/bearing_block.svg"
@@ -25,69 +21,60 @@ _GOLDEN_PDF = "_main/skills/freecad/golden/bearing_block.pdf"
 _GOLDEN_FRONT_RIGHT = "_main/skills/freecad/golden/bearing_block_front_right.png"
 _GOLDEN_BACK_LEFT = "_main/skills/freecad/golden/bearing_block_back_left.png"
 
-_XVFB = 'xvfb-run -a -s \\"-screen 0 1024x768x24\\"'
+
+def _save_logs(uo: Path, name: str, result) -> None:
+    if result.stdout:
+        (uo / f"{name}.stdout").write_text(result.stdout)
+    if result.stderr:
+        (uo / f"{name}.stderr").write_text(result.stderr)
 
 
 @pytest.fixture(scope="module")
-def bearing_block_outputs(tmp_path_factory: pytest.TempPathFactory) -> Path:
+def bearing_block_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_headless) -> Path:
     """Build bearing block, export TechDraw, render perspectives."""
-    tag = load_oci_image(FREECAD_TEST)
-    tmp_path = tmp_path_factory.mktemp("freecad-bearing-block")
+    out_dir = tmp_path_factory.mktemp("bearing-block")
+    uo = undeclared_outputs_dir() / "bearing-block"
+    uo.mkdir(parents=True, exist_ok=True)
 
-    scripts = [
-        (get_required_path(_BUILD_SCRIPT), "/work/build_bearing_block.py"),
-        (get_required_path(_TECHDRAW_SCRIPT), "/work/build_bearing_block_techdraw.py"),
-        (get_required_path(_RENDER_SCRIPT), "/work/render_multi_angle.py"),
-        (get_required_path(_EXPORT_SCRIPT), "/work/export_page.py"),
-        (get_required_path(_HELPERS_SCRIPT), "/work/freecad_helpers.py"),
-    ]
-    volumes = [(str(src), dst, "ro") for src, dst in scripts] + [(str(tmp_path), "/output", "rw")]
+    # Stage 1: Build the Part Design model (pure freecadcmd, no GUI)
+    result = freecad_headless(get_required_path(_BUILD_SCRIPT), outdir=out_dir)
+    _save_logs(uo, "build", result)
+    assert result.returncode == 0, (
+        f"build_bearing_block.py failed (exit {result.returncode}):\n"
+        f"stdout: {result.stdout[:1000]}\nstderr: {result.stderr[:1000]}"
+    )
 
-    with LoggedContainer(
-        tag,
-        test_name="freecad-bearing-block",
-        command="sleep infinity",
-        volumes=volumes,
-        docker_client_kw={"timeout": 300},
-    ) as container:
-        # Stage 1: Build the Part Design model
-        result = container.exec('bash -c "OUTDIR=/output freecadcmd /work/build_bearing_block.py"')
-        output = result.output.decode(errors="replace")
-        print(output)
-        assert result.exit_code == 0, f"Build failed (exit {result.exit_code}): {output[:500]}"
+    fcstd = out_dir / "bearing_block.FCStd"
+    assert fcstd.exists(), f"FCStd not generated\nstderr: {result.stderr[:500]}"
 
-        # Stage 2: Add TechDraw page with 4 views + dimensions
-        result = container.exec(
-            f'bash -c "INPUT=/output/bearing_block.FCStd OUTDIR=/output '
-            f'{_XVFB} freecadcmd /work/build_bearing_block_techdraw.py"'
-        )
-        output = result.output.decode(errors="replace")
-        print(output)
-        assert result.exit_code == 0, f"TechDraw failed (exit {result.exit_code}): {output[:3000]}"
+    # Stage 2: Add TechDraw views + dimensions
+    result = freecad_headless(get_required_path(_TECHDRAW_SCRIPT), outdir=out_dir, env={"INPUT": str(fcstd)})
+    _save_logs(uo, "techdraw", result)
+    assert result.returncode == 0, (
+        f"build_bearing_block_techdraw.py failed (exit {result.returncode}):\n"
+        f"stdout: {result.stdout[:1000]}\nstderr: {result.stderr[:1000]}"
+    )
 
-        # Stage 3: Export TechDraw to DXF/SVG/PDF
-        result = container.exec(
-            f'bash -c "INPUT=/output/bearing_block.FCStd OUTDIR=/output {_XVFB} freecadcmd /work/export_page.py"'
-        )
-        output = result.output.decode(errors="replace")
-        print(output)
-        assert result.exit_code == 0, f"Export failed (exit {result.exit_code}): {output[:500]}"
+    # Stage 3: Export TechDraw to DXF/SVG/PDF
+    result = freecad_headless(get_required_path(_EXPORT_SCRIPT), outdir=out_dir, env={"INPUT": str(fcstd)})
+    _save_logs(uo, "export", result)
+    assert result.returncode == 0, (
+        f"export_page.py failed (exit {result.returncode}):\n"
+        f"stdout: {result.stdout[:1000]}\nstderr: {result.stderr[:1000]}"
+    )
 
-        # Stage 4: Render multiple perspectives
-        result = container.exec(
-            f'bash -c "INPUT=/output/bearing_block.FCStd OUTDIR=/output {_XVFB} freecadcmd /work/render_multi_angle.py"'
-        )
-        output = result.output.decode(errors="replace")
-        print(output)
-        assert result.exit_code == 0, f"Render failed (exit {result.exit_code}): {output[:500]}"
+    # Stage 4: Render multiple 3D perspectives
+    result = freecad_headless(get_required_path(_RENDER_SCRIPT), outdir=out_dir, env={"INPUT": str(fcstd)})
+    _save_logs(uo, "render", result)
+    assert result.returncode == 0, (
+        f"render_multi_angle.py failed (exit {result.returncode}):\n"
+        f"stdout: {result.stdout[:1000]}\nstderr: {result.stderr[:1000]}"
+    )
 
-    # Save outputs for debugging
-    out_dir = undeclared_outputs_dir() / "bearing-block"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    for f in tmp_path.iterdir():
-        shutil.copy2(f, out_dir / f.name)
+    for f in out_dir.iterdir():
+        shutil.copy2(f, uo / f.name)
 
-    return tmp_path
+    return out_dir
 
 
 def test_techdraw_dxf_golden(bearing_block_outputs: Path) -> None:
