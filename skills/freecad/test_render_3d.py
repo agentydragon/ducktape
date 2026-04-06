@@ -1,92 +1,62 @@
-"""Golden-file test: 3D cube with hole -> FCStd -> render PNG via FreeCAD in Docker."""
+"""Golden-file test: cube with hole -> FCStd -> render PNG via FreeCAD AppImage."""
 
 import shutil
 from pathlib import Path
 
+import pytest
 import pytest_bazel
-from opentelemetry import trace
 
-from skills.freecad.conftest import FREECAD_HELPERS, FREECAD_TEST
 from skills.freecad.testing.compare import assert_png_equal
 from util.bazel.runfiles import get_required_path
-from util.oci import load_oci_image
-from util.testing.container_logs import LoggedContainer
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 _BUILD_SCRIPT = "_main/skills/freecad/build_cube_with_hole.py"
 _RENDER_SCRIPT = "_main/skills/freecad/render_fcstd.py"
 _GOLDEN = "_main/skills/freecad/golden/cube_with_hole.png"
 
-tracer = trace.get_tracer(__name__)
+
+def _save_logs(uo: Path, name: str, result) -> None:
+    if result.stdout:
+        (uo / f"{name}.stdout").write_text(result.stdout)
+    if result.stderr:
+        (uo / f"{name}.stderr").write_text(result.stderr)
 
 
-def test_render_3d(tmp_path: Path) -> None:
-    with tracer.start_as_current_span("load_oci_image"):
-        load_oci_image(FREECAD_TEST)
+@pytest.fixture(scope="module")
+def render_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_headless, freecad_gui) -> Path:
+    """Build FCStd with freecadcmd, render PNG with freecad GUI binary."""
+    out_dir = tmp_path_factory.mktemp("render-3d")
+    uo = undeclared_outputs_dir() / "render-3d"
+    uo.mkdir(parents=True, exist_ok=True)
+
     build_script = get_required_path(_BUILD_SCRIPT)
+    result = freecad_headless(build_script, outdir=out_dir)
+    _save_logs(uo, "build", result)
+    assert result.returncode == 0, (
+        f"build_cube_with_hole.py failed (exit {result.returncode}):\n"
+        f"stdout: {result.stdout[:1000]}\nstderr: {result.stderr[:1000]}"
+    )
+
+    fcstd = out_dir / "cube_with_hole.FCStd"
+    assert fcstd.exists(), f"FCStd not generated\nstderr: {result.stderr[:500]}"
+
     render_script = get_required_path(_RENDER_SCRIPT)
-    helpers = get_required_path(FREECAD_HELPERS)
-    golden_path = get_required_path(_GOLDEN)
+    result2 = freecad_gui(render_script, outdir=out_dir, env={"INPUT": str(fcstd)})
+    _save_logs(uo, "render", result2)
+    assert result2.returncode == 0, (
+        f"render_fcstd.py failed (exit {result2.returncode}):\n"
+        f"stdout: {result2.stdout[:1000]}\nstderr: {result2.stderr[:1000]}"
+    )
 
-    with (
-        tracer.start_as_current_span("container_build"),
-        LoggedContainer(
-            FREECAD_TEST.tag,
-            test_name="freecad-3d-build",
-            command="sleep infinity",
-            volumes=[
-                (str(helpers), "/work/freecad_helpers.py", "ro"),
-                (str(build_script), "/work/build_cube_with_hole.py", "ro"),
-                (str(tmp_path), "/output", "rw"),
-            ],
-            docker_client_kw={"timeout": 120},
-        ) as container,
-    ):
-        result = container.exec('bash -c "OUTDIR=/output freecadcmd /work/build_cube_with_hole.py"')
-        assert result.exit_code == 0, (
-            f"build failed (exit {result.exit_code}): {result.output.decode(errors='replace')[:500]}"
-        )
+    png = out_dir / "cube_with_hole.png"
+    assert png.exists(), f"PNG not generated\nstderr: {result2.stderr[:500]}"
+    shutil.copy2(png, uo / "actual.png")
+    shutil.copy2(get_required_path(_GOLDEN), uo / "golden.png")
+    return out_dir
 
-    fcstd = tmp_path / "cube_with_hole.FCStd"
-    assert fcstd.exists(), "FCStd not generated — check container logs"
 
-    with (
-        tracer.start_as_current_span("container_render"),
-        LoggedContainer(
-            FREECAD_TEST.tag,
-            test_name="freecad-3d-render",
-            command="sleep infinity",
-            volumes=[
-                (str(helpers), "/work/freecad_helpers.py", "ro"),
-                (str(render_script), "/work/render_fcstd.py", "ro"),
-                (str(fcstd), "/work/cube_with_hole.FCStd", "ro"),
-                (str(tmp_path), "/output", "rw"),
-            ],
-            docker_client_kw={"timeout": 120},
-        ) as container,
-    ):
-        # Use the freecad GUI binary (not freecadcmd) so QApplication::exec() runs,
-        # giving render_fcstd.py a proper event loop and clean exit. xvfb-run hangs
-        # with the GUI binary, so Xvfb is started manually.
-        result = container.exec(
-            "bash -c '"
-            "Xvfb :99 -screen 0 1024x768x24 -nolisten tcp & sleep 2 && "
-            "DISPLAY=:99 INPUT=/work/cube_with_hole.FCStd OUTDIR=/output "
-            "freecad /work/render_fcstd.py"
-            "'"
-        )
-        assert result.exit_code == 0, (
-            f"render failed (exit {result.exit_code}): {result.output.decode(errors='replace')[:500]}"
-        )
-
-    actual_png = tmp_path / "cube_with_hole.png"
-    assert actual_png.exists(), "PNG not generated — check container logs"
-
-    out_dir = undeclared_outputs_dir() / "render-3d"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy(actual_png, out_dir / "actual.png")
-
-    assert_png_equal(actual_png, golden_path)
+def test_render_3d_golden(render_outputs: Path) -> None:
+    assert_png_equal(render_outputs / "cube_with_hole.png", get_required_path(_GOLDEN))
 
 
 if __name__ == "__main__":
