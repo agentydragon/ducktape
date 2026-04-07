@@ -44,7 +44,9 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     "vpa": {"VerticalPodAutoscaler", "VerticalPodAutoscalerCheckpoint"},
     "node-feature-discovery": {"NodeFeatureRule", "NodeFeature", "NodeFeatureGroup"},
     "openclaw-operator": {"OpenClawInstance", "OpenClawSelfConfig"},
-    "flux-image-automation": {"ImageRepository", "ImagePolicy", "ImageUpdateAutomation"},
+    # TODO: if non-GHCR image automations are added, add a separate entry here
+    # (e.g. "flux-image-automation-harbor": {"ImageRepository", ...}).
+    "flux-image-automation-ghcr": {"ImageRepository", "ImagePolicy", "ImageUpdateAutomation"},
 }
 
 # Derived: CRD kind -> operator name (for error messages)

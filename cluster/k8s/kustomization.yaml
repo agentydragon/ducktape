@@ -5,7 +5,6 @@ resources:
   - flux-system/
   - flux-webhook/flux-kustomization.yaml
   - flux-grafana-secrets/flux-kustomization.yaml
-  - flux-image-automation/flux-kustomization.yaml
   - flux-image-automation-ghcr/flux-kustomization.yaml
 
   # --- core infrastructure (standalone) ---
