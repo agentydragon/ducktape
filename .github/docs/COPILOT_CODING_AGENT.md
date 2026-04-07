@@ -47,6 +47,63 @@ GitHub Copilot coding agent is an AI agent that you can assign issues to on GitH
 
 **Documentation**: [Customize the agent environment](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/customize-the-agent-environment)
 
+### How to Give Copilot Coding Agent Access to Secrets
+
+GitHub Copilot coding agent can access secrets via the `copilot` GitHub environment. Here's how to set it up:
+
+#### Step 1: Create the `copilot` Environment in GitHub
+
+1. Go to your repository on GitHub.com
+2. Navigate to **Settings** → **Environments**
+3. Click **New environment**
+4. Name it exactly `copilot` (lowercase)
+5. Click **Configure environment**
+
+#### Step 2: Add Secrets to the `copilot` Environment
+
+1. In the `copilot` environment configuration page, scroll to **Environment secrets**
+2. Click **Add secret**
+3. Enter the secret name (e.g., `MY_API_KEY`)
+4. Enter the secret value
+5. Click **Add secret**
+
+#### Step 3: Reference Secrets in `copilot-setup-steps.yml`
+
+The secrets from the `copilot` environment will be available in the `copilot-setup-steps` job. You can access them using the standard `${{ secrets.SECRET_NAME }}` syntax and pass them to the agent as environment variables:
+
+```yaml
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    # Specify the copilot environment to access its secrets
+    environment: copilot
+
+    steps:
+      # ... other setup steps ...
+
+      - name: Set up secret environment variables
+        run: |
+          # Make secrets available to the Copilot agent as environment variables
+          echo "MY_API_KEY=${{ secrets.MY_API_KEY }}" >> $GITHUB_ENV
+          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
+```
+
+**Important notes**:
+
+- The job **must** specify `environment: copilot` to access the environment's secrets
+- Secrets are added to `$GITHUB_ENV` to make them available to the Copilot agent
+- Secrets are masked in logs for security
+- The Copilot agent will have access to these environment variables during its execution
+
+**Example use case**: If you need to give Copilot access to an API key for testing external integrations:
+
+```yaml
+- name: Configure API credentials for testing
+  run: |
+    echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> $GITHUB_ENV
+    echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> $GITHUB_ENV
+```
+
 ### 2. Repository Custom Instructions (`.github/COPILOT_INSTRUCTIONS.md`)
 
 **What it is**: Instructions file that tells Copilot how to work with your repository.

@@ -15,6 +15,10 @@ jobs:
   copilot-setup-steps:
     runs-on: ubuntu-latest
 
+    # Uncomment the line below to access secrets from the 'copilot' GitHub environment
+    # See .github/docs/COPILOT_CODING_AGENT.md for instructions on setting up secrets
+    # environment: copilot
+
     # Set the permissions to the lowest permissions possible needed for your steps.
     # Copilot will be given its own token for its operations.
     permissions:
@@ -65,6 +69,14 @@ jobs:
           echo "Pre-commit version: $(pre-commit --version)"
           which tofu && echo "OpenTofu version: $(tofu --version | head -1)" || echo "OpenTofu: not installed"
           which tflint && echo "tflint version: $(tflint --version)" || echo "tflint: not installed"
+
+      # Example: Uncomment to expose secrets from the 'copilot' environment to the agent
+      # - name: Configure secret environment variables
+      #   run: |
+      #     # Make secrets available to the Copilot agent
+      #     echo "MY_API_KEY=${{ secrets.MY_API_KEY }}" >> $GITHUB_ENV
+      #     echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
+      #     echo "Secret environment variables configured (values are masked in logs)"
 
       - name: Set up Props environment variables
         run: |
