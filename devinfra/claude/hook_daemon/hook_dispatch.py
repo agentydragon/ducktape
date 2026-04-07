@@ -59,14 +59,17 @@ def main() -> None:
 
     paths = SessionPaths.from_env(parsed.session_id, dict(os.environ))
 
+    def _fail(detail: str) -> None:
+        log_path = paths.hook_daemon_dir / "daemon.log"
+        recovery = _RECOVERY_MSG.replace("<session_id>", parsed.session_id)
+        print(f"ERROR: {detail}\n{recovery}\nDaemon log: {log_path}", file=sys.stderr)
+        sys.exit(1)
+
     try:
         result = call_daemon(parsed, dict(os.environ), paths)
     except DaemonHttpError as e:
         _log_event("error", str(e), hook_name=parsed.hook_event_name, session_id=parsed.session_id)
-        log_path = paths.hook_daemon_dir / "daemon.log"
-        print(f"ERROR: {e}\n{_RECOVERY_MSG.replace('<session_id>', parsed.session_id)}", file=sys.stderr)
-        print(f"Daemon log: {log_path}", file=sys.stderr)
-        sys.exit(1)
+        _fail(str(e))
 
     if result is not None and result.output is not None:
         output_json = result.output.model_dump_json(by_alias=True, exclude_none=True)
@@ -76,10 +79,7 @@ def main() -> None:
         sys.stdout.write(output_json)
     elif result is None:
         _log_event("error", "daemon_unavailable", hook_name=parsed.hook_event_name, session_id=parsed.session_id)
-        log_path = paths.hook_daemon_dir / "daemon.log"
-        print(f"ERROR: {_RECOVERY_MSG.replace('<session_id>', parsed.session_id)}", file=sys.stderr)
-        print(f"Daemon log: {log_path}", file=sys.stderr)
-        sys.exit(1)
+        _fail("daemon unreachable after restart attempt")
     else:
         _log_event("output", None, hook_name=parsed.hook_event_name, session_id=parsed.session_id)
 
