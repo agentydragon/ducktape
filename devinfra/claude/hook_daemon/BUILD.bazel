@@ -130,6 +130,7 @@ py_library(
         ":client",
         "//devinfra/claude:session_paths",
         "//devinfra/claude/claude_api/hooks:dispatch_input",
+        "@pypi//mako",
         "@pypi//pydantic",
     ],
 )

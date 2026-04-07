@@ -12,6 +12,7 @@ import time
 import traceback
 from pathlib import Path
 
+from mako.template import Template
 from pydantic import TypeAdapter
 
 from devinfra.claude.claude_api.hooks.dispatch_input import AnyHookInput
@@ -22,13 +23,14 @@ _adapter: TypeAdapter[AnyHookInput] = TypeAdapter(AnyHookInput)
 
 _HOOK_EVENT_LOG = Path("/tmp/claude-hook-events.jsonl")
 
-_RECOVERY_MSG = (
-    "Hook daemon unavailable — the session environment may be broken.\n"
-    "Tell the user about this problem and check the daemon log:\n"
-    "  tail -50 ~/.claude/session-env/<session_id>/hook-daemon/daemon.log\n"
-    "Then follow the recovery steps in CLAUDE.md under\n"
-    "  'Recovering from a Broken Session Start Hook'."
-)
+_ERROR_TEMPLATE = Template("""\
+ERROR: ${detail}
+Hook daemon unavailable — the session environment may be broken.
+Tell the user about this problem and check the daemon log:
+  tail -50 ${log_path}
+Then follow the recovery steps in CLAUDE.md under
+  'Recovering from a Broken Session Start Hook'.\
+""")
 
 
 def _log_event(direction: str, raw_json: str | None, *, hook_name: str = "", session_id: str = "") -> None:
@@ -61,8 +63,7 @@ def main() -> None:
 
     def _fail(detail: str) -> None:
         log_path = paths.hook_daemon_dir / "daemon.log"
-        recovery = _RECOVERY_MSG.replace("<session_id>", parsed.session_id)
-        print(f"ERROR: {detail}\n{recovery}\nDaemon log: {log_path}", file=sys.stderr)
+        print(_ERROR_TEMPLATE.render(detail=detail, log_path=log_path), file=sys.stderr)
         sys.exit(1)
 
     try:
