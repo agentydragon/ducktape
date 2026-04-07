@@ -15,12 +15,20 @@ from pathlib import Path
 from pydantic import TypeAdapter
 
 from devinfra.claude.claude_api.hooks.dispatch_input import AnyHookInput
-from devinfra.claude.hook_daemon.client import call_daemon
+from devinfra.claude.hook_daemon.client import DaemonHttpError, call_daemon
 from devinfra.claude.session_paths import SessionPaths
 
 _adapter: TypeAdapter[AnyHookInput] = TypeAdapter(AnyHookInput)
 
 _HOOK_EVENT_LOG = Path("/tmp/claude-hook-events.jsonl")
+
+_RECOVERY_MSG = (
+    "Hook daemon unavailable — the session environment may be broken.\n"
+    "Tell the user about this problem and check the daemon log:\n"
+    "  tail -50 ~/.claude/session-env/<session_id>/hook-daemon/daemon.log\n"
+    "Then follow the recovery steps in CLAUDE.md under\n"
+    "  'Recovering from a Broken Session Start Hook'."
+)
 
 
 def _log_event(direction: str, raw_json: str | None, *, hook_name: str = "", session_id: str = "") -> None:
@@ -51,7 +59,15 @@ def main() -> None:
 
     paths = SessionPaths.from_env(parsed.session_id, dict(os.environ))
 
-    result = call_daemon(parsed, dict(os.environ), paths)
+    try:
+        result = call_daemon(parsed, dict(os.environ), paths)
+    except DaemonHttpError as e:
+        _log_event("error", str(e), hook_name=parsed.hook_event_name, session_id=parsed.session_id)
+        log_path = paths.hook_daemon_dir / "daemon.log"
+        print(f"ERROR: {e}\n{_RECOVERY_MSG.replace('<session_id>', parsed.session_id)}", file=sys.stderr)
+        print(f"Daemon log: {log_path}", file=sys.stderr)
+        sys.exit(1)
+
     if result is not None and result.output is not None:
         output_json = result.output.model_dump_json(by_alias=True, exclude_none=True)
         _log_event("output", output_json, hook_name=parsed.hook_event_name, session_id=parsed.session_id)
@@ -60,7 +76,9 @@ def main() -> None:
         sys.stdout.write(output_json)
     elif result is None:
         _log_event("error", "daemon_unavailable", hook_name=parsed.hook_event_name, session_id=parsed.session_id)
-        print("ERROR: hook daemon unavailable", file=sys.stderr)
+        log_path = paths.hook_daemon_dir / "daemon.log"
+        print(f"ERROR: {_RECOVERY_MSG.replace('<session_id>', parsed.session_id)}", file=sys.stderr)
+        print(f"Daemon log: {log_path}", file=sys.stderr)
         sys.exit(1)
     else:
         _log_event("output", None, hook_name=parsed.hook_event_name, session_id=parsed.session_id)

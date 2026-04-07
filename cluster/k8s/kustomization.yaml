@@ -5,6 +5,7 @@ resources:
   - flux-system/
   - flux-webhook/flux-kustomization.yaml
   - flux-grafana-secrets/flux-kustomization.yaml
+  - flux-image-automation/flux-kustomization.yaml
   - flux-image-automation-ghcr/flux-kustomization.yaml
 
   # --- core infrastructure (standalone) ---
@@ -90,6 +91,7 @@ resources:
   - monitoring/stack-secrets/flux-kustomization.yaml
   - monitoring/rules/flux-kustomization.yaml
   - monitoring/loki/flux-kustomization.yaml
+  - monitoring/loki-vpa/flux-kustomization.yaml
   - monitoring/alloy/flux-kustomization.yaml
   - monitoring/alloy-otlp-bearer-token-tf/flux-kustomization.yaml
   - monitoring/tempo/flux-kustomization.yaml

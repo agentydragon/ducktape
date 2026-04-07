@@ -296,6 +296,7 @@ repos:
       - id: checkov_diff
         args: ["--framework", "terraform", "--skip-check", "CKV_TF_1", "-f"]
         files: "^cluster/terraform/.*\\.tf$"
+        additional_dependencies: ["urllib3"]
 
   # TFLint - Terraform linter — tflint provided by devShell / web-session via Nix
   # Config: cluster/.tflint.hcl; plugins cached in ~/.tflint.d/plugins

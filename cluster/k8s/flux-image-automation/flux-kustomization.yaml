@@ -1,14 +1,12 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: flux-image-automation-ghcr
+  name: flux-image-automation
   namespace: flux-system
 spec:
   interval: 10m
-  path: ./cluster/k8s/flux-image-automation-ghcr
+  path: ./cluster/k8s/flux-image-automation
   prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
-  dependsOn:
-    - name: flux-image-automation

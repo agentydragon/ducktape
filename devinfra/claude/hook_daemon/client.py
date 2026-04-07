@@ -46,6 +46,15 @@ class DaemonStartError(RuntimeError):
     """Raised when the hook daemon fails to start or crashes during startup."""
 
 
+class DaemonHttpError(RuntimeError):
+    """Raised when the hook daemon returns a non-200 HTTP response."""
+
+    def __init__(self, status: int, body: str) -> None:
+        super().__init__(f"Daemon returned HTTP {status}: {body}")
+        self.status = status
+        self.body = body
+
+
 def update_proxy_creds(https_proxy: str, paths: SessionPaths) -> str:
     """Send fresh proxy credentials to the daemon. Returns the local proxy URL.
 
@@ -106,8 +115,9 @@ def _post_to_daemon(request: HookRequest, sock_path: Path) -> HookResponse | Non
         conn.request("POST", "/hook", body=payload, headers={"Content-Type": "application/json"})
         response = conn.getresponse()
         if response.status != 200:
-            logger.warning("Daemon returned HTTP %d", response.status)
-            return None
+            body = response.read().decode("utf-8", errors="replace")
+            conn.close()
+            raise DaemonHttpError(response.status, body)
         body = response.read()
         conn.close()
         return HookResponse.model_validate_json(body)

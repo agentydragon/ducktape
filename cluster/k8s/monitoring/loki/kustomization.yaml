@@ -6,7 +6,6 @@ resources:
   - helmrelease.yaml
   - promtail-helmrelease.yaml
   - cilium-network-policy.yaml
-  - vpa.yaml
   # External access handled by Authentik proxy outpost (native blueprint in k8s/authentik/app/blueprints/).
   # Traffic flows: Gateway → ak-outpost-loki-outpost (auth) → loki backend.
   # Grafana accesses Loki internally via cluster service (unaffected).
