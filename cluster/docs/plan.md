@@ -33,6 +33,12 @@ CloudNativePG `local-path`.
 
 ## Next Actions
 
+- [ ] Test Authentik TF provider SSO migration: verify `gatus-sso` TF module
+      reconciles successfully, Gatus OIDC login works at `status.allegedly.works`,
+      and the K8s Secret `gatus-oidc-secret` in `gatus` namespace has the correct
+      `GATUS_CLIENT_SECRET`. Also unsuspend Grocy and verify the agent service account
+      bearer token works (`curl -H 'Authorization: Bearer <token>' https://grocy.allegedly.works/api/system/info`).
+      PRs: #1213 (grocy binding), #1214 (gatus SSO migration).
 - [ ] Decouple wyrm2 from tofu: `module.wyrm2` in the same TF root as the cluster means
       any `tofu apply` risks rebooting wyrm2 (the machine running tofu). The `--exclude`
       flag is a workaround but error-prone. Options: separate TF root for wyrm2, or manage
