@@ -41,7 +41,8 @@ background_commands:
   - name: bazelisk warmup (query //...)
     command: |
       echo "Bazel warmup starting (PID $$). Bazel's output base lock is held until this finishes."
-      echo "To cancel: kill $$"
+      echo "To cancel warmup and release the lock: kill -TERM -$$"
+      set -m
       bazelisk query //...
     timeout: 300
     after_env: true
