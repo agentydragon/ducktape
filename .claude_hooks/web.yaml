@@ -35,18 +35,6 @@ background_commands:
       apt-get update -qq &&
       apt-get install -y -qq libgirepository-2.0-dev libcairo2-dev libdbus-1-dev
     timeout: 300
-  - name: rootfs tuning
-    command: |
-      if ! test -b /dev/vda; then
-        echo "rootfs tuning: /dev/vda not present (not a Firecracker VM?), skipping"
-        exit 0
-      fi
-      echo "--- tune2fs -l /dev/vda (before) ---"
-      tune2fs -l /dev/vda
-      tune2fs -m 1 /dev/vda
-      echo "--- tune2fs -l /dev/vda (after) ---"
-      tune2fs -l /dev/vda
-    timeout: 30
   - name: pre-commit setup
     command: pre-commit install --install-hooks
     timeout: 300
