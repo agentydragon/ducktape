@@ -1,27 +1,6 @@
 """Hermetic cpio archive rule (newc format)."""
 
-CpioEntryInfo = provider(
-    doc = "A single file together with its destination path in a cpio archive.",
-    fields = {
-        "dest": "Destination path in the archive (string).",
-        "src": "Source File.",
-    },
-)
-
-def _cpio_entry_impl(ctx):
-    return [
-        CpioEntryInfo(dest = ctx.attr.dest, src = ctx.file.src),
-        DefaultInfo(files = depset([ctx.file.src])),
-    ]
-
-cpio_entry = rule(
-    implementation = _cpio_entry_impl,
-    doc = "Declares a file together with where it should appear in a cpio archive.",
-    attrs = {
-        "src": attr.label(allow_single_file = True, mandatory = True),
-        "dest": attr.string(mandatory = True, doc = "Destination path in the archive."),
-    },
-)
+load("@rules_pkg//pkg:providers.bzl", "PackageFilesInfo")
 
 def _cpio_archive_impl(ctx):
     output = ctx.outputs.out
@@ -29,9 +8,9 @@ def _cpio_archive_impl(ctx):
     inputs = []
     manifest_entries = []
     for src in ctx.attr.srcs:
-        entry = src[CpioEntryInfo]
-        manifest_entries.append([entry.dest, entry.src.path])
-        inputs.append(entry.src)
+        for dest, src_file in src[PackageFilesInfo].dest_src_map.items():
+            manifest_entries.append([dest, src_file.path])
+            inputs.append(src_file)
 
     manifest = ctx.actions.declare_file(ctx.label.name + ".manifest.json")
     ctx.actions.write(manifest, json.encode(manifest_entries))
@@ -53,11 +32,11 @@ def _cpio_archive_impl(ctx):
 
 cpio_archive = rule(
     implementation = _cpio_archive_impl,
-    doc = "Builds a hermetic newc-format cpio archive from cpio_entry targets.",
+    doc = "Builds a hermetic newc-format cpio archive from pkg_files targets.",
     attrs = {
         "srcs": attr.label_list(
-            providers = [CpioEntryInfo],
-            doc = "cpio_entry targets to include in the archive.",
+            providers = [PackageFilesInfo],
+            doc = "pkg_files targets to include in the archive.",
         ),
         "out": attr.output(mandatory = True),
         "_tool": attr.label(
