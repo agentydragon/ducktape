@@ -40,10 +40,11 @@ background_commands:
     timeout: 300
   - name: bazelisk warmup (query //...)
     command: |
-      echo "Bazel warmup starting (PID $$). Bazel's output base lock is held until this finishes."
-      echo "To cancel warmup and release the lock: kill -TERM -$$"
-      set -m
-      bazelisk query //...
+      bazelisk query //... >/dev/null &
+      bazelisk_pid=$!
+      echo "Bazel warmup running (PID ${bazelisk_pid}). Output base lock held until finished."
+      echo "To cancel: kill -TERM ${bazelisk_pid}"
+      wait "${bazelisk_pid}"
     timeout: 300
     after_env: true
 context_template: .claude_hooks/templates/web_context.mako
