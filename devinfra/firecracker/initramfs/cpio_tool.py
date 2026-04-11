@@ -2,7 +2,7 @@
 
 Usage: cpio_tool.py <output.cpio> < <manifest.json>
 
-stdin: [[dest_path, src_file], ...]
+stdin: [[dest_path, src_file, mode_octal], ...]  (mode_octal e.g. "0755")
 
 Adds a root directory entry, one entry per pair (mode 0755), then closes
 with a TRAILER!!! entry. mtime is zeroed for reproducibility.
@@ -38,7 +38,7 @@ def main() -> None:
     output_path = sys.argv[1]
     manifest: list[list[str]] = json.load(sys.stdin)
 
-    entries = [(".", None, 0o040755, 2)] + [(dest, src, 0o100755, 1) for dest, src in manifest]
+    entries = [(".", None, 0o040755, 2)] + [(dest, src, 0o100000 | int(mode, 8), 1) for dest, src, mode in manifest]
     with Path(output_path).open("wb") as out:
         for ino, (name, src_file, mode, nlink) in enumerate(entries, start=1):
             data = Path(src_file).read_bytes() if src_file else b""

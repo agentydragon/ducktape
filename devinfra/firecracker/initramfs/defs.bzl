@@ -8,8 +8,10 @@ def _cpio_archive_impl(ctx):
     inputs = []
     manifest_entries = []
     for src in ctx.attr.srcs:
-        for dest, src_file in src[PackageFilesInfo].dest_src_map.items():
-            manifest_entries.append([dest, src_file.path])
+        info = src[PackageFilesInfo]
+        mode = info.attributes.get("mode", "0755")
+        for dest, src_file in info.dest_src_map.items():
+            manifest_entries.append([dest, src_file.path, mode])
             inputs.append(src_file)
 
     manifest = ctx.actions.declare_file(ctx.label.name + ".manifest.json")
