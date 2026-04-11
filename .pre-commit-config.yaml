@@ -232,7 +232,6 @@ repos:
         name: ducktape commit-msg
         entry: ducktape-commit-msg
         language: system
-        pass_filenames: false
         always_run: true
         stages: [commit-msg]
 
