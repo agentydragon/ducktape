@@ -37,7 +37,7 @@ def main() -> None:
     output_path = sys.argv[1]
     entries = pkg_manifest.read_entries_from(sys.stdin)
 
-    file_entries: list[tuple[str, str, int]] = []
+    cpio_entries = [(".", None, 0o040755, 2)]
     for e in entries:
         if e.type != pkg_manifest.ENTRY_IS_FILE:
             sys.exit(f"{e.dest!r}: unsupported entry type {e.type!r} (only 'file' is supported)")
@@ -49,9 +49,7 @@ def main() -> None:
             sys.exit(f"{e.dest!r}: uid={e.uid!r} not supported (only uid=0 is supported)")
         if e.gid not in (None, 0):
             sys.exit(f"{e.dest!r}: gid={e.gid!r} not supported (only gid=0 is supported)")
-        file_entries.append((e.dest, e.src, 0o100000 | int(e.mode or "0755", 8)))
-
-    cpio_entries = [(".", None, 0o040755, 2)] + [(dest, src, mode, 1) for dest, src, mode in file_entries]
+        cpio_entries.append((e.dest, e.src, 0o100000 | int(e.mode or "0755", 8), 1))
     with Path(output_path).open("wb") as out:
         for ino, (name, src_file, mode, nlink) in enumerate(cpio_entries, start=1):
             data = Path(src_file).read_bytes() if src_file else b""
