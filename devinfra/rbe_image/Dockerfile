@@ -27,8 +27,6 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
         libgirepository-2.0-dev \
         libcairo2-dev \
         libdbus-1-dev \
-        # cpio: needed to build initramfs for QEMU-based tests
-        cpio \
         # xvfb: virtual framebuffer for headless GUI tests (e.g. FreeCAD 3D rendering with OpenGL)
         xvfb \
         # Chromium headless shell shared library dependencies
