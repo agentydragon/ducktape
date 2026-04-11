@@ -2,17 +2,14 @@
 
 Usage: cpio_tool.py <output.cpio> < <manifest.json>
 
-Reads a rules_pkg manifest JSON array from stdin. Each entry must be:
-  {"type": "file", "src": "...", "dest": "...", "mode": "0755",
-   "uid": null, "gid": null, "user": null, "group": null, ...}
-
 Only "file" entries are supported. Non-zero uid/gid and user/group names
 (which cpio does not represent) are rejected.
 """
 
-import json
 import sys
 from pathlib import Path
+
+from pkg.private import manifest as pkg_manifest
 
 
 def _pad4(n: int) -> int:
@@ -38,26 +35,25 @@ def main() -> None:
         sys.exit(f"Usage: {sys.argv[0]} <output.cpio> < <manifest.json>")
 
     output_path = sys.argv[1]
-    manifest = json.load(sys.stdin)
+    entries = pkg_manifest.read_entries_from(sys.stdin)
 
     file_entries: list[tuple[str, str, int]] = []
-    for e in manifest:
-        dest = e["dest"]
-        if e["type"] != "file":
-            sys.exit(f"{dest!r}: unsupported entry type {e['type']!r} (only 'file' is supported)")
-        if e.get("user") is not None:
-            sys.exit(f"{dest!r}: user={e['user']!r} not supported (cpio has no username field; use uid=0)")
-        if e.get("group") is not None:
-            sys.exit(f"{dest!r}: group={e['group']!r} not supported (cpio has no group name field; use gid=0)")
-        if e.get("uid") not in (None, 0):
-            sys.exit(f"{dest!r}: uid={e['uid']!r} not supported (only uid=0 is supported)")
-        if e.get("gid") not in (None, 0):
-            sys.exit(f"{dest!r}: gid={e['gid']!r} not supported (only gid=0 is supported)")
-        file_entries.append((dest, e["src"], 0o100000 | int(e.get("mode") or "0755", 8)))
+    for e in entries:
+        if e.type != pkg_manifest.ENTRY_IS_FILE:
+            sys.exit(f"{e.dest!r}: unsupported entry type {e.type!r} (only 'file' is supported)")
+        if e.user is not None:
+            sys.exit(f"{e.dest!r}: user={e.user!r} not supported (cpio has no username field; use uid=0)")
+        if e.group is not None:
+            sys.exit(f"{e.dest!r}: group={e.group!r} not supported (cpio has no group name field; use gid=0)")
+        if e.uid not in (None, 0):
+            sys.exit(f"{e.dest!r}: uid={e.uid!r} not supported (only uid=0 is supported)")
+        if e.gid not in (None, 0):
+            sys.exit(f"{e.dest!r}: gid={e.gid!r} not supported (only gid=0 is supported)")
+        file_entries.append((e.dest, e.src, 0o100000 | int(e.mode or "0755", 8)))
 
-    entries = [(".", None, 0o040755, 2)] + [(dest, src, mode, 1) for dest, src, mode in file_entries]
+    cpio_entries = [(".", None, 0o040755, 2)] + [(dest, src, mode, 1) for dest, src, mode in file_entries]
     with Path(output_path).open("wb") as out:
-        for ino, (name, src_file, mode, nlink) in enumerate(entries, start=1):
+        for ino, (name, src_file, mode, nlink) in enumerate(cpio_entries, start=1):
             data = Path(src_file).read_bytes() if src_file else b""
             out.write(_entry(ino, mode, nlink, name, data))
         out.write(_entry(0, 0, 1, "TRAILER!!!", b""))

@@ -4,4 +4,5 @@ py_binary(
     name = "cpio_tool",
     srcs = ["cpio_tool.py"],
     visibility = ["//visibility:public"],
+    deps = ["@rules_pkg//pkg/private:manifest"],
 )
