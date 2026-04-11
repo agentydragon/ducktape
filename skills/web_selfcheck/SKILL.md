@@ -3,11 +3,13 @@ name: web_selfcheck
 description: >
   Diagnose the health of a Claude Code web session — checks whether
   web_setup.sh ran, whether the session start hook succeeded, whether
-  the installed claude-hooks package is stale relative to the repo, and
+  the installed claude-hooks package is stale relative to the repo,
   whether each SOPS-encrypted credential is decryptable and live-tests
-  each one against its upstream API. Reports what's broken and how to fix
-  it. Use when the user asks "did setup go ok", "why isn't bbr working",
-  "check credentials", "selfcheck", or any question about web session health.
+  each one against its upstream API, and whether ducktape git hooks
+  (pre-commit, commit-msg) actually pass when committing. Reports what's
+  broken and how to fix it. Use when the user asks "did setup go ok",
+  "why isn't bbr working", "check credentials", "selfcheck", "why do my
+  commits fail", or any question about web session health.
 ---
 
 # Web Session Selfcheck
@@ -323,6 +325,150 @@ fix above.
 
 ---
 
+### 7. Ducktape Git Hooks
+
+**Goal**: confirm pre-commit hooks actually pass when committing. Hooks break in
+web sessions due to `bbr` using the session's local git proxy URL
+(`127.0.0.1:*`) that the BuildBuddy cloud runner can't reach, or due to
+`DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG` being active while the commit-msg hook
+receives no argv.
+
+#### 7a. Framework & installation
+
+```bash
+# Are the git hook shims installed?
+ls -la /home/user/ducktape/.git/hooks/pre-commit \
+       /home/user/ducktape/.git/hooks/commit-msg 2>/dev/null || echo "HOOKS NOT INSTALLED"
+
+# What version of pre-commit?
+pre-commit --version 2>/dev/null || echo "pre-commit not found"
+
+# Which backend will detect_bazel_backend() pick?
+python3 -c "
+import os, shutil
+bb = shutil.which('bbr')
+key = os.environ.get('BUILDBUDDY_API_KEY')
+print('bbr on PATH:', bool(bb))
+print('BUILDBUDDY_API_KEY set:', bool(key))
+print('=> backend:', 'BUILDBUDDY (bbr)' if bb and key else 'LOCAL (bazel)')
+"
+
+# Active test-tag enforcement?
+echo "DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG=${DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG:-<unset>}"
+```
+
+#### 7b. bbr git remote URL
+
+When the backend is `BUILDBUDDY`, `bb remote` reads `git remote -v` locally and
+sends the remote URL to the cloud runner. If `origin` is `127.0.0.1:*` (Claude
+Code web session proxy), the runner can't reach it.
+
+```bash
+git -C /home/user/ducktape remote -v | head -4
+
+# Is origin a local proxy?
+ORIGIN_URL=$(git -C /home/user/ducktape remote get-url origin 2>/dev/null)
+if echo "$ORIGIN_URL" | grep -qE '127\.0\.0\.1|localhost'; then
+  echo "WARN: origin is a local proxy ($ORIGIN_URL)"
+  echo "      BuildBuddy cloud runner cannot reach this — bbr queries will fail"
+  echo "FIX:  git remote add github https://github.com/agentydragon/ducktape"
+  echo "      git config buildbuddy.remote-bazel-default-remote github"
+else
+  echo "OK: origin is externally reachable ($ORIGIN_URL)"
+fi
+
+# Is the bb default remote override already set?
+git -C /home/user/ducktape config buildbuddy.remote-bazel-default-remote 2>/dev/null \
+  && echo "(buildbuddy.remote-bazel-default-remote override is set)" \
+  || echo "(no remote override — bb will use origin)"
+```
+
+#### 7c. Direct hook invocation
+
+Test each hook binary directly, bypassing the full `git commit` flow.
+
+```bash
+# --- pytest-main-check ---
+# Unset BUILDBUDDY_API_KEY to force local bazel (avoids bbr/proxy issues)
+BUILDBUDDY_API_KEY= \
+  ducktape-pytest-main-check \
+  /home/user/ducktape/devinfra/claude/hook_daemon/test_hook_daemon.py \
+  2>&1 | tail -3
+echo "pytest-main-check exit: $?"
+
+# --- commit-msg hook ---
+# Write a sample commit message and run the hook against it.
+TMP_MSG=$(mktemp)
+cat > "$TMP_MSG" <<'MSG'
+test: dummy message for hook selfcheck
+
+https://claude.ai/code/test
+MSG
+
+DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG= \
+  ducktape-commit-msg "$TMP_MSG" 2>&1
+echo "commit-msg exit: $?"
+rm -f "$TMP_MSG"
+```
+
+**Failure: `pytest-main-check` exits 1 with `Command 'bazel' returned non-zero exit status 255`**
+
+Two sub-causes:
+
+- _bbr backend, local proxy_: `BUILDBUDDY_API_KEY` is set and origin is `127.0.0.1:*`. The cloud runner fetches from the local proxy URL it received in `RunRequest.repo.url` and fails. Fix: add the `github` remote and set `buildbuddy.remote-bazel-default-remote` (see 7b above). Or temporarily unset `BUILDBUDDY_API_KEY` before committing.
+- _Concurrent bbr calls_: `build_bazel_index` runs two concurrent `bbr query` calls; if both race to re-initialise the runner repo, one fails. The local-proxy issue is the root cause in web sessions.
+
+**Failure: `commit-msg` exits 1 with `commit message file path required as argument`**
+
+`DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG=1` is active but `pass_filenames: false` was set (now fixed in `.pre-commit-config.yaml`). Confirm the fix is present:
+
+```bash
+grep -A6 'ducktape-commit-msg' /home/user/ducktape/.pre-commit-config.yaml | grep pass_filenames \
+  && echo "WARN: pass_filenames still set" \
+  || echo "OK: pass_filenames not set"
+```
+
+#### 7d. Live end-to-end commit test
+
+Actually exercises the full hook pipeline (pre-commit + commit-msg) on a
+throwaway commit in a temp branch. Cleans up afterwards.
+
+```bash
+set -e
+cd /home/user/ducktape
+
+# Create a throwaway branch from HEAD
+TEST_BRANCH="selfcheck/hook-test-$(date +%s)"
+git checkout -q -b "$TEST_BRANCH"
+
+# Make a trivial tracked change
+TEST_FILE=$(mktemp /home/user/ducktape/selfcheck-hook-test-XXXXX.txt)
+echo "hook selfcheck $(date -Iseconds)" > "$TEST_FILE"
+git add "$TEST_FILE"
+
+# Commit with BUILDBUDDY_API_KEY unset (forces local bazel in pre-commit)
+# and DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG unset (skips test-tag check)
+BUILDBUDDY_API_KEY= DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG= \
+  git commit -m "test: selfcheck hook test — delete me" 2>&1
+COMMIT_EXIT=$?
+
+# Clean up: remove branch and file regardless of outcome
+git checkout -q -
+git branch -D "$TEST_BRANCH"
+rm -f "$TEST_FILE"
+
+echo "Live commit test exit: $COMMIT_EXIT"
+[ "$COMMIT_EXIT" -eq 0 ] && echo "PASS: git hooks work" || echo "FAIL: git hooks broken"
+```
+
+Add `| grep -E '^(PASS|FAIL|Passed|Failed|error|Error)'` to the git commit
+line to reduce noise, or run it unfiltered to see all hook output.
+
+**If the live test fails**: capture the full pre-commit output, then run the
+failing hook directly (7c) to isolate which hook is broken.
+
+---
+
 ## Report Format
 
 After running all checks, produce:
@@ -347,6 +493,8 @@ After running all checks, produce:
 | Secret: k8s-token            | OK/FAIL| decrypts / API <http_code>          |
 | Secret: otlp-token           | OK/FAIL| decrypts / API <http_code>          |
 | bbr / BuildBuddy RBE         | OK/FAIL| ...                                 |
+| Git hooks (pre-commit)       | OK/FAIL| backend=LOCAL/bbr; live commit pass/fail |
+| Git hooks (commit-msg)       | OK/FAIL| pass_filenames ok; ENFORCE_TEST_TAG state |
 
 ## Issues & Remediation
 
