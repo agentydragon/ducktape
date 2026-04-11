@@ -5,6 +5,10 @@ load("@rules_pkg//pkg:providers.bzl", "PackageFilesInfo")
 def _cpio_archive_impl(ctx):
     output = ctx.outputs.out
 
+    # TODO: if rules_pkg ever exposes create_mapping_context_from_ctx +
+    # add_label_list + write_manifest from @rules_pkg//pkg/private:pkg_files.bzl
+    # as a public API, replace the manual dict construction and json.encode below
+    # with those helpers (they are currently restricted to //pkg/private internals).
     inputs = []
     manifest_entries = []
     for src in ctx.attr.srcs:
