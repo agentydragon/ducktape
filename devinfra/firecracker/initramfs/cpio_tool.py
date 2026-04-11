@@ -1,11 +1,14 @@
-"""Build a newc-format cpio archive from a list of files.
+"""Build a newc-format cpio archive from a JSON manifest on stdin.
 
-Usage: cpio_tool.py <output.cpio> <dest_path> <src_file> [<dest_path> <src_file> ...]
+Usage: cpio_tool.py <output.cpio> < <manifest.json>
 
-Adds a root directory entry, one entry per dest_path/src_file pair (mode 0755),
-then closes with a TRAILER!!! entry. mtime is zeroed for reproducibility.
+stdin: [[dest_path, src_file], ...]
+
+Adds a root directory entry, one entry per pair (mode 0755), then closes
+with a TRAILER!!! entry. mtime is zeroed for reproducibility.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -29,15 +32,13 @@ def _entry(ino: int, mode: int, nlink: int, name: str, data: bytes) -> bytes:
 
 
 def main() -> None:
-    args = sys.argv[1:]
-    if not args or len(args[1:]) % 2 != 0:
-        sys.exit(f"Usage: {sys.argv[0]} <output.cpio> [<dest_path> <src_file> ...]")
+    if len(sys.argv) != 2:
+        sys.exit(f"Usage: {sys.argv[0]} <output.cpio> < <manifest.json>")
 
-    output_path, *pairs = args
+    output_path = sys.argv[1]
+    manifest: list[list[str]] = json.load(sys.stdin)
 
-    entries = [(".", None, 0o040755, 2)] + [
-        (dest_path, src_file, 0o100755, 1) for dest_path, src_file in zip(pairs[::2], pairs[1::2], strict=False)
-    ]
+    entries = [(".", None, 0o040755, 2)] + [(dest, src, 0o100755, 1) for dest, src in manifest]
     with Path(output_path).open("wb") as out:
         for ino, (name, src_file, mode, nlink) in enumerate(entries, start=1):
             data = Path(src_file).read_bytes() if src_file else b""
