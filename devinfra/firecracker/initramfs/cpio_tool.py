@@ -35,14 +35,13 @@ def main() -> None:
 
     output_path, *pairs = args
 
+    entries = [(".", None, 0o040755, 2)] + [
+        (dest_path, src_file, 0o100755, 1) for dest_path, src_file in zip(pairs[::2], pairs[1::2], strict=False)
+    ]
     with Path(output_path).open("wb") as out:
-        ino = 1
-        out.write(_entry(ino, 0o040755, 2, ".", b""))
-        ino += 1
-        for dest_path, src_file in zip(pairs[::2], pairs[1::2], strict=False):
-            data = Path(src_file).read_bytes()
-            out.write(_entry(ino, 0o100755, 1, dest_path, data))
-            ino += 1
+        for ino, (name, src_file, mode, nlink) in enumerate(entries, start=1):
+            data = Path(src_file).read_bytes() if src_file else b""
+            out.write(_entry(ino, mode, nlink, name, data))
         out.write(_entry(0, 0, 1, "TRAILER!!!", b""))
 
 
