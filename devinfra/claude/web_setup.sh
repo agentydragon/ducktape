@@ -95,7 +95,11 @@ for bin in "${NIX_PROFILE}"/bin/*; do
 done
 
 # --- Step 3: Set profile for web mode ---
-export DUCKTAPE_CLAUDE_HOOKS_PROFILE=.claude_hooks/web.yaml
+# Write to .claude/settings.local.json so Claude Code injects the env var into
+# hook processes — the export below only covers the current shell process.
+SETTINGS_LOCAL="${FLAKE#path:}/.claude/settings.local.json"
+echo '{"env":{"DUCKTAPE_CLAUDE_HOOKS_PROFILE":".claude_hooks/web.yaml"}}' > "$SETTINGS_LOCAL"
+echo "[$(date -Iseconds)] Wrote DUCKTAPE_CLAUDE_HOOKS_PROFILE to ${SETTINGS_LOCAL}"
 
 # --- Step 4: Symlink skills into ~/.claude/skills/ ---
 # Per-skill symlinks instead of replacing the directory, so Anthropic's
