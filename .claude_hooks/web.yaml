@@ -38,8 +38,11 @@ background_commands:
   - name: pre-commit setup
     command: pre-commit install --install-hooks
     timeout: 300
-  - name: bazel info
-    command: bazelisk info
+  - name: bazelisk warmup (query //...)
+    command: |
+      echo "Bazel warmup starting (PID $$). Bazel's output base lock is held until this finishes."
+      echo "To cancel: kill $$"
+      bazelisk query //...
     timeout: 300
     after_env: true
 context_template: .claude_hooks/templates/web_context.mako
