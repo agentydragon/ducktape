@@ -14,10 +14,9 @@ py_binary(
 # HTTP control server.
 cpio_archive(
     name = "initramfs",
+    srcs = ["//devinfra/claude/web_env/re/process_api:process_api_re"],
     out = "initramfs.cpio",
-    files = {
-        "./init": "//devinfra/claude/web_env/re/process_api:process_api_re",
-    },
+    dest_paths = ["./init"],
     visibility = ["//devinfra/firecracker:__subpackages__"],
 )
 
