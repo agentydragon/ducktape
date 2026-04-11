@@ -29,15 +29,11 @@ def _cpio_archive_impl(ctx):
     manifest = ctx.actions.declare_file(ctx.label.name + ".manifest.json")
     ctx.actions.write(manifest, json.encode(manifest_entries))
 
-    ctx.actions.run_shell(
+    ctx.actions.run(
         inputs = inputs + [manifest],
         outputs = [output],
-        tools = [ctx.executable._tool],
-        command = "{tool} {output} < {manifest}".format(
-            tool = ctx.executable._tool.path,
-            output = output.path,
-            manifest = manifest.path,
-        ),
+        executable = ctx.executable._tool,
+        arguments = [output.path, manifest.path],
         mnemonic = "CpioArchive",
         progress_message = "Building cpio archive %s" % ctx.label.name,
     )
