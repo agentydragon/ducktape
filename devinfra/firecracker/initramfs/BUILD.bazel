@@ -1,11 +1,17 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary")
-load(":defs.bzl", "cpio_archive")
+load(":defs.bzl", "cpio_archive", "cpio_entry")
 
 py_binary(
     name = "cpio_tool",
     srcs = ["cpio_tool.py"],
     visibility = ["//visibility:private"],
+)
+
+cpio_entry(
+    name = "init",
+    src = "//devinfra/claude/web_env/re/process_api:process_api_re",
+    dest = "./init",
 )
 
 # Build a cpio initramfs containing the RE process_api as /init.
@@ -14,9 +20,8 @@ py_binary(
 # HTTP control server.
 cpio_archive(
     name = "initramfs",
-    srcs = ["//devinfra/claude/web_env/re/process_api:process_api_re"],
+    srcs = [":init"],
     out = "initramfs.cpio",
-    dest_paths = ["./init"],
     visibility = ["//devinfra/firecracker:__subpackages__"],
 )
 

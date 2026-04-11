@@ -1,22 +1,37 @@
 """Hermetic cpio archive rule (newc format)."""
 
+CpioEntryInfo = provider(
+    doc = "A single file together with its destination path in a cpio archive.",
+    fields = {
+        "dest": "Destination path in the archive (string).",
+        "src": "Source File.",
+    },
+)
+
+def _cpio_entry_impl(ctx):
+    return [
+        CpioEntryInfo(dest = ctx.attr.dest, src = ctx.file.src),
+        DefaultInfo(files = depset([ctx.file.src])),
+    ]
+
+cpio_entry = rule(
+    implementation = _cpio_entry_impl,
+    doc = "Declares a file together with where it should appear in a cpio archive.",
+    attrs = {
+        "src": attr.label(allow_single_file = True, mandatory = True),
+        "dest": attr.string(mandatory = True, doc = "Destination path in the archive."),
+    },
+)
+
 def _cpio_archive_impl(ctx):
     output = ctx.outputs.out
 
-    srcs = ctx.attr.srcs
-    dest_paths = ctx.attr.dest_paths
-    if len(srcs) != len(dest_paths):
-        fail("srcs and dest_paths must have the same length")
-
     inputs = []
     manifest_entries = []
-    for src_target, dest_path in zip(srcs, dest_paths):
-        src_files = src_target.files.to_list()
-        if len(src_files) != 1:
-            fail("Each entry in srcs must resolve to exactly one file, got %d for %s" % (len(src_files), src_target.label))
-        src_file = src_files[0]
-        manifest_entries.append([dest_path, src_file.path])
-        inputs.append(src_file)
+    for src in ctx.attr.srcs:
+        entry = src[CpioEntryInfo]
+        manifest_entries.append([entry.dest, entry.src.path])
+        inputs.append(entry.src)
 
     manifest = ctx.actions.declare_file(ctx.label.name + ".manifest.json")
     ctx.actions.write(manifest, json.encode(manifest_entries))
@@ -38,13 +53,11 @@ def _cpio_archive_impl(ctx):
 
 cpio_archive = rule(
     implementation = _cpio_archive_impl,
+    doc = "Builds a hermetic newc-format cpio archive from cpio_entry targets.",
     attrs = {
         "srcs": attr.label_list(
-            allow_files = True,
-            doc = "Source file labels, parallel to dest_paths.",
-        ),
-        "dest_paths": attr.string_list(
-            doc = "Archive destination paths, parallel to srcs.",
+            providers = [CpioEntryInfo],
+            doc = "cpio_entry targets to include in the archive.",
         ),
         "out": attr.output(mandatory = True),
         "_tool": attr.label(
