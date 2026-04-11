@@ -123,7 +123,28 @@ Path(os.environ["SETTINGS_LOCAL"]).write_text(
 PYEOF
 echo "[$(date -Iseconds)] Wrote profile + secrets to ${SETTINGS_LOCAL}"
 
-# --- Step 4: Symlink skills into ~/.claude/skills/ ---
+# --- Step 4: Add github-no-proxy remote for bbr ---
+# Claude Code web sessions use a local git proxy as 'origin'
+# (http://127.0.0.1:<port>/git/...). When 'bb remote' sends a RunRequest to
+# the BuildBuddy cloud runner, it embeds the selected remote's URL in
+# RepoState.repo.url. The runner then fetches from that URL. The local proxy
+# URL is unreachable from the cloud runner, so bbr fails.
+#
+# Fix: add a 'github-no-proxy' remote that points directly at GitHub. Set
+# buildbuddy.remote-bazel-remote-name so 'bb remote' uses it without
+# prompting interactively (the prompt would get EOF in non-TTY sessions).
+REPO_DIR="$(git -C "$PROJECT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$PROJECT_DIR")"
+GITHUB_REMOTE_URL="https://github.com/agentydragon/ducktape"
+if git -C "$REPO_DIR" remote get-url github-no-proxy &>/dev/null; then
+  echo "[$(date -Iseconds)] git remote 'github-no-proxy' already exists, skipping."
+else
+  git -C "$REPO_DIR" remote add github-no-proxy "$GITHUB_REMOTE_URL"
+  echo "[$(date -Iseconds)] Added git remote 'github-no-proxy' -> $GITHUB_REMOTE_URL"
+fi
+git -C "$REPO_DIR" config buildbuddy.remote-bazel-remote-name github-no-proxy
+echo "[$(date -Iseconds)] Set buildbuddy.remote-bazel-remote-name=github-no-proxy"
+
+# --- Step 5: Symlink skills into ~/.claude/skills/ ---
 # Per-skill symlinks instead of replacing the directory, so Anthropic's
 # pre-landed default skills are preserved.
 echo "Deploying skills to ~/.claude/skills/..."
