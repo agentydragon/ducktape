@@ -133,15 +133,14 @@ echo "[$(date -Iseconds)] Wrote profile + secrets to ${SETTINGS_LOCAL}"
 # Fix: add a 'github-no-proxy' remote that points directly at GitHub. Set
 # buildbuddy.remote-bazel-remote-name so 'bb remote' uses it without
 # prompting interactively (the prompt would get EOF in non-TTY sessions).
-REPO_DIR="$(git -C "$PROJECT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$PROJECT_DIR")"
 GITHUB_REMOTE_URL="https://github.com/agentydragon/ducktape"
-if git -C "$REPO_DIR" remote get-url github-no-proxy &>/dev/null; then
+if git -C "$PROJECT_DIR" remote get-url github-no-proxy &>/dev/null; then
   echo "[$(date -Iseconds)] git remote 'github-no-proxy' already exists, skipping."
 else
-  git -C "$REPO_DIR" remote add github-no-proxy "$GITHUB_REMOTE_URL"
+  git -C "$PROJECT_DIR" remote add github-no-proxy "$GITHUB_REMOTE_URL"
   echo "[$(date -Iseconds)] Added git remote 'github-no-proxy' -> $GITHUB_REMOTE_URL"
 fi
-git -C "$REPO_DIR" config buildbuddy.remote-bazel-remote-name github-no-proxy
+git -C "$PROJECT_DIR" config buildbuddy.remote-bazel-remote-name github-no-proxy
 echo "[$(date -Iseconds)] Set buildbuddy.remote-bazel-remote-name=github-no-proxy"
 
 # --- Step 5: Symlink skills into ~/.claude/skills/ ---

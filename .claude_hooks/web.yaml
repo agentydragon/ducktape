@@ -41,11 +41,11 @@ background_commands:
         echo "rootfs tuning: /dev/vda not present (not a Firecracker VM?), skipping"
         exit 0
       fi
-      BEFORE=$(tune2fs -l /dev/vda | awk '/Reserved block count:/ {print $NF}')
-      TOTAL=$(tune2fs -l /dev/vda | awk '/Block count:/ {print $NF}')
-      PCT=$(awk "BEGIN {printf \"%.1f\", $BEFORE * 100 / $TOTAL}")
-      echo "Reserved blocks before tuning: $BEFORE / $TOTAL ($PCT%)"
-      /sbin/tune2fs -m 1 /dev/vda
+      echo "--- tune2fs -l /dev/vda (before) ---"
+      tune2fs -l /dev/vda
+      tune2fs -m 1 /dev/vda
+      echo "--- tune2fs -l /dev/vda (after) ---"
+      tune2fs -l /dev/vda
     timeout: 30
   - name: pre-commit setup
     command: pre-commit install --install-hooks
