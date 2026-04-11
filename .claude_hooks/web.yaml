@@ -36,7 +36,16 @@ background_commands:
       apt-get install -y -qq libgirepository-2.0-dev libcairo2-dev libdbus-1-dev
     timeout: 300
   - name: rootfs tuning
-    command: /sbin/tune2fs -m 1 /dev/vda
+    command: |
+      if ! test -b /dev/vda; then
+        echo "rootfs tuning: /dev/vda not present (not a Firecracker VM?), skipping"
+        exit 0
+      fi
+      BEFORE=$(tune2fs -l /dev/vda | awk '/Reserved block count:/ {print $NF}')
+      TOTAL=$(tune2fs -l /dev/vda | awk '/Block count:/ {print $NF}')
+      PCT=$(awk "BEGIN {printf \"%.1f\", $BEFORE * 100 / $TOTAL}")
+      echo "Reserved blocks before tuning: $BEFORE / $TOTAL ($PCT%)"
+      /sbin/tune2fs -m 1 /dev/vda
     timeout: 30
   - name: pre-commit setup
     command: pre-commit install --install-hooks
