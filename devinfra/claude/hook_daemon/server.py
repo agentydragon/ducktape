@@ -199,14 +199,13 @@ async def _idle_watchdog(app: FastAPI) -> None:
             return
 
 
-def create_app(daemon_dir: Path, env_script_exports: str, profile: ProfileConfig) -> FastAPI:
+def create_app(daemon_dir: Path, profile: ProfileConfig) -> FastAPI:
     """Create and configure the hook daemon FastAPI app."""
     app = FastAPI()
 
     app.state.daemon_dir = daemon_dir
     app.state.settings = HookSettings()
     app.state.profile = profile
-    app.state.env_script_exports = env_script_exports
     app.state.last_request_time = time.monotonic()
     app.state.sessions = {}  # dict[str, Session]
 
@@ -245,12 +244,7 @@ def create_app(daemon_dir: Path, env_script_exports: str, profile: ProfileConfig
                     await session.start_proxy(app.state.profile)
                     ctx = CallerContext.from_env(req.env)
                     output = await handle_session_start(
-                        session,
-                        req.hook,
-                        app.state.settings,
-                        profile=app.state.profile,
-                        ctx=ctx,
-                        env_script_exports=app.state.env_script_exports,
+                        session, req.hook, app.state.settings, profile=app.state.profile, ctx=ctx
                     )
                 case PreToolUseInput():
                     output = evaluate_pre(req.hook)

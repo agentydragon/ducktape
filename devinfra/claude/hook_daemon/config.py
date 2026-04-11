@@ -4,7 +4,8 @@ Each profile (cli, web) is a standalone YAML file under .claude_hooks/
 (e.g. .claude_hooks/cli.yaml). The daemon loads exactly one profile at
 startup, selected by the DUCKTAPE_CLAUDE_HOOKS_PROFILE env var.
 
-Secrets are handled by env scripts (devinfra/secrets/*.sh), not by config.
+Secrets are not handled here. Web: written to settings.local.json by web_setup.sh.
+CLI: sourced via .envrc (eval "$(devinfra/secrets/cli_env.sh)").
 """
 
 from __future__ import annotations
@@ -103,10 +104,6 @@ class ProfileConfig(BaseModel):
     )
     env_exports: str | None = Field(
         default=None, description="Inline shell content appended verbatim to the session env file."
-    )
-    env_script: str | None = Field(
-        default=None,
-        description="Repo-relative path to a shell script whose stdout is appended to the session env file.",
     )
     idle_watchdog: bool = Field(
         description="Enable idle watchdog that shuts down daemon after inactivity. "

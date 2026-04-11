@@ -28,7 +28,7 @@ _COMMON = {
 
 def _start_uvicorn_in_thread(sock_path: Path, daemon_dir: Path) -> uvicorn.Server:
     """Start uvicorn serving the daemon app on a UDS in a background thread."""
-    app = create_app(daemon_dir, env_script_exports="", profile=TEST_PROFILE)
+    app = create_app(daemon_dir, profile=TEST_PROFILE)
     config = uvicorn.Config(app=app, uds=str(sock_path), log_level="warning")
     server = uvicorn.Server(config)
 

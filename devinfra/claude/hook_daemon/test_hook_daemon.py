@@ -31,7 +31,7 @@ async def client(tmp_path: Path) -> AsyncGenerator[AsyncClient]:
     """Create an async test client for the daemon app."""
     daemon_dir = tmp_path / "hook-daemon"
     daemon_dir.mkdir()
-    app = create_app(daemon_dir, env_script_exports="", profile=TEST_PROFILE)
+    app = create_app(daemon_dir, profile=TEST_PROFILE)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c

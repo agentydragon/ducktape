@@ -10,7 +10,6 @@ from filelock import FileLock
 
 from devinfra.claude.hook_daemon.config import OtelConfig, ProfileConfig
 from devinfra.claude.hook_daemon.server import create_app
-from devinfra.claude.hook_daemon.source_env_script import run_env_script
 from devinfra.claude.hook_daemon.tracing import init_daemon_tracing, shutdown_tracing
 from devinfra.claude.settings import HookSettings
 
@@ -18,7 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_otel_config(profile: ProfileConfig) -> OtelConfig | None:
-    """Build OtelConfig from profile + env vars. Bearer token comes from env (set by env script)."""
+    """Build OtelConfig from profile + env vars.
+
+    Bearer token: web — injected via settings.local.json by web_setup.sh;
+    CLI — sourced from .envrc (cli_env.sh) before daemon starts.
+    """
     if not profile.otel:
         return None
 
@@ -26,7 +29,6 @@ def _resolve_otel_config(profile: ProfileConfig) -> OtelConfig | None:
     if not otel_config.endpoint:
         return None
 
-    # Bearer token sourced from env (set by devinfra/secrets/dev_env.sh at daemon startup)
     token = os.environ.get("DUCKTAPE_OTEL_BEARER_TOKEN")
     if token:
         otel_config = OtelConfig(endpoint=otel_config.endpoint, bearer_token=token)
@@ -64,7 +66,6 @@ def main() -> None:
     logger.info("Daemon startup settings: %s", HookSettings().model_dump())
 
     # Load profile once at daemon startup.
-    env_script_exports: str = ""
     project_dir_str = os.environ.get("CLAUDE_PROJECT_DIR")
     if not project_dir_str:
         raise RuntimeError("CLAUDE_PROJECT_DIR not set — cannot load profile config")
@@ -75,22 +76,10 @@ def main() -> None:
         raise RuntimeError("DUCKTAPE_CLAUDE_HOOKS_PROFILE not set — cannot load profile config")
     profile = ProfileConfig.load(project_dir / settings.profile)
 
-    # Run the profile's env_script to populate secrets in os.environ
-    # (BUILDBUDDY_API_KEY, DUCKTAPE_OTEL_BEARER_TOKEN, etc.)
-    # Raw export lines are stored and written verbatim to the session env file.
-    # TODO: os.environ.update() is a footgun — env script can silently overwrite
-    # any daemon env var. Consider allowlisting which vars the script may set.
-    if profile.env_script:
-        env_script_path = project_dir / profile.env_script
-        if env_script_path.is_file():
-            script_result = run_env_script(env_script_path)
-            os.environ.update(script_result.env_vars)
-            env_script_exports = script_result.raw_exports
-
     otel_config = _resolve_otel_config(profile)
 
     init_daemon_tracing(daemon_dir, otel_config=otel_config)
-    app = create_app(daemon_dir, env_script_exports=env_script_exports, profile=profile)
+    app = create_app(daemon_dir, profile=profile)
     uvicorn.run(app, uds=args.sock, log_level="info")
     shutdown_tracing()
 

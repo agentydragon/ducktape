@@ -72,9 +72,6 @@ class EnvVars:
     mkcert_cert: Path | None = None
     mkcert_key: Path | None = None
 
-    # Raw export lines from profile env_script (pasted verbatim)
-    env_script_exports: str = ""
-
     # Kubeconfig generated at session start (web mode only)
     kubeconfig_path: Path | None = None
 
@@ -137,11 +134,6 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     if vars.hook_timestamp:
         exports.extend(["", "# Session metadata"])
         exports.extend(exports_from_dict({"DUCKTAPE_SESSION_START_HOOK_TS": vars.hook_timestamp.isoformat()}))
-
-    if vars.env_script_exports:
-        exports.extend(["", "# --- env_script exports (from profile env_script) ---"])
-        exports.append(vars.env_script_exports)
-        exports.append("# --- end env_script exports ---")
 
     if vars.kubeconfig_path:
         exports.extend(["", "# Kubeconfig (generated at session start)"])

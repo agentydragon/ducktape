@@ -4,7 +4,8 @@
 # Installs:
 #   1. Nix (Determinate Systems installer, designed for non-interactive/CI use)
 #   2. devtools — claude-hooks, bbapi, gh, skills; from flake via attic binary cache
-#   3. skills — symlinked per-skill into ~/.claude/skills/ (preserves Anthropic defaults)
+#   3. secrets + profile — decrypt SOPS secrets into .claude/settings.local.json
+#   4. skills — symlinked per-skill into ~/.claude/skills/ (preserves Anthropic defaults)
 #
 # IMPORTANT: This script always exits 0 so the session starts even if setup
 # fails. Failures are logged to /tmp/web-setup.log and uploaded to ix.io.
@@ -94,12 +95,33 @@ for bin in "${NIX_PROFILE}"/bin/*; do
   ln -sfn "$bin" /usr/local/bin/"$(basename "$bin")"
 done
 
-# --- Step 3: Set profile for web mode ---
-# Write to .claude/settings.local.json so Claude Code injects the env var into
-# hook processes — the export below only covers the current shell process.
-SETTINGS_LOCAL="${FLAKE#path:}/.claude/settings.local.json"
-echo '{"env":{"DUCKTAPE_CLAUDE_HOOKS_PROFILE":".claude_hooks/web.yaml"}}' > "$SETTINGS_LOCAL"
-echo "[$(date -Iseconds)] Wrote DUCKTAPE_CLAUDE_HOOKS_PROFILE to ${SETTINGS_LOCAL}"
+# --- Step 3: Decrypt secrets and write settings.local.json ---
+# sops is now on PATH (installed by devtools in Step 2).
+# eval the env script to get secrets into current shell env; failures are non-fatal
+# (try_export in _common.sh already continues on per-secret failure).
+PROJECT_DIR="${FLAKE#path:}"
+eval "$("$PROJECT_DIR/devinfra/secrets/web_env.sh" 2>/tmp/web-env-stderr.log)" || true
+cat /tmp/web-env-stderr.log >&2
+
+# Python writes the JSON — safe quoting, no shell escaping footguns.
+# Claude Code injects settings.local.json["env"] into all hook subprocesses,
+# so secrets propagate to the daemon and all tool calls via process inheritance.
+SETTINGS_LOCAL="$PROJECT_DIR/.claude/settings.local.json"
+SETTINGS_LOCAL="$SETTINGS_LOCAL" python3 <<'PYEOF'
+import json, os, sys
+from pathlib import Path
+
+keys = ["BUILDBUDDY_API_KEY", "DUCKTAPE_OTEL_BEARER_TOKEN",
+        "GITHUB_TOKEN", "K8S_TOKEN", "DUCKTAPE_CI_READ_GITHUB_TOKEN"]
+present = {k: v for k in keys if (v := os.environ.get(k))}
+missing = [k for k in keys if k not in present]
+if missing:
+    print(f"WARNING: secrets missing from settings.local.json: {missing}", file=sys.stderr)
+Path(os.environ["SETTINGS_LOCAL"]).write_text(
+    json.dumps({"env": {"DUCKTAPE_CLAUDE_HOOKS_PROFILE": ".claude_hooks/web.yaml"} | present})
+)
+PYEOF
+echo "[$(date -Iseconds)] Wrote profile + secrets to ${SETTINGS_LOCAL}"
 
 # --- Step 4: Symlink skills into ~/.claude/skills/ ---
 # Per-skill symlinks instead of replacing the directory, so Anthropic's

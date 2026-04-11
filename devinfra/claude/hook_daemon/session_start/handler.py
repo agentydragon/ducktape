@@ -346,7 +346,6 @@ async def handle(
     settings: HookSettings,
     profile: ProfileConfig,
     ctx: CallerContext,
-    env_script_exports: str,
 ) -> SessionStartOutput:
     """Unified session setup for both web and CLI modes.
 
@@ -477,7 +476,6 @@ async def handle(
             hook_timestamp=hook_timestamp,
             mkcert_cert=setup.mkcert_result.cert_path if setup.mkcert_result else None,
             mkcert_key=setup.mkcert_result.key_path if setup.mkcert_result else None,
-            env_script_exports=env_script_exports,
             kubeconfig_path=setup.secrets.kubeconfig_path,
             with_direnv=setup.with_direnv,
             extra_env_script=extra_env,
@@ -531,11 +529,7 @@ async def handle(
 
 
 def _build_extra_env_script(profile: ProfileConfig) -> str | None:
-    """Build extra inline env content from profile's env_exports.
-
-    Secrets from env_script are handled separately — run once at daemon startup
-    and passed through via _build_secrets_env_vars.
-    """
+    """Build extra inline env content from profile's env_exports."""
     if profile.env_exports:
         return profile.env_exports.rstrip()
     return None

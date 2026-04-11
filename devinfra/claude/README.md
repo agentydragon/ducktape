@@ -211,7 +211,8 @@ is available. They are **not** compatible with Claude Code web's egress proxy.
 ## OTEL Tracing
 
 Hooks emit OpenTelemetry traces to Grafana Alloy via Authentik proxy at
-`alloy-otlp.allegedly.works`. Bearer token resolved from SOPS at daemon startup.
+`alloy-otlp.allegedly.works`. Bearer token: web — written to `settings.local.json` by
+`web_setup.sh`; CLI — sourced via `.envrc` (`cli_env.sh`).
 
 Configured in `.claude_hooks/config.yaml` (`otel.endpoint`, `secrets.otel_bearer_token`).
 
@@ -229,5 +230,9 @@ bash ducktape/devinfra/claude/web_setup.sh
 
 This runs <web_setup.sh> which installs:
 
-1. The `claude-hooks` wheel (provides the `claude-hook` binary used by hooks in `.claude/settings.json`)
-2. Skills tarball (deployed to `~/.claude/skills/` for AI agent use)
+1. Nix + devtools (`claude-hooks` wheel, `bbapi`, `gh`, `sops`, skills)
+2. Decrypts SOPS secrets (`GITHUB_TOKEN`, `K8S_TOKEN`, `BUILDBUDDY_API_KEY`,
+   `DUCKTAPE_CI_READ_GITHUB_TOKEN`, `DUCKTAPE_OTEL_BEARER_TOKEN`) and writes them
+   into `.claude/settings.local.json` — Claude Code injects these into all hook
+   subprocesses via process inheritance
+3. Skills symlinked into `~/.claude/skills/` (preserves Anthropic defaults)

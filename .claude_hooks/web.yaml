@@ -1,6 +1,6 @@
 otel:
   endpoint: https://alloy-otlp.allegedly.works/v1/traces
-  # bearer_token: read from DUCKTAPE_OTEL_BEARER_TOKEN env var (set by env scripts).
+  # bearer_token: injected via settings.local.json (written by web_setup.sh).
 
 k8s:
   server: https://api.allegedly.works:16443
@@ -25,7 +25,6 @@ setup_docker: true
 env_exports: |
   export DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=0
   export DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG=1
-env_script: devinfra/secrets/web_env.sh
 bazel_remote_proxy:
   target: remote.buildbuddy.io:443
 bazel_bes_proxy:

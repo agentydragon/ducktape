@@ -7,7 +7,8 @@
 #   claude-web-k8s-token.yaml:          admin, claude-web
 #
 # Consumed by:
-#   - Session start hook (web profile)
+#   - web_setup.sh (eval'd to decrypt secrets into shell env, then written
+#     to .claude/settings.local.json for Claude Code injection)
 
 # shellcheck source=_common.sh
 source "$(dirname "$0")/_common.sh"
