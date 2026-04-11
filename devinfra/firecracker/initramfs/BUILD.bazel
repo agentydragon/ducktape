@@ -1,13 +1,6 @@
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("@rules_python//python:defs.bzl", "py_binary")
-load(":defs.bzl", "cpio_archive")
-
-py_binary(
-    name = "cpio_tool",
-    srcs = ["cpio_tool.py"],
-    visibility = ["//visibility:private"],
-)
+load("//devinfra/cpio:defs.bzl", "cpio_archive")
 
 pkg_files(
     name = "init",

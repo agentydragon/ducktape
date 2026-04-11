@@ -9,9 +9,17 @@ def _cpio_archive_impl(ctx):
     manifest_entries = []
     for src in ctx.attr.srcs:
         info = src[PackageFilesInfo]
-        mode = info.attributes.get("mode", "0755")
+        attrs = info.attributes
+        entry_base = {
+            "type": "file",
+            "mode": attrs.get("mode"),
+            "user": attrs.get("user"),
+            "group": attrs.get("group"),
+            "uid": attrs.get("uid"),
+            "gid": attrs.get("gid"),
+        }
         for dest, src_file in info.dest_src_map.items():
-            manifest_entries.append([dest, src_file.path, mode])
+            manifest_entries.append(dict(entry_base, dest = dest, src = src_file.path))
             inputs.append(src_file)
 
     manifest = ctx.actions.declare_file(ctx.label.name + ".manifest.json")
@@ -42,7 +50,7 @@ cpio_archive = rule(
         ),
         "out": attr.output(mandatory = True),
         "_tool": attr.label(
-            default = "//devinfra/firecracker/initramfs:cpio_tool",
+            default = "//devinfra/cpio:cpio_tool",
             executable = True,
             cfg = "exec",
         ),
