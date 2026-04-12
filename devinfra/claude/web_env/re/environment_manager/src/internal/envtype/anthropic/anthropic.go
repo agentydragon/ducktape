@@ -61,6 +61,7 @@ import (
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/envtype/shared"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/o11y"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/process"
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/sources"
 )
 
 // Registration is the global registration for the anthropic environment type.
@@ -338,8 +339,17 @@ func (e *anthropicEnvironmentType) Initialize(ctx context.Context) error {
 			return err
 		}
 
-		// Step 2: Sources processing is handled by the SourceHandlerManager
+		// Step 2: Process sources (git repos) via SourceHandlerManager.
 		// (via RecordFunction.func2 at 0xafdf60)
+		//
+		// The exact parameters passed to NewSourceHandlerManager for the
+		// anthropic new/setup path are garble-obfuscated in 495ea204; the
+		// implementation below is a best-effort reconstruction based on the
+		// available struct fields. Compare with byoc.handleBranchCheckout()
+		// which uses the same mechanism for resume mode.
+		if err := e.processSources(ctx); err != nil {
+			return err
+		}
 	} else if isNewOrSetup {
 		// Step 1 only: Install languages without git
 		if err := e.installLanguages(ctx); err != nil {
@@ -542,6 +552,58 @@ func (e *anthropicEnvironmentType) installLanguage(ctx context.Context, name, ve
 		"duration", result.Duration,
 		"is_resume", e.sessionMode == "resume",
 	)
+
+	return nil
+}
+
+// processSources creates a SourceHandlerManager and processes the git sources
+// from the startup context. Called during Initialize() Step 2 when
+// isNewOrSetup && hasSources.
+//
+// Binary address: wrapped by RecordFunction.func2 at 0xafdf60 in 495ea204.
+// Source file: anthropic.go
+//
+// TODO(re): Exact parameters to NewSourceHandlerManager are garble-obfuscated
+// in 495ea204. The session ID, gitProxyConfig, outcomes, and activityRecorder
+// bindings are reconstructed from struct fields; the processMode string and
+// exact error wrapping messages cannot be verified without runtime observation.
+// Compare with byoc.handleBranchCheckout() for the resume-mode analog.
+func (e *anthropicEnvironmentType) processSources(ctx context.Context) error {
+	// TODO(re): sessionID source — likely e.startupContext.SessionID
+	sessionID := ""
+	if e.startupContext != nil {
+		sessionID = e.startupContext.SessionID
+	}
+
+	// TODO(re): gitProxyConfig source — likely from e.authContext or nil
+	// TODO(re): outcomes source — likely e.startupContext.Outcomes or nil
+	// TODO(re): activityRecorder source — likely nil or from startupContext
+	mgr, err := sources.NewSourceHandlerManager(
+		e.logger,
+		e.cwd,
+		sessionID,
+		nil,                   // gitProxyConfig — TODO(re): source garble-obfuscated
+		nil,                   // outcomes — TODO(re): source garble-obfuscated
+		nil,                   // activityRecorder — TODO(re): source garble-obfuscated
+		string(e.sessionMode), // processMode
+		false,                 // isResume — false for new/setup-only
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create source handler manager: %w", err)
+	}
+
+	if _, err := mgr.ProcessSources(ctx, e.logger, e.startupContext.Sources); err != nil {
+		// TODO(re): exact error message garble-obfuscated in 495ea204
+		return fmt.Errorf("failed to process sources: %w", err)
+	}
+
+	if result, err := mgr.SetupGitProxyAfterSourcesProcessed(ctx, e.logger, e.startupContext.Sources); err != nil {
+		// Non-fatal: log at Warn, consistent with byoc.handleBranchCheckout
+		e.logger.Warn("Failed to setup git proxy after sources processed",
+			"error", err,
+			"result", result,
+		)
+	}
 
 	return nil
 }
