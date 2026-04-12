@@ -54,6 +54,8 @@ async def test_auto_fetch_sends_username_and_password():
     assert "password=test-app-password" in body
     assert "grant_type=client_credentials" in body
     assert "client_id=test-client-id" in body
+    # No client_secret: Authentik M2M uses the user's app_password instead.
+    assert "client_secret=" not in body
 
 
 @respx.mock
@@ -86,6 +88,24 @@ async def test_strips_grocy_api_key_header():
 
 
 @respx.mock
+async def test_strips_caller_authorization_header():
+    """Caller-supplied Authorization header is stripped; proxy's Bearer JWT wins.
+
+    Prevents clients from bypassing the Authentik M2M injection by supplying
+    their own credentials to the upstream.
+    """
+    respx.post(TOKEN_URL).mock(return_value=Response(200, json={"access_token": "proxy-jwt", **_TOKEN_RESPONSE}))
+    upstream_route = respx.get(f"{UPSTREAM_URL}/api/stock").mock(return_value=Response(200))
+
+    app, _ = _make_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
+        await http.get("/api/stock", headers={"Authorization": "Bearer client-supplied-token"})
+
+    upstream_req = upstream_route.calls[0].request
+    assert upstream_req.headers["Authorization"] == "Bearer proxy-jwt"
+
+
+@respx.mock
 async def test_adds_bearer_token():
     """Forwarded request includes Authorization: Bearer header."""
     respx.post(TOKEN_URL).mock(return_value=Response(200, json={"access_token": "my-jwt", **_TOKEN_RESPONSE}))
@@ -115,6 +135,67 @@ async def test_forwards_method_path_body():
     upstream_req = upstream_route.calls[0].request
     assert upstream_req.method == "POST"
     assert b'"amount"' in upstream_req.content
+
+
+@respx.mock
+async def test_strips_hop_by_hop_response_headers():
+    """Hop-by-hop response headers (RFC 7230) are not forwarded to the caller."""
+    respx.post(TOKEN_URL).mock(return_value=Response(200, json={"access_token": "tok", **_TOKEN_RESPONSE}))
+    respx.get(f"{UPSTREAM_URL}/api/stock").mock(
+        return_value=Response(
+            200,
+            headers={
+                "Content-Type": "application/json",
+                "Connection": "keep-alive",
+                "Keep-Alive": "timeout=5",
+                "X-Custom": "keep-me",
+            },
+            json={"ok": True},
+        )
+    )
+
+    app, _ = _make_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
+        resp = await http.get("/api/stock")
+
+    header_keys = {k.lower() for k in resp.headers.keys()}
+    assert "connection" not in header_keys
+    assert "keep-alive" not in header_keys
+    assert "x-custom" in header_keys
+    assert resp.headers["content-type"] == "application/json"
+
+
+@respx.mock
+async def test_preserves_multiple_set_cookie_headers():
+    """Multiple Set-Cookie headers from upstream are preserved, not collapsed."""
+    respx.post(TOKEN_URL).mock(return_value=Response(200, json={"access_token": "tok", **_TOKEN_RESPONSE}))
+    # httpx.Response accepts a list of (key, value) tuples to express repeated headers.
+    respx.get(f"{UPSTREAM_URL}/api/stock").mock(
+        return_value=Response(200, headers=[("set-cookie", "a=1; Path=/"), ("set-cookie", "b=2; Path=/")])
+    )
+
+    app, _ = _make_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
+        resp = await http.get("/api/stock")
+
+    set_cookies = [v for k, v in resp.headers.multi_items() if k.lower() == "set-cookie"]
+    assert len(set_cookies) == 2
+    assert "a=1; Path=/" in set_cookies
+    assert "b=2; Path=/" in set_cookies
+
+
+@respx.mock
+async def test_upstream_trailing_slash_does_not_double_slash():
+    """A trailing slash on UPSTREAM_URL must not produce `//` in forwarded URLs."""
+    respx.post(TOKEN_URL).mock(return_value=Response(200, json={"access_token": "tok", **_TOKEN_RESPONSE}))
+    upstream_route = respx.get(f"{UPSTREAM_URL}/api/stock").mock(return_value=Response(200))
+
+    app = create_app(f"{UPSTREAM_URL}/", lambda: _make_client())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
+        resp = await http.get("/api/stock")
+
+    assert resp.status_code == 200
+    assert str(upstream_route.calls[0].request.url) == f"{UPSTREAM_URL}/api/stock"
 
 
 async def test_health_endpoint():

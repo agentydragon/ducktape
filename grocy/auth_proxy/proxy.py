@@ -24,8 +24,27 @@ from util.env import get_required_env
 
 logger = logging.getLogger(__name__)
 
-# Headers to strip before forwarding.
-_STRIP_HEADERS = frozenset({"grocy-api-key", "host"})
+# Headers stripped from inbound requests before forwarding:
+# - grocy-api-key: the whole point — callers send a dummy key, we replace with JWT.
+# - host: httpx sets its own based on the upstream URL.
+# - authorization / proxy-authorization: prevent callers from bypassing our
+#   Bearer injection by supplying their own credentials to the upstream.
+_STRIP_REQUEST_HEADERS = frozenset({"grocy-api-key", "host", "authorization", "proxy-authorization"})
+
+# Hop-by-hop headers (RFC 7230 §6.1) must not be forwarded between hops.
+# Stripped from upstream responses.
+_HOP_BY_HOP_HEADERS = frozenset(
+    {
+        "connection",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailers",
+        "transfer-encoding",
+        "upgrade",
+    }
+)
 
 
 class AutoFetchOAuth2Client(AsyncOAuth2Client):
@@ -48,10 +67,16 @@ class AutoFetchOAuth2Client(AsyncOAuth2Client):
 
 
 def create_client(token_url: str, client_id: str, username: str, app_password: str) -> AutoFetchOAuth2Client:
-    """Create an OAuth2 HTTP client for the Authentik M2M flow."""
+    """Create an OAuth2 HTTP client for the Authentik M2M flow.
+
+    Authentication method is "none": we don't have a client_secret. Authentik
+    identifies the client via client_id and authenticates the *user* via
+    username + app_password (sent as form params alongside
+    grant_type=client_credentials).
+    """
     return AutoFetchOAuth2Client(
         client_id=client_id,
-        token_endpoint_auth_method="client_secret_post",
+        token_endpoint_auth_method="none",
         token_endpoint=token_url,
         grant_type="client_credentials",
         metadata={"token_endpoint": token_url, "m2m_username": username, "m2m_password": app_password},
@@ -60,6 +85,9 @@ def create_client(token_url: str, client_id: str, username: str, app_password: s
 
 def create_app(upstream_url: str, client_factory: Callable[[], AutoFetchOAuth2Client]) -> Starlette:
     """Build a Starlette app that reverse-proxies to upstream with Bearer auth."""
+    # Normalize once so path concatenation never produces `//`.
+    upstream_url = upstream_url.rstrip("/")
+
     client: AutoFetchOAuth2Client | None = None
 
     async def lifespan(app):
@@ -77,11 +105,21 @@ def create_app(upstream_url: str, client_factory: Callable[[], AutoFetchOAuth2Cl
         if request.url.query:
             url = f"{url}?{request.url.query}"
 
-        headers = {k: v for k, v in request.headers.items() if k.lower() not in _STRIP_HEADERS}
+        headers = [(k, v) for k, v in request.headers.items() if k.lower() not in _STRIP_REQUEST_HEADERS]
         body = await request.body()
 
         resp = await client.request(request.method, url, content=body, headers=headers)
-        return Response(content=resp.content, status_code=resp.status_code, headers=dict(resp.headers))
+
+        # Construct with no headers, then assign raw_headers directly so we can
+        # preserve repeated headers (e.g. multiple Set-Cookie) via multi_items.
+        # Drop hop-by-hop headers which must not cross proxies.
+        out = Response(content=resp.content, status_code=resp.status_code)
+        out.raw_headers = [
+            (k.lower().encode("latin-1"), v.encode("latin-1"))
+            for k, v in resp.headers.multi_items()
+            if k.lower() not in _HOP_BY_HOP_HEADERS
+        ]
+        return out
 
     return Starlette(
         routes=[
