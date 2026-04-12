@@ -18,6 +18,27 @@ Comprehensive health check for a Claude Code web session. Run all checks,
 then produce a single structured report with clear pass/fail status and
 actionable remediation steps for anything that's broken.
 
+## CRITICAL: Observe Only — Do NOT Fix Without Explicit User Approval
+
+This is a **diagnostic skill**. Treat a broken session like a crime scene:
+observe, document, and report — do not touch.
+
+**Do NOT run any remediation commands** (e.g. `web_setup.sh`, re-triggering
+SessionStart, sourcing env files, installing packages) unless the user
+explicitly says to proceed. The "Fix" blocks throughout this skill are
+documentation of what _could_ be done — they are **not instructions for you
+to execute**. Report your findings and wait for a go-ahead.
+
+**Exception — debugging workarounds**: when the session hooks are broken and
+you are actively debugging or documenting (e.g. committing this very skill),
+the following lightweight workarounds are acceptable without explicit approval:
+
+- Committing with hooks bypassed: `git commit --no-verify` (or point hooks at
+  `/dev/null` temporarily) to record diagnostic work while hooks are broken
+- Unsetting `BUILDBUDDY_API_KEY` to force local bazel when bbr is broken
+- Creating a `bazel` wrapper in the session bin that injects `--bazelrc` when
+  the session bazelrc exists but the shim is missing
+
 Run all `Bash` commands with `dangerouslyDisableSandbox: true` (needs network
 and filesystem access outside the sandbox).
 
@@ -55,7 +76,66 @@ bash ducktape/devinfra/claude/web_setup.sh
 
 ---
 
-### 2. Session Start Hook
+### 2. claude-hooks Daemon Version
+
+**Goal**: check whether the installed `claude-hooks` daemon matches the current
+repo code, how far behind it is, and whether any breaking changes have landed
+since the pinned commit.
+
+Do this early — a stale daemon is often the root cause of session hook failures.
+
+```bash
+# Pinned commit (what's actually installed)
+python3 -c "
+import json, re
+pins = json.load(open('/home/user/ducktape/npins/sources.json'))['pins']
+url = pins.get('claude-hooks', {}).get('url', '')
+m = re.search(r'claude-hooks-([0-9a-f]+)', url)
+print('pinned commit:', m.group(1) if m else 'unknown')
+print('pin url:', url[:100])
+"
+
+# Current HEAD of the repo
+git -C /home/user/ducktape rev-parse --short HEAD
+git -C /home/user/ducktape log --oneline -1
+
+# How many devinfra/claude/ commits have landed since the pin was last updated?
+git -C /home/user/ducktape log --oneline -10 -- devinfra/claude/ npins/sources.json
+
+# Key compatibility check: does installed server.py use HookConfig (old) or ProfileConfig (new)?
+grep -c 'HookConfig' /nix/store/*claude-hooks-latest*/lib/python3.13/site-packages/devinfra/claude/hook_daemon/server.py 2>/dev/null \
+  && echo "STALE: installed daemon uses HookConfig (old API, expects config.yaml)" \
+  || echo "OK: installed daemon uses ProfileConfig (new API)"
+
+# When was the pin last updated?
+git -C /home/user/ducktape log --oneline -3 -- npins/sources.json
+```
+
+**If the pin is behind HEAD**, check GitHub CI on `agentydragon/ducktape` to
+understand whether an update is expected soon or something is wedged. Look at:
+
+- Recent `release.yml` runs on `devel` — did it pass after the relevant commit?
+- Recent `sync-pins.yml` runs — did it succeed and push?
+- Recent `ci.yml` runs on `devel` — any blocking test failures?
+
+For each, report: last run status, when it ran, and if failed, what failed.
+
+**Interpretation**:
+
+- `release.yml` failing → new daemon won't be released; find the failing test/step
+- `sync-pins.yml` not running or failing → pin won't auto-update
+- CI tests failing on `devel` → release is blocked until tests are fixed
+
+**Suggested fix** (do not run — report to user):
+
+1. If `release.yml` recently passed after the relevant commit: `sync-pins.yml`
+   will update the pin within 30 min; wait or trigger manually
+2. If `release.yml` hasn't run or failed: identify and fix the blocking issue on `devel`
+3. Once pin is updated and merged, re-run `web_setup.sh`
+
+---
+
+### 3. Session Start Hook
 
 **Goal**: confirm the session start hook ran successfully and wrote the env file.
 
@@ -86,9 +166,11 @@ ss -tlnp 2>/dev/null | grep 35233 || echo "git proxy NOT listening on 35233"
 
 This means the installed `claude-hooks` package is stale — it still calls
 `HookConfig.load_from_repo()` looking for `config.yaml`, but the repo was
-refactored to use standalone `web.yaml`. See check #3.
+refactored to use standalone `web.yaml`. See check #2.
 
-**Fix if env file is missing**: re-trigger SessionStart on the live daemon:
+**Suggested fix if env file is missing** (do not run — report to user):
+
+Re-trigger SessionStart on the live daemon:
 
 ```bash
 LIVE=<live_session_id>
@@ -117,57 +199,6 @@ common --remote_header=x-buildbuddy-api-key=${BUILDBUDDY_API_KEY}
 build --config=rbe
 EOF
 ```
-
----
-
-### 3. claude-hooks Version Staleness
-
-**Goal**: check whether the installed `claude-hooks` Nix package matches the
-current repo code.
-
-```bash
-# Pinned commit (from npins/sources.json)
-python3 -c "
-import json
-pins = json.load(open('/home/user/ducktape/npins/sources.json'))['pins']
-url = pins.get('claude-hooks',{}).get('url','')
-# Extract commit from release tag URL like: claude-hooks-095d71b
-import re; m = re.search(r'claude-hooks-([0-9a-f]+)', url)
-print('pinned commit:', m.group(1) if m else 'unknown', '  url:', url[:80])
-"
-
-# Current HEAD
-git -C /home/user/ducktape rev-parse --short HEAD
-
-# Key API change: does installed server.py still use HookConfig (old) or ProfileConfig (new)?
-grep -c 'HookConfig' /nix/store/*claude-hooks-latest*/lib/python3.13/site-packages/devinfra/claude/hook_daemon/server.py 2>/dev/null \
-  && echo "STALE: installed hooks uses HookConfig (old API, expects config.yaml)" \
-  || echo "OK: installed hooks uses ProfileConfig (new API)"
-
-# Commits on devinfra/claude/ since the pinned commit
-# (pinned commit is often not in local history since it's the CI-released artifact)
-# Instead, check when the npins entry was last updated:
-git -C /home/user/ducktape log --oneline -5 -- npins/sources.json
-```
-
-**Failure indicator**: `grep -c 'HookConfig'` returns > 0 (old API detected).
-
-**Root cause**: `npins/sources.json` pins `claude-hooks` to a specific GitHub
-Release commit. The CI release workflow (`release.yml`) builds and publishes
-the release; `sync-pins.yml` runs every 30 minutes to update the pin and push
-to `devel`. If recent `devinfra/claude/` commits haven't been released yet,
-or if the pin sync hasn't run, the installed package will be stale.
-
-**Fix**:
-
-1. Check if a release was published for the current code:
-   - Look at GitHub Actions → `release.yml` runs on the `devel` branch
-   - Check if `//:release_claude_hooks` completed after the relevant commit
-2. If not released: trigger `release.yml` manually (workflow_dispatch) or
-   push to `devel` to trigger CI
-3. If released but pin not updated: `sync-pins.yml` runs every 30 min;
-   check its last run or trigger manually (workflow_dispatch)
-4. Once pin is updated and merged, re-run `web_setup.sh` in the session
 
 ---
 
@@ -481,12 +512,12 @@ After running all checks, produce:
 
 ## Checks
 
-| Check                        | Status | Detail                              |
-|------------------------------|--------|-------------------------------------|
-| web_setup.sh ran             | OK/FAIL| ...                                 |
-| Session start hook           | OK/FAIL| CANARY present / FileNotFoundError  |
-| claude-hooks version         | OK/STALE| pinned=<sha> head=<sha> diff=N commits |
-| SOPS_AGE_KEY                 | OK/FAIL| age public key matches .sops.yaml   |
+| Check                        | Status   | Detail                                          |
+| ---------------------------- | -------- | ----------------------------------------------- |
+| web_setup.sh ran             | OK/FAIL  | ...                                             |
+| claude-hooks daemon version  | OK/STALE | pinned=<sha> head=<sha> N commits behind; CI status |
+| Session start hook           | OK/FAIL  | CANARY present / FileNotFoundError              |
+| SOPS_AGE_KEY                 | OK/FAIL  | age public key matches .sops.yaml               |
 | Secret: buildbuddy.yaml      | OK/FAIL| decrypts / API <http_code>          |
 | Secret: github-agent-pat     | OK/FAIL| decrypts / login=agentydragon-agent |
 | Secret: github-ci-read-pat   | OK/FAIL| decrypts / login=agentydragon       |
