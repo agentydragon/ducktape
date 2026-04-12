@@ -19,6 +19,8 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 set -euo pipefail
 
 FLAKE="path:$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SETUP_COMMIT=$(git -C "${FLAKE#path:}" rev-parse HEAD 2>/dev/null || echo 'unknown')
+echo "[$(date -Iseconds)] web_setup.sh commit: $SETUP_COMMIT"
 
 # --- Step 1: Install Nix (Determinate Systems installer) ---
 # Uses the Determinate Systems installer instead of the official one because:
@@ -63,9 +65,9 @@ unset _saved_user
 echo "[$(date -Iseconds)] Nix installation complete."
 
 # --- Step 2: Install web session tools ---
-# Debug: dump environment for proxy/cert diagnostics.
-echo "--- environment ---"
-env | sed 's/^\(DUCKTAPE_CLAUDE_HOOKS_K8S_TOKEN=\).*/\1<redacted>/' | sort
+# Debug: dump environment keys for proxy/cert diagnostics (no values — avoids logging JWTs).
+echo "--- environment keys ---"
+env | cut -d= -f1 | sort
 echo "---"
 
 echo "Connectivity check (cache.nixos.org)..."
@@ -131,9 +133,14 @@ echo "[$(date -Iseconds)] Wrote profile + secrets to ${SETTINGS_LOCAL}"
 # RepoState.repo.url. The runner then fetches from that URL. The local proxy
 # URL is unreachable from the cloud runner, so bbr fails.
 #
-# Fix: add a 'github-no-proxy' remote that points directly at GitHub. Set
-# buildbuddy.remote-bazel-remote-name so 'bb remote' uses it without
-# prompting interactively (the prompt would get EOF in non-TTY sessions).
+# Fix: add a 'github-no-proxy' remote that points directly at GitHub.
+#
+# bb source: https://github.com/buildbuddy-io/buildbuddy (cli/remotebazel/)
+#
+# bb auto-selects a single remote without prompting. With 2+ remotes it
+# prompts interactively. bb >= master (post-5.0.339) caches the last-used
+# remote in buildbuddy.remote-bazel-remote-name and skips the prompt on
+# subsequent runs. We set it here so it works as soon as bb is updated.
 GITHUB_REMOTE_URL="https://github.com/agentydragon/ducktape"
 if git -C "$PROJECT_DIR" remote get-url github-no-proxy &>/dev/null; then
   echo "[$(date -Iseconds)] git remote 'github-no-proxy' already exists, skipping."

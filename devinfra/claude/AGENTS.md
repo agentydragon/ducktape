@@ -9,6 +9,10 @@ The hook daemon's runtime Python dependencies are declared in **two places** tha
 
 When adding or removing a runtime dependency, update **both** lists. A mismatch causes `ModuleNotFoundError` at daemon startup in whichever environment has the stale list. Both files have `SYNC:` comments pointing to each other.
 
+## bb CLI Source
+
+The `bb` CLI is open source at <https://github.com/buildbuddy-io/buildbuddy>. Remote Bazel logic lives in `cli/remotebazel/remotebazel.go` and `cli/storage/storage.go`. When debugging `bb remote` behavior (remote selection, flag semantics, git config keys), read the source directly.
+
 ## Agent Instructions
 
 - **Hook daemon logs** (includes session start): `~/.claude/session-env/<session_id>/hook-daemon/daemon.log`

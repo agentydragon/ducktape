@@ -50,7 +50,14 @@ Run all checks in parallel where possible.
 
 ### 1. web_setup.sh
 
-**Goal**: confirm Nix and the `devtools` profile were installed successfully.
+**Goal**: confirm Nix and the `devtools` profile were installed successfully,
+and that setup ran from the current repo commit.
+
+**VM reuse warning**: Anthropic reuses Firecracker microVMs between sessions.
+`/tmp` persists across reuses, so `/tmp/web-setup.log` may be from a prior
+session running an older version of `web_setup.sh`. Always verify the setup
+commit matches the current repo HEAD — a stale setup means Nix devtools and
+skills may not match what the current code expects.
 
 ```bash
 # Was it run at all?
@@ -63,16 +70,40 @@ stat -c '%y' /tmp/web-setup.log 2>/dev/null
 nix --version 2>/dev/null || echo "nix not found"
 # Is the devtools profile active?
 nix profile list 2>/dev/null | grep -E 'devtools|claude-hooks' | head -5 || echo "no devtools profile"
+
+# What commit did web_setup.sh run from?
+grep 'web_setup.sh commit:' /tmp/web-setup.log 2>/dev/null | tail -1 || echo "commit not logged (old web_setup.sh)"
+# Current repo HEAD
+git -C /home/user/ducktape rev-parse HEAD
+
+# Do they match?
+SETUP_COMMIT=$(grep 'web_setup.sh commit:' /tmp/web-setup.log 2>/dev/null | tail -1 | grep -oE '[0-9a-f]{40}' || echo '')
+HEAD_COMMIT=$(git -C /home/user/ducktape rev-parse HEAD)
+if [ -z "$SETUP_COMMIT" ]; then
+  echo "UNKNOWN: web_setup.sh predates commit logging — assume STALE"
+elif [ "$SETUP_COMMIT" = "$HEAD_COMMIT" ]; then
+  echo "OK: setup commit matches HEAD ($HEAD_COMMIT)"
+else
+  echo "STALE: setup ran from ${SETUP_COMMIT:0:12}, HEAD is ${HEAD_COMMIT:0:12}"
+fi
+
+# What env var keys were present when web_setup.sh ran?
+grep -A200 'environment keys' /tmp/web-setup.log 2>/dev/null | grep -B200 '^---$' | grep -v '^---'
 ```
 
 **Failure indicators**: log missing, last line not "Setup complete", nix not
-found, devtools not in profile list.
+found, devtools not in profile list, setup commit doesn't match HEAD.
 
 **Fix**: re-run setup from the Claude Code web UI setup command:
 
 ```
 bash ducktape/devinfra/claude/web_setup.sh
 ```
+
+If re-running, note that `SOPS_AGE_KEY` is typically not available when
+`web_setup.sh` runs — all SOPS decryptions will fail. Secrets are instead
+decrypted by the session start hook daemon (which inherits `SOPS_AGE_KEY`
+from the container after k8s injects it). This is expected and not a bug.
 
 ---
 
@@ -512,6 +543,7 @@ After running all checks, produce:
 | Check                        | Status   | Detail                                          |
 | ---------------------------- | -------- | ----------------------------------------------- |
 | web_setup.sh ran             | OK/FAIL  | ...                                             |
+| web_setup.sh commit          | OK/STALE | setup=<sha12> head=<sha12> (VM reuse risk)      |
 | claude-hooks daemon version  | OK/STALE | pinned=<sha> head=<sha> N commits behind; CI status |
 | Session start hook           | OK/FAIL  | CANARY present / FileNotFoundError              |
 | SOPS_AGE_KEY                 | OK/FAIL  | age public key matches .sops.yaml               |
