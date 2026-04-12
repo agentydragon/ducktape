@@ -6,6 +6,14 @@ common --experimental_isolated_extension_usages
 # from leaking to RBE workers. Default in Bazel 9 but not Bazel 8.
 build --incompatible_strict_action_env
 
+# Suppress -Wdeprecated-declarations from protobuf's own internal usage of its
+# deprecated APIs (FieldOptions::weak(), RepeatedPtrField(Arena*), etc.).
+# All warnings are within external/protobuf+/ — protobuf using APIs that it
+# itself deprecated, not fixable from this repo.
+# Applied to both target and exec (host) configs since protoc runs in exec.
+build --per_file_copt=external/protobuf[+]/.*@-Wno-deprecated-declarations
+build --host_per_file_copt=external/protobuf[+]/.*@-Wno-deprecated-declarations
+
 # Reduce runfiles disk usage (prevents "No space left on device" on CI runners).
 # Each py_test creates a runfiles tree with ~2,458 symlinks for the Python toolchain;
 # with many targets this exhausts the default 20 GB BuildBuddy disk.
