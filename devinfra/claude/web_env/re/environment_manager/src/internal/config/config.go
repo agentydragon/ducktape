@@ -271,7 +271,7 @@ type StartupContext struct {
 	FilesystemID            string            `json:"filesystem_id,omitempty"`
 	FilestoreURL            string            `json:"filestore_url,omitempty"`
 	WorkerID                string            `json:"worker_id,omitempty"`
-	WorkerEpoch             string            `json:"worker_epoch,omitempty"`
+	WorkerEpoch             int64             `json:"worker_epoch,string,omitempty"`
 }
 
 // startupContextJSON is the intermediate struct used for JSON unmarshalling of StartupContext.
@@ -298,7 +298,7 @@ type startupContextJSON struct {
 	FilesystemID            string                 `json:"filesystem_id,omitempty"`
 	FilestoreURL            string                 `json:"filestore_url,omitempty"`
 	WorkerID                string                 `json:"worker_id,omitempty"`
-	WorkerEpoch             string                 `json:"worker_epoch,omitempty"`
+	WorkerEpoch             int64                  `json:"worker_epoch,string,omitempty"`
 }
 
 // sourceTypeJSON is used to peek at a source's type field before full deserialization.

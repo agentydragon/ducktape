@@ -526,10 +526,15 @@ func (lm *LeaseManager) sendHeartbeat() error {
 
 	// Parse response and update lease state
 	var heartbeatResp struct {
-		LeaseExpiresAt        string `json:"lease_expires_at"`
-		GracePeriod           int    `json:"grace_period"`
-		StuckThresholdSeconds string `json:"stuck_threshold_seconds"`
-		ExpectedLastHeartbeat string `json:"expected_last_heartbeat"`
+		LeaseExpiresAt        string    `json:"lease_expires_at"`
+		GracePeriod           int       `json:"grace_period"`
+		StuckThresholdSeconds string    `json:"stuck_threshold_seconds"`
+		ExpectedLastHeartbeat string    `json:"expected_last_heartbeat"`
+		LeaseExtended         bool      `json:"lease_extended"`
+		State                 string    `json:"state"`
+		LastHeartbeat         string    `json:"last_heartbeat"`
+		TTLSeconds            int       `json:"ttl_seconds"`
+		LeaseUpdatedAt        time.Time `json:"lease_updated_at"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&heartbeatResp); err != nil {

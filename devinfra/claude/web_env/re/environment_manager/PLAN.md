@@ -167,13 +167,19 @@ These come from updated gRPC and OTel dependency versions, not application-level
 - [x] Updated main.go version string and obfuscation notice
 - [x] Updated PLAN.md, REVERSE_ENGINEERING_TODOS.md, BINDIFF_RESULTS.md
 - [x] Add missing source files identified from old binary paths (all 11 .go files created)
-- [x] Remove dead Supabase source files from `src/`
+- [x] Remove dead Supabase source files from `src/` (client.go, registration.go, server.go)
 - [x] Remove dead Vercel/Antspace source files from `src/`
-- [ ] Update `auth/context.go` to remove Supabase/Vercel/Antspace fields
-- [ ] Update `tunnel/actions/deploy/action.go` for new filestore mechanism
-- [ ] Remove Baku-specific functions from `anthropic.go`
+- [x] Update `auth/context.go` to remove Supabase/Vercel/Antspace fields and methods
+- [x] Update `tunnel/actions/deploy/action.go` for new filestore mechanism
+- [x] Remove Baku-specific functions from `anthropic.go` and `skill_content.go`
+- [x] Remove Supabase MCP server registration from `manager/mcp.go`
+- [x] Add key JSON fields discovered in verification to RE source structs
+  - [x] `StartupContext`: `use_code_sessions`, `use_sandbox_gateway_config`, `custom_system_prompt`, `append_system_prompt`, `model`, `allowed_tools`, `disallowed_tools`, `enabled_tools`, `environment_sub_type`, `entrypoint`, `filestore_url`, `filesystem_id`, `worker_id`
+  - [x] `WorkerEpoch` type corrected to `int64` with `json:"worker_epoch,string,omitempty"`
+  - [x] Lease heartbeat response: `lease_extended`, `state`, `last_heartbeat`, `ttl_seconds`, `lease_updated_at`
+  - [x] `jwt` auth field added
+- [x] Document env var path separation in `v1_parser.go` `sessionContext` comment
 - [ ] Create `internal/envtype/shared/` package (currently inlined in `skill_content.go`)
-- [ ] Add 17+ JSON fields discovered in verification to RE source structs (see `VERIFICATION_REPORT.md`)
 - [ ] DWARF-based reconstruction (IMPOSSIBLE -- binary is garble-obfuscated)
 
 ## Open Items

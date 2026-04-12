@@ -42,74 +42,53 @@ See `BINDIFF_RESULTS.md` for full analysis. Key findings:
 - CLI flags and sandbox settings
 - Heartbeat/lease response structure
 
-## Priority 1: Remove Dead Code from `src/` (HIGH)
+## ~~Priority 1: Remove Dead Code from `src/`~~ -- DONE
 
-The binary diff proves these source files represent code no longer in the binary.
-They must be removed to avoid misleading future RE work.
+All dead code from removed features has been removed from `src/`:
 
-### Files to delete
+- Deleted: `internal/mcp/servers/supabase/` (client.go, registration.go, server.go)
+- Deleted: `internal/tunnel/actions/deploy/vercel.go`
+- Deleted: `internal/tunnel/actions/deploy/antspace.go`
+- Cleaned: `internal/auth/context.go` -- Supabase/Vercel/Antspace fields and methods removed
+- Cleaned: `internal/manager/mcp.go` -- Supabase MCP server registration removed
+- Cleaned: `internal/envtype/anthropic/anthropic.go` -- Baku functions removed
+- Cleaned: `internal/envtype/anthropic/skill_content.go` -- Baku embedded content removed
 
-- `internal/mcp/servers/supabase/client.go`
-- `internal/mcp/servers/supabase/registration.go`
-- `internal/mcp/servers/supabase/server.go`
-- `internal/tunnel/actions/deploy/vercel.go`
-- `internal/tunnel/actions/deploy/antspace.go`
+## ~~Priority 2: Add Discovered JSON Fields to RE Source~~ -- DONE
 
-### Code to remove from existing files
+Key struct updates applied:
 
-- `internal/auth/context.go`: Remove `supabaseAnonKey`, `supabaseDBPass`,
-  `supabasePAT`, `supabaseProjectRef` fields and `HasSupabase()`,
-  `GetSupabaseAnonKey()`, `GetSupabasePAT()`, `GetSupabaseDBPass()`,
-  `GetSupabaseProjectRef()` methods. Remove `vercelDeployToken`,
-  `antspaceAuthToken`, `antspaceControlPlaneURL` fields and their getters.
-- `internal/manager/mcp.go`: Remove Supabase MCP server registration.
-- `internal/envtype/anthropic/anthropic.go`: Remove `findExistingBakuProject()`,
-  `initializeBakuProject()`, `bootstrapBakuSettings()` functions and Baku
-  template paths (`/opt/baku-templates/vite-template`,
-  `/home/claude/project/.baku/explorations`, `/home/claude/project/.baku/drafts`).
-- `internal/envtype/anthropic/skill_content.go`: Remove Baku-specific embedded
-  content (stop-hook-baku.sh, baku settings JSON).
+- `StartupContext` / `startupContextJSON`: added `use_code_sessions`, `use_sandbox_gateway_config`,
+  `custom_system_prompt`, `append_system_prompt`, `model`, `allowed_tools`, `disallowed_tools`,
+  `enabled_tools`, `environment_sub_type`, `entrypoint`, `filestore_url`, `filesystem_id`, `worker_id`
+- `WorkerEpoch` corrected to `int64` with `json:"worker_epoch,string,omitempty"` (was `string`)
+- Lease heartbeat response struct in `lease_manager.go`: added `lease_extended`, `state`,
+  `last_heartbeat`, `ttl_seconds`, `lease_updated_at`
+- `jwt` field added to auth context
 
-## Priority 2: Add Discovered JSON Fields to RE Source (MEDIUM)
+Note: `internal/envtype/shared/` package (embedded settings JSON, stop hook scripts) is
+currently inlined in `skill_content.go`. In the actual source this is a separate `shared`
+package used by both `anthropic` and `byoc` env types — splitting is still pending.
 
-The verification report identified 17+ JSON fields present in the binary but
-missing from the RE source structs. These should be added to the corresponding
-Go struct definitions. See `VERIFICATION_REPORT.md` "New Fields Discovered"
-section for the full list.
+## ~~Priority 3: Update Deploy Action for Filestore~~ -- DONE
 
-Key structs to update:
+`internal/tunnel/actions/deploy/action.go` updated to use `filestore_url` and
+`filesystem_id`. Actual upload logic is garble-obfuscated and cannot be recovered
+without runtime observation of a live deployment.
 
-- Startup context / V1 input struct (`use_code_sessions`, `use_sandbox_gateway_config`, etc.)
-- Gateway / StartupContext extended struct (`custom_system_prompt`, `append_system_prompt`, `model`, `allowed_tools`, etc.)
-- Lease info struct (`lease_extended`, `state`, `last_heartbeat`, etc.)
+## ~~Priority 4: Investigate `jwt` Auth Field~~ -- DONE
 
-Note: `internal/envtype/shared/` package contains embedded content (settings JSON,
-stop hook scripts) that is currently in `skill_content.go`. In the actual source
-this is a separate `shared` package used by both `anthropic` and `byoc` env types.
-
-## Priority 3: Update Deploy Action for Filestore (LOW)
-
-`internal/tunnel/actions/deploy/action.go` now uses `filestore_url` and
-`filesystem_id` instead of Vercel/Antspace. The actual logic is fully garbled
-and cannot be recovered without runtime observation of a live deployment.
-
-## Priority 4: Investigate `jwt` Auth Field (LOW)
-
-The new `json:"jwt"` field in the binary is not part of the V0/V1 session context
-structs. It may be part of a new auth mechanism or internal API response. Location
-in the code is unknown.
+The `json:"jwt"` field has been added to the auth context struct. Its exact purpose
+(new auth mechanism vs internal API response) remains unclear from the obfuscated binary.
 
 ## Known Gaps in the Source
 
-The source contains 27 `TODO(re)` markers across 8 files (inherited from the
-a6f96673 reconstruction). With the binary diff findings, additional gaps are now
-documented:
-
-- **Dead Baku code**: Functions and embedded content that should be removed
-- **Missing JSON fields**: 17+ fields discovered in verification not yet in RE source
-- **New deploy mechanism**: `filestore_url`/`filesystem_id` logic is unknown
-- **Obfuscated env vars**: `CLAUDE_CODE_*` constants are garbled in new binary
+- **`internal/envtype/shared/` package**: Embedded content (settings JSON, stop hook
+  scripts) currently inlined in `skill_content.go`; should be a separate package
+- **Obfuscated env vars**: `CLAUDE_CODE_*` constants are garbled in the new binary
 - **Stale binary addresses**: All `0x...` addresses in comments are from a6f96673
+- **TODO(re) markers**: Remaining markers document garble-obfuscated logic that
+  cannot be recovered without runtime observation
 
 ## What Was Verified (2026-03-26)
 

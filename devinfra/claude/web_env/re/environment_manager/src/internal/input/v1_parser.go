@@ -134,6 +134,22 @@ func (p *V1Parser) buildSessionResult(workResp *V1WorkResponse, authCtx *auth.Au
 }
 
 // sessionContext represents the session context data from the API.
+//
+// Two distinct env var paths flow through this struct:
+//
+//   - StartupContext (json:"startup_context") contains the user-facing "Environment
+//     Variables" knob from Claude Code web. These are deserialized into
+//     ParsedContext.StartupContext.EnvironmentVariables and then appended to the
+//     Claude Code process's environment in ClaudeCodeExecutor.Execute(). They reach
+//     Claude and its children (including the hook daemon) but NOT the setup script.
+//
+//   - EnvironmentConfig (json:"environment") is Anthropic's internal config blob
+//     (anthropicConfig), decoded by DecodeConfig(). Its EnvironmentVariables field
+//     is passed to RunInit() as part of environment initialization, reaching only
+//     the setup script subprocess — NOT the Claude Code process.
+//
+// This is why SOPS_AGE_KEY set via the "Environment Variables" knob is available
+// to Claude and hook daemons but absent when web_setup.sh runs.
 type sessionContext struct {
 	StartupContext    json.RawMessage       `json:"startup_context"`
 	EnvironmentConfig json.RawMessage       `json:"environment"`
