@@ -62,6 +62,38 @@ Container starts (SOPS_AGE_KEY in container env from the start)
             └── Source session env file → have all secrets
 ```
 
+### Env vars received by each subprocess
+
+The following is based on best-effort RE of the `environment-manager` binary (Build ID
+`495ea204`) — see `web_env/re/environment_manager/src/` for RE source. The RE is a
+reconstruction and may have gaps; the running binary is the ground truth.
+
+**`claude --init-only`** (runs `web_setup.sh`):
+
+- Inherits environment-manager's full process env via `syscall.Environ()` — includes
+  `SOPS_AGE_KEY` from the k8s pod secret, `HTTPS_PROXY`, and all other container-level vars
+- Plus `anthropicConfig.EnvironmentVariables` (from the `environment.environment_variables`
+  API field) appended as `key=value` pairs
+- Does **not** receive `startup_context.environment_variables` (the user's UI vars)
+
+RE evidence: `claude/init.go:RunInit` starts `claude --init-only` with
+`cmd.Env = syscall.Environ()` then appends `anthropicConfig.EnvironmentVariables`.
+
+**Claude Code** (interactive session):
+
+- Inherits environment-manager's full process env via `os.Environ()` — same container
+  env as above
+- Plus `startup_context.environment_variables` (user's "Environment Variables" UI knob)
+  appended as `key=value` pairs
+- Plus fixed vars: `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_SESSION_ID`,
+  `CLAUDE_CODE_REMOTE_SESSION_ID`, `CLAUDE_CODE_ENVIRONMENT_RUNNER_VERSION`,
+  `CLAUDE_CODE_DIAGNOSTICS_FILE`
+
+RE evidence: `claude/claude_code_executor.go:Execute` starts with `envVars = os.Environ()`
+then appends `e.Config.EnvironmentVariables` (= `StartupContext.EnvironmentVariables`).
+`cmd/cmd_task_run.go` creates the executor with `parsedCtx.StartupContext` after
+`Manager.Run()` returns.
+
 ### Why two paths?
 
 `settings.local.json` and `startup_env_script` serve different consumers:
@@ -102,7 +134,7 @@ These come from the sessions API response: `startup_context.environment_variable
 Flow:
 1. Sessions API: `GET /v1/sessions/<id>/context` → `startup_context.environment_variables`
 2. `v1_parser.go:buildStartupContext()` → `config.StartupContext.EnvironmentVariables`
-3. `manager.go:RunSession()` → `ClaudeCodeExecutor{Config: startupContext}`
+3. `cmd/cmd_task_run.go` creates `ClaudeCodeExecutor{Config: parsedCtx.StartupContext}` after `Manager.Run()`
 4. `claude_code_executor.go:Execute()` → appended to Claude Code subprocess env
 
 **Result**: Claude and everything it spawns (hook daemon calls, tools) sees these vars.
@@ -116,11 +148,14 @@ Flow:
 1. Sessions API response: `environment.environment_variables` (internal Anthropic config)
 2. `v1_parser.go:buildEnvironmentResponse()` → raw JSON for `anthropicConfig`
 3. `anthropic.go:Initialize()` → `claude.RunInit(..., e.config.EnvironmentVariables)`
-4. `RunInit()` runs `claude --init-only` with only these vars in env
+4. `RunInit()` (RE: `claude/init.go`) runs `claude --init-only` with `syscall.Environ()`
+   (full process env, including `SOPS_AGE_KEY` from k8s pod secret) plus these vars appended
 
-**Result**: The setup script sees only these internal vars — NOT the user's UI vars.
+**Result**: The setup script sees the full container environment plus
+`anthropicConfig.EnvironmentVariables`. It does **not** receive
+`startup_context.environment_variables` (the user's UI vars).
 This is why `SOPS_AGE_KEY` set via the "Environment Variables" UI knob is **not**
-available during `web_setup.sh` (which runs as the setup script).
+available during `web_setup.sh` — the UI vars go to path 1 (Claude Code), not here.
 
 ## startup_env_script: The Right Hook
 
