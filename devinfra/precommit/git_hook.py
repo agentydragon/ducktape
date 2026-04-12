@@ -208,6 +208,9 @@ def _run_prepare_commit_msg(argv: list[str]) -> int:
 
 _TEST_TAG_ENV_VAR = "DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG"
 
+# TODO: Re-enable by default once pytest_main_check is faster.
+_PYTEST_MAIN_CHECK_ENV_VAR = "DUCKTAPE_PYTEST_MAIN_CHECK"
+
 
 def _run_commit_msg(argv: list[str]) -> int:
     if os.environ.get(_TEST_TAG_ENV_VAR) not in ("1", "true"):
@@ -236,6 +239,9 @@ def main_pre_commit() -> int:
 
 
 def main_pytest_main_check() -> int:
+    if os.environ.get(_PYTEST_MAIN_CHECK_ENV_VAR) not in ("1", "true"):
+        return 0
+
     repo = pygit2.Repository(".")
     repo_root = Path(repo.workdir)
     _setup_tracing(repo)
