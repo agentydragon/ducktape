@@ -84,7 +84,7 @@ async def test_strips_grocy_api_key_header():
         await http.get("/api/stock", headers={"GROCY-API-KEY": "should-be-stripped"})
 
     upstream_req = upstream_route.calls[0].request
-    assert "grocy-api-key" not in {k.lower() for k in upstream_req.headers.keys()}
+    assert "grocy-api-key" not in {k.lower() for k in upstream_req.headers}
 
 
 @respx.mock
@@ -158,7 +158,7 @@ async def test_strips_hop_by_hop_response_headers():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
         resp = await http.get("/api/stock")
 
-    header_keys = {k.lower() for k in resp.headers.keys()}
+    header_keys = {k.lower() for k in resp.headers}
     assert "connection" not in header_keys
     assert "keep-alive" not in header_keys
     assert "x-custom" in header_keys
@@ -190,7 +190,7 @@ async def test_upstream_trailing_slash_does_not_double_slash():
     respx.post(TOKEN_URL).mock(return_value=Response(200, json={"access_token": "tok", **_TOKEN_RESPONSE}))
     upstream_route = respx.get(f"{UPSTREAM_URL}/api/stock").mock(return_value=Response(200))
 
-    app = create_app(f"{UPSTREAM_URL}/", lambda: _make_client())
+    app = create_app(f"{UPSTREAM_URL}/", _make_client)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
         resp = await http.get("/api/stock")
 
