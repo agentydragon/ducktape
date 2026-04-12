@@ -37,26 +37,29 @@ Container starts (SOPS_AGE_KEY in container env from the start)
 │       { "env": { "DUCKTAPE_CLAUDE_HOOKS_PROFILE": "...",
 │                  "BUILDBUDDY_API_KEY": "...",          ← for pre-commit
 │                  "GITHUB_TOKEN": "...", ... } }
-│       Claude Code injects settings.local.json["env"] into:
-│         - All hook subprocesses
-│         - MCP server processes  ← only path that reaches them
-│       (kube MCP server self-decrypts via kube_from_sops.sh — not listed here)
 │
-└── Hook daemon starts (inherits SOPS_AGE_KEY from container env)
-    ├── Loads profile (profiles/web/profile.yaml)
+└── environment-manager starts Claude Code (interactive)
+    │   Claude Code reads settings.local.json["env"] and injects it into:
+    │     - All hook subprocesses (including the hook daemon)
+    │     - MCP server processes  ← only path that reaches them
+    │   (kube MCP server self-decrypts via kube_from_sops.sh — not listed here)
     │
-    ├── Runs startup_env_script: devinfra/secrets/web_env.sh
-    │   → Decrypts all SOPS secrets into daemon os.environ (reliable path)
-    │
-    ├── Session starts (SessionStart hook fires)
-    │   ├── Reads secrets from os.environ
-    │   ├── Writes kubeconfig from K8S_TOKEN
-    │   ├── Configures BuildBuddy from BUILDBUDDY_API_KEY
-    │   ├── Sets up fork remote from GITHUB_TOKEN
-    │   └── Writes session env file including startup_env_vars block
-    │
-    └── Claude Code process + hook subprocesses
-        └── Source session env file → have all secrets
+    └── First hook dispatch → `claude-hook` entrypoint → Hook daemon starts
+        │   (inherits SOPS_AGE_KEY + settings.local.json["env"] from Claude Code)
+        ├── Loads profile (profiles/web/profile.yaml)
+        │
+        ├── Runs startup_env_script: devinfra/secrets/web_env.sh
+        │   → Decrypts all SOPS secrets into daemon os.environ
+        │
+        ├── Session starts (SessionStart hook fires)
+        │   ├── Reads secrets from os.environ
+        │   ├── Writes kubeconfig from K8S_TOKEN
+        │   ├── Configures BuildBuddy from BUILDBUDDY_API_KEY
+        │   ├── Sets up fork remote from GITHUB_TOKEN
+        │   └── Writes session env file including startup_env_vars block
+        │
+        └── Subsequent hook subprocesses
+            └── Source session env file → have all secrets
 ```
 
 ### Why two paths?
