@@ -19,5 +19,5 @@ spec:
       name: grocy-mcp
       namespace: grocy-mcp
   dependsOn:
-    - name: machine-access-tf
+    - name: agent-machine-access-tf
     - name: reflector
