@@ -13,6 +13,12 @@ entries:
   # proxy outposts do). It uses authentik_host for both internal communication
   # and browser-facing redirects. Internal connectivity uses localhost implicitly
   # since the outpost runs in the server process.
+  #
+  # NOTE: when a provider listed below is recreated in Authentik (e.g. by a TF
+  # destroy/apply cycle), the outpost's stored providers list keeps a dangling
+  # reference to the old DB ID until this blueprint is re-applied. Touch this
+  # file (git commit) to bump the underlying ConfigMap's resourceVersion and
+  # trigger Authentik's blueprint watcher to re-resolve the !Find refs below.
   - model: authentik_outposts.outpost
     state: present
     identifiers:
