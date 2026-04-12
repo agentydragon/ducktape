@@ -98,12 +98,12 @@ then appends `e.Config.EnvironmentVariables` (= `StartupContext.EnvironmentVaria
 
 `settings.local.json` and `startup_env_script` serve different consumers:
 
-| Consumer | Gets env from | Path |
-|----------|--------------|-------|
-| kube MCP server | `kube_from_sops.sh` (self-decrypts at startup) | `claude-sandbox-kubectl-mcp.sh` |
-| Other MCP servers | `settings.local.json["env"]` | web_setup.sh |
-| Hook daemon subprocesses | session env file | startup_env_script |
-| Claude Code process | `settings.local.json["env"]` + session env file | both |
+| Consumer                 | Gets env from                                   | Path                            |
+| ------------------------ | ----------------------------------------------- | ------------------------------- |
+| kube MCP server          | `kube_from_sops.sh` (self-decrypts at startup)  | `claude-sandbox-kubectl-mcp.sh` |
+| Other MCP servers        | `settings.local.json["env"]`                    | web_setup.sh                    |
+| Hook daemon subprocesses | session env file                                | startup_env_script              |
+| Claude Code process      | `settings.local.json["env"]` + session env file | both                            |
 
 The kube MCP server (`claude-sandbox-kubectl-mcp.sh`) is self-sufficient: it
 calls `kube_from_sops.sh` to decrypt the token and write a temp kubeconfig,
@@ -132,6 +132,7 @@ different places and delivered to different processes:
 These come from the sessions API response: `startup_context.environment_variables`.
 
 Flow:
+
 1. Sessions API: `GET /v1/sessions/<id>/context` → `startup_context.environment_variables`
 2. `v1_parser.go:buildStartupContext()` → `config.StartupContext.EnvironmentVariables`
 3. `cmd/cmd_task_run.go` creates `ClaudeCodeExecutor{Config: parsedCtx.StartupContext}` after `Manager.Run()`
@@ -145,6 +146,7 @@ Flow:
 These come from: `environment.environment_variables` in the same API response.
 
 Flow:
+
 1. Sessions API response: `environment.environment_variables` (internal Anthropic config)
 2. `v1_parser.go:buildEnvironmentResponse()` → raw JSON for `anthropicConfig`
 3. `anthropic.go:Initialize()` → `claude.RunInit(..., e.config.EnvironmentVariables)`
@@ -170,18 +172,18 @@ available during `web_setup.sh` — the UI vars go to path 1 (Claude Code), not 
 
 ## What Lives Where
 
-| Secret | `settings.local.json` (for MCP) | Session env file (for hooks) |
-|--------|----------------------------------|------------------------------|
-| `BUILDBUDDY_API_KEY` | web_setup.sh | startup_env_script (reliable) |
-| `GITHUB_TOKEN` | web_setup.sh | startup_env_script (reliable) |
-| `K8S_TOKEN` | web_setup.sh | startup_env_script (reliable) |
-| `CLAUDE_SANDBOX_K8S_TOKEN` | n/a — MCP launcher decrypts directly | n/a — `~/.kube/config` written by web_env.sh |
-| `DUCKTAPE_OTEL_BEARER_TOKEN` | web_setup.sh | startup_env_script (reliable) |
-| `DUCKTAPE_CI_READ_GITHUB_TOKEN` | web_setup.sh | startup_env_script (reliable) |
-| `DUCKTAPE_CLAUDE_HOOKS_PROFILE` | web_setup.sh (**required** — daemon needs this before startup_env_script) | n/a |
-| User env vars (UI knob) | n/a | Sessions API `startup_context` → Claude Code only |
-| Setup-script env vars | n/a | Sessions API `environment` → setup script (`--init-only`) only |
-| `SOPS_AGE_KEY` | n/a (k8s container env, available to all) | n/a |
+| Secret                          | `settings.local.json` (for MCP)                                           | Session env file (for hooks)                                   |
+| ------------------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `BUILDBUDDY_API_KEY`            | web_setup.sh                                                              | startup_env_script (reliable)                                  |
+| `GITHUB_TOKEN`                  | web_setup.sh                                                              | startup_env_script (reliable)                                  |
+| `K8S_TOKEN`                     | web_setup.sh                                                              | startup_env_script (reliable)                                  |
+| `CLAUDE_SANDBOX_K8S_TOKEN`      | n/a — MCP launcher decrypts directly                                      | n/a — `~/.kube/config` written by web_env.sh                   |
+| `DUCKTAPE_OTEL_BEARER_TOKEN`    | web_setup.sh                                                              | startup_env_script (reliable)                                  |
+| `DUCKTAPE_CI_READ_GITHUB_TOKEN` | web_setup.sh                                                              | startup_env_script (reliable)                                  |
+| `DUCKTAPE_CLAUDE_HOOKS_PROFILE` | web_setup.sh (**required** — daemon needs this before startup_env_script) | n/a                                                            |
+| User env vars (UI knob)         | n/a                                                                       | Sessions API `startup_context` → Claude Code only              |
+| Setup-script env vars           | n/a                                                                       | Sessions API `environment` → setup script (`--init-only`) only |
+| `SOPS_AGE_KEY`                  | n/a (k8s container env, available to all)                                 | n/a                                                            |
 
 ## CLI Profile
 
