@@ -176,5 +176,7 @@ visual_test_matrix(
     pages = [
         "ListPage",
         "DetailPage",
+        "BackendsPage",
+        "OAuthPage",
     ],
 )

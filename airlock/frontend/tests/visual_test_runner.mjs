@@ -11,7 +11,7 @@ if (!page || !baselineName) {
   process.exit(1);
 }
 
-const options = { baselineName, colorScheme };
+const options = { baselineName, colorScheme, waitMs: 500 };
 if (viewportWidth !== 1200 || viewportHeight !== 800) {
   options.viewport = { width: viewportWidth, height: viewportHeight };
 }

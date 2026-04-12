@@ -113,9 +113,10 @@ function compareBaseline(name, screenshot, outputDir, baselineDir, updateWriteDi
  *
  * @param {string} scenarioName - Harness page name (e.g. "ListPage").
  * @param {string|null} callerUrl - import.meta.url of the calling test file (for baseline dir resolution).
- * @param {{ viewport?: { width: number, height: number }, baselineName?: string, colorScheme?: 'light' | 'dark' }} [options] - Optional overrides.
+ * @param {{ viewport?: { width: number, height: number }, baselineName?: string, colorScheme?: 'light' | 'dark', waitMs?: number }} [options] - Optional overrides.
  *   baselineName overrides the filename stem for the baseline PNG (defaults to scenarioName).
  *   colorScheme sets the `prefers-color-scheme` media feature (defaults to 'light').
+ *   waitMs overrides the settle delay after `#app > *` appears (defaults to 200).
  */
 export async function main(scenarioName, callerUrl = null, options = {}) {
   const baselineName = options.baselineName || scenarioName;
@@ -228,7 +229,7 @@ export async function main(scenarioName, callerUrl = null, options = {}) {
     console.log(`Testing: ${baselineName} (page=${scenarioName})`);
     await page.goto(`${harnessUrl}?page=${scenarioName}`, { waitUntil: "networkidle0" });
     await page.waitForSelector("#app > *", { timeout: 5000 });
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, options.waitMs ?? 200));
 
     const element = await page.$("#app");
     const screenshotData = await element.screenshot();
