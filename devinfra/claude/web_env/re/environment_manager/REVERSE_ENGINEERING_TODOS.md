@@ -2,10 +2,6 @@
 
 Binary: Build ID `495ea204`, version `release-d84d76b7-ext`
 
-**Status:** Binary diff (2026-03-26) revealed major code changes from a6f96673.
-The source in `src/` contains dead code from removed features. All previously
-missing source files have been created.
-
 ## Critical Constraint: Binary Is Garble-Obfuscated
 
 The 495ea204 binary is obfuscated using garble (Go obfuscator):
@@ -42,59 +38,13 @@ See `BINDIFF_RESULTS.md` for full analysis. Key findings:
 - CLI flags and sandbox settings
 - Heartbeat/lease response structure
 
-## ~~Priority 1: Remove Dead Code from `src/`~~ -- DONE
-
-All dead code from removed features has been removed from `src/`:
-
-- Deleted: `internal/mcp/servers/supabase/` (client.go, registration.go, server.go)
-- Deleted: `internal/tunnel/actions/deploy/vercel.go`
-- Deleted: `internal/tunnel/actions/deploy/antspace.go`
-- Cleaned: `internal/auth/context.go` -- Supabase/Vercel/Antspace fields and methods removed
-- Cleaned: `internal/manager/mcp.go` -- Supabase MCP server registration removed
-- Cleaned: `internal/envtype/anthropic/anthropic.go` -- Baku functions removed
-- Cleaned: `internal/envtype/anthropic/skill_content.go` -- Baku embedded content removed
-
-## ~~Priority 2: Add Discovered JSON Fields to RE Source~~ -- DONE
-
-Key struct updates applied:
-
-- `StartupContext` / `startupContextJSON`: added `use_code_sessions`, `use_sandbox_gateway_config`,
-  `custom_system_prompt`, `append_system_prompt`, `model`, `allowed_tools`, `disallowed_tools`,
-  `enabled_tools`, `environment_sub_type`, `entrypoint`, `filestore_url`, `filesystem_id`, `worker_id`
-- `WorkerEpoch` corrected to `int64` with `json:"worker_epoch,string,omitempty"` (was `string`)
-- Lease heartbeat response struct in `lease_manager.go`: added `lease_extended`, `state`,
-  `last_heartbeat`, `ttl_seconds`, `lease_updated_at`
-- `jwt` field added to auth context
-
-Note: `internal/envtype/shared/` package (embedded settings JSON, stop hook scripts) is
-currently inlined in `skill_content.go`. In the actual source this is a separate `shared`
-package used by both `anthropic` and `byoc` env types — splitting is still pending.
-
-## ~~Priority 3: Update Deploy Action for Filestore~~ -- DONE
-
-`internal/tunnel/actions/deploy/action.go` updated to use `filestore_url` and
-`filesystem_id`. Actual upload logic is garble-obfuscated and cannot be recovered
-without runtime observation of a live deployment.
-
-## ~~Priority 4: Investigate `jwt` Auth Field~~ -- DONE
-
-The `json:"jwt"` field has been added to the auth context struct. Its exact purpose
-(new auth mechanism vs internal API response) remains unclear from the obfuscated binary.
-
-## Known Gaps in the Source
+## Remaining Work
 
 - **`internal/envtype/shared/` package**: Embedded content (settings JSON, stop hook
   scripts) currently inlined in `skill_content.go`; should be a separate package
 - **Obfuscated env vars**: `CLAUDE_CODE_*` constants are garbled in the new binary
 - **Stale binary addresses**: All `0x...` addresses in comments are from a6f96673
+- **New deploy mechanism**: `filestore_url`/`filesystem_id` logic is fully garbled;
+  cannot be recovered without runtime observation of a live deployment
 - **TODO(re) markers**: Remaining markers document garble-obfuscated logic that
   cannot be recovered without runtime observation
-
-## What Was Verified (2026-03-26)
-
-- CLI flags: all subcommands identical flags and defaults
-- Sandbox settings: `enableWeakerNestedSandbox: false`, same domain lists
-- Version string: `release-d84d76b7-ext`
-- V0/V1 struct layouts: field-by-field match via garbled type recovery
-- Removed features: confirmed via string count comparison (HIGH confidence)
-- New fields: `filestore_url`, `filesystem_id`, `jwt` (HIGH confidence)
