@@ -24,3 +24,5 @@ resources:
   - token-provisioner-image-policy.yaml
   - claude-token-rotation-image-repository.yaml
   - claude-token-rotation-image-policy.yaml
+  - grocy-auth-proxy-image-repository.yaml
+  - grocy-auth-proxy-image-policy.yaml

@@ -1,0 +1,23 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: grocy-mcp
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./cluster/k8s/agents/grocy-mcp
+  prune: true
+  wait: true
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: grocy-mcp
+      namespace: grocy-mcp
+  dependsOn:
+    - name: machine-access-tf
+    - name: reflector

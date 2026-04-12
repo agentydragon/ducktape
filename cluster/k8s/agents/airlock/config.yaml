@@ -3,6 +3,8 @@ backends:
     url: http://kubeapi-admin-exec-mcp.airlock.svc.cluster.local:8766/mcp
   google_workspace_mcp:
     url: http://google-workspace-mcp.google-workspace-mcp.svc.cluster.local:8000/mcp
+  grocy:
+    url: http://grocy-mcp.grocy-mcp.svc.cluster.local:3000/mcp
 
 public_base_url: "https://airlock.allegedly.works"
 oidc_issuer: "https://auth.allegedly.works/application/o/airlock/"

@@ -155,9 +155,9 @@ resource "kubernetes_secret" "grocy_machine_credentials" {
     namespace = "claude-sandbox"
     annotations = {
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "openclaw-sandbox"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "openclaw-sandbox,grocy-mcp"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "openclaw-sandbox"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "openclaw-sandbox,grocy-mcp"
     }
   }
 
@@ -166,5 +166,6 @@ resource "kubernetes_secret" "grocy_machine_credentials" {
     username     = authentik_user.grocy_machine_sa.username
     app_password = authentik_token.grocy_machine_app_password.key
     token_url    = "https://auth.allegedly.works/application/o/token/"
+    upstream_url = "https://grocy.allegedly.works"
   }
 }
