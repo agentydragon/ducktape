@@ -102,16 +102,19 @@ git -C /home/user/ducktape log --oneline -1
 # How many devinfra/claude/ commits have landed since the pin was last updated?
 git -C /home/user/ducktape log --oneline -10 -- devinfra/claude/ npins/sources.json
 
-# Key compatibility check: does installed server.py use HookConfig (old) or ProfileConfig (new)?
-grep -c 'HookConfig' /nix/store/*claude-hooks-latest*/lib/python3.13/site-packages/devinfra/claude/hook_daemon/server.py 2>/dev/null \
-  && echo "STALE: installed daemon uses HookConfig (old API, expects config.yaml)" \
-  || echo "OK: installed daemon uses ProfileConfig (new API)"
-
 # When was the pin last updated?
 git -C /home/user/ducktape log --oneline -3 -- npins/sources.json
 ```
 
-**If the pin is behind HEAD**, check GitHub CI on `agentydragon/ducktape` to
+**If the pin is behind HEAD**, diff the installed package against the repo
+source to spot breaking changes: look at the git log for `devinfra/claude/`
+since the pinned commit, read the relevant changed files in both the installed
+Nix store package and the repo, and use your judgement to assess whether any
+of those changes are likely to cause incompatibility with the running session.
+Report any suspicious mismatches (e.g. renamed classes, changed config file
+paths, new required fields, removed hooks).
+
+Also check GitHub CI on `agentydragon/ducktape` to
 understand whether an update is expected soon or something is wedged. Look at:
 
 - Recent `release.yml` runs on `devel` — did it pass after the relevant commit?
@@ -161,12 +164,6 @@ ls ~/.claude/session-env/$LIVE/bazelrc 2>/dev/null && echo "session bazelrc pres
 # Is the git proxy shim running? (bbr connects via 127.0.0.1:35233)
 ss -tlnp 2>/dev/null | grep 35233 || echo "git proxy NOT listening on 35233"
 ```
-
-**Common failure: `FileNotFoundError: Hook config not found: .claude_hooks/config.yaml`**
-
-This means the installed `claude-hooks` package is stale — it still calls
-`HookConfig.load_from_repo()` looking for `config.yaml`, but the repo was
-refactored to use standalone `web.yaml`. See check #2.
 
 **Suggested fix if env file is missing** (do not run — report to user):
 
