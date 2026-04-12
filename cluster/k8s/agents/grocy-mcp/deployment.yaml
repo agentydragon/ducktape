@@ -76,20 +76,30 @@ spec:
               cpu: "200m"
         # MCP server: saya6k/mcp-grocy-api (40+ Grocy tools over streamable HTTP).
         #
-        # The ghcr.io/saya6k/mcp-grocy-api image is a Home Assistant add-on: its
-        # s6-overlay run script (`rootfs/etc/s6-overlay/app/run`) overwrites every
-        # relevant env var with `bashio::config ...` reads from an HA supervisor
-        # config.yaml we don't provide. Without HA supervisor, those reads return
-        # empty, and `set -e` kills the container on the first node check.
+        # Two image quirks we work around here:
         #
-        # Override entrypoint/command so we bypass s6-overlay entirely and run
-        # `node build/index.js` directly with the env vars the Pod spec already
-        # provides. /app is the WORKDIR baked into the image.
+        # 1. The ghcr.io/saya6k/mcp-grocy-api image is a Home Assistant add-on.
+        #    Its s6-overlay run script (`rootfs/etc/s6-overlay/app/run`)
+        #    overwrites every relevant env var with `bashio::config ...` reads
+        #    from an HA supervisor config.yaml we don't provide. Without HA
+        #    supervisor those reads return empty, and `set -e` kills the
+        #    container on the first failed check. Fix: bypass s6-overlay and
+        #    run `node build/index.js` directly, so env vars from this Pod
+        #    spec reach Node.js unchanged.
+        #
+        # 2. `src/index.ts::run()` unconditionally creates a StdioServerTransport
+        #    BEFORE starting the HTTP server. In Kubernetes without a TTY the
+        #    container's stdin is closed immediately, which causes the stdio
+        #    transport to see EOF, and the Node process exits before it gets
+        #    to start the HTTP server. Fix: keep stdin alive by piping from
+        #    `sleep infinity`. The sleep process never writes anything, so the
+        #    JSON-RPC stdio reader blocks harmlessly, and the HTTP server on
+        #    port 3000 starts normally for Airlock to talk to.
         - name: grocy-mcp
           image: ghcr.io/saya6k/mcp-grocy-api:latest
           imagePullPolicy: Always
-          command: ["node"]
-          args: ["build/index.js"]
+          command: ["/bin/sh", "-c"]
+          args: ["sleep infinity | node build/index.js"]
           workingDir: /app
           ports:
             - name: mcp
