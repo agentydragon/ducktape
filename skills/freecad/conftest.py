@@ -18,11 +18,10 @@ from util.testing.otel_tracing import configure_tracing
 # has its own OciImage. Remove once confirmed no new Docker-based tests are planned.
 # FREECAD_TEST = OciImage("_main/skills/freecad/freecad_test.rloc", "freecad-test:pinned")
 
-# Conda-based FreeCAD binary (rules_conda run_binary target).
-# Used as anchor to locate the conda env root in runfiles.
-_FREECADCMD_RLOCATION = "_main/skills/freecad/conda/freecadcmd"
-
 _CONDA_ENV_REPO = "rules_conda++conda+freecad_conda"
+
+# Anchor file inside the conda env — used to locate the conda root via Rlocation.
+_CONDA_FREECADCMD_RLOCATION = f"{_CONDA_ENV_REPO}/bin/freecadcmd"
 
 tracer = trace.get_tracer(__name__)
 
@@ -36,12 +35,11 @@ def pytest_configure(config: pytest.Config) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _find_conda_root(any_runfiles_path: Path) -> Path:
-    """Locate the conda env root from any path within the runfiles tree."""
-    p = any_runfiles_path.resolve()
-    while p.name and ".runfiles" not in p.name:
-        p = p.parent
-    conda_root = p / _CONDA_ENV_REPO
+def _find_conda_root() -> Path:
+    """Locate the conda env root via Rlocation of an anchor file inside the env."""
+    anchor = get_required_path(_CONDA_FREECADCMD_RLOCATION)
+    # anchor is <conda_root>/bin/freecadcmd → parent.parent is the conda root
+    conda_root = anchor.parent.parent
     if not conda_root.is_dir():
         raise RuntimeError(f"Conda env not found at {conda_root}")
     return conda_root
@@ -139,8 +137,8 @@ def copy_outputs(src: Path, dst: Path) -> None:
 
 @pytest.fixture(scope="session")
 def conda_root() -> Path:
-    """Locate the conda env root from the freecadcmd runfiles path."""
-    return _find_conda_root(get_required_path(_FREECADCMD_RLOCATION))
+    """Locate the conda env root via Rlocation."""
+    return _find_conda_root()
 
 
 @pytest.fixture(scope="session")

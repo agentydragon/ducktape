@@ -46,8 +46,6 @@ py_test(
         "front_right.png",
         "//skills/freecad/conda:freecadcmd",
     ],
-    # Stubs shadow FreeCAD conda C extensions. See debug/legacy-create-init-investigation.md
-    legacy_create_init = 0,
     deps = [
         ":build",
         ":build_techdraw",
@@ -72,8 +70,6 @@ py_test(
         "debug_faces.png",
         "//skills/freecad/conda:freecadcmd",
     ],
-    # Stubs shadow FreeCAD conda C extensions. See debug/legacy-create-init-investigation.md
-    legacy_create_init = 0,
     deps = [
         ":build",
         ":build_techdraw",

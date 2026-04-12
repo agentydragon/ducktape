@@ -130,7 +130,6 @@ py_test(
     name = "test_session_context",
     srcs = ["test_session_context.py"],
     data = ["__snapshots__/test_session_context.ambr"],
-    legacy_create_init = 0,
     uses_syrupy = True,
     deps = [
         ":container_runtime",

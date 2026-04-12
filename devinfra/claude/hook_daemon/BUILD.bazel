@@ -171,7 +171,6 @@ py_library(
 
 py_binary(
     name = "main",
-    legacy_create_init = 0,
     main_module = "devinfra.claude.hook_daemon.main",
     deps = [":main_lib"],
 )
@@ -258,7 +257,6 @@ py_test(
 py_test(
     name = "test_hook_daemon",
     srcs = ["test_hook_daemon.py"],
-    legacy_create_init = 0,
     deps = [
         ":config",
         ":models",
@@ -292,7 +290,6 @@ py_library(
 py_test(
     name = "test_hook_daemon_restart",
     srcs = ["test_hook_daemon_restart.py"],
-    legacy_create_init = 0,
     deps = [
         ":client",
         ":hook_daemon_conftest",
@@ -310,7 +307,6 @@ py_test(
     name = "test_ensure_daemon",
     size = "medium",
     srcs = ["test_ensure_daemon.py"],
-    legacy_create_init = 0,
     deps = [
         ":client",
         ":hook_daemon_conftest",
@@ -325,7 +321,6 @@ py_test(
 py_test(
     name = "test_pre_tool_use",
     srcs = ["test_pre_tool_use.py"],
-    legacy_create_init = 0,
     deps = [
         ":pre_tool_use_lib",
         ":session",
@@ -343,7 +338,6 @@ py_test(
     name = "test_post_tool_use",
     srcs = ["test_post_tool_use.py"],
     data = ["__snapshots__/test_post_tool_use.ambr"],
-    legacy_create_init = 0,
     uses_syrupy = True,
     deps = [
         ":config",
@@ -389,7 +383,6 @@ py_test(
         "@multitool//tools/ruff",
     ],
     env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
-    legacy_create_init = 0,
     deps = [
         ":config",
         ":hook_daemon_conftest",
