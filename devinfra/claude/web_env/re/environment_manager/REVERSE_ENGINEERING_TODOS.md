@@ -40,8 +40,6 @@ See `BINDIFF_RESULTS.md` for full analysis. Key findings:
 
 ## Remaining Work
 
-- **`internal/envtype/shared/` package**: Embedded content (settings JSON, stop hook
-  scripts) currently inlined in `skill_content.go`; should be a separate package
 - **Obfuscated env vars**: `CLAUDE_CODE_*` constants are garbled in the new binary
 - **Stale binary addresses**: All `0x...` addresses in comments are from a6f96673
 - **New deploy mechanism**: `filestore_url`/`filesystem_id` logic is fully garbled;

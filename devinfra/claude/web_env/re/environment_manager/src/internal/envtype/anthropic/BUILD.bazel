@@ -14,6 +14,7 @@ go_library(
         "//devinfra/claude/web_env/re/environment_manager/src/internal/config",
         "//devinfra/claude/web_env/re/environment_manager/src/internal/envtype",
         "//devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic/install_scripts",
+        "//devinfra/claude/web_env/re/environment_manager/src/internal/envtype/shared",
         "//devinfra/claude/web_env/re/environment_manager/src/internal/o11y",
         "//devinfra/claude/web_env/re/environment_manager/src/internal/process",
     ],

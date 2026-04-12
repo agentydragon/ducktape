@@ -28,6 +28,7 @@ import (
 
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/config"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/envtype"
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/envtype/shared"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/podmonitor"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/process"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/sources"
@@ -55,8 +56,8 @@ var stopHookScript []byte
 // envtype/shared.StopHookScript, stores into byoc.defaultSettingsJSON
 // and byoc.stopHookScript respectively.
 func init() {
-	// defaultSettingsJSON = shared.DefaultSettingsJSON
-	// stopHookScript = shared.StopHookScript
+	defaultSettingsJSON = shared.DefaultSettingsJSON
+	stopHookScript = shared.StopHookScript
 }
 
 // byocConfig holds the JSON-decoded configuration for a BYOC environment.

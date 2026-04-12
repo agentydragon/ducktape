@@ -58,6 +58,7 @@ import (
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/config"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/envtype"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/envtype/anthropic/install_scripts"
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/envtype/shared"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/o11y"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/process"
 )
@@ -82,14 +83,13 @@ var stopHookScript []byte
 // init copies shared defaults (DefaultSettingsJSON, StopHookScript) from the
 // shared package into package-level variables.
 //
-// Reconstructed from: anthropic.init (0xaf8480)
-// Assembly evidence: loads from envtype/shared.DefaultSettingsJSON and
+// Binary: anthropic.init (0xaf8480)
+// Assembly: loads from envtype/shared.DefaultSettingsJSON and
 // envtype/shared.StopHookScript, stores into anthropic.defaultSettingsJSON
 // and anthropic.stopHookScript.
 func init() {
-	// defaultSettingsJSON = shared.DefaultSettingsJSON
-	// stopHookScript = shared.StopHookScript
-	// (actual shared package references elided for compilation independence)
+	defaultSettingsJSON = shared.DefaultSettingsJSON
+	stopHookScript = shared.StopHookScript
 }
 
 // anthropicEnvironmentType implements envtype.EnvironmentType for Anthropic-hosted

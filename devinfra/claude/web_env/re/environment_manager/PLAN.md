@@ -149,9 +149,8 @@ These come from updated gRPC and OTel dependency versions, not application-level
 
 ### Phase 1: Census & Diff -- COMPLETE
 
-### Phase 2: Source Updates -- IN PROGRESS
+### Phase 2: Source Updates -- COMPLETE
 
-- [ ] Create `internal/envtype/shared/` package (currently inlined in `skill_content.go`)
 - [ ] DWARF-based reconstruction (IMPOSSIBLE -- binary is garble-obfuscated)
 
 ## Open Items
