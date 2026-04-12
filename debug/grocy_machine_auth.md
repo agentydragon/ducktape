@@ -1,75 +1,169 @@
 # Grocy Machine Auth Investigation
 
-**Goal**: Agents (claude-sandbox, openclaw-sandbox) can call the Grocy API at
-`grocy.allegedly.works` with a bearer token, alongside existing human OIDC SSO.
+Context: Grocy runs at `grocy.allegedly.works` behind an Authentik proxy outpost.
+Goal: enable agent/machine access without a human browser session.
 
-## Architecture
+## Grocy Authentication Architecture
+
+### AUTH_CLASS (single-valued)
+
+Grocy supports exactly **one** active auth class at a time, set via `AUTH_CLASS` in config
+or settingoverrides. There is no multi-provider mode. Available classes:
+
+| Class                                         | Mechanism                                                        |
+| --------------------------------------------- | ---------------------------------------------------------------- |
+| `Grocy\Middleware\DefaultAuthMiddleware`      | Username + password (Grocy DB), Argon2ID hashing                 |
+| `Grocy\Middleware\ReverseProxyAuthMiddleware` | Trusts a header (or env var) injected by a reverse proxy         |
+| `Grocy\Middleware\LdapAuthMiddleware`         | LDAP bind: service account search → user bind to verify password |
+| (custom)                                      | Any class implementing `Grocy\Middleware\AuthMiddleware`         |
+
+Auth bypass is a config toggle, not a class: set `DISABLE_AUTH=true` (or `GROCY_DISABLE_AUTH`
+env var). All requests use the default user (user ID 1). Also auto-enabled in dev/demo/prerelease
+`GROCY_MODE` values.
+
+**API keys are orthogonal**: `ApiKeyAuthMiddleware` is the base of every class above.
+All middleware chains check the `GROCY-API-KEY` header (or query param) _first_, before
+falling through to the class-specific mechanism. So API keys work alongside any AUTH_CLASS.
+
+### ReverseProxyAuthMiddleware (current)
+
+Config:
+
+| Setting                      | Default                 | Our value                    |
+| ---------------------------- | ----------------------- | ---------------------------- |
+| `AUTH_CLASS`                 | `DefaultAuthMiddleware` | `ReverseProxyAuthMiddleware` |
+| `REVERSE_PROXY_AUTH_HEADER`  | `REMOTE_USER`           | `X-authentik-username`       |
+| `REVERSE_PROXY_AUTH_USE_ENV` | `false`                 | `false` (use header)         |
+
+Behavior:
+
+- Reads username from the named header. Throws an exception (→ 500) if the header is missing or
+  empty — no graceful fallback to another auth method.
+- If the user doesn't exist in Grocy's DB, **auto-creates** it (empty password, default permissions).
+- Sets `GROCY_EXTERNALLY_MANAGED_AUTHENTICATION=true` internally, which hides password fields in
+  the user management UI.
+- Also accepts `GROCY-API-KEY` (checked first via the shared base).
+- **Security assumption**: the reverse proxy strips any client-supplied copy of the header.
+  Authentik's outpost enforces this — clients cannot inject `X-authentik-username` directly.
+
+### Native Grocy API Keys
+
+Independent of AUTH_CLASS. Managed per-user in the Grocy UI
+(Settings → Manage API keys) or via the API itself.
+
+- **Header**: `GROCY-API-KEY: <key>` (recommended)
+- **Query param**: `?GROCY-API-KEY=<key>` (not recommended)
+- Keys are 50-char random strings, stored in DB with `user_id`, expiry, description.
+- Each key is scoped to one user.
+- Work even when `AUTH_CLASS` is `ReverseProxyAuthMiddleware`.
+
+### LdapAuthMiddleware (not used here)
+
+Config: `LDAP_ADDRESS`, `LDAP_BASE_DN`, `LDAP_BIND_DN`, `LDAP_BIND_PW`,
+`LDAP_USER_FILTER`, `LDAP_UID_ATTR` (Windows AD: `sAMAccountName`, OpenLDAP: `uid`).
+
+Flow: service-account bind → search for user DN → bind as user to verify password →
+create/reuse session. Also checks API keys first.
+
+## Settingoverrides Mechanism
+
+Grocy resolves settings in priority order (highest first):
+
+1. `/data/settingoverrides/<SETTING_NAME>.txt` — file content (trailing newlines stripped)
+2. `GROCY_<SETTING_NAME>` environment variable (trailing whitespace stripped)
+3. `config-dist.php` defaults
+
+In this cluster, the settingoverrides directory is mounted via ConfigMap `grocy-settingoverrides`
+(`cluster/k8s/grocy/settingoverrides.yaml`).
+
+## Current Cluster Setup
 
 ```
-Human browser → grocy.allegedly.works → Authentik proxy outpost → grocy pod
-                                         ↓ sets X-authentik-username header
-Agent (bearer JWT) → grocy.allegedly.works → Authentik proxy outpost → grocy pod
+client → grocy.allegedly.works
+       → Gateway (cilium)
+       → Authentik proxy outpost (authentik namespace)
+       → Grocy pod (grocy namespace, port 80)
 ```
 
-Grocy uses `ReverseProxyAuthMiddleware` trusting `X-authentik-username` from the proxy
-outpost. No second API key needed — any authenticated request through the proxy is trusted.
+The Authentik proxy outpost:
 
-## What We Tried
+1. Checks the request is authenticated (valid session cookie or Bearer JWT).
+2. Injects `X-authentik-username: <user>` before forwarding.
+3. Grocy reads that header via `ReverseProxyAuthMiddleware`.
 
-### 1. Authentik API token as Bearer (failed)
+SSO resource management: `cluster/terraform/gitops/agent-machine-access/main.tf`
+(proxy provider + application + policy bindings for humans and machine SA).
 
-The `agent-bearer-token` K8s secret contains an Authentik **API key** (intent=api). The
-proxy outpost doesn't recognize API tokens — it expects either a browser session cookie or
-a JWT issued by the provider.
+## Machine Auth Options Considered
 
-### 2. Separate OAuth2 provider with client_credentials (failed)
+### Option A: OAuth2 client_credentials (current)
 
-Created `grocy-machine` OAuth2 provider in TF, successfully got a JWT via
-`client_credentials` grant. But the proxy outpost **rejects JWTs from a different
-provider** — it validates that the JWT's `azp` claim matches its own `client_id`.
+**Flow**: agent reads `client_id`+`client_secret` from K8s secret
+`grocy-machine-credentials` → POSTs to Authentik token endpoint
+(`/application/o/<slug>/token/`) → receives JWT → presents as
+`Authorization: Bearer <jwt>` to `grocy.allegedly.works` → outpost validates JWT,
+injects `X-authentik-username: ak-grocy-client_credentials` → Grocy auto-creates
+that user on first request.
 
-Error: `"Due to 'Receive header authentication' being set, no redirect is performed."`
+Credentials location: `grocy-machine-credentials` secret in `claude-sandbox`
+(reflected to `openclaw-sandbox` via Reflector).
 
-**Key learning**: Cross-provider JWTs don't work with proxy outposts. The outpost only
-accepts JWTs from its own provider.
+**Pros**: consistent with how other Authentik-fronted services do machine auth;
+SSO policy enforced by Authentik (can revoke at Authentik layer without touching Grocy).
 
-### 3. Move proxy provider to TF, use client_credentials on it (current — partial)
+**Cons**: token refresh needed (JWTs expire per `access_token_validity = "hours=24"`);
+extra round-trip to Authentik token endpoint before each Grocy session.
 
-Since both human and machine auth must go through the same provider, moved the grocy proxy
-provider from blueprint to the `agent-machine-access` TF module.
+### Option B: Grocy native API key
 
-**Problem**: `authentik_provider_proxy` in the Authentik TF provider exports `client_id`
-(computed) but **not** `client_secret`. The underlying Authentik API does return
-`client_secret` on proxy providers (they inherit from OAuth2Provider), but the TF resource
-schema doesn't expose it.
+**Flow**: generate an API key in Grocy UI for a dedicated machine user → store in K8s
+secret → agent sends `GROCY-API-KEY: <key>` header directly.
 
-**Current state** (as of 2026-04-12):
+Works even with `ReverseProxyAuthMiddleware` active (API key check is a base-layer
+bypass that runs before the proxy header check).
 
-- Blueprint `grocy-sso.yaml` removed, provider/app/bindings deleted from Authentik via API
-- TF has `authentik_provider_proxy.grocy` but the plan fails on `.client_secret`
-- Embedded outpost blueprint still references `!Find [authentik_providers_proxy.proxyprovider, [name, grocy]]`
+**Pros**: simpler — no token exchange, no expiry handling, no Authentik dependency in
+the auth path; key can be rotated independently.
 
-## client_credentials Flow Details
+**Cons**: Grocy has no API to programmatically create users or API keys (must bootstrap
+manually via UI); key is long-lived (until manually rotated); not reflected in Authentik
+audit logs.
 
-- Token endpoint: `POST https://auth.allegedly.works/application/o/token/`
-- Parameters: `grant_type=client_credentials&client_id=<id>&client_secret=<secret>&scope=openid`
-- Authentik auto-creates a service account `ak-<provider-slug>-client_credentials`
-- The auto-created user must pass the application's policy engine (needs a binding)
-- Pre-creating the user in TF works — Authentik uses the existing user on first call
+### Option C: Direct header injection (no Authentik)
 
-## Open Options
+Only viable for in-cluster clients that can route directly to the `grocy` service
+bypassing the ingress. A client inside the cluster that can reach
+`grocy.grocy.svc.cluster.local:80` could set `X-authentik-username: <user>` itself.
 
-| #   | Approach                                                        | Pros                            | Cons                                              |
-| --- | --------------------------------------------------------------- | ------------------------------- | ------------------------------------------------- |
-| A   | `data "http"` to read client_secret from Authentik API          | Works, TF manages everything    | Hacky, fragile, token in state                    |
-| B   | Blueprint for proxy provider, `client_secret: !Env` with SOPS   | Clean separation                | SOPS secret + env mount, dual management          |
-| C   | PR the Authentik TF provider to export `client_secret`          | Clean, permanent                | Upstream dependency, time                         |
-| D   | Skip proxy — direct network access to grocy pod + Grocy API key | Simple, no Authentik complexity | Two auth paths, CiliumNetworkPolicy, API key mgmt |
-| E   | `random_password` in TF, share to blueprint via SOPS/env        | TF is source of truth           | Still need SOPS pipeline                          |
+**Rejected**: CiliumNetworkPolicy (`cluster/k8s/grocy/networkpolicy.yaml`) restricts
+which pods can reach the grocy service, and `ReverseProxyAuthMiddleware` assumes a
+trusted proxy strips the header before it arrives — direct injection is only safe if
+external access is blocked at the network level for all clients.
 
-## Related Files
+### Option D: Disable auth + network policy
 
-- `cluster/terraform/gitops/agent-machine-access/main.tf` — TF module (current owner)
-- `cluster/k8s/grocy/settingoverrides.yaml` — Grocy reverse proxy auth config
-- `cluster/k8s/authentik/app/blueprints/embedded-outpost.yaml` — outpost provider list
-- `cluster/k8s/authentik/proxy-routes/grocy-httproute.yaml` — Gateway API route
+Set `DISABLE_AUTH=true`, rely on network-level access control.
+
+**Rejected**: too broad — any in-cluster pod with network access becomes admin.
+
+## Active Implementation
+
+Option A (client_credentials). The machine SA username inside Grocy is
+`ak-grocy-client_credentials` (auto-created on first authenticated request).
+
+Token endpoint: `https://auth.allegedly.works/application/o/grocy/token/`
+
+```
+POST /application/o/grocy/token/
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+&client_id=<from grocy-machine-credentials secret>
+&client_secret=<from grocy-machine-credentials secret>
+```
+
+Response: `{"access_token": "...", "token_type": "Bearer", "expires_in": 86400}`
+
+Then: `GET https://grocy.allegedly.works/api/... -H "Authorization: Bearer <token>"`
+
+Tokens are valid 24h. Refresh by repeating the POST.
