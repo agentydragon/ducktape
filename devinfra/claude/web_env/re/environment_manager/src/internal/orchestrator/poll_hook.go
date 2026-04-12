@@ -40,7 +40,7 @@ import (
 // Fields reconstructed from binary string table and caller patterns in
 // cmd_orchestrator.go (environmentID, workerID passed through orchestrator flow).
 type PollHookStdinContext struct {
-	EnvironmentID string `json:"environment_id,omitempty"`
+	EnvironmentID string `json:"environment_id"`
 	WorkerID      string `json:"worker_id,omitempty"`
 	SessionID     string `json:"session_id,omitempty"`
 }

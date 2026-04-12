@@ -46,3 +46,8 @@ See `BINDIFF_RESULTS.md` for full analysis. Key findings:
   cannot be recovered without runtime observation of a live deployment
 - **TODO(re) markers**: Remaining markers document garble-obfuscated logic that
   cannot be recovered without runtime observation
+- **`json:"mount_path,omitempty"` field**: Present in binary RTTI but not yet placed
+  in any source struct. Likely in a filesystem/container configuration struct.
+- **`json:"organization_uuid"` field**: Present in binary RTTI but not yet in any
+  JSON struct; currently only used as an HTTP header (`organization_uuid` header in
+  lease heartbeat). May also be in a JSON request/response struct not yet identified.

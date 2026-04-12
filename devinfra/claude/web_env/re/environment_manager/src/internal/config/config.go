@@ -268,10 +268,10 @@ type StartupContext struct {
 	Entrypoint              string            `json:"entrypoint,omitempty"`
 	EnvironmentVariables    map[string]string `json:"environment_variables,omitempty"`
 	EnvironmentSubType      string            `json:"environment_sub_type,omitempty"`
-	FilesystemID            string            `json:"filesystem_id,omitempty"`
-	FilestoreURL            string            `json:"filestore_url,omitempty"`
-	WorkerID                string            `json:"worker_id,omitempty"`
-	WorkerEpoch             int64             `json:"worker_epoch,string,omitempty"`
+	FilesystemID            string            `json:"filesystem_id"`
+	FilestoreURL            string            `json:"filestore_url"`
+	WorkerID                string            `json:"worker_id"`
+	WorkerEpoch             int64             `json:"worker_epoch,string"`
 }
 
 // startupContextJSON is the intermediate struct used for JSON unmarshalling of StartupContext.
@@ -295,10 +295,10 @@ type startupContextJSON struct {
 	Entrypoint              string                 `json:"entrypoint,omitempty"`
 	EnvironmentVariables    map[string]string      `json:"environment_variables,omitempty"`
 	EnvironmentSubType      string                 `json:"environment_sub_type,omitempty"`
-	FilesystemID            string                 `json:"filesystem_id,omitempty"`
-	FilestoreURL            string                 `json:"filestore_url,omitempty"`
-	WorkerID                string                 `json:"worker_id,omitempty"`
-	WorkerEpoch             int64                  `json:"worker_epoch,string,omitempty"`
+	FilesystemID            string                 `json:"filesystem_id"`
+	FilestoreURL            string                 `json:"filestore_url"`
+	WorkerID                string                 `json:"worker_id"`
+	WorkerEpoch             int64                  `json:"worker_epoch,string"`
 }
 
 // sourceTypeJSON is used to peek at a source's type field before full deserialization.
