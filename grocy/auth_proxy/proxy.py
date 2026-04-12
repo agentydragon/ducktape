@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import sys
 from collections.abc import Callable
+from contextlib import asynccontextmanager
 
 import httpx
 import uvicorn
@@ -55,13 +56,18 @@ class AutoFetchOAuth2Client(AsyncOAuth2Client):
     authentication is user-based.
     """
 
+    # Extra attributes set by create_client().
+    m2m_token_url: str
+    m2m_username: str
+    m2m_password: str
+
     async def request(self, method, url, withhold_token=False, auth=httpx.USE_CLIENT_DEFAULT, **kwargs):
         if not withhold_token and auth is httpx.USE_CLIENT_DEFAULT and not self.token:
             await self.fetch_token(
-                self.metadata["token_endpoint"],
+                self.m2m_token_url,
                 grant_type="client_credentials",
-                username=self.metadata["m2m_username"],
-                password=self.metadata["m2m_password"],
+                username=self.m2m_username,
+                password=self.m2m_password,
             )
         return await super().request(method, url, withhold_token=withhold_token, auth=auth, **kwargs)
 
@@ -74,13 +80,16 @@ def create_client(token_url: str, client_id: str, username: str, app_password: s
     username + app_password (sent as form params alongside
     grant_type=client_credentials).
     """
-    return AutoFetchOAuth2Client(
+    client = AutoFetchOAuth2Client(
         client_id=client_id,
         token_endpoint_auth_method="none",
         token_endpoint=token_url,
         grant_type="client_credentials",
-        metadata={"token_endpoint": token_url, "m2m_username": username, "m2m_password": app_password},
     )
+    client.m2m_token_url = token_url
+    client.m2m_username = username
+    client.m2m_password = app_password
+    return client
 
 
 def create_app(upstream_url: str, client_factory: Callable[[], AutoFetchOAuth2Client]) -> Starlette:
@@ -88,19 +97,23 @@ def create_app(upstream_url: str, client_factory: Callable[[], AutoFetchOAuth2Cl
     # Normalize once so path concatenation never produces `//`.
     upstream_url = upstream_url.rstrip("/")
 
-    client: AutoFetchOAuth2Client | None = None
+    # Build the OAuth2 client eagerly so requests never race against lifespan
+    # startup. httpx's ASGITransport (used in tests) doesn't run the ASGI
+    # lifespan protocol at all, so lazy construction would leave `client` as
+    # None during tests.
+    client = client_factory()
 
+    @asynccontextmanager
     async def lifespan(app):
-        nonlocal client
-        client = client_factory()
-        yield
-        await client.aclose()
+        try:
+            yield
+        finally:
+            await client.aclose()
 
     async def health(request: Request) -> Response:
         return Response('{"status":"ok"}', media_type="application/json")
 
     async def proxy(request: Request) -> Response:
-        assert client is not None
         url = f"{upstream_url}{request.url.path}"
         if request.url.query:
             url = f"{url}?{request.url.query}"
