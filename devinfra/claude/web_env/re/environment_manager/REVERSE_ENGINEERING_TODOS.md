@@ -46,8 +46,16 @@ See `BINDIFF_RESULTS.md` for full analysis. Key findings:
   cannot be recovered without runtime observation of a live deployment
 - **TODO(re) markers**: Remaining markers document garble-obfuscated logic that
   cannot be recovered without runtime observation
-- **`json:"mount_path,omitempty"` field**: Present in binary RTTI but not yet placed
-  in any source struct. Likely in a filesystem/container configuration struct.
-- **`json:"organization_uuid"` field**: Present in binary RTTI but not yet in any
-  JSON struct; currently only used as an HTTP header (`organization_uuid` header in
-  lease heartbeat). May also be in a JSON request/response struct not yet identified.
+- **`json:"mount_path,omitempty"` field**: Located in `GitInfo` struct
+  (`config.go`). Binary RTTI at VA 0x221448c confirms it as a `*string` field at
+  offset 0x50 in an 8-field, 88-byte struct. Added to `config.GitInfo` alongside
+  the also-new `Host string` field (offset 0x30). Binary RTTI also confirmed that
+  `Ref`, `URL`, and `Auth` fields have `omitempty` tags (previously incorrect in RE).
+- **`json:"organization_uuid"` field**: Located in two separate structs in
+  `api/work_client.go`:
+  1. `WorkPollRequest` (VA 0x23966c0, 48 bytes): `organization_uuid`, `environment_id`,
+     `worker_id` — likely the JSON body for the v1 work poll endpoint.
+  2. `WorkAssignment` (file 0x1f965a0, 48 bytes): `type`, `organization_uuid`,
+     `environment_id` — likely a work assignment or event record.
+  Exact usage of both structs is garble-obfuscated; cannot recover without runtime
+  observation.

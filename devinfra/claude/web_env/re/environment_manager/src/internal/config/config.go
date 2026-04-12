@@ -49,17 +49,27 @@ func (b BaseSource) GetDirectory(baseDir string) string {
 }
 
 // GitInfo holds git repository metadata for a source.
-// Reconstructed from: config.GitInfo (DWARF struct)
-// Fields: Type (offset 0), Repo (offset 16), Ref (offset 32), URL (offset 40),
 //
-//	Auth (offset 48), AllowUnrestrictedGitPush (offset 56).
+// Verified against binary RTTI (495ea204): struct type at VA 0x2457a20,
+// size=0x58 (88 bytes), 8 fields. Layout:
+//
+//	offset 0x00: Type (string, 16)
+//	offset 0x10: Repo (string, 16)
+//	offset 0x20: Ref (*string, 8)  -- ptr
+//	offset 0x28: URL (*string, 8)  -- ptr
+//	offset 0x30: Host (string, 16) -- present in 495ea204, absent in a6f96673
+//	offset 0x40: Auth (*AuthConfig, 8) -- ptr
+//	offset 0x48: AllowUnrestrictedGitPush (bool, 1)
+//	offset 0x50: MountPath (*string, 8) -- ptr, present in 495ea204, absent in a6f96673
 type GitInfo struct {
 	Type                     string      `json:"type"`
 	Repo                     string      `json:"repo"`
-	Ref                      *string     `json:"ref"`
-	URL                      *string     `json:"url"`
-	Auth                     *AuthConfig `json:"auth"`
+	Ref                      *string     `json:"ref,omitempty"`
+	URL                      *string     `json:"url,omitempty"`
+	Host                     string      `json:"host,omitempty"`
+	Auth                     *AuthConfig `json:"auth,omitempty"`
 	AllowUnrestrictedGitPush bool        `json:"allow_unrestricted_git_push,omitempty"`
+	MountPath                *string     `json:"mount_path,omitempty"`
 }
 
 // AuthConfig holds source-level authentication configuration.

@@ -149,3 +149,39 @@ func (c *WorkClient) AcknowledgeWork(
 
 	return nil
 }
+
+// WorkPollRequest is the JSON request body for the work poll endpoint
+// ("%s/v1/environments/%s/work/poll"). Identifies the calling worker.
+//
+// Verified against binary RTTI (495ea204): struct at VA 0x23966c0,
+// size=0x30 (48 bytes), 3 string fields:
+//
+//	offset 0x00: OrganizationUUID string `json:"organization_uuid"`
+//	offset 0x10: EnvironmentID    string `json:"environment_id"`
+//	offset 0x20: WorkerID         string `json:"worker_id"`
+//
+// TODO(re): exact usage (which API call sends this as request body) is
+// garble-obfuscated; cannot recover without runtime observation.
+type WorkPollRequest struct {
+	OrganizationUUID string `json:"organization_uuid"`
+	EnvironmentID    string `json:"environment_id"`
+	WorkerID         string `json:"worker_id"`
+}
+
+// WorkAssignment is a work assignment record returned by the work poll endpoint.
+// Contains a type discriminator plus organization and environment context.
+//
+// Verified against binary RTTI (495ea204): struct at file 0x1f965a0,
+// size=0x30 (48 bytes), 3 string fields:
+//
+//	offset 0x00: Type             string `json:"type"`
+//	offset 0x10: OrganizationUUID string `json:"organization_uuid"`
+//	offset 0x20: EnvironmentID    string `json:"environment_id"`
+//
+// TODO(re): exact usage (poll response or event type) is garble-obfuscated;
+// cannot recover without runtime observation.
+type WorkAssignment struct {
+	Type             string `json:"type"`
+	OrganizationUUID string `json:"organization_uuid"`
+	EnvironmentID    string `json:"environment_id"`
+}
