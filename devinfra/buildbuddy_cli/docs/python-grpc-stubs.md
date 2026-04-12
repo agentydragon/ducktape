@@ -160,39 +160,25 @@ other modules) doesn't have that target. This is a C++ ABI
 incompatibility — you can't mix protobuf 29.x with the abseil version
 that protobuf 32.x's transitive deps bring in.
 
-## Blocking Issue: Protobuf Version Skew
+## Protobuf Version Skew — Resolved (2026-04)
 
-The fundamental problem is a three-way conflict:
+The previously blocking three-way conflict between the Bazel `protobuf` module
+gencode version, the pip `protobuf` runtime, and `autogen-core`'s `<6.0.0` pin
+is now fully resolved:
 
-1. **Bazel `protobuf` module** resolves to 32.1 (pulled by
-   `stardoc@0.7.2` via `aspect_bazel_lib@2.22.5`), generating
-   `_pb2.py` files with gencode `6.32.1`.
-2. **Pip `protobuf==5.29.6`** has runtime `5.29.6` — too old.
-3. ~~**Pip `autogen-core`** pinned `protobuf~=5.29.3` (`<6.0.0`),
-   blocking upgrade to pip `protobuf>=6.32.0`.~~
-   **Resolved:** `autogen-core` was replaced by `agent-framework-core`
-   (Microsoft Agent Framework, 1.0 GA 2026-04-02) which has no protobuf pin.
+- `autogen-core` was replaced by `agent-framework-core`, which has no protobuf pin.
+- pip `protobuf` is pinned to `6.33.1` to match the nixpkgs version.
+- `py_proto_library` targets now build and run correctly.
 
-Possible resolutions:
-
-- ~~**Drop or upgrade `autogen-core`**~~ Done — migrated to Agent Framework.
-- **Pin `stardoc`** to an older version that uses protobuf <30 (may
-  break `aspect_bazel_lib`).
-- **Override `aspect_bazel_lib`** to use an older `stardoc`.
-
-This is pre-existing — the test `//devinfra/claude/hook_daemon:test_pre_tool_use`
-was already broken before our session's changes.
+`py_proto_library` targets for BuildBuddy message types (including `invocation_py_proto`
+and its transitive deps) are defined in `third_party/buildbuddy/BUILD.protos.bazel`.
+These are used for JSON deserialization via `google.protobuf.json_format` — see
+`devinfra/precommit/test_tag.py` for an example.
 
 ## Recommendation
 
-**Start with option E** (no codegen) to unblock the feature. The `Run`
-RPC is simple (unary, not streaming). If we later need more RPCs or
-want type safety on the service layer, upgrade to option D (genrule
-with `grpcio-tools`).
-
-Option D is the right long-term answer but requires a lockfile update
-cycle and genrule plumbing that's not worth doing until we're sure the
-feature works end-to-end.
-
-The protobuf version skew must be resolved separately — it blocks
-_all_ Python proto usage, not just gRPC stubs.
+Python gRPC **service** stubs (`*_pb2_grpc.py`) are still not generated — only Go
+gets those. For the `Run` RPC use case (option E/D above), the path is now clear:
+message types are available via `py_proto_library`; only service stub generation
+remains as future work if needed. Option D (genrule with `grpcio-tools`) or option E
+(manual `channel.unary_unary()`) are both viable starting points.

@@ -1,4 +1,4 @@
-"""Python proto libraries for googleapis protos used by the BES interceptor."""
+"""Python proto libraries for googleapis protos used by the BES interceptor and invocation verification."""
 
 load("@protobuf//bazel:py_proto_library.bzl", "py_proto_library")
 
@@ -7,4 +7,24 @@ package(default_visibility = ["//visibility:public"])
 py_proto_library(
     name = "build_v1_py_proto",
     deps = ["@googleapis//google/devtools/build/v1:build_proto"],
+)
+
+py_proto_library(
+    name = "rpc_status_py_proto",
+    deps = ["@googleapis//google/rpc:status_proto"],
+)
+
+py_proto_library(
+    name = "api_http_py_proto",
+    deps = ["@googleapis//google/api:http_proto"],
+)
+
+py_proto_library(
+    name = "api_annotations_py_proto",
+    deps = ["@googleapis//google/api:annotations_proto"],
+)
+
+py_proto_library(
+    name = "longrunning_operations_py_proto",
+    deps = ["@googleapis//google/longrunning:operations_proto"],
 )

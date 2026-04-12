@@ -347,6 +347,81 @@ py_proto_library(
     deps = [":build_event_stream_proto"],
 )
 
+py_proto_library(
+    name = "user_id_py_proto",
+    deps = [":user_id_proto"],
+)
+
+py_proto_library(
+    name = "acl_py_proto",
+    deps = [":acl_proto"],
+)
+
+py_proto_library(
+    name = "context_py_proto",
+    deps = [":context_proto"],
+)
+
+py_proto_library(
+    name = "invocation_status_py_proto",
+    deps = [":invocation_status_proto"],
+)
+
+py_proto_library(
+    name = "capability_py_proto",
+    deps = [":capability_proto"],
+)
+
+py_proto_library(
+    name = "stat_filter_py_proto",
+    deps = [":stat_filter_proto"],
+)
+
+py_proto_library(
+    name = "trace_py_proto",
+    deps = [":trace_proto"],
+)
+
+py_proto_library(
+    name = "semver_py_proto",
+    deps = [":semver_proto"],
+)
+
+py_proto_library(
+    name = "scheduler_py_proto",
+    deps = [":scheduler_proto"],
+)
+
+py_proto_library(
+    name = "remote_execution_py_proto",
+    deps = [":remote_execution_proto"],
+)
+
+py_proto_library(
+    name = "resource_py_proto",
+    deps = [":resource_proto"],
+)
+
+py_proto_library(
+    name = "cache_py_proto",
+    deps = [":cache_proto"],
+)
+
+py_proto_library(
+    name = "api_v1_common_py_proto",
+    deps = [":api_v1_common_proto"],
+)
+
+py_proto_library(
+    name = "target_py_proto",
+    deps = [":target_proto"],
+)
+
+py_proto_library(
+    name = "invocation_py_proto",
+    deps = [":invocation_proto"],
+)
+
 proto_library(
     name = "remote_execution_proto",
     srcs = ["proto/remote_execution.proto"],
