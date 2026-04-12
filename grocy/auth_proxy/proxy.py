@@ -47,6 +47,14 @@ _HOP_BY_HOP_HEADERS = frozenset(
     }
 )
 
+# httpx transparently decodes gzip/deflate/br responses into `resp.content`, so
+# the upstream's `content-encoding` and `content-length` no longer match the
+# decoded body we pass to uvicorn. If we kept the original content-length,
+# uvicorn raises "Response content longer than Content-Length" and resets the
+# connection. Strip both and let Starlette recompute `content-length` from the
+# decoded body.
+_REWRITTEN_RESPONSE_HEADERS = frozenset({"content-encoding", "content-length"})
+
 
 class AutoFetchOAuth2Client(AsyncOAuth2Client):
     """AsyncOAuth2Client that auto-fetches a token via M2M app_password flow.
@@ -125,13 +133,17 @@ def create_app(upstream_url: str, client_factory: Callable[[], AutoFetchOAuth2Cl
 
         # Construct with no headers, then assign raw_headers directly so we can
         # preserve repeated headers (e.g. multiple Set-Cookie) via multi_items.
-        # Drop hop-by-hop headers which must not cross proxies.
+        # Drop hop-by-hop headers which must not cross proxies, plus
+        # content-encoding/content-length which no longer match the decoded body.
         out = Response(content=resp.content, status_code=resp.status_code)
         out.raw_headers = [
             (k.lower().encode("latin-1"), v.encode("latin-1"))
             for k, v in resp.headers.multi_items()
-            if k.lower() not in _HOP_BY_HOP_HEADERS
+            if k.lower() not in _HOP_BY_HOP_HEADERS and k.lower() not in _REWRITTEN_RESPONSE_HEADERS
         ]
+        # Starlette's Response.__init__ already computed content-length from
+        # self.body; append it so uvicorn sees a consistent frame.
+        out.raw_headers.append((b"content-length", str(len(out.body)).encode("latin-1")))
         return out
 
     return Starlette(

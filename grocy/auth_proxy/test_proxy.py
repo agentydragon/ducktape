@@ -138,6 +138,41 @@ async def test_forwards_method_path_body():
 
 
 @respx.mock
+async def test_gzipped_response_recomputes_content_length():
+    """Gzipped upstream response: content-length is rewritten from the decoded body.
+
+    Regression for RuntimeError: Response content longer than Content-Length.
+    Authentik's 404 page is served with content-encoding: gzip and the
+    compressed content-length, but httpx auto-decodes into resp.content,
+    so passing content-length through verbatim causes uvicorn to reset the
+    connection.
+    """
+    import gzip
+
+    decoded = b"<html>decoded body!</html>"
+    encoded = gzip.compress(decoded)
+    assert len(encoded) != len(decoded)
+
+    respx.post(TOKEN_URL).mock(return_value=Response(200, json={"access_token": "tok", **_TOKEN_RESPONSE}))
+    respx.get(f"{UPSTREAM_URL}/api/stock").mock(
+        return_value=Response(
+            404,
+            headers={"content-encoding": "gzip", "content-length": str(len(encoded)), "content-type": "text/html"},
+            content=encoded,
+        )
+    )
+
+    app, _ = _make_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
+        resp = await http.get("/api/stock")
+
+    assert resp.status_code == 404
+    assert resp.content == decoded
+    assert int(resp.headers["content-length"]) == len(decoded)
+    assert "content-encoding" not in {k.lower() for k in resp.headers}
+
+
+@respx.mock
 async def test_strips_hop_by_hop_response_headers():
     """Hop-by-hop response headers (RFC 7230) are not forwarded to the caller."""
     respx.post(TOKEN_URL).mock(return_value=Response(200, json={"access_token": "tok", **_TOKEN_RESPONSE}))
