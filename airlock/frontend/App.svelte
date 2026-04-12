@@ -76,22 +76,31 @@
   });
 </script>
 
-{#snippet defaultHeader()}
-  <header class="app-header px-4 py-3 sm:px-6 flex items-center gap-3">
+<header class="app-header px-4 py-3 sm:px-6 flex items-center gap-3">
+  {#if route.kind === "action" && action}
+    <h1 class="text-lg font-semibold m-0" style="color: var(--color-header-text);">
+      <a href="#/" class="app-header-link">Airlock</a>
+      <span class="font-normal" style="color: var(--color-header-text-dim);"> / </span>
+      <span class="text-sm font-normal" style="color: var(--color-header-link);">
+        Action {action.key.session_key}/{action.key.action_seq}
+      </span>
+    </h1>
+  {:else}
     <h1 class="app-header-title text-lg font-semibold m-0">Airlock</h1>
-    <nav class="flex gap-3 ml-auto text-sm">
-      <a href="#/" class="app-header-link">Actions</a>
-      <a href="#/backends" class="app-header-link">Backends</a>
-      <a href="#/oauth" class="app-header-link">OAuth</a>
-    </nav>
-  </header>
-{/snippet}
+    {#if route.kind === "list" && pending.length > 0}
+      <span class="badge text-xs font-bold rounded-full px-2.5 py-0.5">{pending.length} pending</span>
+    {/if}
+  {/if}
+  <nav class="flex gap-3 ml-auto text-sm">
+    <a href="#/" class="app-header-link">Actions</a>
+    <a href="#/backends" class="app-header-link">Backends</a>
+    <a href="#/oauth" class="app-header-link">OAuth</a>
+  </nav>
+</header>
 
 {#if loading}
-  {@render defaultHeader()}
   <main class="max-w-4xl mx-auto px-4 py-6"><p class="section-heading">Loading…</p></main>
 {:else if error}
-  {@render defaultHeader()}
   <main class="max-w-4xl mx-auto px-4 py-6">
     <p class="font-medium" style="color: var(--color-error);">Failed to load: {error}</p>
   </main>
@@ -99,18 +108,15 @@
   {#if action}
     <ActionDetail {action} />
   {:else}
-    {@render defaultHeader()}
     <main class="max-w-4xl mx-auto px-4 py-6">
       <p class="font-medium" style="color: var(--color-error);">Action not found.</p>
     </main>
   {/if}
 {:else if route.kind === "backends"}
-  {@render defaultHeader()}
   <main class="max-w-4xl mx-auto px-4 py-6">
     <BackendStatus />
   </main>
 {:else if route.kind === "oauth"}
-  {@render defaultHeader()}
   <main class="max-w-4xl mx-auto px-4 py-6">
     <OAuthProviders />
   </main>
