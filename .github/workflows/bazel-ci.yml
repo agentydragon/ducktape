@@ -39,6 +39,13 @@ jobs:
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
+      # bb remote's base resolution falls back to `git rev-parse <default-branch>`
+      # which needs a local ref. actions/checkout only creates remote tracking refs
+      # (origin/devel), not local branches, so create one for PR builds.
+      - name: Create local ref for default branch
+        if: github.event_name == 'pull_request'
+        run: git branch "$GIT_REPO_DEFAULT_BRANCH" "origin/$GIT_REPO_DEFAULT_BRANCH"
+
       - name: Test
         uses: ./.github/actions/bb-remote
         with:
