@@ -16,6 +16,7 @@ import signal
 import time
 import traceback
 from collections.abc import Callable
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -205,7 +206,18 @@ async def _idle_watchdog(app: FastAPI) -> None:
 
 def create_app(daemon_dir: Path, profile: ProfileConfig) -> FastAPI:
     """Create and configure the hook daemon FastAPI app."""
-    app = FastAPI()
+
+    @asynccontextmanager
+    async def _lifespan(app: FastAPI):
+        if profile.idle_watchdog:
+            app.state.watchdog_task = asyncio.create_task(_idle_watchdog(app))
+        else:
+            logger.info("Idle watchdog disabled by profile config")
+        yield
+        for session in app.state.sessions.values():
+            session.stop()
+
+    app = FastAPI(lifespan=_lifespan)
 
     app.state.daemon_dir = daemon_dir
     app.state.settings = HookSettings()
@@ -319,18 +331,5 @@ def create_app(daemon_dir: Path, profile: ProfileConfig) -> FastAPI:
         for s in app.state.sessions.values():
             s.post_message(req.message)
         return {"status": "ok"}
-
-    @app.on_event("startup")
-    async def _start_idle_watchdog() -> None:
-        if not profile.idle_watchdog:
-            logger.info("Idle watchdog disabled by profile config")
-            return
-        app.state.watchdog_task = asyncio.create_task(_idle_watchdog(app))
-
-    @app.on_event("shutdown")
-    async def _stop_proxy() -> None:
-        """Stop the in-process proxies on daemon shutdown."""
-        for session in app.state.sessions.values():
-            session.stop()
 
     return app
