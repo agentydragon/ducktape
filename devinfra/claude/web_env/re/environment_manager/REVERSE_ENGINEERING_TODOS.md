@@ -38,16 +38,6 @@ See `BINDIFF_RESULTS.md` for full analysis. Key findings:
 - CLI flags and sandbox settings
 - Heartbeat/lease response structure
 
-## Completed (2026-04-12)
-
-- **`shared.DefaultSettingsJSON` and `shared.StopHookScript`**: Recovered from the
-  live container at `/home/claude/.claude/settings.json` and
-  `/home/claude/.claude/stop-hook-git-check.sh`. Filled in `envtype/shared/shared.go`.
-- **`Initialize()` Step 2 (sources processing)**: Implemented `processSources()` method
-  on `anthropicEnvironmentType` — creates a `SourceHandlerManager` and calls
-  `ProcessSources()` + `SetupGitProxyAfterSourcesProcessed()`. Parameters that can't
-  be recovered from the garble-obfuscated binary are marked `TODO(re)`.
-
 ## Remaining Work
 
 - **Obfuscated env vars**: `CLAUDE_CODE_*` constants are garbled in the new binary
