@@ -57,5 +57,5 @@ See `BINDIFF_RESULTS.md` for full analysis. Key findings:
      `worker_id` — likely the JSON body for the v1 work poll endpoint.
   2. `WorkAssignment` (file 0x1f965a0, 48 bytes): `type`, `organization_uuid`,
      `environment_id` — likely a work assignment or event record.
-  Exact usage of both structs is garble-obfuscated; cannot recover without runtime
-  observation.
+     Exact usage of both structs is garble-obfuscated; cannot recover without runtime
+     observation.
