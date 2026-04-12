@@ -87,22 +87,22 @@ resource "kubernetes_secret" "agent_bearer_token" {
   }
 }
 
-# --- Grocy (proxy provider + machine auth via client_credentials) ---
+# --- Grocy (proxy provider + machine auth via M2M app password) ---
 # Replaces the grocy-sso.yaml blueprint. TF is the sole manager.
-# Humans authenticate via OIDC (browser session through the proxy outpost).
-# Agents exchange client_id + client_secret for a JWT via client_credentials,
-# then use the JWT as Bearer token against grocy.allegedly.works.
-# The proxy outpost only accepts JWTs from its own provider, so both flows
-# must go through the same provider.
+# Humans authenticate via browser session through the proxy outpost.
+# Agents authenticate via Authentik M2M: POST to /application/o/token/
+# with grant_type=client_credentials, client_id, username, password
+# (app_password) → JWT → Bearer token against grocy.allegedly.works.
+# The proxy outpost only accepts JWTs from its own provider.
 
 resource "authentik_provider_proxy" "grocy" {
-  name               = "grocy"
-  external_host      = "https://grocy.allegedly.works"
-  internal_host      = "http://grocy.grocy.svc.cluster.local:80"
-  mode               = "proxy"
-  authentication_flow = data.authentik_flow.authentication.id
-  authorization_flow  = data.authentik_flow.implicit_consent.id
-  invalidation_flow   = data.authentik_flow.invalidation.id
+  name                  = "grocy"
+  external_host         = "https://grocy.allegedly.works"
+  internal_host         = "http://grocy.grocy.svc.cluster.local:80"
+  mode                  = "proxy"
+  authentication_flow   = data.authentik_flow.authentication.id
+  authorization_flow    = data.authentik_flow.implicit_consent.id
+  invalidation_flow     = data.authentik_flow.invalidation.id
   access_token_validity = "hours=24"
 }
 
@@ -123,13 +123,21 @@ resource "authentik_policy_binding" "grocy_admins" {
   order  = 0
 }
 
-# Machine access: pre-create the service account that client_credentials
-# auto-generates (ak-<provider-slug>-client_credentials) so we can bind it.
+# Machine access: service account for agent M2M auth via app password.
 resource "authentik_user" "grocy_machine_sa" {
-  username = "ak-grocy-client_credentials"
-  name     = "Grocy Machine (client_credentials)"
+  username = "grocy-machine"
+  name     = "Grocy Machine Agent"
   type     = "service_account"
   path     = "goauthentik.io/service-accounts"
+}
+
+resource "authentik_token" "grocy_machine_app_password" {
+  identifier   = "grocy-machine-app-password"
+  user         = authentik_user.grocy_machine_sa.id
+  intent       = "app_password"
+  expiring     = true
+  retrieve_key = true
+  description  = "App password for Grocy machine auth (M2M via proxy provider)"
 }
 
 resource "authentik_policy_binding" "grocy_machine_sa" {
@@ -138,7 +146,9 @@ resource "authentik_policy_binding" "grocy_machine_sa" {
   order  = 10
 }
 
-# K8s secret with the proxy provider's OAuth2 credentials for agents.
+# K8s secret with M2M credentials for agents to authenticate to Grocy.
+# Flow: POST /application/o/token/ with grant_type=client_credentials,
+# client_id, username, password (app_password) → JWT → Bearer token.
 resource "kubernetes_secret" "grocy_machine_credentials" {
   metadata {
     name      = "grocy-machine-credentials"
@@ -152,7 +162,9 @@ resource "kubernetes_secret" "grocy_machine_credentials" {
   }
 
   data = {
-    client_id     = authentik_provider_proxy.grocy.client_id
-    client_secret = authentik_provider_proxy.grocy.client_secret
+    client_id    = authentik_provider_proxy.grocy.client_id
+    username     = authentik_user.grocy_machine_sa.username
+    app_password = authentik_token.grocy_machine_app_password.key
+    token_url    = "https://auth.allegedly.works/application/o/token/"
   }
 }
