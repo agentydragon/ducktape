@@ -64,25 +64,76 @@ def _build_auth(settings: ServerSettings) -> AuthProvider:
 def _extract_bearer_token() -> str:
     """Return the upstream Authentik access token for the current request.
 
-    Earlier versions of this function read the raw `Authorization` header off
-    the request, which gave us the FastMCP JTI-reference token (signed by
-    OIDCProxy's derived key, not by the Authentik OAuth2 provider). Forwarded
-    to the Authentik proxy outpost, that token fails JWT federation by
-    definition and the outpost returns 401 "Receive header authentication".
+    `OAuthProxy.load_access_token` performs a server-side swap (see
+    <NOTES.md> §3) that gives us the Authentik-signed JWT that was issued
+    by our user-login OAuth2 provider. `get_access_token().token` is that
+    token — NOT the FastMCP JTI reference token the raw `Authorization`
+    header would contain.
 
-    `OAuthProxy.load_access_token` already performs a server-side token swap
-    (see <NOTES.md> §3 for the full trace) that verifies the JTI reference,
-    looks up the upstream Authentik token in its encrypted store, validates
-    it, and populates `AccessToken.token` with the upstream access token.
-    `get_access_token().token` gives us exactly that — the Authentik-signed
-    JWT that `jwt_federation_providers` will accept.
+    On its own, this token is NOT what the backend outpost wants: the
+    outpost's introspection is scoped to the backend's OWN OAuth2 provider
+    (see <NOTES.md> §5). We use this token as the `client_assertion` in a
+    JWT-bearer token exchange to mint a new token the outpost will accept —
+    see `_exchange_token_for_backend`.
     """
     access = get_access_token()
     if access is None:
         raise RuntimeError("no authenticated access token in request context")
     token = access.token
-    _log_token_shape("forwarded bearer", token)
+    _log_token_shape("upstream user token", token)
     return token
+
+
+async def _exchange_token_for_backend(user_token: str, settings: ServerSettings, client: httpx.AsyncClient) -> str:
+    """Trade the user's upstream token for one the backend outpost will accept.
+
+    Background: Authentik's proxy outpost validates incoming Bearer tokens
+    via RFC 7662 introspection, scoped to the outpost's OWN client_id
+    (i.e., the backend proxy provider's auto-generated OAuth2 client). So
+    the outpost only accepts tokens issued by the BACKEND provider — not
+    tokens from a different provider, even one listed in the backend
+    provider's `jwt_federation_providers`. See <NOTES.md> §5 for the full
+    trace through `authentik/providers/oauth2/views/introspection.py`.
+
+    What `jwt_federation_providers` IS for: the `/application/o/token/`
+    endpoint's `__post_init_client_credentials_jwt` path (RFC 7521
+    client-credentials with `client_assertion_type=...:jwt-bearer`). The
+    backend provider accepts JWT assertions signed by any of its federated
+    providers and, on success, MINTS A NEW ACCESS TOKEN scoped to the
+    backend provider. That new token IS stored as an `AccessToken` row
+    with `provider=<backend_provider>`, so the outpost's introspection
+    (filtered by that same provider) finds and accepts it.
+
+    The exchange:
+
+        POST /application/o/token/
+            grant_type         = client_credentials
+            client_id          = <backend_proxy_provider_client_id>
+            client_assertion_type = urn:ietf:params:oauth:client-assertion-type:jwt-bearer
+            client_assertion   = <user's upstream Authentik JWT>
+            scope              = openid
+
+    The user identity is preserved because Authentik uses the federated
+    token's `user` field when minting the new token.
+    """
+    response = await client.post(
+        settings.authentik_token_endpoint(),
+        data={
+            "grant_type": "client_credentials",
+            "client_id": settings.backend_oidc_client_id,
+            "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            "client_assertion": user_token,
+            "scope": "openid",
+        },
+    )
+    if response.status_code != 200:
+        raise RuntimeError(f"token exchange failed: status={response.status_code} body={response.text!r}")
+    payload = response.json()
+    if not isinstance(payload, dict) or not isinstance(payload.get("access_token"), str):
+        raise RuntimeError(f"token exchange response missing access_token: {payload!r}")
+    backend_token: str = payload["access_token"]
+    _log_token_shape("backend-scoped token", backend_token)
+    return backend_token
 
 
 def _b64url_decode(s: str) -> bytes:
@@ -133,19 +184,30 @@ def build_server(settings: ServerSettings) -> FastMCP:
 
     @mcp.tool
     async def whoami_via_backend() -> dict[str, object]:
-        """Forward the caller's Authentik JWT to the whoami backend and return its response.
+        """Call the Authentik-proxy-protected whoami backend as the current user.
 
-        The backend sits behind an Authentik Proxy Provider. This tool proves
-        the Bearer token received by this MCP server is also accepted by a
-        second, independently-configured Authentik-protected service — i.e.,
-        that the user identity really flows end-to-end through Authentik's
-        JWT federation, not just through this server's own auth layer.
+        Flow (see <NOTES.md> §5 for why this is more complicated than it looks):
+
+        1. Pull the user's upstream Authentik token out of FastMCP's request
+           context (already swapped from the FastMCP JTI reference by
+           `OAuthProxy.load_access_token`).
+        2. Exchange that token for one scoped to the backend's Authentik
+           proxy provider via an RFC 7521 JWT-bearer client-credentials
+           grant — this is what `jwt_federation_providers` actually enables.
+        3. Forward the new, backend-scoped token to `/whoami`. The outpost's
+           RFC 7662 introspection finds it (same provider), accepts it,
+           rewrites to `internal_host`, and injects the `X-Authentik-*`
+           identity headers the backend echoes back.
+
+        The tool returns the backend's response plus the HTTP status so the
+        user can see the exact wire-level behaviour.
         """
-        token = _extract_bearer_token()
+        user_token = _extract_bearer_token()
         async with httpx.AsyncClient(timeout=10.0) as client:
+            backend_token = await _exchange_token_for_backend(user_token, settings, client)
             response = await client.get(
                 f"{settings.backend_url.rstrip('/')}/whoami",
-                headers={"Authorization": f"Bearer {token}"},
+                headers={"Authorization": f"Bearer {backend_token}"},
                 follow_redirects=False,
             )
         return {

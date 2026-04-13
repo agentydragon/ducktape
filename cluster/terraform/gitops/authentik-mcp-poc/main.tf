@@ -180,7 +180,17 @@ resource "kubernetes_secret" "mcp_poc_oidc" {
   }
 
   data = {
+    # OIDCProxy wraps the user-login OAuth2 provider — these are the creds
+    # it uses to complete the authorization_code grant with Authentik.
     client_id     = authentik_provider_oauth2.mcp_poc.client_id
     client_secret = authentik_provider_oauth2.mcp_poc.client_secret
+    # The proxy provider's auto-generated OAuth2 client_id. The MCP server
+    # uses this as the `client_id` in its JWT-bearer token exchange against
+    # Authentik — see x/authentik_mcp_poc/server.py::_exchange_token_for_backend
+    # and NOTES.md §5. No client_secret is needed: the JWT assertion IS the
+    # authentication, and Authentik's __post_init_client_credentials_jwt
+    # does not require a matching client_secret for the client_credentials
+    # grant path.
+    backend_client_id = authentik_provider_proxy.mcp_poc_backend.client_id
   }
 }

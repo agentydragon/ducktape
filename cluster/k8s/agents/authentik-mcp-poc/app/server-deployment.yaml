@@ -60,6 +60,14 @@ spec:
                 secretKeyRef:
                   name: authentik-mcp-poc-oidc
                   key: client_secret
+            # Backend proxy provider's auto-generated client_id — used by
+            # the tool handler's JWT-bearer token exchange (see server.py
+            # and NOTES.md §5). TF writes this into the same secret.
+            - name: AUTHENTIK_MCP_POC_BACKEND_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-mcp-poc-oidc
+                  key: backend_client_id
           resources:
             requests:
               memory: "128Mi"

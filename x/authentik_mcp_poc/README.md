@@ -12,12 +12,15 @@ Two things are being demonstrated:
    servers with their own auth (OAuth 2.1 + PKCE, RFC 9728 protected-resource
    metadata, RFC 8414 AS metadata discovery, RFC 7591 dynamic client
    registration, RFC 8707 resource indicators).
-2. That a single user-issued Authentik JWT can traverse **two independent
-   Authentik providers** — once when the MCP server validates it, and again
-   when the Authentik proxy outpost in front of the backend validates it — via
-   Authentik's **JWT federation** feature (`jwt_federation_providers` on a
-   proxy provider). This is how "auth handoff" works without any per-hop token
-   exchange.
+2. That a single user identity flows through **two independent Authentik
+   providers** — once when the MCP server validates the user's Authentik JWT,
+   and again when the Authentik proxy outpost in front of the backend validates
+   a **backend-scoped token** the tool handler mints on the fly via an
+   RFC 7521 JWT-bearer client-credentials exchange (see <NOTES.md>). The
+   `jwt_federation_providers` list on the backend proxy provider is the
+   knob that authorizes the exchange. Net effect: one user login in
+   claude.ai grants the agent the ability to call through a _real_ Authentik
+   Proxy Provider outpost as that same user.
 
 This is a toy: the only tool is `whoami_via_backend`, which forwards the
 caller's Bearer JWT to the backend and returns the outpost-injected identity
@@ -67,28 +70,52 @@ claude.ai talks to remote MCP servers.
 │          │◀──────────────────────│   token response: Authentik-signed JWT,
 │          │                       │   passed through OIDCProxy unchanged
 │          │                       │
-│          │ 8. POST /mcp w/ Authorization: Bearer <jwt>
+│          │ 8. POST /mcp w/ Authorization: Bearer <fastmcp-jti>
 │          │──────────────────────▶│   ┌───────────────────────────┐
-│          │                       │──▶│ JWTVerifier validates the │
-│          │                       │   │ JWT against Authentik's   │
-│          │                       │   │ JWKS. Tool runs.          │
-│          │                       │   └───────────────────────────┘
-└──────────┘                       │
-                                   │ 9. tool calls backend
-                                   ▼
+│          │                       │──▶│ OAuthProxy.load_access_   │
+│          │                       │   │ token swaps the JTI ref   │
+│          │                       │   │ for the upstream          │
+│          │                       │   │ Authentik user token.     │
+│          │                       │   │ Tool runs.                │
+│          │                       │   └─────────────┬─────────────┘
+└──────────┘                                         │
+                                                     │ 9a. token exchange
+                                                     ▼
+                            POST https://auth.allegedly.works/application/o/token/
+                                grant_type            = client_credentials
+                                client_id             = <proxy provider client_id>
+                                client_assertion_type = …:jwt-bearer
+                                client_assertion      = <user upstream token>
+                                                     │
+                                                     │ Authentik runs
+                                                     │ __validate_jwt_from_provider
+                                                     │ against mcp_poc_backend.
+                                                     │ jwt_federation_providers
+                                                     │ = [mcp_poc.id], mints a
+                                                     │ NEW AccessToken bound to
+                                                     │ the proxy provider with
+                                                     │ user = original user.
+                                                     ▼
+                                            { access_token: <backend-scoped JWT> }
+                                                     │
+                                                     │ 9b. tool calls backend
+                                                     ▼
                         GET https://authentik-mcp-poc-backend.allegedly.works/whoami
-                        Authorization: Bearer <same jwt>
+                        Authorization: Bearer <backend-scoped JWT>
                                    │
                                    ▼
                         ┌──────────────────────────┐
                         │ Authentik embedded       │
                         │ outpost                  │
                         │ (authentik-server:80)    │
-                        │                          │   authentik_provider_proxy
-                        │ ─ matches Host header    │   .mcp_poc_backend
-                        │ ─ validates Bearer JWT   │   jwt_federation_providers
-                        │   via jwt_federation_    │   = [mcp_poc.id]
-                        │   providers              │
+                        │                          │
+                        │ ─ matches Host header    │
+                        │ ─ introspects token via  │
+                        │   RFC 7662 (scoped to    │
+                        │   proxy provider's own   │
+                        │   client_id, so only     │
+                        │   backend-scoped tokens  │
+                        │   match)                 │
                         │ ─ checks application     │
                         │   policy bindings        │
                         │ ─ sets X-Authentik-*     │
@@ -128,23 +155,40 @@ have the backend validate Authentik JWTs directly with `JWTVerifier`. That
 works but doesn't demonstrate anything about the **forward-auth layer** — it's
 just the MCP server's own auth pattern repeated twice.
 
-JWT federation is the knob that lets both ends be "real":
+JWT federation via a tool-side token exchange is the knob that lets both ends
+be "real":
 
 - MCP server uses OIDCProxy-wrapped `authentik_provider_oauth2`, so the OAuth
   flow is fully RFC-compliant.
-- Backend sits behind `authentik_provider_proxy` with
-  `jwt_federation_providers = [<oauth2 provider id>]`, so the outpost accepts
-  the same JWT as a Bearer token and handles everything from there.
+- The tool handler exchanges the user's upstream token for a backend-scoped
+  one via Authentik's `/application/o/token/` endpoint with
+  `grant_type=client_credentials` + a JWT-bearer client assertion. The
+  backend proxy provider's `jwt_federation_providers = [<oauth2 provider id>]`
+  is the list of providers whose tokens Authentik will accept as assertions.
+- Backend sits behind `authentik_provider_proxy`, and the outpost validates
+  the (new, backend-scoped) Bearer via RFC 7662 introspection against its own
+  provider — so the introspection lookup finds the token and lets the request
+  through.
 
-> **Gotcha we hit during bringup.** OIDCProxy does NOT pass the upstream
-> Authentik token through to the client unchanged — it mints its own minimal
-> JWT (JTI reference into a server-side encrypted store) and issues _that_ to
-> claude.ai. That reference token fails JWT federation at the outpost because
-> it's signed by FastMCP's own signing key, not by `authentik_provider_oauth2.mcp_poc`.
-> The fix is to use `get_access_token().token` in the tool handler (which
-> returns the upstream Authentik token after `OAuthProxy.load_access_token`'s
-> server-side swap), **not** the raw `Authorization` header off the request.
-> Full write-up in <NOTES.md> §2-§4.
+> **Two gotchas we hit during bringup, in case they come up again:**
+>
+> 1. `OIDCProxy` does NOT pass the upstream Authentik token to the MCP client
+>    unchanged — it mints a FastMCP-signed JTI reference token. Reading the
+>    raw `Authorization` header in a tool handler gives you that reference,
+>    not the upstream token. Use `get_access_token().token` instead, which
+>    returns the upstream token after `OAuthProxy.load_access_token`'s
+>    server-side swap.
+> 2. Authentik's proxy outpost does NOT consult `jwt_federation_providers`
+>    when validating forward-auth Bearer headers. Its introspection is
+>    scoped to the proxy provider's own `client_id`, so it only recognizes
+>    tokens issued by THAT provider. `jwt_federation_providers` is only
+>    consulted by the `/application/o/token/` endpoint, in the
+>    `client_credentials` + JWT-bearer client-assertion path — i.e., you use
+>    it to MINT a new, backend-scoped token at tool-call time. This is what
+>    `_exchange_token_for_backend` in `server.py` does.
+>
+> Full forensic write-up, including source-level references in both FastMCP
+> and Authentik, in <NOTES.md> §2-§5.
 
 ## Layout
 

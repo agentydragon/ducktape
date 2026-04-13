@@ -1,9 +1,10 @@
 # Architecture notes
 
 Deep-dive findings from bringing the POC up end-to-end against the live cluster.
-Supersedes the "simple JWT federation" mental model in README.md. The README is
-still accurate about the 50000-foot architecture; this file captures the
-non-obvious details that only surfaced once things were actually running.
+The README describes the 50000-foot architecture; this file captures the
+non-obvious mechanics that only surfaced once things were actually running.
+**It took two incorrect fixes to land on the right one — §2-§4 are the wrong
+path, §5 is the real answer.**
 
 ## 1. The POC's original premise
 
@@ -19,20 +20,23 @@ claude.ai ─OAuth 2.1+PKCE─▶ MCP server (OIDCProxy wraps Authentik OAuth2 p
                                      outpost injects after successful federation
 ```
 
-The idea was that a single user-issued Authentik JWT would traverse **two
-independent Authentik providers**: once the MCP server's `JWTVerifier` validates
-it, once more when the proxy outpost validates it via JWT federation. The
-outpost would then forward to the backend with the standard Authentik
+The idea: a single user-issued Authentik JWT traverses **two independent
+Authentik providers** — once when the MCP server's `JWTVerifier` validates it,
+once more when the proxy outpost validates it via "JWT federation". The outpost
+forwards to the backend with the standard
 `X-Authentik-{Username,Email,Groups,Uid}` headers.
 
-## 2. What actually happens with OIDCProxy in the middle
+**This mental model is wrong in two places.** Both are fixable, but getting
+there required reading both FastMCP's and Authentik's source.
 
-`OIDCProxy` (a subclass of `OAuthProxy`) doesn't pass the upstream Authentik
+## 2. First wrong turn — raw Authorization header is the FastMCP JTI reference
+
+`OIDCProxy` (a subclass of `OAuthProxy`) does NOT pass the upstream Authentik
 token through to the MCP client. Concretely, from reading the wheel source
 (fastmcp 3.1.0):
 
-`fastmcp/server/auth/oauth_proxy/proxy.py` around line 950-985, after the
-upstream token-exchange with Authentik completes:
+`fastmcp/server/auth/oauth_proxy/proxy.py` lines 950-985, after the upstream
+token exchange with Authentik completes:
 
 ```python
 # Store encrypted upstream token under an opaque id
@@ -60,183 +64,283 @@ fastmcp_access_token = self.jwt_issuer.issue_access_token(
 )
 ```
 
-The token returned to claude.ai is therefore:
+The token returned to claude.ai is:
 
 - **Signed by FastMCP's `JWTIssuer`**, whose key is derived from the upstream
-  client_secret via `derive_jwt_key` with salt
-  `"fastmcp-storage-encryption-key"`.
+  client_secret via `derive_jwt_key` with salt `"fastmcp-storage-encryption-key"`.
 - **A short-lived JTI reference** — it carries `jti`, `client_id`, `scopes`,
-  and an `upstream_claims` blob extracted by
-  `_extract_upstream_claims(idp_tokens)`, but it does **not** carry the
-  upstream Authentik access token itself.
-- **Not verifiable by Authentik's JWKS**. The signing key is different, the
-  `iss` claim is the MCP server's `base_url`, not the Authentik issuer.
+  and an `upstream_claims` blob, but it does **not** carry the upstream
+  Authentik access token itself.
+- **Not verifiable by Authentik's JWKS**. The signing key is different and the
+  `iss` claim is the MCP server's `base_url`.
 
-Handing that token directly to Authentik's proxy outpost fails JWT federation
-by definition — the outpost is looking for a signature from the federated
-`authentik_provider_oauth2.mcp_poc` key and seeing FastMCP's locally-derived
-key instead. That's what produced the 401 "Unauthenticated — Due to 'Receive
-header authentication' being set, no redirect is performed" from the outpost
-on our first end-to-end test.
+Our first `_extract_bearer_token` implementation read the raw `Authorization`
+header off `get_http_request()` and forwarded that. We were forwarding the
+FastMCP JTI reference, which Authentik has never heard of. That's why the
+outpost returned 401 "Unauthenticated — Due to 'Receive header authentication'
+being set, no redirect is performed".
 
-## 3. The token swap we missed — FastMCP already did the hard part
+## 3. Second wrong turn — the upstream token isn't what the outpost wants either
 
-The next layer down is what `OAuthProxy.load_access_token` does on the MCP
-server side when a tool request arrives. Still in
-`fastmcp/server/auth/oauth_proxy/proxy.py`, lines 1384-1450:
+`OAuthProxy.load_access_token` runs on the MCP server side when a tool request
+arrives (same file, lines 1384-1454):
 
 ```python
 async def load_access_token(self, token: str) -> AccessToken | None:
-    """Validate FastMCP JWT by swapping for upstream token.
-
-    This implements the token swap pattern:
-    1. Verify FastMCP JWT signature (proves it's our token)
-    2. Look up upstream token via JTI mapping
-    3. Decrypt upstream token
-    4. Validate upstream token with provider (GitHub API, JWT validation, etc.)
-    5. Return upstream validation result
-    """
-    ...
+    # 1. Verify the FastMCP JWT we issued
+    payload = self.jwt_issuer.verify_token(token)
+    jti = payload["jti"]
+    # 2. Look up the upstream token via the JTI mapping
     jti_mapping = await self._jti_mapping_store.get(key=jti)
     upstream_token_set = await self._upstream_token_store.get(
         key=jti_mapping.upstream_token_id
     )
+    # 3. Validate the upstream token against the upstream IdP's JWKS
     verification_token = self._get_verification_token(upstream_token_set)
-    # → upstream_token_set.access_token  (the real Authentik JWT)
-
     validated = await self._token_validator.verify_token(verification_token)
-    ...
+    # 4. Ensure the returned AccessToken carries the upstream access token
     if verification_token != upstream_token_set.access_token:
         validated = validated.model_copy(
-            update={
-                "token": upstream_token_set.access_token,   # ← swap
-                "scopes": upstream_token_set.scope.split()
-                if upstream_token_set.scope
-                else validated.scopes,
-                "expires_at": int(upstream_token_set.expires_at),
-            }
+            update={"token": upstream_token_set.access_token, ...}
         )
     return validated
 ```
 
-So when MultiAuth calls `proxy.verify_token(fastmcp_jti_token)`:
-
-1. `OAuthProvider.verify_token` delegates to
-   `OAuthProxy.load_access_token` (`fastmcp/server/auth/auth.py:646-659`).
-2. `load_access_token` verifies the FastMCP signature, looks up the upstream
-   token via the JTI store, decrypts it, validates it against the upstream
-   JWKS via the configured `TokenVerifier`, and returns an `AccessToken`
-   whose **`.token` field is set to the upstream Authentik access token** —
-   not the JTI reference.
-
-In other words, FastMCP **already does** the server-side equivalent of an
-RFC 8693 token exchange. `get_access_token().token` inside a tool handler is
-the real Authentik JWT, signed by `authentik-mcp-poc`, exactly the shape the
-proxy outpost's `jwt_federation_providers` wants.
-
-## 4. Where our POC went wrong
-
-`x/authentik_mcp_poc/server.py` `_extract_bearer_token` reads the raw
-`Authorization` header off the incoming request and forwards **that** to the
-backend:
+In `JWTVerifier.verify_token` (the `_token_validator` OIDCProxy uses),
+`providers/jwt.py` line 475:
 
 ```python
-def _extract_bearer_token() -> str:
-    request = get_http_request()
-    header = request.headers.get("authorization", "")
-    scheme, _, token = header.partition(" ")
-    if scheme.lower() != "bearer" or not token:
-        raise RuntimeError(f"expected Bearer token in Authorization header, got {header!r}")
-    return token
+return AccessToken(
+    token=token,     # ← whatever was passed in — i.e. upstream_token_set.access_token
+    client_id=str(client_id),
+    scopes=scopes, ...
+)
 ```
 
-The raw `Authorization` header is the FastMCP JTI reference token (what
-claude.ai sent), **not** the upstream Authentik token. We were skipping past
-the token swap entirely. That's why the proxy outpost kept rejecting it.
+So `get_access_token().token` in the tool handler IS the real Authentik JWT,
+issued by our `authentik-mcp-poc` OAuth2 provider (provider 54 in the live
+cluster). Good. That was our second fix. **Still got 401 "token is not active"
+from the outpost at 2026-04-13T18:30:57Z.**
 
-The fix is one function — use `get_access_token()` from
-`fastmcp.server.dependencies` instead:
+Here's what's actually happening inside Authentik when the outpost receives
+our forwarded Bearer header. The embedded outpost validates incoming Bearer
+tokens by calling RFC 7662 introspection against the **proxy provider's own**
+token endpoint, authenticating as **itself** (using the proxy provider's
+auto-generated `client_id`/`client_secret`). Then
+`authentik/providers/oauth2/views/introspection.py:45-50` runs:
 
 ```python
-from fastmcp.server.dependencies import get_access_token
-
-def _extract_bearer_token() -> str:
-    access = get_access_token()
-    if access is None:
-        raise RuntimeError("no access token in request context")
-    # After OAuthProxy.load_access_token's swap, .token is the upstream
-    # Authentik access token — not the JTI reference the raw Authorization
-    # header would give us.
-    return access.token
+access_token = AccessToken.objects.filter(
+    token=raw_token,
+    provider=provider,   # ← bound to whoever authenticated the /introspect/ call
+).first()
 ```
 
-After this change the Bearer we forward to the backend is Authentik-signed,
-`jwt_federation_providers = [mcp_poc]` matches, the outpost forwards to the
-backend, and FastAPI sees the real `X-Authentik-*` headers.
+Where `provider = authenticate_provider(request)` = the **proxy provider**
+(provider 55, `authentik-mcp-poc-backend`). The filter hard-codes `provider` —
+there is **no fallback**, no "also check `jwt_federation_providers`". So
+Authentik looks for `AccessToken.filter(token=<our_user_jwt>, provider=55)` and
+finds nothing, because our user's token was issued by provider 54. The
+introspection endpoint returns `{active: false}`, the outpost logs `token is
+not active`, falls through to the "unauthenticated header auth" branch, and
+returns the 401 HTML page.
 
-## 5. Why we don't need RFC 8693 token exchange
+`jwt_federation_providers` is in Authentik source in exactly one code path:
+`authentik/providers/oauth2/views/token.py::__post_init_client_credentials_jwt`,
+called from the `/application/o/token/` endpoint when the grant type is
+`client_credentials` and the request carries a `client_assertion_type` of
+`urn:ietf:params:oauth:client-assertion-type:jwt-bearer`. It is **not** used
+for forward-auth Bearer validation at the outpost. **The POC's original
+premise ("the outpost federates JWTs via `jwt_federation_providers`") is
+wrong** — that's not what the field does.
 
-Option (B) from the earlier discussion was: have the tool perform an RFC 8693
-token-exchange call to Authentik to mint an audience-bound token from the
-upstream token. Turns out that's what `OAuthProxy.load_access_token`
-effectively already did server-side — we just weren't using its output.
+(Also, contrary to what this file claimed earlier, Authentik 2026.2.1 does
+**not** implement RFC 8693 token exchange. `authentik/common/oauth/constants.py`
+lists the supported grants and `urn:ietf:params:oauth:grant-type:token-exchange`
+is not there. I'd written that from faulty memory. Removed.)
 
-We **may** still want actual RFC 8693 later for two reasons, but neither is
-required for the current POC:
+## 4. But `jwt_federation_providers` IS usable — just on the token endpoint
 
-1. **Per-resource audience binding.** The upstream token we get back is
-   audience-scoped to `authentik-mcp-poc` (the OAuth2 provider). If we wanted
-   the token to be audience-scoped to `authentik-mcp-poc-backend` (the proxy
-   provider) to tighten the blast radius, RFC 8693 would be the knob.
-2. **Multi-backend fanout.** A tool that needs to call N different services,
-   each under its own proxy provider, would need N audience-specific tokens.
-   RFC 8693 lets us spawn those on demand without N separate OAuth flows.
+The field IS the right knob, just in a different place. Reading
+`authentik/providers/oauth2/views/token.py` lines 414-442:
 
-Authentik does support RFC 8693 token exchange natively (since 2024.10), so
-either extension is mechanically feasible — but we should only reach for it
-when a real use case shows up, not speculatively.
+```python
+def __validate_jwt_from_provider(
+    self, assertion: str
+) -> tuple[dict, OAuth2Provider] | tuple[None, None]:
+    token = provider = _key = None
+    federated_token = AccessToken.objects.filter(
+        token=assertion, provider__in=self.provider.jwt_federation_providers.all()
+    ).first()
+    if federated_token:
+        _key, _alg = federated_token.provider.jwt_key
+        try:
+            token = decode(
+                assertion, _key.public_key(),
+                algorithms=[_alg],
+                options={"verify_aud": False},
+            )
+            provider = federated_token.provider
+            self.user = federated_token.user
+        except ...
+    return token, provider
+```
 
-## 6. Open questions after this fix lands
+And the routing to it, lines 316-334:
 
-The fix is "one line in `server.py`". Expected post-fix behavior:
+```python
+def __post_init_client_credentials(self, request: HttpRequest):
+    # client_credentials flow with client assertion
+    if request.POST.get(CLIENT_ASSERTION_TYPE, "") != "":
+        return self.__post_init_client_credentials_jwt(request)
+    ...
+```
 
-- `whoami_via_backend` tool forwards the real Authentik access token.
-- Proxy outpost's `jwt_federation_providers` accepts it.
-- Outpost decodes user identity from the token and rewrites to `internal_host`
-  with `X-Authentik-{Username,Email,Groups,Uid}` headers set.
-- FastAPI backend's `/whoami` returns those headers echoed as JSON plus the
-  `secret_message`.
+So if we POST to `/application/o/token/` with:
 
-Things to verify once it rolls out:
+```
+grant_type              = client_credentials
+client_id               = <backend proxy provider's auto-generated client_id>
+client_assertion_type   = urn:ietf:params:oauth:client-assertion-type:jwt-bearer
+client_assertion        = <user's upstream Authentik JWT (issued by provider 54)>
+scope                   = openid
+```
 
-- Token audience/scope on the upstream token includes whatever the outpost
-  enforces. `authentik_provider_proxy.mcp_poc_backend` doesn't declare
-  `required_scopes` — should be OK — but if the outpost has a minimum-scope
-  check we haven't configured, we'd get another 401 with a different body.
-- The `upstream_claims` embedded in the FastMCP token still contains enough
-  info for the `get_access_token().claims` path the tool might use for
-  logging. Not load-bearing for the call path, but worth checking.
-- Token lifetime. OAuthProxy aligns the FastMCP token TTL with the upstream
-  expiry, so claude.ai should refresh in sync with the underlying Authentik
-  token. The refresh flow (`handle_refresh_token`, lines 1150-1200) also
-  re-issues the FastMCP token; the tool code doesn't care which generation it
-  is.
+then:
+
+1. `TokenView.post` looks up `self.provider` by the `client_id` → provider 55
+   (the backend proxy provider).
+2. The confidential-client secret check at line 167 is guarded by
+   `grant_type in [AUTHORIZATION_CODE, REFRESH_TOKEN]`, so `client_credentials`
+   bypasses it — **no `client_secret` is required**, the JWT assertion is the
+   authentication.
+3. `__post_init_client_credentials` sees `CLIENT_ASSERTION_TYPE != ""` and
+   routes to `__post_init_client_credentials_jwt`.
+4. `__validate_jwt_from_provider` looks up the assertion in `AccessToken`
+   filtered to `self.provider.jwt_federation_providers` =
+   `provider_55.jwt_federation_providers.all()` = `[provider_54]`. The user's
+   upstream token IS in that table (it's the token the
+   `authorization_code`-grant issued), so the lookup succeeds. Authentik
+   validates the signature against provider 54's JWK and sets
+   `self.user = federated_token.user` — the identity is preserved.
+5. Token issuance proceeds, minting a **new** `AccessToken` row with
+   `provider=provider_55` and `user=<original_user>`.
+
+That new token is exactly the shape the outpost's introspection expects:
+`AccessToken.filter(token=<new_token>, provider=provider_55)` finds it,
+returns `{active: true}`, and the outpost rewrites to `internal_host` with the
+standard `X-Authentik-*` identity headers set from the federated user.
+
+## 5. The fix: tool-side token exchange before calling the backend
+
+Two-hop instead of one:
+
+```
+get_access_token().token                            → user's upstream token
+        │                                             (issued by provider 54)
+        ▼
+POST /application/o/token/
+    grant_type=client_credentials
+    client_id=<provider_55's client_id>
+    client_assertion_type=...:jwt-bearer
+    client_assertion=<user's upstream token>
+        │
+        ▼                                             → backend-scoped token
+access_token in response                              (issued by provider 55)
+        │                                             identity = same user
+        ▼
+GET https://authentik-mcp-poc-backend.allegedly.works/whoami
+    Authorization: Bearer <backend-scoped token>
+        │
+        ▼
+Authentik outpost introspects → AccessToken.filter(
+    token=<backend-scoped>, provider=provider_55) → MATCH → active=True
+        │
+        ▼
+Rewrites to internal_host with X-Authentik-{Username,Email,Uid,Groups}
+```
+
+Code shape in `server.py`:
+
+```python
+async def _exchange_token_for_backend(
+    user_token: str, settings: ServerSettings, client: httpx.AsyncClient,
+) -> str:
+    response = await client.post(
+        settings.authentik_token_endpoint(),
+        data={
+            "grant_type": "client_credentials",
+            "client_id": settings.backend_oidc_client_id,
+            "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            "client_assertion": user_token,
+            "scope": "openid",
+        },
+    )
+    response.raise_for_status()
+    return response.json()["access_token"]
+```
+
+and the tool becomes:
+
+```python
+user_token = _extract_bearer_token()
+async with httpx.AsyncClient(timeout=10.0) as client:
+    backend_token = await _exchange_token_for_backend(user_token, settings, client)
+    response = await client.get(f"{backend_url}/whoami",
+                                headers={"Authorization": f"Bearer {backend_token}"})
+```
+
+Terraform still needs `jwt_federation_providers = [authentik_provider_oauth2.mcp_poc.id]`
+on the proxy provider — that's the whitelist `__validate_jwt_from_provider`
+filters on. We additionally expose the proxy provider's auto-generated
+`client_id` in the K8s secret so the server Deployment can read it.
+
+## 6. Things worth double-checking once this lands
+
+- **Token lifetime.** Authentik's OAuth2 provider 54 has `access_token_validity
+= "minutes=10"` by default; the upstream token we forward must still be
+  live when we do the exchange (which is fine in practice — FastMCP's refresh
+  flow aligns its token TTL with the upstream expiry, so claude.ai refreshes
+  before the underlying token expires). Provider 55's
+  `access_token_validity = "hours=24"` is the TTL of the backend-scoped token,
+  which only needs to outlive one HTTP call.
+- **Policy bindings.** The backend application (`authentik-mcp-poc-backend`)
+  has a policy binding to the `authentik Admins` group. `__validate_jwt_from_provider`
+  **does not** run `__check_policy_access` — the policy enforcement happens
+  when the outpost serves the backend's `external_host`, not at the token
+  exchange. So the token exchange succeeds for any user whose upstream token
+  passes provider 54's policy; the backend-side policy check on provider 55
+  happens when the outpost processes the subsequent `/whoami` request.
+- **Scope handling.** We ask for `scope=openid`; the new token inherits the
+  proxy provider's property_mappings which include the proxy-specific claims
+  the outpost reads at introspection time (username, email, groups, uid).
+- **Not forwarding the token to multiple backends.** If we later want to call
+  N backends in one tool call, each needs its own exchange keyed by that
+  backend's `client_id`. There's no audience-bound reuse — each backend's
+  outpost checks `provider=<its_own_provider>` in introspection.
 
 ## 7. References
 
-- fastmcp 3.1.0 wheel, `fastmcp/server/auth/oauth_proxy/proxy.py`:
-  - `load_access_token` token-swap pattern — lines 1384-1450.
+- **fastmcp 3.1.0 wheel**, `fastmcp/server/auth/oauth_proxy/proxy.py`:
+  - `OAuthProxy.load_access_token` token-swap pattern — lines 1384-1454.
   - Upstream token storage on /token handler — lines 895-985.
   - Refresh flow (aligns FastMCP TTL with upstream) — lines 1150-1200.
-- fastmcp 3.1.0 wheel, `fastmcp/server/auth/auth.py`:
-  - `OAuthProvider.verify_token` → `load_access_token` delegation — lines 646-659.
-  - `MultiAuth.verify_token` iterates `server` first, then `verifiers` — lines 537-556.
-- mcp 1.27.0 wheel, `mcp/server/auth/provider.py`:
-  - `AccessToken` model — `.token: str` is a plain string field, set by
-    OAuthProxy to the upstream Authentik access token after the swap.
-- fastmcp 3.1.0 wheel, `fastmcp/server/dependencies.py`:
-  - `get_access_token()` — returns the `AccessToken` from request scope, so
-    the swap result is what the tool sees — lines 469-540.
-- Authentik RFC 8693 support — release notes for 2024.10 add
-  `urn:ietf:params:oauth:grant-type:token-exchange` on the `/application/o/token/`
-  endpoint. Not used by this POC (see §5) but available for future extensions.
+- **fastmcp 3.1.0 wheel**, `fastmcp/server/auth/providers/jwt.py`:
+  - `JWTVerifier.load_access_token` returns `AccessToken(token=token, ...)` —
+    line 475. (This is why the OAuthProxy swap's `model_copy` check at line
+    1436 is effectively a no-op in the happy path: the inner verifier has
+    already set `.token` to `verification_token`, which equals
+    `upstream_token_set.access_token`.)
+- **Authentik 2026.2.1**, `authentik/providers/oauth2/views/introspection.py`:
+  - `TokenIntrospectionParams.from_request` — lines 41-55. The hard-coded
+    `provider=provider` filter that blocks cross-provider token recognition.
+- **Authentik 2026.2.1**, `authentik/providers/oauth2/views/token.py`:
+  - `__validate_jwt_from_provider` — lines 414-442. The one place
+    `jwt_federation_providers` is consulted.
+  - `__post_init_client_credentials` router — lines 316-334.
+  - `__post_init__` confidential-client secret check — lines 165-174 (only
+    guards `authorization_code` / `refresh_token`, not `client_credentials`).
+- **Authentik 2026.2.1**, `authentik/common/oauth/constants.py`:
+  - Full list of supported grant types. Notably absent:
+    `urn:ietf:params:oauth:grant-type:token-exchange` — Authentik does not
+    implement RFC 8693.
