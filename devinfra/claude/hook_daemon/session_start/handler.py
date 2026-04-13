@@ -30,11 +30,10 @@ from devinfra.claude.errors import SkipError
 from devinfra.claude.hook_daemon import templates
 from devinfra.claude.hook_daemon.config import BackgroundCommand, ProfileConfig
 from devinfra.claude.hook_daemon.models import StartupResult
-from devinfra.claude.hook_daemon.session import Session
+from devinfra.claude.hook_daemon.session import BgStream, Session, _feed_queue
 from devinfra.claude.hook_daemon.session_start import (
     buildbuddy,
     container_runtime,
-    fork_remote,
     kubeconfig,
     mkcert,
     platform_detect,
@@ -99,7 +98,6 @@ class PlatformSetup:
     bazel_cache_dir: Path | None = None
     kubeconfig_path: Path | None = None
     # Shared-step results (populated by handle(), not platform setup)
-    fork_result: fork_remote.ForkRemoteSetup | None = None
     buildbuddy_setup: buildbuddy.BuildbuddySetup = field(default_factory=buildbuddy.BuildbuddyNotConfigured)
 
     @property
@@ -115,7 +113,19 @@ class PlatformSetup:
         return self.env_overlay.get("GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN")
 
 
-async def _run_background_command(
+async def _watch_proc(session: Session, cmd: BackgroundCommand, proc: asyncio.subprocess.Process) -> None:
+    """Wait for a background process; post a lifecycle message on completion or timeout."""
+    try:
+        returncode = await asyncio.wait_for(proc.wait(), timeout=cmd.timeout)
+    except TimeoutError:
+        proc.kill()
+        await proc.wait()
+        session.post_message(f"Task [{cmd.name}] timed out after {cmd.timeout}s.")
+        return
+    session.post_message(f"Task [{cmd.name}] exited {returncode}.")
+
+
+async def _launch_background_command(
     session: Session,
     cmd: BackgroundCommand,
     sock_path: Path,
@@ -123,41 +133,37 @@ async def _run_background_command(
     project_dir: Path,
     env_overlay: dict[str, str],
 ) -> None:
-    """Run a background shell command with lifecycle messages to the session mailbox.
+    """Start a background command; wire stdout/stderr queues and a lifecycle watcher.
 
     Passes HOOK_DAEMON_SOCK so scripts can post additional messages via
     ``curl --unix-socket $HOOK_DAEMON_SOCK -X POST http://localhost/mailbox -d '{"message":"..."}'``.
+    Output accumulates in per-source queues and is flushed by drain_bg_output() on the
+    next REPL hook — without waiting for the process to finish.
     """
     session.post_message(f"Task [{cmd.name}] started.")
-    try:
-        env = {**os.environ, **env_overlay, "HOOK_DAEMON_SOCK": str(sock_path)}
+    env = {**os.environ, **env_overlay, "HOOK_DAEMON_SOCK": str(sock_path)}
 
-        shell_cmd = cmd.command
-        if cmd.after_env and env_file_path:
-            shell_cmd = f"source {shlex.quote(str(env_file_path))} && {shell_cmd}"
+    shell_cmd = cmd.command
+    if cmd.after_env and env_file_path:
+        shell_cmd = f"source {shlex.quote(str(env_file_path))} && {shell_cmd}"
 
-        proc = await asyncio.create_subprocess_exec(
-            "bash",
-            "-c",
-            shell_cmd,
-            cwd=project_dir,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=cmd.timeout)
-        if proc.returncode != 0:
-            output = (stderr or stdout or b"").decode(errors="replace")[-500:]
-            logger.error("Background command %s failed (exit %d): %s", cmd.name, proc.returncode, output)
-            session.post_message(f"Task [{cmd.name}] failed, see hook daemon logs for details.")
-        else:
-            session.post_message(f"Task [{cmd.name}] completed successfully.")
-    except TimeoutError:
-        logger.exception("Background command %s timed out after %ds", cmd.name, cmd.timeout)
-        session.post_message(f"Task [{cmd.name}] failed, see hook daemon logs for details.")
-    except Exception:
-        logger.exception("Background command %s failed", cmd.name)
-        session.post_message(f"Task [{cmd.name}] failed, see hook daemon logs for details.")
+    proc = await asyncio.create_subprocess_exec(
+        "bash",
+        "-c",
+        shell_cmd,
+        cwd=project_dir,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=env,
+    )
+
+    stdout_q: asyncio.Queue[str] = asyncio.Queue()
+    stderr_q: asyncio.Queue[str] = asyncio.Queue()
+    session.add_bg_source(cmd.name, BgStream.STDOUT, stdout_q)
+    session.add_bg_source(cmd.name, BgStream.STDERR, stderr_q)
+    session.track(asyncio.create_task(_feed_queue(proc.stdout, stdout_q)))  # type: ignore[arg-type]
+    session.track(asyncio.create_task(_feed_queue(proc.stderr, stderr_q)))  # type: ignore[arg-type]
+    session.track(asyncio.create_task(_watch_proc(session, cmd, proc)))
 
 
 def _launch_background_commands(
@@ -172,7 +178,7 @@ def _launch_background_commands(
     """Launch background commands as fire-and-forget asyncio tasks."""
     for cmd in commands:
         task = asyncio.create_task(
-            _run_background_command(session, cmd, sock_path, env_file_path, project_dir, env_overlay)
+            _launch_background_command(session, cmd, sock_path, env_file_path, project_dir, env_overlay)
         )
         session.track(task)
 
@@ -427,14 +433,6 @@ async def handle(
             else:
                 setup.buildbuddy_setup = buildbuddy_result
 
-    # Ensure 'fork' git remote when GITHUB_TOKEN is available.
-    if setup.github_token:
-        try:
-            with tracer.start_as_current_span("setup_fork_remote", context=root_ctx):
-                setup.fork_result = fork_remote.ensure_fork_remote(setup.github_token, project_dir)
-        except Exception as e:
-            logger.warning("Fork remote setup failed: %s", e)
-
     # Write bbr bazelrc (metadata tags for BuildBuddy invocation filtering).
     # Consumed by bbr via $BBR_BAZELRC and try-imported into the session bazelrc.
     session_id = ctx.caller_env.get("CLAUDE_CODE_SESSION_ID", "unknown")
@@ -522,7 +520,6 @@ async def handle(
         extra_context = _render_extra_context(
             project_dir,
             setup,
-            setup.fork_result,
             profile=profile,
             bazel_remote_proxy_sock=session.paths.bazel_remote_proxy_sock if session.uds_remote else None,
             bazel_bes_proxy_sock=session.paths.bazel_bes_proxy_sock if session.bes_interceptor else None,
@@ -563,7 +560,6 @@ def _build_extra_env_script(profile: ProfileConfig) -> str | None:
 def _render_extra_context(
     project_dir: Path,
     setup: PlatformSetup,
-    fork_result: fork_remote.ForkRemoteSetup | None = None,
     *,
     profile: ProfileConfig,
     bazel_remote_proxy_sock: Path | None,
@@ -578,7 +574,6 @@ def _render_extra_context(
     template = Template(extra_template_path.read_text())
     result: str = template.render(
         setup=setup,
-        fork_result=fork_result,
         profile=profile,
         bazel_remote_proxy_sock=bazel_remote_proxy_sock,
         bazel_bes_proxy_sock=bazel_bes_proxy_sock,

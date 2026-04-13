@@ -20,6 +20,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
+import anyio
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from opentelemetry import trace
@@ -50,7 +51,7 @@ from devinfra.claude.hook_daemon.models import (
 )
 from devinfra.claude.hook_daemon.post_tool_use import evaluate as evaluate_post
 from devinfra.claude.hook_daemon.pre_tool_use import evaluate as evaluate_pre
-from devinfra.claude.hook_daemon.session import Session
+from devinfra.claude.hook_daemon.session import BgStream, Session
 from devinfra.claude.hook_daemon.session_start.handler import CallerContext, handle as handle_session_start
 from devinfra.claude.hook_daemon.worktree import handle_worktree_create
 from devinfra.claude.session_paths import SessionPaths
@@ -104,7 +105,7 @@ def _save_session_env(daemon_dir: Path | None, env: dict[str, str]) -> None:
 
 
 def _apply_mailbox(output: HookOutput | None, session: Session, hook: AnyHookInput) -> HookOutput | None:
-    """Drain session mailbox and append messages to output.system_message.
+    """Drain session mailbox and bg output; append to output.system_message.
 
     Only flushes on REPL hooks — those where Claude Code delivers systemMessage
     to the model conversation (as a hook_system_message attachment). Non-REPL
@@ -113,12 +114,32 @@ def _apply_mailbox(output: HookOutput | None, session: Session, hook: AnyHookInp
     """
     if isinstance(hook, _NON_REPL_HOOK_TYPES):
         return output
-    if bg_messages := session.drain_messages():
-        if output is None:
-            output = HookOutput()
-        formatted = "Messages from hook daemon mailbox:\n" + "\n".join(f"- {m}" for m in bg_messages)
-        parts = [output.system_message, formatted] if output.system_message else [formatted]
-        output.system_message = "\n\n".join(parts)
+
+    raw = session.drain_messages()
+    bg_output = session.drain_bg_output()
+
+    if not raw and not bg_output:
+        return output
+
+    if output is None:
+        output = HookOutput()
+
+    parts = [output.system_message] if output.system_message else []
+
+    if bg_output:
+        by_task: dict[str, dict[BgStream, list[str]]] = {}
+        for (task_name, stream), lines in bg_output.items():
+            by_task.setdefault(task_name, {})[stream] = lines
+        task_blocks = []
+        for task_name, streams in by_task.items():
+            inner = "".join(f"<{stream}>{chr(10).join(lines)}</{stream}>" for stream, lines in streams.items())
+            task_blocks.append(f"<task {task_name}>{inner}</task>")
+        parts.append("Background task output:\n" + "\n".join(task_blocks))
+
+    if raw:
+        parts.append("Messages from hook daemon mailbox:\n" + "\n".join(f"- {m}" for m in raw))
+
+    output.system_message = "\n\n".join(parts)
     return output
 
 
@@ -239,6 +260,10 @@ def create_app(daemon_dir: Path, profile: ProfileConfig, startup: StartupResult)
         """Log full traceback for unhandled exceptions instead of silent 500."""
         try:
             return await call_next(request)
+        except anyio.EndOfStream:
+            # Client closed the connection before the response was fully sent.
+            # Starlette's BaseHTTPMiddleware raises this internally; let it propagate.
+            raise
         except Exception:
             tb_str = traceback.format_exc()
             logger.exception("Unhandled exception in %s %s", request.method, request.url.path)

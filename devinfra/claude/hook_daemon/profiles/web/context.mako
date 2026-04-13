@@ -1,43 +1,11 @@
 <%import os%>\
-## Secrets
-<%
-    has_any_secret = setup.buildbuddy_api_key or setup.github_token
-%>\
-% if has_any_secret:
-Secrets loaded (buildbuddy=${"yes" if setup.buildbuddy_api_key else "no"}, github=${"yes" if setup.github_token else "no"}).
-% if setup.github_token:
-`GITHUB_TOKEN`: GitHub PAT for the `agentydragon-agent` bot account. Used by `gh` CLI automatically.
-  **PR workflow** (`origin` pushes to `agentydragon/ducktape` via proxy, but bot is NOT a collaborator so PRs must come from a fork):
-% if fork_result and fork_result.fork_exists:
-  `fork` remote pre-configured → `https://github.com/${fork_result.username}/${fork_result.repo_name}.git`
-  ```bash
-  git push -u fork <branch-name>
-  gh pr create --repo agentydragon/ducktape --head ${fork_result.username}:<branch-name> --base devel
-  ```
-% elif fork_result and not fork_result.fork_exists:
-  **Fork `https://github.com/${fork_result.username}/${fork_result.repo_name}` not found.** Create it and add the remote:
-  ```bash
-  gh repo fork agentydragon/ducktape --org ${fork_result.username} --clone=false
-  git remote add fork "https://${fork_result.username}:${'$'}{GITHUB_TOKEN}@github.com/${fork_result.username}/${fork_result.repo_name}.git"
-  git push -u fork <branch-name>
-  gh pr create --repo agentydragon/ducktape --head ${fork_result.username}:<branch-name> --base devel
-  ```
-% else:
-  Fork remote setup unavailable this session. Manually:
-  ```bash
-  git remote add fork "https://agentydragon-agent:${'$'}{GITHUB_TOKEN}@github.com/agentydragon-agent/ducktape.git"
-  git push -u fork <branch-name>
-  gh pr create --repo agentydragon/ducktape --head agentydragon-agent:<branch-name> --base devel
-  ```
-% endif
-% endif
 % if setup.kubeconfig_path:
 `KUBECONFIG` set — `kubectl` and the `claude-sandbox-kubectl` MCP tools are available.
 % endif
 % if setup.buildbuddy_api_key:
 API key in `~/.config/bazel/buildbuddy.bazelrc`. See <docs/buildbuddy_api.md> for undocumented endpoints (profile download, invocation search, cache scorecard).
 % endif
-% else:
+% if not setup.buildbuddy_api_key and not setup.github_token:
 
 ${"##"} Secrets — UNAVAILABLE
 Secrets could not be fetched. This means:
@@ -63,6 +31,4 @@ Secrets could not be fetched. This means:
 LLM inference (2x RTX 5090, Apache 2.0 `gpt-oss` models):
   - `https://litellm.allegedly.works/v1` — OpenAI-compatible proxy (LiteLLM). Model: `gpt-oss-20b-128k`. API key: k8s secret `litellm-master-key` (key `api-key`) in `claude-sandbox`. LiteLLM routes to Ollama and can support additional providers.
   - `https://ollama.allegedly.works` — Ollama native API (direct). Bearer token: k8s secret `ollama-bearer-token` (key `token`) in `claude-sandbox`. Use for Ollama-specific features (model management, embeddings).
-% if profile.setup_tmpfs:
 Bazel: `bazel build //...` / `bazel test //...` (full repo) are slow in web sessions. When a repo-wide scan is needed, run a few smaller serial invocations (e.g. `//agent_core/...`, then `//props/...`) rather than one large `//...`.
-% endif

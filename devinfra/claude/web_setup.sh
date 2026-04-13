@@ -139,10 +139,10 @@ echo "[$(date -Iseconds)] Wrote secrets to ${SETTINGS_LOCAL}"
 #
 # bb source: https://github.com/buildbuddy-io/buildbuddy (cli/remotebazel/)
 #
-# bb auto-selects a single remote without prompting. With 2+ remotes it
-# prompts interactively. bb >= master (post-5.0.339) caches the last-used
-# remote in buildbuddy.remote-bazel-remote-name and skips the prompt on
-# subsequent runs. We set it here so it works as soon as bb is updated.
+# bb auto-selects a single remote without prompting. With 2+ remotes, in TTY
+# mode it shows a selection TUI; in non-TTY mode (pre-commit hooks, CI) it
+# reads buildbuddy.remote-bazel-remote-name and uses the named remote directly.
+# Value must be a remote NAME (not a URL) — bb resolves the URL from git config.
 GITHUB_REMOTE_URL="https://github.com/agentydragon/ducktape"
 if git -C "$PROJECT_DIR" remote get-url github-no-proxy &>/dev/null; then
   echo "[$(date -Iseconds)] git remote 'github-no-proxy' already exists, skipping."

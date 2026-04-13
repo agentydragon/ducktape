@@ -34,13 +34,6 @@ py_library(
 )
 
 py_library(
-    name = "fork_remote",
-    srcs = ["fork_remote.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//pygit2"],
-)
-
-py_library(
     name = "mkcert",
     srcs = ["mkcert.py"],
     visibility = ["//visibility:public"],
@@ -78,7 +71,6 @@ py_library(
     deps = [
         ":buildbuddy",
         ":container_runtime",
-        ":fork_remote",
         ":kubeconfig",
         ":mkcert",
         ":platform_detect",

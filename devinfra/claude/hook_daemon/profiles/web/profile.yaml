@@ -57,6 +57,58 @@ background_commands:
   - name: pre-commit setup
     command: pre-commit install --install-hooks
     timeout: 300
+  - name: fork remote setup
+    command: |
+      if [ -z "${GITHUB_TOKEN:-}" ]; then
+        echo "GITHUB_TOKEN not set — skipping fork remote setup"
+        exit 0
+      fi
+      user_json=$(curl -sf \
+        -H "Authorization: token $GITHUB_TOKEN" \
+        -H "Accept: application/vnd.github.v3+json" \
+        -H "User-Agent: ducktape-session-hook/1.0" \
+        https://api.github.com/user 2>/dev/null) || {
+        echo "WARNING: fork remote: GitHub /user API call failed" >&2
+        exit 1
+      }
+      username=$(printf '%s' "$user_json" \
+        | python3 -c 'import json,sys; print(json.load(sys.stdin)["login"])') || {
+        echo "WARNING: fork remote: could not parse username" >&2
+        exit 1
+      }
+      origin_url=$(git remote get-url origin 2>/dev/null) || {
+        echo "WARNING: fork remote: no origin remote" >&2
+        exit 1
+      }
+      repo_name="${origin_url%/}"; repo_name="${repo_name%.git}"; repo_name="${repo_name##*/}"
+      fork_status=$(curl -s -o /dev/null -w "%{http_code}" \
+        -H "Authorization: token $GITHUB_TOKEN" \
+        -H "Accept: application/vnd.github.v3+json" \
+        "https://api.github.com/repos/$username/$repo_name") || fork_status="000"
+      if [ "$fork_status" != "200" ]; then
+        msg="Fork https://github.com/$username/$repo_name not found (HTTP $fork_status). Create: gh repo fork agentydragon/ducktape --org $username --clone=false"
+        curl -sf --unix-socket "$HOOK_DAEMON_SOCK" -X POST http://localhost/mailbox \
+          -H 'Content-Type: application/json' \
+          -d "$(python3 -c "import json,sys; print(json.dumps({'message': sys.argv[1]}))" "$msg")"
+        exit 0
+      fi
+      fork_url="https://$username:$GITHUB_TOKEN@github.com/$username/$repo_name.git"
+      if git remote get-url fork &>/dev/null; then
+        git remote set-url fork "$fork_url"; action="updated"
+      else
+        git remote add fork "$fork_url"; action="added"
+      fi
+      msg=$(python3 -c "
+      import json, sys
+      username, repo, action = sys.argv[1], sys.argv[2], sys.argv[3]
+      print(json.dumps({'message':
+        f'Fork remote {action}: git push -u fork <branch>, then: '
+        f'gh pr create --repo agentydragon/ducktape --head {username}:<branch> --base devel.'
+      }))" "$username" "$repo_name" "$action")
+      curl -sf --unix-socket "$HOOK_DAEMON_SOCK" -X POST http://localhost/mailbox \
+        -H 'Content-Type: application/json' -d "$msg"
+    timeout: 30
+    after_env: true
   - name: bazelisk warmup (query //...)
     command: |
       bazelisk query //... >/dev/null &

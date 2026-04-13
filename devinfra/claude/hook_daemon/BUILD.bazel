@@ -148,6 +148,7 @@ py_library(
         "//devinfra/claude/claude_api/hooks:pre_tool_use",
         "//devinfra/claude/claude_api/hooks:session_start",
         "//devinfra/claude/hook_daemon/session_start:session_start_lib",
+        "@pypi//anyio",
         "@pypi//fastapi",
         "@pypi//opentelemetry_api",
         "@pypi//pydantic",
@@ -403,6 +404,20 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "test_bg_output",
+    srcs = ["test_bg_output.py"],
+    legacy_create_init = 0,
+    deps = [
+        ":session",
+        "//devinfra/claude:conftest",
+        "//devinfra/claude/hook_daemon/testing:testing_helpers",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
     ],
 )
 
