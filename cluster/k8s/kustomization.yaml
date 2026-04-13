@@ -42,6 +42,8 @@ resources:
   - agents/claude-sandbox-firecracker/flux-kustomization.yaml
   - agents/airlock/flux-kustomization.yaml
   - agents/airlock-oidc-proxy-tf/flux-kustomization.yaml
+  - agents/authentik-mcp-poc/flux-kustomization.yaml
+  - agents/authentik-mcp-poc-tf/flux-kustomization.yaml
   - agents/google-workspace-mcp/flux-kustomization.yaml
   - agents/tana-mcp/flux-kustomization.yaml
   - agents/kagent/namespace/flux-kustomization.yaml

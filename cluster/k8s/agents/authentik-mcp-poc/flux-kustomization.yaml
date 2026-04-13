@@ -1,0 +1,28 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: authentik-mcp-poc
+  namespace: flux-system
+spec:
+  suspend: false
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./cluster/k8s/agents/authentik-mcp-poc
+  prune: true
+  wait: true
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: authentik-mcp-poc-server
+      namespace: authentik-mcp-poc
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: authentik-mcp-poc-backend
+      namespace: authentik-mcp-poc
+  dependsOn:
+    - name: gateway
+    - name: authentik-mcp-poc-tf

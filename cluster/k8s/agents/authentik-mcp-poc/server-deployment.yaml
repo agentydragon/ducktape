@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authentik-mcp-poc-server
+  namespace: authentik-mcp-poc
+  labels:
+    app: authentik-mcp-poc
+    component: server
+  annotations:
+    description: "FastMCP server with OIDCProxy wrapping Authentik; forwards the caller's JWT to the whoami backend via the Authentik proxy outpost."
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: authentik-mcp-poc
+      component: server
+  template:
+    metadata:
+      labels:
+        app: authentik-mcp-poc
+        component: server
+    spec:
+      containers:
+        - name: server
+          image: ghcr.io/agentydragon/authentik-mcp-poc-server:latest # {"$imagepolicy": "flux-system:authentik-mcp-poc-server"}
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8765
+              protocol: TCP
+          env:
+            - name: AUTHENTIK_MCP_POC_OIDC_ISSUER
+              value: "https://auth.allegedly.works/application/o/authentik-mcp-poc/"
+            - name: AUTHENTIK_MCP_POC_PUBLIC_BASE_URL
+              value: "https://authentik-mcp-poc.allegedly.works"
+            - name: AUTHENTIK_MCP_POC_BACKEND_URL
+              value: "https://authentik-mcp-poc-backend.allegedly.works"
+            - name: AUTHENTIK_MCP_POC_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-mcp-poc-oidc
+                  key: client_id
+            - name: AUTHENTIK_MCP_POC_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-mcp-poc-oidc
+                  key: client_secret
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          readinessProbe:
+            tcpSocket:
+              port: 8765
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8765
+            initialDelaySeconds: 15
+            periodSeconds: 20

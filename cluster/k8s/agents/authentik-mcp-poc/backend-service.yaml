@@ -1,0 +1,21 @@
+# Target of `internal_host` on the Authentik proxy provider. The outpost
+# reaches this Service via cluster DNS after validating the Bearer JWT.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: authentik-mcp-poc-backend
+  namespace: authentik-mcp-poc
+  labels:
+    app: authentik-mcp-poc
+    component: backend
+spec:
+  selector:
+    app: authentik-mcp-poc
+    component: backend
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+  type: ClusterIP

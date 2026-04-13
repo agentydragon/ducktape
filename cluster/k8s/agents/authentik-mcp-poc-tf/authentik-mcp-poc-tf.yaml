@@ -1,0 +1,21 @@
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: authentik-mcp-poc
+  namespace: flux-system
+spec:
+  interval: 15m
+  approvePlan: "auto"
+  path: ./cluster/terraform/gitops/authentik-mcp-poc
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  serviceAccountName: tf-runner
+  backendConfig:
+    customConfiguration: |
+      backend "kubernetes" {
+        secret_suffix    = "authentik-mcp-poc"
+        namespace        = "flux-system"
+      }
+  vars: []

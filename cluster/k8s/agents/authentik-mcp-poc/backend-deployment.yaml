@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authentik-mcp-poc-backend
+  namespace: authentik-mcp-poc
+  labels:
+    app: authentik-mcp-poc
+    component: backend
+  annotations:
+    description: "Whoami backend sitting behind the Authentik proxy outpost. Trusts X-Authentik-* headers injected by the outpost."
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: authentik-mcp-poc
+      component: backend
+  template:
+    metadata:
+      labels:
+        app: authentik-mcp-poc
+        component: backend
+    spec:
+      containers:
+        - name: backend
+          image: ghcr.io/agentydragon/authentik-mcp-poc-backend:latest # {"$imagepolicy": "flux-system:authentik-mcp-poc-backend"}
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "25m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20

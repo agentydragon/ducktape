@@ -1,0 +1,21 @@
+# HTTPRoute for the MCP server itself.
+# Not behind the Authentik outpost — OIDCProxy handles auth inside the pod.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: authentik-mcp-poc-server
+  namespace: authentik-mcp-poc
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  hostnames:
+    - "authentik-mcp-poc.allegedly.works"
+  rules:
+    - backendRefs:
+        - name: authentik-mcp-poc-server
+          port: 8765
+      timeouts:
+        request: "60s"
+        backendRequest: "60s"
