@@ -19,7 +19,7 @@ from fastmcp.server.auth import MultiAuth
 from fastmcp.server.auth.auth import AuthProvider
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from fastmcp.server.dependencies import get_http_request
+from fastmcp.server.dependencies import get_access_token
 
 from x.authentik_mcp_poc.config import ServerSettings
 
@@ -60,19 +60,25 @@ def _build_auth(settings: ServerSettings) -> AuthProvider:
 
 
 def _extract_bearer_token() -> str:
-    """Return the raw JWT from the current request's Authorization header.
+    """Return the upstream Authentik access token for the current request.
 
-    FastMCP has already validated the token via JWTVerifier by the time the
-    tool body runs, so we don't re-validate here; we just need to forward it
-    to the backend unchanged so the Authentik outpost can validate it against
-    `jwt_federation_providers`.
+    Earlier versions of this function read the raw `Authorization` header off
+    the request, which gave us the FastMCP JTI-reference token (signed by
+    OIDCProxy's derived key, not by the Authentik OAuth2 provider). Forwarded
+    to the Authentik proxy outpost, that token fails JWT federation by
+    definition and the outpost returns 401 "Receive header authentication".
+
+    `OAuthProxy.load_access_token` already performs a server-side token swap
+    (see <NOTES.md> §3 for the full trace) that verifies the JTI reference,
+    looks up the upstream Authentik token in its encrypted store, validates
+    it, and populates `AccessToken.token` with the upstream access token.
+    `get_access_token().token` gives us exactly that — the Authentik-signed
+    JWT that `jwt_federation_providers` will accept.
     """
-    request = get_http_request()
-    header = request.headers.get("authorization", "")
-    scheme, _, token = header.partition(" ")
-    if scheme.lower() != "bearer" or not token:
-        raise RuntimeError(f"expected Bearer token in Authorization header, got {header!r}")
-    return token
+    access = get_access_token()
+    if access is None:
+        raise RuntimeError("no authenticated access token in request context")
+    return access.token
 
 
 def build_server(settings: ServerSettings) -> FastMCP:

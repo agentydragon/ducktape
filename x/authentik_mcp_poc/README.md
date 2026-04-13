@@ -136,6 +136,16 @@ JWT federation is the knob that lets both ends be "real":
   `jwt_federation_providers = [<oauth2 provider id>]`, so the outpost accepts
   the same JWT as a Bearer token and handles everything from there.
 
+> **Gotcha we hit during bringup.** OIDCProxy does NOT pass the upstream
+> Authentik token through to the client unchanged — it mints its own minimal
+> JWT (JTI reference into a server-side encrypted store) and issues _that_ to
+> claude.ai. That reference token fails JWT federation at the outpost because
+> it's signed by FastMCP's own signing key, not by `authentik_provider_oauth2.mcp_poc`.
+> The fix is to use `get_access_token().token` in the tool handler (which
+> returns the upstream Authentik token after `OAuthProxy.load_access_token`'s
+> server-side swap), **not** the raw `Authorization` header off the request.
+> Full write-up in <NOTES.md> §2-§4.
+
 ## Layout
 
 | Path                                                                                | What it is                                                     |
