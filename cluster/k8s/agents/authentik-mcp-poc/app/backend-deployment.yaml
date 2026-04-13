@@ -21,6 +21,12 @@ spec:
         app: authentik-mcp-poc
         component: backend
     spec:
+      # Don't auto-inject `<SERVICE>_PORT=tcp://...` env vars. The same-namespace
+      # `authentik-mcp-poc-backend` Service injects
+      # `AUTHENTIK_MCP_POC_BACKEND_PORT=tcp://10.x.x.x:8080`, which collides
+      # with the `port: int` field on `BackendSettings` (env_prefix
+      # `AUTHENTIK_MCP_POC_BACKEND_`) and crashes pydantic-settings on startup.
+      enableServiceLinks: false
       containers:
         - name: backend
           image: ghcr.io/agentydragon/authentik-mcp-poc-backend:devel-20260413030152-e437889 # {"$imagepolicy": "flux-system:authentik-mcp-poc-backend"}

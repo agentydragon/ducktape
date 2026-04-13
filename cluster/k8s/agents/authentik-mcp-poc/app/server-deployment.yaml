@@ -21,6 +21,12 @@ spec:
         app: authentik-mcp-poc
         component: server
     spec:
+      # Don't auto-inject `<SERVICE>_PORT=tcp://...` env vars from same-namespace
+      # Services. Pydantic-settings on the backend pod parses
+      # `AUTHENTIK_MCP_POC_BACKEND_PORT=tcp://...` as the `port: int` field and
+      # crashes; symmetric protection here so the server pod can't trip on the
+      # same trap if the field set ever changes.
+      enableServiceLinks: false
       containers:
         - name: server
           image: ghcr.io/agentydragon/authentik-mcp-poc-server:devel-20260413030146-e437889 # {"$imagepolicy": "flux-system:authentik-mcp-poc-server"}
@@ -30,6 +36,14 @@ spec:
               containerPort: 8765
               protocol: TCP
           env:
+            # OIDCProxy creates an encrypted DCR client store at
+            # `${FASTMCP_HOME}/oauth_proxy_client_storage/...` on init. The OCI
+            # image runs as user 1000 with no HOME set, so without this
+            # platformdirs falls back to `~/.local/share/fastmcp` which expands
+            # to `/.local/share/fastmcp` and EPERM. /tmp is writable for any
+            # user; the POC doesn't need persistent DCR registrations.
+            - name: FASTMCP_HOME
+              value: "/tmp/fastmcp"
             - name: AUTHENTIK_MCP_POC_OIDC_ISSUER
               value: "https://auth.allegedly.works/application/o/authentik-mcp-poc/"
             - name: AUTHENTIK_MCP_POC_PUBLIC_BASE_URL
