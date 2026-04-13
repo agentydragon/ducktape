@@ -9,6 +9,7 @@ pkg_tar(
         "//skills/backtrace:backtrace_tar",
         "//skills/branch_splitter:branch_splitter_tar",
         "//skills/buildbuddy_api:buildbuddy_api_tar",
+        "//skills/cihealth:cihealth_tar",
         "//skills/cluster_health:cluster_health_tar",
         "//skills/followups:followups_tar",
         "//skills/forensic_surgeon:forensic_surgeon_tar",
