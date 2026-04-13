@@ -18,11 +18,14 @@ diagnosis plans for anything that needs deeper investigation.
 
 ## Setup — GitHub Authentication
 
-Set `GITHUB_TOKEN` for `gh` commands. In a Claude Code web session the token
-is already in the environment as `DUCKTAPE_CI_READ_GITHUB_TOKEN` (exported by
-`devinfra/secrets/web_env.sh` via the session start hook). Outside that
-context, decrypt `secrets/github-ci-read-pat.yaml` with the SOPS age key —
-see `devinfra/secrets/web_env.sh` for the exact pattern.
+`gh` reads `GITHUB_TOKEN`. In a Claude Code web session, the read-only token
+is already available in the environment as
+`DUCKTAPE_CI_READ_GITHUB_TOKEN` (exported by `devinfra/secrets/web_env.sh`
+via the session start hook), so export
+`GITHUB_TOKEN="$DUCKTAPE_CI_READ_GITHUB_TOKEN"` before running `gh`
+commands. Outside that context, decrypt
+`secrets/github-ci-read-pat.yaml` with the SOPS age key and export it as
+`GITHUB_TOKEN`; see `devinfra/secrets/web_env.sh` for the exact pattern.
 
 If auth is unavailable, continue with the public API (rate-limited) and note
 it in the report.
