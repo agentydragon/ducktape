@@ -29,14 +29,27 @@ logger = logging.getLogger(__name__)
 def _build_auth(settings: ServerSettings) -> AuthProvider:
     """OIDCProxy (for DCR + MCP OAuth endpoints) + JWTVerifier (for tool calls).
 
-    Modeled on airlock/app.py::_build_auth.
+    Modeled on airlock/app.py::_build_auth, with one important difference:
+    airlock wraps FastMCP under FastAPI and `app.mount("/mcp", mcp_app)`s it,
+    so airlock's FastMCP internal path is "/" and `base_url` includes "/mcp"
+    (the FastAPI mount adds the prefix externally). We serve uvicorn directly
+    on `mcp.http_app(path="/mcp")`, so FastMCP's internal path IS "/mcp" and
+    `base_url` must NOT include "/mcp" — otherwise:
+
+      - `_get_resource_url(mcp_path)` doubles to `<base_url>/mcp/mcp`
+      - AS metadata `authorization_endpoint` becomes `<base_url>/authorize` =
+        `https://server/mcp/authorize`, but the actual route is at root
+        `/authorize` (FastMCP mounts auth routes flat, not under streamable_http_path)
+
+    With `base_url = settings.public_base_url` (no /mcp), both the resource
+    URL and the OAuth endpoint URLs collapse to the right thing.
     """
     issuer = settings.normalized_issuer()
     proxy = OIDCProxy(
         config_url=f"{issuer}/.well-known/openid-configuration",
         client_id=settings.oidc_client_id,
         client_secret=settings.oidc_client_secret,
-        base_url=f"{settings.normalized_public_base_url()}/mcp",
+        base_url=settings.normalized_public_base_url(),
         require_authorization_consent=True,
     )
     # OIDCProxy's DCR endpoint rejects scopes it doesn't know about; allow the

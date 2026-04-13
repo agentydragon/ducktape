@@ -108,7 +108,11 @@ resource "authentik_provider_oauth2" "mcp_poc" {
   allowed_redirect_uris = [
     {
       matching_mode = "strict"
-      url           = "https://authentik-mcp-poc.allegedly.works/mcp/auth/callback"
+      # OIDCProxy's redirect path defaults to "/auth/callback" relative to the
+      # FastMCP server's `base_url`. We deliberately set `base_url` to the bare
+      # public URL (no /mcp) in x/authentik_mcp_poc/server.py so OAuth metadata
+      # URLs collapse correctly — see the comment in `_build_auth` for why.
+      url = "https://authentik-mcp-poc.allegedly.works/auth/callback"
     },
   ]
 }
