@@ -63,6 +63,16 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_config",
+    srcs = ["test_config.py"],
+    deps = [
+        ":config",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # ── OCI images ────────────────────────────────────────────────────────────────
 # Two separate images: one for the MCP server, one for the whoami backend.
 

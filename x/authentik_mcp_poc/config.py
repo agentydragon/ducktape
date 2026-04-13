@@ -62,13 +62,22 @@ class ServerSettings(BaseSettings):
         dispatches off the `client_id` parameter in the request body, so a
         single URL like `https://auth.allegedly.works/application/o/token/`
         handles both our MCP user-login provider AND the backend's proxy
-        provider. We derive it from `oidc_issuer` (which points at our
-        provider's per-provider issuer URL) by stripping the trailing
-        `/<slug>/` segment.
+        provider.
+
+        We derive it by stripping only the trailing provider slug from
+        `oidc_issuer`, preserving any reverse-proxy path prefix before
+        `/application/o/` — so `https://example.com/auth/application/o/<slug>/`
+        correctly yields `https://example.com/auth/application/o/token/`, not
+        `https://example.com/application/o/token/`.
         """
         parsed = urlparse(self.oidc_issuer.rstrip("/"))
-        # Issuer path looks like `/application/o/authentik-mcp-poc`; we want `/application/o/token/`.
-        return urlunparse(parsed._replace(path="/application/o/token/"))
+        prefix, marker, provider_slug = parsed.path.rpartition("/application/o/")
+        if not marker or not provider_slug or "/" in provider_slug:
+            raise ValueError(
+                "oidc_issuer must end in an Authentik per-provider issuer path "
+                f"like `.../application/o/<slug>/`; got {self.oidc_issuer!r}"
+            )
+        return urlunparse(parsed._replace(path=f"{prefix}{marker}token/"))
 
 
 class BackendSettings(BaseSettings):

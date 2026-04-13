@@ -126,9 +126,19 @@ async def _exchange_token_for_backend(user_token: str, settings: ServerSettings,
             "scope": "openid",
         },
     )
+    content_type = response.headers.get("content-type")
+    body_preview = response.text[:500] + ("..." if len(response.text) > 500 else "")
     if response.status_code != 200:
-        raise RuntimeError(f"token exchange failed: status={response.status_code} body={response.text!r}")
-    payload = response.json()
+        raise RuntimeError(
+            f"token exchange failed: status={response.status_code} content_type={content_type!r} body={body_preview!r}"
+        )
+    try:
+        payload = response.json()
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            "token exchange returned non-JSON: "
+            f"status={response.status_code} content_type={content_type!r} body={body_preview!r}"
+        ) from exc
     if not isinstance(payload, dict) or not isinstance(payload.get("access_token"), str):
         raise RuntimeError(f"token exchange response missing access_token: {payload!r}")
     backend_token: str = payload["access_token"]
@@ -143,23 +153,25 @@ def _b64url_decode(s: str) -> bytes:
 def _log_token_shape(label: str, token: str) -> None:
     """Decode a JWT's header + payload (no signature verification) and log key claims.
 
-    Pure diagnostics — we want to know *which* token we're forwarding to the
-    backend. If `iss` is the Authentik issuer and `kid`/`alg` match the
-    Authentik OAuth2 provider signing key, the upstream-token swap worked.
-    If `iss` is the MCP server's base_url, we still have the FastMCP JTI
-    reference.
+    DEBUG-level diagnostics for development — logs iss/aud/sub/jti/scope so
+    we can tell which token we're forwarding during bringup. Kept around
+    because this POC has already bit us twice in exactly this spot (see
+    <NOTES.md> §2 and §3). Production operators should not enable DEBUG
+    for this logger unless they explicitly want identity metadata in logs.
     """
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
     parts = token.split(".")
     if len(parts) < 2:
-        logger.info("%s: non-JWT token (%d parts)", label, len(parts))
+        logger.debug("%s: non-JWT token (%d parts)", label, len(parts))
         return
     try:
         header = json.loads(_b64url_decode(parts[0]))
         payload = json.loads(_b64url_decode(parts[1]))
     except (ValueError, json.JSONDecodeError) as exc:
-        logger.info("%s: could not decode JWT: %s", label, exc)
+        logger.debug("%s: could not decode JWT: %s", label, exc)
         return
-    logger.info(
+    logger.debug(
         "%s: header=%s iss=%r aud=%r sub=%r jti=%r scope=%r",
         label,
         header,
