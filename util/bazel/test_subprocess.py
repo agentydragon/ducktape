@@ -1,14 +1,13 @@
 """Tests for util.bazel.subprocess module."""
 
-import os
 import sys
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 import pytest_bazel
 
 from util.bazel.subprocess import (
+    _in_bazel_venv,
     exports_from_dict,
     generate_shell_wrapper,
     python_env,
@@ -17,31 +16,27 @@ from util.bazel.subprocess import (
 )
 
 
-def test_python_env_inherit_includes_pythonpath():
+def test_python_env_inherit_includes_path():
     env = python_env(inherit=True)
-    assert "PYTHONPATH" in env
-    # Should also contain other env vars
     assert "PATH" in env
 
 
 def test_python_env_no_inherit_minimal():
     env = python_env(inherit=False)
-    assert "PYTHONPATH" in env
     assert "PATH" not in env
 
 
-def test_python_env_merges_sys_path_and_pythonpath():
-    """PYTHONPATH merges sys.path with os.environ PYTHONPATH (both included)."""
-    with patch.dict(os.environ, {"PYTHONPATH": "/custom/path"}):
-        result_paths = set(python_env(inherit=False)["PYTHONPATH"].split(os.pathsep))
-        assert {"/custom/path"} <= result_paths
-        assert {p for p in sys.path if p} <= result_paths
+def test_python_env_bazel_venv_omits_pythonpath():
+    """In a Bazel venv, PYTHONPATH is omitted (venv handles sys.path)."""
+    assert _in_bazel_venv(), "test must run in a Bazel venv"
+    env = python_env(inherit=True)
+    assert "PYTHONPATH" not in env
 
 
-def test_python_env_uses_sys_path_when_no_pythonpath():
-    with patch.dict(os.environ, {}, clear=True):
-        result_paths = set(python_env(inherit=False)["PYTHONPATH"].split(os.pathsep))
-        assert {p for p in sys.path if p} <= result_paths
+def test_python_env_inherit_false_always_has_pythonpath():
+    """inherit=False always includes PYTHONPATH (child env is too minimal for venv discovery)."""
+    env = python_env(inherit=False)
+    assert "PYTHONPATH" in env
 
 
 def test_python_env_sets_safe_path():

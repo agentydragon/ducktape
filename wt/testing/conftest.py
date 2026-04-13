@@ -41,9 +41,13 @@ from wt.testing.utils import run_cli_command, wait_until
 
 def get_wt_package_dir() -> Path:
     """Return the installed wt package directory."""
-    wt_file = importlib.import_module("wt").__file__
-    assert wt_file is not None
-    return Path(wt_file).parent
+    wt_mod = importlib.import_module("wt")
+    # With --incompatible_default_to_explicit_init_py, wt may be a namespace
+    # package (__file__ is None). Use __path__ which works for both regular
+    # and namespace packages.
+    if wt_mod.__file__ is not None:
+        return Path(wt_mod.__file__).parent
+    return Path(wt_mod.__path__[0])
 
 
 @pytest.fixture(scope="session", autouse=True)

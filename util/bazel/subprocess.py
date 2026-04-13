@@ -1,14 +1,18 @@
 """Run Python modules as subprocesses under Bazel's rules_python.
 
-rules_python's venv-based bootstrap sets up sys.path via a virtual environment,
-but that doesn't carry over to subprocesses spawned via sys.executable. This
-module provides subprocess.run / asyncio.create_subprocess_exec wrappers and a
-shell-wrapper generator that propagate PYTHONPATH automatically.
+Provides subprocess.run / asyncio.create_subprocess_exec wrappers and a
+shell-wrapper generator for spawning Python module subprocesses.
+
+In a Bazel venv (bootstrap_impl=script), subprocesses automatically get
+correct sys.path via the venv's _bazel_site_init — no PYTHONPATH needed.
+Outside Bazel (Nix wheel, hook daemon), PYTHONPATH is propagated so
+subprocesses can find Nix-managed packages.
 """
 
 from __future__ import annotations
 
 import asyncio
+import functools
 import os
 import shlex
 import subprocess
@@ -18,17 +22,32 @@ from pathlib import Path
 from typing import Any
 
 
-def python_env(*, inherit: bool = True) -> dict[str, str]:
-    """Environment dict with PYTHONPATH propagated for Bazel subprocesses.
+@functools.cache
+def _in_bazel_venv() -> bool:
+    """True if running inside a Bazel-managed venv (bootstrap_impl=script).
 
-    Args:
-        inherit: If True, start from os.environ. If False, return a minimal
-                 dict with only PYTHONPATH.
+    In a Bazel venv, subprocesses spawned via sys.executable inherit the venv
+    (pyvenv.cfg → site.py → _bazel_site_init) and get correct sys.path without
+    PYTHONPATH. Propagating PYTHONPATH from the parent is harmful: the
+    rules_python bootstrap prepends the test's package directory to sys.path[0],
+    which leaks into PYTHONPATH and causes stdlib module shadowing (e.g., a
+    local subprocess.py found before the stdlib one).
     """
-    env = os.environ.copy() if inherit else {}
-    # Merge sys.path (includes Nix site.addsitedir paths) with existing PYTHONPATH.
-    # Using only os.environ["PYTHONPATH"] loses sys.path entries added at runtime
-    # (e.g., Nix wrapper's site.addsitedir); using only sys.path loses env entries.
+    try:
+        import _bazel_site_init  # type: ignore[import-untyped]  # noqa: F401, PLC0415
+
+        return True
+    except ImportError:
+        return False
+
+
+def _merge_pythonpath() -> str:
+    """Merge sys.path with existing PYTHONPATH for non-Bazel contexts.
+
+    Used by Nix-installed wheels (hook daemon, shims) where the subprocess
+    doesn't have a Bazel venv. Merges sys.path (includes Nix site.addsitedir
+    paths) with os.environ PYTHONPATH.
+    """
     existing = os.environ.get("PYTHONPATH", "").split(os.pathsep) if os.environ.get("PYTHONPATH") else []
     merged: list[str] = []
     seen: set[str] = set()
@@ -36,7 +55,30 @@ def python_env(*, inherit: bool = True) -> dict[str, str]:
         if p and p not in seen:
             seen.add(p)
             merged.append(p)
-    env["PYTHONPATH"] = os.pathsep.join(merged)
+    return os.pathsep.join(merged)
+
+
+def python_env(*, inherit: bool = True) -> dict[str, str]:
+    """Environment dict for spawning Python subprocesses.
+
+    In a Bazel venv with ``inherit=True``, omits PYTHONPATH — the child
+    inherits the venv (pyvenv.cfg → _bazel_site_init) and gets correct
+    sys.path automatically.
+
+    PYTHONPATH is still propagated when:
+    - ``inherit=False``: minimal env, child needs explicit paths since
+      env vars like RUNFILES_DIR (needed by _bazel_site_init) are missing.
+    - Outside Bazel (Nix wheel): no venv, child needs PYTHONPATH to find
+      Nix-managed packages.
+    """
+    env = os.environ.copy() if inherit else {}
+    if _in_bazel_venv() and inherit:
+        # Venv activation handles sys.path in the child. Don't propagate
+        # PYTHONPATH — it includes the bootstrap's sys.path[0] prepend
+        # which causes stdlib shadowing.
+        env.pop("PYTHONPATH", None)
+    else:
+        env["PYTHONPATH"] = _merge_pythonpath()
     # Prevent Python from prepending CWD to sys.path (equivalent to -P flag).
     # Without this, `python -m module` adds '' to sys.path[0], causing the
     # subprocess to import from the working directory instead of PYTHONPATH —

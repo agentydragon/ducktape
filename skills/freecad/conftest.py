@@ -11,7 +11,7 @@ import pytest_bazel
 from opentelemetry import trace
 
 from util.bazel.runfiles import get_required_path
-from util.bazel.subprocess import python_env
+from util.bazel.subprocess import _merge_pythonpath
 from util.testing.otel_tracing import configure_tracing
 
 # CLEANUP(2026-04-10): Unused — tests migrated to conda fixtures. eval/run_eval.py
@@ -90,7 +90,7 @@ def _freecad_run(
     # Inject _main runfiles paths so FreeCAD scripts can import from the
     # monorepo. Filter out Bazel's Python 3.13 stdlib/site-packages — they
     # conflict with FreeCAD's bundled Python 3.14.
-    base_pythonpath = python_env().get("PYTHONPATH", "")
+    base_pythonpath = _merge_pythonpath()
     inject_paths = [p for p in base_pythonpath.split(os.pathsep) if p and "/_main" in p and "site-packages" not in p]
     wrapper = outdir / "_freecad_wrapper.py"
     wrapper.write_text(
