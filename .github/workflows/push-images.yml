@@ -88,6 +88,16 @@ jobs:
         with:
           args: run --remote_download_toplevel ${{ matrix.target }}
           rbe_image: ${{ inputs.rbe_image }}
+          # GHCR auth: forward the workflow-scoped GITHUB_TOKEN via bb remote
+          # env-overrides so crane push inside the runner VM logs in as the
+          # workflow. Advantages over a long-lived PAT:
+          #   * The `permissions: packages: write` block above is enforced per
+          #     run instead of relying on secret scope.
+          #   * First-push packages are automatically linked to this repo and
+          #     inherit its (public) visibility — no post-push API PATCH.
+          #   * The token rotates per job, not per manual rotation.
+          # Username is literally `x-access-token`; that's the conventional
+          # form GHCR accepts alongside a workflow token.
           env_overrides: |
-            GHCR_TOKEN=${{ env.GHCR_TOKEN }}
-            GHCR_USERNAME=${{ env.GHCR_USERNAME }}
+            GHCR_TOKEN=${{ secrets.GITHUB_TOKEN }}
+            GHCR_USERNAME=x-access-token

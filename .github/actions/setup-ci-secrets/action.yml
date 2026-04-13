@@ -38,13 +38,16 @@ runs:
         SOPS_AGE_KEY: ${{ inputs.sops_age_key }}
       run: |
         eval "$(devinfra/secrets/ci_env.sh)"
-        # Mask secret values so they don't appear in logs
-        for var in BUILDBUDDY_API_KEY GITHUB_TOKEN ATTIC_TOKEN \
-                   PROPS_REGISTRY_PASSWORD GHCR_TOKEN GH_RELEASE_PAT; do
+        # Mask secret values so they don't appear in logs.
+        # GITHUB_TOKEN / GHCR_TOKEN are intentionally absent — GHCR pushes
+        # now use the workflow-scoped secrets.GITHUB_TOKEN plumbed directly
+        # through bb remote env_overrides (see push-images.yml).
+        for var in BUILDBUDDY_API_KEY ATTIC_TOKEN \
+                   PROPS_REGISTRY_PASSWORD GH_RELEASE_PAT; do
           val="${!var:-}"
           if [ -n "$val" ]; then
             echo "::add-mask::$val"
           fi
         done
         # Export to GITHUB_ENV for subsequent steps
-        env | grep -E '^(BUILDBUDDY_API_KEY|GITHUB_TOKEN|ATTIC_TOKEN|PROPS_REGISTRY_USERNAME|PROPS_REGISTRY_PASSWORD|GHCR_USERNAME|GHCR_TOKEN|GH_RELEASE_PAT)=' >> "$GITHUB_ENV"
+        env | grep -E '^(BUILDBUDDY_API_KEY|ATTIC_TOKEN|PROPS_REGISTRY_USERNAME|PROPS_REGISTRY_PASSWORD|GH_RELEASE_PAT)=' >> "$GITHUB_ENV"

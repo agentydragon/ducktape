@@ -3,15 +3,20 @@
 Uses crane to compare local vs remote digests before pushing. Only creates a
 new pinned tag (branch-YYYYMMDDHHMMSS-sha7) when the image digest actually
 changed, preventing spurious Flux repins.
+
+Authenticates to GHCR with the workflow-scoped `secrets.GITHUB_TOKEN` forwarded
+through `bb remote`'s `x-buildbuddy-platform.env-overrides` into the runner
+VM's environment. Because the token is issued by GitHub Actions for the
+current workflow run, new packages created by a push are automatically linked
+to the source repository and inherit its visibility — for a public repo like
+this one, the package is created public without any follow-up API call. See
+<docs/ci-ghcr-auth.md> for the full wiring diagram.
 """
 
 import argparse
-import json
 import logging
 import os
 import subprocess
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -41,41 +46,11 @@ def _image_runfiles_dir(image_target: str) -> Path:
     return get_required_path(f"_main/{label.package}/{label.name}")
 
 
-def _ensure_package_public(package_name: str, token: str) -> None:
-    """Set GHCR package visibility to public via GitHub API.
-
-    Idempotent — already-public packages return 200. This is needed because
-    packages pushed via crane (BuildBuddy CI) default to private, unlike
-    packages pushed via GitHub Actions GITHUB_TOKEN which auto-inherit repo
-    visibility.
-    """
-    url = f"https://api.github.com/user/packages/container/{package_name}"
-    data = json.dumps({"visibility": "public"}).encode()
-    req = urllib.request.Request(
-        url,
-        data=data,
-        method="PATCH",
-        headers={
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        },
-    )
-    try:
-        urllib.request.urlopen(req)
-        logger.info("%s: package visibility set to public", package_name)
-    except urllib.error.HTTPError as e:
-        # 404 = package doesn't exist yet (first push in progress), will be
-        # set on next CI run. Don't fail the push for this.
-        logger.warning("%s: failed to set package visibility (HTTP %d): %s", package_name, e.code, e.reason)
-
-
 class ImagePusher:
-    def __init__(self, crane: Crane, branch: str, pinned_tag: str, ghcr_token: str) -> None:
+    def __init__(self, crane: Crane, branch: str, pinned_tag: str) -> None:
         self.crane = crane
         self.branch = branch
         self.pinned_tag = pinned_tag
-        self.ghcr_token = ghcr_token
 
     def _latest_pinned_tag(self, repo: str) -> str | None:
         try:
@@ -101,10 +76,6 @@ class ImagePusher:
         print(f"{img.repository}: tagging {self.pinned_tag}")
         self.crane.tag(ref, self.pinned_tag)
 
-        # Extract package name from "ghcr.io/owner/name" → "name"
-        package_name = img.repository.rsplit("/", 1)[-1]
-        _ensure_package_public(package_name, self.ghcr_token)
-
 
 def main() -> None:
     """Push a single OCI image to GHCR if its digest changed."""
@@ -123,12 +94,16 @@ def main() -> None:
     ts = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
     sha = _git("rev-parse", "--short=7", "HEAD")
 
-    ghcr_token = get_required_env("GHCR_TOKEN")
+    # GHCR_USERNAME/GHCR_TOKEN are forwarded by .github/workflows/push-images.yml
+    # via `bb remote --remote_run_header=x-buildbuddy-platform.env-overrides=…`.
+    # The token is the workflow-scoped secrets.GITHUB_TOKEN; the username is
+    # the conventional "x-access-token" that GHCR accepts for workflow tokens.
     pusher = ImagePusher(
-        crane=Crane(registry="ghcr.io", username=get_required_env("GHCR_USERNAME"), password=ghcr_token),
+        crane=Crane(
+            registry="ghcr.io", username=get_required_env("GHCR_USERNAME"), password=get_required_env("GHCR_TOKEN")
+        ),
         branch=branch,
         pinned_tag=f"{branch}-{ts}-{sha}",
-        ghcr_token=ghcr_token,
     )
     pusher.push_and_tag(GhcrImage(image_target=args.image_target, repository=args.repository))
 
