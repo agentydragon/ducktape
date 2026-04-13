@@ -1,7 +1,10 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+# Note: the namespace is created by the authentik-mcp-poc Terraform module
+# (cluster/terraform/gitops/authentik-mcp-poc), which also writes the
+# client-secret into it. This Kustomization runs after authentik-mcp-poc-tf
+# (see flux-kustomization.yaml dependsOn).
 resources:
-  - namespace.yaml
   - server-deployment.yaml
   - server-service.yaml
   - server-httproute.yaml

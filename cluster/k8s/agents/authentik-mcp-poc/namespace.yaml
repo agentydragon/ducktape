@@ -1,8 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: authentik-mcp-poc
-  labels:
-    name: authentik-mcp-poc
-    # POC namespace; opt out of Goldilocks/VPA recommendations.
-    goldilocks.fairwinds.com/enabled: "false"

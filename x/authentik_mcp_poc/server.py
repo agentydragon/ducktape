@@ -105,7 +105,11 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s", stream=sys.stderr)
     settings = ServerSettings()
     mcp = build_server(settings)
-    app = mcp.http_app(path="/")
+    # path="/mcp" matches both OIDCProxy's base_url (settings.public_base_url + "/mcp")
+    # and the Deployment's advertised remote MCP URL. Leaving this unset works too
+    # (FastMCP's streamable_http_path defaults to "/mcp") but we're explicit so the
+    # routing is visible at the call site.
+    app = mcp.http_app(path="/mcp")
     logger.info("authentik-mcp-poc listening on %s:%d", settings.host, settings.port)
     uvicorn.run(app, host=settings.host, port=settings.port, log_level="info")
 

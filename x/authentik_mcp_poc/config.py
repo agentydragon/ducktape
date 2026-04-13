@@ -1,8 +1,10 @@
 """Settings for the Authentik MCP POC.
 
 Pure environment-variable config — intentionally minimal. The POC runs two
-processes from the same module: the FastMCP server (`AUTHENTIK_MCP_POC_ROLE=server`)
-and the FastAPI whoami backend (`AUTHENTIK_MCP_POC_ROLE=backend`).
+separate processes via separate entrypoints: the FastMCP server (`server.py`)
+and the FastAPI whoami backend (`backend.py`). Server settings use the
+`AUTHENTIK_MCP_POC_` prefix; backend settings use the
+`AUTHENTIK_MCP_POC_BACKEND_` prefix.
 """
 
 from __future__ import annotations
