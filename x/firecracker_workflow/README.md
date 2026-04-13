@@ -265,13 +265,36 @@ glibc 2.25+, so bazelisk fails to run Bazel 9.0.2 in this image.
 
 `recycle-runner=true` keeps the Firecracker VM alive between actions, but:
 
-- Each new action gets a **fresh workspace** (workspace dir is cleaned)
-- The VM is restored from a snapshot — uptime shows "0 min" each time
-- State (files, processes) does NOT persist between `bb execute` calls
+- The VM is restored from a **Firecracker snapshot** on each action — uptime resets to ~4-5s,
+  `boot_id` changes every call (this is normal; it does NOT mean a different physical runner)
+- State (files, processes) does NOT persist between `bb execute` calls on BB Cloud
 - Runner lifetime is managed by BuildBuddy (GC'd after prolonged idle)
 
-**Observed**: two consecutive `bbr build` calls used the same runner (same host `192.168.241.2`),
-confirming recycling. A file written in one `bb execute` call was gone in the next.
+**Observed**: two consecutive `bbr build` calls used the same runner (same host IP),
+confirming recycling. Files written in one `bb execute` call were gone in the next.
+
+### `preserve-workspace=true` — what the source says vs. what works on BB Cloud
+
+The `preserve-workspace` exec property exists in the BB source (`platform.go`). According to
+the source code (`firecracker.go:workspacePathsToExtract`):
+
+- Without it: only declared outputs are extracted from the ext4 drive back to the host workspace
+- **With it**: the entire ext4 contents (`["/"]`) are extracted, and `Clean()` only removes
+  declared outputs (not all files). The next action repacks the preserved host directory into a
+  fresh ext4 and attaches it to the VM. `boot_id` still changes (snapshot restore) but the
+  workspace data should survive.
+
+**In practice on BB Cloud**: `preserve-workspace=true` has no observable effect with
+`bb execute`. The workspace is always freshly initialized (only `lost+found`) on every call,
+even with `recycle-runner=true` + `runner-recycling-key`. Tested with multiple recycling keys,
+both default and custom images, with and without declared `-output_path`. The workspace never
+persisted. Likely cause: BB Cloud's public RBE executors are stateless (different executor
+pods between actions) or the feature requires a dedicated self-hosted deployment.
+
+**Bazel analysis cache**: also not preserved. Two consecutive `bbr build //devinfra/buildbuddy_cli:bbapi`
+calls both took ~8s with identical "1 packages loaded, 87 targets configured" — full
+re-analysis each time. The analysis cache lives inside the VM's snapshot filesystem (`/root/.cache/bazel/`)
+which is reset on each snapshot restore.
 
 ## Reusing the Same VM
 
@@ -315,9 +338,13 @@ bb execute $BB_FLAGS -- bash -c 'hostname && uname -a'
 bb execute $BB_FLAGS -- bash -c 'git clone ... && bazelisk build ...'
 ```
 
-**Important**: this targets the same physical VM (same `runner-recycling-key`) but each
-action is independent — workspace is reset, processes don't persist. This is different from
-`bb ssh` which gives a continuous shell session with persistent state.
+**Important**: this targets the same physical runner (same `runner-recycling-key`) but each
+action gets a fresh Firecracker snapshot restore — workspace is reset, processes don't persist.
+The `boot_id` and uptime (always ~4-5s) change on every call; this is expected Firecracker
+snapshot-restore behavior, not evidence of a different machine. Without `runner-recycling-key`,
+different runners (different executor pods) handle each call — confirmed by observing different
+boot_ids even faster. This is different from `bb ssh` which gives a continuous shell session
+with persistent state.
 
 If a `bb box create ducktape-dev` is currently running (ssh-server active), the `bb execute`
 with `runner-recycling-key=ducktape-dev` may share the same physical hardware but the
