@@ -50,20 +50,20 @@ its Bearer JWT so clients can't bypass the M2M flow.
 
 ## Pieces in the repo
 
-| Path | Purpose |
-| --- | --- |
-| `grocy/auth_proxy/proxy.py` | Starlette + authlib reverse proxy (strip `GROCY-API-KEY`/`Authorization`, inject Bearer JWT, strip hop-by-hop response headers, preserve multi-value cookies) |
-| `grocy/auth_proxy/BUILD.bazel` | `py_library` → `py_binary` → OCI image → `ghcr_push` → `py_test` |
-| `grocy/auth_proxy/test_proxy.py` | respx-mocked unit tests |
-| `cluster/terraform/gitops/agent-machine-access/main.tf` | Authentik proxy provider + application + policy bindings + service account + app password + K8s secret |
-| `cluster/k8s/agents/grocy-mcp/deployment.yaml` | Two-container pod (auth proxy sidecar + MCP server) |
-| `cluster/k8s/agents/grocy-mcp/service.yaml` | ClusterIP on port 3000 for Airlock to reach |
-| `cluster/k8s/agents/grocy-mcp/flux-kustomization.yaml` | Flux wiring; depends on `agent-machine-access-tf` + `reflector` |
-| `cluster/k8s/agents/airlock/config.yaml` | Registers `grocy` backend at `http://grocy-mcp.grocy-mcp.svc.cluster.local:3000/mcp` |
-| `cluster/k8s/grocy/settingoverrides.yaml` | `AUTH_CLASS=ReverseProxyAuthMiddleware`, `REVERSE_PROXY_AUTH_HEADER=X-authentik-username` |
-| `cluster/k8s/authentik/app/blueprints/embedded-outpost.yaml` | `!Find [authentik_providers_proxy.proxyprovider, [name, grocy]]` binds grocy to the shared embedded outpost |
-| `cluster/k8s/authentik/proxy-routes/grocy-httproute.yaml` | Gateway API HTTPRoute: `grocy.allegedly.works → authentik-server:80` |
-| `cluster/k8s/flux-image-automation-ghcr/grocy-auth-proxy-image-{repository,policy}.yaml` | Flux ImageRepository + ImagePolicy for auto-repinning the proxy image tag |
+| Path                                                                                     | Purpose                                                                                                                                                       |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `grocy/auth_proxy/proxy.py`                                                              | Starlette + authlib reverse proxy (strip `GROCY-API-KEY`/`Authorization`, inject Bearer JWT, strip hop-by-hop response headers, preserve multi-value cookies) |
+| `grocy/auth_proxy/BUILD.bazel`                                                           | `py_library` → `py_binary` → OCI image → `ghcr_push` → `py_test`                                                                                              |
+| `grocy/auth_proxy/test_proxy.py`                                                         | respx-mocked unit tests                                                                                                                                       |
+| `cluster/terraform/gitops/agent-machine-access/main.tf`                                  | Authentik proxy provider + application + policy bindings + service account + app password + K8s secret                                                        |
+| `cluster/k8s/agents/grocy-mcp/deployment.yaml`                                           | Two-container pod (auth proxy sidecar + MCP server)                                                                                                           |
+| `cluster/k8s/agents/grocy-mcp/service.yaml`                                              | ClusterIP on port 3000 for Airlock to reach                                                                                                                   |
+| `cluster/k8s/agents/grocy-mcp/flux-kustomization.yaml`                                   | Flux wiring; depends on `agent-machine-access-tf` + `reflector`                                                                                               |
+| `cluster/k8s/agents/airlock/config.yaml`                                                 | Registers `grocy` backend at `http://grocy-mcp.grocy-mcp.svc.cluster.local:3000/mcp`                                                                          |
+| `cluster/k8s/grocy/settingoverrides.yaml`                                                | `AUTH_CLASS=ReverseProxyAuthMiddleware`, `REVERSE_PROXY_AUTH_HEADER=X-authentik-username`                                                                     |
+| `cluster/k8s/authentik/app/blueprints/embedded-outpost.yaml`                             | `!Find [authentik_providers_proxy.proxyprovider, [name, grocy]]` binds grocy to the shared embedded outpost                                                   |
+| `cluster/k8s/authentik/proxy-routes/grocy-httproute.yaml`                                | Gateway API HTTPRoute: `grocy.allegedly.works → authentik-server:80`                                                                                          |
+| `cluster/k8s/flux-image-automation-ghcr/grocy-auth-proxy-image-{repository,policy}.yaml` | Flux ImageRepository + ImagePolicy for auto-repinning the proxy image tag                                                                                     |
 
 ## Authentik M2M flow (what the auth proxy actually does)
 
