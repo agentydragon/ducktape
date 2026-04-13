@@ -29,6 +29,7 @@ from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.errors import SkipError
 from devinfra.claude.hook_daemon import templates
 from devinfra.claude.hook_daemon.config import BackgroundCommand, ProfileConfig
+from devinfra.claude.hook_daemon.models import StartupResult
 from devinfra.claude.hook_daemon.session import Session
 from devinfra.claude.hook_daemon.session_start import (
     buildbuddy,
@@ -48,16 +49,6 @@ logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
 
 
-@dataclass
-class SecretsResult:
-    """Secrets read from os.environ (populated by env scripts at daemon startup)."""
-
-    k8s_token: str | None = None
-    buildbuddy_api_key: str | None = None
-    github_token: str | None = None
-    kubeconfig_path: Path | None = None
-
-
 @dataclass(frozen=True)
 class CallerContext:
     """Structured env vars extracted from the hook client's environment.
@@ -66,19 +57,23 @@ class CallerContext:
     at the session start entry point (handle), then threaded through.
     """
 
-    env_file_path: Path
-    project_dir: Path
     caller_env: dict[str, str]
+
+    @property
+    def env_file_path(self) -> Path:
+        return Path(self.caller_env["CLAUDE_ENV_FILE"])
+
+    @property
+    def project_dir(self) -> Path:
+        return Path(self.caller_env["CLAUDE_PROJECT_DIR"])
 
     @classmethod
     def from_env(cls, env: dict[str, str]) -> "CallerContext":
-        env_file_str = env.get("CLAUDE_ENV_FILE")
-        if not env_file_str:
+        if not env.get("CLAUDE_ENV_FILE"):
             raise KeyError("CLAUDE_ENV_FILE environment variable is required")
-        project_dir_str = env.get("CLAUDE_PROJECT_DIR")
-        if not project_dir_str:
+        if not env.get("CLAUDE_PROJECT_DIR"):
             raise KeyError("CLAUDE_PROJECT_DIR environment variable is required")
-        return cls(env_file_path=Path(env_file_str), project_dir=Path(project_dir_str), caller_env=env)
+        return cls(caller_env=env)
 
 
 # ============================================================================
@@ -96,19 +91,37 @@ class PlatformSetup:
 
     # Platform-specific results
     platform: platform_detect.PlatformInfo
+    env_overlay: dict[str, str]  # vars added/changed by startup_env_script (delta over os.environ)
     auth_proxy: proxy_setup.ProxySetup | None = None
     container: container_runtime.ContainerRuntimeSetup | None = None
     mkcert_result: mkcert.MkcertSetup | None = None
     docker_env: dict[str, str] | None = None
     bazel_cache_dir: Path | None = None
-    # Shared-step results (populated by run_session, not platform setup)
-    secrets: SecretsResult = field(default_factory=SecretsResult)
+    kubeconfig_path: Path | None = None
+    # Shared-step results (populated by handle(), not platform setup)
     fork_result: fork_remote.ForkRemoteSetup | None = None
     buildbuddy_setup: buildbuddy.BuildbuddySetup = field(default_factory=buildbuddy.BuildbuddyNotConfigured)
 
+    @property
+    def k8s_token(self) -> str | None:
+        return self.env_overlay.get("K8S_TOKEN") or os.environ.get("K8S_TOKEN")
+
+    @property
+    def buildbuddy_api_key(self) -> str | None:
+        return self.env_overlay.get("BUILDBUDDY_API_KEY") or os.environ.get("BUILDBUDDY_API_KEY")
+
+    @property
+    def github_token(self) -> str | None:
+        return self.env_overlay.get("GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN")
+
 
 async def _run_background_command(
-    session: Session, cmd: BackgroundCommand, sock_path: Path, env_file_path: Path | None, project_dir: Path
+    session: Session,
+    cmd: BackgroundCommand,
+    sock_path: Path,
+    env_file_path: Path | None,
+    project_dir: Path,
+    env_overlay: dict[str, str],
 ) -> None:
     """Run a background shell command with lifecycle messages to the session mailbox.
 
@@ -117,8 +130,7 @@ async def _run_background_command(
     """
     session.post_message(f"Task [{cmd.name}] started.")
     try:
-        env = dict(os.environ)
-        env["HOOK_DAEMON_SOCK"] = str(sock_path)
+        env = {**os.environ, **env_overlay, "HOOK_DAEMON_SOCK": str(sock_path)}
 
         shell_cmd = cmd.command
         if cmd.after_env and env_file_path:
@@ -155,10 +167,13 @@ def _launch_background_commands(
     sock_path: Path,
     env_file_path: Path | None,
     project_dir: Path,
+    env_overlay: dict[str, str],
 ) -> None:
     """Launch background commands as fire-and-forget asyncio tasks."""
     for cmd in commands:
-        task = asyncio.create_task(_run_background_command(session, cmd, sock_path, env_file_path, project_dir))
+        task = asyncio.create_task(
+            _run_background_command(session, cmd, sock_path, env_file_path, project_dir, env_overlay)
+        )
         session.track(task)
 
 
@@ -169,11 +184,13 @@ async def _setup_platform_services(
     project_dir: Path,
     root_ctx: trace.Context,
     platform: platform_detect.PlatformInfo,
+    env_overlay: dict[str, str],
 ) -> PlatformSetup:
     """Profile-driven platform services: supervisor, proxy, containers, tmpfs, certs.
 
-    Returns a PlatformSetup with platform-specific results. K8s secrets,
-    BuildBuddy, and fork remote are handled in the unified handle() path.
+    env_overlay is the delta from startup_env_script (new/changed vars vs. os.environ).
+    Callers access secrets as properties (k8s_token, etc.).
+    BuildBuddy, fork remote, and kubeconfig write are handled in handle().
 
     Which services run is controlled by profile flags (setup_auth_proxy,
     setup_docker, setup_tmpfs, install_mkcert).
@@ -256,7 +273,12 @@ async def _setup_platform_services(
     # Fire-and-forget immediate background commands (notifications via session mailbox).
     immediate_cmds = [cmd for cmd in profile.background_commands if not cmd.after_env]
     _launch_background_commands(
-        session, immediate_cmds, sock_path=session.paths.hook_daemon_sock, env_file_path=None, project_dir=project_dir
+        session,
+        immediate_cmds,
+        sock_path=session.paths.hook_daemon_sock,
+        env_file_path=None,
+        project_dir=project_dir,
+        env_overlay=env_overlay,
     )
 
     # Proxy task starts without BuildBuddy state (buildbuddy setup depends on
@@ -327,6 +349,7 @@ async def _setup_platform_services(
 
     return PlatformSetup(
         platform=platform,
+        env_overlay=env_overlay,
         auth_proxy=auth_proxy_result if isinstance(auth_proxy_result, proxy_setup.ProxySetup) else None,
         container=None if isinstance(container_result, BaseException) else container_result,
         mkcert_result=None if isinstance(mkcert_result, BaseException) else mkcert_result,
@@ -341,6 +364,7 @@ async def handle(
     settings: HookSettings,
     profile: ProfileConfig,
     ctx: CallerContext,
+    startup: StartupResult,
 ) -> HookOutput:
     """Profile-driven session setup.
 
@@ -370,23 +394,20 @@ async def handle(
     # Platform services (proxy, containers, certs, tmpfs) are individually gated
     # by profile flags inside _setup_platform_services. Services whose flags are
     # false get skipped via SkipError.
-    setup = await _setup_platform_services(session, settings, profile, project_dir, root_ctx, platform=platform)
+    setup = await _setup_platform_services(
+        session, settings, profile, project_dir, root_ctx, platform=platform, env_overlay=startup.env_overlay
+    )
 
     # -- Shared steps: secrets, BuildBuddy, fork remote --
     combined_ca = setup.auth_proxy.combined_ca if setup.auth_proxy else None
     proxy_url = get_proxy_url(ctx.caller_env)
 
-    # Read secrets from os.environ (populated by env scripts sourced at daemon startup).
-    with tracer.start_as_current_span("read_secrets", context=root_ctx):
-        setup.secrets.k8s_token = os.environ.get("K8S_TOKEN")
-        setup.secrets.buildbuddy_api_key = os.environ.get("BUILDBUDDY_API_KEY")
-        setup.secrets.github_token = os.environ.get("GITHUB_TOKEN")
-
-        # Write kubeconfig when token is available and profile enables it.
-        # CLI profile skips this — the user has their own ~/.kube/config.
-        k8s_token = setup.secrets.k8s_token or settings.k8s_token
-        if k8s_token and profile.k8s and profile.write_kubeconfig:
-            setup.secrets.kubeconfig_path = kubeconfig.write_kubeconfig(
+    # Write kubeconfig when token is available and profile enables it.
+    # CLI profile skips this — the user has their own ~/.kube/config.
+    k8s_token = setup.k8s_token or settings.k8s_token
+    if k8s_token and profile.k8s and profile.write_kubeconfig:
+        with tracer.start_as_current_span("write_kubeconfig", context=root_ctx):
+            setup.kubeconfig_path = kubeconfig.write_kubeconfig(
                 token=k8s_token,
                 k8s_cfg=profile.k8s,
                 session_dir=session.paths.session_dir,
@@ -396,7 +417,7 @@ async def handle(
 
     # Configure BuildBuddy now that secrets are available.
     with tracer.start_as_current_span("setup_buildbuddy", context=root_ctx):
-        if buildbuddy_api_key := setup.secrets.buildbuddy_api_key:
+        if buildbuddy_api_key := setup.buildbuddy_api_key:
             session.buildbuddy_api_key = buildbuddy_api_key
             buildbuddy_result = await run_in_thread(
                 lambda: buildbuddy.setup_buildbuddy(api_key=buildbuddy_api_key, session_dir=session.paths.session_dir)
@@ -407,10 +428,10 @@ async def handle(
                 setup.buildbuddy_setup = buildbuddy_result
 
     # Ensure 'fork' git remote when GITHUB_TOKEN is available.
-    if setup.secrets.github_token:
+    if setup.github_token:
         try:
             with tracer.start_as_current_span("setup_fork_remote", context=root_ctx):
-                setup.fork_result = fork_remote.ensure_fork_remote(setup.secrets.github_token, project_dir)
+                setup.fork_result = fork_remote.ensure_fork_remote(setup.github_token, project_dir)
         except Exception as e:
             logger.warning("Fork remote setup failed: %s", e)
 
@@ -474,8 +495,9 @@ async def handle(
             hook_timestamp=hook_timestamp,
             mkcert_cert=setup.mkcert_result.cert_path if setup.mkcert_result else None,
             mkcert_key=setup.mkcert_result.key_path if setup.mkcert_result else None,
-            kubeconfig_path=setup.secrets.kubeconfig_path,
+            kubeconfig_path=setup.kubeconfig_path,
             bbr_bazelrc=bbr_bazelrc,
+            env_overlay=startup.env_overlay,
             extra_env_script=extra_env,
         )
         env_file.write_env_file(ctx.env_file_path, env_vars)
@@ -492,13 +514,14 @@ async def handle(
         sock_path=session.paths.hook_daemon_sock,
         env_file_path=ctx.env_file_path,
         project_dir=ctx.project_dir,
+        env_overlay=setup.env_overlay,
     )
 
     # Build structured session context for Claude Code transcript
     with tracer.start_as_current_span("emit_session_context", context=root_ctx):
         extra_context = _render_extra_context(
             project_dir,
-            setup.secrets,
+            setup,
             setup.fork_result,
             profile=profile,
             bazel_remote_proxy_sock=session.paths.bazel_remote_proxy_sock if session.uds_remote else None,
@@ -517,6 +540,7 @@ async def handle(
             profile=profile,
             bazel_remote_proxy_sock=session.paths.bazel_remote_proxy_sock if session.uds_remote else None,
             session_id=session_id,
+            startup=startup,
         )
         output = HookOutput(hook_specific_output=SessionStartHookSpecificOutput(additional_context=context_output))
 
@@ -538,7 +562,7 @@ def _build_extra_env_script(profile: ProfileConfig) -> str | None:
 
 def _render_extra_context(
     project_dir: Path,
-    secrets: SecretsResult | None,
+    setup: PlatformSetup,
     fork_result: fork_remote.ForkRemoteSetup | None = None,
     *,
     profile: ProfileConfig,
@@ -553,7 +577,7 @@ def _render_extra_context(
         return ""
     template = Template(extra_template_path.read_text())
     result: str = template.render(
-        secrets=secrets,
+        setup=setup,
         fork_result=fork_result,
         profile=profile,
         bazel_remote_proxy_sock=bazel_remote_proxy_sock,

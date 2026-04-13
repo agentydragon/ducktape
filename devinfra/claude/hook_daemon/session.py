@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 
 
 # TODO: persist mailbox to disk so messages survive daemon restarts.
-# TODO: route daemon log errors/warnings to session mailbox so the agent sees them.
 
 
 @dataclass

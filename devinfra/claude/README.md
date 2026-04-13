@@ -214,8 +214,8 @@ is available. They are **not** compatible with Claude Code web's egress proxy.
 ## OTEL Tracing
 
 Hooks emit OpenTelemetry traces to Grafana Alloy via Authentik proxy at
-`alloy-otlp.allegedly.works`. Bearer token: web — written to `settings.local.json` by
-`web_setup.sh`; CLI — sourced via `.envrc` (`cli_env.sh`).
+`alloy-otlp.allegedly.works`. Bearer token: web — decrypted via `startup_env_script`
+(`web_env.sh`) at daemon startup; CLI — sourced via `.envrc` (`cli_env.sh`).
 
 Configured in the profile path (`otel.endpoint`, `secrets.otel_bearer_token`).
 
@@ -225,7 +225,21 @@ Rotation: bump `rotation_version` in the TF module.
 
 ## Web Setup
 
-To use this repository with Claude Code on the web, configure the following setup script in the Claude Code web UI:
+To use this repository with Claude Code on the web, configure **both** of the following in the Claude Code web UI:
+
+### 1. Environment Variables (Claude Code web UI → Settings → Environment Variables)
+
+These must be configured as env vars in the Claude Code web UI so they are injected into the Claude process at startup:
+
+| Variable                        | Description                                                                  |
+| ------------------------------- | ---------------------------------------------------------------------------- |
+| `DUCKTAPE_CLAUDE_HOOKS_PROFILE` | Path to the profile: `devinfra/claude/hook_daemon/profiles/web/profile.yaml` |
+| `SOPS_AGE_KEY`                  | Age private key for SOPS decryption (format: `AGE-SECRET-KEY-1...`)          |
+
+`DUCKTAPE_CLAUDE_HOOKS_PROFILE` is needed so Claude Code injects the profile path into all hook subprocesses.
+`SOPS_AGE_KEY` is the age private key for decrypting secrets. The hook daemon receives it from the Claude process environment via `startup_env_script`.
+
+### 2. Setup Script
 
 ```bash
 bash ducktape/devinfra/claude/web_setup.sh
@@ -234,8 +248,18 @@ bash ducktape/devinfra/claude/web_setup.sh
 This runs <web_setup.sh> which installs:
 
 1. Nix + devtools (`claude-hooks` wheel, `bbapi`, `gh`, `sops`, skills)
-2. Decrypts SOPS secrets (`GITHUB_TOKEN`, `K8S_TOKEN`, `BUILDBUDDY_API_KEY`,
-   `DUCKTAPE_CI_READ_GITHUB_TOKEN`, `DUCKTAPE_OTEL_BEARER_TOKEN`) and writes them
-   into `.claude/settings.local.json` — Claude Code injects these into all hook
-   subprocesses via process inheritance
+2. Writes decrypted secrets into `.claude/settings.local.json` for MCP servers
 3. Skills symlinked into `~/.claude/skills/` (preserves Anthropic defaults)
+
+Secrets (`GITHUB_TOKEN`, `BUILDBUDDY_API_KEY`, `DUCKTAPE_OTEL_BEARER_TOKEN`, etc.) are
+decrypted in **two places** because different consumers read from different sources:
+
+- **`web_setup.sh`** → `settings.local.json`: the only path that reaches **MCP server**
+  processes. Claude Code injects `settings.local.json["env"]` into MCP servers directly.
+- **Hook daemon `startup_env_script`** → session env file: the path for **hook
+  subprocesses**, which source the session env file written by `SessionStart`.
+
+The kube MCP server (`claude-sandbox-kubectl`) is special: it self-decrypts via
+`kube_from_sops.sh` at startup and does not read from `settings.local.json`.
+
+See <docs/secrets_env_flow.md> for the full picture.

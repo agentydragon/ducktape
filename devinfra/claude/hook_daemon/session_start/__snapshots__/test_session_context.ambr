@@ -5,9 +5,6 @@
   
   **Environment:** CLI (local)
   
-  
-  Nix is available with nixpkgs. When a tool you need isn't installed, use `nix-shell -p <pkg> --run <cmd>` (one-shot) or `nix shell nixpkgs#<pkg>` (Nix flakes) rather than installing permanently.
-  
   Session start log: `/tmp/daemon.log`
   
   '''
@@ -18,9 +15,6 @@
   
   **Environment:** CLI (local)
   
-  
-  Nix is installed but nixpkgs channels are not configured. You can set up nixpkgs with `nix-channel --add https://nixos.org/channels/nixpkgs-unstable nixpkgs && nix-channel --update` to enable `nix-shell -p <pkg>`.
-  
   Session start log: `/tmp/daemon.log`
   
   '''
@@ -30,7 +24,6 @@
   # Claude Code session start hook — OK
   
   **Environment:** CLI (local)
-  
   
   Session start log: `/tmp/daemon.log`
   
@@ -45,7 +38,38 @@
   ## BuildBuddy
   Bazel builds and tests by default execute remotely via BuildBuddy.
   Use BuildBuddy API (key in `~/.config/bazel/buildbuddy.bazelrc`) to download undeclared test outputs, profiles, search invocations.
+  Your `bbr` invocations are tagged `session:test-session-id`. To list your builds:
+  `bbapi invocation list --tag session:test-session-id`
   
+  Session start log: `/tmp/daemon.log`
+  
+  '''
+# ---
+# name: test_startup_script_failed
+  '''
+  # Claude Code session start hook — OK
+  
+  **Environment:** CLI (local)
+  **startup_env_script** `None` FAILED (exit 1) — yielded 0 vars
+  ```
+  WARNING: secrets: BUILDBUDDY_API_KEY: sops decrypt failed: age: no identity matched
+  ```
+  
+  Session start log: `/tmp/daemon.log`
+  
+  '''
+# ---
+# name: test_startup_script_succeeded
+  '''
+  # Claude Code session start hook — OK
+  
+  **Environment:** CLI (local)
+  **startup_env_script** `None` succeeded — yielded 3 vars: BUILDBUDDY_API_KEY, GITHUB_TOKEN, K8S_TOKEN
+  ```
+  secrets: BUILDBUDDY_API_KEY: OK
+  kubeconfig: wrote ~/.kube/config
+  Nix: available with nixpkgs.
+  ```
   
   Session start log: `/tmp/daemon.log`
   
@@ -61,7 +85,8 @@
   ## BuildBuddy
   Bazel builds and tests by default execute remotely via BuildBuddy.
   Use BuildBuddy API (key in `~/.config/bazel/buildbuddy.bazelrc`) to download undeclared test outputs, profiles, search invocations.
-  
+  Your `bbr` invocations are tagged `session:test-session-id`. To list your builds:
+  `bbapi invocation list --tag session:test-session-id`
   
   Session start log: `/tmp/daemon.log`
   
@@ -77,7 +102,6 @@
   ## Background tasks
   - apt package install
   - bazel info (after env)
-  
   
   Session start log: `/tmp/daemon.log`
   
@@ -99,7 +123,8 @@
   ## BuildBuddy
   Bazel builds and tests by default execute remotely via BuildBuddy.
   Use BuildBuddy API (key in `~/.config/bazel/buildbuddy.bazelrc`) to download undeclared test outputs, profiles, search invocations.
-  
+  Your `bbr` invocations are tagged `session:test-session-id`. To list your builds:
+  `bbapi invocation list --tag session:test-session-id`
   
   Session start log: `/tmp/daemon.log`
   
@@ -110,7 +135,6 @@
   # Claude Code session start hook — OK with warnings
   
   **Environment:** CLI (local)
-  
   
   - WARNING: Something went wrong during setup
   

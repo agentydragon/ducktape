@@ -99,32 +99,34 @@ done
 
 # --- Step 3: Decrypt secrets and write settings.local.json ---
 # sops is now on PATH (installed by devtools in Step 2).
-# eval the env script to get secrets into current shell env; failures are non-fatal
-# (try_export in _common.sh already continues on per-secret failure).
+# These secrets are used by Claude Code itself and any non-kube MCP servers.
+# The kube MCP server (claude-sandbox-kubectl) self-decrypts via kube_from_sops.sh
+# and does not read from settings.local.json. See docs/secrets_env_flow.md.
+#
+# The hook daemon also decrypts independently via startup_env_script at daemon
+# startup — the reliable path for hook subprocesses.
 PROJECT_DIR="${FLAKE#path:}"
 eval "$("$PROJECT_DIR/devinfra/secrets/web_env.sh" 2>/tmp/web-env-stderr.log)" || true
 cat /tmp/web-env-stderr.log >&2
 
 # Python writes the JSON — safe quoting, no shell escaping footguns.
-# Claude Code injects settings.local.json["env"] into all hook subprocesses,
-# so secrets propagate to the daemon and all tool calls via process inheritance.
+# Note: DUCKTAPE_CLAUDE_HOOKS_PROFILE is not written here; configure it as an
+# env var in the Claude Code web UI (along with the SOPS_AGE_KEY age private key).
 SETTINGS_LOCAL="$PROJECT_DIR/.claude/settings.local.json"
 SETTINGS_LOCAL="$SETTINGS_LOCAL" python3 <<'PYEOF'
 import json, os, sys
 from pathlib import Path
 
 keys = ["BUILDBUDDY_API_KEY", "DUCKTAPE_OTEL_BEARER_TOKEN",
-        "GITHUB_TOKEN", "K8S_TOKEN", "CLAUDE_SANDBOX_K8S_TOKEN",
-        "DUCKTAPE_CI_READ_GITHUB_TOKEN"]
+        "GITHUB_TOKEN", "K8S_TOKEN", "DUCKTAPE_CI_READ_GITHUB_TOKEN"]
 present = {k: v for k in keys if (v := os.environ.get(k))}
 missing = [k for k in keys if k not in present]
 if missing:
-    print(f"WARNING: secrets missing from settings.local.json: {missing}", file=sys.stderr)
-Path(os.environ["SETTINGS_LOCAL"]).write_text(
-    json.dumps({"env": {"DUCKTAPE_CLAUDE_HOOKS_PROFILE": "devinfra/claude/hook_daemon/profiles/web/profile.yaml"} | present})
-)
+    print(f"NOTE: secrets not yet available for settings.local.json: {missing}", file=sys.stderr)
+    print("      Hook daemon will decrypt via startup_env_script at session start.", file=sys.stderr)
+Path(os.environ["SETTINGS_LOCAL"]).write_text(json.dumps({"env": present}))
 PYEOF
-echo "[$(date -Iseconds)] Wrote profile + secrets to ${SETTINGS_LOCAL}"
+echo "[$(date -Iseconds)] Wrote secrets to ${SETTINGS_LOCAL}"
 
 # --- Step 4: Add github-no-proxy remote for bbr ---
 # Claude Code web sessions use a local git proxy as 'origin'

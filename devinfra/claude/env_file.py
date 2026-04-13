@@ -4,7 +4,7 @@ Centralizes all environment variable exports into a single file write.
 """
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -79,6 +79,9 @@ class EnvVars:
     # bbr session bazelrc (metadata tags for BuildBuddy invocations)
     bbr_bazelrc: Path | None = None
 
+    # Delta from startup_env_script: vars added/changed vs. os.environ (secrets, tokens, etc.)
+    env_overlay: dict[str, str] = field(default_factory=dict)
+
     # Extra shell script content from config.yaml (appended verbatim)
     extra_env_script: str | None = None
 
@@ -143,6 +146,10 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     if vars.bbr_bazelrc:
         exports.extend(["", "# bbr session bazelrc (BuildBuddy invocation metadata)"])
         exports.extend(exports_from_dict({"BBR_BAZELRC": vars.bbr_bazelrc}))
+
+    if vars.env_overlay:
+        exports.extend(["", "# Secrets from startup_env_script"])
+        exports.extend(exports_from_dict(vars.env_overlay))
 
     # Point Ansible's local tmp to a sandbox-writable directory so that
     # pre-commit ansible-syntax-check works when /tmp is read-only in the

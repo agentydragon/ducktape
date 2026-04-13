@@ -13,7 +13,14 @@ from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput
 from devinfra.claude.claude_api.hooks.pre_tool_use import PreToolUseInput
 from devinfra.claude.claude_api.hooks.stop import StopInput
 from devinfra.claude.hook_daemon.config import ProfileConfig
-from devinfra.claude.hook_daemon.models import HookRequest, HookResponse, ShimBlocked, ShimExecRequest, ShimExecve
+from devinfra.claude.hook_daemon.models import (
+    HookRequest,
+    HookResponse,
+    ShimBlocked,
+    ShimExecRequest,
+    ShimExecve,
+    StartupResult,
+)
 from devinfra.claude.hook_daemon.server import create_app
 from devinfra.claude.hook_daemon.testing.testing_helpers import TEST_PROFILE
 
@@ -34,7 +41,7 @@ async def client(tmp_path: Path) -> AsyncGenerator[AsyncClient]:
     """Create an async test client for the daemon app."""
     daemon_dir = tmp_path / "hook-daemon"
     daemon_dir.mkdir()
-    app = create_app(daemon_dir, profile=TEST_PROFILE)
+    app = create_app(daemon_dir, profile=TEST_PROFILE, startup=StartupResult())
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
@@ -230,7 +237,7 @@ class TestGitShimConfigDisabled:
     async def permissive_client(self, tmp_path: Path) -> AsyncGenerator[AsyncClient]:
         daemon_dir = tmp_path / "hook-daemon"
         daemon_dir.mkdir()
-        app = create_app(daemon_dir, profile=_PERMISSIVE_PROFILE)
+        app = create_app(daemon_dir, profile=_PERMISSIVE_PROFILE, startup=StartupResult())
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as c:
             yield c

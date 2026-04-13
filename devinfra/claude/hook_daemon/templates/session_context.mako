@@ -9,6 +9,19 @@
 % else:
 **Environment:** CLI (local)
 % endif
+% if startup.exit_code is not None:
+<%
+    _var_summary = f"yielded {len(startup.env_overlay)} vars"
+    if startup.env_overlay:
+        _var_summary += f": {', '.join(sorted(startup.env_overlay))}"
+%>\
+**startup_env_script** `${profile.startup_env_script}` ${"succeeded" if startup.exit_code == 0 else f"FAILED (exit {startup.exit_code})"} — ${_var_summary}
+% if startup.output.strip():
+```
+${startup.output.rstrip()}
+```
+% endif
+% endif
 % if container:
 
 ## Docker
@@ -38,6 +51,8 @@ ${"##"} Background tasks
 % if profile.bazel_remote_proxy and bazel_remote_proxy_sock:
 Bazel remote proxy (UDS): `${bazel_remote_proxy_sock}` → `${profile.bazel_remote_proxy.target}` (used by `--remote_proxy`/`--bes_proxy` in session bazelrc).
 % endif
+## TODO(move-to-env-script): BUILDBUDDY_API_KEY status surfaces in the startup section above.
+## The session-id-specific bbr tag line stays here until session_id is available outside the hook.
 % if buildbuddy_configured:
 
 ${"##"} BuildBuddy
@@ -47,16 +62,6 @@ Use BuildBuddy API (key in `~/.config/bazel/buildbuddy.bazelrc`) to download und
 Your `bbr` invocations are tagged `session:${session_id}`. To list your builds:
 `bbapi invocation list --tag session:${session_id}`
 % endif
-% endif
-
-% if platform.nixpkgs_available:
-
-## Nix
-Nix is available with nixpkgs. When a tool you need isn't installed, use `nix-shell -p <pkg> --run <cmd>` (one-shot) or `nix shell nixpkgs#<pkg>` (Nix flakes) rather than installing permanently.
-% elif platform.nix_installed:
-
-## Nix
-Nix is installed but nixpkgs channels are not configured. You can set up nixpkgs with `nix-channel --add https://nixos.org/channels/nixpkgs-unstable nixpkgs && nix-channel --update` to enable `nix-shell -p <pkg>`.
 % endif
 % if collector.has_warnings:
 

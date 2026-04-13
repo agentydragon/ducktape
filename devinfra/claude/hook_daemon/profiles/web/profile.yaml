@@ -1,6 +1,8 @@
+startup_env_script: devinfra/secrets/web_env.sh
+
 otel:
   endpoint: https://alloy-otlp.allegedly.works/v1/traces
-  # bearer_token: injected via settings.local.json (written by web_setup.sh).
+  # bearer_token: decrypted via startup_env_script (web_env.sh) at daemon startup.
 
 k8s:
   server: https://api.allegedly.works:16443
@@ -32,6 +34,21 @@ bazel_remote_proxy:
 bazel_bes_proxy:
   target: remote.buildbuddy.io:443
 background_commands:
+  - name: nix nixpkgs check
+    command: |
+      if ! command -v nix &>/dev/null; then
+        echo "ERROR: Nix not found on PATH. web_setup.sh should have installed Nix — did it complete successfully?"
+        exit 1
+      fi
+      if nix-instantiate '<nixpkgs>' --eval -E '1' &>/dev/null 2>&1; then
+        echo "Nix: nixpkgs available. Use 'nix-shell -p <pkg> --run <cmd>' or 'nix shell nixpkgs#<pkg>'."
+      else
+        echo "Nix: nixpkgs not configured. Configuring nixpkgs-unstable channel..."
+        nix-channel --add https://nixos.org/channels/nixpkgs-unstable nixpkgs
+        nix-channel --update nixpkgs
+        echo "Nix: nixpkgs channel configured."
+      fi
+    timeout: 120
   - name: apt package install
     command: |
       apt-get update -qq &&

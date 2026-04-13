@@ -4,8 +4,11 @@ Each profile (cli, web) lives under devinfra/claude/hook_daemon/profiles/<name>/
 The daemon loads exactly one profile at startup, selected by the
 DUCKTAPE_CLAUDE_HOOKS_PROFILE env var.
 
-Secrets are not handled here. Web: written to settings.local.json by web_setup.sh.
-CLI: sourced via .envrc (eval "$(devinfra/secrets/cli_env.sh)").
+Secrets are not handled here.
+Web: sourced via startup_env_script (web_env.sh) at daemon startup; also partially written
+to settings.local.json by web_setup.sh (runs before SOPS_AGE_KEY injection, so typically
+only DUCKTAPE_CLAUDE_HOOKS_PROFILE lands there reliably).
+CLI: sourced via .envrc (eval "$(devinfra/secrets/cli_env.sh)") before daemon starts.
 """
 
 from __future__ import annotations
@@ -131,6 +134,13 @@ class ProfileConfig(BaseModel):
     otel: OtelConfig | None = Field(default=None, description="OpenTelemetry tracing configuration.")
     pre_commit: PreCommitConfig | None = Field(default=None, description="Pre-commit hook behavior configuration.")
     git_shim: GitShimConfig = Field(default_factory=GitShimConfig, description="Git shim behavior toggles.")
+    startup_env_script: str | None = Field(
+        default=None,
+        description="Repo-relative path to a shell script run at daemon startup. "
+        "The script's stdout must be eval-able shell (e.g. `export VAR=val` lines from try_export). "
+        "New/changed vars are merged into os.environ before any session starts. "
+        "Used by the web profile to decrypt SOPS secrets when SOPS_AGE_KEY is available.",
+    )
     context_template: str | None = Field(
         default=None, description="Repo-relative path to a Mako template rendered into the session context output."
     )

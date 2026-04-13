@@ -3,12 +3,15 @@
 import argparse
 import logging
 import os
+import shlex
+import subprocess
 from pathlib import Path
 
 import uvicorn
 from filelock import FileLock
 
 from devinfra.claude.hook_daemon.config import OtelConfig, ProfileConfig
+from devinfra.claude.hook_daemon.models import StartupResult
 from devinfra.claude.hook_daemon.server import create_app
 from devinfra.claude.hook_daemon.tracing import init_daemon_tracing, shutdown_tracing
 from devinfra.claude.settings import HookSettings
@@ -16,10 +19,57 @@ from devinfra.claude.settings import HookSettings
 logger = logging.getLogger(__name__)
 
 
-def _resolve_otel_config(profile: ProfileConfig) -> OtelConfig | None:
+def _source_env_script(script_path: Path) -> StartupResult:
+    """Run a startup env script and collect env var patches without mutating os.environ.
+
+    The script must print `export VAR=value` lines to stdout (as try_export does).
+    Runs as: eval "$(script)" && env -0 — executes the script in a subprocess,
+    evals its stdout, then dumps the final env via null-delimited pairs. Returns
+    the vars the script added or changed relative to the current env; callers
+    apply them explicitly rather than relying on a global mutation.
+    """
+    if not script_path.exists():
+        msg = f"startup_env_script not found: {script_path}"
+        logger.warning(msg)
+        return StartupResult(exit_code=1, output=msg)
+
+    logger.info("Running startup_env_script: %s", script_path)
+    initial_env = dict(os.environ)
+    proc = subprocess.run(
+        ["bash", "-c", f'eval "$({shlex.quote(str(script_path))})" && env -0'],
+        capture_output=True,
+        env=initial_env,
+        check=False,
+    )
+
+    output = proc.stderr.decode(errors="replace")
+    if output.strip():
+        logger.info("startup_env_script output:\n%s", output.rstrip())
+
+    if proc.returncode != 0:
+        logger.warning("startup_env_script exited %d — secrets may be missing from session env", proc.returncode)
+        return StartupResult(exit_code=proc.returncode, output=output)
+
+    # Parse null-delimited KEY=VALUE pairs from `env -0`. Collect vars the script
+    # added or changed relative to initial_env; do NOT mutate os.environ.
+    added: dict[str, str] = {}
+    for item in proc.stdout.split(b"\x00"):
+        if not item:
+            continue
+        key_b, _, val_b = item.partition(b"=")
+        key = key_b.decode(errors="replace")
+        val = val_b.decode(errors="replace")
+        if initial_env.get(key) != val:
+            added[key] = val
+
+    logger.info("startup_env_script: collected %d new/updated vars: %s", len(added), sorted(added))
+    return StartupResult(exit_code=0, output=output, env_overlay=added)
+
+
+def _resolve_otel_config(profile: ProfileConfig, env_overlay: dict[str, str]) -> OtelConfig | None:
     """Build OtelConfig from profile + env vars.
 
-    Bearer token: web — injected via settings.local.json by web_setup.sh;
+    Bearer token: web — decrypted via startup_env_script (web_env.sh) at daemon startup;
     CLI — sourced from .envrc (cli_env.sh) before daemon starts.
     """
     if not profile.otel:
@@ -29,7 +79,7 @@ def _resolve_otel_config(profile: ProfileConfig) -> OtelConfig | None:
     if not otel_config.endpoint:
         return None
 
-    token = os.environ.get("DUCKTAPE_OTEL_BEARER_TOKEN")
+    token = env_overlay.get("DUCKTAPE_OTEL_BEARER_TOKEN") or os.environ.get("DUCKTAPE_OTEL_BEARER_TOKEN")
     if token:
         otel_config = OtelConfig(endpoint=otel_config.endpoint, bearer_token=token)
 
@@ -76,10 +126,14 @@ def main() -> None:
         raise RuntimeError("DUCKTAPE_CLAUDE_HOOKS_PROFILE not set — cannot load profile config")
     profile = ProfileConfig.load(project_dir / settings.profile)
 
-    otel_config = _resolve_otel_config(profile)
+    startup = StartupResult()
+    if profile.startup_env_script:
+        startup = _source_env_script(project_dir / profile.startup_env_script)
+
+    otel_config = _resolve_otel_config(profile, startup.env_overlay)
 
     init_daemon_tracing(daemon_dir, otel_config=otel_config)
-    app = create_app(daemon_dir, profile=profile)
+    app = create_app(daemon_dir, profile=profile, startup=startup)
     uvicorn.run(app, uds=args.sock, log_level="info")
     shutdown_tracing()
 

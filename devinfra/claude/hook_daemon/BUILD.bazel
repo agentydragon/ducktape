@@ -160,6 +160,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":config",
+        ":models",
         ":server",
         ":tracing",
         "//devinfra/claude:settings",

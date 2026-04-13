@@ -56,7 +56,7 @@ Container starts (SOPS_AGE_KEY in container env from the start)
         │   ├── Writes kubeconfig from K8S_TOKEN
         │   ├── Configures BuildBuddy from BUILDBUDDY_API_KEY
         │   ├── Sets up fork remote from GITHUB_TOKEN
-        │   └── Writes session env file including startup_env_vars block
+        │   └── Writes session env file including env_overlay block
         │
         └── Subsequent hook subprocesses
             └── Source session env file → have all secrets

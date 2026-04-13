@@ -15,7 +15,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # Helper: decrypt a SOPS file, output an export line. On failure, warns on stderr
 # but continues (stdout only contains successful exports, safe to eval).
 try_export() {
-  local var_name="$1" file="$2" extract="${3:-}"
+  local var_name="$1" file="$2" extract="${3:-}" description="${4:-}"
   if [ ! -f "$file" ]; then
     echo "WARNING: secrets: $var_name: file not found: $file" >&2
     return 0
@@ -26,18 +26,23 @@ try_export() {
   [ -n "$extract" ] && sops_args+=(--extract "$extract")
   sops_args+=("$file")
   if ! value=$(sops "${sops_args[@]}" 2>"$sops_stderr"); then
-    echo "WARNING: secrets: $var_name: sops decrypt failed: $(cat "$sops_stderr")" >&2
+    local _desc_suffix=""
+    [ -n "$description" ] && _desc_suffix=" (${description})"
+    echo "WARNING: secrets: $var_name${_desc_suffix}: sops decrypt failed: $(cat "$sops_stderr")" >&2
     rm -f "$sops_stderr"
     return 0
   fi
   rm -f "$sops_stderr"
+  local _ok_msg="secrets: ${var_name}: OK"
+  [ -n "$description" ] && _ok_msg="${_ok_msg} — ${description}"
+  echo "$_ok_msg" >&2
   printf 'export %s=%q\n' "$var_name" "$value"
 }
 
 # --- Common secrets (shared across all contexts) ---
 
 # BuildBuddy API key
-try_export BUILDBUDDY_API_KEY "$REPO_ROOT/secrets/buildbuddy.yaml" '["buildbuddy_api_key"]'
+try_export BUILDBUDDY_API_KEY "$REPO_ROOT/secrets/buildbuddy.yaml" '["buildbuddy_api_key"]' "BuildBuddy remote cache/execution (bbr)"
 
 # TODO: Once docker-ci is working in cluster, put the decrypted PEM into
 # BBR_REMOTE_ARGS as:

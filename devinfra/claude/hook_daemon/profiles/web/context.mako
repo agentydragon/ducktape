@@ -1,11 +1,11 @@
 <%import os%>\
 ## Secrets
 <%
-    has_any_secret = secrets and (secrets.buildbuddy_api_key or secrets.github_token)
+    has_any_secret = setup.buildbuddy_api_key or setup.github_token
 %>\
 % if has_any_secret:
-Secrets loaded (buildbuddy=${"yes" if secrets.buildbuddy_api_key else "no"}, github=${"yes" if secrets.github_token else "no"}).
-% if secrets.github_token:
+Secrets loaded (buildbuddy=${"yes" if setup.buildbuddy_api_key else "no"}, github=${"yes" if setup.github_token else "no"}).
+% if setup.github_token:
 `GITHUB_TOKEN`: GitHub PAT for the `agentydragon-agent` bot account. Used by `gh` CLI automatically.
   **PR workflow** (`origin` pushes to `agentydragon/ducktape` via proxy, but bot is NOT a collaborator so PRs must come from a fork):
 % if fork_result and fork_result.fork_exists:
@@ -31,10 +31,10 @@ Secrets loaded (buildbuddy=${"yes" if secrets.buildbuddy_api_key else "no"}, git
   ```
 % endif
 % endif
-% if secrets.kubeconfig_path:
-`KUBECONFIG`: ServiceAccount `claude-code-web` with access to the `claude-sandbox` namespace (pods, services, secrets, exec). Resource limits: 4 CPU, 8Gi memory, 10 pods. Use `kubectl` for `cluster/` operations (deploy, inspect, debug).
+% if setup.kubeconfig_path:
+`KUBECONFIG` set — `kubectl` and the `claude-sandbox-kubectl` MCP tools are available.
 % endif
-% if secrets.buildbuddy_api_key:
+% if setup.buildbuddy_api_key:
 API key in `~/.config/bazel/buildbuddy.bazelrc`. See <docs/buildbuddy_api.md> for undocumented endpoints (profile download, invocation search, cache scorecard).
 % endif
 % else:

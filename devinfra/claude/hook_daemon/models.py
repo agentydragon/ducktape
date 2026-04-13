@@ -1,11 +1,26 @@
-"""Pydantic models for hook daemon RPC protocol."""
+"""Pydantic models and dataclasses for hook daemon RPC protocol and startup state."""
 
+from dataclasses import dataclass, field
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from devinfra.claude.claude_api.hooks.dispatch_input import AnyHookInput
 from devinfra.claude.claude_api.hooks.output import HookOutput
+
+
+@dataclass
+class StartupResult:
+    """Outcome of running startup_env_script at daemon startup.
+
+    exit_code is None when no script was configured.
+    output is the script's combined stdout+stderr (human-readable status/error messages).
+    env_overlay holds vars that were new or changed vs. the pre-script environment.
+    """
+
+    env_overlay: dict[str, str] = field(default_factory=dict)
+    exit_code: int | None = None
+    output: str = ""
 
 
 class HookRequest(BaseModel):

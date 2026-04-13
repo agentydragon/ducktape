@@ -11,6 +11,7 @@ from syrupy.assertion import SnapshotAssertion
 from devinfra.claude.auth_proxy import setup as proxy_setup
 from devinfra.claude.hook_daemon import templates
 from devinfra.claude.hook_daemon.config import BackgroundCommand, ProfileConfig
+from devinfra.claude.hook_daemon.models import StartupResult
 from devinfra.claude.hook_daemon.session_start import container_runtime, mkcert, platform_detect
 from devinfra.claude.hook_daemon.session_start.handler import LogCollector
 from devinfra.claude.hook_daemon.testing.testing_helpers import TEST_PROFILE
@@ -28,6 +29,8 @@ def _render(
     log_file: str = "/tmp/daemon.log",
     buildbuddy_configured: bool = False,
     profile: ProfileConfig = TEST_PROFILE,
+    session_id: str = "test-session-id",
+    startup: StartupResult | None = None,
 ) -> str:
     collector = LogCollector()
     collector.buffer.extend(log_entries or [])
@@ -44,6 +47,8 @@ def _render(
             platform=platform,
             profile=profile,
             bazel_remote_proxy_sock=None,
+            session_id=session_id,
+            startup=startup or StartupResult(),
         )
     )
 
@@ -161,6 +166,30 @@ def test_with_warnings_in_log(
         exc_info=None,
     )
     result = _render(platform=cli_platform(), log_entries=[record])
+    assert result == snapshot
+
+
+def test_startup_script_succeeded(
+    snapshot: SnapshotAssertion, cli_platform: Callable[..., platform_detect.PlatformInfo]
+) -> None:
+    startup = StartupResult(
+        exit_code=0,
+        output="secrets: BUILDBUDDY_API_KEY: OK\nkubeconfig: wrote ~/.kube/config\nNix: available with nixpkgs.",
+        env_overlay={"BUILDBUDDY_API_KEY": "key123", "GITHUB_TOKEN": "ghp_xxx", "K8S_TOKEN": "tok"},
+    )
+    result = _render(platform=cli_platform(), startup=startup)
+    assert result == snapshot
+
+
+def test_startup_script_failed(
+    snapshot: SnapshotAssertion, cli_platform: Callable[..., platform_detect.PlatformInfo]
+) -> None:
+    startup = StartupResult(
+        exit_code=1,
+        output="WARNING: secrets: BUILDBUDDY_API_KEY: sops decrypt failed: age: no identity matched",
+        env_overlay={},
+    )
+    result = _render(platform=cli_platform(), startup=startup)
     assert result == snapshot
 
 

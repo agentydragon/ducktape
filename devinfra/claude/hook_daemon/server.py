@@ -40,7 +40,14 @@ from devinfra.claude.claude_api.hooks.setup import SetupInput
 from devinfra.claude.claude_api.hooks.worktree_create import WorktreeCreateInput
 from devinfra.claude.claude_api.hooks.worktree_remove import WorktreeRemoveInput
 from devinfra.claude.hook_daemon.config import ProfileConfig
-from devinfra.claude.hook_daemon.models import HookRequest, HookResponse, ShimBlocked, ShimExecRequest, ShimExecve
+from devinfra.claude.hook_daemon.models import (
+    HookRequest,
+    HookResponse,
+    ShimBlocked,
+    ShimExecRequest,
+    ShimExecve,
+    StartupResult,
+)
 from devinfra.claude.hook_daemon.post_tool_use import evaluate as evaluate_post
 from devinfra.claude.hook_daemon.pre_tool_use import evaluate as evaluate_pre
 from devinfra.claude.hook_daemon.session import Session
@@ -53,6 +60,7 @@ logger = logging.getLogger(__name__)
 
 IDLE_TIMEOUT_SECONDS = 1800  # 30 minutes
 IDLE_CHECK_INTERVAL_SECONDS = 30
+
 
 # Non-REPL hooks: Claude Code delivers systemMessage to the UI notification
 # callback only, not to the model conversation. Flushing mailbox messages into
@@ -204,7 +212,7 @@ async def _idle_watchdog(app: FastAPI) -> None:
             return
 
 
-def create_app(daemon_dir: Path, profile: ProfileConfig) -> FastAPI:
+def create_app(daemon_dir: Path, profile: ProfileConfig, startup: StartupResult) -> FastAPI:
     """Create and configure the hook daemon FastAPI app."""
 
     @asynccontextmanager
@@ -222,6 +230,7 @@ def create_app(daemon_dir: Path, profile: ProfileConfig) -> FastAPI:
     app.state.daemon_dir = daemon_dir
     app.state.settings = HookSettings()
     app.state.profile = profile
+    app.state.startup = startup
     app.state.last_request_time = time.monotonic()
     app.state.sessions = {}  # dict[str, Session]
 
@@ -260,7 +269,12 @@ def create_app(daemon_dir: Path, profile: ProfileConfig) -> FastAPI:
                     await session.start_proxy()
                     ctx = CallerContext.from_env(req.env)
                     output = await handle_session_start(
-                        session, req.hook, app.state.settings, profile=app.state.profile, ctx=ctx
+                        session,
+                        req.hook,
+                        app.state.settings,
+                        profile=app.state.profile,
+                        ctx=ctx,
+                        startup=app.state.startup,
                     )
                 case PreToolUseInput():
                     output = evaluate_pre(req.hook, session)

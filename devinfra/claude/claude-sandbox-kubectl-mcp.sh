@@ -1,37 +1,16 @@
 #!/usr/bin/env bash
-# Assembles a kubeconfig from CLAUDE_SANDBOX_K8S_TOKEN and runs kubernetes-mcp-server.
-# The Go server uses client-go (needs a kubeconfig file, not env vars).
+# Decrypts k8s token from SOPS, assembles kubeconfig, runs kubernetes-mcp-server.
+#
+# Uses subprocess (not exec) so the EXIT trap cleans up the temp kubeconfig.
+# SOPS_AGE_KEY must be in env — the container provides it before MCP servers start.
 set -euo pipefail
 
-if [ -z "${CLAUDE_SANDBOX_K8S_TOKEN:-}" ]; then
-  echo "ERROR: CLAUDE_SANDBOX_K8S_TOKEN not set" >&2
-  exit 1
-fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 TMPKC="$(mktemp "${TMPDIR:-/tmp}/claude-sandbox-kc.XXXXXX")"
 trap 'rm -f "$TMPKC"' EXIT
 
-cat >"$TMPKC" <<EOF
-apiVersion: v1
-kind: Config
-clusters:
-- cluster:
-    server: https://api.allegedly.works:16443
-    insecure-skip-tls-verify: true
-  name: claude-sandbox
-contexts:
-- context:
-    cluster: claude-sandbox
-    namespace: claude-sandbox
-    user: claude-code-web
-  name: claude-code-web
-current-context: claude-code-web
-users:
-- name: claude-code-web
-  user:
-    token: ${CLAUDE_SANDBOX_K8S_TOKEN}
-EOF
-chmod 600 "$TMPKC"
+"$SCRIPT_DIR/kube_from_sops.sh" "$TMPKC"
 
-# No exec — let bash stay alive so trap cleans up the temp kubeconfig on exit.
+# Subprocess (not exec) — bash stays alive so the EXIT trap cleans up.
 kubernetes-mcp-server --kubeconfig "$TMPKC" --disable-multi-cluster "$@"
