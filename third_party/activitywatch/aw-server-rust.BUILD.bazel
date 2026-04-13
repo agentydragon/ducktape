@@ -25,6 +25,9 @@ rust_library(
     srcs = glob(["aw-models/src/**/*.rs"]),
     crate_root = "aw-models/src/lib.rs",
     edition = "2021",
+    # Suppress dead_code warning for TryParse::Unparsed field in tryvec.rs
+    # (external code we don't control).
+    rustc_flags = ["-Adead_code"],
     visibility = ["//visibility:public"],
     deps = [
         "@aw_server_crates//:chrono",
@@ -61,6 +64,9 @@ rust_library(
     srcs = glob(["aw-datastore/src/**/*.rs"]),
     crate_root = "aw-datastore/src/lib.rs",
     edition = "2021",
+    # Suppress dead_code warnings for LegacyDatastoreImportError fields in
+    # legacy_import.rs (external code we don't control).
+    rustc_flags = ["-Adead_code"],
     visibility = ["//visibility:public"],
     deps = [
         ":aw_models",
