@@ -234,7 +234,7 @@ resource "github_repository_webhook" "flux_receiver" {
   }
 
   active = true
-  events = ["push"]
+  events = ["push", "registry_package"]
 
   lifecycle {
     # Token has ignore_changes on its random_password, so the URL is stable.

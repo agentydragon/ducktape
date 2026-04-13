@@ -1,0 +1,64 @@
+---
+# Flux Receiver: GitHub registry_package → immediate ImageRepository reconciliation
+#
+# When GitHub fires a registry_package event (a new image pushed to GHCR), Flux
+# immediately reconciles all GHCR ImageRepositories instead of waiting for the
+# 5-minute poll interval.
+#
+# Reuses github-webhook-token (same webhook URL as the push receiver). GitHub
+# registers this event via the registry_package entry in the
+# terraform/gitops/harbor-ci github_repository_webhook resource.
+#
+# Requirement: each GHCR package must be linked to the ducktape repository in
+# GitHub for the registry_package webhook event to fire.
+apiVersion: notification.toolkit.fluxcd.io/v1
+kind: Receiver
+metadata:
+  name: ghcr-image-automation
+  namespace: flux-system
+spec:
+  type: github
+  events:
+    - registry_package
+  secretRef:
+    name: github-webhook-token
+  resources:
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: activitywatch
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: airlock
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: auth-proxy
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: authentik-mcp-poc-backend
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: authentik-mcp-poc-server
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: claude-token-rotation
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: homeassistant-proxy
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: openclaw
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: openclaw-exec
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: props-backend
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: tana-mcp
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: tana-token-broker
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: token-provisioner
