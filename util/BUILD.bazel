@@ -1,7 +1,7 @@
 """Shared utility libraries."""
 
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "otel",
@@ -82,6 +82,16 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//util/bazel:runfiles",
+    ],
+)
+
+py_test(
+    name = "test_crane",
+    srcs = ["test_crane.py"],
+    deps = [
+        ":crane",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

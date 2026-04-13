@@ -40,6 +40,22 @@ class BazelImage:
     image_rlocation: str
 
 
+def _format_crane_error(args: tuple[str, ...], returncode: int | None, stderr: str, stdout: str) -> str:
+    """Build a multiline message describing a failed crane subprocess.
+
+    Used by both the sync and async wrappers so failures look the same
+    regardless of which path raised. crane writes its error messages to
+    stderr; stdout is included for the rare case where it carries useful
+    context (e.g. a partial push trace).
+    """
+    parts = [f"crane {' '.join(args)} failed (exit {returncode})"]
+    if stderr.strip():
+        parts.append(f"stderr:\n{stderr.rstrip()}")
+    if stdout.strip():
+        parts.append(f"stdout:\n{stdout.rstrip()}")
+    return "\n".join(parts)
+
+
 class Crane:
     """Typed wrapper around the crane CLI.
 
@@ -66,7 +82,17 @@ class Crane:
             self._env = {**os.environ, "DOCKER_CONFIG": self._config_dir.name}
 
     def _run(self, *args: str) -> str:
-        result = subprocess.run([str(self._path), *args], check=True, capture_output=True, text=True, env=self._env)
+        try:
+            result = subprocess.run([str(self._path), *args], check=True, capture_output=True, text=True, env=self._env)
+        except subprocess.CalledProcessError as e:
+            # Surface stderr/stdout in the exception message. By default
+            # `CalledProcessError.__str__` only prints `cmd` and `returncode`,
+            # which makes errors from `check=True, capture_output=True` show up
+            # as the useless `Command '[...]' returned non-zero exit status N.`
+            # in tracebacks. Without the captured streams we can't tell whether
+            # crane hit a 401 from GHCR, a network blip during a blob upload,
+            # or anything else.
+            raise RuntimeError(_format_crane_error(args, e.returncode, e.stderr or "", e.stdout or "")) from e
         return result.stdout.strip()
 
     async def _arun(self, *args: str) -> str:
@@ -75,7 +101,7 @@ class Crane:
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
-            raise RuntimeError(f"crane {args[0]} failed: {stderr.decode()}")
+            raise RuntimeError(_format_crane_error(args, proc.returncode, stderr.decode(), stdout.decode()))
         return stdout.decode().strip()
 
     def digest(self, image_ref: str) -> str:
