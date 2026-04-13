@@ -181,7 +181,7 @@ def _preload_postgres() -> None:
 
 
 @pytest.fixture(scope="session")
-def postgres_container() -> Generator[PostgresContainer, None, None]:
+def postgres_container() -> Generator[PostgresContainer]:
     """Session-scoped PostgreSQL container shared across all tests."""
     container = PostgresContainer(image=POSTGRES_18.tag, username="postgres", password="postgres", dbname="postgres")
     container.start()
