@@ -248,18 +248,12 @@ bash ducktape/devinfra/claude/web_setup.sh
 This runs <web_setup.sh> which installs:
 
 1. Nix + devtools (`claude-hooks` wheel, `bbapi`, `gh`, `sops`, skills)
-2. Writes decrypted secrets into `.claude/settings.local.json` for MCP servers
+2. `github-no-proxy` git remote + `buildbuddy.remote-bazel-remote-name` for bbr
 3. Skills symlinked into `~/.claude/skills/` (preserves Anthropic defaults)
 
-Secrets (`GITHUB_TOKEN`, `BUILDBUDDY_API_KEY`, `DUCKTAPE_OTEL_BEARER_TOKEN`, etc.) are
-decrypted in **two places** because different consumers read from different sources:
-
-- **`web_setup.sh`** → `settings.local.json`: the only path that reaches **MCP server**
-  processes. Claude Code injects `settings.local.json["env"]` into MCP servers directly.
-- **Hook daemon `startup_env_script`** → session env file: the path for **hook
-  subprocesses**, which source the session env file written by `SessionStart`.
-
-The kube MCP server (`claude-sandbox-kubectl`) is special: it self-decrypts via
-`kube_from_sops.sh` at startup and does not read from `settings.local.json`.
+Secrets are **not** decrypted by `web_setup.sh`. `SOPS_AGE_KEY` is a user UI env var
+delivered only to the interactive Claude Code process — not to the setup script. All
+decryption happens in the hook daemon via `startup_env_script` (`web_env.sh`) at
+daemon startup, once `SOPS_AGE_KEY` is available in the inherited env.
 
 See <docs/secrets_env_flow.md> for the full picture.

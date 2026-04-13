@@ -4,11 +4,22 @@
 # Installs:
 #   1. Nix (Determinate Systems installer, designed for non-interactive/CI use)
 #   2. devtools — claude-hooks, bbapi, gh, skills; from flake via attic binary cache
-#   3. secrets + profile — decrypt SOPS secrets into .claude/settings.local.json
+#   3. git remote + bbr config for BuildBuddy remote execution
 #   4. skills — symlinked per-skill into ~/.claude/skills/ (preserves Anthropic defaults)
 #
+# Secrets are NOT decrypted here. SOPS_AGE_KEY is a user UI env var and is
+# only available to Claude Code and its subprocesses — not to this setup script.
+# This script is run directly by environment-manager as a bash init script
+# (process.ExecuteScript → temp file "init-script-*.sh"), inheriting only the
+# container env. `claude --init-only` (which fires Setup+SessionStart hooks) runs
+# separately afterward. Neither step receives user UI vars.
+# Decryption happens exclusively in the claude-hook daemon via startup_env_script.
+#
 # IMPORTANT: This script always exits 0 so the session starts even if setup
-# fails. Failures are logged to /tmp/web-setup.log and uploaded to ix.io.
+# fails. Failures are logged to /tmp/web-setup.log.
+#
+# Set DUCKTAPE_WEB_SETUP_UPLOAD_LOG=1 to upload the log to ix.io on completion
+# (useful for debugging sessions where you can't read the log directly).
 #
 # Usage (Claude Code web UI setup command):
 #   bash ducktape/devinfra/claude/web_setup.sh
@@ -97,38 +108,9 @@ for bin in "${NIX_PROFILE}"/bin/*; do
   ln -sfn "$bin" /usr/local/bin/"$(basename "$bin")"
 done
 
-# --- Step 3: Decrypt secrets and write settings.local.json ---
-# sops is now on PATH (installed by devtools in Step 2).
-# These secrets are used by Claude Code itself and any non-kube MCP servers.
-# The kube MCP server (claude-sandbox-kubectl) self-decrypts via kube_from_sops.sh
-# and does not read from settings.local.json. See docs/secrets_env_flow.md.
-#
-# The hook daemon also decrypts independently via startup_env_script at daemon
-# startup — the reliable path for hook subprocesses.
 PROJECT_DIR="${FLAKE#path:}"
-eval "$("$PROJECT_DIR/devinfra/secrets/web_env.sh" 2>/tmp/web-env-stderr.log)" || true
-cat /tmp/web-env-stderr.log >&2
 
-# Python writes the JSON — safe quoting, no shell escaping footguns.
-# Note: DUCKTAPE_CLAUDE_HOOKS_PROFILE is not written here; configure it as an
-# env var in the Claude Code web UI (along with the SOPS_AGE_KEY age private key).
-SETTINGS_LOCAL="$PROJECT_DIR/.claude/settings.local.json"
-SETTINGS_LOCAL="$SETTINGS_LOCAL" python3 <<'PYEOF'
-import json, os, sys
-from pathlib import Path
-
-keys = ["BUILDBUDDY_API_KEY", "DUCKTAPE_OTEL_BEARER_TOKEN",
-        "GITHUB_TOKEN", "K8S_TOKEN", "DUCKTAPE_CI_READ_GITHUB_TOKEN"]
-present = {k: v for k in keys if (v := os.environ.get(k))}
-missing = [k for k in keys if k not in present]
-if missing:
-    print(f"NOTE: secrets not yet available for settings.local.json: {missing}", file=sys.stderr)
-    print("      Hook daemon will decrypt via startup_env_script at session start.", file=sys.stderr)
-Path(os.environ["SETTINGS_LOCAL"]).write_text(json.dumps({"env": present}))
-PYEOF
-echo "[$(date -Iseconds)] Wrote secrets to ${SETTINGS_LOCAL}"
-
-# --- Step 4: Add github-no-proxy remote for bbr ---
+# --- Step 3: Add github-no-proxy remote for bbr ---
 # Claude Code web sessions use a local git proxy as 'origin'
 # (http://127.0.0.1:<port>/git/...). When 'bb remote' sends a RunRequest to
 # the BuildBuddy cloud runner, it embeds the selected remote's URL in
@@ -153,7 +135,7 @@ fi
 git -C "$PROJECT_DIR" config buildbuddy.remote-bazel-remote-name github-no-proxy
 echo "[$(date -Iseconds)] Set buildbuddy.remote-bazel-remote-name=github-no-proxy"
 
-# --- Step 5: Symlink skills into ~/.claude/skills/ ---
+# --- Step 4: Symlink skills into ~/.claude/skills/ ---
 # Per-skill symlinks instead of replacing the directory, so Anthropic's
 # pre-landed default skills are preserved.
 echo "Deploying skills to ~/.claude/skills/..."
@@ -163,3 +145,8 @@ for skill in "${NIX_PROFILE}"/share/claude-hooks/skills/*/; do
 done
 
 echo "[$(date -Iseconds)] Setup complete. Log: ${LOG_FILE}"
+
+if [ "${DUCKTAPE_WEB_SETUP_UPLOAD_LOG:-0}" = "1" ]; then
+  UPLOAD_URL=$(curl -s -F "f:1=@${LOG_FILE}" ix.io 2>/dev/null || echo "upload failed")
+  echo "[$(date -Iseconds)] Log uploaded: ${UPLOAD_URL}"
+fi

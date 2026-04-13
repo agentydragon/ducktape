@@ -5,9 +5,8 @@ The daemon loads exactly one profile at startup, selected by the
 DUCKTAPE_CLAUDE_HOOKS_PROFILE env var.
 
 Secrets are not handled here.
-Web: sourced via startup_env_script (web_env.sh) at daemon startup; also partially written
-to settings.local.json by web_setup.sh (runs before SOPS_AGE_KEY injection, so typically
-only DUCKTAPE_CLAUDE_HOOKS_PROFILE lands there reliably).
+Web: sourced via startup_env_script (web_env.sh) at daemon startup (SOPS_AGE_KEY
+is available in the daemon's inherited env from Claude Code).
 CLI: sourced via .envrc (eval "$(devinfra/secrets/cli_env.sh)") before daemon starts.
 """
 

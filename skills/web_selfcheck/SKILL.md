@@ -64,8 +64,13 @@ skills may not match what the current code expects.
 ls -la /tmp/web-setup.log 2>/dev/null || echo "MISSING"
 # Did it succeed? (last line should be "Setup complete.")
 tail -5 /tmp/web-setup.log 2>/dev/null
-# Was it recent? (mtime)
-stat -c '%y' /tmp/web-setup.log 2>/dev/null
+# When did it run, and how long ago?
+SETUP_MTIME=$(stat -c '%Y' /tmp/web-setup.log 2>/dev/null)
+if [ -n "$SETUP_MTIME" ]; then
+  NOW=$(date +%s)
+  AGO=$(( (NOW - SETUP_MTIME) / 60 ))
+  echo "web_setup.sh ran: $(stat -c '%y' /tmp/web-setup.log) (${AGO} minutes ago)"
+fi
 # Did Nix install?
 nix --version 2>/dev/null || echo "nix not found"
 # Is the devtools profile active?
@@ -91,6 +96,10 @@ fi
 grep -A200 'environment keys' /tmp/web-setup.log 2>/dev/null | grep -B200 '^---$' | grep -v '^---'
 ```
 
+If the log is present and non-empty, show more context on failure. Print the
+last 40 lines of `/tmp/web-setup.log` when anything looks wrong — setup scripts
+often log the exact error before the failure.
+
 **Failure indicators**: log missing, last line not "Setup complete", nix not
 found, devtools not in profile list, setup commit doesn't match HEAD.
 
@@ -99,11 +108,6 @@ found, devtools not in profile list, setup commit doesn't match HEAD.
 ```
 bash ducktape/devinfra/claude/web_setup.sh
 ```
-
-If re-running, note that `SOPS_AGE_KEY` is typically not available when
-`web_setup.sh` runs — all SOPS decryptions will fail. Secrets are instead
-decrypted by the session start hook daemon (which inherits `SOPS_AGE_KEY`
-from the container after k8s injects it). This is expected and not a bug.
 
 ---
 
@@ -227,6 +231,110 @@ common --remote_header=x-buildbuddy-api-key=${BUILDBUDDY_API_KEY}
 build --config=rbe
 EOF
 ```
+
+---
+
+### 3b. Daemon & Hook Logs
+
+**Goal**: when the session start hook failed (or anything looks wrong with hook
+processing), read the full set of relevant log files to find the root cause.
+Run all reads in parallel.
+
+#### Daemon log (`daemon.log` / `daemon.err.log`)
+
+The hook daemon writes structured Python `logging` output. Every hook event
+it processes appears as `hook <HookName> → {output}`. A missing `SessionStart`
+line in the log means the daemon never received (or never processed) that event.
+
+```bash
+LIVE=$(ps aux | grep hook_daemon | grep -v grep | grep -oP '(?<=--sock /tmp/claude-hd/)[^/]+' | head -1)
+DAEMON_LOG=~/.claude/session-env/$LIVE/hook-daemon/daemon.log
+DAEMON_ERR=~/.claude/session-env/$LIVE/hook-daemon/daemon.err.log
+
+echo "=== daemon.log (first 60 lines) ==="
+head -60 "$DAEMON_LOG" 2>/dev/null || echo "MISSING"
+
+echo "=== daemon.log (errors + SessionStart mentions) ==="
+grep -n -E 'ERROR|Exception|Traceback|SessionStart|sessionstart|FileNotFoundError|session_dir' \
+  "$DAEMON_LOG" 2>/dev/null | head -40 || echo "(no matches)"
+
+echo "=== daemon.err.log (last 30 lines) ==="
+tail -30 "$DAEMON_ERR" 2>/dev/null || echo "MISSING"
+```
+
+**Interpreting `daemon.log`**:
+
+- First lines show: startup env var keys, settings (`profile`, `k8s_token`,
+  `session_dir`), tracing config, server bind address.
+- `settings: { ..., 'session_dir': None }` means the daemon didn't know its
+  session directory at startup — the env file path was not provided to it.
+  This is normal when the hook framework passes `CLAUDE_ENV_FILE` per-request;
+  it's NOT normal if `SessionStart` never arrives.
+- `hook SessionStart → {...}` should appear within the first few lines of hook
+  processing. If the first hook logged is `UserPromptSubmit`, SessionStart was
+  never sent — the daemon started after the event fired (race condition / VM
+  reuse), or the shim failed silently.
+- Any `ERROR` or `Traceback` during `SessionStart` processing explains why
+  the env file was not written even if the event arrived.
+
+#### Hook event trace (`/tmp/claude-hook-events.jsonl`)
+
+The `claude-hook` entrypoint shim writes every hook invocation (input and
+output) to this file as JSONL. This is the ground truth of what events the
+shim saw, regardless of whether the daemon processed them.
+
+Each line is a JSON object with fields: `ts` (Unix float), `pid`, `dir`
+(`"input"` or `"output"`), `hook` (event name), `session_id`, `data` (raw
+hook payload string or null). Print a compact timeline of the last 20 events
+and count `SessionStart` input vs output occurrences.
+
+```bash
+tail -20 /tmp/claude-hook-events.jsonl 2>/dev/null || echo "MISSING"
+grep '"SessionStart"' /tmp/claude-hook-events.jsonl 2>/dev/null | grep -c '"dir": *"input"' || echo 0
+grep '"SessionStart"' /tmp/claude-hook-events.jsonl 2>/dev/null | grep -c '"dir": *"output"' || echo 0
+```
+
+**Interpreting `/tmp/claude-hook-events.jsonl`**:
+
+- Each hook event appears twice: once as `input` (shim received it) and once
+  as `output` (shim returned result). If `SessionStart` appears as `input` but
+  not `output`, the daemon timed out or the shim crashed processing it.
+- If `SessionStart` doesn't appear at all, the event was never fired for this
+  session — this happens on VM reuse where Claude Code skips startup hooks
+  (see `env-manager.log` below).
+- Multiple session IDs in the file are normal (prior + current session).
+
+#### Environment manager logs (`/tmp/env-manager.log`, `/tmp/environment-manager-*.diag.log`)
+
+The environment manager (Anthropic's session init process) logs its work here.
+This is the most authoritative source for whether `web_setup.sh` was skipped.
+
+`/tmp/env-manager.log` is JSONL. Each line has `event` (or `message`),
+`timestamp` (or `time`), and `data` (or `attributes`) fields. Parse and print
+it as a compact timeline. Then show the tail of the most recent
+`/tmp/environment-manager-*.diag.log`.
+
+```bash
+cat /tmp/env-manager.log 2>/dev/null || echo "MISSING"
+DIAG=$(ls -t /tmp/environment-manager-*.diag.log 2>/dev/null | head -1)
+[ -n "$DIAG" ] && tail -30 "$DIAG" || echo "no diag log"
+```
+
+**Key events to look for in `env-manager.log`**:
+
+| Event                                                    | Meaning                                                                          |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `git_clone_completed`                                    | Repo cloned fresh                                                                |
+| `init_script_skipped` with `session_mode: resume-cached` | VM reuse — `web_setup.sh` was NOT re-run; `/tmp` carries over from prior session |
+| `init_script_started` / `init_script_completed`          | `web_setup.sh` ran this session                                                  |
+| `env_init_completed`                                     | Env setup finished (good or bad)                                                 |
+
+When `session_mode: resume-cached` appears, the `/tmp/web-setup.log` is from
+a prior session. Its contents may differ from what the current `web_setup.sh`
+would produce. The daemon may also be the one from the prior session.
+
+Report the `session_mode` and whether `web_setup.sh` ran in this session
+vs was inherited from a prior VM.
 
 ---
 
@@ -617,30 +725,47 @@ failing hook directly (7c) to isolate which hook is broken.
 
 After running all checks, produce:
 
+**Timestamps rule**: whenever you report a date/time (web_setup.sh ran, daemon
+started, last git commit, hook event time, etc.) always include how long ago
+that was relative to now. Use a human-readable form: "2026-04-12T09:01Z
+(25 hours ago)" or "2026-04-13T21:08Z (3 minutes ago)". Never report a
+bare timestamp without the relative age — it forces the reader to do mental
+arithmetic to assess staleness.
+
 ```
-# Web Session Selfcheck — <timestamp>
+# Web Session Selfcheck — <timestamp> (now)
 
 ## Summary
 <one-line: healthy / degraded / broken>
 
 ## Checks
 
-| Check                        | Status   | Detail                                          |
-| ---------------------------- | -------- | ----------------------------------------------- |
-| web_setup.sh ran             | OK/FAIL  | ...                                             |
-| web_setup.sh commit          | OK/STALE | setup=<sha12> head=<sha12> (VM reuse risk)      |
-| claude-hooks daemon version  | OK/STALE | pinned=<sha> head=<sha> N commits behind; CI status |
-| Session start hook           | OK/FAIL  | CANARY present / FileNotFoundError              |
-| SOPS_AGE_KEY                 | OK/FAIL  | age public key matches .sops.yaml               |
-| Secret: buildbuddy.yaml      | OK/FAIL| decrypts / API <http_code>          |
-| Secret: github-agent-pat     | OK/FAIL| decrypts / login=agentydragon-agent |
-| Secret: github-ci-read-pat   | OK/FAIL| decrypts / login=agentydragon       |
-| Secret: k8s-token            | OK/FAIL| decrypts / API <http_code>          |
-| Secret: otlp-token           | OK/FAIL| decrypts / API <http_code>          |
-| bbr / BuildBuddy RBE         | OK/FAIL| ...                                 |
-| bbr runner recycling         | OK/WARN/AMBIG | cold=Xs warm=Ys ratio=Z%     |
-| Git hooks (pre-commit)       | OK/FAIL| backend=LOCAL/bbr; live commit pass/fail |
-| Git hooks (commit-msg)       | OK/FAIL| pass_filenames ok; ENFORCE_TEST_TAG state |
+| Check                          | Status        | Detail                                                      |
+| ------------------------------ | ------------- | ----------------------------------------------------------- |
+| web_setup.sh ran               | OK/FAIL       | <ISO timestamp> (<N> hours ago); last line "Setup complete" |
+| web_setup.sh VM reuse          | OK/SKIPPED    | session_mode=resume-cached / init_script_ran                |
+| web_setup.sh commit            | OK/STALE      | setup=<sha12> head=<sha12>                                  |
+| claude-hooks daemon version    | OK/STALE      | pinned=<sha> head=<sha> N commits behind; CI status         |
+| Session start hook             | OK/FAIL       | CANARY present / env file missing; first hook event logged  |
+| Daemon log: SessionStart       | OK/FAIL/NEVER | processed <ISO> (<N> min ago) / not in log / error          |
+| Hook trace: SessionStart       | OK/MISSING    | input+output seen / input only (daemon timeout) / absent    |
+| Env manager: init mode         | OK/INFO       | resume-cached (setup skipped) / fresh (setup ran)           |
+| SOPS_AGE_KEY                   | OK/FAIL       | age public key matches .sops.yaml                           |
+| SOPS: buildbuddy.yaml          | OK/FAIL       | decrypts                                                    |
+| SOPS: github-agent-pat         | OK/FAIL       | decrypts                                                    |
+| SOPS: github-ci-read-pat       | OK/FAIL       | decrypts                                                    |
+| SOPS: k8s-token                | OK/FAIL       | decrypts                                                    |
+| SOPS: otlp-token               | OK/FAIL       | decrypts                                                    |
+| SOPS: docker-ci client key     | OK/FAIL       | decrypts                                                    |
+| API: BuildBuddy                | OK/FAIL       | HTTP <code> (200/400=auth OK, 401/403=invalid key)          |
+| API: github-agent-pat          | OK/FAIL       | login=agentydragon-agent                                    |
+| API: github-ci-read-pat        | OK/FAIL       | login=agentydragon                                          |
+| API: k8s token                 | OK/FAIL       | HTTP <code> (200=OK, 401=rotated)                           |
+| API: otlp token                | OK/FAIL       | HTTP <code> (200/400=auth OK, 401=rotated)                  |
+| bbr / BuildBuddy RBE           | OK/FAIL       | ...                                                         |
+| bbr runner recycling           | OK/WARN/AMBIG | cold=Xs warm=Ys ratio=Z%                                    |
+| Git hooks (pre-commit)         | OK/FAIL       | backend=LOCAL/bbr; live commit pass/fail                    |
+| Git hooks (commit-msg)         | OK/FAIL       | pass_filenames ok; ENFORCE_TEST_TAG state                   |
 
 ## Issues & Remediation
 
