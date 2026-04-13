@@ -146,9 +146,16 @@ JWT federation is the knob that lets both ends be "real":
 | `test_backend.py`                                                                   | Smoke test for the backend header contract                     |
 | `BUILD.bazel`                                                                       | Two `oci_image` / `ghcr_push` pairs                            |
 | `../../cluster/terraform/gitops/authentik-mcp-poc/`                                 | Both Authentik providers + K8s secret                          |
-| `../../cluster/k8s/agents/authentik-mcp-poc/`                                       | Deployment/Service/HTTPRoute for the two containers            |
-| `../../cluster/k8s/agents/authentik-mcp-poc-tf/`                                    | Flux Terraform CRD wrapping the TF module                      |
+| `../../cluster/k8s/agents/authentik-mcp-poc/namespace/`                             | Layer 1: namespace-only Flux Kustomization                     |
+| `../../cluster/k8s/agents/authentik-mcp-poc/tf/`                                    | Layer 2: Flux Terraform CRD wrapping the TF module             |
+| `../../cluster/k8s/agents/authentik-mcp-poc/app/`                                   | Layer 3: Deployments, Services, HTTPRoute                      |
 | `../../cluster/k8s/authentik/proxy-routes/authentik-mcp-poc-backend-httproute.yaml` | HTTPRoute in the `authentik` namespace pointing at the outpost |
+
+The three-layer split keeps bootstrap ordering explicit:
+`authentik-mcp-poc-namespace` → `authentik-mcp-poc-tf` → `authentik-mcp-poc`
+(the `app/` Flux Kustomization). `tf/` writes the OIDC client-credentials
+Secret into the already-existing namespace; `app/` consumes that Secret via
+`secretKeyRef` in the server Deployment.
 
 ## Terraform: two providers, one JWT
 
@@ -208,8 +215,10 @@ bb run //x/authentik_mcp_poc:backend_push_ghcr
 
 ## Verification in the cluster
 
-After Flux has reconciled both `authentik-mcp-poc-tf` (which creates the
-Authentik providers + K8s secret) and `authentik-mcp-poc` (the app):
+After Flux has reconciled the three layers in order — `authentik-mcp-poc-namespace`
+(just the namespace), `authentik-mcp-poc-tf` (Authentik providers + K8s secret),
+and `authentik-mcp-poc` (the app Deployments) — you can poke at the running
+stack with:
 
 ```bash
 # 1. Terraform CRD applied, providers exist, secret written.

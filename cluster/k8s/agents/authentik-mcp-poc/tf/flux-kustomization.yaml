@@ -6,7 +6,7 @@ metadata:
 spec:
   retryInterval: 1m
   interval: 10m
-  path: ./cluster/k8s/agents/authentik-mcp-poc-tf
+  path: ./cluster/k8s/agents/authentik-mcp-poc/tf
   prune: true
   sourceRef:
     kind: GitRepository
@@ -20,3 +20,6 @@ spec:
   dependsOn:
     - name: tofu-controller
     - name: authentik
+    # TF writes the OIDC client-credentials secret into the authentik-mcp-poc
+    # namespace, so the namespace Kustomization must run first.
+    - name: authentik-mcp-poc-namespace

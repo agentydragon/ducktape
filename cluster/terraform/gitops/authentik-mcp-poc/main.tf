@@ -161,28 +161,18 @@ resource "authentik_policy_binding" "mcp_poc_backend_admins" {
   order  = 0
 }
 
-# --- Namespace + K8s secret with OAuth2 client credentials for the MCP server ---
+# --- K8s secret with OAuth2 client credentials for the MCP server ---
 #
-# TF owns the namespace so bootstrap ordering is acyclic:
-# authentik-mcp-poc-tf Flux Kustomization runs → namespace + secret exist →
-# authentik-mcp-poc Flux Kustomization runs its Deployments into the now-existing
-# namespace. See commit rationale in x/authentik_mcp_poc/README.md.
-
-resource "kubernetes_namespace" "mcp_poc" {
-  metadata {
-    name = "authentik-mcp-poc"
-    labels = {
-      name = "authentik-mcp-poc"
-      # POC namespace; opt out of Goldilocks/VPA recommendations.
-      "goldilocks.fairwinds.com/enabled" = "false"
-    }
-  }
-}
+# The namespace is owned by the sibling `namespace/` Flux Kustomization
+# (cluster/k8s/agents/authentik-mcp-poc/namespace), which the Flux
+# Kustomization that applies this TF module dependsOn. Bootstrap order:
+# namespace Kustomization → TF (writes secret into namespace) → app
+# Kustomization (consumes secret).
 
 resource "kubernetes_secret" "mcp_poc_oidc" {
   metadata {
     name      = "authentik-mcp-poc-oidc"
-    namespace = kubernetes_namespace.mcp_poc.metadata[0].name
+    namespace = "authentik-mcp-poc"
   }
 
   data = {

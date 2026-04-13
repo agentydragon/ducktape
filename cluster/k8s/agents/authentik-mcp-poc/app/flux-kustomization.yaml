@@ -11,7 +11,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: ./cluster/k8s/agents/authentik-mcp-poc
+  path: ./cluster/k8s/agents/authentik-mcp-poc/app
   prune: true
   wait: true
   healthChecks:
@@ -25,4 +25,5 @@ spec:
       namespace: authentik-mcp-poc
   dependsOn:
     - name: gateway
+    - name: authentik-mcp-poc-namespace
     - name: authentik-mcp-poc-tf
