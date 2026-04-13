@@ -69,6 +69,9 @@ runs:
           --runner_exec_properties=EstimatedComputeUnits=${{ inputs.compute_units }} \
           --runner_exec_properties=workload-isolation-type=firecracker \
           --runner_exec_properties=init-dockerd=true \
+          --runner_exec_properties=recycle-runner=true \
+          --runner_exec_properties=remote-snapshot-save-policy=always \
+          --runner_exec_properties=snapshot-read-policy=newest \
           "${ENV_ARGS[@]}" \
           "${BB_IMAGE_ARGS[@]}" \
           ${{ inputs.args }} \
