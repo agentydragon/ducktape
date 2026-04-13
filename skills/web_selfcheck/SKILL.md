@@ -411,10 +411,12 @@ echo "$POISON_MARKER" >> MODULE.bazel
 
 # Step 2: Cold build. MODULE.bazel changed → Bazel must re-analyse everything.
 # --nobuild skips compilation; we only care about analysis time.
-# Cap at 3 minutes — bail if bbr itself is hung.
+# Cold analysis of //... can take 5–20 minutes on this repo — be patient.
+# If it hangs with no output for >10 minutes, abort (Ctrl-C), restore
+# MODULE.bazel with `git checkout -- MODULE.bazel`, and skip this check.
 echo "--- Cold build (poisoned MODULE.bazel) ---"
 T1_START=$(date +%s%N)
-timeout 180 bbr build //... --nobuild 2>&1 | tail -5
+bbr build //... --nobuild 2>&1 | tail -5
 BBR_EXIT=$?
 T1_END=$(date +%s%N)
 T1_SEC=$(( (T1_END - T1_START) / 1000000000 ))
@@ -422,12 +424,12 @@ echo "Cold build: ${T1_SEC}s (exit $BBR_EXIT)"
 
 if [ $BBR_EXIT -ne 0 ]; then
   git checkout -- MODULE.bazel
-  echo "SKIP: Cold build failed or timed out — skipping cache warmth check."
+  echo "SKIP: Cold build failed — skipping cache warmth check."
 else
   # Step 3: Warm build. Same poisoned MODULE.bazel, same runner expected.
   echo "--- Warm build (same inputs, runner should be recycled) ---"
   T2_START=$(date +%s%N)
-  timeout 180 bbr build //... --nobuild 2>&1 | tail -5
+  bbr build //... --nobuild 2>&1 | tail -5
   T2_SEC=$(( ($(date +%s%N) - T2_START) / 1000000000 ))
   echo "Warm build: ${T2_SEC}s"
 

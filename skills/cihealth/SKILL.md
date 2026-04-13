@@ -18,22 +18,14 @@ diagnosis plans for anything that needs deeper investigation.
 
 ## Setup — GitHub Authentication
 
-Authenticate with GitHub before running any `gh` commands. Check for the CI
-read token in the environment, falling back to SOPS decryption:
+Set `GITHUB_TOKEN` for `gh` commands. In a Claude Code web session the token
+is already in the environment as `DUCKTAPE_CI_READ_GITHUB_TOKEN` (exported by
+`devinfra/secrets/web_env.sh` via the session start hook). Outside that
+context, decrypt `secrets/github-ci-read-pat.yaml` with the SOPS age key —
+see `devinfra/secrets/web_env.sh` for the exact pattern.
 
-```bash
-# Prefer already-exported token
-if [ -n "${DUCKTAPE_CI_READ_GITHUB_TOKEN:-}" ]; then
-  export GITHUB_TOKEN="$DUCKTAPE_CI_READ_GITHUB_TOKEN"
-elif [ -n "${SOPS_AGE_KEY:-}" ]; then
-  export GITHUB_TOKEN=$(sops --extract '["github_token"]' \
-    -d /home/user/ducktape/secrets/github-ci-read-pat.yaml 2>/dev/null)
-fi
-echo "GitHub auth: $([ -n "${GITHUB_TOKEN:-}" ] && echo OK || echo MISSING)"
-```
-
-If auth is unavailable, continue with public API (rate-limited, no private data)
-but note it in the report.
+If auth is unavailable, continue with the public API (rate-limited) and note
+it in the report.
 
 ## Phase 1 — Discover CI Organisation
 
@@ -92,78 +84,19 @@ For any workflow whose **most recent run** is not `success`:
 
 ### 2b. Release Artifact Staleness
 
-Compare each pinned artifact's commit against devel HEAD to compute how many
-commits and how much time it lags:
+For each entry in `npins/sources.json`, the URL encodes the pinned commit:
+ducktape-produced pins follow the pattern
+`.../releases/download/<artifact>-<sha7>/<filename>`. Extract that sha7,
+count how many commits `origin/devel` is ahead of it, and report the age of
+the pinned commit.
 
-```bash
-cd /home/user/ducktape
+External pins (e.g. `bb` from buildbuddy-io) have semantic version tags
+instead — just report the version.
 
-# Get current devel HEAD
-DEVEL_HEAD=$(git rev-parse origin/devel)
-echo "devel HEAD: $DEVEL_HEAD"
-
-# For each pin in npins/sources.json, extract the short commit from the URL
-python3 - <<'EOF'
-import json, re, subprocess, sys
-
-pins = json.load(open("npins/sources.json"))["pins"]
-devel_head = subprocess.check_output(
-    ["git", "rev-parse", "origin/devel"], text=True).strip()
-
-for name, pin in sorted(pins.items()):
-    url = pin.get("url", "")
-    # Extract short commit from URL pattern: releases/download/<name>-<sha7>/<file>
-    m = re.search(r'/releases/download/[^/]+-([0-9a-f]{7,})/[^/]+$', url)
-    if not m:
-        # External pin (e.g. bb from buildbuddy-io) — extract version differently
-        m2 = re.search(r'/releases/download/([^/]+)/', url)
-        ver = m2.group(1) if m2 else "unknown"
-        print(f"  {name}: {ver} (external, no commit)")
-        continue
-    pin_short = m.group(1)
-    # Find how many commits on devel are ahead of this pin
-    try:
-        result = subprocess.check_output(
-            ["git", "log", "--oneline", f"{pin_short}..origin/devel",
-             "--", "--"],
-            text=True, stderr=subprocess.DEVNULL).strip()
-        commits_behind = len(result.splitlines()) if result else 0
-        if commits_behind == 0:
-            print(f"  {name}: up-to-date ({pin_short})")
-        else:
-            # Get timestamp of when pin commit was made
-            ts = subprocess.check_output(
-                ["git", "log", "-1", "--format=%cr", pin_short],
-                text=True, stderr=subprocess.DEVNULL).strip()
-            print(f"  {name}: {commits_behind} commits behind devel "
-                  f"(pinned={pin_short}, {ts})")
-    except subprocess.CalledProcessError:
-        print(f"  {name}: commit {pin_short} not found locally "
-              f"(may need git fetch --all)")
-EOF
-```
-
-Also check `devinfra/image_pins.json` for Dockerfile-based image staleness:
-
-```bash
-python3 - <<'EOF'
-import json, subprocess, datetime
-
-try:
-    pins = json.load(open("devinfra/image_pins.json"))
-except FileNotFoundError:
-    print("devinfra/image_pins.json not found")
-    raise SystemExit
-
-# Check when each image was last updated vs devel tip date
-devel_date = subprocess.check_output(
-    ["git", "log", "-1", "--format=%ai", "origin/devel"], text=True).strip()
-print(f"devel tip: {devel_date}")
-
-for image, digest in sorted(pins.items()):
-    print(f"  {image}: {str(digest)[:40]}...")
-EOF
-```
+Also read `devinfra/image_pins.json` for Dockerfile-based image digests
+(rbe-worker, freecad-test). These are updated by `container-images.yml` only
+when the relevant Dockerfiles change, so staleness is expected unless those
+paths were recently touched.
 
 ### 2c. Scheduled Workflow Health
 
@@ -286,9 +219,8 @@ For every failure found in Phase 2:
    - **Pin/release stuck**: artifact not being released or pinned — trace the
      release pipeline (ci.yml → release.yml → sync-pins.yml) to find the break
 
-3. **For trivial fixes**: implement them directly, commit on a new branch
-   (`claude/cihealth-fix-<topic>`), push, and open a PR targeting `devel`.
-   Report the PR URL in the health report.
+3. **For trivial fixes**: implement them directly, commit, push a branch, and
+   open a PR targeting `devel`. Report the PR URL in the health report.
 
 4. **For non-trivial issues**: write a diagnosis plan with specific commands
    the user can run to confirm the root cause, followed by proposed fixes.
@@ -358,9 +290,13 @@ Produce a single markdown report. Healthy items get one line. Issues get details
   something is wrong with the scheduler or the workflow itself is failing
 - **Release blocked**: if `ci.yml` succeeded but `release.yml` sub-job failed,
   artifacts won't update and pins will grow stale
-- **Artifact drift**: if pins are >3 commits behind devel AND sync-pins is
-  running successfully, there may be a release test failure silently blocking
-  the release matrix for that artifact
+- **Artifact drift with healthy pipeline**: pins can legitimately lag by
+  several commits while a CI run is still in progress (commits often land
+  while the release job is building). To assess whether drift is a problem,
+  trace the pipeline: did `ci.yml` complete successfully for the commits since
+  the pin? Did the `release` sub-job succeed for that specific artifact's test
+  matrix entry? Did `sync-pins.yml` run after that release completed? If all
+  three happened and the pin still hasn't moved, something is stuck upstream
 - **Prettier / formatting churn**: if pre-commit fails on the same file
   repeatedly across different commits, the file likely has an ongoing formatting
   conflict (contributor not running `pre-commit` locally)
