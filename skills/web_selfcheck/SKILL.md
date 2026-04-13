@@ -454,12 +454,12 @@ fi
 
 **Interpreting results:**
 
-| Warm / Cold ratio | Interpretation |
-| --- | --- |
-| < 33% | ✅ Runner recycling and analysis cache are working |
-| 33–70% | ⚠️ Partial benefit; runner may be rotating |
-| > 70% | ⚠️ Likely no recycling — but check again, high FP rate |
-| Cold < 5s | ❓ Ambiguous — build graph too small or poisoning ineffective |
+| Warm / Cold ratio | Interpretation                                                |
+| ----------------- | ------------------------------------------------------------- |
+| < 33%             | ✅ Runner recycling and analysis cache are working            |
+| 33–70%            | ⚠️ Partial benefit; runner may be rotating                    |
+| > 70%             | ⚠️ Likely no recycling — but check again, high FP rate        |
+| Cold < 5s         | ❓ Ambiguous — build graph too small or poisoning ineffective |
 
 **If consistently warm ≈ cold across two runs**: check the BuildBuddy run UI
 (`bbapi invocation <id>`) to see if runner IDs differ between invocations. If

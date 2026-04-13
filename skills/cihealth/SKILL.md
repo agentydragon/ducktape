@@ -49,6 +49,7 @@ git -C /home/user/ducktape log --oneline origin/devel | head -1  # current HEAD
 ```
 
 From the discovery, build a mental model of:
+
 - Which workflows run on push to devel (per-commit checks)
 - Which workflows run on a schedule (repinning, attic push)
 - Which workflows are triggered manually only
@@ -79,6 +80,7 @@ done
 ```
 
 For any workflow whose **most recent run** is not `success`:
+
 - Read the failure log: `gh run view <id> --repo $REPO --log-failed 2>&1 | tail -100`
 - Identify exactly what failed (hook name, step name, error message, diff)
 
@@ -128,6 +130,7 @@ gh run list --repo $REPO --workflow nix-flake-update.yml \
 ```
 
 **sync-pins health criteria:**
+
 - Should have a `success` run within the last 45 minutes
 - If last success is >60 min ago: warn; if >2 hours: flag as stuck
 - If recent runs are failing: read failure log and diagnose
@@ -238,23 +241,23 @@ Produce a single markdown report. Healthy items get one line. Issues get details
 
 ## Per-Commit Checks (devel)
 
-| Workflow           | Status | Last run       | Note                    |
-| ------------------ | ------ | -------------- | ----------------------- |
-| pre-commit         | ✅     | 2026-04-13 06:19 |                        |
-| bazel-ci           | ✅     | 2026-04-13 06:19 |                        |
-| release            | ✅     | 2026-04-13 06:19 | all 6 artifacts released |
-| push-images        | ✅     | 2026-04-13 06:15 |                        |
-| ansible-lint       | ✅     | 2026-04-12 14:03 |                        |
-| nix-attic-push     | ⚠️     | 2026-04-12 10:00 | 28h ago, timed out     |
-| container-images   | ✅     | 2026-04-11 08:00 | no Dockerfile changes  |
-| <other>            | ...    | ...            | ...                     |
+| Workflow         | Status | Last run         | Note                     |
+| ---------------- | ------ | ---------------- | ------------------------ |
+| pre-commit       | ✅     | 2026-04-13 06:19 |                          |
+| bazel-ci         | ✅     | 2026-04-13 06:19 |                          |
+| release          | ✅     | 2026-04-13 06:19 | all 6 artifacts released |
+| push-images      | ✅     | 2026-04-13 06:15 |                          |
+| ansible-lint     | ✅     | 2026-04-12 14:03 |                          |
+| nix-attic-push   | ⚠️     | 2026-04-12 10:00 | 28h ago, timed out       |
+| container-images | ✅     | 2026-04-11 08:00 | no Dockerfile changes    |
+| <other>          | ...    | ...              | ...                      |
 
 ## Scheduled Jobs
 
-| Job           | Schedule     | Last success       | Status |
-| ------------- | ------------ | ------------------ | ------ |
-| sync-pins     | every 30 min | 2026-04-13 06:32   | ✅     |
-| nix-flake-update | manual    | 2026-04-10 (manual) | ✅    |
+| Job              | Schedule     | Last success        | Status |
+| ---------------- | ------------ | ------------------- | ------ |
+| sync-pins        | every 30 min | 2026-04-13 06:32    | ✅     |
+| nix-flake-update | manual       | 2026-04-10 (manual) | ✅     |
 
 ## Artifact Pin Staleness
 
@@ -268,10 +271,10 @@ Produce a single markdown report. Healthy items get one line. Issues get details
 
 ## Dockerfile Image Pins
 
-| Image      | Pin age  | Status |
-| ---------- | -------- | ------ |
-| rbe-worker | current  | ✅     |
-| freecad-test | current | ✅    |
+| Image        | Pin age | Status |
+| ------------ | ------- | ------ |
+| rbe-worker   | current | ✅     |
+| freecad-test | current | ✅     |
 
 ## Issues Found
 
