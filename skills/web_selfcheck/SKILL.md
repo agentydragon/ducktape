@@ -157,6 +157,36 @@ curl -s -o /dev/null -w "%{http_code}\n" \
 Pass: `200` or `400` (bad proto = auth passed). `401` = token rotated or
 missing.
 
+**C9 — `bbr` preserves the analysis cache on a second identical run.**
+
+Low-precision, high-recall sensor with a high false-positive rate (runner
+rotation, BB server restart, cache eviction can all cause transient cold
+hits). Report the finding but don't act on a single failure. Stop early
+rather than spending many minutes retrying.
+
+**Method — cache poisoning**: append a comment to `MODULE.bazel` so the
+first build is guaranteed cold, then time an immediately-following
+identical build. The SPEC permits occasional cold-hits; only flag if
+warm ≈ cold across **two** repeated runs.
+
+```bash
+cd /home/user/ducktape
+echo "# selfcheck-poison-$(date +%s)" >> MODULE.bazel
+T1_START=$(date +%s%N)
+bbr build //... --nobuild 2>&1 | tail -3
+T1_SEC=$(( ($(date +%s%N) - T1_START) / 1000000000 ))
+T2_START=$(date +%s%N)
+bbr build //... --nobuild 2>&1 | tail -3
+T2_SEC=$(( ($(date +%s%N) - T2_START) / 1000000000 ))
+git checkout -- MODULE.bazel
+echo "cold=${T1_SEC}s warm=${T2_SEC}s"
+```
+
+Interpret: `warm < cold/3` = recycling works. `warm ≈ cold` = likely not
+recycling (but re-run before diagnosing — high FP rate). `cold < 5s` =
+build graph too small to measure. If consistently warm≈cold across two
+runs, inspect `bbapi invocation <id>` for runner IDs.
+
 ### CLI only
 
 **CLI1 — `git commit --amend` is blocked by the git shim.**
@@ -282,39 +312,7 @@ the repo source for breaking changes (renamed classes, changed config
 paths, removed hooks). Check GitHub CI on `agentydragon/ducktape`:
 recent `release.yml` and `sync-pins.yml` runs on `devel`.
 
-### D3 — bbr runner recycling / analysis cache warmth (web only)
-
-Confirms `bbr` reuses the same BuildBuddy runner VM between invocations so
-the analysis cache is warm for subsequent builds.
-
-**Calibration**: low-precision, high-recall sensor with a high
-false-positive rate. A single "not recycling" result may be transient
-(runner rotation, BB server restart, cache eviction). Report the finding
-but don't act on a single failure. Stop early rather than spending many
-minutes trying.
-
-**Method — cache poisoning**: append a comment to `MODULE.bazel` to force
-a cold first build, then time an immediate identical rebuild.
-
-```bash
-cd /home/user/ducktape
-echo "# selfcheck-poison-$(date +%s)" >> MODULE.bazel
-T1_START=$(date +%s%N)
-bbr build //... --nobuild 2>&1 | tail -3
-T1_SEC=$(( ($(date +%s%N) - T1_START) / 1000000000 ))
-T2_START=$(date +%s%N)
-bbr build //... --nobuild 2>&1 | tail -3
-T2_SEC=$(( ($(date +%s%N) - T2_START) / 1000000000 ))
-git checkout -- MODULE.bazel
-echo "cold=${T1_SEC}s warm=${T2_SEC}s"
-```
-
-Interpret: `warm < cold/3` = recycling works. `warm ≈ cold` = likely not
-recycling, but verify with a second run before diagnosing. `cold < 5s` =
-build graph too small to measure. If consistently warm≈cold across two
-runs, inspect `bbapi invocation <id>` for runner IDs.
-
-### D4 — `git remote origin` URL reachability (web only)
+### D3 — `git remote origin` URL reachability (web only)
 
 Known failure mode: `bb remote` reads `git remote -v` locally and sends
 the URL to the cloud runner. If `origin` is `127.0.0.1:*` (Claude Code
@@ -340,24 +338,24 @@ Profile: <CLI/Web>    Summary: <healthy / degraded / broken>
 
 | ID  | Check                          | Status   | Detail                |
 | --- | ------------------------------ | -------- | --------------------- |
-| C1  | BUILDBUDDY_API_KEY valid       | OK/FAIL  | HTTP <code>           |
-| C2  | GITHUB_TOKEN valid             | OK/FAIL  | login=...             |
-| C3  | bbr build trivial              | OK/FAIL  | ...                   |
-| C4  | bazelisk shim + session tag    | OK/FAIL  | ...                   |
-| C5  | PostToolUse auto-apply         | OK/SKIP  | manually verified?    |
-| C6  | throwaway commit end-to-end    | OK/FAIL  | ...                   |
-| C7  | daemon log clean               | OK/FAIL  | N errors              |
-| C8  | OTLP tracing                   | OK/FAIL  | HTTP <code>           |
-| CLI1–4 / W1–5                  | ...      | ...                   |
+| C1  | BUILDBUDDY_API_KEY valid       | OK/FAIL       | HTTP <code>           |
+| C2  | GITHUB_TOKEN valid             | OK/FAIL       | login=...             |
+| C3  | bbr build trivial              | OK/FAIL       | ...                   |
+| C4  | bazelisk shim + session tag    | OK/FAIL       | ...                   |
+| C5  | PostToolUse auto-apply         | OK/SKIP       | manually verified?    |
+| C6  | throwaway commit end-to-end    | OK/FAIL       | ...                   |
+| C7  | daemon log clean               | OK/FAIL       | N errors              |
+| C8  | OTLP tracing                   | OK/FAIL       | HTTP <code>           |
+| C9  | bbr analysis cache warm        | OK/WARN/AMBIG | cold=Xs warm=Ys       |
+| CLI1–4 / W1–5                   | ...           | ...                   |
 
 ## Out-of-SPEC diagnostics
 
-| ID | Check                          | Status        | Detail                |
-| -- | ------------------------------ | ------------- | --------------------- |
-| D1 | web_setup.sh freshness         | OK/STALE/MISS | setup=<sha> head=<sha>|
-| D2 | claude-hooks pin staleness     | OK/BEHIND     | pin=<sha>, CI status  |
-| D3 | bbr runner recycling           | OK/WARN/AMBIG | cold=Xs warm=Ys       |
-| D4 | origin URL reachable for bbr   | OK/WARN       | origin=...            |
+| ID | Check                          | Status        | Detail                 |
+| -- | ------------------------------ | ------------- | ---------------------- |
+| D1 | web_setup.sh freshness         | OK/STALE/MISS | setup=<sha> head=<sha> |
+| D2 | claude-hooks pin staleness     | OK/BEHIND     | pin=<sha>, CI status   |
+| D3 | origin URL reachable for bbr   | OK/WARN       | origin=...             |
 
 ## Issues & remediation
 

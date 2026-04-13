@@ -57,6 +57,14 @@ manually — if a credential is missing, the daemon is broken.
   `--remote_cache=...`, or any authentication flags.
 - BuildBuddy invocations are tagged with the session ID so they can be
   filtered later via `bbapi invocation list --tag session:<id>`.
+- **`bbr` preserves the Bazel analysis cache across invocations, at least
+  mostly.** Running `bbr` a second time with the same inputs should
+  usually land on a warm BuildBuddy runner that has the analysis cache
+  already populated, so the second build is substantially faster than a
+  cold one. This is best-effort, not a hard guarantee — today runners are
+  shared across all concurrent sessions and may be evicted or rotated,
+  so an occasional cold hit is acceptable. A session where _every_ `bbr`
+  call is cold is broken.
 
 ### Pre-commit lint & format on Edit/Write
 
@@ -230,6 +238,12 @@ applicable criteria for its profile.
    SessionStart.
 8. Tracing reaches the OTLP collector (the bearer token test returns a
    non-auth-error status).
+9. Running `bbr build <target>` twice in a row with identical inputs
+   lands on a warm runner the second time: the second invocation's
+   analysis phase is substantially faster than the first (rule of thumb:
+   warm < cold / 3). This is best-effort; a single cold-hit failure can
+   be transient (runner rotation, cache eviction), but consistent
+   cold-every-time across repeated runs is a daemon bug.
 
 ### CLI only
 
