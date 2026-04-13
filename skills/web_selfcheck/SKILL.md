@@ -384,6 +384,89 @@ fix above.
 
 ---
 
+### 6b. BuildBuddy Runner Recycling & Analysis Cache
+
+**Goal**: Confirm that `bbr` reuses the same BuildBuddy runner VM between
+invocations so the Bazel analysis cache is warm for subsequent builds. A
+recycled runner means the second build completes analysis significantly faster
+than the first cold build.
+
+**Calibration note**: This is a low-precision, high-recall sensor with a high
+false-positive rate. A single "not recycling" result may be transient (runner
+rotation, BB server restart, cache eviction). Report the finding but don't act
+on a single failure. Stop early rather than spending many minutes trying.
+
+**Method — cache poisoning**: Append a comment to `MODULE.bazel` so the first
+build is guaranteed cold even if the runner was already warm, then measure
+whether the immediately-following identical build is significantly faster.
+
+```bash
+cd /home/user/ducktape
+
+# Step 1: Poison the analysis cache.
+# Any uncommmitted change to MODULE.bazel forces Bazel to re-analyse from
+# scratch on the runner, even if it was already warm.
+POISON_MARKER="# selfcheck-poison-$(date +%s)"
+echo "$POISON_MARKER" >> MODULE.bazel
+
+# Step 2: Cold build. MODULE.bazel changed → Bazel must re-analyse everything.
+# --nobuild skips compilation; we only care about analysis time.
+# Cap at 3 minutes — bail if bbr itself is hung.
+echo "--- Cold build (poisoned MODULE.bazel) ---"
+T1_START=$(date +%s%N)
+timeout 180 bbr build //... --nobuild 2>&1 | tail -5
+BBR_EXIT=$?
+T1_END=$(date +%s%N)
+T1_SEC=$(( (T1_END - T1_START) / 1000000000 ))
+echo "Cold build: ${T1_SEC}s (exit $BBR_EXIT)"
+
+if [ $BBR_EXIT -ne 0 ]; then
+  git checkout -- MODULE.bazel
+  echo "SKIP: Cold build failed or timed out — skipping cache warmth check."
+else
+  # Step 3: Warm build. Same poisoned MODULE.bazel, same runner expected.
+  echo "--- Warm build (same inputs, runner should be recycled) ---"
+  T2_START=$(date +%s%N)
+  timeout 180 bbr build //... --nobuild 2>&1 | tail -5
+  T2_SEC=$(( ($(date +%s%N) - T2_START) / 1000000000 ))
+  echo "Warm build: ${T2_SEC}s"
+
+  # Step 4: Restore MODULE.bazel.
+  git checkout -- MODULE.bazel
+
+  # Step 5: Assess.
+  echo "--- Result: cold=${T1_SEC}s  warm=${T2_SEC}s ---"
+  if [ "$T1_SEC" -lt 5 ]; then
+    echo "AMBIGUOUS: Cold build was <5s — build graph may be too small to"
+    echo "           measure, or poisoning had no effect on this runner."
+  elif [ "$T2_SEC" -lt $(( T1_SEC / 3 )) ]; then
+    echo "OK: Warm build (${T2_SEC}s) < 1/3 of cold (${T1_SEC}s)."
+    echo "    Runner recycling + analysis cache reuse is working."
+  else
+    echo "WARN: Warm build (${T2_SEC}s) is not much faster than cold (${T1_SEC}s)."
+    echo "      Runner may not be recycled, or analysis cache is evicted."
+    echo "      High false-positive rate — verify with a second run before diagnosing."
+  fi
+fi
+```
+
+**Interpreting results:**
+
+| Warm / Cold ratio | Interpretation |
+| --- | --- |
+| < 33% | ✅ Runner recycling and analysis cache are working |
+| 33–70% | ⚠️ Partial benefit; runner may be rotating |
+| > 70% | ⚠️ Likely no recycling — but check again, high FP rate |
+| Cold < 5s | ❓ Ambiguous — build graph too small or poisoning ineffective |
+
+**If consistently warm ≈ cold across two runs**: check the BuildBuddy run UI
+(`bbapi invocation <id>`) to see if runner IDs differ between invocations. If
+they do, BB is not reusing runners — this may be a BB configuration or quota
+issue. If runner IDs are the same but analysis is still slow, the Bazel server
+on the runner may be restarting between invocations.
+
+---
+
 ### 7. Ducktape Git Hooks
 
 **Goal**: confirm pre-commit hooks actually pass when committing. Hooks break in
@@ -553,6 +636,7 @@ After running all checks, produce:
 | Secret: k8s-token            | OK/FAIL| decrypts / API <http_code>          |
 | Secret: otlp-token           | OK/FAIL| decrypts / API <http_code>          |
 | bbr / BuildBuddy RBE         | OK/FAIL| ...                                 |
+| bbr runner recycling         | OK/WARN/AMBIG | cold=Xs warm=Ys ratio=Z%     |
 | Git hooks (pre-commit)       | OK/FAIL| backend=LOCAL/bbr; live commit pass/fail |
 | Git hooks (commit-msg)       | OK/FAIL| pass_filenames ok; ENFORCE_TEST_TAG state |
 
