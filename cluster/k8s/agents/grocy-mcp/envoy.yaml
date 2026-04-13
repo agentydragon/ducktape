@@ -29,10 +29,12 @@
 #   kubelet readiness probes to /health never depend on the OAuth token
 #   being available. Otherwise the pod would never go Ready while Envoy is
 #   trying to fetch its first token.
-# - The HCM's request_headers_to_remove drops any inbound Authorization or
-#   GROCY-API-KEY headers so the off-the-shelf Grocy MCP server can send
-#   its dummy GROCY-API-KEY safely, and clients can't bypass the Bearer
-#   injection by supplying their own Authorization.
+# - The RouteConfiguration's request_headers_to_remove drops any inbound
+#   Authorization or GROCY-API-KEY headers so the off-the-shelf Grocy MCP
+#   server can send its dummy GROCY-API-KEY safely, and clients can't
+#   bypass the Bearer injection by supplying their own Authorization.
+#   (request_headers_to_remove is NOT a valid field on HttpConnectionManager
+#   — it only exists on RouteConfiguration/VirtualHost/Route.)
 # - client_secret_b64 is base64("username:app_password") — Authentik's M2M
 #   flow for proxy providers accepts this as an equivalent form of the
 #   username+app_password credential, so it plugs directly into Envoy's
@@ -66,12 +68,12 @@ static_resources:
                   - name: envoy.access_loggers.stdout
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
-                request_headers_to_remove:
-                  - GROCY-API-KEY
-                  - Authorization
-                  - Proxy-Authorization
                 route_config:
                   name: local_route
+                  request_headers_to_remove:
+                    - GROCY-API-KEY
+                    - Authorization
+                    - Proxy-Authorization
                   virtual_hosts:
                     - name: grocy
                       domains: ["*"]
