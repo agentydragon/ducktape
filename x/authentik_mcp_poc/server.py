@@ -9,6 +9,8 @@ See <x/authentik_mcp_poc/README.md> for the end-to-end flow.
 
 from __future__ import annotations
 
+import base64
+import json
 import logging
 import sys
 
@@ -78,7 +80,44 @@ def _extract_bearer_token() -> str:
     access = get_access_token()
     if access is None:
         raise RuntimeError("no authenticated access token in request context")
-    return access.token
+    token = access.token
+    _log_token_shape("forwarded bearer", token)
+    return token
+
+
+def _b64url_decode(s: str) -> bytes:
+    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+
+
+def _log_token_shape(label: str, token: str) -> None:
+    """Decode a JWT's header + payload (no signature verification) and log key claims.
+
+    Pure diagnostics — we want to know *which* token we're forwarding to the
+    backend. If `iss` is the Authentik issuer and `kid`/`alg` match the
+    Authentik OAuth2 provider signing key, the upstream-token swap worked.
+    If `iss` is the MCP server's base_url, we still have the FastMCP JTI
+    reference.
+    """
+    parts = token.split(".")
+    if len(parts) < 2:
+        logger.info("%s: non-JWT token (%d parts)", label, len(parts))
+        return
+    try:
+        header = json.loads(_b64url_decode(parts[0]))
+        payload = json.loads(_b64url_decode(parts[1]))
+    except (ValueError, json.JSONDecodeError) as exc:
+        logger.info("%s: could not decode JWT: %s", label, exc)
+        return
+    logger.info(
+        "%s: header=%s iss=%r aud=%r sub=%r jti=%r scope=%r",
+        label,
+        header,
+        payload.get("iss"),
+        payload.get("aud"),
+        payload.get("sub"),
+        payload.get("jti"),
+        payload.get("scope"),
+    )
 
 
 def build_server(settings: ServerSettings) -> FastMCP:
