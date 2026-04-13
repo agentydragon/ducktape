@@ -45,6 +45,13 @@ By preserving the original proxy env vars:
 - JWT token refreshes are automatically picked up
 - The bazelisk shim sends fresh credentials to the daemon on each invocation
 
+## Specification
+
+See <hook_daemon/SPEC.md> for the high-level, user-facing specification of
+what the hook daemon guarantees to every Claude Code session (on CLI and on
+web). Read that first if you want to know **what** the daemon does for the
+agent — this README covers **how** those behaviors are implemented.
+
 ## Components
 
 - **Session Start Hook**: Sets up the development environment for Claude Code web sessions

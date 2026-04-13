@@ -175,6 +175,26 @@ If you touched `ansible/`, also follow <ansible/AGENTS.md>.
 
 `plans/`: for future work or work in progress. Once a plan is fully completed, remove it from `plans/` (delete, or squash into short tombstone/summary elsewhere).
 
+### SPEC.md — High-level component specifications
+
+`<subproject>/SPEC.md`: high-level, user-facing specification of what a
+component guarantees to its users. An outside observer should be able to read
+SPEC.md to understand what behaviors they can rely on, without having to read
+the implementation. Example: <devinfra/claude/hook_daemon/SPEC.md> describes
+what the Claude Code hook daemon provides to every session, and the
+`/web_selfcheck` skill runs the acceptance tests derived from it.
+
+SPEC.md files **must** be updated when the high-level requirements of the
+thing they cover change — a new class of credential gets injected, a new
+shim behavior is added, a new profile lands, a new promise is made to the
+agent, etc.
+
+SPEC.md files **must not** record low-level implementation details that an
+outside observer would not notice. "Credentials are refreshed regularly by
+the backend service" belongs in SPEC.md; "credentials live in
+`<session_dir>/creds.json` and rotate every 300s via RPC to
+`rotate.example.com`" does not — that belongs in README.md or in the code.
+
 ### TODO Tracking
 
 Subprojects use `TODO.md` for persistent TODO tracking. TODOs local to a specific code location are fine as inline comments; cross-cutting or project-level TODOs belong in `TODO.md`.

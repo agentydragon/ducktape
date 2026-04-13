@@ -18,6 +18,20 @@ Comprehensive health check for a Claude Code web session. Run all checks,
 then produce a single structured report with clear pass/fail status and
 actionable remediation steps for anything that's broken.
 
+## What "Healthy" Means — the Hook Daemon SPEC
+
+This skill is effectively the **runnable acceptance test** for
+<../../devinfra/claude/hook_daemon/SPEC.md>. That SPEC is the source of truth
+for what the hook daemon is supposed to provide to every session (common
+behaviors, CLI-only, web-only, and the enumerated user-observable
+acceptance criteria). **Read it first.** If a check in this skill and the
+SPEC disagree, the SPEC wins — update the skill to match.
+
+When a new behavior is added to the SPEC (new credential, new shim, new
+MCP), add a corresponding check here. When a check in this skill catches a
+real-world failure mode that the SPEC doesn't cover, update the SPEC's
+acceptance criteria too.
+
 ## CRITICAL: Observe Only — Do NOT Fix Without Explicit User Approval
 
 This is a **diagnostic skill**. Treat a broken session like a crime scene:

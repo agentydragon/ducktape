@@ -7,6 +7,10 @@ everything to the real BuildBuddy BES backend.
 
 If a build/test invocation lacks --remote_executor, a mailbox message is posted
 to the session nudging the agent toward `bb remote`.
+
+TODO: this nudge behavior is experimental and deliberately NOT in SPEC.md yet.
+If it proves reliable and useful, promote it to a committed behavior under
+"Common Behaviors" in <SPEC.md>.
 """
 
 from __future__ import annotations
