@@ -195,36 +195,142 @@ This is what forced the switch to Option A's M2M app password flow,
 which only needs `client_id` (exported) + a separately-managed
 `authentik_token` for the service account.
 
-## Known issue — outpost blueprint stale binding
+## Verified current state (2026-04-13)
 
-The `embedded-outpost.yaml` blueprint uses
-`!Find [authentik_providers_proxy.proxyprovider, [name, grocy]]` to
-populate the outpost's providers list. When the grocy provider was
-deleted and re-created by TF as part of the M2M migration, the embedded
-outpost's providers list kept a stale reference to the old DB ID. As of
-2026-04-12 the outpost still doesn't know about the current grocy
-provider.
+End-to-end test, reading live credentials from
+`claude-sandbox/grocy-machine-credentials` and hitting the public ingress:
 
-Symptoms:
+```bash
+# 1. M2M token exchange against Authentik
+curl -X POST https://auth.allegedly.works/application/o/token/ \
+    -d grant_type=client_credentials \
+    -d client_id=<client_id> \
+    -d client_secret=<client_secret_b64>
+# → {"token_type":"Bearer","expires_in":86400,"access_token":"..."}  ✓
 
-- Direct anonymous `GET grocy.allegedly.works/` redirects to
-  `/flows/-/default/authentication/?next=/` (generic Authentik UI flow)
-  instead of `/outpost.goauthentik.io/start` (real outpost flow).
-- `GET grocy.allegedly.works/outpost.goauthentik.io/start?rd=...` returns
-  404 (with `x-powered-by: authentik`), while the same path on
-  `longhorn.allegedly.works` 302s into the authorize flow.
-- Any request with a valid M2M JWT in `Authorization: Bearer` returns
-  the same 404.
+# 2. Outpost reachability (no auth)
+curl -I https://grocy.allegedly.works/outpost.goauthentik.io/auth/nginx
+# → HTTP/2 302
+#   location: .../outpost.goauthentik.io/start?rd=...
+#   set-cookie: authentik_proxy_328f0ca8=...   (provider-specific cookie)   ✓
 
-Fix paths:
+# 3. Full path with Bearer JWT
+curl -H "Authorization: Bearer $JWT" https://grocy.allegedly.works/api/system/info
+# → HTTP/2 500 (from Grocy, not Authentik)
+#   {"error_message":"ReverseProxyAuthMiddleware: X-authentik-username header is missing or invalid"}
+```
 
-- Wait for Authentik's periodic blueprint scheduler (~hourly).
-- Restart `authentik-worker` pods to force blueprint reload.
-- Touch `cluster/k8s/authentik/app/blueprints/embedded-outpost.yaml` in
-  git so the ConfigMap's `resourceVersion` bumps and Authentik re-reads
-  it from the mounted file.
-- From the Authentik admin UI, open the embedded outpost and add the
-  current grocy provider manually.
+### What works
 
-Until this is fixed, the auth proxy → outpost → Grocy leg will fail
-even though the MCP handshake all the way up to the auth proxy works.
+- **M2M client_credentials** exchange returns a valid Bearer JWT (≈673 bytes,
+  24h validity) when you encode `client_secret = base64("<username>:<app_password>")`
+  — this form is Authentik's accepted encoding for M2M app-password auth.
+- **Outpost binding to the grocy provider exists**: `/outpost.goauthentik.io/auth/nginx`
+  302s into the authorize flow and issues a provider-specific session cookie.
+  This confirms the embedded outpost's `providers` M2M includes the current
+  `authentik_provider_proxy.grocy` PK.
+- **The JWT is accepted by the outpost**: the request is forwarded to `internal_host`
+  (i.e. the Grocy container at `grocy.grocy.svc.cluster.local:80`) — we know it
+  reached Grocy because the response body is a PHP stack trace from
+  `/app/www/middleware/ReverseProxyAuthMiddleware.php`.
+
+### What doesn't work — the real current blocker
+
+**Authentik's embedded outpost does not inject `X-authentik-username` (or any
+`X-authentik-*` header) on the forwarded request when the caller authenticated
+via a Bearer JWT.** Grocy's `ReverseProxyAuthMiddleware` therefore rejects the
+request with HTTP 500 because the header it's configured to trust is missing.
+
+Hypotheses (not yet verified against Authentik source):
+
+1. Proxy-mode header injection (`X-authentik-username`, `-email`, `-groups`,
+   `-uid`, `-meta-*`) may only fire on the browser session path (i.e. after
+   a successful authorize-flow redirect), not on the Bearer-JWT short-circuit
+   that reuses the same provider.
+2. Service-account users might be skipped by the header-injection step, even
+   though they carry a `username` — e.g. because they lack a primary email or
+   a human `name`.
+3. The `proxy` provider mode expects forward-auth upstream semantics for
+   header injection; with a direct JWT call the outpost might bypass the
+   header-building step entirely.
+
+This supersedes the earlier "stale outpost binding" theory. The binding is fine;
+header injection on the JWT path is the problem.
+
+### What to investigate next
+
+- Read Authentik's source (`authentik/providers/proxy/api/proxyprovider.py` and
+  the outpost's Go proxy code in `outpost/proxyv2/application/`) to find the
+  header-injection branch and confirm whether it fires on JWT-authenticated
+  requests.
+- Try setting `X-authentik-username: grocy-machine` directly from inside the
+  cluster bypassing the outpost (would require a CiliumNetworkPolicy exception).
+  That's Option C in the options survey above — currently rejected but might
+  be the cleanest path if the outpost can't be coerced into injecting headers
+  for JWT callers.
+- Alternatively: reshape the flow so the Envoy sidecar obtains a browser-style
+  session cookie via the authorize flow (requires a headless login, which for
+  service accounts is possible through the token endpoint). The outpost DOES
+  inject headers on session-authenticated requests.
+
+## Known issue — outpost providers list doesn't auto-refresh (resolved 2026-04-13)
+
+The `embedded-outpost.yaml` blueprint hand-curates the outpost's providers list
+via `!Find [authentik_providers_proxy.proxyprovider, [name, <x>]]` entries.
+Authentik's blueprint file watcher only re-applies the blueprint when the
+underlying ConfigMap's `resourceVersion` bumps (i.e. when the file content
+changes in git) or when the periodic blueprint scheduler fires (~every 23h).
+
+If a TF-managed proxy provider is created **after** the most recent blueprint
+apply, `!Find` resolves it, but only on the next apply. Between "provider
+created" and "next blueprint apply", the outpost's providers list has no
+binding for that hostname, and Authentik returns its brand 404 for any
+request to that host.
+
+This is exactly what happened for grocy: the blueprint already had
+`!Find [name, grocy]`, but no subsequent blueprint re-apply had occurred since
+the grocy provider's most recent state change, so the outpost's `providers`
+M2M never repopulated.
+
+**Accidental fix**: commit `be28f6fac` (#1267) added
+`!Find [name, authentik-mcp-poc-backend]` to the same blueprint file for a
+completely unrelated reason. The file change bumped the ConfigMap's
+`resourceVersion`, Authentik's blueprint watcher re-applied the blueprint,
+`!Find` re-resolved **every** entry in the providers list, and grocy's binding
+was restored as a side effect.
+
+Direct verification after that commit landed:
+
+```
+grocy.allegedly.works/outpost.goauthentik.io/auth/nginx  → HTTP/2 302  ✓
+```
+
+This makes PR #1248 ("touch-embedded-outpost-blueprint") obsolete — that PR's
+sole purpose was to force the exact re-apply that `be28f6fac` already forced.
+
+### Architectural smell
+
+TF owns the providers; the blueprint file owns the outpost→providers M2M.
+There is **no automatic sync** between the two. Any time a provider is added,
+renamed, or destroyed/recreated in TF, the blueprint must also be re-applied —
+but the blueprint only re-applies on its own file change or the ~23h scheduler.
+Until then, the new provider is invisible to the outpost.
+
+Cleaner alternatives (not yet done):
+
+1. **Move the outpost→providers binding into TF** alongside the provider
+   itself. The goauthentik TF provider has `authentik_outpost` — the grocy
+   module could append to the embedded outpost's providers list at apply time.
+   Risk: the embedded-outpost.yaml blueprint is still the source of truth for
+   most other providers, so TF would need to coexist with it without fighting.
+2. **Kill the hand-curated list** and bind providers through an
+   `authentik_policy_binding` or per-provider blueprint that registers itself
+   with the outpost. Each new provider then drags its own outpost binding along.
+3. **Drop the periodic scheduler dependency** by wiring a Flux
+   `HelmRelease`/`Kustomization` post-apply hook that rolls the authentik-worker
+   pods whenever `embedded-outpost.yaml` changes — but this doesn't help the
+   "TF created a provider, blueprint didn't change" case, which is the actual
+   failure mode.
+
+Keep the inline note on the blueprint file in place so the next person hitting
+this failure mode knows to touch the file as the quickest patch.
