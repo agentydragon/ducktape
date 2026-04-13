@@ -3,8 +3,11 @@
 Deep-dive findings from bringing the POC up end-to-end against the live cluster.
 The README describes the 50000-foot architecture; this file captures the
 non-obvious mechanics that only surfaced once things were actually running.
-**It took two incorrect fixes to land on the right one — §2-§4 are the wrong
-path, §5 is the real answer.**
+**Three false starts before the POC worked end-to-end.** §2-§3 cover the
+first two (raw Authorization header, then the swapped upstream token that
+still doesn't match what the outpost wants), §4-§5 are the correct
+token-exchange shape, and §6 is the third — an Authentik scope-gating
+gotcha that produced a 200 with empty identity headers.
 
 ## 1. The POC's original premise
 
@@ -295,31 +298,98 @@ on the proxy provider — that's the whitelist `__validate_jwt_from_provider`
 filters on. We additionally expose the proxy provider's auto-generated
 `client_id` in the K8s secret so the server Deployment can read it.
 
-## 6. Things worth double-checking once this lands
+## 6. Third wrong turn — scope-gating swallows the identity claims
 
-- **Token lifetime.** Authentik's OAuth2 provider 54 has `access_token_validity
-= "minutes=10"` by default; the upstream token we forward must still be
-  live when we do the exchange (which is fine in practice — FastMCP's refresh
-  flow aligns its token TTL with the upstream expiry, so claude.ai refreshes
-  before the underlying token expires). Provider 55's
-  `access_token_validity = "hours=24"` is the TTL of the backend-scoped token,
-  which only needs to outlive one HTTP call.
+First post-fix run of `whoami_via_backend` returned:
+
+```json
+{
+  "backend_status": 200,
+  "backend_response": {
+    "user": "",
+    "email": "",
+    "uid": "6bdf979edce7a934bf8a246005bcb38103fc12b9b682b11b1dcf46cbe4402b00",
+    "groups": [],
+    "secret_message": "auth flowed through the Authentik proxy outpost"
+  }
+}
+```
+
+200 with `secret_message` set — so the outpost accepted the exchanged token
+and let us through — but `user`/`email`/`groups` came back empty. Only
+`uid` (which is just the stringified `sub` claim = `hashed_user_id`) was
+populated.
+
+Cause: **Authentik's property mappings are scope-gated.** Each
+`PropertyMapping` is attached to a `Scope` (`openid`, `email`, `profile`,
+`entitlements`, `ak_proxy`, …), and a mapping only fires when its scope
+appears in the `scope=` parameter of the `/token/` request. Our first
+cut of `_exchange_token_for_backend` requested `scope=openid`, so only
+the OIDC minimal claims ended up in the minted backend-scoped token.
+
+Provider 55 (`authentik-mcp-poc-backend`) has five mappings:
+
+| scope          | name                                                      |
+| -------------- | --------------------------------------------------------- |
+| `openid`       | authentik default OAuth Mapping: OpenID 'openid'          |
+| `email`        | authentik default OAuth Mapping: OpenID 'email'           |
+| `profile`      | authentik default OAuth Mapping: OpenID 'profile'         |
+| `entitlements` | authentik default OAuth Mapping: Application Entitlements |
+| `ak_proxy`     | authentik default OAuth Mapping: Proxy outpost            |
+
+The last one is the interesting one: `ak_proxy` is the scope whose
+mapping populates the claim set the proxy outpost reads on the
+forward-auth hop. Without it the outpost still validates the token via
+introspection (success), still injects the `X-Authentik-*` headers, but
+with empty values because the claims it would have read aren't there.
+Without `email` + `profile` the standard `name`/`email`/`preferred_username`
+claims are also missing, so the username and email fields stay blank.
+
+You can enumerate the mappings on any provider via the API:
+
+```
+GET /api/v3/propertymappings/provider/scope/?pm_uuid=<UUID>&pm_uuid=<UUID>&...
+```
+
+passing each UUID from the provider's `property_mappings` list.
+
+**Fix**: request every scope whose mapping you want to fire. For the POC
+that's `openid email profile ak_proxy`. Don't be clever about omitting
+scopes — in Authentik, a scope in the request is necessary but not
+sufficient (the property mapping must be attached to the provider); a
+scope attached to the provider is also necessary but not sufficient
+(the request must ask for it). Both are required.
+
+## 7. Things worth double-checking once this lands
+
+- **Token lifetime.** Authentik's OAuth2 provider 54 has
+  `access_token_validity = "minutes=10"` by default; the upstream token
+  we forward must still be live when we do the exchange (which is fine
+  in practice — FastMCP's refresh flow aligns its token TTL with the
+  upstream expiry, so claude.ai refreshes before the underlying token
+  expires). Provider 55's `access_token_validity = "hours=24"` is the
+  TTL of the backend-scoped token, which only needs to outlive one HTTP
+  call.
 - **Policy bindings.** The backend application (`authentik-mcp-poc-backend`)
-  has a policy binding to the `authentik Admins` group. `__validate_jwt_from_provider`
-  **does not** run `__check_policy_access` — the policy enforcement happens
-  when the outpost serves the backend's `external_host`, not at the token
-  exchange. So the token exchange succeeds for any user whose upstream token
-  passes provider 54's policy; the backend-side policy check on provider 55
-  happens when the outpost processes the subsequent `/whoami` request.
-- **Scope handling.** We ask for `scope=openid`; the new token inherits the
-  proxy provider's property_mappings which include the proxy-specific claims
-  the outpost reads at introspection time (username, email, groups, uid).
-- **Not forwarding the token to multiple backends.** If we later want to call
-  N backends in one tool call, each needs its own exchange keyed by that
-  backend's `client_id`. There's no audience-bound reuse — each backend's
-  outpost checks `provider=<its_own_provider>` in introspection.
+  has a policy binding to the `authentik Admins` group.
+  `__validate_jwt_from_provider` **does not** run `__check_policy_access`
+  — policy enforcement happens when the outpost serves the backend's
+  `external_host`, not at the token exchange. So the token exchange
+  succeeds for any user whose upstream token passes provider 54's
+  policy; the backend-side policy check on provider 55 happens when the
+  outpost processes the subsequent `/whoami` request.
+- **Scope handling.** Already bit us once (§6). Request every scope whose
+  property mapping you want to fire:
+  `scope=openid email profile ak_proxy` for the POC. Mappings that aren't
+  requested don't execute, and claims that aren't produced become empty
+  `X-Authentik-*` headers on the outpost's forward-auth hop — a 200 with
+  no identity, which is the confusing failure mode to watch for.
+- **Not forwarding the token to multiple backends.** If we later want to
+  call N backends in one tool call, each needs its own exchange keyed by
+  that backend's `client_id`. There's no audience-bound reuse — each
+  backend's outpost checks `provider=<its_own_provider>` in introspection.
 
-## 7. References
+## 8. References
 
 - **fastmcp 3.1.0 wheel**, `fastmcp/server/auth/oauth_proxy/proxy.py`:
   - `OAuthProxy.load_access_token` token-swap pattern — lines 1384-1454.
