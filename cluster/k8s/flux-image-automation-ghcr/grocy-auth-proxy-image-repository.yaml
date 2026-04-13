@@ -1,8 +1,0 @@
-apiVersion: image.toolkit.fluxcd.io/v1beta2
-kind: ImageRepository
-metadata:
-  name: grocy-auth-proxy
-  namespace: flux-system
-spec:
-  image: ghcr.io/agentydragon/grocy-auth-proxy
-  interval: 5m

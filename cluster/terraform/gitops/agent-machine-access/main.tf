@@ -148,19 +148,13 @@ resource "authentik_policy_binding" "grocy_machine_sa" {
 
 # K8s secret with M2M credentials for agents to authenticate to Grocy.
 #
-# Authentik's M2M flow for proxy providers has several accepted encodings of
-# username+app_password. We expose two of them so different proxy sidecars can
-# pick whichever matches their config surface:
-#
-#   1. username + app_password (form params)
-#      Used by the Python auth proxy in grocy/auth_proxy/, which posts them
-#      verbatim via authlib.
-#
-#   2. client_secret_b64 = base64("<username>:<app_password>")
-#      Used by Envoy's envoy.filters.http.credential_injector filter, which
-#      only supports the standard OAuth2 client_credentials shape
-#      (client_id + client_secret). Authentik accepts this base64 encoding as
-#      an alternative representation of the same M2M credential.
+# Authentik's M2M flow for proxy providers authenticates with a service-account
+# user's username + app_password. Envoy's envoy.filters.http.credential_injector
+# filter only speaks the standard OAuth2 client_credentials shape
+# (client_id + client_secret), so we encode the credential as
+# client_secret_b64 = base64("<username>:<app_password>") — Authentik accepts
+# this as an equivalent form. The grocy-mcp Envoy sidecar consumes these two
+# fields directly via secretKeyRef.
 resource "kubernetes_secret" "grocy_machine_credentials" {
   metadata {
     name      = "grocy-machine-credentials"
@@ -175,11 +169,7 @@ resource "kubernetes_secret" "grocy_machine_credentials" {
 
   data = {
     client_id         = authentik_provider_proxy.grocy.client_id
-    username          = authentik_user.grocy_machine_sa.username
-    app_password      = authentik_token.grocy_machine_app_password.key
     client_secret_b64 = base64encode("${authentik_user.grocy_machine_sa.username}:${authentik_token.grocy_machine_app_password.key}")
-    token_url         = "https://auth.allegedly.works/application/o/token/"
-    upstream_url      = "https://grocy.allegedly.works"
   }
 }
 
