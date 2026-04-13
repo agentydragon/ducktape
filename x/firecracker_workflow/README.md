@@ -142,15 +142,33 @@ Snapshot behavior is controlled by two `runner_exec_properties`:
 branch, and always on the default branch. Subsequent runs on the same branch read the existing
 snapshot but don't write a new one.
 
-**For maximum warm-runner benefit** (interactive development):
+**This repo uses `always` + `newest` as the default** (set in `devinfra/bbr.json`):
 
-```bash
-BBR_REMOTE_ARGS="--runner_exec_properties=remote-snapshot-save-policy=always \
-                 --runner_exec_properties=snapshot-read-policy=newest" \
-  bbr build //target
+```json
+{
+  "runner_exec_properties": {
+    "recycle-runner": "true",
+    "remote-snapshot-save-policy": "always",
+    "snapshot-read-policy": "newest"
+  }
+}
 ```
 
-Or add to `BBR_REMOTE_ARGS` in your shell profile for persistent effect.
+`bbr` picks these up automatically. The same properties are applied to CI via
+`.github/actions/bb-remote/action.yml`. No `BBR_REMOTE_ARGS` override is needed.
+
+With the default policy, back-to-back builds frequently cold-start due to a snapshot
+serialization race (snapshot not yet written before the next build starts) or landing on a
+different executor. The `always` policy ensures every build saves a snapshot, so the next
+build can always find one.
+
+### `runner-recycling-key` — not needed for snapshot recycling
+
+`runner-recycling-key` routes calls to the same **physical executor node** (same machine in
+BB's executor pool), but snapshot recycling works via the **BB remote cache** — any executor
+that loads the same snapshot key gets the warm state. `recycle-runner=true` alone enables
+recycling; `runner-recycling-key` is optional and only matters if you want executor affinity
+(e.g., for local-only snapshots with `snapshot-read-policy=local-only`).
 
 ### Observed build times
 
@@ -165,12 +183,6 @@ Three consecutive `bbr build //devinfra/buildbuddy_cli:bbapi` with
 
 Build 3 with "0 packages loaded, 0 targets configured" is a fully warm Bazel server — Bazel
 re-uses the in-memory analysis cache with zero analysis work.
-
-Without the explicit save policy (default `first-non-default-ref`), consecutive back-to-back
-builds may both cold-start due to a snapshot serialization race (snapshot not yet written to
-cache before the second build starts) or landing on a different executor (local snapshot
-inaccessible from a different machine). Fallback chain: exact branch snapshot → base branch →
-default branch → fresh cold boot.
 
 ---
 
@@ -197,8 +209,9 @@ bb execute \
 `runner-recycling-key` routes calls to the same physical executor, but each action still
 gets a fresh VM snapshot restore (workspace cleared, `/tmp` cleared, new `boot_id`). The
 `preserve-workspace=true` exec property exists in the BB source and is supposed to preserve
-non-output workspace files between recycled calls, but has no observable effect on BB Cloud
-for `bb execute` (workspace is always `lost+found`-only on every call).
+non-output workspace files between recycled calls, but **has no observable effect on BB Cloud
+for `bb execute`** (workspace is always `lost+found`-only on every call). The property works
+for Bazel RBE actions with declared input roots, not for `bb execute` with an empty input root.
 
 ### Helper for repeated commands
 
@@ -281,12 +294,12 @@ Tools (default image):  git 2.7.4, bazelisk, java, curl — no rsync, no bb bina
 
 ## Summary: State Persistence by Access Method
 
-| Method                                          | State preserved                    | Works from Claude Code web     | Notes                                                             |
-| ----------------------------------------------- | ---------------------------------- | ------------------------------ | ----------------------------------------------------------------- |
-| `bb box` + `bb ssh`                             | Full persistent process            | **No** — WireGuard/UDP blocked | Works from regular dev machine                                    |
-| `bbr` with `remote-snapshot-save-policy=always` | Full VM memory (Bazel server warm) | **Yes**                        | Build 3 showed 0 packages loaded, 0.652s                          |
-| `bbr` with default policy                       | Maybe warm, maybe cold             | Yes                            | Race condition / different executor → often cold                  |
-| `bb execute`                                    | None                               | Yes                            | Fresh VM every call; `preserve-workspace` ineffective on BB Cloud |
+| Method                                    | State preserved                    | Works from Claude Code web     | Notes                                                                    |
+| ----------------------------------------- | ---------------------------------- | ------------------------------ | ------------------------------------------------------------------------ |
+| `bb box` + `bb ssh`                       | Full persistent process            | **No** — WireGuard/UDP blocked | Works from regular dev machine                                           |
+| `bbr` (repo default: `always` + `newest`) | Full VM memory (Bazel server warm) | **Yes**                        | Build 3 showed 0 packages loaded, 0.652s; default in `devinfra/bbr.json` |
+| `bbr` with default BB policy              | Maybe warm, maybe cold             | Yes                            | Race condition / different executor → often cold                         |
+| `bb execute`                              | None                               | Yes                            | Fresh VM every call; `preserve-workspace` ineffective on BB Cloud        |
 
 `boot_id` is **not** a reliable indicator of snapshot reuse — it always changes on Firecracker
 snapshot restore by design (entropy regeneration per clone). Use Bazel analysis time and
