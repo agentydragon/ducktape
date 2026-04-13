@@ -9,8 +9,7 @@ through `bb remote`'s `x-buildbuddy-platform.env-overrides` into the runner
 VM's environment. Because the token is issued by GitHub Actions for the
 current workflow run, new packages created by a push are automatically linked
 to the source repository and inherit its visibility — for a public repo like
-this one, the package is created public without any follow-up API call. See
-<docs/ci-ghcr-auth.md> for the full wiring diagram.
+this one, the package is created public without any follow-up API call.
 """
 
 import argparse
