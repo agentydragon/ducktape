@@ -23,7 +23,10 @@ rules:
   - apiGroups: [""]
     resources:
       - pods/exec
-    verbs: ["create"]
+    # Both `get` and `create` are required: kubectl exec opens a websocket
+    # upgrade via GET first, then falls back to POST (mapped to `create`).
+    # RBAC denies the request at the GET check unless `get` is granted.
+    verbs: ["get", "create"]
   - apiGroups: [""]
     resources:
       - secrets
@@ -43,9 +46,11 @@ subjects:
     name: claude-code-web
     namespace: default
 ---
-# Secret read in the POC namespace (the OIDC client credentials the MCP
-# server consumes) — intentionally scoped narrower than the authentik ns
-# Role so we don't accidentally expand persistent secret read.
+# Secret read + pod exec in the POC namespace (the OIDC client credentials
+# the MCP server consumes, plus the ability to drop into the server pod
+# and introspect the runtime token store during debug). Intentionally
+# scoped narrower than the authentik ns Role so we don't accidentally
+# expand persistent secret read.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -55,6 +60,9 @@ rules:
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["get", "create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
