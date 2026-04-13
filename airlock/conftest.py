@@ -6,7 +6,7 @@ import asyncio
 import re
 import threading
 import time
-from collections.abc import AsyncGenerator, Callable, Mapping
+from collections.abc import AsyncGenerator, Callable, Generator, Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -181,7 +181,7 @@ def _preload_postgres() -> None:
 
 
 @pytest.fixture(scope="session")
-def postgres_container() -> PostgresContainer:
+def postgres_container() -> Generator[PostgresContainer, None, None]:
     """Session-scoped PostgreSQL container shared across all tests."""
     container = PostgresContainer(image=POSTGRES_18.tag, username="postgres", password="postgres", dbname="postgres")
     container.start()

@@ -11,10 +11,11 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Any, SupportsFloat
+from typing import Any, SupportsFloat, cast
 
 from sqlalchemy import DateTime, String, delete, select
 from sqlalchemy.dialects.postgresql import JSONB, insert as pg_insert
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -117,7 +118,7 @@ class PostgresKeyValueStore:
         now = datetime.now(tz=UTC)
         return [
             dict(rows[k].value)
-            if k in rows and (rows[k].expires_at is None or rows[k].expires_at.replace(tzinfo=UTC) >= now)
+            if k in rows and ((exp := rows[k].expires_at) is None or exp.replace(tzinfo=UTC) >= now)
             else None
             for k in keys
         ]
@@ -159,6 +160,9 @@ class PostgresKeyValueStore:
     async def delete_many(self, keys: Sequence[str], *, collection: str | None = None) -> int:
         coll = self._coll(collection)
         async with self._session_factory() as session:
-            result = await session.execute(delete(_KVRow).where(_KVRow.collection == coll, _KVRow.key.in_(keys)))
+            result = cast(
+                CursorResult[Any],
+                await session.execute(delete(_KVRow).where(_KVRow.collection == coll, _KVRow.key.in_(keys))),
+            )
             await session.commit()
         return result.rowcount

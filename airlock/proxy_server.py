@@ -290,12 +290,12 @@ class AirlockServer(EnhancedFastMCP):
         @self.resource("resource://sessions/{session_key}/log_hwm")
         async def log_hwm_resource(session_key: str) -> str:
             """The entry_id of the last log entry for this session."""
-            return str(await self._req_storage.get_log_hwm(session_key))
+            return str(await self._req_storage.get_log_hwm(UUID(session_key)))
 
         @self.resource("resource://sessions/{session_key}/log/{entry_id}")
         async def log_entry_resource(session_key: str, entry_id: int) -> str:
             """A specific log entry."""
-            entry = await self._req_storage.get_log_entry(session_key, entry_id)
+            entry = await self._req_storage.get_log_entry(UUID(session_key), entry_id)
             if entry is None:
                 raise ValueError(f"Log entry not found: {session_key}/{entry_id}")
             return entry.model_dump_json()
@@ -370,7 +370,7 @@ class AirlockServer(EnhancedFastMCP):
             effective = wait_mode if wait_mode is not None else self._settings.default_wait_mode
             effective_timeout = _wait_mode_to_timeout(effective)
 
-            pipeline = self._spawn(self._run_action_pipeline(key, namespace, tool_name, input))
+            pipeline = self._spawn(self._run_action_pipeline(key, namespace, tool_name, input or {}))
 
             if effective_timeout > 0:
                 with anyio.move_on_after(effective_timeout):
