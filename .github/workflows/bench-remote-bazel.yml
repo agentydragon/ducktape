@@ -3,62 +3,36 @@ name: Remote Bazel Benchmark
 on:
   workflow_dispatch:
 
+env:
+  GIT_REPO_DEFAULT_BRANCH: devel
+
 jobs:
   bench:
     name: Benchmark (bb remote)
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Check out code
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-      - name: Install bb CLI
-        run: |
-          curl -fsSL https://install.buildbuddy.io | bash
-          bb version
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: citools
 
       - uses: ./.github/actions/setup-ci-secrets
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
-      - name: bb remote build -k //...
-        id: build
-        run: |
-          START=$SECONDS
-          bb remote --runner_exec_properties=EstimatedFreeDiskBytes=50GB build -k //... --config=rbe 2>&1 | tee /tmp/build.log
-          echo "elapsed=$((SECONDS - START))" >> "$GITHUB_OUTPUT"
+      - name: Create local ref for default branch
+        run: git branch "$GIT_REPO_DEFAULT_BRANCH" "origin/$GIT_REPO_DEFAULT_BRANCH"
 
-      - name: bb remote test -k //...
-        id: test
-        if: always()
-        run: |
-          START=$SECONDS
-          bb remote --runner_exec_properties=EstimatedFreeDiskBytes=50GB test -k //... --config=rbe --config=ci 2>&1 | tee /tmp/test.log
-          echo "elapsed=$((SECONDS - START))" >> "$GITHUB_OUTPUT"
-
-      - name: Write results
-        if: always()
-        run: |
-          BUILD_S=${{ steps.build.outputs.elapsed }}
-          TEST_S=${{ steps.test.outputs.elapsed }}
-          cat > results.md << EOF
-          # Remote Bazel Benchmark Results
-
-          | Command | Time |
-          |---------|------|
-          | \`bb remote build -k //...\` | ${BUILD_S}s ($(( BUILD_S / 60 ))m $(( BUILD_S % 60 ))s) |
-          | \`bb remote test -k //...\`  | ${TEST_S}s ($(( TEST_S / 60 ))m $(( TEST_S % 60 ))s) |
-
-          Run: ${{ github.run_id }}
-          EOF
-          cat results.md >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload results
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Build
+        uses: ./.github/actions/bb-remote
         with:
-          name: bench-results
-          path: |
-            results.md
-            /tmp/build.log
-            /tmp/test.log
+          args: build --keep_going //...
+
+      - name: Test
+        uses: ./.github/actions/bb-remote
+        with:
+          args: test --keep_going //...
