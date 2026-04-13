@@ -147,8 +147,20 @@ resource "authentik_policy_binding" "grocy_machine_sa" {
 }
 
 # K8s secret with M2M credentials for agents to authenticate to Grocy.
-# Flow: POST /application/o/token/ with grant_type=client_credentials,
-# client_id, username, password (app_password) → JWT → Bearer token.
+#
+# Authentik's M2M flow for proxy providers has several accepted encodings of
+# username+app_password. We expose two of them so different proxy sidecars can
+# pick whichever matches their config surface:
+#
+#   1. username + app_password (form params)
+#      Used by the Python auth proxy in grocy/auth_proxy/, which posts them
+#      verbatim via authlib.
+#
+#   2. client_secret_b64 = base64("<username>:<app_password>")
+#      Used by Envoy's envoy.filters.http.credential_injector filter, which
+#      only supports the standard OAuth2 client_credentials shape
+#      (client_id + client_secret). Authentik accepts this base64 encoding as
+#      an alternative representation of the same M2M credential.
 resource "kubernetes_secret" "grocy_machine_credentials" {
   metadata {
     name      = "grocy-machine-credentials"
@@ -162,10 +174,39 @@ resource "kubernetes_secret" "grocy_machine_credentials" {
   }
 
   data = {
-    client_id    = authentik_provider_proxy.grocy.client_id
-    username     = authentik_user.grocy_machine_sa.username
-    app_password = authentik_token.grocy_machine_app_password.key
-    token_url    = "https://auth.allegedly.works/application/o/token/"
-    upstream_url = "https://grocy.allegedly.works"
+    client_id         = authentik_provider_proxy.grocy.client_id
+    username          = authentik_user.grocy_machine_sa.username
+    app_password      = authentik_token.grocy_machine_app_password.key
+    client_secret_b64 = base64encode("${authentik_user.grocy_machine_sa.username}:${authentik_token.grocy_machine_app_password.key}")
+    token_url         = "https://auth.allegedly.works/application/o/token/"
+    upstream_url      = "https://grocy.allegedly.works"
+  }
+}
+
+# Flux postBuild.substituteFrom variables for the grocy-mcp Kustomization's
+# Envoy sidecar config. Flux resolves substituteFrom references in the same
+# namespace as the Kustomization itself, which lives in flux-system — so the
+# substitution source has to live there too.
+#
+# Only client_id needs build-time substitution: it's a plain string field
+# in Envoy's OAuth2 filter config and has no DataSource variant. client_id
+# isn't sensitive (it's a public OAuth client identifier), so a plain
+# ConfigMap is appropriate — same pattern as cert-manager-issuer-config.
+#
+# The actual secret (client_secret_b64) is read by Envoy at startup from
+# an env var populated via secretKeyRef on the Envoy container
+# (DataSource.environment_variable), so it never passes through flux-system
+# or the rendered bootstrap file.
+#
+# Keys are upper-case because Flux substituteFrom substitutes by raw key
+# name into `${KEY}` placeholders in the built manifests.
+resource "kubernetes_config_map" "grocy_envoy_vars" {
+  metadata {
+    name      = "grocy-envoy-vars"
+    namespace = "flux-system"
+  }
+
+  data = {
+    CLIENT_ID = authentik_provider_proxy.grocy.client_id
   }
 }

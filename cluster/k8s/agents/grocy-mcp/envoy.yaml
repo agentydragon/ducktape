@@ -1,0 +1,180 @@
+# Envoy bootstrap config for the grocy-mcp auth proxy sidecar.
+#
+# Wrapped into a ConfigMap by kustomize configMapGenerator in
+# kustomization.yaml, then fed through Flux postBuild.substituteFrom which
+# replaces ${CLIENT_ID} at apply time from the grocy-envoy-vars ConfigMap
+# in flux-system (provisioned by the agent-machine-access TF module).
+#
+# CLIENT_SECRET_B64 is read directly from an env var on the Envoy container
+# (populated via secretKeyRef from grocy-machine-credentials), so the
+# sensitive value never lives in the rendered bootstrap file.
+#
+# TODO(2026-04-13): asymmetric substitution is ugly. client_secret uses
+# core.v3.DataSource.environment_variable natively (since GenericSecret
+# wraps a DataSource), but OAuth2.ClientCredentials.client_id is a plain
+# string field with no DataSource variant, so it has to be substituted at
+# build time by Flux instead of at runtime by Envoy. Paths forward:
+#   - Upstream Envoy: PR to make client_id a DataSource (or accept an
+#     SdsSecretConfig) so both fields use the same mechanism.
+#   - Alternative: drop the distroless image, run Envoy under a shell
+#     wrapper that `sed`s ${CLIENT_ID} in from an env var, so both values
+#     come from the same K8s Secret via secretKeyRef and the Flux
+#     postBuild.substituteFrom + grocy-envoy-vars ConfigMap go away.
+#     Trade-off: non-distroless base, larger image, shell+coreutils in
+#     the container. Not worth it until the asymmetry actually hurts.
+#
+# Design notes:
+#
+# - The health_check HTTP filter is ordered BEFORE credential_injector so
+#   kubelet readiness probes to /health never depend on the OAuth token
+#   being available. Otherwise the pod would never go Ready while Envoy is
+#   trying to fetch its first token.
+# - The HCM's request_headers_to_remove drops any inbound Authorization or
+#   GROCY-API-KEY headers so the off-the-shelf Grocy MCP server can send
+#   its dummy GROCY-API-KEY safely, and clients can't bypass the Bearer
+#   injection by supplying their own Authorization.
+# - client_secret_b64 is base64("username:app_password") — Authentik's M2M
+#   flow for proxy providers accepts this as an equivalent form of the
+#   username+app_password credential, so it plugs directly into Envoy's
+#   standard client_id + client_secret shape with auth_type URL_ENCODED_BODY.
+# - host_rewrite_literal pins the upstream Host header so Authentik's
+#   hostname-based routing resolves to the grocy provider.
+# - Both upstream clusters use explicit SNI + CA validation against the
+#   distroless Envoy image's /etc/ssl/certs/ca-certificates.crt.
+
+admin:
+  address:
+    socket_address:
+      address: 127.0.0.1
+      port_value: 9901
+
+static_resources:
+  listeners:
+    - name: ingress
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 8080
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: grocy_auth_proxy
+                codec_type: AUTO
+                access_log:
+                  - name: envoy.access_loggers.stdout
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                request_headers_to_remove:
+                  - GROCY-API-KEY
+                  - Authorization
+                  - Proxy-Authorization
+                route_config:
+                  name: local_route
+                  virtual_hosts:
+                    - name: grocy
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/"
+                          route:
+                            cluster: grocy_upstream
+                            host_rewrite_literal: grocy.allegedly.works
+                            timeout: 30s
+                http_filters:
+                  - name: envoy.filters.http.health_check
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.health_check.v3.HealthCheck
+                      pass_through_mode: false
+                      headers:
+                        - name: ":path"
+                          string_match:
+                            exact: "/health"
+                  - name: envoy.filters.http.credential_injector
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector
+                      overwrite: false
+                      allow_request_without_credential: false
+                      credential:
+                        name: envoy.http.injected_credentials.oauth2
+                        typed_config:
+                          "@type": type.googleapis.com/envoy.extensions.http.injected_credentials.oauth2.v3.OAuth2
+                          token_endpoint:
+                            cluster: authentik_upstream
+                            uri: "https://auth.allegedly.works/application/o/token/"
+                            timeout: 5s
+                          client_credentials:
+                            client_id: "${CLIENT_ID}"
+                            client_secret:
+                              name: grocy_oauth_client_secret
+                            auth_type: URL_ENCODED_BODY
+                          token_fetch_retry_interval: 2s
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+  clusters:
+    - name: grocy_upstream
+      connect_timeout: 5s
+      type: LOGICAL_DNS
+      dns_lookup_family: V4_ONLY
+      dns_refresh_rate: 30s
+      respect_dns_ttl: true
+      load_assignment:
+        cluster_name: grocy_upstream
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: grocy.allegedly.works
+                      port_value: 443
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          sni: grocy.allegedly.works
+          common_tls_context:
+            validation_context:
+              trusted_ca:
+                filename: /etc/ssl/certs/ca-certificates.crt
+              match_typed_subject_alt_names:
+                - san_type: DNS
+                  matcher:
+                    exact: grocy.allegedly.works
+
+    - name: authentik_upstream
+      connect_timeout: 5s
+      type: LOGICAL_DNS
+      dns_lookup_family: V4_ONLY
+      dns_refresh_rate: 30s
+      respect_dns_ttl: true
+      load_assignment:
+        cluster_name: authentik_upstream
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: auth.allegedly.works
+                      port_value: 443
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          sni: auth.allegedly.works
+          common_tls_context:
+            validation_context:
+              trusted_ca:
+                filename: /etc/ssl/certs/ca-certificates.crt
+              match_typed_subject_alt_names:
+                - san_type: DNS
+                  matcher:
+                    exact: auth.allegedly.works
+
+  secrets:
+    - name: grocy_oauth_client_secret
+      generic_secret:
+        secret:
+          environment_variable: CLIENT_SECRET_B64

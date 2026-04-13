@@ -4,3 +4,10 @@ resources:
   - namespace.yaml
   - deployment.yaml
   - service.yaml
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: grocy-envoy-config
+    namespace: grocy-mcp
+    files:
+      - envoy.yaml

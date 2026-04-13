@@ -258,6 +258,7 @@ repos:
             # Application config files, not K8s manifests
             cluster/k8s/gatus/app/config\.yaml|
             cluster/k8s/agents/airlock/config\.yaml|
+            cluster/k8s/agents/grocy-mcp/envoy\.yaml|
             cluster/k8s/agents/homeassistant-proxy/config\.yaml|
             cluster/k8s/agents/claude-sandbox-firecracker/config\.yaml|
             cluster/k8s/litellm/app/proxy-config\.yaml|

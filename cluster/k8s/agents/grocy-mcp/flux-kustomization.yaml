@@ -18,6 +18,16 @@ spec:
       kind: Deployment
       name: grocy-mcp
       namespace: grocy-mcp
+  # ${CLIENT_ID} in envoy.yaml (wrapped into the grocy-envoy-config
+  # ConfigMap by kustomize configMapGenerator) is substituted from the
+  # grocy-envoy-vars ConfigMap in flux-system, populated by the
+  # agent-machine-access TF module. The sensitive client_secret_b64 is
+  # NOT substituted here — Envoy reads it directly from an env var on the
+  # container via DataSource.environment_variable.
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: grocy-envoy-vars
   dependsOn:
     - name: agent-machine-access-tf
     - name: reflector
