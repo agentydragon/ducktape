@@ -123,7 +123,16 @@ async def _exchange_token_for_backend(user_token: str, settings: ServerSettings,
             "client_id": settings.backend_oidc_client_id,
             "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
             "client_assertion": user_token,
-            "scope": "openid",
+            # Request every scope whose property mapping we want to fire
+            # when Authentik mints the new, backend-scoped token.
+            # `openid email profile` populate the standard OIDC claims.
+            # `ak_proxy` is Authentik's "default OAuth Mapping: Proxy
+            # outpost" scope — it carries the `ak_proxy` claim set the
+            # outpost reads to fill in X-Authentik-{Username,Email,Groups}
+            # on the forward-auth hop. Without it the backend sees blank
+            # username/email/groups headers even though the uid (sub) is
+            # set correctly.
+            "scope": "openid email profile ak_proxy",
         },
     )
     content_type = response.headers.get("content-type")
