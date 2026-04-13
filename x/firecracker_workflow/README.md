@@ -273,28 +273,66 @@ glibc 2.25+, so bazelisk fails to run Bazel 9.0.2 in this image.
 **Observed**: two consecutive `bbr build` calls used the same runner (same host IP),
 confirming recycling. Files written in one `bb execute` call were gone in the next.
 
-### `preserve-workspace=true` — what the source says vs. what works on BB Cloud
+### How Firecracker snapshot recycling actually works
 
-The `preserve-workspace` exec property exists in the BB source (`platform.go`). According to
-the source code (`firecracker.go:workspacePathsToExtract`):
+Source: `enterprise/server/remote_execution/containers/firecracker/firecracker.go`,
+`enterprise/server/remote_execution/snaputil/snaputil.go`,
+`enterprise/server/remote_execution/snaploader/snaploader.go`.
 
-- Without it: only declared outputs are extracted from the ext4 drive back to the host workspace
-- **With it**: the entire ext4 contents (`["/"]`) are extracted, and `Clean()` only removes
-  declared outputs (not all files). The next action repacks the preserved host directory into a
-  fresh ext4 and attaches it to the VM. `boot_id` still changes (snapshot restore) but the
-  workspace data should survive.
+The Firecracker process is **NOT** kept alive between actions — it is fully stopped and
+restarted from a snapshot each time. The lifecycle is:
 
-**In practice on BB Cloud**: `preserve-workspace=true` has no observable effect with
-`bb execute`. The workspace is always freshly initialized (only `lost+found`) on every call,
-even with `recycle-runner=true` + `runner-recycling-key`. Tested with multiple recycling keys,
-both default and custom images, with and without declared `-output_path`. The workspace never
-persisted. Likely cause: BB Cloud's public RBE executors are stateless (different executor
-pods between actions) or the feature requires a dedicated self-hosted deployment.
+1. Action runs inside the VM
+2. `Pause()`: workspace drive is swapped out for an empty placeholder, then a full (first run)
+   or diff (subsequent runs) memory snapshot is saved to local filecache / remote cache. The
+   Firecracker process is then killed.
+3. For the next action with the same snapshot key: `Unpause()` → `LoadSnapshot()` starts a
+   new Firecracker process and resumes the VM from the saved snapshot.
 
-**Bazel analysis cache**: also not preserved. Two consecutive `bbr build //devinfra/buildbuddy_cli:bbapi`
-calls both took ~8s with identical "1 packages loaded, 87 targets configured" — full
-re-analysis each time. The analysis cache lives inside the VM's snapshot filesystem (`/root/.cache/bazel/`)
-which is reset on each snapshot restore.
+**`boot_id` always changes on snapshot restore** — this is intentional Firecracker behavior.
+Firecracker regenerates entropy-related state (including `boot_id`) per-clone to prevent
+collisions across cloned VMs (see Firecracker's own `docs/snapshotting/random-for-clones.md`).
+It is NOT evidence of a different physical runner or a cold boot.
+
+**What is preserved** (when snapshot recycling is working):
+
+- Full VM memory state → running Bazel server survives with in-memory analysis cache
+- Root filesystem (including `/tmp`, `/root`, `/root/.cache/bazel/`) → bazelisk cache, Bazel
+  output base survive
+- The workspace drive (`/workspace/`) is excluded from the snapshot and repacked per-action
+
+**The gating flag**: snapshot recycling for Firecracker requires EITHER:
+
+```
+--executor.enable_local_snapshot_sharing=true
+--executor.enable_remote_snapshot_sharing=true
+```
+
+Both default to `false` in `snaputil.go`. Without one of these, `recycle-runner=true` on
+Firecracker does NOTHING — the in-memory runner pool path is also skipped for Firecracker
+when snapshot sharing is off (source: `runner.go:1137-1153`). Every action cold-boots.
+
+**Snapshot write rate limiting**: `DefaultSnapshotWriteInterval = 1 hour`. Snapshots are
+written at most once per hour per key. Subsequent calls within the hour load the saved
+snapshot but don't write a new one.
+
+**On BB Cloud public RBE** (`bb execute`, `bbr`): neither snapshot sharing flag appears to
+be enabled. All our tests showed cold-boot behavior: `boot_id` changes, `/tmp` doesn't
+persist, identical Bazel analysis times on repeated builds (8s both runs, "1 packages loaded,
+87 targets configured" both times). BB's Workflows CI product has snapshot recycling enabled
+(their docs: "system dependencies will be persisted across workflow runs"), but the public
+`bb execute`/`bb remote` RBE pool appears to use cold-boot VMs only.
+
+**`preserve-workspace=true`**: works at the host-side workspace directory layer. When
+enabled, `workspacePathsToExtract` returns `["/"]` (extract full ext4 back to host dir after
+action), and `Clean()` only removes declared outputs. The next action repacks the preserved
+host directory into a fresh ext4. However, on BB Cloud this also has no observable effect —
+the workspace is always freshly initialized (`lost+found` only). Likely because the same
+snapshot-sharing infrastructure is absent.
+
+**Bazel analysis cache**: not preserved on BB Cloud. Two consecutive
+`bbr build //devinfra/buildbuddy_cli:bbapi` calls both took ~8s with identical
+"1 packages loaded, 87 targets configured" — full re-analysis each time.
 
 ## Reusing the Same VM
 
@@ -338,12 +376,14 @@ bb execute $BB_FLAGS -- bash -c 'hostname && uname -a'
 bb execute $BB_FLAGS -- bash -c 'git clone ... && bazelisk build ...'
 ```
 
-**Important**: this targets the same physical runner (same `runner-recycling-key`) but each
-action gets a fresh Firecracker snapshot restore — workspace is reset, processes don't persist.
-The `boot_id` and uptime (always ~4-5s) change on every call; this is expected Firecracker
-snapshot-restore behavior, not evidence of a different machine. Without `runner-recycling-key`,
-different runners (different executor pods) handle each call — confirmed by observing different
-boot_ids even faster. This is different from `bb ssh` which gives a continuous shell session
+**Important**: this targets the same physical runner (same `runner-recycling-key`) but on
+BB Cloud each action cold-boots a fresh Firecracker VM (snapshot sharing not enabled). The
+`boot_id` changes on every call and uptime always resets to ~4-5s — note that `boot_id`
+changing is ALSO normal when snapshot recycling is working (Firecracker intentionally
+regenerates entropy per clone), so it is not a reliable identity indicator. Use `/tmp`
+file persistence or Bazel analysis cache speed as better tests for warm snapshot reuse.
+Without `runner-recycling-key`, any available executor handles each call (not necessarily
+the same machine). This is different from `bb ssh` which gives a continuous shell session
 with persistent state.
 
 If a `bb box create ducktape-dev` is currently running (ssh-server active), the `bb execute`
