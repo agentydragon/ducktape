@@ -70,6 +70,35 @@ def fix_entity_refs(spec: dict[str, object]) -> None:
         }
 
 
+def fix_created_object_id(spec: dict[str, object]) -> None:
+    """Widen created_object_id to accept string or integer.
+
+    Grocy returns created_object_id as a string despite the spec declaring it
+    as integer, causing FastMCP output validation to fail.
+    """
+    paths = spec.get("paths")
+    if not isinstance(paths, dict):
+        return
+    entity_route = paths.get("/objects/{entity}")
+    if not isinstance(entity_route, dict):
+        return
+    post_op = entity_route.get("post")
+    if not isinstance(post_op, dict):
+        return
+    try:
+        props = post_op["responses"]["200"]["content"]["application/json"]["schema"]["properties"]
+    except (KeyError, TypeError):
+        return
+    if not isinstance(props, dict):
+        return
+    field = props.get("created_object_id")
+    if isinstance(field, dict) and field.get("type") == "integer":
+        props["created_object_id"] = {
+            "anyOf": [{"type": "integer"}, {"type": "string"}],
+            "description": field.get("description", "The id of the created object"),
+        }
+
+
 def main() -> None:
     if len(sys.argv) != 3:
         print(f"Usage: {sys.argv[0]} <input.json> <output.json>", file=sys.stderr)
@@ -78,6 +107,7 @@ def main() -> None:
     spec: dict[str, object] = json.loads(Path(sys.argv[1]).read_text())
     strip_empty_enums(spec)
     fix_entity_refs(spec)
+    fix_created_object_id(spec)
     Path(sys.argv[2]).write_text(json.dumps(spec, indent=2))
 
 

@@ -149,6 +149,7 @@ py_test(
         "//util/testing:container_logs",
         "@pypi//fastmcp",
         "@pypi//httpx",
+        "@pypi//jsonschema",
         "@pypi//mcp",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

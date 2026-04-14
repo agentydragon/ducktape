@@ -17,8 +17,10 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import jsonschema
 import pytest
 import pytest_bazel
+from fastmcp import FastMCP
 from fastmcp.tools import ToolResult
 from mcp.types import TextContent
 
@@ -135,6 +137,28 @@ def _result_json(result: ToolResult) -> Any:
     raise ValueError(f"Empty tool result: {result!r}")
 
 
+async def _call(mcp: FastMCP, tool_name: str, args: dict | None = None) -> Any:
+    """Call a tool and validate the result against the tool's declared output schema.
+
+    This mirrors what the MCP client (e.g. Claude) does: after receiving a
+    CallToolResult with structuredContent, it validates the content against the
+    tool's declared outputSchema. Calling mcp.call_tool() directly skips that
+    client-side validation, so we replicate it here to catch schema mismatches
+    (e.g. Grocy returning "9" where the spec says integer).
+    """
+    result = await mcp.call_tool(tool_name, args or {})
+    data = _result_json(result)
+
+    tool = await mcp.get_tool(tool_name)
+    if tool is not None and tool.output_schema is not None and result.structured_content is not None:
+        try:
+            jsonschema.validate(result.structured_content, tool.output_schema)
+        except jsonschema.ValidationError as e:
+            pytest.fail(f"Output schema validation failed for {tool_name!r}: {e.message}")
+
+    return data
+
+
 # ── Tool name coverage ───────────────────────────────────────────────────
 
 
@@ -180,26 +204,24 @@ async def test_inventory_bootstrap(grocy_base_url: str) -> None:
     """Full inventory workflow: create entities → add stock → query → consume."""
     mcp = build_mcp(_settings(grocy_base_url), client=_make_grocy_client(grocy_base_url))
 
-    async def call(tool_name: str, args: dict | None = None) -> Any:
-        result = await mcp.call_tool(tool_name, args or {})
-        return _result_json(result)
-
     # Use unique names to avoid collision with Grocy's seed data.
     suffix = uuid.uuid4().hex[:6]
 
     # 1. Create a location
-    loc = await call("create_entity", {"entity": "locations", "body": {"name": f"TestLoc-{suffix}"}})
+    loc = await _call(mcp, "create_entity", {"entity": "locations", "body": {"name": f"TestLoc-{suffix}"}})
     loc_id = loc["created_object_id"]
 
     # 2. Create a quantity unit
-    qu = await call(
+    qu = await _call(
+        mcp,
         "create_entity",
         {"entity": "quantity_units", "body": {"name": f"TestUnit-{suffix}", "name_plural": f"TestUnits-{suffix}"}},
     )
     qu_id = qu["created_object_id"]
 
     # 3. Create a product
-    product = await call(
+    product = await _call(
+        mcp,
         "create_entity",
         {
             "entity": "products",
@@ -214,15 +236,15 @@ async def test_inventory_bootstrap(grocy_base_url: str) -> None:
     product_id = product["created_object_id"]
 
     # 4. Add stock
-    add_result = await call(
-        "add_product_stock", {"productId": product_id, "amount": 5, "best_before_date": "2030-01-01"}
+    add_result = await _call(
+        mcp, "add_product_stock", {"productId": product_id, "amount": 5, "best_before_date": "2030-01-01"}
     )
     # FastMCP wraps the response in {"result": [...]}.
     transactions = add_result["result"] if isinstance(add_result, dict) and "result" in add_result else add_result
     assert isinstance(transactions, list), f"Expected transaction list, got {add_result!r}"
 
     # 5. Verify stock shows up
-    stock_raw = await call("list_stock")
+    stock_raw = await _call(mcp, "list_stock")
     stock = stock_raw["result"] if isinstance(stock_raw, dict) and "result" in stock_raw else stock_raw
     assert isinstance(stock, list)
     # product_id may be str or int depending on Grocy version — compare loosely.
@@ -231,14 +253,14 @@ async def test_inventory_bootstrap(grocy_base_url: str) -> None:
     assert float(product_stock[0]["amount"]) == 5.0
 
     # 6. Get product details
-    details = await call("get_product_stock", {"productId": product_id})
+    details = await _call(mcp, "get_product_stock", {"productId": product_id})
     assert float(details["stock_amount"]) == 5.0
 
     # 7. Consume some stock
-    await call("consume_product_stock", {"productId": product_id, "amount": 2})
+    await _call(mcp, "consume_product_stock", {"productId": product_id, "amount": 2})
 
     # 8. Verify reduced stock
-    stock_after_raw = await call("list_stock")
+    stock_after_raw = await _call(mcp, "list_stock")
     stock_after = (
         stock_after_raw["result"]
         if isinstance(stock_after_raw, dict) and "result" in stock_after_raw
@@ -248,7 +270,7 @@ async def test_inventory_bootstrap(grocy_base_url: str) -> None:
     assert float(product_stock_after[0]["amount"]) == 3.0
 
     # 9. Verify entity CRUD — read back the product
-    product_obj = await call("get_entity", {"entity": "products", "objectId": product_id})
+    product_obj = await _call(mcp, "get_entity", {"entity": "products", "objectId": product_id})
     assert product_obj["name"] == f"TestRice-{suffix}"
 
 
