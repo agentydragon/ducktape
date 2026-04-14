@@ -151,6 +151,7 @@ oci_image(
     entrypoint = py_image_entrypoint("server_bin"),
     env = py_image_env(binary_name = "server_bin"),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tags = ["ghcr_push"],
     tars = [":layers"],
     user = "1000:1000",
     visibility = ["//visibility:public"],
