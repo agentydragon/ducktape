@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   # --- flux ---
   - flux-system/
+  - flux-webhook-token/flux-kustomization.yaml
   - flux-webhook/flux-kustomization.yaml
   - flux-grafana-secrets/flux-kustomization.yaml
   - flux-image-automation-ghcr/flux-kustomization.yaml

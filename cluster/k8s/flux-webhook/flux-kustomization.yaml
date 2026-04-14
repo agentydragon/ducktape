@@ -16,5 +16,5 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: harbor-ci # webhook token secrets created by harbor-ci TF
+    - name: flux-webhook-token
     - name: gateway

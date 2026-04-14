@@ -140,10 +140,24 @@ resource "random_password" "harbor_webhook_token" {
   special = false
 }
 
-# GitHub webhook token for the Flux github Receiver (GitHub push → Flux GitRepository)
-resource "random_password" "github_webhook_token" {
-  length  = 40
-  special = false
+# CLEANUP(2026-04-14): github_webhook_token and flux_receiver webhook migrated
+# to cluster/terraform/gitops/flux-webhook-token to decouple flux-webhook from
+# the harbor dependency chain (issue #1291). Remove these removed blocks once
+# the flux-webhook-token TF module has been applied and the old GitHub webhook
+# (registered with the harbor-ci token) has been manually deleted from GitHub.
+removed {
+  from = random_password.github_webhook_token
+  lifecycle { destroy = false }
+}
+
+removed {
+  from = kubernetes_secret.github_webhook_token
+  lifecycle { destroy = false }
+}
+
+removed {
+  from = github_repository_webhook.flux_receiver
+  lifecycle { destroy = false }
 }
 
 # --- K8s Secrets (direct, replacing Vault + ESO) ---
@@ -201,44 +215,5 @@ resource "kubernetes_secret" "harbor_webhook_token" {
     # Don't rotate the token after initial creation — rotating it would require
     # reconfiguring the Harbor webhook notification and the Flux Receiver path.
     ignore_changes = [data]
-  }
-}
-
-resource "kubernetes_secret" "github_webhook_token" {
-  metadata {
-    name      = "github-webhook-token"
-    namespace = "flux-system"
-  }
-
-  data = {
-    token = random_password.github_webhook_token.result
-  }
-
-  lifecycle {
-    # Don't rotate after initial creation — rotating requires reconfiguring the
-    # GitHub webhook URL (path changes with the sha256 of the token).
-    ignore_changes = [data]
-  }
-}
-
-# --- GitHub webhook for Flux Receiver ---
-
-resource "github_repository_webhook" "flux_receiver" {
-  repository = "ducktape"
-
-  configuration {
-    url          = "https://flux-webhook.allegedly.works/hook/${sha256(random_password.github_webhook_token.result)}"
-    content_type = "json"
-    secret       = random_password.github_webhook_token.result
-    insecure_ssl = false
-  }
-
-  active = true
-  events = ["push", "registry_package"]
-
-  lifecycle {
-    # Token has ignore_changes on its random_password, so the URL is stable.
-    # Only recreate if the webhook is manually deleted from GitHub.
-    ignore_changes = [configuration]
   }
 }

@@ -1,0 +1,25 @@
+---
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: flux-webhook-token
+  namespace: flux-system
+spec:
+  interval: 15m
+  path: ./cluster/terraform/gitops/flux-webhook-token
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+
+  serviceAccountName: tf-runner
+  approvePlan: "auto"
+
+  backendConfig:
+    customConfiguration: |
+      backend "kubernetes" {
+        secret_suffix = "flux-webhook-token"
+        namespace     = "flux-system"
+      }
+
+  vars: []
