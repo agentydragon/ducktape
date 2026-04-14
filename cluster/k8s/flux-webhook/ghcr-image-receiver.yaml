@@ -46,7 +46,7 @@ spec:
       name: homeassistant-proxy
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: openclaw
+      name: openclaw-matrix
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
       name: openclaw-exec
