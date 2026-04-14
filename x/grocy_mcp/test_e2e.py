@@ -3,26 +3,27 @@
 Starts a real Grocy container (LinuxServer image, auth disabled, demo mode),
 wires the MCP server to it, and exercises a realistic sequence of tool calls
 that mirrors how an LLM would bootstrap a Grocy inventory from scratch.
+
+All tool calls go through the full MCP protocol via fastmcp.Client with
+FastMCPTransport. This ensures output schema validation and error propagation
+match what real MCP clients (e.g. Claude) experience.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import tempfile
 import time
 import uuid
-from collections.abc import Generator
+from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
-from typing import Any
 
 import httpx
-import jsonschema
 import pytest
 import pytest_bazel
 from fastmcp import FastMCP
-from fastmcp.tools import ToolResult
-from mcp.types import TextContent
+from fastmcp.client import Client
+from fastmcp.client.transports import FastMCPTransport
 
 from third_party.containers.rlocations import GROCY
 from util.oci import load_oci_image
@@ -32,6 +33,17 @@ from x.grocy_mcp.server import build_mcp
 from x.grocy_mcp.tool_metadata import TOOL_OVERRIDES
 
 logger = logging.getLogger(__name__)
+
+# Names of the custom batch tools registered by register_batch_tools.
+CUSTOM_TOOL_NAMES = {
+    "create_entities",
+    "list_entities",
+    "get_entities",
+    "get_stock",
+    "add_stock",
+    "consume_stock",
+    "inventory_products",
+}
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────
@@ -118,55 +130,27 @@ def grocy_base_url(grocy_container: LoggedContainer) -> str:
     return f"http://{host}:{port}"
 
 
-def _make_grocy_client(grocy_base_url: str) -> httpx.AsyncClient:
-    """Create a fresh async httpx client for the Grocy API."""
-    return httpx.AsyncClient(base_url=f"{grocy_base_url}/api", timeout=30.0)
+@pytest.fixture(scope="session")
+def grocy_mcp(grocy_base_url: str) -> FastMCP:
+    client = httpx.AsyncClient(base_url=f"{grocy_base_url}/api", timeout=30.0)
+    return build_mcp(_settings(grocy_base_url), client=client)
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────
-
-
-def _result_json(result: ToolResult) -> Any:
-    """Extract parsed JSON from a FastMCP ToolResult."""
-    if result.structured_content is not None:
-        return result.structured_content
-    if result.content:
-        first = result.content[0]
-        assert isinstance(first, TextContent), f"Expected TextContent, got {type(first)}"
-        return json.loads(first.text)
-    raise ValueError(f"Empty tool result: {result!r}")
-
-
-async def _call(mcp: FastMCP, tool_name: str, args: dict | None = None) -> Any:
-    """Call a tool and validate the result against the tool's declared output schema.
-
-    This mirrors what the MCP client (e.g. Claude) does: after receiving a
-    CallToolResult with structuredContent, it validates the content against the
-    tool's declared outputSchema. Calling mcp.call_tool() directly skips that
-    client-side validation, so we replicate it here to catch schema mismatches
-    (e.g. Grocy returning "9" where the spec says integer).
-    """
-    result = await mcp.call_tool(tool_name, args or {})
-    data = _result_json(result)
-
-    tool = await mcp.get_tool(tool_name)
-    if tool is not None and tool.output_schema is not None and result.structured_content is not None:
-        try:
-            jsonschema.validate(result.structured_content, tool.output_schema)
-        except jsonschema.ValidationError as e:
-            pytest.fail(f"Output schema validation failed for {tool_name!r}: {e.message}")
-
-    return data
+@pytest.fixture(scope="session")
+async def mcp_client(grocy_mcp: FastMCP) -> AsyncGenerator[Client]:
+    """Session-scoped MCP client exercising the full MCP protocol in-process."""
+    async with Client(FastMCPTransport(grocy_mcp)) as client:
+        yield client
 
 
 # ── Tool name coverage ───────────────────────────────────────────────────
 
 
-async def test_all_tool_names_are_customized(grocy_base_url: str) -> None:
-    """Every tool exposed by the MCP server has a name from TOOL_OVERRIDES."""
-    mcp = build_mcp(_settings(grocy_base_url), client=_make_grocy_client(grocy_base_url))
-    tools = await mcp.list_tools()
+async def test_all_tool_names_are_customized(mcp_client: Client) -> None:
+    """Every tool exposed by the MCP server has a name from TOOL_OVERRIDES or CUSTOM_TOOL_NAMES."""
+    tools = await mcp_client.list_tools()
     expected_names = {o.name for o in TOOL_OVERRIDES.values() if o.enabled and not o.resource}
+    expected_names |= CUSTOM_TOOL_NAMES
     actual_names = {t.name for t in tools}
     assert actual_names == expected_names, (
         f"Mismatch: extra={actual_names - expected_names}, missing={expected_names - actual_names}"
@@ -176,22 +160,19 @@ async def test_all_tool_names_are_customized(grocy_base_url: str) -> None:
 # ── MCP resource ─────────────────────────────────────────────────────────
 
 
-async def test_system_info_resource(grocy_base_url: str) -> None:
+async def test_system_info_resource(mcp_client: Client) -> None:
     """GET /system/info is exposed as an MCP resource, not a tool."""
-    mcp = build_mcp(_settings(grocy_base_url), client=_make_grocy_client(grocy_base_url))
-
-    tools = await mcp.list_tools()
+    tools = await mcp_client.list_tools()
     tool_names = {t.name for t in tools}
     assert "get_system_info" not in tool_names, "system_info should be a resource, not a tool"
 
-    resources = await mcp.list_resources()
+    resources = await mcp_client.list_resources()
     resource_uris = {str(r.uri): r for r in resources}
     matching = [uri for uri in resource_uris if "system_info" in uri]
     assert matching, f"system_info resource not found in {list(resource_uris.keys())}"
 
-    # Read the resource — should return Grocy version info.
     resource_uri = matching[0]
-    content = await mcp.read_resource(resource_uri)
+    content = await mcp_client.read_resource(resource_uri)
     assert content, "system_info resource returned empty content"
     text = str(content)
     assert "grocy_version" in text.lower() or "Grocy" in text, f"Unexpected resource content: {text[:200]}"
@@ -200,78 +181,92 @@ async def test_system_info_resource(grocy_base_url: str) -> None:
 # ── Inventory bootstrap workflow ─────────────────────────────────────────
 
 
-async def test_inventory_bootstrap(grocy_base_url: str) -> None:
-    """Full inventory workflow: create entities → add stock → query → consume."""
-    mcp = build_mcp(_settings(grocy_base_url), client=_make_grocy_client(grocy_base_url))
-
-    # Use unique names to avoid collision with Grocy's seed data.
+async def test_inventory_bootstrap(mcp_client: Client) -> None:
+    """Full batch inventory workflow: create entities → add → get enriched → consume → inventory."""
     suffix = uuid.uuid4().hex[:6]
 
-    # 1. Create a location
-    loc = await _call(mcp, "create_entity", {"entity": "locations", "body": {"name": f"TestLoc-{suffix}"}})
-    loc_id = loc["created_object_id"]
-
-    # 2. Create a quantity unit
-    qu = await _call(
-        mcp,
-        "create_entity",
-        {"entity": "quantity_units", "body": {"name": f"TestUnit-{suffix}", "name_plural": f"TestUnits-{suffix}"}},
-    )
-    qu_id = qu["created_object_id"]
-
-    # 3. Create a product
-    product = await _call(
-        mcp,
-        "create_entity",
+    # 1. Create location and quantity unit in one batch call
+    result = await mcp_client.call_tool(
+        "create_entities",
         {
-            "entity": "products",
-            "body": {
-                "name": f"TestRice-{suffix}",
-                "location_id": loc_id,
-                "qu_id_purchase": qu_id,
-                "qu_id_stock": qu_id,
-            },
+            "items": [
+                {"entity_type": "locations", "body": {"name": f"TestLoc-{suffix}"}},
+                {
+                    "entity_type": "quantity_units",
+                    "body": {"name": f"TestUnit-{suffix}", "name_plural": f"TestUnits-{suffix}"},
+                },
+            ]
         },
     )
-    product_id = product["created_object_id"]
+    created = result.structured_content["result"]
+    assert created[0]["ok"], f"location create failed: {created[0].get('error')}"
+    assert created[1]["ok"], f"quantity_unit create failed: {created[1].get('error')}"
+    loc_id = created[0]["created_object_id"]
+    qu_id = created[1]["created_object_id"]
 
-    # 4. Add stock
-    add_result = await _call(
-        mcp, "add_product_stock", {"productId": product_id, "amount": 5, "best_before_date": "2030-01-01"}
+    # 2. Create a product
+    result = await mcp_client.call_tool(
+        "create_entities",
+        {
+            "items": [
+                {
+                    "entity_type": "products",
+                    "body": {
+                        "name": f"TestRice-{suffix}",
+                        "location_id": loc_id,
+                        "qu_id_purchase": qu_id,
+                        "qu_id_stock": qu_id,
+                    },
+                }
+            ]
+        },
     )
-    # FastMCP wraps the response in {"result": [...]}.
-    transactions = add_result["result"] if isinstance(add_result, dict) and "result" in add_result else add_result
-    assert isinstance(transactions, list), f"Expected transaction list, got {add_result!r}"
+    product_id = result.structured_content["result"][0]["created_object_id"]
+    assert product_id is not None
 
-    # 5. Verify stock shows up
-    stock_raw = await _call(mcp, "list_stock")
-    stock = stock_raw["result"] if isinstance(stock_raw, dict) and "result" in stock_raw else stock_raw
-    assert isinstance(stock, list)
-    # product_id may be str or int depending on Grocy version — compare loosely.
-    product_stock = [s for s in stock if str(s.get("product_id")) == str(product_id)]
-    assert len(product_stock) == 1
+    # 3. Add stock
+    result = await mcp_client.call_tool(
+        "add_stock", {"items": [{"product_id": product_id, "amount": 5, "best_before_date": "2030-01-01"}]}
+    )
+    op = result.structured_content["result"][0]
+    assert op["ok"], f"add_stock failed: {op.get('error')}"
+    assert op["new_amount"] == 5.0
+
+    # 4. Get enriched stock — verify product + QU + location attached
+    result = await mcp_client.call_tool("get_stock", {"include_quantity_unit": True, "include_location": True})
+    stock = result.structured_content["result"]
+    product_stock = [s for s in stock if str(s["product_id"]) == str(product_id)]
+    assert len(product_stock) == 1, f"product {product_id} not found in stock"
     assert float(product_stock[0]["amount"]) == 5.0
+    assert product_stock[0]["quantity_unit"] is not None, "quantity_unit not enriched"
+    assert product_stock[0]["location"] is not None, "location not enriched"
 
-    # 6. Get product details
-    details = await _call(mcp, "get_product_stock", {"productId": product_id})
-    assert float(details["stock_amount"]) == 5.0
+    # 5. Consume some stock
+    result = await mcp_client.call_tool("consume_stock", {"items": [{"product_id": product_id, "amount": 2}]})
+    op = result.structured_content["result"][0]
+    assert op["ok"], f"consume_stock failed: {op.get('error')}"
+    assert op["new_amount"] == 3.0
 
-    # 7. Consume some stock
-    await _call(mcp, "consume_product_stock", {"productId": product_id, "amount": 2})
+    # 6. Inventory — set absolute amount
+    result = await mcp_client.call_tool("inventory_products", {"items": [{"product_id": product_id, "new_amount": 10}]})
+    op = result.structured_content["result"][0]
+    assert op["ok"], f"inventory_products failed: {op.get('error')}"
+    assert op["new_amount"] == 10.0
 
-    # 8. Verify reduced stock
-    stock_after_raw = await _call(mcp, "list_stock")
-    stock_after = (
-        stock_after_raw["result"]
-        if isinstance(stock_after_raw, dict) and "result" in stock_after_raw
-        else stock_after_raw
-    )
-    product_stock_after = [s for s in stock_after if str(s.get("product_id")) == str(product_id)]
-    assert float(product_stock_after[0]["amount"]) == 3.0
+    # 7. List entities — fetch products, locations, quantity_units in one call
+    result = await mcp_client.call_tool("list_entities", {"entity_types": ["products", "locations", "quantity_units"]})
+    data = result.structured_content
+    assert "products" in data
+    assert "locations" in data
+    assert "quantity_units" in data
+    product_names = [p["name"] for p in data["products"]]
+    assert f"TestRice-{suffix}" in product_names
 
-    # 9. Verify entity CRUD — read back the product
-    product_obj = await _call(mcp, "get_entity", {"entity": "products", "objectId": product_id})
-    assert product_obj["name"] == f"TestRice-{suffix}"
+    # 8. Get specific entity by ID
+    result = await mcp_client.call_tool("get_entities", {"entity_type": "products", "object_ids": [product_id]})
+    entities = result.structured_content["result"]
+    assert entities[0]["ok"], f"get_entities failed: {entities[0].get('error')}"
+    assert entities[0]["data"]["name"] == f"TestRice-{suffix}"
 
 
 if __name__ == "__main__":

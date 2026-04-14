@@ -35,6 +35,7 @@ from pydantic.networks import AnyUrl
 
 from util.bazel.runfiles import get_required_path
 from x.grocy_mcp.auth import AuthentikExchangeAuth
+from x.grocy_mcp.batch_tools import register_batch_tools
 from x.grocy_mcp.config import ServerSettings
 from x.grocy_mcp.tool_metadata import TOOL_OVERRIDES
 
@@ -117,7 +118,7 @@ def build_mcp(settings: ServerSettings, *, client: httpx.AsyncClient | None = No
         if override.extra_description:
             component.description = f"{component.description}\n\n{override.extra_description}"
 
-    return FastMCP.from_openapi(
+    mcp = FastMCP.from_openapi(
         openapi_spec=spec,
         client=client,
         name="Grocy",
@@ -125,6 +126,8 @@ def build_mcp(settings: ServerSettings, *, client: httpx.AsyncClient | None = No
         route_map_fn=_filter_disabled,
         mcp_component_fn=_customize_component,
     )
+    register_batch_tools(mcp, client)
+    return mcp
 
 
 def build_server(settings: ServerSettings) -> FastMCP:

@@ -43,24 +43,50 @@ OAuth directly against OIDCProxy, which requires RFC 7591 DCR and PKCE to
 its own redirect URI, not a forward-auth 302. Only the downstream call into
 Grocy traverses the outpost.
 
+## MCP resources vs tools
+
+As of 2026-04-14, claude.ai does not expose MCP resources to the AI. Everything
+the AI needs to invoke must be a tool. `get_system_info` (from `GET /system/info`)
+is currently exposed as an MCP resource and is therefore invisible to the AI —
+it is informational only. New capabilities should be added as tools.
+
 ## Tool surface
 
-Generated from <grocy_openapi.json> (Grocy 4.6.0 OpenAPI 3.1 spec from
-<https://demo.grocy.info/api/openapi/specification>). Filtered via
-`ROUTE_MAPS` in <server.py> to just `/objects/*` and `/stock/*`, which
-covers the bootstrap path "empty Grocy → populated inventory":
+The tool surface combines OpenAPI-generated tools (from Grocy's spec) with custom
+batch tools registered by `register_batch_tools` in <batch_tools.py>.
 
-- `/objects/{entity}` — generic CRUD over quantity units, locations,
-  product groups, products, quantity-unit conversions, etc. Discoverable
-  entities: see the `entity` path parameter in Grocy's docs.
-- `/stock` — current stock listing.
-- `/stock/products/{id}/{add,consume,inventory,...}` — stock manipulation.
+### Batch tools (custom, in <batch_tools.py>)
 
-Explicitly excluded: `/chores`, `/batteries`, `/recipes`, `/tasks`,
-`/calendar`, `/print`, `/files`, `/users`, `/user`, `/userfields`,
-`/system`. If you later want any of these, add a
-`RouteMap(pattern=..., mcp_type=MCPType.TOOL)` higher in the list in
-<server.py>.
+These replace the equivalent single-shot OpenAPI routes to enable efficient
+multi-item operations via `asyncio.gather`. Each failed item is collected with
+`ok=False`; failures do not abort the others.
+
+| Tool | Replaces | Description |
+|---|---|---|
+| `create_entities` | `create_entity` | Create N entities of any type in one call |
+| `list_entities` | `list_entities` | Fetch N entity types concurrently |
+| `get_entities` | `get_entity` | Fetch N objects of one type by ID |
+| `get_stock` | `list_stock` | Stock list with optional QU + location enrichment |
+| `add_stock` | `add_product_stock` | Add stock for N products; returns `new_amount` per item |
+| `consume_stock` | `consume_product_stock` | Consume stock for N products |
+| `inventory_products` | `inventory_product` | Set absolute amounts for N products |
+
+Stock operations return `transaction_id` per item for per-operation undo via the
+`undo_transaction` tool. There is no cross-item atomicity — Grocy has no
+client-initiated batch transaction API.
+
+### OpenAPI-generated tools (from Grocy spec)
+
+All remaining enabled routes from `/objects/*` and `/stock/*`:
+`update_entity`, `delete_entity`, `get_product_stock`, `transfer_product_stock`,
+`open_product_stock`, `list_product_stock_entries`, `list_product_locations`,
+`merge_products`, `list_location_stock`, `get_stock_entry`, `edit_stock_entry`,
+`list_volatile_stock`, `shopping_list_*`, and others. See <tool_metadata.py> for
+the full list.
+
+Explicitly excluded: `/chores`, `/batteries`, `/recipes`, `/tasks`, `/calendar`,
+`/print`, `/files`, `/users`, `/user`, `/userfields`, `/system`. Add a
+`RouteMap(pattern=..., mcp_type=MCPType.TOOL)` in <server.py> to re-enable any.
 
 ## Why `FastMCP.from_openapi` and not hand-written tools?
 

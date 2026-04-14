@@ -54,12 +54,24 @@ py_library(
 )
 
 py_library(
+    name = "batch_tools",
+    srcs = ["batch_tools.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//fastmcp",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "server",
     srcs = ["server.py"],
     data = [":grocy_openapi_fixed"],
     visibility = ["//visibility:public"],
     deps = [
         ":auth",
+        ":batch_tools",
         ":config",
         ":tool_metadata",
         "//util/bazel:runfiles",
@@ -149,9 +161,8 @@ py_test(
         "//util/testing:container_logs",
         "@pypi//fastmcp",
         "@pypi//httpx",
-        "@pypi//jsonschema",
-        "@pypi//mcp",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//testcontainers",
     ],

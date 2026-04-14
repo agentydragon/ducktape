@@ -33,13 +33,13 @@ _D = lambda name, **kw: ToolOverride(name, enabled=False, **kw)  # noqa: E731
 
 TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     # ── Generic entity CRUD ──────────────────────────────────────────
-    ("GET", "/objects/{entity}"): _E("list_entities"),
-    ("POST", "/objects/{entity}"): _E("create_entity"),
-    ("GET", "/objects/{entity}/{objectId}"): _E("get_entity"),
+    ("GET", "/objects/{entity}"): _D("list_entities"),  # replaced by batch list_entities
+    ("POST", "/objects/{entity}"): _D("create_entity"),  # replaced by batch create_entities
+    ("GET", "/objects/{entity}/{objectId}"): _D("get_entity"),  # replaced by batch get_entities
     ("PUT", "/objects/{entity}/{objectId}"): _E("update_entity"),
     ("DELETE", "/objects/{entity}/{objectId}"): _E("delete_entity"),
     # ── Stock overview ───────────────────────────────────────────────
-    ("GET", "/stock"): _E("list_stock"),
+    ("GET", "/stock"): _D("list_stock"),  # replaced by batch get_stock
     ("GET", "/stock/volatile"): _E(
         "list_volatile_stock", "Returns products that are due soon, overdue, expired, or below min stock."
     ),
@@ -49,12 +49,10 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     ("GET", "/stock/entry/{entryId}/printlabel"): _D("print_stock_entry_label"),
     # ── Product stock operations (by ID) ─────────────────────────────
     ("GET", "/stock/products/{productId}"): _E("get_product_stock"),
-    ("POST", "/stock/products/{productId}/add"): _E("add_product_stock"),
-    ("POST", "/stock/products/{productId}/consume"): _E("consume_product_stock"),
+    ("POST", "/stock/products/{productId}/add"): _D("add_product_stock"),  # replaced by batch add_stock
+    ("POST", "/stock/products/{productId}/consume"): _D("consume_product_stock"),  # replaced by batch consume_stock
     ("POST", "/stock/products/{productId}/transfer"): _E("transfer_product_stock"),
-    ("POST", "/stock/products/{productId}/inventory"): _E(
-        "inventory_product", "Set absolute stock amount — Grocy adds or removes to reach the target."
-    ),
+    ("POST", "/stock/products/{productId}/inventory"): _D("inventory_product"),  # replaced by batch inventory_products
     ("POST", "/stock/products/{productId}/open"): _E("open_product_stock"),
     ("GET", "/stock/products/{productId}/entries"): _E("list_product_stock_entries"),
     ("GET", "/stock/products/{productId}/locations"): _E("list_product_locations"),
