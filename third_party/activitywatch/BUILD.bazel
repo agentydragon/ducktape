@@ -52,6 +52,7 @@ oci_image(
     ],
     exposed_ports = ["5600/tcp"],
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tags = ["ghcr_push"],
     tars = [":aw_server_layer"],
 )
 

@@ -75,6 +75,7 @@ oci_image(
     entrypoint = py_image_entrypoint("entrypoint_bin"),
     env = py_image_env(binary_name = "entrypoint_bin"),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tags = ["ghcr_push"],
     tars = [
         "@bookworm_fc_vm_pod//:flat",
         ":layers",

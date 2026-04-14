@@ -269,6 +269,7 @@ oci_image(
     ],
     env = py_image_env(),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tags = ["ghcr_push"],
     tars = [
         ":layers",
         ":frontend_assets",

@@ -85,6 +85,7 @@ oci_image(
     entrypoint = py_image_entrypoint("direct_aspect_bin"),
     env = py_image_env(binary_name = "direct_aspect_bin"),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tags = ["ghcr_push"],
     tars = [":direct_layers"],
     user = "1000:1000",
     visibility = ["//visibility:public"],

@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # === Base modules (no internal deps) ===
 
@@ -74,4 +74,54 @@ py_binary(
     name = "check_release_bin",
     main_module = "devinfra.ci.check_release",
     deps = [":check_release"],
+)
+
+# === CI lint checks ===
+
+# Scope: all oci_image targets in the repo.  genquery(scope=) requires explicit
+# labels — it does not accept //... wildcards.  When adding a new oci_image,
+# add it here so the query can see it.  The test enforces:
+#   • every scope target tagged ghcr_push appears in push-images.yml matrix
+#   • every matrix row corresponds to a scope target with the ghcr_push tag
+_OCI_IMAGE_TARGETS = [
+    "//airlock:image",
+    "//airlock/auth_proxy:image",
+    "//cluster/k8s/agents/claude-token-rotation:image",
+    "//cluster/k8s/inventree/token-provisioner:image",
+    "//devinfra/firecracker/manager:image",
+    "//devinfra/firecracker/vm_pod:image",
+    "//homeassistant/proxy:image",
+    "//inventree_utils/rai_plugin:image",
+    "//mcp_infra/exec:direct_image",
+    "//openclaw/exec:image",
+    "//props/backend:image",
+    "//tana/token_broker:image",
+    "//third_party/activitywatch:image",
+    "//x/authentik_mcp_poc:backend_image",
+    "//x/authentik_mcp_poc:server_image",
+    "//x/grocy_mcp:server_image",
+]
+
+# Materialize the set of oci_image targets tagged for GHCR pushing at analysis
+# time.  The test reads this file from runfiles — no Bazel subprocess needed.
+genquery(
+    name = "ghcr_push_images_query",
+    expression = 'attr("tags", "ghcr_push", set(' + " ".join(_OCI_IMAGE_TARGETS) + "))",
+    scope = _OCI_IMAGE_TARGETS,
+    strict = False,
+)
+
+py_test(
+    name = "test_push_images_matrix",
+    srcs = ["test_push_images_matrix.py"],
+    data = [
+        ":ghcr_push_images_query",
+        "//.github/workflows:push-images.yml",
+    ],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
 )

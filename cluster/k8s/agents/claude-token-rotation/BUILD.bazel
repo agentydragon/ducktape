@@ -13,6 +13,7 @@ oci_image(
     base = "@debian_slim_linux_amd64",
     entrypoint = ["/bin/bash"],
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tags = ["ghcr_push"],
     tars = [
         "@bookworm_token_rotation//:flat",
         ":sops_layer",

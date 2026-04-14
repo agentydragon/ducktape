@@ -108,5 +108,6 @@ oci_image(
     entrypoint = py_image_entrypoint("service_bin"),
     env = py_image_env(binary_name = "service_bin"),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tags = ["ghcr_push"],
     tars = [":layers"],
 )

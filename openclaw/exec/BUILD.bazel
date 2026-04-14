@@ -40,6 +40,7 @@ oci_image(
     # no private registry pull at build time.
     base = "//mcp_infra/exec:direct_image",
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tags = ["ghcr_push"],
     # Layers are added in dependency order; each becomes a separate OCI layer.
     tars = [
         ":kubectl_layer",

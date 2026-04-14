@@ -72,6 +72,7 @@ oci_image(
     entrypoint = py_image_entrypoint("homeassistant_proxy_bin"),
     env = py_image_env(binary_name = "homeassistant_proxy_bin"),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tags = ["ghcr_push"],
     tars = [":layers"],
     user = "1000:1000",
 )

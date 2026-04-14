@@ -52,6 +52,7 @@ oci_image(
     name = "image",
     base = "@inventree_stable_linux_amd64",
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tags = ["ghcr_push"],
     tars = [":rai_plugin_layer"],
     visibility = ["//visibility:public"],
 )

@@ -59,6 +59,7 @@ oci_image(
     entrypoint = py_image_entrypoint("token_broker_bin"),
     env = py_image_env(binary_name = "token_broker_bin"),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tags = ["ghcr_push"],
     tars = [":layers"],
     user = "1000:1000",
 )
