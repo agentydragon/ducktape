@@ -97,6 +97,22 @@ echo "  flake.nix exists: $(test -f flake.nix && echo yes || echo no)"
 echo "  ls pwd:"
 ls -la
 # Pass --max-jobs explicitly to override any nix.conf misconfiguration.
+#
+# CRITICAL: `nix profile install` is a no-op when the attribute path is already
+# in the profile — it matches by attrpath, not by evaluated store hash. On
+# persistent Firecracker rootfs `web_setup.sh` re-runs on every session
+# (environment-manager's `Initialize` fires `init_script` unconditionally —
+# verified in <devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic/anthropic.go>
+# Initialize(), Step 3 at line ~361 is not gated on session mode). Without an
+# explicit remove, the installed devtools derivation freezes at whatever pin
+# was current on container first-boot, even though `npins/sources.json` in
+# the working tree has moved forward. The downstream symptom is agent sessions
+# running a stale `claude-hooks` wheel against fresh profile YAML / Mako
+# templates, which crashes SessionStart as soon as the schema churns. Remove
+# first so `install` re-evaluates `.#devtools` against the current flake.
+#
+# See <devinfra/claude/docs/web-setup-debug.md> ("Pin drift on persistent rootfs").
+nix profile remove devtools 2>/dev/null || true
 nix profile install --max-jobs auto "${FLAKE}#devtools"
 echo "[$(date -Iseconds)] Dev tools installed."
 

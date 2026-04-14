@@ -200,9 +200,72 @@ curl -fsSL https://raw.githubusercontent.com/agentydragon/ducktape/680d78946bf72
 
 ## Container Environment (from RE docs)
 
-- Ubuntu 24.04 on gVisor (runsc)
+- Ubuntu 24.04 on gVisor (runsc) or Firecracker microVM (current production)
 - Egress proxy: TLS-inspecting, JWT auth in `HTTPS_PROXY` URL
 - Proxy CA at `/usr/local/share/ca-certificates/swp-ca-production.crt`
-- No open-sourced environment-manager or process_api binaries
-- Setup scripts run before Claude Code, as root, on new sessions only
+- `environment-manager` and `process_api` binaries have been reverse-engineered —
+  see <../web_env/re/environment_manager/README.md> and <../web_env/re/process_api/README.md>
+- **Setup scripts run before Claude Code, as root, on EVERY session** — not just
+  new sessions. `environment-manager`'s `Initialize` calls `runInitScript`
+  unconditionally (Step 3), regardless of session mode (`new` / `resume` /
+  `resume-cached` / `setup-only`). Steps 1 (install languages) and 2 (clone
+  sources) _are_ gated on `isNewOrSetup`, which is probably where the "new
+  sessions only" misconception came from. Verified in
+  <../web_env/re/environment_manager/src/internal/envtype/anthropic/anthropic.go>
+  Initialize(), line ~361.
 - See <../web_env/re/SETUP_FLAGS_INVENTORY.md> for full binary RE docs
+
+## Pin drift on persistent rootfs — 2026-04-14
+
+**Symptom**: agent session's SessionStart crashes during Mako template render
+with `'Undefined' object has no attribute 'kubeconfig_path'`. Alternatively:
+profile YAML fields silently no-op (e.g., `startup_env_script` ignored, secrets
+never decrypted). Container has been up for 2+ days; the install commit of
+`claude-hooks` is behind the current `npins/sources.json` pin.
+
+**Root cause**: `nix profile install "${FLAKE}#devtools"` is a no-op when the
+attrpath is already in the profile — it matches by attrpath, not by evaluated
+store hash. Firecracker microVMs persist the rootfs across sessions, and
+`environment-manager` re-runs `init_script` on every session, so `web_setup.sh`
+is called over and over — but each call hits the already-installed `devtools`
+and skips. The nix store path for `claude-hooks` freezes at whatever pin was
+current on container first-boot.
+
+Meanwhile the working tree is `git pull`'d fresh on every session (by
+environment-manager's source-handler in Step 2 for new sessions, or by our own
+git usage during the session), so `profile.yaml`, `context.mako`, and other
+repo files advance past what the installed `claude-hooks` wheel knows how to
+parse / render. The next schema-breaking change causes a silent field drop
+(Pydantic `extra="ignore"` default) or a loud template crash.
+
+**Fix**: `web_setup.sh` now runs `nix profile remove devtools || true` before
+`nix profile install`, forcing re-evaluation of `.#devtools` against the
+current flake on every session. The remove+install pair is idempotent and
+cheap (~1-2s steady state) because nix substitutes all closure paths from
+cache when the pin hasn't actually moved.
+
+**How to diagnose future occurrences**:
+
+```bash
+# Compare installed vs pinned claude-hooks commit
+readlink /nix/var/nix/profiles/default/bin/claude-hook  # → /nix/store/<hash>-claude-hooks-<ver>/bin/claude-hook
+# Then match <hash> against `git log --all --oneline` of claude-hooks source commits,
+# or check `devinfra/_build_status.txt` bundled inside the wheel if present.
+
+# Check the daemon error log for Mako/pydantic complaints
+tail -100 ~/.claude/session-env/*/hook-daemon/daemon.err.log
+
+# Check what npins says is current
+python3 -c "import json; p=json.load(open('npins/sources.json'))['pins']['claude-hooks']; print(p['url'])"
+```
+
+**Lessons**:
+
+- `nix profile install` is "add if missing" not "install-or-upgrade". Always
+  pair with `nix profile remove` (or `nix profile upgrade`) on persistent
+  rootfs where the install script re-runs.
+- When schema-level changes land in a `claude-hooks` profile YAML or Mako
+  template, they will silently break agent sessions until the next container
+  rebuild unless the install script actually pulls forward the wheel.
+- Pydantic `extra="ignore"` (default) silently drops unknown fields. Consider
+  `extra="forbid"` on config models to turn silent drops into loud crashes.

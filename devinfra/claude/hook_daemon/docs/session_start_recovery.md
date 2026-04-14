@@ -131,3 +131,52 @@ bazelisk info  # should show output_base
 
 **Do NOT** bypass certificate/proxy errors with `--noverify`, `SSL_VERIFY=false`, etc. The
 root cause is always a missing/broken session start hook. Notify the user.
+
+## Failure mode: installed wheel drifted behind the pin
+
+**Symptom**: SessionStart returns 500, and `daemon.err.log` contains one of:
+
+- `AttributeError: 'Undefined' object has no attribute '<field>'` from a Mako template render
+- `TypeError: <handler> got an unexpected keyword argument '<field>'`
+- Silently missing env vars (`BUILDBUDDY_API_KEY`, `GITHUB_TOKEN`, `KUBECONFIG`)
+  because a new `profile.yaml` field was silently dropped by Pydantic
+
+**Root cause**: the installed `claude-hooks` wheel was pinned on container
+first-boot and has never been refreshed. Meanwhile the working tree has moved
+forward and introduced schema-level changes in `profile.yaml` / `context.mako`
+/ `config.py` that the old wheel doesn't understand.
+
+This is structural — see <../../docs/web-setup-debug.md> "Pin drift on
+persistent rootfs". The short version: Firecracker rootfs is persistent, and
+`environment-manager`'s `Initialize` re-runs `init_script` (web_setup.sh) on
+every session, but `nix profile install` is a no-op if the attrpath is already
+in the profile, so without an explicit `nix profile remove` the version
+freezes at first-boot.
+
+**Diagnose**:
+
+```bash
+# 1. Confirm wheel drift
+readlink /nix/var/nix/profiles/default/bin/claude-hook
+python3 -c "import json; p=json.load(open('npins/sources.json'))['pins']['claude-hooks']; print(p['url'])"
+# The hash on the readlink line and the commit SHA in the URL should match.
+
+# 2. Confirm the specific crash
+tail -100 ~/.claude/session-env/*/hook-daemon/daemon.err.log
+```
+
+**Recover**:
+
+```bash
+# Re-run web_setup.sh — this now does `nix profile remove devtools` first,
+# so it actually pulls forward to the current pin.
+bash devinfra/claude/web_setup.sh
+
+# Then re-trigger SessionStart using the Step 2 recipe above (or just start
+# a fresh session — the new wheel will be picked up automatically).
+```
+
+If the container is from before the `web_setup.sh` fix landed (pre-commit on
+devel adding `nix profile remove` before `install`), the re-run from a stale
+container will itself be stale. In that case you need a fresh container from
+the Claude Code web UI.

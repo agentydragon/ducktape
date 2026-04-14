@@ -57,6 +57,33 @@ approval:
 - Creating a `bazel` wrapper in the session bin that injects `--bazelrc`
   when the session bazelrc exists but the shim is missing
 
+## Log file inventory
+
+When diagnosing a broken session, these are the log files worth reading, in
+order of "most likely to contain the smoking gun":
+
+| Path                                                           | What's in it                                                                                                                                                                      |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `~/.claude/session-env/<sid>/hook-daemon/daemon.err.log`       | **Unhandled exceptions / tracebacks from hook handlers** — check first.                                                                                                           |
+| `~/.claude/session-env/<sid>/hook-daemon/daemon.log`           | Structured daemon log: session start output, per-hook request logs.                                                                                                               |
+| `~/.claude/session-env/<sid>/hook-daemon/startup_failure.json` | Written when the `claude-hook` client could not reach/start the daemon. Distinguishes "dispatcher timed out waiting for socket" from "daemon crashed after accepting connection". |
+| `~/.claude/session-env/<sid>/sessionstart-hook-0.sh`           | The env file the daemon wrote. Presence with the `CANARY` marker = SessionStart got far enough to write it.                                                                       |
+| `~/.claude/session-env/<sid>/supervisor/supervisord.log`       | Supervisor daemon log (only populated when the container-runtime profile is in use).                                                                                              |
+| `/tmp/web-setup.log`                                           | `web_setup.sh` output from the most recent run. First line has `web_setup.sh commit: <sha>` — use it to detect stale setup scripts.                                               |
+
+`<sid>` can be resolved with:
+
+```bash
+LIVE=$(ps aux | grep hook_daemon | grep -v grep | grep -oP '(?<=--sock /tmp/claude-hd/)[^/]+')
+echo "$LIVE"
+```
+
+or from `$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR` (the basename).
+
+Agent discipline: when a check below fails, dump the relevant log section
+verbatim into the report's "Issues & remediation" block. Do not paraphrase
+tracebacks — the exact text is what the user needs to correlate with git log.
+
 ## SPEC acceptance checks
 
 Each check below corresponds one-to-one with a numbered criterion in
@@ -276,6 +303,16 @@ docker info >/dev/null 2>&1 && echo OK || echo FAIL
 These are not in SPEC.md but catch real-world failure modes. Include them
 in the report under a separate "Diagnostics" heading.
 
+**Before running D1/D2**, skim <../../devinfra/claude/docs/web-setup-debug.md>
+— it documents the historical failure modes (SHA-pinned setup URLs, gVisor
+`max-jobs=0`, the Firecracker "pin drift on persistent rootfs" class, the
+Nix 2.34.3 SIGABRT masking issue) and is the authoritative reference for
+how `web_setup.sh` is supposed to behave. In particular, the
+**"Pin drift on persistent rootfs"** section explains why a container
+running for more than a day or two can silently have a stale `claude-hooks`
+wheel even though `web_setup.sh` re-runs every session, and gives the
+`readlink /nix/var/nix/profiles/default/bin/claude-hook` diagnostic below.
+
 ### D1 — `web_setup.sh` freshness (web only)
 
 Anthropic reuses Firecracker microVMs; `/tmp/web-setup.log` may be from a
@@ -293,10 +330,23 @@ HEAD_COMMIT=$(git -C /home/user/ducktape rev-parse HEAD)
 ### D2 — `claude-hooks` daemon pin staleness
 
 A stale installed daemon is often the root cause of session hook failures.
-Check the pinned commit against HEAD, and check whether release CI is
-passing so that the pin would move if you waited.
+There are **two** independent kinds of staleness to check:
+
+**(a) Pin in `npins/sources.json` is behind HEAD** — sync-pins.yml didn't
+run recently, or release.yml is failing. The repo itself is out of date.
+
+**(b) Installed wheel is behind the pin** — on Firecracker web sessions
+with a persistent rootfs, `nix profile install` is a no-op when devtools
+is already installed, so the on-disk wheel can freeze at first-boot even
+though `npins/sources.json` has moved forward. This is the class of
+failure described in <../../devinfra/claude/docs/web-setup-debug.md>
+"Pin drift on persistent rootfs". Typical symptom: SessionStart crashes
+with `'Undefined' object has no attribute '<field>'` in `daemon.err.log`,
+or silently missing env vars because a new `profile.yaml` field was
+dropped by Pydantic.
 
 ```bash
+# (a) Pin in npins vs HEAD
 python3 -c "
 import json, re
 pins = json.load(open('/home/user/ducktape/npins/sources.json'))['pins']
@@ -305,12 +355,23 @@ m = re.search(r'claude-hooks-([0-9a-f]+)', url)
 print('pinned:', m.group(1) if m else 'unknown')
 "
 git -C /home/user/ducktape log --oneline -5 -- devinfra/claude/ npins/sources.json
+
+# (b) Installed wheel vs pin
+INSTALLED=$(readlink /nix/var/nix/profiles/default/bin/claude-hook 2>/dev/null)
+echo "installed: $INSTALLED"  # /nix/store/<hash>-claude-hooks-<ver>/bin/claude-hook
+# Check daemon.err.log for template/schema crashes that indicate drift
+tail -50 ~/.claude/session-env/*/hook-daemon/daemon.err.log 2>/dev/null
 ```
 
-If the pin is behind HEAD, diff the installed Nix store package against
-the repo source for breaking changes (renamed classes, changed config
-paths, removed hooks). Check GitHub CI on `agentydragon/ducktape`:
+If (a) the pin is behind HEAD, diff the installed Nix store package
+against the repo source for breaking changes (renamed classes, changed
+config paths, removed hooks). Check GitHub CI on `agentydragon/ducktape`:
 recent `release.yml` and `sync-pins.yml` runs on `devel`.
+
+If (b) the installed wheel is behind the pin, the remediation is to
+re-run `bash devinfra/claude/web_setup.sh` — but do **not** do this
+unprompted per the "observe only" rule above. Report the drift in the
+Issues section with exact commit SHAs and let the user decide.
 
 ### D3 — `git remote origin` URL reachability (web only)
 
