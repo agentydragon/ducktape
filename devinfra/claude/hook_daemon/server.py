@@ -209,8 +209,13 @@ def _handle_git_shim(report: ShimExecRequest, session: Session) -> ShimBlocked |
     return ShimExecve(argv=report.argv)
 
 
-def _handle_bazelisk_shim(report: ShimExecRequest, session: Session) -> ShimBlocked | ShimExecve:
-    """Inject --bazelrc pointing to the session bazelrc."""
+def _handle_bazel_shim(report: ShimExecRequest, session: Session) -> ShimBlocked | ShimExecve:
+    """Inject --bazelrc pointing to the session bazelrc.
+
+    Handles both ``bazelisk`` and ``bazel`` invocations. Prefer ``bazelisk``:
+    it reads ``.bazelversion`` to download and pin the exact Bazel version once;
+    a bare ``bazel`` binary uses whatever version is installed on the system.
+    """
     argv = list(report.argv)
     argv.insert(1, f"--bazelrc={session.paths.bazelrc}")
     return ShimExecve(argv=argv)
@@ -218,7 +223,10 @@ def _handle_bazelisk_shim(report: ShimExecRequest, session: Session) -> ShimBloc
 
 _SHIM_HANDLERS: dict[str, Callable[[ShimExecRequest, Session], ShimBlocked | ShimExecve]] = {
     "git": _handle_git_shim,
-    "bazelisk": _handle_bazelisk_shim,
+    "bazelisk": _handle_bazel_shim,
+    # Inject --bazelrc for bare `bazel` too, if it exists on the system.
+    # bazelisk is still canonical: it pins the version via .bazelversion.
+    "bazel": _handle_bazel_shim,
 }
 
 

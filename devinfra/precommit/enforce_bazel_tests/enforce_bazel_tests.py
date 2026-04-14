@@ -182,8 +182,7 @@ def run(workspace: BazelWorkspace, deltas: list[pygit2.DiffDelta]) -> None:
 
     if should_run:
         raise EnforceBazelTestsError("tests failed")
+    bazel_cmd = " ".join(workspace.backend.command)
     raise EnforceBazelTestsError(
-        f"affected tests are not up-to-date or failing.\n"
-        f"Run: bazel test {' '.join(targets)}\n"
-        f"Or set DUCKTAPE_PRECOMMIT_RUN_TESTS=1 to run tests automatically."
+        f"affected tests are not up-to-date or failing.\nRun: {bazel_cmd} test {' '.join(targets)}"
     )

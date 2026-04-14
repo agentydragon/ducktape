@@ -162,7 +162,12 @@ class BazelBackend(enum.Enum):
     """How Bazel commands are executed."""
 
     LOCAL = "local"
-    """Direct local ``bazel`` invocation."""
+    """Local ``bazelisk`` invocation.
+
+    ``bazelisk`` is canonical over bare ``bazel``: it reads ``.bazelversion``
+    to download and pin the exact Bazel version, so every developer and CI run
+    uses the same binary.
+    """
 
     BUILDBUDDY = "buildbuddy"
     """Remote execution via ``bbr``."""
@@ -171,19 +176,31 @@ class BazelBackend(enum.Enum):
     def command(self) -> tuple[str, ...]:
         match self:
             case BazelBackend.LOCAL:
-                return ("bazel",)
+                return ("bazelisk",)
             case BazelBackend.BUILDBUDDY:
                 return ("bbr",)
 
 
 def detect_bazel_backend() -> BazelBackend:
-    """Use BuildBuddy when ``bbr`` is on PATH and ``BUILDBUDDY_API_KEY`` is set."""
+    """Return BUILDBUDDY when ``bbr`` + ``BUILDBUDDY_API_KEY`` are available, else LOCAL.
+
+    LOCAL uses ``bazelisk`` (not bare ``bazel``) because bazelisk reads
+    ``.bazelversion`` to pin the exact Bazel release, while a system ``bazel``
+    binary may be any version.
+
+    Raises ``RuntimeError`` if neither ``bbr`` nor ``bazelisk`` is on PATH.
+    """
     if os.environ.get("BUILDBUDDY_API_KEY") and shutil.which("bbr"):
         return BazelBackend.BUILDBUDDY
+    if not shutil.which("bazelisk"):
+        raise FileNotFoundError(
+            "Neither bbr nor bazelisk found on PATH. "
+            "Install bazelisk (e.g. nix develop) or set BUILDBUDDY_API_KEY and install bbr."
+        )
     if not shutil.which("bbr"):
-        logger.warning("bbr not on PATH, falling back to local bazel")
+        logger.warning("bbr not on PATH, falling back to local bazelisk")
     elif not os.environ.get("BUILDBUDDY_API_KEY"):
-        logger.warning("BUILDBUDDY_API_KEY not set, falling back to local bazel")
+        logger.warning("BUILDBUDDY_API_KEY not set, falling back to local bazelisk")
     return BazelBackend.LOCAL
 
 
@@ -285,7 +302,7 @@ class BazelWorkspace:
             (persist_dir / "exit_code").write_text(str(result.returncode))
         ok_codes = {0, 3} if keep_going else {0}
         if result.returncode not in ok_codes:
-            raise subprocess.CalledProcessError(result.returncode, "bazel", result.stdout, result.stderr)
+            raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
 
         # TODO: bbr mixes its own log lines (git sync, progress) into
         # stdout.  We filter to lines that look like Bazel labels.  A cleaner
