@@ -1,0 +1,27 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: grocy-mcp-oidc
+  namespace: flux-system
+spec:
+  suspend: false
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./cluster/k8s/agents/grocy-mcp-oidc/app
+  prune: true
+  wait: true
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: grocy-mcp-oidc-server
+      namespace: grocy-mcp-oidc
+  dependsOn:
+    - name: gateway
+    - name: grocy-mcp-oidc-namespace
+    # agent-machine-access-tf writes the grocy-mcp-oidc secret into the
+    # namespace; without it the Deployment's secretKeyRef envs fail.
+    - name: agent-machine-access-tf

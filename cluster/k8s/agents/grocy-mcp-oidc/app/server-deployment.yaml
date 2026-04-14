@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grocy-mcp-oidc-server
+  namespace: grocy-mcp-oidc
+  labels:
+    app: grocy-mcp-oidc
+    component: server
+  annotations:
+    description: "FastMCP server generating Grocy tools from Grocy's OpenAPI spec. Per-request token exchange swaps the caller's Authentik JWT for a Grocy-proxy-scoped JWT before calling Grocy."
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grocy-mcp-oidc
+      component: server
+  template:
+    metadata:
+      labels:
+        app: grocy-mcp-oidc
+        component: server
+    spec:
+      # Don't auto-inject `<SERVICE>_PORT=tcp://...` env vars from
+      # same-namespace Services — Pydantic-settings on our pod would
+      # parse `GROCY_MCP_*_PORT=tcp://...` as the `port: int` field and
+      # crash. Same protection as x/authentik_mcp_poc.
+      enableServiceLinks: false
+      containers:
+        - name: server
+          image: ghcr.io/agentydragon/grocy-mcp:latest # {"$imagepolicy": "flux-system:grocy-mcp-oidc-server"}
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8765
+              protocol: TCP
+          env:
+            # OIDCProxy's encrypted DCR client store needs a writable
+            # path; the OCI image runs as user 1000 with no HOME.
+            - name: FASTMCP_HOME
+              value: "/tmp/fastmcp"
+            - name: GROCY_MCP_OIDC_ISSUER
+              value: "https://auth.allegedly.works/application/o/grocy-mcp/"
+            - name: GROCY_MCP_PUBLIC_BASE_URL
+              value: "https://grocy-mcp.allegedly.works"
+            - name: GROCY_MCP_GROCY_URL
+              value: "https://grocy.allegedly.works"
+            - name: GROCY_MCP_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: grocy-mcp-oidc
+                  key: client_id
+            - name: GROCY_MCP_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: grocy-mcp-oidc
+                  key: client_secret
+            # Existing Grocy proxy provider's auto-generated client_id
+            # — used by AuthentikExchangeAuth as the `client_id` in the
+            # RFC 7521 jwt-bearer token exchange.
+            - name: GROCY_MCP_GROCY_PROXY_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: grocy-mcp-oidc
+                  key: grocy_proxy_client_id
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          readinessProbe:
+            tcpSocket:
+              port: 8765
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8765
+            initialDelaySeconds: 15
+            periodSeconds: 20

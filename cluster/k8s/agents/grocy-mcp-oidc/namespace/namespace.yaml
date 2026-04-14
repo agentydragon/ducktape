@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: grocy-mcp-oidc
+  labels:
+    name: grocy-mcp-oidc
+    goldilocks.fairwinds.com/enabled: "false"
+  annotations:
+    description: "Auth-aware Grocy MCP server (FastMCP + OIDCProxy). Distinct from the legacy grocy-mcp namespace that hosts the Envoy-based M2M stack."

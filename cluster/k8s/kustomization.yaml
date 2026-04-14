@@ -51,6 +51,8 @@ resources:
   - agents/kagent/secrets/flux-kustomization.yaml
   - agents/kagent/app/flux-kustomization.yaml
   - agents/grocy-mcp/flux-kustomization.yaml
+  - agents/grocy-mcp-oidc/namespace/flux-kustomization.yaml
+  - agents/grocy-mcp-oidc/app/flux-kustomization.yaml
   - agents/homeassistant-proxy/flux-kustomization.yaml
   - agents/openclaw/operator/flux-kustomization.yaml
   - agents/openclaw/gateway-namespace/flux-kustomization.yaml

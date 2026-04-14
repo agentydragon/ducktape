@@ -49,6 +49,25 @@ data "authentik_group" "admins" {
   name = "authentik Admins"
 }
 
+# Signing key + OIDC scope property mappings for the grocy-mcp user-login
+# OAuth2 provider below. Mirrors
+# <../authentik-mcp-poc/main.tf>'s data-source block.
+data "authentik_certificate_key_pair" "self_signed" {
+  name = "authentik Self-signed Certificate"
+}
+
+data "authentik_property_mapping_provider_scope" "openid" {
+  managed = "goauthentik.io/providers/oauth2/scope-openid"
+}
+
+data "authentik_property_mapping_provider_scope" "email" {
+  managed = "goauthentik.io/providers/oauth2/scope-email"
+}
+
+data "authentik_property_mapping_provider_scope" "profile" {
+  managed = "goauthentik.io/providers/oauth2/scope-profile"
+}
+
 # --- Service Account ---
 # Shared service account for Claude/OpenClaw sandbox agents.
 # Used for Authentik API access (e.g., querying user info).
@@ -104,6 +123,12 @@ resource "authentik_provider_proxy" "grocy" {
   authorization_flow    = data.authentik_flow.implicit_consent.id
   invalidation_flow     = data.authentik_flow.invalidation.id
   access_token_validity = "hours=24"
+
+  # Lets the grocy-mcp server's tool handlers mint Grocy-scoped JWTs on
+  # behalf of the calling MCP user, via the RFC 7521 jwt-bearer client-
+  # credentials path. See x/authentik_mcp_poc/NOTES.md §4-§5 for the full
+  # trace through Authentik's __validate_jwt_from_provider.
+  jwt_federation_providers = [authentik_provider_oauth2.grocy_mcp.id]
 }
 
 resource "authentik_application" "grocy" {
@@ -198,5 +223,82 @@ resource "kubernetes_config_map" "grocy_envoy_vars" {
 
   data = {
     CLIENT_ID = authentik_provider_proxy.grocy.client_id
+  }
+}
+
+# --- Grocy MCP: OAuth2 provider for user-login (OIDCProxy upstream) ---
+#
+# Wiring for x/grocy_mcp — an auth-aware MCP server that drives Grocy's
+# REST API on behalf of the calling user. The server uses FastMCP's
+# OIDCProxy, which requires a dedicated confidential OAuth2 client so
+# claude.ai / Claude Code can drive OAuth 2.1 + PKCE + RFC 7591 DCR
+# against it. The existing `grocy` proxy provider above cannot be reused
+# for this (its OAuth2 client is locked to the outpost's internal
+# callback URL). The new provider is then listed in the proxy provider's
+# `jwt_federation_providers` so the tool handlers can exchange the
+# caller's upstream token for a Grocy-scoped one via the RFC 7521
+# jwt-bearer client-credentials path — see
+# <x/authentik_mcp_poc/NOTES.md> §4-§6 for why each piece is
+# load-bearing.
+
+resource "authentik_provider_oauth2" "grocy_mcp" {
+  name               = "grocy-mcp"
+  client_id          = "grocy-mcp"
+  client_type        = "confidential"
+  authorization_flow = data.authentik_flow.implicit_consent.id
+  invalidation_flow  = data.authentik_flow.invalidation.id
+  signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+  issuer_mode                = "per_provider"
+  include_claims_in_id_token = true
+
+  property_mappings = [
+    data.authentik_property_mapping_provider_scope.openid.id,
+    data.authentik_property_mapping_provider_scope.email.id,
+    data.authentik_property_mapping_provider_scope.profile.id,
+  ]
+
+  allowed_redirect_uris = [
+    {
+      matching_mode = "strict"
+      # OIDCProxy's redirect path defaults to "/auth/callback" relative
+      # to its `base_url`. x/grocy_mcp/server.py sets base_url to the
+      # bare public URL (no /mcp) — see the `_build_auth` comment for
+      # why.
+      url = "https://grocy-mcp.allegedly.works/auth/callback"
+    },
+  ]
+}
+
+resource "authentik_application" "grocy_mcp" {
+  name              = "Grocy MCP"
+  slug              = "grocy-mcp"
+  protocol_provider = authentik_provider_oauth2.grocy_mcp.id
+  meta_description  = "Auth-aware MCP server for Grocy — OIDCProxy upstream for user login"
+  meta_launch_url   = "https://grocy-mcp.allegedly.works"
+}
+
+resource "authentik_policy_binding" "grocy_mcp_admins" {
+  target = authentik_application.grocy_mcp.uuid
+  group  = data.authentik_group.admins.id
+  order  = 0
+}
+
+# K8s secret with OIDC client credentials and the grocy proxy provider's
+# auto-generated client_id that the server uses as the `client_id` in its
+# RFC 7521 jwt-bearer token exchange. Namespace ownership: the
+# `grocy-mcp-oidc-namespace` Flux Kustomization creates the namespace
+# first; `agent-machine-access-tf` depends on it so TF runs after the
+# namespace exists.
+resource "kubernetes_secret" "grocy_mcp_oidc" {
+  metadata {
+    name      = "grocy-mcp-oidc"
+    namespace = "grocy-mcp-oidc"
+  }
+
+  data = {
+    client_id             = authentik_provider_oauth2.grocy_mcp.client_id
+    client_secret         = authentik_provider_oauth2.grocy_mcp.client_secret
+    grocy_proxy_client_id = authentik_provider_proxy.grocy.client_id
   }
 }

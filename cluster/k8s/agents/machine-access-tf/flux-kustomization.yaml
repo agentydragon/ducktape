@@ -20,3 +20,6 @@ spec:
   dependsOn:
     - name: tofu-controller
     - name: authentik
+    # TF writes the `grocy-mcp-oidc` secret into the `grocy-mcp-oidc`
+    # namespace, so that namespace must exist first.
+    - name: grocy-mcp-oidc-namespace
