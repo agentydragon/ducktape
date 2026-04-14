@@ -21,7 +21,6 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from importlib.resources import files
 
 import httpx
 import uvicorn
@@ -32,6 +31,7 @@ from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.providers.openapi import MCPType, RouteMap
 
+from util.bazel.runfiles import get_required_path
 from x.grocy_mcp.auth import AuthentikExchangeAuth
 from x.grocy_mcp.config import ServerSettings
 
@@ -95,8 +95,10 @@ def _strip_empty_enums(node: object) -> None:
 
 
 def _load_openapi_spec() -> dict[str, object]:
-    """Return the checked-in Grocy OpenAPI 3.1 spec as a dict."""
-    spec: dict[str, object] = json.loads(files("x.grocy_mcp").joinpath("grocy_openapi.json").read_text())
+    """Return the Grocy OpenAPI 3.1 spec, fetched via the @grocy_openapi_spec
+    http_file repo (pinned to a Grocy release tag in MODULE.bazel)."""
+    spec_path = get_required_path("grocy_openapi_spec/file/grocy.openapi.json")
+    spec: dict[str, object] = json.loads(spec_path.read_text())
     _strip_empty_enums(spec)
     return spec
 

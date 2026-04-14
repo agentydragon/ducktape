@@ -28,11 +28,12 @@ py_library(
 py_library(
     name = "server",
     srcs = ["server.py"],
-    data = ["grocy_openapi.json"],
+    data = ["@grocy_openapi_spec//file"],
     visibility = ["//visibility:public"],
     deps = [
         ":auth",
         ":config",
+        "//util/bazel:runfiles",
         "@pypi//fastmcp",
         "@pypi//httpx",
         "@pypi//uvicorn",

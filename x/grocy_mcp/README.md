@@ -93,15 +93,21 @@ request-scoped contextvars via `get_access_token()`. See <auth.py>.
 
 ## Refreshing the OpenAPI spec
 
-The spec is checked in so container builds are deterministic and have no
-startup-time dependency on demo.grocy.info. Refresh when Grocy ships a
-new version:
+The spec is fetched at build time from
+`https://raw.githubusercontent.com/grocy/grocy/<tag>/grocy.openapi.json`
+via the `@grocy_openapi_spec` `http_file` repo declared in
+<../../MODULE.bazel>. Refresh when Grocy ships a new version:
 
 ```bash
-curl -sSfL https://demo.grocy.info/api/openapi/specification \
-  -o x/grocy_mcp/grocy_openapi.json
-git diff x/grocy_mcp/grocy_openapi.json
-bbr test //x/grocy_mcp:test_server   # catches schema drift
+# 1. Pick a new release tag from https://github.com/grocy/grocy/releases
+NEW_TAG=v4.7.0
+# 2. Fetch the file and recompute its sha256
+curl -sSfL "https://raw.githubusercontent.com/grocy/grocy/${NEW_TAG}/grocy.openapi.json" \
+  | sha256sum
+# 3. Bump `urls` and `sha256` on the `grocy_openapi_spec` http_file in MODULE.bazel
+# 4. Run the smoke test — catches new spec quirks (e.g. additional empty
+#    enums) FastMCP rejects.
+bbr test //x/grocy_mcp:test_server
 ```
 
 ## End-to-end verification

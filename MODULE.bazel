@@ -700,6 +700,17 @@ http_file(
     urls = ["https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"],
 )
 
+# Grocy OpenAPI 3.1 spec — fetched verbatim from the upstream repo so
+# `//x/grocy_mcp:server` can drive `FastMCP.from_openapi` without
+# vendoring the 100 KB JSON in-tree. Refresh by bumping the tag and
+# updating the sha256.
+http_file(
+    name = "grocy_openapi_spec",
+    downloaded_file_path = "grocy.openapi.json",
+    sha256 = "04280473b40b031a30c335f7991c959e51c6f42e91689b2d526886f997b368c7",
+    urls = ["https://raw.githubusercontent.com/grocy/grocy/v4.6.0/grocy.openapi.json"],
+)
+
 # FreeCAD 1.2.dev from conda.
 # Lockfile generated with pixi (not bazel run lockfile.update — rules_conda's
 # lock_environments target has a Python version conflict with our 3.13 toolchain).

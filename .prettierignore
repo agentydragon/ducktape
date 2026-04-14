@@ -50,8 +50,3 @@ props/specimens/*/*/code/**
 
 # SOPS-encrypted file - prettier reformats the long encrypted blob
 secrets/claude-web-k8s-token.yaml
-
-# Upstream-fetched Grocy OpenAPI spec - kept verbatim from
-# https://demo.grocy.info/api/openapi/specification so refresh diffs
-# stay clean.
-x/grocy_mcp/grocy_openapi.json
