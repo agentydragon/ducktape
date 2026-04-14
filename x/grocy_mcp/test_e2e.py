@@ -21,7 +21,6 @@ from pathlib import Path
 import httpx
 import pytest
 import pytest_bazel
-from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
 
@@ -130,23 +129,22 @@ def grocy_base_url(grocy_container: LoggedContainer) -> str:
     return f"http://{host}:{port}"
 
 
-@pytest.fixture(scope="session")
-def grocy_mcp(grocy_base_url: str) -> FastMCP:
-    client = httpx.AsyncClient(base_url=f"{grocy_base_url}/api", timeout=30.0)
-    return build_mcp(_settings(grocy_base_url), client=client)
-
-
 @pytest.fixture
-async def mcp_client(grocy_mcp: FastMCP) -> AsyncGenerator[Client]:
+async def mcp_client(grocy_base_url: str) -> AsyncGenerator[Client]:
     """Function-scoped MCP client exercising the full MCP protocol in-process.
 
-    Function scope (not session) ensures the client and its transport share the same
-    event loop as the test function. pytest-asyncio creates a new event loop per test
-    function; a session-scoped async fixture would run in a different loop and the
-    client's internal asyncio primitives would deadlock when used from the test loop.
+    A fresh httpx.AsyncClient is created per test so connection pools don't carry
+    sockets from a previous test's (now-closed) event loop. Session-scoping the
+    httpx client caused "Event loop is closed" on the third test because asyncio
+    transports are pinned to the loop that opened them.
     """
-    async with Client(FastMCPTransport(grocy_mcp)) as client:
-        yield client
+    http_client = httpx.AsyncClient(base_url=f"{grocy_base_url}/api", timeout=30.0)
+    try:
+        mcp = build_mcp(_settings(grocy_base_url), client=http_client)
+        async with Client(FastMCPTransport(mcp)) as client:
+            yield client
+    finally:
+        await http_client.aclose()
 
 
 # ── Tool name coverage ───────────────────────────────────────────────────
