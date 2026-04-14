@@ -3,7 +3,6 @@
 
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_python//python:packaging.bzl", "py_wheel")
-load("//devinfra/ghcr_push:push.bzl", "ghcr_push")
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
@@ -62,10 +61,4 @@ oci_load(
     image = ":image",
     repo_tags = ["inventree-custom:latest"],
     visibility = ["//visibility:public"],
-)
-
-ghcr_push(
-    name = "push_ghcr",
-    image = ":image",
-    repository = "ghcr.io/agentydragon/inventree",
 )

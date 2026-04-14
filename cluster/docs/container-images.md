@@ -12,9 +12,13 @@ Props agent images are still published to Harbor (`registry.allegedly.works/prop
    external toolchains). Set `org.opencontainers.image.source` label.
    Example: <../k8s/activitywatch/BUILD.bazel>
 
-2. **Push**: Add a `ghcr_push` target (from `//devinfra/ghcr_push:push.bzl`).
-   Register in `devinfra/ci/generate_buildbuddy.py` so CI pushes on every `devel` commit.
-   The push script auto-sets GHCR package visibility to public.
+2. **Push**: Add a row to the matrix in `.github/workflows/push-images.yml`:
+   `{ image: "//pkg:image", image_name: "<ghcr-name>", test_target: "//pkg/..." }`.
+   The workflow builds the image on RBE, downloads it to the runner, and `crane push`es
+   to `ghcr.io/agentydragon/<image_name>`. Pushes are deduped by content digest against
+   the newest existing `devel-*` tag — unchanged images are no-ops, so Flux ImagePolicy
+   doesn't churn deployments. Set `org.opencontainers.image.source` on the `oci_image`
+   to link the package to the repo on first push.
 
 3. **Tag policy — avoid `:latest`**: Use Flux image automation to track pinned tags
    (`{branch}-{timestamp}-{sha7}`). For in-cluster images:

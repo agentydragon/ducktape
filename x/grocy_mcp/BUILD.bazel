@@ -1,6 +1,5 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
-load("//devinfra/ghcr_push:push.bzl", "ghcr_push")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
@@ -187,10 +186,4 @@ oci_load(
     name = "server_load",
     image = ":server_image",
     repo_tags = ["grocy-mcp:latest"],
-)
-
-ghcr_push(
-    name = "server_push_ghcr",
-    image = ":server_image",
-    repository = "ghcr.io/agentydragon/grocy-mcp",
 )

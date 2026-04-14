@@ -1,10 +1,31 @@
-# Push OCI images to GHCR via bb remote (parallel matrix).
+# Push OCI images to GHCR via bb remote build + runner-side `crane push`.
 #
-# Each image is pushed independently — a broken build doesn't block others.
-# Images with a test_target are only pushed if their tests pass (Bazel remote
-# cache makes this a fast cache lookup after bazel-ci already ran //...).
-# Images without a test_target are always pushed on commit.
-# Images with unchanged digests are skipped (ghcr_push_lib deduplicates).
+# For each image in the matrix:
+#
+#   1. Optionally run tests (`test_target`). A failing test skips this
+#      image's push but does not fail the matrix job — other images keep
+#      pushing. (Same continue-on-error semantics as before the rewrite.)
+#
+#   2. `bb remote build <image>.digest --remote_download_outputs=toplevel`
+#      downloads only the ~70-byte sibling `.json.sha256` digest file that
+#      `rules_oci`'s `oci_image` macro auto-generates. The digest is
+#      reproducible across rebuilds, so when nothing changed this is a
+#      Bazel cache hit that ships back a single tiny file.
+#
+#   3. `crane ls` + `crane digest` against the newest `devel-*` tag (the
+#      one Flux ImagePolicy currently picks). If the local digest equals
+#      the remote digest, skip the push entirely — no new tag, no Flux
+#      churn. Otherwise mark `push=true` and continue.
+#
+#   4. Only when push is needed:
+#        a) `bb remote build <image> --remote_download_outputs=toplevel`
+#           downloads the OCI layout directory.
+#        b) `crane push` + `crane tag <pinned> latest`.
+#
+# Credentials live exactly where they should: the workflow's
+# `secrets.GITHUB_TOKEN` (with `permissions: packages: write`) is used by
+# `crane auth login` on the runner. No more env_overrides plumbing
+# through the BB runner VM.
 name: Push Images
 
 on:
@@ -26,40 +47,63 @@ env:
 
 jobs:
   push:
-    name: Push ${{ matrix.target }}
+    name: Push ${{ matrix.image_name }}
+    # Only push from devel. `workflow_dispatch` can be triggered from any
+    # branch, but Flux ImagePolicy filters on `devel-YYYYMMDDHHMMSS-shortsha`
+    # and picks newest-alphabetical — so pushing that tag shape from a
+    # feature branch would immediately deploy unmerged code. Gate at the
+    # job level rather than on individual steps so the whole matrix
+    # short-circuits off-devel with a clear "skipped" status.
+    if: github.ref_name == 'devel'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Images with test gates: only pushed if their tests pass.
-          - target: //airlock:push_ghcr
-            test_target: //airlock/...
-          - target: //airlock/auth_proxy:push_ghcr
-            test_target: //airlock/auth_proxy/...
-          - target: //homeassistant/proxy:push_ghcr
-            test_target: //homeassistant/proxy/...
-          - target: //mcp_infra/exec:push_ghcr
-            test_target: //mcp_infra/exec/...
-          - target: //props/backend:push_ghcr
-            test_target: //props/backend/...
-          - target: //tana/token_broker:push_ghcr
-            test_target: //tana/token_broker/...
-          - target: //x/authentik_mcp_poc:server_push_ghcr
-            test_target: //x/authentik_mcp_poc/...
-          - target: //x/authentik_mcp_poc:backend_push_ghcr
-            test_target: //x/authentik_mcp_poc/...
-          - target: //x/grocy_mcp:server_push_ghcr
-            test_target: //x/grocy_mcp/...
-          # Images without tests: always pushed on commit.
-          - target: //cluster/k8s/agents/claude-token-rotation:push_ghcr
-          - target: //cluster/k8s/inventree/token-provisioner:push_ghcr
-          - target: //devinfra/firecracker/manager:push_ghcr
-          - target: //devinfra/firecracker/vm_pod:push_ghcr
-          - target: //inventree_utils/rai_plugin:push_ghcr
-          - target: //openclaw/exec:push_ghcr
-          - target: //third_party/activitywatch:push_ghcr
+          # Test-gated images: push only if their tests pass.
+          - { image: "//airlock:image", image_name: airlock, test_target: "//airlock/..." }
+          - { image: "//airlock/auth_proxy:image", image_name: auth-proxy, test_target: "//airlock/auth_proxy/..." }
+          - {
+              image: "//homeassistant/proxy:image",
+              image_name: homeassistant-proxy,
+              test_target: "//homeassistant/proxy/...",
+            }
+          - { image: "//mcp_infra/exec:direct_image", image_name: exec-backend, test_target: "//mcp_infra/exec/..." }
+          - { image: "//props/backend:image", image_name: props-backend, test_target: "//props/backend/..." }
+          - {
+              image: "//tana/token_broker:image",
+              image_name: tana-token-broker,
+              test_target: "//tana/token_broker/...",
+            }
+          - {
+              image: "//x/authentik_mcp_poc:server_image",
+              image_name: authentik-mcp-poc-server,
+              test_target: "//x/authentik_mcp_poc/...",
+            }
+          - {
+              image: "//x/authentik_mcp_poc:backend_image",
+              image_name: authentik-mcp-poc-backend,
+              test_target: "//x/authentik_mcp_poc/...",
+            }
+          - { image: "//x/grocy_mcp:server_image", image_name: grocy-mcp, test_target: "//x/grocy_mcp/..." }
+          # Untested images: always-push if content changed. Explicit
+          # `test_target: ""` so the `matrix.test_target != ''` check on
+          # the test step evaluates the same as on test-gated rows —
+          # GitHub Actions treats a missing matrix key as null, which
+          # compares != "" truthy, so we'd accidentally run an empty
+          # `bb remote test` on these rows otherwise.
+          - {
+              image: "//cluster/k8s/agents/claude-token-rotation:image",
+              image_name: claude-token-rotation,
+              test_target: "",
+            }
+          - { image: "//cluster/k8s/inventree/token-provisioner:image", image_name: token-provisioner, test_target: "" }
+          - { image: "//devinfra/firecracker/manager:image", image_name: firecracker-manager, test_target: "" }
+          - { image: "//devinfra/firecracker/vm_pod:image", image_name: fc-vm-pod, test_target: "" }
+          - { image: "//inventree_utils/rai_plugin:image", image_name: inventree, test_target: "" }
+          - { image: "//openclaw/exec:image", image_name: openclaw-exec, test_target: "" }
+          - { image: "//third_party/activitywatch:image", image_name: aw-server, test_target: "" }
     steps:
       - uses: actions/checkout@v6
         with:
@@ -82,22 +126,125 @@ jobs:
           rbe_image: ${{ inputs.rbe_image }}
         continue-on-error: true
 
-      - name: Push image (skipped if tests failed)
+      - name: Resolve image output paths
+        if: steps.test.outcome == 'success' || steps.test.outcome == 'skipped'
+        id: paths
+        shell: bash
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          # //pkg:name → pkg, name
+          PKG="${IMAGE#//}"
+          PKG="${PKG%:*}"
+          NAME="${IMAGE##*:}"
+          # `bb remote build` downloads artifacts into
+          # `bb-out/bazel-out/<config>/bin/<pkg>/<name>`. The `<config>` is
+          # `k8-fastbuild` for the Linux x86_64 fastbuild we always use
+          # here (via --config=rbe --config=ci in the bb-remote action).
+          # There is no `bb-out/bazel-bin/` convenience symlink on `bb
+          # remote` output — that symlink only exists in local Bazel
+          # workspaces.
+          BIN="bb-out/bazel-out/k8-fastbuild/bin"
+          {
+            echo "oci_dir=${BIN}/${PKG}/${NAME}"
+            echo "digest_file=${BIN}/${PKG}/${NAME}.json.sha256"
+          } >> "$GITHUB_OUTPUT"
+
+      # Phase 1 — download just the .digest sibling target (~70 bytes).
+      - name: bb remote build digest
         if: steps.test.outcome == 'success' || steps.test.outcome == 'skipped'
         uses: ./.github/actions/bb-remote
         with:
-          args: run --remote_download_toplevel ${{ matrix.target }}
+          args: build ${{ matrix.image }}.digest --remote_download_outputs=toplevel
           rbe_image: ${{ inputs.rbe_image }}
-          # GHCR auth: forward the workflow-scoped GITHUB_TOKEN via bb remote
-          # env-overrides so crane push inside the runner VM logs in as the
-          # workflow. Advantages over a long-lived PAT:
-          #   * The `permissions: packages: write` block above is enforced per
-          #     run instead of relying on secret scope.
-          #   * First-push packages are automatically linked to this repo and
-          #     inherit its (public) visibility — no post-push API PATCH.
-          #   * The token rotates per job, not per manual rotation.
-          # Username is literally `x-access-token`; that's the conventional
-          # form GHCR accepts alongside a workflow token.
-          env_overrides: |
-            GHCR_TOKEN=${{ secrets.GITHUB_TOKEN }}
-            GHCR_USERNAME=x-access-token
+
+      - uses: imjasonh/setup-crane@v0.4
+        if: steps.test.outcome == 'success' || steps.test.outcome == 'skipped'
+
+      - name: Check whether digest already published
+        if: steps.test.outcome == 'success' || steps.test.outcome == 'skipped'
+        id: dedup
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DIGEST_FILE: ${{ steps.paths.outputs.digest_file }}
+          REPO: ghcr.io/agentydragon/${{ matrix.image_name }}
+        run: |
+          set -euo pipefail
+
+          echo "$GITHUB_TOKEN" \
+            | crane auth login ghcr.io -u x-access-token --password-stdin
+
+          LOCAL_DIGEST=$(cat "$DIGEST_FILE")
+
+          # Newest devel-* tag = the one Flux ImagePolicy currently picks
+          # (filters on `^devel-\d{14}-[0-9a-f]{7}$`, alphabetical: asc).
+          #
+          # `crane ls` on a brand-new GHCR package exits non-zero with
+          # `NAME_UNKNOWN: repository name not known to registry` — that's
+          # an expected first-push case, treat it as "no existing tag".
+          # Any OTHER failure (auth, transport, 5xx) must fail loudly; we
+          # don't want to silently fall into "push a new tag" on e.g. an
+          # auth glitch, because that would churn Flux ImagePolicy.
+          #
+          # Using a temp file + explicit exit code capture so a failure
+          # inside the command substitution doesn't get swallowed by
+          # bash's errexit-in-subshell semantics.
+          ls_stderr=$(mktemp)
+          ls_rc=0
+          crane_ls_out=$(crane ls "$REPO" 2>"$ls_stderr") || ls_rc=$?
+          if [ $ls_rc -ne 0 ]; then
+            if grep -q NAME_UNKNOWN "$ls_stderr"; then
+              echo "$REPO: new package, no existing tags"
+              LATEST=""
+            else
+              echo "crane ls $REPO failed (exit $ls_rc):" >&2
+              cat "$ls_stderr" >&2
+              rm -f "$ls_stderr"
+              exit 1
+            fi
+          else
+            LATEST=$(echo "$crane_ls_out" \
+              | { grep -E '^devel-[0-9]{14}-[0-9a-f]{7}$' || true; } \
+              | sort | tail -1)
+          fi
+          rm -f "$ls_stderr"
+
+          PUSH=true
+          if [ -n "$LATEST" ]; then
+            REMOTE_DIGEST=$(crane digest "$REPO:$LATEST")
+            if [ "$LOCAL_DIGEST" = "$REMOTE_DIGEST" ]; then
+              echo "$REPO: digest unchanged ($LOCAL_DIGEST), latest devel tag still $LATEST — skipping push"
+              PUSH=false
+            fi
+          fi
+
+          {
+            echo "push=$PUSH"
+            echo "local_digest=$LOCAL_DIGEST"
+            echo "latest=${LATEST:-<none>}"
+          } >> "$GITHUB_OUTPUT"
+
+      # Phase 2 — only when content actually changed: download the OCI
+      # layout directory and crane push it.
+      - name: bb remote build OCI layout
+        if: steps.dedup.outputs.push == 'true'
+        uses: ./.github/actions/bb-remote
+        with:
+          args: build ${{ matrix.image }} --remote_download_outputs=toplevel
+          rbe_image: ${{ inputs.rbe_image }}
+
+      - name: Push to GHCR
+        if: steps.dedup.outputs.push == 'true'
+        shell: bash
+        env:
+          OCI_DIR: ${{ steps.paths.outputs.oci_dir }}
+          REPO: ghcr.io/agentydragon/${{ matrix.image_name }}
+          LOCAL_DIGEST: ${{ steps.dedup.outputs.local_digest }}
+          LATEST: ${{ steps.dedup.outputs.latest }}
+        run: |
+          set -euo pipefail
+          PINNED="devel-$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
+          echo "$REPO: pushing $LOCAL_DIGEST as :$PINNED (was :$LATEST)"
+          crane push "$OCI_DIR" "$REPO:$PINNED"
+          crane tag "$REPO:$PINNED" latest

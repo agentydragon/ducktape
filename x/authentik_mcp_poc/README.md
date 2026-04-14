@@ -235,7 +235,7 @@ be "real":
 | `backend.py`                                                                        | FastAPI whoami backend, trusts `X-Authentik-*`                 |
 | `config.py`                                                                         | Pydantic settings for both processes                           |
 | `test_backend.py`                                                                   | Smoke test for the backend header contract                     |
-| `BUILD.bazel`                                                                       | Two `oci_image` / `ghcr_push` pairs                            |
+| `BUILD.bazel`                                                                       | Two `oci_image` targets (server + backend)                     |
 | `../../cluster/terraform/gitops/authentik-mcp-poc/`                                 | Both Authentik providers + K8s secret                          |
 | `../../cluster/k8s/agents/authentik-mcp-poc/namespace/`                             | Layer 1: namespace-only Flux Kustomization                     |
 | `../../cluster/k8s/agents/authentik-mcp-poc/tf/`                                    | Layer 2: Flux Terraform CRD wrapping the TF module             |
@@ -359,9 +359,10 @@ outpost let the request through.
 bbr build //x/authentik_mcp_poc/...
 bbr test  //x/authentik_mcp_poc/...
 
-# Push to GHCR (CI does this automatically on merge to devel):
-bb run //x/authentik_mcp_poc:server_push_ghcr
-bb run //x/authentik_mcp_poc:backend_push_ghcr
+# CI pushes to GHCR automatically on merge to devel via the
+# .github/workflows/push-images.yml matrix. Each merge that touches
+# x/authentik_mcp_poc/ updates ghcr.io/agentydragon/authentik-mcp-poc-{server,backend}.
+# Pushes are deduped by content digest, so unchanged images are no-ops.
 ```
 
 ## Verification in the cluster

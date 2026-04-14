@@ -16,8 +16,11 @@ inputs:
   env_overrides:
     description: >
       Newline-separated KEY=VALUE pairs forwarded to the runner via
-      x-buildbuddy-platform.env-overrides. Values from setup-ci-secrets are
-      already masked via ::add-mask:: so they won't leak in logs.
+      x-buildbuddy-platform.env-overrides. Only still used by
+      .github/workflows/props-images.yml, which pushes to the private
+      props registry from inside the BB runner VM. The GHCR push path
+      (.github/workflows/push-images.yml) downloads OCI layouts to the
+      runner and calls `crane push` directly, so it doesn't need this.
     required: false
     default: ""
   rbe_image:

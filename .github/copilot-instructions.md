@@ -63,9 +63,12 @@ redundant application.
 ### Container Images
 
 Container images are built with Bazel (`rules_oci`, `rules_distroless`), not Dockerfiles.
-Images are pushed to GHCR via `ghcr_push` targets, triggered by BuildBuddy CI. The RBE
-worker image and a few upstream-derived images (OpenClaw, Tana MCP) still use Dockerfiles
-with GitHub Actions workflows, but all new images should use `oci_image` + `ghcr_push`.
+The `.github/workflows/push-images.yml` matrix builds each `oci_image` on RBE,
+downloads the layout to the GHA runner, and pushes via `crane`. Pushes are
+content-deduped against the newest `devel-*` tag in the registry so unchanged images
+don't trigger Flux deployment rolls. The RBE worker image and a few upstream-derived
+images (OpenClaw, Tana MCP) still use Dockerfiles with GitHub Actions workflows, but
+all new images should use `oci_image` + a row in `push-images.yml`'s matrix.
 
 ## Verification (Required)
 
