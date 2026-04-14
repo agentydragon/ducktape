@@ -28,3 +28,5 @@ resources:
   - authentik-mcp-poc-server-image-policy.yaml
   - authentik-mcp-poc-backend-image-repository.yaml
   - authentik-mcp-poc-backend-image-policy.yaml
+  - grocy-mcp-oidc-server-image-repository.yaml
+  - grocy-mcp-oidc-server-image-policy.yaml

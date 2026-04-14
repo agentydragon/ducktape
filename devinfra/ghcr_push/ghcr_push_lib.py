@@ -56,6 +56,15 @@ class ImagePusher:
             tags = self.crane.ls(repo)
         except subprocess.CalledProcessError:
             return None
+        except RuntimeError as exc:
+            # `util.crane.Crane._run` wraps subprocess errors in RuntimeError,
+            # so first-push bootstrap (`NAME_UNKNOWN` from GHCR because the
+            # repository doesn't exist yet) no longer surfaces as
+            # CalledProcessError here. Treat it as "no previous tags" so
+            # brand-new images can land their first push.
+            if "NAME_UNKNOWN" not in str(exc):
+                raise
+            return None
         branch_tags = sorted(t for t in tags if t.startswith(f"{self.branch}-"))
         return branch_tags[-1] if branch_tags else None
 
