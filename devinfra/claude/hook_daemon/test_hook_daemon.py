@@ -155,7 +155,12 @@ class TestHealth:
 
 def _shim_request(shim: str, argv: list[str], env: dict[str, str] | None = None) -> ShimExecRequest:
     return ShimExecRequest(
-        shim=shim, session_id="test-session", cwd="/tmp", argv=argv, env=env or {"HOME": "/tmp", "PATH": "/usr/bin"}
+        shim=shim,
+        session_id="test-session",
+        cwd="/tmp",
+        argv=argv,
+        pid=0,
+        env=env or {"HOME": "/tmp", "PATH": "/usr/bin"},
     )
 
 
