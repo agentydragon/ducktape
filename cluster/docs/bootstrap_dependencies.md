@@ -172,6 +172,17 @@ decryptable (L5) and on dependency chains between kustomizations (cert-manager
 Services with external credentials read them from `*.sops.yaml` files
 decrypted by Flux. See [App Credentials](#app-credentials) for the full list.
 
+### flux-webhook-token
+
+The `flux-webhook-token` tofu-controller module creates the `github-webhook-token` k8s
+secret (consumed by the Flux `github` Receiver) and the GitHub repository webhook on
+`ducktape`. It reads `github-secrets-sync-pat` (provided by `github-secrets-sync-secrets`).
+The `flux-webhook` Kustomization depends on `flux-webhook-token`.
+
+**If `flux-webhook` receiver stops working after bootstrap**: Check `flux-webhook-token`
+reconciliation. The token and webhook URL use `ignore_changes` and are stable across
+re-applies — only resource recreation changes them.
+
 ## L7: NixOS Worker Integration
 
 wyrm2 and rugged join the cluster via kubelet TLS bootstrap over Nebula mesh.

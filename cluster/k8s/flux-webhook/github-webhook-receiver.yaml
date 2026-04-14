@@ -9,7 +9,7 @@
 # an ImageRepository scan on a git push is a no-op, and a GitRepository reconciliation
 # on an image push is a no-op.
 #
-# The GitHub webhook is auto-configured by terraform/gitops/harbor-ci
+# The GitHub webhook is auto-configured by terraform/gitops/flux-webhook-token
 # (github_repository_webhook with events = ["push", "registry_package"]).
 #
 # Requirement for registry_package: each GHCR package must be linked to the
