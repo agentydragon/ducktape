@@ -25,7 +25,7 @@ def _settings() -> ServerSettings:
 async def test_dump_all_tools() -> None:
     mcp = build_mcp(_settings())
     tools = await mcp.list_tools()
-    all_tools = [tool.model_dump(mode="json") for tool in tools]
+    all_tools = [tool.to_mcp_tool().model_dump(mode="json") for tool in tools]
     out = undeclared_outputs_dir() / "all_tools.json"
     out.write_text(json.dumps(all_tools, indent=2))
     print(f"Wrote {len(all_tools)} tools to {out}")

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from enum import StrEnum
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
 import httpx
 from fastmcp import FastMCP
@@ -76,9 +76,6 @@ class CreateError(BaseModel):
     error: str
 
 
-CreateResult = Annotated[CreateOk | CreateError, Field(discriminator="kind")]
-
-
 class GetOk(BaseModel):
     kind: Literal["ok"] = "ok"
     entity_type: EntityType
@@ -91,9 +88,6 @@ class GetError(BaseModel):
     entity_type: EntityType
     object_id: int
     error: str
-
-
-GetResult = Annotated[GetOk | GetError, Field(discriminator="kind")]
 
 
 class StockEnrichedEntry(BaseModel):
@@ -165,14 +159,14 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient) -> None:
     """Register custom batch tools on an existing FastMCP instance."""
 
     @mcp.tool()
-    async def create_entities(items: list[CreateItem]) -> list[CreateResult]:
+    async def create_entities(items: list[CreateItem]) -> list[CreateOk | CreateError]:
         """Create multiple Grocy entities in one call.
 
         Sends one POST /objects/{entity_type} per item concurrently. Failed items
         are collected as CreateError; they do not abort others.
         """
 
-        async def _one(i: int, item: CreateItem) -> CreateResult:
+        async def _one(i: int, item: CreateItem) -> CreateOk | CreateError:
             try:
                 r = await client.post(f"/objects/{item.entity_type}", json=item.body)
                 r.raise_for_status()
@@ -201,7 +195,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient) -> None:
         return dict(pairs)
 
     @mcp.tool()
-    async def get_entities(entity_type: EntityType, object_ids: list[int]) -> list[GetResult]:
+    async def get_entities(entity_type: EntityType, object_ids: list[int]) -> list[GetOk | GetError]:
         """Fetch multiple Grocy objects of the same entity type by ID.
 
         Returns one GetResult per ID, each carrying entity_type and object_id for
@@ -209,7 +203,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient) -> None:
         returned as GetError and do not abort others.
         """
 
-        async def _one(object_id: int) -> GetResult:
+        async def _one(object_id: int) -> GetOk | GetError:
             try:
                 r = await client.get(f"/objects/{entity_type}/{object_id}")
                 r.raise_for_status()
