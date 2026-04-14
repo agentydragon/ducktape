@@ -102,11 +102,6 @@ class ProfileConfig(BaseModel):
         description="When BES interceptor is active, post a mailbox nudge if a build/test invocation "
         "lacks --remote_executor. Encourages agent to use `bb remote`.",
     )
-    write_kubeconfig: bool = Field(
-        default=True,
-        description="Write a service-account kubeconfig and export KUBECONFIG. "
-        "Set to false in CLI profile when the user has their own ~/.kube/config.",
-    )
     install_mkcert: bool = Field(default=False, description="Install mkcert and generate localhost TLS cert.")
     setup_docker: bool = Field(default=False, description="Set up Docker daemon under supervisor.")
     background_commands: list[BackgroundCommand] = Field(

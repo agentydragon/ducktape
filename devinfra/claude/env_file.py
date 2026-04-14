@@ -48,7 +48,7 @@ class EnvVars:
 
     All profiles set bazel_wrapper_dir and session_bazelrc. Other fields
     are populated based on profile flags (setup_auth_proxy, setup_docker,
-    install_mkcert, write_kubeconfig, etc.).
+    install_mkcert, etc.).
     """
 
     # Required in all profiles
@@ -72,9 +72,6 @@ class EnvVars:
     # mkcert localhost TLS certificate (when install_mkcert is enabled)
     mkcert_cert: Path | None = None
     mkcert_key: Path | None = None
-
-    # Kubeconfig (when write_kubeconfig is enabled)
-    kubeconfig_path: Path | None = None
 
     # bbr session bazelrc (metadata tags for BuildBuddy invocations)
     bbr_bazelrc: Path | None = None
@@ -138,10 +135,6 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     if vars.hook_timestamp:
         exports.extend(["", "# Session metadata"])
         exports.extend(exports_from_dict({"DUCKTAPE_SESSION_START_HOOK_TS": vars.hook_timestamp.isoformat()}))
-
-    if vars.kubeconfig_path:
-        exports.extend(["", "# Kubeconfig (generated at session start)"])
-        exports.extend(exports_from_dict({"KUBECONFIG": vars.kubeconfig_path}))
 
     if vars.bbr_bazelrc:
         exports.extend(["", "# bbr session bazelrc (BuildBuddy invocation metadata)"])

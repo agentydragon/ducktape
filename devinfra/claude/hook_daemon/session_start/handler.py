@@ -22,7 +22,6 @@ from opentelemetry import trace
 
 from devinfra.claude import env_file
 from devinfra.claude.auth_proxy import setup as proxy_setup
-from devinfra.claude.auth_proxy.vars import get_proxy_url
 from devinfra.claude.claude_api.hooks.output import HookOutput
 from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput, SessionStartHookSpecificOutput
 from devinfra.claude.debug import log_entrypoint_debug
@@ -31,14 +30,7 @@ from devinfra.claude.hook_daemon import templates
 from devinfra.claude.hook_daemon.config import BackgroundCommand, ProfileConfig
 from devinfra.claude.hook_daemon.models import StartupResult
 from devinfra.claude.hook_daemon.session import BgStream, Session, _feed_queue
-from devinfra.claude.hook_daemon.session_start import (
-    buildbuddy,
-    container_runtime,
-    kubeconfig,
-    mkcert,
-    platform_detect,
-    tmpfs,
-)
+from devinfra.claude.hook_daemon.session_start import buildbuddy, container_runtime, mkcert, platform_detect, tmpfs
 from devinfra.claude.hook_daemon.shim_install import install as install_shim
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.settings import CONFIG_FILES, HookSettings
@@ -96,7 +88,6 @@ class PlatformSetup:
     mkcert_result: mkcert.MkcertSetup | None = None
     docker_env: dict[str, str] | None = None
     bazel_cache_dir: Path | None = None
-    kubeconfig_path: Path | None = None
     # Shared-step results (populated by handle(), not platform setup)
     buildbuddy_setup: buildbuddy.BuildbuddySetup = field(default_factory=buildbuddy.BuildbuddyNotConfigured)
 
@@ -196,7 +187,7 @@ async def _setup_platform_services(
 
     env_overlay is the delta from startup_env_script (new/changed vars vs. os.environ).
     Callers access secrets as properties (k8s_token, etc.).
-    BuildBuddy, fork remote, and kubeconfig write are handled in handle().
+    BuildBuddy and fork remote are handled in handle().
 
     Which services run is controlled by profile flags (setup_auth_proxy,
     setup_docker, setup_tmpfs, install_mkcert).
@@ -406,20 +397,6 @@ async def handle(
 
     # -- Shared steps: secrets, BuildBuddy, fork remote --
     combined_ca = setup.auth_proxy.combined_ca if setup.auth_proxy else None
-    proxy_url = get_proxy_url(ctx.caller_env)
-
-    # Write kubeconfig when token is available and profile enables it.
-    # CLI profile skips this — the user has their own ~/.kube/config.
-    k8s_token = setup.k8s_token or settings.k8s_token
-    if k8s_token and profile.k8s and profile.write_kubeconfig:
-        with tracer.start_as_current_span("write_kubeconfig", context=root_ctx):
-            setup.kubeconfig_path = kubeconfig.write_kubeconfig(
-                token=k8s_token,
-                k8s_cfg=profile.k8s,
-                session_dir=session.paths.session_dir,
-                combined_ca_path=combined_ca,
-                proxy_url=proxy_url,
-            )
 
     # Configure BuildBuddy now that secrets are available.
     with tracer.start_as_current_span("setup_buildbuddy", context=root_ctx):
@@ -493,7 +470,6 @@ async def handle(
             hook_timestamp=hook_timestamp,
             mkcert_cert=setup.mkcert_result.cert_path if setup.mkcert_result else None,
             mkcert_key=setup.mkcert_result.key_path if setup.mkcert_result else None,
-            kubeconfig_path=setup.kubeconfig_path,
             bbr_bazelrc=bbr_bazelrc,
             env_overlay=startup.env_overlay,
             extra_env_script=extra_env,

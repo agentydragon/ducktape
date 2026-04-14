@@ -1,7 +1,4 @@
 <%import os%>\
-% if setup.kubeconfig_path:
-`KUBECONFIG` set — `kubectl` and the `claude-sandbox-kubectl` MCP tools are available.
-% endif
 % if setup.buildbuddy_api_key:
 API key in `~/.config/bazel/buildbuddy.bazelrc`. See <docs/buildbuddy_api.md> for undocumented endpoints (profile download, invocation search, cache scorecard).
 % endif
@@ -11,7 +8,7 @@ ${"##"} Secrets — UNAVAILABLE
 Secrets could not be fetched. This means:
 - `GITHUB_TOKEN` is not set — `gh` CLI and authenticated git operations will fail
 - `BUILDBUDDY_API_KEY` is not set — Bazel remote cache/execution (RBE) is unavailable
-- `KUBECONFIG` is not set — `kubectl` will not work
+- `K8S_TOKEN` is not set — `kubectl` will not be configured (kubeconfig setup task will report this)
 
 **Recovery steps:**
 1. Check the daemon log for the root cause (see `Session start log` path above)

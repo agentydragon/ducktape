@@ -20,7 +20,6 @@ git_shim:
 idle_watchdog: true
 setup_auth_proxy: false
 setup_tmpfs: false
-write_kubeconfig: false
 env_exports: |
   export DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=0
   export DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG=1
