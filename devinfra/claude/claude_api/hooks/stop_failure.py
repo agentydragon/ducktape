@@ -1,4 +1,4 @@
-"""Pydantic models for Claude Code StopFailure hook (v2.1.87+)."""
+"""Pydantic models for Claude Code StopFailure hook."""
 
 from enum import StrEnum
 from typing import Literal

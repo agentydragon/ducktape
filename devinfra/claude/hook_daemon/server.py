@@ -319,7 +319,7 @@ def create_app(daemon_dir: Path, profile: ProfileConfig, startup: StartupResult)
                 raise AssertionError(
                     f"Bug: system_message set on non-REPL hook {hook_name!r}. "
                     f"The model will never see this message. Use additionalContext "
-                    f"or initialUserMessage in hookSpecificOutput instead."
+                    f"in hookSpecificOutput instead."
                 )
 
             resp = HookResponse(output=output)

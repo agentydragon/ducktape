@@ -1,4 +1,4 @@
-"""Pydantic models for Claude Code TaskCreated hook (v2.1.87+)."""
+"""Pydantic models for Claude Code TaskCreated hook."""
 
 from typing import Literal
 

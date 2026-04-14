@@ -56,6 +56,7 @@ class PermissionModeValue(StrEnum):
     BYPASS_PERMISSIONS = "bypassPermissions"
     PLAN = "plan"
     DONT_ASK = "dontAsk"
+    AUTO = "auto"
 
 
 class SetModeSuggestion(CamelModel):

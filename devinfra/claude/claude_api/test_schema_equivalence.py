@@ -24,7 +24,7 @@ from util.json_schema import inline_refs
 
 def _load_zod_json_schema() -> dict[str, Any]:
     """Load the Zod-derived JSON Schema for hookOutput from runfiles."""
-    path = get_required_path("_main/devinfra/claude/claude_api/hooks/schemas/2.1.87/hook_output.json")
+    path = get_required_path("_main/devinfra/claude/claude_api/hooks/schemas/2.1.105/hook_output.json")
     return json.loads(path.read_text())  # type: ignore[no-any-return]
 
 

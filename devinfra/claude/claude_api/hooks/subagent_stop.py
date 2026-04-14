@@ -11,4 +11,4 @@ class SubagentStopInput(HookInputBase):
     agent_id: str
     agent_type: str
     agent_transcript_path: str
-    last_assistant_message: str
+    last_assistant_message: str | None = None

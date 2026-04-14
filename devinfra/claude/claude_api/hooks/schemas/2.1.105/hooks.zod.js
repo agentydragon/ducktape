@@ -1,15 +1,15 @@
-// Extracted from Claude Code binary v2.1.87
-// Source: strings /opt/claude-code/bin/claude, minified names resolved manually
-// y. replaced with z. (Zod); pH() is lazy initializer wrapper
+// Extracted from Claude Code npm package v2.1.105
+// Source: /tmp/claude-code-2.1.105/package/cli.js (npm package, 14MB minified)
+//         Zod namespace: y.  Base schema: g2()
 //
 // IMPORTANT: All .optional() fields accept undefined (absent) but NOT null.
 // Python hooks must use exclude_none=True when serializing output.
 
 import { z } from "zod";
 
-// --- PermissionSuggestion (dtH in binary) ---
-// A discriminated union of permission modification actions.
-// Helper schemas: jr8 (rule), cp$ (behavior), PyH (destination), RKH (permission mode)
+// ============================================================
+// Shared permission suggestion types (used in PermissionRequest)
+// ============================================================
 
 const PermissionRule = z.object({
   toolName: z.string(),
@@ -20,10 +20,12 @@ const PermissionBehavior = z.enum(["allow", "deny", "ask"]);
 
 const PermissionDestination = z.enum(["userSettings", "projectSettings", "localSettings", "session", "cliArg"]);
 
+// Known permission mode values (upstream uses z.string() for the base hook input field,
+// but the PermissionSuggestion setMode action uses an explicit enum).
 const PermissionMode = z
-  .enum(["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk"])
+  .enum(["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"])
   .describe(
-    "Permission mode for controlling how tool executions are handled. 'default' - Standard behavior, prompts for dangerous operations. 'acceptEdits' - Auto-accept file edit operations. 'bypassPermissions' - Bypass all permission checks (requires allowDangerouslySkipPermissions). 'plan' - Planning mode, no actual tool execution. 'dontAsk' - Don't prompt for permissions, deny if not pre-approved."
+    "Permission mode for controlling how tool executions are handled. 'default' - Standard behavior. 'acceptEdits' - Auto-accept file edits. 'bypassPermissions' - Bypass all permission checks. 'plan' - Planning mode. 'dontAsk' - Don't prompt for permissions. 'auto' - Auto mode."
   );
 
 const PermissionSuggestion = z.discriminatedUnion("type", [
@@ -62,19 +64,8 @@ const PermissionSuggestion = z.discriminatedUnion("type", [
   }),
 ]);
 
-// --- StopFailure error enum (Lr8 in binary) ---
-const StopFailureError = z.enum([
-  "authentication_failed",
-  "billing_error",
-  "rate_limit",
-  "invalid_request",
-  "server_error",
-  "unknown",
-  "max_output_tokens",
-]);
-
 // ============================================================
-// Hook Event Names (Rx1 in binary)
+// Hook Event Names (27 in v2.1.105)
 // ============================================================
 
 const HookEventNames = [
@@ -92,16 +83,17 @@ const HookEventNames = [
   "PreCompact",
   "PostCompact",
   "PermissionRequest",
+  "PermissionDenied",
   "Setup",
   "TeammateIdle",
-  "TaskCreated",
   "TaskCompleted",
+  "TaskCreated",
   "Elicitation",
   "ElicitationResult",
   "ConfigChange",
+  "InstructionsLoaded",
   "WorktreeCreate",
   "WorktreeRemove",
-  "InstructionsLoaded",
   "CwdChanged",
   "FileChanged",
 ];
@@ -110,24 +102,16 @@ const HookEventNames = [
 // Hook Input Schemas
 // ============================================================
 
-// --- Base fields (all hook inputs extend this) ---
+// Base fields — present in all hook inputs.
+// permission_mode uses z.string() (not z.enum) — may receive future unknown values.
+// agent_id and agent_type are in the base schema (optional); narrowed to required in subagent hooks.
 const baseHookInput = z.object({
   session_id: z.string(),
   transcript_path: z.string(),
   cwd: z.string(),
   permission_mode: z.string().optional(),
-  agent_id: z
-    .string()
-    .optional()
-    .describe(
-      "Subagent identifier. Present only when the hook fires from within a subagent (e.g., a tool called by an AgentTool worker). Absent for the main thread, even in --agent sessions. Use this field (not agent_type) to distinguish subagent calls from main-thread calls."
-    ),
-  agent_type: z
-    .string()
-    .optional()
-    .describe(
-      'Agent type name (e.g., "general-purpose", "code-reviewer"). Present when the hook fires from within a subagent (alongside agent_id), or on the main thread of a session started with --agent (without agent_id).'
-    ),
+  agent_id: z.string().optional(),
+  agent_type: z.string().optional(),
 });
 
 // --- Event-specific inputs ---
@@ -147,6 +131,16 @@ const PermissionRequestInput = baseHookInput.and(
     tool_name: z.string(),
     tool_input: z.unknown(),
     permission_suggestions: z.array(PermissionSuggestion).optional(),
+  })
+);
+
+const PermissionDeniedInput = baseHookInput.and(
+  z.object({
+    hook_event_name: z.literal("PermissionDenied"),
+    tool_name: z.string(),
+    tool_input: z.unknown(),
+    tool_use_id: z.string(),
+    reason: z.string(),
   })
 );
 
@@ -207,20 +201,15 @@ const StopInput = baseHookInput.and(
   z.object({
     hook_event_name: z.literal("Stop"),
     stop_hook_active: z.boolean(),
-    last_assistant_message: z
-      .string()
-      .optional()
-      .describe(
-        "Text content of the last assistant message before stopping. Avoids the need to read and parse the transcript file."
-      ),
+    last_assistant_message: z.string().optional(),
   })
 );
 
-// NEW in 2.1.87
 const StopFailureInput = baseHookInput.and(
   z.object({
     hook_event_name: z.literal("StopFailure"),
-    error: StopFailureError,
+    stop_hook_active: z.boolean(),
+    error: z.string(),
     error_details: z.string().optional(),
     last_assistant_message: z.string().optional(),
   })
@@ -241,12 +230,7 @@ const SubagentStopInput = baseHookInput.and(
     agent_id: z.string(),
     agent_transcript_path: z.string(),
     agent_type: z.string(),
-    last_assistant_message: z
-      .string()
-      .optional()
-      .describe(
-        "Text content of the last assistant message before stopping. Avoids the need to read and parse the transcript file."
-      ),
+    last_assistant_message: z.string().optional(),
   })
 );
 
@@ -262,7 +246,7 @@ const PostCompactInput = baseHookInput.and(
   z.object({
     hook_event_name: z.literal("PostCompact"),
     trigger: z.enum(["manual", "auto"]),
-    compact_summary: z.string().describe("The conversation summary produced by compaction"),
+    compact_summary: z.string(),
   })
 );
 
@@ -271,18 +255,6 @@ const TeammateIdleInput = baseHookInput.and(
     hook_event_name: z.literal("TeammateIdle"),
     teammate_name: z.string(),
     team_name: z.string(),
-  })
-);
-
-// NEW in 2.1.87 (renamed from TaskCompleted which had same fields in 2.1.76)
-const TaskCreatedInput = baseHookInput.and(
-  z.object({
-    hook_event_name: z.literal("TaskCreated"),
-    task_id: z.string(),
-    task_subject: z.string(),
-    task_description: z.string().optional(),
-    teammate_name: z.string().optional(),
-    team_name: z.string().optional(),
   })
 );
 
@@ -297,56 +269,65 @@ const TaskCompletedInput = baseHookInput.and(
   })
 );
 
-const ElicitationInput = baseHookInput
-  .and(
-    z.object({
-      hook_event_name: z.literal("Elicitation"),
-      mcp_server_name: z.string(),
-      message: z.string(),
-      mode: z.enum(["form", "url"]).optional(),
-      url: z.string().optional(),
-      elicitation_id: z.string().optional(),
-      requested_schema: z.record(z.string(), z.unknown()).optional(),
-    })
-  )
-  .describe(
-    "Hook input for the Elicitation event. Fired when an MCP server requests user input. Hooks can auto-respond (accept/decline) instead of showing the dialog."
-  );
+const TaskCreatedInput = baseHookInput.and(
+  z.object({
+    hook_event_name: z.literal("TaskCreated"),
+    task_id: z.string(),
+    task_subject: z.string(),
+    task_description: z.string().optional(),
+    teammate_name: z.string().optional(),
+    team_name: z.string().optional(),
+  })
+);
 
-const ElicitationResultInput = baseHookInput
-  .and(
-    z.object({
-      hook_event_name: z.literal("ElicitationResult"),
-      mcp_server_name: z.string(),
-      elicitation_id: z.string().optional(),
-      mode: z.enum(["form", "url"]).optional(),
-      action: z.enum(["accept", "decline", "cancel"]),
-      content: z.record(z.string(), z.unknown()).optional(),
-    })
-  )
-  .describe(
-    "Hook input for the ElicitationResult event. Fired after the user responds to an MCP elicitation. Hooks can observe or override the response before it is sent to the server."
-  );
+const SessionEndReasons = ["clear", "logout", "prompt_input_exit", "other", "bypass_permissions_disabled"];
+const SessionEndInput = baseHookInput.and(
+  z.object({
+    hook_event_name: z.literal("SessionEnd"),
+    reason: z.enum(SessionEndReasons),
+  })
+);
 
-const ConfigChangeSourceValues = ["user_settings", "project_settings", "local_settings", "policy_settings", "skills"];
+const ElicitationInput = baseHookInput.and(
+  z.object({
+    hook_event_name: z.literal("Elicitation"),
+    mcp_server_name: z.string(),
+    message: z.string(),
+    mode: z.string().optional(),
+    url: z.string().optional(),
+    elicitation_id: z.string().optional(),
+    requested_schema: z.unknown().optional(),
+  })
+);
+
+// ElicitationResult input: action uses "deny" (not "decline")
+// The Elicitation output uses "decline"; ElicitationResult input uses "deny".
+const ElicitationResultInput = baseHookInput.and(
+  z.object({
+    hook_event_name: z.literal("ElicitationResult"),
+    mcp_server_name: z.string(),
+    action: z.enum(["accept", "deny", "cancel"]),
+    content: z.record(z.string(), z.unknown()).optional(),
+    mode: z.string().optional(),
+    elicitation_id: z.string().optional(),
+  })
+);
+
 const ConfigChangeInput = baseHookInput.and(
   z.object({
     hook_event_name: z.literal("ConfigChange"),
-    source: z.enum(ConfigChangeSourceValues),
+    source: z.string(),
     file_path: z.string().optional(),
   })
 );
 
-// CHANGED in 2.1.87: added "compact" to InstructionsLoadedReasons
-const InstructionsLoadedReasons = ["session_start", "nested_traversal", "path_glob_match", "include", "compact"];
-const InstructionsLoadedMemoryTypes = ["User", "Project", "Local", "Managed"];
 const InstructionsLoadedInput = baseHookInput.and(
   z.object({
     hook_event_name: z.literal("InstructionsLoaded"),
     file_path: z.string(),
-    memory_type: z.enum(InstructionsLoadedMemoryTypes),
-    load_reason: z.enum(InstructionsLoadedReasons),
-    globs: z.array(z.string()).optional(),
+    memory_type: z.string(),
+    load_reason: z.string(),
+    globs: z.array(z.string()),
     trigger_file_path: z.string().optional(),
     parent_file_path: z.string().optional(),
   })
@@ -366,7 +347,6 @@ const WorktreeRemoveInput = baseHookInput.and(
   })
 );
 
-// NEW in 2.1.87
 const CwdChangedInput = baseHookInput.and(
   z.object({
     hook_event_name: z.literal("CwdChanged"),
@@ -375,21 +355,11 @@ const CwdChangedInput = baseHookInput.and(
   })
 );
 
-// NEW in 2.1.87
 const FileChangedInput = baseHookInput.and(
   z.object({
     hook_event_name: z.literal("FileChanged"),
     file_path: z.string(),
     event: z.enum(["change", "add", "unlink"]),
-  })
-);
-
-// CHANGED in 2.1.87: added "resume" to SessionEndReasons
-const SessionEndReasons = ["clear", "resume", "logout", "prompt_input_exit", "other", "bypass_permissions_disabled"];
-const SessionEndInput = baseHookInput.and(
-  z.object({
-    hook_event_name: z.literal("SessionEnd"),
-    reason: z.enum(SessionEndReasons),
   })
 );
 
@@ -408,10 +378,11 @@ const AnyHookInput = z.union([
   PreCompactInput,
   PostCompactInput,
   PermissionRequestInput,
+  PermissionDeniedInput,
   SetupInput,
   TeammateIdleInput,
-  TaskCreatedInput,
   TaskCompletedInput,
+  TaskCreatedInput,
   ElicitationInput,
   ElicitationResultInput,
   ConfigChangeInput,
@@ -446,7 +417,6 @@ const hookOutput = z.object({
         hookEventName: z.literal("UserPromptSubmit"),
         additionalContext: z.string().optional(),
       }),
-      // CHANGED in 2.1.87: added initialUserMessage and watchPaths
       z.object({
         hookEventName: z.literal("SessionStart"),
         additionalContext: z.string().optional(),
@@ -493,34 +463,30 @@ const hookOutput = z.object({
         hookEventName: z.literal("PermissionDenied"),
         retry: z.boolean().optional(),
       }),
+      // Elicitation output: action uses "decline" (hook response to Claude Code)
       z.object({
         hookEventName: z.literal("Elicitation"),
         action: z.enum(["accept", "decline", "cancel"]).optional(),
         content: z.record(z.string(), z.unknown()).optional(),
       }),
+      // ElicitationResult output: same enum as Elicitation output
       z.object({
         hookEventName: z.literal("ElicitationResult"),
         action: z.enum(["accept", "decline", "cancel"]).optional(),
         content: z.record(z.string(), z.unknown()).optional(),
       }),
-      // NEW in 2.1.87
       z.object({
         hookEventName: z.literal("CwdChanged"),
         watchPaths: z.array(z.string()).optional(),
       }),
-      // NEW in 2.1.87
       z.object({
         hookEventName: z.literal("FileChanged"),
         watchPaths: z.array(z.string()).optional(),
       }),
-      z
-        .object({
-          hookEventName: z.literal("WorktreeCreate"),
-          worktreePath: z.string(),
-        })
-        .describe(
-          "Hook-specific output for the WorktreeCreate event. Provides the absolute path to the created worktree directory. Command hooks print the path on stdout instead."
-        ),
+      z.object({
+        hookEventName: z.literal("WorktreeCreate"),
+        worktreePath: z.string(),
+      }),
     ])
     .optional(),
 });

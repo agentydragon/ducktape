@@ -7,20 +7,20 @@ REPL vs non-REPL hooks
 ----------------------
 Hooks are split into two execution paths:
 
-**REPL hooks** (PreToolUse, PostToolUse, PostToolUseFailure, UserPromptSubmit,
-Notification, Stop, SubagentStart, SubagentStop, PreCompact, PostCompact,
-PermissionRequest, PermissionDenied, Elicitation, ElicitationResult):
+**REPL hooks**: PreToolUse, PostToolUse, PostToolUseFailure,
+UserPromptSubmit, Notification, Stop, SubagentStart, SubagentStop, PreCompact,
+PermissionRequest:
   - ``systemMessage`` is injected into the model conversation as a
     ``hook_system_message`` attachment — **the model reads it**.
   - ``additionalContext`` (via ``hookSpecificOutput``) is also injected as a
     ``hook_additional_context`` attachment.
 
-**Non-REPL hooks** (SessionStart, SessionEnd, Setup, CwdChanged, FileChanged,
-InstructionsLoaded, WorktreeCreate, WorktreeRemove, ConfigChange):
+**Non-REPL hooks**: SessionStart, SessionEnd, Setup, CwdChanged, FileChanged,
+InstructionsLoaded, WorktreeCreate, WorktreeRemove, ConfigChange, and others:
   - ``systemMessage`` is delivered to the **UI notification callback only** —
     the model never sees it. This is a common footgun.
-  - For SessionStart, use ``initialUserMessage`` or ``additionalContext`` via
-    ``hookSpecificOutput`` to inject text that the model reads.
+  - For SessionStart, use ``additionalContext`` via ``hookSpecificOutput``
+    to inject text that the model reads.
 
 Exit code 2 = blocking
 -----------------------
@@ -36,7 +36,7 @@ CLAUDE_ENV_FILE availability
 -----------------------------
 Only these hooks receive ``CLAUDE_ENV_FILE`` in their environment (allowing
 hooks to inject env vars into the bash shell):
-  - SessionStart, Setup, CwdChanged, FileChanged
+  - SessionStart, Setup
 
 PreToolUse permission semantics
 -------------------------------
@@ -70,11 +70,17 @@ from pydantic.alias_generators import to_camel
 
 
 class PermissionMode(StrEnum):
-    """Claude Code permission mode values."""
+    """Known permission_mode values (upstream field uses z.string() — may receive new values).
+
+    The base hook input uses an arbitrary string for permission_mode, so HookInputBase
+    annotates the field as str | None rather than PermissionMode | None. These constants
+    exist for reference and for code that needs to compare against known values.
+    """
 
     DEFAULT = "default"
     PLAN = "plan"
     ACCEPT_EDITS = "acceptEdits"
+    BYPASS_PERMISSIONS = "bypassPermissions"
     DONT_ASK = "dontAsk"
     AUTO = "auto"
 
@@ -91,14 +97,16 @@ class HookInputBase(BaseModel):
     session_id: str
     transcript_path: Path
     cwd: Path
-    permission_mode: PermissionMode | None = Field(
+    # Upstream uses z.string().optional() — accept any future permission mode values.
+    permission_mode: str | None = Field(
         default=None, description="Not sent by Claude Code Web for some SessionStart events"
     )
+    # agent_id and agent_type are not in the base schema (v2.1.105); they appear only
+    # in SubagentStart and SubagentStop inputs. We keep them here as optional so that
+    # subclasses (SubagentStartInput, SubagentStopInput) can narrow them to required str.
     agent_id: str | None = Field(
         default=None, description="Subagent identifier. Present only when the hook fires from within a subagent."
     )
-    parent_session_id: str | None = Field(default=None, description="Parent session ID when running as a subagent.")
     agent_type: str | None = Field(
-        default=None,
-        description="Agent type name. Present in subagent context (with agent_id) or on main thread with --agent.",
+        default=None, description="Agent type name. Present in subagent context (SubagentStart/SubagentStop)."
     )

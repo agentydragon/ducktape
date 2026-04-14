@@ -28,5 +28,7 @@ class SessionStartHookInput(HookInputBase):
 class SessionStartHookSpecificOutput(CamelModel):
     hook_event_name: Literal["SessionStart"] = "SessionStart"
     additional_context: str | None = Field(default=None, description="Context added to Claude's system prompt")
-    initial_user_message: str | None = Field(default=None, description="Inject an initial user message")
-    watch_paths: list[str] | None = Field(default=None, description="Register paths to watch for FileChanged events")
+    initial_user_message: str | None = Field(
+        default=None, description="Synthetic user message injected at session start"
+    )
+    watch_paths: list[str] | None = Field(default=None, description="Paths to watch for FileChanged events")

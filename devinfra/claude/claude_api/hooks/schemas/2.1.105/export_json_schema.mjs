@@ -14,9 +14,7 @@ const schemas = { hookOutput, AnyHookInput };
 const args = process.argv.slice(2);
 
 if (args.length === 0) {
-  console.error(
-    `Usage: export_json_schema.mjs <name>=<file> [...]\nAvailable: ${Object.keys(schemas).join(", ")}`,
-  );
+  console.error(`Usage: export_json_schema.mjs <name>=<file> [...]\nAvailable: ${Object.keys(schemas).join(", ")}`);
   process.exit(1);
 }
 
