@@ -13,3 +13,6 @@ subjects:
   - kind: ServiceAccount
     name: default
     namespace: openclaw-sandbox
+  - kind: Group
+    name: oidc-ksbx-groups:kubectl-sandbox-users
+    apiGroup: rbac.authorization.k8s.io

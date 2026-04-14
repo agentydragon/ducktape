@@ -23,3 +23,6 @@ spec:
     # TF writes the `grocy-mcp-oidc` secret into the `grocy-mcp-oidc`
     # namespace, so that namespace must exist first.
     - name: grocy-mcp-oidc-namespace
+    # TF writes the `kubectl-sandbox-mcp` secret into the `kubectl-sandbox-mcp`
+    # namespace, so that namespace must exist first.
+    - name: kubectl-sandbox-mcp-namespace

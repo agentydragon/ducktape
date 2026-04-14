@@ -11,3 +11,6 @@ subjects:
   - kind: ServiceAccount
     name: claude-code-web
     namespace: default
+  - kind: Group
+    name: oidc-ksbx-groups:kubectl-sandbox-users
+    apiGroup: rbac.authorization.k8s.io

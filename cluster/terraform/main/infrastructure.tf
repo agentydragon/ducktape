@@ -93,16 +93,53 @@ locals {
     }
   }
 
+  # AuthenticationConfiguration — supports multiple JWT issuers (headlamp + kubectl MCPs).
+  # Talos 1.12 has no dedicated authenticationConfig field (unlike authorizationConfig),
+  # so we write this file via machine.files and mount it into the kube-apiserver static pod.
+  auth_config_content = yamlencode({
+    apiVersion = "apiserver.config.k8s.io/v1beta1"
+    kind       = "AuthenticationConfiguration"
+    jwt = [
+      # Headlamp: existing single-user OIDC (migrated from --oidc-* flags)
+      {
+        issuer = {
+          url       = "https://auth.${var.cluster_domain}/application/o/headlamp/"
+          audiences = ["headlamp"]
+        }
+        claimMappings = {
+          username = { claim = "preferred_username", prefix = "oidc:" }
+          groups   = { claim = "groups", prefix = "oidc-groups:" }
+        }
+      },
+      # kubectl-sandbox-mcp: sandbox-scoped kubectl MCP server
+      {
+        issuer = {
+          url       = "https://auth.${var.cluster_domain}/application/o/kubectl-sandbox-mcp/"
+          audiences = ["kubectl-sandbox-mcp"]
+        }
+        claimMappings = {
+          username = { claim = "preferred_username", prefix = "oidc-ksbx:" }
+          groups   = { claim = "groups", prefix = "oidc-ksbx-groups:" }
+        }
+      },
+    ]
+  })
+
   # Shared kube-apiserver config for all control plane nodes (VPS + Proxmox).
   # Centralised here to avoid duplicating between hetzner-nodes.tf and proxmox-nodes.tf.
   api_server_config = {
     certSANs = ["api.${var.cluster_domain}"]
     extraArgs = {
-      "oidc-issuer-url"      = "https://auth.${var.cluster_domain}/application/o/headlamp/"
-      "oidc-client-id"       = "headlamp"
-      "oidc-username-claim"  = "preferred_username"
-      "oidc-username-prefix" = "oidc:"
+      # Structured auth replaces the old --oidc-* flags; supports multiple issuers.
+      "authentication-config" = "/etc/kubernetes/auth/auth-config.yaml"
     }
+    extraVolumes = [
+      {
+        hostPath  = "/etc/kubernetes/auth"
+        mountPath = "/etc/kubernetes/auth"
+        readonly  = true
+      }
+    ]
   }
 
   # Controlplane cluster config — includes etcd, apiServer, and inline

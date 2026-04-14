@@ -1,0 +1,26 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubectl-sandbox-mcp
+  namespace: flux-system
+spec:
+  suspend: false
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./cluster/k8s/agents/kubectl-sandbox-mcp/app
+  prune: true
+  wait: true
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: kubectl-sandbox-mcp
+      namespace: kubectl-sandbox-mcp
+  dependsOn:
+    - name: gateway
+    - name: kubectl-sandbox-mcp-namespace
+    # TF writes the kubectl-sandbox-mcp secret (with config.toml) into the namespace.
+    - name: agent-machine-access-tf

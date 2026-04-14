@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubectl-sandbox-mcp
+  namespace: kubectl-sandbox-mcp
+  annotations:
+    description: "containers/kubernetes-mcp-server in OAuth passthrough mode. Caller's Authentik JWT is forwarded directly to kube-apiserver; server itself is unprivileged."
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kubectl-sandbox-mcp
+  template:
+    metadata:
+      labels:
+        app: kubectl-sandbox-mcp
+    spec:
+      serviceAccountName: kubectl-sandbox-mcp
+      # Prevent kubernetes-mcp-server from picking up KUBECTL_SANDBOX_MCP_* env vars
+      # injected by kube for same-namespace Services — they could confuse config parsing.
+      enableServiceLinks: false
+      containers:
+        - name: server
+          image: ghcr.io/containers/kubernetes-mcp-server:v0.0.60
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config=/etc/kubectl-sandbox-mcp/config.toml
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/kubectl-sandbox-mcp
+              readOnly: true
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+      volumes:
+        - name: config
+          secret:
+            secretName: kubectl-sandbox-mcp

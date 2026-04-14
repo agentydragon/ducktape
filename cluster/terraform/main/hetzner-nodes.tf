@@ -142,6 +142,17 @@ locals {
           cloud-provider         = "external"
         }
       })
+      # Write AuthenticationConfiguration to the host filesystem so kube-apiserver
+      # can read it via the extraVolumes mount. CP nodes only — workers don't run kube-apiserver.
+      # permissions = 416 (= 0640 octal: owner rw, group r, world none)
+      files = [
+        {
+          content     = local.auth_config_content
+          path        = "/etc/kubernetes/auth/auth-config.yaml"
+          op          = "overwrite"
+          permissions = 416
+        }
+      ]
     })
     cluster = local.common_cluster_config
   })
