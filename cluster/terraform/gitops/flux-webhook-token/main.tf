@@ -48,7 +48,7 @@ resource "github_repository_webhook" "flux_receiver" {
   repository = "ducktape"
 
   configuration {
-    url          = "https://flux-webhook.allegedly.works/hook/${sha256(random_password.github_webhook_token.result)}"
+    url          = "https://flux-webhook.allegedly.works/hook/${sha256(join("", [random_password.github_webhook_token.result, "github", "flux-system"]))}"
     content_type = "json"
     secret       = random_password.github_webhook_token.result
     insecure_ssl = false
@@ -58,8 +58,10 @@ resource "github_repository_webhook" "flux_receiver" {
   events = ["push", "registry_package"]
 
   lifecycle {
-    # Token has ignore_changes on its random_password, so the URL is stable.
-    # Only recreate if the webhook is manually deleted from GitHub.
+    # Keep the GitHub webhook configuration stable after initial creation.
+    # The generated token is persisted in Terraform state, and downstream
+    # secret/webhook updates are intentionally ignored unless this resource is
+    # replaced (for example, if the webhook is manually deleted from GitHub).
     ignore_changes = [configuration]
   }
 }
