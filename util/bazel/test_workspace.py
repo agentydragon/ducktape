@@ -123,7 +123,7 @@ def test_query_parses_labels(tmp_path: Path) -> None:
     with patch("util.bazel.workspace.subprocess.run", return_value=mock_result) as mock_run:
         result = workspace.query("//...")
     (cmd,), kwargs = mock_run.call_args
-    assert cmd[:3] == ["bazel", "query", "--output=label"]
+    assert cmd[:3] == ["bazelisk", "query", "--output=label"]
     assert cmd[3] == "//..."  # short queries passed inline, not via --query_file
     assert kwargs == {"capture_output": True, "text": True, "cwd": tmp_path, "check": False, "timeout": None}
     assert result == [
