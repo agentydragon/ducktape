@@ -340,6 +340,34 @@ Interactive mode (detected via `terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.St
 3. **`--script` + file redirect** — redirect bazel output to a file on the
    runner, download via `--remote_download_regex`
 
+## Downloaded artifacts land under `bb-out/bazel-out/`, NOT `bb-out/bazel-bin/`
+
+When `bb remote build //pkg:name --remote_download_outputs=toplevel` (or
+`--remote_download_regex=...`) fetches build outputs back to the local
+workspace, they land at:
+
+```
+bb-out/bazel-out/<config>/bin/<pkg>/<name>
+```
+
+The `<config>` for our standard Linux x86_64 RBE builds (via
+`--config=rbe --config=ci` from `.github/actions/bb-remote/`) is
+`k8-fastbuild`. So `bb remote build //x/grocy_mcp:server_image.digest`
+lands at `bb-out/bazel-out/k8-fastbuild/bin/x/grocy_mcp/server_image.json.sha256`.
+
+**There is NO `bb-out/bazel-bin/<pkg>/<name>` convenience symlink.** That
+symlink only exists in local Bazel workspaces — it's created by Bazel's
+local runner, not by `bb remote`. Workflows that consume bb-remote-built
+artifacts on the runner side (e.g. `push-images.yml` after PR #1290)
+must use the full `bb-out/bazel-out/k8-fastbuild/bin/...` path.
+
+`bbr` follows the same layout, as shown in `CLAUDE.md`:
+
+```bash
+bbr build //:requirements --remote_download_regex='.*requirements\.out'
+cp bb-out/bazel-out/k8-fastbuild/bin/requirements.out requirements_bazel.txt
+```
+
 ## Key source files
 
 All paths relative to <https://github.com/buildbuddy-io/buildbuddy>.

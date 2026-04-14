@@ -26,6 +26,7 @@
 - [ ] Migrate all Python packages to Bazel monorepo style (colocated tests, flat structure like `git_commit_ai/`)
 - [ ] Re-enable `bazel coverage` in CI once compatible with remote execution (RBE). Currently disabled because the Java-based `remote_coverage_tools` can't locate its runfiles on BuildBuddy workers, causing all tests to be marked as failed. See `bazel-test.yml`.
 - [ ] Remove `--per_file_copt=external/protobuf[+]/.*@-Wno-deprecated-declarations` from `.bazelrc` once protobuf cleans up its internal deprecated API usage (`FieldOptions::weak()`, `RepeatedPtrField(Arena*)`). These are in `external/protobuf+/src/google/protobuf/` and `compiler/cpp/`. Currently `protobuf 33.1`.
+- [ ] Pre-commit lint for `.github/workflows/push-images.yml` matrix completeness: fail if any in-cluster `oci_image` target lacks a matrix row, and warn on rows whose `image` label points at a non-existent target. Would have caught `airlock`/`fc-vm-pod`-style coverage gaps during the runner-side push rewrite (PR #1290). Easiest implementation: a `py_test` that loads `push-images.yml`, parses the `image:` fields, runs `bazel query 'kind("oci_image_rule", //...)'`, and diffs the two sets.
 
 ## Terraform
 

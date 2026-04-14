@@ -72,9 +72,18 @@ branch.
 
 **Downloading build outputs from RBE**: `--config=rbe` sets `--remote_download_minimal`,
 so build artifacts aren't downloaded by default. To force-download specific outputs,
-add `--remote_download_regex='<java regex>'` (e.g., `--remote_download_regex='.*\.whl$'`).
-This is additive with `--remote_download_minimal`. For `bbr`, pass the flag before
-the target: `bbr build //target --remote_download_regex='.*\.whl$'`.
+add `--remote_download_regex='<java regex>'` (e.g., `--remote_download_regex='.*\.whl$'`)
+or `--remote_download_outputs=toplevel` to fetch just the direct outputs of the
+requested targets. This is additive with `--remote_download_minimal`. For `bbr`, pass
+the flag before the target: `bbr build //target --remote_download_regex='.*\.whl$'`.
+
+**Downloaded artifacts land at `bb-out/bazel-out/<config>/bin/<pkg>/<name>`**, not
+`bb-out/bazel-bin/<pkg>/<name>`. The `bazel-bin/` convenience symlink only exists in
+local Bazel workspaces — `bb remote` does not create it on the runner side. For our
+standard RBE build (`--config=rbe --config=ci` from `.github/actions/bb-remote/`) the
+config is `k8-fastbuild`, so outputs land at `bb-out/bazel-out/k8-fastbuild/bin/...`.
+Workflows consuming bb-remote-built artifacts on the runner side (e.g. `push-images.yml`)
+must use the full path. See <devinfra/docs/bb_remote_internals.md> for details.
 
 **Requirements:** `bb` on PATH and `BUILDBUDDY_API_KEY` set (both provided by session
 start hook).
