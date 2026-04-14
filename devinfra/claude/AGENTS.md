@@ -25,8 +25,12 @@ The `bb` CLI is open source at <https://github.com/buildbuddy-io/buildbuddy>. Re
 ## Container Lifecycle — Reverse-Engineered Source
 
 Anthropic's `environment-manager` binary (Go, garble-obfuscated) is partially
-reverse-engineered under <web_env/re/environment_manager/>. **Read this before
-speculating about when/how session-start-adjacent things fire.** Specifically:
+reverse-engineered under <web_env/re/environment_manager/>. **The RE is
+incomplete and may be wrong in places — treat it as a starting point, not
+ground truth.** When running inside a Claude Code web session you can pull
+the live binary from the container and cross-check it against the committed
+RE (or update the RE if it's drifted). Read this before speculating about
+when/how session-start-adjacent things fire. Specifically:
 
 - **Which hook points fire on which session modes** (`new` / `resume` /
   `resume-cached` / `setup-only`): see
@@ -43,7 +47,9 @@ speculating about when/how session-start-adjacent things fire.** Specifically:
 If something in the lifecycle is unclear, grep
 `devinfra/claude/web_env/re/environment_manager/src/` for the function name
 or error string before opening an issue — there's likely already a decompiled
-source file with line-annotated binary offsets.
+source file with line-annotated binary offsets. If the RE looks wrong or
+stale, pull the live binary from the web container and verify against it
+before assuming the RE is authoritative.
 
 ## Debugging Commands
 
