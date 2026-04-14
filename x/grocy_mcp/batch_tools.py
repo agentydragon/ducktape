@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from enum import StrEnum
-from typing import Any
+from typing import Annotated, Any, Literal
 
 import httpx
 from fastmcp import FastMCP
@@ -19,40 +19,40 @@ from pydantic import BaseModel, Field
 class EntityType(StrEnum):
     """Grocy entity type names exposed through the /objects/{entity} API."""
 
-    products = "products"
-    chores = "chores"
-    product_barcodes = "product_barcodes"
-    batteries = "batteries"
-    locations = "locations"
-    quantity_units = "quantity_units"
-    quantity_unit_conversions = "quantity_unit_conversions"
-    shopping_list = "shopping_list"
-    shopping_lists = "shopping_lists"
-    shopping_locations = "shopping_locations"
-    recipes = "recipes"
-    recipes_pos = "recipes_pos"
-    recipes_nestings = "recipes_nestings"
-    tasks = "tasks"
-    task_categories = "task_categories"
-    product_groups = "product_groups"
-    equipment = "equipment"
-    api_keys = "api_keys"
-    userfields = "userfields"
-    userentities = "userentities"
-    userobjects = "userobjects"
-    meal_plan = "meal_plan"
-    stock_log = "stock_log"
-    stock = "stock"
-    stock_current_locations = "stock_current_locations"
-    chores_log = "chores_log"
-    meal_plan_sections = "meal_plan_sections"
-    products_last_purchased = "products_last_purchased"
-    products_average_price = "products_average_price"
-    quantity_unit_conversions_resolved = "quantity_unit_conversions_resolved"
-    recipes_pos_resolved = "recipes_pos_resolved"
-    battery_charge_cycles = "battery_charge_cycles"
-    product_barcodes_view = "product_barcodes_view"
-    permission_hierarchy = "permission_hierarchy"
+    PRODUCTS = "products"
+    CHORES = "chores"
+    PRODUCT_BARCODES = "product_barcodes"
+    BATTERIES = "batteries"
+    LOCATIONS = "locations"
+    QUANTITY_UNITS = "quantity_units"
+    QUANTITY_UNIT_CONVERSIONS = "quantity_unit_conversions"
+    SHOPPING_LIST = "shopping_list"
+    SHOPPING_LISTS = "shopping_lists"
+    SHOPPING_LOCATIONS = "shopping_locations"
+    RECIPES = "recipes"
+    RECIPES_POS = "recipes_pos"
+    RECIPES_NESTINGS = "recipes_nestings"
+    TASKS = "tasks"
+    TASK_CATEGORIES = "task_categories"
+    PRODUCT_GROUPS = "product_groups"
+    EQUIPMENT = "equipment"
+    API_KEYS = "api_keys"
+    USERFIELDS = "userfields"
+    USERENTITIES = "userentities"
+    USEROBJECTS = "userobjects"
+    MEAL_PLAN = "meal_plan"
+    STOCK_LOG = "stock_log"
+    STOCK = "stock"
+    STOCK_CURRENT_LOCATIONS = "stock_current_locations"
+    CHORES_LOG = "chores_log"
+    MEAL_PLAN_SECTIONS = "meal_plan_sections"
+    PRODUCTS_LAST_PURCHASED = "products_last_purchased"
+    PRODUCTS_AVERAGE_PRICE = "products_average_price"
+    QUANTITY_UNIT_CONVERSIONS_RESOLVED = "quantity_unit_conversions_resolved"
+    RECIPES_POS_RESOLVED = "recipes_pos_resolved"
+    BATTERY_CHARGE_CYCLES = "battery_charge_cycles"
+    PRODUCT_BARCODES_VIEW = "product_barcodes_view"
+    PERMISSION_HIERARCHY = "permission_hierarchy"
 
 
 # ── Shared input/output types ──────────────────────────────────────────────
@@ -60,22 +60,40 @@ class EntityType(StrEnum):
 
 class CreateItem(BaseModel):
     entity_type: EntityType
+    # TODO: discriminated union per entity_type for body (avoids having to know per-entity field names)
     body: dict[str, Any]
 
 
-class CreateResult(BaseModel):
+class CreateOk(BaseModel):
+    kind: Literal["ok"] = "ok"
     index: int
-    ok: bool
     created_object_id: int | None = None
-    error: str | None = None
 
 
-class GetResult(BaseModel):
+class CreateError(BaseModel):
+    kind: Literal["error"] = "error"
     index: int
+    error: str
+
+
+CreateResult = Annotated[CreateOk | CreateError, Field(discriminator="kind")]
+
+
+class GetOk(BaseModel):
+    kind: Literal["ok"] = "ok"
+    entity_type: EntityType
     object_id: int
-    ok: bool
-    data: dict[str, Any] | None = None
-    error: str | None = None
+    data: dict[str, Any]
+
+
+class GetError(BaseModel):
+    kind: Literal["error"] = "error"
+    entity_type: EntityType
+    object_id: int
+    error: str
+
+
+GetResult = Annotated[GetOk | GetError, Field(discriminator="kind")]
 
 
 class StockEnrichedEntry(BaseModel):
@@ -103,7 +121,15 @@ class ConsumeItem(BaseModel):
     product_id: int
     amount: float
     spoiled: bool = False
-    location_id: int | None = Field(default=None, description="Omit → consume from any location.")
+    location_id: int | None = Field(
+        default=None,
+        description=(
+            "Which location to consume from. Omit → consume from any location (Grocy picks). "
+            # TODO: consider requiring explicit location_id when the product has stock in multiple locations,
+            # to avoid silently consuming from the wrong place. For now, rely on callers to check.
+            "If the product has stock in multiple locations, specify location_id to be explicit."
+        ),
+    )
     allow_subproduct_substitution: bool = False
 
 
@@ -143,7 +169,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient) -> None:
         """Create multiple Grocy entities in one call.
 
         Sends one POST /objects/{entity_type} per item concurrently. Failed items
-        are collected with ok=False and error set; they do not abort others.
+        are collected as CreateError; they do not abort others.
         """
 
         async def _one(i: int, item: CreateItem) -> CreateResult:
@@ -152,9 +178,9 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient) -> None:
                 r.raise_for_status()
                 data = r.json()
                 raw_id = data.get("created_object_id")
-                return CreateResult(index=i, ok=True, created_object_id=int(raw_id) if raw_id is not None else None)
+                return CreateOk(index=i, created_object_id=int(raw_id) if raw_id is not None else None)
             except Exception as e:
-                return CreateResult(index=i, ok=False, error=str(e))
+                return CreateError(index=i, error=str(e))
 
         return list(await asyncio.gather(*[_one(i, item) for i, item in enumerate(items)]))
 
@@ -178,19 +204,20 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient) -> None:
     async def get_entities(entity_type: EntityType, object_ids: list[int]) -> list[GetResult]:
         """Fetch multiple Grocy objects of the same entity type by ID.
 
-        Returns one GetResult per ID. Failed fetches set ok=False with error
-        details; they do not abort others.
+        Returns one GetResult per ID, each carrying entity_type and object_id for
+        unambiguous identification without index-matching. Failed fetches are
+        returned as GetError and do not abort others.
         """
 
-        async def _one(i: int, object_id: int) -> GetResult:
+        async def _one(object_id: int) -> GetResult:
             try:
                 r = await client.get(f"/objects/{entity_type}/{object_id}")
                 r.raise_for_status()
-                return GetResult(index=i, object_id=object_id, ok=True, data=r.json())
+                return GetOk(entity_type=entity_type, object_id=object_id, data=r.json())
             except Exception as e:
-                return GetResult(index=i, object_id=object_id, ok=False, error=str(e))
+                return GetError(entity_type=entity_type, object_id=object_id, error=str(e))
 
-        return list(await asyncio.gather(*[_one(i, oid) for i, oid in enumerate(object_ids)]))
+        return list(await asyncio.gather(*[_one(oid) for oid in object_ids]))
 
     @mcp.tool()
     async def get_stock(

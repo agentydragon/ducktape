@@ -161,25 +161,16 @@ async def test_all_tool_names_are_customized(mcp_client: Client) -> None:
     )
 
 
-# ── MCP resource ─────────────────────────────────────────────────────────
+# ── System info tool ─────────────────────────────────────────────────────
 
 
-async def test_system_info_resource(mcp_client: Client) -> None:
-    """GET /system/info is exposed as an MCP resource, not a tool."""
-    tools = await mcp_client.list_tools()
-    tool_names = {t.name for t in tools}
-    assert "get_system_info" not in tool_names, "system_info should be a resource, not a tool"
-
-    resources = await mcp_client.list_resources()
-    resource_uris = {str(r.uri): r for r in resources}
-    matching = [uri for uri in resource_uris if "system_info" in uri]
-    assert matching, f"system_info resource not found in {list(resource_uris.keys())}"
-
-    resource_uri = matching[0]
-    content = await mcp_client.read_resource(resource_uri)
-    assert content, "system_info resource returned empty content"
-    text = str(content)
-    assert "grocy_version" in text.lower() or "Grocy" in text, f"Unexpected resource content: {text[:200]}"
+async def test_system_info_tool(mcp_client: Client) -> None:
+    """GET /system/info is exposed as an MCP tool (claude.ai does not expose MCP resources to the AI)."""
+    result = await mcp_client.call_tool("get_system_info", {})
+    sc = result.structured_content
+    assert sc is not None
+    text = str(sc)
+    assert "grocy_version" in text.lower() or "grocy" in text.lower(), f"Unexpected tool result: {text[:200]}"
 
 
 # ── Inventory bootstrap workflow ─────────────────────────────────────────
@@ -205,8 +196,8 @@ async def test_inventory_bootstrap(mcp_client: Client) -> None:
     sc = result.structured_content
     assert sc is not None
     created = sc["result"]
-    assert created[0]["ok"], f"location create failed: {created[0].get('error')}"
-    assert created[1]["ok"], f"quantity_unit create failed: {created[1].get('error')}"
+    assert created[0]["kind"] == "ok", f"location create failed: {created[0].get('error')}"
+    assert created[1]["kind"] == "ok", f"quantity_unit create failed: {created[1].get('error')}"
     loc_id = created[0]["created_object_id"]
     qu_id = created[1]["created_object_id"]
 
@@ -229,7 +220,9 @@ async def test_inventory_bootstrap(mcp_client: Client) -> None:
     )
     sc = result.structured_content
     assert sc is not None
-    product_id = sc["result"][0]["created_object_id"]
+    product_create = sc["result"][0]
+    assert product_create["kind"] == "ok", f"product create failed: {product_create.get('error')}"
+    product_id = product_create["created_object_id"]
     assert product_id is not None
 
     # 3. Add stock
@@ -284,7 +277,7 @@ async def test_inventory_bootstrap(mcp_client: Client) -> None:
     sc = result.structured_content
     assert sc is not None
     entities = sc["result"]
-    assert entities[0]["ok"], f"get_entities failed: {entities[0].get('error')}"
+    assert entities[0]["kind"] == "ok", f"get_entities failed: {entities[0].get('error')}"
     assert entities[0]["data"]["name"] == f"TestRice-{suffix}"
 
 

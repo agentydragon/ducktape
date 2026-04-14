@@ -59,13 +59,13 @@ background_commands:
     timeout: 300
   - name: git remote info
     command: |
-      echo "Git remotes:"
-      echo "  origin        — Anthropic's local git proxy (routes to GitHub). Use this for pushing: git push origin <branch>."
-      echo "  github-no-proxy — Direct GitHub URL (https://github.com/agentydragon/ducktape)."
-      echo "                    Exists ONLY as a bbr shim: BB's RBE runner runs on their cloud and cannot reach"
-      echo "                    the local proxy URL (127.0.0.1:51318) that 'origin' uses. bbr selects this remote"
-      echo "                    so the runner can fetch the repo from GitHub directly."
-      echo "                    Do NOT push to github-no-proxy — it uses a read-only PAT. Always push to origin."
+      echo "Git remotes (set up by web_setup.sh):"
+      echo "  origin          — Anthropic's local git proxy (routes to GitHub). Push here: git push origin <branch>."
+      echo "  github-no-proxy — Plain GitHub HTTPS URL, no credentials."
+      echo "                    Exists ONLY as a bbr shim: BB's RBE runner runs on their cloud and cannot"
+      echo "                    reach the local proxy URL (127.0.0.1:51318) that 'origin' uses. bbr selects"
+      echo "                    this remote so the cloud runner can fetch the repo from GitHub directly."
+      echo "                    Do NOT push to github-no-proxy — no push credentials. Always push to origin."
     timeout: 10
   - name: fork remote setup
     command: |

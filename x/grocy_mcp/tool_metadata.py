@@ -135,7 +135,9 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     ("GET", "/userfields/{entity}/{objectId}"): _D("get_userfields"),
     ("PUT", "/userfields/{entity}/{objectId}"): _D("set_userfields"),
     # ── System ───────────────────────────────────────────────────────
-    ("GET", "/system/info"): _E("get_system_info", resource=True),
+    ("GET", "/system/info"): _E(
+        "get_system_info"
+    ),  # tool, not resource: claude.ai doesn't expose MCP resources to the AI
     ("GET", "/system/time"): _D("get_system_time"),
     ("GET", "/system/db-changed-time"): _E("get_db_changed_time"),
     ("GET", "/system/config"): _D("get_system_config"),
