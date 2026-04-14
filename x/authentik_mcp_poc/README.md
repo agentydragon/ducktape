@@ -5,6 +5,43 @@ Authentik, and then uses the resulting OAuth token to call a second service
 that is **also** behind Authentik — a real Authentik **Proxy Provider outpost**,
 not just JWT validation in the backend itself.
 
+**Status**: working end-to-end as of 2026-04-13. Adding
+`https://authentik-mcp-poc.allegedly.works/mcp` to claude.ai as a remote MCP
+server and calling `whoami_via_backend` returns:
+
+```json
+{
+  "backend_status": 200,
+  "backend_url": "https://authentik-mcp-poc-backend.allegedly.works/whoami",
+  "backend_response": {
+    "user": "agentydragon",
+    "email": "agentydragon@gmail.com",
+    "uid": "6bdf979edce7a934bf8a246005bcb38103fc12b9b682b11b1dcf46cbe4402b00",
+    "groups": ["authentik Admins", "Grafana Admins"],
+    "secret_message": "auth flowed through the Authentik proxy outpost"
+  }
+}
+```
+
+Every field above is load-bearing:
+
+- `backend_status: 200` — proves the outpost accepted the forwarded Bearer.
+- `backend_url: https://authentik-mcp-poc-backend.allegedly.works/whoami` —
+  the MCP server's tool handler went out to the internet, hit the public
+  Gateway, landed on the Authentik embedded outpost, got forwarded to the
+  backend's internal Service.
+- `user` / `email` / `groups` — come from `X-Authentik-{Username,Email,Groups}`
+  headers the outpost injected **after** validating the token by calling
+  `/application/o/introspect/` against itself. That means the token really
+  was issued by the backend proxy provider's own OAuth2 client (if it had
+  been issued by any other provider, the introspection lookup would have
+  missed and the outpost would have fallen through to "Unauthenticated").
+- `uid` — the `sub` claim in the token, Authentik's `hashed_user_id` of
+  `agentydragon`.
+- `secret_message` — a hardcoded string in <backend.py>, echoed only if the
+  backend's `/whoami` handler actually ran (proving the outpost rewrote the
+  request to `internal_host` instead of serving its own 302/401 page).
+
 Two things are being demonstrated:
 
 1. That FastMCP's `OIDCProxy` + Authentik implements the full **MCP remote
@@ -14,17 +51,17 @@ Two things are being demonstrated:
    registration, RFC 8707 resource indicators).
 2. That a single user identity flows through **two independent Authentik
    providers** — once when the MCP server validates the user's Authentik JWT,
-   and again when the Authentik proxy outpost in front of the backend validates
-   a **backend-scoped token** the tool handler mints on the fly via an
-   RFC 7521 JWT-bearer client-credentials exchange (see <NOTES.md>). The
-   `jwt_federation_providers` list on the backend proxy provider is the
-   knob that authorizes the exchange. Net effect: one user login in
-   claude.ai grants the agent the ability to call through a _real_ Authentik
-   Proxy Provider outpost as that same user.
+   and again when the Authentik proxy outpost in front of the backend
+   validates a **backend-scoped token** the tool handler mints on the fly
+   via an RFC 7521 JWT-bearer client-credentials exchange. The
+   `jwt_federation_providers` list on the backend proxy provider is the knob
+   that authorizes the exchange. Net effect: one user login in claude.ai
+   grants the agent the ability to call through a _real_ Authentik Proxy
+   Provider outpost as that same user.
 
-This is a toy: the only tool is `whoami_via_backend`, which forwards the
-caller's Bearer JWT to the backend and returns the outpost-injected identity
-headers. That's enough to prove every link of the chain is sound.
+This is a toy: the only tool is `whoami_via_backend`, which exchanges the
+caller's upstream Authentik JWT for a backend-scoped one and forwards it.
+That's enough to prove every link of the chain is sound.
 
 ## Protocol quick reference
 
@@ -211,26 +248,86 @@ The three-layer split keeps bootstrap ordering explicit:
 Secret into the already-existing namespace; `app/` consumes that Secret via
 `secretKeyRef` in the server Deployment.
 
-## Terraform: two providers, one JWT
+## Required moving parts
+
+Twelve things have to line up for this POC to work. Missing or wrong on any
+of them produces a specific, localized failure that's easy to mistake for
+something else — each row lists what you get if it's broken.
+
+| #   | Component                                             | Where                                                                               | What it does                                                                                                                                                                                                                                                                                                                                                                   | Failure mode if missing                                                               |
+| --- | ----------------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| 1   | `authentik_provider_oauth2.mcp_poc`                   | <../../cluster/terraform/gitops/authentik-mcp-poc/main.tf>                          | User-login AS, wrapped by OIDCProxy. `issuer_mode=per_provider`, `client_type=confidential`, `allowed_redirect_uris=[https://authentik-mcp-poc.allegedly.works/auth/callback]`, property_mappings = openid+email+profile                                                                                                                                                       | OAuth flow in claude.ai fails at `/authorize`                                         |
+| 2   | `authentik_provider_proxy.mcp_poc_backend`            | same `main.tf`                                                                      | Forward-auth for the backend. `mode=proxy`, `jwt_federation_providers=[mcp_poc.id]`, `access_token_validity=hours=24`                                                                                                                                                                                                                                                          | Tool call gets 302 (SSO redirect) from outpost because no provider backs the hostname |
+| 3   | `authentik_application` × 2 + policy bindings         | same `main.tf`                                                                      | Each provider needs an Application with a policy binding (here: `authentik Admins` group) or the user can't access it                                                                                                                                                                                                                                                          | `__check_policy_access` fails on the outpost side, 403                                |
+| 4   | `kubernetes_secret "mcp_poc_oidc"`                    | same `main.tf`                                                                      | Writes `client_id`, `client_secret` (for the OAuth2 provider) **and `backend_client_id`** (auto-generated on the proxy provider) into the `authentik-mcp-poc` namespace                                                                                                                                                                                                        | MCP server pod crash-loops on startup (missing required Pydantic field)               |
+| 5   | `authentik_provider_proxy` ↔ embedded outpost binding | <../../cluster/k8s/authentik/app/blueprints/embedded-outpost.yaml> `!Find`          | The embedded outpost's `providers` list must include the proxy provider by name, or the outpost doesn't know the hostname and returns 404                                                                                                                                                                                                                                      | `/whoami` returns a branded Authentik 404 page                                        |
+| 6   | Embedded outpost HTTPRoute                            | <../../cluster/k8s/authentik/proxy-routes/authentik-mcp-poc-backend-httproute.yaml> | Gateway-level HTTPRoute that routes `authentik-mcp-poc-backend.allegedly.works` → `authentik-server:80` in the `authentik` namespace                                                                                                                                                                                                                                           | DNS resolves but Envoy has no route, returns 404 from the Gateway itself              |
+| 7   | MCP server HTTPRoute                                  | <../../cluster/k8s/agents/authentik-mcp-poc/app/server-httproute.yaml>              | Plain route for `authentik-mcp-poc.allegedly.works` → `mcp-server:8765` in the POC namespace (this one is NOT behind the outpost)                                                                                                                                                                                                                                              | claude.ai can't reach `/mcp` at all                                                   |
+| 8   | `server-deployment.yaml` env wiring                   | <../../cluster/k8s/agents/authentik-mcp-poc/app/server-deployment.yaml>             | Maps `client_id`/`client_secret`/`backend_client_id` from the TF-managed secret to `AUTHENTIK_MCP_POC_OIDC_*` env vars. Also `FASTMCP_HOME=/tmp/fastmcp` (OIDCProxy writes encrypted DCR state there) and `enableServiceLinks: false` (so K8s `<SVC>_PORT=tcp://...` env vars don't collide with Pydantic settings parsing)                                                    | Pod crash-loops on startup, see <NOTES.md> gotcha list                                |
+| 9   | `OIDCProxy` wrapping provider 1                       | <server.py> `_build_auth`                                                           | `base_url` must NOT include `/mcp` (we serve via `mcp.http_app(path="/mcp")` directly, not via FastAPI mount), or AS metadata and the resource URL end up wrong                                                                                                                                                                                                                | 401 with mismatched `resource_metadata` URL, claude.ai refuses to proceed             |
+| 10  | `get_access_token().token` (not raw header)           | <server.py> `_extract_bearer_token`                                                 | OIDCProxy hands claude.ai a FastMCP-signed JTI reference; the upstream Authentik token lives in the server-side encrypted store and is exposed on `AccessToken.token` only after `OAuthProxy.load_access_token` swaps it in. Raw `Authorization` header = wrong token                                                                                                          | Outpost introspection says "token is not active"; see NOTES.md §2                     |
+| 11  | RFC 7521 JWT-bearer token exchange                    | <server.py> `_exchange_token_for_backend`                                           | POST `/application/o/token/` with `grant_type=client_credentials`, `client_id=<proxy provider client_id>`, `client_assertion_type=...:jwt-bearer`, `client_assertion=<user upstream token>`, `scope=openid email profile ak_proxy`. Authentik validates the assertion via `__validate_jwt_from_provider`, preserves the user, mints a NEW token scoped to the backend provider | Outpost introspection says "token is not active"; see NOTES.md §3-§4                  |
+| 12  | `scope=openid email profile ak_proxy`                 | same helper                                                                         | Property mappings in Authentik are scope-gated. Without `ak_proxy` the proxy-outpost claim mapping doesn't fire and the outpost still authenticates the request but injects **empty** `X-Authentik-*` headers — the sneaky failure mode that gives you a 200 with a blank identity                                                                                             | 200 from `/whoami`, `user`/`email`/`groups` all blank; see NOTES.md §6                |
+
+### Terraform shape
 
 ```hcl
-# User-login AS: OIDCProxy upstream.
+# 1. User-login AS: OIDCProxy upstream.
 resource "authentik_provider_oauth2" "mcp_poc" {
-  client_type                = "confidential"
-  allowed_redirect_uris      = [{
+  name              = "authentik-mcp-poc"
+  client_id         = "authentik-mcp-poc"
+  client_type       = "confidential"
+  issuer_mode       = "per_provider"
+  include_claims_in_id_token = true
+
+  property_mappings = [
+    # openid + email + profile scope mappings
+    data.authentik_property_mapping_provider_scope.openid.id,
+    data.authentik_property_mapping_provider_scope.email.id,
+    data.authentik_property_mapping_provider_scope.profile.id,
+  ]
+
+  allowed_redirect_uris = [{
     matching_mode = "strict"
-    url           = "https://authentik-mcp-poc.allegedly.works/mcp/auth/callback"
+    # Matches OIDCProxy's default `/auth/callback` redirect path relative
+    # to `base_url = https://authentik-mcp-poc.allegedly.works` (no `/mcp`
+    # prefix — the MCP server is served by `mcp.http_app(path="/mcp")`
+    # directly, not mounted under FastAPI).
+    url = "https://authentik-mcp-poc.allegedly.works/auth/callback"
   }]
-  # …
 }
 
-# Backend forward-auth: trusts JWTs from mcp_poc above.
+# 2. Backend forward-auth: the outpost's OAuth2 client will accept JWT
+#    assertions from the mcp_poc provider above.
 resource "authentik_provider_proxy" "mcp_poc_backend" {
+  name                     = "authentik-mcp-poc-backend"
   external_host            = "https://authentik-mcp-poc-backend.allegedly.works"
   internal_host            = "http://authentik-mcp-poc-backend.authentik-mcp-poc.svc.cluster.local:8080"
   mode                     = "proxy"
+  access_token_validity    = "hours=24"
+
+  # THE KNOB. Per authentik/providers/oauth2/views/token.py, this list is
+  # filtered by __validate_jwt_from_provider when the /token/ endpoint
+  # receives a client_credentials request with a JWT client_assertion —
+  # and the resulting new AccessToken is stored with provider=<this
+  # proxy provider>, which is exactly what the outpost's introspection
+  # looks up on the forward-auth hop.
   jwt_federation_providers = [authentik_provider_oauth2.mcp_poc.id]
-  # …
+}
+
+# 3. K8s secret exposes BOTH providers' client_ids plus OAuth2 client_secret.
+resource "kubernetes_secret" "mcp_poc_oidc" {
+  metadata {
+    name      = "authentik-mcp-poc-oidc"
+    namespace = "authentik-mcp-poc"
+  }
+  data = {
+    client_id         = authentik_provider_oauth2.mcp_poc.client_id
+    client_secret     = authentik_provider_oauth2.mcp_poc.client_secret
+    backend_client_id = authentik_provider_proxy.mcp_poc_backend.client_id
+    # No backend client_secret: the JWT assertion authenticates the
+    # /token/ call, so we don't need one (see NOTES.md §5).
+  }
 }
 ```
 
@@ -278,26 +375,63 @@ stack with:
 # 1. Terraform CRD applied, providers exist, secret written.
 kubectl -n flux-system get terraform authentik-mcp-poc
 kubectl -n authentik-mcp-poc get secret authentik-mcp-poc-oidc
+# Expect three data keys: client_id, client_secret, backend_client_id.
 
 # 2. Both Deployments ready.
 kubectl -n authentik-mcp-poc get deploy
 
 # 3. MCP server returns a 401 challenge with resource_metadata.
 curl -i https://authentik-mcp-poc.allegedly.works/mcp
+# Expect: HTTP/1.1 401 Unauthorized
+# WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource"
 
-# 4. Backend is reachable through the outpost — expect an Authentik 302 when
-#    unauthenticated (SSO redirect), not a 200 from the FastAPI app.
+# 4. Backend's `/whoami` is ONLY reachable via the outpost with a valid
+#    backend-scoped Bearer. Direct unauthenticated GET returns the outpost's
+#    HTML "Unauthenticated" page.
 curl -i https://authentik-mcp-poc-backend.allegedly.works/whoami
+# Expect: HTTP/1.1 401 Unauthorized + HTML body from outpost
 
-# 5. End-to-end: add the MCP server to claude.ai or Claude Code, run the tool.
+# 5. End-to-end: add the MCP server to claude.ai or Claude Code, run the
+#    `whoami_via_backend` tool. Expected response is the JSON blob at the
+#    top of this README. Any variation (blank fields, 401, 404) maps to
+#    exactly one of the twelve rows in the "Required moving parts" table.
 ```
+
+### End-to-end test result
+
+Run on 2026-04-13 against the live cluster after all twelve components
+were in place:
+
+```json
+{
+  "backend_status": 200,
+  "backend_url": "https://authentik-mcp-poc-backend.allegedly.works/whoami",
+  "backend_response": {
+    "user": "agentydragon",
+    "email": "agentydragon@gmail.com",
+    "uid": "6bdf979edce7a934bf8a246005bcb38103fc12b9b682b11b1dcf46cbe4402b00",
+    "groups": ["authentik Admins", "Grafana Admins"],
+    "secret_message": "auth flowed through the Authentik proxy outpost"
+  }
+}
+```
+
+For the full forensic trace of how we got there (three wrong turns along
+the way), see <NOTES.md>.
 
 ## Things this POC intentionally skips
 
-- No request signing, no audience-split JWTs: everything uses a single
-  `openid`+`email`+`profile` scope and the user's own identity.
-- No NetworkPolicy on the backend — in production the backend port should
-  only be reachable from the outpost, so direct in-cluster calls bypass the
-  outpost. For the POC we rely on the hostname/outpost coupling.
-- No scope-based RBAC in the MCP server. There's one tool and it runs for
-  any authenticated user.
+- **No request signing, no audience-split tokens per backend.** We exchange
+  once per tool call for a single backend. A multi-backend fanout would need
+  N exchanges, one per backend's `client_id`.
+- **No NetworkPolicy on the backend.** In production the backend port should
+  only be reachable from the outpost so direct in-cluster calls can't bypass
+  forward-auth. For the POC we rely on the hostname/outpost coupling —
+  anyone inside the cluster could still curl the Service directly.
+- **No scope-based RBAC in the MCP server.** There's one tool and it runs
+  for any authenticated user. The `authentik Admins` policy binding on the
+  Authentik Application is the only gate.
+- **No proxy-provider client_secret.** The JWT assertion IS the
+  authentication for the client_credentials grant (see NOTES.md §5), so
+  we don't need to ship the backend proxy provider's auto-generated
+  client_secret into the MCP server pod.
