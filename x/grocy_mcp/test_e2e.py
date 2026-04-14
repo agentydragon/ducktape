@@ -20,6 +20,7 @@ import httpx
 import pytest
 import pytest_bazel
 from fastmcp.tools import ToolResult
+from mcp.types import TextContent
 
 from third_party.containers.rlocations import GROCY
 from util.oci import load_oci_image
@@ -128,7 +129,9 @@ def _result_json(result: ToolResult) -> Any:
     if result.structured_content is not None:
         return result.structured_content
     if result.content:
-        return json.loads(result.content[0].text)
+        first = result.content[0]
+        assert isinstance(first, TextContent), f"Expected TextContent, got {type(first)}"
+        return json.loads(first.text)
     raise ValueError(f"Empty tool result: {result!r}")
 
 

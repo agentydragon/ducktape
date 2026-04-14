@@ -29,8 +29,9 @@ from fastmcp.server.auth import MultiAuth
 from fastmcp.server.auth.auth import AuthProvider
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from fastmcp.server.providers.openapi import MCPType, OpenAPIResource, OpenAPITool, RouteMap
+from fastmcp.server.providers.openapi import MCPType, OpenAPIResource, OpenAPIResourceTemplate, OpenAPITool, RouteMap
 from fastmcp.utilities.openapi import HTTPRoute
+from pydantic.networks import AnyUrl
 
 from util.bazel.runfiles import get_required_path
 from x.grocy_mcp.auth import AuthentikExchangeAuth
@@ -71,7 +72,8 @@ def _load_openapi_spec() -> dict[str, object]:
     :grocy_openapi_fixed genrule. See <fix_openapi_spec.py>.
     """
     spec_path = get_required_path("_main/x/grocy_mcp/grocy.openapi.fixed.json")
-    return json.loads(spec_path.read_text())
+    result: dict[str, object] = json.loads(spec_path.read_text())
+    return result
 
 
 def build_mcp(settings: ServerSettings, *, client: httpx.AsyncClient | None = None) -> FastMCP:
@@ -101,7 +103,9 @@ def build_mcp(settings: ServerSettings, *, client: httpx.AsyncClient | None = No
             return MCPType.RESOURCE
         return mcp_type
 
-    def _customize_component(route: HTTPRoute, component: OpenAPITool | OpenAPIResource) -> None:
+    def _customize_component(
+        route: HTTPRoute, component: OpenAPITool | OpenAPIResource | OpenAPIResourceTemplate
+    ) -> None:
         override = TOOL_OVERRIDES.get((route.method, route.path))
         if override is None:
             raise ValueError(
@@ -109,7 +113,7 @@ def build_mcp(settings: ServerSettings, *, client: httpx.AsyncClient | None = No
             )
         component.name = override.name
         if isinstance(component, OpenAPIResource):
-            component.uri = f"resource://{override.name}"
+            component.uri = AnyUrl(f"resource://{override.name}")
         if override.extra_description:
             component.description = f"{component.description}\n\n{override.extra_description}"
 

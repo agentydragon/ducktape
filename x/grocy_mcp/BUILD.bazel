@@ -150,6 +150,7 @@ py_test(
         "//util/testing:container_logs",
         "@pypi//fastmcp",
         "@pypi//httpx",
+        "@pypi//mcp",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//testcontainers",
