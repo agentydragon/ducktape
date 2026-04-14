@@ -29,6 +29,9 @@ setup_docker: true
 env_exports: |
   export DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=0
   export DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG=1
+  # Nix devtools (prettier with svelte plugin, pre-commit, ruff, etc.) must
+  # come before /opt/node22/bin so the nix versions are preferred.
+  export PATH="${HOME}/.nix-profile/bin:${PATH}"
 bazel_remote_proxy:
   target: remote.buildbuddy.io:443
 bazel_bes_proxy:

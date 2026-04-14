@@ -130,16 +130,13 @@ py_test(
     ],
 )
 
-py_test(
-    name = "test_dump_tool",
-    srcs = ["test_dump_tool.py"],
+py_binary(
+    name = "dump_tools",
+    srcs = ["dump_tools.py"],
+    main_module = "x.grocy_mcp.dump_tools",
     deps = [
         ":config",
-        ":conftest",
         ":server",
-        "//util/testing:undeclared_outputs",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

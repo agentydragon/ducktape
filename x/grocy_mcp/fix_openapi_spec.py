@@ -12,7 +12,11 @@ Grocy's published spec has two classes of issues that prevent FastMCP's
    drops parameters it can't resolve, making ``/objects/{entity}`` tools
    unusable (no ``entity`` parameter).
 
-This script reads the raw spec, applies both fixups, and writes the
+Additionally, routes replaced by batch tools (``batch_tools.py``) are
+stripped from the spec entirely so FastMCP never generates competing
+single-item tool stubs for them.
+
+This script reads the raw spec, applies all fixups, and writes the
 corrected spec. It runs as a Bazel genrule so the server loads a
 pre-fixed spec at runtime with no patching logic.
 """
@@ -70,33 +74,39 @@ def fix_entity_refs(spec: dict[str, object]) -> None:
         }
 
 
-def fix_created_object_id(spec: dict[str, object]) -> None:
-    """Widen created_object_id to accept string or integer.
+# Routes replaced by custom batch tools in batch_tools.py.
+# Stripped from the spec so FastMCP never generates competing stubs for them.
+_REPLACED_ROUTES: set[tuple[str, str]] = {
+    ("get", "/objects/{entity}"),
+    ("post", "/objects/{entity}"),
+    ("get", "/objects/{entity}/{objectId}"),
+    ("get", "/stock"),
+    ("post", "/stock/products/{productId}/add"),
+    ("post", "/stock/products/{productId}/consume"),
+    ("post", "/stock/products/{productId}/inventory"),
+}
 
-    Grocy returns created_object_id as a string despite the spec declaring it
-    as integer, causing FastMCP output validation to fail.
+
+def strip_replaced_routes(spec: dict[str, object]) -> None:
+    """Remove routes replaced by batch_tools.py from the spec.
+
+    Keeps the path entry if other HTTP methods remain; removes the path
+    entirely if all its methods are stripped.
     """
     paths = spec.get("paths")
     if not isinstance(paths, dict):
         return
-    entity_route = paths.get("/objects/{entity}")
-    if not isinstance(entity_route, dict):
-        return
-    post_op = entity_route.get("post")
-    if not isinstance(post_op, dict):
-        return
-    try:
-        props = post_op["responses"]["200"]["content"]["application/json"]["schema"]["properties"]
-    except (KeyError, TypeError):
-        return
-    if not isinstance(props, dict):
-        return
-    field = props.get("created_object_id")
-    if isinstance(field, dict) and field.get("type") == "integer":
-        props["created_object_id"] = {
-            "anyOf": [{"type": "integer"}, {"type": "string"}],
-            "description": field.get("description", "The id of the created object"),
-        }
+    empty_paths = []
+    for path, path_item in paths.items():
+        if not isinstance(path_item, dict):
+            continue
+        for method in list(path_item):
+            if (method, path) in _REPLACED_ROUTES:
+                del path_item[method]
+        if not any(m in path_item for m in ("get", "post", "put", "patch", "delete")):
+            empty_paths.append(path)
+    for path in empty_paths:
+        del paths[path]
 
 
 def main() -> None:
@@ -107,7 +117,7 @@ def main() -> None:
     spec: dict[str, object] = json.loads(Path(sys.argv[1]).read_text())
     strip_empty_enums(spec)
     fix_entity_refs(spec)
-    fix_created_object_id(spec)
+    strip_replaced_routes(spec)
     Path(sys.argv[2]).write_text(json.dumps(spec, indent=2))
 
 
