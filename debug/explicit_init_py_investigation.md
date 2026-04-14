@@ -1,6 +1,20 @@
 # `--incompatible_default_to_explicit_init_py` sys.path breakage
 
-## Status: root cause found
+## Status: fixed
+
+Resolved by two successive fixes in `util/bazel/subprocess.py`:
+
+1. Commit 5fb25de — `python_env(inherit=True)` stopped propagating PYTHONPATH
+   in a Bazel venv (venv activation handles sys.path via `pyvenv.cfg`).
+2. Follow-up — `python_env(inherit=False)` stopped propagating PYTHONPATH as
+   well, and now forwards `RUNFILES_DIR` / `RUNFILES_MANIFEST_FILE` /
+   `TEST_SRCDIR` / `JAVA_RUNFILES` so that `_bazel_site_init` in the
+   child can still locate the runfiles root. Without the runfiles env vars,
+   the child venv Python activates but `bazel.pth` cannot find repo-local
+   packages. Fixed `//mcp_infra/exec:test_mcp_integration` (the
+   `stdio_echo_spec` fixture uses `inherit=False`).
+
+The original investigation is kept below for historical context.
 
 ## Problem
 

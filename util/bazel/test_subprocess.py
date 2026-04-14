@@ -27,16 +27,16 @@ def test_python_env_no_inherit_minimal():
 
 
 def test_python_env_bazel_venv_omits_pythonpath():
-    """In a Bazel venv, PYTHONPATH is omitted (venv handles sys.path)."""
+    """In a Bazel venv, PYTHONPATH is omitted regardless of ``inherit``.
+
+    The child activates the venv via ``pyvenv.cfg`` discovery (``sys.executable``
+    points at the venv python), so propagating PYTHONPATH is both unnecessary and
+    harmful — it leaks the rules_python bootstrap's poisoned ``sys.path[0]``
+    (the test's package directory) and causes stdlib shadowing.
+    """
     assert _in_bazel_venv(), "test must run in a Bazel venv"
-    env = python_env(inherit=True)
-    assert "PYTHONPATH" not in env
-
-
-def test_python_env_inherit_false_always_has_pythonpath():
-    """inherit=False always includes PYTHONPATH (child env is too minimal for venv discovery)."""
-    env = python_env(inherit=False)
-    assert "PYTHONPATH" in env
+    assert "PYTHONPATH" not in python_env(inherit=True)
+    assert "PYTHONPATH" not in python_env(inherit=False)
 
 
 def test_python_env_sets_safe_path():

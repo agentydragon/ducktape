@@ -58,24 +58,35 @@ def _merge_pythonpath() -> str:
     return os.pathsep.join(merged)
 
 
+#: Environment variables that ``_bazel_site_init`` reads to locate runfiles
+#: when a child venv Python is launched. Without at least one of these the
+#: venv's ``bazel.pth`` site hook cannot resolve the runfiles root, so the
+#: child fails to import any repo-local module.
+_BAZEL_RUNFILES_ENV = ("RUNFILES_DIR", "RUNFILES_MANIFEST_FILE", "JAVA_RUNFILES", "TEST_SRCDIR")
+
+
 def python_env(*, inherit: bool = True) -> dict[str, str]:
     """Environment dict for spawning Python subprocesses.
 
-    In a Bazel venv with ``inherit=True``, omits PYTHONPATH — the child
-    inherits the venv (pyvenv.cfg → _bazel_site_init) and gets correct
-    sys.path automatically.
+    In a Bazel venv, omits PYTHONPATH — ``sys.executable`` points at the venv
+    python, so the child activates the venv via ``pyvenv.cfg`` discovery
+    (``site.py`` → ``bazel.pth`` → ``_bazel_site_init``) and gets the correct
+    sys.path without PYTHONPATH. With ``inherit=False`` we still forward the
+    Bazel runfiles pointers so that venv activation can find the runfiles root.
 
-    PYTHONPATH is still propagated when:
-    - ``inherit=False``: minimal env, child needs explicit paths since
-      env vars like RUNFILES_DIR (needed by _bazel_site_init) are missing.
-    - Outside Bazel (Nix wheel): no venv, child needs PYTHONPATH to find
-      Nix-managed packages.
+    Outside Bazel (Nix wheel, hook daemon), PYTHONPATH is propagated so the
+    child can find Nix-managed packages — there is no venv to activate.
+
+    Propagating PYTHONPATH inside a Bazel venv is actively harmful: with
+    ``--incompatible_default_to_explicit_init_py``, the rules_python bootstrap
+    prepends the test's package directory to ``sys.path[0]``, which leaks into
+    PYTHONPATH and causes stdlib shadowing when a local file collides with a
+    stdlib module (e.g., ``mcp_infra/exec/subprocess.py`` shadowing stdlib
+    ``subprocess`` in any subprocess spawned from a test in that package).
+    See <debug/explicit_init_py_investigation.md>.
     """
-    env = os.environ.copy() if inherit else {}
-    if _in_bazel_venv() and inherit:
-        # Venv activation handles sys.path in the child. Don't propagate
-        # PYTHONPATH — it includes the bootstrap's sys.path[0] prepend
-        # which causes stdlib shadowing.
+    env = os.environ.copy() if inherit else {k: v for k in _BAZEL_RUNFILES_ENV if (v := os.environ.get(k)) is not None}
+    if _in_bazel_venv():
         env.pop("PYTHONPATH", None)
     else:
         env["PYTHONPATH"] = _merge_pythonpath()
@@ -145,8 +156,11 @@ def generate_shell_wrapper(
         extra_lines: Raw shell lines inserted after exports and before the ``exec``
                      (use for dynamic expressions like ``$(...)``).
     """
-    pythonpath = python_env(inherit=False)["PYTHONPATH"]
-    env: dict[str, str | Path] = {"PYTHONPATH": pythonpath}
+    # Shell wrappers run outside any Bazel venv (e.g., installed shims in Nix
+    # environments) and must bake the full sys.path so the launched Python can
+    # find its packages. Call _merge_pythonpath() directly instead of going
+    # through python_env(), which omits PYTHONPATH in a Bazel venv context.
+    env: dict[str, str | Path] = {"PYTHONPATH": _merge_pythonpath()}
     if baked_env:
         env.update(baked_env)
     parts = ["#!/bin/sh", *exports_from_dict(env)]
