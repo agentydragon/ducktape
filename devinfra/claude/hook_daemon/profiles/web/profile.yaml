@@ -57,6 +57,16 @@ background_commands:
   - name: pre-commit setup
     command: pre-commit install --install-hooks
     timeout: 300
+  - name: git remote info
+    command: |
+      echo "Git remotes:"
+      echo "  origin        — Anthropic's local git proxy (routes to GitHub). Use this for pushing: git push origin <branch>."
+      echo "  github-no-proxy — Direct GitHub URL (https://github.com/agentydragon/ducktape)."
+      echo "                    Exists ONLY as a bbr shim: BB's RBE runner runs on their cloud and cannot reach"
+      echo "                    the local proxy URL (127.0.0.1:51318) that 'origin' uses. bbr selects this remote"
+      echo "                    so the runner can fetch the repo from GitHub directly."
+      echo "                    Do NOT push to github-no-proxy — it uses a read-only PAT. Always push to origin."
+    timeout: 10
   - name: fork remote setup
     command: |
       if [ -z "${GITHUB_TOKEN:-}" ]; then

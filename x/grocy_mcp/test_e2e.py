@@ -136,9 +136,15 @@ def grocy_mcp(grocy_base_url: str) -> FastMCP:
     return build_mcp(_settings(grocy_base_url), client=client)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 async def mcp_client(grocy_mcp: FastMCP) -> AsyncGenerator[Client]:
-    """Session-scoped MCP client exercising the full MCP protocol in-process."""
+    """Function-scoped MCP client exercising the full MCP protocol in-process.
+
+    Function scope (not session) ensures the client and its transport share the same
+    event loop as the test function. pytest-asyncio creates a new event loop per test
+    function; a session-scoped async fixture would run in a different loop and the
+    client's internal asyncio primitives would deadlock when used from the test loop.
+    """
     async with Client(FastMCPTransport(grocy_mcp)) as client:
         yield client
 
@@ -198,7 +204,9 @@ async def test_inventory_bootstrap(mcp_client: Client) -> None:
             ]
         },
     )
-    created = result.structured_content["result"]
+    sc = result.structured_content
+    assert sc is not None
+    created = sc["result"]
     assert created[0]["ok"], f"location create failed: {created[0].get('error')}"
     assert created[1]["ok"], f"quantity_unit create failed: {created[1].get('error')}"
     loc_id = created[0]["created_object_id"]
@@ -221,20 +229,26 @@ async def test_inventory_bootstrap(mcp_client: Client) -> None:
             ]
         },
     )
-    product_id = result.structured_content["result"][0]["created_object_id"]
+    sc = result.structured_content
+    assert sc is not None
+    product_id = sc["result"][0]["created_object_id"]
     assert product_id is not None
 
     # 3. Add stock
     result = await mcp_client.call_tool(
         "add_stock", {"items": [{"product_id": product_id, "amount": 5, "best_before_date": "2030-01-01"}]}
     )
-    op = result.structured_content["result"][0]
+    sc = result.structured_content
+    assert sc is not None
+    op = sc["result"][0]
     assert op["ok"], f"add_stock failed: {op.get('error')}"
     assert op["new_amount"] == 5.0
 
     # 4. Get enriched stock — verify product + QU + location attached
     result = await mcp_client.call_tool("get_stock", {"include_quantity_unit": True, "include_location": True})
-    stock = result.structured_content["result"]
+    sc = result.structured_content
+    assert sc is not None
+    stock = sc["result"]
     product_stock = [s for s in stock if str(s["product_id"]) == str(product_id)]
     assert len(product_stock) == 1, f"product {product_id} not found in stock"
     assert float(product_stock[0]["amount"]) == 5.0
@@ -243,19 +257,24 @@ async def test_inventory_bootstrap(mcp_client: Client) -> None:
 
     # 5. Consume some stock
     result = await mcp_client.call_tool("consume_stock", {"items": [{"product_id": product_id, "amount": 2}]})
-    op = result.structured_content["result"][0]
+    sc = result.structured_content
+    assert sc is not None
+    op = sc["result"][0]
     assert op["ok"], f"consume_stock failed: {op.get('error')}"
     assert op["new_amount"] == 3.0
 
     # 6. Inventory — set absolute amount
     result = await mcp_client.call_tool("inventory_products", {"items": [{"product_id": product_id, "new_amount": 10}]})
-    op = result.structured_content["result"][0]
+    sc = result.structured_content
+    assert sc is not None
+    op = sc["result"][0]
     assert op["ok"], f"inventory_products failed: {op.get('error')}"
     assert op["new_amount"] == 10.0
 
     # 7. List entities — fetch products, locations, quantity_units in one call
     result = await mcp_client.call_tool("list_entities", {"entity_types": ["products", "locations", "quantity_units"]})
     data = result.structured_content
+    assert data is not None
     assert "products" in data
     assert "locations" in data
     assert "quantity_units" in data
@@ -264,7 +283,9 @@ async def test_inventory_bootstrap(mcp_client: Client) -> None:
 
     # 8. Get specific entity by ID
     result = await mcp_client.call_tool("get_entities", {"entity_type": "products", "object_ids": [product_id]})
-    entities = result.structured_content["result"]
+    sc = result.structured_content
+    assert sc is not None
+    entities = sc["result"]
     assert entities[0]["ok"], f"get_entities failed: {entities[0].get('error')}"
     assert entities[0]["data"]["name"] == f"TestRice-{suffix}"
 
