@@ -1,11 +1,19 @@
 ---
-# Flux Receiver: GitHub push to devel → immediate GitRepository reconciliation
+# Flux Receiver: GitHub webhooks → immediate reconciliation
 #
-# When GitHub sends a push webhook for the devel branch, Flux immediately
-# reconciles the flux-system GitRepository instead of waiting for the 1-minute
-# poll interval.
+# Handles two event types on a single URL (webhookPath is stable across events):
+#   push            → reconcile flux-system GitRepository (eliminates 1-min poll lag)
+#   registry_package → reconcile all GHCR ImageRepositories (eliminates 5-min poll lag)
 #
-# The webhook is auto-configured by terraform/gitops/harbor-ci (github_repository_webhook).
+# Both event types trigger reconciliation of all listed resources, which is harmless:
+# an ImageRepository scan on a git push is a no-op, and a GitRepository reconciliation
+# on an image push is a no-op.
+#
+# The GitHub webhook is auto-configured by terraform/gitops/harbor-ci
+# (github_repository_webhook with events = ["push", "registry_package"]).
+#
+# Requirement for registry_package: each GHCR package must be linked to the
+# ducktape repo in GitHub for the event to fire on this repo-level webhook.
 apiVersion: notification.toolkit.fluxcd.io/v1
 kind: Receiver
 metadata:
@@ -15,6 +23,7 @@ spec:
   type: github
   events:
     - push
+    - registry_package
   secretRef:
     name: github-webhook-token
   resources:
@@ -22,3 +31,42 @@ spec:
       kind: GitRepository
       name: flux-system
       namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: activitywatch
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: airlock
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: auth-proxy
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: authentik-mcp-poc-backend
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: authentik-mcp-poc-server
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: claude-token-rotation
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: homeassistant-proxy
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: openclaw-matrix
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: openclaw-exec
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: props-backend
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: tana-mcp
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: tana-token-broker
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
+      name: token-provisioner

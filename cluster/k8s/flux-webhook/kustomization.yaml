@@ -2,7 +2,6 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - github-webhook-receiver.yaml
-  - ghcr-image-receiver.yaml
   - httproute.yaml
   - allow-gateway-webhook-ingress.yaml
   - ntfy-alerts.yaml
