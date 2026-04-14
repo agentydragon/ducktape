@@ -19,6 +19,4 @@ resources:
   - rolebinding-harbor-reader.yaml
   - role-authentik-mcp-poc-reader.yaml
   - rolebinding-authentik-mcp-poc-reader.yaml
-  # CLEANUP(2026-04-13): remove with role-authentik-debug.yaml by 2026-04-14
-  - role-authentik-debug.yaml
   - role-logs-configmaps-reader.yaml
