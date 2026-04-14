@@ -26,6 +26,39 @@ if [ -z "${SOPS_AGE_KEY:-}" ] && command -v ssh-to-age >/dev/null 2>&1; then
   unset _ssh_key
 fi
 
+# Helper: read a value from a K8s Secret via kubectl, output an export line. On
+# failure (no kubeconfig, no cluster access, missing secret), warns on stderr
+# but continues — stdout only contains successful exports, safe to eval.
+try_export_from_k8s() {
+  local var_name="$1" namespace="$2" secret_name="$3" key="$4" description="${5:-}"
+  local _desc_suffix=""
+  [ -n "$description" ] && _desc_suffix=" (${description})"
+  if ! command -v kubectl >/dev/null 2>&1; then
+    echo "WARNING: secrets: $var_name${_desc_suffix}: kubectl not on PATH" >&2
+    return 0
+  fi
+  local kubectl_stderr value
+  kubectl_stderr=$(mktemp)
+  if ! value=$(kubectl get secret -n "$namespace" "$secret_name" -o "jsonpath={.data.$key}" 2>"$kubectl_stderr"); then
+    echo "WARNING: secrets: $var_name${_desc_suffix}: kubectl get secret failed: $(cat "$kubectl_stderr")" >&2
+    rm -f "$kubectl_stderr"
+    return 0
+  fi
+  rm -f "$kubectl_stderr"
+  if [ -z "$value" ]; then
+    echo "WARNING: secrets: $var_name${_desc_suffix}: empty value at ${namespace}/${secret_name}:${key}" >&2
+    return 0
+  fi
+  if ! value=$(printf '%s' "$value" | base64 -d 2>/dev/null); then
+    echo "WARNING: secrets: $var_name${_desc_suffix}: base64 decode failed" >&2
+    return 0
+  fi
+  local _ok_msg="secrets: ${var_name}: OK"
+  [ -n "$description" ] && _ok_msg="${_ok_msg} — ${description}"
+  echo "$_ok_msg" >&2
+  printf 'export %s=%q\n' "$var_name" "$value"
+}
+
 # Helper: decrypt a SOPS file, output an export line. On failure, warns on stderr
 # but continues (stdout only contains successful exports, safe to eval).
 try_export() {

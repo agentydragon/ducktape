@@ -176,16 +176,6 @@ creation_rules:
           - *iguana-agentydragon
           - *claude-web
           - *ci
-  # OTLP bearer token for Alloy tracing (admin + all users + claude-web agent)
-  - path_regex: secrets/alloy-otlp-bearer-token\.yaml$
-    key_groups:
-      - age:
-          - *admin
-          - *wyrm2-agentydragon
-          - *rugged-agentydragon
-          - *atlas-agentydragon
-          - *iguana-agentydragon
-          - *claude-web
   # CI read-only fine-grained PAT (personal, agentydragon — read GHA runs/artifacts)
   - path_regex: secrets/github-ci-read-pat\.yaml$
     key_groups:

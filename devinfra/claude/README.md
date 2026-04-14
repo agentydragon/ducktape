@@ -221,14 +221,19 @@ is available. They are **not** compatible with Claude Code web's egress proxy.
 ## OTEL Tracing
 
 Hooks emit OpenTelemetry traces to Grafana Alloy via Authentik proxy at
-`alloy-otlp.allegedly.works`. Bearer token: web — decrypted via `startup_env_script`
-(`web_env.sh`) at daemon startup; CLI — sourced via `.envrc` (`cli_env.sh`).
+`alloy-otlp.allegedly.works`. Authentik is the canonical source for the bearer
+token: the TF module creates an Authentik service account + token and writes
+the generated value into the `alloy-otlp-bearer-token` Secret in
+`claude-sandbox`. `cli_env.sh` and `web_env.sh` read that Secret via `kubectl`
+and export it as `DUCKTAPE_OTEL_BEARER_TOKEN`.
 
 Configured in the profile path (`otel.endpoint`, `secrets.otel_bearer_token`).
 
-Key files: TF module in `cluster/terraform/gitops/alloy-otlp-bearer-token/`,
-Authentik blueprint in `cluster/k8s/authentik/app/blueprints/alloy-otlp-sso.yaml`.
-Rotation: bump `rotation_version` in the TF module.
+Key files: TF module in <cluster/terraform/gitops/alloy-otlp-bearer-token/>
+(provisions proxy provider, application, service account, token, policy
+binding, and the K8s Secret). Rotation: `tofu taint
+authentik_token.alloy_otlp` and let tofu-controller reconcile, or delete the
+Authentik token via the UI and wait for the next TF apply.
 
 ## Web Setup
 

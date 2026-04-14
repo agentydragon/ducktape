@@ -25,15 +25,12 @@ try_export GITHUB_TOKEN "$REPO_ROOT/secrets/github-pat-agentydragon-agent.yaml" 
 # K8s service account token (claude-code-web SA) — for session hook kubeconfig
 try_export K8S_TOKEN "$REPO_ROOT/secrets/claude-web-k8s-token.yaml" '["k8s_token"]' "K8s service account token (claude-code-web SA)"
 
-# OTEL bearer token (Grafana Alloy via Authentik)
-try_export DUCKTAPE_OTEL_BEARER_TOKEN "$REPO_ROOT/secrets/alloy-otlp-bearer-token.yaml" '["token"]' "OTEL bearer token — traces to Grafana Alloy"
-
-# CI read-only fine-grained PAT (personal, agentydragon — read GHA runs/artifacts)
-try_export DUCKTAPE_CI_READ_GITHUB_TOKEN "$REPO_ROOT/secrets/github-ci-read-pat.yaml" '["github_token"]' "CI read PAT (agentydragon) — read GHA runs and artifacts"
-
 # Write ~/.kube/config from the SOPS token so kubectl works without KUBECONFIG.
 # The MCP server (claude-sandbox-kubectl-mcp.sh) decrypts its own temp kubeconfig
 # directly via kube_from_sops.sh — it does not read from here.
+# Must run before any `try_export_from_k8s` below: the web session has no
+# pre-existing kubeconfig, so kubectl has nothing to authenticate with until
+# this block writes ~/.kube/config.
 # Failures are non-fatal (e.g. SOPS_AGE_KEY not yet available at web_setup.sh time).
 _kube_stderr="$(mktemp)"
 if ! "$REPO_ROOT/devinfra/claude/kube_from_sops.sh" "$HOME/.kube/config" 2>"$_kube_stderr"; then
@@ -42,6 +39,13 @@ else
   echo "kubeconfig: wrote ~/.kube/config — ServiceAccount claude-code-web, claude-sandbox namespace (full CRUD: pods/log/exec, services, configmaps, secrets, PVCs, events, deployments, jobs, cronjobs; quota: 8 CPU, 16Gi, 20 pods); cluster-wide read on nodes, Flux, HelmReleases, cert-manager, CNPG, etc." >&2
 fi
 rm -f "$_kube_stderr"
+
+# OTEL bearer token (Grafana Alloy via Authentik) — canonical source is Authentik,
+# TF writes it into this K8s Secret (cluster/terraform/gitops/alloy-otlp-bearer-token).
+try_export_from_k8s DUCKTAPE_OTEL_BEARER_TOKEN claude-sandbox alloy-otlp-bearer-token token "OTEL bearer token — traces to Grafana Alloy"
+
+# CI read-only fine-grained PAT (personal, agentydragon — read GHA runs/artifacts)
+try_export DUCKTAPE_CI_READ_GITHUB_TOKEN "$REPO_ROOT/secrets/github-ci-read-pat.yaml" '["github_token"]' "CI read PAT (agentydragon) — read GHA runs and artifacts"
 
 # Add Nix default profile bin to PATH so hook subprocesses find Nix-installed tools
 # (sops, bb, gh, etc.) without relying on /usr/local/bin symlinks.

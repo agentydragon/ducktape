@@ -14,7 +14,7 @@
 # shellcheck source=_common.sh
 source "$(dirname "$0")/_common.sh"
 
-try_export DUCKTAPE_OTEL_BEARER_TOKEN "$REPO_ROOT/secrets/alloy-otlp-bearer-token.yaml" '["token"]'
+try_export_from_k8s DUCKTAPE_OTEL_BEARER_TOKEN claude-sandbox alloy-otlp-bearer-token token "OTEL bearer token — traces to Grafana Alloy"
 
 # K8s service account token for claude-sandbox MCP server
 try_export CLAUDE_SANDBOX_K8S_TOKEN "$REPO_ROOT/secrets/claude-web-k8s-token.yaml" '["k8s_token"]'

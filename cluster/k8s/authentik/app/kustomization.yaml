@@ -22,7 +22,6 @@ configMapGenerator:
       - blueprints/hubble-sso.yaml
       - blueprints/longhorn-sso.yaml
       - blueprints/openclaw-sso.yaml
-      - blueprints/alloy-otlp-sso.yaml
       - blueprints/kagent-sso.yaml
       - blueprints/headlamp-sso.yaml
       - blueprints/tandoor-sso.yaml
