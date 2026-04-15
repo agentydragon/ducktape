@@ -68,9 +68,9 @@ def _report_shim(shim: str, session_id: str, paths: SessionPaths) -> list[str]:
 def run_shim(shim_name: str, session_id: str) -> None:
     """Run the shim: report to daemon, resolve real binary, exec it.
 
-    sys.argv must be set to [shim_name, <original args...>] before calling.
-    Called from the `claude-hook shim` subcommand (new style) and from
-    main() for legacy python -m invocations.
+    Expects sys.argv[1:] to be the arguments for the real binary.
+    Both callers (hook_dispatch shim subcommand and legacy main()) normalize
+    sys.argv before calling here.
     """
     paths = SessionPaths.from_env(session_id, dict(os.environ))
     _setup_logging(shim_name, paths)
@@ -99,6 +99,10 @@ def main() -> None:
             f"Shim env vars not set ({SHIM_NAME_ENV}, {SHIM_SESSION_ID_ENV}) "
             f"— shim must be installed via shim_install.install()"
         )
+    # Normalize sys.argv so run_shim sees [shim_name, <original args>].
+    # In a python -m invocation sys.argv[0] is the module file path, not the
+    # shim name; replace it so argv[1:] is unambiguously the args to forward.
+    sys.argv = [shim_name, *sys.argv[1:]]
     run_shim(shim_name, session_id)
 
 

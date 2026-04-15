@@ -52,7 +52,10 @@ def main() -> None:
     # Shim subcommand: `claude-hook shim <shim_name> [args...]`
     # New-style shim wrappers exec into here instead of python -m shim,
     # so the profile symlink resolves the interpreter at invocation time.
-    if len(sys.argv) > 2 and sys.argv[1] == "shim":
+    if len(sys.argv) >= 2 and sys.argv[1] == "shim":
+        if len(sys.argv) < 3:
+            print("usage: claude-hook shim <shim-name> [args...]", file=sys.stderr)
+            sys.exit(1)
         shim_name = sys.argv[2]
         session_id = os.environ.get(SHIM_SESSION_ID_ENV)
         if not session_id:

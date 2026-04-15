@@ -1,5 +1,6 @@
 """Tests for shim binary resolution."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -29,7 +30,7 @@ def test_resolve_real_binary_skips_shim_dir(monkeypatch: pytest.MonkeyPatch, tmp
         b.write_text("#!/bin/sh\n")
         b.chmod(0o755)
 
-    monkeypatch.setenv("PATH", f"{shim_dir}:{real_dir}")
+    monkeypatch.setenv("PATH", os.pathsep.join([str(shim_dir), str(real_dir)]))
 
     result = resolve_real_binary("bazelisk", shim_dir)
     assert result == str(real_dir / "bazelisk")
