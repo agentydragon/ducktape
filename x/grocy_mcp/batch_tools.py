@@ -183,7 +183,8 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient) -> None:
         """Fetch multiple Grocy entity types in one call.
 
         Returns a mapping of entity_type → list of entity objects, fetched
-        concurrently. Raises if any fetch fails.
+        concurrently. Raises on the first failed fetch (fail-fast). Use
+        separate calls if partial failure tolerance is needed.
         """
 
         async def _fetch(entity_type: EntityType) -> tuple[str, list[Any]]:
@@ -385,8 +386,12 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient) -> None:
                 tx_id = entries[0]["transaction_id"] if entries else None
                 amount_delta = sum(float(e.get("amount", 0)) for e in entries) if entries else None
 
+                stock_r = await client.get(f"/stock/products/{item.product_id}")
+                stock_r.raise_for_status()
+                new_amount = float(stock_r.json().get("stock_amount", 0))
+
                 return StockOpResult(
-                    index=i, ok=True, transaction_id=tx_id, amount_delta=amount_delta, new_amount=item.new_amount
+                    index=i, ok=True, transaction_id=tx_id, amount_delta=amount_delta, new_amount=new_amount
                 )
             except Exception as e:
                 return StockOpResult(index=i, ok=False, error=str(e))

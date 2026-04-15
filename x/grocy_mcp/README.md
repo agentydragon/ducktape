@@ -47,8 +47,8 @@ Grocy traverses the outpost.
 
 As of 2026-04-14, claude.ai does not expose MCP resources to the AI. Everything
 the AI needs to invoke must be a tool. `get_system_info` (from `GET /system/info`)
-is currently exposed as an MCP resource and is therefore invisible to the AI —
-it is informational only. New capabilities should be added as tools.
+is exposed as a tool and is available to the AI. New capabilities should be
+added as tools, not resources.
 
 ## Tool surface
 
@@ -85,7 +85,8 @@ All remaining enabled routes from `/objects/*` and `/stock/*`:
 the full list.
 
 Explicitly excluded: `/chores`, `/batteries`, `/recipes`, `/tasks`, `/calendar`,
-`/print`, `/files`, `/users`, `/user`, `/userfields`, `/system`. Add a
+`/print`, `/files`, `/users`, `/user`, `/userfields`, and most `/system/*` routes
+(except `get_system_info` and `get_db_changed_time`). Add a
 `RouteMap(pattern=..., mcp_type=MCPType.TOOL)` in <server.py> to re-enable any.
 
 ## Why `FastMCP.from_openapi` and not hand-written tools?
