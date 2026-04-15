@@ -3,7 +3,7 @@ otel:
   # bearer_token: sourced from .envrc (cli_env.sh → DUCKTAPE_OTEL_BEARER_TOKEN).
 
 k8s:
-  server: https://api.allegedly.works:16443
+  server: https://api.allegedly.works
   service_account: claude-code-web
   service_account_namespace: default
   namespace: claude-sandbox
