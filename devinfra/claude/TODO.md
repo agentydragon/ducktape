@@ -18,8 +18,8 @@ secret. Sketch:
    the token into `secrets/alloy-otlp-bearer-token.yaml` via `sops_file` or
    an equivalent provider — re-encrypted for the `claude-web` age recipient
    on every TF apply.
-2. Swap `web_env.sh`'s `try_export_from_k8s` call for a `try_export
-"$REPO_ROOT/secrets/alloy-otlp-bearer-token.yaml" '["token"]'`.
+2. Swap `web_env.sh`'s `try_export_from_k8s` call for a
+   `try_export "$REPO_ROOT/secrets/alloy-otlp-bearer-token.yaml" '["token"]'`.
 3. Delete the `enable_k8s_otel_bearer_token` flag on `ProfileConfig` and its
    plumbing in `hook_daemon/main.py` + `web_env.sh`.
 
