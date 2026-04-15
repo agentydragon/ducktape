@@ -263,9 +263,6 @@ resources:
   - github-secrets-sync/secrets/flux-kustomization.yaml
   - github-secrets-sync/flux-kustomization.yaml
 
-  # --- github-repo-rulesets ---
-  - github-repo-rulesets/flux-kustomization.yaml
-
   # --- standalone applications ---
   - buildbuddy-executor/flux-kustomization.yaml
   - website/flux-kustomization.yaml
