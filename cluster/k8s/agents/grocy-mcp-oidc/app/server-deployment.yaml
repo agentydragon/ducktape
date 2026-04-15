@@ -43,6 +43,8 @@ spec:
             # path; the OCI image runs as user 1000 with no HOME.
             - name: FASTMCP_HOME
               value: "/tmp/fastmcp"
+            - name: LOG_LEVEL
+              value: "DEBUG"
             - name: GROCY_MCP_OIDC_ISSUER
               value: "https://auth.allegedly.works/application/o/grocy-mcp/"
             - name: GROCY_MCP_PUBLIC_BASE_URL

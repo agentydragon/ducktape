@@ -174,7 +174,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient) -> None:
                 raw_id = data.get("created_object_id")
                 return CreateOk(index=i, created_object_id=int(raw_id) if raw_id is not None else None)
             except Exception as e:
-                return CreateError(index=i, error=str(e))
+                return CreateError(index=i, error=str(e) or repr(e))
 
         return list(await asyncio.gather(*[_one(i, item) for i, item in enumerate(items)]))
 
@@ -210,7 +210,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient) -> None:
                 r.raise_for_status()
                 return GetOk(entity_type=entity_type, object_id=object_id, data=r.json())
             except Exception as e:
-                return GetError(entity_type=entity_type, object_id=object_id, error=str(e))
+                return GetError(entity_type=entity_type, object_id=object_id, error=str(e) or repr(e))
 
         return list(await asyncio.gather(*[_one(oid) for oid in object_ids]))
 
@@ -308,7 +308,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient) -> None:
                     index=i, ok=True, transaction_id=tx_id, amount_delta=amount_delta, new_amount=new_amount
                 )
             except Exception as e:
-                return StockOpResult(index=i, ok=False, error=str(e))
+                return StockOpResult(index=i, ok=False, error=str(e) or repr(e))
 
         return list(await asyncio.gather(*[_one(i, item) for i, item in enumerate(items)]))
 
@@ -347,7 +347,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient) -> None:
                     index=i, ok=True, transaction_id=tx_id, amount_delta=amount_delta, new_amount=new_amount
                 )
             except Exception as e:
-                return StockOpResult(index=i, ok=False, error=str(e))
+                return StockOpResult(index=i, ok=False, error=str(e) or repr(e))
 
         return list(await asyncio.gather(*[_one(i, item) for i, item in enumerate(items)]))
 
@@ -394,6 +394,6 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient) -> None:
                     index=i, ok=True, transaction_id=tx_id, amount_delta=amount_delta, new_amount=new_amount
                 )
             except Exception as e:
-                return StockOpResult(index=i, ok=False, error=str(e))
+                return StockOpResult(index=i, ok=False, error=str(e) or repr(e))
 
         return list(await asyncio.gather(*[_one(i, item) for i, item in enumerate(items)]))
