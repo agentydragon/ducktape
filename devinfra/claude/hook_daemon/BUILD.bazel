@@ -11,6 +11,27 @@ py_library(
 )
 
 py_library(
+    name = "kubeconfig",
+    srcs = ["kubeconfig.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":config",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_kubeconfig",
+    srcs = ["test_kubeconfig.py"],
+    deps = [
+        ":config",
+        ":kubeconfig",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
     name = "bes_interceptor",
     srcs = ["bes_interceptor.py"],
     visibility = ["//visibility:public"],
@@ -226,8 +247,8 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":config",
+        ":kubeconfig",
         "//devinfra/claude/auth_proxy:vars",
-        "//devinfra/claude/hook_daemon/session_start:kubeconfig",
         "@pypi//pyyaml",
     ],
 )

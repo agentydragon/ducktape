@@ -24,7 +24,7 @@ import yaml
 
 from devinfra.claude.auth_proxy.vars import get_proxy_url
 from devinfra.claude.hook_daemon.config import ProfileConfig
-from devinfra.claude.hook_daemon.session_start.kubeconfig import build_kubeconfig
+from devinfra.claude.hook_daemon.kubeconfig import build_kubeconfig
 
 logger = logging.getLogger(__name__)
 
@@ -129,8 +129,19 @@ def main(argv: list[str]) -> None:
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(yaml.dump(kubeconfig, default_flow_style=False))
-    output_path.chmod(0o600)
+    # Atomic 0o600 write: create a temp file in the destination directory with
+    # restrictive perms from inception (never mode 0o644 even briefly), write the
+    # serialized kubeconfig, then rename over the final path.
+    serialized = yaml.safe_dump(kubeconfig, default_flow_style=False, sort_keys=False)
+    tmp_path = output_path.with_name(f".{output_path.name}.tmp")
+    fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(serialized)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
+    tmp_path.replace(output_path)
     print(
         f"wrote {output_path} — server={profile.k8s.server} ca={ca_path} proxy={'set' if proxy_url else 'unset'}",
         file=sys.stderr,

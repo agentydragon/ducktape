@@ -6,7 +6,7 @@ import pytest_bazel
 import yaml
 
 from devinfra.claude.hook_daemon.config import K8sConfig
-from devinfra.claude.hook_daemon.session_start.kubeconfig import write_kubeconfig
+from devinfra.claude.hook_daemon.kubeconfig import write_kubeconfig
 
 _K8S_CFG = K8sConfig(
     server="https://k8s.example.com",

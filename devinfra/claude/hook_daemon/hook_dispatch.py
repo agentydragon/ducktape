@@ -72,7 +72,11 @@ def main() -> None:
     # materialize a service-account kubeconfig without re-implementing CA /
     # proxy-url logic in bash. Replaces the now-deleted kube_from_sops.sh.
     if len(sys.argv) >= 2 and sys.argv[1] == "write-kubeconfig":
-        write_kubeconfig_main(sys.argv[2:])
+        try:
+            write_kubeconfig_main(sys.argv[2:])
+        except Exception as e:
+            print(f"write-kubeconfig failed: {e}", file=sys.stderr)
+            sys.exit(1)
         return
 
     raw = sys.stdin.buffer.read()

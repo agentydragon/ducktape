@@ -1,16 +1,6 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
-    name = "kubeconfig",
-    srcs = ["kubeconfig.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//devinfra/claude/hook_daemon:config",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_library(
     name = "buildbuddy",
     srcs = ["buildbuddy.py"],
     visibility = ["//visibility:public"],
@@ -71,7 +61,6 @@ py_library(
     deps = [
         ":buildbuddy",
         ":container_runtime",
-        ":kubeconfig",
         ":mkcert",
         ":platform_detect",
         ":tmpfs",
@@ -86,6 +75,7 @@ py_library(
         "//devinfra/claude/claude_api/hooks:output",
         "//devinfra/claude/claude_api/hooks:session_start",
         "//devinfra/claude/hook_daemon:config",
+        "//devinfra/claude/hook_daemon:kubeconfig",
         "//devinfra/claude/hook_daemon:models",
         "//devinfra/claude/hook_daemon:session",
         "//devinfra/claude/hook_daemon:shim_install",
@@ -105,17 +95,6 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = ["//util/testing:otel_tracing"],
-)
-
-py_test(
-    name = "test_kubeconfig",
-    srcs = ["test_kubeconfig.py"],
-    deps = [
-        ":kubeconfig",
-        "//devinfra/claude/hook_daemon:config",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
 )
 
 py_test(

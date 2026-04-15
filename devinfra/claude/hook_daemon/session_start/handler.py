@@ -27,18 +27,11 @@ from devinfra.claude.claude_api.hooks.output import HookOutput
 from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput, SessionStartHookSpecificOutput
 from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.errors import SkipError
-from devinfra.claude.hook_daemon import templates
+from devinfra.claude.hook_daemon import kubeconfig, templates
 from devinfra.claude.hook_daemon.config import BackgroundCommand, ProfileConfig
 from devinfra.claude.hook_daemon.models import StartupResult
 from devinfra.claude.hook_daemon.session import BgStream, Session, _feed_queue
-from devinfra.claude.hook_daemon.session_start import (
-    buildbuddy,
-    container_runtime,
-    kubeconfig,
-    mkcert,
-    platform_detect,
-    tmpfs,
-)
+from devinfra.claude.hook_daemon.session_start import buildbuddy, container_runtime, mkcert, platform_detect, tmpfs
 from devinfra.claude.hook_daemon.shim_install import install as install_shim
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.settings import CONFIG_FILES, HookSettings
