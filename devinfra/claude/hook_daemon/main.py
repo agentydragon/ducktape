@@ -5,6 +5,7 @@ import logging
 import os
 import shlex
 import subprocess
+import time
 from pathlib import Path
 
 import uvicorn
@@ -38,22 +39,33 @@ def _source_env_script(script_path: Path, extra_env: dict[str, str] | None = Non
         return StartupResult(exit_code=1, output=msg)
 
     logger.info("Running startup_env_script: %s", script_path)
+    t0 = time.monotonic()
     initial_env = dict(os.environ)
     if extra_env:
         initial_env.update(extra_env)
+    # Pipe script stdout through `tee /dev/stderr` so the export lines are visible
+    # in proc.stderr alongside the script's own stderr. proc.stdout receives only the
+    # null-delimited `env -0` output used for env var parsing.
     proc = subprocess.run(
-        ["bash", "-c", f'eval "$({shlex.quote(str(script_path))})" && env -0'],
+        ["bash", "-c", f'eval "$({shlex.quote(str(script_path))} | tee /dev/stderr)" && env -0'],
         capture_output=True,
         env=initial_env,
         check=False,
     )
+    elapsed = time.monotonic() - t0
 
     output = proc.stderr.decode(errors="replace")
     if output.strip():
-        logger.info("startup_env_script output:\n%s", output.rstrip())
+        logger.info("startup_env_script output (%.2fs):\n%s", elapsed, output.rstrip())
+    else:
+        logger.info("startup_env_script: no output (%.2fs)", elapsed)
 
     if proc.returncode != 0:
-        logger.warning("startup_env_script exited %d — secrets may be missing from session env", proc.returncode)
+        logger.warning(
+            "startup_env_script exited %d after %.2fs — secrets may be missing from session env",
+            proc.returncode,
+            elapsed,
+        )
         return StartupResult(exit_code=proc.returncode, output=output)
 
     # Parse null-delimited KEY=VALUE pairs from `env -0`. Collect vars the script

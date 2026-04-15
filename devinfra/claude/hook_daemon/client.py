@@ -27,7 +27,8 @@ _SHIM_RESPONSE_ADAPTER: TypeAdapter[ShimBlocked | ShimExecve] = TypeAdapter(Shim
 logger = logging.getLogger(__name__)
 
 # How long to wait for the daemon socket to appear after starting the daemon.
-_DAEMON_STARTUP_TIMEOUT_SECS = 5
+# Override via DUCKTAPE_CLAUDE_HOOKS_DAEMON_STARTUP_TIMEOUT_SECS for slow environments.
+_DAEMON_STARTUP_TIMEOUT_SECS = float(os.environ.get("DUCKTAPE_CLAUDE_HOOKS_DAEMON_STARTUP_TIMEOUT_SECS", "10"))
 
 # Circuit breaker: throttle restart attempts after repeated failures.
 _STARTUP_FAILURE_FILE = "startup_failure.json"
@@ -267,7 +268,12 @@ def _ensure_daemon(paths: SessionPaths) -> _UDSConnection:
     # Create daemon dir before acquiring the lock (FileLock needs the parent to exist).
     daemon_dir.mkdir(parents=True, exist_ok=True)
 
+    t_lock_start = time.monotonic()
+    logger.info("Acquiring daemon.lock at %s", daemon_dir / "daemon.lock")
     with FileLock(str(daemon_dir / "daemon.lock")):
+        t_lock_acquired = time.monotonic()
+        logger.info("daemon.lock acquired after %.2fs", t_lock_acquired - t_lock_start)
+
         # Re-check after acquiring: another client may have won the race and
         # already started a healthy daemon while we were waiting.
         conn = _UDSConnection(sock_path)
@@ -295,7 +301,9 @@ def _ensure_daemon(paths: SessionPaths) -> _UDSConnection:
         if pidfile.exists():
             pidfile.unlink()
 
+        t_fork = time.monotonic()
         daemon_pid = _fork_daemon(daemon_dir, sock_path)
+        logger.info("Daemon forked (pid=%d) after %.2fs from lock acquire", daemon_pid, time.monotonic() - t_fork)
 
         # Wait for socket while still holding daemon.lock — prevents other
         # clients from entering and trying to start a second daemon.
@@ -309,6 +317,11 @@ def _ensure_daemon(paths: SessionPaths) -> _UDSConnection:
                 raise DaemonStartError(f"{e}\n--- daemon stderr ---\n{stderr}") from e
             raise
 
+        logger.info(
+            "Daemon ready in %.2fs total (lock wait: %.2fs)",
+            time.monotonic() - t_lock_start,
+            t_lock_acquired - t_lock_start,
+        )
         _clear_startup_failure(daemon_dir)
         return conn
 
@@ -392,15 +405,26 @@ def _wait_for_sock(
     2. Pre-pidfile: os.kill(daemon_pid, 0) — covers the gap before the daemon
        acquires the flock. PID reuse in the <5s startup window is negligible.
     """
-    logger.debug("Waiting for daemon socket %s (pid=%d, timeout=%.1fs)", sock_path, daemon_pid, timeout_secs)
-    deadline = time.monotonic() + timeout_secs
+    t0 = time.monotonic()
+    logger.info("Waiting for daemon socket %s (pid=%d, timeout=%.1fs)", sock_path, daemon_pid, timeout_secs)
+    deadline = t0 + timeout_secs
+    socket_appeared_at: float | None = None
+    last_log_at = t0
     while time.monotonic() < deadline:
+        elapsed = time.monotonic() - t0
         if sock_path.exists():
+            if socket_appeared_at is None:
+                socket_appeared_at = elapsed
+                logger.info("Daemon socket file appeared after %.2fs; waiting for health check", socket_appeared_at)
             conn = _UDSConnection(sock_path)
             if conn.check_health():
-                logger.debug("Daemon socket ready at %s", sock_path)
+                logger.info("Daemon socket healthy after %.2fs", time.monotonic() - t0)
                 return conn
             conn.close()
+        elif elapsed - last_log_at >= 1.0:
+            # Log progress every second while waiting, so timeouts are easy to diagnose.
+            logger.info("Still waiting for daemon socket (%.1fs elapsed, pid=%d)", elapsed, daemon_pid)
+            last_log_at = elapsed
 
         # Post-pidfile crash detection: if the daemon died, its flock on the
         # pidfile is released by the kernel.  The stale pidfile is deleted
@@ -419,5 +443,11 @@ def _wait_for_sock(
             raise DaemonStartError("Daemon process died during startup (pre-pidfile)")
 
         time.sleep(0.1)
-    logger.warning("Daemon socket did not appear within %.1fs at %s", timeout_secs, sock_path)
-    raise DaemonStartError(f"Daemon socket did not appear within {timeout_secs}s")
+    elapsed = time.monotonic() - t0
+    sock_note = (
+        f"socket appeared at {socket_appeared_at:.2f}s but health check never passed"
+        if socket_appeared_at
+        else "socket never appeared"
+    )
+    logger.warning("Daemon did not become healthy within %.1fs at %s (%s)", elapsed, sock_path, sock_note)
+    raise DaemonStartError(f"Daemon socket did not appear within {timeout_secs}s ({sock_note})")
