@@ -122,9 +122,12 @@ old ID, the client finds no socket for the old ID and tries to start a _second_ 
 
 **Consequences:**
 
-- **`Setup` hook**: Do NOT register it in `.claude/settings.json`. It would start a daemon
-  for the new session ID. The `Setup` hook handler is a noop anyway (the daemon returns
-  `{}` immediately).
+- **`Setup` hook with `claude-hook`**: Do NOT register `claude-hook` for the `Setup`
+  event. It would start a daemon for the new session ID. The `Setup` hook handler is a
+  noop anyway (the daemon returns `{}` immediately).
+- **`Setup` hook with plain shell scripts**: Safe, as long as the script does NOT call
+  `claude-hook`. We register `bash devinfra/claude/web_setup_hook.sh` for Setup — it
+  reinstalls devtools before SessionStart fires, but never invokes `claude-hook`.
 - **Session-local files** (socket, shim dir, session bazelrc): always keyed by
   `SessionStart`'s session ID, which may be the _old_ ID after a compaction.
 - **Session-global files** (bazelisk binary at `~/.cache/claude-hooks/bazelisk`): shared
