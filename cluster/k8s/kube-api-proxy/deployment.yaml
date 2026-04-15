@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kube-api-proxy
+  namespace: kube-api-proxy
+  annotations:
+    description: |
+      nginx reverse proxy that fronts the in-cluster `kubernetes` Service
+      for the api.allegedly.works HTTPRoute. The Cilium Gateway terminates
+      TLS for the client on :443; this pod listens plaintext on :8080 and
+      re-encrypts upstream to `kubernetes.default.svc.cluster.local:443`.
+      Runs without hostNetwork — :8080 is only reachable via the ClusterIP
+      Service (`kube-api-proxy`). Pinned to `hil` to match the Gateway /
+      wildcard cert footprint.
+
+      This exists because Claude Code web sandboxes can only reach port
+      443 outbound through Anthropic's TLS-inspecting egress proxy, so the
+      k8s API must be reachable on :443. It can be replaced by a direct
+      HTTPRoute → `kubernetes.default` backend with a BackendTLSPolicy
+      once Cilium is upgraded to ≥1.20 (current: 1.19.2 lacks
+      BackendTLSPolicy support).
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: kube-api-proxy
+  template:
+    metadata:
+      annotations:
+        reloader.stakater.com/auto: "true"
+      labels:
+        app: kube-api-proxy
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      containers:
+        - name: nginx
+          image: docker.io/library/nginx:alpine
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: kube-api-proxy-nginx-config

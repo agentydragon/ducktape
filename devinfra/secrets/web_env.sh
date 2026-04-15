@@ -46,9 +46,10 @@ rm -f "$_kube_stderr"
 # TF writes it into this K8s Secret (cluster/terraform/gitops/alloy-otlp-bearer-token).
 #
 # Gated because `kubectl get secret` blocks for ~30s per retry when the k8s API
-# is unreachable (e.g. CCR v2 web sandboxes can only reach port 443; the API
-# lives on :16443). Unconditional call → wedged daemon startup → dispatcher
-# timeout loop → no secrets in the agent env at all. Default off.
+# is unreachable. Unconditional call → wedged daemon startup → dispatcher
+# timeout loop → no secrets in the agent env at all. Default off until the
+# api.allegedly.works:443 path has been validated end-to-end from a fresh
+# web sandbox.
 # CLEANUP: mirror alloy-otlp-bearer-token into SOPS and `try_export` it instead;
 # see devinfra/claude/TODO.md "OTEL bearer token: mirror into SOPS".
 if [ "${DUCKTAPE_ENABLE_K8S_OTEL_BEARER_TOKEN:-0}" = "1" ]; then

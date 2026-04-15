@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: kube-api-proxy
+  namespace: kube-api-proxy
+  annotations:
+    description: |
+      ClusterIP service in front of the kube-api-proxy Deployment. It is
+      the backend of the api.allegedly.works HTTPRoute on the cluster
+      Cilium Gateway: the Gateway terminates TLS for the client and nginx
+      in the Deployment pods re-encrypts to the in-cluster `kubernetes`
+      Service.
+spec:
+  type: ClusterIP
+  selector:
+    app: kube-api-proxy
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP

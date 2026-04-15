@@ -267,11 +267,11 @@ inter-node CIDRs. Keep 80/443/53 public.
 | TF state / `cluster/.envrc`   | `https://<vps0-ip>:6443` | Direct VPS IP (bootstrap node)                        |
 | `~/.kube/config` (wyrm2)      | `localhost:7445`         | Via local haproxy                                     |
 
-`api.allegedly.works` exists (round-robin VPS IPs, `kube-api-proxy` DaemonSet on port 16443
-with LE cert, managed by ClusterRRset CRDs + `k8s/kube-api-proxy/`). Bootstrappable from
-cluster — DNS record is a declarative ClusterRRset, Flux deploys the proxy.
-
-- [ ] Patch TF-generated kubeconfig post-bootstrap to use `api.allegedly.works:16443`
+`api.allegedly.works` exists on port 443 behind the cluster Cilium Gateway
+(HTTPRoute in `k8s/kube-api-proxy/` fronts an nginx Deployment that re-encrypts
+to the in-cluster `kubernetes` Service). This is what Claude Code web sandboxes
+use to reach the k8s API — Anthropic's egress proxy only allows port 443
+outbound, so a non-standard port would not work.
 
 ### OpenTofu State Backend
 

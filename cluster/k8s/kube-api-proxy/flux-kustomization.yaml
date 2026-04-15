@@ -11,15 +11,8 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: cert-manager-issuer-config
-  dependsOn:
-    - name: cert-manager
-    - name: cert-manager-issuer-config
   healthChecks:
     - apiVersion: apps/v1
-      kind: DaemonSet
+      kind: Deployment
       name: kube-api-proxy
       namespace: kube-api-proxy

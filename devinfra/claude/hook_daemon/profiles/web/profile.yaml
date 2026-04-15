@@ -5,7 +5,7 @@ otel:
   # bearer_token: decrypted via startup_env_script (web_env.sh) at daemon startup.
 
 k8s:
-  server: https://api.allegedly.works:16443
+  server: https://api.allegedly.works
   service_account: claude-code-web
   service_account_namespace: default
   namespace: claude-sandbox
