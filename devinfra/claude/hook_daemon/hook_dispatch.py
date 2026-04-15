@@ -19,6 +19,7 @@ from devinfra.claude.claude_api.hooks.dispatch_input import AnyHookInput
 from devinfra.claude.hook_daemon.client import DaemonHttpError, DaemonStartError, call_daemon
 from devinfra.claude.hook_daemon.shim import run_shim
 from devinfra.claude.hook_daemon.shim_install import SHIM_SESSION_ID_ENV
+from devinfra.claude.hook_daemon.write_kubeconfig_cli import main as write_kubeconfig_main
 from devinfra.claude.session_paths import SessionPaths
 
 _adapter: TypeAdapter[AnyHookInput] = TypeAdapter(AnyHookInput)
@@ -64,6 +65,14 @@ def main() -> None:
         # Adjust argv so run_shim sees [shim_name, <original args>]
         sys.argv = [shim_name, *sys.argv[3:]]
         run_shim(shim_name, session_id)
+        return
+
+    # write-kubeconfig subcommand: `claude-hook write-kubeconfig <output-path>`
+    # Used by devinfra/secrets/web_env.sh and claude-sandbox-kubectl-mcp.sh to
+    # materialize a service-account kubeconfig without re-implementing CA /
+    # proxy-url logic in bash. Replaces the now-deleted kube_from_sops.sh.
+    if len(sys.argv) >= 2 and sys.argv[1] == "write-kubeconfig":
+        write_kubeconfig_main(sys.argv[2:])
         return
 
     raw = sys.stdin.buffer.read()

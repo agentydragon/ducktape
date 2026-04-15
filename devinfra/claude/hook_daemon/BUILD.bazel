@@ -221,12 +221,36 @@ py_binary(
 )
 
 py_library(
+    name = "write_kubeconfig_cli",
+    srcs = ["write_kubeconfig_cli.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":config",
+        "//devinfra/claude/auth_proxy:vars",
+        "//devinfra/claude/hook_daemon/session_start:kubeconfig",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_write_kubeconfig_cli",
+    srcs = ["test_write_kubeconfig_cli.py"],
+    deps = [
+        ":write_kubeconfig_cli",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
     name = "hook_dispatch_lib",
     srcs = ["hook_dispatch.py"],
     visibility = ["//visibility:public"],
     deps = [
         ":client",
         ":shim_lib",
+        ":write_kubeconfig_cli",
         "//devinfra/claude:session_paths",
         "//devinfra/claude/claude_api/hooks:dispatch_input",
         "@pypi//mako",

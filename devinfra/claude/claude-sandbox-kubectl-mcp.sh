@@ -5,12 +5,13 @@
 # SOPS_AGE_KEY must be in env — the container provides it before MCP servers start.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 TMPKC="$(mktemp "${TMPDIR:-/tmp}/claude-sandbox-kc.XXXXXX")"
 trap 'rm -f "$TMPKC"' EXIT
 
-"$SCRIPT_DIR/kube_from_sops.sh" "$TMPKC"
+# Canonical kubeconfig materializer: embeds CA bundle + proxy-url from the
+# active profile so kubectl actually works behind the TLS-inspecting egress
+# proxy on Claude Code web. See devinfra/claude/hook_daemon/write_kubeconfig_cli.py.
+claude-hook write-kubeconfig "$TMPKC"
 
 # Subprocess (not exec) — bash stays alive so the EXIT trap cleans up.
 kubernetes-mcp-server --kubeconfig "$TMPKC" --disable-multi-cluster "$@"

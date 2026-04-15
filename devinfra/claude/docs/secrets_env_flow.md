@@ -85,12 +85,12 @@ reconstruction and may have gaps; the running binary is the ground truth.
 
 ### What reaches each consumer
 
-| Consumer                 | Gets secrets from                           |
-| ------------------------ | ------------------------------------------- |
-| kube MCP server          | `kube_from_sops.sh` (self-decrypts)         |
-| Cloud MCP servers        | Anthropic-managed — no local secrets needed |
-| Hook daemon subprocesses | session env file (via startup_env_script)   |
-| Claude Code process      | session env file (sourced by env hooks)     |
+| Consumer                 | Gets secrets from                                |
+| ------------------------ | ------------------------------------------------ |
+| kube MCP server          | `claude-hook write-kubeconfig` (self-decrypts)   |
+| Cloud MCP servers        | Anthropic-managed — no local secrets needed      |
+| Hook daemon subprocesses | session env file (via startup_env_script)        |
+| Claude Code process      | session env file (sourced by env hooks)          |
 
 `settings.local.json` is no longer written by `web_setup.sh` — it was always
 written empty because `SOPS_AGE_KEY` was unavailable at setup time.

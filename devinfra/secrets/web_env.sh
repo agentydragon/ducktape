@@ -25,15 +25,17 @@ try_export GITHUB_TOKEN "$REPO_ROOT/secrets/github-pat-agentydragon-agent.yaml" 
 # K8s service account token (claude-code-web SA) — for session hook kubeconfig
 try_export K8S_TOKEN "$REPO_ROOT/secrets/claude-web-k8s-token.yaml" '["k8s_token"]' "K8s service account token (claude-code-web SA)"
 
-# Write ~/.kube/config from the SOPS token so kubectl works without KUBECONFIG.
-# The MCP server (claude-sandbox-kubectl-mcp.sh) decrypts its own temp kubeconfig
-# directly via kube_from_sops.sh — it does not read from here.
+# Write ~/.kube/config via the canonical hook-daemon kubeconfig materializer —
+# embeds CA + proxy-url from the active profile so kubectl actually works behind
+# the TLS-inspecting egress proxy on Claude Code web. The MCP server
+# (claude-sandbox-kubectl-mcp.sh) uses the same `claude-hook write-kubeconfig`
+# subcommand and does not read from here.
 # Must run before any `try_export_from_k8s` below: the web session has no
 # pre-existing kubeconfig, so kubectl has nothing to authenticate with until
 # this block writes ~/.kube/config.
 # Failures are non-fatal (e.g. SOPS_AGE_KEY not yet available at web_setup.sh time).
 _kube_stderr="$(mktemp)"
-if ! "$REPO_ROOT/devinfra/claude/kube_from_sops.sh" "$HOME/.kube/config" 2>"$_kube_stderr"; then
+if ! claude-hook write-kubeconfig "$HOME/.kube/config" 2>"$_kube_stderr"; then
   echo "WARNING: kubeconfig: failed to write ~/.kube/config: $(cat "$_kube_stderr")" >&2
 else
   echo "kubeconfig: wrote ~/.kube/config — ServiceAccount claude-code-web, claude-sandbox namespace (full CRUD: pods/log/exec, services, configmaps, secrets, PVCs, events, deployments, jobs, cronjobs; quota: 8 CPU, 16Gi, 20 pods); cluster-wide read on nodes, Flux, HelmReleases, cert-manager, CNPG, etc." >&2
