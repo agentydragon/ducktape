@@ -42,7 +42,18 @@ rm -f "$_kube_stderr"
 
 # OTEL bearer token (Grafana Alloy via Authentik) — canonical source is Authentik,
 # TF writes it into this K8s Secret (cluster/terraform/gitops/alloy-otlp-bearer-token).
-try_export_from_k8s DUCKTAPE_OTEL_BEARER_TOKEN claude-sandbox alloy-otlp-bearer-token token "OTEL bearer token — traces to Grafana Alloy"
+#
+# Gated because `kubectl get secret` blocks for ~30s per retry when the k8s API
+# is unreachable (e.g. CCR v2 web sandboxes can only reach port 443; the API
+# lives on :16443). Unconditional call → wedged daemon startup → dispatcher
+# timeout loop → no secrets in the agent env at all. Default off.
+# CLEANUP: mirror alloy-otlp-bearer-token into SOPS and `try_export` it instead;
+# see devinfra/claude/TODO.md "OTEL bearer token: mirror into SOPS".
+if [ "${DUCKTAPE_ENABLE_K8S_OTEL_BEARER_TOKEN:-0}" = "1" ]; then
+  try_export_from_k8s DUCKTAPE_OTEL_BEARER_TOKEN claude-sandbox alloy-otlp-bearer-token token "OTEL bearer token — traces to Grafana Alloy"
+else
+  echo "secrets: DUCKTAPE_OTEL_BEARER_TOKEN: skipped (DUCKTAPE_ENABLE_K8S_OTEL_BEARER_TOKEN != 1)" >&2
+fi
 
 # CI read-only fine-grained PAT (personal, agentydragon — read GHA runs/artifacts)
 try_export DUCKTAPE_CI_READ_GITHUB_TOKEN "$REPO_ROOT/secrets/github-ci-read-pat.yaml" '["github_token"]' "CI read PAT (agentydragon) — read GHA runs and artifacts"

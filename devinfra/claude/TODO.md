@@ -1,5 +1,33 @@
 # claude_hooks TODO
 
+## OTEL bearer token: mirror into SOPS
+
+**CLEANUP(2026-04-15)**: today `devinfra/secrets/web_env.sh` fetches
+`DUCKTAPE_OTEL_BEARER_TOKEN` from the `alloy-otlp-bearer-token` K8s Secret via
+`kubectl get secret`. On CCR v2 web sandboxes (and any env where the k8s API
+is unreachable) this blocks the daemon's `startup_env_script` for ~30s per
+retry and wedges session startup — so the call is now gated behind the
+`enable_k8s_otel_bearer_token` profile flag (off by default, see
+`ProfileConfig`).
+
+The real fix is to mirror the Authentik-generated token into a SOPS-encrypted
+file and `try_export` from it, matching the pattern used for every other
+secret. Sketch:
+
+1. Extend `cluster/terraform/gitops/alloy-otlp-bearer-token/` to also write
+   the token into `secrets/alloy-otlp-bearer-token.yaml` via `sops_file` or
+   an equivalent provider — re-encrypted for the `claude-web` age recipient
+   on every TF apply.
+2. Swap `web_env.sh`'s `try_export_from_k8s` call for a `try_export
+   "$REPO_ROOT/secrets/alloy-otlp-bearer-token.yaml" '["token"]'`.
+3. Delete the `enable_k8s_otel_bearer_token` flag on `ProfileConfig` and its
+   plumbing in `hook_daemon/main.py` + `web_env.sh`.
+
+Condition to remove this tombstone: the SOPS mirror exists and `web_env.sh`
+reads the token without touching kubectl.
+
+
+
 ## Nix Installation Timeout
 
 **Problem**: Installing nix on Claude Code web times out because downloading nixpkgs takes >2 minutes (session start hook timeout).

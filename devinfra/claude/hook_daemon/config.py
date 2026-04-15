@@ -140,6 +140,16 @@ class ProfileConfig(BaseModel):
         "New/changed vars are merged into os.environ before any session starts. "
         "Used by the web profile to decrypt SOPS secrets when SOPS_AGE_KEY is available.",
     )
+    enable_k8s_otel_bearer_token: bool = Field(
+        default=False,
+        description="If true, startup_env_script fetches DUCKTAPE_OTEL_BEARER_TOKEN from the "
+        "alloy-otlp-bearer-token Secret via kubectl. Default off because kubectl hangs for "
+        "~30s per call when the k8s API is unreachable (e.g. CCR v2 web sandboxes that can "
+        "only reach port 443), which wedges daemon startup. The flag is exported to the script "
+        "environment as DUCKTAPE_ENABLE_K8S_OTEL_BEARER_TOKEN=1|0. "
+        "CLEANUP: remove once alloy-otlp-bearer-token is mirrored into SOPS — see "
+        "devinfra/claude/TODO.md.",
+    )
     context_template: str | None = Field(
         default=None, description="Repo-relative path to a Mako template rendered into the session context output."
     )

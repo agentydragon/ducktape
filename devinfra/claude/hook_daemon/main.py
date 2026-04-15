@@ -19,7 +19,7 @@ from devinfra.claude.settings import HookSettings
 logger = logging.getLogger(__name__)
 
 
-def _source_env_script(script_path: Path) -> StartupResult:
+def _source_env_script(script_path: Path, extra_env: dict[str, str] | None = None) -> StartupResult:
     """Run a startup env script and collect env var patches without mutating os.environ.
 
     The script must print `export VAR=value` lines to stdout (as try_export does).
@@ -27,6 +27,10 @@ def _source_env_script(script_path: Path) -> StartupResult:
     evals its stdout, then dumps the final env via null-delimited pairs. Returns
     the vars the script added or changed relative to the current env; callers
     apply them explicitly rather than relying on a global mutation.
+
+    extra_env is merged into the subprocess environment (and into the baseline
+    used to compute the overlay, so the flags themselves are not reported as
+    new vars). Use it to pass profile toggles down into the script.
     """
     if not script_path.exists():
         msg = f"startup_env_script not found: {script_path}"
@@ -35,6 +39,8 @@ def _source_env_script(script_path: Path) -> StartupResult:
 
     logger.info("Running startup_env_script: %s", script_path)
     initial_env = dict(os.environ)
+    if extra_env:
+        initial_env.update(extra_env)
     proc = subprocess.run(
         ["bash", "-c", f'eval "$({shlex.quote(str(script_path))})" && env -0'],
         capture_output=True,
@@ -128,7 +134,10 @@ def main() -> None:
 
     startup = StartupResult()
     if profile.startup_env_script:
-        startup = _source_env_script(project_dir / profile.startup_env_script)
+        startup = _source_env_script(
+            project_dir / profile.startup_env_script,
+            extra_env={"DUCKTAPE_ENABLE_K8S_OTEL_BEARER_TOKEN": "1" if profile.enable_k8s_otel_bearer_token else "0"},
+        )
 
     otel_config = _resolve_otel_config(profile, startup.env_overlay)
 
