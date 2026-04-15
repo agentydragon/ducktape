@@ -197,8 +197,6 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//devinfra/claude:session_paths",
-        "//devinfra/claude:settings",
-        "//util/bazel:subprocess",
     ],
 )
 
@@ -228,6 +226,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":client",
+        ":shim_lib",
         "//devinfra/claude:session_paths",
         "//devinfra/claude/claude_api/hooks:dispatch_input",
         "@pypi//mako",

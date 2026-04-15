@@ -72,13 +72,18 @@ The hook runs at the start of each Claude Code web session and:
 ### PATH Shims (via `hook_daemon/shim_install.py`)
 
 7. Bazelisk binary provided by Nix devShell (on PATH)
-8. Installs PATH shims at `<session_dir>/bin/{bazelisk,git,bazel,bb,bbr}` — thin
-   scripts that report to the hook daemon via `/shim-exec` RPC before exec'ing the
+8. Installs PATH shims at `<session_dir>/bin/{bazelisk,git,bazel,bb,bbr}` — two-line
+   shell scripts that `exec claude-hook shim <name>` (PATH-resolved at invocation
+   time), which reports to the hook daemon via `/shim-exec` RPC before exec'ing the
    real binary. The daemon handles proxy credential refresh, `--bazelrc` injection
    (bazelisk), and configurable git safety checks (blocking `git add -A`,
    `git stash`, `git commit --amend` — controlled by `git_shim` in profile config,
    enabled in CLI mode, disabled in web mode). `bazel`, `bb`, `bbr` shims are
    currently no-op passthrough.
+
+   Because `claude-hook` is resolved via PATH at exec time (not baked as a store
+   path at install time), `nix profile install` / `home-manager switch` takes
+   effect for all subsequent shim invocations without restarting the session.
 
 ### Git Hooks
 
