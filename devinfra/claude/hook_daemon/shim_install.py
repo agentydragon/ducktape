@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 
 # Shim-internal env vars (baked into shell wrappers at install time).
 # Double-underscore prefix = private, not part of the public DUCKTAPE_CLAUDE_HOOKS_* namespace.
-SHIM_DIR_ENV = "__DUCKTAPE_CLAUDE_HOOKS_SHIM_DIR"
 SHIM_NAME_ENV = "__DUCKTAPE_CLAUDE_HOOKS_SHIM_NAME"
 SHIM_SESSION_ID_ENV = "__DUCKTAPE_CLAUDE_HOOKS_SHIM_SESSION_ID"
 
@@ -39,17 +38,10 @@ def install(shim_name: str, paths: SessionPaths) -> Path:
     return shim_path
 
 
-def resolve_real_binary(binary_name: str, shim_dir: Path | None = None) -> str:
-    """Find the real binary on PATH, skipping the shim directory.
-
-    shim_dir: directory to exclude (the session wrapper_dir). When None, falls
-    back to the legacy SHIM_DIR_ENV env var set by old-style shim wrappers.
-    """
-    if shim_dir is None:
-        shim_dir_str = os.environ.get(SHIM_DIR_ENV, "")
-        shim_dir = Path(shim_dir_str) if shim_dir_str else None
+def resolve_real_binary(binary_name: str, shim_dir: Path) -> str:
+    """Find the real binary on PATH, excluding shim_dir (the session wrapper_dir)."""
     for directory in os.environ.get("PATH", "").split(os.pathsep):
-        if shim_dir and Path(directory).resolve() == shim_dir.resolve():
+        if Path(directory).resolve() == shim_dir.resolve():
             continue
         candidate = Path(directory) / binary_name
         if candidate.is_file() and os.access(candidate, os.X_OK):
