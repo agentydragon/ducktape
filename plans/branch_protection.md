@@ -139,7 +139,7 @@ Decision deferred — see tracking issue.
 
 ## Tracking
 
-- GitHub issue: TBD (to be opened as part of this revert PR)
+- GitHub issue: agentydragon/ducktape#1314
 - Related files to restore when the second attempt lands:
   - `cluster/terraform/gitops/github-repo-rulesets/` (module)
   - `cluster/k8s/github-repo-rulesets/` (Flux wiring)
