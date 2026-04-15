@@ -11,10 +11,15 @@ import "fmt"
 //     run "claude init" (RunInit), bootstrap skills and hooks.
 //   - "setup-only":   Same as "new" — full initialization. Used for pre-warming environments
 //     without starting a Claude Code session.
-//   - "resume":       Skips language installation and source cloning. Still runs init script,
-//     RunInit, skills, and hooks bootstrapping (idempotent writes).
-//   - "resume-cached": Same behavior as "resume" — skips install/clone steps. The "cached"
-//     suffix indicates the filesystem state was preserved from a prior session.
+//   - "resume":       TODO(re): behavior unobserved. Likely runs init script (unlike
+//     resume-cached), but Step 1/2 (language install, source clone) skipped.
+//   - "resume-cached": Fast-resume optimization — skips Step 1 (languages), Step 3
+//     (init script), and Step 2 (source clone, replaced by fast repo update).
+//     The binary emits "Fast resume: Languages already installed" and
+//     "Fast resume: Environment already configured" / "Skipping initialization script
+//     for faster startup" log messages. Observed in /tmp/environment-manager.out with
+//     has_init_script:true, confirming the skip is an explicit optimization, NOT caused
+//     by an empty init_script field. Steps 4-6 (RunInit, skills, hooks) still run.
 //
 // Binary evidence for mode strings: "setup-only" (len 10) and "resume-cached" (len 13)
 // are present in the binary string table. The Initialize method defaults to "new" if

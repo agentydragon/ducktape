@@ -52,13 +52,29 @@ evidence:
 The `init-script-*.sh` pattern and `process.ExecuteScript` flow match. The pattern
 `%s-*.sh` for temp files is present in binary strings.
 
-#### Log Messages - CANNOT VERIFY (garbled)
+#### Log Messages - CANNOT VERIFY via strings (garbled), VERIFIED at runtime
 
-All log message strings (e.g., `"Initializing Anthropic environment"`, `"Installing
-languages"`, `"Running initialization script"`) are **not present** in the binary
-strings. This is expected: garble obfuscates string constants. The RE code's log
-messages are **plausible reconstructions** based on DWARF-era analysis but cannot be
-independently verified from this binary alone.
+All log message strings are absent from `strings` output — garble obfuscates string
+constants in the binary. However, the structured JSON log at `/tmp/environment-manager.out`
+captures live runtime output and confirms several key messages. See "Behavioral
+Observations" section below for the verified log corpus.
+
+#### Initialize() Fast-Resume Path - VERIFIED at runtime
+
+The `resume-cached` session mode triggers a **fast-resume optimization** that was
+previously undocumented in the RE. Observed in `/tmp/environment-manager.out` on
+2026-04-15T22:23 with `--session-mode resume-cached`:
+
+- `"Initializing Anthropic environment"` with `has_init_script:true` confirms the
+  `init_script` field was non-empty — the skip is NOT caused by an empty field.
+- `"Fast resume: Using existing repository clones"` — Step 2 replaced by fast git update.
+- `"Fast resume: Languages already installed"` — Step 1 skipped entirely.
+- `"Fast resume: Environment already configured"` / `"Skipping initialization script
+for faster startup"` — Step 3 (init script / `web_setup.sh`) explicitly skipped.
+
+This refutes the prior RE claim that "Steps 3-6 run unconditionally for all session
+modes including resume." Step 3 does NOT run for `resume-cached`. The `anthropic.go`
+`Initialize()` has been updated to reflect this with the `isResumeCached` fast path.
 
 #### JSON Field Tags - CONFIRMED
 
