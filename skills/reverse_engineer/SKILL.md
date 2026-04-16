@@ -13,6 +13,8 @@ allowed-tools: Bash, Read, Grep, Glob, Edit, Write, Task, WebFetch
 
 **Every binary is reversible.** Stripping removes metadata, not behavior. Obfuscation renames symbols, not logic. The CPU executes the same instructions regardless of whether you have debug info. You always have: the full instruction stream, string literals, the syscall interface, and runtime behavior. Adjust techniques, not ambition.
 
+**When a tool fails, diagnose and build.** A tool returning an error or empty output is not a dead end — it is a precise description of what the binary violates. Read the error, find the exact check that failed, determine what the binary does instead, and write the minimal fix. Add the fix to `examples/` and record it in the Defeating Obfuscation section below. This skill is a living document: every obfuscation technique you defeat belongs here so the next run starts ahead.
+
 ---
 
 ## Classify First
@@ -178,6 +180,31 @@ paths in type metadata, and (with `-literals`) most string constants.
   outputs, syscall traces, network traffic. Externally observable behavior
   is ground truth regardless of obfuscation.
 
+### Defeating Obfuscation: Build What's Missing
+
+When a tool fails, follow this pattern:
+
+1. **Read the error exactly.** `"no symbol section"`, `"failed to locate pclntab"`,
+   `"unknown"` — each error names the specific check that failed.
+2. **Find what the binary has instead.** `readelf -S` for sections, hex dump
+   the relevant bytes, compare to what the tool expects.
+3. **Write the minimal fix** — a small Go/Python program, a patch, or a shell
+   function that repairs or works around the specific difference.
+4. **Verify it works** against the actual binary, then add it to `examples/`
+   with a comment explaining the obfuscation it defeats.
+5. **Record it in the table below** and update this skill so future runs
+   start with the fix already available.
+
+**Known-defeated techniques** (tools in `examples/`):
+
+| Technique                                       | What breaks                                                                      | Fix                                                                                 | File                   |
+| ----------------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ---------------------- |
+| garble XORs `.gopclntab` magic bytes (v0.13.0+) | `go tool objdump`, `redress`, `GoReSym`, `debug/gosym` all fail to parse pclntab | Try each known Go magic in-memory until `gosym.NewTable` succeeds                   | `examples/pclntool.go` |
+| garble strips ELF `.symtab`                     | `go tool objdump` fails with "no symbol section"                                 | Use GNU `objdump -d` instead; it does not require `.symtab`                         | (no file needed)       |
+| garble strips module info from `.go.buildinfo`  | `go version -m` returns `unknown`                                                | Use Go compiler version from `redress info` or `readelf` on `.go.buildinfo` section | (no file needed)       |
+
+When you encounter a new technique not in this table, defeat it and add a row.
+
 ### Go-Specific: Function Enumeration from pclntab
 
 Garble randomizes symbol names but **cannot remove `runtime.pclntab`** — the
@@ -193,9 +220,10 @@ redress source ./binary        # source-level view
 
 **On garble-obfuscated binaries `redress` returns empty output.** Garble v0.13.0+
 XORs the first 4 bytes of `.gopclntab` (the magic number) with a seed-derived
-key. `redress` cannot parse the table without the correct magic and returns 0
-packages. Use `pclntool` (see `examples/pclntool.go`) instead — it tries all
-known Go pclntab magics in memory until one parses successfully:
+key. `redress`, `GoReSym`, and `debug/gosym` all fail — they expect a known
+magic and get garbage. This is a defeated technique: `pclntool`
+(`examples/pclntool.go`) patches each known Go magic in-memory until
+`gosym.NewTable` succeeds:
 
 ```bash
 # Build pclntool (stdlib only, no external deps)
