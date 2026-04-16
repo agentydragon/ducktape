@@ -110,7 +110,7 @@ All tests must fail loudly — no swallowed exceptions. A broken recipe → a re
 
 ## Bazel wiring
 
-```python
+```starlark
 # examples/BUILD.bazel
 py_library(name = "my_recipe", srcs = ["my_recipe.py"], deps = [...])
 
@@ -118,16 +118,56 @@ py_test(
     name = "test_my_recipe",
     srcs = ["test_my_recipe.py"],
     data = ["golden.png", "//skills/myskill/conda:tool_binary"],
-    deps = [":my_recipe", "//skills/myskill:conftest", ...],
+    deps = [":my_recipe", "//skills/myskill:conftest", "@pypi//pytest_bazel", ...],
+)
+```
+
+Every `py_test` must include a `pytest_bazel.main()` entry point — without it Bazel
+exits 0 without running any tests (see AGENTS.md):
+
+```python
+import pytest_bazel
+# ... tests ...
+if __name__ == "__main__":
+    pytest_bazel.main()
+```
+
+**Packaging recipes from a subpackage**: `skill_package` uses `strip_prefix.from_pkg()`,
+which drops subdirectory structure for cross-package sources — a recipe from
+`//skills/myskill/examples:my_recipe.py` would land at the skill root, not in
+`examples/`. Use explicit `pkg_files` targets with `prefix` instead (the freecad pattern):
+
+```starlark
+# myskill/BUILD.bazel — when recipes live in examples/
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+pkg_files(
+    name = "myskill_local_files",
+    srcs = ["SKILL.md"],
+    strip_prefix = strip_prefix.from_pkg(),
 )
 
-# myskill/BUILD.bazel
+pkg_files(
+    name = "myskill_example_files",
+    srcs = ["//skills/myskill/examples:my_recipe.py"],
+    prefix = "examples",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_tar(
+    name = "myskill_tar",
+    srcs = [":myskill_local_files", ":myskill_example_files"],
+    package_dir = "myskill",
+    visibility = ["//visibility:public"],
+)
+```
+
+For skills with only a `SKILL.md` and no subpackage recipes, `skill_package` is fine:
+
+```starlark
 load("//skills:defs.bzl", "skill_package")
-
-skill_package(
-    name = "myskill",
-    srcs = ["SKILL.md", "//skills/myskill/examples:my_recipe.py"],
-)
+skill_package(name = "myskill", srcs = ["SKILL.md"])
 ```
 
 Add `myskill_tar` to `skills/BUILD.bazel`'s `all_skills_tar` deps.
