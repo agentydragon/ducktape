@@ -46,13 +46,13 @@ def _strip_no_proxy_google() -> dict[str, str] | None:
 class EnvVars:
     """Collected environment variables for session.
 
-    All profiles set bazel_wrapper_dir and session_bazelrc. Other fields
+    All profiles set shims_dir (session bin/) and session_bazelrc. Other fields
     are populated based on profile flags (setup_auth_proxy, setup_docker,
     etc.).
     """
 
     # Required in all profiles
-    bazel_wrapper_dir: Path
+    shims_dir: Path
     session_bazelrc: Path
 
     # Per-session directory
@@ -85,7 +85,7 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     This is the SINGLE write point for all session environment variables.
     Works for both web mode (all fields set) and CLI mode (minimal fields).
     """
-    path_str = os.pathsep.join(filter(None, [str(vars.bazel_wrapper_dir), os.environ.get("PATH")]))
+    path_str = os.pathsep.join(filter(None, [str(vars.shims_dir), os.environ.get("PATH")]))
 
     exports: list[str] = ["# Environment configured by session start hook"]
     if vars.hook_timestamp:
@@ -143,7 +143,7 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
 
     # Session bin dir must be first on PATH regardless of what env_overlay or
     # extra_env_script did to PATH above. Emit this last so it always wins.
-    exports.extend(["", f'export PATH="{vars.bazel_wrapper_dir}:$PATH"'])
+    exports.extend(["", f'export PATH="{vars.shims_dir}:$PATH"'])
 
     content = "\n".join(exports) + "\n"
     write_config(env_file, content, "session environment")

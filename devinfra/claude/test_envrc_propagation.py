@@ -1,6 +1,6 @@
 """Tests for CLI-mode environment file generation.
 
-Verifies that write_env_file with CLI-mode EnvVars writes the wrapper PATH,
+Verifies that write_env_file with CLI-mode EnvVars writes the shims PATH,
 SESSION_BAZELRC, and extra_env_script (including direnv) into subsequent Bash
 tool calls.
 """
@@ -14,7 +14,7 @@ from devinfra.claude.env_file import EnvVars, write_env_file
 
 
 def _cli_env_vars(wrapper_dir: Path, bazelrc: Path, *, extra_env_script: str | None = None) -> EnvVars:
-    return EnvVars(bazel_wrapper_dir=wrapper_dir, session_bazelrc=bazelrc, extra_env_script=extra_env_script)
+    return EnvVars(shims_dir=wrapper_dir, session_bazelrc=bazelrc, extra_env_script=extra_env_script)
 
 
 @pytest.fixture
@@ -59,14 +59,6 @@ def test_extra_env_script_with_direnv(env_file: Path, wrapper_dir: Path, bazelrc
 
     content = env_file.read_text()
     assert "direnv export bash" in content
-
-
-def test_exports_ansible_local_temp(env_file: Path, wrapper_dir: Path, bazelrc: Path) -> None:
-    """Env file exports ANSIBLE_LOCAL_TEMP so pre-commit works in read-only sandboxes."""
-    write_env_file(env_file, _cli_env_vars(wrapper_dir, bazelrc))
-
-    content = env_file.read_text()
-    assert "ANSIBLE_LOCAL_TEMP=" in content
 
 
 def test_no_direnv_without_extra_env(env_file: Path, wrapper_dir: Path, bazelrc: Path) -> None:

@@ -434,7 +434,7 @@ async def handle(
     with tracer.start_as_current_span("write_env_file", context=root_ctx):
         extra_env = _build_extra_env_script(profile)
         env_vars = env_file.EnvVars(
-            bazel_wrapper_dir=session.paths.wrapper_dir,
+            shims_dir=session.paths.wrapper_dir,
             session_bazelrc=session_bazelrc,
             session_dir=session.paths.session_dir,
             supervisor_port=settings.supervisor_port,
