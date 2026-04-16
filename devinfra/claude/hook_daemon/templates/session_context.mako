@@ -3,9 +3,12 @@
 %>\
 # Claude Code session start hook — ${status}
 
-% if proxy:
-**Environment:** gVisor sandbox, TLS-inspecting proxy, no overlay fs (vfs), 9p fs
+% if proxy and proxy.status != "not configured":
+**Environment:** gVisor sandbox, TLS-inspecting proxy
 **Bazel:** wrapper adds auth proxy (${proxy.ca_status})
+% elif proxy:
+**Environment:** gVisor sandbox, no egress proxy detected
+**Bazel:** direct connect (system CA)
 % else:
 **Environment:** CLI (local)
 % endif

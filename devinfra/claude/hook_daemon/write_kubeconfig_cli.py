@@ -1,13 +1,11 @@
 """`claude-hook write-kubeconfig <path>` — materialize a service-account kubeconfig.
 
-Kubeconfig writer used by `web_env.sh` (writes `~/.kube/config` at daemon
-startup) and `claude-sandbox-kubectl-mcp.sh` (writes a tempfile for the
-kubectl MCP server).
+Kubeconfig writer for Claude Code sessions. Used by:
+  - SessionStart handler (writes `~/.kube/config` after auth_proxy setup)
+  - `claude-sandbox-kubectl-mcp.sh` (writes a tempfile for the kubectl MCP server)
 
-Used to be a duplicated bash script at `devinfra/claude/kube_from_sops.sh` that
-silently drifted — emitting a kubeconfig with no `certificate-authority-data`
-and no `proxy-url`, breaking kubectl on Claude Code web (TLS inspecting proxy
-+ MITM CA). This module is the single source of truth now.
+Public helpers (`decrypt_k8s_token`, `build_kubeconfig`, `write_kubeconfig_file`)
+are importable for use from the SessionStart handler.
 """
 
 from __future__ import annotations
@@ -55,7 +53,7 @@ def _load_profile(project_dir: Path) -> ProfileConfig:
     return ProfileConfig.load(project_dir / profile_path)
 
 
-def _decrypt_k8s_token(project_dir: Path) -> str:
+def decrypt_k8s_token(project_dir: Path) -> str:
     sops_path = project_dir / _K8S_TOKEN_SOPS_PATH
     if not sops_path.is_file():
         raise RuntimeError(f"k8s token SOPS file not found: {sops_path}")
@@ -97,7 +95,7 @@ def _resolve_ca_path() -> Path | None:
     return None
 
 
-def _build_kubeconfig(
+def build_kubeconfig(
     token: str, server: str, service_account: str, namespace: str, ca_path: Path | None, proxy_url: str | None
 ) -> dict:
     """Build kubeconfig dict for kubectl CLI use."""
@@ -139,11 +137,11 @@ def main(argv: list[str]) -> None:
             "`claude-hook write-kubeconfig` there."
         )
 
-    token = _decrypt_k8s_token(project_dir)
+    token = decrypt_k8s_token(project_dir)
     ca_path = _resolve_ca_path()
     proxy_url = get_proxy_url(dict(os.environ))
 
-    kubeconfig = _build_kubeconfig(
+    kubeconfig = build_kubeconfig(
         token=token,
         server=profile.k8s.server,
         service_account=profile.k8s.service_account,
@@ -152,10 +150,16 @@ def main(argv: list[str]) -> None:
         proxy_url=proxy_url,
     )
 
+    write_kubeconfig_file(kubeconfig, output_path)
+    print(
+        f"wrote {output_path} — server={profile.k8s.server} ca={ca_path} proxy={'set' if proxy_url else 'unset'}",
+        file=sys.stderr,
+    )
+
+
+def write_kubeconfig_file(kubeconfig: dict, output_path: Path) -> None:
+    """Atomic 0o600 write of a kubeconfig dict to disk."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    # Atomic 0o600 write: create a temp file in the destination directory with
-    # restrictive perms from inception (never mode 0o644 even briefly), write the
-    # serialized kubeconfig, then rename over the final path.
     serialized = yaml.safe_dump(kubeconfig, default_flow_style=False, sort_keys=False)
     tmp_path = output_path.with_name(f".{output_path.name}.tmp")
     fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -166,7 +170,3 @@ def main(argv: list[str]) -> None:
         tmp_path.unlink(missing_ok=True)
         raise
     tmp_path.replace(output_path)
-    print(
-        f"wrote {output_path} — server={profile.k8s.server} ca={ca_path} proxy={'set' if proxy_url else 'unset'}",
-        file=sys.stderr,
-    )

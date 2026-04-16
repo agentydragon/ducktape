@@ -88,7 +88,7 @@ def _find_keytool() -> str:
 class ProxySetup:
     """Result of auth proxy setup."""
 
-    combined_ca: Path
+    combined_ca: Path | None
     status: str
     ca_status: str
 
@@ -280,7 +280,7 @@ async def setup_auth_proxy(paths: SessionPaths) -> ProxySetup:
 
     if not get_upstream_proxy_url():
         logger.info("No https_proxy set, auth proxy setup not needed")
-        return ProxySetup(combined_ca=combined_ca, status="not configured", ca_status="system")
+        return ProxySetup(combined_ca=None, status="not configured", ca_status="system")
 
     logger.info("Setting up auth proxy for TLS-inspecting proxy...")
 

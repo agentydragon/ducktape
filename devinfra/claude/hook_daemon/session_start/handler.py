@@ -12,9 +12,11 @@ import logging
 import logging.handlers
 import os
 import shlex
+import socket
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 import anyio
 from mako.template import Template
@@ -22,6 +24,7 @@ from opentelemetry import trace
 
 from devinfra.claude import env_file
 from devinfra.claude.auth_proxy import setup as proxy_setup
+from devinfra.claude.auth_proxy.vars import get_proxy_url
 from devinfra.claude.claude_api.hooks.output import HookOutput
 from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput, SessionStartHookSpecificOutput
 from devinfra.claude.debug import log_entrypoint_debug
@@ -32,6 +35,7 @@ from devinfra.claude.hook_daemon.models import StartupResult
 from devinfra.claude.hook_daemon.session import BgStream, Session, _feed_queue
 from devinfra.claude.hook_daemon.session_start import buildbuddy, container_runtime, platform_detect, tmpfs
 from devinfra.claude.hook_daemon.shim_install import install as install_shim
+from devinfra.claude.hook_daemon.write_kubeconfig_cli import build_kubeconfig, decrypt_k8s_token, write_kubeconfig_file
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.settings import CONFIG_FILES, HookSettings
 from devinfra.claude.supervisor import setup as supervisor_setup
@@ -360,8 +364,12 @@ async def handle(
         session, settings, profile, project_dir, root_ctx, platform=platform, env_overlay=startup.env_overlay
     )
 
-    # -- Shared steps: BuildBuddy, fork remote --
+    # -- Shared steps: BuildBuddy, kubeconfig, fork remote --
     combined_ca = setup.auth_proxy.combined_ca if setup.auth_proxy else None
+
+    # Write kubeconfig now that auth_proxy setup is complete (known proxy state + CA).
+    with tracer.start_as_current_span("write_kubeconfig", context=root_ctx):
+        await _write_kubeconfig(profile, project_dir, combined_ca)
 
     # Configure BuildBuddy now that secrets are available.
     with tracer.start_as_current_span("setup_buildbuddy", context=root_ctx):
@@ -392,7 +400,7 @@ async def handle(
             CONFIG_FILES.joinpath("bazelrc.mako").read_text(), imports=["from shlex import quote as sh"]
         )
         bazelrc_content: str = bazelrc_template.render(
-            setup_auth_proxy=profile.setup_auth_proxy,
+            setup_auth_proxy=profile.setup_auth_proxy and combined_ca is not None,
             bazel_remote_proxy_sock=session.paths.bazel_remote_proxy_sock if session.uds_remote else None,
             bazel_bes_proxy_sock=session.paths.bazel_bes_proxy_sock if session.bes_interceptor else None,
             truststore_path=session.paths.auth_proxy_truststore,
@@ -481,6 +489,48 @@ async def handle(
 
     root_span.end()
     return output
+
+
+async def _write_kubeconfig(profile: ProfileConfig, project_dir: Path, combined_ca: Path | None) -> None:
+    """Write ~/.kube/config after auth_proxy setup so proxy-url and CA are correct."""
+    if profile.k8s is None:
+        return
+
+    output_path = Path.home() / ".kube" / "config"
+    try:
+        token = await anyio.to_thread.run_sync(lambda: decrypt_k8s_token(project_dir))
+    except RuntimeError:
+        logger.warning("kubeconfig: failed to decrypt k8s token (SOPS_AGE_KEY missing?)", exc_info=True)
+        return
+
+    proxy_url = get_proxy_url(dict(os.environ))
+    ca_path = combined_ca if combined_ca and combined_ca.exists() else Path("/etc/ssl/certs/ca-certificates.crt")
+
+    kubeconfig = build_kubeconfig(
+        token=token,
+        server=profile.k8s.server,
+        service_account=profile.k8s.service_account,
+        namespace=profile.k8s.namespace,
+        ca_path=ca_path if ca_path.exists() else None,
+        proxy_url=proxy_url,
+    )
+    write_kubeconfig_file(kubeconfig, output_path)
+    logger.info(
+        "kubeconfig: wrote %s — server=%s ca=%s proxy=%s",
+        output_path,
+        profile.k8s.server,
+        ca_path,
+        "set" if proxy_url else "unset",
+    )
+
+    # Lightweight reachability probe (non-fatal).
+    parsed = urlparse(profile.k8s.server)
+    hostname = parsed.hostname or ""
+    try:
+        socket.getaddrinfo(hostname, parsed.port or 443)
+        logger.info("kubeconfig: DNS OK for %s", hostname)
+    except OSError:
+        logger.warning("kubeconfig: WARNING — DNS resolution failed for %s; kubectl will not work", hostname)
 
 
 def _build_extra_env_script(profile: ProfileConfig) -> str | None:

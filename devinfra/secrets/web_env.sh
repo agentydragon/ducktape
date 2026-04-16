@@ -13,31 +13,14 @@
 #     vars flow into the session env file for hook subprocesses
 #
 # Side effects (in addition to printing export lines):
-#   - Writes ~/.kube/config from the SOPS-encrypted k8s token so that kubectl
-#     works without KUBECONFIG set. Web env has no pre-existing user kubeconfig.
+#   - (none — kubeconfig is now written by the SessionStart handler after
+#     auth_proxy setup, so it has correct proxy-url and CA path)
 
 # shellcheck source=_common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 # Machine-user GitHub PAT (agentydragon-agent)
 try_export GITHUB_TOKEN "$REPO_ROOT/secrets/github-pat-agentydragon-agent.yaml" '["github_token"]' "GitHub PAT for agentydragon-agent bot — used by gh CLI automatically. PR workflow: origin is a local proxy; PRs must come from a fork (fork remote + push/PR instructions delivered via mailbox)."
-
-# Write ~/.kube/config via the canonical hook-daemon kubeconfig materializer —
-# embeds CA + proxy-url from the active profile so kubectl actually works behind
-# the TLS-inspecting egress proxy on Claude Code web. The MCP server
-# (claude-sandbox-kubectl-mcp.sh) uses the same `claude-hook write-kubeconfig`
-# subcommand and does not read from here.
-# Must run before any `try_export_from_k8s` below: the web session has no
-# pre-existing kubeconfig, so kubectl has nothing to authenticate with until
-# this block writes ~/.kube/config.
-# Failures are non-fatal (e.g. SOPS_AGE_KEY not yet available at web_setup.sh time).
-_kube_stderr="$(mktemp)"
-if ! claude-hook write-kubeconfig "$HOME/.kube/config" 2>"$_kube_stderr"; then
-  echo "WARNING: kubeconfig: failed to write ~/.kube/config: $(cat "$_kube_stderr")" >&2
-else
-  echo "kubeconfig: wrote ~/.kube/config — ServiceAccount claude-code-web, claude-sandbox namespace (full CRUD: pods/log/exec, services, configmaps, secrets, PVCs, events, deployments, jobs, cronjobs; quota: 8 CPU, 16Gi, 20 pods); cluster-wide read on nodes, Flux, HelmReleases, cert-manager, CNPG, etc." >&2
-fi
-rm -f "$_kube_stderr"
 
 # OTEL bearer token (Grafana Alloy via Authentik) — canonical source is Authentik,
 # TF writes it into this K8s Secret (cluster/terraform/gitops/alloy-otlp-bearer-token).
@@ -57,10 +40,3 @@ fi
 
 # CI read-only fine-grained PAT (personal, agentydragon — read GHA runs/artifacts)
 try_export DUCKTAPE_CI_READ_GITHUB_TOKEN "$REPO_ROOT/secrets/github-ci-read-pat.yaml" '["github_token"]' "CI read PAT (agentydragon) — read GHA runs and artifacts"
-
-# Add Nix default profile bin to PATH so hook subprocesses find Nix-installed tools
-# (sops, bb, gh, etc.) without relying on /usr/local/bin symlinks.
-if [ -d "/nix/var/nix/profiles/default/bin" ]; then
-  echo "PATH: prepended /nix/var/nix/profiles/default/bin (Nix default profile)" >&2
-  export PATH="/nix/var/nix/profiles/default/bin:$PATH"
-fi
