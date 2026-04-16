@@ -383,22 +383,21 @@ func (e *anthropicEnvironmentType) Initialize(ctx context.Context) error {
 	}
 
 	// resume-cached early exit: Binary 0x1fba0e1-0x1fbb074.
-	// After calling FJqRbR1MIeE("resume") + ProcessSources, resume-cached returns.
+	// Disassembly shows the fall-through block (after jne 0x1fbb075) calls
+	// FJqRbR1MIeE("resume") then ProcessSources, then hits ret at 0x1fbb074.
 	// Steps 4-6 are NOT reached for resume-cached sessions.
 	if e.sessionMode == "resume-cached" {
-		// Fast-resume path: call FJqRbR1MIeE("resume") and return.
-		// Observed log messages (from /tmp/environment-manager.out, has_init_script:true):
-		//   "Fast resume: Languages already installed"
-		//   "Fast resume: Environment already configured" + "Skipping initialization script for faster startup"
-		// The has_init_script:true confirms the skip is an explicit optimization,
-		// not due to an empty field.
-		e.logger.Info("Fast resume: Languages already installed",
-			"languages", e.config.Languages,
-			"message", "Using existing language installations from previous session",
-		)
-		e.logger.Info("Fast resume: Environment already configured",
-			"message", "Skipping initialization script for faster startup",
-		)
+		// TODO(re): FJqRbR1MIeE is a garble-obfuscated function called with
+		// the string "resume" on this path and "fresh" on the non-cached path
+		// (0x1fbb075). Likely configures language symlinks or source handler
+		// mode for fast-resume vs fresh install. Not reconstructed.
+
+		// processSources runs on resume-cached with mode "resume" (not "resume-cached").
+		// The "Fast resume: ..." log messages observed at runtime are emitted inside
+		// FJqRbR1MIeE / processSources, not by Initialize directly.
+		if err := e.processSources(ctx); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -589,16 +588,17 @@ func (e *anthropicEnvironmentType) installLanguage(ctx context.Context, name, ve
 }
 
 // processSources creates a SourceHandlerManager and processes the git sources
-// from the startup context. Called during Initialize() Step 2 when
-// isNewOrSetup && hasSources.
+// from the startup context. Called in two places in Initialize():
+//   - Step 2 (new/setup-only + hasSources): fresh clone path
+//   - resume-cached early-exit block: fast-update path, after FJqRbR1MIeE("resume")
 //
 // Binary address: wrapped by RecordFunction.func2 at 0xafdf60 in 495ea204.
 // Source file: anthropic.go
 //
 // TODO(re): Exact parameters to NewSourceHandlerManager are garble-obfuscated
-// in 495ea204. The session ID, gitProxyConfig, outcomes, and activityRecorder
-// bindings are reconstructed from struct fields; the processMode string and
-// exact error wrapping messages cannot be verified without runtime observation.
+// in 495ea204. In particular, the processMode string passed for resume-cached
+// is "resume" (from FJqRbR1MIeE("resume")), not "resume-cached" — the current
+// stub passes string(e.sessionMode) which is wrong for that path.
 // Compare with byoc.handleBranchCheckout() for the resume-mode analog.
 func (e *anthropicEnvironmentType) processSources(ctx context.Context) error {
 	// TODO(re): sessionID source — likely e.startupContext.SessionID
