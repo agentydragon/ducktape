@@ -35,10 +35,14 @@ when/how session-start-adjacent things fire. Specifically:
 - **Which hook points fire on which session modes** (`new` / `resume` /
   `resume-cached` / `setup-only`): see
   <web_env/re/environment_manager/src/internal/envtype/anthropic/anthropic.go>
-  `Initialize()`. Step 1 (install languages) and Step 2 (clone sources) are
-  gated on `isNewOrSetup`. **Steps 3–6 run on every session** — including
-  Step 3 (`runInitScript`, i.e. our `web_setup.sh`) and Step 4
-  (`claude --init-only` which fires SessionStart hooks).
+  `Initialize()`. Steps 1–2 (install languages, clone sources) are gated on
+  `isNewOrSetup`. Step 3 (init script / `web_setup.sh`) is gated on
+  `isNewOrSetup` — **both `resume` and `resume-cached` skip the init script**.
+  **`resume-cached` exits early** (after FJqRbR1MIeE + ProcessSources, VMA
+  `0x1fbb074`) and does NOT run Steps 4–6. Steps 4–6 (`claude --init-only`
+  which fires SessionStart hooks, skill bootstrap, hook bootstrap) run for
+  `new` and `resume` modes only. `setup-only` runs the init script and exits
+  partway through the subsequent steps.
 - **`process_api` (PID 1) lifecycle**, WebSocket ports, orphan monitor, OOM killers:
   <web_env/re/process_api/README.md>.
 - **CLI flags and env vars** that tune the above:

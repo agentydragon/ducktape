@@ -59,22 +59,56 @@ constants in the binary. However, the structured JSON log at `/tmp/environment-m
 captures live runtime output and confirms several key messages. See "Behavioral
 Observations" section below for the verified log corpus.
 
-#### Initialize() Fast-Resume Path - VERIFIED at runtime
+#### Initialize() Session Mode Dispatch - VERIFIED by disassembly
 
-The `resume-cached` session mode triggers a **fast-resume optimization** that was
-previously undocumented in the RE. Observed in `/tmp/environment-manager.out` on
-2026-04-15T22:23 with `--session-mode resume-cached`:
+Function `YpqWUfDmj6T.(*yczF0CFcH).Initialize` at VMA `0x1fb1220` (495ea204).
+Disassembled from the live binary. Key verified control flow:
 
-- `"Initializing Anthropic environment"` with `has_init_script:true` confirms the
-  `init_script` field was non-empty — the skip is NOT caused by an empty field.
-- `"Fast resume: Using existing repository clones"` — Step 2 replaced by fast git update.
-- `"Fast resume: Languages already installed"` — Step 1 skipped entirely.
-- `"Fast resume: Environment already configured"` / `"Skipping initialization script
-for faster startup"` — Step 3 (init script / `web_setup.sh`) explicitly skipped.
+**Default mode (VMA `0x1fb12d5`):**
 
-This refutes the prior RE claim that "Steps 3-6 run unconditionally for all session
-modes including resume." Step 3 does NOT run for `resume-cached`. The `anthropic.go`
-`Initialize()` has been updated to reflect this with the `isResumeCached` fast path.
+```asm
+cmpq $0x0,0x28(%rax)   ; test sessionMode len == 0
+jne  ...               ; already set → skip
+movq $0x3,0x28(%rax)   ; len = 3
+; stores "new" → defaults to SessionModeNew
+```
+
+**isNewOrSetup check (VMA `0x1fb23b5`–`0x1fb240f`):**
+Compares len==3/"new" then len==10/"setup-only". `r10b` = isNewOrSetup flag.
+
+**Step 3 init script guard (VMA `0x1fb2640`):**
+
+```asm
+test %r10b,%r10b   ; test isNewOrSetup flag
+je   0x1fb3726     ; if NOT newOrSetup → skip entire init script block
+```
+
+Guard is `isNewOrSetup`, NOT `!isResumeCached`. **Both `resume` and `resume-cached`
+skip the init script.** Single call site to the init script function at `0x1fb26a0`.
+
+**resume-cached early exit (VMA `0x1fba0e1`–`0x1fbb074`):**
+
+```asm
+0x1fba0e1: ; checks len==13 + "resume-cached" comparison
+0x1fba0e6: jne 0x1fbb075   ; NOT resume-cached → jump to non-cached path
+; resume-cached falls through: calls FJqRbR1MIeE("resume") + ProcessSources
+0x1fbb074: ret              ; RETURNS HERE — Steps 4, 5, 6 never reached
+```
+
+**Non-cached path (VMA `0x1fbb075`):** called by `new`, `resume`, and `setup-only`.
+Calls FJqRbR1MIeE("fresh") + UpdateRemoteURLs, then continues to Steps 4–6.
+`setup-only` exits early at `0x1fbb4ae` → `0x1fbb6f3` and `0x1fc0105` → `0x1fc0365`.
+
+**Corrections to prior RE:**
+
+- Prior claim "Steps 3–6 run unconditionally for all modes" is wrong.
+- Step 3 skips both `resume` and `resume-cached` (not just `resume-cached`).
+- `resume-cached` exits before Steps 4–6. Steps 4–6 run for `new` and `resume` only.
+- The `isResumeCached` early-exit code path in the prior RE was in the wrong position
+  (before Steps 1–2); the actual early exit is after Steps 1–2 equivalent work.
+
+Runtime observation (2026-04-15, `/tmp/environment-manager.out`, `has_init_script:true`)
+confirming `resume-cached` skips init script remains valid and consistent with disassembly.
 
 #### JSON Field Tags - CONFIRMED
 

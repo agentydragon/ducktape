@@ -287,41 +287,43 @@ func (e *anthropicEnvironmentType) CreateLeaseManager(ctx context.Context, sessi
 // This is a complex multi-step process that includes:
 //  1. Installing languages (Go, Node, Python, etc.) — new/setup-only modes only
 //  2. Cloning git repositories from sources — new/setup-only modes only
-//  3. Running init scripts — skipped for resume-cached (fast-resume optimization)
-//  4. Running "claude --init-only" (via RunInit) — all modes, non-fatal
-//  5. Bootstrapping Claude skills — all modes
-//  6. Bootstrapping hooks (settings.json + stop hook) — all modes
+//  3. Running init scripts — new/setup-only modes only (NOT resume or resume-cached)
+//  4. Running "claude --init-only" (via RunInit) — new, resume, and partial setup-only
+//  5. Bootstrapping Claude skills — new and resume modes
+//  6. Bootstrapping hooks (settings.json + stop hook) — new and resume modes
 //
-// Steps 1-2 are gated on isNewOrSetup (session mode "new" or "setup-only").
-// Steps 5-6 run unconditionally for all session modes including resume.
-// Step 4 errors are non-fatal (logged and swallowed).
+// Steps 1-3 are gated on isNewOrSetup (session mode "new" or "setup-only").
+// Steps 4-6 run for "new" and "resume" modes; resume-cached exits early before them.
 //
-// Step 3 (init script): gated on both InitScript != "" AND NOT resume-cached.
-// For resume-cached sessions, the binary explicitly emits:
+// VERIFIED by disassembly of VMA 0x1fb1220 (function YpqWUfDmj6T.(*yczF0CFcH).Initialize):
 //
-//	"Fast resume: Languages already installed" (skips Step 1)
-//	"Fast resume: Environment already configured" + "Skipping initialization script
-//	  for faster startup" (skips Step 3 init script)
+// Step 3 (init script) guard: at VMA 0x1fb2640:
 //
-// This fast-resume path runs INSTEAD of the normal Step 1 and Step 3 logic.
-// Observed in /tmp/environment-manager.out at 22:23 UTC with has_init_script:true,
-// confirming the skip is NOT due to an empty init_script field — the binary actively
-// chooses to skip the init script for resume-cached regardless of field content.
+//	test %r10b,%r10b    ; test isNewOrSetup flag
+//	je   0x1fb3726      ; if NOT newOrSetup (resume OR resume-cached): skip entire init script block
 //
-// Binary address: 0xaf8740 (a6f96673) — address likely shifted in 495ea204.
+// The guard is isNewOrSetup, NOT "!isResumeCached". Both "resume" and "resume-cached"
+// skip the init script. There is exactly one call site (0x1fb26a0) to the init script
+// function (VzYs1kO6Z.mcv2vyZK362.func2.func54 at 0x1f393c0).
+//
+// resume-cached early exit: at VMA 0x1fba0e1 the binary checks len==13 + "resume-cached":
+//
+//	jne  0x1fbb075      ; if NOT resume-cached: jump to non-cached path
+//	...                 ; resume-cached: call FJqRbR1MIeE("resume") + ProcessSources
+//	ret  at 0x1fbb074   ; resume-cached RETURNS HERE — skipping Steps 4, 5, 6
+//
+// The non-resume-cached path (0x1fbb075) calls FJqRbR1MIeE("fresh") + UpdateRemoteURLs,
+// then continues to Steps 4-6.
+//
+// setup-only exits mid-sequence: setup-only sessions enter the non-resume-cached path
+// (0x1fbb075) and proceed through some steps before exiting early at multiple
+// check points (e.g. 0x1fbb4ae → 0x1fbb6f3 → ret, 0x1fc0105 → 0x1fc0365 → ret).
+//
+// Binary address: VMA 0x1fb1220 (495ea204, `YpqWUfDmj6T.(*yczF0CFcH).Initialize`).
 // Source file: anthropic.go
-//
-// The function has grown significantly between binary versions:
-//   - a6f96673: 5 RecordFunction closures (func1-func5)
-//   - 495ea204: 87 top-level closures (func1-func87) + 6 IravBP8W4ie
-//     (RecordFunction) wrappers (func107, func111, func133, func146,
-//     func164, func172), each with identical sub-closure patterns.
-//
-// The 6 IravBP8W4ie wrappers correspond to the 6 major initialization
-// steps listed above, each individually timed and observed.
 func (e *anthropicEnvironmentType) Initialize(ctx context.Context) error {
 	// Default session mode to "new" if not set.
-	// Binary: 0xaf87db-0xaf8816 checks sessionMode len == 0, sets to "new"
+	// Binary 0x1fb12d5: cmpq $0x0,0x28(%rax); jne ...; movq $0x3,0x28(%rax); "new"
 	if e.sessionMode == "" {
 		e.sessionMode = "new"
 	}
@@ -331,8 +333,7 @@ func (e *anthropicEnvironmentType) Initialize(ctx context.Context) error {
 	hasSources := e.startupContext != nil && len(e.startupContext.Sources) > 0
 
 	// Log initialization start with configuration details.
-	// Binary: 0xaf89e7 slog.Info "Initializing Anthropic environment" (34 chars)
-	// with 10 attrs including cwd, session_mode, has_init_script, languages count, has_sources
+	// Binary 0x1fb23a5: computes isNewOrSetup flag.
 	e.logger.Info("Initializing Anthropic environment",
 		"cwd", e.cwd,
 		"session_mode", e.sessionMode,
@@ -342,74 +343,33 @@ func (e *anthropicEnvironmentType) Initialize(ctx context.Context) error {
 	)
 
 	// Check session mode: "new" or "setup-only" proceed with full init.
-	// Binary: 0xaf8a20-0xaf8a70 compares session mode string
+	// Binary 0x1fb23b5-0x1fb240f: compares len==3/"new" and len==10/"setup-only".
 	isNewOrSetup := e.sessionMode == "new" || e.sessionMode == "setup-only"
-	isResumeCached := e.sessionMode == "resume-cached"
 
-	if isResumeCached {
-		// Fast-resume path: skip language installation and init script entirely.
-		// The binary emits two distinct log messages for this path, both observed
-		// in /tmp/environment-manager.out at 22:23:21 UTC with has_init_script:true:
-		//
-		//   "Fast resume: Languages already installed"
-		//   {"languages":[{"name":"python","version":"3.11"},{"name":"node","version":"20"}],
-		//    "message":"Using existing language installations from previous session"}
-		//
-		//   "Fast resume: Environment already configured"
-		//   {"message":"Skipping initialization script for faster startup"}
-		//
-		// The has_init_script:true at session start (line 189 of log) confirms the
-		// init_script field was non-empty — the skip is an explicit fast-resume
-		// optimization, NOT a consequence of an empty field.
-		e.logger.Info("Fast resume: Languages already installed",
-			"languages", e.config.Languages,
-			"message", "Using existing language installations from previous session",
-		)
-		e.logger.Info("Fast resume: Environment already configured",
-			"message", "Skipping initialization script for faster startup",
-		)
-	} else if isNewOrSetup && hasSources {
-		// Step 1: Install languages (via RecordFunction.func1 at 0xafe420)
+	// Steps 1-2: language installation and source cloning — new/setup-only only.
+	if isNewOrSetup && hasSources {
+		// Step 1: Install languages (new/setup-only + sources).
 		if err := e.installLanguages(ctx); err != nil {
 			return err
 		}
 
 		// Step 2: Process sources (git repos) via SourceHandlerManager.
-		// (via RecordFunction.func2 at 0xafdf60)
-		//
-		// The exact parameters passed to NewSourceHandlerManager for the
-		// anthropic new/setup path are garble-obfuscated in 495ea204; the
-		// implementation below is a best-effort reconstruction based on the
-		// available struct fields. Compare with byoc.handleBranchCheckout()
-		// which uses the same mechanism for resume mode.
 		if err := e.processSources(ctx); err != nil {
 			return err
 		}
-
-		// Step 3: Run init script (via RecordFunction/IravBP8W4ie wrapper)
-		// Only reached for new/setup-only sessions. resume-cached takes the fast
-		// path above; plain "resume" behavior for Step 3 is TODO(re): unobserved.
-		if e.config != nil && e.config.InitScript != "" {
-			if err := e.runInitScript(ctx, e.config.InitScript); err != nil {
-				return err
-			}
-		}
 	} else if isNewOrSetup {
-		// Step 1 only: Install languages without git
+		// Step 1 only: Install languages without sources.
 		if err := e.installLanguages(ctx); err != nil {
 			return err
 		}
+	}
+	// resume / resume-cached: Steps 1-2 are skipped entirely.
 
-		// Step 3: Run init script for new/setup-only without sources
-		if e.config != nil && e.config.InitScript != "" {
-			if err := e.runInitScript(ctx, e.config.InitScript); err != nil {
-				return err
-			}
-		}
-	} else {
-		// Plain "resume" mode: TODO(re): behavior unobserved. Likely similar to
-		// resume-cached but without the fast-resume optimization (may re-run
-		// init script). Treat as running init script for now.
+	// Step 3: Run init script — ONLY for new/setup-only sessions.
+	// Binary 0x1fb2640: test %r10b (isNewOrSetup); je 0x1fb3726 (skip).
+	// Guard is isNewOrSetup, NOT !isResumeCached. Both "resume" and
+	// "resume-cached" skip the init script. Single call site at 0x1fb26a0.
+	if isNewOrSetup {
 		if e.config != nil && e.config.InitScript != "" {
 			if err := e.runInitScript(ctx, e.config.InitScript); err != nil {
 				return err
@@ -417,21 +377,35 @@ func (e *anthropicEnvironmentType) Initialize(ctx context.Context) error {
 		}
 	}
 
-	// Step 4: Run "claude --init-only" (via RecordFunction/IravBP8W4ie wrapper)
-	// Calls claude.RunInit which executes "claude --init-only" in the working
-	// directory with the environment's env vars. This runs Setup + SessionStart
-	// hooks synchronously, then exits. See internal/claude/init.go for details.
-	//
-	// Session mode gating: UNCONDITIONAL — runs for all session modes (new,
-	// setup-only, resume, resume-cached). The session_mode.go documentation
-	// confirms resume modes still run RunInit. This makes sense because
-	// --init-only runs hooks (which need to fire every session) and applies
-	// config env vars (idempotent).
-	//
-	// Error handling: NON-FATAL — errors are logged at Warn level and
-	// initialization continues. This is intentional: RunInit fires hooks as
-	// a best-effort pre-warm; the main Claude Code session will fire hooks
-	// again during its own startup.
+	// resume-cached early exit: Binary 0x1fba0e1-0x1fbb074.
+	// After calling FJqRbR1MIeE("resume") + ProcessSources, resume-cached returns.
+	// Steps 4-6 are NOT reached for resume-cached sessions.
+	if e.sessionMode == "resume-cached" {
+		// Fast-resume path: call FJqRbR1MIeE("resume") and return.
+		// Observed log messages (from /tmp/environment-manager.out, has_init_script:true):
+		//   "Fast resume: Languages already installed"
+		//   "Fast resume: Environment already configured" + "Skipping initialization script for faster startup"
+		// The has_init_script:true confirms the skip is an explicit optimization,
+		// not due to an empty field.
+		e.logger.Info("Fast resume: Languages already installed",
+			"languages", e.config.Languages,
+			"message", "Using existing language installations from previous session",
+		)
+		e.logger.Info("Fast resume: Environment already configured",
+			"message", "Skipping initialization script for faster startup",
+		)
+		return nil
+	}
+
+	// setup-only exits partway through the remaining steps (verified at
+	// 0x1fbb4ae and 0x1fc0105 in the binary). The exact cutoff point is
+	// unclear from RE alone; the reconstruction below is approximate.
+
+	// Step 4: Run "claude --init-only" (via RunInit).
+	// Runs Setup + SessionStart hooks synchronously, then exits.
+	// Session mode gating: runs for "new" and "resume"; NOT resume-cached (exits above).
+	// Error handling: NON-FATAL — errors are logged at Warn level.
+	// Binary: WarnContext calls at 0x1fbb480+ log step progress/errors.
 	{
 		envVars := e.config.EnvironmentVariables
 		if err := claude.RunInit(e.logger, ctx, e.cwd, envVars); err != nil {
@@ -441,12 +415,12 @@ func (e *anthropicEnvironmentType) Initialize(ctx context.Context) error {
 		}
 	}
 
-	// Step 5: Bootstrap Claude skills (via RecordFunction/IravBP8W4ie wrapper)
+	// Step 5: Bootstrap Claude skills.
 	if err := e.bootstrapClaudeSkills(ctx); err != nil {
 		return err
 	}
 
-	// Step 6: Bootstrap hooks in all dirs (via RecordFunction/IravBP8W4ie wrapper)
+	// Step 6: Bootstrap hooks in all dirs.
 	if err := e.bootstrapHooksInAllDirs(ctx); err != nil {
 		return err
 	}
