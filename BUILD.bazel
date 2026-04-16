@@ -199,6 +199,14 @@ py_wheel(
     # SYNC: This list must match propagatedBuildInputs in nix/packages/default.nix
     # (claude-hooks). The Nix derivation provides these at runtime on NixOS/devShell.
     # When adding a dependency, update BOTH places.
+    #
+    # CLEANUP: the auth_proxy subsystem was removed — audit whether these deps
+    # are still needed anywhere in the wheel's imports, and drop those that
+    # aren't. Candidates that looked auth_proxy-specific: `cryptography` (CA
+    # extraction), `grpcio` + `protobuf` (BES interceptor), `pyjwt` (JWT
+    # expiry check). Keep `ducktape-util` and shared infra deps.
+    # Remember to update nix/packages/default.nix claude-hooks
+    # propagatedBuildInputs in lockstep.
     requires = [
         "anyio",
         "cryptography",
@@ -230,7 +238,7 @@ py_wheel(
         "ducktape-util",
     ],
     version = "0.1.0",
-    visibility = ["//devinfra/claude/hook_daemon/session_start/container_e2e:__pkg__"],
+    visibility = ["//visibility:public"],
     deps = [":claude_hooks_pkg"],
 )
 

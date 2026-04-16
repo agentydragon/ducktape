@@ -110,11 +110,15 @@ in
   # causing ImportError in ducktape-precommit. Keep both in sync.
   claude-hooks = mkWheel {
     pname = "claude-hooks";
-    description = "Claude Code session hooks (statusline, session-start, auth proxy)";
+    description = "Claude Code session hooks (statusline, session-start)";
     mainProgram = "claude-hook";
     # SYNC: This list must match `requires` in //:claude_hooks_wheel (BUILD.bazel).
     # The wheel declares pip-level deps; this list provides Nix-level equivalents.
     # When adding a dependency, update BOTH places.
+    #
+    # CLEANUP: auth_proxy subsystem removed — audit cryptography, grpcio,
+    # protobuf, pyjwt for whether anything still uses them and drop the unused
+    # ones (matching BUILD.bazel).
     propagatedBuildInputs =
       with pkgs.python3Packages;
       [
