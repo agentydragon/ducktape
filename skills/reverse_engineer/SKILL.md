@@ -208,17 +208,13 @@ pclntool ./garbled-binary 0x4a1b20
 # See examples/garble_re_recipe.sh for the complete runnable recipe
 ```
 
-`pclntool` gives you garbled-but-real function names and PC ranges. Use this to:
+`pclntool` maps a single PC address to the garbled function name that contains
+it. The full workflow (string → byte offset → VMA → instruction PC → function
+name) is demonstrated and CI-verified in `examples/garble_re_recipe.sh`.
 
-1. **Know total function count** — scope the RE effort
-2. **Get function boundaries for targeted disassembly** — instead of dumping
-   the entire binary, extract one function at a time
-3. **Identify new/removed/changed functions between versions** — compare
-   function sizes; a changed size means changed logic
-
-For version-to-version updates, run `pclntool` on both binaries (extract full
-function table) and diff by function size. Functions whose size changed need
-re-RE; identical sizes are likely unchanged and can be marked `CARRIED`.
+`pclntool` does not enumerate all functions — it answers "which function owns
+this address?" only. Bulk function enumeration from pclntab requires a
+different tool not currently in this skill.
 
 ### Go-Specific: Instruction-Level Analysis and String-to-Function Anchoring
 
@@ -266,40 +262,41 @@ sequences. This affects constants like env var names that appear nowhere in
 
 ```bash
 # If a known constant is missing from strings output, it may be encrypted
-strings "$BINARY" | grep -c "CLAUDE_CODE_"   # → 0 means likely encrypted
+strings "$BINARY" | grep -c "KNOWN_STRING"   # → 0 means likely encrypted
 
-# Find init functions with byte-array manipulation patterns
-go tool objdump "$BINARY" | grep -A 200 '^TEXT.*init\.' | grep -A 3 'MOVB\|XORB'
+# Look for byte-array init patterns in disassembly
+# (use GNU objdump -d, not go tool objdump — the latter fails on garbled binaries)
+objdump -d "$BINARY" | grep -E 'movb|xorb' | head -20
 ```
 
-**Recovery via strace (fastest):**
+**Recovery via strace:**
 
-The binary decrypts strings at runtime before using them. strace captures
-the results:
+The binary decrypts strings at runtime. In principle, strace can observe the
+results as arguments to write/sendto or in environment lookups. This has not
+been verified against an actual `-literals` binary — treat as a starting point:
 
 ```bash
-# Capture env var reads — decrypted names appear as getenv arguments
-strace -e trace=openat,read -s 256 ./binary --help 2>&1 | grep CLAUDE
-
-# For longer operations, trace the full startup
-GOTRACEBACK=all strace -f -e trace=all ./binary task-run --help 2>&1 | grep -i claude
+strace -e trace=write -s 512 ./binary --help 2>&1
+strace -e trace=openat,read -s 256 ./binary --help 2>&1
 ```
 
-**Recovery via disassembly (when strace isn't enough):**
+**Recovery via disassembly:**
 
-Each encrypted string has an `init` function that looks like:
+Each encrypted string has a generated `init` function that decrypts it in
+place using XOR/shift sequences. The general shape to look for (not verified
+against a real `-literals` binary — treat as illustrative):
 
 ```asm
-; Encrypted bytes loaded into a stack buffer, then XOR'd
-MOVB $0x43, 0x00(SP)   ; 'C' XOR key
+; Encrypted bytes loaded into a stack buffer, then XOR'd in place
+MOVB $0x43, 0x00(SP)
 MOVB $0x57, 0x01(SP)
-XORB $0x14, 0x00(SP)   ; apply key byte
+XORB $0x14, 0x00(SP)
 XORB $0x14, 0x01(SP)
-; result: the decrypted string
+; the buffer now holds the decrypted string
 ```
 
-Emulate the sequence manually (or with a short Python script) to recover the
-plaintext. The decrypted value is the true string constant.
+Emulate the sequence manually or with a short Python script to recover the
+plaintext.
 
 **Go-specific: garble preserves struct tags.** Even with `-literals`, garble
 cannot encrypt `json:"field_name"` struct tags because the `encoding/json`
@@ -323,35 +320,23 @@ than manual RE of the obfuscated binary.
 
 1. **BinDiff** (Google, free) — Ghidra or IDA plugin. Matches functions by
    call graph structure, string references, basic block count, instruction
-   mnemonics. Exports a SQLite database of matched pairs.
+   mnemonics. Not tested in this skill — documented based on tool documentation.
 2. **Diaphora** (open source) — Ghidra/IDA plugin. Similar matching but also
-   compares pseudo-code ASTs. Better at partial matches.
-3. **radiff2** (radare2) — CLI-based binary diffing. Lighter weight, scriptable.
-   Use this for the compile-verify loop and for version-to-version function-level
-   diffs without Ghidra.
+   compares pseudo-code ASTs. Not tested in this skill.
+3. **radiff2** (radare2) — CLI-based structural diffing. Tested for the
+   compile-verify loop (garbled target vs. freshly compiled RE binary). Not
+   tested for garbled-vs-garbled comparison across versions.
 4. **Custom string-anchored matcher** — when tools aren't available, a script
    can match functions by their string reference sets (see below).
 
-**Workflow with BinDiff/Diaphora:**
+**BinDiff/Diaphora** (reported workflow, not verified in this skill):
 
 ```bash
-OLD_BINARY="staging-with-symbols"
-NEW_BINARY="release-garbled"
-
-# 1. Import both into Ghidra projects (headless)
+# Import both into Ghidra projects, run the plugin, get a function mapping:
+# pairs of (old_name, old_addr) → (new_addr, similarity_score)
 analyzeHeadless /tmp/ghidra_old OldProject -import "$OLD_BINARY"
 analyzeHeadless /tmp/ghidra_new NewProject -import "$NEW_BINARY"
-
-# 2. Run BinDiff/Diaphora to produce function mapping
-# Output: pairs of (old_name, old_addr) → (new_addr, similarity_score)
-
-# 3. Filter by confidence
-#    similarity > 0.9 → high confidence, transfer name directly
-#    similarity 0.7-0.9 → verify string refs match before transferring
-#    similarity < 0.7 → manual review required
-
-# 4. Apply to RE: for each matched pair, update address annotations
-#    in the reconstructed source from old_addr → new_addr
+# Then run BinDiff or Diaphora from the Ghidra GUI or headless script
 ```
 
 **Compile-verify loop with `radiff2`:**
@@ -386,21 +371,12 @@ function, rebuild, and watch both metrics improve.
 
 **Version-to-version function delta with `radiff2`:**
 
-When a new garbled binary version ships, use `radiff2` for structural
-comparison between versions — garbled names differ between builds, so
-function matching must be structural rather than by name:
-
-```bash
-OLD="old_binary"
-NEW="new_binary"
-
-# Structural diff between versions
-radiff2 -s "$OLD" "$NEW" 2>/dev/null | awk '$3 < 0.95' | sort -k3 -n
-# These are functions whose logic changed — prioritize for manual re-RE
-
-# Functions in NEW but not OLD: new code requiring fresh RE
-radiff2 -s "$NEW" "$OLD" 2>/dev/null | awk '$3 == "UNMATCH"'
-```
+`radiff2` is tested for the compile-verify loop (garbled target vs. freshly
+compiled RE binary with symbols). Whether it matches functions usefully between
+two garbled binaries — where both have randomized names and potentially
+different code layout — is untested. It may work via instruction-level
+structural matching, but results should be treated with skepticism until
+verified empirically.
 
 **String-anchored matching (no tools required):**
 
@@ -410,16 +386,13 @@ unique string (log message, error text, format string). Functions referencing
 the same set of strings are the same function.
 
 ```bash
-OLD="$OLD_BINARY"
-NEW="$NEW_BINARY"
-
 # 1. For old binary (has symbols): map function → strings it references
-#    Use: go tool objdump -s 'pkg.Func' "$OLD" | grep string offsets
-#    Or: Ghidra xref analysis
+#    nm "$OLD" gives symbol names and addresses; objdump -d gives disassembly
+#    to find which strings each function loads
 
-# 2. For new binary: find all string-referencing code sites
-#    strings -t x "$NEW" gives (offset, string) pairs
-#    objdump -d "$NEW" | grep -B5 <string_offset> finds the referencing function
+# 2. For new garbled binary: find all string-referencing code sites
+#    strings -t x "$NEW" gives (file-offset, string) pairs
+#    Convert offset to VMA via readelf -S, then use pclntool to map PC → garbled fn
 
 # 3. Match: old function refs {"error A", "log B"} = new function refs same strings
 #    → new garbled function = old named function
