@@ -3,7 +3,7 @@
 #
 # Shows what survives garble obfuscation and how to anchor known string
 # literals to their garbled functions using standard Linux tools and
-# go tool addr2line (which reads pclntab — preserved by garble).
+# go tool objdump (which reads pclntab — preserved by garble).
 #
 # Expects: 'garbled-binary' in cwd, 'go' on PATH.
 
@@ -23,16 +23,29 @@ string_vma() {
   printf "0x%x" $((sec_vma + file_off - sec_file))
 }
 
-# fn_at_vma VMA → garbled function name from pclntab for the instruction that loads VMA
+# fn_at_vma VMA → garbled function name from pclntab for the function that
+# contains an instruction referencing VMA.
+#
+# go tool objdump reads pclntab (preserved by garble) and annotates each
+# instruction with its containing function.  TEXT headers mark function
+# boundaries; instructions that load string addresses reference the VMA.
+# For stripped binaries without a symbol table, the disassembler shows the
+# effective address as a bare hex value.
 fn_at_vma() {
-  local vma="$1" insn_line insn_addr
-  insn_line=$(objdump -d garbled-binary 2>/dev/null | grep "# ${vma}$" | head -1)
-  [ -n "$insn_line" ] || {
-    echo "FAIL: no instruction references VMA $vma" >&2
+  local vma="$1"
+  local hex="${vma#0x}" # strip 0x; match case-insensitively against output
+  local result
+  result=$(go tool objdump garbled-binary 2>/dev/null \
+    | awk -v hex="$hex" '
+        BEGIN { hex = tolower(hex) }
+        /^TEXT / { fn = $2; sub(/\(.*/, "", fn) }
+        fn && index(tolower($0), hex) { print fn; exit }
+      ')
+  if [ -z "$result" ]; then
+    echo "FAIL: no function references VMA $vma" >&2
     exit 1
-  }
-  insn_addr=0x$(echo "$insn_line" | awk '{print $1}' | tr -d ':')
-  echo "$insn_addr" | go tool addr2line garbled-binary 2>/dev/null | head -1
+  fi
+  echo "$result"
 }
 
 echo "=== 1. JSON struct tags (always preserved by garble) ==="
@@ -51,9 +64,9 @@ echo "=== 2. String-to-function mapping ==="
 #   a. grep -oba finds the exact byte offset of the string in the file.
 #   b. readelf -S gives .rodata section VMA and file offset.
 #   c. Shell arithmetic: string_vma = rodata_vma + (file_off - rodata_file_off)
-#   d. objdump -d disassembles; LEA instructions reference data VMAs in comments.
-#   e. go tool addr2line reads pclntab (preserved by garble) to map the
-#      instruction address to the garbled function name it belongs to.
+#   d. go tool objdump disassembles and shows pclntab function headers (TEXT)
+#      and the effective address of memory references.  Tracking the last
+#      TEXT header as we scan for the VMA gives us the containing function.
 
 strings_=(
   "connection refused: server not accepting connections" # connectToServer
