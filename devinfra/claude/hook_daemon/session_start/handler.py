@@ -503,8 +503,8 @@ async def _write_kubeconfig(profile: ProfileConfig, project_dir: Path, combined_
     output_path = Path.home() / ".kube" / "config"
     try:
         token = await anyio.to_thread.run_sync(lambda: decrypt_k8s_token(project_dir))
-    except RuntimeError:
-        logger.warning("kubeconfig: failed to decrypt k8s token (SOPS_AGE_KEY missing?)", exc_info=True)
+    except (RuntimeError, FileNotFoundError, OSError):
+        logger.warning("kubeconfig: failed to decrypt k8s token", exc_info=True)
         return
 
     proxy_url = get_proxy_url(dict(os.environ))

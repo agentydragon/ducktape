@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest_bazel
 
-from devinfra.claude.hook_daemon.write_kubeconfig_cli import _build_kubeconfig as build_kubeconfig
+from devinfra.claude.hook_daemon.write_kubeconfig_cli import build_kubeconfig
 
 
 def test_kubeconfig_proxy_url() -> None:
