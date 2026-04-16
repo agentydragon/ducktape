@@ -129,13 +129,18 @@ type anthropicEnvironmentType struct {
 //	offset 0x68: devServerConfig *devServerConfig
 //	offset 0x70: padding/reserved
 type anthropicConfig struct {
-	InitScript           string              `json:"init_script,omitempty"`
-	StopHookPath         string              `json:"stop_hook_path,omitempty"`
-	CWD                  string              `json:"cwd"`
+	InitScript string `json:"init_script,omitempty"`
+	// TODO(re): json tag "stop_hook_path" not found in binary strings — may be garbled or wrong name.
+	// Field offset 0x10 confirmed via bootstrapHooksInAllDirs disassembly; tag is inferred.
+	StopHookPath string `json:"stop_hook_path,omitempty"`
+	CWD          string `json:"cwd"`
+	// TODO(re): json tag "skills_directory" not found in binary strings — may be garbled or wrong name.
+	// Field offset 0x30 confirmed; tag is inferred.
 	SkillsDirectory      string              `json:"skills_directory,omitempty"`
 	EnvironmentVariables map[string]string   `json:"environment_variables,omitempty"`
 	Languages            []anthropicLanguage `json:"languages,omitempty"`
-	DevServerConfig      *devServerConfig    `json:"dev_server,omitempty"`
+	// TODO(re): json tag "dev_server" not found in binary strings. Struct offset 0x68 confirmed; tag inferred.
+	DevServerConfig *devServerConfig `json:"dev_server,omitempty"`
 }
 
 // anthropicLanguage represents a language runtime to install.

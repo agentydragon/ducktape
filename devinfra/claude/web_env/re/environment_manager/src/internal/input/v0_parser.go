@@ -39,7 +39,8 @@ type v0Input struct {
 	Auth           json.RawMessage `json:"auth"`
 	Outcomes       []v0Outcome     `json:"outcomes"`
 	McpConfig      *v0McpConfig    `json:"mcp_config"`
-	McpConfigData  json.RawMessage `json:"mcp_config_data"`
+	// TODO(re): "mcp_config_data" not found in binary strings — may be garbled or removed.
+	McpConfigData json.RawMessage `json:"mcp_config_data"`
 }
 
 type v0McpConfig struct {
@@ -47,12 +48,15 @@ type v0McpConfig struct {
 }
 
 type v0Outcome struct {
-	Type       string   `json:"type"`
-	Name       string   `json:"name"`
-	RemoteURL  string   `json:"remote_url"`
-	Branch     string   `json:"branch"`
-	Branches   []string `json:"branches"`
-	CommitHash string   `json:"commit_hash"`
+	Type string `json:"type"`
+	Name string `json:"name"`
+	// TODO(re): "remote_url" not found in binary strings — may be garbled or wrong name.
+	RemoteURL string `json:"remote_url"`
+	// TODO(re): "branch" not found in binary strings — may be garbled or wrong name.
+	Branch   string   `json:"branch"`
+	Branches []string `json:"branches"`
+	// TODO(re): "commit_hash" not found in binary strings — may be garbled or wrong name.
+	CommitHash string `json:"commit_hash"`
 }
 
 // Parse parses V0-format stdin input and returns a ParsedContext.

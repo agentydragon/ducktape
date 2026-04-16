@@ -145,6 +145,7 @@ func (rt *containProvideAuthRoundTripper) RoundTrip(req *http.Request) (*http.Re
 	clonedReq.Header[versionKey] = []string{util.Version}
 
 	// 0xb07b79-0xb07bd2: Set anthropic-beta header
+	// TODO(re): value "environments-2025-11-01" confirmed in a6f96673 DWARF; garbled in 495ea204.
 	betaKey := textproto.CanonicalMIMEHeaderKey("anthropic-beta")
 	clonedReq.Header[betaKey] = []string{"environments-2025-11-01"}
 
