@@ -12,7 +12,7 @@ def log_entrypoint_debug(name: str) -> None:
     """Log standard debug info for an entrypoint.
 
     Logs sys.executable, sys.path, and full environment as JSON.
-    Call early in each entrypoint (session_start, bazel_wrapper, auth_proxy).
+    Call early in each entrypoint (session_start, bazel_wrapper).
     """
     logger.debug("=== %s debug info ===", name)
     logger.debug("sys.executable: %s", sys.executable)

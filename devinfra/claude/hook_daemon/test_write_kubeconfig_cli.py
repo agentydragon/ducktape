@@ -36,15 +36,13 @@ def test_write_kubeconfig_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyP
     profile_path.parent.mkdir(parents=True)
     _write_profile(profile_path)
 
-    session_dir = tmp_path / "session"
-    auth_proxy_dir = session_dir / "auth-proxy"
-    auth_proxy_dir.mkdir(parents=True)
+    fake_system_ca = tmp_path / "system-ca.pem"
     ca_pem = "-----BEGIN CERTIFICATE-----\nFAKE-CA-DATA\n-----END CERTIFICATE-----\n"
-    (auth_proxy_dir / "combined_ca.pem").write_text(ca_pem)
+    fake_system_ca.write_text(ca_pem)
+    monkeypatch.setattr(write_kubeconfig_cli, "_SYSTEM_CA_BUNDLE", fake_system_ca)
 
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project_dir))
     monkeypatch.setenv("DUCKTAPE_CLAUDE_HOOKS_PROFILE", profile_rel)
-    monkeypatch.setenv("DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR", str(session_dir))
     monkeypatch.setenv("HTTPS_PROXY", "http://egress.example.test:3128")
 
     # Stub sops so the test doesn't need SOPS_AGE_KEY or a real encrypted file.
@@ -66,8 +64,8 @@ def test_write_kubeconfig_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert output_path.stat().st_mode & 0o777 == 0o600
 
 
-def test_write_kubeconfig_falls_back_to_system_ca(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """When no session combined_ca.pem, the system bundle is used (if present)."""
+def test_write_kubeconfig_no_proxy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """When HTTPS_PROXY is unset, kubeconfig has no proxy-url (normal on new containers)."""
     project_dir = tmp_path / "repo"
     (project_dir / "secrets").mkdir(parents=True)
     (project_dir / "secrets" / "claude-web-k8s-token.yaml").write_text("stub")
@@ -83,7 +81,6 @@ def test_write_kubeconfig_falls_back_to_system_ca(tmp_path: Path, monkeypatch: p
 
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project_dir))
     monkeypatch.setenv("DUCKTAPE_CLAUDE_HOOKS_PROFILE", profile_rel)
-    monkeypatch.delenv("DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR", raising=False)
     monkeypatch.delenv("HTTPS_PROXY", raising=False)
     monkeypatch.delenv("https_proxy", raising=False)
     monkeypatch.delenv("HTTP_PROXY", raising=False)

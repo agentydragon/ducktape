@@ -67,38 +67,9 @@ class SessionPaths:
         return self.supervisor_dir / "supervisord.pid"
 
     @property
-    def auth_proxy_dir(self) -> Path:
-        return self.session_dir / "auth-proxy"
-
-    @property
-    def auth_proxy_combined_ca(self) -> Path:
-        """Combined CA bundle (system CAs + proxy CA)."""
-        return self.auth_proxy_dir / "combined_ca.pem"
-
-    @property
-    def auth_proxy_ca_file(self) -> Path:
-        """Extracted Anthropic CA file."""
-        return self.auth_proxy_dir / "anthropic_ca.pem"
-
-    @property
-    def auth_proxy_truststore(self) -> Path:
-        """Java truststore with proxy CA."""
-        return self.auth_proxy_dir / "cacerts.jks"
-
-    @property
     def _short_dir(self) -> Path:
         """Short session-scoped dir under /tmp for Unix sockets (108-byte AF_UNIX limit)."""
         return _short_session_dir(self.session_id)
-
-    @property
-    def bazel_remote_proxy_sock(self) -> Path:
-        """UDS socket for Bazel --remote_proxy (remote execution + cache)."""
-        return self._short_dir / "bazel-remote-proxy.sock"
-
-    @property
-    def bazel_bes_proxy_sock(self) -> Path:
-        """UDS socket for Bazel --bes_proxy (Build Event Service)."""
-        return self._short_dir / "bazel-bes-proxy.sock"
 
     @property
     def wrapper_dir(self) -> Path:

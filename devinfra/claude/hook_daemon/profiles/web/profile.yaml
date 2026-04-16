@@ -22,7 +22,6 @@ pre_commit:
     - end-of-file-fixer
 
 idle_watchdog: false
-setup_auth_proxy: true
 setup_tmpfs: true
 setup_docker: true
 env_exports: |
@@ -31,10 +30,6 @@ env_exports: |
   # Nix devtools (prettier with svelte plugin, pre-commit, ruff, etc.) must
   # come before /opt/node22/bin so the nix versions are preferred.
   export PATH="${HOME}/.nix-profile/bin:${PATH}"
-bazel_remote_proxy:
-  target: remote.buildbuddy.io:443
-bazel_bes_proxy:
-  target: remote.buildbuddy.io:443
 background_commands:
   - name: nix nixpkgs check
     command: |

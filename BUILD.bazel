@@ -155,14 +155,13 @@ platform(
     parents = ["@buildbuddy_toolchain//:platform_linux_x86_64"],
 )
 
-# Claude hooks wheel - Claude Code session hooks, auth proxy, statusline
+# Claude hooks wheel - Claude Code session hooks, statusline
 py_package(
     name = "claude_hooks_pkg",
     packages = [
         "cluster.validation",
         "devinfra",
         "devinfra.claude",
-        "devinfra.claude.auth_proxy",
         "devinfra.claude.claude_api",
         "devinfra.claude.claude_api.hooks",
         "devinfra.claude.hook_daemon",
@@ -170,10 +169,6 @@ py_package(
         "devinfra.claude.supervisor",
         "devinfra.precommit",
         "devinfra.precommit.enforce_bazel_tests",
-        # Generated proto packages for BES interceptor
-        "google.api",
-        "google.devtools.build.v1",
-        "proto",
     ],
     deps = [
         "//devinfra:bbr",

@@ -16,15 +16,12 @@ Key findings from Docker evaluation (2026-02-17):
 import asyncio
 import json
 import logging
-import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import httpx
 
-from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS
-from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.supervisor.client import ProcessInfo, ProcessState, SupervisorClient
@@ -68,11 +65,6 @@ class _RuntimeSpec:
 # ============================================================================
 
 
-def _collect_proxy_env() -> dict[str, str]:
-    """Collect proxy and SSL CA env vars from the current environment."""
-    return {var: v for var in PROXY_ENV_VARS + SSL_CA_ENV_VARS if (v := os.environ.get(var))}
-
-
 async def _snapshot_status(supervisor: SupervisorClient, service_name: str) -> str:
     """Return supervisor statename for a service, or UNKNOWN on error."""
     try:
@@ -112,16 +104,12 @@ async def _is_docker_socket_responsive(socket_path: Path) -> bool:
 async def _start_service(
     spec: _RuntimeSpec, supervisor: SupervisorClient, on_failure: Callable[[ProcessInfo], None] | None = None
 ) -> None:
-    """Start a container runtime under supervisor and wait for the socket.
-
-    Merges proxy/SSL env vars into the daemon environment so the daemon can
-    pull images through the TLS-inspecting egress proxy.
-    """
-    daemon_env = dict(spec.daemon_extra_env)
-    daemon_env.update(_collect_proxy_env())
-
+    """Start a container runtime under supervisor and wait for the socket."""
     await supervisor.add_service(
-        name=spec.service_name, command=spec.supervisor_command, directory=Path.home(), environment=daemon_env
+        name=spec.service_name,
+        command=spec.supervisor_command,
+        directory=Path.home(),
+        environment=dict(spec.daemon_extra_env),
     )
 
     async with asyncio.timeout(10):

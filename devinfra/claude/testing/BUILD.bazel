@@ -3,15 +3,6 @@ load("//devinfra/python:defs.bzl", "py_library")
 package(default_visibility = ["//devinfra/claude:__subpackages__"])
 
 py_library(
-    name = "proxy_ca",
-    testonly = True,
-    srcs = ["proxy_ca.py"],
-    deps = [
-        "@pypi//cryptography",
-    ],
-)
-
-py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
@@ -29,29 +20,11 @@ py_library(
     testonly = True,
     srcs = ["fixtures.py"],
     deps = [
-        ":mitmproxy_fixture",
         "//devinfra/claude:session_paths",
         "//devinfra/claude:settings",
         "//devinfra/claude/supervisor:client",
         "//util:net",
         "//util/testing:undeclared_outputs",
         "@pypi//pytest",
-    ],
-)
-
-py_library(
-    name = "mitmproxy_fixture",
-    testonly = True,
-    srcs = ["mitmproxy_fixture.py"],
-    data = ["//third_party/containers:mitmproxy"],
-    deps = [
-        ":proxy_ca",
-        "//third_party/containers:rlocations",
-        "//util:net",
-        "//util:oci",
-        "//util/testing:undeclared_outputs",
-        "@pypi//docker",
-        "@pypi//pytest",
-        "@pypi//testcontainers",
     ],
 )

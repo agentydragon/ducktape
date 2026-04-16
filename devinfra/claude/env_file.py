@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.settings import ENV_SESSION_DIR, ENV_SUPERVISOR_PORT
 from util.bazel.subprocess import exports_from_dict
@@ -47,8 +46,7 @@ class EnvVars:
     """Collected environment variables for session.
 
     All profiles set shims_dir (session bin/) and session_bazelrc. Other fields
-    are populated based on profile flags (setup_auth_proxy, setup_docker,
-    etc.).
+    are populated based on profile flags (setup_docker, etc.).
     """
 
     # Required in all profiles
@@ -60,8 +58,6 @@ class EnvVars:
 
     # Supervisor port (when setup_docker is enabled)
     supervisor_port: int | None = None
-    # Combined CA bundle (when setup_auth_proxy is enabled)
-    combined_ca: Path | None = None
 
     # Container runtime env vars (when setup_docker is enabled)
     docker_env: dict[str, str] | None = None
@@ -98,10 +94,6 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
         session_config: dict[str, str | Path] = {ENV_SESSION_DIR: vars.session_dir}
         if vars.supervisor_port is not None:
             session_config[ENV_SUPERVISOR_PORT] = str(vars.supervisor_port)
-        if vars.combined_ca is not None:
-            assert vars.combined_ca.exists(), f"combined_ca set but missing: {vars.combined_ca}"
-            ca_config: dict[str, str | Path] = dict.fromkeys(SSL_CA_ENV_VARS, vars.combined_ca)
-            session_config.update(ca_config)
         exports.extend(["", "# Session configuration"])
         exports.extend(exports_from_dict(session_config))
 

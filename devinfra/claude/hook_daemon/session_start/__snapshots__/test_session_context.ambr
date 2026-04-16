@@ -75,12 +75,25 @@
   
   '''
 # ---
+# name: test_web_connectivity_failed
+  '''
+  # Claude Code session start hook — OK
+  
+  **Environment:** firecracker sandbox (direct internet via transparent proxy)
+  **Connectivity:** WARNING — direct probe failed: ConnectError: cannot reach host.
+  If this container re-requires explicit proxy configuration (HTTPS_PROXY with JWT,
+  UDS proxy for Bazel gRPC, Java truststore), restore the `devinfra/claude/auth_proxy/`
+  subsystem from git history.
+  
+  Session start log: `/tmp/daemon.log`
+  
+  '''
+# ---
 # name: test_web_no_nix
   '''
   # Claude Code session start hook — OK
   
-  **Environment:** gVisor sandbox, TLS-inspecting proxy
-  **Bazel:** wrapper adds auth proxy (/session/auth-proxy/combined_ca.pem)
+  **Environment:** firecracker sandbox (direct internet via transparent proxy)
   
   ## BuildBuddy
   Bazel builds and tests by default execute remotely via BuildBuddy.
@@ -96,8 +109,7 @@
   '''
   # Claude Code session start hook — OK
   
-  **Environment:** gVisor sandbox, TLS-inspecting proxy
-  **Bazel:** wrapper adds auth proxy (/session/auth-proxy/combined_ca.pem)
+  **Environment:** firecracker sandbox (direct internet via transparent proxy)
   
   ## Background tasks
   - apt package install
@@ -111,8 +123,7 @@
   '''
   # Claude Code session start hook — OK
   
-  **Environment:** gVisor sandbox, TLS-inspecting proxy
-  **Bazel:** wrapper adds auth proxy (/session/auth-proxy/combined_ca.pem)
+  **Environment:** firecracker sandbox (direct internet via transparent proxy)
   
   running, `DOCKER_HOST=unix:///var/run/docker.sock`
   - `docker run` works. `docker build --network=host` works (BuildKit handles large output gracefully).

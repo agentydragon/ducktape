@@ -19,12 +19,9 @@ py_library(
     srcs = ["session_start_helpers.py"],
     deps = [
         "//devinfra/claude:settings",
-        "//devinfra/claude/auth_proxy:setup",
-        "//devinfra/claude/auth_proxy:vars",
         "//devinfra/claude/claude_api/hooks:common",
         "//devinfra/claude/claude_api/hooks:session_start",
         "//devinfra/claude/hook_daemon/session_start:tmpfs",
-        "//devinfra/claude/testing:mitmproxy_fixture",
         "//devinfra/claude/testing:shell_helpers",
         "//util:net",
         "//util/bazel:runfiles",

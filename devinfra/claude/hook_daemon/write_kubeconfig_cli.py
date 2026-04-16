@@ -1,7 +1,7 @@
 """`claude-hook write-kubeconfig <path>` — materialize a service-account kubeconfig.
 
 Kubeconfig writer for Claude Code sessions. Used by:
-  - SessionStart handler (writes `~/.kube/config` after auth_proxy setup)
+  - SessionStart handler (writes `~/.kube/config` during setup)
   - `claude-sandbox-kubectl-mcp.sh` (writes a tempfile for the kubectl MCP server)
 
 Public helpers (`decrypt_k8s_token`, `build_kubeconfig`, `write_kubeconfig_file`)
@@ -19,7 +19,6 @@ from pathlib import Path
 
 import yaml
 
-from devinfra.claude.auth_proxy.vars import get_proxy_url
 from devinfra.claude.hook_daemon.config import ProfileConfig
 
 logger = logging.getLogger(__name__)
@@ -29,9 +28,9 @@ logger = logging.getLogger(__name__)
 _K8S_TOKEN_SOPS_PATH = "secrets/claude-web-k8s-token.yaml"
 _K8S_TOKEN_SOPS_EXTRACT = '["k8s_token"]'
 
-# Fallback CA bundle on web containers — already contains Anthropic's
-# swp-ca-production.crt, so it works for kubectl → egress proxy → k8s even when
-# the session hasn't yet populated `<session_dir>/auth-proxy/combined_ca.pem`.
+# System CA bundle on web containers — already contains Anthropic's transparent
+# proxy CA (swp-ca-production.crt), so kubectl works directly without a
+# per-session bundle.
 _SYSTEM_CA_BUNDLE = Path("/etc/ssl/certs/ca-certificates.crt")
 
 
@@ -74,25 +73,8 @@ def decrypt_k8s_token(project_dir: Path) -> str:
 
 
 def _resolve_ca_path() -> Path | None:
-    """Pick a CA bundle for kubectl → k8s API TLS verification.
-
-    Preference order:
-      1. `<session_dir>/auth-proxy/combined_ca.pem` if the web profile has
-         already materialized it via `proxy_setup.py` (system CAs + Anthropic
-         MITM CA).
-      2. `/etc/ssl/certs/ca-certificates.crt` — web containers have Anthropic's
-         CA installed into the system store, so this works even before the
-         session's combined bundle exists.
-      3. None — caller's responsibility (unusual).
-    """
-    session_dir = os.environ.get("DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR")
-    if session_dir:
-        combined = Path(session_dir) / "auth-proxy" / "combined_ca.pem"
-        if combined.is_file():
-            return combined
-    if _SYSTEM_CA_BUNDLE.is_file():
-        return _SYSTEM_CA_BUNDLE
-    return None
+    """System CA bundle, or None if missing (unusual)."""
+    return _SYSTEM_CA_BUNDLE if _SYSTEM_CA_BUNDLE.is_file() else None
 
 
 def build_kubeconfig(
@@ -139,7 +121,7 @@ def main(argv: list[str]) -> None:
 
     token = decrypt_k8s_token(project_dir)
     ca_path = _resolve_ca_path()
-    proxy_url = get_proxy_url(dict(os.environ))
+    proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
 
     kubeconfig = build_kubeconfig(
         token=token,

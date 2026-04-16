@@ -1,6 +1,6 @@
 """Unified session start hook for Claude Code.
 
-Profile-driven setup: auth proxy, containers, tmpfs, and background tasks are
+Profile-driven setup: containers, tmpfs, and background tasks are
 controlled by flags in the active profile (see ProfileConfig in config.py).
 
 All profiles render a per-session bazelrc from the unified bazelrc.mako template
@@ -23,8 +23,6 @@ from mako.template import Template
 from opentelemetry import trace
 
 from devinfra.claude import env_file
-from devinfra.claude.auth_proxy import setup as proxy_setup
-from devinfra.claude.auth_proxy.vars import get_proxy_url
 from devinfra.claude.claude_api.hooks.output import HookOutput
 from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput, SessionStartHookSpecificOutput
 from devinfra.claude.debug import log_entrypoint_debug
@@ -33,7 +31,13 @@ from devinfra.claude.hook_daemon import templates
 from devinfra.claude.hook_daemon.config import BackgroundCommand, ProfileConfig
 from devinfra.claude.hook_daemon.models import StartupResult
 from devinfra.claude.hook_daemon.session import BgStream, Session, _feed_queue
-from devinfra.claude.hook_daemon.session_start import buildbuddy, container_runtime, platform_detect, tmpfs
+from devinfra.claude.hook_daemon.session_start import (
+    buildbuddy,
+    connectivity,
+    container_runtime,
+    platform_detect,
+    tmpfs,
+)
 from devinfra.claude.hook_daemon.shim_install import install as install_shim
 from devinfra.claude.hook_daemon.write_kubeconfig_cli import build_kubeconfig, decrypt_k8s_token, write_kubeconfig_file
 from devinfra.claude.managed_files import write_config
@@ -87,7 +91,7 @@ class PlatformSetup:
     # Platform-specific results
     platform: platform_detect.PlatformInfo
     env_overlay: dict[str, str]  # vars added/changed by startup_env_script (delta over os.environ)
-    auth_proxy: proxy_setup.NoProxy | proxy_setup.ProxyConfigured | None = None
+    connectivity_result: connectivity.ConnectivityResult | None = None
     container: container_runtime.ContainerRuntimeSetup | None = None
     docker_env: dict[str, str] | None = None
     bazel_cache_dir: Path | None = None
@@ -188,8 +192,7 @@ async def _setup_platform_services(
     Callers access secrets as properties (k8s_token, etc.).
     BuildBuddy and fork remote are handled in handle().
 
-    Which services run is controlled by profile flags (setup_auth_proxy,
-    setup_docker, setup_tmpfs).
+    Which services run is controlled by profile flags (setup_docker, setup_tmpfs).
     """
     logger.info("Setting up platform services...")
 
@@ -218,12 +221,10 @@ async def _setup_platform_services(
             logger.warning("tmpfs mount failed at %s, will fall back to 9p: %s", path, e)
             return False
 
-    async def setup_proxy_credentials() -> proxy_setup.ProxySetup:
-        """Set up CA/truststore for TLS-inspecting proxy."""
-        with tracer.start_as_current_span("setup_proxy", context=root_ctx):
-            if not profile.setup_auth_proxy:
-                raise SkipError("Auth proxy setup disabled (setup_auth_proxy=False)")
-            return await proxy_setup.setup_auth_proxy(session.paths)
+    async def check_internet_connectivity() -> connectivity.ConnectivityResult:
+        """Probe direct internet reachability (replaces historical auth_proxy setup)."""
+        with tracer.start_as_current_span("check_connectivity", context=root_ctx):
+            return await connectivity.check_connectivity()
 
     async def setup_container_runtime_task() -> container_runtime.ContainerRuntimeSetup:
         """Set up Docker (depends on supervisor).
@@ -277,25 +278,23 @@ async def _setup_platform_services(
         env_overlay=env_overlay,
     )
 
-    # Proxy task starts without BuildBuddy state (buildbuddy setup depends on
-    # k8s secrets which in turn depend on proxy being up for TLS).
-    # Proxy runs in-process (daemon threads, started by hook daemon server).
-    # This task writes credentials and sets up CA/truststore.
-    proxy_task = asyncio.create_task(setup_proxy_credentials())
+    # Connectivity probe: verify direct internet works. Replaces the historical
+    # auth_proxy setup — current containers use a transparent network-layer proxy
+    # with the Anthropic CA already in the system bundle, so no per-session
+    # CA/truststore/UDS-proxy setup is needed.
+    connectivity_task = asyncio.create_task(check_internet_connectivity())
 
-    results = await asyncio.gather(proxy_task, setup_container_runtime_task(), bazel_tmpfs_task, return_exceptions=True)
+    results = await asyncio.gather(
+        connectivity_task, setup_container_runtime_task(), bazel_tmpfs_task, return_exceptions=True
+    )
     # Unpack with explicit type annotations for mypy
-    auth_proxy_result: proxy_setup.NoProxy | proxy_setup.ProxyConfigured | BaseException = results[0]
+    connectivity_result: connectivity.ConnectivityResult | BaseException = results[0]
     container_result: container_runtime.ContainerRuntimeSetup | BaseException = results[1]
     tmpfs_result: tmpfs.TmpfsSetup | BaseException = results[2]
 
-    # Log non-critical failures / skips
-    if isinstance(auth_proxy_result, SkipError):
-        logger.info("Auth proxy setup skipped: %s", auth_proxy_result)
-    elif isinstance(auth_proxy_result, BaseException):
-        # Proxy was requested but failed — propagate
-        logger.error("Proxy setup failed: %s", auth_proxy_result)
-        raise RuntimeError(f"Proxy setup failed: {auth_proxy_result}") from auth_proxy_result
+    if isinstance(connectivity_result, BaseException):
+        logger.warning("Connectivity probe raised: %s", connectivity_result)
+        connectivity_result = connectivity.ConnectivityFailed(reason=str(connectivity_result))
 
     if isinstance(tmpfs_result, SkipError):
         logger.info("tmpfs setup skipped: %s", tmpfs_result)
@@ -310,18 +309,12 @@ async def _setup_platform_services(
     else:
         docker_env = container_result.env_vars
 
-    if isinstance(auth_proxy_result, proxy_setup.ProxyConfigured):
-        logger.info("Ready: proxy configured, CA=%s", auth_proxy_result.combined_ca)
-    elif isinstance(auth_proxy_result, proxy_setup.NoProxy):
-        logger.info("Ready: no egress proxy, using system CA")
     logger.info("Container: %s", container_result)
 
     return PlatformSetup(
         platform=platform,
         env_overlay=env_overlay,
-        auth_proxy=auth_proxy_result
-        if isinstance(auth_proxy_result, (proxy_setup.NoProxy, proxy_setup.ProxyConfigured))
-        else None,
+        connectivity_result=connectivity_result,
         container=None if isinstance(container_result, BaseException) else container_result,
         docker_env=docker_env,
         bazel_cache_dir=tmpfs_result.bazel_cache if isinstance(tmpfs_result, tmpfs.TmpfsSetup) else None,
@@ -369,11 +362,12 @@ async def handle(
     )
 
     # -- Shared steps: BuildBuddy, kubeconfig, fork remote --
-    combined_ca = setup.auth_proxy.combined_ca if isinstance(setup.auth_proxy, proxy_setup.ProxyConfigured) else None
 
-    # Write kubeconfig now that auth_proxy setup is complete (known proxy state + CA).
+    # Write kubeconfig after platform setup. System CA bundle at
+    # /etc/ssl/certs/ca-certificates.crt contains the Anthropic CA on web
+    # containers (pre-installed).
     with tracer.start_as_current_span("write_kubeconfig", context=root_ctx):
-        await _write_kubeconfig(profile, project_dir, combined_ca)
+        await _write_kubeconfig(profile, project_dir)
 
     # Configure BuildBuddy now that secrets are available.
     with tracer.start_as_current_span("setup_buildbuddy", context=root_ctx):
@@ -398,19 +392,15 @@ async def handle(
     )
     write_config(bbr_bazelrc, bbr_bazelrc_content, "bbr bazelrc")
 
-    # Pick a JVM truststore: the session-local one built by auth_proxy setup
-    # has priority (explicitly tuned for the current session), else fall back to
-    # Debian's /etc/ssl/certs/java/cacerts (ca-certificates-java regenerates it
-    # from the system PEM bundle, so it picks up Anthropic's TLS inspection CA
-    # on web containers). None means no JVM truststore override — Bazel falls
-    # back to its bundled JDK cacerts (works on CLI/NixOS where no MITM happens).
+    # Pick a JVM truststore for Bazel's bundled JDK. Debian's
+    # /etc/ssl/certs/java/cacerts is kept in sync with /etc/ssl/certs/ca-certificates.crt
+    # by ca-certificates-java, so on web containers it already contains
+    # Anthropic's TLS inspection CA. None means no override (CLI/NixOS, bundled
+    # JDK cacerts works since there's no MITM).
     system_java_cacerts = Path("/etc/ssl/certs/java/cacerts")
     truststore_path: Path | None
     truststore_password: str | None
-    if profile.setup_auth_proxy and combined_ca is not None:
-        truststore_path = session.paths.auth_proxy_truststore
-        truststore_password = proxy_setup.TRUSTSTORE_PASSWORD
-    elif system_java_cacerts.exists():
+    if system_java_cacerts.exists():
         truststore_path = system_java_cacerts
         # ca-certificates-java uses the JDK default storepass; documented in
         # /etc/default/cacerts (storepass='' means default = 'changeit').
@@ -425,12 +415,8 @@ async def handle(
             CONFIG_FILES.joinpath("bazelrc.mako").read_text(), imports=["from shlex import quote as sh"]
         )
         bazelrc_content: str = bazelrc_template.render(
-            setup_auth_proxy=profile.setup_auth_proxy and combined_ca is not None,
-            bazel_remote_proxy_sock=session.paths.bazel_remote_proxy_sock if session.uds_remote else None,
-            bazel_bes_proxy_sock=session.paths.bazel_bes_proxy_sock if session.bes_interceptor else None,
             truststore_path=truststore_path,
             truststore_password=truststore_password,
-            combined_ca_path=combined_ca,
             buildbuddy_bazelrc=setup.buildbuddy_setup.bazelrc_path
             if isinstance(setup.buildbuddy_setup, buildbuddy.BuildbuddyConfigured)
             else None,
@@ -463,7 +449,6 @@ async def handle(
             session_bazelrc=session_bazelrc,
             session_dir=session.paths.session_dir,
             supervisor_port=settings.supervisor_port,
-            combined_ca=combined_ca,
             docker_env=setup.docker_env,
             hook_timestamp=hook_timestamp,
             bbr_bazelrc=bbr_bazelrc,
@@ -489,16 +474,10 @@ async def handle(
 
     # Build structured session context for Claude Code transcript
     with tracer.start_as_current_span("emit_session_context", context=root_ctx):
-        extra_context = _render_extra_context(
-            project_dir,
-            setup,
-            profile=profile,
-            bazel_remote_proxy_sock=session.paths.bazel_remote_proxy_sock if session.uds_remote else None,
-            bazel_bes_proxy_sock=session.paths.bazel_bes_proxy_sock if session.bes_interceptor else None,
-        )
+        extra_context = _render_extra_context(project_dir, setup, profile=profile)
         context_output: str = templates.session_context.render(
             collector=collector,
-            proxy=setup.auth_proxy,
+            connectivity=setup.connectivity_result,
             container=setup.container,
             background_commands=profile.background_commands,
             extra_context=extra_context,
@@ -506,7 +485,6 @@ async def handle(
             buildbuddy_configured=isinstance(setup.buildbuddy_setup, buildbuddy.BuildbuddyConfigured),
             platform=setup.platform,
             profile=profile,
-            bazel_remote_proxy_sock=session.paths.bazel_remote_proxy_sock if session.uds_remote else None,
             session_id=session_id,
             startup=startup,
         )
@@ -516,8 +494,11 @@ async def handle(
     return output
 
 
-async def _write_kubeconfig(profile: ProfileConfig, project_dir: Path, combined_ca: Path | None) -> None:
-    """Write ~/.kube/config after auth_proxy setup so proxy-url and CA are correct."""
+_SYSTEM_CA_BUNDLE = Path("/etc/ssl/certs/ca-certificates.crt")
+
+
+async def _write_kubeconfig(profile: ProfileConfig, project_dir: Path) -> None:
+    """Write ~/.kube/config using system CA bundle and any HTTPS_PROXY in env."""
     if profile.k8s is None or not profile.k8s.write_home_kubeconfig:
         return
 
@@ -528,15 +509,15 @@ async def _write_kubeconfig(profile: ProfileConfig, project_dir: Path, combined_
         logger.warning("kubeconfig: failed to decrypt k8s token", exc_info=True)
         return
 
-    proxy_url = get_proxy_url(dict(os.environ))
-    ca_path = combined_ca if combined_ca and combined_ca.exists() else Path("/etc/ssl/certs/ca-certificates.crt")
+    proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+    ca_path = _SYSTEM_CA_BUNDLE if _SYSTEM_CA_BUNDLE.exists() else None
 
     kubeconfig = build_kubeconfig(
         token=token,
         server=profile.k8s.server,
         service_account=profile.k8s.service_account,
         namespace=profile.k8s.namespace,
-        ca_path=ca_path if ca_path.exists() else None,
+        ca_path=ca_path,
         proxy_url=proxy_url,
     )
     write_kubeconfig_file(kubeconfig, output_path)
@@ -570,14 +551,7 @@ def _build_extra_env_script(profile: ProfileConfig) -> str | None:
 # ============================================================================
 
 
-def _render_extra_context(
-    project_dir: Path,
-    setup: PlatformSetup,
-    *,
-    profile: ProfileConfig,
-    bazel_remote_proxy_sock: Path | None,
-    bazel_bes_proxy_sock: Path | None,
-) -> str:
+def _render_extra_context(project_dir: Path, setup: PlatformSetup, *, profile: ProfileConfig) -> str:
     """Render per-profile context template if configured."""
     if not profile.context_template:
         return ""
@@ -585,12 +559,7 @@ def _render_extra_context(
     if not extra_template_path.exists():
         return ""
     template = Template(extra_template_path.read_text())
-    result: str = template.render(
-        setup=setup,
-        profile=profile,
-        bazel_remote_proxy_sock=bazel_remote_proxy_sock,
-        bazel_bes_proxy_sock=bazel_bes_proxy_sock,
-    )
+    result: str = template.render(setup=setup, profile=profile)
     return result.rstrip("\n")
 
 

@@ -1,6 +1,6 @@
 # Claude Code Integration
 
-Session hooks, UDS proxy, statusline, and Claude Code API models for Claude Code
+Session hooks, statusline, and Claude Code API models for Claude Code
 web environments.
 
 ## References
@@ -8,42 +8,19 @@ web environments.
 - [Claude Code Hooks API](https://docs.anthropic.com/en/docs/claude-code/hooks)
 - [Settings JSON Schema](https://json.schemastore.org/claude-code-settings.json)
 
-## Glossary
+## Networking
 
-| Concept                            | Canonical term      | Rationale                                                      |
-| ---------------------------------- | ------------------- | -------------------------------------------------------------- |
-| Anthropic's Envoy gateway          | **egress proxy**    | Matches Anthropic's own docs ("egress controls"). Unambiguous. |
-| mitmproxy testcontainer for tests  | **mitmproxy proxy** | Stock mitmproxy:11 in Docker, simulates egress proxy TLS MITM. |
-| "The proxy this proxy forwards to" | **upstream proxy**  | Standard networking term. UDS proxy's upstream = egress proxy. |
+Current Claude Code web containers expose direct internet via a **transparent
+TLS-inspecting proxy** at the network layer — no `HTTPS_PROXY` env vars are
+set, and Anthropic's inspection CA is pre-installed into the system CA bundle
+(`/etc/ssl/certs/ca-certificates.crt`). All tools — curl, Bazel, pip, npm,
+kubectl, git — work without per-tool proxy configuration.
 
-## Anthropic's TLS-Inspecting Proxy
-
-Claude Code on the web runs in sandboxed containers with network egress controlled through a TLS-inspecting proxy. Key characteristics:
-
-### Environment Setup (by Anthropic)
-
-Anthropic configures the container environment with:
-
-```bash
-HTTPS_PROXY=http://<container_id>:<jwt_token>@<proxy_host>:<port>
-HTTP_PROXY=...  # same
-```
-
-- **JWT authentication**: Credentials are embedded in the proxy URL as username:password
-- **Token refresh**: Anthropic may refresh JWT tokens during long sessions
-- **TLS inspection**: Proxy terminates TLS to inspect traffic, re-encrypts with Anthropic CA
-
-### Our Design Principle
-
-**We do NOT overwrite `HTTPS_PROXY` / `HTTP_PROXY` environment variables.**
-
-Most tools (curl, pip, npm, git, etc.) work correctly with Anthropic's proxy. Only Bazel needs special handling due to Java's proxy authentication limitations.
-
-By preserving the original proxy env vars:
-
-- Tools continue to use Anthropic's proxy directly
-- JWT token refreshes are automatically picked up
-- The bazelisk shim sends fresh credentials to the daemon on each invocation
+The SessionStart hook runs a quick probe (`session_start/connectivity.py`)
+and emits a WARNING in the session banner if direct internet fails. If that
+warning starts appearing on new sessions, the container generation has
+likely changed back to requiring explicit proxy env vars — see the
+[historical note](#historical-explicit-egress-proxy) below.
 
 ## Specification
 
@@ -54,20 +31,16 @@ agent — this README covers **how** those behaviors are implemented.
 
 ## Components
 
-- **Session Start Hook**: Sets up the development environment for Claude Code web sessions
-- **UDS Proxy**: Routes Bazel gRPC traffic through a Unix domain socket proxy (adds egress proxy auth)
+- **Session Start Hook**: Sets up the development environment for Claude Code web sessions.
 
 ## Session Start Hook
 
 The hook runs at the start of each Claude Code web session and:
 
-### Proxy Setup (via `proxy_setup.py`)
+### Connectivity Probe (via `session_start/connectivity.py`)
 
-1. UDS proxy starts in-process in the hook daemon for Bazel `--remote_proxy`
-2. Loads the TLS inspection CA from the pre-installed filesystem path (`/usr/local/share/ca-certificates/swp-ca-production.crt`)
-3. Creates a Java truststore with the CA using keytool
-4. Creates combined CA bundle (system CAs + proxy CA)
-5. Writes bazelrc to `<session_dir>/bazelrc`
+Verifies direct internet reachability to BuildBuddy. Emits a WARNING to
+the session banner on failure.
 
 ### PATH Shims (via `hook_daemon/shim_install.py`)
 
@@ -133,26 +106,25 @@ old ID, the client finds no socket for the old ID and tries to start a _second_ 
 - **Session-global files** (bazelisk binary at `~/.cache/claude-hooks/bazelisk`): shared
   across all session IDs, safe for concurrent daemons.
 
-## UDS Proxy for Bazel
+## Historical: Explicit Egress Proxy
 
-Bazel's gRPC remote execution client (gRPC-Java/Netty) cannot reliably authenticate
-with HTTP CONNECT proxies due to a timing issue: `ProxyHelper` installs the
-`Authenticator` only when a repository rule triggers a download, which may be after
-the gRPC channel is already established. The UDS proxy bypasses this entirely —
-Bazel's `--remote_proxy=unix:<path>` routes gRPC traffic through the UDS natively.
+Earlier Claude Code web containers injected `HTTPS_PROXY=http://<container_id>:<jwt>@<host>:<port>`
+into the process environment. The hook daemon previously ran a substantial
+subsystem under `devinfra/claude/auth_proxy/` to handle it:
 
-```
-Most tools (curl, pip, npm, etc.)
-    └──► HTTPS_PROXY (Anthropic's proxy) ──► Internet
-         (unchanged, fresh JWT)
+- Load the TLS inspection CA from `/usr/local/share/ca-certificates/swp-ca-production.crt`
+- Build a Java truststore (`cacerts.jks`) for Bazel JVM's HTTPS
+- Build a combined CA bundle (`combined_ca.pem`) for `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, etc.
+- Start a UDS proxy (`UdsRemoteProxy`) that Bazel used via `--remote_proxy=unix:<path>`
+  to work around gRPC-Java's `Authenticator` installation timing bug with HTTP
+  CONNECT proxies.
+- A BES interceptor that inspected Bazel build events and forwarded them to BuildBuddy.
 
-Bazel gRPC (remote execution, cache, BES)
-    └──► --remote_proxy=unix:<session_dir>/remote-proxy.sock
-           └──► UdsRemoteProxy (in hook daemon)
-                  └──► CONNECT tunnel through egress proxy ──► remote.buildbuddy.io
-```
-
-BCR fetches use native JVM proxy settings from Anthropic's `JAVA_TOOL_OPTIONS`.
+Current containers handle proxying transparently at the network layer with
+the Anthropic CA in the system CA bundle, so none of the above is needed —
+every tool just works. The entire `auth_proxy/` subsystem was removed; see
+git log for the removal. If Anthropic reverts to explicit proxy env vars,
+restore the subsystem from history.
 
 ## Configuration
 
@@ -189,12 +161,6 @@ Hook daemon files (in `<session_dir>/hook-daemon/`):
 - `daemon.pid` - Daemon pidfile
 - `daemon.log` - Daemon and session start logs
 
-CA/truststore files (in `<session_dir>/auth-proxy/`, created by `proxy_setup.py`):
-
-- `anthropic_ca.pem` - Loaded TLS inspection CA
-- `combined_ca.pem` - System CAs + Anthropic CA bundle
-- `cacerts.jks` - Java truststore with CA
-
 Global (non-session-scoped) files in `~/.cache/claude-hooks/`:
 
 - `bazelisk` - Bazelisk binary
@@ -212,18 +178,6 @@ Global (non-session-scoped) files in `~/.cache/claude-hooks/`:
 Configuration via environment variable:
 
 - `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT`: Override TCP port (default: 19001)
-
-## Test Environments
-
-### Proxy in Tests
-
-Tests that need an egress proxy simulation use a **mitmproxy testcontainer** (stock
-`mitmproxy:11` in Docker). The fixture generates a mock CA, starts mitmdump with Basic
-auth, and exposes the proxy on a random host port. Tests point `HTTPS_PROXY` at it.
-
-The mitmproxy container connects directly to the internet — no upstream proxy chaining.
-Tests requiring a proxy are designed to run on RBE or CI where direct internet access
-is available. They are **not** compatible with Claude Code web's egress proxy.
 
 ## OTEL Tracing
 

@@ -18,56 +18,15 @@ startup --host_jvm_args=-Xmx4g
 # JVM truststore for Bazel's bundled JDK. Bazel's own cacerts lacks custom
 # CAs (e.g. Anthropic's TLS inspection CA on Claude Code web), so direct
 # HTTPS fetches (BCR, gazelle fetch_repo, etc.) fail with PKIX path building
-# failed. The handler picks: (1) the session-local truststore built by
-# auth_proxy setup, else (2) /etc/ssl/certs/java/cacerts (Debian's
-# ca-certificates-java keeps it in sync with /etc/ssl/certs/ca-certificates.crt),
-# else (3) no override.
+# failed. /etc/ssl/certs/java/cacerts is kept in sync with
+# /etc/ssl/certs/ca-certificates.crt by Debian's ca-certificates-java on web
+# containers; None means no override (CLI/NixOS, bundled JDK cacerts works).
 startup --host_jvm_args=-Djavax.net.ssl.trustStore=${truststore_path | sh}
 startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=${truststore_password | sh}
 % endif
-% if setup_auth_proxy:
-# BCR fetches use the native JVM proxy settings from Anthropic's
-# JAVA_TOOL_OPTIONS (proxyHost/proxyPort/proxyUser/proxyPassword). Only gRPC
-# traffic (remote execution, cache, BES) needs the UDS proxy.
-startup --host_jvm_args=-Djdk.http.auth.tunneling.disabledSchemes=
-
-# Pass proxy + TLS CA to repository rules (for Go modules in gazelle, etc.)
-# GONOPROXY=* forces all Go module downloads through HTTP proxy.
-# Explicitly NOT passing NO_PROXY since it excludes *.googleapis.com
-# (see also _strip_no_proxy_google in env_file.py which fixes this globally).
-common --repo_env=HTTP_PROXY
-common --repo_env=HTTPS_PROXY
-common --repo_env=http_proxy
-common --repo_env=https_proxy
-common --repo_env=GONOPROXY=*
-common --repo_env=GOPRIVATE=
-common --repo_env=GOSUMDB=sum.golang.org
-# TLS inspection CA: the egress proxy MITMs HTTPS, so git and Go need the
-# proxy CA in their trust stores.  GIT_SSL_CAINFO covers git-ls-remote
-# (used by Gazelle fetch_repo), SSL_CERT_FILE covers Go's net/http and most
-# other tools that repo rules shell out to.  These are --repo_env so they
-# only affect the Bazel host (repo rules); RBE workers are unaffected.
-common --repo_env=GIT_SSL_CAINFO=${combined_ca_path | sh}
-common --repo_env=SSL_CERT_FILE=${combined_ca_path | sh}
 
 # Skip live OpenAI tests in wildcard expansion (no API key available)
 test --test_tag_filters=-live_openai_api
-% endif
-% if bazel_remote_proxy_sock:
-# Route gRPC remote execution/cache through a UDS proxy (direct on CLI,
-# CONNECT tunnel through egress proxy on web). Uses Bazel's native --remote_proxy,
-# bypassing gRPC-Java's proxy auth timing issue.
-# On CLI: socket accessible inside bwrap sandbox (--ro-bind / / exposes host fs;
-# no seccomp on most Linux machines means AF_UNIX is not blocked).
-build --remote_proxy=unix:${bazel_remote_proxy_sock}
-% endif
-% if bazel_bes_proxy_sock:
-# Route BES to the local interceptor which inspects events and forwards to BuildBuddy.
-# The interceptor runs as a gRPC service, so we point --bes_backend (not --bes_proxy)
-# at it — Bazel speaks BES directly to our service on UDS.
-build --bes_backend=unix:${bazel_bes_proxy_sock}
-build --bes_results_url=https://app.buildbuddy.io/invocation/
-% endif
 
 % if buildbuddy_bazelrc:
 # BuildBuddy remote cache (API key written to per-session bazelrc)

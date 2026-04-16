@@ -25,7 +25,6 @@ def session_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionPat
     paths = SessionPaths.from_env(session_id, {"HOME": str(home)})
     # Pre-create subdirs that production code expects to exist
     paths.session_dir.mkdir(parents=True, exist_ok=True)
-    paths.auth_proxy_dir.mkdir(parents=True, exist_ok=True)
     return paths
 
 

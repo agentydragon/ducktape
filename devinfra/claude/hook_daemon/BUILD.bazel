@@ -41,25 +41,6 @@ py_test(
 )
 
 py_library(
-    name = "bes_interceptor",
-    srcs = ["bes_interceptor.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//third_party/googleapis:build_v1_py_proto",
-        "@buildbuddy_protos//:action_cache_py_proto",
-        "@buildbuddy_protos//:build_event_stream_py_proto",
-        "@buildbuddy_protos//:command_line_py_proto",
-        "@buildbuddy_protos//:failure_details_py_proto",
-        "@buildbuddy_protos//:invocation_policy_py_proto",
-        "@buildbuddy_protos//:option_filters_py_proto",
-        "@buildbuddy_protos//:package_load_metrics_py_proto",
-        "@buildbuddy_protos//:strategy_policy_py_proto",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
-    ],
-)
-
-py_library(
     name = "tracing",
     srcs = ["tracing.py"],
     visibility = ["//visibility:public"],
@@ -88,12 +69,9 @@ py_library(
     srcs = ["session.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":bes_interceptor",
         ":config",
         "//devinfra/claude:session_paths",
         "//devinfra/claude:settings",
-        "//devinfra/claude/auth_proxy:proxy",
-        "//devinfra/claude/auth_proxy:vars",
     ],
 )
 
@@ -172,7 +150,6 @@ py_library(
         ":worktree",
         "//devinfra/claude:session_paths",
         "//devinfra/claude:settings",
-        "//devinfra/claude/auth_proxy:credentials",
         "//devinfra/claude/claude_api/hooks:output",
         "//devinfra/claude/claude_api/hooks:post_tool_use",
         "//devinfra/claude/claude_api/hooks:pre_tool_use",
@@ -256,7 +233,6 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":config",
-        "//devinfra/claude/auth_proxy:vars",
         "@pypi//pyyaml",
     ],
 )

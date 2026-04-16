@@ -12,9 +12,8 @@
 #   - hook daemon startup_env_script: eval'd into daemon os.environ,
 #     vars flow into the session env file for hook subprocesses
 #
-# Side effects (in addition to printing export lines):
-#   - (none — kubeconfig is now written by the SessionStart handler after
-#     auth_proxy setup, so it has correct proxy-url and CA path)
+# Side effects: none beyond printing export lines. Kubeconfig is written by
+# the SessionStart handler.
 
 # shellcheck source=_common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"

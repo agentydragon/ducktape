@@ -17,14 +17,11 @@ from pathlib import Path
 import pytest
 
 from devinfra.claude import settings
-from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
-from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
 from devinfra.claude.claude_api.hooks.common import PermissionMode
 from devinfra.claude.claude_api.hooks.session_start import HookSource, SessionStartHookInput
 from devinfra.claude.hook_daemon.session_start.tmpfs import unmount_tmpfs_under
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.testing import shell_helpers
-from devinfra.claude.testing.mitmproxy_fixture import MitmproxyFixture
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -70,16 +67,8 @@ def isolated_dirs(tmp_path: Path) -> IsolatedDirs:
     return dirs
 
 
-def setup_hook_env(monkeypatch: pytest.MonkeyPatch, isolated_dirs: IsolatedDirs, mock_proxy: MitmproxyFixture) -> None:
+def setup_hook_env(monkeypatch: pytest.MonkeyPatch, isolated_dirs: IsolatedDirs) -> None:
     """Set up environment variables for running session start hook via monkeypatch."""
-    # Create combined CA bundle with system CAs + mock proxy CA
-    # This allows bazelisk and other TLS clients to trust the mock proxy
-    system_ca_path = next((p for p in SYSTEM_CA_BUNDLES if p.exists()), None)
-    combined_ca_path = isolated_dirs.cache / "combined_ca.pem"
-    system_cas = system_ca_path.read_bytes() if system_ca_path else b""
-    combined_ca_path.write_bytes(system_cas + b"\n" + mock_proxy.ca_cert_pem)
-
-    # Pick isolated port for supervisor
     supervisor_port = pick_free_port()
 
     # Required by CallerContext.from_env()
@@ -94,22 +83,6 @@ def setup_hook_env(monkeypatch: pytest.MonkeyPatch, isolated_dirs: IsolatedDirs,
 
     # Isolated port (avoid conflicts between tests)
     monkeypatch.setenv(settings.ENV_SUPERVISOR_PORT, str(supervisor_port))
-
-    # Proxy configuration (simulating Claude Code web)
-    for var in PROXY_ENV_VARS:
-        monkeypatch.setenv(var, mock_proxy.url)
-
-    # Configure SSL trust for the mock proxy's CA
-    # This is needed for bazelisk and other tools to trust TLS connections through the mock proxy
-    for var in SSL_CA_ENV_VARS:
-        monkeypatch.setenv(var, str(combined_ca_path))
-
-    # Point _extract_proxy_ca to the mock CA on the filesystem
-    mock_ca_path = isolated_dirs.cache / "mock-anthropic-ca.crt"
-    mock_ca_path.write_bytes(mock_proxy.ca_cert_pem)
-    monkeypatch.setenv("ANTHROPIC_CA_PATH", str(mock_ca_path))
-
-    # setup_docker is now controlled by profile config, not env var
 
 
 def make_hook_input(project_dir: Path, source: HookSource = HookSource.STARTUP) -> str:

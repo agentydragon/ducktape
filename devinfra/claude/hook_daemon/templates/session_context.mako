@@ -1,15 +1,17 @@
 <%
-    from devinfra.claude.auth_proxy.setup import ProxyConfigured
+    from devinfra.claude.hook_daemon.session_start.connectivity import ConnectivityFailed
     status = "ERRORS" if collector.has_errors else "OK with warnings" if collector.has_warnings else "OK"
 %>\
 # Claude Code session start hook — ${status}
 
-% if isinstance(proxy, ProxyConfigured):
-**Environment:** gVisor sandbox, TLS-inspecting proxy
-**Bazel:** wrapper adds auth proxy (${proxy.combined_ca})
-% elif proxy is not None:
-**Environment:** gVisor sandbox, no egress proxy detected
-**Bazel:** direct connect (system CA)
+% if connectivity is not None:
+**Environment:** ${platform.platform.value} sandbox (direct internet via transparent proxy)
+% if isinstance(connectivity, ConnectivityFailed):
+**Connectivity:** WARNING — direct probe failed: ${connectivity.reason}.
+If this container re-requires explicit proxy configuration (HTTPS_PROXY with JWT,
+UDS proxy for Bazel gRPC, Java truststore), restore the `devinfra/claude/auth_proxy/`
+subsystem from git history.
+% endif
 % else:
 **Environment:** CLI (local)
 % endif
@@ -46,9 +48,6 @@ ${"##"} Background tasks
 % for cmd in background_commands:
 - ${cmd.name}${ " (after env)" if cmd.after_env else "" }
 % endfor
-% endif
-% if profile.bazel_remote_proxy and bazel_remote_proxy_sock:
-Bazel remote proxy (UDS): `${bazel_remote_proxy_sock}` → `${profile.bazel_remote_proxy.target}` (used by `--remote_proxy`/`--bes_proxy` in session bazelrc).
 % endif
 % if buildbuddy_configured:
 

@@ -64,7 +64,6 @@ py_library(
     deps = [
         ":managed_files",
         ":settings",
-        "//devinfra/claude/auth_proxy:setup",
         "//util/bazel:subprocess",
     ],
 )
@@ -104,51 +103,6 @@ py_test(
         "//devinfra/claude/claude_api/hooks:common",
         "//devinfra/claude/claude_api/hooks:session_start",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_proxy",
-    srcs = ["test_proxy.py"],
-    deps = [
-        "//devinfra/claude/auth_proxy:credentials",
-        "@pypi//pyjwt",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_integration",
-    srcs = ["test_integration.py"],
-    data = [
-        "//third_party/jdk:cacerts",
-        "//third_party/jdk:keytool",
-    ],
-    env = {
-        "JAVA_CACERTS_RLOCATION": "$(rlocationpath //third_party/jdk:cacerts)",
-        "KEYTOOL_RLOCATION": "$(rlocationpath //third_party/jdk:keytool)",
-    },
-    env_inherit = [
-        "HTTPS_PROXY",
-        "https_proxy",
-        "SSL_CERT_FILE",
-        "REQUESTS_CA_BUNDLE",
-    ],
-    # local: keytool (Adoptium JDK) needs libjli.so which isn't on the RBE worker image
-    local = True,
-    tags = ["e2e"],
-    deps = [
-        ":conftest",
-        ":session_paths",
-        ":settings",
-        "//devinfra/claude/auth_proxy:setup",
-        "//devinfra/claude/testing:fixtures",
-        "//devinfra/claude/testing:mitmproxy_fixture",
-        "@pypi//cryptography",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

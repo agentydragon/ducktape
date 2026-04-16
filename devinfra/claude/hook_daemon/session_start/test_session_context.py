@@ -2,17 +2,15 @@
 
 import logging
 from collections.abc import Callable
-from pathlib import Path
 
 import pytest
 import pytest_bazel
 from syrupy.assertion import SnapshotAssertion
 
-from devinfra.claude.auth_proxy import setup as proxy_setup
 from devinfra.claude.hook_daemon import templates
 from devinfra.claude.hook_daemon.config import BackgroundCommand, ProfileConfig
 from devinfra.claude.hook_daemon.models import StartupResult
-from devinfra.claude.hook_daemon.session_start import container_runtime, platform_detect
+from devinfra.claude.hook_daemon.session_start import connectivity, container_runtime, platform_detect
 from devinfra.claude.hook_daemon.session_start.handler import LogCollector
 from devinfra.claude.hook_daemon.testing.testing_helpers import TEST_PROFILE
 
@@ -20,7 +18,7 @@ from devinfra.claude.hook_daemon.testing.testing_helpers import TEST_PROFILE
 def _render(
     *,
     platform: platform_detect.PlatformInfo,
-    proxy: proxy_setup.ProxyConfigured | None = None,  # NoProxy | ProxyConfigured | None
+    connectivity_result: connectivity.ConnectivityResult | None = None,
     container: container_runtime.ContainerRuntimeSetup | None = None,
     background_commands: list[BackgroundCommand] | None = None,
     extra_context: str = "",
@@ -36,7 +34,7 @@ def _render(
     return str(
         templates.session_context.render(
             collector=collector,
-            proxy=proxy,
+            connectivity=connectivity_result,
             container=container,
             background_commands=background_commands or [],
             extra_context=extra_context,
@@ -44,7 +42,6 @@ def _render(
             buildbuddy_configured=buildbuddy_configured,
             platform=platform,
             profile=profile,
-            bazel_remote_proxy_sock=None,
             session_id=session_id,
             startup=startup or StartupResult(),
         )
@@ -81,8 +78,8 @@ def web_platform() -> platform_detect.PlatformInfo:
 
 
 @pytest.fixture
-def proxy() -> proxy_setup.ProxyConfigured:
-    return proxy_setup.ProxyConfigured(combined_ca=Path("/session/auth-proxy/combined_ca.pem"))
+def ok_connectivity() -> connectivity.ConnectivityOk:
+    return connectivity.ConnectivityOk()
 
 
 # === CLI mode ===
@@ -118,18 +115,22 @@ def test_cli_with_buildbuddy(
 
 
 def test_web_no_nix(
-    snapshot: SnapshotAssertion, web_platform: platform_detect.PlatformInfo, proxy: proxy_setup.ProxyConfigured
+    snapshot: SnapshotAssertion,
+    web_platform: platform_detect.PlatformInfo,
+    ok_connectivity: connectivity.ConnectivityOk,
 ) -> None:
-    result = _render(platform=web_platform, proxy=proxy, buildbuddy_configured=True)
+    result = _render(platform=web_platform, connectivity_result=ok_connectivity, buildbuddy_configured=True)
     assert result == snapshot
 
 
 def test_web_with_docker(
-    snapshot: SnapshotAssertion, web_platform: platform_detect.PlatformInfo, proxy: proxy_setup.ProxyConfigured
+    snapshot: SnapshotAssertion,
+    web_platform: platform_detect.PlatformInfo,
+    ok_connectivity: connectivity.ConnectivityOk,
 ) -> None:
     result = _render(
         platform=web_platform,
-        proxy=proxy,
+        connectivity_result=ok_connectivity,
         container=container_runtime.ContainerRuntimeSetup(
             socket_url="unix:///var/run/docker.sock", status="running", storage_driver="overlay"
         ),
@@ -139,13 +140,21 @@ def test_web_with_docker(
 
 
 def test_web_with_background_commands(
-    snapshot: SnapshotAssertion, web_platform: platform_detect.PlatformInfo, proxy: proxy_setup.ProxyConfigured
+    snapshot: SnapshotAssertion,
+    web_platform: platform_detect.PlatformInfo,
+    ok_connectivity: connectivity.ConnectivityOk,
 ) -> None:
     cmds = [
         BackgroundCommand(name="apt package install", command="apt-get install -y foo"),
         BackgroundCommand(name="bazel info", command="bazelisk info", after_env=True),
     ]
-    result = _render(platform=web_platform, proxy=proxy, background_commands=cmds)
+    result = _render(platform=web_platform, connectivity_result=ok_connectivity, background_commands=cmds)
+    assert result == snapshot
+
+
+def test_web_connectivity_failed(snapshot: SnapshotAssertion, web_platform: platform_detect.PlatformInfo) -> None:
+    failed = connectivity.ConnectivityFailed(reason="ConnectError: cannot reach host")
+    result = _render(platform=web_platform, connectivity_result=failed)
     assert result == snapshot
 
 

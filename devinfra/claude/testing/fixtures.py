@@ -19,7 +19,6 @@ from devinfra.claude import settings
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings
 from devinfra.claude.supervisor.client import try_connect
-from devinfra.claude.testing.mitmproxy_fixture import MitmproxyFixture  # noqa: F401
 from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -28,11 +27,10 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class IsolatedSupervisorDirs:
-    """Isolated directories for supervisor/proxy testing."""
+    """Isolated directories for supervisor testing."""
 
     session_dir: Path
     supervisor_dir: Path
-    auth_proxy_dir: Path
 
 
 TEST_SESSION_ID = "test-session"
@@ -40,7 +38,7 @@ TEST_SESSION_ID = "test-session"
 
 @pytest.fixture
 def isolated_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[IsolatedSupervisorDirs]:
-    """Create isolated session/supervisor/auth-proxy dirs with free ports.
+    """Create isolated session/supervisor dirs with free ports.
 
     Sets HOME so SessionPaths derives paths under tmp_path.
     Sets environment variables so HookSettings() picks them up.
@@ -55,16 +53,12 @@ def isolated_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[
     session_dir.mkdir(parents=True)
     supervisor_dir = session_dir / "supervisor"
     supervisor_dir.mkdir()
-    auth_proxy_dir = session_dir / "auth-proxy"
-    auth_proxy_dir.mkdir()
 
     monkeypatch.setenv(settings.ENV_SESSION_DIR, str(session_dir))
     monkeypatch.setenv(settings.ENV_SUPERVISOR_PORT, str(pick_free_port()))
 
     with supervisor_cleanup(supervisor_dir / "supervisord.pid"):
-        yield IsolatedSupervisorDirs(
-            session_dir=session_dir, supervisor_dir=supervisor_dir, auth_proxy_dir=auth_proxy_dir
-        )
+        yield IsolatedSupervisorDirs(session_dir=session_dir, supervisor_dir=supervisor_dir)
 
     # Collect supervisor logs into test outputs for CI debugging
     collect_supervisor_logs(supervisor_dir)

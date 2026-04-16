@@ -15,10 +15,17 @@ py_library(
         "//devinfra/claude:managed_files",
         "//devinfra/claude:session_paths",
         "//devinfra/claude:settings",
-        "//devinfra/claude/auth_proxy:setup",
-        "//devinfra/claude/auth_proxy:vars",
         "//devinfra/claude/supervisor:client",
         "//devinfra/claude/supervisor:service_utils",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "connectivity",
+    srcs = ["connectivity.py"],
+    visibility = ["//visibility:public"],
+    deps = [
         "@pypi//httpx",
     ],
 )
@@ -49,6 +56,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":buildbuddy",
+        ":connectivity",
         ":container_runtime",
         ":platform_detect",
         ":tmpfs",
@@ -58,8 +66,6 @@ py_library(
         "//devinfra/claude:managed_files",
         "//devinfra/claude:session_paths",
         "//devinfra/claude:settings",
-        "//devinfra/claude/auth_proxy:setup",
-        "//devinfra/claude/auth_proxy:vars",
         "//devinfra/claude/claude_api/hooks:output",
         "//devinfra/claude/claude_api/hooks:session_start",
         "//devinfra/claude/hook_daemon:config",
@@ -70,7 +76,6 @@ py_library(
         "//devinfra/claude/hook_daemon/templates",
         "//devinfra/claude/supervisor:setup",
         "@pypi//anyio",
-        "@pypi//httpx",
         "@pypi//mako",
         "@pypi//opentelemetry_api",
     ],
@@ -91,10 +96,10 @@ py_test(
     data = ["__snapshots__/test_session_context.ambr"],
     uses_syrupy = True,
     deps = [
+        ":connectivity",
         ":container_runtime",
         ":platform_detect",
         ":session_start_lib",
-        "//devinfra/claude/auth_proxy:setup",
         "//devinfra/claude/hook_daemon:config",
         "//devinfra/claude/hook_daemon:models",
         "//devinfra/claude/hook_daemon/templates",
