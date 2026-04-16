@@ -83,6 +83,14 @@ many targets, then compare `bb remote test //... --config=rbe` vs `bb remote tes
 
 ## Integration Test: Session Start Hook via Nix devShell
 
-**Problem**: The existing container E2E test (`container_e2e/test_container_e2e.py`) tests the hook daemon inside a Docker container with `uv tool install`, but does not exercise the Nix-packaged `claude-hooks` derivation. Missing Nix-level dependencies (like `grpcio`) cause the daemon to crash with `ModuleNotFoundError` at startup — only discovered when a real CLI session starts.
+**Problem**: The container E2E test (`container_e2e/test_container_e2e.py`) was
+removed along with the auth_proxy subsystem since it was tightly coupled to the
+mitmproxy simulation. There is no replacement that exercises the Nix-packaged
+`claude-hooks` derivation end-to-end, so missing Nix-level dependencies can
+still cause `ModuleNotFoundError` at daemon startup — only discovered when a
+real CLI session starts.
 
-**Solution**: Add an integration test that runs the exact session start hook shim as configured in `.claude/settings.json` (i.e., invokes `claude-hook` the same way Claude Code does), using the Nix devShell environment. This verifies that all runtime imports resolve end-to-end — not just a subset. The existing container E2E test exercises the `uv tool install` path but has no Nix; this test would cover the Nix-installed path.
+**Solution**: Add an integration test that runs the exact session start hook
+shim as configured in `.claude/settings.json` (i.e., invokes `claude-hook` the
+same way Claude Code does), using the Nix devShell environment. This verifies
+that all runtime imports resolve end-to-end — not just a subset.
