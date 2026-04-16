@@ -93,6 +93,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/kevinburke/ssh_config v1.4.0 // indirect
+	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/mandiant/GoReSym v1.7.1 // indirect
 	github.com/pjbgf/sha1cd v0.5.0 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
