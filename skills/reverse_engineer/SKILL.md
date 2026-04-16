@@ -31,10 +31,10 @@ readelf --debug-dump=info "$BINARY" 2>/dev/null | grep -q DW_TAG && echo "DWARF"
 # Go garble? (returns "unknown" when garbled)
 go version -m "$BINARY" 2>&1 | grep -q unknown && echo "GARBLE-OBFUSCATED"
 
-# Go: enumerate functions and packages from pclntab (works even on garbled binaries)
+# Go: enumerate functions from pclntab (non-garbled only — garble XORs the magic)
 # Install: go install github.com/goretk/redress@latest
-redress -pkg "$BINARY"          # packages with function counts
-redress -compiler "$BINARY"     # Go version + build metadata
+redress packages "$BINARY"      # packages (returns empty on garbled binaries)
+# For garbled binaries, use pclntool (see examples/pclntool.go)
 
 # Application string count
 strings "$BINARY" | grep -cE '(error|fail|flag|usage|http|/v[0-9])'
@@ -178,28 +178,37 @@ paths in type metadata, and (with `-literals`) most string constants.
   outputs, syscall traces, network traffic. Externally observable behavior
   is ground truth regardless of obfuscation.
 
-### Go-Specific: Function Enumeration with `redress`
+### Go-Specific: Function Enumeration from pclntab
 
 Garble randomizes symbol names but **cannot remove `runtime.pclntab`** — the
-PC-to-line-number table the Go runtime needs for stack traces. `redress` parses
-it to recover function boundaries even from fully garbled binaries:
+PC-to-line-number table the Go runtime needs for stack traces. On
+**non-garbled** stripped Go binaries, `redress` parses pclntab to list
+function boundaries:
 
 ```bash
-# Install
 go install github.com/goretk/redress@latest
-
-# List all packages with their function counts
-redress -pkg ./binary
-
-# List all functions with PC ranges (garbled names, but real boundaries)
-redress -pkg -func ./binary
-
-# Get Go compiler version and build metadata
-redress -compiler ./binary
+redress packages ./binary      # package list with function counts
+redress source ./binary        # source-level view
 ```
 
-`redress` gives you the complete function inventory — garbled names but correct
-PC ranges and package grouping. Use this to:
+**On garble-obfuscated binaries `redress` returns empty output.** Garble v0.13.0+
+XORs the first 4 bytes of `.gopclntab` (the magic number) with a seed-derived
+key. `redress` cannot parse the table without the correct magic and returns 0
+packages. Use `pclntool` (see `examples/pclntool.go`) instead — it tries all
+known Go pclntab magics in memory until one parses successfully:
+
+```bash
+# Build pclntool (stdlib only, no external deps)
+go build -o pclntool pclntool.go
+
+# Map a PC address to its garbled function name
+pclntool ./garbled-binary 0x4a1b20
+
+# Full workflow: string → VMA → instruction PC → garbled function name
+# See examples/garble_re_recipe.sh for the complete runnable recipe
+```
+
+`pclntool` gives you garbled-but-real function names and PC ranges. Use this to:
 
 1. **Know total function count** — scope the RE effort
 2. **Get function boundaries for targeted disassembly** — instead of dumping
@@ -207,9 +216,9 @@ PC ranges and package grouping. Use this to:
 3. **Identify new/removed/changed functions between versions** — compare
    function sizes; a changed size means changed logic
 
-For version-to-version updates, run `redress -pkg -func` on both binaries and
-diff the output by function size. Functions whose size changed need re-RE;
-functions with identical sizes are likely unchanged and can be marked `CARRIED`.
+For version-to-version updates, run `pclntool` on both binaries (extract full
+function table) and diff by function size. Functions whose size changed need
+re-RE; identical sizes are likely unchanged and can be marked `CARRIED`.
 
 ### Go-Specific: Instruction-Level Analysis and String-to-Function Anchoring
 
@@ -242,7 +251,7 @@ LEAQ 0x10(SP), BX    ; BX = pointer to stack local at +0x10
 CALL some_func
 ```
 
-Compare offsets to struct RTTI (`redress -type ./binary` or manual `readelf`)
+Compare offsets to struct RTTI (manual `readelf` on type metadata sections)
 to name the arguments. This directly resolves "gitProxyConfig source —
 garble-obfuscated" style TODOs.
 
@@ -372,23 +381,18 @@ radiff2 -s "$TARGET" /tmp/re-binary 2>/dev/null | awk '$3 == "UNMATCH" {count++}
 
 The string diff tells you _what_ is missing; `radiff2` tells you _which function_
 is missing or has different logic. Use them together: find a missing string,
-trace it to the function via `go tool objdump`, write the function, rebuild,
-and watch both metrics improve.
+trace it to the garbled function via `pclntool` + `objdump -d`, write the
+function, rebuild, and watch both metrics improve.
 
-**Version-to-version function delta with `redress` + `radiff2`:**
+**Version-to-version function delta with `radiff2`:**
 
-When a new binary version ships, use `redress` to get function-level inventory
-and `radiff2` for structural comparison — this is far more precise than string
-diffs alone:
+When a new garbled binary version ships, use `radiff2` for structural
+comparison between versions — garbled names differ between builds, so
+function matching must be structural rather than by name:
 
 ```bash
 OLD="old_binary"
 NEW="new_binary"
-
-# Function size comparison: changed size = changed logic
-redress -pkg -func "$OLD" > /tmp/funcs_old.txt
-redress -pkg -func "$NEW" > /tmp/funcs_new.txt
-diff /tmp/funcs_old.txt /tmp/funcs_new.txt
 
 # Structural diff between versions
 radiff2 -s "$OLD" "$NEW" 2>/dev/null | awk '$3 < 0.95' | sort -k3 -n
