@@ -1,6 +1,25 @@
-load("//skills:defs.bzl", "skill_package")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
-skill_package(
-    name = "reverse_engineer",
+pkg_files(
+    name = "reverse_engineer_local_files",
     srcs = ["SKILL.md"],
+    strip_prefix = strip_prefix.from_pkg(),
+)
+
+pkg_files(
+    name = "reverse_engineer_example_files",
+    srcs = ["//skills/reverse_engineer/examples:garble_re_recipe.sh"],
+    prefix = "examples",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_tar(
+    name = "reverse_engineer_tar",
+    srcs = [
+        ":reverse_engineer_example_files",
+        ":reverse_engineer_local_files",
+    ],
+    package_dir = "reverse_engineer",
+    visibility = ["//visibility:public"],
 )

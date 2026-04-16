@@ -1,0 +1,60 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+exports_files(
+    ["garble_re_recipe.sh"],
+    visibility = ["//skills/reverse_engineer:__pkg__"],
+)
+
+# Build the garbled victim binary using garble as a Bazel tool.
+# The genrule runs from the execroot where third_party/go.mod is available,
+# so go_bin_runner can locate GOROOT correctly.
+genrule(
+    name = "garbled_victim",
+    srcs = [
+        "//skills/reverse_engineer/cmd/garble_target:srcs",
+        "//third_party:go.mod",  # go_bin_runner reads this to find GOROOT
+        "//third_party:go.sum",
+    ],
+    outs = ["garbled-binary"],
+    cmd = """
+        TMPDIR=$$(mktemp -d)
+        BIN=$$TMPDIR/bin && mkdir -p $$BIN
+        ln -s $$(realpath $(execpath @io_bazel_rules_go//go:go)) $$BIN/go
+        export PATH=$$BIN:$$PATH
+        export GOROOT=$$(go env GOROOT)
+        export GOCACHE=$$TMPDIR/.gocache
+        export GOPATH=$$TMPDIR/.gopath
+        SRCDIR=$$TMPDIR/src && mkdir -p $$SRCDIR
+        for f in $(SRCS); do
+          case $$f in *.go) cp $$f $$SRCDIR/ ;; esac
+        done
+        printf 'module garble_target\\ngo 1.24\\n' > $$SRCDIR/go.mod
+        cd $$SRCDIR
+        $(execpath @cc_mvdan_garble//:garble) build -trimpath -o $(RULEDIR)/garbled-binary .
+    """,
+    tools = [
+        "@cc_mvdan_garble//:garble",
+        "@io_bazel_rules_go//go",
+    ],
+)
+
+# The scaffold copies the pre-built garbled binary into TEST_TMPDIR and runs
+# the recipe against it. go_bin_runner is used only to obtain GOROOT (so
+# go tool addr2line works); it runs from the runfiles workspace root where
+# third_party/go.mod is present.
+sh_test(
+    name = "test_go_objdump_demo",
+    srcs = ["test_scaffold.sh"],
+    data = [
+        "garble_re_recipe.sh",
+        ":garbled_victim",
+        "//third_party:go.mod",
+        "//third_party:go.sum",
+        "@io_bazel_rules_go//go",
+    ],
+    env = {
+        "BINARY": "$(rlocationpath :garbled_victim)",
+        "GO": "$(rlocationpath @io_bazel_rules_go//go:go)",
+        "RECIPE": "$(rlocationpath garble_re_recipe.sh)",
+    },
+)

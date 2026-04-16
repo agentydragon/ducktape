@@ -28,8 +28,13 @@ nm "$BINARY" 2>/dev/null | grep -q ' T ' && echo "SYMBOLS" || echo "STRIPPED"
 # DWARF?
 readelf --debug-dump=info "$BINARY" 2>/dev/null | grep -q DW_TAG && echo "DWARF" || echo "NO DWARF"
 
-# Go garble?
+# Go garble? (returns "unknown" when garbled)
 go version -m "$BINARY" 2>&1 | grep -q unknown && echo "GARBLE-OBFUSCATED"
+
+# Go: enumerate functions and packages from pclntab (works even on garbled binaries)
+# Install: go install github.com/goretk/redress@latest
+redress -pkg "$BINARY"          # packages with function counts
+redress -compiler "$BINARY"     # Go version + build metadata
 
 # Application string count
 strings "$BINARY" | grep -cE '(error|fail|flag|usage|http|/v[0-9])'
@@ -96,6 +101,18 @@ comm -23 <(strings -n 6 "$REF" | sort -u) <(strings -n 6 "$YOURS" | sort -u) > /
 # Symbol diff (if applicable)
 diff <(nm -D "$REF" | sort) <(nm -D "$YOURS" | sort)
 
+# Compile your RE source and compare against the target binary
+# String coverage: every line in missing.txt is a code path not yet reconstructed
+go build -o /tmp/re-binary ./...
+comm -23 \
+  <(strings -n 6 "$REF" | sort -u) \
+  <(strings -n 6 /tmp/re-binary | sort -u) \
+  > /tmp/missing_strings.txt
+
+# Function-level structural comparison with radiff2 (radare2)
+# Shows function similarity scores — unmatched functions = structural gaps
+radiff2 -s "$REF" /tmp/re-binary | sort -k3 -n | head -40
+
 # Behavioral diff
 strace -f "$REF" <args> 2>/tmp/ref.strace &
 strace -f "$YOURS" <args> 2>/tmp/my.strace &
@@ -133,12 +150,14 @@ No symbols — use strings as your primary anchor and disassembly for everything
 Obfuscation (garble, UPX, symbol mangling) makes static analysis harder but
 not impossible. The instruction stream is still there — read it.
 
-**What's preserved**: all string literals, runtime behavior (CLI, network,
-files), serialization formats (protobuf, JSON tags), embedded content
-(templates, scripts), syscall patterns, and the full disassembly.
+**What's preserved**: runtime behavior (CLI, network, files), serialization
+formats (JSON tags, protobuf field names), embedded content (templates,
+scripts), syscall patterns, `runtime.pclntab` (function boundaries), and the
+full disassembly. String literals are preserved unless garble's `-literals`
+flag was used (see Garble Literal Deobfuscation below).
 
 **What's destroyed**: symbol names, DWARF, `go version -m` output, package
-paths in type metadata.
+paths in type metadata, and (with `-literals`) most string constants.
 
 **Techniques:**
 
@@ -148,15 +167,138 @@ paths in type metadata.
   string loads to identify what each function does.
 - **Runtime probing**: `--help`, `--version`, strace for syscalls, ltrace for
   library calls. CLI help text is always preserved.
-- **String analysis**: garble doesn't touch string literals. Extract all
-  strings — log messages, error texts, CLI flags, API endpoints, JSON tags,
-  gRPC service names, embedded scripts. These are your anchors.
+- **String analysis**: garble doesn't touch string literals (unless `-literals`
+  is used — see below). Extract all strings — log messages, error texts, CLI
+  flags, API endpoints, JSON tags, gRPC service names, embedded scripts.
+  These are your anchors.
 - **Binary diffing** (see below): when a prior unobfuscated version exists,
   use BinDiff/Diaphora to automatically match functions across versions and
   recover original names. This is the highest-leverage technique.
 - **Behavioral validation**: run both binaries with identical inputs, compare
   outputs, syscall traces, network traffic. Externally observable behavior
   is ground truth regardless of obfuscation.
+
+### Go-Specific: Function Enumeration with `redress`
+
+Garble randomizes symbol names but **cannot remove `runtime.pclntab`** — the
+PC-to-line-number table the Go runtime needs for stack traces. `redress` parses
+it to recover function boundaries even from fully garbled binaries:
+
+```bash
+# Install
+go install github.com/goretk/redress@latest
+
+# List all packages with their function counts
+redress -pkg ./binary
+
+# List all functions with PC ranges (garbled names, but real boundaries)
+redress -pkg -func ./binary
+
+# Get Go compiler version and build metadata
+redress -compiler ./binary
+```
+
+`redress` gives you the complete function inventory — garbled names but correct
+PC ranges and package grouping. Use this to:
+
+1. **Know total function count** — scope the RE effort
+2. **Get function boundaries for targeted disassembly** — instead of dumping
+   the entire binary, extract one function at a time
+3. **Identify new/removed/changed functions between versions** — compare
+   function sizes; a changed size means changed logic
+
+For version-to-version updates, run `redress -pkg -func` on both binaries and
+diff the output by function size. Functions whose size changed need re-RE;
+functions with identical sizes are likely unchanged and can be marked `CARRIED`.
+
+### Go-Specific: Instruction-Level Analysis and String-to-Function Anchoring
+
+`go tool objdump` requires an ELF symbol table and fails on garbled binaries
+(`no symbol section`). Use `objdump -d` (GNU binutils) for disassembly and
+`go tool addr2line` for pclntab lookups — both work on stripped/garbled binaries.
+
+**Workflow:** read `examples/garble_re_recipe.sh` — it is a runnable, CI-verified
+demonstration with inline commentary explaining each step.
+
+```bash
+# Step 6: correlate register/offset patterns to struct fields
+# LEA rdi, [rcx+0x30]  →  receiver field at offset 0x30
+# MOVQ [rsp+0x18], rax →  stack argument at position 3
+# Cross-reference with RTTI struct layouts to name the fields
+```
+
+**Reading call arguments from disassembly:**
+
+Go's register ABI (since 1.17) passes the first ~9 integer arguments in
+`AX, BX, CX, DI, SI, R8, R9, R10, R11`. Before a `CALL` instruction, read
+which registers are loaded:
+
+```
+MOVQ 0x30(CX), AX    ; AX = receiver.fieldAtOffset0x30
+LEAQ 0x10(SP), BX    ; BX = pointer to stack local at +0x10
+CALL some_func
+```
+
+Compare offsets to struct RTTI (`redress -type ./binary` or manual `readelf`)
+to name the arguments. This directly resolves "gitProxyConfig source —
+garble-obfuscated" style TODOs.
+
+### Go-Specific: Garble Literal Deobfuscation
+
+When garble is built with `-literals`, string constants are encrypted at
+compile time and decrypted by generated `init()` functions using XOR/shift
+sequences. This affects constants like env var names that appear nowhere in
+`strings` output.
+
+**Detection:**
+
+```bash
+# If a known constant is missing from strings output, it may be encrypted
+strings "$BINARY" | grep -c "CLAUDE_CODE_"   # → 0 means likely encrypted
+
+# Find init functions with byte-array manipulation patterns
+go tool objdump "$BINARY" | grep -A 200 '^TEXT.*init\.' | grep -A 3 'MOVB\|XORB'
+```
+
+**Recovery via strace (fastest):**
+
+The binary decrypts strings at runtime before using them. strace captures
+the results:
+
+```bash
+# Capture env var reads — decrypted names appear as getenv arguments
+strace -e trace=openat,read -s 256 ./binary --help 2>&1 | grep CLAUDE
+
+# For longer operations, trace the full startup
+GOTRACEBACK=all strace -f -e trace=all ./binary task-run --help 2>&1 | grep -i claude
+```
+
+**Recovery via disassembly (when strace isn't enough):**
+
+Each encrypted string has an `init` function that looks like:
+
+```asm
+; Encrypted bytes loaded into a stack buffer, then XOR'd
+MOVB $0x43, 0x00(SP)   ; 'C' XOR key
+MOVB $0x57, 0x01(SP)
+XORB $0x14, 0x00(SP)   ; apply key byte
+XORB $0x14, 0x01(SP)
+; result: the decrypted string
+```
+
+Emulate the sequence manually (or with a short Python script) to recover the
+plaintext. The decrypted value is the true string constant.
+
+**Go-specific: garble preserves struct tags.** Even with `-literals`, garble
+cannot encrypt `json:"field_name"` struct tags because the `encoding/json`
+package reads them via reflection at runtime. Extract all tags:
+
+```bash
+strings "$BINARY" | grep -oP 'json:"[^"]*"' | sort -u
+strings "$BINARY" | grep -oP '[a-z_]+,omitempty' | sort -u
+```
+
+These reveal the complete wire format of every serialized struct.
 
 ### Binary Diffing: Recovering Names from a Prior Version
 
@@ -173,6 +315,8 @@ than manual RE of the obfuscated binary.
 2. **Diaphora** (open source) — Ghidra/IDA plugin. Similar matching but also
    compares pseudo-code ASTs. Better at partial matches.
 3. **radiff2** (radare2) — CLI-based binary diffing. Lighter weight, scriptable.
+   Use this for the compile-verify loop and for version-to-version function-level
+   diffs without Ghidra.
 4. **Custom string-anchored matcher** — when tools aren't available, a script
    can match functions by their string reference sets (see below).
 
@@ -196,6 +340,59 @@ analyzeHeadless /tmp/ghidra_new NewProject -import "$NEW_BINARY"
 
 # 4. Apply to RE: for each matched pair, update address annotations
 #    in the reconstructed source from old_addr → new_addr
+```
+
+**Compile-verify loop with `radiff2`:**
+
+After writing RE source for the current binary, compile it and compare against
+the target. This closes the verification loop without requiring Ghidra.
+
+```bash
+# Build your RE source
+go build -o /tmp/re-binary ./...
+
+# String coverage gap — every line is a code path not yet reconstructed
+comm -23 \
+  <(strings -n 6 "$TARGET" | sort -u) \
+  <(strings -n 6 /tmp/re-binary | sort -u) \
+  > /tmp/missing_strings.txt
+wc -l /tmp/missing_strings.txt   # shrink this to zero
+
+# Function-level structural diff
+# Columns: addr_in_target | addr_in_yours | similarity_score | name
+radiff2 -s "$TARGET" /tmp/re-binary 2>/dev/null | sort -k3 -n
+# similarity 1.0 → identical; < 0.8 → logic diverges; missing → new/removed function
+
+# Count unmatched functions (in target but not in your binary)
+radiff2 -s "$TARGET" /tmp/re-binary 2>/dev/null | awk '$3 == "UNMATCH" {count++} END {print count, "unmatched"}'
+```
+
+The string diff tells you _what_ is missing; `radiff2` tells you _which function_
+is missing or has different logic. Use them together: find a missing string,
+trace it to the function via `go tool objdump`, write the function, rebuild,
+and watch both metrics improve.
+
+**Version-to-version function delta with `redress` + `radiff2`:**
+
+When a new binary version ships, use `redress` to get function-level inventory
+and `radiff2` for structural comparison — this is far more precise than string
+diffs alone:
+
+```bash
+OLD="old_binary"
+NEW="new_binary"
+
+# Function size comparison: changed size = changed logic
+redress -pkg -func "$OLD" > /tmp/funcs_old.txt
+redress -pkg -func "$NEW" > /tmp/funcs_new.txt
+diff /tmp/funcs_old.txt /tmp/funcs_new.txt
+
+# Structural diff between versions
+radiff2 -s "$OLD" "$NEW" 2>/dev/null | awk '$3 < 0.95' | sort -k3 -n
+# These are functions whose logic changed — prioritize for manual re-RE
+
+# Functions in NEW but not OLD: new code requiring fresh RE
+radiff2 -s "$NEW" "$OLD" 2>/dev/null | awk '$3 == "UNMATCH"'
 ```
 
 **String-anchored matching (no tools required):**
@@ -233,19 +430,6 @@ NEW="$NEW_BINARY"
 - For functions in old but not new: removed code — delete from RE
 - For functions with partial matches (same strings but different size):
   changed logic — compare disassembly and update RE
-
-**Go-specific: garble preserves struct tags.**
-
-Garble randomizes symbol names but preserves `json:"field_name"` struct tags
-and other string metadata. Extract with:
-
-```bash
-strings "$BINARY" | grep -oP 'json:"[^"]*"' | sort -u
-```
-
-These reveal the complete wire format (JSON field names, omitempty flags) of
-every serialized struct, even without symbols. Combined with the function
-mapping, you can recover the full type system.
 
 ---
 
