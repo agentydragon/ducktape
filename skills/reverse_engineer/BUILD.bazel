@@ -10,6 +10,7 @@ pkg_files(
 pkg_files(
     name = "reverse_engineer_example_files",
     srcs = [
+        "//skills/reverse_engineer/examples:binary_diff_recipe.sh",
         "//skills/reverse_engineer/examples:garble_re_recipe.sh",
         "//skills/reverse_engineer/examples:pclntool.go",
     ],

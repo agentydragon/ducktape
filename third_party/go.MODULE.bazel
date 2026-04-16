@@ -16,6 +16,8 @@ go_deps.from_file(go_mod = "//third_party:go.mod")
 # Patch garble's decodeBuildIDHash to pad short hashes (<15 bytes) instead
 # of panicking. Bazel-built Go binaries embed "redacted" (6 decoded bytes)
 # in their build ID ELF note, which is shorter than garble's expected 15.
+# This affects even -seed=random builds: garble reads its own build ID in
+# toolexecCmd regardless of the seed source.
 go_deps.module_override(
     patch_strip = 1,
     patches = ["//skills/reverse_engineer/examples:garble_hash_fix.patch"],

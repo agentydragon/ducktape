@@ -3,6 +3,7 @@ load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 exports_files(
     [
+        "binary_diff_recipe.sh",
         "garble_hash_fix.patch",
         "garble_re_recipe.sh",
         "pclntool.go",
@@ -41,5 +42,26 @@ sh_test(
         "PCLNTOOL": "$(rlocationpath :pclntool)",
         "RECIPE": "$(rlocationpath garble_re_recipe.sh)",
         "REDRESS": "$(rlocationpath @com_github_goretk_redress//:redress)",
+    },
+)
+
+sh_test(
+    name = "test_binary_diff_demo",
+    srcs = ["test_scaffold_binary_diff.sh"],
+    data = [
+        "binary_diff_recipe.sh",
+        ":pclntool",
+        "//skills/reverse_engineer/cmd/garble_target:srcs",
+        "//skills/reverse_engineer/cmd/garble_target_v2:srcs",
+        "//third_party:go.mod",
+        "//third_party:go.sum",
+        "@cc_mvdan_garble//:garble",
+        "@io_bazel_rules_go//go",
+    ],
+    env = {
+        "GARBLE": "$(rlocationpath @cc_mvdan_garble//:garble)",
+        "GO": "$(rlocationpath @io_bazel_rules_go//go:go)",
+        "PCLNTOOL": "$(rlocationpath :pclntool)",
+        "RECIPE": "$(rlocationpath binary_diff_recipe.sh)",
     },
 )

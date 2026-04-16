@@ -396,6 +396,11 @@ string references alone. Most application functions reference at least one
 unique string (log message, error text, format string). Functions referencing
 the same set of strings are the same function.
 
+**See `examples/binary_diff_recipe.sh` for a runnable, CI-verified demonstration**
+of this technique: plain v1 binary (symbols intact) vs. garble-obfuscated v2
+(new function added). The recipe shows shared-string matching identifying the
+same function across versions, and v2-only strings identifying the new function.
+
 ```bash
 # 1. For old binary (has symbols): map function → strings it references
 #    nm "$OLD" gives symbol names and addresses; objdump -d gives disassembly
