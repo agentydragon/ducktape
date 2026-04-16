@@ -87,7 +87,7 @@ class PlatformSetup:
     # Platform-specific results
     platform: platform_detect.PlatformInfo
     env_overlay: dict[str, str]  # vars added/changed by startup_env_script (delta over os.environ)
-    auth_proxy: proxy_setup.ProxySetup | None = None
+    auth_proxy: proxy_setup.NoProxy | proxy_setup.ProxyConfigured | None = None
     container: container_runtime.ContainerRuntimeSetup | None = None
     docker_env: dict[str, str] | None = None
     bazel_cache_dir: Path | None = None
@@ -285,7 +285,7 @@ async def _setup_platform_services(
 
     results = await asyncio.gather(proxy_task, setup_container_runtime_task(), bazel_tmpfs_task, return_exceptions=True)
     # Unpack with explicit type annotations for mypy
-    auth_proxy_result: proxy_setup.ProxySetup | BaseException = results[0]
+    auth_proxy_result: proxy_setup.NoProxy | proxy_setup.ProxyConfigured | BaseException = results[0]
     container_result: container_runtime.ContainerRuntimeSetup | BaseException = results[1]
     tmpfs_result: tmpfs.TmpfsSetup | BaseException = results[2]
 
@@ -310,14 +310,18 @@ async def _setup_platform_services(
     else:
         docker_env = container_result.env_vars
 
-    if isinstance(auth_proxy_result, proxy_setup.ProxySetup):
-        logger.info("Ready: proxy=%s, CA=%s", auth_proxy_result.status, auth_proxy_result.ca_status)
+    if isinstance(auth_proxy_result, proxy_setup.ProxyConfigured):
+        logger.info("Ready: proxy configured, CA=%s", auth_proxy_result.combined_ca)
+    elif isinstance(auth_proxy_result, proxy_setup.NoProxy):
+        logger.info("Ready: no egress proxy, using system CA")
     logger.info("Container: %s", container_result)
 
     return PlatformSetup(
         platform=platform,
         env_overlay=env_overlay,
-        auth_proxy=auth_proxy_result if isinstance(auth_proxy_result, proxy_setup.ProxySetup) else None,
+        auth_proxy=auth_proxy_result
+        if isinstance(auth_proxy_result, (proxy_setup.NoProxy, proxy_setup.ProxyConfigured))
+        else None,
         container=None if isinstance(container_result, BaseException) else container_result,
         docker_env=docker_env,
         bazel_cache_dir=tmpfs_result.bazel_cache if isinstance(tmpfs_result, tmpfs.TmpfsSetup) else None,
@@ -365,7 +369,7 @@ async def handle(
     )
 
     # -- Shared steps: BuildBuddy, kubeconfig, fork remote --
-    combined_ca = setup.auth_proxy.combined_ca if setup.auth_proxy else None
+    combined_ca = setup.auth_proxy.combined_ca if isinstance(setup.auth_proxy, proxy_setup.ProxyConfigured) else None
 
     # Write kubeconfig now that auth_proxy setup is complete (known proxy state + CA).
     with tracer.start_as_current_span("write_kubeconfig", context=root_ctx):

@@ -20,7 +20,7 @@ from devinfra.claude.hook_daemon.testing.testing_helpers import TEST_PROFILE
 def _render(
     *,
     platform: platform_detect.PlatformInfo,
-    proxy: proxy_setup.ProxySetup | None = None,
+    proxy: proxy_setup.ProxyConfigured | None = None,  # NoProxy | ProxyConfigured | None
     container: container_runtime.ContainerRuntimeSetup | None = None,
     background_commands: list[BackgroundCommand] | None = None,
     extra_context: str = "",
@@ -81,10 +81,8 @@ def web_platform() -> platform_detect.PlatformInfo:
 
 
 @pytest.fixture
-def proxy() -> proxy_setup.ProxySetup:
-    return proxy_setup.ProxySetup(
-        combined_ca=Path("/session/auth-proxy/combined_ca.pem"), status="started", ca_status="loaded"
-    )
+def proxy() -> proxy_setup.ProxyConfigured:
+    return proxy_setup.ProxyConfigured(combined_ca=Path("/session/auth-proxy/combined_ca.pem"))
 
 
 # === CLI mode ===
@@ -120,14 +118,14 @@ def test_cli_with_buildbuddy(
 
 
 def test_web_no_nix(
-    snapshot: SnapshotAssertion, web_platform: platform_detect.PlatformInfo, proxy: proxy_setup.ProxySetup
+    snapshot: SnapshotAssertion, web_platform: platform_detect.PlatformInfo, proxy: proxy_setup.ProxyConfigured
 ) -> None:
     result = _render(platform=web_platform, proxy=proxy, buildbuddy_configured=True)
     assert result == snapshot
 
 
 def test_web_with_docker(
-    snapshot: SnapshotAssertion, web_platform: platform_detect.PlatformInfo, proxy: proxy_setup.ProxySetup
+    snapshot: SnapshotAssertion, web_platform: platform_detect.PlatformInfo, proxy: proxy_setup.ProxyConfigured
 ) -> None:
     result = _render(
         platform=web_platform,
@@ -141,7 +139,7 @@ def test_web_with_docker(
 
 
 def test_web_with_background_commands(
-    snapshot: SnapshotAssertion, web_platform: platform_detect.PlatformInfo, proxy: proxy_setup.ProxySetup
+    snapshot: SnapshotAssertion, web_platform: platform_detect.PlatformInfo, proxy: proxy_setup.ProxyConfigured
 ) -> None:
     cmds = [
         BackgroundCommand(name="apt package install", command="apt-get install -y foo"),

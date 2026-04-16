@@ -85,12 +85,18 @@ def _find_keytool() -> str:
 
 
 @dataclass
-class ProxySetup:
-    """Result of auth proxy setup."""
+class NoProxy:
+    """No upstream egress proxy detected."""
 
-    combined_ca: Path | None
-    status: str
-    ca_status: str
+
+@dataclass
+class ProxyConfigured:
+    """Egress proxy detected; CA bundle and truststore created."""
+
+    combined_ca: Path
+
+
+ProxySetup = NoProxy | ProxyConfigured
 
 
 def _find_system_file(candidates: list[Path], description: str) -> Path:
@@ -280,7 +286,7 @@ async def setup_auth_proxy(paths: SessionPaths) -> ProxySetup:
 
     if not get_upstream_proxy_url():
         logger.info("No https_proxy set, auth proxy setup not needed")
-        return ProxySetup(combined_ca=None, status="not configured", ca_status="system")
+        return NoProxy()
 
     logger.info("Setting up auth proxy for TLS-inspecting proxy...")
 
@@ -297,10 +303,9 @@ async def setup_auth_proxy(paths: SessionPaths) -> ProxySetup:
     # Create combined CA bundle (for tools like uv that use SSL_CERT_FILE)
     _create_combined_ca_bundle(paths)
 
-    ca_status = "custom CA" if combined_ca.exists() else "system"
-
+    assert combined_ca.exists(), f"_create_combined_ca_bundle did not write {combined_ca}"
     logger.info("Auth proxy setup complete")
-    return ProxySetup(combined_ca=combined_ca, status="uds-only", ca_status=ca_status)
+    return ProxyConfigured(combined_ca=combined_ca)
 
 
 def is_configured(paths: SessionPaths) -> bool:
