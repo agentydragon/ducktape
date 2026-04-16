@@ -16,6 +16,7 @@ from mako.template import Template
 from pydantic import TypeAdapter
 
 from devinfra.claude.claude_api.hooks.dispatch_input import AnyHookInput
+from devinfra.claude.hook_daemon._build_info import GIT_COMMIT
 from devinfra.claude.hook_daemon.client import DaemonHttpError, DaemonStartError, call_daemon
 from devinfra.claude.hook_daemon.shim import run_shim
 from devinfra.claude.hook_daemon.shim_install import SHIM_SESSION_ID_ENV
@@ -50,6 +51,10 @@ def _log_event(direction: str, raw_json: str | None, *, hook_name: str = "", ses
 
 
 def main() -> None:
+    if len(sys.argv) >= 2 and sys.argv[1] in ("--version", "-V", "version"):
+        print(f"claude-hook 0.1.0 git={GIT_COMMIT}")
+        return
+
     # Shim subcommand: `claude-hook shim <shim_name> [args...]`
     # New-style shim wrappers exec into here instead of python -m shim,
     # so the profile symlink resolves the interpreter at invocation time.

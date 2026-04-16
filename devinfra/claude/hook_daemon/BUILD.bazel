@@ -1,4 +1,25 @@
+load("@aspect_bazel_lib//lib:expand_template.bzl", "expand_template")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+expand_template(
+    name = "_build_info_gen",
+    out = "_build_info.py",
+    stamp = -1,
+    stamp_substitutions = {
+        "{{GIT_COMMIT}}": "{{STABLE_BUILD_COMMIT}}",
+    },
+    substitutions = {
+        "{{GIT_COMMIT}}": "dev",
+    },
+    template = "build_info.tpl",
+)
+
+py_library(
+    name = "_build_info",
+    srcs = [":_build_info_gen"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+)
 
 py_library(
     name = "config",
@@ -269,6 +290,7 @@ py_library(
     srcs = ["hook_dispatch.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":_build_info",
         ":client",
         ":shim_lib",
         ":write_kubeconfig_cli",

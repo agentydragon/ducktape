@@ -64,9 +64,10 @@ build:rbe --experimental_profile_include_primary_output
 # Formatting: use bazel run //devinfra/format (fix) or //devinfra/format.check (check)
 # Supports: prettier (JS/TS/CSS/HTML/MD), ruff (Python), shfmt (Shell), buildifier (Bazel), rustfmt (Rust)
 
-# Stamping - embeds build metadata (commit hash, etc.) into build artifacts
-# Only targets that depend on ctx.info_file (like build_info_gen) are invalidated on commit change
-build --stamp --workspace_status_command=devinfra/stamp.sh
+# Workspace status command populates volatile metadata (repo URL, branch, user)
+# for BuildBuddy UI. Stamping is off by default for hermeticity; release builds
+# opt in with --stamp to embed commit/content info via expand_template rules.
+build --workspace_status_command=devinfra/stamp.sh
 
 # Use shell-based bootstrap instead of system_python.  The default
 # (system_python) starts with `#!/usr/bin/env python3` which picks up whatever

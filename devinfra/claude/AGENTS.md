@@ -66,13 +66,13 @@ cat "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/bazelrc"
 # Check supervisor status (container runtime only)
 python -m supervisor.supervisorctl -c "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/supervisor/supervisord.conf" status
 
-# Check installed claude-hooks vs the pin in the working tree — catches
-# "container reuse froze the wheel at an old pin" situations on Firecracker.
-readlink /nix/var/nix/profiles/default/bin/claude-hook
-python3 -c "import json; p=json.load(open('npins/sources.json'))['pins']['claude-hooks']; print(p['url'])"
+# Check installed claude-hooks vs the pin — git= shows the commit the wheel was built from
+claude-hook --version
+jq -r '.pins["claude-hooks"].url' npins/sources.json
 ```
 
-If these disagree on the claude-hooks commit sha, the installed wheel has
-drifted behind the pin — re-run `bash devinfra/claude/web_setup.sh` to pull
-forward. See <docs/web-setup-debug.md> "Pin drift on persistent rootfs" for
-the underlying cause.
+If the version shows `git=dev` (unstamped) or an old commit, the installed
+wheel has drifted behind the pin — re-run
+`bash devinfra/claude/web_setup.sh` to pull forward. See
+<docs/web-setup-debug.md> "Pin drift on persistent rootfs" for the underlying
+cause.

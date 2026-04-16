@@ -247,16 +247,13 @@ cache when the pin hasn't actually moved.
 **How to diagnose future occurrences**:
 
 ```bash
-# Compare installed vs pinned claude-hooks commit
-readlink /nix/var/nix/profiles/default/bin/claude-hook  # → /nix/store/<hash>-claude-hooks-<ver>/bin/claude-hook
-# Then match <hash> against `git log --all --oneline` of claude-hooks source commits,
-# or check `devinfra/_build_status.txt` bundled inside the wheel if present.
+# Compare installed vs pinned — check the git commit the installed wheel was built from
+claude-hook --version
+# The npins URL contains the content-addressed release tag (12-hex hash prefix)
+jq -r '.pins["claude-hooks"].url' npins/sources.json
 
 # Check the daemon error log for Mako/pydantic complaints
 tail -100 ~/.claude/session-env/*/hook-daemon/daemon.err.log
-
-# Check what npins says is current
-python3 -c "import json; p=json.load(open('npins/sources.json'))['pins']['claude-hooks']; print(p['url'])"
 ```
 
 **Lessons**:

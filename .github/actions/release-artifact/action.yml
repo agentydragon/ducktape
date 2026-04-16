@@ -23,18 +23,19 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Build artifact
+    # Build 1: unstamped (default, --stamp off) — deterministic, for skip decision
+    - name: Build artifact (unstamped)
       uses: ./.github/actions/bb-remote
       with:
         args: build ${{ inputs.bazel_target }}
         rbe_image: ${{ inputs.rbe_image }}
 
-    - name: Release
+    - name: Check content hash
+      id: check
       shell: bash
       env:
         GH_TOKEN: ${{ env.GH_RELEASE_PAT }}
         PKG: ${{ inputs.pkg }}
-        RETENTION_DAYS: ${{ inputs.retention_days }}
       run: |
         set -euo pipefail
 
@@ -42,6 +43,7 @@ runs:
         subject=$(git log -1 --format=%s)
         if [[ "$subject" == *"[skip ci]"* ]]; then
           echo "$PKG: commit has [skip ci], skipping"
+          echo "should_release=false" >> "$GITHUB_OUTPUT"
           exit 0
         fi
 
@@ -52,29 +54,54 @@ runs:
           exit 1
         fi
 
-        # Compute SHA256 (base64, matching npins format)
-        sha=$(openssl dgst -sha256 -binary "$artifact" | base64 -w0)
+        # Content-addressed skip check: tag by hash of the unstamped wheel.
+        # If a release with this tag already exists, the content hasn't changed.
+        content_sha=$(sha256sum "$artifact" | awk '{print $1}')
+        tag="${PKG}-${content_sha:0:12}"
 
-        # Compare against pinned value
-        pinned_sha=$(jq -r ".pins.\"$PKG\".sha256 // empty" npins/sources.json)
-        if [[ "$sha" == "$pinned_sha" ]]; then
-          echo "$PKG: unchanged, skipping"
+        if gh release view "$tag" >/dev/null 2>&1; then
+          echo "$PKG: unchanged (release $tag exists), skipping"
+          echo "should_release=false" >> "$GITHUB_OUTPUT"
           exit 0
         fi
 
-        short_sha=$(git rev-parse --short=7 HEAD)
-        tag="${PKG}-${short_sha}"
+        echo "should_release=true" >> "$GITHUB_OUTPUT"
+        echo "content_sha=${content_sha}" >> "$GITHUB_OUTPUT"
+        echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+    # Build 2: stamped — injects GIT_COMMIT via expand_template.
+    # Only _build_info_gen + wheel targets re-run; everything else is cache-hit.
+    - name: Build artifact (stamped)
+      if: steps.check.outputs.should_release == 'true'
+      uses: ./.github/actions/bb-remote
+      with:
+        args: build ${{ inputs.bazel_target }} --stamp
+        rbe_image: ${{ inputs.rbe_image }}
+
+    - name: Upload release
+      if: steps.check.outputs.should_release == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ env.GH_RELEASE_PAT }}
+        PKG: ${{ inputs.pkg }}
+        RETENTION_DAYS: ${{ inputs.retention_days }}
+      run: |
+        set -euo pipefail
+
+        tag="${{ steps.check.outputs.tag }}"
+        artifact="${{ inputs.bazel_output }}"
+
         echo "$PKG: content changed, creating release $tag"
 
         gh release create "$tag" "$artifact" \
-          --title "$PKG ($short_sha)" \
+          --title "$PKG (${tag#"${PKG}"-})" \
           --notes "$PKG release" \
           --latest=false
 
-        # Prune old releases for this package
+        # Prune old releases for this package (content-addressed 12-char hex tags)
         cutoff=$(date -u -d "-${RETENTION_DAYS} days" +%Y-%m-%dT%H:%M:%SZ)
         gh release list --json tagName,createdAt -L 200 \
-          --jq ".[] | select(.tagName | test(\"^${PKG}-[0-9a-f]{7}$\")) | select(.createdAt < \"${cutoff}\") | .tagName" \
+          --jq ".[] | select(.tagName | test(\"^${PKG}-[0-9a-f]{12}$\")) | select(.createdAt < \"${cutoff}\") | .tagName" \
           | while read -r old_tag; do
               [[ "$old_tag" == "$tag" ]] && continue
               echo "  pruning $old_tag"

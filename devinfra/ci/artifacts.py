@@ -25,12 +25,15 @@ class Sources(BaseModel):
     pins: dict[str, Pin]
 
 
-_TAG_RE = re.compile(r"-[0-9a-f]{7}$")
+_HEX_SUFFIX_RE = re.compile(r"^[0-9a-f]{7}$|^[0-9a-f]{12}$")
 
 
 def is_tag_for_pkg(tag: str, pkg: str) -> bool:
-    """Match `{pkg}-{7hex}` exactly, avoiding prefix collisions like ducktape/ducktape-util."""
-    return tag.startswith(f"{pkg}-") and _TAG_RE.search(tag) is not None and len(tag) == len(pkg) + 8
+    """Match `{pkg}-{7hex}` or `{pkg}-{12hex}` exactly, avoiding prefix collisions."""
+    prefix = f"{pkg}-"
+    if not tag.startswith(prefix):
+        return False
+    return _HEX_SUFFIX_RE.match(tag[len(prefix) :]) is not None
 
 
 class Artifact(BaseModel, frozen=True):

@@ -156,10 +156,9 @@ freezes at first-boot.
 **Diagnose**:
 
 ```bash
-# 1. Confirm wheel drift
-readlink /nix/var/nix/profiles/default/bin/claude-hook
-python3 -c "import json; p=json.load(open('npins/sources.json'))['pins']['claude-hooks']; print(p['url'])"
-# The hash on the readlink line and the commit SHA in the URL should match.
+# 1. Confirm wheel drift — git= shows the commit the wheel was built from
+claude-hook --version
+jq -r '.pins["claude-hooks"].url' npins/sources.json
 
 # 2. Confirm the specific crash
 tail -100 ~/.claude/session-env/*/hook-daemon/daemon.err.log

@@ -357,8 +357,7 @@ print('pinned:', m.group(1) if m else 'unknown')
 git -C /home/user/ducktape log --oneline -5 -- devinfra/claude/ npins/sources.json
 
 # (b) Installed wheel vs pin
-INSTALLED=$(readlink /nix/var/nix/profiles/default/bin/claude-hook 2>/dev/null)
-echo "installed: $INSTALLED"  # /nix/store/<hash>-claude-hooks-<ver>/bin/claude-hook
+claude-hook --version  # git= shows the commit the installed wheel was built from
 # Check daemon.err.log for template/schema crashes that indicate drift
 tail -50 ~/.claude/session-env/*/hook-daemon/daemon.err.log 2>/dev/null
 ```
