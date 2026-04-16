@@ -50,6 +50,13 @@ mkdir -p "$XDG_CACHE_HOME"
 GARBLE_BIN="$TEST_SRCDIR/$GARBLE"
 (cd "$SRCDIR" && "$GARBLE_BIN" -seed=random build -o "$TEST_TMPDIR/garbled-binary" .)
 
-# ── 3. Run the recipe in TEST_TMPDIR where 'garbled-binary' lives ────────────
+# ── 3. Install downstream tools that the recipe requires ─────────────────────
+# redress and GoReSym are not available as Bazel deps; install them with `go
+# install` so they land in $GOPATH/bin and are found on PATH.
+go install github.com/goretk/redress@latest
+go install github.com/mandiant/GoReSym@latest
+export PATH="$GOPATH/bin:$PATH"
+
+# ── 4. Run the recipe in TEST_TMPDIR where 'garbled-binary' lives ────────────
 cd "$TEST_TMPDIR"
 exec bash "$TEST_SRCDIR/$RECIPE"

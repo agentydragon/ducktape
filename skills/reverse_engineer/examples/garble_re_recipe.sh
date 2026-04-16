@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
 # Recipe: reverse engineering a garble-obfuscated Go binary.
 #
-# Shows what survives garble obfuscation and how to anchor known string
-# literals to their garbled functions.
+# Section 1: pclntab deobfuscation
+#   garble v0.13.0+ XORs the .gopclntab magic header bytes to break redress,
+#   GoReSym, and debug/gosym. pclntool patch repairs the magic in a copy of
+#   the binary, unlocking those tools on the patched output.
 #
-# Key insight: garble v0.13.0+ obfuscates the .gopclntab magic header bytes
-# (first 4 bytes) to break go tool objdump, but the pclntab structure is
-# intact. pclntool (examples/pclntool.go) patches the magic and uses
-# debug/gosym to map any instruction PC to its garbled function name.
+# Section 2: string-to-function mapping
+#   pclntool pc maps any instruction PC to its garbled function name via the
+#   repaired pclntab, enabling string → VMA → objdump → function anchoring.
 #
 # Prerequisites:
 #   - 'garbled-binary' in cwd
 #   - 'objdump', 'readelf', 'strings' on PATH
 #   - 'pclntool' on PATH  (build with: go build -o pclntool pclntool.go)
+#   - 'redress' on PATH   (go install github.com/goretk/redress@latest)
+#   - 'GoReSym' on PATH   (go install github.com/mandiant/GoReSym@latest)
 
 set -euo pipefail
 
@@ -53,7 +56,33 @@ fn_at_vma() {
   pclntool garbled-binary "$insn_addr"
 }
 
-echo "=== 1. JSON struct tags (always preserved by garble) ==="
+echo "=== 1. Deobfuscate pclntab and enable downstream tools ==="
+# pclntool patch writes a copy with the correct magic — all 4 bytes, nothing else changed.
+pclntool patch garbled-binary garbled-binary-deobf
+echo "PASS: garbled-binary-deobf written"
+
+# redress could not read the garbled binary (returned 0 packages). After patching it works.
+redress_out=$(redress packages garbled-binary-deobf 2>&1)
+echo "$redress_out"
+echo "$redress_out" | grep -q "^main" \
+  || {
+    echo "FAIL: redress did not find 'main' package in deobfuscated binary"
+    exit 1
+  }
+echo "PASS: redress enumerates packages from deobfuscated binary"
+
+# GoReSym similarly requires a parseable pclntab.
+goresym_fns=$(GoReSym garbled-binary-deobf 2>/dev/null \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d.get('UserFunctions') or []))")
+[ "$goresym_fns" -gt 0 ] \
+  || {
+    echo "FAIL: GoReSym found no functions in deobfuscated binary"
+    exit 1
+  }
+echo "PASS: GoReSym found $goresym_fns functions in deobfuscated binary"
+
+echo ""
+echo "=== 2. JSON struct tags (always preserved by garble) ==="
 # garble cannot encrypt struct tags because encoding/json reads them at runtime.
 tags=$(strings garbled-binary | grep -E 'json:"[^"]+"')
 echo "$tags"
@@ -64,7 +93,7 @@ echo "$tags" | grep -q 'json:"token,omitempty"' || {
 echo "PASS: struct tags survive garble"
 
 echo ""
-echo "=== 2. String-to-function mapping ==="
+echo "=== 3. String-to-function mapping ==="
 strings_=(
   "connection refused: server not accepting connections" # connectToServer
   "missing required field: host"                         # connectToServer

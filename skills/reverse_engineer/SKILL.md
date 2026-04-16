@@ -197,11 +197,11 @@ When a tool fails, follow this pattern:
 
 **Known-defeated techniques** (tools in `examples/`):
 
-| Technique                                       | What breaks                                                                      | Fix                                                                                 | File                   |
-| ----------------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ---------------------- |
-| garble XORs `.gopclntab` magic bytes (v0.13.0+) | `go tool objdump`, `redress`, `GoReSym`, `debug/gosym` all fail to parse pclntab | Try each known Go magic in-memory until `gosym.NewTable` succeeds                   | `examples/pclntool.go` |
-| garble strips ELF `.symtab`                     | `go tool objdump` fails with "no symbol section"                                 | Use GNU `objdump -d` instead; it does not require `.symtab`                         | (no file needed)       |
-| garble strips module info from `.go.buildinfo`  | `go version -m` returns `unknown`                                                | Use Go compiler version from `redress info` or `readelf` on `.go.buildinfo` section | (no file needed)       |
+| Technique                                       | What breaks                                                                      | Fix                                                                                  | File                   |
+| ----------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------- |
+| garble XORs `.gopclntab` magic bytes (v0.13.0+) | `go tool objdump`, `redress`, `GoReSym`, `debug/gosym` all fail to parse pclntab | `pclntool patch` writes a repaired binary; `pclntool pc` maps a PC to its garbled fn | `examples/pclntool.go` |
+| garble strips ELF `.symtab`                     | `go tool objdump` fails with "no symbol section"                                 | Use GNU `objdump -d` instead; it does not require `.symtab`                          | (no file needed)       |
+| garble strips module info from `.go.buildinfo`  | `go version -m` returns `unknown`                                                | Use Go compiler version from `redress info` or `readelf` on `.go.buildinfo` section  | (no file needed)       |
 
 When you encounter a new technique not in this table, defeat it and add a row.
 
@@ -229,20 +229,24 @@ magic and get garbage. This is a defeated technique: `pclntool`
 # Build pclntool (stdlib only, no external deps)
 go build -o pclntool pclntool.go
 
-# Map a PC address to its garbled function name
-pclntool ./garbled-binary 0x4a1b20
+# Write a copy of the binary with the correct pclntab magic — enables redress,
+# GoReSym, and debug/gosym on the output.
+pclntool patch ./garbled-binary ./garbled-binary-deobf
 
-# Full workflow: string → VMA → instruction PC → garbled function name
+# Map a single PC address to its garbled function name
+pclntool pc ./garbled-binary 0x4a1b20
+
+# Full workflow — pclntab deobfuscation + redress + GoReSym + string→function:
 # See examples/garble_re_recipe.sh for the complete runnable recipe
 ```
 
-`pclntool` maps a single PC address to the garbled function name that contains
-it. The full workflow (string → byte offset → VMA → instruction PC → function
-name) is demonstrated and CI-verified in `examples/garble_re_recipe.sh`.
+`pclntool patch` is the primary entry point: it produces a patched binary where
+`redress`, `GoReSym`, and all `debug/gosym`-based tools work normally. `pclntool pc`
+maps a single PC address to the garbled function name that contains it.
 
-`pclntool` does not enumerate all functions — it answers "which function owns
-this address?" only. Bulk function enumeration from pclntab requires a
-different tool not currently in this skill.
+The full workflow (pclntab deobfuscation → redress/GoReSym enumeration → string →
+byte offset → VMA → instruction PC → function name) is demonstrated and
+CI-verified in `examples/garble_re_recipe.sh`.
 
 ### Go-Specific: Instruction-Level Analysis and String-to-Function Anchoring
 
