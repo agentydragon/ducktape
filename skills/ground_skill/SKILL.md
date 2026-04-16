@@ -13,16 +13,12 @@ A **grounded skill** backs its claims with runnable code that CI verifies contin
 Prose rots; tests catch it. The agent using the skill reads the same recipe files that
 the tests execute.
 
-## Skill types and grounding approach
-
-| Type           | Examples                  | Grounding                                      |
-| -------------- | ------------------------- | ---------------------------------------------- |
-| Tool/API       | freecad, buildbuddy_api   | Runnable recipe scripts + output golden tests  |
-| Workflow/meta  | followups, verify_docs    | Eval harness: task scenario + scored checklist |
-| Pure reasoning | superforecaster, readback | Eval harness if testable; otherwise minimal    |
-
-Tool/API skills are the highest-value target — deterministic outputs that can be asserted
-against. Workflow skills use the eval harness pattern (below).
+The tests are a **correctness certificate** for the skill's advice. They don't have to
+judge end-to-end output quality — they just prove that the runnable examples in the skill
+actually work. Even FreeCAD, which produces complex visual outputs that are hard to
+evaluate holistically, has CI tests that certify the examples are correct. That's the bar:
+if the recipes run and produce the expected structural outputs, the skill's claims are
+grounded.
 
 ## Recipes are scaffold-free; tests provide the scaffold
 
@@ -172,23 +168,6 @@ skill_package(name = "myskill", srcs = ["SKILL.md"])
 
 Add `myskill_tar` to `skills/BUILD.bazel`'s `all_skills_tar` deps.
 
-## Eval harness (workflow/reasoning skills)
-
-For skills where outputs aren't deterministic, use the eval harness pattern:
-
-```
-skills/myskill/eval/
-  README.md          # how to run the eval
-  scenario_name/
-    TASK.md          # prompt given to the agent
-    CHECKLIST.md     # scored rubric (0/1/2 per criterion)
-  run_eval.py        # launches agent with skill + MCP tools, records transcript
-  BUILD.bazel
-```
-
-The eval is a `py_binary` run manually by agents or humans. CI does not gate on it
-(non-deterministic), but it provides a repeatable benchmark for skill improvements.
-
 ## Process: upgrading an existing skill
 
 1. **Audit the claims** — list every pattern, API call, or command the skill describes.
@@ -199,7 +178,6 @@ The eval is a `py_binary` run manually by agents or humans. CI does not gate on 
 
 ## Reference
 
-See `//skills/freecad` for the canonical example of a fully grounded tool/API skill:
+See `//skills/freecad` for the canonical example of a fully grounded skill:
 scaffold-free recipes in `examples/`, shared helpers in `freecad_helpers.py`, tests with
-visual and structural golden outputs, `conftest.py` for container fixtures, and an eval
-harness in `eval/`.
+visual and structural golden outputs, and `conftest.py` for container fixtures.
