@@ -17,6 +17,7 @@ go_binary(
     name = "pclntool",
     srcs = ["pclntool.go"],
     pure = "on",
+    deps = ["@com_github_spf13_cobra//:cobra"],
 )
 
 sh_test(

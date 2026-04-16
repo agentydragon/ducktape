@@ -1,22 +1,3 @@
-// pclntool operates on garble-obfuscated Go ELF binaries.
-//
-// garble v0.13.0+ XORs the .gopclntab magic header bytes with a seed-derived
-// key, preventing standard tools (go tool objdump, debug/gosym, redress,
-// GoReSym) from parsing the table. The rest of the pclntab structure is
-// intact, so this tool tries each known Go magic value until
-// debug/gosym.NewTable succeeds.
-//
-// Commands:
-//
-//	pclntool pc <binary> <pc>
-//	    Map an instruction PC to its containing garbled function name.
-//	    pc may be decimal or hex (0x-prefixed).
-//
-//	pclntool patch <binary> <output>
-//	    Write a copy of <binary> with the obfuscated pclntab magic repaired.
-//	    The output binary is identical to the input except for the 4-byte
-//	    magic at the start of .gopclntab. redress, GoReSym, and debug/gosym
-//	    all work on the patched binary.
 package main
 
 import (
@@ -26,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+
+	"github.com/spf13/cobra"
 )
 
 // Known pclntab magic values (little-endian uint32 as stored in the binary).
@@ -43,30 +26,54 @@ func die(format string, a ...any) {
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		usage()
+	root := &cobra.Command{
+		Use:           "pclntool",
+		Short:         "Operate on garble-obfuscated Go ELF binaries via pclntab",
+		SilenceUsage:  true,
+		SilenceErrors: true,
 	}
-	switch os.Args[1] {
-	case "pc":
-		if len(os.Args) != 4 {
-			usage()
-		}
-		cmdPC(os.Args[2], os.Args[3])
-	case "patch":
-		if len(os.Args) != 4 {
-			usage()
-		}
-		cmdPatch(os.Args[2], os.Args[3])
-	default:
-		usage()
+
+	root.AddCommand(cmdPC(), cmdPatch())
+
+	if err := root.Execute(); err != nil {
+		die("%v", err)
 	}
 }
 
-func usage() {
-	fmt.Fprintln(os.Stderr, "usage:")
-	fmt.Fprintln(os.Stderr, "  pclntool pc <binary> <pc>          map PC to garbled function name")
-	fmt.Fprintln(os.Stderr, "  pclntool patch <binary> <output>   repair obfuscated pclntab magic")
-	os.Exit(1)
+func cmdPC() *cobra.Command {
+	return &cobra.Command{
+		Use:   "pc <binary> <pc>",
+		Short: "Map an instruction PC to its containing garbled function name",
+		Long: `Map an instruction PC to its containing garbled function name.
+
+garble XORs the .gopclntab magic header, but the rest of the table is intact.
+pclntool tries each known Go magic until debug/gosym.NewTable succeeds, then
+calls PCToFunc to resolve the name.
+
+pc may be decimal or hex (0x-prefixed).`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runPC(args[0], args[1])
+			return nil
+		},
+	}
+}
+
+func cmdPatch() *cobra.Command {
+	return &cobra.Command{
+		Use:   "patch <binary> <output>",
+		Short: "Repair obfuscated pclntab magic so redress/GoReSym can parse the binary",
+		Long: `Write a copy of <binary> with the obfuscated pclntab magic repaired.
+
+The output binary is identical to the input except for the 4-byte magic at the
+start of .gopclntab. redress, GoReSym, and debug/gosym all work on the patched
+output.`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runPatch(args[0], args[1])
+			return nil
+		},
+	}
 }
 
 // findWorkingMagic tries each known Go pclntab magic against pclntabData
@@ -87,7 +94,7 @@ func findWorkingMagic(pclntabData []byte, textAddr uint64) (uint32, *gosym.Table
 	return 0, nil, false
 }
 
-func cmdPC(binaryPath, pcStr string) {
+func runPC(binaryPath, pcStr string) {
 	f, err := elf.Open(binaryPath)
 	if err != nil {
 		die("elf.Open: %v", err)
@@ -116,7 +123,7 @@ func cmdPC(binaryPath, pcStr string) {
 	fmt.Println(fn.Name)
 }
 
-func cmdPatch(inputPath, outputPath string) {
+func runPatch(inputPath, outputPath string) {
 	raw, err := os.ReadFile(inputPath)
 	if err != nil {
 		die("read: %v", err)
