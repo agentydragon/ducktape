@@ -214,8 +214,11 @@ functions with identical sizes are likely unchanged and can be marked `CARRIED`.
 ### Go-Specific: Instruction-Level Analysis and String-to-Function Anchoring
 
 `go tool objdump` requires an ELF symbol table and fails on garbled binaries
-(`no symbol section`). Use `objdump -d` (GNU binutils) for disassembly and
-`go tool addr2line` for pclntab lookups — both work on stripped/garbled binaries.
+(`no symbol section`). `go tool addr2line` similarly fails on garbled binaries
+(returns `?` for all addresses). Use `objdump -d` (GNU binutils) for disassembly.
+For pclntab-based PC→function mapping, use `pclntool` (see `examples/pclntool.go`):
+garble v0.13.0+ obfuscates the `.gopclntab` magic bytes, so standard Go tooling
+that reads pclntab won't work until the magic is repaired.
 
 **Workflow:** read `examples/garble_re_recipe.sh` — it is a runnable, CI-verified
 demonstration with inline commentary explaining each step.

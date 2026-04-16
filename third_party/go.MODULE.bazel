@@ -13,7 +13,7 @@ go_sdk.nogo(nogo = "//devinfra/lint:nogo")
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//third_party:go.mod")
 
-# Patch garble's decodeBuildIDHash to pad short hashes (≥15 bytes) instead
+# Patch garble's decodeBuildIDHash to pad short hashes (<15 bytes) instead
 # of panicking. Bazel-built Go binaries embed "redacted" (6 decoded bytes)
 # in their build ID ELF note, which is shorter than garble's expected 15.
 go_deps.module_override(

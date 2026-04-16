@@ -13,5 +13,8 @@
 +	for len(h) < buildIDHashLength {
 +		h = append(h, 0)
 +	}
-+	return h[:buildIDHashLength]
++	if len(h) != buildIDHashLength {
++		panic(fmt.Sprintf("decodeBuildIDHash expects to result in a hash of length %d, got %d", buildIDHashLength, len(h)))
++	}
++	return h
  }
