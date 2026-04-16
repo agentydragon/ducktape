@@ -14,6 +14,7 @@ pkg_tar(
         "//skills/followups:followups_tar",
         "//skills/forensic_surgeon:forensic_surgeon_tar",
         "//skills/freecad:freecad_tar",
+        "//skills/ground_skill:ground_skill_tar",
         "//skills/hetzner_vnc_screenshot:hetzner_vnc_screenshot_tar",
         "//skills/info_gathering:info_gathering_tar",
         "//skills/lint_audit:lint_audit_tar",
