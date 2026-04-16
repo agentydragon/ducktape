@@ -4,7 +4,7 @@
 %>\
 # Claude Code session start hook — ${status}
 
-% if connectivity is not None:
+% if platform.is_firecracker or platform.is_gvisor:
 **Environment:** ${platform.platform.value} sandbox (direct internet via transparent proxy)
 % if isinstance(connectivity, ConnectivityFailed):
 **Connectivity:** WARNING — direct probe failed: ${connectivity.reason}.

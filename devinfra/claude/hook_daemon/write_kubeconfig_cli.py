@@ -121,7 +121,12 @@ def main(argv: list[str]) -> None:
 
     token = decrypt_k8s_token(project_dir)
     ca_path = _resolve_ca_path()
-    proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+    proxy_url = (
+        os.environ.get("HTTPS_PROXY")
+        or os.environ.get("https_proxy")
+        or os.environ.get("HTTP_PROXY")
+        or os.environ.get("http_proxy")
+    )
 
     kubeconfig = build_kubeconfig(
         token=token,

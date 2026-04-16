@@ -10,7 +10,7 @@ infrastructure is needed.
 
 If this probe starts failing, a future container generation likely re-requires
 explicit proxy configuration. Restore the `auth_proxy` subsystem from git
-history (see commit `<removal SHA>` for the full removal diff).
+history — `git log --all -- devinfra/claude/auth_proxy/` finds the removal.
 """
 
 from __future__ import annotations

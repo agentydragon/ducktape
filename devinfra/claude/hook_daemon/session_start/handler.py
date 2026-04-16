@@ -221,8 +221,15 @@ async def _setup_platform_services(
             logger.warning("tmpfs mount failed at %s, will fall back to 9p: %s", path, e)
             return False
 
-    async def check_internet_connectivity() -> connectivity.ConnectivityResult:
-        """Probe direct internet reachability (replaces historical auth_proxy setup)."""
+    async def check_internet_connectivity() -> connectivity.ConnectivityResult | None:
+        """Probe direct internet reachability on web sandboxes only.
+
+        Replaces the historical auth_proxy setup. Skipped on CLI: a developer
+        workstation may be offline or behind a corporate firewall, and
+        BuildBuddy reachability isn't the hook's concern there.
+        """
+        if not (platform.is_firecracker or platform.is_gvisor):
+            return None
         with tracer.start_as_current_span("check_connectivity", context=root_ctx):
             return await connectivity.check_connectivity()
 
@@ -288,7 +295,7 @@ async def _setup_platform_services(
         connectivity_task, setup_container_runtime_task(), bazel_tmpfs_task, return_exceptions=True
     )
     # Unpack with explicit type annotations for mypy
-    connectivity_result: connectivity.ConnectivityResult | BaseException = results[0]
+    connectivity_result: connectivity.ConnectivityResult | None | BaseException = results[0]
     container_result: container_runtime.ContainerRuntimeSetup | BaseException = results[1]
     tmpfs_result: tmpfs.TmpfsSetup | BaseException = results[2]
 
@@ -509,7 +516,12 @@ async def _write_kubeconfig(profile: ProfileConfig, project_dir: Path) -> None:
         logger.warning("kubeconfig: failed to decrypt k8s token", exc_info=True)
         return
 
-    proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+    proxy_url = (
+        os.environ.get("HTTPS_PROXY")
+        or os.environ.get("https_proxy")
+        or os.environ.get("HTTP_PROXY")
+        or os.environ.get("http_proxy")
+    )
     ca_path = _SYSTEM_CA_BUNDLE if _SYSTEM_CA_BUNDLE.exists() else None
 
     kubeconfig = build_kubeconfig(

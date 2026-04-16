@@ -18,6 +18,7 @@ py_library(
     testonly = True,
     srcs = ["session_start_helpers.py"],
     deps = [
+        "//devinfra/claude:session_paths",
         "//devinfra/claude:settings",
         "//devinfra/claude/claude_api/hooks:common",
         "//devinfra/claude/claude_api/hooks:session_start",
