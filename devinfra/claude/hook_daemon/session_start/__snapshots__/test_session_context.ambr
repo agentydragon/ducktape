@@ -79,8 +79,8 @@
   '''
   # Claude Code session start hook — OK
   
-  **Environment:** gVisor sandbox, TLS-inspecting proxy, no overlay fs (vfs), 9p fs
-  **Bazel:** wrapper adds auth proxy (loaded)
+  **Environment:** gVisor sandbox, TLS-inspecting proxy
+  **Bazel:** wrapper adds auth proxy (/session/auth-proxy/combined_ca.pem)
   
   ## BuildBuddy
   Bazel builds and tests by default execute remotely via BuildBuddy.
@@ -96,8 +96,8 @@
   '''
   # Claude Code session start hook — OK
   
-  **Environment:** gVisor sandbox, TLS-inspecting proxy, no overlay fs (vfs), 9p fs
-  **Bazel:** wrapper adds auth proxy (loaded)
+  **Environment:** gVisor sandbox, TLS-inspecting proxy
+  **Bazel:** wrapper adds auth proxy (/session/auth-proxy/combined_ca.pem)
   
   ## Background tasks
   - apt package install
@@ -111,8 +111,8 @@
   '''
   # Claude Code session start hook — OK
   
-  **Environment:** gVisor sandbox, TLS-inspecting proxy, no overlay fs (vfs), 9p fs
-  **Bazel:** wrapper adds auth proxy (loaded)
+  **Environment:** gVisor sandbox, TLS-inspecting proxy
+  **Bazel:** wrapper adds auth proxy (/session/auth-proxy/combined_ca.pem)
   
   running, `DOCKER_HOST=unix:///var/run/docker.sock`
   - `docker run` works. `docker build --network=host` works (BuildKit handles large output gracefully).
