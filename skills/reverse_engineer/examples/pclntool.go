@@ -37,6 +37,11 @@ var goMagics = []uint32{
 	0xfffffffb, // Go 1.2
 }
 
+func die(format string, a ...any) {
+	fmt.Fprintf(os.Stderr, format+"\n", a...)
+	os.Exit(1)
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -85,33 +90,28 @@ func findWorkingMagic(pclntabData []byte, textAddr uint64) (uint32, *gosym.Table
 func cmdPC(binaryPath, pcStr string) {
 	f, err := elf.Open(binaryPath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "elf.Open:", err)
-		os.Exit(1)
+		die("elf.Open: %v", err)
 	}
 	defer f.Close()
 
 	pc, err := strconv.ParseUint(pcStr, 0, 64)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "parse pc:", err)
-		os.Exit(1)
+		die("parse pc: %v", err)
 	}
 
 	pclntabData, err := f.Section(".gopclntab").Data()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, ".gopclntab read:", err)
-		os.Exit(1)
+		die(".gopclntab read: %v", err)
 	}
 	textAddr := f.Section(".text").Addr
 
 	_, table, ok := findWorkingMagic(pclntabData, textAddr)
 	if !ok {
-		fmt.Fprintln(os.Stderr, "could not parse pclntab with any known Go magic")
-		os.Exit(1)
+		die("could not parse pclntab with any known Go magic")
 	}
 	fn := table.PCToFunc(pc)
 	if fn == nil {
-		fmt.Fprintf(os.Stderr, "no function at PC %#x\n", pc)
-		os.Exit(1)
+		die("no function at PC %#x", pc)
 	}
 	fmt.Println(fn.Name)
 }
@@ -119,36 +119,30 @@ func cmdPC(binaryPath, pcStr string) {
 func cmdPatch(inputPath, outputPath string) {
 	raw, err := os.ReadFile(inputPath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "read:", err)
-		os.Exit(1)
+		die("read: %v", err)
 	}
 
 	f, err := elf.Open(inputPath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "elf.Open:", err)
-		os.Exit(1)
+		die("elf.Open: %v", err)
 	}
+	defer f.Close()
+
 	sec := f.Section(".gopclntab")
 	if sec == nil {
-		fmt.Fprintln(os.Stderr, "no .gopclntab section")
-		f.Close()
-		os.Exit(1)
+		die("no .gopclntab section")
 	}
 	pclntabData, err := sec.Data()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, ".gopclntab read:", err)
-		f.Close()
-		os.Exit(1)
+		die(".gopclntab read: %v", err)
 	}
 	fileOffset := sec.Offset
 	textAddr := f.Section(".text").Addr
-	f.Close()
 
 	origMagic := binary.LittleEndian.Uint32(pclntabData[:4])
 	magic, _, ok := findWorkingMagic(pclntabData, textAddr)
 	if !ok {
-		fmt.Fprintln(os.Stderr, "could not find working pclntab magic")
-		os.Exit(1)
+		die("could not find working pclntab magic")
 	}
 
 	out := make([]byte, len(raw))
@@ -157,12 +151,10 @@ func cmdPatch(inputPath, outputPath string) {
 
 	info, err := os.Stat(inputPath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "stat:", err)
-		os.Exit(1)
+		die("stat: %v", err)
 	}
 	if err := os.WriteFile(outputPath, out, info.Mode()); err != nil {
-		fmt.Fprintln(os.Stderr, "write:", err)
-		os.Exit(1)
+		die("write: %v", err)
 	}
 	fmt.Fprintf(os.Stderr, "patched .gopclntab magic: %#08x → %#08x\n", origMagic, magic)
 	fmt.Fprintf(os.Stderr, "wrote %d bytes to %s\n", len(out), outputPath)

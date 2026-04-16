@@ -223,30 +223,9 @@ XORs the first 4 bytes of `.gopclntab` (the magic number) with a seed-derived
 key. `redress`, `GoReSym`, and `debug/gosym` all fail — they expect a known
 magic and get garbage. This is a defeated technique: `pclntool`
 (`examples/pclntool.go`) patches each known Go magic in-memory until
-`gosym.NewTable` succeeds:
-
-```bash
-# Build pclntool (stdlib only, no external deps)
-go build -o pclntool pclntool.go
-
-# Write a copy of the binary with the correct pclntab magic — enables redress,
-# GoReSym, and debug/gosym on the output.
-pclntool patch ./garbled-binary ./garbled-binary-deobf
-
-# Map a single PC address to its garbled function name
-pclntool pc ./garbled-binary 0x4a1b20
-
-# Full workflow — pclntab deobfuscation + redress + GoReSym + string→function:
-# See examples/garble_re_recipe.sh for the complete runnable recipe
-```
-
-`pclntool patch` is the primary entry point: it produces a patched binary where
-`redress`, `GoReSym`, and all `debug/gosym`-based tools work normally. `pclntool pc`
-maps a single PC address to the garbled function name that contains it.
-
-The full workflow (pclntab deobfuscation → redress/GoReSym enumeration → string →
-byte offset → VMA → instruction PC → function name) is demonstrated and
-CI-verified in `examples/garble_re_recipe.sh`.
+`gosym.NewTable` succeeds. See `examples/garble_re_recipe.sh` for the full
+workflow: pclntab deobfuscation → redress/GoReSym enumeration → string →
+byte offset → VMA → instruction PC → function name.
 
 ### Go-Specific: Instruction-Level Analysis and String-to-Function Anchoring
 

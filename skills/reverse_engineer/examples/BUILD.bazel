@@ -29,12 +29,16 @@ sh_test(
         "//third_party:go.mod",
         "//third_party:go.sum",
         "@cc_mvdan_garble//:garble",
+        "@com_github_goretk_redress//:redress",
+        "@com_github_mandiant_goresym//:GoReSym",
         "@io_bazel_rules_go//go",
     ],
     env = {
         "GARBLE": "$(rlocationpath @cc_mvdan_garble//:garble)",
         "GO": "$(rlocationpath @io_bazel_rules_go//go:go)",
+        "GORESYM": "$(rlocationpath @com_github_mandiant_goresym//:GoReSym)",
         "PCLNTOOL": "$(rlocationpath :pclntool)",
         "RECIPE": "$(rlocationpath garble_re_recipe.sh)",
+        "REDRESS": "$(rlocationpath @com_github_goretk_redress//:redress)",
     },
 )

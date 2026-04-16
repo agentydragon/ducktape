@@ -5,8 +5,10 @@
 # Env vars (set via Bazel env = {...}):
 #   GARBLE    — rlocation path to the garble go_binary
 #   GO        — rlocation path to the go_bin_runner wrapper
+#   GORESYM   — rlocation path to the GoReSym go_binary
 #   PCLNTOOL  — rlocation path to the compiled pclntool binary
 #   RECIPE    — rlocation path to garble_re_recipe.sh
+#   REDRESS   — rlocation path to the redress go_binary
 set -euo pipefail
 
 # ── 1. Resolve GOROOT via go_bin_runner ──────────────────────────────────────
@@ -16,6 +18,8 @@ set -euo pipefail
 mkdir -p "$TEST_TMPDIR/bin"
 ln -s "$TEST_SRCDIR/$GO" "$TEST_TMPDIR/bin/go_bin_runner"
 ln -s "$TEST_SRCDIR/$PCLNTOOL" "$TEST_TMPDIR/bin/pclntool"
+ln -s "$TEST_SRCDIR/$REDRESS" "$TEST_TMPDIR/bin/redress"
+ln -s "$TEST_SRCDIR/$GORESYM" "$TEST_TMPDIR/bin/GoReSym"
 
 export GOROOT
 GOROOT=$(cd "$TEST_SRCDIR/_main" && "$TEST_TMPDIR/bin/go_bin_runner" env GOROOT)
@@ -50,13 +54,6 @@ mkdir -p "$XDG_CACHE_HOME"
 GARBLE_BIN="$TEST_SRCDIR/$GARBLE"
 (cd "$SRCDIR" && "$GARBLE_BIN" -seed=random build -o "$TEST_TMPDIR/garbled-binary" .)
 
-# ── 3. Install downstream tools that the recipe requires ─────────────────────
-# redress and GoReSym are not available as Bazel deps; install them with `go
-# install` so they land in $GOPATH/bin and are found on PATH.
-go install github.com/goretk/redress@latest
-go install github.com/mandiant/GoReSym@latest
-export PATH="$GOPATH/bin:$PATH"
-
-# ── 4. Run the recipe in TEST_TMPDIR where 'garbled-binary' lives ────────────
+# ── 3. Run the recipe in TEST_TMPDIR where 'garbled-binary' lives ────────────
 cd "$TEST_TMPDIR"
 exec bash "$TEST_SRCDIR/$RECIPE"
