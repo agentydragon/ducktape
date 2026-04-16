@@ -6,96 +6,15 @@
 #
 # Key insight: garble v0.13.0+ obfuscates the .gopclntab magic header bytes
 # (first 4 bytes) to break go tool objdump, but the pclntab structure is
-# intact. An inline Go tool patches the magic and uses debug/gosym to recover
-# the garbled function name for any PC.
+# intact. pclntool (examples/pclntool.go) patches the magic and uses
+# debug/gosym to map any instruction PC to its garbled function name.
 #
-# Expects: 'garbled-binary' in cwd, 'go' on PATH.
+# Prerequisites:
+#   - 'garbled-binary' in cwd
+#   - 'objdump', 'readelf', 'strings' on PATH
+#   - 'pclntool' on PATH  (build with: go build -o pclntool pclntool.go)
 
 set -euo pipefail
-
-# ── Build inline pclntool ────────────────────────────────────────────────────
-# garble v0.13.0+ XORs the .gopclntab magic bytes with a seed-derived key,
-# preventing standard tools (go tool objdump, debug/gosym) from parsing it.
-# The rest of the pclntab is structurally intact. We try each known Go magic
-# value until one allows debug/gosym to parse the table successfully.
-_build_pclntool() {
-  local dir
-  dir=$(mktemp -d)
-  cat >"$dir/main.go" <<'GOEOF'
-package main
-
-import (
-	"debug/elf"
-	"debug/gosym"
-	"encoding/binary"
-	"fmt"
-	"os"
-	"strconv"
-)
-
-// Known pclntab magic values (little-endian uint32 as stored in the binary).
-// Garble obfuscates the magic but leaves the rest of the pclntab intact.
-var goMagics = []uint32{
-	0xfffffff1, // Go 1.20+
-	0xfffffff2, // Go 1.22+
-	0xfffffff0, // Go 1.18
-	0xfffffffa, // Go 1.16
-	0xfffffffb, // Go 1.2
-}
-
-func main() {
-	if len(os.Args) < 3 {
-		fmt.Fprintln(os.Stderr, "usage: pclntool <binary> <pc>")
-		os.Exit(1)
-	}
-	f, err := elf.Open(os.Args[1])
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "elf.Open:", err)
-		os.Exit(1)
-	}
-	defer f.Close()
-
-	pc, err := strconv.ParseUint(os.Args[2], 0, 64)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "parse pc:", err)
-		os.Exit(1)
-	}
-
-	pclntabData, err := f.Section(".gopclntab").Data()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, ".gopclntab read:", err)
-		os.Exit(1)
-	}
-	textAddr := f.Section(".text").Addr
-
-	for _, magic := range goMagics {
-		buf := make([]byte, len(pclntabData))
-		copy(buf, pclntabData)
-		binary.LittleEndian.PutUint32(buf[:4], magic)
-
-		lt := gosym.NewLineTable(buf, textAddr)
-		table, err := gosym.NewTable(nil, lt)
-		if err != nil || len(table.Funcs) == 0 {
-			continue
-		}
-		fn := table.PCToFunc(pc)
-		if fn == nil {
-			fmt.Fprintf(os.Stderr, "no function at PC %#x\n", pc)
-			os.Exit(1)
-		}
-		fmt.Println(fn.Name)
-		return
-	}
-	fmt.Fprintln(os.Stderr, "could not parse pclntab with any known Go magic")
-	os.Exit(1)
-}
-GOEOF
-  printf 'module pclntool\ngo 1.20.0\n' >"$dir/go.mod"
-  (cd "$dir" && go build -o pclntool .)
-  echo "$dir/pclntool"
-}
-
-PCLNTOOL=$(_build_pclntool)
 
 # string_vma STRING → hex VMA of STRING's bytes in .rodata
 string_vma() {
@@ -116,8 +35,8 @@ string_vma() {
 # Two-step technique:
 #   1. GNU objdump annotates RIP-relative memory references with their
 #      effective address in a comment ("# 0xADDR"). Grep for our VMA.
-#   2. An inline Go tool (pclntool) patches the garbled .gopclntab magic
-#      and uses debug/gosym to map the instruction PC to its function.
+#   2. pclntool patches the garbled .gopclntab magic and uses debug/gosym
+#      to map the instruction PC to its containing function name.
 fn_at_vma() {
   local vma="$1"
   local insn_line insn_addr
@@ -131,7 +50,7 @@ fn_at_vma() {
   insn_addr=0x$(echo "$insn_line" | awk '{print $1}' | tr -d ':')
 
   # Step 2: look up the instruction PC via patched pclntab.
-  "$PCLNTOOL" garbled-binary "$insn_addr"
+  pclntool garbled-binary "$insn_addr"
 }
 
 echo "=== 1. JSON struct tags (always preserved by garble) ==="

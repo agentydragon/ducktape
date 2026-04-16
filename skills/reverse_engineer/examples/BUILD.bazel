@@ -1,9 +1,11 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 exports_files(
     [
-        "garble_re_recipe.sh",
         "garble_hash_fix.patch",
+        "garble_re_recipe.sh",
+        "pclntool.go",
     ],
     visibility = [
         "//skills/reverse_engineer:__pkg__",
@@ -11,11 +13,18 @@ exports_files(
     ],
 )
 
+go_binary(
+    name = "pclntool",
+    srcs = ["pclntool.go"],
+    pure = "on",
+)
+
 sh_test(
     name = "test_go_objdump_demo",
     srcs = ["test_scaffold.sh"],
     data = [
         "garble_re_recipe.sh",
+        ":pclntool",
         "//skills/reverse_engineer/cmd/garble_target:srcs",
         "//third_party:go.mod",
         "//third_party:go.sum",
@@ -25,6 +34,7 @@ sh_test(
     env = {
         "GARBLE": "$(rlocationpath @cc_mvdan_garble//:garble)",
         "GO": "$(rlocationpath @io_bazel_rules_go//go:go)",
+        "PCLNTOOL": "$(rlocationpath :pclntool)",
         "RECIPE": "$(rlocationpath garble_re_recipe.sh)",
     },
 )
