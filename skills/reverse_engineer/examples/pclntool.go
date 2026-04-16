@@ -53,11 +53,6 @@ func main() {
 		}
 		cmdPatch(os.Args[2], os.Args[3])
 	default:
-		// Backward-compatible: pclntool <binary> <pc>
-		if len(os.Args) == 3 {
-			cmdPC(os.Args[1], os.Args[2])
-			return
-		}
 		usage()
 	}
 }

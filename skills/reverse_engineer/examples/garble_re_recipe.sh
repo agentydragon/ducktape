@@ -53,7 +53,7 @@ fn_at_vma() {
   insn_addr=0x$(echo "$insn_line" | awk '{print $1}' | tr -d ':')
 
   # Step 2: look up the instruction PC via patched pclntab.
-  pclntool garbled-binary "$insn_addr"
+  pclntool pc garbled-binary "$insn_addr"
 }
 
 echo "=== 1. Deobfuscate pclntab and enable downstream tools ==="
