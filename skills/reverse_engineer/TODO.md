@@ -35,15 +35,6 @@ the patched binary, but the names are still opaque hashes — we can't yet map
    loads each distinctive string, then assign a descriptive name from the string
    content.
 
-**Recipe** (CI-verified): `examples/binary_diff_recipe.sh` + `examples/test_scaffold_binary_diff.sh`.
-
-- Builds victim_v1 plain (`go build` from `cmd/garble_target`).
-- Builds victim_v2 garbled (`garble build` from `cmd/garble_target_v2`, which adds `validateConfig`).
-- Asserts: shared strings ("connection refused", "failed to read config file") anchor to the
-  correct named v1 functions and to distinct garbled v2 functions.
-- Asserts: v2-only string ("invalid port: must be between 1 and 65535") is absent from v1 and
-  maps to a distinct garbled function in v2 (the new `validateConfig`).
-
 ### Function/type name recovery without a reference binary
 
 **What's needed**: when no unobfuscated reference exists, recover human-readable
