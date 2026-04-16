@@ -1,0 +1,17 @@
+--- a/hash.go
++++ b/hash.go
+@@ -42,8 +42,10 @@ func decodeBuildIDHash(str string) []byte {
+ 	if err != nil {
+ 		panic(fmt.Sprintf("invalid hash %q: %v", str, err))
+ 	}
+-	if len(h) != buildIDHashLength {
+-		panic(fmt.Sprintf("decodeBuildIDHash expects to result in a hash of length %d, got %d", buildIDHashLength, len(h)))
+-	}
+-	return h
++	// Pad to buildIDHashLength if shorter (Bazel-built binaries embed a
++	// "redacted" build ID that decodes to 6 bytes instead of 15).
++	for len(h) < buildIDHashLength {
++		h = append(h, 0)
++	}
++	return h[:buildIDHashLength]
+ }

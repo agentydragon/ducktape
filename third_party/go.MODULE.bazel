@@ -3,7 +3,7 @@
 
 # ─ Go toolchain ──────────────────────────────────────────────────────────
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
-go_sdk.download(version = "1.26.0")
+go_sdk.download(version = "1.26.2")
 go_sdk.nogo(nogo = "//devinfra/lint:nogo")
 
 # ─ Go dependencies ───────────────────────────────────────────────────────
@@ -12,6 +12,15 @@ go_sdk.nogo(nogo = "//devinfra/lint:nogo")
 # not covered by the root go.mod (go_deps only allows one from_file).
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//third_party:go.mod")
+
+# Patch garble's decodeBuildIDHash to pad short hashes (≥15 bytes) instead
+# of panicking. Bazel-built Go binaries embed "redacted" (6 decoded bytes)
+# in their build ID ELF note, which is shorter than garble's expected 15.
+go_deps.module_override(
+    patch_strip = 1,
+    patches = ["//skills/reverse_engineer/examples:garble_hash_fix.patch"],
+    path = "mvdan.cc/garble",
+)
 
 # ─ environment-manager dependencies (vendored Anthropic binary) ──────────
 # These deps are from devinfra/claude/web_env/re/environment_manager/.../go.mod
