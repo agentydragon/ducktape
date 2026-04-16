@@ -42,7 +42,9 @@ mkdir -p "$V2SRC"
 V2_DIR="$TEST_SRCDIR/_main/skills/reverse_engineer/cmd/garble_target_v2"
 for f in "$V2_DIR"/*.go; do cp "$f" "$V2SRC/"; done
 printf 'module garble_target\ngo 1.26.0\n' >"$V2SRC/go.mod"
-(cd "$V2SRC" && "$GARBLE_BIN" -seed=random build -o "$TEST_TMPDIR/v2_garbled" .)
+# Fixed seed → deterministic obfuscated names and addresses.
+# "ZHVja3RhcGU=" is base64("ducktape").
+(cd "$V2SRC" && "$GARBLE_BIN" -seed=ZHVja3RhcGU= build -o "$TEST_TMPDIR/v2_garbled" .)
 
 cd "$TEST_TMPDIR"
 exec bash "$TEST_SRCDIR/$RECIPE"
