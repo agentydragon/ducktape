@@ -62,20 +62,17 @@ redress_out=$(redress packages garbled-binary-deobf 2>&1)
 echo "$redress_out"
 echo "$redress_out" | grep -q "^main" \
   || fail "redress did not find 'main' package in deobfuscated binary"
-echo "PASS: redress enumerates packages from deobfuscated binary"
 
 # GoReSym similarly requires a parseable pclntab.
 goresym_fns=$(GoReSym garbled-binary-deobf 2>/dev/null \
   | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d.get('UserFunctions') or []))")
 [ "$goresym_fns" -gt 0 ] || fail "GoReSym found no functions in deobfuscated binary"
-echo "PASS: GoReSym found $goresym_fns functions in deobfuscated binary"
 
 echo "=== JSON struct tags (always preserved by garble) ==="
 # garble cannot encrypt struct tags because encoding/json reads them at runtime.
 tags=$(strings garbled-binary | grep -E 'json:"[^"]+"')
 echo "$tags"
 echo "$tags" | grep -q 'json:"token,omitempty"' || fail 'json:"token,omitempty" missing'
-echo "PASS: struct tags survive garble"
 
 echo "=== String-to-function mapping ==="
 strings_=(
@@ -94,9 +91,9 @@ done
 # strings[0] and [1] are from connectToServer → same garbled function
 [ "${fns[0]}" = "${fns[1]}" ] \
   || fail "expected same function for connectToServer strings (got ${fns[0]} vs ${fns[1]})"
-echo "PASS: connectToServer strings map to the same garbled function (${fns[0]})"
 
 # strings[2] is from loadConfig → different garbled function
 [ "${fns[0]}" != "${fns[2]}" ] \
   || fail "expected different function for loadConfig string (both map to ${fns[0]})"
-echo "PASS: loadConfig string maps to a different garbled function (${fns[2]})"
+
+echo "All checks passed."

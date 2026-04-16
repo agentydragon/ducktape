@@ -20,11 +20,6 @@ var goMagics = []uint32{
 	0xfffffffb, // Go 1.2
 }
 
-func die(format string, a ...any) {
-	fmt.Fprintf(os.Stderr, format+"\n", a...)
-	os.Exit(1)
-}
-
 func main() {
 	root := &cobra.Command{
 		Use:           "pclntool",
@@ -36,7 +31,7 @@ func main() {
 	root.AddCommand(cmdPC(), cmdPatch())
 
 	if err := root.Execute(); err != nil {
-		die("%v", err)
+		panic(err)
 	}
 }
 
@@ -97,28 +92,28 @@ func findWorkingMagic(pclntabData []byte, textAddr uint64) (uint32, *gosym.Table
 func runPC(binaryPath, pcStr string) {
 	f, err := elf.Open(binaryPath)
 	if err != nil {
-		die("elf.Open: %v", err)
+		panic(err)
 	}
 	defer f.Close()
 
 	pc, err := strconv.ParseUint(pcStr, 0, 64)
 	if err != nil {
-		die("parse pc: %v", err)
+		panic(err)
 	}
 
 	pclntabData, err := f.Section(".gopclntab").Data()
 	if err != nil {
-		die(".gopclntab read: %v", err)
+		panic(err)
 	}
 	textAddr := f.Section(".text").Addr
 
 	_, table, ok := findWorkingMagic(pclntabData, textAddr)
 	if !ok {
-		die("could not parse pclntab with any known Go magic")
+		panic("could not parse pclntab with any known Go magic")
 	}
 	fn := table.PCToFunc(pc)
 	if fn == nil {
-		die("no function at PC %#x", pc)
+		panic(fmt.Sprintf("no function at PC %#x", pc))
 	}
 	fmt.Println(fn.Name)
 }
@@ -126,22 +121,22 @@ func runPC(binaryPath, pcStr string) {
 func runPatch(inputPath, outputPath string) {
 	raw, err := os.ReadFile(inputPath)
 	if err != nil {
-		die("read: %v", err)
+		panic(err)
 	}
 
 	f, err := elf.Open(inputPath)
 	if err != nil {
-		die("elf.Open: %v", err)
+		panic(err)
 	}
 	defer f.Close()
 
 	sec := f.Section(".gopclntab")
 	if sec == nil {
-		die("no .gopclntab section")
+		panic("no .gopclntab section")
 	}
 	pclntabData, err := sec.Data()
 	if err != nil {
-		die(".gopclntab read: %v", err)
+		panic(err)
 	}
 	fileOffset := sec.Offset
 	textAddr := f.Section(".text").Addr
@@ -149,7 +144,7 @@ func runPatch(inputPath, outputPath string) {
 	origMagic := binary.LittleEndian.Uint32(pclntabData[:4])
 	magic, _, ok := findWorkingMagic(pclntabData, textAddr)
 	if !ok {
-		die("could not find working pclntab magic")
+		panic("could not find working pclntab magic")
 	}
 
 	out := make([]byte, len(raw))
@@ -158,10 +153,10 @@ func runPatch(inputPath, outputPath string) {
 
 	info, err := os.Stat(inputPath)
 	if err != nil {
-		die("stat: %v", err)
+		panic(err)
 	}
 	if err := os.WriteFile(outputPath, out, info.Mode()); err != nil {
-		die("write: %v", err)
+		panic(err)
 	}
 	fmt.Fprintf(os.Stderr, "patched .gopclntab magic: %#08x → %#08x\n", origMagic, magic)
 	fmt.Fprintf(os.Stderr, "wrote %d bytes to %s\n", len(out), outputPath)
