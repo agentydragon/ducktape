@@ -75,6 +75,9 @@ output.`,
 // (with .text base addr textAddr) and returns the first that parses, plus
 // the resulting symbol table.
 func findWorkingMagic(pclntabData []byte, textAddr uint64) (uint32, *gosym.Table, bool) {
+	if len(pclntabData) < 4 {
+		return 0, nil, false
+	}
 	for _, magic := range goMagics {
 		buf := make([]byte, len(pclntabData))
 		copy(buf, pclntabData)
@@ -101,13 +104,20 @@ func runPC(binaryPath, pcStr string) {
 		panic(err)
 	}
 
-	pclntabData, err := f.Section(".gopclntab").Data()
+	pclntabSec := f.Section(".gopclntab")
+	if pclntabSec == nil {
+		panic("no .gopclntab section")
+	}
+	pclntabData, err := pclntabSec.Data()
 	if err != nil {
 		panic(err)
 	}
-	textAddr := f.Section(".text").Addr
+	textSec := f.Section(".text")
+	if textSec == nil {
+		panic("no .text section")
+	}
 
-	_, table, ok := findWorkingMagic(pclntabData, textAddr)
+	_, table, ok := findWorkingMagic(pclntabData, textSec.Addr)
 	if !ok {
 		panic("could not parse pclntab with any known Go magic")
 	}
@@ -139,17 +149,27 @@ func runPatch(inputPath, outputPath string) {
 		panic(err)
 	}
 	fileOffset := sec.Offset
-	textAddr := f.Section(".text").Addr
+	if uint64(len(raw)) < fileOffset+4 {
+		panic(fmt.Sprintf(".gopclntab offset %#x out of range for %d-byte file", fileOffset, len(raw)))
+	}
 
+	textSec := f.Section(".text")
+	if textSec == nil {
+		panic("no .text section")
+	}
+
+	if len(pclntabData) < 4 {
+		panic(".gopclntab is too short to contain a magic value")
+	}
 	origMagic := binary.LittleEndian.Uint32(pclntabData[:4])
-	magic, _, ok := findWorkingMagic(pclntabData, textAddr)
+	magic, _, ok := findWorkingMagic(pclntabData, textSec.Addr)
 	if !ok {
 		panic("could not find working pclntab magic")
 	}
 
 	out := make([]byte, len(raw))
 	copy(out, raw)
-	binary.LittleEndian.PutUint32(out[fileOffset:], magic)
+	binary.LittleEndian.PutUint32(out[fileOffset:fileOffset+4], magic)
 
 	info, err := os.Stat(inputPath)
 	if err != nil {

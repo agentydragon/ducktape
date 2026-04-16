@@ -16,6 +16,7 @@
 #   - 'pclntool' on PATH  (build with: go build -o pclntool pclntool.go)
 #   - 'redress' on PATH   (go install github.com/goretk/redress@latest)
 #   - 'GoReSym' on PATH   (go install github.com/mandiant/GoReSym@latest)
+#   - 'python3' on PATH   (used to parse GoReSym JSON output)
 
 set -euo pipefail
 
@@ -64,7 +65,7 @@ echo "$redress_out" | grep -q "^main" \
   || fail "redress did not find 'main' package in deobfuscated binary"
 
 # GoReSym similarly requires a parseable pclntab.
-goresym_fns=$(GoReSym garbled-binary-deobf 2>/dev/null \
+goresym_fns=$(GoReSym garbled-binary-deobf \
   | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d.get('UserFunctions') or []))")
 [ "$goresym_fns" -gt 0 ] || fail "GoReSym found no functions in deobfuscated binary"
 
