@@ -107,8 +107,8 @@ class QUCache:
         if qu_id is not None:
             qu = self._by_id.get(qu_id)
             if qu is None:
-                available = sorted(self._by_id.keys())
-                raise ValueError(f"unknown qu_id={qu_id}; available IDs: {available}")
+                available_ids = sorted(self._by_id.keys())
+                raise ValueError(f"unknown qu_id={qu_id}; available IDs: {available_ids}")
             return ResolvedQU(qu_id=int(qu["id"]), qu_name=str(qu["name"]))
 
         assert qu_name is not None
