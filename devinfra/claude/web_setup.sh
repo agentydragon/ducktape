@@ -82,7 +82,7 @@ env | cut -d= -f1 | sort
 echo "---"
 
 echo "Connectivity check (cache.nixos.org)..."
-curl -fsSL --max-time 10 https://cache.nixos.org/nix-cache-info
+curl -fsSL --max-time 10 https://cache.nixos.org/nix-cache-info || echo "WARNING: cache.nixos.org check failed — continuing anyway" >&2
 
 echo "--- nix.conf ---"
 cat /etc/nix/nix.conf
