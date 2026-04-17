@@ -72,6 +72,11 @@ class SessionPaths:
         return _short_session_dir(self.session_id)
 
     @property
+    def bazel_bes_proxy_sock(self) -> Path:
+        """UDS socket for the BES interceptor (--bes_backend=unix:...)."""
+        return self._short_dir / "bazel-bes-proxy.sock"
+
+    @property
     def wrapper_dir(self) -> Path:
         """Wrapper directory (added to PATH)."""
         return self.session_dir / "bin"

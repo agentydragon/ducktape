@@ -3,13 +3,15 @@
 ## Audit claude-hooks wheel deps after auth_proxy removal
 
 **CLEANUP(2026-04-16)**: The `auth_proxy` subsystem was removed in the
-followup to PR #1325. Several Python runtime deps may now be unused:
+followup to PR #1325. A few Python runtime deps may now be unused:
 
 - `cryptography` — previously for CA extraction / x509 parsing
-- `grpcio` + `protobuf` — previously for the BES interceptor
 - `pyjwt` — previously for proxy JWT credential expiry checks
 
-Check whether anything else in the wheel imports these (e.g. via transitive
+(`grpcio` + `protobuf` are still used by the BES interceptor that surfaces
+the "use `bb remote`" nudge — keep.)
+
+Check whether anything else in the wheel imports them (e.g. via transitive
 use by FastAPI/uvicorn/etc.) and drop the ones that are truly unused.
 
 Files to update in lockstep:

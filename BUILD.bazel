@@ -169,6 +169,10 @@ py_package(
         "devinfra.claude.supervisor",
         "devinfra.precommit",
         "devinfra.precommit.enforce_bazel_tests",
+        # Generated proto packages for BES interceptor
+        "google.api",
+        "google.devtools.build.v1",
+        "proto",
     ],
     deps = [
         "//devinfra:bbr",
@@ -200,13 +204,10 @@ py_wheel(
     # (claude-hooks). The Nix derivation provides these at runtime on NixOS/devShell.
     # When adding a dependency, update BOTH places.
     #
-    # CLEANUP: the auth_proxy subsystem was removed — audit whether these deps
-    # are still needed anywhere in the wheel's imports, and drop those that
-    # aren't. Candidates that looked auth_proxy-specific: `cryptography` (CA
-    # extraction), `grpcio` + `protobuf` (BES interceptor), `pyjwt` (JWT
-    # expiry check). Keep `ducktape-util` and shared infra deps.
-    # Remember to update nix/packages/default.nix claude-hooks
-    # propagatedBuildInputs in lockstep.
+    # CLEANUP: the auth_proxy subsystem was removed; audit whether `cryptography`
+    # (was CA extraction) and `pyjwt` (was JWT expiry check) are still needed.
+    # `grpcio` + `protobuf` are still required for the BES interceptor that
+    # surfaces the "use `bb remote`" nudge.
     requires = [
         "anyio",
         "cryptography",

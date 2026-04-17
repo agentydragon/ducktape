@@ -48,6 +48,10 @@ class K8sConfig(BaseModel):
     )
 
 
+class BazelRemoteProxyConfig(BaseModel):
+    target: str = Field(description="host:port to connect to, e.g. 'remote.buildbuddy.io:443'")
+
+
 class BackgroundCommand(BaseModel):
     """Shell command to run in the background during session start."""
 
@@ -90,6 +94,16 @@ class GitShimConfig(BaseModel):
 
 
 class ProfileConfig(BaseModel):
+    bazel_bes_proxy: BazelRemoteProxyConfig | None = Field(
+        default=None,
+        description="BES interceptor: gRPC service that inspects build events and forwards to BuildBuddy. "
+        "Null = disabled. When set, bazelrc routes --bes_backend through a UDS to the in-process interceptor.",
+    )
+    bes_nudge_remote_execution: bool = Field(
+        default=False,
+        description="When BES interceptor is active, post a mailbox nudge if a build/test invocation "
+        "lacks --remote_executor. Encourages agent to use `bb remote`.",
+    )
     setup_docker: bool = Field(default=False, description="Set up Docker daemon under supervisor.")
     background_commands: list[BackgroundCommand] = Field(
         default_factory=list,

@@ -235,6 +235,8 @@ def create_app(daemon_dir: Path, profile: ProfileConfig, startup: StartupResult)
         else:
             logger.info("Idle watchdog disabled by profile config")
         yield
+        for session in app.state.sessions.values():
+            session.stop()
 
     app = FastAPI(lifespan=_lifespan)
 

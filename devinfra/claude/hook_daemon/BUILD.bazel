@@ -65,10 +65,30 @@ py_library(
 )
 
 py_library(
+    name = "bes_interceptor",
+    srcs = ["bes_interceptor.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//third_party/googleapis:build_v1_py_proto",
+        "@buildbuddy_protos//:action_cache_py_proto",
+        "@buildbuddy_protos//:build_event_stream_py_proto",
+        "@buildbuddy_protos//:command_line_py_proto",
+        "@buildbuddy_protos//:failure_details_py_proto",
+        "@buildbuddy_protos//:invocation_policy_py_proto",
+        "@buildbuddy_protos//:option_filters_py_proto",
+        "@buildbuddy_protos//:package_load_metrics_py_proto",
+        "@buildbuddy_protos//:strategy_policy_py_proto",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
     name = "session",
     srcs = ["session.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":bes_interceptor",
         ":config",
         "//devinfra/claude:session_paths",
         "//devinfra/claude:settings",

@@ -388,6 +388,11 @@ async def handle(
             else:
                 setup.buildbuddy_setup = buildbuddy_result
 
+    # Start BES interceptor (gRPC server on UDS) once BuildBuddy API key is known.
+    # Bazelrc below wires --bes_backend=unix:... to this socket.
+    with tracer.start_as_current_span("start_bes_interceptor", context=root_ctx):
+        session.start_bes_interceptor()
+
     # Write bbr bazelrc (metadata tags for BuildBuddy invocation filtering).
     # Consumed by bbr via $BBR_BAZELRC and try-imported into the session bazelrc.
     session_id = ctx.caller_env.get("CLAUDE_CODE_SESSION_ID", "unknown")
@@ -424,6 +429,7 @@ async def handle(
         bazelrc_content: str = bazelrc_template.render(
             truststore_path=truststore_path,
             truststore_password=truststore_password,
+            bazel_bes_proxy_sock=session.paths.bazel_bes_proxy_sock if session.bes_interceptor else None,
             buildbuddy_bazelrc=setup.buildbuddy_setup.bazelrc_path
             if isinstance(setup.buildbuddy_setup, buildbuddy.BuildbuddyConfigured)
             else None,

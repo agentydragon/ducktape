@@ -28,6 +28,13 @@ startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=${truststore_password
 # Skip live OpenAI tests in wildcard expansion (no API key available)
 test --test_tag_filters=-live_openai_api
 
+% if bazel_bes_proxy_sock:
+# Route BES to the local interceptor which inspects events and forwards to BuildBuddy.
+# The interceptor is a gRPC service on a UDS; we point --bes_backend (not --bes_proxy) at it.
+build --bes_backend=unix:${bazel_bes_proxy_sock}
+build --bes_results_url=https://app.buildbuddy.io/invocation/
+% endif
+
 % if buildbuddy_bazelrc:
 # BuildBuddy remote cache (API key written to per-session bazelrc)
 try-import ${buildbuddy_bazelrc}
