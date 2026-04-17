@@ -86,10 +86,40 @@ py_binary(
 # ── Tests ────────────────────────────────────────────────────────────────────
 
 py_library(
+    name = "grocy_container",
+    srcs = ["grocy_container.py"],
+    data = ["//third_party/containers:grocy"],
+    visibility = ["//x/grocy_mcp:__subpackages__"],
+    deps = [
+        ":config",
+        "//third_party/containers:rlocations",
+        "//util:oci",
+        "@pypi//httpx",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_library(
+    name = "grocy_fixtures",
+    testonly = True,
+    srcs = ["grocy_fixtures.py"],
+    data = ["//third_party/containers:grocy"],
+    visibility = ["//x/grocy_mcp:__subpackages__"],
+    deps = [
+        ":grocy_container",
+        "//third_party/containers:rlocations",
+        "//util:oci",
+        "//util/testing:container_logs",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":grocy_fixtures",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # runtime dep: conftest sets asyncio_mode="auto"
     ],
@@ -176,19 +206,14 @@ py_test(
     name = "test_e2e",
     size = "medium",
     srcs = ["test_e2e.py"],
-    data = [
-        "//third_party/containers:grocy",
-    ],
     requires_docker = True,
     deps = [
-        ":config",
         ":conftest",
+        ":grocy_container",
+        ":grocy_fixtures",
         ":server",
         ":tool_metadata",
         "//:conftest",
-        "//third_party/containers:rlocations",
-        "//util:oci",
-        "//util/testing:container_logs",
         "@pypi//fastmcp",
         "@pypi//httpx",
         "@pypi//pytest",

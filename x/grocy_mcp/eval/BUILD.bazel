@@ -1,0 +1,39 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "prompts",
+    srcs = ["prompts.py"],
+)
+
+py_library(
+    name = "result_types",
+    srcs = ["result_types.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "run",
+    srcs = ["run.py"],
+    deps = [
+        ":prompts",
+        ":result_types",
+        "//x/grocy_mcp:config",
+        "//x/grocy_mcp:server",
+        "@pypi//agent_framework_anthropic",
+        "@pypi//agent_framework_claude",
+        "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",
+        "@pypi//httpx",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "cli",
+    srcs = ["cli.py"],
+    main_module = "x.grocy_mcp.eval.cli",
+    deps = [
+        ":run",
+        "//x/grocy_mcp:grocy_container",
+    ],
+)
