@@ -6,14 +6,14 @@ by the container E2E test at
 
 ## What's Here
 
-| File | Purpose |
-|---|---|
-| `test_age.key` | Test-only age keypair. **Not a real secret.** Only decrypts the fake files in this directory. |
-| `buildbuddy.yaml` | Encrypted `buildbuddy_api_key: test-fake-bb-key` — mounted at `/project/secrets/buildbuddy.yaml` in the test container. |
-| `github-pat-agentydragon-agent.yaml` | Encrypted `github_token: test-fake-gh-agent-token` — mounted at `/project/secrets/github-pat-agentydragon-agent.yaml`. |
-| `github-ci-read-pat.yaml` | Encrypted `github_token: test-fake-ci-read-token` — mounted at `/project/secrets/github-ci-read-pat.yaml`. |
-| `claude-web-k8s-token.yaml` | Encrypted `k8s_token: test-fake-k8s-token` — mounted at `/project/secrets/claude-web-k8s-token.yaml`, consumed by the daemon's kubeconfig writer. |
-| `profile.yaml` | Web-style profile used by the test: real `startup_env_script`, real `k8s:` block, no container runtime / tmpfs / BES / bg commands. |
+| File                                 | Purpose                                                                                                                                           |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test_age.key`                       | Test-only age keypair. **Not a real secret.** Only decrypts the fake files in this directory.                                                     |
+| `buildbuddy.yaml`                    | Encrypted `buildbuddy_api_key: test-fake-bb-key` — mounted at `/project/secrets/buildbuddy.yaml` in the test container.                           |
+| `github-pat-agentydragon-agent.yaml` | Encrypted `github_token: test-fake-gh-agent-token` — mounted at `/project/secrets/github-pat-agentydragon-agent.yaml`.                            |
+| `github-ci-read-pat.yaml`            | Encrypted `github_token: test-fake-ci-read-token` — mounted at `/project/secrets/github-ci-read-pat.yaml`.                                        |
+| `claude-web-k8s-token.yaml`          | Encrypted `k8s_token: test-fake-k8s-token` — mounted at `/project/secrets/claude-web-k8s-token.yaml`, consumed by the daemon's kubeconfig writer. |
+| `profile.yaml`                       | Web-style profile used by the test: real `startup_env_script`, real `k8s:` block, no container runtime / tmpfs / BES / bg commands.               |
 
 ## Why Fake Encrypted Files?
 
