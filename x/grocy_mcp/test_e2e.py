@@ -69,14 +69,8 @@ CUSTOM_TOOL_NAMES = {
 
 
 def _settings(grocy_url: str) -> ServerSettings:
-    return ServerSettings(
-        oidc_issuer="https://auth.example.com/application/o/grocy-mcp/",
-        oidc_client_id="unused",
-        oidc_client_secret="unused",
-        public_base_url="https://grocy-mcp.example.com",
-        grocy_url=grocy_url,
-        grocy_proxy_client_id="unused",
-    )
+    """Settings for a Grocy test instance: direct HTTP, no Authentik outpost."""
+    return ServerSettings(grocy_url=grocy_url)
 
 
 def _prepare_custom_init_dir() -> str:

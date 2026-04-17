@@ -55,23 +55,14 @@ def _load_openapi_spec() -> dict[str, object]:
     return result
 
 
-def build_mcp(settings: ServerSettings, *, client: httpx.AsyncClient | None = None) -> FastMCP:
+def build_mcp(settings: ServerSettings, *, client: httpx.AsyncClient) -> FastMCP:
     """Build the FastMCP instance with generated Grocy tools, but no auth.
 
-    Args:
-        settings: Server configuration.
-        client: Optional pre-configured httpx client for Grocy API calls.
-            If not provided, creates an Authentik-exchange-wrapped client
-            (production path). Tests can pass a plain client to bypass auth.
+    Callers supply the httpx client used to talk to Grocy — production wraps
+    it in `AuthentikExchangeAuth` (see `build_server`); tests and evals pass
+    a plain client.
     """
     spec = _load_openapi_spec()
-
-    if client is None:
-        client = httpx.AsyncClient(
-            base_url=f"{settings.grocy_url.rstrip('/')}/api",
-            auth=AuthentikExchangeAuth(settings.auth_config()),
-            timeout=settings.grocy_timeout,
-        )
 
     def _filter_disabled(route: HTTPRoute, mcp_type: MCPType) -> MCPType | None:
         override = TOOL_OVERRIDES.get((route.method, route.path))
@@ -112,8 +103,15 @@ def build_mcp(settings: ServerSettings, *, client: httpx.AsyncClient | None = No
 
 
 def build_server(settings: ServerSettings) -> FastMCP:
-    mcp = build_mcp(settings)
-    mcp.auth = build_authentik_auth(settings.auth_config())
+    if settings.auth is None:
+        raise ValueError("build_server requires ServerSettings.auth to be set (production path)")
+    client = httpx.AsyncClient(
+        base_url=f"{settings.grocy_url.rstrip('/')}/api",
+        auth=AuthentikExchangeAuth(settings.auth),
+        timeout=settings.grocy_timeout,
+    )
+    mcp = build_mcp(settings, client=client)
+    mcp.auth = build_authentik_auth(settings.auth)
     return mcp
 
 

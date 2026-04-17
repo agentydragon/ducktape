@@ -115,6 +115,7 @@ py_test(
         ":conftest",
         ":server",
         "//:conftest",
+        "@pypi//httpx",
         "@pypi//pytest_bazel",
     ],
 )
@@ -137,6 +138,7 @@ py_binary(
     deps = [
         ":config",
         ":server",
+        "@pypi//httpx",
     ],
 )
 

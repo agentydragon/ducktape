@@ -33,16 +33,7 @@ STOCK_RESPONSE = {"stock_amount": 5}
 
 
 def _settings() -> ServerSettings:
-    return ServerSettings(
-        oidc_issuer="https://auth.example.com/application/o/test/",
-        oidc_client_id="unused",
-        oidc_client_secret="unused",
-        public_base_url="https://test.example.com",
-        grocy_url=BASE_URL.removesuffix("/api"),
-        grocy_proxy_client_id="unused",
-        max_retries=2,
-        retry_base_delay=0.01,
-    )
+    return ServerSettings(grocy_url=BASE_URL.removesuffix("/api"), max_retries=2, retry_base_delay=0.01)
 
 
 def _setup_resolver_routes(router: respx.Router) -> None:

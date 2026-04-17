@@ -18,6 +18,7 @@ is best-effort outside the retry loop. This prevents retry-induced stock inflati
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import traceback
 from collections.abc import Awaitable, Callable
@@ -739,7 +740,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
             for product_ref in products:
                 resolved = await resolver.resolve_product(product_ref)
                 try:
-                    r = await _retry(lambda rid=resolved.id: client.get(f"/stock/products/{rid}/entries"))
+                    r = await _retry(functools.partial(client.get, f"/stock/products/{resolved.id}/entries"))
                     r.raise_for_status()
                     entries_data: list[dict[str, Any]] = r.json()
                     for entry_data in entries_data:

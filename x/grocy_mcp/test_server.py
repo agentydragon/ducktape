@@ -2,25 +2,17 @@
 
 from __future__ import annotations
 
+import httpx
 import pytest_bazel
 
 from x.grocy_mcp.config import ServerSettings
 from x.grocy_mcp.server import build_mcp
 
 
-def _settings() -> ServerSettings:
-    return ServerSettings(
-        oidc_issuer="https://auth.example.com/application/o/grocy-mcp/",
-        oidc_client_id="id",
-        oidc_client_secret="secret",
-        public_base_url="https://grocy-mcp.example.com",
-        grocy_url="https://grocy.example.com",
-        grocy_proxy_client_id="grocy-proxy-id",
-    )
-
-
 def test_build_mcp_accepts_grocy_spec() -> None:
-    build_mcp(_settings())
+    settings = ServerSettings(grocy_url="https://grocy.example.com")
+    client = httpx.AsyncClient(base_url=f"{settings.grocy_url}/api")
+    build_mcp(settings, client=client)
 
 
 if __name__ == "__main__":

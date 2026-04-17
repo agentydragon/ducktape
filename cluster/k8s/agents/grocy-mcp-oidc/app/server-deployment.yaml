@@ -45,18 +45,18 @@ spec:
               value: "/data/fastmcp"
             - name: LOG_LEVEL
               value: "DEBUG"
-            - name: GROCY_MCP_OIDC_ISSUER
+            - name: GROCY_MCP_AUTH__OIDC_ISSUER
               value: "https://auth.allegedly.works/application/o/grocy-mcp/"
-            - name: GROCY_MCP_PUBLIC_BASE_URL
+            - name: GROCY_MCP_AUTH__PUBLIC_BASE_URL
               value: "https://grocy-mcp.allegedly.works"
             - name: GROCY_MCP_GROCY_URL
               value: "https://grocy.allegedly.works"
-            - name: GROCY_MCP_OIDC_CLIENT_ID
+            - name: GROCY_MCP_AUTH__OIDC_CLIENT_ID
               valueFrom:
                 secretKeyRef:
                   name: grocy-mcp-oidc
                   key: client_id
-            - name: GROCY_MCP_OIDC_CLIENT_SECRET
+            - name: GROCY_MCP_AUTH__OIDC_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: grocy-mcp-oidc
@@ -64,7 +64,7 @@ spec:
             # Existing Grocy proxy provider's auto-generated client_id
             # — used by AuthentikExchangeAuth as the `client_id` in the
             # RFC 7521 jwt-bearer token exchange.
-            - name: GROCY_MCP_GROCY_PROXY_CLIENT_ID
+            - name: GROCY_MCP_AUTH__PROXY_CLIENT_ID
               valueFrom:
                 secretKeyRef:
                   name: grocy-mcp-oidc

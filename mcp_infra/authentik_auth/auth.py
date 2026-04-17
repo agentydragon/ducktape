@@ -2,9 +2,12 @@
 
 Three components:
 
-1. `AuthentikAuthConfig` — frozen dataclass capturing the auth-only fields
-   needed to wire OIDCProxy + JWTVerifier and perform JWT-bearer token
-   exchanges against an Authentik proxy provider outpost.
+1. `AuthentikAuthConfig` — frozen Pydantic model capturing the auth-only
+   fields needed to wire OIDCProxy + JWTVerifier and perform JWT-bearer
+   token exchanges against an Authentik proxy provider outpost. Because
+   it's a Pydantic model, it doubles as a `BaseSettings` nested field so
+   downstream servers can load auth from env vars without keeping a
+   parallel `*Settings` twin.
 
 2. `build_authentik_auth` — constructs the FastMCP AuthProvider (OIDCProxy +
    JWTVerifier + MultiAuth) that handles the MCP OAuth dance with claude.ai.
@@ -21,7 +24,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse, urlunparse
 
@@ -33,6 +35,7 @@ from fastmcp.server.auth.auth import AuthProvider
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token
+from pydantic import BaseModel, ConfigDict
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -54,8 +57,7 @@ DEFAULT_VALID_SCOPES = ["openid", "email", "profile"]
 # ── Config ────────────────────────────────────────────────────────────────
 
 
-@dataclass(frozen=True)
-class AuthentikAuthConfig:
+class AuthentikAuthConfig(BaseModel):
     """Auth-only config for an Authentik-backed MCP server.
 
     Core fields (oidc_issuer through public_base_url) are needed by
@@ -63,6 +65,8 @@ class AuthentikAuthConfig:
     are only needed when using `AuthentikExchangeAuth` for JWT-bearer token
     exchange against a proxy provider outpost.
     """
+
+    model_config = ConfigDict(frozen=True)
 
     oidc_issuer: str
     oidc_client_id: str

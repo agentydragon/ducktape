@@ -8,6 +8,7 @@ py_library(
         "@pypi//authlib",
         "@pypi//fastmcp",
         "@pypi//httpx",
+        "@pypi//pydantic",
     ],
 )
 
