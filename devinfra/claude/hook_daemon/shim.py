@@ -29,7 +29,7 @@ def _setup_logging(shim: str, paths: SessionPaths) -> Path:
 
     Does not print the log file path to stderr: the real binary's stderr is
     consumed (and often concatenated with stdout via Go's CombinedOutput) by
-    callers that parse the output. The shim path surfaces only on block
+    callers that parse the output. The log file path surfaces only on block
     (see _report_shim) where the user has a reason to look.
     """
     formatter = logging.Formatter(f"[{shim}-shim] %(asctime)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
