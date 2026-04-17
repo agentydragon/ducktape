@@ -1,6 +1,5 @@
 exports_files(
     [
-        "rules_distroless_filegroup_cycle.patch",
         "rules_tf_check_terraform_mirror.patch",
         "rules_tf_check_tofu_mirror.patch",
     ],

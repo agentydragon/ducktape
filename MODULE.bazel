@@ -113,21 +113,7 @@ bazel_dep(name = "aspect_rules_py", version = "1.10.0")
 
 # Container images (rules_oci)
 bazel_dep(name = "rules_oci", version = "2.3.0")
-bazel_dep(name = "rules_distroless", version = "0.6.2")
-
-# Fix filegroup circular deps in apt packages (e.g. libc6 <-> libgcc-s1).
-# Debian has legitimate circular dependencies between packages. The generated
-# per-arch filegroup targets reference other packages' filegroups, creating a
-# Bazel analysis cycle. The patch changes deps to point at :data targets
-# instead, breaking the cycle without losing content.
-# Upstream PR: https://github.com/bazel-contrib/rules_distroless/pull/164
-# TODO: Remove once upstream merges #164 and we upgrade rules_distroless.
-single_version_override(
-    module_name = "rules_distroless",
-    patch_strip = 1,
-    patches = ["//patches:rules_distroless_filegroup_cycle.patch"],
-)
-
+bazel_dep(name = "rules_distroless", version = "0.8.0")
 bazel_dep(name = "rules_pkg", version = "1.2.0")
 
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
