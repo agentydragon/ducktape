@@ -1,0 +1,26 @@
+# Deb packages layered on python:3.13-slim for container E2E tests.
+#
+# Hermetic, lockfile-pinned deb extraction via rules_distroless.
+# The base image (python:3.13-slim, Debian Trixie) already provides
+# Python, bash, and ca-certificates.
+#
+# Regenerate the lock file after any change:
+#   bazel run @trixie_e2e//:lock
+version: 1
+
+sources:
+  - channel: trixie main
+    url: https://snapshot.debian.org/archive/debian/20260301T000000Z
+  - channel: trixie-security main
+    url: https://snapshot.debian.org/archive/debian-security/20260301T000000Z
+  - channel: trixie-updates main
+    url: https://snapshot.debian.org/archive/debian/20260301T000000Z
+
+archs:
+  - "amd64"
+
+packages:
+  # JDK for keytool (Java truststore creation in session start hook)
+  - "default-jdk-headless"
+  # Git for hook tests (pre-commit needs a git repo)
+  - "git"

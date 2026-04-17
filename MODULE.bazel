@@ -243,6 +243,13 @@ use_repo(image_pins, "freecad_test", "freecad_test_linux_amd64", "image_pins")
 # Replaces Dockerfile apt-get with lockfile-pinned deb extraction.
 apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")
 
+# E2E test container: git + JDK layered on python:3.13-slim base.
+apt.install(
+    name = "trixie_e2e",
+    lock = "//devinfra/claude/hook_daemon/session_start/container_e2e:trixie_e2e.lock.json",
+    manifest = "//devinfra/claude/hook_daemon/session_start/container_e2e:trixie_e2e.yaml",
+)
+
 # Firecracker VM pod: iproute2, iptables, mount, procps, openssh-client on debian:bookworm-slim.
 apt.install(
     name = "bookworm_fc_vm_pod",
@@ -256,7 +263,7 @@ apt.install(
     lock = "//cluster/k8s/agents/claude-token-rotation:bookworm_token_rotation.lock.json",
     manifest = "//cluster/k8s/agents/claude-token-rotation:bookworm_token_rotation.yaml",
 )
-use_repo(apt, "bookworm_fc_vm_pod", "bookworm_token_rotation")
+use_repo(apt, "bookworm_fc_vm_pod", "bookworm_token_rotation", "trixie_e2e")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
