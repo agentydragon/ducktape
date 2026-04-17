@@ -11,6 +11,7 @@ from pathlib import Path
 import uvicorn
 from filelock import FileLock
 
+from devinfra.claude.env_file import parse_env_null_delimited
 from devinfra.claude.hook_daemon.config import OtelConfig, ProfileConfig
 from devinfra.claude.hook_daemon.models import StartupResult
 from devinfra.claude.hook_daemon.server import create_app
@@ -71,17 +72,9 @@ def _source_env_script(script_path: Path, extra_env: dict[str, str] | None = Non
         )
         return StartupResult(exit_code=proc.returncode, output=output)
 
-    # Parse null-delimited KEY=VALUE pairs from `env -0`. Collect vars the script
-    # added or changed relative to initial_env; do NOT mutate os.environ.
-    added: dict[str, str] = {}
-    for item in proc.stdout.split(b"\x00"):
-        if not item:
-            continue
-        key_b, _, val_b = item.partition(b"=")
-        key = key_b.decode(errors="replace")
-        val = val_b.decode(errors="replace")
-        if initial_env.get(key) != val:
-            added[key] = val
+    # Collect vars the script added or changed relative to initial_env;
+    # do NOT mutate os.environ.
+    added = {k: v for k, v in parse_env_null_delimited(proc.stdout).items() if initial_env.get(k) != v}
 
     logger.info("startup_env_script: collected %d new/updated vars: %s", len(added), sorted(added))
     return StartupResult(exit_code=0, output=output, env_overlay=added)

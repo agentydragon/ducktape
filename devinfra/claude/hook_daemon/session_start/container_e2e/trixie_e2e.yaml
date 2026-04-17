@@ -20,6 +20,8 @@ archs:
   - "amd64"
 
 packages:
+  # curl for daemon UDS health checks
+  - "curl"
   # JDK for keytool (Java truststore creation in session start hook)
   - "default-jdk-headless"
   # Git for hook tests (pre-commit needs a git repo)

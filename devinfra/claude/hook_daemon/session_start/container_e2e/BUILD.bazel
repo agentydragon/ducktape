@@ -83,6 +83,7 @@ py_test(
     ],
     deps = [
         "//devinfra/claude:conftest",
+        "//devinfra/claude:env_file",
         "//devinfra/claude/testing:conftest",
         "//util:oci",
         "//util/bazel:runfiles",

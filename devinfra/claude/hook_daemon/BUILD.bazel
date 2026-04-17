@@ -191,6 +191,7 @@ py_library(
         ":models",
         ":server",
         ":tracing",
+        "//devinfra/claude:env_file",
         "//devinfra/claude:settings",
         "@pypi//filelock",
         "@pypi//uvicorn",

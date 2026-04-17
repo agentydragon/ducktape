@@ -12,6 +12,23 @@ from devinfra.claude.managed_files import write_config
 from devinfra.claude.settings import ENV_SESSION_DIR, ENV_SUPERVISOR_PORT
 from util.bazel.subprocess import exports_from_dict
 
+
+def parse_env_null_delimited(raw: bytes) -> dict[str, str]:
+    """Parse `env -0` (or `bash -c 'env -0'`) stdout into a dict.
+
+    `env -0` writes NUL-delimited `KEY=VALUE` records. Values may contain
+    newlines and `=` signs; only the first `=` is a separator. Empty records
+    (e.g. trailing NUL) are skipped.
+    """
+    result: dict[str, str] = {}
+    for item in raw.split(b"\x00"):
+        if not item:
+            continue
+        key_b, _, val_b = item.partition(b"=")
+        result[key_b.decode(errors="replace")] = val_b.decode(errors="replace")
+    return result
+
+
 # Runtime env var names (written by session hook, read by bazel_wrapper)
 ENV_SESSION_BAZELRC = "SESSION_BAZELRC"
 
