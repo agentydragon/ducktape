@@ -1,0 +1,11 @@
+tasks:
+  - name: secrets.buildbuddy_api_key
+    shell: bash plans/session_hooks_refactor/tasks/secret_sops.sh BUILDBUDDY_API_KEY secrets/buildbuddy.yaml '["buildbuddy_api_key"]'
+
+  - name: bazelrc.buildbuddy
+    shell: bash plans/session_hooks_refactor/tasks/bazelrc_buildbuddy.sh
+    requires: [secrets.buildbuddy_api_key]
+
+  - name: bazelrc.session
+    shell: bash plans/session_hooks_refactor/tasks/bazelrc_session.sh
+    requires: [bazelrc.buildbuddy]
