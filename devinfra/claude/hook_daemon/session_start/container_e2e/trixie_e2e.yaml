@@ -26,3 +26,4 @@ packages:
   - "default-jdk-headless"
   # Git for hook tests (pre-commit needs a git repo)
   - "git"
+  # (sops is not in trixie main; installed from @sops_linux_amd64 via pkg_tar.)

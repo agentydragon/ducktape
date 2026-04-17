@@ -21,7 +21,8 @@ pkg_tar(
     package_dir = "/wheel",
 )
 
-# Bazelisk binary baked into /tools/ (on PATH via oci_image env).
+# Bazelisk + sops baked into /tools/ (on PATH). Neither is in Debian main,
+# so we fetch them as static binaries via @bazelisk_linux_amd64 / @sops_linux_amd64.
 pkg_tar(
     name = "e2e_bazelisk",
     testonly = True,
@@ -30,8 +31,6 @@ pkg_tar(
     remap_paths = {"/file/bazelisk": "bazelisk"},
 )
 
-# SOPS binary baked into /tools/ (on PATH) so startup_env_script and
-# the daemon's kubeconfig writer can decrypt the test secret fixtures.
 pkg_tar(
     name = "e2e_sops",
     testonly = True,
@@ -40,8 +39,8 @@ pkg_tar(
     remap_paths = {"/file/sops": "sops"},
 )
 
-# E2E test container: python:3.13-slim base + git + JDK from rules_distroless.
-# See trixie_e2e.yaml for the deb manifest.
+# E2E test container: python:3.13-slim base + curl + git + JDK from trixie,
+# bazelisk + sops as static binaries. See trixie_e2e.yaml.
 oci_image(
     name = "e2e_container_image",
     testonly = True,
