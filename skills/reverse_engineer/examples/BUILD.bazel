@@ -1,5 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load(":defs.bzl", "garble_binary", "plain_binary")
 
 exports_files(
     [
@@ -45,23 +46,39 @@ sh_test(
     },
 )
 
+# Build v1_plain (plain go build, symbols intact) as a cached Bazel artifact.
+plain_binary(
+    name = "build_v1_plain",
+    srcs = ["//skills/reverse_engineer/cmd/garble_target:srcs"],
+    out = "v1_plain",
+)
+
+# Build v2_garbled (garble with fixed seed) as a cached Bazel artifact.
+# Fixed seed ZHVja3RhcGU= (base64 "ducktape") → deterministic obfuscated names.
+garble_binary(
+    name = "build_v2_garbled",
+    srcs = ["//skills/reverse_engineer/cmd/garble_target_v2:srcs"],
+    out = "v2_garbled",
+    seed = "ZHVja3RhcGU=",
+)
+
 sh_test(
     name = "test_binary_diff_demo",
     srcs = ["test_scaffold_binary_diff.sh"],
     data = [
         "binary_diff_recipe.sh",
+        ":build_v1_plain",
+        ":build_v2_garbled",
         ":pclntool",
-        "//skills/reverse_engineer/cmd/garble_target:srcs",
-        "//skills/reverse_engineer/cmd/garble_target_v2:srcs",
         "//third_party:go.mod",
         "//third_party:go.sum",
-        "@cc_mvdan_garble//:garble",
         "@io_bazel_rules_go//go",
     ],
     env = {
-        "GARBLE": "$(rlocationpath @cc_mvdan_garble//:garble)",
         "GO": "$(rlocationpath @io_bazel_rules_go//go:go)",
         "PCLNTOOL": "$(rlocationpath :pclntool)",
         "RECIPE": "$(rlocationpath binary_diff_recipe.sh)",
+        "V1_PLAIN": "$(rlocationpath :build_v1_plain)",
+        "V2_GARBLED": "$(rlocationpath :build_v2_garbled)",
     },
 )

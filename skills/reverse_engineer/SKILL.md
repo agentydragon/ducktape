@@ -225,7 +225,7 @@ magic and get garbage. This is a defeated technique: `pclntool`
 (`examples/pclntool.go`) patches each known Go magic in-memory until
 `gosym.NewTable` succeeds. See `examples/garble_re_recipe.sh` for the full
 workflow: pclntab deobfuscation → redress/GoReSym enumeration → string →
-byte offset → VMA → instruction PC → function name.
+byte offset → VMA → instruction PC → function name (see `examples/binary_diff_recipe.sh`).
 
 ### Go-Specific: Instruction-Level Analysis and String-to-Function Anchoring
 
@@ -236,15 +236,8 @@ For pclntab-based PC→function mapping, use `pclntool` (see `examples/pclntool.
 garble v0.13.0+ obfuscates the `.gopclntab` magic bytes, so standard Go tooling
 that reads pclntab won't work until the magic is repaired.
 
-**Workflow:** read `examples/garble_re_recipe.sh` — it is a runnable, CI-verified
+**Workflow:** read `examples/binary_diff_recipe.sh` — it is a runnable, CI-verified
 demonstration with inline commentary explaining each step.
-
-```bash
-# Step 6: correlate register/offset patterns to struct fields
-# LEA rdi, [rcx+0x30]  →  receiver field at offset 0x30
-# MOVQ [rsp+0x18], rax →  stack argument at position 3
-# Cross-reference with RTTI struct layouts to name the fields
-```
 
 **Reading call arguments from disassembly:**
 
@@ -400,22 +393,6 @@ the same set of strings are the same function.
 of this technique: plain v1 binary (symbols intact) vs. garble-obfuscated v2
 (new function added). The recipe shows shared-string matching identifying the
 same function across versions, and v2-only strings identifying the new function.
-
-```bash
-# 1. For old binary (has symbols): map function → strings it references
-#    nm "$OLD" gives symbol names and addresses; objdump -d gives disassembly
-#    to find which strings each function loads
-
-# 2. For new garbled binary: find all string-referencing code sites
-#    strings -t x "$NEW" gives (file-offset, string) pairs
-#    Convert offset to VMA via readelf -S, then use pclntool to map PC → garbled fn
-
-# 3. Match: old function refs {"error A", "log B"} = new function refs same strings
-#    → new garbled function = old named function
-
-# 4. Identify NEW functions: string refs in new binary with no match in old
-#    → these are new or changed code, need manual RE
-```
 
 **What to do with the mapping:**
 
