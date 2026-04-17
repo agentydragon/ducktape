@@ -47,8 +47,6 @@ props/specimens/*/*/code/**
 **/pnpm-lock.yaml
 **/package-lock.json
 **/uv.lock
-**/trixie_e2e.lock.json
 
-# SOPS-encrypted files - prettier reformats the long encrypted blob
+# SOPS-encrypted file - prettier reformats the long encrypted blob
 secrets/claude-web-k8s-token.yaml
-devinfra/claude/hook_daemon/testdata/e2e_secrets/*.yaml
