@@ -30,6 +30,16 @@ pkg_tar(
     remap_paths = {"/file/bazelisk": "bazelisk"},
 )
 
+# SOPS binary baked into /tools/ (on PATH) so startup_env_script and
+# the daemon's kubeconfig writer can decrypt the test secret fixtures.
+pkg_tar(
+    name = "e2e_sops",
+    testonly = True,
+    srcs = ["@sops_linux_amd64//file"],
+    package_dir = "/tools",
+    remap_paths = {"/file/sops": "sops"},
+)
+
 # E2E test container: python:3.13-slim base + git + JDK from rules_distroless.
 # See trixie_e2e.yaml for the deb manifest.
 oci_image(
@@ -45,6 +55,7 @@ oci_image(
         "@trixie_e2e//:flat",
         ":e2e_wheels",
         ":e2e_bazelisk",
+        ":e2e_sops",
     ],
 )
 
@@ -60,7 +71,10 @@ py_test(
     srcs = ["test_container_e2e.py"],
     data = [
         ":e2e_container",
+        "//devinfra/claude/hook_daemon/testdata/e2e_secrets:e2e_secrets_files",
         "//devinfra/claude/testdata/test_workspace:workspace_files",
+        "//devinfra/secrets:_common.sh",
+        "//devinfra/secrets:web_env.sh",
     ],
     requires_docker = True,
     tags = [
@@ -76,5 +90,6 @@ py_test(
         "@pypi//docker",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )

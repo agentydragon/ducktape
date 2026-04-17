@@ -1,0 +1,35 @@
+# Test-only web-style profile used by the container E2E test.
+#
+# Exercises the real web session-start flow end-to-end:
+#   - startup_env_script = real devinfra/secrets/web_env.sh
+#       → decrypts test-encrypted secrets at /project/secrets/*.yaml
+#   - k8s block triggers the daemon's kubeconfig writer, which imports
+#     devinfra.claude.hook_daemon.write_kubeconfig_cli (real code) and
+#     decrypts /project/secrets/claude-web-k8s-token.yaml
+#
+# Stripped (vs real web profile):
+#   - setup_tmpfs / setup_docker  (needs mount/privileges)
+#   - bazel_bes_proxy             (BES interceptor not relevant here)
+#   - pre_commit                  (PostToolUse not exercised in v0)
+#   - network-heavy bg commands   (apt-get, pre-commit install, fork remote,
+#                                  bazelisk warmup — none relevant to secrets)
+#   - context_template            (keep output minimal for test assertions)
+#
+# The real web profile is at devinfra/claude/hook_daemon/profiles/web/profile.yaml.
+
+startup_env_script: devinfra/secrets/web_env.sh
+
+k8s:
+  server: https://test.example/
+  service_account: claude-code-web
+  service_account_namespace: default
+  namespace: claude-sandbox
+
+idle_watchdog: false
+
+# Keep the git shim exercised in the existing test (block_add_all=true).
+git_shim:
+  block_add_all: true
+
+env_exports: |
+  export E2E_TEST_MARKER=1

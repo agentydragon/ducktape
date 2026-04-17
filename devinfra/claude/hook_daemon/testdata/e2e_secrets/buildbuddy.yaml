@@ -1,0 +1,16 @@
+buildbuddy_api_key: ENC[AES256_GCM,data:x6wF1MuQqh8JbmacRuDv8Q==,iv:DWSXSb75uJ8rWMGUCG5YyVcvEH4drfP+4PJKT5Ag4a0=,tag:pSlkxuR77GcIcHaorJziUA==,type:str]
+sops:
+    age:
+        - recipient: age102xf0yxnha25gye8rtuxvx64y39sxhgxvg0msx5n32ujg503tumsmhd4zf
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA4YWZ2MlZ6NUkzamJCb2Jz
+            a2NPb1BQRTkxNk1VekJDYllueWRwbmRVT2xVCjNyNHZZU21PNml2YUdhMWxma0g3
+            cTVFNHJBTWVDNXUvalFzcFNycWdvcGsKLS0tIGtjd1Bla29OejlhcHhUZjYvRDU4
+            MjdBMXQ0di9IUy8xcmRrN1RtV1NNZGsK2f6FYfDLPWzKBoFry8qKgxauS30Bv2QE
+            AEZ7BswtpZPEoeVlCGEAMc0ByQRnjQ7+RWDDV6q71lGJh+vs0CnxoA==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-04-17T20:02:57Z"
+    mac: ENC[AES256_GCM,data:A1PRVWqzcmSglWb93zzcPTPgh7WAQeLHfrNNXcUueRM3En2iyfLmMyre69Y14+kZYf4qzbuLTF64CEaXgEVhQnuMr638qw3rZmvUvOSepS47V11b/8D2hYoYbT2HYm2RMcCHbntb+GbQ2y0S1MeGtthJfayAkoa91xUTUz7Bp3M=,iv:o/pyDVh6W5vgJXE9kScX42IbR82TFekYPnIcQH0/ItQ=,tag:8imJyii16ZMd2HHzJ0mAdg==,type:str]
+    unencrypted_suffix: _unencrypted
+    version: 3.12.1

@@ -1,0 +1,19 @@
+"""Test fixtures for the container E2E test.
+
+The container test copies these into a staging dir that's bind-mounted at
+/project in the test container. See <README.md> for details.
+"""
+
+filegroup(
+    name = "e2e_secrets_files",
+    testonly = True,
+    srcs = [
+        "buildbuddy.yaml",
+        "claude-web-k8s-token.yaml",
+        "github-ci-read-pat.yaml",
+        "github-pat-agentydragon-agent.yaml",
+        "profile.yaml",
+        "test_age.key",
+    ],
+    visibility = ["//devinfra/claude:__subpackages__"],
+)
