@@ -10,17 +10,21 @@ web environments.
 
 ## Networking
 
-Current Claude Code web containers expose direct internet via a **transparent
-TLS-inspecting proxy** at the network layer — no `HTTPS_PROXY` env vars are
-set, and Anthropic's inspection CA is pre-installed into the system CA bundle
-(`/etc/ssl/certs/ca-certificates.crt`). All tools — curl, Bazel, pip, npm,
-kubectl, git — work without per-tool proxy configuration.
+Current Claude Code web containers reach the internet without any per-tool
+proxy configuration: no `HTTPS_PROXY` env vars are set, and Anthropic's TLS
+inspection CA is already in the system CA bundle
+(`/etc/ssl/certs/ca-certificates.crt`) — so curl, Bazel, pip, npm, kubectl,
+git, etc. all work out of the box. We don't try to distinguish whether that
+works via a transparent network-layer MITM proxy or direct egress; as far
+as the hook daemon is concerned, outbound HTTPS to known hosts reaches
+them, end of story.
 
 The SessionStart hook runs a quick probe (`session_start/connectivity.py`)
-and emits a WARNING in the session banner if direct internet fails. If that
-warning starts appearing on new sessions, the container generation has
-likely changed back to requiring explicit proxy env vars — see the
-[historical note](#historical-explicit-egress-proxy) below.
+against `remote.buildbuddy.io` and emits a WARNING in the session banner
+if the probe fails. If that warning starts appearing on new sessions,
+outbound reachability broke — most likely the container generation
+changed back to requiring explicit proxy env vars (see the
+[historical note](#historical-explicit-egress-proxy) below).
 
 ## Specification
 
@@ -120,11 +124,12 @@ subsystem under `devinfra/claude/auth_proxy/` to handle it:
   CONNECT proxies.
 - A BES interceptor that inspected Bazel build events and forwarded them to BuildBuddy.
 
-Current containers handle proxying transparently at the network layer with
-the Anthropic CA in the system CA bundle, so none of the above is needed —
-every tool just works. The entire `auth_proxy/` subsystem was removed; see
-git log for the removal. If Anthropic reverts to explicit proxy env vars,
-restore the subsystem from history.
+Current containers reach the internet without any of that — outbound
+HTTPS to public hosts just works, and Anthropic's CA is already in the
+system CA bundle if TLS is being inspected somewhere upstream. The
+entire `auth_proxy/` subsystem was removed; see git log for the
+removal. If Anthropic reverts to explicit proxy env vars, restore the
+subsystem from history.
 
 ## Configuration
 

@@ -5,10 +5,10 @@
 # Claude Code session start hook — ${status}
 
 % if platform.is_firecracker or platform.is_gvisor:
-**Environment:** ${platform.platform.value} sandbox (direct internet via transparent proxy)
+**Environment:** ${platform.platform.value} sandbox
 % if isinstance(connectivity, ConnectivityFailed):
-**Connectivity:** WARNING — direct probe failed: ${connectivity.reason}.
-If this container re-requires explicit proxy configuration (HTTPS_PROXY with JWT,
+**Connectivity:** WARNING — outbound internet probe failed: ${connectivity.reason}.
+If this container requires explicit proxy configuration (HTTPS_PROXY with JWT,
 UDS proxy for Bazel gRPC, Java truststore), restore the `devinfra/claude/auth_proxy/`
 subsystem from git history.
 % endif

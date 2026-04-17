@@ -1,12 +1,13 @@
-"""Basic internet connectivity probe for the SessionStart hook.
+"""Basic outbound connectivity probe for the SessionStart hook.
 
 Replaces the historical `auth_proxy` subsystem. Older Claude Code containers
 required an egress proxy (HTTPS_PROXY with JWT credentials) for internet
 access; the hook daemon extracted Anthropic's TLS inspection CA, built a
 Java truststore, and started a UDS proxy for Bazel gRPC. Current containers
-provide a transparent proxy at the network layer with the Anthropic CA
-already installed in the system CA bundle — no env var setup or custom CA
-infrastructure is needed.
+reach the internet with no env var setup or custom CA infrastructure —
+whether via a transparent network-layer proxy, direct egress, or something
+else, we don't try to distinguish; we just check that a known host is
+reachable.
 
 If this probe starts failing, a future container generation likely re-requires
 explicit proxy configuration. Restore the `auth_proxy` subsystem from git
@@ -30,12 +31,12 @@ _PROBE_TIMEOUT_SECONDS = 5.0
 
 @dataclass
 class ConnectivityOk:
-    """Direct internet connectivity works."""
+    """Probe reached the target. Says nothing about how (direct vs. transparent proxy)."""
 
 
 @dataclass
 class ConnectivityFailed:
-    """Direct internet probe failed — proxy setup may be needed."""
+    """Probe could not reach the target — explicit proxy setup may be needed."""
 
     reason: str
 
@@ -44,14 +45,14 @@ ConnectivityResult = ConnectivityOk | ConnectivityFailed
 
 
 async def check_connectivity() -> ConnectivityResult:
-    """Probe direct internet reachability. Logs outcome."""
+    """Probe outbound reachability to a known host. Logs outcome."""
     try:
         async with httpx.AsyncClient(timeout=_PROBE_TIMEOUT_SECONDS) as client:
             response = await client.get(_PROBE_URL)
     except httpx.HTTPError as e:
         reason = f"{type(e).__name__}: {e}"
-        logger.warning("connectivity: direct probe to %s failed: %s", _PROBE_URL, reason)
+        logger.warning("connectivity: probe to %s failed: %s", _PROBE_URL, reason)
         return ConnectivityFailed(reason=reason)
 
-    logger.info("connectivity: direct probe to %s ok (HTTP %d)", _PROBE_URL, response.status_code)
+    logger.info("connectivity: probe to %s ok (HTTP %d)", _PROBE_URL, response.status_code)
     return ConnectivityOk()
