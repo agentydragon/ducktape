@@ -24,8 +24,14 @@ from devinfra.claude.settings import ENV_SESSION_DIR
 logger = logging.getLogger(__name__)
 
 
-def _setup_logging(shim: str, paths: SessionPaths) -> None:
-    """Configure logging to stderr and file."""
+def _setup_logging(shim: str, paths: SessionPaths) -> Path:
+    """Configure logging to stderr and file. Returns the log file path.
+
+    Does not print the log file path to stderr: the real binary's stderr is
+    consumed (and often concatenated with stdout via Go's CombinedOutput) by
+    callers that parse the output. The shim path surfaces only on block
+    (see _report_shim) where the user has a reason to look.
+    """
     formatter = logging.Formatter(f"[{shim}-shim] %(asctime)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
 
     stderr_handler = logging.StreamHandler(sys.stderr)
@@ -42,15 +48,15 @@ def _setup_logging(shim: str, paths: SessionPaths) -> None:
     file_handler.setFormatter(formatter)
     file_handler.setLevel(logging.DEBUG)
     root_logger.addHandler(file_handler)
-    print(f"[{shim}-shim] log: {log_file}", file=sys.stderr)
 
     logger.info("%s shim started", shim)
+    return log_file
 
 
-def _report_shim(shim: str, session_id: str, paths: SessionPaths) -> list[str]:
+def _report_shim(shim: str, session_id: str, paths: SessionPaths, log_file: Path) -> list[str]:
     """Report to daemon, handle blocks, return argv to exec with.
 
-    On block: prints message to stderr and exits 1.
+    On block: prints message + log path to stderr and exits 1.
     On daemon unreachable: logs error, returns original sys.argv (fallback).
     """
     report = ShimExecRequest(
@@ -60,7 +66,7 @@ def _report_shim(shim: str, session_id: str, paths: SessionPaths) -> list[str]:
     if response is None:
         return sys.argv  # Fallback: daemon unreachable
     if isinstance(response, ShimBlocked):
-        print(f"[{shim}-shim] BLOCKED: {response.message}", file=sys.stderr)
+        print(f"[{shim}-shim] BLOCKED: {response.message}\n[{shim}-shim] log: {log_file}", file=sys.stderr)
         raise SystemExit(1)
     return response.argv
 
@@ -73,10 +79,10 @@ def run_shim(shim_name: str, session_id: str) -> None:
     sys.argv before calling here.
     """
     paths = SessionPaths.from_env(session_id, dict(os.environ))
-    _setup_logging(shim_name, paths)
+    log_file = _setup_logging(shim_name, paths)
     log_entrypoint_debug(f"{shim_name}_shim")
 
-    argv = _report_shim(shim_name, session_id, paths)
+    argv = _report_shim(shim_name, session_id, paths, log_file)
 
     # Propagate session dir to subprocesses of the real binary (e.g. bazel_wrapper).
     os.environ[ENV_SESSION_DIR] = str(paths.session_dir)
