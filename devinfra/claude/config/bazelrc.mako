@@ -14,20 +14,18 @@ startup --host_jvm_args=-Xmx8g
 % elif platform.is_gvisor:
 startup --host_jvm_args=-Xmx4g
 % endif
-% if system_java_cacerts:
-# Bazel's bundled JDK uses its own cacerts which lacks Anthropic's TLS
-# inspection CA, so direct BCR fetches (e.g. bcr.bazel.build) fail with
-# PKIX path building failed under the transparent MITM proxy. Pointing the
-# JVM at /etc/ssl/certs/java/cacerts picks up the system-wide truststore,
-# which ca-certificates-java populates from /etc/ssl/certs/ca-certificates.crt
-# (and therefore contains the Anthropic CA on web containers). Emitted after
-# the setup_auth_proxy block so it overrides any session-local truststore.
-startup --host_jvm_args=-Djavax.net.ssl.trustStore=${system_java_cacerts | sh}
-startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=changeit
-% endif
-% if setup_auth_proxy:
+% if truststore_path:
+# JVM truststore for Bazel's bundled JDK. Bazel's own cacerts lacks custom
+# CAs (e.g. Anthropic's TLS inspection CA on Claude Code web), so direct
+# HTTPS fetches (BCR, gazelle fetch_repo, etc.) fail with PKIX path building
+# failed. The handler picks: (1) the session-local truststore built by
+# auth_proxy setup, else (2) /etc/ssl/certs/java/cacerts (Debian's
+# ca-certificates-java keeps it in sync with /etc/ssl/certs/ca-certificates.crt),
+# else (3) no override.
 startup --host_jvm_args=-Djavax.net.ssl.trustStore=${truststore_path | sh}
 startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=${truststore_password | sh}
+% endif
+% if setup_auth_proxy:
 # BCR fetches use the native JVM proxy settings from Anthropic's
 # JAVA_TOOL_OPTIONS (proxyHost/proxyPort/proxyUser/proxyPassword). Only gRPC
 # traffic (remote execution, cache, BES) needs the UDS proxy.
