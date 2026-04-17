@@ -236,8 +236,8 @@ For pclntab-based PC→function mapping, use `pclntool` (see `examples/pclntool.
 garble v0.13.0+ obfuscates the `.gopclntab` magic bytes, so standard Go tooling
 that reads pclntab won't work until the magic is repaired.
 
-**Workflow:** read `examples/binary_diff_recipe.sh` — it is a runnable, CI-verified
-demonstration with inline commentary explaining each step.
+**Workflow:** read `examples/binary_diff_recipe.sh` — a runnable demonstration
+with inline commentary explaining each step.
 
 **Reading call arguments from disassembly:**
 
