@@ -14,6 +14,17 @@ startup --host_jvm_args=-Xmx8g
 % elif platform.is_gvisor:
 startup --host_jvm_args=-Xmx4g
 % endif
+% if system_java_cacerts:
+# Bazel's bundled JDK uses its own cacerts which lacks Anthropic's TLS
+# inspection CA, so direct BCR fetches (e.g. bcr.bazel.build) fail with
+# PKIX path building failed under the transparent MITM proxy. Pointing the
+# JVM at /etc/ssl/certs/java/cacerts picks up the system-wide truststore,
+# which ca-certificates-java populates from /etc/ssl/certs/ca-certificates.crt
+# (and therefore contains the Anthropic CA on web containers). Emitted after
+# the setup_auth_proxy block so it overrides any session-local truststore.
+startup --host_jvm_args=-Djavax.net.ssl.trustStore=${system_java_cacerts | sh}
+startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=changeit
+% endif
 % if setup_auth_proxy:
 startup --host_jvm_args=-Djavax.net.ssl.trustStore=${truststore_path | sh}
 startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=${truststore_password | sh}

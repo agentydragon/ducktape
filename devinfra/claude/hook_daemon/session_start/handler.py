@@ -399,6 +399,7 @@ async def handle(
     write_config(bbr_bazelrc, bbr_bazelrc_content, "bbr bazelrc")
 
     # Render session bazelrc
+    system_java_cacerts = Path("/etc/ssl/certs/java/cacerts")
     with tracer.start_as_current_span("render_bazelrc", context=root_ctx):
         bazelrc_template = Template(
             CONFIG_FILES.joinpath("bazelrc.mako").read_text(), imports=["from shlex import quote as sh"]
@@ -416,6 +417,7 @@ async def handle(
             bazel_cache_dir=setup.bazel_cache_dir,
             platform=setup.platform,
             bbr_bazelrc=bbr_bazelrc,
+            system_java_cacerts=system_java_cacerts if system_java_cacerts.exists() else None,
         )
         session_bazelrc = session.paths.session_dir / "bazelrc"
         write_config(session_bazelrc, bazelrc_content, "session bazelrc")
