@@ -1,0 +1,71 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "prompts",
+    srcs = ["prompts.py"],
+)
+
+py_library(
+    name = "result_types",
+    srcs = ["result_types.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "run",
+    srcs = ["run.py"],
+    deps = [
+        ":prompts",
+        ":result_types",
+        "//x/grocy_mcp:config",
+        "//x/grocy_mcp:grocy_fixtures",
+        "//x/grocy_mcp:server",
+        "@pypi//agent_framework_core",
+        "@pypi//agent_framework_anthropic",
+        "@pypi//agent_framework_openai",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "//x/grocy_mcp:grocy_fixtures",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_eval",
+    size = "large",
+    srcs = ["test_eval.py"],
+    env_inherit = [
+        "ANTHROPIC_API_KEY",
+        "EVAL_API",
+        "OPENAI_API_KEY",
+        "OPENAI_BASE_URL",
+        "OPENAI_MODEL",
+    ],
+    requires_docker = True,
+    tags = ["live_openai_api"],
+    deps = [
+        ":conftest",
+        ":run",
+        "//:conftest",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_binary(
+    name = "cli",
+    srcs = ["cli.py"],
+    main_module = "x.grocy_mcp.eval.cli",
+    deps = [":run"],
+)

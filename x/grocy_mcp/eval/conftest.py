@@ -1,4 +1,4 @@
-"""Shared pytest config for grocy_mcp tests."""
+"""Pytest config for grocy_mcp eval tests."""
 
 from __future__ import annotations
 
