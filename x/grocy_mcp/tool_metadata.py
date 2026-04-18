@@ -37,33 +37,40 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     # and GET /stock are stripped from the OpenAPI spec by fix_openapi_spec.py;
     # they are replaced by batch tools in batch_tools.py.
     ("PUT", "/objects/{entity}/{objectId}"): _enabled(
-        "update_entity",
-        "WARNING: This is a FULL REPLACE, not a partial update. You must include ALL fields, "
-        "not just the ones you want to change. Fields you omit will be set to null. "
-        "First use get_entities to read the current state, then send the complete object "
-        "with your changes applied. For products, use the dedicated edit_product tool instead.",
+        "entity_update",
+        "WARNING: full replace, not a partial update — every field you omit gets nulled. Read the "
+        "current row with `entities_get` first, then send the complete object with your changes "
+        "applied. For products specifically, prefer the typed `product_edit` (does the read-merge-write "
+        "for you and only touches writable columns).",
     ),
-    ("DELETE", "/objects/{entity}/{objectId}"): _enabled("delete_entity"),
+    ("DELETE", "/objects/{entity}/{objectId}"): _enabled("entity_delete"),
     # ── Stock overview ───────────────────────────────────────────────
     ("GET", "/stock/volatile"): _enabled(
-        "list_volatile_stock", "Returns products that are due soon, overdue, expired, or below min stock."
+        "list_volatile_stock",
+        "Returns products that are due soon, overdue, expired, or below min stock — the same data "
+        "the typed `get_expiring_stock` / `get_expired_stock` / `get_below_minimum_stock` tools slice.",
     ),
     # ── Stock entry ──────────────────────────────────────────────────
-    # Replaced by custom tools in batch_tools.py (get_stock_entries, edit_stock_entry).
+    # Replaced by custom tools in batch_tools.py (stock_entries_list, stock_entry_edit).
     # Stripped from the OpenAPI spec by fix_openapi_spec.py.
     ("GET", "/stock/entry/{entryId}"): _disabled("get_stock_entry"),
-    ("PUT", "/stock/entry/{entryId}"): _disabled("edit_stock_entry"),
+    ("PUT", "/stock/entry/{entryId}"): _disabled("stock_entry_edit"),
     ("GET", "/stock/entry/{entryId}/printlabel"): _disabled("print_stock_entry_label"),
     # ── Product stock operations (by ID) ─────────────────────────────
     ("GET", "/stock/products/{productId}"): _enabled("get_product_stock"),
     # POST /stock/products/{productId}/add, /consume, /inventory stripped from
-    # OpenAPI spec; replaced by batch add_stock, consume_stock, inventory_stock.
-    # Replaced by custom transfer_stock in batch_tools.py.
+    # OpenAPI spec; replaced by batch stock_add, stock_consume, stock_set.
+    # Replaced by custom stock_transfer in batch_tools.py.
     # Stripped from the OpenAPI spec by fix_openapi_spec.py.
     ("POST", "/stock/products/{productId}/transfer"): _disabled("transfer_product_stock"),
     ("POST", "/stock/products/{productId}/open"): _enabled("open_product_stock"),
-    ("GET", "/stock/products/{productId}/entries"): _enabled("list_product_stock_entries"),
-    ("GET", "/stock/products/{productId}/locations"): _enabled("list_product_locations"),
+    # `list_product_stock_entries` / `list_product_locations` disabled: the
+    # generated schema carries a `query[]` filter parameter, whose property
+    # key violates Anthropic's tool schema regex
+    # `^[a-zA-Z0-9_.-]{1,64}$`. TODO: re-expose as hand-written batch tools
+    # once there's demand.
+    ("GET", "/stock/products/{productId}/entries"): _disabled("list_product_stock_entries"),
+    ("GET", "/stock/products/{productId}/locations"): _disabled("list_product_locations"),
     ("GET", "/stock/products/{productId}/price-history"): _disabled("get_product_price_history"),
     ("GET", "/stock/products/{productId}/printlabel"): _disabled("print_product_label"),
     # ── Product stock operations (by barcode) ────────────────────────
@@ -74,9 +81,10 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     ("POST", "/stock/products/by-barcode/{barcode}/inventory"): _disabled("inventory_by_barcode"),
     ("POST", "/stock/products/by-barcode/{barcode}/open"): _disabled("open_stock_by_barcode"),
     # ── Product merge ────────────────────────────────────────────────
-    ("POST", "/stock/products/{productIdToKeep}/merge/{productIdToRemove}"): _enabled("merge_products"),
+    ("POST", "/stock/products/{productIdToKeep}/merge/{productIdToRemove}"): _enabled("products_merge"),
     # ── Location stock ───────────────────────────────────────────────
-    ("GET", "/stock/locations/{locationId}/entries"): _enabled("list_location_stock"),
+    # `list_location_stock` disabled: same `query[]` issue as above.
+    ("GET", "/stock/locations/{locationId}/entries"): _disabled("list_location_stock"),
     # ── Shopping list ────────────────────────────────────────────────
     # Shopping list bulk helpers — disabled for now (low usage, custom tools cover the core).
     ("POST", "/stock/shoppinglist/add-missing-products"): _disabled("shopping_list_add_missing"),
@@ -91,7 +99,7 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     ("GET", "/stock/bookings/{bookingId}"): _disabled("get_booking"),
     ("POST", "/stock/bookings/{bookingId}/undo"): _disabled("undo_booking"),
     ("GET", "/stock/transactions/{transactionId}"): _disabled("get_transaction_bookings"),
-    ("POST", "/stock/transactions/{transactionId}/undo"): _enabled("undo_transaction"),
+    ("POST", "/stock/transactions/{transactionId}/undo"): _enabled("transaction_undo"),
     # ── Barcode lookup ───────────────────────────────────────────────
     ("GET", "/stock/barcodes/external-lookup/{barcode}"): _disabled("barcode_lookup"),
     # ── Batteries ────────────────────────────────────────────────────
@@ -125,11 +133,12 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     ("GET", "/calendar/ical"): _disabled("get_calendar_ical"),
     ("GET", "/calendar/ical/sharing-link"): _disabled("get_calendar_sharing_link"),
     # ── Files ────────────────────────────────────────────────────────
-    ("GET", "/files/{group}/{fileName}"): _enabled("get_file"),
-    ("PUT", "/files/{group}/{fileName}"): _enabled("upload_file"),
+    ("GET", "/files/{group}/{fileName}"): _enabled("file_get"),
+    ("PUT", "/files/{group}/{fileName}"): _enabled("file_upload"),
     ("DELETE", "/files/{group}/{fileName}"): _disabled("delete_file"),
     # ── Users ────────────────────────────────────────────────────────
-    ("GET", "/users"): _enabled("list_users"),
+    # `list_users` disabled: same `query[]` issue as above.
+    ("GET", "/users"): _disabled("list_users"),
     ("POST", "/users"): _disabled("create_user"),
     ("PUT", "/users/{userId}"): _disabled("update_user"),
     ("DELETE", "/users/{userId}"): _disabled("delete_user"),

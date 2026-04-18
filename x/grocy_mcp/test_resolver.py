@@ -188,11 +188,17 @@ async def test_qu_name_lookup(resolver: EntityResolver) -> None:
     assert await resolver.qu_name(3) == "Kilogram"
 
 
-# -- Caching ---------------------------------------------------------------
+# -- Freshness -------------------------------------------------------------
 
 
-async def test_resolver_caches_across_calls() -> None:
-    """Multiple resolves should only fetch from Grocy once."""
+async def test_resolver_fetches_fresh_per_call() -> None:
+    """Resolver is stateless: every lookup re-fetches from Grocy.
+
+    The MCP server isn't the only client of a Grocy instance, so we
+    deliberately don't cache — a cache would hide state another client
+    changed behind us. One `/objects/products` GET per resolve is the
+    correct, intended cost.
+    """
     with respx.mock(base_url=BASE_URL, assert_all_called=False) as router:
         products_route = router.get("/objects/products").respond(json=PRODUCTS)
         router.get("/objects/quantity_units").respond(json=QUS)
@@ -204,7 +210,7 @@ async def test_resolver_caches_across_calls() -> None:
         await resolver.resolve_product("Milk")
         await resolver.resolve_product(1)
 
-        assert products_route.call_count == 1
+        assert products_route.call_count == 3
 
 
 if __name__ == "__main__":

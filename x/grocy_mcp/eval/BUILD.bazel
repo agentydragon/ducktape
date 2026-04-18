@@ -12,14 +12,31 @@ py_library(
 )
 
 py_library(
+    name = "seed",
+    srcs = ["seed.py"],
+    deps = ["@pypi//httpx"],
+)
+
+py_library(
+    name = "cases",
+    srcs = ["cases.py"],
+    deps = [
+        ":seed",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
     name = "run",
     srcs = ["run.py"],
     deps = [
+        ":cases",
         ":prompts",
         ":result_types",
         "//util:net",
+        "//util/bazel:runfiles",
         "//x/grocy_mcp:config",
-        "//x/grocy_mcp:server",
+        "//x/grocy_mcp:server",  # transitively provides server_instructions.md via runfiles
         "@pypi//agent_framework_anthropic",
         "@pypi//agent_framework_claude",
         "@pypi//agent_framework_core",
@@ -34,6 +51,8 @@ py_binary(
     srcs = ["cli.py"],
     main_module = "x.grocy_mcp.eval.cli",
     deps = [
+        ":cases",
+        ":result_types",
         ":run",
         "//x/grocy_mcp:grocy_container",
     ],

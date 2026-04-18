@@ -65,7 +65,7 @@ async def test_add_stock_post_not_retried_when_get_fails(mcp_client: tuple[Clien
     router.get("/stock/products/1").respond(500)
 
     result = await client.call_tool(
-        "add_stock", {"items": [{"product": 1, "amount": 5, "qu": "pieces", "location": "TestLoc"}]}
+        "stock_add", {"items": [{"product": 1, "amount": 5, "qu": "pieces", "location": "TestLoc"}]}
     )
     sc = result.structured_content
     assert sc is not None
@@ -87,7 +87,7 @@ async def test_add_stock_post_retried_on_transient_failure(mcp_client: tuple[Cli
     router.get("/stock/products/1").respond(json=STOCK_RESPONSE)
 
     result = await client.call_tool(
-        "add_stock", {"items": [{"product": 1, "amount": 5, "qu": "pieces", "location": "TestLoc"}]}
+        "stock_add", {"items": [{"product": 1, "amount": 5, "qu": "pieces", "location": "TestLoc"}]}
     )
     sc = result.structured_content
     assert sc is not None
@@ -102,7 +102,7 @@ async def test_unit_validation_rejects_wrong_qu(mcp_client: tuple[Client, respx.
     client, _router = mcp_client
 
     result = await client.call_tool(
-        "add_stock", {"items": [{"product": 1, "amount": 5, "qu": "grams", "location": "TestLoc"}]}
+        "stock_add", {"items": [{"product": 1, "amount": 5, "qu": "grams", "location": "TestLoc"}]}
     )
     sc = result.structured_content
     assert sc is not None
@@ -115,7 +115,7 @@ async def test_unit_validation_rejects_missing_qu(mcp_client: tuple[Client, resp
     """Omitting qu should fail validation."""
     client, _router = mcp_client
     with pytest.raises(Exception, match="qu"):
-        await client.call_tool("add_stock", {"items": [{"product": 1, "amount": 5, "location": "TestLoc"}]})
+        await client.call_tool("stock_add", {"items": [{"product": 1, "amount": 5, "location": "TestLoc"}]})
 
 
 if __name__ == "__main__":

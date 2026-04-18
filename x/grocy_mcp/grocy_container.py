@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
+import os
 import tempfile
-import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
 import httpx
+from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 from testcontainers.core.container import DockerContainer
 
 from third_party.containers.rlocations import GROCY
@@ -17,6 +18,16 @@ from util.oci import load_oci_image
 from x.grocy_mcp.config import ServerSettings
 
 logger = logging.getLogger(__name__)
+
+# Required on gvisor sandboxes where IPv4 forwarding is off, so Docker
+# port publishing is a no-op and `testcontainers.get_exposed_port(80)`
+# never resolves. Outside the sandbox, the env var is absent and behaviour
+# is unchanged.
+_HOST_NETWORK_ENV = "GROCY_MCP_HOST_NETWORK"
+
+
+def _host_network_enabled() -> bool:
+    return os.environ.get(_HOST_NETWORK_ENV) == "1"
 
 
 def make_settings(grocy_url: str) -> ServerSettings:
@@ -55,7 +66,10 @@ def configure_grocy_container(container: DockerContainer, *, init_dir: str, data
     `data_dir/grocy.db` on the host throughout the run — no post-hoc copy
     needed. LinuxServer chowns the mount point on startup.
     """
-    container.with_exposed_ports(80)
+    if _host_network_enabled():
+        container.with_kwargs(network_mode="host")
+    else:
+        container.with_exposed_ports(80)
     container.with_env("PUID", "1000")
     container.with_env("PGID", "1000")
     container.with_env("TZ", "UTC")
@@ -68,28 +82,55 @@ def configure_grocy_container(container: DockerContainer, *, init_dir: str, data
 
 
 def grocy_url(container: DockerContainer) -> str:
+    if _host_network_enabled():
+        return "http://127.0.0.1:80"
     host = container.get_container_host_ip()
     port = container.get_exposed_port(80)
     return f"http://{host}:{port}"
 
 
-def wait_for_grocy_ready(container: DockerContainer, *, timeout_s: float = 90) -> None:
-    """Poll `/api/system/info` until it returns 200; raise TimeoutError otherwise."""
+class _NotReadyError(Exception):
+    """Raised by the inner probe when Grocy replies but isn't finished migrating yet."""
+
+
+def _probe_grocy_ready(base_url: str) -> None:
+    """Hit `/` to force lazy migrations then verify the API is serving.
+
+    Grocy runs its SQLite migrations lazily on the first HTTP request to
+    `/`; before that, `/api/*` endpoints hit the auth middleware and
+    SELECT from the `users` table, which doesn't exist yet (500 "no such
+    table: users"). Raises `_NotReadyError` — meant to be retried — when Grocy
+    is reachable but the API isn't serving JSON yet.
+    """
+    httpx.get(f"{base_url}/", timeout=10)
+    r = httpx.get(f"{base_url}/api/objects/locations", timeout=10)
+    if r.status_code != 200:
+        raise _NotReadyError(f"HTTP {r.status_code}: {r.text[:120]!r}")
+    try:
+        body = r.json()
+    except ValueError as e:
+        raise _NotReadyError(f"HTTP 200 but non-JSON body ({e}): {r.text[:120]!r}") from e
+    if not isinstance(body, list):
+        raise _NotReadyError(f"HTTP 200 but unexpected body type {type(body).__name__}: {r.text[:120]!r}")
+
+
+def wait_for_grocy_ready(container: DockerContainer, *, timeout_s: float = 60) -> None:
+    """Poll until Grocy has migrated the DB and is serving API requests.
+
+    Raises whatever the last probe attempt raised once `timeout_s` elapses
+    (`reraise=True`), so the caller sees the real cause (HTTP status,
+    JSON decode error, connection refused) rather than a generic timeout.
+    """
     base_url = grocy_url(container)
-    deadline = time.monotonic() + timeout_s
-    last_err = ""
-    while time.monotonic() < deadline:
-        try:
-            httpx.get(f"{base_url}/", timeout=10)
-            r = httpx.get(f"{base_url}/api/system/info", timeout=10)
-            if r.status_code == 200:
-                logger.info("Grocy ready at %s", base_url)
-                return
-            last_err = f"HTTP {r.status_code}: {r.text[:200]}"
-        except (httpx.ConnectError, httpx.ReadError, httpx.RemoteProtocolError) as e:
-            last_err = f"{type(e).__name__}: {e}"
-        time.sleep(2)
-    raise TimeoutError(f"Grocy did not become ready at {base_url} within {timeout_s}s. Last: {last_err}")
+    for attempt in Retrying(
+        stop=stop_after_delay(timeout_s),
+        wait=wait_fixed(1),
+        retry=retry_if_exception_type((_NotReadyError, httpx.ConnectError, httpx.ReadError, httpx.RemoteProtocolError)),
+        reraise=True,
+    ):
+        with attempt:
+            _probe_grocy_ready(base_url)
+    logger.info("Grocy ready at %s", base_url)
 
 
 @contextmanager

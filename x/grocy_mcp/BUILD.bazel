@@ -62,7 +62,10 @@ py_library(
 py_library(
     name = "server",
     srcs = ["server.py"],
-    data = [":grocy_openapi_fixed"],
+    data = [
+        "server_instructions.md",
+        ":grocy_openapi_fixed",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         ":batch_tools",
@@ -95,6 +98,7 @@ py_library(
         "//third_party/containers:rlocations",
         "//util:oci",
         "@pypi//httpx",
+        "@pypi//tenacity",
         "@pypi//testcontainers",
     ],
 )
@@ -145,6 +149,20 @@ py_test(
         ":conftest",
         ":server",
         "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_docstring_cross_links",
+    srcs = ["test_docstring_cross_links.py"],
+    deps = [
+        ":config",
+        ":conftest",
+        ":server",
+        "//:conftest",
+        "@pypi//fastmcp",
         "@pypi//httpx",
         "@pypi//pytest_bazel",
     ],

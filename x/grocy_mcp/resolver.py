@@ -1,12 +1,23 @@
 """Entity name/ID resolver for Grocy MCP tools.
 
-Provides a unified cache that resolves `int | str` references to Grocy
-entities (products, locations, quantity units) into validated (id, name)
-pairs. Each cache is loaded lazily on first access and shared within a
-single batch call.
+Resolves `int | str` references to Grocy entities (products, locations,
+quantity units, product groups, shopping lists) into validated
+`(id, name)` pairs.
+
+**No caching.** Every resolution re-fetches the relevant `/objects/<entity>`
+list from Grocy. The MCP server isn't the only client of a Grocy
+instance — assuming any longer-than-call lifetime would let other
+clients (the web UI, mobile app, another agent) mutate state behind us
+and we'd silently serve stale lookups. The cost is one extra fetch per
+resolve; the simplicity wins.
+
+A single `EntityResolver` is created once in `register_batch_tools` and
+shared across every batch tool — since it's stateless, sharing is just
+about avoiding the `EntityResolver(client)` boilerplate at each call
+site.
 
 Grocy enforces `name TEXT NOT NULL UNIQUE` on products, locations, and
-quantity_units at the database level. Name-based resolution is therefore
+quantity_units at the database level, so name-based resolution is
 unambiguous by construction. Duplicate-name checks are retained as a
 defensive measure in case Grocy relaxes this constraint.
 
@@ -19,7 +30,6 @@ must multiply by the conversion factor before sending to Grocy.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import dataclass
 from difflib import get_close_matches
@@ -51,100 +61,83 @@ class ResolvedQU:
     1.0 when the input QU is the stock QU."""
 
 
-class _EntityCache:
-    """Lazy-loaded, per-batch cache for a single Grocy entity type."""
+class _EntityList:
+    """Stateless `/objects/<entity>` accessor with name → ID resolution."""
 
     def __init__(self, client: httpx.AsyncClient, entity_path: str, entity_label: str) -> None:
         self._client = client
         self._entity_path = entity_path
         self._entity_label = entity_label
-        self._by_id: dict[int, dict[str, Any]] | None = None
-        self._by_name: dict[str, dict[str, Any]] | None = None
-        self._all_names: list[str] | None = None
-        self._lock = asyncio.Lock()
 
-    async def _ensure_loaded(self) -> None:
-        if self._by_id is not None:
-            return
-        async with self._lock:
-            if self._by_id is not None:
-                return
-            r = await self._client.get(self._entity_path)
-            r.raise_for_status()
-            rows: list[dict[str, Any]] = r.json()
-            self._by_id = {int(row["id"]): row for row in rows}
-            self._by_name = {}
-            for row in rows:
-                name_lower = str(row["name"]).lower()
-                if name_lower in self._by_name:
-                    # Defensive: Grocy enforces UNIQUE but we guard anyway.
-                    logger.warning(
-                        "duplicate %s name %r (IDs: %d, %d)",
-                        self._entity_label,
-                        row["name"],
-                        self._by_name[name_lower]["id"],
-                        row["id"],
-                    )
-                self._by_name[name_lower] = row
-            self._all_names = sorted({str(row["name"]) for row in rows})
+    async def _fetch(self) -> tuple[dict[int, dict[str, Any]], dict[str, dict[str, Any]], list[str]]:
+        r = await self._client.get(self._entity_path)
+        r.raise_for_status()
+        rows: list[dict[str, Any]] = r.json()
+        by_id = {int(row["id"]): row for row in rows}
+        by_name: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            name_lower = str(row["name"]).lower()
+            if name_lower in by_name:
+                # Defensive: Grocy enforces UNIQUE but we guard anyway.
+                logger.warning(
+                    "duplicate %s name %r (IDs: %d, %d)",
+                    self._entity_label,
+                    row["name"],
+                    by_name[name_lower]["id"],
+                    row["id"],
+                )
+            by_name[name_lower] = row
+        all_names = sorted({str(row["name"]) for row in rows})
+        return by_id, by_name, all_names
 
     async def resolve(self, ref: int | str) -> Resolved:
         """Resolve an int (ID) or str (name) to a validated (id, name) pair."""
-        await self._ensure_loaded()
-        assert self._by_id is not None
-        assert self._by_name is not None
-        assert self._all_names is not None
+        by_id, by_name, all_names = await self._fetch()
 
         if isinstance(ref, int):
-            row = self._by_id.get(ref)
-            if row is None:
-                raise ValueError(f"No {self._entity_label} with id={ref}. Available: {self._all_names}")
+            if (row := by_id.get(ref)) is None:
+                raise ValueError(f"No {self._entity_label} with id={ref}. Available: {all_names}")
             return Resolved(id=int(row["id"]), name=str(row["name"]))
 
-        row = self._by_name.get(ref.lower())
-        if row is not None:
+        if (row := by_name.get(ref.lower())) is not None:
             return Resolved(id=int(row["id"]), name=str(row["name"]))
 
-        close = get_close_matches(ref.lower(), list(self._by_name.keys()), n=5, cutoff=0.4)
-        suggestions = [str(self._by_name[m]["name"]) for m in close] if close else self._all_names[:10]
+        close = get_close_matches(ref.lower(), list(by_name.keys()), n=5, cutoff=0.4)
+        suggestions = [str(by_name[m]["name"]) for m in close] if close else all_names[:10]
         raise ValueError(f"No {self._entity_label} named {ref!r}. Similar: {suggestions}")
 
     async def get_name(self, entity_id: int) -> str:
         """Look up name by ID. Returns 'id=N' if not found."""
-        await self._ensure_loaded()
-        assert self._by_id is not None
-        row = self._by_id.get(entity_id)
+        by_id, _, _ = await self._fetch()
+        row = by_id.get(entity_id)
         return str(row["name"]) if row else f"id={entity_id}"
 
     async def get_raw(self, entity_id: int) -> dict[str, Any] | None:
         """Get the raw entity dict by ID."""
-        await self._ensure_loaded()
-        assert self._by_id is not None
-        return self._by_id.get(entity_id)
+        by_id, _, _ = await self._fetch()
+        return by_id.get(entity_id)
 
     async def all_rows(self) -> list[dict[str, Any]]:
-        """Return all cached rows."""
-        await self._ensure_loaded()
-        assert self._by_id is not None
-        return list(self._by_id.values())
+        """Return all rows."""
+        by_id, _, _ = await self._fetch()
+        return list(by_id.values())
 
 
 class EntityResolver:
-    """Per-batch entity resolver supporting products, locations, QUs, and QU conversions.
+    """Stateless entity resolver shared across all batch tools on one MCP server.
 
-    Create one instance per tool call / batch operation. Caches are loaded
-    lazily on first access and shared across all items in the batch.
+    Forwards to per-entity `/objects/<entity>` accessors that re-fetch on
+    every call. Sharing one instance is just about avoiding the
+    `EntityResolver(client)` boilerplate at each tool's call site.
     """
 
     def __init__(self, client: httpx.AsyncClient) -> None:
         self._client = client
-        self._products = _EntityCache(client, "/objects/products", "product")
-        self._locations = _EntityCache(client, "/objects/locations", "location")
-        self._qus = _EntityCache(client, "/objects/quantity_units", "quantity unit")
-        self._product_groups = _EntityCache(client, "/objects/product_groups", "product group")
-        self._shopping_lists = _EntityCache(client, "/objects/shopping_lists", "shopping list")
-        self._conversions: list[dict[str, Any]] | None = None
-        self._conversions_lock = asyncio.Lock()
+        self._products = _EntityList(client, "/objects/products", "product")
+        self._locations = _EntityList(client, "/objects/locations", "location")
+        self._qus = _EntityList(client, "/objects/quantity_units", "quantity unit")
+        self._product_groups = _EntityList(client, "/objects/product_groups", "product group")
+        self._shopping_lists = _EntityList(client, "/objects/shopping_lists", "shopping list")
 
     # ── Direct entity resolution ─────────────────────────────────────
 
@@ -193,15 +186,11 @@ class EntityResolver:
 
     # ── QU validation with conversion support ────────────────────────
 
-    async def _ensure_conversions_loaded(self) -> None:
-        if self._conversions is not None:
-            return
-        async with self._conversions_lock:
-            if self._conversions is not None:
-                return
-            r = await self._client.get("/objects/quantity_unit_conversions_resolved")
-            r.raise_for_status()
-            self._conversions = r.json()
+    async def _fetch_conversions(self) -> list[dict[str, Any]]:
+        r = await self._client.get("/objects/quantity_unit_conversions_resolved")
+        r.raise_for_status()
+        rows: list[dict[str, Any]] = r.json()
+        return rows
 
     async def resolve_qu_for_product(self, qu_ref: int | str, product_id: int) -> ResolvedQU:
         """Resolve a QU reference and validate it against a product's stock QU.
@@ -229,14 +218,13 @@ class EntityResolver:
             )
 
         # Look for a conversion
-        await self._ensure_conversions_loaded()
-        assert self._conversions is not None
+        conversions = await self._fetch_conversions()
 
         # Grocy's quantity_unit_conversions_resolved stores pre-computed
         # transitive conversions. Look for from_qu_id → to_qu_id matching
         # our input QU → stock QU, optionally product-specific.
         factor: float | None = None
-        for conv in self._conversions:
+        for conv in conversions:
             if int(conv["from_qu_id"]) != resolved.id or int(conv["to_qu_id"]) != stock_qu_id:
                 continue
             conv_product_id = conv.get("product_id")
@@ -259,7 +247,7 @@ class EntityResolver:
 
         # No conversion found — error with helpful info
         available_from_qus: set[str] = set()
-        for conv in self._conversions:
+        for conv in conversions:
             if int(conv["to_qu_id"]) == stock_qu_id:
                 cp = conv.get("product_id")
                 if cp is None or int(cp) == product_id:

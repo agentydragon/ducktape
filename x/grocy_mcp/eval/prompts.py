@@ -1,16 +1,11 @@
-"""Prompt constants for the Grocy MCP eval."""
+"""Prompt constants for the Grocy MCP eval.
+
+Per-case task prompts live in `cases.py`; what stays here is the voice and
+the postmortem, which we share across every case so reflections are
+comparable between rollouts.
+"""
 
 SYSTEM_PROMPT = "You are an inventory management assistant using Grocy."
-
-TASK_PROMPT = """\
-Please stock this empty Grocy instance with what we have on hand.
-
-In the pantry we've got 2 bags of rice that are good through June 2026, plus a \
-liter of olive oil that keeps until mid-2027. The fridge has 3 liters of milk \
-expiring 2026-05-01 and a dozen eggs expiring 2026-05-15. And in the freezer \
-there's a bag of frozen peas, best before 2027-01-01.
-
-Once you've got everything in, summarize what you entered."""
 
 POSTMORTEM_PROMPT = """\
 Now that you've completed the task, please reflect on your experience using \

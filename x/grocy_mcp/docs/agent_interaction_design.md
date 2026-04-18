@@ -48,7 +48,7 @@ The user mentions a product, a quantity with a unit, and a location.
 The agent doesn't know whether "cucumbers" exists in inventory yet.
 
 ```
-Agent: get_stock()
+Agent: stock_get()
   Response:
     [{product_name: "Rice", amount: 2.0, qu_name: "Kilogram",
       location_name: "Pantry", best_before_date: "2026-12-01"},
@@ -59,7 +59,7 @@ Agent: get_stock()
   exists but is just unstocked, and check that the location and unit
   exist.
 
-Agent: list_products()
+Agent: products_list()
   Response:
     [{id: 1, name: "Rice"}, {id: 10, name: "Milk"}, ...]
 
@@ -68,11 +68,11 @@ Agent: list_products()
   The agent already saw "Kilogram" and "Fridge" in the stock response
   above — but if stock were empty, it would need:
 
-Agent: list_locations()
+Agent: locations_list()
   Response:
     [{id: 1, name: "Pantry"}, {id: 7, name: "Fridge"}, {id: 12, name: "Freezer"}]
 
-Agent: list_quantity_units()
+Agent: quantity_units_list()
   Response:
     [{id: 1, name: "Piece"}, {id: 3, name: "Kilogram"}, {id: 5, name: "Liter"}]
 
@@ -97,7 +97,7 @@ Agent: create_product(
     `product_group` (int|str), `description`.
   - Response confirms what was created with names, not just IDs.
 
-Agent: add_stock(
+Agent: stock_add(
     product: "Cucumbers",
     amount: 5,
     qu: "Kilogram",
@@ -125,7 +125,7 @@ IDs from prior context) is **1 call**.
 ### Scenario 2: "What's in stock?"
 
 ```
-Agent: get_stock()
+Agent: stock_get()
   Response:
     [{product_id: 42, product_name: "Cucumbers", amount: 5.0,
       qu_name: "Kilogram", location_name: "Fridge",
@@ -172,7 +172,7 @@ Notes:
 ### Scenario 4: "We used 2 kilograms of rice from the pantry"
 
 ```
-Agent: consume_stock(
+Agent: stock_consume(
     product: "Rice",
     amount: 2,
     qu: "Kilogram",
@@ -187,16 +187,16 @@ Agent: consume_stock(
 
 Notes:
 
-- `location` is required (same as `add_stock`). This prevents accidentally
+- `location` is required (same as `stock_add`). This prevents accidentally
   consuming from the wrong location — important when one Grocy instance
   manages multiple households/locations.
-- The agent must know where the stock is. If unsure, `get_stock` shows
+- The agent must know where the stock is. If unsure, `stock_get` shows
   which locations have stock of a given product.
 
 ### Scenario 5: "Change the price of that rice entry to 9.99"
 
 ```
-Agent: edit_stock_entry(entry_id: 42, price: 9.99)
+Agent: stock_entry_edit(entry_id: 42, price: 9.99)
   Response:
     {kind: "ok", entry_id: 42, product_name: "Rice",
      qu_name: "Kilogram",
@@ -218,7 +218,7 @@ Notes:
 ### Scenario 6: "Move 3 bottles of wine from the cellar to the fridge"
 
 ```
-Agent: transfer_stock(
+Agent: stock_transfer(
     product: "Red Wine",
     amount: 3,
     qu: "Bottle",
@@ -248,7 +248,7 @@ Agent: get_below_minimum_stock()
      {product_name: "Eggs", amount: 2.0, min_amount: 12.0,
       qu_name: "Piece", deficit: 10.0}]
 
-Agent: add_to_shopping_list(items: [
+Agent: shopping_list_items_add(items: [
     {product: "Milk", amount: 1.5},
     {product: "Eggs", amount: 10},
     {note: "Check if we need paper towels"}
@@ -273,7 +273,7 @@ Notes:
 ### Scenario 7b: "What's on the shopping list? Remove the eggs."
 
 ```
-Agent: get_shopping_list()
+Agent: shopping_list_get()
   Response:
     {name: "Shopping list", description: null,
      items: [
@@ -285,7 +285,7 @@ Agent: get_shopping_list()
         amount: 1.0, qu_name: null,
         note: "Check if we need paper towels"}]}
 
-Agent: remove_from_shopping_list(item_ids: [51])
+Agent: shopping_list_items_remove(item_ids: [51])
   Response:
     [{kind: "ok", item_id: 51,
       product_name: "Eggs", amount: 12.0, qu_name: "Piece"}]
@@ -312,7 +312,7 @@ Notes:
 ### Scenario 9: Agent uses wrong unit (no conversion exists)
 
 ```
-Agent: add_stock(product: "Rice", amount: 5, qu: "Liter", location: "Pantry")
+Agent: stock_add(product: "Rice", amount: 5, qu: "Liter", location: "Pantry")
   Response:
     {kind: "error",
      error: "No conversion from 'Liter' to stock QU 'Kilogram' for 'Rice'.
@@ -326,7 +326,7 @@ the fix.
 ### Scenario 9b: Agent uses purchase QU (conversion exists)
 
 ```
-Agent: add_stock(product: "Beer", amount: 2, qu: "Crate", location: "Cellar")
+Agent: stock_add(product: "Beer", amount: 2, qu: "Crate", location: "Cellar")
   Response:
     {kind: "ok", product_name: "Beer",
      amount_added: 2.0, qu_name: "Crate",
@@ -345,7 +345,7 @@ Grocy enforces unique product names, so there's no ambiguity — but the
 agent might use an inexact name ("Wine" when the product is "Red Wine").
 
 ```
-Agent: consume_stock(product: "Wine", amount: 1, qu: "Bottle")
+Agent: stock_consume(product: "Wine", amount: 1, qu: "Bottle")
   Response:
     {kind: "error",
      error: "No product named 'Wine'. Similar products:
@@ -364,9 +364,9 @@ Notes:
 ### Scenario 11: "Undo that last stock change"
 
 ```
-Agent: undo_transaction(transaction_id: "abc123")
+Agent: transaction_undo(transaction_id: "abc123")
   Response:
-    {kind: "ok", undone: "add_stock",
+    {kind: "ok", undone: "stock_add",
      product_name: "Cucumbers", amount_reversed: 5.0,
      qu_name: "Kilogram"}
 ```
@@ -377,7 +377,7 @@ a single call. The response confirms what was undone.
 ### Scenario 12: "Show me the stock entries for rice"
 
 ```
-Agent: get_stock_entries(product: "Rice")
+Agent: stock_entries_list(product: "Rice")
   Response:
     [{entry_id: 100, amount: 2.0, qu_name: "Kilogram",
       location_name: "Pantry", best_before_date: "2026-12-01",
@@ -391,7 +391,7 @@ Notes:
 
 - Lookup by product name (or ID), not by entry ID. The common question is
   "what entries does this product have?" not "show me entry 42".
-- Entry IDs are returned for use with `edit_stock_entry`.
+- Entry IDs are returned for use with `stock_entry_edit`.
 - Compact: names, not nested dicts.
 
 ## Proposed Tool Inventory
@@ -400,37 +400,37 @@ Notes:
 
 | Tool               | Purpose                    | Required Params                                 | Notes                                                                     |
 | ------------------ | -------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------- |
-| `get_stock`        | Current stock overview     | (none; optional product/location filters)       | Compact. Filters: `products: list[int\|str]`, `locations: list[int\|str]` |
-| `add_stock`        | Add stock                  | product, amount, qu, location                   | All `int\|str`. All required, no defaults. Batch.                         |
-| `consume_stock`    | Consume stock              | product, amount, qu, location                   | All required — prevents cross-household mistakes.                         |
-| `transfer_stock`   | Move between locations     | product, amount, qu, from_location, to_location | Both locations required.                                                  |
-| `inventory_stock`  | Set absolute amount        | product, new_amount, qu, location               | All required — same rationale as consume.                                 |
+| `stock_get`        | Current stock overview     | (none; optional product/location filters)       | Compact. Filters: `products: list[int\|str]`, `locations: list[int\|str]` |
+| `stock_add`        | Add stock                  | product, amount, qu, location                   | All `int\|str`. All required, no defaults. Batch.                         |
+| `stock_consume`    | Consume stock              | product, amount, qu, location                   | All required — prevents cross-household mistakes.                         |
+| `stock_transfer`   | Move between locations     | product, amount, qu, from_location, to_location | Both locations required.                                                  |
+| `stock_set`        | Set absolute amount        | product, new_amount, qu, location               | All required — same rationale as consume.                                 |
 | `open_stock`       | Mark stock entry as opened | product, amount, qu                             |                                                                           |
-| `undo_transaction` | Undo a stock operation     | transaction_id                                  |                                                                           |
+| `transaction_undo` | Undo a stock operation     | transaction_id                                  |                                                                           |
 
 ### Stock Entry Operations
 
-| Tool                | Purpose                    | Required Params                | Notes                                                                                             |
-| ------------------- | -------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------- |
-| `get_stock_entries` | List entries for a product | product or entry_ids           | By product (common) or by entry ID (editing)                                                      |
-| `edit_stock_entry`  | Partial-update an entry    | entry_id + changed fields only | Fields: amount, price, best_before_date, purchased_date, location, open, note. Server-side merge. |
+| Tool                 | Purpose                    | Required Params                | Notes                                                                                             |
+| -------------------- | -------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `stock_entries_list` | List entries for a product | product or entry_ids           | By product (common) or by entry ID (editing)                                                      |
+| `stock_entry_edit`   | Partial-update an entry    | entry_id + changed fields only | Fields: amount, price, best_before_date, purchased_date, location, open, note. Server-side merge. |
 
 ### Product Management
 
 | Tool             | Purpose                  | Required Params          | Notes                                                                            |
 | ---------------- | ------------------------ | ------------------------ | -------------------------------------------------------------------------------- |
-| `list_products`  | All products             | (none)                   | `detail: "brief"\|"full"`, default brief (id + name)                             |
+| `products_list`  | All products             | (none)                   | `detail: "brief"\|"full"`, default brief (id + name)                             |
 | `create_product` | Create a new product     | name, stock_qu, location | Optional: min_stock_amount, default_best_before_days, product_group, description |
-| `edit_product`   | Partial-update a product | product + changed fields |                                                                                  |
-| `delete_product` | Delete a product         | product                  |                                                                                  |
+| `product_edit`   | Partial-update a product | product + changed fields |                                                                                  |
+| `product_delete` | Delete a product         | product                  |                                                                                  |
 
 ### Reference Data
 
 | Tool                  | Purpose               | Notes                                                              |
 | --------------------- | --------------------- | ------------------------------------------------------------------ |
-| `list_locations`      | All storage locations | `detail: "brief"\|"full"`, default brief (id + name)               |
-| `list_quantity_units` | All quantity units    | `detail: "brief"\|"full"`, default brief (id + name + name_plural) |
-| `list_product_groups` | All product groups    | `detail: "brief"\|"full"`, default brief (id + name)               |
+| `locations_list`      | All storage locations | `detail: "brief"\|"full"`, default brief (id + name)               |
+| `quantity_units_list` | All quantity units    | `detail: "brief"\|"full"`, default brief (id + name + name_plural) |
+| `product_groups_list` | All product groups    | `detail: "brief"\|"full"`, default brief (id + name)               |
 
 ### Queries
 
@@ -449,16 +449,16 @@ name, description; names are unique). A default list named "Shopping list"
 is nullable). The same product can appear multiple times on a list (no
 uniqueness constraint), so the item's own `id` is the real key.
 
-| Tool                        | Purpose                        | Notes                                                                                |
-| --------------------------- | ------------------------------ | ------------------------------------------------------------------------------------ |
-| `get_shopping_list`         | Get items on a shopping list   | `shopping_list: int\|str  (required)`. Returns list metadata + items.                |
-| `add_to_shopping_list`      | Add items to a shopping list   | Batch. Product-linked or note-only. `shopping_list` per item (required, no default). |
-| `edit_shopping_list_item`   | Partial-update a shopping item | By `item_id`. Can change amount, note, done. Not product (delete + re-add instead).  |
-| `remove_from_shopping_list` | Remove items by item ID        | `item_ids: list[int]`. Item ID is the key (product is not unique).                   |
-| `clear_shopping_list`       | Clear all items from a list    | `shopping_list: int\|str  (required)`.                                               |
+| Tool                         | Purpose                        | Notes                                                                                |
+| ---------------------------- | ------------------------------ | ------------------------------------------------------------------------------------ |
+| `shopping_list_get`          | Get items on a shopping list   | `shopping_list: int\|str  (required)`. Returns list metadata + items.                |
+| `shopping_list_items_add`    | Add items to a shopping list   | Batch. Product-linked or note-only. `shopping_list` per item (required, no default). |
+| `shopping_list_item_edit`    | Partial-update a shopping item | By `item_id`. Can change amount, note, done. Not product (delete + re-add instead).  |
+| `shopping_list_items_remove` | Remove items by item ID        | `item_ids: list[int]`. Item ID is the key (product is not unique).                   |
+| `shopping_list_clear`        | Clear all items from a list    | `shopping_list: int\|str  (required)`.                                               |
 
 To discover what shopping lists exist, use the generic
-`list_entities(["shopping_lists"])` — it's a rare operation.
+`entities_list(["shopping_lists"])` — it's a rare operation.
 
 ### Generic Entity CRUD (escape hatch)
 
@@ -468,19 +468,19 @@ QU + product, list, get by ID, update, delete).
 
 | Tool              | Purpose              | Notes                                                                   |
 | ----------------- | -------------------- | ----------------------------------------------------------------------- |
-| `create_entities` | Batch create         | `[{entity_type, body: dict}]`. Body is opaque — agent must know fields. |
-| `list_entities`   | Batch list by type   | `[entity_type]` → `{type: [dicts]}`. `detail: "brief"\|"full"`.         |
-| `get_entities`    | Batch get by ID      | `entity_type, [ids]` → `[ok\|error]`.                                   |
-| `update_entity`   | Update single entity | **WARNING: full replace, not partial update.** See note below.          |
-| `delete_entity`   | Delete single entity | By entity type + ID.                                                    |
+| `entities_create` | Batch create         | `[{entity_type, body: dict}]`. Body is opaque — agent must know fields. |
+| `entities_list`   | Batch list by type   | `[entity_type]` → `{type: [dicts]}`. `detail: "brief"\|"full"`.         |
+| `entities_get`    | Batch get by ID      | `entity_type, [ids]` → `[ok\|error]`.                                   |
+| `entity_update`   | Update single entity | **WARNING: full replace, not partial update.** See note below.          |
+| `entity_delete`   | Delete single entity | By entity type + ID.                                                    |
 
-**`update_entity` is a full replace.** The tool description must warn the
+**`entity_update` is a full replace.** The tool description must warn the
 agent prominently: "This replaces the entire entity. You must include ALL
 fields, not just the ones you want to change. Fields you omit will be set
-to null. First use `get_entities` to read the current state, then send the
+to null. First use `entities_get` to read the current state, then send the
 complete object with your changes applied." This is acceptable for simple
 entities (locations, QUs — 1-3 fields) but dangerous for complex ones.
-Products have a dedicated `edit_product` with partial-update semantics
+Products have a dedicated `product_edit` with partial-update semantics
 specifically to avoid this.
 
 ### System
@@ -515,8 +515,8 @@ treated as an ID. If a string, it's resolved by name. No separate
 `product_id` / `product_name` pair — just `product: int | str`.
 
 ```
-add_stock(product: "Rice", ...)      # resolved by name
-add_stock(product: 42, ...)          # used as ID directly
+stock_add(product: "Rice", ...)      # resolved by name
+stock_add(product: 42, ...)          # used as ID directly
 create_product(location: "Fridge", stock_qu: "Kilogram")  # both by name
 create_product(location: 7, stock_qu: 3)                   # both by ID
 ```
@@ -558,16 +558,16 @@ Validation flow: resolve QU by name/ID → check if it matches stock QU
 
 ### Required Locations on All Mutations
 
-Location is **required** on `add_stock`, `consume_stock`, `inventory_stock`,
-and `transfer_stock` (both from and to). No silent defaults.
+Location is **required** on `stock_add`, `stock_consume`, `stock_set`,
+and `stock_transfer` (both from and to). No silent defaults.
 
 Rationale: one Grocy instance may manage multiple households/locations.
 Omitting location and relying on Grocy's default (product's `location_id`
 or FIFO) risks putting stock in the wrong household. The agent should
 always confirm where stock is going or coming from.
 
-If the agent doesn't know the location, it should call `get_stock()` first
-to see where existing stock is, or `list_locations()` to see what's
+If the agent doesn't know the location, it should call `stock_get()` first
+to see where existing stock is, or `locations_list()` to see what's
 available.
 
 ### Partial Updates with `clear_fields`
@@ -587,22 +587,22 @@ unchanged" (both would be absent from the request). Each edit tool has a
 `set[Literal["field1", "field2", ...]]` — a JSON Schema array with
 `uniqueItems: true` and an enum of allowed values.
 
-- `edit_stock_entry`: clearable fields are `price`, `best_before_date`,
+- `stock_entry_edit`: clearable fields are `price`, `best_before_date`,
   `purchased_date`, `note` (all nullable in the `stock` table).
-- `edit_product`: clearable fields are `description`, `product_group`,
+- `product_edit`: clearable fields are `description`, `product_group`,
   `parent_product`, `calories` (nullable in the `products` table).
-- `edit_shopping_list_item`: clearable field is `note`.
+- `shopping_list_item_edit`: clearable field is `note`.
 
 ### Compact Responses by Default
 
 Stock overview returns: product name, amount, unit name, location name,
 expiry date. That's it. Full product/QU/location objects are available
-through dedicated detail tools (`get_product`, `get_stock_entries`) when
+through dedicated detail tools (`get_product`, `stock_entries_list`) when
 needed.
 
 ### Batch Operations
 
-`add_stock`, `consume_stock`, and `add_to_shopping_list` accept lists of
+`stock_add`, `stock_consume`, and `shopping_list_items_add` accept lists of
 items for multi-product operations. Each item succeeds or fails
 independently — failures don't abort the batch. Results are ordered to
 match inputs.
@@ -621,19 +621,19 @@ lookup call to recover from an error.
 This design implies several changes from the current Grocy MCP server:
 
 1. **Name-based resolution** for products and locations (currently only QUs)
-2. **Partial update** for `edit_stock_entry` (currently full-replace), adding `note` field
-3. **Compact `get_stock` response** with product/location filters (currently returns full product dicts, no filtering)
-4. **Location required on all mutations** — `add_stock`, `consume_stock`, `inventory_stock` (currently optional with silent defaults)
+2. **Partial update** for `stock_entry_edit` (currently full-replace), adding `note` field
+3. **Compact `stock_get` response** with product/location filters (currently returns full product dicts, no filtering)
+4. **Location required on all mutations** — `stock_add`, `stock_consume`, `stock_set` (currently optional with silent defaults)
 5. **Typed `create_product`** with optional `min_stock_amount`, `default_best_before_days`, `product_group`, `description` (currently `dict[str, Any]` body)
-6. **`list_products` with `detail` param** replacing `list_entities` + `search_products` (brief/full output)
-7. **`get_stock_entries` by product** (currently by entry ID list only)
+6. **`products_list` with `detail` param** replacing `entities_list` + `search_products` (brief/full output)
+7. **`stock_entries_list` by product** (currently by entry ID list only)
 8. **`get_expiring_stock` / `get_below_minimum_stock`** as focused tools
    (currently bundled in `list_volatile_stock`)
 9. **Rewritten tool descriptions** from the agent's perspective
-10. **`transfer_stock` as custom tool** with name resolution and QU validation
+10. **`stock_transfer` as custom tool** with name resolution and QU validation
     (currently OpenAPI-generated `transfer_product_stock` with opaque body)
 11. **`detail: "brief" | "full"` on reference data tools** (currently always return full Grocy objects)
 12. **Server-side QU conversion** — accept any QU with a valid conversion to stock QU, convert server-side (Grocy's API only accepts stock QU)
-13. **Enable `undo_transaction`** (currently disabled in tool_metadata.py)
-14. **Shopping list `done` field** in responses and `edit_shopping_list_item`
-15. **Shopping list `get_shopping_list`** returns list metadata + items, referenced by name or ID
+13. **Enable `transaction_undo`** (currently disabled in tool_metadata.py)
+14. **Shopping list `done` field** in responses and `shopping_list_item_edit`
+15. **Shopping list `shopping_list_get`** returns list metadata + items, referenced by name or ID

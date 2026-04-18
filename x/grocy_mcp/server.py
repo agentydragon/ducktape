@@ -55,6 +55,16 @@ def _load_openapi_spec() -> dict[str, object]:
     return result
 
 
+def _load_server_instructions() -> str:
+    """Return the shared cross-cutting-conventions markdown.
+
+    Delivered to MCP clients via the `initialize.instructions` field. See
+    <server_instructions.md> for the content; the file is data-dep'd into
+    the server target.
+    """
+    return get_required_path("_main/x/grocy_mcp/server_instructions.md").read_text()
+
+
 def build_mcp(settings: ServerSettings, *, client: httpx.AsyncClient) -> FastMCP:
     """Build the FastMCP instance with generated Grocy tools, but no auth.
 
@@ -94,6 +104,7 @@ def build_mcp(settings: ServerSettings, *, client: httpx.AsyncClient) -> FastMCP
         openapi_spec=spec,
         client=client,
         name="Grocy",
+        instructions=_load_server_instructions(),
         route_maps=ROUTE_MAPS,
         route_map_fn=_filter_disabled,
         mcp_component_fn=_customize_component,
