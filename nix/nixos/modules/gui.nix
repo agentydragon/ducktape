@@ -21,6 +21,15 @@
   # Keyring CLI (secret-tool)
   environment.systemPackages = [ pkgs.libsecret ];
 
+  # GSConnect — phone integration via GNOME Shell extension.
+  # Uses programs.kdeconnect with the gsconnect package to open the
+  # required firewall ports (TCP+UDP 1714-1764). The extension itself is
+  # enabled for the user via programs.gnome-shell.extensions in home.nix.
+  programs.kdeconnect = {
+    enable = true;
+    package = pkgs.gnomeExtensions.gsconnect;
+  };
+
   # Screen time management
   ducktape.timekpr = {
     enable = true;

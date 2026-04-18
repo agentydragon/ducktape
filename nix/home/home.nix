@@ -746,6 +746,8 @@ in
       { package = pkgs.gnomeExtensions.panel-date-format; }
       { package = pkgs.gnomeExtensions.cronomix; }
       { package = pkgs.gnomeExtensions.pop-shell; }
+      # Phone integration (firewall ports opened by programs.kdeconnect in gui.nix).
+      { package = pkgs.gnomeExtensions.gsconnect; }
     ];
   };
 
