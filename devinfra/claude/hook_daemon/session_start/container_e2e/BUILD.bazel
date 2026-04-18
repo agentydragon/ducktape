@@ -69,6 +69,7 @@ py_test(
     size = "large",
     srcs = ["test_container_e2e.py"],
     data = [
+        "test_profile.yaml",
         ":e2e_container",
         "//devinfra/claude/hook_daemon/testdata/e2e_secrets:e2e_secrets_files",
         "//devinfra/claude/testdata/test_workspace:workspace_files",

@@ -1,8 +1,8 @@
 # E2E Test Secrets Fixture
 
-Test-only SOPS-encrypted secret files + age key + web-style profile used
-by the container E2E test at
-<../../session_start/container_e2e/test_container_e2e.py>.
+Test-only SOPS-encrypted secret files + age key used by the container E2E
+test at <../../session_start/container_e2e/test_container_e2e.py>. The
+test profile itself lives next to the test as `test_profile.yaml`.
 
 ## What's Here
 
@@ -13,7 +13,6 @@ by the container E2E test at
 | `github-pat-agentydragon-agent.yaml` | Encrypted `github_token: test-fake-gh-agent-token` — mounted at `/project/secrets/github-pat-agentydragon-agent.yaml`.                            |
 | `github-ci-read-pat.yaml`            | Encrypted `github_token: test-fake-ci-read-token` — mounted at `/project/secrets/github-ci-read-pat.yaml`.                                        |
 | `claude-web-k8s-token.yaml`          | Encrypted `k8s_token: test-fake-k8s-token` — mounted at `/project/secrets/claude-web-k8s-token.yaml`, consumed by the daemon's kubeconfig writer. |
-| `profile.yaml`                       | Web-style profile used by the test: real `startup_env_script`, real `k8s:` block, no container runtime / tmpfs / BES / bg commands.               |
 
 ## Why Fake Encrypted Files?
 

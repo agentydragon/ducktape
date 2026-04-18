@@ -47,7 +47,8 @@ _WHEEL_DIR = "/wheel"
 _TEST_WORKSPACE_MODULE = "_main/devinfra/claude/testdata/test_workspace/MODULE.bazel"
 _WEB_ENV_SH = "_main/devinfra/secrets/web_env.sh"
 _COMMON_SH = "_main/devinfra/secrets/_common.sh"
-_FIXTURES_DIR_MARKER = "_main/devinfra/claude/hook_daemon/testdata/e2e_secrets/profile.yaml"
+_TEST_PROFILE = "_main/devinfra/claude/hook_daemon/session_start/container_e2e/test_profile.yaml"
+_SECRETS_DIR_MARKER = "_main/devinfra/claude/hook_daemon/testdata/e2e_secrets/test_age.key"
 
 # Test SOPS files live at these repo-relative paths inside /project (matching
 # what web_env.sh and write_kubeconfig_cli.py look for in the real repo).
@@ -135,13 +136,13 @@ def staged_project(tmp_path: Path) -> Path:
     shutil.copy2(get_required_path(_WEB_ENV_SH), secrets_dir / "web_env.sh")
     shutil.copy2(get_required_path(_COMMON_SH), secrets_dir / "_common.sh")
 
-    # Test profile + test-encrypted SOPS files (see testdata/e2e_secrets/).
-    fixtures_dir = get_required_path(_FIXTURES_DIR_MARKER).parent
-    shutil.copy2(fixtures_dir / "profile.yaml", project / "profile.yaml")
+    # Test profile (sibling of this test) + test-encrypted SOPS fixtures.
+    shutil.copy2(get_required_path(_TEST_PROFILE), project / "profile.yaml")
+    secrets_fixtures = get_required_path(_SECRETS_DIR_MARKER).parent
     project_secrets = project / "secrets"
     project_secrets.mkdir()
     for name in _TEST_SECRET_FILES:
-        shutil.copy2(fixtures_dir / name, project_secrets / name)
+        shutil.copy2(secrets_fixtures / name, project_secrets / name)
 
     (project / ".git").mkdir()  # pre-commit wants a git repo
 
@@ -156,8 +157,7 @@ def test_age_key() -> str:
     secrets. Passed to the container as SOPS_AGE_KEY so the real web_env.sh and
     kubeconfig writer can read the fixtures.
     """
-    fixtures_dir = get_required_path(_FIXTURES_DIR_MARKER).parent
-    raw = (fixtures_dir / "test_age.key").read_text()
+    raw = get_required_path(_SECRETS_DIR_MARKER).read_text()
     # The file has a "# public key: ..." header and the AGE-SECRET-KEY-* line.
     return next(line.strip() for line in raw.splitlines() if line.startswith("AGE-SECRET-KEY-"))
 
