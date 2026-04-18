@@ -10,6 +10,15 @@ import yaml
 
 from devinfra.claude.scripts import write_kubeconfig
 
+_KUBECONFIG = {
+    "apiVersion": "v1",
+    "kind": "Config",
+    "clusters": [{"cluster": {"server": "https://k8s.example.com"}, "name": "cluster"}],
+    "contexts": [{"context": {"cluster": "cluster", "namespace": "ns", "user": "sa"}, "name": "sa"}],
+    "current-context": "sa",
+    "users": [{"name": "sa", "user": {"token": "tok"}}],
+}
+
 
 def test_build_kubeconfig_proxy_url() -> None:
     kc = write_kubeconfig.build_kubeconfig(
@@ -47,6 +56,39 @@ def test_build_kubeconfig_ca_data(tmp_path: Path) -> None:
         proxy_url=None,
     )
     assert "certificate-authority-data" in kc["clusters"][0]["cluster"]
+
+
+def test_write_kubeconfig_file_fresh(tmp_path: Path) -> None:
+    output = tmp_path / "kubeconfig"
+    write_kubeconfig.write_kubeconfig_file(_KUBECONFIG, output)
+    assert yaml.safe_load(output.read_text()) == _KUBECONFIG
+    assert output.stat().st_mode & 0o777 == 0o600
+
+
+def test_write_kubeconfig_file_noop_when_identical(tmp_path: Path) -> None:
+    output = tmp_path / "kubeconfig"
+    write_kubeconfig.write_kubeconfig_file(_KUBECONFIG, output)
+    mtime = output.stat().st_mtime_ns
+    # Second call with identical content is a no-op (doesn't rewrite).
+    write_kubeconfig.write_kubeconfig_file(_KUBECONFIG, output)
+    assert output.stat().st_mtime_ns == mtime
+
+
+def test_write_kubeconfig_file_refuses_to_clobber(tmp_path: Path) -> None:
+    output = tmp_path / "kubeconfig"
+    other = {**_KUBECONFIG, "users": [{"name": "sa", "user": {"token": "different"}}]}
+    output.write_text(yaml.safe_dump(other))
+    with pytest.raises(RuntimeError, match="refusing to overwrite"):
+        write_kubeconfig.write_kubeconfig_file(_KUBECONFIG, output)
+    # Original file unchanged.
+    assert yaml.safe_load(output.read_text()) == other
+
+
+def test_write_kubeconfig_file_refuses_on_invalid_yaml(tmp_path: Path) -> None:
+    output = tmp_path / "kubeconfig"
+    output.write_text("not: valid: yaml: [")
+    with pytest.raises(RuntimeError, match="not valid YAML"):
+        write_kubeconfig.write_kubeconfig_file(_KUBECONFIG, output)
 
 
 def test_main_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

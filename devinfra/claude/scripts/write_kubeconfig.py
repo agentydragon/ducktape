@@ -73,7 +73,23 @@ def build_kubeconfig(
 
 
 def write_kubeconfig_file(kubeconfig: dict, output_path: Path) -> None:
-    """Atomic 0o600 write."""
+    """Atomic 0o600 write — never clobbers.
+
+    If the file exists and its parsed YAML differs from `kubeconfig`, raises.
+    A match is a no-op; a missing file is written fresh.
+    """
+    if output_path.exists():
+        existing_raw = output_path.read_text()
+        try:
+            existing = yaml.safe_load(existing_raw)
+        except yaml.YAMLError as e:
+            raise RuntimeError(f"refusing to overwrite {output_path}: existing file is not valid YAML ({e})") from e
+        if existing != kubeconfig:
+            raise RuntimeError(
+                f"refusing to overwrite {output_path}: existing kubeconfig differs from the one we'd write"
+            )
+        return
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     serialized = yaml.safe_dump(kubeconfig, default_flow_style=False, sort_keys=False)
     tmp_path = output_path.with_name(f".{output_path.name}.tmp")
