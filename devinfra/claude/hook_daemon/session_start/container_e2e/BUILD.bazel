@@ -69,6 +69,7 @@ py_test(
         "test_profile.yaml",
         ":e2e_container",
         "//devinfra/claude/hook_daemon/testdata/e2e_secrets:e2e_secrets_files",
+        "//devinfra/claude/scripts:write_kubeconfig.py",
         "//devinfra/claude/testdata/test_workspace:workspace_files",
         "//devinfra/secrets:_common.sh",
         "//devinfra/secrets:web_env.sh",

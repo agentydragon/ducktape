@@ -4,12 +4,6 @@ otel:
   endpoint: https://alloy-otlp.allegedly.works/v1/traces
   # bearer_token: decrypted via startup_env_script (web_env.sh) at daemon startup.
 
-k8s:
-  server: https://api.allegedly.works
-  service_account: claude-code-web
-  service_account_namespace: default
-  namespace: claude-sandbox
-
 pre_commit:
   auto_apply_hooks:
     - ruff-format
@@ -33,6 +27,10 @@ env_exports: |
   # come before /opt/node22/bin so the nix versions are preferred.
   export PATH="${HOME}/.nix-profile/bin:${PATH}"
 background_commands:
+  - name: kubeconfig
+    command: python3 "$CLAUDE_PROJECT_DIR/devinfra/claude/scripts/write_kubeconfig.py" ~/.kube/config
+    timeout: 30
+    after_env: true
   - name: nix nixpkgs check
     command: |
       if ! command -v nix &>/dev/null; then

@@ -12,11 +12,9 @@ import logging
 import logging.handlers
 import os
 import shlex
-import socket
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlparse
 
 import anyio
 from mako.template import Template
@@ -39,7 +37,6 @@ from devinfra.claude.hook_daemon.session_start import (
     tmpfs,
 )
 from devinfra.claude.hook_daemon.shim_install import install as install_shim
-from devinfra.claude.hook_daemon.write_kubeconfig_cli import build_kubeconfig, decrypt_k8s_token, write_kubeconfig_file
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.settings import CONFIG_FILES, HookSettings
 from devinfra.claude.supervisor import setup as supervisor_setup
@@ -368,13 +365,7 @@ async def handle(
         session, settings, profile, project_dir, root_ctx, platform=platform, env_overlay=startup.env_overlay
     )
 
-    # -- Shared steps: BuildBuddy, kubeconfig, fork remote --
-
-    # Write kubeconfig after platform setup. System CA bundle at
-    # /etc/ssl/certs/ca-certificates.crt contains the Anthropic CA on web
-    # containers (pre-installed).
-    with tracer.start_as_current_span("write_kubeconfig", context=root_ctx):
-        await _write_kubeconfig(profile, project_dir)
+    # -- Shared steps: BuildBuddy, fork remote --
 
     # Configure BuildBuddy now that secrets are available.
     with tracer.start_as_current_span("setup_buildbuddy", context=root_ctx):
@@ -505,56 +496,6 @@ async def handle(
 
     root_span.end()
     return output
-
-
-_SYSTEM_CA_BUNDLE = Path("/etc/ssl/certs/ca-certificates.crt")
-
-
-async def _write_kubeconfig(profile: ProfileConfig, project_dir: Path) -> None:
-    """Write ~/.kube/config using system CA bundle and any HTTPS_PROXY in env."""
-    if profile.k8s is None or not profile.k8s.write_home_kubeconfig:
-        return
-
-    output_path = Path.home() / ".kube" / "config"
-    try:
-        token = await anyio.to_thread.run_sync(lambda: decrypt_k8s_token(project_dir))
-    except (RuntimeError, FileNotFoundError, OSError):
-        logger.warning("kubeconfig: failed to decrypt k8s token", exc_info=True)
-        return
-
-    proxy_url = (
-        os.environ.get("HTTPS_PROXY")
-        or os.environ.get("https_proxy")
-        or os.environ.get("HTTP_PROXY")
-        or os.environ.get("http_proxy")
-    )
-    ca_path = _SYSTEM_CA_BUNDLE if _SYSTEM_CA_BUNDLE.exists() else None
-
-    kubeconfig = build_kubeconfig(
-        token=token,
-        server=profile.k8s.server,
-        service_account=profile.k8s.service_account,
-        namespace=profile.k8s.namespace,
-        ca_path=ca_path,
-        proxy_url=proxy_url,
-    )
-    write_kubeconfig_file(kubeconfig, output_path)
-    logger.info(
-        "kubeconfig: wrote %s — server=%s ca=%s proxy=%s",
-        output_path,
-        profile.k8s.server,
-        ca_path,
-        "set" if proxy_url else "unset",
-    )
-
-    # Lightweight reachability probe (non-fatal).
-    parsed = urlparse(profile.k8s.server)
-    hostname = parsed.hostname or ""
-    try:
-        socket.getaddrinfo(hostname, parsed.port or 443)
-        logger.info("kubeconfig: DNS OK for %s", hostname)
-    except OSError:
-        logger.warning("kubeconfig: WARNING — DNS resolution failed for %s; kubectl will not work", hostname)
 
 
 def _build_extra_env_script(profile: ProfileConfig) -> str | None:

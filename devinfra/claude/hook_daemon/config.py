@@ -35,19 +35,6 @@ class OtelConfig(BaseModel):
         )
 
 
-class K8sConfig(BaseModel):
-    """K8s cluster connection config for kubeconfig generation."""
-
-    server: str = Field(description="K8s API server URL")
-    service_account: str = Field(description="ServiceAccount name for kubeconfig user and context")
-    service_account_namespace: str = Field(default="default", description="Namespace of the ServiceAccount")
-    namespace: str = Field(description="Default namespace for kubectl operations")
-    write_home_kubeconfig: bool = Field(
-        default=True,
-        description="Write SA kubeconfig to ~/.kube/config. Set false on CLI where sops-nix manages that file.",
-    )
-
-
 class BazelRemoteProxyConfig(BaseModel):
     target: str = Field(description="host:port to connect to, e.g. 'remote.buildbuddy.io:443'")
 
@@ -121,8 +108,6 @@ class ProfileConfig(BaseModel):
         "Disable in environments where the container is torn down externally."
     )
 
-    # Formerly top-level HookConfig fields, now per-profile.
-    k8s: K8sConfig | None = Field(default=None, description="K8s cluster connection config for kubeconfig generation.")
     otel: OtelConfig | None = Field(default=None, description="OpenTelemetry tracing configuration.")
     pre_commit: PreCommitConfig | None = Field(default=None, description="Pre-commit hook behavior configuration.")
     git_shim: GitShimConfig = Field(default_factory=GitShimConfig, description="Git shim behavior toggles.")

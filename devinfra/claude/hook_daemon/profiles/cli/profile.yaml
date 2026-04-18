@@ -2,13 +2,6 @@ otel:
   endpoint: https://alloy-otlp.allegedly.works/v1/traces
   # bearer_token: sourced from .envrc (cli_env.sh → DUCKTAPE_OTEL_BEARER_TOKEN).
 
-k8s:
-  server: https://api.allegedly.works
-  service_account: claude-code-web
-  service_account_namespace: default
-  namespace: claude-sandbox
-  write_home_kubeconfig: false # sops-nix owns ~/.kube/config on CLI; don't clobber it
-
 pre_commit:
   auto_apply_hooks:
     - ruff-format

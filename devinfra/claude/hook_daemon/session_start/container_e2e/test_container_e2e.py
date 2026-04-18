@@ -47,11 +47,12 @@ _WHEEL_DIR = "/wheel"
 _TEST_WORKSPACE_MODULE = "_main/devinfra/claude/testdata/test_workspace/MODULE.bazel"
 _WEB_ENV_SH = "_main/devinfra/secrets/web_env.sh"
 _COMMON_SH = "_main/devinfra/secrets/_common.sh"
+_WRITE_KUBECONFIG = "_main/devinfra/claude/scripts/write_kubeconfig.py"
 _TEST_PROFILE = "_main/devinfra/claude/hook_daemon/session_start/container_e2e/test_profile.yaml"
 _SECRETS_DIR_MARKER = "_main/devinfra/claude/hook_daemon/testdata/e2e_secrets/test_age.key"
 
 # Test SOPS files live at these repo-relative paths inside /project (matching
-# what web_env.sh and write_kubeconfig_cli.py look for in the real repo).
+# what web_env.sh and write_kubeconfig.py look for in the real repo).
 _TEST_SECRET_FILES = [
     "buildbuddy.yaml",
     "github-pat-agentydragon-agent.yaml",
@@ -130,11 +131,14 @@ def staged_project(tmp_path: Path) -> Path:
         if src.is_file():
             shutil.copy2(src, project / src.name)
 
-    # Real env scripts at their real repo paths.
+    # Real scripts at their real repo paths.
     secrets_dir = project / "devinfra" / "secrets"
     secrets_dir.mkdir(parents=True)
     shutil.copy2(get_required_path(_WEB_ENV_SH), secrets_dir / "web_env.sh")
     shutil.copy2(get_required_path(_COMMON_SH), secrets_dir / "_common.sh")
+    scripts_dir = project / "devinfra" / "claude" / "scripts"
+    scripts_dir.mkdir(parents=True)
+    shutil.copy2(get_required_path(_WRITE_KUBECONFIG), scripts_dir / "write_kubeconfig.py")
 
     # Test profile (sibling of this test) + test-encrypted SOPS fixtures.
     shutil.copy2(get_required_path(_TEST_PROFILE), project / "profile.yaml")
@@ -252,13 +256,15 @@ def test_container_e2e(container: docker.models.containers.Container) -> None:
     assert agent_env["GITHUB_TOKEN"] == "test-fake-gh-agent-token"
     assert agent_env["DUCKTAPE_CI_READ_GITHUB_TOKEN"] == "test-fake-ci-read-token"
 
-    # Kubeconfig written by the real write_kubeconfig_cli code.
+    # Kubeconfig written by the write_kubeconfig bg command (async — poll).
+    _exec(
+        container, ["bash", "-c", "for i in $(seq 60); do [ -f /root/.kube/config ] && exit 0; sleep 0.5; done; exit 1"]
+    )
     _, kubeconfig_raw, _ = _exec(container, ["cat", "/root/.kube/config"])
     kube = yaml.safe_load(kubeconfig_raw)
     assert kube["current-context"] == "claude-code-web"
     assert kube["users"][0]["user"]["token"] == "test-fake-k8s-token"
-    assert kube["clusters"][0]["cluster"]["server"] == "https://test.example/"
-    # Kubeconfig must be 0o600 (contains a bearer token).
+    assert kube["clusters"][0]["cluster"]["server"] == "https://api.allegedly.works"
     _, stat_out, _ = _exec(container, ["stat", "-c", "%a", "/root/.kube/config"])
     assert stat_out.strip() == b"600"
 

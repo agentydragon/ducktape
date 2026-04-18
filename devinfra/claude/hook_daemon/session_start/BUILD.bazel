@@ -72,7 +72,6 @@ py_library(
         "//devinfra/claude/hook_daemon:models",
         "//devinfra/claude/hook_daemon:session",
         "//devinfra/claude/hook_daemon:shim_install",
-        "//devinfra/claude/hook_daemon:write_kubeconfig_cli",
         "//devinfra/claude/hook_daemon/templates",
         "//devinfra/claude/supervisor:setup",
         "@pypi//anyio",

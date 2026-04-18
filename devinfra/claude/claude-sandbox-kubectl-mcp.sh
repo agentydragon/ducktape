@@ -21,10 +21,10 @@ fi
 TMPKC="$(mktemp "${TMPDIR:-/tmp}/claude-sandbox-kc.XXXXXX")"
 trap 'rm -f "$TMPKC"' EXIT
 
-# Canonical kubeconfig materializer: embeds CA bundle + proxy-url from the
-# active profile so kubectl actually works behind the TLS-inspecting egress
-# proxy on Claude Code web. See devinfra/claude/hook_daemon/write_kubeconfig_cli.py.
-claude-hook write-kubeconfig "$TMPKC"
+# Standalone kubeconfig materializer: embeds CA bundle + proxy-url so kubectl
+# works behind the TLS-inspecting egress proxy on Claude Code web.
+# See devinfra/claude/scripts/write_kubeconfig.py.
+python3 "$CLAUDE_PROJECT_DIR/devinfra/claude/scripts/write_kubeconfig.py" "$TMPKC"
 
 # Subprocess (not exec) — bash stays alive so the EXIT trap cleans up.
 kubernetes-mcp-server --kubeconfig "$TMPKC" --disable-multi-cluster "$@"
