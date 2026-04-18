@@ -11,9 +11,13 @@
 #   - setup_tmpfs / setup_docker  (needs mount/privileges)
 #   - bazel_bes_proxy             (BES interceptor not relevant here)
 #   - pre_commit                  (PostToolUse not exercised in v0)
-#   - network-heavy bg commands   (apt-get, pre-commit install, fork remote,
-#                                  bazelisk warmup — none relevant to secrets)
+#   - network-heavy bg commands   (apt-get, pre-commit install, fork remote)
 #   - context_template            (keep output minimal for test assertions)
+#
+# Kept: bazelisk warmup — exercises the full bg-command flow (after_env=true
+# waits for the env file, the bazelisk shim is invoked from the bg command,
+# and the daemon serializes with the subsequent `bazelisk build //:hello`
+# via Bazel's output base lock).
 #
 # The real web profile is at devinfra/claude/hook_daemon/profiles/web/profile.yaml.
 
@@ -33,3 +37,14 @@ git_shim:
 
 env_exports: |
   export E2E_TEST_MARKER=1
+
+background_commands:
+  - name: bazelisk warmup (query //...)
+    command: |
+      bazelisk query //... >/dev/null &
+      bazelisk_pid=$!
+      echo "Bazel warmup running (PID ${bazelisk_pid}). Output base lock held until finished."
+      echo "To cancel: kill -TERM ${bazelisk_pid}"
+      wait "${bazelisk_pid}"
+    timeout: 300
+    after_env: true
