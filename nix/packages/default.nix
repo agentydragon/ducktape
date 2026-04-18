@@ -152,6 +152,26 @@ in
       ];
   };
 
+  # Rust claude-hook binary — static, no runtime deps.
+  # Provides the same `claude-hook` binary name as the Python wheel so it's a
+  # drop-in replacement. Installed into a separate flake output (#claude-hooks-rs)
+  # and selected via `web_setup.sh --impl=rust`.
+  claude-hook-rs = pkgs.stdenvNoCC.mkDerivation {
+    pname = "claude-hook-rs";
+    version = "latest";
+    src = artifacts.claude-hook-rs;
+    dontUnpack = true;
+    installPhase = ''
+      install -Dm755 $src $out/bin/claude-hook
+    '';
+    meta = {
+      description = "Claude Code hook daemon (Rust)";
+      homepage = "https://github.com/agentydragon/ducktape";
+      license = lib.licenses.agpl3Only;
+      mainProgram = "claude-hook";
+    };
+  };
+
   gterm-theme = mkWheel {
     pname = "gterm-theme";
     description = "GNOME Terminal theme follower";

@@ -22,12 +22,30 @@
 # (useful for debugging sessions where you can't read the log directly).
 #
 # Usage (Claude Code web UI setup command):
-#   bash ducktape/devinfra/claude/web_setup.sh
+#   bash ducktape/devinfra/claude/web_setup.sh [--impl=<python|rust>]
+#
+# --impl selects the claude-hook implementation:
+#   python (default) — Python wheel (#devtools flake output)
+#   rust             — Rust static binary (#devtools-rust flake output)
 
 LOG_FILE="/tmp/web-setup.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 set -euo pipefail
+
+# Hook implementation: python (default) or rust.
+HOOK_IMPL="${DUCKTAPE_CLAUDE_HOOK_IMPL:-python}"
+for arg in "$@"; do
+  case "$arg" in --impl=*) HOOK_IMPL="${arg#--impl=}" ;; esac
+done
+case "$HOOK_IMPL" in
+  python) DEVTOOLS_OUTPUT="devtools" ;;
+  rust) DEVTOOLS_OUTPUT="devtools-rust" ;;
+  *)
+    echo "Unknown --impl=$HOOK_IMPL (expected python or rust)" >&2
+    DEVTOOLS_OUTPUT="devtools"
+    ;;
+esac
 
 FLAKE="path:$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SETUP_COMMIT=$(git -C "${FLAKE#path:}" rev-parse HEAD 2>/dev/null || echo 'unknown')
@@ -113,8 +131,9 @@ ls -la
 #
 # See <devinfra/claude/docs/web-setup-debug.md> ("Pin drift on persistent rootfs").
 nix profile remove devtools 2>/dev/null || true
-nix profile install --max-jobs auto "${FLAKE}#devtools"
-echo "[$(date -Iseconds)] Dev tools installed."
+nix profile remove devtools-rust 2>/dev/null || true
+nix profile install --max-jobs auto "${FLAKE}#${DEVTOOLS_OUTPUT}"
+echo "[$(date -Iseconds)] Dev tools installed (impl=$HOOK_IMPL)."
 
 # Symlink all Nix-installed binaries into /usr/local/bin so they're on PATH.
 # Claude Code is launched directly (not via login shell), so the Nix profile bin

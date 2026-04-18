@@ -1,0 +1,122 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+
+rust_library(
+    name = "protocol",
+    srcs = ["protocol.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "protocol_test",
+    crate = ":protocol",
+)
+
+rust_library(
+    name = "config",
+    srcs = ["config.rs"],
+    crate_name = "claude_hook_config",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@crates//:serde",
+        "@crates//:serde_yaml",
+    ],
+)
+
+rust_test(
+    name = "config_test",
+    crate = ":config",
+)
+
+rust_library(
+    name = "env_script",
+    srcs = ["env_script.rs"],
+    crate_name = "claude_hook_env_script",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+)
+
+rust_test(
+    name = "env_script_test",
+    crate = ":env_script",
+    deps = ["@crates//:tempfile"],
+)
+
+rust_library(
+    name = "env_file",
+    srcs = ["env_file.rs"],
+    crate_name = "claude_hook_env_file",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@crates//:shlex",
+        "@crates//:tempfile",
+    ],
+)
+
+rust_test(
+    name = "env_file_test",
+    crate = ":env_file",
+)
+
+rust_library(
+    name = "shim_install",
+    srcs = ["shim_install.rs"],
+    crate_name = "claude_hook_shim_install",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@crates//:shlex"],
+)
+
+rust_test(
+    name = "shim_install_test",
+    crate = ":shim_install",
+    deps = ["@crates//:tempfile"],
+)
+
+rust_binary(
+    name = "claude_hook",
+    srcs = [
+        "bg_command.rs",
+        "daemon_lifecycle.rs",
+        "git_shim.rs",
+        "main.rs",
+        "session.rs",
+        "shim_runtime.rs",
+    ],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":config",
+        ":env_file",
+        ":env_script",
+        ":protocol",
+        ":shim_install",
+        "@crates//:axum",
+        "@crates//:clap",
+        "@crates//:http-body-util",
+        "@crates//:hyper",
+        "@crates//:hyper-util",
+        "@crates//:libc",
+        "@crates//:nix",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:shlex",
+        "@crates//:tempfile",
+        "@crates//:tokio",
+        "@crates//:tower",
+    ],
+)
+
+rust_test(
+    name = "claude_hook_test",
+    crate = ":claude_hook",
+    deps = [
+        "@crates//:tempfile",
+    ],
+)

@@ -32,6 +32,10 @@ jobs:
             target: //:claude_hooks_wheel
             bazel_output: bb-out/bazel-out/k8-fastbuild/bin/claude_hooks-0.1.0-py3-none-any.whl
             tests: //devinfra/claude/... //devinfra/precommit/... //cluster/validation/...
+          - pkg: claude-hook-rs
+            target: //devinfra/claude/claude_hook:claude_hook
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/devinfra/claude/claude_hook/claude_hook
+            tests: //devinfra/claude/claude_hook/...
           - pkg: ducktape-util
             target: //util:wheel
             bazel_output: bb-out/bazel-out/k8-fastbuild/bin/util/ducktape_util-0.1.0-py3-none-any.whl

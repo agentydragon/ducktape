@@ -232,9 +232,8 @@
       ];
       # System libraries matching RBE worker image (devinfra/rbe_image/Dockerfile).
       systemLibs = import ./nix/packages/system-libs.nix { inherit pkgs; };
-      devToolPackages = [
-        # Repo-specific tools (bbr is provided by claude-hooks wheel)
-        ducktapePkgs.claude-hooks
+      # Common dev tools shared by both Python and Rust hook implementations.
+      devToolsCommon = [
         ducktapePkgs.bb
         ducktapePkgs.bbapi
         ducktapePkgs.skills
@@ -262,6 +261,10 @@
         pkgs.ssh-to-age
         ducktapePkgs.kubernetes-mcp-server
       ];
+      # Python claude-hook (bbr provided by the wheel's console_scripts).
+      devToolPackages = devToolsCommon ++ [ ducktapePkgs.claude-hooks ];
+      # Rust claude-hook (static binary, no Python runtime).
+      devToolPackagesRust = devToolsCommon ++ [ ducktapePkgs.claude-hook-rs ];
     in
     {
       # Development shell — enter via `nix develop` or direnv (`use flake`).
@@ -281,9 +284,15 @@
           ];
         };
         # Installable package for `nix profile install .#devtools` (used by web_setup.sh).
+        # Default: Python claude-hook. Use #devtools-rust for the Rust binary.
         devtools = pkgs.symlinkJoin {
           name = "ducktape-devtools";
           paths = devToolPackages ++ localOnlyPackages;
+        };
+        # Rust claude-hook variant (selected via `web_setup.sh --impl=rust`).
+        devtools-rust = pkgs.symlinkJoin {
+          name = "ducktape-devtools-rust";
+          paths = devToolPackagesRust ++ localOnlyPackages;
         };
         # Lean devtools for RBE worker image (no rustfmt, ansible).
         rbetools = pkgs.symlinkJoin {

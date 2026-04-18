@@ -1,30 +1,24 @@
 """Container E2E test for the hook daemon's session-start flow.
 
-Exercises the real secret-decryption + kubeconfig path end-to-end inside an
-isolated Docker container:
+Parameterized over two implementations:
 
-  - Stages a /project tree with the real devinfra/secrets/web_env.sh,
-    the real _common.sh, a web-style profile (testdata/e2e_secrets/profile.yaml),
-    and test-encrypted SOPS secrets (testdata/e2e_secrets/*.yaml) at the same
-    repo-relative paths the real scripts expect.
-  - Installs the claude_hooks wheel in the container.
-  - Runs SessionStart. The daemon sources web_env.sh (decrypts the fake
-    secrets with the test age key), writes ~/.kube/config via the real
-    kubeconfig writer, and sets up PATH shims + bazelrc.
-  - Asserts the agent's contract: after `source <ENV_FILE>`, BUILDBUDDY_API_KEY,
-    GITHUB_TOKEN, DUCKTAPE_CI_READ_GITHUB_TOKEN are set; ~/.kube/config is a
-    valid kubeconfig with the decrypted token; PATH shims work; bazel build
-    succeeds.
+  - ``python``: install the ``claude_hooks`` Python wheel (the current prod
+    path).
+  - ``rust``: copy the ``claude-hook`` Rust binary into ``/usr/local/bin``.
 
-The test age key is generated once and committed to testdata/e2e_secrets/test_age.key.
-It only decrypts the fake secret fixtures in that directory; no real secrets
-are involved.
+Both use the same container image, the same staged `/project` (real
+`web_env.sh`, real SOPS fixtures, test profile, etc.), and the same
+assertion set. Both implementations must pass the full contract.
+
+Exercises the real secret-decryption + kubeconfig path end-to-end.
 """
 
+import io
 import json
 import os
 import shlex
 import shutil
+import tarfile
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -43,16 +37,15 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 # via pkg_tar layers / the trixie_e2e apt manifest (see BUILD.bazel).
 _WHEEL_DIR = "/wheel"
 
-# Runfiles paths for real scripts + test fixtures.
+# Runfiles paths.
 _TEST_WORKSPACE_MODULE = "_main/devinfra/claude/testdata/test_workspace/MODULE.bazel"
 _WEB_ENV_SH = "_main/devinfra/secrets/web_env.sh"
 _COMMON_SH = "_main/devinfra/secrets/_common.sh"
 _WRITE_KUBECONFIG = "_main/devinfra/claude/scripts/write_kubeconfig.py"
 _TEST_PROFILE = "_main/devinfra/claude/hook_daemon/session_start/container_e2e/test_profile.yaml"
 _SECRETS_DIR_MARKER = "_main/devinfra/claude/hook_daemon/testdata/e2e_secrets/test_age.key"
+_RUST_BINARY = "_main/devinfra/claude/claude_hook/claude_hook"
 
-# Test SOPS files live at these repo-relative paths inside /project (matching
-# what web_env.sh and write_kubeconfig.py look for in the real repo).
 _TEST_SECRET_FILES = [
     "buildbuddy.yaml",
     "github-pat-agentydragon-agent.yaml",
@@ -68,14 +61,12 @@ _CONTAINER_NAME = "ducktape-container-e2e"
 _SESSION_ID = "container-e2e-test"
 _ENV_FILE = f"/root/.claude/session-env/{_SESSION_ID}/sessionstart-hook-0.sh"
 _SESSION_DIR = f"/root/.claude/session-env/{_SESSION_ID}"
-# Daemon UDS lives under /tmp/claude-hd/<session_id>/ (short path — AF_UNIX
-# has a 108-byte sun_path limit; see devinfra/claude/session_paths.py).
+# Daemon UDS lives under /tmp/claude-hd/<session_id>/ (AF_UNIX 108-byte limit).
 _DAEMON_SOCK = f"/tmp/claude-hd/{_SESSION_ID}/d.sock"
 
 
-def _save_output(name: str, content: str) -> None:
-    """Save content to undeclared test outputs."""
-    out_dir = undeclared_outputs_dir() / "container-e2e"
+def _save_output(impl: str, name: str, content: str) -> None:
+    out_dir = undeclared_outputs_dir() / f"container-e2e-{impl}"
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / name).write_text(content)
 
@@ -83,7 +74,6 @@ def _save_output(name: str, content: str) -> None:
 def _exec(
     container: docker.models.containers.Container, cmd: list[str], *, workdir: str | None = None, check: bool = True
 ) -> tuple[int, bytes, bytes]:
-    """Run a command in the container via docker exec."""
     result = container.exec_run(cmd, demux=True, workdir=workdir)
     stdout, stderr = result.output
     stdout = stdout or b""
@@ -99,116 +89,33 @@ def _exec(
 def _exec_under_env(
     container: docker.models.containers.Container, shell_cmd: str, *, workdir: str | None = None, check: bool = True
 ) -> tuple[int, bytes, bytes]:
-    """Run a shell command inside the container after sourcing the session env file.
-
-    Simulates what the agent's Bash tool does: Claude Code sources the session
-    env file before every Bash call.
-    """
+    """Run a shell command after sourcing the session env file (agent's Bash behavior)."""
     return _exec(container, ["bash", "-c", f"source {_ENV_FILE} && {shell_cmd}"], workdir=workdir, check=check)
 
 
-@pytest.fixture
-def staged_project(tmp_path: Path) -> Path:
-    """A /project tree mirroring the real repo layout (for bind-mount into the container).
-
-    /project/
-      MODULE.bazel, BUILD.bazel, .bazelrc, .bazelversion   (test workspace)
-      profile.yaml                                          (web-style test profile)
-      devinfra/secrets/{web_env.sh,_common.sh}              (real scripts)
-      secrets/{buildbuddy,github-pat-...,
-               github-ci-read-pat,
-               claude-web-k8s-cert}.yaml                    (test-encrypted)
-      .git/                                                 (pre-commit needs a repo)
-    """
-    project = tmp_path / "project"
-    project.mkdir()
-
-    test_workspace = get_required_path(_TEST_WORKSPACE_MODULE).parent
-    for src in test_workspace.iterdir():
-        if src.name == "profile.yaml":
-            # Overridden by the e2e_secrets profile below.
-            continue
-        if src.is_file():
-            shutil.copy2(src, project / src.name)
-
-    # Real scripts at their real repo paths.
-    secrets_dir = project / "devinfra" / "secrets"
-    secrets_dir.mkdir(parents=True)
-    shutil.copy2(get_required_path(_WEB_ENV_SH), secrets_dir / "web_env.sh")
-    shutil.copy2(get_required_path(_COMMON_SH), secrets_dir / "_common.sh")
-    scripts_dir = project / "devinfra" / "claude" / "scripts"
-    scripts_dir.mkdir(parents=True)
-    shutil.copy2(get_required_path(_WRITE_KUBECONFIG), scripts_dir / "write_kubeconfig.py")
-
-    # Test profile (sibling of this test) + test-encrypted SOPS fixtures.
-    shutil.copy2(get_required_path(_TEST_PROFILE), project / "profile.yaml")
-    secrets_fixtures = get_required_path(_SECRETS_DIR_MARKER).parent
-    project_secrets = project / "secrets"
-    project_secrets.mkdir()
-    for name in _TEST_SECRET_FILES:
-        shutil.copy2(secrets_fixtures / name, project_secrets / name)
-
-    (project / ".git").mkdir()  # pre-commit wants a git repo
-
-    return project
+def _docker_cp(
+    container: docker.models.containers.Container, src_path: str, dest_path: str, *, mode: int = 0o755
+) -> None:
+    """Copy a local file into a running container via put_archive."""
+    dest = Path(dest_path)
+    with Path(src_path).open("rb") as f:
+        data = f.read()
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        info = tarfile.TarInfo(name=dest.name)
+        info.size = len(data)
+        info.mode = mode
+        tar.addfile(info, io.BytesIO(data))
+    buf.seek(0)
+    container.put_archive(str(dest.parent), buf)
 
 
-@pytest.fixture
-def test_age_key() -> str:
-    """Test-only age private key from testdata/e2e_secrets/test_age.key.
-
-    Decrypts the fake SOPS fixtures in that directory; does not unlock any real
-    secrets. Passed to the container as SOPS_AGE_KEY so the real web_env.sh and
-    kubeconfig writer can read the fixtures.
-    """
-    raw = get_required_path(_SECRETS_DIR_MARKER).read_text()
-    # The file has a "# public key: ..." header and the AGE-SECRET-KEY-* line.
-    return next(line.strip() for line in raw.splitlines() if line.startswith("AGE-SECRET-KEY-"))
+# ---------------------------------------------------------------------------
+# Parameterization: python (wheel install) vs rust (binary copy)
+# ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-def e2e_image() -> str:
-    """Load the e2e container OCI image into Docker."""
-    return load_oci_image(_E2E)
-
-
-@pytest.fixture
-def container(staged_project: Path, test_age_key: str, e2e_image: str) -> Iterator[docker.models.containers.Container]:
-    """Start the e2e container with the staged project bind-mounted at /project.
-
-    Teardown saves container logs + daemon logs to undeclared outputs for
-    post-mortem analysis, then force-removes the container.
-    """
-    env = {
-        "CLAUDE_PROJECT_DIR": "/project",
-        "CLAUDE_ENV_FILE": _ENV_FILE,
-        "DUCKTAPE_CLAUDE_HOOKS_PROFILE": "profile.yaml",
-        "SOPS_AGE_KEY": test_age_key,
-    }
-    c = docker.from_env().containers.run(
-        e2e_image,
-        command=["sleep", "infinity"],
-        name=f"{_CONTAINER_NAME}-{os.getpid()}",
-        environment=env,
-        volumes={str(staged_project): {"bind": "/project", "mode": "ro"}},
-        detach=True,
-    )
-    try:
-        yield c
-    finally:
-        _save_output("container-stdout.log", c.logs(stdout=True, stderr=False).decode(errors="replace"))
-        _save_output("container-stderr.log", c.logs(stdout=False, stderr=True).decode(errors="replace"))
-        for log_file in ["hook-daemon/daemon.log", "hook-daemon/daemon.err.log", "sessionstart-hook-0.sh", "bazelrc"]:
-            rc, content, _ = _exec(c, ["cat", f"{_SESSION_DIR}/{log_file}"], check=False)
-            if rc == 0:
-                _save_output(log_file.replace("/", "-"), content.decode(errors="replace"))
-        c.remove(force=True)
-
-
-def test_container_e2e(container: docker.models.containers.Container) -> None:
-    """SessionStart contract test: secrets, kubeconfig, shims, bazel all work."""
-    # Install claude_hooks wheel from the image's /wheel/ dir.
-    _exec(container, ["ls", "-la", _WHEEL_DIR])
+def _install_python_wheel(container: docker.models.containers.Container) -> None:
     _exec(
         container,
         [
@@ -220,11 +127,124 @@ def test_container_e2e(container: docker.models.containers.Container) -> None:
             f"{_WHEEL_DIR}/claude_hooks-0.1.0-py3-none-any.whl",
         ],
     )
+
+
+def _install_rust_binary(container: docker.models.containers.Container) -> None:
+    rust_binary = get_required_path(_RUST_BINARY)
+    _docker_cp(container, str(rust_binary), "/usr/local/bin/claude-hook")
+    # The Rust binary has no Python runtime deps; write_kubeconfig.py
+    # (invoked as a bg command) imports yaml. The Python impl gets PyYAML
+    # transitively via the claude_hooks wheel; the Rust impl must install
+    # it explicitly.
+    _exec(container, ["pip", "install", "--break-system-packages", "pyyaml"])
+
+
+_IMPLS = {"python": _install_python_wheel, "rust": _install_rust_binary}
+
+
+@pytest.fixture(params=list(_IMPLS.keys()))
+def impl(request: pytest.FixtureRequest) -> str:
+    param: str = request.param
+    return param
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def staged_project(tmp_path: Path) -> Path:
+    project = tmp_path / "project"
+    project.mkdir()
+
+    test_workspace = get_required_path(_TEST_WORKSPACE_MODULE).parent
+    for src in test_workspace.iterdir():
+        if src.name == "profile.yaml":
+            continue
+        if src.is_file():
+            shutil.copy2(src, project / src.name)
+
+    secrets_dir = project / "devinfra" / "secrets"
+    secrets_dir.mkdir(parents=True)
+    shutil.copy2(get_required_path(_WEB_ENV_SH), secrets_dir / "web_env.sh")
+    shutil.copy2(get_required_path(_COMMON_SH), secrets_dir / "_common.sh")
+
+    scripts_dir = project / "devinfra" / "claude" / "scripts"
+    scripts_dir.mkdir(parents=True)
+    shutil.copy2(get_required_path(_WRITE_KUBECONFIG), scripts_dir / "write_kubeconfig.py")
+
+    shutil.copy2(get_required_path(_TEST_PROFILE), project / "profile.yaml")
+    secrets_fixtures = get_required_path(_SECRETS_DIR_MARKER).parent
+    project_secrets = project / "secrets"
+    project_secrets.mkdir()
+    for name in _TEST_SECRET_FILES:
+        shutil.copy2(secrets_fixtures / name, project_secrets / name)
+
+    (project / ".git").mkdir()
+    return project
+
+
+@pytest.fixture
+def test_age_key() -> str:
+    raw = get_required_path(_SECRETS_DIR_MARKER).read_text()
+    return next(line.strip() for line in raw.splitlines() if line.startswith("AGE-SECRET-KEY-"))
+
+
+@pytest.fixture
+def e2e_image() -> str:
+    return load_oci_image(_E2E)
+
+
+@pytest.fixture
+def container(
+    impl: str, staged_project: Path, test_age_key: str, e2e_image: str
+) -> Iterator[docker.models.containers.Container]:
+    env = {
+        "CLAUDE_PROJECT_DIR": "/project",
+        "CLAUDE_ENV_FILE": _ENV_FILE,
+        "DUCKTAPE_CLAUDE_HOOKS_PROFILE": "profile.yaml",
+        "SOPS_AGE_KEY": test_age_key,
+    }
+    c = docker.from_env().containers.run(
+        e2e_image,
+        command=["sleep", "infinity"],
+        name=f"{_CONTAINER_NAME}-{impl}-{os.getpid()}",
+        environment=env,
+        volumes={str(staged_project): {"bind": "/project", "mode": "ro"}},
+        detach=True,
+    )
+    try:
+        yield c
+    finally:
+        _save_output(impl, "container-stdout.log", c.logs(stdout=True, stderr=False).decode(errors="replace"))
+        _save_output(impl, "container-stderr.log", c.logs(stdout=False, stderr=True).decode(errors="replace"))
+        for log_file in ["hook-daemon/daemon.log", "hook-daemon/daemon.err.log", "sessionstart-hook-0.sh", "bazelrc"]:
+            rc, content, _ = _exec(c, ["cat", f"{_SESSION_DIR}/{log_file}"], check=False)
+            if rc == 0:
+                _save_output(impl, log_file.replace("/", "-"), content.decode(errors="replace"))
+        # Rust daemon writes logs under the short session dir.
+        for log_file in ["daemon.log", "daemon.err.log", "daemon.pid"]:
+            rc, content, _ = _exec(c, ["cat", f"/tmp/claude-hd/{_SESSION_ID}/{log_file}"], check=False)
+            if rc == 0:
+                _save_output(impl, f"rust-{log_file}", content.decode(errors="replace"))
+        c.remove(force=True)
+
+
+# ---------------------------------------------------------------------------
+# Contract test
+# ---------------------------------------------------------------------------
+
+
+def test_container_e2e(impl: str, container: docker.models.containers.Container) -> None:
+    """SessionStart contract test, parameterized over python/rust impls."""
+    # Install whichever claude-hook impl this run is for.
+    _IMPLS[impl](container)
     _exec(container, ["which", "claude-hook"])
     _exec(container, ["which", "sops"])
     _exec(container, ["which", "curl"])
 
-    # Run SessionStart hook.
+    # Run SessionStart.
     hook_input = json.dumps(
         {
             "hook_event_name": "SessionStart",
@@ -238,11 +258,7 @@ def test_container_e2e(container: docker.models.containers.Container) -> None:
     )
     _exec(container, ["bash", "-c", f"echo {shlex.quote(hook_input)} | claude-hook"])
 
-    # ------------------------------------------------------------------
-    # Agent contract assertions — what the agent's Bash tool calls see
-    # after `source $CLAUDE_ENV_FILE`.
-    # ------------------------------------------------------------------
-
+    # Env file exists.
     _exec(container, ["test", "-f", _ENV_FILE])
     _, stdout, _ = _exec_under_env(container, "env -0")
     agent_env = parse_env_null_delimited(stdout)
@@ -250,13 +266,20 @@ def test_container_e2e(container: docker.models.containers.Container) -> None:
     # env_exports from profile.
     assert agent_env["E2E_TEST_MARKER"] == "1"
 
-    # Secrets decrypted by real web_env.sh (_common.sh → BUILDBUDDY_API_KEY;
-    # web_env.sh → GITHUB_TOKEN, DUCKTAPE_CI_READ_GITHUB_TOKEN).
+    # Secrets decrypted by real web_env.sh.
     assert agent_env["BUILDBUDDY_API_KEY"] == "test-fake-bb-key"
     assert agent_env["GITHUB_TOKEN"] == "test-fake-gh-agent-token"
     assert agent_env["DUCKTAPE_CI_READ_GITHUB_TOKEN"] == "test-fake-ci-read-token"
 
-    # Kubeconfig written by the write_kubeconfig bg command (async — poll).
+    # Daemon alive on UDS.
+    _, stdout, _ = _exec(container, ["curl", "-sf", "--unix-socket", _DAEMON_SOCK, "http://localhost/health"])
+    assert b'"status":"ok"' in stdout
+
+    # PATH shims: passthrough.
+    _, stdout, _ = _exec_under_env(container, "git --version")
+    assert b"git version" in stdout
+
+    # Kubeconfig (written by bg command).
     _exec(
         container, ["bash", "-c", "for i in $(seq 60); do [ -f /root/.kube/config ] && exit 0; sleep 0.5; done; exit 1"]
     )
@@ -270,15 +293,7 @@ def test_container_e2e(container: docker.models.containers.Container) -> None:
     _, stat_out, _ = _exec(container, ["stat", "-c", "%a", "/root/.kube/config"])
     assert stat_out.strip() == b"600"
 
-    # Daemon alive on UDS.
-    _, stdout, _ = _exec(container, ["curl", "-sf", "--unix-socket", _DAEMON_SOCK, "http://localhost/health"])
-    assert b'"status":"ok"' in stdout
-
-    # PATH shims: passthrough.
-    _, stdout, _ = _exec_under_env(container, "git --version")
-    assert b"git version" in stdout
-
-    # git shim blocks `git add -A` (profile has block_add_all=true).
+    # git shim blocks `git add -A`.
     rc, _, stderr = _exec_under_env(container, "git add -A", check=False)
     assert rc != 0
     assert b"BLOCKED" in stderr
