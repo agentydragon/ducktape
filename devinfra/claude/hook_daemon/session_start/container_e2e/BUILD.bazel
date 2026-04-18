@@ -22,21 +22,19 @@ pkg_tar(
 )
 
 # Bazelisk + sops baked into /tools/ (on PATH). Neither is in Debian main,
-# so we fetch them as static binaries via @bazelisk_linux_amd64 / @sops_linux_amd64.
+# so we fetch them as static binaries via http_file.
 pkg_tar(
-    name = "e2e_bazelisk",
+    name = "e2e_tools",
     testonly = True,
-    srcs = ["@bazelisk_linux_amd64//file"],
+    srcs = [
+        "@bazelisk_linux_amd64//file",
+        "@sops_linux_amd64//file",
+    ],
     package_dir = "/tools",
-    remap_paths = {"/file/bazelisk": "bazelisk"},
-)
-
-pkg_tar(
-    name = "e2e_sops",
-    testonly = True,
-    srcs = ["@sops_linux_amd64//file"],
-    package_dir = "/tools",
-    remap_paths = {"/file/sops": "sops"},
+    remap_paths = {
+        "/file/bazelisk": "bazelisk",
+        "/file/sops": "sops",
+    },
 )
 
 # E2E test container: python:3.13-slim base + curl + git + JDK from trixie,
@@ -53,8 +51,7 @@ oci_image(
     tars = [
         "@trixie_e2e//:flat",
         ":e2e_wheels",
-        ":e2e_bazelisk",
-        ":e2e_sops",
+        ":e2e_tools",
     ],
 )
 
