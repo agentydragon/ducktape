@@ -5,7 +5,8 @@ Invoked as a profile background command during SessionStart and by the
 claude-sandbox-kubectl MCP server script.
 
 Usage:
-    python3 -m devinfra.claude.scripts.write_kubeconfig [OPTIONS] OUTPUT_PATH
+    python3 "$CLAUDE_PROJECT_DIR/devinfra/claude/scripts/write_kubeconfig.py" \\
+        [OPTIONS] OUTPUT_PATH
 
 Requires CLAUDE_PROJECT_DIR (to locate secrets/claude-web-k8s-token.yaml)
 and SOPS_AGE_KEY (for sops decryption) in the environment.
@@ -18,6 +19,7 @@ import base64
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -92,15 +94,18 @@ def write_kubeconfig_file(kubeconfig: dict, output_path: Path) -> None:
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     serialized = yaml.safe_dump(kubeconfig, default_flow_style=False, sort_keys=False)
-    tmp_path = output_path.with_name(f".{output_path.name}.tmp")
-    fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    # mkstemp: unique name (no concurrent clobber) + default 0o600 + returns fd
+    # we must close ourselves. fdopen takes ownership of the fd so any later
+    # failure still closes it via the 'with'.
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{output_path.name}.", suffix=".tmp", dir=output_path.parent)
+    tmp_path = Path(tmp_name)
     try:
         with os.fdopen(fd, "w") as f:
             f.write(serialized)
+        tmp_path.replace(output_path)
     except BaseException:
         tmp_path.unlink(missing_ok=True)
         raise
-    tmp_path.replace(output_path)
 
 
 def main(argv: list[str] | None = None) -> None:
