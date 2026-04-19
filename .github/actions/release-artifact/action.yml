@@ -54,6 +54,18 @@ runs:
           exit 1
         fi
 
+        # Verify basename(bazel_output) matches devinfra/ci/artifacts.py
+        # filename for this pkg. sync-pins fetches the release asset by
+        # that exact filename; a mismatch (e.g. rust_binary "claude_hook"
+        # vs registered "claude-hook") yields 404 at next sync. Catch
+        # here at release time, not 30 min later at sync-pins time.
+        expected_filename=$(uv run --script devinfra/ci/artifacts.py filename "$PKG")
+        actual_filename=$(basename "$artifact")
+        if [[ "$expected_filename" != "$actual_filename" ]]; then
+          echo "::error::Artifact filename mismatch for $PKG: Bazel produced '$actual_filename', artifacts.py registers '$expected_filename'. Fix one or the other so sync-pins can find the release asset."
+          exit 1
+        fi
+
         # Content-addressed skip check: tag by hash of the unstamped wheel.
         # If a release with this tag already exists, the content hasn't changed.
         content_sha=$(sha256sum "$artifact" | awk '{print $1}')

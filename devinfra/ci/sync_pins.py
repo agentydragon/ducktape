@@ -21,10 +21,15 @@ if str(_REPO_ROOT) not in sys.path:
 
 from github import Auth, Github
 
-from devinfra.ci.artifacts import ARTIFACTS, Pin, Sources, is_tag_for_pkg, sources_path, url_sha256
+from devinfra.ci.artifacts import ARTIFACTS, Pin, Sources, is_tag_for_pkg, url_sha256
+from util.bazel.workspace import get_build_workspace_directory
 
 REPO = "agentydragon/ducktape"
 BASE = f"https://github.com/{REPO}/releases/download"
+
+
+def sources_path() -> Path:
+    return get_build_workspace_directory() / "npins" / "sources.json"
 
 
 def main() -> None:

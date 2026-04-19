@@ -60,6 +60,15 @@ without — give you side-by-side testing on the same branch.
    image. Since the tokio runtime hasn't been created before fork, the
    grandchild could call `run_daemon()` directly — saves ~1ms and one
    exec. Alternatively, split into separate client/daemon binaries.
+5. **Session bazelrc + `--bazelrc` injection**. Python renders a Mako
+   session bazelrc and bazelisk/bazel shim injects `--bazelrc=<path>`.
+   Rust passes through. Works today because bazelisk finds `~/.bazelrc`,
+   but a session bazelrc is how BuildBuddy session tagging + BES events
+   are currently wired.
+6. **Python unit test parity**. `test_ensure_daemon`,
+   `test_hook_daemon_restart`, `test_shim`, `test_bg_output`,
+   `test_hook_daemon`, `test_tracing` don't have Rust equivalents. The
+   container E2E covers the happy path but not restart/crash edge cases.
 
 Cutover readiness checklist: <CUTOVER_CHECKLIST.md>
 
