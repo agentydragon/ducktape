@@ -88,6 +88,7 @@ rust_binary(
         "main.rs",
         "session.rs",
         "shim_runtime.rs",
+        "test_util.rs",
     ],
     edition = "2024",
     visibility = ["//visibility:public"],

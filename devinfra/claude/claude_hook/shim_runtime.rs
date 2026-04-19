@@ -98,28 +98,15 @@ async fn call_daemon(sock: &Path, req: &ShimExecRequest) -> Result<ShimResponse,
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::make_request;
     use axum::Json;
     use axum::routing::post;
     use std::sync::Arc;
     use tokio::net::UnixListener;
 
-    fn sample_request() -> ShimExecRequest {
-        let mut env = HashMap::new();
-        env.insert("PATH".into(), "/usr/bin".into());
-        ShimExecRequest {
-            shim: "git".into(),
-            session_id: "session-test".into(),
-            cwd: PathBuf::from("/tmp"),
-            argv: vec!["git".into(), "status".into()],
-            pid: 42,
-            env,
-        }
-    }
-
-    /// Spawn a one-shot fake daemon on a temp UDS that answers every request
-    /// with `response`. The join handle is dropped when the test ends, which
-    /// aborts the server task — but the socket path is already cleaned up by
-    /// `tempdir()`. Returns the socket path.
+    /// Spawn a fake daemon on a temp UDS that answers every `/shim-exec`
+    /// with `response`. Kept alive by the returned `JoinHandle`; the caller
+    /// holds it (`let _server = ...`) until the test ends.
     async fn spawn_fake_daemon(
         sock: PathBuf,
         response: ShimResponse,
@@ -127,25 +114,20 @@ mod tests {
         let shared = Arc::new(response);
         let app = axum::Router::new().route(
             "/shim-exec",
-            post({
+            post(move || {
                 let shared = shared.clone();
-                move || {
-                    let shared = shared.clone();
-                    async move {
-                        // axum's Json needs `Serialize`; ShimResponse is. Clone
-                        // the shared value into a fresh owned one for the
-                        // response (`Arc::clone` would hand out a shared ref,
-                        // but Json takes ownership).
-                        let resp: ShimResponse = match &*shared {
-                            ShimResponse::Blocked { message } => ShimResponse::Blocked {
-                                message: message.clone(),
-                            },
-                            ShimResponse::Execve { argv } => {
-                                ShimResponse::Execve { argv: argv.clone() }
-                            }
-                        };
-                        Json(resp)
-                    }
+                async move {
+                    // Clone inner fields — ShimResponse isn't Clone, and the
+                    // Arc holds a shared ref while Json wants ownership.
+                    let resp = match &*shared {
+                        ShimResponse::Blocked { message } => ShimResponse::Blocked {
+                            message: message.clone(),
+                        },
+                        ShimResponse::Execve { argv } => {
+                            ShimResponse::Execve { argv: argv.clone() }
+                        }
+                    };
+                    Json(resp)
                 }
             }),
         );
@@ -155,6 +137,10 @@ mod tests {
                 eprintln!("fake daemon serve error: {e}");
             }
         })
+    }
+
+    fn git_status_request() -> ShimExecRequest {
+        make_request("git", &["git", "status"], "/usr/bin")
     }
 
     #[tokio::test]
@@ -168,9 +154,8 @@ mod tests {
             },
         )
         .await;
-        let req = sample_request();
-        let decision = decide(&sock, &req, req.argv.clone()).await;
-        match decision {
+        let req = git_status_request();
+        match decide(&sock, &req, req.argv.clone()).await {
             ShimDecision::Block(m) => assert_eq!(m, "nope"),
             other => panic!("expected Block, got {other:?}"),
         }
@@ -187,9 +172,8 @@ mod tests {
             },
         )
         .await;
-        let req = sample_request();
-        let decision = decide(&sock, &req, req.argv.clone()).await;
-        match decision {
+        let req = git_status_request();
+        match decide(&sock, &req, req.argv.clone()).await {
             ShimDecision::Exec(argv) => {
                 assert!(
                     argv[0].starts_with('/'),
@@ -206,10 +190,9 @@ mod tests {
     async fn decide_passthrough_when_daemon_missing() {
         let tmp = tempfile::tempdir().unwrap();
         let sock = tmp.path().join("nonexistent.sock");
-        let req = sample_request();
+        let req = git_status_request();
         let original = req.argv.clone();
-        let decision = decide(&sock, &req, original.clone()).await;
-        match decision {
+        match decide(&sock, &req, original.clone()).await {
             ShimDecision::Passthrough(argv) => assert_eq!(argv, original),
             other => panic!("expected Passthrough, got {other:?}"),
         }
