@@ -33,6 +33,7 @@ mod session;
 mod shim_runtime;
 mod test_util;
 
+use protocol::NON_REPL_HOOK_NAMES;
 use session::{Session, format_system_message};
 
 // ---------------------------------------------------------------------------
@@ -138,14 +139,23 @@ impl AppState {
 // Non-REPL hook events: Claude Code delivers system_message only to the UI
 // notification callback on these, not into the model conversation. Flushing
 // mailbox here would waste the messages. Matches `_NON_REPL_HOOK_TYPES` in
-// `server.py`.
+// `server.py` / `NON_REPL_HOOK_NAMES`.
 fn is_repl_hook(hook: &AnyHookInput) -> bool {
-    !matches!(
-        hook,
-        AnyHookInput::SessionStart(_) | AnyHookInput::WorktreeCreate(_) | AnyHookInput::Unknown
-    )
-    // Python's list also includes SessionEnd/Setup/CwdChanged/etc., which we
-    // deserialize as Unknown (our enum only names the 4 we care about).
+    match hook {
+        AnyHookInput::SessionStart(_)
+        | AnyHookInput::SessionEnd(_)
+        | AnyHookInput::WorktreeCreate(_)
+        | AnyHookInput::WorktreeRemove(_)
+        | AnyHookInput::Setup(_)
+        | AnyHookInput::CwdChanged(_)
+        | AnyHookInput::FileChanged(_)
+        | AnyHookInput::InstructionsLoaded(_)
+        | AnyHookInput::ConfigChange(_) => false,
+        AnyHookInput::Unknown {
+            hook_event_name, ..
+        } => !NON_REPL_HOOK_NAMES.contains(&hook_event_name.as_str()),
+        _ => true,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -373,12 +383,37 @@ async fn handle_hook(
 }
 
 fn hook_session_id(hook: &AnyHookInput) -> Option<String> {
+    macro_rules! sid {
+        ($h:expr) => {
+            Some($h.base.session_id.clone())
+        };
+    }
     match hook {
-        AnyHookInput::SessionStart(h) => Some(h.base.session_id.clone()),
-        AnyHookInput::PreToolUse(h) => Some(h.base.session_id.clone()),
-        AnyHookInput::PostToolUse(h) => Some(h.base.session_id.clone()),
-        AnyHookInput::WorktreeCreate(h) => Some(h.base.session_id.clone()),
-        AnyHookInput::Unknown => None,
+        AnyHookInput::SessionStart(h) => sid!(h),
+        AnyHookInput::WorktreeCreate(h) => sid!(h),
+        AnyHookInput::SessionEnd(h) => sid!(h),
+        AnyHookInput::WorktreeRemove(h) => sid!(h),
+        AnyHookInput::Setup(h) => sid!(h),
+        AnyHookInput::CwdChanged(h) => sid!(h),
+        AnyHookInput::FileChanged(h) => sid!(h),
+        AnyHookInput::InstructionsLoaded(h) => sid!(h),
+        AnyHookInput::ConfigChange(h) => sid!(h),
+        AnyHookInput::PreToolUse(h) => sid!(h),
+        AnyHookInput::PostToolUse(h) => sid!(h),
+        AnyHookInput::PostToolUseFailure(h) => sid!(h),
+        AnyHookInput::UserPromptSubmit(h) => sid!(h),
+        AnyHookInput::Stop(h) => sid!(h),
+        AnyHookInput::SubagentStart(h) => sid!(h),
+        AnyHookInput::SubagentStop(h) => sid!(h),
+        AnyHookInput::Notification(h) => sid!(h),
+        AnyHookInput::PermissionRequest(h) => sid!(h),
+        AnyHookInput::Elicitation(h) => sid!(h),
+        AnyHookInput::ElicitationResult(h) => sid!(h),
+        AnyHookInput::PreCompact(h) => sid!(h),
+        AnyHookInput::PostCompact(h) => sid!(h),
+        AnyHookInput::TeammateIdle(h) => sid!(h),
+        AnyHookInput::TaskCompleted(h) => sid!(h),
+        AnyHookInput::Unknown { session_id, .. } => session_id.clone(),
     }
 }
 
