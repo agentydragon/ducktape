@@ -422,7 +422,7 @@ async fn handle_shim_exec(
     let shim_dir = session_dir.join("bin");
     let bazelrc_path = session_dir.join("bazelrc");
     Json(shim_exec_decision(
-        &req,
+        req,
         &state.profile,
         &shim_dir,
         &bazelrc_path,
@@ -432,25 +432,29 @@ async fn handle_shim_exec(
 /// Pure decision logic for `/shim-exec`: given a request, profile, and session
 /// paths, return the `ShimResponse` the daemon should send back. No axum/hyper
 /// types, no state mutation, no env lookups — testable in isolation.
+///
+/// Takes `req` by value so `argv` can be moved into `resolve_execve` without
+/// allocation. Only the `bazelisk`/`bazel` branch needs to clone, and only to
+/// inject `--bazelrc`.
 fn shim_exec_decision(
-    req: &ShimExecRequest,
+    req: ShimExecRequest,
     profile: &ProfileConfig,
     shim_dir: &Path,
     bazelrc_path: &Path,
 ) -> ShimResponse {
     match req.shim.as_str() {
         "git" => match git_shim::evaluate(&req.argv, &profile.git_shim) {
-            Ok(()) => resolve_execve(&req.shim, req.argv.clone(), shim_dir, &req.env),
+            Ok(()) => resolve_execve(&req.shim, req.argv, shim_dir, &req.env),
             Err(message) => ShimResponse::Blocked { message },
         },
         "bazelisk" | "bazel" => {
-            let mut argv = req.argv.clone();
+            let mut argv = req.argv;
             if bazelrc_path.exists() {
                 argv.insert(1, format!("--bazelrc={}", bazelrc_path.display()));
             }
             resolve_execve(&req.shim, argv, shim_dir, &req.env)
         }
-        _ => resolve_execve(&req.shim, req.argv.clone(), shim_dir, &req.env),
+        _ => resolve_execve(&req.shim, req.argv, shim_dir, &req.env),
     }
 }
 
@@ -952,7 +956,7 @@ mod tests {
             std::fs::write(&bazelrc, "# test\n").unwrap();
         }
         let req = make_request(shim, argv, &PathFixture::join_path(&[&real]));
-        let resp = shim_exec_decision(&req, profile, &shim_dir, &bazelrc);
+        let resp = shim_exec_decision(req, profile, &shim_dir, &bazelrc);
         (resp, real)
     }
 
@@ -1019,7 +1023,7 @@ mod tests {
         // PATH has only shim_dir → resolver excludes it → None → Blocked.
         let req = make_request("git", &["git", "status"], &shim_dir.display().to_string());
         match shim_exec_decision(
-            &req,
+            req,
             &ProfileConfig::default(),
             &shim_dir,
             &f.root.join("bazelrc"),

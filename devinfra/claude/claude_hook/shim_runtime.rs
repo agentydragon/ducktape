@@ -22,12 +22,13 @@ pub(crate) enum ShimDecision {
     /// Daemon returned an approved argv (argv[0] is an absolute path the
     /// daemon has already resolved) — exec it.
     Exec(Vec<String>),
-    /// Daemon unreachable — fall back to execing the original argv.
-    Passthrough(Vec<String>),
+    /// Daemon unreachable — exec the original argv. `reason` carries the
+    /// RPC error so `run_shim` can surface a single user-facing message.
+    Passthrough { argv: Vec<String>, reason: String },
 }
 
 /// Ask the daemon how to handle this shim invocation. Turns RPC failures
-/// into `Passthrough(original_argv)` so `run_shim` doesn't need to know
+/// into `Passthrough { argv, reason }` so `run_shim` doesn't need to know
 /// anything about the daemon wire protocol.
 pub(crate) async fn decide(
     sock: &Path,
@@ -37,12 +38,10 @@ pub(crate) async fn decide(
     match call_daemon(sock, req).await {
         Ok(ShimResponse::Blocked { message }) => ShimDecision::Block(message),
         Ok(ShimResponse::Execve { argv }) => ShimDecision::Exec(argv),
-        Err(e) => {
-            // Log the specific RPC error before we lose it — run_shim just
-            // prints a generic "passing through" to the user.
-            eprintln!("[{}-shim] daemon call failed: {e}", req.shim);
-            ShimDecision::Passthrough(original_argv)
-        }
+        Err(reason) => ShimDecision::Passthrough {
+            argv: original_argv,
+            reason,
+        },
     }
 }
 
@@ -76,8 +75,8 @@ pub async fn run_shim(name: String, forwarded: Vec<String>) -> ! {
             std::process::exit(1);
         }
         ShimDecision::Exec(argv) => argv,
-        ShimDecision::Passthrough(argv) => {
-            eprintln!("[{name}-shim] daemon unreachable — passing through");
+        ShimDecision::Passthrough { argv, reason } => {
+            eprintln!("[{name}-shim] daemon unreachable: {reason} — passing through");
             argv
         }
     };
@@ -104,9 +103,10 @@ mod tests {
     use std::sync::Arc;
     use tokio::net::UnixListener;
 
-    /// Spawn a fake daemon on a temp UDS that answers every `/shim-exec`
-    /// with `response`. Kept alive by the returned `JoinHandle`; the caller
-    /// holds it (`let _server = ...`) until the test ends.
+    /// Spawn a fake daemon on `sock` that answers every `/shim-exec` request
+    /// with `response`. Returns the server task's `JoinHandle`. The task
+    /// runs until `handle.abort()` is called or the tokio runtime ends with
+    /// the test; dropping the handle alone does NOT abort it.
     async fn spawn_fake_daemon(
         sock: PathBuf,
         response: ShimResponse,
@@ -193,7 +193,10 @@ mod tests {
         let req = git_status_request();
         let original = req.argv.clone();
         match decide(&sock, &req, original.clone()).await {
-            ShimDecision::Passthrough(argv) => assert_eq!(argv, original),
+            ShimDecision::Passthrough { argv, reason } => {
+                assert_eq!(argv, original);
+                assert!(!reason.is_empty(), "reason should carry the RPC error");
+            }
             other => panic!("expected Passthrough, got {other:?}"),
         }
     }
