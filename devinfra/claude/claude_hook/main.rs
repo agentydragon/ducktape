@@ -33,7 +33,6 @@ mod session;
 mod shim_runtime;
 mod test_util;
 
-use protocol::NON_REPL_HOOK_NAMES;
 use session::{Session, format_system_message};
 
 // ---------------------------------------------------------------------------
@@ -133,28 +132,6 @@ impl AppState {
         g.entry(session_id.to_string())
             .or_insert_with(|| Arc::new(Session::new(session_id.to_string())))
             .clone()
-    }
-}
-
-// Non-REPL hook events: Claude Code delivers system_message only to the UI
-// notification callback on these, not into the model conversation. Flushing
-// mailbox here would waste the messages. Matches `_NON_REPL_HOOK_TYPES` in
-// `server.py` / `NON_REPL_HOOK_NAMES`.
-fn is_repl_hook(hook: &AnyHookInput) -> bool {
-    match hook {
-        AnyHookInput::SessionStart(_)
-        | AnyHookInput::SessionEnd(_)
-        | AnyHookInput::WorktreeCreate(_)
-        | AnyHookInput::WorktreeRemove(_)
-        | AnyHookInput::Setup(_)
-        | AnyHookInput::CwdChanged(_)
-        | AnyHookInput::FileChanged(_)
-        | AnyHookInput::InstructionsLoaded(_)
-        | AnyHookInput::ConfigChange(_) => false,
-        AnyHookInput::Unknown {
-            hook_event_name, ..
-        } => !NON_REPL_HOOK_NAMES.contains(&hook_event_name.as_str()),
-        _ => true,
     }
 }
 
@@ -341,7 +318,7 @@ async fn handle_hook(
     state.touch();
 
     let session_env_file = req.env.get("CLAUDE_ENV_FILE").map(PathBuf::from);
-    let session_id = hook_session_id(&req.hook);
+    let session_id = req.hook.session_id();
 
     let session = session_id
         .as_deref()
@@ -365,7 +342,7 @@ async fn handle_hook(
     };
 
     // Drain mailbox into output.system_message for REPL hooks.
-    if is_repl_hook(&req.hook) {
+    if req.hook.is_repl() {
         if let Some(s) = session {
             let mailbox = s.drain_messages();
             let bg = s.drain_bg_output();
@@ -380,41 +357,6 @@ async fn handle_hook(
     }
 
     Json(HookResponse { output })
-}
-
-fn hook_session_id(hook: &AnyHookInput) -> Option<String> {
-    macro_rules! sid {
-        ($h:expr) => {
-            Some($h.base.session_id.clone())
-        };
-    }
-    match hook {
-        AnyHookInput::SessionStart(h) => sid!(h),
-        AnyHookInput::WorktreeCreate(h) => sid!(h),
-        AnyHookInput::SessionEnd(h) => sid!(h),
-        AnyHookInput::WorktreeRemove(h) => sid!(h),
-        AnyHookInput::Setup(h) => sid!(h),
-        AnyHookInput::CwdChanged(h) => sid!(h),
-        AnyHookInput::FileChanged(h) => sid!(h),
-        AnyHookInput::InstructionsLoaded(h) => sid!(h),
-        AnyHookInput::ConfigChange(h) => sid!(h),
-        AnyHookInput::PreToolUse(h) => sid!(h),
-        AnyHookInput::PostToolUse(h) => sid!(h),
-        AnyHookInput::PostToolUseFailure(h) => sid!(h),
-        AnyHookInput::UserPromptSubmit(h) => sid!(h),
-        AnyHookInput::Stop(h) => sid!(h),
-        AnyHookInput::SubagentStart(h) => sid!(h),
-        AnyHookInput::SubagentStop(h) => sid!(h),
-        AnyHookInput::Notification(h) => sid!(h),
-        AnyHookInput::PermissionRequest(h) => sid!(h),
-        AnyHookInput::Elicitation(h) => sid!(h),
-        AnyHookInput::ElicitationResult(h) => sid!(h),
-        AnyHookInput::PreCompact(h) => sid!(h),
-        AnyHookInput::PostCompact(h) => sid!(h),
-        AnyHookInput::TeammateIdle(h) => sid!(h),
-        AnyHookInput::TaskCompleted(h) => sid!(h),
-        AnyHookInput::Unknown { session_id, .. } => session_id.clone(),
-    }
 }
 
 fn resolve_binary_from_env(

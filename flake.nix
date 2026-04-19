@@ -278,8 +278,15 @@
       ];
       # Python claude-hook.
       devToolPackages = devToolsCommon ++ [ ducktapePkgs.claude-hooks ];
-      # Rust claude-hook (static binary, no Python runtime).
-      devToolPackagesRust = devToolsCommon ++ [ ducktapePkgs.claude-hook-rs ];
+      # Rust claude-hook. claude-hook-rs is listed first so symlinkJoin's lndir
+      # links the Rust claude-hook binary before claude-hooks gets a chance to
+      # link the Python one (lndir silently skips existing links). claude-hooks
+      # is included to provide bbr and the ducktape-* console_scripts.
+      devToolPackagesRust = [
+        ducktapePkgs.claude-hook-rs
+      ]
+      ++ devToolsCommon
+      ++ [ ducktapePkgs.claude-hooks ];
     in
     {
       # Development shell — enter via `nix develop` or direnv (`use flake`).

@@ -70,7 +70,7 @@ pub enum AnyHookInput {
     ConfigChange(ConfigChangeInput),
 
     /// Hook type not explicitly modeled. Carries `hook_event_name` and
-    /// `session_id` so `is_repl_hook` and `hook_session_id` still work for
+    /// `session_id` so `is_repl()` and `session_id()` still work for
     /// hooks added to Claude Code after this file was last updated.
     Unknown {
         hook_event_name: String,
@@ -183,6 +183,66 @@ impl Serialize for AnyHookInput {
                 }
                 serde_json::Value::Object(map).serialize(serializer)
             }
+        }
+    }
+}
+
+impl AnyHookInput {
+    /// Returns the session ID carried by this hook event, if any.
+    pub fn session_id(&self) -> Option<String> {
+        macro_rules! sid {
+            ($h:expr) => {
+                Some($h.base.session_id.clone())
+            };
+        }
+        match self {
+            AnyHookInput::SessionStart(h) => sid!(h),
+            AnyHookInput::WorktreeCreate(h) => sid!(h),
+            AnyHookInput::SessionEnd(h) => sid!(h),
+            AnyHookInput::WorktreeRemove(h) => sid!(h),
+            AnyHookInput::Setup(h) => sid!(h),
+            AnyHookInput::CwdChanged(h) => sid!(h),
+            AnyHookInput::FileChanged(h) => sid!(h),
+            AnyHookInput::InstructionsLoaded(h) => sid!(h),
+            AnyHookInput::ConfigChange(h) => sid!(h),
+            AnyHookInput::PreToolUse(h) => sid!(h),
+            AnyHookInput::PostToolUse(h) => sid!(h),
+            AnyHookInput::PostToolUseFailure(h) => sid!(h),
+            AnyHookInput::UserPromptSubmit(h) => sid!(h),
+            AnyHookInput::Stop(h) => sid!(h),
+            AnyHookInput::SubagentStart(h) => sid!(h),
+            AnyHookInput::SubagentStop(h) => sid!(h),
+            AnyHookInput::Notification(h) => sid!(h),
+            AnyHookInput::PermissionRequest(h) => sid!(h),
+            AnyHookInput::Elicitation(h) => sid!(h),
+            AnyHookInput::ElicitationResult(h) => sid!(h),
+            AnyHookInput::PreCompact(h) => sid!(h),
+            AnyHookInput::PostCompact(h) => sid!(h),
+            AnyHookInput::TeammateIdle(h) => sid!(h),
+            AnyHookInput::TaskCompleted(h) => sid!(h),
+            AnyHookInput::Unknown { session_id, .. } => session_id.clone(),
+        }
+    }
+
+    /// Returns true if Claude Code injects `systemMessage` into the model
+    /// conversation for this hook. Non-REPL hooks deliver it only to the UI
+    /// notification callback; flushing the mailbox there has no effect.
+    /// Matches `_NON_REPL_HOOK_TYPES` in `server.py`.
+    pub fn is_repl(&self) -> bool {
+        match self {
+            AnyHookInput::SessionStart(_)
+            | AnyHookInput::SessionEnd(_)
+            | AnyHookInput::WorktreeCreate(_)
+            | AnyHookInput::WorktreeRemove(_)
+            | AnyHookInput::Setup(_)
+            | AnyHookInput::CwdChanged(_)
+            | AnyHookInput::FileChanged(_)
+            | AnyHookInput::InstructionsLoaded(_)
+            | AnyHookInput::ConfigChange(_) => false,
+            AnyHookInput::Unknown {
+                hook_event_name, ..
+            } => !NON_REPL_HOOK_NAMES.contains(&hook_event_name.as_str()),
+            _ => true,
         }
     }
 }
