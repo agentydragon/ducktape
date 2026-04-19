@@ -27,6 +27,18 @@
 # --impl selects the claude-hook implementation:
 #   python (default) — Python wheel (#devtools flake output)
 #   rust             — Rust static binary (#devtools-rust flake output)
+#
+# CLEANUP(2026-04-19): this script runs TWICE per session — once as the
+# init script (no user-UI env vars, always installs python default) and
+# once via the Setup hook (web_setup_hook.sh, has UI env vars, may swap
+# to rust). The first run is wasted when the user wants rust — the
+# profile install gets overwritten seconds later. Once the Setup hook
+# is confirmed to fire reliably across all session modes (new / resume
+# / resume-cached / setup-only — see devinfra/claude/README.md) and is
+# sufficient on its own, make the init-script path a no-op (or drop it
+# from the Claude Code web UI "Setup Command" field) and let the Setup
+# hook own devtools install. Remove this tombstone after ≥1 week of
+# live sessions with no "Setup hook missed firing" fallbacks needed.
 
 LOG_FILE="/tmp/web-setup.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
