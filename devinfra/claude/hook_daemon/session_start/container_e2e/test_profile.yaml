@@ -27,9 +27,14 @@ startup_env_script: devinfra/secrets/web_env.sh
 
 idle_watchdog: false
 
-# Keep the git shim exercised in the existing test (block_add_all=true).
+# Exercise the full git_shim surface in the container E2E matrix.
+# pre-commit (which invokes git stash internally) is not run in this test,
+# so block_stash=true here is safe. CLI profile leaves block_stash=false for
+# this reason — see profiles/cli/profile.yaml.
 git_shim:
   block_add_all: true
+  block_stash: true
+  block_amend: true
 
 env_exports: |
   export E2E_TEST_MARKER=1

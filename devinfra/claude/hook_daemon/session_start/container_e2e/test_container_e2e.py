@@ -293,10 +293,40 @@ def test_container_e2e(impl: str, container: docker.models.containers.Container)
     _, stat_out, _ = _exec(container, ["stat", "-c", "%a", "/root/.kube/config"])
     assert stat_out.strip() == b"600"
 
-    # git shim blocks `git add -A`.
-    rc, _, stderr = _exec_under_env(container, "git add -A", check=False)
-    assert rc != 0
-    assert b"BLOCKED" in stderr
+    # git shim matrix: verify block vs passthrough decisions for a
+    # representative set of commands. Runs in a real repo so passthrough
+    # cases (git log, git status) succeed instead of failing on missing
+    # HEAD. Block-expected cases short-circuit before real git runs so
+    # they don't depend on repo state.
+    _exec(
+        container,
+        [
+            "bash",
+            "-c",
+            "cd /tmp && git init -q shim-test && cd shim-test && "
+            "git -c user.email=t@e.co -c user.name=t commit -q --allow-empty -m initial",
+        ],
+    )
+    # (command, should_block)
+    git_shim_tests = [
+        ("git add -A", True),
+        ("git add .", True),
+        ("git add --all", True),
+        ("git commit --amend --allow-empty -m x", True),
+        ("git stash", True),
+        ("git --version", False),
+        ("git status", False),
+        ("git log --oneline -1", False),
+    ]
+    for cmd, should_block in git_shim_tests:
+        rc, _, stderr = _exec_under_env(container, cmd, workdir="/tmp/shim-test", check=False)
+        stderr_str = stderr.decode(errors="replace")
+        if should_block:
+            assert rc != 0, f"[{impl}] {cmd!r} should have been blocked but exited 0\nstderr: {stderr_str}"
+            assert b"BLOCKED" in stderr, f"[{impl}] {cmd!r} expected BLOCKED in stderr\nstderr: {stderr_str}"
+        else:
+            assert rc == 0, f"[{impl}] {cmd!r} should passthrough but exited {rc}\nstderr: {stderr_str}"
+            assert b"BLOCKED" not in stderr, f"[{impl}] {cmd!r} unexpectedly BLOCKED\nstderr: {stderr_str}"
 
     # Bazel build over the staged workspace.
     _exec_under_env(container, "bazelisk build //:hello", workdir="/project")

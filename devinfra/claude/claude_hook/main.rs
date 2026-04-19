@@ -420,22 +420,37 @@ async fn handle_shim_exec(
     let session_dir = home_session_dir(&req.session_id);
     let shim_dir = session_dir.join("bin");
     let bazelrc_path = session_dir.join("bazelrc");
+    Json(shim_exec_decision(
+        &req,
+        &state.profile,
+        &shim_dir,
+        &bazelrc_path,
+    ))
+}
 
-    let resp = match req.shim.as_str() {
-        "git" => match git_shim::evaluate(&req.argv, &state.profile.git_shim) {
-            Ok(()) => resolve_execve(&req.shim, req.argv, &shim_dir, &req.env),
+/// Pure decision logic for `/shim-exec`: given a request, profile, and session
+/// paths, return the `ShimResponse` the daemon should send back. No axum/hyper
+/// types, no state mutation, no env lookups — testable in isolation.
+fn shim_exec_decision(
+    req: &ShimExecRequest,
+    profile: &ProfileConfig,
+    shim_dir: &Path,
+    bazelrc_path: &Path,
+) -> ShimResponse {
+    match req.shim.as_str() {
+        "git" => match git_shim::evaluate(&req.argv, &profile.git_shim) {
+            Ok(()) => resolve_execve(&req.shim, req.argv.clone(), shim_dir, &req.env),
             Err(message) => ShimResponse::Blocked { message },
         },
         "bazelisk" | "bazel" => {
-            let mut argv = req.argv;
+            let mut argv = req.argv.clone();
             if bazelrc_path.exists() {
                 argv.insert(1, format!("--bazelrc={}", bazelrc_path.display()));
             }
-            resolve_execve(&req.shim, argv, &shim_dir, &req.env)
+            resolve_execve(&req.shim, argv, shim_dir, &req.env)
         }
-        _ => resolve_execve(&req.shim, req.argv, &shim_dir, &req.env),
-    };
-    Json(resp)
+        _ => resolve_execve(&req.shim, req.argv.clone(), shim_dir, &req.env),
+    }
 }
 
 fn resolve_execve(
@@ -802,5 +817,301 @@ async fn main() {
             run_daemon(sock, daemon_dir).await;
         }
         None => dispatch_hook().await,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn make_exec(dir: &Path, name: &str) {
+        let p = dir.join(name);
+        std::fs::write(&p, "#!/bin/sh\nexit 0\n").unwrap();
+        let mut perms = std::fs::metadata(&p).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&p, perms).unwrap();
+    }
+
+    fn env_with_path(path: &str) -> HashMap<String, String> {
+        let mut env = HashMap::new();
+        env.insert("PATH".into(), path.into());
+        env
+    }
+
+    #[test]
+    fn resolves_outside_shim_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shim = tmp.path().join("shim");
+        let real = tmp.path().join("real");
+        std::fs::create_dir(&shim).unwrap();
+        std::fs::create_dir(&real).unwrap();
+        make_exec(&real, "git");
+        let path_env = format!("{}:{}", shim.display(), real.display());
+        let env = env_with_path(&path_env);
+        assert_eq!(
+            resolve_binary_from_env("git", &shim, &env),
+            Some(real.join("git"))
+        );
+    }
+
+    #[test]
+    fn skips_shim_dir_even_first_on_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shim = tmp.path().join("shim");
+        let real = tmp.path().join("real");
+        std::fs::create_dir(&shim).unwrap();
+        std::fs::create_dir(&real).unwrap();
+        make_exec(&shim, "git");
+        make_exec(&real, "git");
+        let path_env = format!("{}:{}", shim.display(), real.display());
+        let env = env_with_path(&path_env);
+        assert_eq!(
+            resolve_binary_from_env("git", &shim, &env),
+            Some(real.join("git")),
+        );
+    }
+
+    #[test]
+    fn returns_none_when_only_in_shim() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shim = tmp.path().join("shim");
+        let other = tmp.path().join("other");
+        std::fs::create_dir(&shim).unwrap();
+        std::fs::create_dir(&other).unwrap();
+        make_exec(&shim, "git");
+        let path_env = format!("{}:{}", shim.display(), other.display());
+        let env = env_with_path(&path_env);
+        assert_eq!(resolve_binary_from_env("git", &shim, &env), None);
+    }
+
+    #[test]
+    fn handles_canonicalized_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shim_real = tmp.path().join("shim_real");
+        let shim_link = tmp.path().join("shim_link");
+        let real = tmp.path().join("real");
+        std::fs::create_dir(&shim_real).unwrap();
+        std::os::unix::fs::symlink(&shim_real, &shim_link).unwrap();
+        std::fs::create_dir(&real).unwrap();
+        make_exec(&shim_real, "git");
+        make_exec(&real, "git");
+        // PATH references shim via the symlink; resolver gets the real shim
+        // dir. Both canonicalize to shim_real, so the entry is skipped.
+        let path_env = format!("{}:{}", shim_link.display(), real.display());
+        let env = env_with_path(&path_env);
+        assert_eq!(
+            resolve_binary_from_env("git", &shim_real, &env),
+            Some(real.join("git")),
+        );
+    }
+
+    #[test]
+    fn non_executable_file_skipped() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shim = tmp.path().join("shim");
+        let stub = tmp.path().join("stub");
+        let real = tmp.path().join("real");
+        std::fs::create_dir(&shim).unwrap();
+        std::fs::create_dir(&stub).unwrap();
+        std::fs::create_dir(&real).unwrap();
+        // Non-executable "git" file in stub dir — must be skipped.
+        std::fs::write(stub.join("git"), "not a real binary").unwrap();
+        make_exec(&real, "git");
+        let path_env = format!("{}:{}:{}", shim.display(), stub.display(), real.display());
+        let env = env_with_path(&path_env);
+        assert_eq!(
+            resolve_binary_from_env("git", &shim, &env),
+            Some(real.join("git")),
+        );
+    }
+
+    #[test]
+    fn empty_path_segment_ignored() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shim = tmp.path().join("shim");
+        let real = tmp.path().join("real");
+        std::fs::create_dir(&shim).unwrap();
+        std::fs::create_dir(&real).unwrap();
+        make_exec(&real, "git");
+        // PATH with empty segment between colons: shim::real.
+        let path_env = format!("{}::{}", shim.display(), real.display());
+        let env = env_with_path(&path_env);
+        assert_eq!(
+            resolve_binary_from_env("git", &shim, &env),
+            Some(real.join("git")),
+        );
+    }
+
+    #[test]
+    fn returns_none_when_path_env_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shim = tmp.path().join("shim");
+        std::fs::create_dir(&shim).unwrap();
+        let env: HashMap<String, String> = HashMap::new();
+        assert_eq!(resolve_binary_from_env("git", &shim, &env), None);
+    }
+
+    // ---- C.2: shim_exec_decision integration ----
+
+    use claude_hook_config::GitShimConfig;
+
+    fn shim_req(name: &str, argv: &[&str], path_env: &str) -> ShimExecRequest {
+        let mut env = HashMap::new();
+        env.insert("PATH".into(), path_env.into());
+        ShimExecRequest {
+            shim: name.into(),
+            session_id: "test-session".into(),
+            cwd: PathBuf::from("/tmp"),
+            argv: argv.iter().map(|s| (*s).to_string()).collect(),
+            pid: 1234,
+            env,
+        }
+    }
+
+    fn block_add_all_profile() -> ProfileConfig {
+        ProfileConfig {
+            git_shim: GitShimConfig {
+                block_add_all: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn git_add_dash_a_blocks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shim_dir = tmp.path().join("bin");
+        let bazelrc = tmp.path().join("bazelrc");
+        let profile = block_add_all_profile();
+        // PATH populated with a real git — shouldn't matter; block short-circuits.
+        let real = tmp.path().join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        make_exec(&real, "git");
+        let req = shim_req("git", &["git", "add", "-A"], &real.display().to_string());
+
+        match shim_exec_decision(&req, &profile, &shim_dir, &bazelrc) {
+            ShimResponse::Blocked { message } => assert!(message.contains("git add -A")),
+            other => panic!("expected Blocked, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn git_status_resolves_to_absolute_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shim_dir = tmp.path().join("bin");
+        let bazelrc = tmp.path().join("bazelrc");
+        let real = tmp.path().join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        make_exec(&real, "git");
+        let profile = block_add_all_profile(); // block config irrelevant for `status`
+        let req = shim_req("git", &["git", "status"], &real.display().to_string());
+
+        match shim_exec_decision(&req, &profile, &shim_dir, &bazelrc) {
+            ShimResponse::Execve { argv } => {
+                assert!(
+                    argv[0].starts_with('/'),
+                    "argv[0] should be absolute, got {:?}",
+                    argv[0]
+                );
+                assert_eq!(argv[0], real.join("git").display().to_string());
+                assert_eq!(&argv[1..], &["status".to_string()]);
+            }
+            other => panic!("expected Execve, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn git_not_on_path_blocks_with_helpful_message() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shim_dir = tmp.path().join("bin");
+        let bazelrc = tmp.path().join("bazelrc");
+        let profile = ProfileConfig::default();
+        // Only shim dir on PATH — shim dir is excluded from resolution, so no match.
+        std::fs::create_dir_all(&shim_dir).unwrap();
+        let req = shim_req("git", &["git", "status"], &shim_dir.display().to_string());
+
+        match shim_exec_decision(&req, &profile, &shim_dir, &bazelrc) {
+            ShimResponse::Blocked { message } => {
+                assert!(
+                    message.contains("command not found"),
+                    "got message: {message}"
+                );
+            }
+            other => panic!("expected Blocked, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn passthrough_shim_resolves_to_absolute() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shim_dir = tmp.path().join("bin");
+        let bazelrc = tmp.path().join("bazelrc");
+        let real = tmp.path().join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        make_exec(&real, "bb");
+        let profile = ProfileConfig::default();
+        let req = shim_req("bb", &["bb", "info"], &real.display().to_string());
+
+        match shim_exec_decision(&req, &profile, &shim_dir, &bazelrc) {
+            ShimResponse::Execve { argv } => {
+                assert_eq!(argv[0], real.join("bb").display().to_string());
+                assert_eq!(&argv[1..], &["info".to_string()]);
+            }
+            other => panic!("expected Execve, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bazelisk_injects_bazelrc_when_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shim_dir = tmp.path().join("bin");
+        let bazelrc = tmp.path().join("bazelrc");
+        let real = tmp.path().join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        make_exec(&real, "bazelisk");
+        // Create the bazelrc file so injection activates.
+        std::fs::write(&bazelrc, "# test bazelrc\n").unwrap();
+        let profile = ProfileConfig::default();
+        let req = shim_req(
+            "bazelisk",
+            &["bazelisk", "build", "//..."],
+            &real.display().to_string(),
+        );
+
+        match shim_exec_decision(&req, &profile, &shim_dir, &bazelrc) {
+            ShimResponse::Execve { argv } => {
+                // [real/bazelisk, --bazelrc=..., build, //...]
+                assert_eq!(argv[0], real.join("bazelisk").display().to_string());
+                assert_eq!(argv[1], format!("--bazelrc={}", bazelrc.display()));
+                assert_eq!(&argv[2..], &["build".to_string(), "//...".to_string()]);
+            }
+            other => panic!("expected Execve, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bazelisk_skips_bazelrc_when_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shim_dir = tmp.path().join("bin");
+        let bazelrc = tmp.path().join("bazelrc"); // intentionally not created
+        let real = tmp.path().join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        make_exec(&real, "bazelisk");
+        let profile = ProfileConfig::default();
+        let req = shim_req(
+            "bazelisk",
+            &["bazelisk", "build", "//..."],
+            &real.display().to_string(),
+        );
+
+        match shim_exec_decision(&req, &profile, &shim_dir, &bazelrc) {
+            ShimResponse::Execve { argv } => {
+                assert_eq!(argv[0], real.join("bazelisk").display().to_string());
+                assert_eq!(&argv[1..], &["build".to_string(), "//...".to_string()]);
+            }
+            other => panic!("expected Execve, got {other:?}"),
+        }
     }
 }
