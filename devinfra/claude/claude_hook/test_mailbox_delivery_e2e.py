@@ -16,7 +16,6 @@ sentinel file. The test verifies that:
 """
 
 import json
-import os
 import shlex
 from collections.abc import Iterator
 from pathlib import Path
@@ -65,20 +64,10 @@ def container(impl: str, staged_project: Path, e2e_image: str) -> Iterator[docke
         "CLAUDE_ENV_FILE": _ENV_FILE,
         "DUCKTAPE_CLAUDE_HOOKS_PROFILE": "mailbox_test_profile.yaml",
     }
-    c = docker.from_env().containers.run(
-        e2e_image,
-        command=["sleep", "infinity"],
-        name=f"{_CONTAINER_NAME}-{impl}-{os.getpid()}",
-        environment=env,
-        volumes={str(staged_project): {"bind": "/project", "mode": "ro"}},
-        detach=True,
-    )
-    prefix = f"mailbox-e2e-{impl}"
-    try:
+    with container_e2e.run_e2e_container(
+        e2e_image, f"{_CONTAINER_NAME}-{impl}", env, staged_project, f"mailbox-e2e-{impl}", _SESSION_ID
+    ) as c:
         yield c
-    finally:
-        container_e2e.collect_container_logs(c, prefix, _SESSION_ID)
-        c.remove(force=True)
 
 
 def _send_hook(container: docker.models.containers.Container, payload: dict) -> dict:

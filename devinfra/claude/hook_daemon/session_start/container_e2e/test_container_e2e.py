@@ -14,7 +14,6 @@ Exercises the real secret-decryption + kubeconfig path end-to-end.
 """
 
 import json
-import os
 import shlex
 import shutil
 from collections.abc import Iterator
@@ -144,26 +143,17 @@ def container(
         "DUCKTAPE_CLAUDE_HOOKS_PROFILE": "profile.yaml",
         "SOPS_AGE_KEY": test_age_key,
     }
-    c = docker.from_env().containers.run(
+    with container_e2e.run_e2e_container(
         e2e_image,
-        command=["sleep", "infinity"],
-        name=f"{_CONTAINER_NAME}-{impl}-{os.getpid()}",
-        environment=env,
-        volumes={str(staged_project): {"bind": "/project", "mode": "ro"}},
-        detach=True,
-    )
-    prefix = f"container-e2e-{impl}"
-    try:
+        f"{_CONTAINER_NAME}-{impl}",
+        env,
+        staged_project,
+        f"container-e2e-{impl}",
+        _SESSION_ID,
+        extra_session_files=["sessionstart-hook-0.sh", "bazelrc"],
+        extra_rust_files=["daemon.pid"],
+    ) as c:
         yield c
-    finally:
-        container_e2e.collect_container_logs(
-            c,
-            prefix,
-            _SESSION_ID,
-            extra_session_files=["sessionstart-hook-0.sh", "bazelrc"],
-            extra_rust_files=["daemon.pid"],
-        )
-        c.remove(force=True)
 
 
 # ---------------------------------------------------------------------------

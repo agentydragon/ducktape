@@ -1,9 +1,11 @@
 """Shared helpers for container E2E tests (python wheel vs rust binary)."""
 
+import contextlib
 import io
+import os
 import tarfile
 import time
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 import docker
@@ -91,6 +93,35 @@ def poll_file(container: docker.models.containers.Container, path: str, timeout:
             return
         time.sleep(0.1)
     pytest.fail(f"Timed out waiting for {path}")
+
+
+@contextlib.contextmanager
+def run_e2e_container(
+    image: str,
+    name_prefix: str,
+    env: dict[str, str],
+    staged_project: Path,
+    log_prefix: str,
+    session_id: str,
+    *,
+    extra_session_files: Sequence[str] = (),
+    extra_rust_files: Sequence[str] = (),
+) -> Iterator[docker.models.containers.Container]:
+    c = docker.from_env().containers.run(
+        image,
+        command=["sleep", "infinity"],
+        name=f"{name_prefix}-{os.getpid()}",
+        environment=env,
+        volumes={str(staged_project): {"bind": "/project", "mode": "ro"}},
+        detach=True,
+    )
+    try:
+        yield c
+    finally:
+        collect_container_logs(
+            c, log_prefix, session_id, extra_session_files=extra_session_files, extra_rust_files=extra_rust_files
+        )
+        c.remove(force=True)
 
 
 def collect_container_logs(
