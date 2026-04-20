@@ -45,6 +45,7 @@ ARTIFACTS = [
     Artifact(pkg="bbr", filename="bbr-0.1.0-py3-none-any.whl"),
     Artifact(pkg="claude-hooks", filename="claude_hooks-0.1.0-py3-none-any.whl"),
     Artifact(pkg="claude-hook-rs", filename="claude_hook"),
+    Artifact(pkg="ducktape-git-hooks", filename="ducktape_git_hooks-0.1.0-py3-none-any.whl"),
     Artifact(pkg="ducktape-util", filename="ducktape_util-0.1.0-py3-none-any.whl"),
     Artifact(pkg="ducktape", filename="ducktape-0.1.0-py3-none-any.whl"),
     Artifact(pkg="gterm-theme", filename="gterm_theme-0.1.0-py3-none-any.whl"),

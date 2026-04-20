@@ -61,9 +61,31 @@ let
     ];
   };
 
+  ducktape-git-hooks = mkWheel {
+    pname = "ducktape-git-hooks";
+    description = "Git hooks: ducktape-precommit, ducktape-commit-msg, cluster validation";
+    mainProgram = "ducktape-precommit";
+    # SYNC: This list must match `requires` in //:ducktape_git_hooks_wheel (BUILD.bazel).
+    # When adding a dependency, update BOTH places.
+    propagatedBuildInputs =
+      with pkgs.python3Packages;
+      [
+        httpx
+        networkx
+        opentelemetry-api
+        opentelemetry-sdk
+        protobuf
+        pygit2
+        pydantic
+        pyyaml
+      ]
+      ++ [ ducktape-util ];
+  };
+
 in
 {
   inherit ducktape-util;
+  inherit ducktape-git-hooks;
 
   bbr = mkWheel {
     pname = "bbr";
@@ -111,10 +133,6 @@ in
     ];
   };
 
-  # NOTE: Installed in BOTH home-manager (home.nix) and devShell (flake.nix).
-  # Both add PYTHONPATH entries. If one is updated but not the other, the stale
-  # version's namespace packages (cluster.validation) shadow the new one,
-  # causing ImportError in ducktape-precommit. Keep both in sync.
   claude-hooks = mkWheel {
     pname = "claude-hooks";
     description = "Claude Code session hooks (statusline, session-start)";
@@ -123,8 +141,8 @@ in
     # The wheel declares pip-level deps; this list provides Nix-level equivalents.
     # When adding a dependency, update BOTH places.
     #
-    # `grpcio` + `protobuf` are required for the BES interceptor that surfaces
-    # the "use `bb remote`" nudge.
+    # `grpcio` + `protobuf` are required for the BES interceptor; the generated
+    # proto Python files (google.*, proto.*) come from ducktape-git-hooks at runtime.
     propagatedBuildInputs =
       with pkgs.python3Packages;
       [
@@ -153,9 +171,9 @@ in
       ]
       ++ [
         ducktape-util
+        ducktape-git-hooks
         pkgs.pre-commit
         pyrage
-        pkgs.python3Packages.networkx
       ];
   };
 

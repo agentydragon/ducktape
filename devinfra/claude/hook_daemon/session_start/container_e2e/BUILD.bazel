@@ -16,6 +16,7 @@ pkg_tar(
     testonly = True,
     srcs = [
         "//:claude_hooks_wheel",
+        "//:ducktape_git_hooks_wheel",
         "//util:wheel",
     ],
     package_dir = "/wheel",

@@ -69,7 +69,10 @@ class E2EContainer:
                 "install",
                 "-q",
                 "--break-system-packages",
+                "--find-links",
+                WHEEL_DIR,
                 f"{WHEEL_DIR}/ducktape_util-0.1.0-py3-none-any.whl",
+                f"{WHEEL_DIR}/ducktape_git_hooks-0.1.0-py3-none-any.whl",
                 f"{WHEEL_DIR}/claude_hooks-0.1.0-py3-none-any.whl",
             ]
         )

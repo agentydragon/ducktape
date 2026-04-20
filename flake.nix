@@ -251,6 +251,7 @@
         ducktapePkgs.bb
         ducktapePkgs.bbapi
         ducktapePkgs.bbr
+        ducktapePkgs.ducktape-git-hooks
         ducktapePkgs.skills
         # Dev tools
         pkgs.pre-commit
