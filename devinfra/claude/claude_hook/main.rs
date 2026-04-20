@@ -157,8 +157,9 @@ fn detect_root_fstype() -> String {
 
 /// True when running inside a Firecracker microVM (checks PID 1 cmdline).
 fn is_firecracker() -> bool {
+    const NEEDLE: &[u8] = b"--firecracker-init";
     std::fs::read("/proc/1/cmdline")
-        .map(|b| b.windows(18).any(|w| w == b"--firecracker-init"))
+        .map(|b| b.windows(NEEDLE.len()).any(|w| w == NEEDLE))
         .unwrap_or(false)
 }
 
@@ -182,12 +183,24 @@ fn write_buildbuddy_bazelrc(session_dir: &Path, api_key: &str) -> Option<PathBuf
          # Enable RBE (platforms, exec properties in .bazelrc + BUILD.bazel platform)\n\
          build --config=rbe\n"
     );
-    match std::fs::write(&bb_bazelrc, content) {
-        Ok(()) => Some(bb_bazelrc),
-        Err(e) => {
-            eprintln!("SessionStart: failed to write buildbuddy.bazelrc: {e}");
-            None
-        }
+    // Atomic write + 0600: file contains the API key (a secret).
+    // Mirrors env_file.rs which uses the same pattern for the session env file.
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+    let write_result = (|| {
+        let mut tmp = tempfile::NamedTempFile::new_in(session_dir).ok()?;
+        tmp.write_all(content.as_bytes()).ok()?;
+        tmp.as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o600))
+            .ok()?;
+        tmp.persist(&bb_bazelrc).ok()?;
+        Some(())
+    })();
+    if write_result.is_some() {
+        Some(bb_bazelrc)
+    } else {
+        eprintln!("SessionStart: failed to write buildbuddy.bazelrc");
+        None
     }
 }
 
