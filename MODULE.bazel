@@ -92,7 +92,7 @@ tf.download(
         "libvirt": "dmacvicar/libvirt:0.9.3",
         "local": "hashicorp/local:2.5.3",
         "null": "hashicorp/null:3.2.4",
-        "proxmox": "bpg/proxmox:0.91.0",
+        "proxmox": "bpg/proxmox:0.93.0",
         "random": "hashicorp/random:3.7.2",
         "sops": "carlpett/sops:1.4.1",
         "talos": "siderolabs/talos:0.10.1",
