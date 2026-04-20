@@ -740,4 +740,26 @@ mod tests {
         assert_eq!(req.pid, 12345);
         assert_eq!(req.argv.len(), 3);
     }
+
+    #[test]
+    fn hook_request_deserializes() {
+        let json = r#"{
+            "hook": {
+                "hook_event_name": "PreToolUse",
+                "session_id": "req-sess",
+                "transcript_path": "/tmp/t.json",
+                "cwd": "/project",
+                "tool_name": "Bash",
+                "tool_input": {},
+                "tool_use_id": "tu_001"
+            },
+            "env": {
+                "PATH": "/usr/bin",
+                "HOME": "/root"
+            }
+        }"#;
+        let req: HookRequest = serde_json::from_str(json).unwrap();
+        assert!(matches!(req.hook, AnyHookInput::PreToolUse(_)));
+        assert_eq!(req.env.get("HOME").map(String::as_str), Some("/root"));
+    }
 }

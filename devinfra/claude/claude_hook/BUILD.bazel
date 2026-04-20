@@ -138,9 +138,8 @@ py_test(
         "external",
     ],
     deps = [
-        "//util:oci",
+        "//devinfra/claude/testing:container_e2e",
         "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
         "@pypi//docker",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
