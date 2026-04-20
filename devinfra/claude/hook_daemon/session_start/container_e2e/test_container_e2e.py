@@ -63,18 +63,14 @@ def _exec_under_env(
 # ---------------------------------------------------------------------------
 
 
-def _install_python_wheel(container: docker.models.containers.Container) -> None:
-    container_e2e.install_python(container)
-
-
-def _install_rust_binary(container: docker.models.containers.Container) -> None:
+def _install_rust(container: docker.models.containers.Container) -> None:
     container_e2e.install_rust(container)
     # write_kubeconfig.py (bg command) imports yaml; the Rust impl has no
     # Python runtime deps, so install PyYAML explicitly.
     container_e2e.exec_in_container(container, ["pip", "install", "--break-system-packages", "pyyaml"])
 
 
-_IMPLS = {"python": _install_python_wheel, "rust": _install_rust_binary}
+_IMPLS = {"python": container_e2e.install_python, "rust": _install_rust}
 
 
 @pytest.fixture(params=list(_IMPLS.keys()))
