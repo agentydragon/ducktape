@@ -186,10 +186,13 @@ py_test(
 py_test(
     name = "test_fix_openapi_spec",
     srcs = ["test_fix_openapi_spec.py"],
+    data = [":grocy_openapi_fixed"],
     deps = [
         ":conftest",
         ":fix_openapi_spec_lib",
+        ":grocy_types",
         "//:conftest",
+        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
 )

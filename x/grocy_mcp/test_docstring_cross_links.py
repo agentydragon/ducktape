@@ -126,6 +126,9 @@ _RESIDUAL_TOKENS: set[str] = {
     # OpenAPI-generated tokens not in our models
     "force_serve_as",
     "picture",
+    # Server-computed columns referenced by the entity_update warning
+    # (named in the "don't round-trip these" list — not writable).
+    "has_sub_products",
     # Literal string/boolean values used as parameter values in descriptions
     "brief",
     "full",

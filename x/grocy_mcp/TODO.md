@@ -77,3 +77,18 @@ is spent during eval runs.
 
 Tombstone — keep until the next design pass so we remember it was an
 intentional fix rather than an oversight.
+
+## File upstream Grocy PR for missing entity-schema properties
+
+`fix_openapi_spec.py::patch_product_schema` downstream-patches 12 writable
+product columns that Grocy's hand-maintained `grocy.openapi.json` has never
+picked up since migrations 0207/0210/0219 added them (2022–2023). Upstream
+spec has similar gaps on `Location` (no `active`, no `is_freezer`),
+`QuantityUnit` (no `active`), `ShoppingListItem` (no `qu_id`, no `done`),
+and is missing `ShoppingList`, `ProductGroup`, `Recipe` entirely.
+
+Action: file an issue + PR against https://github.com/grocy/grocy adding
+the missing properties and the three missing schemas. Maintainer (berrnd)
+has accepted similar drift fixes (#1451, #1967, #2198, #2694). Once a
+Grocy release shipping the upstream fix is pinned in `MODULE.bazel`,
+remove the corresponding downstream patches from `fix_openapi_spec.py`.

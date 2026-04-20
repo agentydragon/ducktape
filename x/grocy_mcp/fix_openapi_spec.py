@@ -12,6 +12,18 @@ Grocy's published spec has two classes of issues that prevent FastMCP's
    drops parameters it can't resolve, making ``/objects/{entity}`` tools
    unusable (no ``entity`` parameter).
 
+3. **Incomplete entity schemas**: Grocy's ``grocy.openapi.json`` is
+   hand-maintained and has drifted from the DB schema — writable columns
+   added by later migrations (e.g. ``qu_id_consume``, ``qu_id_price``,
+   ``default_best_before_days_after_freezing``) never made it into
+   ``components.schemas.Product.properties``. Without a patch these
+   columns are invisible in the ``entity_update`` tool schema even though
+   Grocy accepts them. TODO: file an upstream PR against
+   https://github.com/grocy/grocy adding the missing Product properties
+   (and similar gaps in Location, QuantityUnit, ShoppingListItem; and
+   the entirely missing ShoppingList, ProductGroup, Recipe schemas).
+   Until that lands and we pin a Grocy release including it, patch here.
+
 Additionally, routes replaced by batch tools (``batch_tools.py``) are
 stripped from the spec entirely so FastMCP never generates competing
 single-item tool stubs for them.
@@ -74,6 +86,50 @@ def fix_entity_refs(spec: dict[str, object]) -> None:
         }
 
 
+# Writable product columns missing from Grocy's hand-maintained spec.
+# Types follow Grocy's existing style: booleans are encoded as ``integer``
+# (0/1 in SQLite), FK IDs are ``integer``, amounts are ``number``. Keep in
+# sync with ``PRODUCT_WRITABLE_FIELDS`` in grocy_types.py; the
+# test_fix_openapi_spec smoke test enforces that every writable field is
+# present in the patched schema.
+_MISSING_PRODUCT_PROPERTIES: dict[str, dict[str, object]] = {
+    "active": {"type": "integer", "default": 1, "description": "0 or 1 (boolean)."},
+    "calories": {"type": "number", "description": "Calories per stock QU."},
+    "cumulate_min_stock_amount_of_sub_products": {
+        "type": "integer",
+        "default": 0,
+        "description": "0 or 1 (boolean). Sum child product stock toward this parent's minimum.",
+    },
+    "default_best_before_days_after_freezing": {
+        "type": "integer",
+        "minimum": -1,
+        "default": 0,
+        "description": "-1 = never expires after freezing.",
+    },
+    "default_best_before_days_after_thawing": {"type": "integer", "minimum": 0, "default": 0},
+    "default_stock_label_type": {"type": "integer", "default": 0},
+    "due_type": {"type": "integer", "default": 1, "description": "1 = best before, 2 = expiration."},
+    "hide_on_stock_overview": {"type": "integer", "default": 0, "description": "0 or 1 (boolean)."},
+    "parent_product_id": {"type": "integer", "description": "FK to products.id; omit for top-level."},
+    "qu_id_consume": {"type": "integer", "description": "Default QU for consume (FK to quantity_units)."},
+    "qu_id_price": {"type": "integer", "description": "Default QU for price display (FK to quantity_units)."},
+    "quick_consume_amount": {"type": "number", "default": 1},
+}
+
+
+def patch_product_schema(spec: dict[str, object]) -> None:
+    """Add missing writable Product columns to the spec.
+
+    Raises KeyError if the spec no longer contains ``components.schemas.Product``
+    — that would mean Grocy restructured the spec and this patch needs revisiting.
+    """
+    schemas = spec["components"]["schemas"]  # type: ignore[index]
+    properties = schemas["Product"]["properties"]
+    for name, definition in _MISSING_PRODUCT_PROPERTIES.items():
+        if name not in properties:
+            properties[name] = dict(definition)
+
+
 # Routes replaced by custom batch tools in batch_tools.py.
 # Stripped from the spec so FastMCP never generates competing stubs for them.
 _REPLACED_ROUTES: set[tuple[str, str]] = {
@@ -123,6 +179,7 @@ def main() -> None:
     spec: dict[str, object] = json.loads(Path(sys.argv[1]).read_text())
     strip_empty_enums(spec)
     fix_entity_refs(spec)
+    patch_product_schema(spec)
     strip_replaced_routes(spec)
     Path(sys.argv[2]).write_text(json.dumps(spec, indent=2))
 

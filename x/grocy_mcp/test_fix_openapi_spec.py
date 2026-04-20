@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest_bazel
 
-from x.grocy_mcp.fix_openapi_spec import fix_entity_refs, strip_empty_enums, strip_replaced_routes
+from util.bazel.runfiles import get_required_path
+from x.grocy_mcp.fix_openapi_spec import (
+    _MISSING_PRODUCT_PROPERTIES,
+    fix_entity_refs,
+    patch_product_schema,
+    strip_empty_enums,
+    strip_replaced_routes,
+)
+from x.grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS
 
 
 def test_strip_empty_enums_removes_empty_enum() -> None:
@@ -63,6 +73,38 @@ def test_strip_replaced_routes_removes_replaced_methods() -> None:
 
     # /stock GET replaced — path gone.
     assert "/stock" not in paths
+
+
+def test_fixed_spec_has_every_writable_product_column() -> None:
+    """The built spec served at runtime must have every writable column of the products table.
+
+    Catches the regression where someone adds a field to
+    ``PRODUCT_WRITABLE_FIELDS`` without also adding its schema entry to
+    ``_MISSING_PRODUCT_PROPERTIES`` (or vice versa, once Grocy upstream
+    starts shipping a complete spec). This is the smoke test the
+    ``entity_update`` feedback asked for: every field named in the tool's
+    docstring examples must actually be accepted by the tool's input schema.
+    """
+    spec_path = get_required_path("_main/x/grocy_mcp/grocy.openapi.fixed.json")
+    spec = json.loads(spec_path.read_text())
+    properties = spec["components"]["schemas"]["Product"]["properties"]
+
+    missing = PRODUCT_WRITABLE_FIELDS - properties.keys()
+    assert not missing, (
+        f"PRODUCT_WRITABLE_FIELDS entries missing from patched Product schema: {sorted(missing)}. "
+        f"Add them to _MISSING_PRODUCT_PROPERTIES in fix_openapi_spec.py."
+    )
+
+
+def test_patch_product_schema_does_not_clobber_existing_upstream_property() -> None:
+    """If Grocy ever adds a patched field upstream, the upstream schema wins."""
+    sample_field = next(iter(_MISSING_PRODUCT_PROPERTIES))
+    upstream_definition = {"type": "integer", "description": "upstream wins"}
+    spec: dict = {
+        "components": {"schemas": {"Product": {"type": "object", "properties": {sample_field: upstream_definition}}}}
+    }
+    patch_product_schema(spec)
+    assert spec["components"]["schemas"]["Product"]["properties"][sample_field] == upstream_definition
 
 
 if __name__ == "__main__":

@@ -47,10 +47,10 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
         "Do NOT blindly round-trip the full `entities_get` response — GET returns server-computed "
         "columns (e.g. `qu_factor_*`, `has_sub_products` on products, `userfields`) that Grocy "
         "rejects on PUT with 400. For common fields prefer the typed helpers — `products_edit`, "
-        "`stock_entry_edit`, `shopping_list_item_edit` — and reserve `entity_update` for entity "
-        "types / advanced fields those don't cover (e.g. `default_best_before_days_after_freezing`, "
-        "`should_not_be_frozen` on products). Never set `best_before_date` to null on stock "
-        "entries — use `2999-12-31` for never-expires.",
+        "`stock_entry_edit`, `shopping_list_item_edit` — and reserve `entity_update` for advanced "
+        "fields those don't cover (e.g. `default_best_before_days_after_freezing`, "
+        "`should_not_be_frozen`, `qu_id_consume` on products). Never set `best_before_date` to "
+        "null on stock entries — use `2999-12-31` for never-expires.",
     ),
     ("DELETE", "/objects/{entity}/{objectId}"): _enabled("entity_delete"),
     # ── Stock overview ───────────────────────────────────────────────
