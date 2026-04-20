@@ -471,17 +471,18 @@ QU + product, list, get by ID, update, delete).
 | `entities_create` | Batch create         | `[{entity_type, body: dict}]`. Body is opaque — agent must know fields. |
 | `entities_list`   | Batch list by type   | `[entity_type]` → `{type: [dicts]}`. `detail: "brief"\|"full"`.         |
 | `entities_get`    | Batch get by ID      | `entity_type, [ids]` → `[ok\|error]`.                                   |
-| `entity_update`   | Update single entity | **WARNING: full replace, not partial update.** See note below.          |
+| `entity_update`   | Partial update       | Only fields you send are written; omitted fields preserved.             |
 | `entity_delete`   | Delete single entity | By entity type + ID.                                                    |
 
-**`entity_update` is a full replace.** The tool description must warn the
-agent prominently: "This replaces the entire entity. You must include ALL
-fields, not just the ones you want to change. Fields you omit will be set
-to null. First use `entities_get` to read the current state, then send the
-complete object with your changes applied." This is acceptable for simple
-entities (locations, QUs — 1-3 fields) but dangerous for complex ones.
-Products have a dedicated `products_edit` with partial-update semantics
-specifically to avoid this.
+**`entity_update` is a partial update.** Grocy's `BaseApiController`
+filters the body to the writable DB columns and UPDATEs only those, so
+omitted fields are preserved and unknown / server-computed columns
+(`row_created_timestamp`, `qu_factor_*`, `has_sub_products`, …) are
+silently dropped. To null a nullable field, send it explicitly with value
+null. Typed helpers (`products_edit`, `stock_entry_edit`,
+`shopping_list_item_edit`) are still preferred for their validation and
+change-diff, but the read-merge-write dance is not required for
+correctness when falling back to `entity_update`.
 
 ### System
 
