@@ -8,7 +8,7 @@ exports_files(
 tf_providers_versions(
     name = "providers",
     providers = {
-        "proxmox": "bpg/proxmox:~>0.91.0",
+        "proxmox": "bpg/proxmox:~>0.93.0",
         "hcloud": "hetznercloud/hcloud:~>1.45",
         "talos": "siderolabs/talos:~>0.10.0",
         "kubernetes": "hashicorp/kubernetes:~>2.38.0",
