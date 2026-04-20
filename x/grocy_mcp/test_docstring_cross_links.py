@@ -13,6 +13,7 @@ import httpx
 import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
+from pydantic import BaseModel
 
 from x.grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS, EntityType, ReadableEntityType, WriteableEntityType
 from x.grocy_mcp.mcp_types import (
@@ -65,7 +66,7 @@ _KNOWN_NON_TOOL_REFERENCES = {
     "EditShoppingListField",
 }
 
-_PYDANTIC_MODELS = [
+_PYDANTIC_MODELS: list[type[BaseModel]] = [
     AddItem,
     BriefListItem,
     BriefQuantityUnit,
@@ -129,8 +130,6 @@ _RESIDUAL_TOKENS: set[str] = {
     "brief",
     "full",
     "true",
-    # Date-format placeholder
-    "yyyy-mm-dd",
 }
 
 _KNOWN_NON_TOOL_TOKENS = (
