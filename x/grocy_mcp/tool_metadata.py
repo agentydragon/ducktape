@@ -42,15 +42,15 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     # they are replaced by batch tools in batch_tools.py.
     ("PUT", "/objects/{entity}/{objectId}"): _enabled(
         "entity_update",
-        "Partial update: send only the writable fields you want to change. Omitted fields are "
-        "preserved, and unknown or server-computed columns (e.g. `row_created_timestamp`, "
-        "`qu_factor_*`, `has_sub_products` on products) are silently dropped by Grocy, so "
-        "echoing them back from `entities_get` is harmless. To null a nullable field, include "
-        "it explicitly with value null. For common fields prefer the typed helpers — "
-        "`products_edit`, `stock_entry_edit`, `shopping_list_item_edit` — and reserve "
-        "`entity_update` for entity types / advanced fields those don't cover (e.g. "
-        "`default_best_before_days_after_freezing`, `should_not_be_frozen` on products). "
-        "Never set `best_before_date` to null on stock entries — use `2999-12-31` for never-expires.",
+        "Partial update: send only the writable columns you want to change. Omitted fields are "
+        "preserved. To null a nullable field, include it explicitly with value null. "
+        "Do NOT blindly round-trip the full `entities_get` response — GET returns server-computed "
+        "columns (e.g. `qu_factor_*`, `has_sub_products` on products, `userfields`) that Grocy "
+        "rejects on PUT with 400. For common fields prefer the typed helpers — `products_edit`, "
+        "`stock_entry_edit`, `shopping_list_item_edit` — and reserve `entity_update` for entity "
+        "types / advanced fields those don't cover (e.g. `default_best_before_days_after_freezing`, "
+        "`should_not_be_frozen` on products). Never set `best_before_date` to null on stock "
+        "entries — use `2999-12-31` for never-expires.",
     ),
     ("DELETE", "/objects/{entity}/{objectId}"): _enabled("entity_delete"),
     # ── Stock overview ───────────────────────────────────────────────

@@ -475,14 +475,14 @@ QU + product, list, get by ID, update, delete).
 | `entity_delete`   | Delete single entity | By entity type + ID.                                                    |
 
 **`entity_update` is a partial update.** Grocy's `BaseApiController`
-filters the body to the writable DB columns and UPDATEs only those, so
-omitted fields are preserved and unknown / server-computed columns
-(`row_created_timestamp`, `qu_factor_*`, `has_sub_products`, …) are
-silently dropped. To null a nullable field, send it explicitly with value
-null. Typed helpers (`products_edit`, `stock_entry_edit`,
-`shopping_list_item_edit`) are still preferred for their validation and
-change-diff, but the read-merge-write dance is not required for
-correctness when falling back to `entity_update`.
+UPDATEs only the writable columns you send, so omitted fields are
+preserved. To null a nullable field, send it explicitly with value null.
+**But** Grocy rejects the full `entities_get` response on PUT with 400 —
+GET surfaces server-computed columns (`qu_factor_*`, `has_sub_products`,
+`userfields`, …) that PUT doesn't accept. So: send only writable columns.
+Typed helpers (`products_edit`, `stock_entry_edit`,
+`shopping_list_item_edit`) are preferred for their validation and
+change-diff and do the writable-column filtering for you.
 
 ### System
 
