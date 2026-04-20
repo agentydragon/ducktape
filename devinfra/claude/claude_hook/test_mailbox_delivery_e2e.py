@@ -77,23 +77,7 @@ def container(impl: str, staged_project: Path, e2e_image: str) -> Iterator[docke
     try:
         yield c
     finally:
-        container_e2e.save_output(
-            prefix, "container-stdout.log", c.logs(stdout=True, stderr=False).decode(errors="replace")
-        )
-        container_e2e.save_output(
-            prefix, "container-stderr.log", c.logs(stdout=False, stderr=True).decode(errors="replace")
-        )
-        session_dir = f"/root/.claude/session-env/{_SESSION_ID}"
-        for log_file in ["hook-daemon/daemon.log", "hook-daemon/daemon.err.log"]:
-            rc, content, _ = container_e2e.exec_in_container(c, ["cat", f"{session_dir}/{log_file}"], check=False)
-            if rc == 0:
-                container_e2e.save_output(prefix, log_file.replace("/", "-"), content.decode(errors="replace"))
-        for log_file in ["daemon.log", "daemon.err.log"]:
-            rc, content, _ = container_e2e.exec_in_container(
-                c, ["cat", f"/tmp/claude-hd/{_SESSION_ID}/{log_file}"], check=False
-            )
-            if rc == 0:
-                container_e2e.save_output(prefix, f"rust-{log_file}", content.decode(errors="replace"))
+        container_e2e.collect_container_logs(c, prefix, _SESSION_ID)
         c.remove(force=True)
 
 

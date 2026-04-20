@@ -3,6 +3,7 @@
 import io
 import tarfile
 import time
+from collections.abc import Sequence
 from pathlib import Path
 
 import docker
@@ -90,3 +91,25 @@ def poll_file(container: docker.models.containers.Container, path: str, timeout:
             return
         time.sleep(0.1)
     pytest.fail(f"Timed out waiting for {path}")
+
+
+def collect_container_logs(
+    container: docker.models.containers.Container,
+    prefix: str,
+    session_id: str,
+    *,
+    extra_session_files: Sequence[str] = (),
+    extra_rust_files: Sequence[str] = (),
+) -> None:
+    """Collect container and daemon logs into undeclared test outputs."""
+    save_output(prefix, "container-stdout.log", container.logs(stdout=True, stderr=False).decode(errors="replace"))
+    save_output(prefix, "container-stderr.log", container.logs(stdout=False, stderr=True).decode(errors="replace"))
+    session_dir = f"/root/.claude/session-env/{session_id}"
+    for log_file in ["hook-daemon/daemon.log", "hook-daemon/daemon.err.log", *extra_session_files]:
+        rc, content, _ = exec_in_container(container, ["cat", f"{session_dir}/{log_file}"], check=False)
+        if rc == 0:
+            save_output(prefix, log_file.replace("/", "-"), content.decode(errors="replace"))
+    for log_file in ["daemon.log", "daemon.err.log", *extra_rust_files]:
+        rc, content, _ = exec_in_container(container, ["cat", f"/tmp/claude-hd/{session_id}/{log_file}"], check=False)
+        if rc == 0:
+            save_output(prefix, f"rust-{log_file}", content.decode(errors="replace"))
