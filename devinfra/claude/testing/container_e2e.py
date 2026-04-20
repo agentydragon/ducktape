@@ -2,7 +2,9 @@
 
 import contextlib
 import io
+import json
 import os
+import shlex
 import tarfile
 import time
 from collections.abc import Iterator, Sequence
@@ -82,6 +84,19 @@ def save_output(prefix: str, name: str, content: str) -> None:
     out_dir = undeclared_outputs_dir() / prefix
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / name).write_text(content)
+
+
+def send_hook(container: docker.models.containers.Container, payload: dict) -> dict:
+    """Pipe a hook JSON payload to claude-hook stdin and return parsed JSON output."""
+    _, stdout, _ = exec_in_container(
+        container, ["bash", "-c", f"echo {shlex.quote(json.dumps(payload))} | claude-hook"]
+    )
+    return json.loads(stdout) if stdout.strip() else {}
+
+
+@pytest.fixture
+def e2e_image() -> str:
+    return load_e2e_image()
 
 
 def poll_file(container: docker.models.containers.Container, path: str, timeout: int = 15) -> None:

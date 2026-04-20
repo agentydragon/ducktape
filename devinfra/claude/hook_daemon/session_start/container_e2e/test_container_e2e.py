@@ -13,8 +13,6 @@ assertion set. Both implementations must pass the full contract.
 Exercises the real secret-decryption + kubeconfig path end-to-end.
 """
 
-import json
-import shlex
 import shutil
 from collections.abc import Iterator
 from pathlib import Path
@@ -129,11 +127,6 @@ def test_age_key() -> str:
 
 
 @pytest.fixture
-def e2e_image() -> str:
-    return container_e2e.load_e2e_image()
-
-
-@pytest.fixture
 def container(
     impl: str, staged_project: Path, test_age_key: str, e2e_image: str
 ) -> Iterator[docker.models.containers.Container]:
@@ -170,7 +163,8 @@ def test_container_e2e(impl: str, container: docker.models.containers.Container)
     container_e2e.exec_in_container(container, ["which", "curl"])
 
     # Run SessionStart.
-    hook_input = json.dumps(
+    container_e2e.send_hook(
+        container,
         {
             "hook_event_name": "SessionStart",
             "session_id": _SESSION_ID,
@@ -179,9 +173,8 @@ def test_container_e2e(impl: str, container: docker.models.containers.Container)
             "permission_mode": "default",
             "source": "startup",
             "model": "claude-sonnet-4-6",
-        }
+        },
     )
-    container_e2e.exec_in_container(container, ["bash", "-c", f"echo {shlex.quote(hook_input)} | claude-hook"])
 
     # Env file exists.
     container_e2e.exec_in_container(container, ["test", "-f", _ENV_FILE])

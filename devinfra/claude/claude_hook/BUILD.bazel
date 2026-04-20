@@ -1,5 +1,5 @@
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
-load("//devinfra/python:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 rust_library(
     name = "protocol",
@@ -123,6 +123,13 @@ rust_test(
     ],
 )
 
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = ["//devinfra/claude/testing:container_e2e"],
+)
+
 py_test(
     name = "test_mailbox_delivery_e2e",
     size = "medium",
@@ -138,6 +145,7 @@ py_test(
         "external",
     ],
     deps = [
+        ":conftest",
         "//devinfra/claude/testing:container_e2e",
         "//util/bazel:runfiles",
         "@pypi//docker",
