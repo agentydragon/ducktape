@@ -14,7 +14,44 @@ import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
 
-from x.grocy_mcp.mcp_types import ServerSettings
+from x.grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS, EntityType, ReadableEntityType, WriteableEntityType
+from x.grocy_mcp.mcp_types import (
+    AddItem,
+    BriefListItem,
+    BriefQuantityUnit,
+    ConsumeItem,
+    CreateError,
+    CreateItem,
+    CreateLocationItem,
+    CreateOk,
+    CreateProductGroupItem,
+    CreateProductItem,
+    CreateQuantityUnitItem,
+    CreateShoppingListItem,
+    EditProductField,
+    EditProductItem,
+    EditShoppingListField,
+    EditStockEntryField,
+    EditStockEntryItem,
+    FullLocation,
+    FullProduct,
+    FullProductGroup,
+    FullQuantityUnit,
+    FullShoppingList,
+    GetError,
+    GetOk,
+    ServerSettings,
+    SetItem,
+    ShoppingItem,
+    ShoppingListItemError,
+    ShoppingListItemOk,
+    StockEntry,
+    StockEntryDetail,
+    StockEntryError,
+    StockEntryOk,
+    StockOpError,
+    StockOpOk,
+)
 from x.grocy_mcp.server import build_mcp
 
 # Tool-ish identifiers that appear in docstrings but aren't live tools — MCP
@@ -28,112 +65,80 @@ _KNOWN_NON_TOOL_REFERENCES = {
     "EditShoppingListField",
 }
 
-# Param / field / concept names that look like tools but aren't. Grouped for
-# readability. Expand when a rename introduces a new term.
-_KNOWN_NON_TOOL_TOKENS = {
-    # Pydantic field names
-    "items",
-    "product",
-    "products",
-    "amount",
-    "qu",
-    "qu_name",
-    "stock_qu",
-    "purchase_qu",
-    "location",
-    "from_location",
-    "to_location",
-    "best_before_date",
-    "purchased_date",
-    "price",
-    "note",
-    "done",
-    "shopping_list",
-    "product_group",
-    "name",
-    "name_plural",
-    "description",
-    "is_freezer",
-    "plural_forms",
-    "min_stock_amount",
-    "default_best_before_days",
-    "spoiled",
-    "allow_subproduct_substitution",
-    "new_amount",
-    "amount_delta",
-    "transaction_id",
-    "stock_qu_name",
-    "location_name",
-    "product_name",
-    "item_id",
-    "entry_id",
-    "object_ids",
-    "entry_ids",
-    "item_ids",
-    "entity_type",
-    "entity_types",
-    "body",
-    "object_id",
-    "data",
-    "kind",
-    "ok",
-    "error",
-    "changes",
-    "result",
-    "id",
-    "detail",
-    "brief",
-    "full",
+_PYDANTIC_MODELS = [
+    AddItem,
+    BriefListItem,
+    BriefQuantityUnit,
+    ConsumeItem,
+    CreateError,
+    CreateItem,
+    CreateLocationItem,
+    CreateOk,
+    CreateProductGroupItem,
+    CreateProductItem,
+    CreateQuantityUnitItem,
+    CreateShoppingListItem,
+    EditProductItem,
+    EditStockEntryItem,
+    FullLocation,
+    FullProduct,
+    FullProductGroup,
+    FullQuantityUnit,
+    FullShoppingList,
+    GetError,
+    GetOk,
+    SetItem,
+    ShoppingItem,
+    ShoppingListItemError,
+    ShoppingListItemOk,
+    StockEntry,
+    StockEntryDetail,
+    StockEntryError,
+    StockEntryOk,
+    StockOpError,
+    StockOpOk,
+]
+
+_ENUMS = [
+    EditProductField,
+    EditShoppingListField,
+    EditStockEntryField,
+    EntityType,
+    ReadableEntityType,
+    WriteableEntityType,
+]
+
+# Tokens that appear backtick-quoted in tool descriptions but are not
+# representable as Pydantic model fields or enum values — function parameter
+# names, response dict keys, and OpenAPI tokens.
+_RESIDUAL_TOKENS: set[str] = {
+    # Function parameters and response dict keys not in Pydantic models
     "days_ahead",
-    "deficit",
-    "days_until_expiry",
     "days_overdue",
+    "days_until_expiry",
+    "deficit",
+    "done",
+    "entry_ids",
+    "from_location",
     "min_amount",
-    "open",
-    "clear_fields",
-    "shopping_lists",
-    "shopping_locations",
-    # OpenAPI-generated query/response tokens referenced in tool descriptions
-    "created_object_id",
+    "to_location",
+    # OpenAPI-generated tokens not in our models
     "force_serve_as",
     "picture",
-    "asc",
-    "desc",
+    # Literal string/boolean values used as parameter values in descriptions
+    "brief",
+    "full",
     "true",
-    # Entity-type values the docs reference as strings
-    "locations",
-    "quantity_units",
-    "quantity_unit_conversions",
-    "product_barcodes",
-    "product_groups",
-    "stock",
-    "stock_log",
-    "stock_current_locations",
-    "products_last_purchased",
-    "products_average_price",
-    "permission_hierarchy",
-    "chores_log",
-    "battery_charge_cycles",
-    "product_barcodes_view",
-    "quantity_unit_conversions_resolved",
-    "recipes_pos_resolved",
-    "recipes",
-    "recipes_pos",
-    "recipes_nestings",
-    "tasks",
-    "task_categories",
-    "chores",
-    "batteries",
-    "equipment",
-    "userfields",
-    "userentities",
-    "userobjects",
-    "api_keys",
-    "meal_plan",
-    "meal_plan_sections",
-    # Domain terms / generic words
+    # Date-format placeholder
     "yyyy-mm-dd",
 }
+
+_KNOWN_NON_TOOL_TOKENS = (
+    {field for model in _PYDANTIC_MODELS for field in model.model_fields}
+    | {v.value for enum in _ENUMS for v in enum}
+    | PRODUCT_WRITABLE_FIELDS
+    | _RESIDUAL_TOKENS
+)
 
 
 async def test_docstring_cross_links_resolve() -> None:
