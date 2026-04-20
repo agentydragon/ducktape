@@ -17,8 +17,6 @@ import shutil
 from collections.abc import Iterator
 from pathlib import Path
 
-import docker
-import docker.models.containers
 import pytest
 import pytest_bazel
 import yaml
@@ -50,12 +48,10 @@ _DAEMON_SOCK = f"/tmp/claude-hd/{_SESSION_ID}/d.sock"
 
 
 def _exec_under_env(
-    container: docker.models.containers.Container, shell_cmd: str, *, workdir: str | None = None, check: bool = True
+    c: container_e2e.E2EContainer, shell_cmd: str, *, workdir: str | None = None, check: bool = True
 ) -> tuple[int, bytes, bytes]:
     """Run a shell command after sourcing the session env file (agent's Bash behavior)."""
-    return container_e2e.exec_in_container(
-        container, ["bash", "-c", f"source {_ENV_FILE} && {shell_cmd}"], workdir=workdir, check=check
-    )
+    return c.exec(["bash", "-c", f"source {_ENV_FILE} && {shell_cmd}"], workdir=workdir, check=check)
 
 
 # ---------------------------------------------------------------------------
@@ -63,14 +59,14 @@ def _exec_under_env(
 # ---------------------------------------------------------------------------
 
 
-def _install_rust(container: docker.models.containers.Container) -> None:
-    container_e2e.install_rust(container)
+def _install_rust(c: container_e2e.E2EContainer) -> None:
+    c.install_rust()
     # write_kubeconfig.py (bg command) imports yaml; the Rust impl has no
     # Python runtime deps, so install PyYAML explicitly.
-    container_e2e.exec_in_container(container, ["pip", "install", "--break-system-packages", "pyyaml"])
+    c.exec(["pip", "install", "--break-system-packages", "pyyaml"])
 
 
-_IMPLS = {"python": container_e2e.install_python, "rust": _install_rust}
+_IMPLS = {"python": container_e2e.E2EContainer.install_python, "rust": _install_rust}
 
 
 @pytest.fixture(params=list(_IMPLS.keys()))
@@ -125,7 +121,7 @@ def test_age_key() -> str:
 @pytest.fixture
 def container(
     impl: str, staged_project: Path, test_age_key: str, e2e_image: str
-) -> Iterator[docker.models.containers.Container]:
+) -> Iterator[container_e2e.E2EContainer]:
     env = {
         "CLAUDE_PROJECT_DIR": "/project",
         "CLAUDE_ENV_FILE": _ENV_FILE,
@@ -150,17 +146,16 @@ def container(
 # ---------------------------------------------------------------------------
 
 
-def test_container_e2e(impl: str, container: docker.models.containers.Container) -> None:
+def test_container_e2e(impl: str, container: container_e2e.E2EContainer) -> None:
     """SessionStart contract test, parameterized over python/rust impls."""
     # Install whichever claude-hook impl this run is for.
     _IMPLS[impl](container)
-    container_e2e.exec_in_container(container, ["which", "claude-hook"])
-    container_e2e.exec_in_container(container, ["which", "sops"])
-    container_e2e.exec_in_container(container, ["which", "curl"])
+    container.exec(["which", "claude-hook"])
+    container.exec(["which", "sops"])
+    container.exec(["which", "curl"])
 
     # Run SessionStart.
-    container_e2e.send_hook(
-        container,
+    container.send_hook(
         {
             "hook_event_name": "SessionStart",
             "session_id": _SESSION_ID,
@@ -169,11 +164,11 @@ def test_container_e2e(impl: str, container: docker.models.containers.Container)
             "permission_mode": "default",
             "source": "startup",
             "model": "claude-sonnet-4-6",
-        },
+        }
     )
 
     # Env file exists.
-    container_e2e.exec_in_container(container, ["test", "-f", _ENV_FILE])
+    container.exec(["test", "-f", _ENV_FILE])
     _, stdout, _ = _exec_under_env(container, "env -0")
     agent_env = parse_env_null_delimited(stdout)
 
@@ -186,9 +181,7 @@ def test_container_e2e(impl: str, container: docker.models.containers.Container)
     assert agent_env["DUCKTAPE_CI_READ_GITHUB_TOKEN"] == "test-fake-ci-read-token"
 
     # Daemon alive on UDS.
-    _, stdout, _ = container_e2e.exec_in_container(
-        container, ["curl", "-sf", "--unix-socket", _DAEMON_SOCK, "http://localhost/health"]
-    )
+    _, stdout, _ = container.exec(["curl", "-sf", "--unix-socket", _DAEMON_SOCK, "http://localhost/health"])
     assert b'"status":"ok"' in stdout
 
     # PATH shims: passthrough.
@@ -196,15 +189,15 @@ def test_container_e2e(impl: str, container: docker.models.containers.Container)
     assert b"git version" in stdout
 
     # Kubeconfig (written by bg command).
-    container_e2e.poll_file(container, "/root/.kube/config", timeout=30)
-    _, kubeconfig_raw, _ = container_e2e.exec_in_container(container, ["cat", "/root/.kube/config"])
+    container.poll_file("/root/.kube/config", timeout=30)
+    _, kubeconfig_raw, _ = container.exec(["cat", "/root/.kube/config"])
     kube = yaml.safe_load(kubeconfig_raw)
     assert kube["current-context"] == "claude-code-web"
     user_data = kube["users"][0]["user"]
     assert "client-certificate-data" in user_data
     assert "client-key-data" in user_data
     assert kube["clusters"][0]["cluster"]["server"] == "https://api.allegedly.works"
-    _, stat_out, _ = container_e2e.exec_in_container(container, ["stat", "-c", "%a", "/root/.kube/config"])
+    _, stat_out, _ = container.exec(["stat", "-c", "%a", "/root/.kube/config"])
     assert stat_out.strip() == b"600"
 
     # git shim matrix: verify block vs passthrough decisions for a
@@ -212,14 +205,13 @@ def test_container_e2e(impl: str, container: docker.models.containers.Container)
     # cases (git log, git status) succeed instead of failing on missing
     # HEAD. Block-expected cases short-circuit before real git runs so
     # they don't depend on repo state.
-    container_e2e.exec_in_container(
-        container,
+    container.exec(
         [
             "bash",
             "-c",
             "cd /tmp && git init -q shim-test && cd shim-test && "
             "git -c user.email=t@e.co -c user.name=t commit -q --allow-empty -m initial",
-        ],
+        ]
     )
     # (command, should_block)
     git_shim_tests = [

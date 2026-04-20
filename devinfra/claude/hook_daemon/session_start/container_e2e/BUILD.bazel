@@ -95,7 +95,6 @@ py_test(
         "//devinfra/claude/testing:conftest",
         "//devinfra/claude/testing:container_e2e",
         "//util/bazel:runfiles",
-        "@pypi//docker",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

@@ -18,8 +18,6 @@ sentinel file. The test verifies that:
 from collections.abc import Iterator
 from pathlib import Path
 
-import docker
-import docker.models.containers
 import pytest
 import pytest_bazel
 
@@ -31,7 +29,7 @@ _SESSION_ID = "mailbox-e2e-test"
 _ENV_FILE = f"/root/.claude/session-env/{_SESSION_ID}/sessionstart-hook-0.sh"
 _CONTAINER_NAME = "ducktape-mailbox-e2e"
 
-_IMPLS = {"python": container_e2e.install_python, "rust": container_e2e.install_rust}
+_IMPLS = {"python": container_e2e.E2EContainer.install_python, "rust": container_e2e.E2EContainer.install_rust}
 
 
 @pytest.fixture(params=list(_IMPLS.keys()))
@@ -51,7 +49,7 @@ def staged_project(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def container(impl: str, staged_project: Path, e2e_image: str) -> Iterator[docker.models.containers.Container]:
+def container(impl: str, staged_project: Path, e2e_image: str) -> Iterator[container_e2e.E2EContainer]:
     env = {
         "CLAUDE_PROJECT_DIR": "/project",
         "CLAUDE_ENV_FILE": _ENV_FILE,
@@ -85,29 +83,29 @@ _PRE_TOOL_USE = {
 }
 
 
-def test_mailbox_delivery(impl: str, container: docker.models.containers.Container) -> None:
+def test_mailbox_delivery(impl: str, container: container_e2e.E2EContainer) -> None:
     """Background task output is delivered once via REPL hook systemMessage, then drained."""
     _IMPLS[impl](container)
-    container_e2e.send_hook(container, _SESSION_START)
+    container.send_hook(_SESSION_START)
 
     # The bg script prints output_X, sleeps 0.5s (giving the daemon's async
     # stdout reader time to buffer it), then creates task_ready. By the time
     # we see the sentinel, output_X is guaranteed in the daemon's buffer.
-    container_e2e.poll_file(container, "/tmp/task_ready")
+    container.poll_file("/tmp/task_ready")
 
-    out1 = container_e2e.send_hook(container, _PRE_TOOL_USE)
+    out1 = container.send_hook(_PRE_TOOL_USE)
     msg1 = out1.get("systemMessage", "")
     assert "output_X" in msg1, f"[{impl}] expected output_X, got: {msg1!r}"
 
     # Drain is destructive: second hook must not re-deliver output_X.
-    out2 = container_e2e.send_hook(container, _PRE_TOOL_USE)
+    out2 = container.send_hook(_PRE_TOOL_USE)
     msg2 = out2.get("systemMessage") or ""
     assert "output_X" not in msg2, f"[{impl}] output_X re-delivered: {msg2!r}"
 
-    container_e2e.exec_in_container(container, ["touch", "/tmp/signal"])
-    container_e2e.poll_file(container, "/tmp/task_done")
+    container.exec(["touch", "/tmp/signal"])
+    container.poll_file("/tmp/task_done")
 
-    out3 = container_e2e.send_hook(container, _PRE_TOOL_USE)
+    out3 = container.send_hook(_PRE_TOOL_USE)
     msg3 = out3.get("systemMessage", "")
     assert "output_Y" in msg3, f"[{impl}] expected output_Y, got: {msg3!r}"
     assert "output_X" not in msg3, f"[{impl}] output_X re-appeared in phase-2 message: {msg3!r}"
