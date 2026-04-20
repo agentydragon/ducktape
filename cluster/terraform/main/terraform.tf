@@ -9,7 +9,7 @@ terraform {
     # From persistent-auth (SOPS-encrypted secrets)
     sops = { source = "carlpett/sops", version = "~> 1.4.0" }
     # From infrastructure + persistent-auth + nixos-dev-env
-    proxmox = { source = "bpg/proxmox", version = "~> 0.91.0" }
+    proxmox = { source = "bpg/proxmox", version = "~> 0.93.0" }
     # From infrastructure
     hcloud     = { source = "hetznercloud/hcloud", version = "~> 1.45" }
     talos      = { source = "siderolabs/talos", version = "~> 0.10.0" }
