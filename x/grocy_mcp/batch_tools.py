@@ -33,6 +33,7 @@ from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait
 from x.grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS, EntityType, ReadableEntityType
 from x.grocy_mcp.mcp_types import (
     DETAIL_DESC,
+    MAX_BATCH_SIZE,
     PRODUCT_DESC,
     QU_DESC,
     AddItem,
@@ -47,6 +48,7 @@ from x.grocy_mcp.mcp_types import (
     CreateProductItem,
     CreateQuantityUnitItem,
     CreateShoppingListItem,
+    EditOk,
     EditProductField,
     EditProductItem,
     EditShoppingListField,
@@ -66,6 +68,7 @@ from x.grocy_mcp.mcp_types import (
     ShoppingListItemOk,
     StockEntry,
     StockEntryDetail,
+    StockEntryEditOk,
     StockEntryError,
     StockEntryOk,
     StockOpError,
@@ -202,8 +205,10 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     # ── Entity CRUD ──────────────────────────────────────────────────────
 
     @mcp.tool()
-    async def entities_create(items: list[CreateItem]) -> list[CreateOk | CreateError]:
-        """Create entities of any writeable type. Max 20 items per call.
+    async def entities_create(
+        items: Annotated[list[CreateItem], Field(description=f"Entities to create. Max {MAX_BATCH_SIZE} per call.")],
+    ) -> list[CreateOk | CreateError]:
+        """Create entities of any writeable type.
 
         For products, locations, and quantity units prefer the typed
         `products_create`, `locations_create`, `quantity_units_create` —
@@ -235,8 +240,12 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         return list(await asyncio.gather(*[_one(item) for item in items]))
 
     @mcp.tool()
-    async def entities_list(entity_types: list[ReadableEntityType]) -> dict[str, list[Any]]:
-        """Fetch every object of one or more entity types. Max 20 types per call.
+    async def entities_list(
+        entity_types: Annotated[
+            list[ReadableEntityType], Field(description=f"Entity types to fetch. Max {MAX_BATCH_SIZE} per call.")
+        ],
+    ) -> dict[str, list[Any]]:
+        """Fetch every object of one or more entity types.
 
         For the common reference types prefer the dedicated `products_list`,
         `locations_list`, `quantity_units_list`, `product_groups_list` —
@@ -263,8 +272,11 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         return dict(pairs)
 
     @mcp.tool()
-    async def entities_get(entity_type: ReadableEntityType, object_ids: list[int]) -> list[GetOk | GetError]:
-        """Fetch specific objects by ID for one entity type. Max 20 IDs per call.
+    async def entities_get(
+        entity_type: ReadableEntityType,
+        object_ids: Annotated[list[int], Field(description=f"Object IDs to fetch. Max {MAX_BATCH_SIZE} per call.")],
+    ) -> list[GetOk | GetError]:
+        """Fetch specific objects by ID for one entity type.
 
         Use this when you already know the IDs (e.g. from `entities_list`,
         `products_list`, or a previous `create_*` call). Each result carries
@@ -433,8 +445,10 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
             return StockOpError(error=_format_exc(e))
 
     @mcp.tool()
-    async def stock_add(items: list[AddItem]) -> list[StockOpOk | StockOpError]:
-        """Add stock for one or more products. Max 20 items per call.
+    async def stock_add(
+        items: Annotated[list[AddItem], Field(description=f"Stock additions. Max {MAX_BATCH_SIZE} per call.")],
+    ) -> list[StockOpOk | StockOpError]:
+        """Add stock for one or more products.
 
         Each item needs `product`, `amount`, `qu`, and `location`. The `qu`
         must match the product's stock QU or have a defined conversion
@@ -450,8 +464,10 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         return list(await asyncio.gather(*[_stock_mutate(item) for item in items]))
 
     @mcp.tool()
-    async def stock_consume(items: list[ConsumeItem]) -> list[StockOpOk | StockOpError]:
-        """Consume (use up) stock for one or more products. Max 20 items per call.
+    async def stock_consume(
+        items: Annotated[list[ConsumeItem], Field(description=f"Stock consumptions. Max {MAX_BATCH_SIZE} per call.")],
+    ) -> list[StockOpOk | StockOpError]:
+        """Consume (use up) stock for one or more products.
 
         Use `stock_get` first if you don't already know which `location`
         the product is in — Grocy can hold the same product in multiple
@@ -464,8 +480,10 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         return list(await asyncio.gather(*[_stock_mutate(item) for item in items]))
 
     @mcp.tool()
-    async def stock_set(items: list[SetItem]) -> list[StockOpOk | StockOpError]:
-        """Set absolute stock amounts for one or more products. Max 20 items per call.
+    async def stock_set(
+        items: Annotated[list[SetItem], Field(description=f"Stock corrections. Max {MAX_BATCH_SIZE} per call.")],
+    ) -> list[StockOpOk | StockOpError]:
+        """Set absolute stock amounts for one or more products.
 
         Use this for corrections — "we actually have 10 kg of rice, not 3"
         — when you'd otherwise have to compute the delta yourself for
@@ -551,19 +569,21 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         return list(await asyncio.gather(*[_one(eid) for eid in entry_ids]))
 
     @mcp.tool()
-    async def stock_entry_edit(items: list[EditStockEntryItem]) -> list[StockEntryOk | StockEntryError]:
-        """Partial update of one or more stock entries. Max 20 items per call.
+    async def stock_entry_edit(
+        items: Annotated[list[EditStockEntryItem], Field(description=f"Entry edits. Max {MAX_BATCH_SIZE} per call.")],
+    ) -> list[StockEntryEditOk | StockEntryError]:
+        """Partial update of one or more stock entries.
 
         For each item, the server reads the current entry, merges your
         changes, and writes back — you don't have to copy-paste unchanged
         fields. Returns one result per input item, in order. Each success
-        carries the post-edit entry plus a `changes` diff. To remove a
+        carries the post-edit entry plus a field-by-field changes diff. To remove a
         nullable field's value (vs setting it to a new value), name it in
         `clear_fields`. See also `stock_entries_list` to discover IDs.
         """
         _check_batch_size(items, "items")
 
-        async def _edit_one(item: EditStockEntryItem) -> StockEntryOk | StockEntryError:
+        async def _edit_one(item: EditStockEntryItem) -> StockEntryEditOk | StockEntryError:
             try:
                 # Read current entry
                 entry_r = await client.get(f"/stock/entry/{item.entry_id}")
@@ -623,7 +643,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
                 updated_r = await client.get(f"/stock/entry/{item.entry_id}")
                 updated_r.raise_for_status()
                 detail = await _enrich_stock_entry(updated_r.json())
-                return StockEntryOk(entry=detail, changes=changes or None)
+                return StockEntryEditOk(entry=detail, changes=changes or None)
             except Exception as e:
                 return StockEntryError(entry_id=item.entry_id, error=_format_exc(e))
 
@@ -734,8 +754,12 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         return list(await asyncio.gather(*[_one(item) for item in items]))
 
     @mcp.tool()
-    async def locations_create(items: list[CreateLocationItem]) -> list[CreateOk | CreateError]:
-        """Create one or more storage locations. Max 20 items per call.
+    async def locations_create(
+        items: Annotated[
+            list[CreateLocationItem], Field(description=f"Locations to create. Max {MAX_BATCH_SIZE} per call.")
+        ],
+    ) -> list[CreateOk | CreateError]:
+        """Create one or more storage locations.
 
         Locations are referenced by name everywhere else (stock ops,
         product creation, etc.) — pick stable, distinctive names. Use
@@ -751,8 +775,12 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         return await _simple_batch_create(items, "/objects/locations", _body)
 
     @mcp.tool()
-    async def quantity_units_create(items: list[CreateQuantityUnitItem]) -> list[CreateOk | CreateError]:
-        """Create one or more quantity units. Max 20 items per call.
+    async def quantity_units_create(
+        items: Annotated[
+            list[CreateQuantityUnitItem], Field(description=f"Units to create. Max {MAX_BATCH_SIZE} per call.")
+        ],
+    ) -> list[CreateOk | CreateError]:
+        """Create one or more quantity units.
 
         Quantity units are referenced by name in stock ops and product
         creation; the singular `name` is what stock operations match
@@ -766,8 +794,12 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         )
 
     @mcp.tool()
-    async def product_groups_create(items: list[CreateProductGroupItem]) -> list[CreateOk | CreateError]:
-        """Create one or more product groups (categories). Max 20 items per call.
+    async def product_groups_create(
+        items: Annotated[
+            list[CreateProductGroupItem], Field(description=f"Groups to create. Max {MAX_BATCH_SIZE} per call.")
+        ],
+    ) -> list[CreateOk | CreateError]:
+        """Create one or more product groups (categories).
 
         Categorising products is optional in Grocy; these groups show up as
         the `product_group` reference on products. Use `product_groups_list`
@@ -779,8 +811,12 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         )
 
     @mcp.tool()
-    async def shopping_lists_create(items: list[CreateShoppingListItem]) -> list[CreateOk | CreateError]:
-        """Create one or more shopping lists (metadata). Max 20 items per call.
+    async def shopping_lists_create(
+        items: Annotated[
+            list[CreateShoppingListItem], Field(description=f"Lists to create. Max {MAX_BATCH_SIZE} per call.")
+        ],
+    ) -> list[CreateOk | CreateError]:
+        """Create one or more shopping lists (metadata).
 
         This creates the list itself, not items on it — items go through
         `shopping_list_items_add`. Pass the returned list name or ID as
@@ -795,8 +831,12 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     # ── Product management ───────────────────────────────────────────────
 
     @mcp.tool()
-    async def products_create(items: list[CreateProductItem]) -> list[CreateOk | CreateError]:
-        """Create one or more products. Max 20 items per call.
+    async def products_create(
+        items: Annotated[
+            list[CreateProductItem], Field(description=f"Products to create. Max {MAX_BATCH_SIZE} per call.")
+        ],
+    ) -> list[CreateOk | CreateError]:
+        """Create one or more products.
 
         Each item needs `name`, `stock_qu`, and `location`. All entity
         references (`stock_qu`, `location`, `purchase_qu`, `product_group`)
@@ -864,8 +904,10 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         return list(await asyncio.gather(*[_one(item) for item in items]))
 
     @mcp.tool()
-    async def products_edit(items: list[EditProductItem]) -> list[CreateOk | CreateError]:
-        """Partial update of one or more products. Max 20 items per call.
+    async def products_edit(
+        items: Annotated[list[EditProductItem], Field(description=f"Product edits. Max {MAX_BATCH_SIZE} per call.")],
+    ) -> list[EditOk | CreateError]:
+        """Partial update of one or more products.
 
         Only the fields you set on each item change — the rest are
         preserved. The server reads each product, merges your changes,
@@ -876,7 +918,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         """
         _check_batch_size(items, "items")
 
-        async def _one(item: EditProductItem) -> CreateOk | CreateError:
+        async def _one(item: EditProductItem) -> EditOk | CreateError:
             try:
                 resolved = await resolver.resolve(EntityType.PRODUCT, item.product)
                 r = await client.get(f"/objects/products/{resolved.id}")
@@ -919,7 +961,7 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
                 r = await client.put(f"/objects/products/{resolved.id}", json=body)
                 r.raise_for_status()
-                return CreateOk(created_object_id=resolved.id)
+                return EditOk(object_id=resolved.id)
             except Exception as e:
                 return CreateError(error=_format_exc(e))
 
@@ -928,13 +970,13 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
     @mcp.tool()
     async def product_delete(
         product: Annotated[int | str, Field(description="Product to delete. Name or ID.")],
-    ) -> CreateOk | CreateError:
+    ) -> EditOk | CreateError:
         """Delete a product. Also removes every stock entry for the product — irreversible."""
         try:
             resolved = await resolver.resolve(EntityType.PRODUCT, product)
             r = await client.delete(f"/objects/products/{resolved.id}")
             r.raise_for_status()
-            return CreateOk(created_object_id=resolved.id)
+            return EditOk(object_id=resolved.id)
         except Exception as e:
             return CreateError(error=_format_exc(e))
 
@@ -1049,8 +1091,10 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         }
 
     @mcp.tool()
-    async def shopping_list_items_add(items: list[ShoppingItem]) -> list[ShoppingListItemOk | ShoppingListItemError]:
-        """Add items to a shopping list. Max 20 items per call.
+    async def shopping_list_items_add(
+        items: Annotated[list[ShoppingItem], Field(description=f"Items to add. Max {MAX_BATCH_SIZE} per call.")],
+    ) -> list[ShoppingListItemOk | ShoppingListItemError]:
+        """Add items to a shopping list.
 
         Each item needs a `shopping_list` (the target list, by name or ID).
         Items come in two shapes:
@@ -1147,9 +1191,14 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
 
     @mcp.tool()
     async def shopping_list_items_remove(
-        item_ids: Annotated[list[int], Field(description="Shopping-list item IDs (from `shopping_list_get`).")],
+        item_ids: Annotated[
+            list[int],
+            Field(
+                description=f"Shopping-list item IDs to remove (from `shopping_list_get`). Max {MAX_BATCH_SIZE} per call."
+            ),
+        ],
     ) -> list[ShoppingListItemOk | ShoppingListItemError]:
-        """Remove specific items from a shopping list. Max 20 IDs per call.
+        """Remove specific items from a shopping list.
 
         For removing every item on a list at once, use
         `shopping_list_clear` instead.

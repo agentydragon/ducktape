@@ -17,6 +17,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from mcp_infra.authentik_auth.auth import AuthentikAuthConfig
 from x.grocy_mcp.grocy_types import ReadableEntityType, WriteableEntityType
 
+MAX_BATCH_SIZE = 100
+
 # ── Server settings ─────────────────────────────────────────────────────────
 
 
@@ -34,7 +36,7 @@ class ServerSettings(BaseSettings):
     port: int = 8765
 
     grocy_timeout: float = Field(default=30.0, description="Timeout (seconds) for Grocy API requests.")
-    max_batch_size: int = Field(default=20, description="Maximum items per batch tool call.")
+    max_batch_size: int = Field(default=MAX_BATCH_SIZE, description="Maximum items per batch tool call.")
     max_concurrent_requests: int = Field(default=4, description="Maximum parallel Grocy API requests within a batch.")
     max_retries: int = Field(default=2, description="Retry count for transient errors (timeouts, 5xx).")
     retry_base_delay: float = Field(default=0.5, description="Initial retry delay in seconds; doubles each attempt.")
@@ -81,6 +83,11 @@ class CreateItem(BaseModel):
 class CreateOk(BaseModel):
     kind: Literal["ok"] = "ok"
     created_object_id: int | None = None
+
+
+class EditOk(BaseModel):
+    kind: Literal["ok"] = "ok"
+    object_id: int
 
 
 class CreateError(BaseModel):
@@ -220,6 +227,9 @@ class StockEntryDetail(BaseModel):
 class StockEntryOk(BaseModel):
     kind: Literal["ok"] = "ok"
     entry: StockEntryDetail
+
+
+class StockEntryEditOk(StockEntryOk):
     changes: dict[str, dict[str, Any]] | None = Field(
         default=None, description="For edits: {field: {old: ..., new: ...}} diff of changed fields."
     )
