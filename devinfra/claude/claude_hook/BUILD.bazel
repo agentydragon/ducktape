@@ -1,4 +1,5 @@
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load("//devinfra/python:defs.bzl", "py_test")
 
 rust_library(
     name = "protocol",
@@ -119,5 +120,29 @@ rust_test(
     crate = ":claude_hook",
     deps = [
         "@crates//:tempfile",
+    ],
+)
+
+py_test(
+    name = "test_mailbox_delivery_e2e",
+    size = "medium",
+    srcs = ["test_mailbox_delivery_e2e.py"],
+    data = [
+        "mailbox_test_profile.yaml",
+        ":claude_hook",
+        "//devinfra/claude/hook_daemon/session_start/container_e2e:e2e_container",
+    ],
+    requires_docker = True,
+    tags = [
+        "e2e",
+        "external",
+    ],
+    deps = [
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//docker",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

@@ -59,6 +59,7 @@ oci_layout_rloc(
     name = "e2e_container",
     testonly = True,
     image = ":e2e_container_image",
+    visibility = ["//devinfra/claude:__subpackages__"],
 )
 
 py_test(
