@@ -103,7 +103,9 @@ conversion via `entity_update` on `quantity_unit_conversions`.
   amount added, consumed, or moved.
 - `stock_set` takes **absolute** amounts — the target on-hand after the
   operation. Grocy figures out whether to add or remove to reach it. Use
-  this for corrections / stock-takes.
+  this for corrections / stock-takes. When `new_amount=0` the unit is
+  irrelevant, so `qu` can be omitted (falls back to the product's stock
+  QU); for any nonzero amount, `qu` is required.
 
 ## Undo
 

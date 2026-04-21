@@ -71,7 +71,7 @@ from x.grocy_mcp.mcp_types import (
     StockOpError,
     StockOpOk,
 )
-from x.grocy_mcp.resolver import EntityResolver
+from x.grocy_mcp.resolver import EntityResolver, ResolvedQU
 
 logger = logging.getLogger(__name__)
 
@@ -380,7 +380,26 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         try:
             product = await resolver.resolve(EntityType.PRODUCT, item.product)
             location = await resolver.resolve(EntityType.LOCATION, item.location)
-            rqu = await resolver.resolve_qu_for_product(item.qu, product.id)
+            qu_ref = item.qu
+            if qu_ref is None:
+                # SetItem-only zeroing-out shortcut: no unit needed since
+                # the amount is 0. AddItem/ConsumeItem keep qu required.
+                assert isinstance(item, SetItem)
+                if item.new_amount != 0:
+                    raise ValueError("`qu` is required unless `new_amount` is 0 (zeroing-out shortcut).")
+                product_row = await resolver.get(EntityType.PRODUCT, product.id)
+                assert product_row is not None  # just resolved
+                stock_qu_id = int(product_row["qu_id_stock"])
+                stock_qu_name = await resolver.name(EntityType.QUANTITY_UNIT, stock_qu_id)
+                rqu = ResolvedQU(
+                    id=stock_qu_id,
+                    name=stock_qu_name,
+                    stock_qu_id=stock_qu_id,
+                    stock_qu_name=stock_qu_name,
+                    conversion_factor=1.0,
+                )
+            else:
+                rqu = await resolver.resolve_qu_for_product(qu_ref, product.id)
             input_amount = item.new_amount if isinstance(item, SetItem) else item.amount
             stock_amount = input_amount * rqu.conversion_factor
 
@@ -472,6 +491,12 @@ def register_batch_tools(mcp: FastMCP, client: httpx.AsyncClient, settings: Serv
         `stock_add` / `stock_consume`. Grocy figures out whether to add
         or remove to reach `new_amount`. `best_before_date` and `price`
         apply only to units being added; ignored when removing.
+
+        `qu` is optional when `new_amount` is 0: the unit is irrelevant
+        when you're just zeroing stock out, so you can omit it and skip
+        the per-product `stock_qu` lookup (useful for bulk "empty this
+        location" operations). For any nonzero amount, `qu` is required.
+
         Each success carries a `transaction_id` for `transaction_undo`.
         See also `stock_add`, `stock_consume`, `stock_transfer`.
         """

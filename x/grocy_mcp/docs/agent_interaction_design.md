@@ -398,15 +398,15 @@ Notes:
 
 ### Stock Operations (the core)
 
-| Tool               | Purpose                    | Required Params                                 | Notes                                                                     |
-| ------------------ | -------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------- |
-| `stock_get`        | Current stock overview     | (none; optional product/location filters)       | Compact. Filters: `products: list[int\|str]`, `locations: list[int\|str]` |
-| `stock_add`        | Add stock                  | product, amount, qu, location                   | All `int\|str`. All required, no defaults. Batch.                         |
-| `stock_consume`    | Consume stock              | product, amount, qu, location                   | All required — prevents cross-household mistakes.                         |
-| `stock_transfer`   | Move between locations     | product, amount, qu, from_location, to_location | Both locations required.                                                  |
-| `stock_set`        | Set absolute amount        | product, new_amount, qu, location               | All required — same rationale as consume.                                 |
-| `open_stock`       | Mark stock entry as opened | product, amount, qu                             |                                                                           |
-| `transaction_undo` | Undo a stock operation     | transaction_id                                  |                                                                           |
+| Tool               | Purpose                    | Required Params                                 | Notes                                                                             |
+| ------------------ | -------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------- |
+| `stock_get`        | Current stock overview     | (none; optional product/location filters)       | Compact. Filters: `products: list[int\|str]`, `locations: list[int\|str]`         |
+| `stock_add`        | Add stock                  | product, amount, qu, location                   | All `int\|str`. All required, no defaults. Batch.                                 |
+| `stock_consume`    | Consume stock              | product, amount, qu, location                   | All required — prevents cross-household mistakes.                                 |
+| `stock_transfer`   | Move between locations     | product, amount, qu, from_location, to_location | Both locations required.                                                          |
+| `stock_set`        | Set absolute amount        | product, new_amount, qu, location               | `qu` optional when `new_amount=0` (zeroing-out shortcut); otherwise all required. |
+| `open_stock`       | Mark stock entry as opened | product, amount, qu                             |                                                                                   |
+| `transaction_undo` | Undo a stock operation     | transaction_id                                  |                                                                                   |
 
 ### Stock Entry Operations
 

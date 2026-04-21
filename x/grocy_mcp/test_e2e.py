@@ -360,6 +360,57 @@ async def test_stock_operations(mcp_client: Client, refunwrap_result: RefData) -
     assert float(entries[0]["entry"]["price"]) == 9.99
 
 
+# -- stock_set: qu-optional when zeroing ------------------------------------
+
+
+async def test_stock_set_qu_optional_when_zeroing(mcp_client: Client, refunwrap_result: RefData) -> None:
+    """`qu` is optional on `stock_set` when `new_amount=0`; required otherwise.
+
+    Motivated by the "nuke the Freezer" workflow: emptying a location bulk
+    should not require the agent to preflight each product's `qu_id_stock`.
+    For any nonzero amount, `qu` is still required (Grocy needs to know
+    the unit for the add side of the correction).
+    """
+    product = refunwrap_result.products[0]
+    qu = refunwrap_result.qu
+    loc = refunwrap_result.location
+
+    # Seed: put something on the shelf.
+    seed = unwrap_result(
+        await mcp_client.call_tool(
+            "stock_add", {"items": [{"product": product, "amount": 7, "qu": qu, "location": loc}]}
+        )
+    )
+    assert seed[0]["kind"] == "ok", seed
+
+    # (1) Zero out without passing `qu` — succeeds, falls back to stock QU.
+    zero_ops = unwrap_result(
+        await mcp_client.call_tool("stock_set", {"items": [{"product": product, "new_amount": 0, "location": loc}]})
+    )
+    assert zero_ops[0]["kind"] == "ok", zero_ops
+    assert zero_ops[0]["new_amount"] == 0.0
+    # Fallback uses the product's own stock QU, which is the fixture's QU.
+    assert zero_ops[0]["qu_name"] == qu
+
+    # (2) Nonzero without `qu` — batch tools collect per-item errors rather
+    # than raising, so the batch succeeds but this item reports an error
+    # naming the omitted `qu`.
+    nonzero_ops = unwrap_result(
+        await mcp_client.call_tool("stock_set", {"items": [{"product": product, "new_amount": 3, "location": loc}]})
+    )
+    assert nonzero_ops[0]["kind"] == "error", nonzero_ops
+    assert "qu" in nonzero_ops[0]["error"]
+
+    # (3) Nonzero with `qu` — still works (regression check for the happy path).
+    set_ops = unwrap_result(
+        await mcp_client.call_tool(
+            "stock_set", {"items": [{"product": product, "new_amount": 3, "qu": qu, "location": loc}]}
+        )
+    )
+    assert set_ops[0]["kind"] == "ok", set_ops
+    assert set_ops[0]["new_amount"] == 3.0
+
+
 # -- Shopping list operations ------------------------------------------------
 
 

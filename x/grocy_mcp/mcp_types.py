@@ -155,7 +155,15 @@ class SetItem(BaseModel):
     new_amount: float = Field(
         description="Absolute target stock amount in `qu` units. Grocy computes the delta and adds or removes to reach it."
     )
-    qu: int | str = Field(description=QU_DESC)
+    qu: int | str | None = Field(
+        default=None,
+        description=(
+            "Quantity unit. Name or ID. Must match the product's stock QU or have a defined "
+            "conversion (see the `quantity_unit_conversions` entity). Optional only when "
+            "`new_amount` is 0 — Grocy is just zeroing the product out and the unit is irrelevant, "
+            "so we fall back to the product's stock QU automatically."
+        ),
+    )
     location: int | str = Field(description="Location for any units being added by the correction. Name or ID.")
     best_before_date: date | None = Field(
         default=None, description=f"Applies to units being added: {BEST_BEFORE_DESC.lower()}"
