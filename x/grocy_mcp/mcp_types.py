@@ -68,6 +68,17 @@ DUE_TYPE_DESC = (
     "2 = 'expiration' (unsafe after date, `get_expired_stock` returns these). "
     "Use 2 for perishables (meat, dairy, medicine)."
 )
+PARENT_PRODUCT_DESC = (
+    "Parent product. Name or ID. Marks this product as a **variant / sub-product** of the "
+    "parent — e.g. two brands of milk both sharing a generic `Milk` parent. This unlocks: "
+    "(a) stock aggregation — `stock_get` and the overview roll every variant's amount (with "
+    "QU conversion) into the parent's row; (b) substitution on consume — `stock_consume` "
+    "with `allow_subproduct_substitution=True` on the parent falls back to any variant "
+    "when the parent itself is short (FIFO across variants); (c) shared low-stock rules "
+    "when `cumulate_min_stock_amount_of_sub_products=1` on the parent. Typical setup pairs "
+    "this with `no_own_stock=1` on the parent so it's a pure umbrella. Single-level "
+    "nesting only — a variant cannot itself have variants."
+)
 
 
 # ── Shared input/output types ──────────────────────────────────────────────
@@ -144,7 +155,12 @@ class ConsumeItem(BaseModel):
     spoiled: bool = Field(default=False, description="Mark the consumption as spoilage rather than normal use.")
     allow_subproduct_substitution: bool = Field(
         default=False,
-        description="If the product has sub-products configured, allow Grocy to consume from sub-product stock when the product itself is short.",
+        description=(
+            "If this product has **variants** configured via `parent_product`, let Grocy "
+            "consume from the variants' stock when the parent itself is short. FIFO across "
+            "variants. Common pattern: a generic parent (often with `no_own_stock=1`) has "
+            "several branded variants; consuming the parent uses whichever brand is on hand."
+        ),
     )
 
 
@@ -308,7 +324,7 @@ class CreateProductItem(BaseModel):
     )
     default_best_before_days: int = Field(default=0, description=DEFAULT_BBD_DESC)
     due_type: Literal[1, 2] = Field(default=1, description=DUE_TYPE_DESC)
-    parent_product: int | str | None = Field(default=None, description="Parent product for grouping. Name or ID.")
+    parent_product: int | str | None = Field(default=None, description=PARENT_PRODUCT_DESC)
     product_group: int | str | None = Field(default=None, description="Product group / category. Name or ID.")
     description: str | None = Field(default=None, description="Free-text description.")
 
@@ -387,7 +403,9 @@ class EditProductItem(BaseModel):
     )
     default_best_before_days: int | None = Field(default=None, description=DEFAULT_BBD_DESC)
     due_type: Literal[1, 2] | None = Field(default=None, description=DUE_TYPE_DESC)
-    parent_product: int | str | None = Field(default=None, description="New parent product. Name or ID.")
+    parent_product: int | str | None = Field(
+        default=None, description=f"New parent product (variant link). {PARENT_PRODUCT_DESC}"
+    )
     product_group: int | str | None = Field(default=None, description="New product group. Name or ID.")
     description: str | None = Field(default=None, description="New free-text description.")
     clear_fields: set[EditProductField] | None = Field(

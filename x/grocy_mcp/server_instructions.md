@@ -107,6 +107,40 @@ conversion via `entity_update` on `quantity_unit_conversions`.
   irrelevant, so `qu` can be omitted (falls back to the product's stock
   QU); for any nonzero amount, `qu` is required.
 
+## Parent products (variants)
+
+A product can have a `parent_product` — this marks it as a **variant**
+of the parent. Common example: a generic `Milk` parent with
+`Alpura 1%` and `Lala Entera` as variants. Each variant keeps its own
+barcodes, prices, and expiry dates; the parent is typically a pure
+umbrella.
+
+What the relationship unlocks:
+
+- **Stock aggregation.** `stock_get` and the UI's stock overview show the
+  parent's row with `amount_aggregated` summed from every variant (with
+  per-variant QU conversion). Variants still show with their own counts.
+- **Consume substitution.** `stock_consume` on the parent with
+  `allow_subproduct_substitution=true` falls back to any variant when the
+  parent itself is short (FIFO across variants). This is how "recipe
+  needs milk, use whichever brand is in the fridge" works.
+- **Shared low-stock rule.** Setting
+  `cumulate_min_stock_amount_of_sub_products=1` on the parent means the
+  parent's minimum is compared against the aggregated total — only the
+  parent is flagged, not individual variants.
+- **Virtual parent.** `no_own_stock=1` on the parent makes it an umbrella
+  with no stock of its own; stock only lives on variants.
+
+Constraints:
+
+- Single-level nesting only — variants can't have their own variants.
+- A product that is already a parent cannot itself be made a variant.
+
+Typical `Milk` setup: create `Milk` with
+`no_own_stock=1, cumulate_min_stock_amount_of_sub_products=1, min_stock_amount=2`,
+then create `Alpura 1%` and `Lala Entera` with `parent_product="Milk"`
+and their own barcodes and purchase QUs.
+
 ## Undo
 
 Every stock mutation returns a `transaction_id`. Pass it to
