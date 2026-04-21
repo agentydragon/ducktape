@@ -32,6 +32,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import date, timedelta
 
 import httpx
 import pytest
@@ -409,6 +410,106 @@ async def test_stock_set_qu_optional_when_zeroing(mcp_client: Client, refunwrap_
     )
     assert set_ops[0]["kind"] == "ok", set_ops
     assert set_ops[0]["new_amount"] == 3.0
+
+
+# -- stock_add: default_best_before_days -----------------------------------
+
+
+async def test_stock_add_applies_default_best_before_days(mcp_client: Client, refunwrap_result: RefData) -> None:
+    """`stock_add` without `best_before_date` honors the product's configured shelf life.
+
+    The tool contracts "Omit to use the product's `default_best_before_days`",
+    but Grocy v4.6.0 has a bug in `StockService::AddProduct`: when the
+    destination is a freezer location and the product has not configured
+    `default_best_before_days_after_freezing` (schema default 0), Grocy's
+    freezing branch fires anyway (guard `>= -1` instead of the correct
+    `> 0 || == -1`) and overwrites BBD with today — the product's
+    `default_best_before_days` is never consulted. Our batch tool fills
+    the date in client-side so the contract holds on both freezer and
+    non-freezer locations.
+    """
+    product = refunwrap_result.products[0]
+    qu = refunwrap_result.qu
+    non_freezer_loc = refunwrap_result.location
+
+    async def _latest_bbd() -> str:
+        entries = unwrap_result(await mcp_client.call_tool("stock_entries_list", {"products": [product]}))
+        latest = max((e["entry"] for e in entries if e["kind"] == "ok"), key=lambda e: e["entry_id"])
+        return str(latest["best_before_date"])
+
+    # Case 1: non-freezer, default_best_before_days=300 → today + 300.
+    edit = unwrap_result(
+        await mcp_client.call_tool("products_edit", {"items": [{"product": product, "default_best_before_days": 300}]})
+    )
+    assert edit[0]["kind"] == "ok", edit
+    ops = unwrap_result(
+        await mcp_client.call_tool(
+            "stock_add", {"items": [{"product": product, "amount": 1, "qu": qu, "location": non_freezer_loc}]}
+        )
+    )
+    assert ops[0]["kind"] == "ok", ops
+    assert await _latest_bbd() == (date.today() + timedelta(days=300)).isoformat()
+
+    # Case 2: non-freezer, default_best_before_days=-1 → 2999-12-31.
+    edit = unwrap_result(
+        await mcp_client.call_tool("products_edit", {"items": [{"product": product, "default_best_before_days": -1}]})
+    )
+    assert edit[0]["kind"] == "ok", edit
+    ops = unwrap_result(
+        await mcp_client.call_tool(
+            "stock_add", {"items": [{"product": product, "amount": 1, "qu": qu, "location": non_freezer_loc}]}
+        )
+    )
+    assert ops[0]["kind"] == "ok", ops
+    assert await _latest_bbd() == "2999-12-31"
+
+    # Case 3 (regression for the reported bug): freezer location,
+    # default_best_before_days=300 and default_best_before_days_after_freezing=0
+    # (the schema default). Without the client-side fallback Grocy would
+    # return BBD=today; our tool must return today+300.
+    freezer_name = f"TestFreezer-{refunwrap_result.suffix}"
+    freezer_create = unwrap_result(
+        await mcp_client.call_tool("locations_create", {"items": [{"name": freezer_name, "is_freezer": True}]})
+    )
+    assert freezer_create[0]["kind"] == "ok", freezer_create
+    edit = unwrap_result(
+        await mcp_client.call_tool("products_edit", {"items": [{"product": product, "default_best_before_days": 300}]})
+    )
+    assert edit[0]["kind"] == "ok", edit
+    ops = unwrap_result(
+        await mcp_client.call_tool(
+            "stock_add", {"items": [{"product": product, "amount": 1, "qu": qu, "location": freezer_name}]}
+        )
+    )
+    assert ops[0]["kind"] == "ok", ops
+    expected = (date.today() + timedelta(days=300)).isoformat()
+    actual = await _latest_bbd()
+    assert actual == expected, (
+        f"Freezer-location stock_add with default_best_before_days=300 and "
+        f"default_best_before_days_after_freezing=0 returned BBD={actual}, expected {expected}. "
+        f"Grocy's freezer branch is known buggy here; the MCP tool is supposed to compute the date client-side."
+    )
+
+    # Case 4: explicit override always wins, freezer or not.
+    override = date.today() + timedelta(days=7)
+    ops = unwrap_result(
+        await mcp_client.call_tool(
+            "stock_add",
+            {
+                "items": [
+                    {
+                        "product": product,
+                        "amount": 1,
+                        "qu": qu,
+                        "location": freezer_name,
+                        "best_before_date": override.isoformat(),
+                    }
+                ]
+            },
+        )
+    )
+    assert ops[0]["kind"] == "ok", ops
+    assert await _latest_bbd() == override.isoformat()
 
 
 # -- Shopping list operations ------------------------------------------------
