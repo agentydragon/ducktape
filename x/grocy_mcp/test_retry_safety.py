@@ -119,14 +119,11 @@ async def test_unit_validation_rejects_missing_qu(mcp_client: tuple[Client, resp
         await client.call_tool("stock_add", {"items": [{"product": 1, "amount": 5, "location": "TestLoc"}]})
 
 
-async def test_http_errors_are_compact_and_include_status_url_and_body(
-    mcp_client: tuple[Client, respx.Router],
-) -> None:
+async def test_http_errors_are_compact_and_include_status_url_and_body(mcp_client: tuple[Client, respx.Router]) -> None:
     """HTTP backend errors should be concise and actionable (no Python traceback)."""
     client, router = mcp_client
     router.post("/stock/products/1/consume").respond(
-        status_code=400,
-        json={"error_message": "Amount to be consumed cannot be > current stock amount"},
+        status_code=400, json={"error_message": "Amount to be consumed cannot be > current stock amount"}
     )
 
     result = await client.call_tool(
