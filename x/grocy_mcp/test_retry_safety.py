@@ -8,6 +8,7 @@ These tests mock the httpx client via respx to verify:
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncGenerator
 
 import httpx
@@ -116,6 +117,30 @@ async def test_unit_validation_rejects_missing_qu(mcp_client: tuple[Client, resp
     client, _router = mcp_client
     with pytest.raises(Exception, match="qu"):
         await client.call_tool("stock_add", {"items": [{"product": 1, "amount": 5, "location": "TestLoc"}]})
+
+
+async def test_http_errors_are_compact_and_include_status_url_and_body(
+    mcp_client: tuple[Client, respx.Router],
+) -> None:
+    """HTTP backend errors should be concise and actionable (no Python traceback)."""
+    client, router = mcp_client
+    router.post("/stock/products/1/consume").respond(
+        status_code=400,
+        json={"error_message": "Amount to be consumed cannot be > current stock amount"},
+    )
+
+    result = await client.call_tool(
+        "stock_consume", {"items": [{"product": 1, "amount": 5, "qu": "pieces", "location": "TestLoc"}]}
+    )
+    sc = result.structured_content
+    assert sc is not None
+    op = sc["result"][0]
+    assert op["kind"] == "error", f"expected error, got: {op}"
+    expected_body = json.dumps({"error_message": "Amount to be consumed cannot be > current stock amount"})
+    assert op["error"] == (
+        "HTTP 400 Bad Request for POST https://grocy.example.com/api/stock/products/1/consume\n"
+        f"Grocy response body: {expected_body}"
+    )
 
 
 if __name__ == "__main__":

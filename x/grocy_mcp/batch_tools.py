@@ -130,18 +130,23 @@ def _compute_default_bbd(product: dict[str, Any], *, is_freezer: bool) -> str:
 
 
 def _format_exc(e: Exception) -> str:
-    """Format exception with full traceback for error reporting.
+    """Format exceptions for tool error payloads.
 
-    On ``HTTPStatusError``, append Grocy's response body so the agent sees
-    the actual failure reason (Grocy returns a JSON ``error_message`` on
-    most 4xx/5xx); httpx's default error is just the status + URL.
+    For ``HTTPStatusError``, return a compact, user-facing message with:
+    HTTP status, method, URL, and Grocy response body (when present).
+    For all other exception types, keep the full traceback.
     """
-    tb = "".join(traceback.format_exception(e))
     if isinstance(e, httpx.HTTPStatusError):
+        status = e.response.status_code
+        reason = e.response.reason_phrase
+        method = e.request.method
+        url = str(e.request.url)
+        summary = f"HTTP {status} {reason} for {method} {url}"
         body = e.response.text.strip()
         if body:
-            return f"{tb}\nGrocy response body: {body[:1500]}"
-    return tb
+            return f"{summary}\nGrocy response body: {body[:1500]}"
+        return summary
+    return "".join(traceback.format_exception(e))
 
 
 def _is_retryable(exc: BaseException) -> bool:
