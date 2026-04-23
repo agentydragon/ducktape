@@ -7,8 +7,6 @@ These tests mock the httpx client via respx to verify:
 """
 
 from __future__ import annotations
-
-import json
 from collections.abc import AsyncGenerator
 
 import httpx
@@ -122,8 +120,10 @@ async def test_unit_validation_rejects_missing_qu(mcp_client: tuple[Client, resp
 async def test_http_errors_are_compact_and_include_status_url_and_body(mcp_client: tuple[Client, respx.Router]) -> None:
     """HTTP backend errors should be concise and actionable (no Python traceback)."""
     client, router = mcp_client
+    error_payload = {"error_message": "Amount to be consumed cannot be > current stock amount"}
     router.post("/stock/products/1/consume").respond(
-        status_code=400, json={"error_message": "Amount to be consumed cannot be > current stock amount"}
+        status_code=400,
+        json=error_payload,
     )
 
     result = await client.call_tool(
@@ -133,7 +133,7 @@ async def test_http_errors_are_compact_and_include_status_url_and_body(mcp_clien
     assert sc is not None
     op = sc["result"][0]
     assert op["kind"] == "error", f"expected error, got: {op}"
-    expected_body = json.dumps({"error_message": "Amount to be consumed cannot be > current stock amount"})
+    expected_body = httpx.Response(status_code=400, json=error_payload).text
     assert op["error"] == (
         "HTTP 400 Bad Request for POST https://grocy.example.com/api/stock/products/1/consume\n"
         f"Grocy response body: {expected_body}"
