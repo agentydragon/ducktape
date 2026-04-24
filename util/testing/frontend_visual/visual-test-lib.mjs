@@ -216,6 +216,28 @@ export async function main(scenarioName, callerUrl = null, options = {}) {
       { name: "prefers-reduced-motion", value: "reduce" },
     ]);
 
+    // Freeze the wall clock so time-relative formatters (e.g. date-fns
+    // formatDistanceToNow used by formatAge) produce deterministic text.
+    // Without this, baselines drift as the mock dates cross date-fns
+    // thresholds ("about 1 year" → "over 1 year", etc.).
+    const frozenNowMs = Date.parse("2025-02-01T12:00:00Z");
+    await page.evaluateOnNewDocument((nowMs) => {
+      const OriginalDate = Date;
+      class FrozenDate extends OriginalDate {
+        constructor(...args) {
+          if (args.length === 0) {
+            super(nowMs);
+          } else {
+            super(...args);
+          }
+        }
+        static now() {
+          return nowMs;
+        }
+      }
+      globalThis.Date = FrozenDate;
+    }, frozenNowMs);
+
     const harnessUrl = `file://${indexPath}`;
 
     // Verify Inter font loads
