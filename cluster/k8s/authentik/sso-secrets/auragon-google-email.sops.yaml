@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: authentik-auragon-google-email
+  namespace: authentik
+  annotations:
+    description: Google OAuth email for declarative authentik_user.auragon (kept out of plaintext git).
+stringData:
+  AURAGON_GOOGLE_EMAIL: ENC[AES256_GCM,data:VXM+RdIVJFf2mA5WvPPHX0nOcQeb6HV5sHo5,iv:N7QHQQvrlqpC8wSkID6EDLRzyjexAqcFprQFHlUJn9Y=,tag:UYtGMWSTKBw+KCuh6exC9g==,type:str]
+sops:
+  age:
+    - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB5cmxSNHlyeGVMU2lpOG80
+        bndVWm4wM3NVNG5DWlB4bXBVYmhXYnJ1SmtzCmJOUXVINU1TWTU5aFRsbStqVEVr
+        cUkxcmUvdzJkd1pSZFBQWWNmTnYrMDgKLS0tICs3d1dqTXJscUZSS0VmOEN4bTFW
+        TDhtc05mblVvN1ZoZmNjTFRoR1hOTGsKFVTKraSHkFcaHE41mJwozaq0R7SBAxya
+        jHg47S9tY0RTHWh+ToEpAiPv9yjOG46kzEjgDWgyjupIJN6i/FsPcA==
+        -----END AGE ENCRYPTED FILE-----
+    - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBtNHdFWEZ3OEJXbDhUMlov
+        OGJLdVFsTW5JWER5WTg5QXp2RHc5RklIU1c4CnRMQmYrbTNvaCtuWFJaL2NWTkVx
+        NUFoWXF5UFpKMWNpdkRtSzVWeDNGU1kKLS0tIFBkQW14MFRKbCtycXJFVEN6UlVi
+        Nm5NWUdNUEJWM1JJUE92SlBaV0RaeEkKSTxxCx27/RPR4Nbm5zIB748/5BYOPYDK
+        Ip4Kyy9/VnzhTl7EQynjrnngqcxAwRPIZX0Z49BbM1vYMyEc++NAmw==
+        -----END AGE ENCRYPTED FILE-----
+  lastmodified: "2026-04-24T00:40:53Z"
+  mac: ENC[AES256_GCM,data:0f3Dw47D+l473TlNY3yAuZsRApUqhfRuz6B0CGGJNYqbx2Y+PJ1ijfTm5T5pBYVB7dNq3G8V6fngLmiPdEcdX34VASoC8a8tF+oJLhc1A6fbVHWgAUt5G0QAxsYM/6UBJWU5kpknvCyJ/OdpQL+XuFBjl7lYMjw+kYEyKEaSZzg=,iv:F5kf6Jw1zogyd2FmHbyqr4GlniPufUa7eeZriG3oKto=,tag:abhpNJrowRA302mj8DuScQ==,type:str]
+  encrypted_regex: ^(data|stringData)$
+  version: 3.12.1

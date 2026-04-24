@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - user-password.sops.yaml
   - google-oauth.sops.yaml
+  - auragon-google-email.sops.yaml

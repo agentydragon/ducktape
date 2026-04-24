@@ -39,6 +39,13 @@ data "kubernetes_secret" "authentik_user_password" {
   }
 }
 
+data "kubernetes_secret" "auragon_google_email" {
+  metadata {
+    name      = "authentik-auragon-google-email"
+    namespace = "authentik"
+  }
+}
+
 provider "authentik" {
   url   = var.authentik_url_override != "" ? var.authentik_url_override : "http://authentik-server.authentik.svc.cluster.local"
   token = data.kubernetes_secret.authentik_bootstrap.data["AUTHENTIK_BOOTSTRAP_TOKEN"]
@@ -71,6 +78,15 @@ resource "authentik_user" "agentydragon" {
   name     = "Rai"
   email    = "agentydragon@gmail.com"
   password = data.kubernetes_secret.authentik_user_password.data["USER_PASSWORD"]
+}
+
+# Google OAuth-only user. Email is SOPS-encrypted — sourced from
+# authentik-auragon-google-email secret so it stays out of plaintext git.
+# Matches via user_matching_mode = "email_link" on authentik_source_oauth.google.
+resource "authentik_user" "auragon" {
+  username = "auragon"
+  name     = "auragon"
+  email    = data.kubernetes_secret.auragon_google_email.data["AURAGON_GOOGLE_EMAIL"]
 }
 
 resource "authentik_group" "authentik_admins" {
