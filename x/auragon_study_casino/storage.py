@@ -7,8 +7,10 @@ clobbering concurrent edits from another device.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import sqlite3
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -38,10 +40,17 @@ class StateStore:
                 ")"
             )
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextlib.contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        # sqlite3.Connection's own `__exit__` only commits/rolls back — it does
+        # NOT call close(), so the bare `with sqlite3.connect(...)` pattern
+        # leaks file descriptors across calls in a long-running process.
         conn = sqlite3.connect(self._db_path, isolation_level=None)
-        conn.execute("PRAGMA journal_mode=WAL")
-        return conn
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            yield conn
+        finally:
+            conn.close()
 
     def load(self) -> StateRecord | None:
         with self._connect() as conn:
