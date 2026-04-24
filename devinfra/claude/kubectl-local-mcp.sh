@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Decrypts k8s token from SOPS, assembles kubeconfig, runs kubernetes-mcp-server.
+# Decrypts the SOPS-encrypted k8s JWT, assembles a kubeconfig, and runs
+# kubernetes-mcp-server against it. See devinfra/claude/scripts/write_kubeconfig.py
+# for the token-auth rationale (TL;DR: Anthropic's egress proxy is an L7 MITM
+# that eats client certs, so we carry auth in the Authorization header).
 #
 # Uses subprocess (not exec) so the EXIT trap cleans up the temp kubeconfig.
 set -euo pipefail
@@ -18,12 +21,12 @@ if [[ -z "${SOPS_AGE_KEY:-}" ]] && command -v ssh-to-age &>/dev/null; then
   export SOPS_AGE_KEY
 fi
 
-TMPKC="$(mktemp "${TMPDIR:-/tmp}/claude-sandbox-kc.XXXXXX")"
+# mktemp -u reserves a unique name without creating the file. write_kubeconfig.py's
+# safe-write refuses to clobber existing files, and mktemp-without-`-u` would hand
+# it a 0-byte file that YAML-parses as None ≠ new-config → RuntimeError.
+TMPKC="$(mktemp -u "${TMPDIR:-/tmp}/claude-sandbox-kc.XXXXXX")"
 trap 'rm -f "$TMPKC"' EXIT
 
-# Standalone kubeconfig materializer: embeds CA bundle + proxy-url so kubectl
-# works behind the TLS-inspecting egress proxy on Claude Code web.
-# See devinfra/claude/scripts/write_kubeconfig.py.
 python3 "$CLAUDE_PROJECT_DIR/devinfra/claude/scripts/write_kubeconfig.py" "$TMPKC"
 
 # Subprocess (not exec) — bash stays alive so the EXIT trap cleans up.

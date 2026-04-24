@@ -37,7 +37,7 @@ _TEST_SECRET_FILES = [
     "buildbuddy.yaml",
     "github-pat-agentydragon-agent.yaml",
     "github-ci-read-pat.yaml",
-    "claude-web-k8s-cert.yaml",
+    "claude-web-k8s-token.yaml",
 ]
 
 _CONTAINER_NAME = "ducktape-container-e2e"

@@ -1,0 +1,29 @@
+apiVersion: gateway.networking.k8s.io/v1alpha3
+kind: BackendTLSPolicy
+metadata:
+  name: kubeapi-allegedly-works
+  namespace: default
+  annotations:
+    description: |
+      Tells the Cilium Gateway to re-encrypt to the `kubernetes` Service with
+      HTTPS on port 443 (not plaintext) and to validate the apiserver cert
+      against the cluster root CA. The apiserver presents a cluster-CA-signed
+      cert with SAN `kubernetes.default.svc`; we match on that SAN.
+
+      The CA bundle is the auto-provisioned `kube-root-ca.crt` ConfigMap that
+      Kubernetes creates in every namespace — its `ca.crt` key is the cluster
+      root CA.
+
+      Pairs with httproute.yaml in this directory.
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: kubernetes
+      sectionName: "443"
+  validation:
+    caCertificateRefs:
+      - group: ""
+        kind: ConfigMap
+        name: kube-root-ca.crt
+    hostname: kubernetes.default.svc

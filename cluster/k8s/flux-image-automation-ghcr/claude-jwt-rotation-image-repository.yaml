@@ -1,8 +1,8 @@
 apiVersion: image.toolkit.fluxcd.io/v1beta2
 kind: ImageRepository
 metadata:
-  name: claude-cert-rotation
+  name: claude-jwt-rotation
   namespace: flux-system
 spec:
-  image: ghcr.io/agentydragon/claude-cert-rotation
+  image: ghcr.io/agentydragon/claude-jwt-rotation
   interval: 5m

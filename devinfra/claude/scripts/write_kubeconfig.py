@@ -1,21 +1,47 @@
-"""Materialize a client-certificate kubeconfig from SOPS-encrypted secrets.
+"""Materialize a bearer-token kubeconfig from a SOPS-encrypted JWT.
 
-Standalone repo-specific script (not part of the generic hook daemon).
-Invoked as a profile background command during SessionStart and by the
-kubectl-local MCP server script.
+Why bearer token, not x509 client cert: the Claude Code web egress proxy is
+an L7 TLS-terminating MITM (presents an Anthropic-signed cert for every
+destination, opens a fresh upstream TLS connection). Client certificates
+live in the TLS handshake and die at the proxy boundary — they cannot be
+relayed upstream. Bearer tokens ride in the HTTP Authorization header and
+survive the proxy's re-encryption.
+
+Why Authentik-issued JWT, not a ServiceAccount token: SA tokens authenticate
+as `system:serviceaccount:<ns>:<name>` — a principal with no group claim.
+Reusing the cluster's sandbox RBAC would require adding the SA as an explicit
+subject to every Role/ClusterRoleBinding it needs (see commit ff3ac18e0 for
+the ~30-binding cleanup we don't want to undo). Authentik's
+`kubectl-sandbox-client-credentials` provider ships a scope mapping that
+hardcodes `groups: ["kubectl-sandbox-users"]` on issued JWTs; kube-apiserver's
+AuthenticationConfiguration maps that claim to
+`oidc-ksbx-groups:kubectl-sandbox-users`, which every sandbox RoleBinding
+already subjects on. Zero RBAC edits.
+
+The JWT is minted in-cluster by the `claude-jwt-rotation` CronJob (a
+client_credentials exchange against Authentik's token endpoint) and committed
+to `secrets/claude-web-k8s-token.yaml`, SOPS-encrypted. This script decrypts
+it at SessionStart with the recipient's `SOPS_AGE_KEY` — no HTTP calls from
+here, no client_secret on the sandbox.
+
+Server is https://kubeapi.allegedly.works — an HTTPRoute on the Cilium
+Gateway terminating the wildcard LE cert and re-encrypting to kube-apiserver.
+The legacy api.allegedly.works TLS-passthrough route is untouched by this
+migration; laptop kubectl uses an unrelated admin kubeconfig deployed by
+home-manager. See cluster/docs/lessons_learned/
+2026_04_24_k8s_auth_through_mitm_proxy.md for the full investigation.
 
 Usage:
     python3 "$CLAUDE_PROJECT_DIR/devinfra/claude/scripts/write_kubeconfig.py" \\
         [OPTIONS] OUTPUT_PATH
 
-Requires CLAUDE_PROJECT_DIR (to locate secrets/claude-web-k8s-cert.yaml)
+Requires CLAUDE_PROJECT_DIR (to locate secrets/claude-web-k8s-token.yaml)
 and SOPS_AGE_KEY (for sops decryption) in the environment.
 """
 
 from __future__ import annotations
 
 import argparse
-import base64
 import os
 import subprocess
 import sys
@@ -24,11 +50,9 @@ from pathlib import Path
 
 import yaml
 
-_K8S_CERT_SOPS_PATH = "secrets/claude-web-k8s-cert.yaml"
-_K8S_CA_PATH = "secrets/k8s-ca.crt"
-_SYSTEM_CA_BUNDLE = Path("/etc/ssl/certs/ca-certificates.crt")
+_K8S_TOKEN_SOPS_PATH = "secrets/claude-web-k8s-token.yaml"
 
-_DEFAULT_SERVER = "https://api.allegedly.works"
+_DEFAULT_SERVER = "https://kubeapi.allegedly.works"
 _DEFAULT_USER = "claude-code-web"
 _DEFAULT_NAMESPACE = "claude-sandbox"
 
@@ -46,46 +70,22 @@ def _sops_extract(sops_path: Path, key: str) -> str:
     return value
 
 
-def decrypt_client_cert(project_dir: Path) -> tuple[str, str]:
-    """Return (client_cert_pem, client_key_pem) from the SOPS-encrypted file."""
-    sops_path = project_dir / _K8S_CERT_SOPS_PATH
+def decrypt_bearer_token(project_dir: Path) -> str:
+    """Return the JWT from the SOPS-encrypted token file."""
+    sops_path = project_dir / _K8S_TOKEN_SOPS_PATH
     if not sops_path.is_file():
-        raise RuntimeError(f"k8s cert SOPS file not found: {sops_path}")
-    client_cert = _sops_extract(sops_path, "client_cert")
-    client_key = _sops_extract(sops_path, "client_key")
-    return client_cert, client_key
+        raise RuntimeError(f"k8s token SOPS file not found: {sops_path}")
+    return _sops_extract(sops_path, "token")
 
 
-def build_kubeconfig(
-    client_cert: str,
-    client_key: str,
-    server: str,
-    user: str,
-    namespace: str,
-    ca_data: bytes | None,
-    proxy_url: str | None,
-) -> dict:
-    cluster_config: dict[str, str] = {"server": server}
-    if ca_data:
-        cluster_config["certificate-authority-data"] = base64.b64encode(ca_data).decode()
-    if proxy_url:
-        cluster_config["proxy-url"] = proxy_url
-
+def build_kubeconfig(token: str, server: str, user: str, namespace: str) -> dict:
     return {
         "apiVersion": "v1",
         "kind": "Config",
-        "clusters": [{"cluster": cluster_config, "name": "cluster"}],
+        "clusters": [{"cluster": {"server": server}, "name": "cluster"}],
         "contexts": [{"context": {"cluster": "cluster", "namespace": namespace, "user": user}, "name": user}],
         "current-context": user,
-        "users": [
-            {
-                "name": user,
-                "user": {
-                    "client-certificate-data": base64.b64encode(client_cert.encode()).decode(),
-                    "client-key-data": base64.b64encode(client_key.encode()).decode(),
-                },
-            }
-        ],
+        "users": [{"name": user, "user": {"token": token}}],
     }
 
 
@@ -114,6 +114,7 @@ def write_kubeconfig_file(kubeconfig: dict, output_path: Path) -> None:
     try:
         with os.fdopen(fd, "w") as f:
             f.write(serialized)
+        tmp_path.chmod(0o600)
         tmp_path.replace(output_path)
     except BaseException:
         tmp_path.unlink(missing_ok=True)
@@ -121,7 +122,7 @@ def write_kubeconfig_file(kubeconfig: dict, output_path: Path) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Write a k8s client-certificate kubeconfig from SOPS secrets.")
+    parser = argparse.ArgumentParser(description="Write a k8s bearer-token kubeconfig from SOPS secrets.")
     parser.add_argument("output_path", type=Path)
     parser.add_argument("--server", default=_DEFAULT_SERVER)
     parser.add_argument("--user", default=_DEFAULT_USER)
@@ -134,46 +135,12 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
     project_dir = Path(project_dir_str)
 
-    client_cert, client_key = decrypt_client_cert(project_dir)
+    token = decrypt_bearer_token(project_dir)
 
-    # The API server cert is signed by the cluster CA (not publicly trusted).
-    # On Claude Code web, traffic goes through Anthropic's TLS-inspecting proxy
-    # whose CA is in the system bundle. Combine both so the chain validates in
-    # all environments.
-    ca_parts: list[bytes] = []
-    cluster_ca = project_dir / _K8S_CA_PATH
-    if cluster_ca.is_file():
-        ca_parts.append(cluster_ca.read_bytes())
-    if _SYSTEM_CA_BUNDLE.is_file():
-        ca_parts.append(_SYSTEM_CA_BUNDLE.read_bytes())
-    ca_data = b"\n".join(ca_parts) if ca_parts else None
-
-    proxy_url = (
-        os.environ.get("HTTPS_PROXY")
-        or os.environ.get("https_proxy")
-        or os.environ.get("HTTP_PROXY")
-        or os.environ.get("http_proxy")
-    )
-
-    kubeconfig = build_kubeconfig(
-        client_cert=client_cert,
-        client_key=client_key,
-        server=args.server,
-        user=args.user,
-        namespace=args.namespace,
-        ca_data=ca_data,
-        proxy_url=proxy_url,
-    )
+    kubeconfig = build_kubeconfig(token=token, server=args.server, user=args.user, namespace=args.namespace)
     write_kubeconfig_file(kubeconfig, args.output_path)
-    ca_sources = []
-    if cluster_ca.is_file():
-        ca_sources.append("cluster")
-    if _SYSTEM_CA_BUNDLE.is_file():
-        ca_sources.append("system")
     print(
-        f"wrote {args.output_path} — server={args.server} ca={'+'.join(ca_sources) or 'none'} "
-        f"proxy={'set' if proxy_url else 'unset'}",
-        file=sys.stderr,
+        f"wrote {args.output_path} — server={args.server} user={args.user} namespace={args.namespace}", file=sys.stderr
     )
 
 

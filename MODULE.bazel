@@ -264,13 +264,14 @@ apt.install(
     manifest = "//devinfra/firecracker/vm_pod:bookworm_fc_vm_pod.yaml",
 )
 
-# Cert rotation image: git + bash + openssl on debian:trixie-slim for cert rotation CronJob.
+# JWT rotation image: curl + jq + git + bash on debian:trixie-slim for the
+# claude-jwt-rotation CronJob (Authentik client_credentials exchange + commit).
 apt.install(
-    name = "trixie_cert_rotation",
-    lock = "//cluster/k8s/agents/claude-cert-rotation:trixie_cert_rotation.lock.json",
-    manifest = "//cluster/k8s/agents/claude-cert-rotation:trixie_cert_rotation.yaml",
+    name = "trixie_jwt_rotation",
+    lock = "//cluster/k8s/agents/claude-jwt-rotation:trixie_jwt_rotation.lock.json",
+    manifest = "//cluster/k8s/agents/claude-jwt-rotation:trixie_jwt_rotation.yaml",
 )
-use_repo(apt, "bookworm_fc_vm_pod", "trixie_cert_rotation", "trixie_e2e")
+use_repo(apt, "bookworm_fc_vm_pod", "trixie_e2e", "trixie_jwt_rotation")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
@@ -751,7 +752,7 @@ http_archive(
 )
 
 # sops - Mozilla SOPS binary for age/KMS secret encryption/decryption.
-# Used by the claude-cert-rotation CronJob image.
+# Used by the claude-jwt-rotation CronJob image.
 http_file(
     name = "sops_linux_amd64",
     downloaded_file_path = "sops",

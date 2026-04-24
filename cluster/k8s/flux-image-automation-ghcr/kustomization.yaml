@@ -26,8 +26,8 @@ resources:
   - tana-token-broker-image-policy.yaml
   - token-provisioner-image-repository.yaml
   - token-provisioner-image-policy.yaml
-  - claude-cert-rotation-image-repository.yaml
-  - claude-cert-rotation-image-policy.yaml
+  - claude-jwt-rotation-image-repository.yaml
+  - claude-jwt-rotation-image-policy.yaml
   - authentik-mcp-poc-server-image-repository.yaml
   - authentik-mcp-poc-server-image-policy.yaml
   - authentik-mcp-poc-backend-image-repository.yaml

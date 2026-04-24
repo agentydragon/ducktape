@@ -133,6 +133,21 @@ locals {
           groups   = { claim = "groups", prefix = "oidc-ksbx-groups:" }
         }
       },
+      # kubectl-sandbox-client-credentials: machine-to-machine OIDC for
+      # write_kubeconfig.py / claude-jwt-rotation CronJob. Non-interactive
+      # client_credentials grant; same fixed-groups scope mapping as
+      # kubectl-sandbox-mcp, so issued tokens always carry
+      # groups: ["kubectl-sandbox-users"].
+      {
+        issuer = {
+          url       = "https://auth.${var.cluster_domain}/application/o/kubectl-sandbox-client-credentials/"
+          audiences = ["kubectl-sandbox-client-credentials"]
+        }
+        claimMappings = {
+          username = { claim = "preferred_username", prefix = "oidc-ksbx:" }
+          groups   = { claim = "groups", prefix = "oidc-ksbx-groups:" }
+        }
+      },
     ]
   })
 

@@ -8,27 +8,19 @@ pkg_tar(
     package_dir = "/usr/local/bin",
 )
 
-# kubectl binary layer — placed at /usr/local/bin/kubectl.
-pkg_tar(
-    name = "kubectl_layer",
-    srcs = ["@kubectl_linux_amd64//file:kubectl"],
-    package_dir = "/usr/local/bin",
-)
-
 oci_image(
     name = "image",
     base = "@debian_trixie_slim_linux_amd64",
     entrypoint = ["/usr/bin/bash"],
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [
-        "@trixie_cert_rotation//:flat",
+        "@trixie_jwt_rotation//:flat",
         ":sops_layer",
-        ":kubectl_layer",
     ],
 )
 
 oci_load(
     name = "load",
     image = ":image",
-    repo_tags = ["claude-cert-rotation:latest"],
+    repo_tags = ["claude-jwt-rotation:latest"],
 )

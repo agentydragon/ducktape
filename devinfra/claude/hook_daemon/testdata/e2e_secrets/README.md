@@ -6,13 +6,13 @@ test profile itself lives next to the test as `test_profile.yaml`.
 
 ## What's Here
 
-| File                                 | Purpose                                                                                                                                    |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `test_age.key`                       | Test-only age keypair. **Not a real secret.** Only decrypts the fake files in this directory.                                              |
-| `buildbuddy.yaml`                    | Encrypted `buildbuddy_api_key: test-fake-bb-key` — mounted at `/project/secrets/buildbuddy.yaml` in the test container.                    |
-| `github-pat-agentydragon-agent.yaml` | Encrypted `github_token: test-fake-gh-agent-token` — mounted at `/project/secrets/github-pat-agentydragon-agent.yaml`.                     |
-| `github-ci-read-pat.yaml`            | Encrypted `github_token: test-fake-ci-read-token` — mounted at `/project/secrets/github-ci-read-pat.yaml`.                                 |
-| `claude-web-k8s-cert.yaml`           | Encrypted `client_cert`/`client_key` — mounted at `/project/secrets/claude-web-k8s-cert.yaml`, consumed by the daemon's kubeconfig writer. |
+| File                                 | Purpose                                                                                                                                     |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test_age.key`                       | Test-only age keypair. **Not a real secret.** Only decrypts the fake files in this directory.                                               |
+| `buildbuddy.yaml`                    | Encrypted `buildbuddy_api_key: test-fake-bb-key` — mounted at `/project/secrets/buildbuddy.yaml` in the test container.                     |
+| `github-pat-agentydragon-agent.yaml` | Encrypted `github_token: test-fake-gh-agent-token` — mounted at `/project/secrets/github-pat-agentydragon-agent.yaml`.                      |
+| `github-ci-read-pat.yaml`            | Encrypted `github_token: test-fake-ci-read-token` — mounted at `/project/secrets/github-ci-read-pat.yaml`.                                  |
+| `claude-web-k8s-token.yaml`          | Encrypted `token: test-fake-k8s-jwt` — mounted at `/project/secrets/claude-web-k8s-token.yaml`, consumed by the daemon's kubeconfig writer. |
 
 ## Why Fake Encrypted Files?
 
@@ -31,7 +31,7 @@ age-keygen -o test_age.key
 # 2. Re-encrypt fixtures (each file is independent; key is in test_age.key)
 TEST_AGE_PUB=$(grep 'public key' test_age.key | awk '{print $NF}')
 for f in buildbuddy.yaml github-pat-agentydragon-agent.yaml \
-         github-ci-read-pat.yaml claude-web-k8s-cert.yaml; do
+         github-ci-read-pat.yaml claude-web-k8s-token.yaml; do
   # Edit the plaintext content inline, then re-encrypt with only the test key.
   # SOPS --age flag avoids inheriting the repo's .sops.yaml creation rules.
   sops encrypt --age "$TEST_AGE_PUB" <(echo "<plaintext YAML>") > "$f"

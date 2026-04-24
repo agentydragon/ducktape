@@ -43,20 +43,34 @@ Namespaced Roles + RoleBindings for specific namespaces:
 
 ## Authentication
 
-Claude Code web sessions authenticate via **client certificate** with
-`O=oidc-ksbx-groups:kubectl-sandbox-users` (maps to the OIDC sandbox group).
-The cert is auto-rotated by a CronJob in `agents-infra` namespace — see
-<../claude-cert-rotation/>.
+Claude Code web sessions authenticate via an **Authentik-issued OIDC JWT**
+that carries `groups: ["kubectl-sandbox-users"]`; kube-apiserver's
+`AuthenticationConfiguration` maps that claim to
+`oidc-ksbx-groups:kubectl-sandbox-users`, the Group every binding below
+subjects on. JWTs are minted biweekly by the `claude-jwt-rotation`
+CronJob in the `agents-infra` namespace — see <../claude-jwt-rotation/>.
 
-OIDC users from the `kubectl-sandbox-mcp` Authentik application also get
-these permissions via the same group.
+OIDC users who log into the `kubectl-sandbox-mcp` Authentik application
+(interactive MCP) receive the same group claim via the same
+`kubectl_sandbox_fixed_groups` scope mapping, so the RBAC below applies
+unchanged.
+
+Laptops run their own admin kubeconfig (deployed by home-manager from
+`secrets/shared/kubeconfig.yaml`) with cluster-admin-level access; it's
+not governed by this sandbox RBAC. See
+<../../../docs/lessons_learned/2026_04_24_k8s_auth_through_mitm_proxy.md>
+for why Claude Code web can't use the laptop's path (L7 TLS-terminating
+egress proxy eats client certs).
 
 ## Kubeconfig Provisioning
 
 Kubeconfig is generated automatically by the session start hook via
 <devinfra/claude/scripts/write_kubeconfig.py>. It decrypts the SOPS-encrypted
-client cert+key from `secrets/claude-web-k8s-cert.yaml` and writes a
-kubeconfig with `client-certificate-data`/`client-key-data` auth.
+bearer JWT from `secrets/claude-web-k8s-token.yaml` and writes a kubeconfig
+with `user.token` auth pointing at `https://kubeapi.allegedly.works` (the
+`HTTPRoute` in <../../kube-api-proxy/httproute.yaml>). The JWT is minted
+biweekly by the `claude-jwt-rotation` CronJob via Authentik's
+`kubectl-sandbox-client-credentials` OAuth2 provider.
 
 ## Security Considerations
 

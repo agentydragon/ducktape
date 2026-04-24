@@ -100,8 +100,8 @@ jobs:
           # compares != "" truthy, so we'd accidentally run an empty
           # `bb remote test` on these rows otherwise.
           - {
-              image: "//cluster/k8s/agents/claude-cert-rotation:image",
-              image_name: claude-cert-rotation,
+              image: "//cluster/k8s/agents/claude-jwt-rotation:image",
+              image_name: claude-jwt-rotation,
               test_target: "",
             }
           - { image: "//cluster/k8s/inventree/token-provisioner:image", image_name: token-provisioner, test_target: "" }

@@ -1,0 +1,28 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: kubeapi-allegedly-works
+  namespace: default
+  annotations:
+    description: |
+      HTTPRoute for the Kubernetes API at kubeapi.allegedly.works. The Cilium
+      Gateway terminates the wildcard LE cert at the `https-wildcard` listener,
+      re-encrypts to the apiserver via the BackendTLSPolicy in this directory,
+      and routes to the default `kubernetes` Service on port 443.
+
+      Purpose: works through Claude Code web's L7 TLS-terminating egress proxy,
+      which rejects the cluster-CA-signed cert that api.allegedly.works presents
+      on the sibling TLSRoute. See ../docs/lessons_learned/ for the full story.
+      Auth is bearer-JWT only (client certs die at the MITM boundary; see the
+      write_kubeconfig.py docstring in devinfra/claude/scripts/).
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+      sectionName: https-wildcard
+  hostnames:
+    - "kubeapi.allegedly.works"
+  rules:
+    - backendRefs:
+        - name: kubernetes
+          port: 443

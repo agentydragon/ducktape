@@ -1,8 +1,9 @@
-# Deb packages for the claude-cert-rotation CronJob image.
-# Git + bash + openssl + kubectl deps on debian:trixie-slim.
+# Deb packages for the claude-jwt-rotation CronJob image.
+# curl + jq + git + bash for client_credentials exchange and git commit on
+# debian:trixie-slim.
 #
 # Regenerate the lock file after any change:
-#   bazel run @trixie_cert_rotation//:lock
+#   bazel run @trixie_jwt_rotation//:lock
 version: 1
 
 sources:
@@ -15,7 +16,8 @@ archs:
   - "amd64"
 
 packages:
-  - "git"
   - "bash"
   - "ca-certificates"
-  - "openssl"
+  - "curl"
+  - "git"
+  - "jq"

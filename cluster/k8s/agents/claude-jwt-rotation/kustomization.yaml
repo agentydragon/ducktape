@@ -3,10 +3,9 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - serviceaccount.yaml
-  - rbac.yaml
   - cronjob.yaml
 configMapGenerator:
-  - name: claude-cert-rotation-script
+  - name: claude-jwt-rotation-script
     namespace: agents-infra
     files:
       - rotate.sh
