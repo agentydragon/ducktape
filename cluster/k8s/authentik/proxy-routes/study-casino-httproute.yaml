@@ -1,0 +1,18 @@
+# HTTPRoute for Study Casino via the shared embedded Authentik proxy outpost.
+# Traffic: Gateway → outpost (auth) → study-casino.study-casino.svc:8080.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: study-casino
+  namespace: authentik
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  hostnames:
+    - "casino.allegedly.works"
+  rules:
+    - backendRefs:
+        - name: authentik-server
+          port: 80

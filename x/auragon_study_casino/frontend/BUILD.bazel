@@ -1,0 +1,66 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
+load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
+
+npm_link_all_packages(name = "node_modules")
+
+# ── Per-file source libraries ──────────────────────────────────────────────────
+
+js_library(
+    name = "storage",
+    srcs = ["src/storage.js"],
+    deps = [":node_modules/idb-keyval"],
+)
+
+js_library(
+    name = "study_casino",
+    srcs = ["src/study_casino.jsx"],
+    deps = [
+        ":node_modules/react",
+        ":storage",
+    ],
+)
+
+js_library(
+    name = "main",
+    srcs = ["src/main.jsx"],
+    deps = [
+        ":node_modules/react",
+        ":node_modules/react-dom",
+        ":study_casino",
+    ],
+)
+
+# ── Production bundle ──────────────────────────────────────────────────────────
+
+_BUNDLE_STATIC = [
+    "index.html",
+    "sw.js",
+    "manifest.webmanifest",
+    "icon.svg",
+]
+
+js_binary(
+    name = "build_bundle",
+    data = _BUNDLE_STATIC + [
+        ":main",
+        ":node_modules",
+    ],
+    entry_point = "esbuild.config.mjs",
+)
+
+js_run_binary(
+    name = "bundle",
+    srcs = _BUNDLE_STATIC + [":main"],
+    outs = [
+        "dist/icon.svg",
+        "dist/index.html",
+        "dist/main.js",
+        "dist/main.js.map",
+        "dist/manifest.webmanifest",
+        "dist/sw.js",
+    ],
+    args = ["dist"],
+    chdir = package_name(),
+    tool = ":build_bundle",
+    visibility = ["//x/auragon_study_casino:__pkg__"],
+)

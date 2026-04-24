@@ -1,5 +1,6 @@
 packages:
   - "x/agent_server/web"
+  - "x/auragon_study_casino/frontend"
   - "airlock/frontend"
   - "airlock/openclaw"
   - "third_party/mcporter"

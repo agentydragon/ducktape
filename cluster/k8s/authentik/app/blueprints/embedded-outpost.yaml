@@ -35,3 +35,4 @@ entries:
         - !Find [authentik_providers_proxy.proxyprovider, [name, authentik-mcp-poc-backend]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, sdr]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, adsb]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, study-casino]]

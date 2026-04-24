@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import { loadState, saveState } from "./storage.js";
 
 const SUBJECTS = [
   "Biochemistry",
@@ -150,19 +151,14 @@ export default function StudyCasino() {
   // Load from storage
   useEffect(() => {
     (async () => {
-      try {
-        const r = await window.storage.get("study-casino-v1");
-        if (r?.value) {
-          const d = JSON.parse(r.value);
-          setCredits(d.credits || 0);
-          setTokens(d.tokens || 0);
-          setSessions(d.sessions || []);
-          setPrizes(d.prizes || DEFAULT_PRIZES);
-          setPrizeLog(d.prizeLog || []);
-          setActiveSession(d.activeSession || null);
-        }
-      } catch (e) {
-        /* first load */
+      const d = await loadState();
+      if (d) {
+        setCredits(d.credits || 0);
+        setTokens(d.tokens || 0);
+        setSessions(d.sessions || []);
+        setPrizes(d.prizes || DEFAULT_PRIZES);
+        setPrizeLog(d.prizeLog || []);
+        setActiveSession(d.activeSession || null);
       }
       setLoaded(true);
     })();
@@ -174,17 +170,7 @@ export default function StudyCasino() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
       try {
-        await window.storage.set(
-          "study-casino-v1",
-          JSON.stringify({
-            credits,
-            tokens,
-            sessions,
-            prizes,
-            prizeLog,
-            activeSession,
-          })
-        );
+        await saveState({ credits, tokens, sessions, prizes, prizeLog, activeSession });
         setShowSaved(true);
         if (savedTimer.current) clearTimeout(savedTimer.current);
         savedTimer.current = setTimeout(() => setShowSaved(false), 1400);

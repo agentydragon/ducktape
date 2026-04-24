@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: study-casino
+  namespace: study-casino
+  labels:
+    app.kubernetes.io/name: study-casino
+  annotations:
+    description: "Single-user habit-tracking casino app. Serves PWA + /state JSON store behind Authentik outpost forward-auth."
+spec:
+  # Single replica because the PVC is RWO and SQLite WAL doesn't tolerate
+  # concurrent writers across processes.
+  replicas: 1
+  strategy:
+    # Recreate instead of RollingUpdate so the old pod releases the PVC
+    # before the new one tries to mount it.
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: study-casino
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: study-casino
+    spec:
+      # Don't auto-inject `<SERVICE>_PORT=tcp://...` env vars. The same-namespace
+      # `study-casino` Service would inject `STUDY_CASINO_PORT=tcp://...`, which
+      # collides with the `port: int` field on Settings (env_prefix
+      # `STUDY_CASINO_`) and crashes pydantic-settings on startup.
+      enableServiceLinks: false
+      containers:
+        - name: app
+          image: ghcr.io/agentydragon/study-casino:devel-20260424030000-0000000 # {"$imagepolicy": "flux-system:study-casino"}
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: STUDY_CASINO_DATA_DIR
+              value: /data
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "25m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: study-casino-data

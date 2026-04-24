@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="felt" cx="50%" cy="35%" r="70%">
+      <stop offset="0%" stop-color="#1f4a2e"/>
+      <stop offset="60%" stop-color="#0f2918"/>
+      <stop offset="100%" stop-color="#06140d"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f3d27a"/>
+      <stop offset="50%" stop-color="#e8b84a"/>
+      <stop offset="100%" stop-color="#a07b1c"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#felt)"/>
+  <circle cx="256" cy="256" r="168" fill="none" stroke="url(#gold)" stroke-width="8"/>
+  <circle cx="256" cy="256" r="148" fill="none" stroke="url(#gold)" stroke-width="2" opacity="0.55"/>
+  <g font-family="Georgia, 'Playfair Display', serif" font-weight="700" fill="url(#gold)" text-anchor="middle">
+    <text x="256" y="226" font-size="92" font-style="italic">S</text>
+    <text x="256" y="326" font-size="92" font-style="italic">C</text>
+  </g>
+  <g fill="url(#gold)">
+    <circle cx="256" cy="88" r="10"/>
+    <circle cx="256" cy="424" r="10"/>
+    <circle cx="88" cy="256" r="10"/>
+    <circle cx="424" cy="256" r="10"/>
+  </g>
+</svg>

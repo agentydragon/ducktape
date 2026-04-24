@@ -40,3 +40,5 @@ resources:
   - kubernetes-mcp-server-image-policy.yaml
   - rtl-tcp-image-repository.yaml
   - rtl-tcp-image-policy.yaml
+  - study-casino-image-repository.yaml
+  - study-casino-image-policy.yaml
