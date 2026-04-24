@@ -196,6 +196,17 @@ resource "kubernetes_secret" "grocy_mcp_oidc_sf" {
 
 # --- Grocy Vallejo household (proxy provider + MCP OAuth2) ---
 
+# Membership group gating both the user-facing Grocy Vallejo webapp and its
+# MCP. Replaces the previous "authentik Admins" binding so non-admins can be
+# granted household access without elevating them to platform admins.
+resource "authentik_group" "grocy_vallejo_household" {
+  name = "grocy-vallejo-household"
+  users = [
+    data.authentik_user.agentydragon.pk,
+    data.authentik_user.auragon.pk,
+  ]
+}
+
 resource "authentik_provider_proxy" "grocy_vallejo" {
   name                  = "grocy-vallejo"
   external_host         = "https://grocy-vallejo.allegedly.works"
@@ -219,10 +230,15 @@ resource "authentik_application" "grocy_vallejo" {
   open_in_new_tab   = true
 }
 
-resource "authentik_policy_binding" "grocy_vallejo_admins" {
+resource "authentik_policy_binding" "grocy_vallejo_household" {
   target = authentik_application.grocy_vallejo.uuid
-  group  = data.authentik_group.admins.id
+  group  = authentik_group.grocy_vallejo_household.id
   order  = 0
+}
+
+moved {
+  from = authentik_policy_binding.grocy_vallejo_admins
+  to   = authentik_policy_binding.grocy_vallejo_household
 }
 
 resource "authentik_provider_oauth2" "grocy_mcp_vallejo" {
@@ -259,10 +275,15 @@ resource "authentik_application" "grocy_mcp_vallejo" {
   meta_launch_url   = "https://grocy-mcp-vallejo.allegedly.works"
 }
 
-resource "authentik_policy_binding" "grocy_mcp_vallejo_admins" {
+resource "authentik_policy_binding" "grocy_mcp_vallejo_household" {
   target = authentik_application.grocy_mcp_vallejo.uuid
-  group  = data.authentik_group.admins.id
+  group  = authentik_group.grocy_vallejo_household.id
   order  = 0
+}
+
+moved {
+  from = authentik_policy_binding.grocy_mcp_vallejo_admins
+  to   = authentik_policy_binding.grocy_mcp_vallejo_household
 }
 
 resource "kubernetes_secret" "grocy_mcp_oidc_vallejo" {
@@ -343,6 +364,10 @@ resource "kubernetes_secret" "tana_mcp_facade_oidc" {
 
 data "authentik_user" "agentydragon" {
   username = "agentydragon"
+}
+
+data "authentik_user" "auragon" {
+  username = "auragon"
 }
 
 resource "authentik_group" "kubectl_sandbox_users" {
