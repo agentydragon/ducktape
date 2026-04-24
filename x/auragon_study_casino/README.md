@@ -1,8 +1,11 @@
 # auragon_study_casino
 
 Single-user habit-tracking "casino" — study for a session, earn credits,
-spend credits on self-chosen prizes. Frontend is a React PWA installable
-on Windows (Edge/Chrome) and iPhone (Safari → Add to Home Screen).
+gamble those credits in the casino for tokens, then spend tokens on
+self-chosen prizes. Credits → tokens is one-way (via the casino or an
+explicit conversion), so winnings can never be re-gambled. Frontend is
+a React PWA installable on Windows (Edge/Chrome) and iPhone (Safari →
+Add to Home Screen).
 
 Lives at <https://casino.allegedly.works>.
 

@@ -122,19 +122,23 @@ def test_roulette_spin_loss() -> None:
         ]
     )
     assert s["credits"] == 90
+    assert s["tokens"] == 0
 
 
-def test_roulette_spin_win() -> None:
+def test_roulette_spin_win_winnings_become_tokens() -> None:
+    # Single-number bet pays 36x gross. Bet returns to credits; the winnings
+    # (35x) land in tokens — the casino can never mint credits.
     s = _reduce(
         [
             ("credits_delta", {"amount": 100}),
             ("roulette_spin", {"bet_amount": 10, "bet_type": "number", "winning_number": 7, "payout": 360}),
         ]
     )
-    assert s["credits"] == 450  # 100 - 10 + 360
+    assert s["credits"] == 100
+    assert s["tokens"] == 350
 
 
-def test_blackjack_and_slots_also_affect_credits() -> None:
+def test_slot_win_pays_winnings_in_tokens_principal_in_credits() -> None:
     s = _reduce(
         [
             ("credits_delta", {"amount": 100}),
@@ -142,7 +146,19 @@ def test_blackjack_and_slots_also_affect_credits() -> None:
             ("blackjack_hand", {"bet_amount": 20, "result": "lose", "payout": 0}),
         ]
     )
-    assert s["credits"] == 325  # 100 - 5 + 250 - 20
+    # Slots: bet 5 returned, +245 tokens. Blackjack loss: -20 credits.
+    assert s["credits"] == 80
+    assert s["tokens"] == 245
+
+
+def test_blackjack_push_is_a_true_no_op() -> None:
+    # Push: payout == bet_amount. Credits and tokens both unchanged — the
+    # principal refund cancels the bet exactly, no winnings accrue.
+    s = _reduce(
+        [("credits_delta", {"amount": 100}), ("blackjack_hand", {"bet_amount": 30, "result": "push", "payout": 30})]
+    )
+    assert s["credits"] == 100
+    assert s["tokens"] == 0
 
 
 def test_prize_redeemed_spends_tokens_and_logs() -> None:

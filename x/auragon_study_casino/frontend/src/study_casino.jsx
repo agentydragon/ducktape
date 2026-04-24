@@ -118,17 +118,22 @@ function getElapsedSec(session, now = Date.now()) {
   return Math.max(0, ms / 1000);
 }
 
+// Red-and-gold casino palette. The felt is a deep crimson; gold and cream are
+// the legible foreground accents. `wine` is a slightly brighter accent that
+// lifts off the felt; `red` is reserved for danger affordances and roulette
+// pockets so it has to remain visibly distinct from the felt's crimson.
 const COLORS = {
-  felt: "#0b3a2e",
-  feltDark: "#07281f",
-  feltDeep: "#051a14",
+  felt: "#5a1f2a",
+  feltDark: "#3d1520",
+  feltDeep: "#1f0a10",
   gold: "#d4a548",
   goldBright: "#e8b84a",
   goldDim: "#9a7a34",
   cream: "#f5e8c7",
   creamDim: "#c9bc9a",
-  wine: "#5a1f2a",
-  red: "#b33939",
+  wine: "#7a2838",
+  red: "#d44040",
+  rose: "#e8b4c0",
   black: "#1a1a1a",
 };
 
@@ -299,6 +304,30 @@ export default function StudyCasino() {
     setSessions(sessions.filter((s) => s.id !== id));
     setCredits((c) => Math.max(0, c - min));
     emitEvents([{ type: "session_deleted", ts_ms: Date.now(), payload: { id, credits_refund: min } }]);
+  };
+
+  // Add a session that already happened (e.g. studying away from the device).
+  // Emits a normal `session_completed` event so it lands in the same log as
+  // live sessions; downstream stats and credits work identically.
+  const addPastSession = (subject, seconds, endedAtMs) => {
+    if (!subject || seconds <= 0) return;
+    const id = `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const min = Math.floor(seconds / 60);
+    setSessions([{ id, subject, seconds, endedAt: endedAtMs }, ...sessions]);
+    setCredits((c) => c + min);
+    emitEvents([
+      {
+        type: "session_completed",
+        ts_ms: Date.now(),
+        payload: {
+          id,
+          subject,
+          seconds,
+          ended_at_ms: endedAtMs,
+          credits_earned: min,
+        },
+      },
+    ]);
   };
 
   const redeemPrize = (prize) => {
@@ -523,6 +552,34 @@ export default function StudyCasino() {
           50% { opacity: 0.4; }
         }
 
+        /* === WIN ANIMATION === */
+        /* Coins/sparkles fan out from the center of a winning panel and fall.
+           Each particle gets random end-position via CSS variables set inline. */
+        @keyframes win-particle {
+          0%   { transform: translate(0, 0) rotate(0deg) scale(0.4); opacity: 0; }
+          10%  { opacity: 1; transform: translate(0, 0) rotate(0deg) scale(1.1); }
+          70%  { opacity: 1; }
+          100% {
+            transform: translate(var(--dx), calc(var(--dy) + 80px)) rotate(var(--rot)) scale(0.9);
+            opacity: 0;
+          }
+        }
+        @keyframes win-text-pop {
+          0%   { transform: translate(-50%, -50%) scale(0.2); opacity: 0; filter: blur(8px); }
+          25%  { transform: translate(-50%, -50%) scale(1.4); opacity: 1; filter: blur(0); }
+          70%  { transform: translate(-50%, -50%) scale(1.05); opacity: 1; }
+          100% { transform: translate(-50%, -50%) scale(1.05); opacity: 0; }
+        }
+        @keyframes win-flash {
+          0%   { opacity: 0; }
+          15%  { opacity: 0.55; }
+          100% { opacity: 0; }
+        }
+        @keyframes win-ring {
+          0%   { transform: translate(-50%, -50%) scale(0.1); opacity: 0.9; }
+          100% { transform: translate(-50%, -50%) scale(3.2); opacity: 0; }
+        }
+
         .deco-corners { position: relative; }
         .deco-corners::before, .deco-corners::after {
           content: '';
@@ -594,7 +651,7 @@ export default function StudyCasino() {
             <div style={{ fontSize: 10, color: COLORS.creamDim, letterSpacing: "0.2em", textTransform: "uppercase" }}>
               Tokens
             </div>
-            <div className="display-font mono" style={{ fontSize: 20, color: "#e8b4c0", fontWeight: 700 }}>
+            <div className="display-font mono" style={{ fontSize: 20, color: COLORS.rose, fontWeight: 700 }}>
               {tokens.toLocaleString()}
             </div>
           </div>
@@ -621,7 +678,7 @@ export default function StudyCasino() {
       {activeSession && (
         <div
           style={{
-            background: activeSession.paused ? "rgba(90,31,42,0.4)" : "rgba(11,58,46,0.85)",
+            background: activeSession.paused ? "rgba(122,40,56,0.45)" : "rgba(31,10,16,0.92)",
             borderBottom: `1px solid ${activeSession.paused ? COLORS.wine : COLORS.gold}`,
             padding: "10px 28px",
             display: "flex",
@@ -737,7 +794,9 @@ export default function StudyCasino() {
             cancel={cancelSession}
           />
         )}
-        {view === "casino" && <CasinoView credits={credits} setCredits={setCredits} emitEvents={emitGameEvents} />}
+        {view === "casino" && (
+          <CasinoView credits={credits} setCredits={setCredits} setTokens={setTokens} emitEvents={emitGameEvents} />
+        )}
         {view === "prizes" && (
           <PrizesView
             credits={credits}
@@ -761,6 +820,7 @@ export default function StudyCasino() {
             exportData={exportData}
             importData={importData}
             resetData={resetData}
+            addPastSession={addPastSession}
             editSession={editSession}
             deleteSession={deleteSession}
           />
@@ -965,8 +1025,9 @@ function StudyView({
 // ============================================================
 // CASINO VIEW
 // ============================================================
-function CasinoView({ credits, setCredits, emitEvents }) {
+function CasinoView({ credits, setCredits, setTokens, emitEvents }) {
   const [game, setGame] = useState("roulette");
+  const gameProps = { credits, setCredits, setTokens, emitEvents };
 
   return (
     <div>
@@ -993,9 +1054,15 @@ function CasinoView({ credits, setCredits, emitEvents }) {
         ))}
       </div>
 
-      {game === "roulette" && <Roulette credits={credits} setCredits={setCredits} emitEvents={emitEvents} />}
-      {game === "blackjack" && <Blackjack credits={credits} setCredits={setCredits} emitEvents={emitEvents} />}
-      {game === "slots" && <Slots credits={credits} setCredits={setCredits} emitEvents={emitEvents} />}
+      <div
+        style={{ fontSize: 12, color: COLORS.creamDim, textAlign: "center", marginBottom: 18, letterSpacing: "0.1em" }}
+      >
+        Bets pay out in <strong style={{ color: COLORS.rose }}>tokens</strong> · winnings can only be spent on prizes
+      </div>
+
+      {game === "roulette" && <Roulette {...gameProps} />}
+      {game === "blackjack" && <Blackjack {...gameProps} />}
+      {game === "slots" && <Slots {...gameProps} />}
     </div>
   );
 }
@@ -1003,7 +1070,7 @@ function CasinoView({ credits, setCredits, emitEvents }) {
 // ============================================================
 // ROULETTE
 // ============================================================
-function Roulette({ credits, setCredits, emitEvents }) {
+function Roulette({ credits, setCredits, setTokens, emitEvents }) {
   const [betAmount, setBetAmount] = useState(10);
   const [betType, setBetType] = useState("red"); // red, black, odd, even, low, high, dozen1, dozen2, dozen3, number
   const [betNumber, setBetNumber] = useState(7);
@@ -1011,6 +1078,7 @@ function Roulette({ credits, setCredits, emitEvents }) {
   const [result, setResult] = useState(null); // { number, won, payout }
   const [rotation, setRotation] = useState(0);
   const [history, setHistory] = useState([]);
+  const [winBurst, setWinBurst] = useState(null);
 
   const canSpin = !spinning && betAmount > 0 && betAmount <= credits;
 
@@ -1062,9 +1130,17 @@ function Roulette({ credits, setCredits, emitEvents }) {
 
     setTimeout(() => {
       const w = checkWin(picked);
-      const winAmount = w.won ? betAmount * w.mult : 0;
-      if (winAmount > 0) setCredits((c) => c + winAmount);
-      setResult({ number: picked, won: w.won, payout: winAmount });
+      const grossPayout = w.won ? betAmount * w.mult : 0;
+      // Principal returns to credits; winnings above the bet land in tokens.
+      // See reducer._apply_wager — the optimistic update mirrors that split.
+      const refund = Math.min(grossPayout, betAmount);
+      const profit = grossPayout - refund;
+      if (refund > 0) setCredits((c) => c + refund);
+      if (profit > 0) {
+        setTokens((t) => t + profit);
+        setWinBurst({ key: Date.now(), amount: profit });
+      }
+      setResult({ number: picked, won: w.won, payout: profit });
       setHistory((h) => [{ number: picked, won: w.won }, ...h].slice(0, 10));
       setSpinning(false);
       emitEvents([
@@ -1076,7 +1152,7 @@ function Roulette({ credits, setCredits, emitEvents }) {
             bet_type: betType,
             bet_number: betType === "number" ? betNumber : null,
             winning_number: picked,
-            payout: winAmount,
+            payout: grossPayout,
           },
         },
       ]);
@@ -1109,7 +1185,8 @@ function Roulette({ credits, setCredits, emitEvents }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(280px, 360px)", gap: 24 }}>
       {/* Wheel */}
-      <div className="panel deco-corners" style={{ padding: 32, textAlign: "center" }}>
+      <div className="panel deco-corners" style={{ padding: 32, textAlign: "center", position: "relative" }}>
+        {winBurst && <WinBurst key={winBurst.key} amount={winBurst.amount} />}
         <div style={{ position: "relative", width: 280, height: 280, margin: "0 auto" }}>
           {/* Pointer */}
           <div
@@ -1226,7 +1303,7 @@ function Roulette({ credits, setCredits, emitEvents }) {
                 letterSpacing: "0.1em",
               }}
             >
-              {result.won ? `WIN +${result.payout}` : "LOST"}
+              {result.won ? `WIN +${result.payout} tokens` : "LOST"}
             </div>
           </div>
         )}
@@ -1419,11 +1496,12 @@ function Roulette({ credits, setCredits, emitEvents }) {
 // ============================================================
 // SLOTS
 // ============================================================
-function Slots({ credits, setCredits, emitEvents }) {
+function Slots({ credits, setCredits, setTokens, emitEvents }) {
   const [bet, setBet] = useState(5);
   const [targets, setTargets] = useState([SLOT_SYMBOLS[2], SLOT_SYMBOLS[3], SLOT_SYMBOLS[4]]);
   const [spinning, setSpinning] = useState(false);
   const [lastResult, setLastResult] = useState(null);
+  const [winBurst, setWinBurst] = useState(null);
 
   const canSpin = !spinning && bet > 0 && bet <= credits;
 
@@ -1437,20 +1515,26 @@ function Slots({ credits, setCredits, emitEvents }) {
     setTargets(picks);
 
     setTimeout(() => {
-      let payout = 0;
+      let grossPayout = 0;
       let label = "";
       const [a, b, c] = picks;
       if (a.id === b.id && b.id === c.id) {
-        payout = bet * a.payout;
+        grossPayout = bet * a.payout;
         label = `Triple ${a.glyph} · ${a.payout}×`;
       } else if (a.id === b.id || b.id === c.id || a.id === c.id) {
-        payout = Math.floor(bet * 1.5);
+        grossPayout = Math.floor(bet * 1.5);
         label = "Pair · 1.5×";
       } else {
         label = "No match";
       }
-      if (payout > 0) setCredits((c) => c + payout);
-      setLastResult({ picks, payout, label });
+      const refund = Math.min(grossPayout, bet);
+      const profit = grossPayout - refund;
+      if (refund > 0) setCredits((c) => c + refund);
+      if (profit > 0) {
+        setTokens((t) => t + profit);
+        setWinBurst({ key: Date.now(), amount: profit });
+      }
+      setLastResult({ picks, payout: profit, label });
       emitEvents([
         {
           type: "slot_spin",
@@ -1458,7 +1542,7 @@ function Slots({ credits, setCredits, emitEvents }) {
           payload: {
             bet_amount: bet,
             symbols: picks.map((p) => p.id),
-            payout,
+            payout: grossPayout,
             label,
           },
         },
@@ -1469,7 +1553,8 @@ function Slots({ credits, setCredits, emitEvents }) {
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(240px, 320px)", gap: 24 }}>
-      <div className="panel deco-corners" style={{ padding: 32, textAlign: "center" }}>
+      <div className="panel deco-corners" style={{ padding: 32, textAlign: "center", position: "relative" }}>
+        {winBurst && <WinBurst key={winBurst.key} amount={winBurst.amount} />}
         <div
           style={{
             display: "flex",
@@ -1502,7 +1587,7 @@ function Slots({ credits, setCredits, emitEvents }) {
             </div>
             {lastResult.payout > 0 && (
               <div style={{ fontSize: 28, color: COLORS.gold, fontWeight: 700, marginTop: 6 }}>
-                +{lastResult.payout}
+                +{lastResult.payout} tokens
               </div>
             )}
           </div>
@@ -1679,7 +1764,7 @@ function SlotReel({ target, index, spinning }) {
 // ============================================================
 // BLACKJACK
 // ============================================================
-function Blackjack({ credits, setCredits, emitEvents }) {
+function Blackjack({ credits, setCredits, setTokens, emitEvents }) {
   const [shoe, setShoe] = useState(() => makeShoe(BLACKJACK_DECKS));
   const [playerHand, setPlayerHand] = useState([]);
   const [dealerHand, setDealerHand] = useState([]);
@@ -1688,6 +1773,7 @@ function Blackjack({ credits, setCredits, emitEvents }) {
   const [wager, setWager] = useState(0);
   const [result, setResult] = useState(null); // { outcome, payout, text }
   const [holeHidden, setHoleHidden] = useState(true);
+  const [winBurst, setWinBurst] = useState(null);
 
   const playerValue = useMemo(() => handValue(playerHand), [playerHand]);
   const dealerValue = useMemo(() => handValue(dealerHand), [dealerHand]);
@@ -1748,8 +1834,16 @@ function Blackjack({ credits, setCredits, emitEvents }) {
       text = "Dealer wins.";
     }
 
-    if (payout > 0) setCredits((c) => c + payout);
-    setResult({ outcome, payout, text });
+    // Principal portion of the payout returns to credits; only the winnings
+    // above the wager land in tokens (mirrors reducer._apply_wager).
+    const refund = Math.min(payout, currentWager);
+    const profit = payout - refund;
+    if (refund > 0) setCredits((c) => c + refund);
+    if (profit > 0) {
+      setTokens((t) => t + profit);
+      setWinBurst({ key: Date.now(), amount: profit });
+    }
+    setResult({ outcome, payout: profit, text });
     setPhase("done");
     setHoleHidden(false);
     emitEvents([
@@ -1880,7 +1974,8 @@ function Blackjack({ credits, setCredits, emitEvents }) {
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(260px, 340px)", gap: 24 }}>
-      <div className="panel deco-corners" style={{ padding: 28, minHeight: 420 }}>
+      <div className="panel deco-corners" style={{ padding: 28, minHeight: 420, position: "relative" }}>
+        {winBurst && <WinBurst key={winBurst.key} amount={winBurst.amount} />}
         {/* Dealer */}
         <div style={{ marginBottom: 28 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -1935,7 +2030,7 @@ function Blackjack({ credits, setCredits, emitEvents }) {
               {result.text}
             </div>
             {result.payout > 0 && (
-              <div style={{ fontSize: 14, color: COLORS.gold, marginTop: 4 }}>+{result.payout} credits</div>
+              <div style={{ fontSize: 14, color: COLORS.rose, marginTop: 4 }}>+{result.payout} tokens</div>
             )}
           </div>
         )}
@@ -2177,9 +2272,10 @@ function PrizesView({ credits, tokens, prizes, prizeLog, redeem, addPrize, delet
         style={{ padding: 20, marginBottom: 32, background: "rgba(90,31,42,0.18)", borderColor: COLORS.wine }}
       >
         <div style={{ fontSize: 13, color: COLORS.creamDim, marginBottom: 14, lineHeight: 1.6 }}>
-          Convert casino credits into tokens to redeem prizes.{" "}
-          <strong style={{ color: pinkText, fontWeight: 500 }}>Tokens are one-way.</strong> Once credits become tokens,
-          they can only be spent on prizes. This protects your winnings from the casino.
+          Casino winnings already arrive as <strong style={{ color: pinkText, fontWeight: 500 }}>tokens</strong>, ready
+          to redeem. You can also pre-convert raw study credits if you want to lock them in beyond the casino's reach.{" "}
+          <strong style={{ color: pinkText, fontWeight: 500 }}>Tokens are one-way</strong> — they can only be spent on
+          prizes.
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 10, alignItems: "end" }}>
           <div>
@@ -2425,6 +2521,7 @@ function StatsView({
   exportData,
   importData,
   resetData,
+  addPastSession,
   editSession,
   deleteSession,
 }) {
@@ -2513,6 +2610,12 @@ function StatsView({
         })}
       </div>
 
+      <SectionTitle>Add a past session</SectionTitle>
+      <div style={{ fontSize: 12, color: COLORS.creamDim, marginBottom: 10 }}>
+        Studied away from the device? Log it here. Earned credits are minutes of study, same as a live session.
+      </div>
+      <AddPastSessionForm onAdd={addPastSession} />
+
       {sessions.length > 0 && (
         <>
           <SectionTitle>All Sessions</SectionTitle>
@@ -2598,6 +2701,145 @@ function StatsView({
 // ============================================================
 // SHARED COMPONENTS
 // ============================================================
+
+// Returns a "YYYY-MM-DDTHH:MM" string in the user's local timezone, suitable
+// for the value of an <input type="datetime-local">. The native Date.toISO
+// methods return UTC, which would shift the picker by the browser's offset.
+function localDatetimeInputValue(date) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}`
+  );
+}
+
+function AddPastSessionForm({ onAdd }) {
+  const [subject, setSubject] = useState(SUBJECTS[0]);
+  const [hours, setHours] = useState(0);
+  const [minutes, setMinutes] = useState(30);
+  const [endedAt, setEndedAt] = useState(() => localDatetimeInputValue(new Date()));
+
+  const seconds = Math.max(0, parseInt(hours) || 0) * 3600 + Math.max(0, Math.min(59, parseInt(minutes) || 0)) * 60;
+  // Browsers parse "YYYY-MM-DDTHH:MM" as local time, which is what the picker
+  // shows the user — no manual TZ adjustment needed.
+  const endedAtMs = new Date(endedAt).getTime();
+  const canAdd = subject && seconds > 0 && Number.isFinite(endedAtMs);
+
+  const handleAdd = () => {
+    if (!canAdd) return;
+    onAdd(subject, seconds, endedAtMs);
+    setHours(0);
+    setMinutes(30);
+    setEndedAt(localDatetimeInputValue(new Date()));
+  };
+
+  const minutesEarned = Math.floor(seconds / 60);
+
+  return (
+    <div className="panel" style={{ padding: 18, marginBottom: 32 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(140px, 1.4fr) minmax(180px, 1fr) minmax(200px, 1.2fr) auto",
+          gap: 10,
+          alignItems: "end",
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontSize: 10,
+              color: COLORS.creamDim,
+              letterSpacing: "0.2em",
+              textTransform: "uppercase",
+              marginBottom: 4,
+            }}
+          >
+            Subject
+          </div>
+          <select value={subject} onChange={(e) => setSubject(e.target.value)} style={{ width: "100%" }}>
+            {SUBJECTS.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <div
+            style={{
+              fontSize: 10,
+              color: COLORS.creamDim,
+              letterSpacing: "0.2em",
+              textTransform: "uppercase",
+              marginBottom: 4,
+            }}
+          >
+            Duration
+          </div>
+          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+            <input
+              type="number"
+              value={hours}
+              onChange={(e) => setHours(e.target.value)}
+              min="0"
+              style={{ width: 64 }}
+            />
+            <span style={{ fontSize: 12, color: COLORS.creamDim }}>h</span>
+            <input
+              type="number"
+              value={minutes}
+              onChange={(e) => setMinutes(e.target.value)}
+              min="0"
+              max="59"
+              style={{ width: 64 }}
+            />
+            <span style={{ fontSize: 12, color: COLORS.creamDim }}>m</span>
+          </div>
+        </div>
+        <div>
+          <div
+            style={{
+              fontSize: 10,
+              color: COLORS.creamDim,
+              letterSpacing: "0.2em",
+              textTransform: "uppercase",
+              marginBottom: 4,
+            }}
+          >
+            Ended at
+          </div>
+          <input
+            type="datetime-local"
+            value={endedAt}
+            onChange={(e) => setEndedAt(e.target.value)}
+            style={{ width: "100%" }}
+          />
+        </div>
+        <button className="btn btn-primary" onClick={handleAdd} disabled={!canAdd}>
+          Add session
+        </button>
+      </div>
+      <div style={{ fontSize: 11, color: COLORS.creamDim, marginTop: 10 }}>
+        {canAdd ? (
+          <>
+            Will log {fmtHoursMin(seconds)} of {subject} ending{" "}
+            {new Date(endedAtMs).toLocaleString([], {
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+            })}
+            . Earns <strong style={{ color: COLORS.gold }}>+{minutesEarned} credits</strong>.
+          </>
+        ) : (
+          "Pick a subject, duration, and end time."
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SessionRow({ session, isLast, onEdit, onDelete }) {
   const [editing, setEditing] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
@@ -2789,6 +3031,124 @@ function StatCard({ label, value, accent }) {
         }}
       >
         {value}
+      </div>
+    </div>
+  );
+}
+
+// Celebratory burst rendered absolutely inside a game panel when the player
+// wins tokens. Particles fly out from the center and fall under gravity; a
+// big "+N tokens" pops in the middle and a quick gold flash washes the panel.
+// Mount under a `key={Date.now()}` so each new win replays the animation.
+const WIN_PARTICLE_COUNT = 28;
+const WIN_GLYPHS = ["◆", "★", "♦", "♠", "$", "✦", "♥"];
+
+function WinBurst({ amount }) {
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    const id = setTimeout(() => setDone(true), 2400);
+    return () => clearTimeout(id);
+  }, []);
+
+  if (done) return null;
+
+  const particles = Array.from({ length: WIN_PARTICLE_COUNT }, (_, i) => {
+    const angle = (Math.PI * 2 * i) / WIN_PARTICLE_COUNT + (Math.random() - 0.5) * 0.4;
+    const dist = 140 + Math.random() * 200;
+    const dx = Math.cos(angle) * dist;
+    const dy = Math.sin(angle) * dist - 90;
+    const rot = (Math.random() - 0.5) * 720;
+    const delay = Math.random() * 0.18;
+    const dur = 1.6 + Math.random() * 0.5;
+    const size = 18 + Math.floor(Math.random() * 18);
+    const glyph = WIN_GLYPHS[Math.floor(Math.random() * WIN_GLYPHS.length)];
+    const goldenTone = Math.random() > 0.35;
+    return { dx, dy, rot, delay, dur, size, glyph, goldenTone };
+  });
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        pointerEvents: "none",
+        overflow: "hidden",
+        zIndex: 30,
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: `radial-gradient(circle at center, ${COLORS.goldBright}, transparent 70%)`,
+          animation: "win-flash 0.9s ease-out forwards",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          width: 120,
+          height: 120,
+          marginLeft: -60,
+          marginTop: -60,
+          borderRadius: "50%",
+          border: `3px solid ${COLORS.goldBright}`,
+          boxShadow: `0 0 40px ${COLORS.goldBright}`,
+          animation: "win-ring 1s ease-out forwards",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          width: 0,
+          height: 0,
+        }}
+      >
+        {particles.map((p, i) => (
+          <span
+            key={i}
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              fontSize: p.size,
+              fontFamily: "'Playfair Display', Georgia, serif",
+              fontWeight: 700,
+              color: p.goldenTone ? COLORS.goldBright : COLORS.rose,
+              textShadow: `0 0 8px ${p.goldenTone ? COLORS.gold : COLORS.rose}`,
+              animation: `win-particle ${p.dur}s cubic-bezier(0.2, 0.6, 0.4, 1) ${p.delay}s forwards`,
+              willChange: "transform, opacity",
+              "--dx": `${p.dx}px`,
+              "--dy": `${p.dy}px`,
+              "--rot": `${p.rot}deg`,
+            }}
+          >
+            {p.glyph}
+          </span>
+        ))}
+      </div>
+      <div
+        className="display-font"
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          fontSize: 56,
+          fontWeight: 900,
+          color: COLORS.goldBright,
+          textShadow: `0 0 30px ${COLORS.goldBright}, 0 0 12px ${COLORS.goldBright}, 0 4px 8px rgba(0,0,0,0.6)`,
+          letterSpacing: "0.05em",
+          whiteSpace: "nowrap",
+          animation: "win-text-pop 1.8s cubic-bezier(0.2, 0.7, 0.3, 1) forwards",
+        }}
+      >
+        +{amount.toLocaleString()} <span style={{ fontSize: 24, color: COLORS.rose }}>tokens</span>
       </div>
     </div>
   );
