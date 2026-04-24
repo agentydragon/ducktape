@@ -29,7 +29,11 @@ through literally to the runner.
 > `--nohome_rc --noworkspace_rc --nosystem_rc`. The "no longer being read"
 > warning from Bazel is triggered by these `--no*_rc` flags — Bazel's legacy
 > transition check (`option_processor.cc`) sees that `.bazelrc` exists but isn't
-> in the read set and warns. Harmless — `bb` already consumed those files.
+> in the read set and warns. Mostly harmless — `bb` already inlined
+> command-level directives — but **`startup` directives are silently dropped**,
+> which bites anyone relying on `startup --host_jvm_args=…` from a bazelrc
+> (notably Claude sessions, where the session-installed trust store never
+> loads). Workaround + proper shim fix in <bb_bazelrc_startup.md>.
 
 **bb remote flags** (partial list): `--runner_exec_properties`,
 `--run_from_commit`, `--run_from_branch`, `--remote_run_header`,
