@@ -126,40 +126,45 @@ def parse_test_tag(message: str) -> TestTag:
     return Invocations(items)
 
 
-@tenacity.retry(
-    retry=tenacity.retry_if_exception_type(_RetriableHTTPError),
-    stop=tenacity.stop_after_attempt(5),
-    wait=tenacity.wait_exponential(multiplier=1, min=1, max=16),
-    before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
-    reraise=True,
-)
-def _fetch_invocation_attempt(inv_id: uuid.UUID, api_key: str) -> invocation_pb2.Invocation:
-    """Single attempt to fetch an invocation; raises _RetriableHTTPError on transient HTTP errors."""
-    try:
-        resp = httpx.post(
-            _BUILDBUDDY_API_URL,
-            json={"lookup": {"invocationId": str(inv_id)}},
-            headers={"x-buildbuddy-api-key": api_key},
-            timeout=5.0,
-        )
-    except httpx.HTTPError as e:
-        raise TestTagError(f"Failed to verify invocation {inv_id}: {e}") from e
-    if resp.status_code in _RETRIABLE_STATUS_CODES:
-        raise _RetriableHTTPError(resp.status_code)
-    if resp.status_code != 200:
-        raise TestTagError(f"BuildBuddy API returned HTTP {resp.status_code} for invocation {inv_id}")
-    resp_proto = json_format.Parse(resp.text, invocation_pb2.GetInvocationResponse(), ignore_unknown_fields=True)
-    if not resp_proto.invocation:
-        raise TestTagError(f"BuildBuddy invocation {inv_id} not found")
-    return resp_proto.invocation[0]
+class BuildBuddyClient:
+    """BuildBuddy API client; encapsulates the API key and retry logic."""
 
+    def __init__(self, api_key: str) -> None:
+        self._api_key = api_key
 
-def _get_invocation(inv_id: uuid.UUID, api_key: str) -> invocation_pb2.Invocation:
-    """Fetch a single invocation from BuildBuddy, retrying on transient errors."""
-    try:
-        return _fetch_invocation_attempt(inv_id, api_key)
-    except _RetriableHTTPError as e:
-        raise TestTagError(f"BuildBuddy API unavailable for invocation {inv_id} after retries: {e}") from e
+    @tenacity.retry(
+        retry=tenacity.retry_if_exception_type(_RetriableHTTPError),
+        stop=tenacity.stop_after_attempt(5),
+        wait=tenacity.wait_exponential(multiplier=1, min=1, max=16),
+        before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
+        reraise=True,
+    )
+    def _fetch_invocation_attempt(self, inv_id: uuid.UUID) -> invocation_pb2.Invocation:
+        """Single attempt; raises _RetriableHTTPError on transient HTTP errors."""
+        try:
+            resp = httpx.post(
+                _BUILDBUDDY_API_URL,
+                json={"lookup": {"invocationId": str(inv_id)}},
+                headers={"x-buildbuddy-api-key": self._api_key},
+                timeout=5.0,
+            )
+        except httpx.HTTPError as e:
+            raise TestTagError(f"Failed to verify invocation {inv_id}: {e}") from e
+        if resp.status_code in _RETRIABLE_STATUS_CODES:
+            raise _RetriableHTTPError(resp.status_code)
+        if resp.status_code != 200:
+            raise TestTagError(f"BuildBuddy API returned HTTP {resp.status_code} for invocation {inv_id}")
+        resp_proto = json_format.Parse(resp.text, invocation_pb2.GetInvocationResponse(), ignore_unknown_fields=True)
+        if not resp_proto.invocation:
+            raise TestTagError(f"BuildBuddy invocation {inv_id} not found")
+        return resp_proto.invocation[0]
+
+    def get_invocation(self, inv_id: uuid.UUID) -> invocation_pb2.Invocation:
+        """Fetch a single invocation from BuildBuddy, retrying on transient errors."""
+        try:
+            return self._fetch_invocation_attempt(inv_id)
+        except _RetriableHTTPError as e:
+            raise TestTagError(f"BuildBuddy API unavailable for invocation {inv_id} after retries: {e}") from e
 
 
 def _get_child_invocation_ids(inv: invocation_pb2.Invocation) -> list[str]:
@@ -183,8 +188,9 @@ def verify_invocations_on_buildbuddy(ids: list[uuid.UUID]) -> None:
     if not api_key:
         return
 
+    client = BuildBuddyClient(api_key)
     for inv_id in ids:
-        inv = _get_invocation(inv_id, api_key)
+        inv = client.get_invocation(inv_id)
         command = inv.command
         if command == "test":
             continue
@@ -198,7 +204,7 @@ def verify_invocations_on_buildbuddy(ids: list[uuid.UUID]) -> None:
         test_child_ids = [
             child_id_str
             for child_id_str in children
-            if _get_invocation(uuid.UUID(child_id_str), api_key).command == "test"
+            if client.get_invocation(uuid.UUID(child_id_str)).command == "test"
         ]
         if not test_child_ids:
             raise TestTagError(
@@ -206,12 +212,11 @@ def verify_invocations_on_buildbuddy(ids: list[uuid.UUID]) -> None:
                 f"but none of its {len(children)} child invocation(s) are 'test'"
             )
         if len(test_child_ids) == 1:
+            inner_id = test_child_ids[0]
             logger.warning(
-                "Invocation %s is a wrapper; inner test invocation: %s "
-                "(tip: use BAZEL_TEST_INVOCATIONS=buildbuddy:%s directly)",
+                "Invocation %s is a wrapper; use inner test invocation directly: BAZEL_TEST_INVOCATIONS=buildbuddy:%s",
                 inv_id,
-                test_child_ids[0],
-                test_child_ids[0],
+                inner_id,
             )
 
 
