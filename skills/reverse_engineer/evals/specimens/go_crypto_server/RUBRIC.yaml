@@ -1,167 +1,118 @@
 # Rubric for the go_crypto_server specimen.
 #
-# Each item has:
-#   id          — stable identifier; refer to this in code and analysis.
-#   weight      — relative weight (sums to 100 across all items).
-#   description — what the agent's recovered source must contain to score full
-#                 marks. Phrasings closer to verbatim score higher; correct but
-#                 paraphrased descriptions score partial; vague or wrong scores
-#                 zero.
+# The judge is given:
+#   - The agent's recovered source (or written description of behavior).
+#   - SPEC.md from this directory.
+#   - The reference Go source files in this directory (the ground truth).
 #
-# Judge prompt (built later) instantiates one critique per item, scoring each
-# 0-2 (none / partial / full), then aggregates weighted to a 0-100 final.
+# Each item is a high-level question about a distinct component of the
+# specimen. The judge scores 0/1/2 — none / partial / full — by comparing
+# the agent's recovery against the reference. Identifier names don't
+# matter; behavioral / structural correctness does.
+#
+# Where useful, items mention a "would-it-round-trip" property: the
+# judge should consider whether the agent's recovered description, if
+# faithfully implemented, would produce the same observable behavior
+# (same ciphertexts under a known key + plaintext, same MAC tags, same
+# wire output) as the reference.
 
 specimen: go_crypto_server
 language: go
 weights_total: 100
 
 items:
-  - id: cipher_block_size
+  - id: wire_protocol
+    weight: 12
+    description: |
+      Did the agent correctly recover the JSON wire protocol — the
+      versioned envelope, the set of endpoints with their request/response
+      shapes, and the success/error response separation? An implementation
+      faithful to the agent's recovery should accept and emit the same
+      bytes on the wire as the reference.
+
+  - id: error_codes
     weight: 4
     description: |
-      Cipher operates on 64-bit (8-byte) blocks. Plain or garbled, the block
-      size is observable from the data layout.
+      Did the agent correctly recover the numeric error code table and
+      its mapping to HTTP status codes? Codes are constants embedded in
+      the binary as integers and reasons as string literals.
 
-  - id: cipher_round_count
-    weight: 6
-    description: |
-      Exactly 8 rounds (named constant `roundCount = 8`). Inferring from a
-      hex-dump of the round-keys array is acceptable.
-
-  - id: cipher_sbox_bytes
-    weight: 10
-    description: |
-      The 16-byte S-box, in order:
-      {0x9, 0x4, 0xA, 0xB, 0xD, 0x1, 0x8, 0x5,
-       0x6, 0x2, 0x0, 0x3, 0xC, 0xE, 0xF, 0x7}.
-      Must be exact and in this order.
-
-  - id: cipher_round_constants
+  - id: token_issuance
     weight: 8
     description: |
-      The 8 32-bit round constants used by the key schedule:
-      {0xB7E15163, 0x9E3779B9, 0x243F6A88, 0x85A308D3,
-       0x13198A2E, 0x03707344, 0xA4093822, 0x299F31D0}.
-      Must be exact and in this order.
-
-  - id: cipher_round_function_shape
-    weight: 8
-    description: |
-      Round function `F(R, K) = sbox[(R^K) & 0xF] * 0x9E370001 ^ rotr(R, 7)`.
-      Must include the s-box index expression `(R^K) & 0xF`, the multiplier
-      `0x9E370001`, and the right-rotation by 7. Wrong constants or wrong
-      bit-twiddle shape scores zero.
-
-  - id: cipher_mode
-    weight: 4
-    description: |
-      Mode of operation is ECB with PKCS#7 padding (block size 8). The
-      recovery must explicitly identify ECB and PKCS#7 — paraphrasing as
-      "block cipher mode" without naming ECB scores zero.
-
-  - id: cipher_endian
-    weight: 2
-    description: |
-      Block words are encoded BigEndian (encoding/binary.BigEndian). Wrong
-      endianness scores zero because it would not round-trip the test
-      vectors.
-
-  - id: key_size_and_format
-    weight: 3
-    description: |
-      Master key is 16 bytes, split into four 32-bit BigEndian words for the
-      key schedule's initial state.
-
-  - id: mac_construction
-    weight: 8
-    description: |
-      Merkle-Damgård over the same Feistel cipher with compression
-      function `compress(state, block) = E_K(state XOR block)`. State is
-      8 bytes; preimage is `key || u32be(len(key)) || message`, then
-      PKCS#7-padded. IV is the constant
-      {0xA5, 0x5A, 0x33, 0xCC, 0x96, 0x69, 0xF0, 0x0F}.
-      Tag is the first 8 bytes of the final state.
-
-  - id: mac_vulnerability_called_out
-    weight: 4
-    description: |
-      Recovered notes (or comments in the recovered source) must explicitly
-      identify the construction as length-extendable (the
-      `key || len || message` shape with no separation/finalization makes
-      it trivially extendable). Paraphrasing "weak MAC" without the
-      length-extension term scores zero.
-
-  - id: token_prng_algorithm
-    weight: 4
-    description: |
-      Token issuance uses splitmix64 with the canonical mixing constants
-      0x9E3779B97F4A7C15, 0xBF58476D1CE4E5B9, 0x94D049BB133111EB.
-
-  - id: token_prng_seed_source
-    weight: 3
-    description: |
-      Seed is `time.Now().UnixNano() ^ os.Getpid()`. Both inputs must be
-      named.
-
-  - id: token_format
-    weight: 2
-    description: |
-      Tokens are 32 lowercase hex characters (16 bytes), produced by two
-      consecutive splitmix64 outputs.
+      Did the agent correctly recover the token PRNG (algorithm and seed
+      source) and the token's external format? A faithful re-implementation
+      seeded the same way would produce the same token sequence as the
+      reference.
 
   - id: session_key_derivation
-    weight: 5
+    weight: 8
     description: |
-      The session key IS the token bytes — `tokenToKey` decodes the
-      32-hex-char token to 16 raw bytes and uses them verbatim as the
-      cipher key. There is no separate KDF. This is a major rubric item:
-      identifying that the token equals the encryption key is the single
-      most exploitable weakness in the protocol.
+      Did the agent identify how the per-session encryption key is derived
+      from the token? Spotting that the key is the token bytes verbatim
+      (no separate KDF) is the security-relevant observation.
 
-  - id: base32_alphabet
+  - id: block_cipher
+    weight: 18
+    description: |
+      Did the agent correctly recover the block cipher — block size,
+      round count, round function, S-box, key schedule, and round
+      constants? Fully correct means a re-implementation would produce
+      bit-identical ciphertexts under a known plaintext + master key as
+      the reference.
+
+  - id: cipher_mode
     weight: 6
     description: |
-      Custom base32 alphabet `"3456789ABCDEFGHJKLMNPQRSTUVWXYZ$"`,
-      32 characters, exact and in order, with `~` as padding character.
+      Did the agent identify the mode of operation (ECB) and the padding
+      scheme (PKCS#7 over the 8-byte block)? Reproducing message
+      encryption depends on both.
 
-  - id: base32_packing
-    weight: 3
+  - id: mac
+    weight: 14
     description: |
-      Encoder consumes 5 bytes at a time, packs into 40 bits big-endian,
-      slices into eight 5-bit indices into the alphabet, and pads short
-      tails to 8 chars with `~`.
+      Did the agent correctly recover the MAC construction — the
+      Merkle-Damgård chaining, the compression function built from the
+      block cipher, the IV, the preimage layout (key, key-length, message),
+      and the tag size? Fully correct means a re-implementation would
+      produce bit-identical tags.
 
-  - id: endpoints
+  - id: mac_security_analysis
     weight: 6
     description: |
-      Five POST endpoints, all under `/v1/`, exact paths:
-      `/v1/register`, `/v1/note/put`, `/v1/note/get`, `/v1/note/list`,
-      `/v1/export`. No GET endpoints, no other paths.
+      Did the agent's analysis identify the length-extension vulnerability
+      that follows from the preimage shape? The point is whether the
+      agent reasoned about why the construction is broken, not whether it
+      named "length extension" verbatim.
 
-  - id: wire_envelope
-    weight: 4
+  - id: custom_base32
+    weight: 8
     description: |
-      Request and response envelope is `{"v": "ncs/1", "op": <op>, "body": <op-specific>}`.
-      The version string is exactly `"ncs/1"`; missing/different version
-      yields HTTP 400. Errors use the flat shape
-      `{"v","op","code","reason"}` with no `body`.
-
-  - id: error_code_table
-    weight: 4
-    description: |
-      Error codes must match exactly: 4001 bad request, 4002 unknown token,
-      4003 unknown note, 4004 bad ciphertext, 4005 bad MAC, 5001 internal,
-      5002 not implemented. 4xxx → HTTP 400, 5xxx → HTTP 500.
-
-  - id: note_id_format
-    weight: 2
-    description: |
-      Note ids are `n_` + 16 uppercase hex digits, zero-padded, derived
-      from a process-wide monotonic counter.
+      Did the agent correctly recover the custom base32 — the alphabet,
+      the padding character, and the packing scheme? A re-implementation
+      should encode and decode bytes identically to the reference.
 
   - id: export_payload_layout
+    weight: 8
+    description: |
+      Did the agent correctly recover the byte layout of the export
+      snapshot (the per-note length-prefixed concatenation, the appended
+      MAC tag, the base32 wrapping)? A re-implementation should produce
+      the same export blob given the same notes and key.
+
+  - id: storage_and_concurrency
     weight: 4
     description: |
-      Export payload is a flat length-prefixed concatenation per note:
-      `(u8 len(note_id), note_id, u8 len(title), title, u32be len(ct), ct)`,
-      then the 8-byte MAC tag appended, then base32-encoded.
+      Did the agent correctly describe the in-memory per-session storage
+      model (token-keyed sessions, per-session note map with insertion
+      order, mutex-guarded shared state, no persistence)? Behavioral, not
+      structural — internal type names don't matter.
+
+  - id: overall_completeness
+    weight: 4
+    description: |
+      Across the whole recovery, did the agent miss any major component
+      that's necessary to reproduce the binary's externally observable
+      behavior? Score reflects gaps that the per-component items above
+      didn't already capture (e.g. a missing endpoint, an undocumented
+      side effect, a behavior that only shows up in concurrent use).
