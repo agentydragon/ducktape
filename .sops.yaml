@@ -190,12 +190,16 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
-  # Claude web K8s bearer JWT (auto-rotated by the claude-jwt-rotation CronJob)
+  # Claude web K8s bearer JWT (auto-rotated by the claude-jwt-rotation CronJob).
+  # cluster-secrets is on the recipient list so the in-cluster rotator pod can
+  # sops-decrypt the file to read the JWT's exp claim and skip rotation when
+  # the token is still fresh — see cluster/k8s/agents/claude-jwt-rotation/.
   - path_regex: secrets/claude-web-k8s-jwt\.yaml$
     key_groups:
       - age:
           - *admin
           - *claude-web
+          - *cluster-secrets
           - *wyrm2-agentydragon
           - *rugged-agentydragon
           - *atlas-agentydragon

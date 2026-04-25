@@ -126,14 +126,20 @@ same solution shape — map identity to Group at one layer, don't duplicate.
 ### 3. In-cluster rotation, JWT-over-SOPS to git
 
 `cluster/k8s/agents/claude-jwt-rotation/` (replaces `claude-cert-rotation/`)
-runs biweekly: `curl` at the Authentik token endpoint with the confidential
+runs hourly, but only re-mints when the existing JWT has <24h of validity
+remaining (sparse-clones just the SOPS file, sops-decrypts it, decodes the
+JWT payload, checks `exp` and `nbf` directly — no reliance on file mtime
+or the Authentik provider's nominal validity window). When a rotation IS
+due: `curl` at the Authentik token endpoint with the confidential
 client_id + client_secret mounted from an in-cluster Secret, jq-extracts
 `.access_token`, commits it SOPS-encrypted to `secrets/claude-web-k8s-jwt.yaml`.
 `write_kubeconfig.py` decrypts and embeds it as `user.token` at SessionStart.
 
-Cadence: cron every 15 days, token validity 45 days. Worst-case session
-starts 15 days after the last successful rotation → still 30 days of
-remaining validity.
+Cadence: cron every hour with an early-exit freshness check; Authentik
+token validity 45 days; rotate-below-remaining threshold 24 hours. So an
+Authentik token is actually issued only every ~44 days, but a failed
+rotation (Authentik down, GitHub PAT expired, etc.) self-heals on the
+very next hour rather than 14 days later.
 
 ### 4. client_secret stays in-cluster
 

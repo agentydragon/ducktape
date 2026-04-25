@@ -5,12 +5,15 @@ metadata:
   namespace: agents-infra
   annotations:
     description: >-
-      Rotates the Claude Code web k8s bearer JWT. Calls the Authentik
-      `kubectl-sandbox-client-credentials` OAuth2 provider via client_credentials
-      grant and commits the SOPS-encrypted JWT to git. Replaces the old
-      claude-cert-rotation CronJob; see ../../../docs/lessons_learned/ for why.
+      Rotates the Claude Code web k8s bearer JWT. Runs hourly; rotate.sh
+      sparse-clones the existing SOPS file, sops-decrypts it, and skips
+      rotation if the JWT's exp claim has > 24h of validity remaining
+      (and nbf is in the past). So an Authentik token is actually minted
+      only every ~44 days (validity 45d − 1d threshold) but a failed
+      rotation self-heals within an hour. Replaces claude-cert-rotation;
+      see ../../../docs/lessons_learned/.
 spec:
-  schedule: "0 0 1,15 * *"
+  schedule: "15 * * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:
@@ -27,6 +30,13 @@ spec:
             - name: github-pat
               secret:
                 secretName: github-secrets-sync-pat
+            - name: sops-age
+              # Mirrored from flux-system/sops-age-cluster-secrets via reflector
+              # annotations on the TF-managed source secret (see
+              # cluster/terraform/main/persistent-auth.tf). Lets rotate.sh
+              # sops-decrypt the existing JWT file to inspect its `exp`.
+              secret:
+                secretName: sops-age-cluster-secrets
             - name: rotate-script
               configMap:
                 name: claude-jwt-rotation-script
@@ -53,6 +63,9 @@ spec:
                   readOnly: true
                 - name: github-pat
                   mountPath: /var/run/secrets/github-pat
+                  readOnly: true
+                - name: sops-age
+                  mountPath: /var/run/secrets/sops-age
                   readOnly: true
                 - name: rotate-script
                   mountPath: /scripts
