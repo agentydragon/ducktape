@@ -127,10 +127,14 @@ same solution shape — map identity to Group at one layer, don't duplicate.
 
 `cluster/k8s/agents/claude-jwt-rotation/` (replaces `claude-cert-rotation/`)
 runs hourly, but only re-mints when the existing JWT has <24h of validity
-remaining (sparse-clones just the SOPS file, sops-decrypts it, decodes the
-JWT payload, checks `exp` and `nbf` directly — no reliance on file mtime
-or the Authentik provider's nominal validity window). When a rotation IS
-due: `curl` at the Authentik token endpoint with the confidential
+remaining. The freshness check uses a plaintext `expires_unencrypted`
+field stored alongside the encrypted `jwt:` field — SOPS leaves it
+unencrypted because the field name matches the default
+`unencrypted_suffix` (`_unencrypted`), so the rotator pod can read it
+with `sed` without needing access to any age key. The expiry value is
+populated from the JWT's own `exp` claim at write-time, so it can't drift
+from the real expiry. When a rotation IS due: `curl` at the Authentik
+token endpoint with the confidential
 client_id + client_secret mounted from an in-cluster Secret, jq-extracts
 `.access_token`, commits it SOPS-encrypted to `secrets/claude-web-k8s-jwt.yaml`.
 `write_kubeconfig.py` decrypts and embeds it as `user.token` at SessionStart.

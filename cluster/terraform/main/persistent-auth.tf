@@ -228,15 +228,6 @@ resource "kubernetes_secret" "sops_age_cluster_secrets" {
   metadata {
     name      = "sops-age-cluster-secrets"
     namespace = "flux-system"
-    annotations = {
-      # Mirror to agents-infra so the claude-jwt-rotation CronJob can sops-decrypt
-      # the existing claude-web-k8s-jwt.yaml to read the JWT's exp claim before
-      # deciding whether to mint a fresh one.
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "agents-infra"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "agents-infra"
-    }
   }
 
   data = {
