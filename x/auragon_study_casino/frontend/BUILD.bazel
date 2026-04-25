@@ -96,10 +96,7 @@ js_run_binary(
 
 js_library(
     name = "visual_harness_lib",
-    srcs = [
-        "tests/harness/harness.jsx",
-        "tests/harness/index.html",
-    ],
+    srcs = ["tests/harness/harness.jsx"],
     tags = ["no-lint"],
     deps = [
         ":node_modules/react",
@@ -150,7 +147,10 @@ js_test(
         "//util/testing/frontend_visual:fonts_conf",
         "//util/testing/frontend_visual:visual_test_lib",
         "@playwright_browsers//:chromium-headless-shell",
-    ] + glob(["tests/baselines/*.png"]),
+    ] + glob(
+        ["tests/baselines/*.png"],
+        allow_empty = True,
+    ),
     entry_point = "tests/visual_test_main_page.mjs",
     env = {
         "HARNESS_PATH": "$(rootpath :visual_harness_js)",

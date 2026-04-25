@@ -53,4 +53,4 @@ window.fetch = async (input) => {
   return new Response(null, { status: 404 });
 };
 
-createRoot(document.getElementById("root")).render(<StudyCasino />);
+createRoot(document.getElementById("app")).render(<StudyCasino />);
