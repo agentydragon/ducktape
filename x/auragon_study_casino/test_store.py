@@ -1,4 +1,4 @@
-"""EventStore tests — append, load, ETag, event log pagination."""
+"""DocStore: validate-then-persist behaviour and round-trip via SQLite."""
 
 from __future__ import annotations
 
@@ -6,98 +6,110 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+from pycrdt import Map
 
-from x.auragon_study_casino.store import EventStore, IncomingEvent, StaleETagError
+from x.auragon_study_casino.doc_shape import Casino
+from x.auragon_study_casino.store import Accepted, DocStore, Rejected
 
 
 @pytest.fixture
-def store(tmp_path: Path) -> EventStore:
-    return EventStore(tmp_path / "state.db")
+def store(tmp_path: Path) -> DocStore:
+    return DocStore(tmp_path / "casino.db")
 
 
-def _ev(type: str, **payload: object) -> IncomingEvent:
-    return IncomingEvent(type=type, ts_ms=1_700_000_000_000, payload=dict(payload))
+def _client_with_initial_state(store: DocStore) -> Casino:
+    """Bootstrap a client casino from the server's current update."""
+    return Casino.from_update(store.get_update_for_client(None))
 
 
-def test_load_on_empty_db_returns_initial_state(store: EventStore) -> None:
-    loaded = store.load()
-    assert loaded.state["credits"] == 0
-    assert loaded.last_event_id == 0
-    assert loaded.etag  # non-empty
+def test_seed_state_is_empty(store: DocStore) -> None:
+    assert int(store.canonical.balance["credits"]) == 0
+    assert int(store.canonical.balance["tokens"]) == 0
 
 
-def test_append_single_event_updates_snapshot(store: EventStore) -> None:
-    before = store.load()
-    after = store.append([_ev("credits_delta", amount=50)])
-    assert after.state["credits"] == 50
-    assert after.last_event_id == 1
-    assert after.etag != before.etag
+def test_round_trip_accepts_valid_update(store: DocStore) -> None:
+    client = _client_with_initial_state(store)
+    sv = client.get_state()
+    client.balance["credits"] = 50
+
+    update = client.get_update(sv)
+    result = store.apply_client_update(update, sv)
+    assert isinstance(result, Accepted)
+    assert int(store.canonical.balance["credits"]) == 50
 
 
-def test_append_empty_list_rejected(store: EventStore) -> None:
-    with pytest.raises(ValueError, match="no events"):
-        store.append([])
+def test_negative_credits_update_is_rejected_and_canonical_unchanged(store: DocStore) -> None:
+    client = _client_with_initial_state(store)
+    sv = client.get_state()
+    client.balance["credits"] = -10
+
+    result = store.apply_client_update(client.get_update(sv), sv)
+    assert isinstance(result, Rejected)
+    assert result.rule == "credits_nonneg"
+    # canonical state unchanged
+    assert int(store.canonical.balance["credits"]) == 0
 
 
-def test_append_batch_yields_contiguous_ids(store: EventStore) -> None:
-    after = store.append(
-        [_ev("credits_delta", amount=10), _ev("credits_delta", amount=20), _ev("tokens_delta", amount=5)]
-    )
-    assert after.state["credits"] == 30
-    assert after.state["tokens"] == 5
-    assert after.last_event_id == 3
+def test_canonical_persists_across_restart(tmp_path: Path) -> None:
+    db = tmp_path / "casino.db"
+    store_a = DocStore(db)
+    client = _client_with_initial_state(store_a)
+    sv = client.get_state()
+    client.balance["credits"] = 77
+    store_a.apply_client_update(client.get_update(sv), sv)
+
+    store_b = DocStore(db)  # reopen
+    assert int(store_b.canonical.balance["credits"]) == 77
 
 
-def test_append_with_matching_if_match_succeeds(store: EventStore) -> None:
-    first = store.append([_ev("credits_delta", amount=10)])
-    second = store.append([_ev("credits_delta", amount=5)], if_match=first.etag)
-    assert second.state["credits"] == 15
+def test_two_devices_concurrent_disjoint_updates_both_land(store: DocStore) -> None:
+    """Phone bumps credits, laptop adds a session — both persist after sync."""
+    base_sv = store.get_server_state_vector()
+    base_update = store.get_update_for_client(None)
+
+    phone = Casino.from_update(base_update)
+    laptop = Casino.from_update(base_update)
+
+    phone.balance["credits"] = 60  # phone earned 60 from a study session
+    laptop.sessions["s1"] = Map()
+    laptop.sessions["s1"]["subject"] = "Anatomy"
+    laptop.sessions["s1"]["seconds"] = 1500
+    laptop.sessions["s1"]["ended_at_ms"] = 1_700_000_000_000
+
+    r1 = store.apply_client_update(phone.get_update(base_sv), base_sv)
+    assert isinstance(r1, Accepted)
+    r2 = store.apply_client_update(laptop.get_update(base_sv), base_sv)
+    assert isinstance(r2, Accepted)
+
+    canonical = store.canonical
+    assert int(canonical.balance["credits"]) == 60
+    assert "s1" in canonical.sessions
+    assert canonical.sessions["s1"]["subject"] == "Anatomy"
 
 
-def test_append_with_stale_if_match_raises_stale_etag(store: EventStore) -> None:
-    store.append([_ev("credits_delta", amount=10)])
-    with pytest.raises(StaleETagError):
-        store.append([_ev("credits_delta", amount=5)], if_match='"stale"')
+def test_server_never_persists_negative_tokens(store: DocStore) -> None:
+    """The validator gate guarantees that no client update — however it
+    arrives, however it merges — can land canonical with tokens < 0.
 
+    Yjs's last-write-wins resolves *concurrent* writes to the same key
+    by (clientId, clock); whichever value LWW picks gets validated
+    against the rule. We exercise the strict guarantee with a direct
+    write that would unambiguously land negative."""
+    boot = _client_with_initial_state(store)
+    sv0 = boot.get_state()
+    boot.balance["tokens"] = 100
+    store.apply_client_update(boot.get_update(sv0), sv0)
+    assert int(store.canonical.balance["tokens"]) == 100
 
-def test_malformed_event_rolls_back_entire_batch(store: EventStore) -> None:
-    # Mix a good event with a bad one; nothing should be persisted.
-    before = store.load()
-    with pytest.raises(ValueError, match="unknown event type"):
-        store.append([_ev("credits_delta", amount=10), _ev("bogus_type")])
-    after = store.load()
-    assert after.state == before.state
-    assert after.last_event_id == before.last_event_id
+    bad = _client_with_initial_state(store)
+    bad_sv = bad.get_state()
+    bad.balance["tokens"] = -50
 
-
-def test_list_events_returns_log_in_order(store: EventStore) -> None:
-    store.append([_ev("credits_delta", amount=10), _ev("tokens_delta", amount=3), _ev("credits_delta", amount=-5)])
-    events = store.list_events()
-    assert [e["type"] for e in events] == ["credits_delta", "tokens_delta", "credits_delta"]
-    assert [e["payload"]["amount"] for e in events] == [10, 3, -5]
-
-
-def test_list_events_since_id_filter(store: EventStore) -> None:
-    store.append([_ev("credits_delta", amount=1), _ev("credits_delta", amount=2)])
-    events = store.list_events(since_id=1)
-    assert len(events) == 1
-    assert events[0]["payload"]["amount"] == 2
-
-
-def test_list_events_limit(store: EventStore) -> None:
-    store.append([_ev("credits_delta", amount=i) for i in range(5)])
-    events = store.list_events(limit=2)
-    assert len(events) == 2
-
-
-def test_snapshot_persists_across_store_instances(tmp_path: Path) -> None:
-    db = tmp_path / "state.db"
-    EventStore(db).append([_ev("credits_delta", amount=100), _ev("tokens_delta", amount=50)])
-    reopened = EventStore(db)
-    loaded = reopened.load()
-    assert loaded.state["credits"] == 100
-    assert loaded.state["tokens"] == 50
-    assert loaded.last_event_id == 2
+    result = store.apply_client_update(bad.get_update(bad_sv), bad_sv)
+    assert isinstance(result, Rejected)
+    assert result.rule == "tokens_nonneg"
+    # Canonical didn't regress into a violating state.
+    assert int(store.canonical.balance["tokens"]) == 100
 
 
 if __name__ == "__main__":

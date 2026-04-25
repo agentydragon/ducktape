@@ -1,47 +1,76 @@
-"""Study Casino backend — event-sourced.
+"""Study Casino backend — Y.Doc-backed multi-device sync.
 
-Serves a React PWA from `frontend/dist/` and exposes an event log:
+The wire surface is one HTTP endpoint, plus health and the static
+frontend. Clients (the Yjs `Y.Doc` running in the React PWA) sync
+their local doc against the server's canonical doc using two binary
+blobs encoded as base64 in a JSON envelope:
 
-  GET  /state              -> {state, last_event_id, etag}
-  POST /events             -> body: [{type, ts_ms, payload}, ...]
-                              header: If-Match: "<etag>" (optional)
-                              returns 200 {state, last_event_id, etag} on success,
-                                      412 if If-Match doesn't match current etag
-  GET  /events?since_id=N  -> paginated raw event log for debugging/analytics
+    POST /sync
+      body: { state_vector_b64: str, update_b64: str }
 
-Sits behind an Authentik proxy outpost (forward-auth mode); does not
-re-validate the JWT. The outpost's `X-Authentik-Username` header is logged
-purely for observability — there is no per-user scoping because this is a
-single-user app.
+      `state_vector_b64`  — Y.encodeStateVector(localDoc), the client's
+                            knowledge of which ops it already has.
+      `update_b64`        — Y.encodeStateAsUpdate(localDoc, lastServerSV),
+                            the ops the client wants the server to merge.
+                            May be empty (\"\") for a pure pull.
+
+      → 200 { update_b64: str, state_vector_b64: str }
+            on success: server merged the client's update, applied
+            validators, persisted, and is returning the binary update
+            the client still needs to catch up to current canonical.
+
+      → 409 { rejection: { rule: str, message: str } }
+            on validation failure: canonical is unchanged, the client
+            should undo its last local transaction (Y.UndoManager) and
+            surface the rule + message in a SyncBanner toast.
+
+There is no `GET /state` and no `POST /events` — all state lives in
+the Y.Doc, and the only way to mutate it is via `/sync`. Sits behind
+an Authentik proxy outpost; backend reads `X-Authentik-Username`
+purely for logging.
 """
 
 from __future__ import annotations
 
-import json
+import base64
 import logging
 import sys
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 import uvicorn
-from fastapi import FastAPI, Header, HTTPException, Query, Response
+from fastapi import FastAPI, Header, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from x.auragon_study_casino.config import Settings
-from x.auragon_study_casino.store import EventStore, IncomingEvent, StaleETagError
+from x.auragon_study_casino.store import Accepted, DocStore, Rejected
 
 logger = logging.getLogger(__name__)
 
 
-class EventIn(BaseModel):
-    type: str = Field(min_length=1, max_length=64)
-    ts_ms: int = Field(ge=0)
-    payload: dict[str, Any] = Field(default_factory=dict)
+class SyncRequest(BaseModel):
+    state_vector_b64: str = Field(min_length=0, max_length=4 * 1024 * 1024)
+    update_b64: str = Field(min_length=0, max_length=4 * 1024 * 1024)
+
+
+class SyncSuccess(BaseModel):
+    update_b64: str
+    state_vector_b64: str
+
+
+class SyncRejection(BaseModel):
+    rule: str
+    message: str
+
+
+class SyncRejectionEnvelope(BaseModel):
+    rejection: SyncRejection
 
 
 def create_app(settings: Settings) -> FastAPI:
-    store = EventStore(settings.data_dir / "state.db")
+    store = DocStore(settings.data_dir / "casino.db")
     frontend_dist = settings.frontend_dist_dir or (Path(__file__).parent / "frontend" / "dist")
 
     app = FastAPI(title="Study Casino", docs_url=None, redoc_url=None)
@@ -50,54 +79,43 @@ def create_app(settings: Settings) -> FastAPI:
     def healthz() -> dict[str, bool]:
         return {"ok": True}
 
-    @app.get("/state")
-    def get_state() -> Response:
-        loaded = store.load()
-        return _snapshot_response(loaded.state, loaded.last_event_id, loaded.etag)
-
-    @app.post("/events")
-    def post_events(
-        events: list[EventIn],
-        x_authentik_username: Annotated[str | None, Header()] = None,
-        if_match: Annotated[str | None, Header()] = None,
-    ) -> Response:
-        if not events:
-            raise HTTPException(status_code=400, detail="empty event list")
-        incoming = [IncomingEvent(type=e.type, ts_ms=e.ts_ms, payload=e.payload) for e in events]
+    @app.post("/sync", response_model=SyncSuccess)
+    def sync(
+        body: SyncRequest, x_authentik_username: Annotated[str | None, Header()] = None
+    ) -> SyncSuccess | JSONResponse:
         try:
-            loaded = store.append(incoming, if_match=if_match)
-        except StaleETagError as e:
-            raise HTTPException(status_code=412, detail=str(e)) from e
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
-        logger.info(
-            "events appended by user=%s count=%d types=%s",
-            x_authentik_username,
-            len(incoming),
-            [e.type for e in incoming],
+            client_sv = base64.b64decode(body.state_vector_b64)
+            client_update = base64.b64decode(body.update_b64)
+        except (ValueError, TypeError) as e:
+            raise HTTPException(status_code=400, detail=f"invalid base64: {e}") from e
+
+        if not client_update:
+            # Pure pull: the client just wants to know what it is missing.
+            server_update = store.get_update_for_client(client_sv)
+            return SyncSuccess(
+                update_b64=base64.b64encode(server_update).decode("ascii"),
+                state_vector_b64=base64.b64encode(store.get_server_state_vector()).decode("ascii"),
+            )
+
+        result = store.apply_client_update(client_update, client_sv)
+        if isinstance(result, Rejected):
+            logger.info("sync rejected: user=%s rule=%s", x_authentik_username, result.rule)
+            envelope = SyncRejectionEnvelope(rejection=SyncRejection(rule=result.rule, message=result.message))
+            return JSONResponse(status_code=409, content=envelope.model_dump())
+
+        assert isinstance(result, Accepted)
+        logger.info("sync accepted: user=%s", x_authentik_username)
+        return SyncSuccess(
+            update_b64=base64.b64encode(result.server_update).decode("ascii"),
+            state_vector_b64=base64.b64encode(result.server_state_vector).decode("ascii"),
         )
-        return _snapshot_response(loaded.state, loaded.last_event_id, loaded.etag)
 
-    @app.get("/events")
-    def list_events(
-        since_id: Annotated[int, Query(ge=0)] = 0, limit: Annotated[int, Query(ge=1, le=1000)] = 100
-    ) -> dict[str, Any]:
-        return {"events": store.list_events(since_id=since_id, limit=limit)}
-
-    # Static frontend is mounted last so /state, /events, /healthz take
-    # precedence. Unknown paths fall through to index.html so the SPA can
-    # route deep links client-side.
     if frontend_dist.exists():
         app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
     else:
         logger.warning("frontend dist dir %s not found — serving API only", frontend_dist)
 
     return app
-
-
-def _snapshot_response(state: dict[str, Any], last_event_id: int, etag: str) -> Response:
-    body = json.dumps({"state": state, "last_event_id": last_event_id, "etag": etag}, separators=(",", ":"))
-    return Response(content=body, media_type="application/json", headers={"ETag": etag, "Cache-Control": "no-store"})
 
 
 def main() -> None:

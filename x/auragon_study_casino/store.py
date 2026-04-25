@@ -1,122 +1,131 @@
-"""Event store — wraps the SQLAlchemy session and exposes an append/load API.
+"""Server-authoritative DocStore for the casino's Y.Doc.
 
-The invariant this maintains: the `snapshot` row is always the reduction of
-all events up to `last_event_id`. Every successful `append` re-reduces the
-new events into the snapshot and bumps the ETag (sha256 of the serialized
-snapshot blob, truncated to 16 hex chars).
+The store holds one Y.Doc in memory and persists it as a single binary
+update blob in SQLite. Every `POST /sync` request goes through
+`apply_client_update`, which:
+
+1. Builds a *trial* doc by cloning the canonical state and applying
+   the inbound client update on top of it.
+2. Runs every validator from `validators.py` against the trial.
+3. On success, promotes the trial to canonical, persists, and returns
+   the binary diff the client doesn't yet have.
+4. On failure, the canonical doc is unchanged and the caller gets a
+   `Rejected` describing which rule was violated.
+
+There is no event log: pycrdt's binary update format already encodes
+every op (Yjs-style CRDT operations are themselves the history). The
+SyncStatus rejection contract on the client mirrors the structure
+returned here, so the UI can roll back the offending transaction via
+`Y.UndoManager`.
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from pathlib import Path
+from threading import RLock
 from typing import Any
 
 from sqlalchemy import create_engine, event, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
-from x.auragon_study_casino.models import Base, EventRow, SnapshotRow
-from x.auragon_study_casino.reducer import initial_state, reduce_event
+from x.auragon_study_casino.doc_shape import Casino
+from x.auragon_study_casino.models import Base, DocRow
+from x.auragon_study_casino.validators import ValidationError, validate
 
 
 @dataclass(frozen=True)
-class LoadedState:
-    state: dict[str, Any]
-    last_event_id: int
-    etag: str
+class Accepted:
+    """The client's update was applied and persisted."""
+
+    server_update: bytes
+    """Binary update the client should apply to catch up to the server's
+    current state, computed against the state vector the client sent."""
+
+    server_state_vector: bytes
+    """Server's state vector after the merge — the client should remember
+    this and pass it on the next sync as `since_state_vector`."""
 
 
 @dataclass(frozen=True)
-class IncomingEvent:
-    type: str
-    ts_ms: int
-    payload: dict[str, Any]
+class Rejected:
+    """The client's update would have violated a business rule."""
+
+    rule: str
+    message: str
 
 
-def _compute_etag(state: dict[str, Any], last_event_id: int) -> str:
-    # Fold last_event_id into the hash so two identical snapshots at different
-    # log positions get different ETags — prevents an If-Match from a stale
-    # client from passing just because their content happens to match.
-    blob = json.dumps({"state": state, "last": last_event_id}, sort_keys=True, separators=(",", ":"))
-    return f'"{hashlib.sha256(blob.encode()).hexdigest()[:16]}"'
+class DocStore:
+    """Owns the canonical Y.Doc and gates writes through the validators."""
 
-
-class EventStore:
     def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._engine: Engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
-        # WAL mode gives us readers+one-writer concurrency, which is what we
-        # want for a FastAPI pod serving many GET /state alongside occasional
-        # POST /events.
         with self._engine.connect() as conn:
             conn.exec_driver_sql("PRAGMA journal_mode=WAL")
             conn.commit()
         Base.metadata.create_all(self._engine)
         self._Session = sessionmaker(bind=self._engine, expire_on_commit=False)
 
-        # Seed the snapshot row on first boot so later code can always assume
-        # it exists.
+        # Lock around the canonical doc + persistence step. pycrdt is not
+        # thread-safe and FastAPI may serve requests from multiple threads;
+        # the critical section (clone → apply → validate → persist) needs
+        # to be atomic.
+        self._lock = RLock()
+
+        # Seed an empty canonical doc on first boot.
         with self._Session() as s:
-            if s.scalar(select(SnapshotRow).where(SnapshotRow.id == 1)) is None:
-                empty = initial_state()
-                s.add(SnapshotRow(id=1, state=empty, last_event_id=0, etag=_compute_etag(empty, 0)))
+            row = s.scalar(select(DocRow).where(DocRow.id == 1))
+            if row is None:
+                seed = Casino.empty()
+                s.add(DocRow(id=1, update_blob=seed.get_update()))
                 s.commit()
+                self._canonical = seed
+            else:
+                self._canonical = Casino.from_update(row.update_blob)
 
-    def load(self) -> LoadedState:
-        with self._Session() as s:
-            row = s.scalar(select(SnapshotRow).where(SnapshotRow.id == 1))
-            assert row is not None  # seeded in __init__
-            return LoadedState(state=row.state, last_event_id=row.last_event_id, etag=row.etag)
+    @property
+    def canonical(self) -> Casino:
+        """Read-only access to the canonical doc; do not mutate."""
+        return self._canonical
 
-    def append(self, events: list[IncomingEvent], *, if_match: str | None = None) -> LoadedState:
-        """Append events, re-reduce into snapshot, return new LoadedState.
+    def get_update_for_client(self, client_state_vector: bytes | None) -> bytes:
+        """Binary update the client needs to catch up to the server's view."""
+        with self._lock:
+            return self._canonical.get_update(client_state_vector)
 
-        Raises `StaleETagError` if `if_match` doesn't match the current snapshot
-        ETag. Raises `ValueError` (from the reducer) if any event is malformed.
+    def get_server_state_vector(self) -> bytes:
+        with self._lock:
+            return self._canonical.get_state()
+
+    def apply_client_update(self, client_update: bytes, client_state_vector: bytes) -> Accepted | Rejected:
+        """Apply `client_update` to a trial Casino, validate, persist on success.
+
+        `client_state_vector` is the state vector the client had *before*
+        producing this update; we use it to compute the minimal `server_update`
+        the client still needs after our merge.
         """
-        if not events:
-            raise ValueError("no events to append")
-        with self._Session() as s, s.begin():
-            row = s.scalar(select(SnapshotRow).where(SnapshotRow.id == 1).with_for_update())
-            assert row is not None
-            if if_match is not None and if_match != row.etag:
-                raise StaleETagError(expected=row.etag, got=if_match)
+        with self._lock:
+            trial = Casino.from_update(self._canonical.get_update())
+            trial.apply_update(client_update)
+            try:
+                validate(trial)
+            except ValidationError as e:
+                return Rejected(rule=e.rule, message=e.message)
 
-            state = row.state
-            last_id = row.last_event_id
-            for inc in events:
-                # Reduce first so malformed events abort before any insert.
-                state = reduce_event(state, inc.type, inc.payload)
-                ev = EventRow(ts_ms=inc.ts_ms, type=inc.type, payload=inc.payload)
-                s.add(ev)
-                s.flush()  # get ev.id
-                last_id = ev.id
+            # Promote trial → canonical and persist.
+            self._canonical = trial
+            with self._Session() as s, s.begin():
+                row = s.scalar(select(DocRow).where(DocRow.id == 1).with_for_update())
+                assert row is not None
+                row.update_blob = trial.get_update()
 
-            row.state = state
-            row.last_event_id = last_id
-            row.etag = _compute_etag(state, last_id)
-            return LoadedState(state=state, last_event_id=last_id, etag=row.etag)
-
-    def list_events(self, *, since_id: int = 0, limit: int = 100) -> list[dict[str, Any]]:
-        with self._Session() as s:
-            rows = s.scalars(select(EventRow).where(EventRow.id > since_id).order_by(EventRow.id).limit(limit)).all()
-            return [{"id": r.id, "ts_ms": r.ts_ms, "type": r.type, "payload": r.payload} for r in rows]
+            return Accepted(server_update=trial.get_update(client_state_vector), server_state_vector=trial.get_state())
 
 
-class StaleETagError(Exception):
-    def __init__(self, *, expected: str, got: str) -> None:
-        super().__init__(f"etag mismatch: expected {expected}, got {got}")
-        self.expected = expected
-        self.got = got
-
-
-# Enable WAL mode on every new connection (not just the first one). Needed
-# because create_engine's connection pool recycles, and PRAGMA journal_mode
-# only sticks per-connection via WAL's file-backed mode flag.
+# Enable WAL on every pooled connection.
 @event.listens_for(Engine, "connect")
 def _sqlite_pragma_on_connect(dbapi_conn: Any, _record: Any) -> None:
     cursor = dbapi_conn.cursor()

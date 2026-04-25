@@ -4561,7 +4561,9 @@ pycrdt==0.12.47 \
     --hash=sha256:f5136b6d3a4c458a0914887acaa4090b66d24c9be8fb453b8035540d8cf655f9 \
     --hash=sha256:f8ab8cbb04e9552127aea52d2e4824803e52dfe34a02cf22abfb116067dca45c \
     --hash=sha256:f8d09f4f25057e0e9fa0a5138adc2aab0f72b71b19dde41a0c4f9caba359f521
-    # via jupyter-ydoc
+    # via
+    #   ducktape (pyproject.toml)
+    #   jupyter-ydoc
 pycryptodome==3.23.0 \
     --hash=sha256:0011f7f00cdb74879142011f95133274741778abba114ceca229adbf8e62c3e4 \
     --hash=sha256:11eeeb6917903876f134b56ba11abe95c0b0fd5e3330def218083c7d98bbcb3c \

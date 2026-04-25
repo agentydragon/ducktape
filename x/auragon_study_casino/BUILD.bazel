@@ -14,9 +14,17 @@ py_library(
 )
 
 py_library(
-    name = "reducer",
-    srcs = ["reducer.py"],
+    name = "doc_shape",
+    srcs = ["doc_shape.py"],
     visibility = ["//visibility:public"],
+    deps = ["@pypi//pycrdt"],
+)
+
+py_library(
+    name = "validators",
+    srcs = ["validators.py"],
+    visibility = ["//visibility:public"],
+    deps = [":doc_shape"],
 )
 
 py_library(
@@ -31,8 +39,10 @@ py_library(
     srcs = ["store.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":doc_shape",
         ":models",
-        ":reducer",
+        ":validators",
+        "@pypi//pycrdt",
         "@pypi//sqlalchemy",
     ],
 )
@@ -61,10 +71,22 @@ py_binary(
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
 py_test(
-    name = "test_reducer",
-    srcs = ["test_reducer.py"],
+    name = "test_doc_shape",
+    srcs = ["test_doc_shape.py"],
     deps = [
-        ":reducer",
+        ":doc_shape",
+        "@pypi//pycrdt",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_validators",
+    srcs = ["test_validators.py"],
+    deps = [
+        ":doc_shape",
+        ":validators",
+        "@pypi//pycrdt",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -74,7 +96,9 @@ py_test(
     name = "test_store",
     srcs = ["test_store.py"],
     deps = [
+        ":doc_shape",
         ":store",
+        "@pypi//pycrdt",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -85,8 +109,10 @@ py_test(
     srcs = ["test_app.py"],
     deps = [
         ":app",
+        ":doc_shape",
         "@pypi//fastapi",
         "@pypi//httpx",
+        "@pypi//pycrdt",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
