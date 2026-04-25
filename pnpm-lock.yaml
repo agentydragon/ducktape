@@ -396,9 +396,6 @@ importers:
 
   x/auragon_study_casino/frontend:
     dependencies:
-      idb-keyval:
-        specifier: ^6.2.1
-        version: 6.2.2
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -3748,9 +3745,6 @@ packages:
     engines: {node: ^10 || ^12 || >= 14}
     peerDependencies:
       postcss: ^8.1.0
-
-  idb-keyval@6.2.2:
-    resolution: {integrity: sha512-yjD9nARJ/jb1g+CvD0tlhUHOrJ9Sy0P8T9MF3YaLlHnSRpwPfpTX0XIvpmw3gAJUmEu3FiICLBDPXVwyEvrleg==}
 
   ieee754@1.2.1:
     resolution: {integrity: sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA==}
@@ -9928,8 +9922,6 @@ snapshots:
   icss-utils@5.1.0(postcss@8.5.9):
     dependencies:
       postcss: 8.5.9
-
-  idb-keyval@6.2.2: {}
 
   ieee754@1.2.1: {}
 

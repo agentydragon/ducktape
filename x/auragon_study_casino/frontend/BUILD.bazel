@@ -20,9 +20,41 @@ filegroup(
 # ── Per-file source libraries ──────────────────────────────────────────────────
 
 js_library(
-    name = "storage",
-    srcs = ["src/storage.js"],
-    deps = [":node_modules/idb-keyval"],
+    name = "sync",
+    srcs = ["src/sync.js"],
+    deps = [
+        ":node_modules/y-indexeddb",
+        ":node_modules/yjs",
+    ],
+)
+
+js_library(
+    name = "y_hooks",
+    srcs = ["src/y_hooks.js"],
+    deps = [
+        ":node_modules/react",
+        ":sync",
+    ],
+)
+
+js_library(
+    name = "use_casino",
+    srcs = ["src/use_casino.js"],
+    deps = [
+        ":node_modules/react",
+        ":sync",
+        ":y_hooks",
+    ],
+)
+
+js_library(
+    name = "sync_banner",
+    srcs = ["src/SyncBanner.jsx"],
+    deps = [
+        ":node_modules/react",
+        ":sync",
+        ":y_hooks",
+    ],
 )
 
 js_library(
@@ -30,7 +62,8 @@ js_library(
     srcs = ["src/study_casino.jsx"],
     deps = [
         ":node_modules/react",
-        ":storage",
+        ":sync_banner",
+        ":use_casino",
     ],
 )
 
@@ -102,6 +135,7 @@ js_library(
         ":node_modules/react",
         ":node_modules/react-dom",
         ":study_casino",
+        ":sync",
     ],
 )
 
