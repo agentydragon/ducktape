@@ -1,0 +1,53 @@
+load("//devinfra/python:defs.bzl", "py_test")
+load("//skills/reverse_engineer/examples:defs.bzl", "garble_binary", "plain_binary")
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["*.go"]),
+    visibility = ["//skills/reverse_engineer/evals:__subpackages__"],
+)
+
+plain_binary(
+    name = "go_crypto_server_plain",
+    srcs = [":srcs"],
+    out = "go_crypto_server_plain.bin",
+    visibility = ["//skills/reverse_engineer/evals:__subpackages__"],
+)
+
+# Fixed seed ZHVja3RhcGU= (base64 "ducktape") matches the convention used for
+# the existing pclntool examples — deterministic obfuscated names.
+garble_binary(
+    name = "go_crypto_server_garbled",
+    srcs = [":srcs"],
+    out = "go_crypto_server_garbled.bin",
+    seed = "ZHVja3RhcGU=",
+    visibility = ["//skills/reverse_engineer/evals:__subpackages__"],
+)
+
+py_test(
+    name = "test_smoke",
+    srcs = ["test_smoke.py"],
+    data = [
+        ":go_crypto_server_garbled",
+        ":go_crypto_server_plain",
+    ],
+    env = {
+        "GARBLED_BIN": "$(rlocationpath :go_crypto_server_garbled)",
+        "PLAIN_BIN": "$(rlocationpath :go_crypto_server_plain)",
+    },
+    deps = [
+        "//util:net",
+        "//util/bazel:runfiles",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+exports_files(
+    [
+        "RUBRIC.yaml",
+        "SPEC.md",
+    ],
+    visibility = ["//skills/reverse_engineer/evals:__subpackages__"],
+)
