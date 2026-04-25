@@ -1,0 +1,18 @@
+load("//devinfra/python:defs.bzl", "py_test")
+
+py_test(
+    name = "test_sync_two_device",
+    srcs = ["test_sync_two_device.py"],
+    deps = [
+        "//util:net",
+        "//x/auragon_study_casino:app",
+        "//x/auragon_study_casino:config",
+        "//x/auragon_study_casino:doc_shape",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pycrdt",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//uvicorn",
+    ],
+)
