@@ -28,7 +28,7 @@ env_exports: |
   export PATH="${HOME}/.nix-profile/bin:${PATH}"
 background_commands:
   # Materializes ~/.kube/config from the SOPS-encrypted JWT in
-  # secrets/claude-web-k8s-token.yaml. See write_kubeconfig.py's module
+  # secrets/claude-web-k8s-jwt.yaml. See write_kubeconfig.py's module
   # docstring for the full rationale (token vs cert, why the egress proxy
   # breaks client-cert auth on CC web).
   - name: kubeconfig

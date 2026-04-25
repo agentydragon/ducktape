@@ -49,4 +49,4 @@ props/specimens/*/*/code/**
 **/uv.lock
 
 # SOPS-encrypted file - prettier reformats the long encrypted blob
-secrets/claude-web-k8s-token.yaml
+secrets/claude-web-k8s-jwt.yaml

@@ -84,6 +84,16 @@ resource "authentik_token" "alloy_otlp" {
   description  = "Bearer token for Claude hooks → Alloy OTLP ingestion"
 }
 
+# TODO: rotate this token periodically the way claude-jwt-rotation rotates the
+# k8s JWT. Different mechanism — this is an Authentik *API token* (validated
+# by the proxy outpost via Authentik API lookup), not an OIDC JWT
+# (cryptographically signed, validated via JWKS), so the rotate.sh
+# `client_credentials` exchange in cluster/k8s/agents/claude-jwt-rotation/
+# doesn't apply directly. A rotator here would either (a) call Authentik's
+# admin API to delete + recreate the token periodically, or (b) migrate the
+# OTLP ingestion path off proxy-outpost auth onto OIDC JWT validation so the
+# same client_credentials script can be reused.
+
 resource "authentik_policy_binding" "alloy_otlp_sa" {
   target = authentik_application.alloy_otlp.uuid
   user   = authentik_user.alloy_otlp_sa.id

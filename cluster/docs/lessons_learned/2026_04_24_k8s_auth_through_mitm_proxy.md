@@ -128,7 +128,7 @@ same solution shape — map identity to Group at one layer, don't duplicate.
 `cluster/k8s/agents/claude-jwt-rotation/` (replaces `claude-cert-rotation/`)
 runs biweekly: `curl` at the Authentik token endpoint with the confidential
 client_id + client_secret mounted from an in-cluster Secret, jq-extracts
-`.access_token`, commits it SOPS-encrypted to `secrets/claude-web-k8s-token.yaml`.
+`.access_token`, commits it SOPS-encrypted to `secrets/claude-web-k8s-jwt.yaml`.
 `write_kubeconfig.py` decrypts and embeds it as `user.token` at SessionStart.
 
 Cadence: cron every 15 days, token validity 45 days. Worst-case session

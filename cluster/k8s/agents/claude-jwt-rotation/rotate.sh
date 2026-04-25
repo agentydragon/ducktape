@@ -7,7 +7,7 @@ set -euo pipefail
 #    provider via client_credentials grant (confidential client, no user
 #    consent), getting a JWT with hardcoded `groups: ["kubectl-sandbox-users"]`
 #    via the kubectl_sandbox_fixed_groups scope mapping.
-# 2. Commit the JWT SOPS-encrypted to secrets/claude-web-k8s-token.yaml on
+# 2. Commit the JWT SOPS-encrypted to secrets/claude-web-k8s-jwt.yaml on
 #    devel.  write_kubeconfig.py decrypts it at SessionStart and embeds it
 #    in the kubeconfig as user.token.
 #
@@ -53,15 +53,15 @@ git clone --depth=1 --branch=devel \
   /tmp/repo
 cd /tmp/repo
 
-cat >secrets/claude-web-k8s-token.yaml <<EOF
-token: ${JWT}
+cat >secrets/claude-web-k8s-jwt.yaml <<EOF
+jwt: ${JWT}
 EOF
 
-sops encrypt --in-place secrets/claude-web-k8s-token.yaml
+sops encrypt --in-place secrets/claude-web-k8s-jwt.yaml
 
 git config user.name "claude-jwt-rotation"
 git config user.email "noreply@allegedly.works"
-git add secrets/claude-web-k8s-token.yaml
+git add secrets/claude-web-k8s-jwt.yaml
 
 if git diff --cached --quiet; then
   echo "No changes to commit"

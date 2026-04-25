@@ -4,7 +4,7 @@
 #   - startup_env_script = real devinfra/secrets/web_env.sh
 #       → decrypts test-encrypted secrets at /project/secrets/*.yaml
 #   - kubeconfig bg command runs the standalone write_kubeconfig.py script,
-#     which decrypts /project/secrets/claude-web-k8s-token.yaml via sops
+#     which decrypts /project/secrets/claude-web-k8s-jwt.yaml via sops
 #
 # Stripped (vs real web profile):
 #   - setup_tmpfs / setup_docker  (needs mount/privileges)

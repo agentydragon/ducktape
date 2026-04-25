@@ -59,7 +59,7 @@ CloudNativePG `local-path`.
       `monitored`. See `nix/nixos/hosts/wyrm2/default.nix` openebs setup services.
 - [ ] Fast token rotation on cluster reprovision: `claude-token-rotation` CronJob runs
       biweekly (1st/15th), so after a cluster rebuild the SOPS-encrypted token in
-      `secrets/claude-web-k8s-token.yaml` is stale until the next scheduled run. Need a
+      `secrets/claude-web-k8s-jwt.yaml` is stale until the next scheduled run. Need a
       mechanism to rotate immediately on reprovision — e.g., trigger the job from
       bootstrap, or add a post-bootstrap hook. Also consider whether the bootstrap script
       itself should decrypt the new token and inject it into the local environment so

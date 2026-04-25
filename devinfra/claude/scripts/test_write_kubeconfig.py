@@ -45,6 +45,15 @@ def test_write_kubeconfig_file_noop_when_identical(tmp_path: Path) -> None:
     assert output.stat().st_mtime_ns == mtime
 
 
+def test_write_kubeconfig_file_overwrites_empty(tmp_path: Path) -> None:
+    """An empty existing file (e.g., from `mktemp`) is treated as a fresh write."""
+    output = tmp_path / "kubeconfig"
+    output.write_text("")
+    write_kubeconfig.write_kubeconfig_file(_KUBECONFIG, output)
+    assert yaml.safe_load(output.read_text()) == _KUBECONFIG
+    assert output.stat().st_mode & 0o777 == 0o600
+
+
 def test_write_kubeconfig_file_refuses_to_clobber(tmp_path: Path) -> None:
     output = tmp_path / "kubeconfig"
     other = {**_KUBECONFIG, "current-context": "different"}
@@ -67,7 +76,7 @@ def _make_fake_sops(token: str = _FAKE_TOKEN):
     def _fake_sops(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
         assert cmd[0] == "sops"
         extract_arg = cmd[cmd.index("--extract") + 1]
-        if "token" in extract_arg:
+        if "jwt" in extract_arg:
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=token.encode(), stderr=b"")
         raise AssertionError(f"unexpected --extract arg: {extract_arg}")
 
@@ -77,7 +86,7 @@ def _make_fake_sops(token: str = _FAKE_TOKEN):
 def test_main_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     project_dir = tmp_path / "repo"
     (project_dir / "secrets").mkdir(parents=True)
-    (project_dir / "secrets" / "claude-web-k8s-token.yaml").write_text("stub")
+    (project_dir / "secrets" / "claude-web-k8s-jwt.yaml").write_text("stub")
 
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project_dir))
     monkeypatch.setattr(write_kubeconfig.subprocess, "run", _make_fake_sops())
@@ -96,7 +105,7 @@ def test_main_defaults(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Uses baked-in defaults when no --server/--user/--namespace given."""
     project_dir = tmp_path / "repo"
     (project_dir / "secrets").mkdir(parents=True)
-    (project_dir / "secrets" / "claude-web-k8s-token.yaml").write_text("stub")
+    (project_dir / "secrets" / "claude-web-k8s-jwt.yaml").write_text("stub")
 
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project_dir))
     monkeypatch.setattr(write_kubeconfig.subprocess, "run", _make_fake_sops())

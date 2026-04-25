@@ -20,7 +20,7 @@ already subjects on. Zero RBAC edits.
 
 The JWT is minted in-cluster by the `claude-jwt-rotation` CronJob (a
 client_credentials exchange against Authentik's token endpoint) and committed
-to `secrets/claude-web-k8s-token.yaml`, SOPS-encrypted. This script decrypts
+to `secrets/claude-web-k8s-jwt.yaml`, SOPS-encrypted. This script decrypts
 it at SessionStart with the recipient's `SOPS_AGE_KEY` — no HTTP calls from
 here, no client_secret on the sandbox.
 
@@ -35,7 +35,7 @@ Usage:
     python3 "$CLAUDE_PROJECT_DIR/devinfra/claude/scripts/write_kubeconfig.py" \\
         [OPTIONS] OUTPUT_PATH
 
-Requires CLAUDE_PROJECT_DIR (to locate secrets/claude-web-k8s-token.yaml)
+Requires CLAUDE_PROJECT_DIR (to locate secrets/claude-web-k8s-jwt.yaml)
 and SOPS_AGE_KEY (for sops decryption) in the environment.
 """
 
@@ -50,7 +50,7 @@ from pathlib import Path
 
 import yaml
 
-_K8S_TOKEN_SOPS_PATH = "secrets/claude-web-k8s-token.yaml"
+_K8S_JWT_SOPS_PATH = "secrets/claude-web-k8s-jwt.yaml"
 
 _DEFAULT_SERVER = "https://kubeapi.allegedly.works"
 _DEFAULT_USER = "claude-code-web"
@@ -70,12 +70,12 @@ def _sops_extract(sops_path: Path, key: str) -> str:
     return value
 
 
-def decrypt_bearer_token(project_dir: Path) -> str:
-    """Return the JWT from the SOPS-encrypted token file."""
-    sops_path = project_dir / _K8S_TOKEN_SOPS_PATH
+def decrypt_jwt(project_dir: Path) -> str:
+    """Return the JWT from the SOPS-encrypted file."""
+    sops_path = project_dir / _K8S_JWT_SOPS_PATH
     if not sops_path.is_file():
-        raise RuntimeError(f"k8s token SOPS file not found: {sops_path}")
-    return _sops_extract(sops_path, "token")
+        raise RuntimeError(f"k8s JWT SOPS file not found: {sops_path}")
+    return _sops_extract(sops_path, "jwt")
 
 
 def build_kubeconfig(token: str, server: str, user: str, namespace: str) -> dict:
@@ -90,10 +90,14 @@ def build_kubeconfig(token: str, server: str, user: str, namespace: str) -> dict
 
 
 def write_kubeconfig_file(kubeconfig: dict, output_path: Path) -> None:
-    """Atomic 0o600 write — never clobbers.
+    """Atomic 0o600 write — never clobbers a non-empty foreign kubeconfig.
 
-    If the file exists and its parsed YAML differs from `kubeconfig`, raises.
-    A match is a no-op; a missing file is written fresh.
+    - Missing file or empty file (yaml-parses to None): write fresh.
+      Empty-file tolerance lets callers do `mktemp` (which creates a 0-byte
+      file) and pass that path here.
+    - File parses to a YAML doc identical to `kubeconfig`: no-op.
+    - File parses to anything else: raise — refusing to clobber a foreign
+      kubeconfig (e.g., user's existing ~/.kube/config).
     """
     if output_path.exists():
         existing_raw = output_path.read_text()
@@ -101,11 +105,14 @@ def write_kubeconfig_file(kubeconfig: dict, output_path: Path) -> None:
             existing = yaml.safe_load(existing_raw)
         except yaml.YAMLError as e:
             raise RuntimeError(f"refusing to overwrite {output_path}: existing file is not valid YAML ({e})") from e
-        if existing != kubeconfig:
+        if existing is None:
+            pass  # 0-byte placeholder (e.g., from mktemp) — treat as fresh write
+        elif existing == kubeconfig:
+            return
+        else:
             raise RuntimeError(
                 f"refusing to overwrite {output_path}: existing kubeconfig differs from the one we'd write"
             )
-        return
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     serialized = yaml.safe_dump(kubeconfig, default_flow_style=False, sort_keys=False)
@@ -135,7 +142,7 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
     project_dir = Path(project_dir_str)
 
-    token = decrypt_bearer_token(project_dir)
+    token = decrypt_jwt(project_dir)
 
     kubeconfig = build_kubeconfig(token=token, server=args.server, user=args.user, namespace=args.namespace)
     write_kubeconfig_file(kubeconfig, args.output_path)

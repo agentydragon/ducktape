@@ -37,7 +37,7 @@ _TEST_SECRET_FILES = [
     "buildbuddy.yaml",
     "github-pat-agentydragon-agent.yaml",
     "github-ci-read-pat.yaml",
-    "claude-web-k8s-token.yaml",
+    "claude-web-k8s-jwt.yaml",
 ]
 
 _CONTAINER_NAME = "ducktape-container-e2e"
@@ -194,9 +194,8 @@ def test_container_e2e(impl: str, container: container_e2e.E2EContainer) -> None
     kube = yaml.safe_load(kubeconfig_raw)
     assert kube["current-context"] == "claude-code-web"
     user_data = kube["users"][0]["user"]
-    assert "client-certificate-data" in user_data
-    assert "client-key-data" in user_data
-    assert kube["clusters"][0]["cluster"]["server"] == "https://api.allegedly.works"
+    assert user_data == {"token": "test-fake-k8s-jwt"}
+    assert kube["clusters"][0]["cluster"]["server"] == "https://kubeapi.allegedly.works"
     _, stat_out, _ = container.exec(["stat", "-c", "%a", "/root/.kube/config"])
     assert stat_out.strip() == b"600"
 

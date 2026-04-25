@@ -59,13 +59,13 @@ secrets to per-session paths. Standard dotfile paths (`~/.config/bazel/buildbudd
 
 Both contexts want: **SOPS file → decrypt → template → standard dotfile path**.
 
-| Secret               | SOPS source                         | Target path                          |
-| -------------------- | ----------------------------------- | ------------------------------------ |
-| `buildbuddy_api_key` | `secrets/buildbuddy.yaml`           | `~/.config/bazel/buildbuddy.bazelrc` |
-| `kubeconfig`         | `secrets/claude-web-k8s-token.yaml` | `~/.kube/config`                     |
-| `otel_bearer_token`  | new SOPS file                       | env var or OTEL config               |
-| `openai_api_key`     | `secrets/home/*/openai.yaml`        | `$OPENAI_API_KEY` env var            |
-| `github_token`       | `secrets/github-pat-*.yaml`         | `$GITHUB_TOKEN` env var              |
+| Secret               | SOPS source                       | Target path                          |
+| -------------------- | --------------------------------- | ------------------------------------ |
+| `buildbuddy_api_key` | `secrets/buildbuddy.yaml`         | `~/.config/bazel/buildbuddy.bazelrc` |
+| `kubeconfig`         | `secrets/claude-web-k8s-jwt.yaml` | `~/.kube/config`                     |
+| `otel_bearer_token`  | new SOPS file                     | env var or OTEL config               |
+| `openai_api_key`     | `secrets/home/*/openai.yaml`      | `$OPENAI_API_KEY` env var            |
+| `github_token`       | `secrets/github-pat-*.yaml`       | `$GITHUB_TOKEN` env var              |
 
 ### Proposed approach: Nix-generated activation script
 

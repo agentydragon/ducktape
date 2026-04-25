@@ -21,10 +21,9 @@ if [[ -z "${SOPS_AGE_KEY:-}" ]] && command -v ssh-to-age &>/dev/null; then
   export SOPS_AGE_KEY
 fi
 
-# mktemp -u reserves a unique name without creating the file. write_kubeconfig.py's
-# safe-write refuses to clobber existing files, and mktemp-without-`-u` would hand
-# it a 0-byte file that YAML-parses as None ≠ new-config → RuntimeError.
-TMPKC="$(mktemp -u "${TMPDIR:-/tmp}/claude-sandbox-kc.XXXXXX")"
+# mktemp atomically creates a 0-byte file with mode 0600 (no TOCTOU); write_kubeconfig.py
+# tolerates an empty existing file and overwrites it via tempfile + atomic rename.
+TMPKC="$(mktemp "${TMPDIR:-/tmp}/claude-sandbox-kc.XXXXXX")"
 trap 'rm -f "$TMPKC"' EXIT
 
 python3 "$CLAUDE_PROJECT_DIR/devinfra/claude/scripts/write_kubeconfig.py" "$TMPKC"

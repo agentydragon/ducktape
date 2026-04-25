@@ -66,7 +66,7 @@ egress proxy eats client certs).
 
 Kubeconfig is generated automatically by the session start hook via
 <devinfra/claude/scripts/write_kubeconfig.py>. It decrypts the SOPS-encrypted
-bearer JWT from `secrets/claude-web-k8s-token.yaml` and writes a kubeconfig
+bearer JWT from `secrets/claude-web-k8s-jwt.yaml` and writes a kubeconfig
 with `user.token` auth pointing at `https://kubeapi.allegedly.works` (the
 `HTTPRoute` in <../../kube-api-proxy/httproute.yaml>). The JWT is minted
 biweekly by the `claude-jwt-rotation` CronJob via Authentik's

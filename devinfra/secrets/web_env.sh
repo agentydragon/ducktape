@@ -4,7 +4,7 @@
 #
 # Age recipients: claude-web (+ admin via _common.sh)
 #   github-pat-agentydragon-agent.yaml: admin, all user keys, claude-web, ci
-#   claude-web-k8s-token.yaml:          admin, all user keys, claude-web
+#   claude-web-k8s-jwt.yaml:          admin, all user keys, claude-web
 #
 # Consumed by:
 #   - web_setup.sh: eval'd to populate shell env, then written to

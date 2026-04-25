@@ -37,7 +37,11 @@ spec:
               type: RuntimeDefault
           containers:
             - name: rotate
-              image: ghcr.io/agentydragon/claude-jwt-rotation:devel # {"$imagepolicy": "flux-system:claude-jwt-rotation"}
+              # Initial placeholder matching the ImagePolicy filterTags
+              # regex (^devel-\d{14}-[0-9a-f]{7}$). Flux rewrites the field
+              # to the latest published tag on first reconcile after a
+              # push-images.yml CI run.
+              image: ghcr.io/agentydragon/claude-jwt-rotation:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:claude-jwt-rotation"}
               command: ["/usr/bin/bash", "/scripts/rotate.sh"]
               securityContext:
                 allowPrivilegeEscalation: false

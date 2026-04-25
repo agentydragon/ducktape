@@ -191,7 +191,7 @@ creation_rules:
           - *atlas-agentydragon
           - *iguana-agentydragon
   # Claude web K8s bearer JWT (auto-rotated by the claude-jwt-rotation CronJob)
-  - path_regex: secrets/claude-web-k8s-token\.yaml$
+  - path_regex: secrets/claude-web-k8s-jwt\.yaml$
     key_groups:
       - age:
           - *admin
