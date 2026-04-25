@@ -2,17 +2,17 @@ const scriptRel = /* @__PURE__ */ (function detectScriptRel() {
   const relList = typeof document !== "undefined" && document.createElement("link").relList;
   return relList && relList.supports && relList.supports("modulepreload") ? "modulepreload" : "preload";
 })();
-const assetsURL = function (dep) {
+const assetsURL = function(dep) {
   return "/" + dep;
 };
 const seen = {};
 const __vitePreload = function preload(baseModule, deps, importerUrl) {
   let promise = Promise.resolve();
   if (deps && deps.length > 0) {
-    let allSettled2 = function (promises) {
+    let allSettled2 = function(promises) {
       return Promise.all(
-        promises.map((p) =>
-          Promise.resolve(p).then(
+        promises.map(
+          (p) => Promise.resolve(p).then(
             (value) => ({ status: "fulfilled", value }),
             (reason) => ({ status: "rejected", reason })
           )
@@ -20,7 +20,9 @@ const __vitePreload = function preload(baseModule, deps, importerUrl) {
       );
     };
     document.getElementsByTagName("link");
-    const cspNonceMeta = document.querySelector("meta[property=csp-nonce]");
+    const cspNonceMeta = document.querySelector(
+      "meta[property=csp-nonce]"
+    );
     const cspNonce = cspNonceMeta?.nonce || cspNonceMeta?.getAttribute("nonce");
     promise = allSettled2(
       deps.map((dep) => {
@@ -46,7 +48,10 @@ const __vitePreload = function preload(baseModule, deps, importerUrl) {
         if (isCss) {
           return new Promise((res, rej) => {
             link.addEventListener("load", res);
-            link.addEventListener("error", () => rej(new Error(`Unable to preload CSS for ${dep}`)));
+            link.addEventListener(
+              "error",
+              () => rej(new Error(`Unable to preload CSS for ${dep}`))
+            );
           });
         }
       })
@@ -54,7 +59,7 @@ const __vitePreload = function preload(baseModule, deps, importerUrl) {
   }
   function handlePreloadError(err) {
     const e2 = new Event("vite:preloadError", {
-      cancelable: true,
+      cancelable: true
     });
     e2.payload = err;
     window.dispatchEvent(e2);
@@ -88,7 +93,7 @@ class A {
     return {
       profileName: this.profile.name,
       total: this.total,
-      tags: this.profile.tags,
+      tags: this.profile.tags
     };
   }
 }
@@ -97,7 +102,7 @@ const d = (a2) => ({
   headline: `${a2.profile.name}:${a2.total}`,
   total: a2.total,
   tags: o(a2.profile.tags),
-  stamp: e$1.stamp,
+  stamp: e$1.stamp
 });
 const h = (a2) => {
   const t2 = document.querySelector("#app");
@@ -110,10 +115,7 @@ const g = async () => {
   const o2 = d(t2);
   globalThis.__mockBundleState = { model: t2.snapshot(), summary: o2, lazy: null, chip: null };
   h(o2);
-  const [{ l: e2 }, { s: i }] = await Promise.all([
-    __vitePreload(() => import("./ActivityPanel-DuckMock.js"), true ? [] : void 0),
-    __vitePreload(() => import("./SummaryChip-DuckMock.js"), true ? [] : void 0),
-  ]);
+  const [{ l: e2 }, { s: i }] = await Promise.all([__vitePreload(() => import("./ActivityPanel-DuckMock.js"), true ? [] : void 0), __vitePreload(() => import("./SummaryChip-DuckMock.js"), true ? [] : void 0)]);
   e2(a2, o2);
   i(o2);
 };

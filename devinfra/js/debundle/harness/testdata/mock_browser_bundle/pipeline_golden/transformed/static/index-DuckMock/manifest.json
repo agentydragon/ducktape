@@ -3,7 +3,12 @@
   "chunkId": "static/index-DuckMock",
   "parser": {
     "allowUndeclaredExports": true,
-    "plugins": ["jsx", "typescript", "importAssertions", "topLevelAwait"],
+    "plugins": [
+      "jsx",
+      "typescript",
+      "importAssertions",
+      "topLevelAwait"
+    ],
     "sourceType": "module"
   },
   "sourcePath": "static/index-DuckMock.js",
@@ -33,126 +38,162 @@
     {
       "id": "owner_00000",
       "line": 1,
-      "names": ["scriptRel"],
+      "names": [
+        "scriptRel"
+      ],
       "type": "VariableDeclaration",
       "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
     },
     {
       "id": "owner_00001",
       "line": 5,
-      "names": ["assetsURL"],
+      "names": [
+        "assetsURL"
+      ],
       "type": "VariableDeclaration",
       "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
     },
     {
       "id": "owner_00002",
       "line": 8,
-      "names": ["seen"],
+      "names": [
+        "seen"
+      ],
       "type": "VariableDeclaration",
       "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
     },
     {
       "id": "owner_00003",
       "line": 9,
-      "names": ["__vitePreload"],
+      "names": [
+        "__vitePreload"
+      ],
       "type": "VariableDeclaration",
       "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
     },
     {
       "id": "owner_00004",
       "line": 78,
-      "names": ["e$3"],
+      "names": [
+        "e$3"
+      ],
       "type": "VariableDeclaration",
       "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
     },
     {
       "id": "owner_00005",
       "line": 79,
-      "names": ["t"],
+      "names": [
+        "t"
+      ],
       "type": "VariableDeclaration",
       "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
     },
     {
       "id": "owner_00006",
       "line": 80,
-      "names": ["a"],
+      "names": [
+        "a"
+      ],
       "type": "VariableDeclaration",
       "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
     },
     {
       "id": "owner_00007",
       "line": 81,
-      "names": ["o$1"],
+      "names": [
+        "o$1"
+      ],
       "type": "VariableDeclaration",
       "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
     },
     {
       "id": "owner_00008",
       "line": 82,
-      "names": ["e$2"],
+      "names": [
+        "e$2"
+      ],
       "type": "VariableDeclaration",
       "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
     },
     {
       "id": "owner_00009",
       "line": 83,
-      "names": ["o"],
+      "names": [
+        "o"
+      ],
       "type": "VariableDeclaration",
       "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
     },
     {
       "id": "owner_00010",
       "line": 84,
-      "names": ["n"],
+      "names": [
+        "n"
+      ],
       "type": "VariableDeclaration",
       "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
     },
     {
       "id": "owner_00011",
       "line": 85,
-      "names": ["e$1"],
+      "names": [
+        "e$1"
+      ],
       "type": "VariableDeclaration",
       "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
     },
     {
       "id": "owner_00012",
       "line": 86,
-      "names": ["e"],
+      "names": [
+        "e"
+      ],
       "type": "VariableDeclaration",
       "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
     },
     {
       "id": "owner_00013",
       "line": 87,
-      "names": ["A"],
+      "names": [
+        "A"
+      ],
       "type": "ClassDeclaration",
       "unsafeReason": "unsupported_top_level_declaration:ClassDeclaration"
     },
     {
       "id": "owner_00014",
       "line": 100,
-      "names": ["s"],
+      "names": [
+        "s"
+      ],
       "type": "VariableDeclaration",
       "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
     },
     {
       "id": "owner_00015",
       "line": 101,
-      "names": ["d"],
+      "names": [
+        "d"
+      ],
       "type": "VariableDeclaration",
       "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
     },
     {
       "id": "owner_00016",
       "line": 107,
-      "names": ["h"],
+      "names": [
+        "h"
+      ],
       "type": "VariableDeclaration",
       "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
     },
     {
       "id": "owner_00017",
       "line": 112,
-      "names": ["g"],
+      "names": [
+        "g"
+      ],
       "type": "VariableDeclaration",
       "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
     }
@@ -285,7 +326,9 @@
         "init": "{\n  stamp: \"mock-dashboard@7\"\n}",
         "kind": "VariableDeclarator",
         "name": "e$1",
-        "objectPropertyNames": ["stamp"]
+        "objectPropertyNames": [
+          "stamp"
+        ]
       }
     },
     {
@@ -317,7 +360,10 @@
         "kind": "ClassDeclaration",
         "name": "A",
         "superClass": null,
-        "memberNames": ["constructor", "snapshot"]
+        "memberNames": [
+          "constructor",
+          "snapshot"
+        ]
       }
     },
     {

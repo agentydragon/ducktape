@@ -43,6 +43,9 @@ props/helm/templates/**
 # Specimens committed snapshot code
 props/specimens/*/*/code/**
 
+# JS debundler golden testdata - must match pipeline output exactly, not reformatted
+devinfra/js/debundle/harness/testdata/**
+
 # Lock files - managed by package managers
 **/pnpm-lock.yaml
 **/package-lock.json

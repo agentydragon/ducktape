@@ -5,4 +5,6 @@ const o = (t) => {
   document.querySelector("#chip").textContent = o2.text;
   return o2;
 };
-export { o as s };
+export {
+  o as s
+};

@@ -154,7 +154,9 @@
         "init": "{\n  stamp: \"mock-dashboard@7\"\n}",
         "kind": "VariableDeclarator",
         "name": "e$1",
-        "objectPropertyNames": ["stamp"]
+        "objectPropertyNames": [
+          "stamp"
+        ]
       }
     },
     {
@@ -186,7 +188,10 @@
         "kind": "ClassDeclaration",
         "name": "A",
         "superClass": null,
-        "memberNames": ["constructor", "snapshot"]
+        "memberNames": [
+          "constructor",
+          "snapshot"
+        ]
       }
     },
     {

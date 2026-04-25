@@ -6,7 +6,7 @@ const renderActivityPanel = (t, a) => {
   const o2 = {
     badge: formatActivityBadge(t, a),
     stamp: a.stamp,
-    tags: t.tags.join(","),
+    tags: t.tags.join(",")
   };
   globalThis.__mockBundleState.lazy = o2;
   document.querySelector("#status").textContent = o2.badge;
