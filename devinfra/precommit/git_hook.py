@@ -23,10 +23,10 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.trace import StatusCode
 
 from cluster.validation.validate_all import validate as validate_cluster
+from devinfra.precommit.commit_tag import TestTagError, check_commit_message
 from devinfra.precommit.enforce_bazel_tests.enforce_bazel_tests import run as enforce_bazel_tests_run
 from devinfra.precommit.filename_conventions import check_filename_conventions
 from devinfra.precommit.frozen_specimens import check_specimen_code_changes
-from devinfra.precommit.test_tag import TestTagError, check_commit_message
 from devinfra.pytest_main import BazelPyTestIndex, build_bazel_index, check_files_async
 from util.bazel.workspace import BazelWorkspace, detect_bazel_backend
 from util.otel import JsonlSpanExporter

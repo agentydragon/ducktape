@@ -195,15 +195,23 @@ def verify_invocations_on_buildbuddy(ids: list[uuid.UUID]) -> None:
             raise TestTagError(f"BuildBuddy invocation {inv_id} is a '{command}' invocation, not 'test'")
 
         # Verify at least one child is a test invocation.
-        for child_id_str in children:
-            child_inv = _get_invocation(uuid.UUID(child_id_str), api_key)
-            child_command = child_inv.command
-            if child_command == "test":
-                break
-        else:
+        test_child_ids = [
+            child_id_str
+            for child_id_str in children
+            if _get_invocation(uuid.UUID(child_id_str), api_key).command == "test"
+        ]
+        if not test_child_ids:
             raise TestTagError(
                 f"BuildBuddy invocation {inv_id} is a '{command}' wrapper, "
                 f"but none of its {len(children)} child invocation(s) are 'test'"
+            )
+        if len(test_child_ids) == 1:
+            logger.warning(
+                "Invocation %s is a wrapper; inner test invocation: %s "
+                "(tip: use BAZEL_TEST_INVOCATIONS=buildbuddy:%s directly)",
+                inv_id,
+                test_child_ids[0],
+                test_child_ids[0],
             )
 
 

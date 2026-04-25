@@ -37,8 +37,8 @@ py_library(
 )
 
 py_library(
-    name = "test_tag",
-    srcs = ["test_tag.py"],
+    name = "commit_tag",
+    srcs = ["commit_tag.py"],
     visibility = ["//visibility:public"],
     deps = [
         "//third_party/googleapis:api_annotations_py_proto",
@@ -75,11 +75,11 @@ py_library(
 )
 
 py_test(
-    name = "test_test_tag",
-    srcs = ["test_test_tag.py"],
+    name = "test_commit_tag",
+    srcs = ["test_commit_tag.py"],
     legacy_create_init = 0,
     deps = [
-        ":test_tag",
+        ":commit_tag",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -102,9 +102,9 @@ py_library(
     srcs = ["git_hook.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":commit_tag",
         ":filename_conventions",
         ":frozen_specimens",
-        ":test_tag",
         "//cluster/validation:validate_all",
         "//devinfra:pytest_main",
         "//devinfra/precommit/enforce_bazel_tests",

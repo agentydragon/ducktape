@@ -7,7 +7,7 @@ import httpx
 import pytest
 import pytest_bazel
 
-from devinfra.precommit.test_tag import (
+from devinfra.precommit.commit_tag import (
     BuildBuddyInvocation,
     Invocations,
     LocalInvocation,
