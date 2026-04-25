@@ -14,10 +14,10 @@ js_library(
         "split_js_tree_lib.mjs",
         "split_js_tree_worker.mjs",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         "//devinfra/js/debundle/common:libs",
     ] + _BABEL_DEPS,
-    visibility = ["//visibility:public"],
 )
 
 js_test(
@@ -37,8 +37,8 @@ js_test(
         "split_js_tree_lib.mjs",
         "split_js_tree_worker.mjs",
         "//devinfra/js/debundle/common:sources",
-        "//devinfra/js/debundle/transforms:libs",
         "//devinfra/js/debundle/test_support:sources",
+        "//devinfra/js/debundle/transforms:libs",
     ] + _BABEL_DEPS,
     entry_point = "split_js_tree_test.mjs",
 )

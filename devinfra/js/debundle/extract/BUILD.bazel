@@ -17,12 +17,12 @@ js_library(
         "guided_selected_owner_modules_stage_lib.mjs",
         "owner_closure_plan_report_lib.mjs",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         "//devinfra/js/debundle/analysis:libs",
         "//devinfra/js/debundle/common:libs",
         "//devinfra/js/debundle/split:libs",
     ] + _BABEL_DEPS,
-    visibility = ["//visibility:public"],
 )
 
 js_test(

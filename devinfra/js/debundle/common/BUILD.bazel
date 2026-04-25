@@ -23,8 +23,8 @@ js_library(
 js_test(
     name = "vendor_runtime_lib_test",
     data = [
-        ":sources",
         "vendor_runtime_lib.mjs",
+        ":sources",
         "//devinfra/js/debundle/test_support:sources",
     ],
     entry_point = "vendor_runtime_lib_test.mjs",

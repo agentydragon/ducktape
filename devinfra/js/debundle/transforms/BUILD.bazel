@@ -10,6 +10,7 @@ js_library(
         "run_transform_lib.mjs",
         "write_js_tree_lib.mjs",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         "//devinfra/js/debundle/analysis:libs",
         "//devinfra/js/debundle/common:libs",
@@ -19,14 +20,13 @@ js_library(
         "//devinfra/js/debundle/split:libs",
         "//devinfra/js/debundle/vendor:libs",
     ] + _JSONC_DEPS,
-    visibility = ["//visibility:public"],
 )
 
 js_binary(
     name = "run_transform",
     data = [
-        ":libs",
         "run_transform.mjs",
+        ":libs",
     ],
     entry_point = "run_transform.mjs",
     node_options = [

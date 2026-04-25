@@ -14,10 +14,10 @@ js_library(
         "rename_vendor_exports_lib.mjs",
         "swap_vendor_chunks_lib.mjs",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         "//devinfra/js/debundle/common:libs",
     ] + _BABEL_DEPS,
-    visibility = ["//visibility:public"],
 )
 
 js_test(

@@ -12,10 +12,10 @@ js_library(
         "runtime_boundary_metadata_lib.mjs",
         "scrambled_identifier_frequency_lib.mjs",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         "//devinfra/js/debundle/common:libs",
     ] + _BABEL_DEPS,
-    visibility = ["//visibility:public"],
 )
 
 js_test(

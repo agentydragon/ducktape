@@ -7,6 +7,7 @@ These tests mock the httpx client via respx to verify:
 """
 
 from __future__ import annotations
+
 from collections.abc import AsyncGenerator
 
 import httpx
@@ -121,10 +122,7 @@ async def test_http_errors_are_compact_and_include_status_url_and_body(mcp_clien
     """HTTP backend errors should be concise and actionable (no Python traceback)."""
     client, router = mcp_client
     error_payload = {"error_message": "Amount to be consumed cannot be > current stock amount"}
-    router.post("/stock/products/1/consume").respond(
-        status_code=400,
-        json=error_payload,
-    )
+    router.post("/stock/products/1/consume").respond(status_code=400, json=error_payload)
 
     result = await client.call_tool(
         "stock_consume", {"items": [{"product": 1, "amount": 5, "qu": "pieces", "location": "TestLoc"}]}

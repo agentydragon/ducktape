@@ -5,11 +5,11 @@ js_library(
     srcs = [
         "emit_browser_harness_lib.mjs",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         "//devinfra/js/debundle/common:libs",
         "//devinfra/js/debundle/split:libs",
     ],
-    visibility = ["//visibility:public"],
 )
 
 js_test(

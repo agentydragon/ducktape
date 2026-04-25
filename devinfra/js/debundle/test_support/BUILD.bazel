@@ -14,11 +14,11 @@ js_library(
     srcs = [
         "fixture_lib.mjs",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         "//:node_modules/@babel/parser",
         "//devinfra/js/debundle/common:libs",
     ],
-    visibility = ["//visibility:public"],
 )
 
 js_library(
@@ -26,10 +26,10 @@ js_library(
     srcs = [
         "pipeline_fixture_lib.mjs",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         "//devinfra/js/debundle/common:libs",
         "//devinfra/js/debundle/split:libs",
         "//devinfra/js/debundle/test_support:libs",
     ],
-    visibility = ["//visibility:public"],
 )

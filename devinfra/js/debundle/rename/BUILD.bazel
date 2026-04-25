@@ -12,11 +12,11 @@ js_library(
     srcs = [
         "rename_bindings_lib.mjs",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         "//devinfra/js/debundle/common:libs",
         "//devinfra/js/debundle/split:libs",
     ] + _BABEL_DEPS,
-    visibility = ["//visibility:public"],
 )
 
 js_test(
