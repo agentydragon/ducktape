@@ -1,7 +1,10 @@
 // Production bundle for the Study Casino PWA.
 //
 // Bundles src/main.jsx → dist/main.js. Copies static assets (index.html,
-// sw.js, manifest.webmanifest, icon.svg) verbatim to dist/.
+// sw.js, manifest.webmanifest, icon.svg) verbatim to dist/. The hermetic
+// font directory (fonts.css + Outfit/Playfair Display woff2 files) is
+// copied to dist/fonts/ so the production app and visual tests both
+// render in the same fonts without any network access.
 //
 // Service worker is NOT bundled because it imports nothing and must be
 // served at a stable top-level path (`/sw.js`) so its scope covers the
@@ -19,6 +22,7 @@ const outdir = resolve(args[0] || "dist");
 const watch = args.includes("--watch");
 
 await mkdir(outdir, { recursive: true });
+await mkdir(resolve(outdir, "fonts"), { recursive: true });
 
 const buildOptions = {
   entryPoints: [resolve(__dirname, "src/main.jsx")],
@@ -37,10 +41,13 @@ const buildOptions = {
 };
 
 const STATIC_ASSETS = ["index.html", "sw.js", "manifest.webmanifest", "icon.svg"];
+const FONT_ASSETS = ["fonts/fonts.css", "fonts/Outfit-latin.woff2", "fonts/PlayfairDisplay-latin.woff2"];
 
 async function copyStatic() {
   await Promise.all(
-    STATIC_ASSETS.map((name) => copyFile(resolve(__dirname, name), resolve(outdir, name))),
+    [...STATIC_ASSETS, ...FONT_ASSETS].map((name) =>
+      copyFile(resolve(__dirname, name), resolve(outdir, name)),
+    ),
   );
 }
 

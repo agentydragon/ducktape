@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Study Casino — Visual Harness</title>
+    <link rel="stylesheet" href="../../fonts/fonts.css" />
+    <style>
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+        background: #1f0a10;
+      }
+      /* Disable animations and transitions for deterministic screenshots —
+         the casino has spinning wheels, win bursts, and pulsing dots. */
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0s !important;
+        animation-delay: 0s !important;
+        transition-duration: 0s !important;
+        transition-delay: 0s !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script src="./dist/harness.js"></script>
+  </body>
+</html>

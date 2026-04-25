@@ -460,7 +460,9 @@ export default function StudyCasino() {
       }}
     >
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;900&family=Outfit:wght@300;400;500;600;700&display=swap');
+        /* Fonts are loaded once, hermetically, via /fonts/fonts.css linked in
+           index.html — kept out of this CSS-in-JSX block so the woff2 files
+           are bundled by Bazel rather than fetched at runtime from a CDN. */
 
         * { box-sizing: border-box; }
 
@@ -1131,16 +1133,13 @@ function Roulette({ credits, setCredits, setTokens, emitEvents }) {
     setTimeout(() => {
       const w = checkWin(picked);
       const grossPayout = w.won ? betAmount * w.mult : 0;
-      // Principal returns to credits; winnings above the bet land in tokens.
-      // See reducer._apply_wager — the optimistic update mirrors that split.
-      const refund = Math.min(grossPayout, betAmount);
-      const profit = grossPayout - refund;
-      if (refund > 0) setCredits((c) => c + refund);
-      if (profit > 0) {
-        setTokens((t) => t + profit);
-        setWinBurst({ key: Date.now(), amount: profit });
+      // Whole payout becomes tokens; bet was already debited from credits.
+      // Mirrors reducer._apply_wager: casino is a pure credits→tokens funnel.
+      if (grossPayout > 0) {
+        setTokens((t) => t + grossPayout);
+        setWinBurst({ key: Date.now(), amount: grossPayout });
       }
-      setResult({ number: picked, won: w.won, payout: profit });
+      setResult({ number: picked, won: w.won, payout: grossPayout });
       setHistory((h) => [{ number: picked, won: w.won }, ...h].slice(0, 10));
       setSpinning(false);
       emitEvents([
@@ -1527,14 +1526,11 @@ function Slots({ credits, setCredits, setTokens, emitEvents }) {
       } else {
         label = "No match";
       }
-      const refund = Math.min(grossPayout, bet);
-      const profit = grossPayout - refund;
-      if (refund > 0) setCredits((c) => c + refund);
-      if (profit > 0) {
-        setTokens((t) => t + profit);
-        setWinBurst({ key: Date.now(), amount: profit });
+      if (grossPayout > 0) {
+        setTokens((t) => t + grossPayout);
+        setWinBurst({ key: Date.now(), amount: grossPayout });
       }
-      setLastResult({ picks, payout: profit, label });
+      setLastResult({ picks, payout: grossPayout, label });
       emitEvents([
         {
           type: "slot_spin",
@@ -1834,16 +1830,12 @@ function Blackjack({ credits, setCredits, setTokens, emitEvents }) {
       text = "Dealer wins.";
     }
 
-    // Principal portion of the payout returns to credits; only the winnings
-    // above the wager land in tokens (mirrors reducer._apply_wager).
-    const refund = Math.min(payout, currentWager);
-    const profit = payout - refund;
-    if (refund > 0) setCredits((c) => c + refund);
-    if (profit > 0) {
-      setTokens((t) => t + profit);
-      setWinBurst({ key: Date.now(), amount: profit });
+    // Whole gross payout becomes tokens; bet was already debited at deal time.
+    if (payout > 0) {
+      setTokens((t) => t + payout);
+      setWinBurst({ key: Date.now(), amount: payout });
     }
-    setResult({ outcome, payout: profit, text });
+    setResult({ outcome, payout, text });
     setPhase("done");
     setHoleHidden(false);
     emitEvents([

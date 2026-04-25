@@ -240,11 +240,14 @@ export async function main(scenarioName, callerUrl = null, options = {}) {
 
     const harnessUrl = `file://${indexPath}`;
 
-    // Verify Inter font loads
+    // Verify the harness's hermetic font loaded. Most callers use Inter (the
+    // shared test-fonts.css default), but a harness can override via the
+    // EXPECTED_FONT_FAMILY env var when it bundles its own typography.
+    const expectedFont = process.env.EXPECTED_FONT_FAMILY || "Inter";
     await page.goto(harnessUrl, { waitUntil: "networkidle0" });
-    const fontLoaded = await page.evaluate(() => document.fonts.check("16px Inter"));
+    const fontLoaded = await page.evaluate((family) => document.fonts.check(`16px "${family}"`), expectedFont);
     if (!fontLoaded) {
-      console.error("FATAL: Inter font did not load");
+      console.error(`FATAL: ${expectedFont} font did not load`);
       process.exit(1);
     }
 

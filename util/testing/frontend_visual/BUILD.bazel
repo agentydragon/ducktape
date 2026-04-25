@@ -13,6 +13,7 @@ js_library(
         "//airlock/frontend:__pkg__",
         "//props/frontend:__pkg__",
         "//props/frontend/src:__subpackages__",
+        "//x/auragon_study_casino/frontend:__pkg__",
     ],
     deps = [
         ":node_modules/pixelmatch",
@@ -44,5 +45,6 @@ filegroup(
         "//airlock/frontend:__pkg__",
         "//props/frontend:__pkg__",
         "//props/frontend/src:__subpackages__",
+        "//x/auragon_study_casino/frontend:__pkg__",
     ],
 )

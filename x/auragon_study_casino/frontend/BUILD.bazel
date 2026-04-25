@@ -1,7 +1,21 @@
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 
 npm_link_all_packages(name = "node_modules")
+
+# Hermetic font assets bundled with both the production frontend and the
+# visual-regression test harness. The two woff2 files are latin-subset
+# variable fonts (Playfair Display v40 / Outfit v15, OFL-licensed); fonts.css
+# wires them into @font-face declarations the React component expects.
+filegroup(
+    name = "casino_fonts",
+    srcs = [
+        "fonts/Outfit-latin.woff2",
+        "fonts/PlayfairDisplay-latin.woff2",
+        "fonts/fonts.css",
+    ],
+    visibility = ["//x/auragon_study_casino:__subpackages__"],
+)
 
 # ── Per-file source libraries ──────────────────────────────────────────────────
 
@@ -42,6 +56,7 @@ _BUNDLE_STATIC = [
 js_binary(
     name = "build_bundle",
     data = _BUNDLE_STATIC + [
+        ":casino_fonts",
         ":main",
         ":node_modules",
     ],
@@ -50,8 +65,14 @@ js_binary(
 
 js_run_binary(
     name = "bundle",
-    srcs = _BUNDLE_STATIC + [":main"],
+    srcs = _BUNDLE_STATIC + [
+        ":casino_fonts",
+        ":main",
+    ],
     outs = [
+        "dist/fonts/Outfit-latin.woff2",
+        "dist/fonts/PlayfairDisplay-latin.woff2",
+        "dist/fonts/fonts.css",
         "dist/icon.svg",
         "dist/index.html",
         "dist/main.js",
@@ -63,4 +84,87 @@ js_run_binary(
     chdir = package_name(),
     tool = ":build_bundle",
     visibility = ["//x/auragon_study_casino:__pkg__"],
+)
+
+# ── Visual regression test ────────────────────────────────────────────────────
+#
+# Renders the StudyCasino component with mocked state and compares the
+# resulting screenshot against baselines/main_page-chromium-linux.png. Reuses
+# the shared Puppeteer + pixelmatch lib at //util/testing/frontend_visual.
+# Casino fonts above are wired in instead of the lib's Inter so the test
+# captures the same typography users see in production.
+
+js_library(
+    name = "visual_harness_lib",
+    srcs = [
+        "tests/harness/harness.jsx",
+        "tests/harness/index.html",
+    ],
+    tags = ["no-lint"],
+    deps = [
+        ":node_modules/react",
+        ":node_modules/react-dom",
+        ":study_casino",
+    ],
+)
+
+js_binary(
+    name = "build_visual_harness",
+    data = [
+        "tests/harness/esbuild.config.mjs",
+        ":casino_fonts",
+        ":node_modules",
+        ":visual_harness_lib",
+    ],
+    entry_point = "tests/harness/esbuild.config.mjs",
+)
+
+js_run_binary(
+    name = "visual_harness_bundle",
+    srcs = [
+        "tests/harness/esbuild.config.mjs",
+        ":casino_fonts",
+        ":visual_harness_lib",
+    ],
+    outs = [
+        "tests/harness/dist/harness.js",
+    ],
+    args = ["tests/harness/dist"],
+    chdir = package_name(),
+    tool = ":build_visual_harness",
+)
+
+# Single-file alias so $(rootpath) resolves to one path the test can read.
+filegroup(
+    name = "visual_harness_js",
+    srcs = ["tests/harness/dist/harness.js"],
+)
+
+js_test(
+    name = "visual_main_page",
+    size = "small",
+    data = [
+        "tests/harness/index.html",
+        ":casino_fonts",
+        ":visual_harness_js",
+        "//util/testing/frontend_visual:fonts_conf",
+        "//util/testing/frontend_visual:visual_test_lib",
+        "@playwright_browsers//:chromium-headless-shell",
+    ] + glob(["tests/baselines/*.png"]),
+    entry_point = "tests/visual_test_main_page.mjs",
+    env = {
+        "HARNESS_PATH": "$(rootpath :visual_harness_js)",
+        "PUPPETEER_EXECUTABLE_PATH": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+        "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
+        "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
+        "BASELINE_WORKSPACE_PATH": "x/auragon_study_casino/frontend/tests/baselines",
+        "EXPECTED_FONT_FAMILY": "Outfit",
+    },
+    no_copy_to_bin = [
+        ":casino_fonts",
+        ":visual_harness_js",
+        "//util/testing/frontend_visual:fonts_conf",
+        "//util/testing/frontend_visual:visual_test_lib",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
 )
