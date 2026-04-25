@@ -20,6 +20,7 @@ import uuid
 from dataclasses import dataclass
 
 import httpx
+import tenacity
 from google.protobuf import json_format
 from proto import invocation_pb2
 
@@ -42,8 +43,19 @@ Example:
   BAZEL_TEST_INVOCATIONS=none: documentation-only change"""
 
 
+_RETRIABLE_STATUS_CODES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
+
+
 class TestTagError(Exception):
     """Raised when a commit message has a missing or invalid BAZEL_TEST_INVOCATIONS= tag."""
+
+
+class _RetriableHTTPError(Exception):
+    """Raised on HTTP status codes that warrant a retry (429, 5xx)."""
+
+    def __init__(self, status_code: int) -> None:
+        super().__init__(f"HTTP {status_code}")
+        self.status_code = status_code
 
 
 @dataclass(frozen=True)
@@ -114,8 +126,15 @@ def parse_test_tag(message: str) -> TestTag:
     return Invocations(items)
 
 
-def _get_invocation(inv_id: uuid.UUID, api_key: str) -> invocation_pb2.Invocation:
-    """Fetch a single invocation from BuildBuddy. Returns the Invocation proto."""
+@tenacity.retry(
+    retry=tenacity.retry_if_exception_type(_RetriableHTTPError),
+    stop=tenacity.stop_after_attempt(5),
+    wait=tenacity.wait_exponential(multiplier=1, min=1, max=16),
+    before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
+    reraise=True,
+)
+def _fetch_invocation_attempt(inv_id: uuid.UUID, api_key: str) -> invocation_pb2.Invocation:
+    """Single attempt to fetch an invocation; raises _RetriableHTTPError on transient HTTP errors."""
     try:
         resp = httpx.post(
             _BUILDBUDDY_API_URL,
@@ -125,12 +144,22 @@ def _get_invocation(inv_id: uuid.UUID, api_key: str) -> invocation_pb2.Invocatio
         )
     except httpx.HTTPError as e:
         raise TestTagError(f"Failed to verify invocation {inv_id}: {e}") from e
+    if resp.status_code in _RETRIABLE_STATUS_CODES:
+        raise _RetriableHTTPError(resp.status_code)
     if resp.status_code != 200:
         raise TestTagError(f"BuildBuddy API returned HTTP {resp.status_code} for invocation {inv_id}")
     resp_proto = json_format.Parse(resp.text, invocation_pb2.GetInvocationResponse(), ignore_unknown_fields=True)
     if not resp_proto.invocation:
         raise TestTagError(f"BuildBuddy invocation {inv_id} not found")
     return resp_proto.invocation[0]
+
+
+def _get_invocation(inv_id: uuid.UUID, api_key: str) -> invocation_pb2.Invocation:
+    """Fetch a single invocation from BuildBuddy, retrying on transient errors."""
+    try:
+        return _fetch_invocation_attempt(inv_id, api_key)
+    except _RetriableHTTPError as e:
+        raise TestTagError(f"BuildBuddy API unavailable for invocation {inv_id} after retries: {e}") from e
 
 
 def _get_child_invocation_ids(inv: invocation_pb2.Invocation) -> list[str]:

@@ -188,11 +188,50 @@ class TestVerifyInvocations:
         ):
             verify_invocations_on_buildbuddy([_UUID])
 
-    def test_http_error_raises(self, monkeypatch):
+    def test_retriable_status_exhausts_retries(self, monkeypatch):
+        """Persistent retriable HTTP errors (500/502/503) exhaust all retries and raise TestTagError."""
         monkeypatch.setenv("BUILDBUDDY_API_KEY", "test-key")
-        mock_response = httpx.Response(500, text="internal server error")
-        with patch("httpx.post", return_value=mock_response), pytest.raises(TestTagError, match="500"):
+        call_count = 0
+
+        def mock_post(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return httpx.Response(500, text="internal server error")
+
+        with patch("httpx.post", side_effect=mock_post), patch("time.sleep"), pytest.raises(TestTagError, match="500"):
             verify_invocations_on_buildbuddy([_UUID])
+        assert call_count == 5
+
+    def test_retries_on_502_then_succeeds(self, monkeypatch):
+        """Transient 502 errors are retried; success on a subsequent attempt is accepted."""
+        monkeypatch.setenv("BUILDBUDDY_API_KEY", "test-key")
+        success_response = httpx.Response(200, json={"invocation": [{"invocationId": _UUID_STR, "command": "test"}]})
+        call_count = 0
+
+        def mock_post(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                return httpx.Response(502)
+            return success_response
+
+        with patch("httpx.post", side_effect=mock_post), patch("time.sleep"):
+            verify_invocations_on_buildbuddy([_UUID])
+        assert call_count == 3
+
+    def test_retries_on_503_exhausted(self, monkeypatch):
+        """Persistent 503 errors exhaust all 5 retries and raise TestTagError."""
+        monkeypatch.setenv("BUILDBUDDY_API_KEY", "test-key")
+        call_count = 0
+
+        def mock_post(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return httpx.Response(503)
+
+        with patch("httpx.post", side_effect=mock_post), patch("time.sleep"), pytest.raises(TestTagError, match="503"):
+            verify_invocations_on_buildbuddy([_UUID])
+        assert call_count == 5
 
 
 if __name__ == "__main__":

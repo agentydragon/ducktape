@@ -70,6 +70,7 @@ py_library(
         "@buildbuddy_protos//:user_id_py_proto",
         "@pypi//httpx",
         "@pypi//protobuf",
+        "@pypi//tenacity",
     ],
 )
 
