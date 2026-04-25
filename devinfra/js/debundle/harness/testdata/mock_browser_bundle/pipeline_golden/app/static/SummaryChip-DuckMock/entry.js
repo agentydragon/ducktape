@@ -2,9 +2,9 @@
 // Executable chunk entry.
 
 import { o as formatChipText } from "../chunk-DuckMock/entry.js";
-const renderSummaryChip = t => {
+const renderSummaryChip = (t) => {
   const o2 = {
-    text: formatChipText(t)
+    text: formatChipText(t),
   };
   globalThis.__mockBundleState.chip = o2;
   document.querySelector("#chip").textContent = o2.text;

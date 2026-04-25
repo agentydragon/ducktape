@@ -21,7 +21,8 @@
           if (!node) {
             node = document.createElement("pre");
             node.id = "debundle-harness-error";
-            node.style.cssText = "position:fixed;inset:0;z-index:2147483647;margin:0;padding:16px;white-space:pre-wrap;background:#2b0000;color:#ffd8d8;font:13px/1.4 monospace;";
+            node.style.cssText =
+              "position:fixed;inset:0;z-index:2147483647;margin:0;padding:16px;white-space:pre-wrap;background:#2b0000;color:#ffd8d8;font:13px/1.4 monospace;";
             body.appendChild(node);
           }
           node.textContent = message;

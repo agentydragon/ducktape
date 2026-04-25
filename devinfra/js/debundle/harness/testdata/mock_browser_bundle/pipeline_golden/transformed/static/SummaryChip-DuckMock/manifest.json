@@ -3,12 +3,7 @@
   "chunkId": "static/SummaryChip-DuckMock",
   "parser": {
     "allowUndeclaredExports": true,
-    "plugins": [
-      "jsx",
-      "typescript",
-      "importAssertions",
-      "topLevelAwait"
-    ],
+    "plugins": ["jsx", "typescript", "importAssertions", "topLevelAwait"],
     "sourceType": "module"
   },
   "sourcePath": "static/SummaryChip-DuckMock.js",
@@ -57,9 +52,7 @@
     {
       "id": "owner_00000",
       "line": 2,
-      "names": [
-        "o"
-      ],
+      "names": ["o"],
       "type": "VariableDeclaration",
       "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
     }

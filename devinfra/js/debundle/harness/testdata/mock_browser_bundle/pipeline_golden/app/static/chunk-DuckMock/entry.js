@@ -2,5 +2,5 @@
 // Executable chunk entry.
 
 const formatActivityBadge = (t, a) => `${t.name}:${a.total}`;
-const formatChipText = t => `chip:${t.stamp}`;
+const formatChipText = (t) => `chip:${t.stamp}`;
 export { formatActivityBadge as e, formatChipText as o };

@@ -3,12 +3,7 @@
   "chunkId": "static/chunk-DuckMock",
   "parser": {
     "allowUndeclaredExports": true,
-    "plugins": [
-      "jsx",
-      "typescript",
-      "importAssertions",
-      "topLevelAwait"
-    ],
+    "plugins": ["jsx", "typescript", "importAssertions", "topLevelAwait"],
     "sourceType": "module"
   },
   "sourcePath": "static/chunk-DuckMock.js",
@@ -49,18 +44,14 @@
     {
       "id": "owner_00000",
       "line": 1,
-      "names": [
-        "e"
-      ],
+      "names": ["e"],
       "type": "VariableDeclaration",
       "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
     },
     {
       "id": "owner_00001",
       "line": 2,
-      "names": [
-        "o"
-      ],
+      "names": ["o"],
       "type": "VariableDeclaration",
       "unsafeReason": "unsupported_top_level_declaration:VariableDeclaration"
     }

@@ -7,18 +7,9 @@
   "runtimeManifestPath": "__PIPELINE_ROOT__/app/transformed-manifest.json",
   "runtimeRoot": "__PIPELINE_ROOT__/app",
   "outDir": "__PIPELINE_ROOT__/app",
-  "copiedAssets": [
-    "index.html",
-    "preload/app.css"
-  ],
-  "entryScripts": [
-    "static/index-DuckMock.js"
-  ],
-  "modulePreloads": [
-    "static/ActivityPanel-DuckMock.js",
-    "static/SummaryChip-DuckMock.js",
-    "static/chunk-DuckMock.js"
-  ],
+  "copiedAssets": ["index.html", "preload/app.css"],
+  "entryScripts": ["static/index-DuckMock.js"],
+  "modulePreloads": ["static/ActivityPanel-DuckMock.js", "static/SummaryChip-DuckMock.js", "static/chunk-DuckMock.js"],
   "vendorManifestPath": null,
   "vendorResolutions": [],
   "generated": {

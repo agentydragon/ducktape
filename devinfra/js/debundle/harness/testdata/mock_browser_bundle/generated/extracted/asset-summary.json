@@ -1,9 +1,7 @@
 {
   "uiVersion": "fixture",
   "entryPoints": {
-    "css": [
-      "preload/app.css"
-    ],
+    "css": ["preload/app.css"],
     "html": "index.html",
     "js": [
       "static/ActivityPanel-DuckMock.js",
