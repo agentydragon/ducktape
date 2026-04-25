@@ -88,9 +88,21 @@ class FakeDevice:
         self.last_rejection: dict[str, Any] | None = None
 
     def sync(self) -> httpx.Response:
-        sv = self.last_server_sv if self.last_server_sv is not None else b""
-        update = self.casino.get_update(sv)
-        r = self.http.post(f"{self.base_url}/sync", json={"state_vector_b64": _b64(sv), "update_b64": _b64(update)})
+        # Wire contract (mirrors frontend/src/sync.js):
+        #   - state_vector_b64 = the *client's current* state vector — what
+        #     ops the client already has.
+        #   - update_b64       = ops produced against the last-seen server
+        #     SV; the server applies them to canonical.
+        # Sending the last-server SV in state_vector_b64 (the previous bug
+        # in this fixture) means the server's reply diff would re-include
+        # the client's own ops; Yjs is idempotent so the test would still
+        # pass, but the wire shape would not match production.
+        last_server_sv = self.last_server_sv if self.last_server_sv is not None else b""
+        client_sv = self.casino.get_state()
+        update = self.casino.get_update(last_server_sv)
+        r = self.http.post(
+            f"{self.base_url}/sync", json={"state_vector_b64": _b64(client_sv), "update_b64": _b64(update)}
+        )
         if r.status_code == 409:
             self.last_rejection = r.json().get("rejection")
             return r

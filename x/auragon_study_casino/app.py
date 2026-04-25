@@ -91,10 +91,12 @@ def create_app(settings: Settings) -> FastAPI:
 
         if not client_update:
             # Pure pull: the client just wants to know what it is missing.
-            server_update = store.get_update_for_client(client_sv)
+            # Get update + state-vector under one lock acquisition so the
+            # pair always describes the same canonical revision.
+            server_update, server_sv = store.snapshot_for_client(client_sv)
             return SyncSuccess(
                 update_b64=base64.b64encode(server_update).decode("ascii"),
-                state_vector_b64=base64.b64encode(store.get_server_state_vector()).decode("ascii"),
+                state_vector_b64=base64.b64encode(server_sv).decode("ascii"),
             )
 
         result = store.apply_client_update(client_update, client_sv)

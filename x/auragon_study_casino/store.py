@@ -100,27 +100,58 @@ class DocStore:
         with self._lock:
             return self._canonical.get_state()
 
+    def snapshot_for_client(self, client_state_vector: bytes | None) -> tuple[bytes, bytes]:
+        """Return (update_for_client, server_state_vector) atomically.
+
+        Two callers (`/sync`'s pure-pull path and the bootstrap path) want a
+        binary update and the matching server state vector. Calling
+        `get_update_for_client` and `get_server_state_vector` separately is
+        racy: another thread can promote a new canonical between the two
+        unlocked sections, leaving the client with an update from version V
+        and a state vector from version V+1. Generate the pair under a
+        single lock acquisition.
+        """
+        with self._lock:
+            return (self._canonical.get_update(client_state_vector), self._canonical.get_state())
+
     def apply_client_update(self, client_update: bytes, client_state_vector: bytes) -> Accepted | Rejected:
         """Apply `client_update` to a trial Casino, validate, persist on success.
 
         `client_state_vector` is the state vector the client had *before*
         producing this update; we use it to compute the minimal `server_update`
         the client still needs after our merge.
+
+        Failure modes, all reported via `Rejected` so the client can surface a
+        toast and roll back rather than seeing a 500:
+        - `invalid_update`: pycrdt couldn't decode the client's binary blob
+          (corrupt or truncated). Catching here keeps a malformed payload
+          from taking the sync surface down.
+        - one of the validators in `validators.py` raised.
+
+        Persistence ordering is **persist first, then promote**: the SQLite
+        write commits before `_canonical` swaps, so a disk error can't leave
+        the in-memory doc ahead of what survives a process restart.
         """
         with self._lock:
             trial = Casino.from_update(self._canonical.get_update())
-            trial.apply_update(client_update)
+            try:
+                trial.apply_update(client_update)
+            except Exception as e:
+                return Rejected(rule="invalid_update", message=f"could not decode client update: {e}")
+
             try:
                 validate(trial)
             except ValidationError as e:
                 return Rejected(rule=e.rule, message=e.message)
 
-            # Promote trial → canonical and persist.
-            self._canonical = trial
+            # Persist first; only swap _canonical after the DB commits so a
+            # disk error can't leave memory ahead of the persisted state.
+            trial_update = trial.get_update()
             with self._Session() as s, s.begin():
                 row = s.scalar(select(DocRow).where(DocRow.id == 1).with_for_update())
                 assert row is not None
-                row.update_blob = trial.get_update()
+                row.update_blob = trial_update
+            self._canonical = trial
 
             return Accepted(server_update=trial.get_update(client_state_vector), server_state_vector=trial.get_state())
 

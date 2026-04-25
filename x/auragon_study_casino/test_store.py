@@ -63,7 +63,15 @@ def test_canonical_persists_across_restart(tmp_path: Path) -> None:
 
 
 def test_two_devices_concurrent_disjoint_updates_both_land(store: DocStore) -> None:
-    """Phone bumps credits, laptop adds a session — both persist after sync."""
+    """Phone bumps credits, laptop adds a session — both persist after sync.
+
+    Per the /sync contract, `client_state_vector` is the *client's current*
+    SV (so the server can compute a minimal diff back to the caller); the
+    update bytes are produced against the client's last-known server SV
+    (here `base_sv`). Conflating the two would still pass the assertions
+    (Yjs is idempotent under double-application) but would not exercise
+    the wire shape the production frontend uses.
+    """
     base_sv = store.get_server_state_vector()
     base_update = store.get_update_for_client(None)
 
@@ -76,9 +84,9 @@ def test_two_devices_concurrent_disjoint_updates_both_land(store: DocStore) -> N
     laptop.sessions["s1"]["seconds"] = 1500
     laptop.sessions["s1"]["ended_at_ms"] = 1_700_000_000_000
 
-    r1 = store.apply_client_update(phone.get_update(base_sv), base_sv)
+    r1 = store.apply_client_update(phone.get_update(base_sv), phone.get_state())
     assert isinstance(r1, Accepted)
-    r2 = store.apply_client_update(laptop.get_update(base_sv), base_sv)
+    r2 = store.apply_client_update(laptop.get_update(base_sv), laptop.get_state())
     assert isinstance(r2, Accepted)
 
     canonical = store.canonical

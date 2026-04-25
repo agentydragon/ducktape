@@ -38,9 +38,15 @@ const DEFAULT_PRIZES = [
 ];
 
 function bytesToB64(bytes) {
-  let s = "";
-  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
-  return btoa(s);
+  // Quadratic string concat blows up CPU/memory once a sync push gets into
+  // the multi-MB range (the doc + per-tab IndexedDB history can grow there);
+  // chunk into 32 KiB blocks and join once.
+  const CHUNK = 0x8000;
+  const parts = [];
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    parts.push(String.fromCharCode(...bytes.subarray(i, i + CHUNK)));
+  }
+  return btoa(parts.join(""));
 }
 
 function b64ToBytes(b64) {
@@ -175,13 +181,22 @@ class CasinoSync {
       // Server rejected our update. Roll back the last local transaction
       // via UndoManager so canonical state on this client matches the
       // server's view, then surface the rejection.
+      //
+      // A single push can carry multiple local transactions (queued
+      // during the debounce window or accumulated while offline). The
+      // server validates the merged result, so a single `undo()` may
+      // leave invalid state behind — drain the entire local-origin
+      // undo stack before resyncing so the next round is built on the
+      // server's known-good view.
       let body;
       try {
         body = await response.json();
       } catch {
         body = { rejection: { rule: "malformed", message: response.statusText } };
       }
-      this._undoManager.undo();
+      while (this._undoManager.undoStack.length > 0) {
+        this._undoManager.undo();
+      }
       this.rejection.set({
         id: Date.now(),
         rule: body.rejection?.rule ?? "unknown",
@@ -192,6 +207,9 @@ class CasinoSync {
         rule: body.rejection?.rule ?? "unknown",
         message: body.rejection?.message ?? "",
       });
+      // Force a pull-only sync so the local doc realigns with canonical
+      // before the user retries the action.
+      this._scheduleSync();
       return;
     }
 

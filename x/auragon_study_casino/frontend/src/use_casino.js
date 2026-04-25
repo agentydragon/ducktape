@@ -10,18 +10,8 @@
 // optimistic updates happen because the local Y.Doc updates synchronously
 // while the network round-trip happens in the background.
 
-import { useMemo } from "react";
-
 import { casinoSync, Y } from "./sync.js";
 import { useYArray, useYMap } from "./y_hooks.js";
-
-function readMap(ymap) {
-  const out = {};
-  for (const [k, v] of ymap.entries()) {
-    out[k] = v && typeof v === "object" && "toJSON" in v ? v.toJSON() : v;
-  }
-  return out;
-}
 
 export function useCasino() {
   const balance = useYMap(casinoSync.balance);
@@ -32,45 +22,40 @@ export function useCasino() {
 
   // Derived plain-JS views that downstream JSX expects unchanged. We round
   // the balance numbers because Yjs stores them as float64.
+  //
+  // These derivations are deliberately *not* memoized: a deep edit (e.g.,
+  // editing a session's subject) does not change `sessionsMap`'s identity
+  // or `.size`, and `useMemo([sessionsMap, sessionsMap.size, ...])` would
+  // hand back a stale snapshot even though `observeDeep` correctly
+  // re-rendered the component. The map iteration is cheap enough to do
+  // every render.
   const credits = Math.floor(balance.get("credits") ?? 0);
   const tokens = Math.floor(balance.get("tokens") ?? 0);
 
-  const sessions = useMemo(
-    () =>
-      [...sessionsMap.entries()]
-        .map(([id, m]) => ({
-          id,
-          subject: m.get("subject"),
-          seconds: Math.floor(m.get("seconds") ?? 0),
-          endedAt: Math.floor(m.get("ended_at_ms") ?? 0),
-        }))
-        .sort((a, b) => b.endedAt - a.endedAt),
-    [sessionsMap, sessionsMap.size, prizeLogArr] // size + array touch for re-eval
-  );
+  const sessions = [...sessionsMap.entries()]
+    .map(([id, m]) => ({
+      id,
+      subject: m.get("subject"),
+      seconds: Math.floor(m.get("seconds") ?? 0),
+      endedAt: Math.floor(m.get("ended_at_ms") ?? 0),
+    }))
+    .sort((a, b) => b.endedAt - a.endedAt);
 
-  const prizes = useMemo(
-    () =>
-      [...prizesMap.entries()].map(([id, m]) => ({
-        id,
-        name: m.get("name"),
-        cost: Math.floor(m.get("cost") ?? 0),
-      })),
-    [prizesMap, prizesMap.size]
-  );
+  const prizes = [...prizesMap.entries()].map(([id, m]) => ({
+    id,
+    name: m.get("name"),
+    cost: Math.floor(m.get("cost") ?? 0),
+  }));
 
-  const prizeLog = useMemo(
-    () =>
-      prizeLogArr
-        .toArray()
-        .map((m) => ({
-          id: m.get("id"),
-          name: m.get("name"),
-          cost: Math.floor(m.get("cost") ?? 0),
-          at: Math.floor(m.get("at_ms") ?? 0),
-        }))
-        .sort((a, b) => b.at - a.at),
-    [prizeLogArr, prizeLogArr.length]
-  );
+  const prizeLog = prizeLogArr
+    .toArray()
+    .map((m) => ({
+      id: m.get("id"),
+      name: m.get("name"),
+      cost: Math.floor(m.get("cost") ?? 0),
+      at: Math.floor(m.get("at_ms") ?? 0),
+    }))
+    .sort((a, b) => b.at - a.at);
 
   const activeSession =
     activeMap.size === 0
@@ -118,6 +103,12 @@ export function useCasino() {
     });
   };
 
+  // Helpers used by every mutation that bumps a balance: read the current
+  // value from the Y.Map *inside the transaction* so a remote update that
+  // landed between render and the actual mutation can't be clobbered.
+  const currentCredits = () => Math.floor(casinoSync.balance.get("credits") ?? 0);
+  const currentTokens = () => Math.floor(casinoSync.balance.get("tokens") ?? 0);
+
   const stopSession = () => {
     if (!activeSession) return;
     const sec = elapsedSeconds(activeSession);
@@ -132,7 +123,7 @@ export function useCasino() {
         sm.set("ended_at_ms", Date.now());
       }
       if (min > 0) {
-        casinoSync.balance.set("credits", credits + min);
+        casinoSync.balance.set("credits", currentCredits() + min);
       }
       casinoSync.active.clear();
     });
@@ -154,7 +145,7 @@ export function useCasino() {
       m.set("subject", newSubject);
       m.set("seconds", newSec);
       if (delta !== 0) {
-        casinoSync.balance.set("credits", Math.max(0, credits + delta));
+        casinoSync.balance.set("credits", Math.max(0, currentCredits() + delta));
       }
     });
   };
@@ -165,7 +156,7 @@ export function useCasino() {
     const min = Math.floor(old.seconds / 60);
     casinoSync.mutate(() => {
       casinoSync.sessions.delete(id);
-      casinoSync.balance.set("credits", Math.max(0, credits - min));
+      casinoSync.balance.set("credits", Math.max(0, currentCredits() - min));
     });
   };
 
@@ -179,7 +170,7 @@ export function useCasino() {
       sm.set("subject", subject);
       sm.set("seconds", seconds);
       sm.set("ended_at_ms", endedAtMs);
-      casinoSync.balance.set("credits", credits + min);
+      casinoSync.balance.set("credits", currentCredits() + min);
     });
   };
 
@@ -187,7 +178,7 @@ export function useCasino() {
     if (tokens < prize.cost) return;
     const id = `r-${Date.now()}`;
     casinoSync.mutate(() => {
-      casinoSync.balance.set("tokens", tokens - prize.cost);
+      casinoSync.balance.set("tokens", currentTokens() - prize.cost);
       const entry = new Y.Map();
       casinoSync.prizeLog.push([entry]);
       entry.set("id", id);
@@ -216,8 +207,8 @@ export function useCasino() {
     const n = Math.max(0, Math.floor(amount));
     if (n <= 0 || n > credits) return;
     casinoSync.mutate(() => {
-      casinoSync.balance.set("credits", credits - n);
-      casinoSync.balance.set("tokens", tokens + n);
+      casinoSync.balance.set("credits", currentCredits() - n);
+      casinoSync.balance.set("tokens", currentTokens() + n);
     });
   };
 
@@ -317,10 +308,6 @@ export function useCasino() {
       // Prizes intentionally retained; the user re-curates the catalog.
     });
   };
-
-  // Touched on each render so callers don't need to discriminate;
-  // _ keeps the lint quiet about unused.
-  void readMap;
 
   return {
     credits,
