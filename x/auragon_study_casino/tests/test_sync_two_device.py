@@ -150,7 +150,9 @@ def test_long_absence_does_not_nuke_other_device_state(casino_server: str, http:
 
     assert phone.sync().status_code == 200
     assert len(phone.casino.sessions) == 3
-    subjects = sorted(str(phone.casino.sessions[sid]["subject"]) for sid in phone.casino.sessions)
+    # pycrdt Map's iter is typed `Iterable[str]` (not Iterator), so a
+    # comprehension trips mypy; iterate via items() which is a proper iterator.
+    subjects = sorted([str(s["subject"]) for _, s in phone.casino.sessions.items()])
     assert subjects == ["Anatomy", "Biochem", "Pharmacology"]
 
 
@@ -204,7 +206,8 @@ def test_offline_writes_replay_on_reconnect(casino_server: str, http: httpx.Clie
 
     laptop = FakeDevice(casino_server, http)
     laptop.sync()
-    assert {"off-1", "off-2"}.issubset(set(laptop.casino.sessions))
+    landed_ids = {sid for sid, _ in laptop.casino.sessions.items()}
+    assert {"off-1", "off-2"}.issubset(landed_ids)
 
 
 def test_overspend_is_rejected_with_structured_409(casino_server: str, http: httpx.Client) -> None:
