@@ -3,24 +3,32 @@
 Hands a Haiku agent the garbled go_crypto_server binary plus the
 reverse_engineer skill, gives it shell access via MCP exec inside a stock
 python:3.13-slim container, runs for up to 10 minutes, and writes the
-transcript + the agent's recovered/ workspace to undeclared test outputs.
+transcript + the agent's recovered/ workspace to --output-dir.
 
 No assertions about the agent's output — this is a manual-inspection
-harness. The test fails only on infrastructure errors (container won't
-boot, model API call fails, etc.).
+harness. Outputs:
+  <output-dir>/transcript_<variant>.jsonl    — one entry per agent turn
+  <output-dir>/recovered_<variant>/          — host-side bind of /work/recovered
+  <output-dir>/summary_<variant>.json        — end_reason, steps, wall_seconds, submit text
+
+Run with:
+  bb run --remote_executor="" \\
+    //skills/reverse_engineer/evals/runs/agent_framework:re_rollout -- \\
+    --skill on --output-dir /tmp/re_eval/$(date -u +%Y%m%dT%H%M%SZ)
 """
 
+import argparse
+import asyncio
 import json
 import logging
 import os
+import sys
 import tarfile
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-import pytest
-import pytest_bazel
 from agent_framework import ChatResponse, Content, FunctionTool, Message
 from agent_framework.anthropic import AnthropicClient
 from fastmcp.client import Client
@@ -30,13 +38,12 @@ from pydantic import BaseModel, Field
 from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.docker_exec import scratch_exec_server
 from util.bazel.runfiles import get_required_path
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
 
-_MODEL = "claude-haiku-4-5-20251001"
-_MAX_STEPS = 200
-_WALL_TIMEOUT_SECONDS = 600  # 10 min agent budget; Bazel test timeout is "long" (900s).
+_DEFAULT_MODEL = "claude-haiku-4-5-20251001"
+_DEFAULT_MAX_STEPS = 200
+_DEFAULT_WALL_TIMEOUT_SECONDS = 600
 
 _TARGET_BINARY_RLOCATION = "_main/skills/reverse_engineer/evals/specimens/go_crypto_server/go_crypto_server_garbled.bin"
 _SKILL_TAR_RLOCATION = "_main/skills/reverse_engineer/reverse_engineer_tar.tar"
@@ -175,14 +182,16 @@ async def _run_rollout(
     tools: list[FunctionTool],
     submit_state: _SubmitState,
     transcript_path: Path,
+    max_steps: int,
+    wall_timeout_seconds: int,
 ) -> tuple[Literal["submit", "step_cap", "wall_timeout", "error"], int, str | None]:
     tool_map = {t.name: t for t in tools}
     history: list[Message] = [Message("system", [system_prompt]), Message("user", [user_message])]
 
-    deadline = time.monotonic() + _WALL_TIMEOUT_SECONDS
+    deadline = time.monotonic() + wall_timeout_seconds
 
     with transcript_path.open("w") as transcript_f:
-        for step in range(1, _MAX_STEPS + 1):
+        for step in range(1, max_steps + 1):
             if submit_state.summary is not None:
                 return "submit", step - 1, submit_state.summary
             if time.monotonic() > deadline:
@@ -232,19 +241,18 @@ async def _run_rollout(
             if tool_results:
                 history.append(Message("tool", tool_results))
 
-        return "step_cap", _MAX_STEPS, None
+        return "step_cap", max_steps, None
 
 
-# -- Test entry point --
+# -- Main --
 
 
-@pytest.mark.parametrize("skill_on", [True], ids=["skill_on"])
-async def test_re_rollout(skill_on: bool) -> None:
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        pytest.skip("ANTHROPIC_API_KEY not set")
-
-    out_dir = undeclared_outputs_dir()
+async def _async_main(args: argparse.Namespace) -> int:
+    skill_on = args.skill == "on"
     suffix = "skill_on" if skill_on else "skill_off"
+    out_dir: Path = args.output_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+
     workspace = out_dir / f"recovered_{suffix}"
     workspace.mkdir(parents=True, exist_ok=True)
     skill_extract = out_dir / f"skill_extract_{suffix}"
@@ -268,8 +276,12 @@ async def test_re_rollout(skill_on: bool) -> None:
     submit_state = _SubmitState()
     submit_tool = _make_submit_tool(submit_state)
 
-    model_client = AnthropicClient(model=_MODEL)
+    model_client = AnthropicClient(model=args.model)
     t_start = time.monotonic()
+    error_msg: str | None = None
+    end_reason: Literal["submit", "step_cap", "wall_timeout", "error"] = "error"
+    steps = 0
+    submit_summary: str | None = None
     try:
         async with (
             scratch_exec_server(binds=binds, working_dir=Path("/work/recovered")) as server,
@@ -283,20 +295,18 @@ async def test_re_rollout(skill_on: bool) -> None:
                 tools=tools,
                 submit_state=submit_state,
                 transcript_path=transcript_path,
+                max_steps=args.max_steps,
+                wall_timeout_seconds=args.wall_timeout,
             )
-            error_msg = None
     except Exception as e:
         logger.exception("Rollout infrastructure failure")
-        end_reason = "error"
-        steps = 0
-        submit_summary = None
         error_msg = repr(e)
     finally:
         if hasattr(model_client, "close"):
             await model_client.close()
 
     summary = RunSummary(
-        model=_MODEL,
+        model=args.model,
         skill_on=skill_on,
         end_reason=end_reason,
         steps=steps,
@@ -305,10 +315,33 @@ async def test_re_rollout(skill_on: bool) -> None:
         error=error_msg,
     )
     summary_path.write_text(summary.model_dump_json(indent=2))
-    logger.info("Rollout finished: %s", summary.model_dump_json())
+    logger.info("Rollout finished. Output dir: %s", out_dir)
+    logger.info("Summary: %s", summary.model_dump_json())
+    return 0 if end_reason != "error" else 1
 
-    assert end_reason != "error", f"infrastructure failure: {error_msg}"
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--skill", choices=["on", "off"], default="on")
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="Directory for transcript, recovered/, summary. Created if missing.",
+    )
+    parser.add_argument("--model", default=_DEFAULT_MODEL)
+    parser.add_argument("--max-steps", type=int, default=_DEFAULT_MAX_STEPS)
+    parser.add_argument(
+        "--wall-timeout", type=int, default=_DEFAULT_WALL_TIMEOUT_SECONDS, help="Agent wall-clock budget in seconds."
+    )
+    args = parser.parse_args()
+
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        sys.exit("ANTHROPIC_API_KEY is not set; refusing to run.")
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    sys.exit(asyncio.run(_async_main(args)))
 
 
 if __name__ == "__main__":
-    pytest_bazel.main()
+    main()

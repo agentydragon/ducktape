@@ -1,33 +1,20 @@
-load("//devinfra/python:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary")
 
-py_test(
-    name = "test_re_rollout",
-    size = "enormous",
-    timeout = "long",
-    srcs = ["test_re_rollout.py"],
+py_binary(
+    name = "re_rollout",
+    srcs = ["re_rollout.py"],
     data = [
         "//skills/reverse_engineer:reverse_engineer_tar",
         "//skills/reverse_engineer/evals/specimens/go_crypto_server:go_crypto_server_garbled",
     ],
-    env_inherit = [
-        "ANTHROPIC_API_KEY",
-        "ANTHROPIC_BASE_URL",
-    ],
-    requires_docker = True,
-    tags = ["manual"],
     deps = [
-        "//:conftest",
         "//mcp_infra/exec:docker_types",
         "//skills/eval_infra:docker_exec",
         "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
         "@pypi//agent_framework_anthropic",
         "@pypi//agent_framework_core",
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
     ],
 )

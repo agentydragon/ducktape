@@ -57,7 +57,7 @@ Land after at least one specimen + rubric is checked in:
   the **whole skill tar** (`//skills/reverse_engineer:reverse_engineer_tar`)
   mounted at `/work/.skill/`. Stock `python:3.13-slim` base; agent has
   internet (proxy already wired in
-  <skills/info_gathering/evals/docker_exec.py>) and installs `binutils`,
+  <skills/eval_infra/docker_exec.py>) and installs `binutils`,
   `radare2`, `file`, etc. on demand.
 - Judge LLM rubric harness driven by `RUBRIC.yaml` — one critique per
   rubric item, scored 0/1/2, weighted to a 0–100 final.
