@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import networkx as nx
+import pygit2
 
 from cluster.validation.flux import FluxKustomizationSpec, parse_flux_kustomizations
 from cluster.validation.k8s import K8sResource, parse_k8s_resource_file
@@ -13,14 +14,36 @@ from cluster.validation.kustomize import KustomizeBuildResult, KustomizeFile, pa
 
 _K8S_SUBPATH = Path("cluster/k8s")
 
-# Non-K8s YAML files that live under cluster/k8s/ but aren't manifests.
-# Excluded from orphan detection and resource parsing.
-# TODO: This list is baked into the installed ducktape-precommit binary.
-# Changes here don't take effect until the binary is rebuilt and reinstalled.
-_EXCLUDED_FILES = {
-    # rules_distroless APT manifests for CronJob images
-    "agents/claude-cert-rotation/trixie_cert_rotation.yaml"
-}
+# Gitattribute that marks a YAML file under cluster/k8s/ as "not a K8s manifest".
+# Files with this attribute set are skipped from resource parsing and orphan
+# detection. Source of truth is `.gitattributes` at the repo root, so new
+# exclusions land atomically with the file they exclude — no ducktape-git-hooks
+# wheel rebuild + npins repin + `nix profile install` cycle required.
+# Mirrors the `rules-lint-ignored` / `filename-conventions-ignored` pattern
+# already used by devinfra/precommit/git_hook.py.
+_MANIFEST_IGNORED_ATTR = "cluster-manifest-ignored"
+
+
+def _open_repo(start: Path) -> pygit2.Repository | None:
+    """Discover the git repo containing `start`, or None if not in a repo."""
+    try:
+        repo_path = pygit2.discover_repository(str(start))
+    except pygit2.GitError:
+        return None
+    if not repo_path:
+        return None
+    return pygit2.Repository(repo_path)
+
+
+def _manifest_ignored(repo: pygit2.Repository | None, path: Path) -> bool:
+    """True iff `path` has gitattribute `cluster-manifest-ignored=true`."""
+    if repo is None:
+        return False
+    try:
+        rel = path.resolve().relative_to(Path(repo.workdir).resolve())
+    except ValueError:
+        return False
+    return repo.get_attr(str(rel), _MANIFEST_IGNORED_ATTR) in (True, "true")
 
 
 @dataclass
@@ -68,6 +91,7 @@ def parse_cluster(k8s_dir: Path) -> ParsedCluster:
     flux_kustomizations: dict[str, FluxKustomizationSpec] = {}
     all_yaml_files: set[Path] = set()
     source_resources: dict[Path, list[K8sResource]] = {}
+    repo = _open_repo(k8s_dir)
 
     for yaml_file in k8s_dir.rglob("*.yaml"):
         # Skip flux-system (auto-generated)
@@ -78,12 +102,8 @@ def parse_cluster(k8s_dir: Path) -> ParsedCluster:
         if "blueprints" in yaml_file.parts:
             continue
 
-        # Skip explicitly excluded non-K8s files
-        try:
-            rel = yaml_file.relative_to(k8s_dir)
-        except ValueError:
-            rel = None
-        if rel and str(rel) in _EXCLUDED_FILES:
+        # Skip non-K8s files flagged via gitattribute (apt manifests, helm values, etc.)
+        if _manifest_ignored(repo, yaml_file):
             continue
 
         all_yaml_files.add(yaml_file.resolve())

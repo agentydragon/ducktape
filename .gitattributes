@@ -42,6 +42,11 @@ llm/instruct_logseq/pages/** filename-conventions-ignored=true
 # Blog posts - filenames are published URLs (date-prefixed kebab-case)
 website/posts/** filename-conventions-ignored=true
 
+# Non-K8s YAML under cluster/k8s/ - rules_distroless apt manifests for CronJob
+# images. cluster/validation/cluster.py reads this attribute via `git check-attr`
+# (pygit2) and skips the file from orphan detection + resource parsing.
+cluster/k8s/**/trixie_*.yaml cluster-manifest-ignored=true
+
 # Dotfiles/dotdirs follow their own naming conventions
 .* filename-conventions-ignored=true
 .*/** filename-conventions-ignored=true

@@ -79,6 +79,16 @@ Exclusions require two files (pre-commit reads `.gitattributes`, ruff reads `ruf
 1. Add `path/** rules-lint-ignored=true` to `.gitattributes`
 2. If Python, also add to `ruff.toml exclude`
 
+Other gitattributes consumed by pre-commit checks:
+
+- `filename-conventions-ignored=true` — skips kebab-case filename enforcement
+  (defaulted on for `cluster/`, `terraform/`, `tf/`, and a few other trees
+  where kebab-case is conventional).
+- `cluster-manifest-ignored=true` — for YAML files under `cluster/k8s/` that
+  aren't K8s manifests (e.g. `rules_distroless` apt manifests next to a
+  CronJob image's `BUILD.bazel`). The cluster validator skips them from
+  orphan detection and resource parsing.
+
 ## CI
 
 - **BuildBuddy Workflows**: `bazel test //...` + `bazel build //...` (RBE, lint)

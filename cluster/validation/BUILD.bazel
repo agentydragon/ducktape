@@ -55,6 +55,7 @@ py_library(
         ":kustomize",
         "@pypi//networkx",
         "@pypi//numpy",
+        "@pypi//pygit2",
         "@pypi//types_networkx",
     ],
 )
