@@ -5,11 +5,21 @@ reverse_engineer skill, gives it shell access via MCP exec inside a stock
 python:3.13-slim container, runs for up to 10 minutes, and writes the
 transcript + the agent's recovered/ workspace to --output-dir.
 
+`Agent.run()` drives the tool-dispatch loop. Two middlewares wire in the
+eval-specific instrumentation:
+
+- `_TranscriptMiddleware` (chat) — runs around every LLM round-trip; dumps
+  each assistant `Message` to JSONL via AF's standard `Message.to_json()`.
+- `_SubmitMiddleware` (function) — runs around every tool dispatch; dumps
+  the tool-result `Message`, captures the `submit` tool's summary, and
+  raises `MiddlewareTermination` when `submit` has been called. Wall-clock
+  enforcement comes from `asyncio.wait_for` around `agent.run()`.
+
 No assertions about the agent's output — this is a manual-inspection
 harness. Outputs:
-  <output-dir>/transcript_<variant>.jsonl    — one entry per agent turn
+  <output-dir>/transcript_<variant>.jsonl    — AF Message stream
   <output-dir>/recovered_<variant>/          — host-side bind of /work/recovered
-  <output-dir>/summary_<variant>.json        — end_reason, steps, wall_seconds, submit text
+  <output-dir>/summary_<variant>.json        — end_reason, wall_seconds, submit text
 
 Run with:
   bb run --remote_executor="" \\
@@ -19,24 +29,35 @@ Run with:
 
 import argparse
 import asyncio
-import json
+import contextlib
 import logging
 import os
 import sys
 import tarfile
 import time
-from datetime import UTC, datetime
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Literal
+from typing import IO, Any, Literal
 
-from agent_framework import ChatResponse, Content, FunctionTool, Message
-from agent_framework.anthropic import AnthropicClient
-from fastmcp.client import Client
-from mcp.types import TextContent
-from pydantic import BaseModel, Field
+from agent_framework import (
+    Agent,
+    AgentSession,
+    ChatContext,
+    ChatMiddleware,
+    ChatResponse,
+    FunctionInvocationContext,
+    FunctionMiddleware,
+    FunctionTool,
+    MCPStdioTool,
+    Message,
+    MiddlewareTermination,
+)
+from pydantic import BaseModel
 
 from mcp_infra.exec.docker.types import BindMount
-from skills.eval_infra.docker_exec import scratch_exec_server
+from skills.eval_infra.af_chat_client import build_model_client
+from skills.eval_infra.af_scratch_mcp import scratch_exec_mcp_tool
 from util.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
@@ -49,28 +70,13 @@ _TARGET_BINARY_RLOCATION = "_main/skills/reverse_engineer/evals/specimens/go_cry
 _SKILL_TAR_RLOCATION = "_main/skills/reverse_engineer/reverse_engineer_tar.tar"
 
 
-# -- Transcript record types --
-
-
-class ToolCallRecord(BaseModel):
-    name: str
-    args: dict[str, Any]
-    result_text: str
-    duration_ms: int
-
-
-class TranscriptEntry(BaseModel):
-    step: int
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    response_text: str = ""
-    tool_calls: list[ToolCallRecord] = Field(default_factory=list)
+# -- Run summary --
 
 
 class RunSummary(BaseModel):
     model: str
     skill_on: bool
     end_reason: Literal["submit", "step_cap", "wall_timeout", "error"]
-    steps: int
     wall_seconds: float
     submit_summary: str | None = None
     error: str | None = None
@@ -125,22 +131,7 @@ _FIRST_USER_MESSAGE = (
 )
 
 
-# -- Tool bridges --
-
-
-def _make_exec_tool(mcp_client: Client) -> FunctionTool:
-    """Bridge the MCP exec tool into an agent_framework FunctionTool."""
-
-    async def exec(cmd: list[str], timeout_ms: int = 60000) -> str:
-        """Run a command in the scratch container. cmd is a list of strings (no shell)."""
-        result = await mcp_client.call_tool("exec", {"cmd": cmd, "timeout_ms": timeout_ms})
-        return "\n".join(block.text for block in result.content if isinstance(block, TextContent))
-
-    return FunctionTool(
-        name="exec",
-        description="Run a command in the scratch container. cmd is a list of strings (no shell).",
-        func=exec,
-    )
+# -- Submit state + tool --
 
 
 class _SubmitState:
@@ -162,86 +153,58 @@ def _make_submit_tool(state: _SubmitState) -> FunctionTool:
     )
 
 
-# -- Rollout loop --
+# -- Middleware --
 
 
-def _extract_function_calls(response: ChatResponse) -> list[Content]:
-    msg = response.messages[0]
-    return [c for c in msg.contents if c.type == "function_call"]
+class _TranscriptMiddleware(ChatMiddleware):
+    """Per-LLM-call: dump assistant Messages to the transcript JSONL."""
+
+    def __init__(self, log_file: IO[str]) -> None:
+        self._log_file = log_file
+
+    async def process(self, context: ChatContext, call_next: Any) -> None:
+        await call_next()
+        if not isinstance(context.result, ChatResponse):
+            return  # streaming path; not used here
+        for msg in context.result.messages:
+            self._log_file.write(msg.to_json() + "\n")
+        self._log_file.flush()
 
 
-def _extract_response_text(response: ChatResponse) -> str:
-    return response.messages[0].text or ""
+class _SubmitMiddleware(FunctionMiddleware):
+    """Per-tool-dispatch: dump tool-result Message; terminate on submit."""
+
+    def __init__(self, submit_state: _SubmitState, log_file: IO[str]) -> None:
+        self._submit_state = submit_state
+        self._log_file = log_file
+
+    async def process(self, context: FunctionInvocationContext, call_next: Any) -> None:
+        await call_next()
+        if isinstance(context.result, list):
+            self._log_file.write(Message("tool", context.result).to_json() + "\n")
+            self._log_file.flush()
+        if self._submit_state.summary is not None:
+            raise MiddlewareTermination("submit called")
 
 
-async def _run_rollout(
-    *,
-    model_client: AnthropicClient,
-    system_prompt: str,
-    user_message: str,
-    tools: list[FunctionTool],
-    submit_state: _SubmitState,
-    transcript_path: Path,
-    max_steps: int,
-    wall_timeout_seconds: int,
-) -> tuple[Literal["submit", "step_cap", "wall_timeout", "error"], int, str | None]:
-    tool_map = {t.name: t for t in tools}
-    history: list[Message] = [Message("system", [system_prompt]), Message("user", [user_message])]
+# -- Sandbox + skill --
 
-    deadline = time.monotonic() + wall_timeout_seconds
 
-    with transcript_path.open("w") as transcript_f:
-        for step in range(1, max_steps + 1):
-            if submit_state.summary is not None:
-                return "submit", step - 1, submit_state.summary
-            if time.monotonic() > deadline:
-                return "wall_timeout", step - 1, None
-
-            try:
-                response = await model_client.get_response(
-                    history, options={"tools": tools, "tool_choice": "required", "allow_multiple_tool_calls": False}
-                )
-            except Exception as e:
-                logger.exception("Model call failed at step %d", step)
-                entry = TranscriptEntry(step=step, response_text=f"<model error: {e}>")
-                transcript_f.write(entry.model_dump_json() + "\n")
-                transcript_f.flush()
-                return "error", step - 1, None
-
-            history.append(response.messages[0])
-            response_text = _extract_response_text(response)
-            function_calls = _extract_function_calls(response)
-
-            entry = TranscriptEntry(step=step, response_text=response_text)
-            tool_results: list[Content] = []
-
-            for fc in function_calls:
-                assert fc.name is not None, f"function_call missing name: {fc}"
-                assert fc.call_id is not None, f"function_call missing call_id: {fc}"
-                args = json.loads(fc.arguments) if isinstance(fc.arguments, str) else (fc.arguments or {})
-                tool = tool_map.get(fc.name)
-                t0 = time.monotonic()
-                if tool is None:
-                    result_text = f"Error: unknown tool {fc.name!r}"
-                else:
-                    try:
-                        out = await tool.invoke(arguments=args)
-                        result_text = out[0].text if out and out[0].text else ""
-                    except Exception as e:
-                        result_text = f"Error: {e}"
-                duration_ms = int((time.monotonic() - t0) * 1000)
-                entry.tool_calls.append(
-                    ToolCallRecord(name=fc.name, args=args, result_text=result_text, duration_ms=duration_ms)
-                )
-                tool_results.append(Content.from_function_result(fc.call_id, result=result_text))
-
-            transcript_f.write(entry.model_dump_json() + "\n")
-            transcript_f.flush()
-
-            if tool_results:
-                history.append(Message("tool", tool_results))
-
-        return "step_cap", max_steps, None
+@asynccontextmanager
+async def _re_exec_tool(
+    *, target_binary: Path, workspace: Path, skill_dir: Path | None
+) -> AsyncGenerator[MCPStdioTool]:
+    """Yield an MCPStdioTool exposing `exec` against a scratch container with the
+    target binary, recovered/ workspace, and (optionally) the unpacked skill tar
+    bind-mounted in."""
+    binds: list[BindMount] = [
+        BindMount(host_path=target_binary.resolve(), container_path=Path("/work/target"), mode="ro"),
+        BindMount(host_path=workspace.resolve(), container_path=Path("/work/recovered"), mode="rw"),
+    ]
+    if skill_dir is not None:
+        binds.append(BindMount(host_path=skill_dir.resolve(), container_path=Path("/work/.skill"), mode="ro"))
+    async with scratch_exec_mcp_tool(binds=binds, working_dir=Path("/work/recovered")) as tool:
+        yield tool
 
 
 # -- Main --
@@ -261,57 +224,56 @@ async def _async_main(args: argparse.Namespace) -> int:
 
     target_path = get_required_path(_TARGET_BINARY_RLOCATION)
 
-    binds: list[BindMount] = [
-        BindMount(host_path=target_path.resolve(), container_path=Path("/work/target"), mode="ro"),
-        BindMount(host_path=workspace.resolve(), container_path=Path("/work/recovered"), mode="rw"),
-    ]
     skill_md_text: str | None = None
+    skill_dir: Path | None = None
     if skill_on:
         skill_extract.mkdir(parents=True, exist_ok=True)
         skill_dir, skill_md_text = _load_skill(skill_extract)
-        binds.append(BindMount(host_path=skill_dir.resolve(), container_path=Path("/work/.skill"), mode="ro"))
 
     system_prompt = _build_system_prompt(skill_on=skill_on, skill_md_text=skill_md_text)
 
     submit_state = _SubmitState()
     submit_tool = _make_submit_tool(submit_state)
 
-    model_client = AnthropicClient(model=args.model)
+    model_client = build_model_client(
+        api="anthropic", model=args.model, function_invocation_configuration={"max_iterations": args.max_steps}
+    )
     t_start = time.monotonic()
     error_msg: str | None = None
     end_reason: Literal["submit", "step_cap", "wall_timeout", "error"] = "error"
-    steps = 0
-    submit_summary: str | None = None
+
     try:
-        async with (
-            scratch_exec_server(binds=binds, working_dir=Path("/work/recovered")) as server,
-            Client(server) as mcp_client,
-        ):
-            tools = [_make_exec_tool(mcp_client), submit_tool]
-            end_reason, steps, submit_summary = await _run_rollout(
-                model_client=model_client,
-                system_prompt=system_prompt,
-                user_message=_FIRST_USER_MESSAGE,
-                tools=tools,
-                submit_state=submit_state,
-                transcript_path=transcript_path,
-                max_steps=args.max_steps,
-                wall_timeout_seconds=args.wall_timeout,
-            )
+        with transcript_path.open("w") as transcript_f:
+            transcript_f.write(Message("system", [system_prompt]).to_json() + "\n")
+            transcript_f.write(Message("user", [_FIRST_USER_MESSAGE]).to_json() + "\n")
+            transcript_f.flush()
+
+            async with _re_exec_tool(target_binary=target_path, workspace=workspace, skill_dir=skill_dir) as exec_tool:
+                agent = Agent(
+                    client=model_client,
+                    instructions=system_prompt,
+                    tools=[exec_tool, submit_tool],
+                    middleware=[_TranscriptMiddleware(transcript_f), _SubmitMiddleware(submit_state, transcript_f)],
+                    default_options={"tool_choice": "required", "allow_multiple_tool_calls": False},
+                )
+                try:
+                    with contextlib.suppress(MiddlewareTermination):
+                        await asyncio.wait_for(
+                            agent.run(_FIRST_USER_MESSAGE, session=AgentSession()), timeout=args.wall_timeout
+                        )
+                    end_reason = "submit" if submit_state.summary is not None else "step_cap"
+                except TimeoutError:
+                    end_reason = "wall_timeout"
     except Exception as e:
         logger.exception("Rollout infrastructure failure")
         error_msg = repr(e)
-    finally:
-        if hasattr(model_client, "close"):
-            await model_client.close()
 
     summary = RunSummary(
         model=args.model,
         skill_on=skill_on,
         end_reason=end_reason,
-        steps=steps,
         wall_seconds=round(time.monotonic() - t_start, 2),
-        submit_summary=submit_summary,
+        submit_summary=submit_state.summary,
         error=error_msg,
     )
     summary_path.write_text(summary.model_dump_json(indent=2))

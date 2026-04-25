@@ -9,15 +9,14 @@ py_binary(
     ],
     deps = [
         "//mcp_infra/exec:docker_types",
-        "//skills/eval_infra:docker_exec",
+        "//skills/eval_infra:af_chat_client",
+        "//skills/eval_infra:af_scratch_mcp",
         "//util/bazel:runfiles",
         # agent_framework's __init__.py references openai/anthropic stubs.
         "@pypi//agent_framework_anthropic",
         "@pypi//agent_framework_claude",
         "@pypi//agent_framework_core",
         "@pypi//agent_framework_openai",
-        "@pypi//fastmcp",
-        "@pypi//mcp",
         "@pypi//pydantic",
     ],
 )
