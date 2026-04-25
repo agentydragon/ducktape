@@ -81,7 +81,7 @@ class Casino:
         casino.balance["credits"] = 0
         casino.balance["tokens"] = 0
         for prize_id, name, cost in DEFAULT_PRIZES:
-            prize = Map()
+            prize: Map = Map()
             casino.prizes[prize_id] = prize
             casino.prizes[prize_id]["name"] = name
             casino.prizes[prize_id]["cost"] = cost

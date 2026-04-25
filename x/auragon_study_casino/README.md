@@ -11,25 +11,31 @@ Lives at <https://casino.allegedly.works>.
 
 ## Layout
 
-| Path                                   | What it is                                                |
-| -------------------------------------- | --------------------------------------------------------- |
-| `app.py`                               | FastAPI backend: `/state` GET, `/events` POST/GET, static |
-| `config.py`                            | Pydantic settings (DATA_DIR, host, port)                  |
-| `models.py`                            | SQLAlchemy models: `events` log + `snapshot` cache        |
-| `reducer.py`                           | Pure reducer: fold events into state                      |
-| `store.py`                             | EventStore: append events, re-reduce snapshot, ETag       |
-| `test_reducer.py`                      | Per-event-type reducer semantics                          |
-| `test_store.py`                        | EventStore round-trip + ETag concurrency                  |
-| `test_app.py`                          | HTTP-surface integration tests                            |
-| `frontend/src/study_casino.jsx`        | The React component (originally a claude.ai artifact)     |
-| `frontend/src/storage.js`              | Thin event-append client (GET /state, POST /events)       |
-| `frontend/src/main.jsx`                | Entry — renders into `#root`, registers service worker    |
-| `frontend/index.html`                  | App shell (manifest link, theme color, apple-\* meta)     |
-| `frontend/manifest.webmanifest`        | PWA manifest                                              |
-| `frontend/sw.js`                       | Service worker (cache app shell, network-only /state)     |
-| `frontend/icon.svg`                    | App icon                                                  |
-| `frontend/esbuild.config.mjs`          | Production bundler config                                 |
-| `BUILD.bazel` / `frontend/BUILD.bazel` | Bazel wiring                                              |
+| Path                                   | What it is                                                 |
+| -------------------------------------- | ---------------------------------------------------------- |
+| `app.py`                               | FastAPI backend: `POST /sync`, `/healthz`, static frontend |
+| `config.py`                            | Pydantic settings (DATA_DIR, host, port)                   |
+| `doc_shape.py`                         | Casino Y.Doc schema (mirror of frontend/src/sync.js)       |
+| `validators.py`                        | Post-merge constraint checks (credits ≥ 0, prize shape…)   |
+| `models.py`                            | SQLAlchemy `doc` row holding the binary Y update blob      |
+| `store.py`                             | DocStore: validate-then-persist client updates             |
+| `test_doc_shape.py`                    | pycrdt API + Casino schema sanity                          |
+| `test_validators.py`                   | Per-rule rejection coverage                                |
+| `test_store.py`                        | DocStore round-trip + persistence + validation gate        |
+| `test_app.py`                          | HTTP-surface coverage of `/sync`                           |
+| `tests/test_sync_two_device.py`        | Two-client multi-device sync E2E (pycrdt-driven)           |
+| `frontend/src/study_casino.jsx`        | The React component (originally a claude.ai artifact)      |
+| `frontend/src/sync.js`                 | Y.Doc + y-indexeddb + HTTP poll provider against `/sync`   |
+| `frontend/src/y_hooks.js`              | useYMap / useYArray / useSyncStatus React hooks            |
+| `frontend/src/use_casino.js`           | Single hook exposing reactive state + every mutation       |
+| `frontend/src/SyncBanner.jsx`          | Header banner + toast for offline/rejected/syncing states  |
+| `frontend/src/main.jsx`                | Entry — renders into `#root`, registers service worker     |
+| `frontend/index.html`                  | App shell (manifest link, theme color, apple-\* meta)      |
+| `frontend/manifest.webmanifest`        | PWA manifest                                               |
+| `frontend/sw.js`                       | Service worker (cache app shell, network-only `/sync`)     |
+| `frontend/icon.svg`                    | App icon                                                   |
+| `frontend/esbuild.config.mjs`          | Production bundler config                                  |
+| `BUILD.bazel` / `frontend/BUILD.bazel` | Bazel wiring                                               |
 
 ## Auth
 
@@ -43,33 +49,47 @@ public hostname route.
 
 ## State sync
 
-Event-sourced. The server stores an append-only `events` log plus a cached
-`snapshot` row. Every user action emits one or more events via
-`POST /events`; the server appends them, re-reduces the snapshot, and
-returns the authoritative state. Clients use `If-Match` on the snapshot
-ETag for optimistic concurrency — on 412 (another device wrote since our
-last read) the client reloads; last-device-wins, no merge. Credits,
-tokens, sessions, and the prize log are all derived from events — the
-only non-derivable state is the current prize catalog (events:
-`prize_added`, `prize_deleted`).
+Y-CRDT, server-authoritative validation. The server holds one Y.Doc
+in memory and persists it as a single binary update blob in SQLite.
+Clients (the Yjs `Y.Doc` running in the React PWA) sync their local
+doc via `POST /sync`, sending base64-encoded
+`{state_vector_b64, update_b64}`:
 
-Event types: `session_{started,paused,resumed,completed,cancelled,edited,deleted}`,
-`roulette_spin`, `slot_spin`, `blackjack_hand`, `prize_redeemed`,
-`prize_added`, `prize_deleted`, `credits_delta`, `tokens_delta`,
-`credits_to_tokens`, `import`, `reset`. The full reducer lives in
-`reducer.py` (Python source of truth); the React frontend emits events
-but does not re-reduce locally.
+- Server: clones canonical → applies the client update on the trial
+  → runs every validator → on success promotes trial to canonical
+  and persists, then returns the binary diff the client still needs;
+  on failure leaves canonical untouched and returns a 409 with a
+  `{rejection: {rule, message}}` payload.
+- Client: applies the returned server update, surfaces a toast for
+  rejections, and rolls back the offending transaction via
+  `Y.UndoManager` so the local Doc always matches canonical.
 
-`GET /events?since_id=N&limit=M` returns the raw log (paginated) for
-debugging and future analytics UIs.
+Document shape — mirrored verbatim between `doc_shape.py` (server)
+and `frontend/src/sync.js` (client):
 
-The service worker serves the app shell offline but bypasses the cache
-for `/state` so a stale GET can't defeat cross-device sync.
+```
+balance   : Y.Map { credits: number, tokens: number }
+active    : Y.Map (current live session, or empty when none)
+sessions  : Y.Map[id, Y.Map { subject, seconds, ended_at_ms }]
+prizes    : Y.Map[id, Y.Map { name, cost }]
+prize_log : Y.Array[Y.Map { id, name, cost, at_ms }]
+```
+
+CRDTs guarantee convergence but not business rules — the server's
+validators (credits ≥ 0, tokens ≥ 0, prize shape, session shape) are
+the only thing keeping the casino's economy honest. See
+<validators.py> for the rule list and the rejection contract.
+
+The service worker serves the app shell offline but bypasses the
+cache for `/sync` so a stale GET can't defeat cross-device sync.
+While offline, mutations stay in the local Y.Doc + IndexedDB and
+replay on reconnect; the SyncBanner UI surfaces "offline" and any
+rejection so failures are never silent.
 
 ## Build
 
 ```bash
-bbr test //x/auragon_study_casino/...
+bbr test //x/auragon_study_casino/...  //x/auragon_study_casino/tests/...
 bbr build //x/auragon_study_casino:image
 ```
 

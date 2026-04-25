@@ -30,7 +30,7 @@ import pytest_bazel
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
-from pycrdt import Map
+from pycrdt import Doc, Map
 
 from util.net import pick_free_port
 from x.auragon_study_casino.app import create_app
@@ -70,12 +70,20 @@ def _unb64(s: str) -> bytes:
 class FakeDevice:
     """Wraps a pycrdt Casino + the wire protocol so a test reads like
     two real clients pushing/pulling. `last_server_sv` stays None until
-    the device has talked to the server at least once."""
+    the device has talked to the server at least once.
+
+    The device starts as a *blank* Doc with the typed handles declared
+    but no values written — that mirrors what the production frontend
+    does on first boot: declare schema, then bootstrap from the server's
+    update before any local writes. Calling `Casino.empty()` here would
+    pre-write `credits=0`/`tokens=0` on the client and overwrite the
+    server's values via last-write-wins on the next sync, which is
+    exactly the bug class these tests are guarding against."""
 
     def __init__(self, base_url: str, http: httpx.Client) -> None:
         self.base_url = base_url
         self.http = http
-        self.casino = Casino.empty()
+        self.casino = Casino(Doc())
         self.last_server_sv: bytes | None = None
         self.last_rejection: dict[str, Any] | None = None
 
@@ -106,13 +114,22 @@ def http() -> Iterator[httpx.Client]:
 def test_long_absence_does_not_nuke_other_device_state(casino_server: str, http: httpx.Client) -> None:
     """Phone accumulates a week of state; laptop comes back, *pulls first*,
     and sees everything. Then any local edit on the laptop merges with the
-    server without dropping phone's prior writes."""
+    server without dropping phone's prior writes.
+
+    Both devices bootstrap (sync once) before writing. That mirrors the
+    production frontend, which only enables the mutation UI after the
+    initial /sync round-trip has completed; without the bootstrap, a
+    local write would be CRDT-concurrent with the server's seed values
+    and Yjs's clientID-tiebreaker would non-deterministically clobber
+    one side."""
     phone = FakeDevice(casino_server, http)
+    assert phone.sync().status_code == 200  # bootstrap
+
     phone.casino.balance["credits"] = 142
     phone.casino.balance["tokens"] = 88
 
     for sid, subject, secs in [("s-1", "Biochem", 3600), ("s-2", "Anatomy", 1500)]:
-        m = Map()
+        m: Map = Map()
         phone.casino.sessions[sid] = m
         phone.casino.sessions[sid]["subject"] = subject
         phone.casino.sessions[sid]["seconds"] = secs
@@ -133,7 +150,7 @@ def test_long_absence_does_not_nuke_other_device_state(casino_server: str, http:
 
     assert phone.sync().status_code == 200
     assert len(phone.casino.sessions) == 3
-    subjects = sorted(phone.casino.sessions[sid]["subject"] for sid in phone.casino.sessions)
+    subjects = sorted(str(phone.casino.sessions[sid]["subject"]) for sid in phone.casino.sessions)
     assert subjects == ["Anatomy", "Biochem", "Pharmacology"]
 
 
