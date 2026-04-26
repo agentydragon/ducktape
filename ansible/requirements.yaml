@@ -4,4 +4,5 @@ roles:
 collections:
   - community.general # dconf module
   - community.sops # sops secret decryption
-  - ansible.posix # mount module
+  - name: ansible.posix
+    version: ">=2.1.0,<3.0.0" # patch module removed in 3.0.0
