@@ -114,7 +114,7 @@
       tags: [users]
 
     - name: Authorize SSH keys for root login
-      ansible.posix.authorized_key:
+      ansible.builtin.authorized_key:
         user: root
         key: |
           ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBoGigbjJZfs1+M6yUCJSBzUlu2mFcakFTmuxrN425fO agentydragon@atlas
@@ -310,7 +310,7 @@
       tags: [swap, zram]
 
     - name: Set swappiness to prefer zram over disk
-      ansible.posix.sysctl:
+      ansible.builtin.sysctl:
         name: vm.swappiness
         value: "150"
         sysctl_file: /etc/sysctl.d/99-zram.conf

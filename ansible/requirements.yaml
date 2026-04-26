@@ -4,4 +4,3 @@ roles:
 collections:
   - community.general # dconf module
   - community.sops # sops secret decryption
-  - ansible.posix # authorized_key, sysctl
