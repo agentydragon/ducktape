@@ -5,12 +5,12 @@ secret boolean function and submits a Python program guess. The scaffold
 evaluates the program against all 2^N inputs in a Docker container and reports
 Hamming loss.
 
-`Agent.run()` drives the tool-dispatch loop. Each LLM round-trip and each
-tool dispatch is dumped to JSONL using AF's standard `Message.to_json()`
-format — one assistant `Message` per LLM call, one tool `Message` per
-function dispatch. Token usage (incl. Anthropic prompt-cache reads/creations)
-is aggregated alongside, and a `_GameEndMiddleware` raises
-`MiddlewareTermination` once `game.finished` (turn-limit reached or solved).
+`Agent.run()` drives the tool-dispatch loop. JSONL transcript writes are
+delegated to `JsonlTranscriptProvider` (AF's standard `HistoryProvider`-shaped
+audit log via `Message.to_json()`); termination on `game.finished` uses
+`terminate_when`. A small `_TokenUsageTracker` ChatMiddleware aggregates
+Anthropic prompt-cache read/create token counts that aren't carried on
+individual `Message` objects.
 """
 
 import argparse
@@ -21,7 +21,7 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import IO, Any, cast
+from typing import Any, cast
 
 import aiodocker
 from agent_framework import (
@@ -31,8 +31,6 @@ from agent_framework import (
     ChatContext,
     ChatMiddleware,
     ChatResponse,
-    FunctionInvocationContext,
-    FunctionMiddleware,
     FunctionTool,
     MCPStdioTool,
     Message,
@@ -45,6 +43,8 @@ from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.af_chat_client import build_model_client
 from skills.eval_infra.af_scratch_mcp import scratch_exec_mcp_tool
 from skills.eval_infra.skill_staging import SKILL_FILES_PATH, SkillSpec, stage_skill
+from skills.eval_infra.termination import terminate_when
+from skills.eval_infra.transcript import JsonlTranscriptProvider
 from skills.info_gathering.evals.function_learning.functions import FUNCTIONS, SecretFunction
 from skills.info_gathering.evals.function_learning.prompts import build_system_prompt, first_user_message
 from skills.info_gathering.evals.function_learning.result_types import (
@@ -72,7 +72,6 @@ SKILL_BY_ARM: dict[str, SkillSpec] = {"on": INFO_GATHERING_SKILL_SPEC, "off": EM
 @dataclass
 class GameContext:
     turn_limit: int
-    log_file: IO[str]
     turn: int = 0
     solved: bool = False
     turn_results: list[TurnResult] = field(default_factory=list)
@@ -84,10 +83,6 @@ class GameContext:
     @property
     def finished(self) -> bool:
         return self.turn >= self.turn_limit or self.solved
-
-    def write_message(self, message: Message) -> None:
-        self.log_file.write(message.to_json() + "\n")
-        self.log_file.flush()
 
 
 # --- Tools ---
@@ -153,8 +148,9 @@ def _make_play_turn_tool(
 # --- Middleware ---
 
 
-class _AssistantLogMiddleware(ChatMiddleware):
-    """Per-LLM-call: dump assistant Messages and aggregate token usage."""
+class _TokenUsageTracker(ChatMiddleware):
+    """Aggregate token usage (incl. Anthropic prompt-cache reads/creations)
+    that AF doesn't carry on individual `Message` objects."""
 
     def __init__(self, game: GameContext) -> None:
         self._game = game
@@ -172,24 +168,6 @@ class _AssistantLogMiddleware(ChatMiddleware):
             # TypedDict, so `.get()` is typed `object | None`; cast for the sum.
             self._game.total_cache_read_tokens += cast(int, usage.get("anthropic.cache_read_input_tokens") or 0)
             self._game.total_cache_creation_tokens += cast(int, usage.get("anthropic.cache_creation_input_tokens") or 0)
-
-        for msg in context.result.messages:
-            self._game.write_message(msg)
-
-
-class _ToolLogMiddleware(FunctionMiddleware):
-    """Per-tool-dispatch: dump tool-result Message; terminate when game.finished."""
-
-    def __init__(self, game: GameContext) -> None:
-        self._game = game
-
-    async def process(self, context: FunctionInvocationContext, call_next: Any) -> None:
-        await call_next()
-        # `tool.invoke()` returns `list[Content]`; wrap as a tool Message.
-        if isinstance(context.result, list):
-            self._game.write_message(Message("tool", context.result))
-        if self._game.finished:
-            raise MiddlewareTermination("game finished")
 
 
 # --- Main ---
@@ -228,22 +206,24 @@ async def run_game(
     calls_path, summary_path = run_output_paths(f"fl_{function_name}_{'hint' if hint else 'nohint'}", output_dir)
 
     with calls_path.open("w") as log_f:
-        game = GameContext(turn_limit=turn_limit, log_file=log_f)
-        play_turn_tool = _make_play_turn_tool(game, secret_fn, scoring_container)
+        # AF "instructions" don't flow through the Message stream — seed it
+        # manually so the JSONL transcript has the full context at the top.
+        log_f.write(Message("system", [system]).to_json() + "\n")
+        log_f.flush()
 
-        # Seed the JSONL with system + opening so a reader has the full context.
-        game.write_message(Message("system", [system]))
-        game.write_message(Message("user", [opening]))
+        game = GameContext(turn_limit=turn_limit)
+        play_turn_tool = _make_play_turn_tool(game, secret_fn, scoring_container)
 
         agent = Agent(
             client=model_client,
             instructions=system,
             tools=[play_turn_tool, exec_tool],
-            middleware=[_AssistantLogMiddleware(game), _ToolLogMiddleware(game)],
+            context_providers=[JsonlTranscriptProvider(log_f)],
+            middleware=[_TokenUsageTracker(game), terminate_when(lambda: game.finished, reason="game finished")],
             default_options={"tool_choice": "required", "allow_multiple_tool_calls": False},
         )
 
-        # _ToolLogMiddleware terminates the loop once `game.finished`.
+        # `terminate_when` raises `MiddlewareTermination` once `game.finished`.
         with contextlib.suppress(MiddlewareTermination):
             await agent.run(opening, session=AgentSession())
 

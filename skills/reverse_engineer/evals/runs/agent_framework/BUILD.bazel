@@ -9,6 +9,8 @@ py_binary(
         "//skills/eval_infra:af_chat_client",
         "//skills/eval_infra:af_scratch_mcp",
         "//skills/eval_infra:skill_staging",
+        "//skills/eval_infra:termination",
+        "//skills/eval_infra:transcript",
         "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
         "//skills/reverse_engineer:reverse_engineer_skill_spec",
         "//util/bazel:runfiles",

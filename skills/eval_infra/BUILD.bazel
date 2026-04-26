@@ -22,6 +22,34 @@ py_library(
     deps = ["//util/bazel:runfiles"],
 )
 
+_AGENT_FRAMEWORK_DEPS = [
+    # agent_framework's __init__.py references openai/anthropic stubs.
+    "@pypi//agent_framework_anthropic",
+    "@pypi//agent_framework_claude",
+    "@pypi//agent_framework_core",
+    "@pypi//agent_framework_openai",
+]
+
+py_library(
+    name = "transcript",
+    srcs = ["transcript.py"],
+    visibility = ["//skills:__subpackages__"],
+    deps = _AGENT_FRAMEWORK_DEPS,
+)
+
+py_library(
+    name = "termination",
+    srcs = ["termination.py"],
+    visibility = ["//skills:__subpackages__"],
+    deps = _AGENT_FRAMEWORK_DEPS,
+)
+
+py_library(
+    name = "eval_prompt",
+    srcs = ["eval_prompt.py"],
+    visibility = ["//skills:__subpackages__"],
+)
+
 py_library(
     name = "af_chat_client",
     srcs = ["af_chat_client.py"],

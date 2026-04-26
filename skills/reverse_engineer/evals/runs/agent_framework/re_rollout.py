@@ -5,15 +5,12 @@ reverse_engineer skill, gives it shell access via MCP exec inside a stock
 python:3.13-slim container, runs for up to 10 minutes, and writes the
 transcript + the agent's recovered/ workspace to --output-dir.
 
-`Agent.run()` drives the tool-dispatch loop. Two middlewares wire in the
-eval-specific instrumentation:
-
-- `_TranscriptMiddleware` (chat) — runs around every LLM round-trip; dumps
-  each assistant `Message` to JSONL via AF's standard `Message.to_json()`.
-- `_SubmitMiddleware` (function) — runs around every tool dispatch; dumps
-  the tool-result `Message`, captures the `submit` tool's summary, and
-  raises `MiddlewareTermination` when `submit` has been called. Wall-clock
-  enforcement comes from `asyncio.wait_for` around `agent.run()`.
+`Agent.run()` drives the tool-dispatch loop. JSONL transcript writes go
+through `JsonlTranscriptProvider` (AF's standard `HistoryProvider`-shaped
+audit log via `Message.to_json()`). The `submit` tool sets
+`SubmitState.summary`; `terminate_when` raises `MiddlewareTermination`
+once that is set. Wall-clock enforcement comes from `asyncio.wait_for`
+around `agent.run()`.
 
 No assertions about the agent's output — this is a manual-inspection
 harness. Outputs:
@@ -37,21 +34,9 @@ import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import IO, Any, Literal
+from typing import Literal
 
-from agent_framework import (
-    Agent,
-    AgentSession,
-    ChatContext,
-    ChatMiddleware,
-    ChatResponse,
-    FunctionInvocationContext,
-    FunctionMiddleware,
-    FunctionTool,
-    MCPStdioTool,
-    Message,
-    MiddlewareTermination,
-)
+from agent_framework import Agent, AgentSession, FunctionTool, MCPStdioTool, Message, MiddlewareTermination
 from pydantic import BaseModel
 from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
 from skills.reverse_engineer.reverse_engineer_skill_spec import SPEC as REVERSE_ENGINEER_SKILL_SPEC
@@ -60,6 +45,8 @@ from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.af_chat_client import build_model_client
 from skills.eval_infra.af_scratch_mcp import scratch_exec_mcp_tool
 from skills.eval_infra.skill_staging import SKILL_FILES_PATH, SkillSpec, stage_skill
+from skills.eval_infra.termination import terminate_when
+from skills.eval_infra.transcript import JsonlTranscriptProvider
 from util.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
@@ -146,40 +133,6 @@ def _make_submit_tool(state: _SubmitState) -> FunctionTool:
     )
 
 
-# -- Middleware --
-
-
-class _TranscriptMiddleware(ChatMiddleware):
-    """Per-LLM-call: dump assistant Messages to the transcript JSONL."""
-
-    def __init__(self, log_file: IO[str]) -> None:
-        self._log_file = log_file
-
-    async def process(self, context: ChatContext, call_next: Any) -> None:
-        await call_next()
-        if not isinstance(context.result, ChatResponse):
-            return  # streaming path; not used here
-        for msg in context.result.messages:
-            self._log_file.write(msg.to_json() + "\n")
-        self._log_file.flush()
-
-
-class _SubmitMiddleware(FunctionMiddleware):
-    """Per-tool-dispatch: dump tool-result Message; terminate on submit."""
-
-    def __init__(self, submit_state: _SubmitState, log_file: IO[str]) -> None:
-        self._submit_state = submit_state
-        self._log_file = log_file
-
-    async def process(self, context: FunctionInvocationContext, call_next: Any) -> None:
-        await call_next()
-        if isinstance(context.result, list):
-            self._log_file.write(Message("tool", context.result).to_json() + "\n")
-            self._log_file.flush()
-        if self._submit_state.summary is not None:
-            raise MiddlewareTermination("submit called")
-
-
 # -- Sandbox + skill --
 
 
@@ -228,8 +181,9 @@ async def _async_main(args: argparse.Namespace) -> int:
 
     try:
         with transcript_path.open("w") as transcript_f:
+            # AF "instructions" don't flow through the Message stream — seed it
+            # manually so the JSONL transcript has the full context at the top.
             transcript_f.write(Message("system", [system_prompt]).to_json() + "\n")
-            transcript_f.write(Message("user", [_FIRST_USER_MESSAGE]).to_json() + "\n")
             transcript_f.flush()
 
             async with _re_exec_tool(
@@ -239,7 +193,8 @@ async def _async_main(args: argparse.Namespace) -> int:
                     client=model_client,
                     instructions=system_prompt,
                     tools=[exec_tool, submit_tool],
-                    middleware=[_TranscriptMiddleware(transcript_f), _SubmitMiddleware(submit_state, transcript_f)],
+                    context_providers=[JsonlTranscriptProvider(transcript_f)],
+                    middleware=[terminate_when(lambda: submit_state.summary is not None, reason="submit called")],
                     default_options={"tool_choice": "required", "allow_multiple_tool_calls": False},
                 )
                 try:

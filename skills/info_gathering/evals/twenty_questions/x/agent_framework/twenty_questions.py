@@ -42,6 +42,7 @@ from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.af_chat_client import build_model_client
 from skills.eval_infra.af_scratch_mcp import scratch_exec_mcp_tool
 from skills.eval_infra.skill_staging import SKILL_FILES_PATH, SkillSpec, stage_skill
+from skills.eval_infra.termination import terminate_when
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
     first_user_message,
@@ -186,18 +187,6 @@ class _SimulatorEndMiddleware(FunctionMiddleware):
         raise MiddlewareTermination("simulator turn complete")
 
 
-class _GameEndMiddleware(FunctionMiddleware):
-    """Terminate the guesser's loop once the game is decided (correct or timeout)."""
-
-    def __init__(self, game: GameContext) -> None:
-        self._game = game
-
-    async def process(self, context: FunctionInvocationContext, call_next: Any) -> None:
-        await call_next()
-        if self._game.result is not None:
-            raise MiddlewareTermination("game decided")
-
-
 # -- Main --
 
 
@@ -244,7 +233,7 @@ async def run_game(
         client=model_client,
         instructions=guesser_system,
         tools=guesser_tools,
-        middleware=[_GameEndMiddleware(game)],
+        middleware=[terminate_when(lambda: game.result is not None, reason="game decided")],
         default_options={"tool_choice": "required", "allow_multiple_tool_calls": False},
     )
     guesser_session = AgentSession()

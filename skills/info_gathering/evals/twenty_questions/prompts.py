@@ -6,6 +6,7 @@ single source of truth used by all implementations (Python, Rust, Go).
 
 from pathlib import Path
 
+from skills.eval_infra.eval_prompt import compose_system_prompt
 from util.bazel.runfiles import get_required_path
 
 _SIM_RLOCATION = "_main/skills/info_gathering/evals/twenty_questions/sim.txt"
@@ -32,29 +33,17 @@ def load_scratch_system_note() -> str:
 
 
 def build_guesser_system(*, skill: str, has_scratch: bool, skill_files_path: Path | None) -> str:
-    """Compose the guesser's system prompt from independent pieces.
+    """Compose the guesser's system prompt: preamble + skill block + (optional) scratch note.
 
-    Args:
-        skill: Skill text to inline. Empty string for the off-arm of a
-               mounted-skill rollout (the empty-skill tar's SKILL.md is blank).
-        has_scratch: Include the scratch container exec tool note.
-        skill_files_path: In-container path where the skill tar is bind-mounted
-                          (e.g. ``/work/.skill``), or ``None`` when the rollout
-                          doesn't mount the skill into a sandbox (the four
-                          non-AF framework variants today). Pass it explicitly.
+    `skill_files_path=None` is for the four non-AF framework variants that
+    don't mount the skill into a sandbox; AF rollouts always pass a real path.
     """
-    parts: list[str] = [_BASE_GUESSER_PREAMBLE]
-    if skill or skill_files_path is not None:
-        skill_block = f"Follow this information-gathering skill throughout.\n\n<skill>\n{skill}\n</skill>"
-        if skill_files_path is not None:
-            skill_block += (
-                f"\n\nThe full skill (SKILL.md and any referenced example files) is available "
-                f"in the container at {skill_files_path}/."
-            )
-        parts.append(skill_block)
-    if has_scratch:
-        parts.append(load_scratch_system_note())
-    return "\n\n---\n\n".join(parts)
+    return compose_system_prompt(
+        preamble=_BASE_GUESSER_PREAMBLE,
+        skill_md=skill,
+        skill_files_path=skill_files_path,
+        scratch_note=load_scratch_system_note() if has_scratch else None,
+    )
 
 
 def first_user_message(domain_description: str, turn_limit: int) -> str:
