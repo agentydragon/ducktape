@@ -5,16 +5,16 @@ as a drop-in replacement for the auto-attached in-memory history (preserving
 multi-turn coherence inside an `Agent.run()`) while *also* writing every
 newly-stored Message to a JSONL audit log via `Message.to_json()`.
 
-By default AF calls `save_messages` once at the end of each `agent.run()`
-(or per LLM round-trip when the agent is constructed with
-`require_per_service_call_history_persistence=True`) — both call paths leave
-the transcript intact even when middleware raises `MiddlewareTermination`,
-because all three middleware pipelines suppress that exception internally.
+Pair this with `Agent(require_per_service_call_history_persistence=True)`
+so AF calls `save_messages` after every LLM round-trip — that's how the
+transcript stays current as the agent runs (rather than only being flushed
+at the end). All three middleware pipelines suppress `MiddlewareTermination`
+internally, so termination via tool-side middleware doesn't drop the final
+batch either.
 
-AF's "instructions" (system prompt) do not flow through the Message stream,
-so the convenience factory `JsonlTranscriptProvider.opened(path, ...)` opens
-the JSONL file, seeds it with a synthetic `Message("system", [...])` line,
-and yields a configured provider — used by FL and RE rollouts.
+The convenience factory `JsonlTranscriptProvider.opened(path)` opens the
+JSONL file and yields a configured provider — saves callers from juggling
+the file handle.
 """
 
 from collections.abc import Iterator, Sequence
@@ -40,15 +40,9 @@ class JsonlTranscriptProvider(InMemoryHistoryProvider):
 
     @classmethod
     @contextmanager
-    def opened(cls, path: Path, *, system_prompt: str) -> Iterator[Self]:
-        """Open `path` for writing, seed with a system Message, yield a provider.
-
-        Single-call replacement for the open-file + manual-system-seed +
-        construct-provider boilerplate every rollout repeats.
-        """
+    def opened(cls, path: Path) -> Iterator[Self]:
+        """Open `path` for writing and yield a provider bound to the file."""
         with path.open("w") as log_file:
-            log_file.write(Message("system", [system_prompt]).to_json() + "\n")
-            log_file.flush()
             yield cls(log_file)
 
     async def save_messages(

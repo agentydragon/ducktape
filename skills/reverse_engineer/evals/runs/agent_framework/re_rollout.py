@@ -35,7 +35,7 @@ import time
 from pathlib import Path
 from typing import Literal
 
-from agent_framework import Agent, AgentSession, FunctionTool, MiddlewareTermination
+from agent_framework import Agent, AgentSession, FunctionTool, Message, MiddlewareTermination
 from pydantic import BaseModel
 from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
 from skills.reverse_engineer.reverse_engineer_skill_spec import SPEC as REVERSE_ENGINEER_SKILL_SPEC
@@ -67,10 +67,9 @@ _SKILL_BY_ARM: dict[str, SkillSpec] = {"on": REVERSE_ENGINEER_SKILL_SPEC, "off":
 class RunSummary(BaseModel):
     model: str
     skill_on: bool
-    end_reason: Literal["submit", "step_cap", "wall_timeout", "error"]
+    end_reason: Literal["submit", "step_cap", "wall_timeout"]
     wall_seconds: float
     submit_summary: str | None = None
-    error: str | None = None
 
 
 # -- Prompts --
@@ -164,31 +163,30 @@ async def _async_main(args: argparse.Namespace) -> int:
         api="anthropic", model=args.model, function_invocation_configuration={"max_iterations": args.max_steps}
     )
     t_start = time.monotonic()
-    error_msg: str | None = None
-    end_reason: Literal["submit", "step_cap", "wall_timeout", "error"] = "error"
+    end_reason: Literal["submit", "step_cap", "wall_timeout"]
 
-    try:
-        with JsonlTranscriptProvider.opened(transcript_path, system_prompt=system_prompt) as transcript:
-            async with eval_sandbox(skill=staged, workspace=workspace, inputs=inputs_dir) as exec_tool:
-                agent = Agent(
-                    client=model_client,
-                    instructions=system_prompt,
-                    tools=[exec_tool, submit_tool],
-                    context_providers=[transcript],
-                    middleware=[terminate_when(lambda: submit_state.summary is not None, reason="submit called")],
-                    default_options={"tool_choice": "required", "allow_multiple_tool_calls": False},
-                )
-                try:
-                    with contextlib.suppress(MiddlewareTermination):
-                        await asyncio.wait_for(
-                            agent.run(_FIRST_USER_MESSAGE, session=AgentSession()), timeout=args.wall_timeout
-                        )
-                    end_reason = "submit" if submit_state.summary is not None else "step_cap"
-                except TimeoutError:
-                    end_reason = "wall_timeout"
-    except Exception as e:
-        logger.exception("Rollout infrastructure failure")
-        error_msg = repr(e)
+    with JsonlTranscriptProvider.opened(transcript_path) as transcript:
+        async with eval_sandbox(skill=staged, workspace=workspace, inputs=inputs_dir) as exec_tool:
+            agent = Agent(
+                client=model_client,
+                tools=[exec_tool, submit_tool],
+                context_providers=[transcript],
+                middleware=[terminate_when(lambda: submit_state.summary is not None, reason="submit called")],
+                default_options={"tool_choice": "required", "allow_multiple_tool_calls": False},
+                require_per_service_call_history_persistence=True,
+            )
+            try:
+                with contextlib.suppress(MiddlewareTermination):
+                    await asyncio.wait_for(
+                        agent.run(
+                            [Message("system", [system_prompt]), Message("user", [_FIRST_USER_MESSAGE])],
+                            session=AgentSession(),
+                        ),
+                        timeout=args.wall_timeout,
+                    )
+                end_reason = "submit" if submit_state.summary is not None else "step_cap"
+            except TimeoutError:
+                end_reason = "wall_timeout"
 
     summary = RunSummary(
         model=args.model,
@@ -196,12 +194,11 @@ async def _async_main(args: argparse.Namespace) -> int:
         end_reason=end_reason,
         wall_seconds=round(time.monotonic() - t_start, 2),
         submit_summary=submit_state.summary,
-        error=error_msg,
     )
     summary_path.write_text(summary.model_dump_json(indent=2))
     logger.info("Rollout finished. Output dir: %s", out_dir)
     logger.info("Summary: %s", summary.model_dump_json())
-    return 0 if end_reason != "error" else 1
+    return 0
 
 
 def main() -> None:

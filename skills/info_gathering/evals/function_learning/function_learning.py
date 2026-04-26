@@ -33,6 +33,7 @@ from agent_framework import (
     ChatResponse,
     FunctionTool,
     MCPStdioTool,
+    Message,
     MiddlewareTermination,
 )
 from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
@@ -206,19 +207,19 @@ async def run_game(
     game = GameContext(turn_limit=turn_limit)
     play_turn_tool = _make_play_turn_tool(game, secret_fn, scoring_container)
 
-    with JsonlTranscriptProvider.opened(calls_path, system_prompt=system) as transcript:
+    with JsonlTranscriptProvider.opened(calls_path) as transcript:
         agent = Agent(
             client=model_client,
-            instructions=system,
             tools=[play_turn_tool, exec_tool],
             context_providers=[transcript],
             middleware=[_TokenUsageTracker(game), terminate_when(lambda: game.finished, reason="game finished")],
             default_options={"tool_choice": "required", "allow_multiple_tool_calls": False},
+            require_per_service_call_history_persistence=True,
         )
 
         # `terminate_when` raises `MiddlewareTermination` once `game.finished`.
         with contextlib.suppress(MiddlewareTermination):
-            await agent.run(opening, session=AgentSession())
+            await agent.run([Message("system", [system]), Message("user", [opening])], session=AgentSession())
 
     per_turn = [tr.score.hamming_loss for tr in game.turn_results]
     per_turn += [0] * (turn_limit - len(per_turn))
