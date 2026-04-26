@@ -74,7 +74,8 @@
 
 - [ ] Consolidate XDG autostart entries into one place
   - Currently split: per-user via `xdg.configFile."autostart/..."` in home-manager
-    (syncthing-gtk in `home.nix`; discord in `discord-minimized-autostart.nix`; flameshot in `flameshot-screenshots.nix`)
+    (syncthing-gtk in `home.nix`) and via `xdg.autostart.entries` (discord in
+    `discord-minimized-autostart.nix`; flameshot in `flameshot-screenshots.nix`)
     and system-wide via `environment.etc."xdg/autostart/..."` in NixOS
     (timekpr-client in `timekpr.nix`)
   - Pick one canonical approach (probably home-manager for user apps, NixOS for
