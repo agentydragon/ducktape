@@ -322,11 +322,11 @@
       tags: [swap, zram]
 
     - name: Set swappiness to prefer zram over disk
-      ansible.builtin.sysctl:
-        name: vm.swappiness
-        value: "150"
-        sysctl_file: /etc/sysctl.d/99-zram.conf
-        reload: true
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/99-zram.conf
+        content: "vm.swappiness = 150\n"
+        mode: "0644"
+      notify: Apply sysctl settings
       tags: [swap, zram]
 
     # Disable ZFS Direct I/O on the dataset backing VM disk images.
@@ -427,3 +427,8 @@
       ansible.builtin.systemd:
         name: zramswap
         state: restarted
+
+    - name: Apply sysctl settings
+      ansible.builtin.command:
+        cmd: sysctl --system
+      changed_when: true
