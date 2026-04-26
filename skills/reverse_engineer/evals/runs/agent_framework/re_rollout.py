@@ -83,11 +83,8 @@ _RE_PREAMBLE = (
     f"Recover its source as Go files under {WORK_PATH}/ (your working directory)."
 )
 
-_RE_SCRATCH_NOTE = (
-    "You have shell access via the `exec` tool — `cmd` is a list of strings, no shell\n"
-    "expansion. Stdout and stderr are returned together. Install whatever you need\n"
-    "(apt-get install -y ..., pip install ..., curl ...). The container has internet.\n"
-    "When you have gone as far as you can, call `submit` with a one-paragraph summary\n"
+_RE_TOOL_GUIDANCE = (
+    "When you have gone as far as you can, call `submit` with a one-paragraph summary "
     "of what the program does and which parts you are confident vs unsure about."
 )
 
@@ -100,7 +97,7 @@ def _build_system_prompt(*, skill_md_text: str) -> str:
     uniform across arms.
     """
     return compose_system_prompt(
-        preamble=_RE_PREAMBLE, skill_md=skill_md_text, skill_files_path=SKILL_PATH, scratch_note=_RE_SCRATCH_NOTE
+        preamble=_RE_PREAMBLE, skill_md=skill_md_text, skill_files_path=SKILL_PATH, tool_guidance=_RE_TOOL_GUIDANCE
     )
 
 

@@ -4,7 +4,6 @@ from pathlib import Path
 
 from skills.eval_infra.eval_prompt import compose_system_prompt
 from skills.info_gathering.evals.function_learning.functions import SecretFunction
-from skills.info_gathering.evals.twenty_questions.prompts import load_scratch_system_note
 from util.bazel.runfiles import get_required_path
 
 _FIRST_USER_MSG_RLOCATION = "_main/skills/info_gathering/evals/function_learning/first_user_message.txt"
@@ -18,13 +17,14 @@ _BASE_PREAMBLE = (
 )
 
 
-def build_system_prompt(*, skill: str, has_scratch: bool, skill_files_path: Path | None) -> str:
-    """Compose the FL system prompt: preamble + skill block + (optional) scratch note."""
+def build_system_prompt(*, skill: str, skill_files_path: Path | None) -> str:
+    """Compose the FL system prompt: preamble + skill block + exec note.
+
+    The `play_turn` tool's `FunctionTool` description is enough for the agent
+    to know how to use it — no eval-specific tool guidance text needed here.
+    """
     return compose_system_prompt(
-        preamble=_BASE_PREAMBLE,
-        skill_md=skill,
-        skill_files_path=skill_files_path,
-        scratch_note=load_scratch_system_note() if has_scratch else None,
+        preamble=_BASE_PREAMBLE, skill_md=skill, skill_files_path=skill_files_path, tool_guidance=None
     )
 
 

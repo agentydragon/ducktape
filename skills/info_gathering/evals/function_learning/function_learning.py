@@ -197,7 +197,7 @@ async def run_game(
     secret_fn = FUNCTIONS[function_name]
     description = secret_fn.description if hint else _NO_HINT
 
-    system = build_system_prompt(skill=skill_md, has_scratch=True, skill_files_path=SKILL_PATH)
+    system = build_system_prompt(skill=skill_md, skill_files_path=SKILL_PATH)
     opening = first_user_message(secret_fn, turn_limit, description, eval_timeout_s=EVAL_TIMEOUT_S)
 
     calls_path, summary_path = run_output_paths(f"fl_{function_name}_{'hint' if hint else 'nohint'}", output_dir)
