@@ -81,10 +81,6 @@
   - Pick one canonical approach (probably home-manager for user apps, NixOS for
     system services) and document the convention
 
-## Not handled, OK to handle later
-
-- OpenAI Codex - now in nixpkgs, migrate to Nix
-
 ## Currently system level but maybe make user-level later
 
 - Nerd Fonts
