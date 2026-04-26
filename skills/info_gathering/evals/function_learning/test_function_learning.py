@@ -67,7 +67,7 @@ async def _run_with_replay(
     workspace = tmp_path / "work"
     workspace.mkdir()
 
-    async with eval_sandbox(skill=staged, workspace=workspace) as exec_tool, aiodocker.Docker() as docker:
+    async with eval_sandbox(skill=staged, workspace=workspace, inputs=None) as exec_tool, aiodocker.Docker() as docker:
         container = await docker.containers.run(
             config={"Image": image_tag, "Cmd": ["sleep", "300"]}, name=f"fl-test-{uuid.uuid4().hex[:8]}"
         )

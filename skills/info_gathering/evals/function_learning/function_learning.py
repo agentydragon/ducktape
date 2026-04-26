@@ -268,7 +268,7 @@ async def _async_main(args: argparse.Namespace) -> None:
     workspace = output_dir / "work"
     workspace.mkdir(parents=True, exist_ok=True)
 
-    async with eval_sandbox(skill=staged, workspace=workspace) as exec_tool:
+    async with eval_sandbox(skill=staged, workspace=workspace, inputs=None) as exec_tool:
         container_name = f"fl-scoring-{uuid.uuid4().hex[:8]}"
         async with aiodocker.Docker() as docker:
             container = await docker.containers.run(

@@ -274,7 +274,7 @@ async def _async_main(args: argparse.Namespace) -> None:
     workspace = output_dir / "work"
     workspace.mkdir(parents=True, exist_ok=True)
 
-    async with eval_sandbox(skill=staged, workspace=workspace) as exec_tool:
+    async with eval_sandbox(skill=staged, workspace=workspace, inputs=None) as exec_tool:
         summary = await run_game(
             variant_name=args.variant,
             model=args.model,

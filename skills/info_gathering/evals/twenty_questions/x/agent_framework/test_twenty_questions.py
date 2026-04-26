@@ -86,7 +86,7 @@ async def _run_with_replay(
     workspace = tmp_path / "work"
     workspace.mkdir()
 
-    async with eval_sandbox(skill=staged, workspace=workspace) as exec_tool:
+    async with eval_sandbox(skill=staged, workspace=workspace, inputs=None) as exec_tool:
         return await run_game(
             variant_name=variant_name,
             model="test-model",

@@ -29,6 +29,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -147,7 +148,12 @@ async def _async_main(args: argparse.Namespace) -> int:
     transcript_path = out_dir / f"transcript_{suffix}.jsonl"
     summary_path = out_dir / f"summary_{suffix}.json"
 
-    target_path = get_required_path(_TARGET_BINARY_RLOCATION)
+    # Assemble the inputs dir: copy the runfiles target binary in under the
+    # name the prompt promises (`/input/target`). Per-run dir so concurrent
+    # rollouts don't collide.
+    inputs_dir = out_dir / f"inputs_{suffix}"
+    inputs_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy(get_required_path(_TARGET_BINARY_RLOCATION), inputs_dir / "target")
 
     staged = stage_skill(_SKILL_BY_ARM[args.skill], out_dir / f"skill_extract_{suffix}")
     system_prompt = _build_system_prompt(skill_md_text=staged.md_text)
@@ -169,7 +175,7 @@ async def _async_main(args: argparse.Namespace) -> int:
             transcript_f.write(Message("system", [system_prompt]).to_json() + "\n")
             transcript_f.flush()
 
-            async with eval_sandbox(skill=staged, workspace=workspace, inputs={"target": target_path}) as exec_tool:
+            async with eval_sandbox(skill=staged, workspace=workspace, inputs=inputs_dir) as exec_tool:
                 agent = Agent(
                     client=model_client,
                     instructions=system_prompt,

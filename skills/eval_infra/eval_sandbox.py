@@ -6,9 +6,9 @@ Conventional in-container layout: every eval rollout's scratch container has
   empty-skill placeholder; eval_sandbox always mounts this).
 - ``/work``  (`WORK_PATH`)   — read-write workspace bind; the agent's default
   cwd; persisted on the host so the eval can harvest outputs after the run.
-- ``/input/<name>`` (`INPUT_PATH / name`) — read-only mounts for
-  eval-specific inputs (e.g. RE's target binary). Caller-driven via the
-  ``inputs`` mapping.
+- ``/input`` (`INPUT_PATH`)  — read-only bind of an eval-specific inputs
+  directory (e.g. RE's `target` binary lives at `/input/target`).
+  Optional — pass ``inputs=None`` for evals with no inputs (TQ, FL).
 
 `eval_sandbox` builds an `MCPStdioTool` that launches the
 `mcp_infra.exec.docker.launcher` CLI as a subprocess (which boots a
@@ -17,16 +17,15 @@ natively — no FastMCP client, no hand-rolled `FunctionTool` bridge.
 
 Usage:
 
-    async with eval_sandbox(skill=staged, workspace=ws_dir) as exec_tool:
+    async with eval_sandbox(skill=staged, workspace=ws_dir, inputs=None) as exec_tool:
         agent = Agent(client=..., tools=[exec_tool, ...])
         await agent.run(...)
 """
 
 import os
-from collections.abc import AsyncGenerator, Mapping
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from types import MappingProxyType
 
 from agent_framework import MCPStdioTool
 
@@ -41,7 +40,6 @@ WORK_PATH = Path("/work")
 INPUT_PATH = Path("/input")
 
 _LAUNCHER_RLOCATION = "_main/mcp_infra/exec/docker_launcher"
-_NO_INPUTS: Mapping[str, Path] = MappingProxyType({})
 
 
 def _proxy_env() -> dict[str, str]:
@@ -55,12 +53,7 @@ def _proxy_env() -> dict[str, str]:
 
 @asynccontextmanager
 async def eval_sandbox(
-    *,
-    skill: StagedSkill,
-    workspace: Path,
-    inputs: Mapping[str, Path] = _NO_INPUTS,
-    image: str = "python:3.13-slim",
-    name: str = "exec",
+    *, skill: StagedSkill, workspace: Path, inputs: Path | None, image: str = "python:3.13-slim", name: str = "exec"
 ) -> AsyncGenerator[MCPStdioTool]:
     """Yield an `MCPStdioTool` exposing `exec` against a scratch container.
 
@@ -68,8 +61,9 @@ async def eval_sandbox(
         skill: Staged skill to bind read-only at `SKILL_PATH`.
         workspace: Host directory bound read-write at `WORK_PATH`. Becomes the
             container cwd; the eval harvests anything the agent writes here.
-        inputs: name → host path mapping; each entry is bound read-only at
-            `INPUT_PATH / name`. The host path may be a file or a directory.
+        inputs: Host directory bound read-only at `INPUT_PATH`, or ``None``
+            for evals with no inputs. Caller is responsible for assembling
+            this directory's contents before entering the context.
         image: Container image. Defaults to `python:3.13-slim`.
         name: MCPStdioTool tool name (defaults to ``"exec"``).
 
@@ -80,8 +74,8 @@ async def eval_sandbox(
         BindMount(host_path=skill.files_path.resolve(), container_path=SKILL_PATH, mode="ro"),
         BindMount(host_path=workspace.resolve(), container_path=WORK_PATH, mode="rw"),
     ]
-    for sub, host_path in inputs.items():
-        binds.append(BindMount(host_path=host_path.resolve(), container_path=INPUT_PATH / sub, mode="ro"))
+    if inputs is not None:
+        binds.append(BindMount(host_path=inputs.resolve(), container_path=INPUT_PATH, mode="ro"))
 
     config = ContainerExecServerConfig(
         image=image,
