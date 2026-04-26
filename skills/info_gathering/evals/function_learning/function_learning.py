@@ -15,7 +15,6 @@ individual `Message` objects.
 
 import argparse
 import asyncio
-import contextlib
 import json
 import logging
 import uuid
@@ -34,14 +33,13 @@ from agent_framework import (
     FunctionTool,
     MCPStdioTool,
     Message,
-    MiddlewareTermination,
 )
 from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
 from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 
 from skills.eval_infra.af_chat_client import build_model_client
 from skills.eval_infra.eval_sandbox import eval_sandbox
-from skills.eval_infra.skill_staging import SKILL_FILES_PATH, SkillSpec, stage_skill
+from skills.eval_infra.skill_staging import SkillSpec, stage_skill
 from skills.eval_infra.termination import terminate_when
 from skills.eval_infra.transcript import JsonlTranscriptProvider
 from skills.info_gathering.evals.function_learning.functions import FUNCTIONS, SecretFunction
@@ -193,38 +191,33 @@ async def run_game(
     The caller owns `model_client`'s lifecycle; this function neither
     constructs nor closes it. The caller also owns staging the skill
     (extracting the tar, mounting the dir into `exec_tool`'s container at
-    `SKILL_FILES_PATH`); `skill_md` is the SKILL.md text to inline (empty
+    `SKILL_PATH`); `skill_md` is the SKILL.md text to inline (empty
     string for the off-arm — the empty-skill tar has an empty SKILL.md).
     """
     secret_fn = FUNCTIONS[function_name]
     description = secret_fn.description if hint else _NO_HINT
 
-    system = build_system_prompt(skill=skill_md, has_scratch=True, skill_files_path=SKILL_FILES_PATH)
+    system = build_system_prompt(skill=skill_md)
     opening = first_user_message(secret_fn, turn_limit, description, eval_timeout_s=EVAL_TIMEOUT_S)
 
     calls_path, summary_path = run_output_paths(f"fl_{function_name}_{'hint' if hint else 'nohint'}", output_dir)
 
-    with calls_path.open("w") as log_f:
-        # AF "instructions" don't flow through the Message stream — seed it
-        # manually so the JSONL transcript has the full context at the top.
-        log_f.write(Message("system", [system]).to_json() + "\n")
-        log_f.flush()
+    game = GameContext(turn_limit=turn_limit)
+    play_turn_tool = _make_play_turn_tool(game, secret_fn, scoring_container)
 
-        game = GameContext(turn_limit=turn_limit)
-        play_turn_tool = _make_play_turn_tool(game, secret_fn, scoring_container)
-
+    with JsonlTranscriptProvider.opened(calls_path) as transcript:
         agent = Agent(
             client=model_client,
-            instructions=system,
             tools=[play_turn_tool, exec_tool],
-            context_providers=[JsonlTranscriptProvider(log_f)],
+            context_providers=[transcript],
             middleware=[_TokenUsageTracker(game), terminate_when(lambda: game.finished, reason="game finished")],
             default_options={"tool_choice": "required", "allow_multiple_tool_calls": False},
+            require_per_service_call_history_persistence=True,
         )
 
-        # `terminate_when` raises `MiddlewareTermination` once `game.finished`.
-        with contextlib.suppress(MiddlewareTermination):
-            await agent.run(opening, session=AgentSession())
+        # `terminate_when` raises `MiddlewareTermination` once `game.finished`;
+        # AF's tool loop catches it internally so `agent.run` returns normally.
+        await agent.run([Message("system", [system]), Message("user", [opening])], session=AgentSession())
 
     per_turn = [tr.score.hamming_loss for tr in game.turn_results]
     per_turn += [0] * (turn_limit - len(per_turn))
@@ -266,7 +259,7 @@ async def _async_main(args: argparse.Namespace) -> None:
 
     staged = stage_skill(SKILL_BY_ARM[args.skill], output_dir / "skill_extract")
 
-    async with eval_sandbox(skill=staged) as exec_tool:
+    async with eval_sandbox(skill=staged, workspace=output_dir / "work", inputs=None) as exec_tool:
         container_name = f"fl-scoring-{uuid.uuid4().hex[:8]}"
         async with aiodocker.Docker() as docker:
             container = await docker.containers.run(

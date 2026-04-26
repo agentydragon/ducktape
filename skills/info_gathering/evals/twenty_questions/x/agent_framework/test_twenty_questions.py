@@ -74,17 +74,17 @@ async def _run_with_replay(
     [guesser_tool_call_1, simulator_tool_call_1, guesser_tool_call_2, simulator_tool_call_2, ...]
 
     Stages the empty skill and binds it into a real `eval_sandbox` so the
-    test mirrors production: the agent sees a populated `SKILL_FILES_PATH`
-    and an exec MCP tool wired to a real launcher subprocess. Replay
-    scripts don't call exec, but the wiring fails loud if the launcher /
-    MCP layer breaks.
+    test mirrors production: the agent sees a populated `SKILL_PATH` and
+    an exec MCP tool wired to a real launcher subprocess. Replay scripts
+    don't call exec, but the wiring fails loud if the launcher / MCP
+    layer breaks.
     """
     client = ReplayChatClient(responses=completions)
     load_oci_image(PYTHON_3_13_SLIM)
 
     staged = stage_skill(EMPTY_SKILL_SPEC, tmp_path / "skill_extract")
 
-    async with eval_sandbox(skill=staged) as exec_tool:
+    async with eval_sandbox(skill=staged, workspace=tmp_path / "work", inputs=None) as exec_tool:
         return await run_game(
             variant_name=variant_name,
             model="test-model",

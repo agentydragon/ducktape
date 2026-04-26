@@ -18,7 +18,6 @@ context window.
 
 import argparse
 import asyncio
-import contextlib
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -40,7 +39,7 @@ from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERI
 
 from skills.eval_infra.af_chat_client import build_model_client
 from skills.eval_infra.eval_sandbox import eval_sandbox
-from skills.eval_infra.skill_staging import SKILL_FILES_PATH, SkillSpec, stage_skill
+from skills.eval_infra.skill_staging import SkillSpec, stage_skill
 from skills.eval_infra.termination import terminate_when
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
@@ -129,10 +128,16 @@ def _make_sim_tools(game: GameContext) -> list[FunctionTool]:
 
 
 def _make_game_tools(*, game: GameContext, sim_agent: Agent, sim_session: AgentSession) -> list[FunctionTool]:
+    # CLEANUP(2026-04-26): Consider replacing this closure-based dispatch with
+    # `sim_agent.as_tool(propagate_session=True)` plumbed into the guesser's
+    # tool list. Would expose the simulator as a typed tool with a real
+    # schema, drop the `last_sim_response` shared-state passing, and let AF
+    # manage session inheritance natively. Bigger restructuring — separate PR.
     async def _drive_simulator(text: str) -> None:
-        # Simulator middleware terminates after the single tool call by design.
-        with contextlib.suppress(MiddlewareTermination):
-            await sim_agent.run(text, session=sim_session)
+        # `_SimulatorEndMiddleware` raises `MiddlewareTermination` after the
+        # single tool dispatch; AF's tool loop catches it internally so
+        # `sim_agent.run()` returns normally.
+        await sim_agent.run(text, session=sim_session)
 
     async def ask_yes_no_question(question: str) -> str:
         """Ask a yes/no question. Uses one turn."""
@@ -204,12 +209,12 @@ async def run_game(
     The caller owns `model_client`'s lifecycle; this function neither
     constructs nor closes it. The caller also owns staging the skill
     (extracting the tar, mounting the dir into `exec_tool`'s container at
-    `SKILL_FILES_PATH`); `skill_md` is the SKILL.md text to inline (empty
+    `SKILL_PATH`); `skill_md` is the SKILL.md text to inline (empty
     string for the off-arm — the empty-skill tar has an empty SKILL.md).
     """
     variant = VARIANTS[variant_name]
     sim_system = load_sim_prompt(secret=variant.secret, turn_limit=variant.turn_limit)
-    guesser_system = build_guesser_system(skill=skill_md, has_scratch=True, skill_files_path=SKILL_FILES_PATH)
+    guesser_system = build_guesser_system(skill=skill_md)
     opening = first_user_message(variant.domain_description, variant.turn_limit)
 
     game = GameContext(turn_limit=variant.turn_limit)
@@ -237,9 +242,9 @@ async def run_game(
     )
     guesser_session = AgentSession()
 
-    # Game-end middleware terminates once `game.result` is set.
-    with contextlib.suppress(MiddlewareTermination):
-        await guesser_agent.run(opening, session=guesser_session)
+    # `terminate_when` raises `MiddlewareTermination` once `game.result` is set;
+    # AF's tool loop catches it internally so this returns normally.
+    await guesser_agent.run(opening, session=guesser_session)
 
     if game.result is None:
         game.result = Timeout(limit=game.turn_limit)
@@ -272,7 +277,7 @@ async def _async_main(args: argparse.Namespace) -> None:
 
     staged = stage_skill(_SKILL_BY_ARM[args.skill], output_dir / "skill_extract")
 
-    async with eval_sandbox(skill=staged) as exec_tool:
+    async with eval_sandbox(skill=staged, workspace=output_dir / "work", inputs=None) as exec_tool:
         summary = await run_game(
             variant_name=args.variant,
             model=args.model,

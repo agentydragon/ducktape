@@ -5,7 +5,7 @@ A `SkillSpec` names a packaged skill: the runfiles location of its
 `skill_package` Bazel macro auto-generates a ``<name>_skill_spec`` py
 module exporting a ``SPEC: SkillSpec`` constant; eval rollouts pick a
 SPEC and call `stage_skill` to extract the tar into a host directory ready
-to bind into the agent's scratch container at `SKILL_FILES_PATH`.
+to bind into the agent's scratch container (see `eval_sandbox.SKILL_PATH`).
 
 Extraction lives in this module — there is no per-skill staging code.
 """
@@ -15,12 +15,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from util.bazel.runfiles import get_required_path
-
-# Conventional in-container path where every eval rollout bind-mounts its
-# staged skill. Single source of truth — callers should import this rather
-# than rewriting the path string. Hardcoded by design: standardizing across
-# rollouts is the whole point of `eval_infra`.
-SKILL_FILES_PATH = Path("/work/.skill")
 
 
 @dataclass(frozen=True)
