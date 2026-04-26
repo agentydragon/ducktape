@@ -84,7 +84,6 @@
 ## Not handled, OK to handle later
 
 - OpenAI Codex - now in nixpkgs, migrate to Nix
-- Discord autostart conflict check: Nix creates only, does not check there's no conflicting ones present (ansible did)
 
 ## Currently system level but maybe make user-level later
 
