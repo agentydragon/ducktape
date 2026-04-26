@@ -22,9 +22,8 @@ import pytest_bazel
 from agent_framework import ChatResponse, Content, Message
 from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
 
-from mcp_infra.exec.docker.types import BindMount
-from skills.eval_infra.af_scratch_mcp import scratch_exec_mcp_tool
-from skills.eval_infra.skill_staging import SKILL_FILES_PATH, stage_skill
+from skills.eval_infra.eval_sandbox import eval_sandbox
+from skills.eval_infra.skill_staging import stage_skill
 from skills.info_gathering.evals.function_learning.function_learning import run_game
 from skills.info_gathering.evals.function_learning.functions import PARITY_GROUPS
 from skills.info_gathering.evals.function_learning.result_types import RunSummary
@@ -65,9 +64,8 @@ async def _run_with_replay(
     # Stage the empty skill so the sandbox shape matches production: prompt
     # claims `SKILL_FILES_PATH` is mounted, and it really is.
     staged = stage_skill(EMPTY_SKILL_SPEC, tmp_path / "skill_extract")
-    skill_bind = BindMount(host_path=staged.files_path.resolve(), container_path=SKILL_FILES_PATH, mode="ro")
 
-    async with scratch_exec_mcp_tool(binds=[skill_bind]) as exec_tool, aiodocker.Docker() as docker:
+    async with eval_sandbox(skill=staged) as exec_tool, aiodocker.Docker() as docker:
         container = await docker.containers.run(
             config={"Image": image_tag, "Cmd": ["sleep", "300"]}, name=f"fl-test-{uuid.uuid4().hex[:8]}"
         )
