@@ -113,12 +113,24 @@
         state: present
       tags: [users]
 
+    - name: Ensure root .ssh directory exists
+      ansible.builtin.file:
+        path: /root/.ssh
+        state: directory
+        mode: "0700"
+        owner: root
+        group: root
+      tags: [users, ssh]
+
     - name: Authorize SSH keys for root login
-      ansible.builtin.authorized_key:
-        user: root
-        key: |
+      ansible.builtin.copy:
+        dest: /root/.ssh/authorized_keys
+        content: |
           ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBoGigbjJZfs1+M6yUCJSBzUlu2mFcakFTmuxrN425fO agentydragon@atlas
           ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICweiJQQidbhojDI7tXuSuntptCc6Dy4stIGzDlI9z0b agentydragon@rugged
+        mode: "0600"
+        owner: root
+        group: root
       tags: [users, ssh]
 
     - name: Allow input group access to /dev/uinput
