@@ -30,6 +30,7 @@ mock_modules:
   - install_handler
   - autostart_entry
   - community.general.snap
+  - community.general.zfs
   - community.general.dconf
   - community.general.ufw
   - community.docker.docker_container
