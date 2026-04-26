@@ -4,6 +4,8 @@ Loads shared prompt templates from text files via Bazel runfiles, providing a
 single source of truth used by all implementations (Python, Rust, Go).
 """
 
+from pathlib import Path
+
 from util.bazel.runfiles import get_required_path
 
 _SIM_RLOCATION = "_main/skills/info_gathering/evals/twenty_questions/sim.txt"
@@ -29,7 +31,7 @@ def load_scratch_system_note() -> str:
     return get_required_path(_SCRATCH_NOTE_RLOCATION).read_text().strip()
 
 
-def build_guesser_system(*, skill: str, has_scratch: bool, skill_files_path: str | None) -> str:
+def build_guesser_system(*, skill: str, has_scratch: bool, skill_files_path: Path | None) -> str:
     """Compose the guesser's system prompt from independent pieces.
 
     Args:

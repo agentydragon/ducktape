@@ -18,7 +18,6 @@ import asyncio
 import contextlib
 import json
 import logging
-import tarfile
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -39,10 +38,13 @@ from agent_framework import (
     Message,
     MiddlewareTermination,
 )
+from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 
 from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.af_chat_client import build_model_client
 from skills.eval_infra.af_scratch_mcp import scratch_exec_mcp_tool
+from skills.eval_infra.empty_skill_spec import SPEC as EMPTY_SKILL_SPEC
+from skills.eval_infra.skill_staging import SkillSpec, stage_skill
 from skills.info_gathering.evals.function_learning.functions import FUNCTIONS, SecretFunction
 from skills.info_gathering.evals.function_learning.prompts import build_system_prompt, first_user_message
 from skills.info_gathering.evals.function_learning.result_types import (
@@ -53,30 +55,16 @@ from skills.info_gathering.evals.function_learning.result_types import (
 )
 from skills.info_gathering.evals.function_learning.scoring import EVAL_TIMEOUT_S, evaluate_program
 from skills.info_gathering.evals.twenty_questions.x.shared.output import run_output_paths
-from util.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
 
 _MAX_STEPS = 200
-_SKILL_FILES_PATH = "/work/.skill"
+_SKILL_FILES_PATH = Path("/work/.skill")
 
-# Maps the --skill CLI value to (rlocation, package_name) of the tar to mount
-# into the scratch container. The "off" arm uses an empty SKILL.md so the
-# sandbox shape is uniform across arms — there is no `if skill_on:` branch.
-_SKILL_TARS: dict[str, tuple[str, str]] = {
-    "on": ("_main/skills/info_gathering/info_gathering_tar.tar", "info_gathering"),
-    "off": ("_main/skills/eval_infra/empty_skill_tar.tar", "empty_skill"),
-}
-
-
-def _load_skill(tar_rlocation: str, package_name: str, extract_dir: Path) -> tuple[Path, str]:
-    """Extract a skill tar; return (host dir to bind-mount, SKILL.md text)."""
-    tar_path = get_required_path(tar_rlocation)
-    with tarfile.open(tar_path) as tf:
-        tf.extractall(extract_dir, filter="data")
-    skill_dir = extract_dir / package_name
-    skill_md = (skill_dir / "SKILL.md").read_text()
-    return skill_dir, skill_md
+# Maps the --skill CLI value to a SkillSpec. The "off" arm uses an empty
+# SKILL.md so the sandbox shape is uniform across arms — there is no
+# `if skill_on:` branch.
+SKILL_BY_ARM: dict[str, SkillSpec] = {"on": INFO_GATHERING_SKILL_SPEC, "off": EMPTY_SKILL_SPEC}
 
 
 # --- Game state ---
@@ -223,7 +211,7 @@ async def run_game(
     scoring_container: aiodocker.docker.DockerContainer,
     model_client: BaseChatClient[Any],
     skill_md: str,
-    skill_files_path: str,
+    skill_files_path: Path,
 ) -> RunSummary:
     """Execute one function learning game and persist results.
 
@@ -300,9 +288,8 @@ async def _async_main(args: argparse.Namespace) -> None:
         api=args.api, model=args.model, function_invocation_configuration={"max_iterations": _MAX_STEPS}
     )
 
-    tar_rlocation, package_name = _SKILL_TARS[args.skill]
-    skill_dir, skill_md = _load_skill(tar_rlocation, package_name, output_dir / "skill_extract")
-    skill_bind = BindMount(host_path=skill_dir.resolve(), container_path=Path(_SKILL_FILES_PATH), mode="ro")
+    staged = stage_skill(SKILL_BY_ARM[args.skill], output_dir / "skill_extract")
+    skill_bind = BindMount(host_path=staged.files_path.resolve(), container_path=_SKILL_FILES_PATH, mode="ro")
 
     async with scratch_exec_mcp_tool(binds=[skill_bind]) as exec_tool:
         container_name = f"fl-scoring-{uuid.uuid4().hex[:8]}"
@@ -320,7 +307,7 @@ async def _async_main(args: argparse.Namespace) -> None:
                     exec_tool=exec_tool,
                     scoring_container=container,
                     model_client=model_client,
-                    skill_md=skill_md,
+                    skill_md=staged.md_text,
                     skill_files_path=_SKILL_FILES_PATH,
                     turn_limit=args.turn_limit,
                 )

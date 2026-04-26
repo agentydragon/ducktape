@@ -76,7 +76,7 @@ async def _run_with_replay(
         output_dir=tmp_path,
         model_client=client,
         skill_md="You are skilled.",
-        skill_files_path="/work/.skill",
+        skill_files_path=Path("/work/.skill"),
     )
 
 

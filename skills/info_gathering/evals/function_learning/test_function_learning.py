@@ -74,7 +74,7 @@ async def _run_with_replay(
                 model_client=client,
                 scoring_container=container,
                 skill_md="",
-                skill_files_path="/work/.skill",
+                skill_files_path=Path("/work/.skill"),
                 turn_limit=turn_limit,
             )
         finally:

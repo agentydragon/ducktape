@@ -41,10 +41,6 @@ py_library(
 py_library(
     name = "function_learning",
     srcs = ["function_learning.py"],
-    data = [
-        "//skills/eval_infra:empty_skill_tar",
-        "//skills/info_gathering:info_gathering_tar",
-    ],
     deps = [
         ":functions",
         ":prompts",
@@ -53,8 +49,10 @@ py_library(
         "//mcp_infra/exec:docker_types",
         "//skills/eval_infra:af_chat_client",
         "//skills/eval_infra:af_scratch_mcp",
+        "//skills/eval_infra:empty_skill_spec",
+        "//skills/eval_infra:skill_staging",
+        "//skills/info_gathering:info_gathering_skill_spec",
         "//skills/info_gathering/evals/twenty_questions/x/shared:output",
-        "//util/bazel:runfiles",
         # agent_framework's __init__.py references openai/anthropic stubs.
         "@pypi//agent_framework_anthropic",
         "@pypi//agent_framework_claude",
@@ -79,6 +77,7 @@ py_library(
         "//mcp_infra/exec:docker_types",
         "//skills/eval_infra:af_chat_client",
         "//skills/eval_infra:af_scratch_mcp",
+        "//skills/eval_infra:skill_staging",
         "@pypi//agent_framework_anthropic",
         "@pypi//agent_framework_claude",
         "@pypi//agent_framework_core",

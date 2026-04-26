@@ -3,20 +3,18 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 py_library(
     name = "twenty_questions",
     srcs = ["twenty_questions.py"],
-    data = [
-        "//skills/eval_infra:empty_skill_tar",
-        "//skills/info_gathering:info_gathering_tar",
-    ],
     deps = [
         "//mcp_infra/exec:docker_types",
         "//skills/eval_infra:af_chat_client",
         "//skills/eval_infra:af_scratch_mcp",
+        "//skills/eval_infra:empty_skill_spec",
+        "//skills/eval_infra:skill_staging",
+        "//skills/info_gathering:info_gathering_skill_spec",
         "//skills/info_gathering/evals/twenty_questions:prompts",
         "//skills/info_gathering/evals/twenty_questions:result_types",
         "//skills/info_gathering/evals/twenty_questions/x/shared:cli",
         "//skills/info_gathering/evals/twenty_questions/x/shared:output",
         "//skills/info_gathering/evals/twenty_questions/x/shared:variants",
-        "//util/bazel:runfiles",
         # The agent_framework core package's openai/anthropic stub modules
         # reference these sibling packages; mypy needs them on the dep graph.
         "@pypi//agent_framework_anthropic",

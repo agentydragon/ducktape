@@ -15,11 +15,11 @@ from pydantic import BaseModel
 from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.af_chat_client import build_model_client
 from skills.eval_infra.af_scratch_mcp import scratch_exec_mcp_tool
+from skills.eval_infra.skill_staging import stage_skill
 from skills.info_gathering.evals.function_learning.function_learning import (
     _MAX_STEPS,
     _SKILL_FILES_PATH,
-    _SKILL_TARS,
-    _load_skill,
+    SKILL_BY_ARM,
     run_game,
 )
 from skills.info_gathering.evals.function_learning.functions import FUNCTIONS
@@ -104,11 +104,10 @@ async def _async_main(args: argparse.Namespace) -> None:
     arms: dict[str, tuple[MCPStdioTool, str]] = {}
     async with AsyncExitStack() as stack:
         for arm in ("on", "off"):
-            tar_rlocation, package_name = _SKILL_TARS[arm]
-            skill_dir, skill_md = _load_skill(tar_rlocation, package_name, output_dir / f"skill_extract_{arm}")
-            skill_bind = BindMount(host_path=skill_dir.resolve(), container_path=Path(_SKILL_FILES_PATH), mode="ro")
+            staged = stage_skill(SKILL_BY_ARM[arm], output_dir / f"skill_extract_{arm}")
+            skill_bind = BindMount(host_path=staged.files_path.resolve(), container_path=_SKILL_FILES_PATH, mode="ro")
             exec_tool = await stack.enter_async_context(scratch_exec_mcp_tool(binds=[skill_bind]))
-            arms[arm] = (exec_tool, skill_md)
+            arms[arm] = (exec_tool, staged.md_text)
 
         docker = await stack.enter_async_context(aiodocker.Docker())
         container_name = f"fl-scoring-{uuid.uuid4().hex[:8]}"

@@ -1,11 +1,13 @@
 """Macros for packaging skills for deployment."""
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/python:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 _FRONTMATTER_TEST_LIB = "//skills:skill_frontmatter_test_lib"
+_SKILL_STAGING_LIB = "//skills/eval_infra:skill_staging"
 
 def skill_mapping(srcs, prefix = "", preserve_paths = False):
     return struct(
@@ -82,4 +84,31 @@ def skill_package(name, srcs = None, contents = None, visibility = None):
         name = name,
         srcs = public_srcs,
         visibility = visibility or ["//visibility:public"],
+    )
+
+    # Auto-generated SkillSpec module — eval rollouts import
+    # `<pkg>.<name>_skill_spec.SPEC` to mount this skill into a sandbox.
+    # The runfile path mirrors what `pkg_tar(name=name+"_tar")` produces.
+    spec_src = name + "_skill_spec.py"
+    write_file(
+        name = name + "_skill_spec_src",
+        out = spec_src,
+        content = [
+            '"""Auto-generated SkillSpec for the {} skill (do not edit)."""'.format(name),
+            "",
+            "from skills.eval_infra.skill_staging import SkillSpec",
+            "",
+            "SPEC = SkillSpec(",
+            '    tar_rlocation="_main/{}/{}_tar.tar",'.format(native.package_name(), name),
+            '    package_name="{}",'.format(name),
+            ")",
+            "",
+        ],
+    )
+    py_library(
+        name = name + "_skill_spec",
+        srcs = [spec_src],
+        data = [":" + name + "_tar"],
+        visibility = visibility or ["//visibility:public"],
+        deps = [_SKILL_STAGING_LIB],
     )

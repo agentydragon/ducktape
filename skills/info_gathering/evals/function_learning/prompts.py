@@ -1,5 +1,7 @@
 """Prompt loading helpers for the function learning eval."""
 
+from pathlib import Path
+
 from skills.info_gathering.evals.function_learning.functions import SecretFunction
 from skills.info_gathering.evals.twenty_questions.prompts import load_scratch_system_note
 from util.bazel.runfiles import get_required_path
@@ -15,7 +17,7 @@ _BASE_PREAMBLE = (
 )
 
 
-def build_system_prompt(*, skill: str, has_scratch: bool, skill_files_path: str | None) -> str:
+def build_system_prompt(*, skill: str, has_scratch: bool, skill_files_path: Path | None) -> str:
     """Compose the system prompt for the function learning guesser.
 
     Args:
