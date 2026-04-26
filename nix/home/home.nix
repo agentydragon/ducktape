@@ -675,17 +675,22 @@ in
   # Default terminal for xdg-terminal-exec (used by Ctrl+Alt+T keybinding above)
   xdg.configFile."xdg-terminals.list".text = "org.gnome.Terminal.desktop\n";
 
-  # XDG autostart desktop entries (migrated from Ansible gui role)
-  xdg.configFile."autostart/syncthing-gtk.desktop".text = ''
-    [Desktop Entry]
-    Type=Application
-    Name=Syncthing-GTK
-    Exec=syncthing-gtk --minimized
-    Icon=syncthing-gtk
-    Terminal=false
-    Categories=Network;FileTransfer;
-    X-GNOME-Autostart-enabled=true
-  '';
+  xdg.autostart = {
+    enable = true;
+    entries = [
+      (pkgs.writeText "syncthing-gtk.desktop" ''
+        [Desktop Entry]
+        Type=Application
+        Name=Syncthing-GTK
+        Exec=syncthing-gtk --minimized
+        Icon=syncthing-gtk
+        Terminal=false
+        Categories=Network;FileTransfer;
+        X-GNOME-Autostart-enabled=true
+      '')
+    ];
+  };
+
   # GNOME dconf settings (migrated from Ansible gui role)
   dconf = {
     enable = true;
