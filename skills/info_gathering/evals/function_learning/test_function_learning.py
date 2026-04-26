@@ -20,8 +20,11 @@ from pathlib import Path
 import aiodocker
 import pytest_bazel
 from agent_framework import ChatResponse, Content, Message
+from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
 
+from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.af_scratch_mcp import scratch_exec_mcp_tool
+from skills.eval_infra.skill_staging import SKILL_FILES_PATH, stage_skill
 from skills.info_gathering.evals.function_learning.function_learning import run_game
 from skills.info_gathering.evals.function_learning.functions import PARITY_GROUPS
 from skills.info_gathering.evals.function_learning.result_types import RunSummary
@@ -59,7 +62,12 @@ async def _run_with_replay(
     client = ReplayChatClient(responses=completions)
     image_tag = load_oci_image(PYTHON_3_13_SLIM)
 
-    async with scratch_exec_mcp_tool() as exec_tool, aiodocker.Docker() as docker:
+    # Stage the empty skill so the sandbox shape matches production: prompt
+    # claims `SKILL_FILES_PATH` is mounted, and it really is.
+    staged = stage_skill(EMPTY_SKILL_SPEC, tmp_path / "skill_extract")
+    skill_bind = BindMount(host_path=staged.files_path.resolve(), container_path=SKILL_FILES_PATH, mode="ro")
+
+    async with scratch_exec_mcp_tool(binds=[skill_bind]) as exec_tool, aiodocker.Docker() as docker:
         container = await docker.containers.run(
             config={"Image": image_tag, "Cmd": ["sleep", "300"]}, name=f"fl-test-{uuid.uuid4().hex[:8]}"
         )
@@ -73,8 +81,7 @@ async def _run_with_replay(
                 exec_tool=exec_tool,
                 model_client=client,
                 scoring_container=container,
-                skill_md="",
-                skill_files_path=Path("/work/.skill"),
+                skill_md=staged.md_text,
                 turn_limit=turn_limit,
             )
         finally:

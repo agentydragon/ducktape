@@ -35,13 +35,13 @@ from agent_framework import (
     MCPStdioTool,
     MiddlewareTermination,
 )
+from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
 from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 
 from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.af_chat_client import build_model_client
 from skills.eval_infra.af_scratch_mcp import scratch_exec_mcp_tool
-from skills.eval_infra.empty_skill_spec import SPEC as EMPTY_SKILL_SPEC
-from skills.eval_infra.skill_staging import SkillSpec, stage_skill
+from skills.eval_infra.skill_staging import SKILL_FILES_PATH, SkillSpec, stage_skill
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
     first_user_message,
@@ -59,7 +59,6 @@ from skills.info_gathering.evals.twenty_questions.x.shared.variants import VARIA
 logger = logging.getLogger(__name__)
 
 _MAX_STEPS = 200
-_SKILL_FILES_PATH = Path("/work/.skill")
 
 # Maps the --skill CLI value to a SkillSpec. The "off" arm uses an empty
 # SKILL.md so the sandbox shape is uniform across arms — there is no
@@ -210,23 +209,19 @@ async def run_game(
     output_dir: Path,
     model_client: BaseChatClient[Any],
     skill_md: str,
-    skill_files_path: Path,
-    exec_tool: MCPStdioTool | None = None,
+    exec_tool: MCPStdioTool,
 ) -> RunSummary:
     """Execute one Twenty Questions game and persist results.
 
     The caller owns `model_client`'s lifecycle; this function neither
     constructs nor closes it. The caller also owns staging the skill
-    (extracting the tar, mounting the dir into `exec_tool`'s container);
-    `skill_md` is the SKILL.md text to inline (empty string for the
-    off-arm — the empty-skill tar has an empty SKILL.md), and
-    `skill_files_path` is the in-container path the agent can `cat`/`ls`.
+    (extracting the tar, mounting the dir into `exec_tool`'s container at
+    `SKILL_FILES_PATH`); `skill_md` is the SKILL.md text to inline (empty
+    string for the off-arm — the empty-skill tar has an empty SKILL.md).
     """
     variant = VARIANTS[variant_name]
     sim_system = load_sim_prompt(secret=variant.secret, turn_limit=variant.turn_limit)
-    guesser_system = build_guesser_system(
-        skill=skill_md, has_scratch=exec_tool is not None, skill_files_path=skill_files_path
-    )
+    guesser_system = build_guesser_system(skill=skill_md, has_scratch=True, skill_files_path=SKILL_FILES_PATH)
     opening = first_user_message(variant.domain_description, variant.turn_limit)
 
     game = GameContext(turn_limit=variant.turn_limit)
@@ -240,11 +235,10 @@ async def run_game(
     )
     sim_session = AgentSession()
 
-    guesser_tools: list[FunctionTool | MCPStdioTool] = list(
-        _make_game_tools(game=game, sim_agent=sim_agent, sim_session=sim_session)
-    )
-    if exec_tool is not None:
-        guesser_tools.append(exec_tool)
+    guesser_tools: list[FunctionTool | MCPStdioTool] = [
+        *_make_game_tools(game=game, sim_agent=sim_agent, sim_session=sim_session),
+        exec_tool,
+    ]
 
     guesser_agent = Agent(
         client=model_client,
@@ -289,7 +283,7 @@ async def _async_main(args: argparse.Namespace) -> None:
     )
 
     staged = stage_skill(_SKILL_BY_ARM[args.skill], output_dir / "skill_extract")
-    skill_bind = BindMount(host_path=staged.files_path.resolve(), container_path=_SKILL_FILES_PATH, mode="ro")
+    skill_bind = BindMount(host_path=staged.files_path.resolve(), container_path=SKILL_FILES_PATH, mode="ro")
 
     async with scratch_exec_mcp_tool(binds=[skill_bind]) as exec_tool:
         summary = await run_game(
@@ -299,7 +293,6 @@ async def _async_main(args: argparse.Namespace) -> None:
             output_dir=output_dir,
             model_client=model_client,
             skill_md=staged.md_text,
-            skill_files_path=_SKILL_FILES_PATH,
             exec_tool=exec_tool,
         )
     logger.info("Result: %s", summary.result.model_dump_json())

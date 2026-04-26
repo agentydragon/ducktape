@@ -15,13 +15,8 @@ from pydantic import BaseModel
 from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.af_chat_client import build_model_client
 from skills.eval_infra.af_scratch_mcp import scratch_exec_mcp_tool
-from skills.eval_infra.skill_staging import stage_skill
-from skills.info_gathering.evals.function_learning.function_learning import (
-    _MAX_STEPS,
-    _SKILL_FILES_PATH,
-    SKILL_BY_ARM,
-    run_game,
-)
+from skills.eval_infra.skill_staging import SKILL_FILES_PATH, stage_skill
+from skills.info_gathering.evals.function_learning.function_learning import _MAX_STEPS, SKILL_BY_ARM, run_game
 from skills.info_gathering.evals.function_learning.functions import FUNCTIONS
 from skills.info_gathering.evals.function_learning.result_types import FunctionLearningResult, TokenUsage
 
@@ -69,7 +64,6 @@ async def run_one(
                 scoring_container=scoring_container,
                 model_client=model_client,
                 skill_md=skill_md,
-                skill_files_path=_SKILL_FILES_PATH,
             )
             record = RunRecord(
                 function=function_name,
@@ -105,7 +99,7 @@ async def _async_main(args: argparse.Namespace) -> None:
     async with AsyncExitStack() as stack:
         for arm in ("on", "off"):
             staged = stage_skill(SKILL_BY_ARM[arm], output_dir / f"skill_extract_{arm}")
-            skill_bind = BindMount(host_path=staged.files_path.resolve(), container_path=_SKILL_FILES_PATH, mode="ro")
+            skill_bind = BindMount(host_path=staged.files_path.resolve(), container_path=SKILL_FILES_PATH, mode="ro")
             exec_tool = await stack.enter_async_context(scratch_exec_mcp_tool(binds=[skill_bind]))
             arms[arm] = (exec_tool, staged.md_text)
 

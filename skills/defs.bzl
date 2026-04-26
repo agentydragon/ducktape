@@ -9,6 +9,44 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 _FRONTMATTER_TEST_LIB = "//skills:skill_frontmatter_test_lib"
 _SKILL_STAGING_LIB = "//skills/eval_infra:skill_staging"
 
+def skill_spec_library(name, tar_basename, package_name, visibility = None):
+    """Generate a py_library exporting `SPEC = SkillSpec(...)` for a skill tar.
+
+    Eval rollouts import `<pkg>.<name>.SPEC` and pass it to `stage_skill(...)`
+    to mount the skill into a sandbox container. The tar at
+    `:{tar_basename}` is added as a runtime data dep.
+
+    Args:
+        name: py_library + module name (e.g. "info_gathering_skill_spec").
+        tar_basename: pkg_tar target name in the same package, without ":".
+        package_name: directory the tar's contents are prefixed with (the
+            `package_dir` passed to pkg_tar / skill_package's `name`).
+        visibility: visibility override (default //visibility:public).
+    """
+    spec_src = name + ".py"
+    write_file(
+        name = name + "_src",
+        out = spec_src,
+        content = [
+            '"""Auto-generated SkillSpec for {} (do not edit)."""'.format(package_name),
+            "",
+            "from skills.eval_infra.skill_staging import SkillSpec",
+            "",
+            "SPEC = SkillSpec(",
+            '    tar_rlocation="_main/{}/{}.tar",'.format(native.package_name(), tar_basename),
+            '    package_name="{}",'.format(package_name),
+            ")",
+            "",
+        ],
+    )
+    py_library(
+        name = name,
+        srcs = [spec_src],
+        data = [":" + tar_basename],
+        visibility = visibility or ["//visibility:public"],
+        deps = [_SKILL_STAGING_LIB],
+    )
+
 def skill_mapping(srcs, prefix = "", preserve_paths = False):
     return struct(
         srcs = srcs,
@@ -86,29 +124,9 @@ def skill_package(name, srcs = None, contents = None, visibility = None):
         visibility = visibility or ["//visibility:public"],
     )
 
-    # Auto-generated SkillSpec module — eval rollouts import
-    # `<pkg>.<name>_skill_spec.SPEC` to mount this skill into a sandbox.
-    # The runfile path mirrors what `pkg_tar(name=name+"_tar")` produces.
-    spec_src = name + "_skill_spec.py"
-    write_file(
-        name = name + "_skill_spec_src",
-        out = spec_src,
-        content = [
-            '"""Auto-generated SkillSpec for the {} skill (do not edit)."""'.format(name),
-            "",
-            "from skills.eval_infra.skill_staging import SkillSpec",
-            "",
-            "SPEC = SkillSpec(",
-            '    tar_rlocation="_main/{}/{}_tar.tar",'.format(native.package_name(), name),
-            '    package_name="{}",'.format(name),
-            ")",
-            "",
-        ],
-    )
-    py_library(
+    skill_spec_library(
         name = name + "_skill_spec",
-        srcs = [spec_src],
-        data = [":" + name + "_tar"],
-        visibility = visibility or ["//visibility:public"],
-        deps = [_SKILL_STAGING_LIB],
+        tar_basename = name + "_tar",
+        package_name = name,
+        visibility = visibility,
     )

@@ -1,17 +1,9 @@
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/python:defs.bzl", "py_library")
 
-# A skill tar that contains nothing but an empty SKILL.md, used as the
-# "skill off" arm in skill-eval rollouts. Mounting an empty skill keeps
-# the sandbox shape uniform across arms — there's no skill_on/off branch
-# in the rollout code, just a different tar.
-pkg_tar(
-    name = "empty_skill_tar",
-    srcs = ["empty_skill/SKILL.md"],
-    package_dir = "empty_skill",
-    strip_prefix = "empty_skill",
-    visibility = ["//skills:__subpackages__"],
-)
+# The "skill off" payload (`empty_skill_tar` + `empty_skill_skill_spec`)
+# lives in the `empty_skill/` subpackage so it goes through the regular
+# `skill_package` macro — same sandbox shape as info_gathering and any
+# other skill.
 
 py_library(
     name = "docker_exec",
@@ -28,14 +20,6 @@ py_library(
     srcs = ["skill_staging.py"],
     visibility = ["//skills:__subpackages__"],
     deps = ["//util/bazel:runfiles"],
-)
-
-py_library(
-    name = "empty_skill_spec",
-    srcs = ["empty_skill_spec.py"],
-    data = [":empty_skill_tar"],
-    visibility = ["//skills:__subpackages__"],
-    deps = [":skill_staging"],
 )
 
 py_library(

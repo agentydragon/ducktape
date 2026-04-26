@@ -13,10 +13,16 @@ from unittest.mock import MagicMock
 import pytest
 import pytest_bazel
 from agent_framework import ChatResponse, Content, Message
+from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
 
+from mcp_infra.exec.docker.types import BindMount
+from skills.eval_infra.af_scratch_mcp import scratch_exec_mcp_tool
+from skills.eval_infra.skill_staging import SKILL_FILES_PATH, stage_skill
 from skills.info_gathering.evals.replay_client import ReplayChatClient
 from skills.info_gathering.evals.twenty_questions.result_types import RunSummary
 from skills.info_gathering.evals.twenty_questions.x.agent_framework.twenty_questions import run_game
+from third_party.containers.rlocations import PYTHON_3_13_SLIM
+from util.oci import load_oci_image
 
 
 def _tool_call_reply(name: str, arguments: dict[str, object]) -> ChatResponse:
@@ -67,17 +73,29 @@ async def _run_with_replay(
 
     Completions interleave guesser and simulator:
     [guesser_tool_call_1, simulator_tool_call_1, guesser_tool_call_2, simulator_tool_call_2, ...]
+
+    Stages the empty skill and binds it into a real `scratch_exec_mcp_tool`
+    sandbox so the test mirrors production: the agent sees a populated
+    `SKILL_FILES_PATH` and an exec MCP tool wired to a real launcher
+    subprocess. Replay scripts don't call exec, but the wiring fails
+    loud if the launcher / MCP layer breaks.
     """
     client = ReplayChatClient(responses=completions)
-    return await run_game(
-        variant_name=variant_name,
-        model="test-model",
-        api="openai",
-        output_dir=tmp_path,
-        model_client=client,
-        skill_md="You are skilled.",
-        skill_files_path=Path("/work/.skill"),
-    )
+    load_oci_image(PYTHON_3_13_SLIM)
+
+    staged = stage_skill(EMPTY_SKILL_SPEC, tmp_path / "skill_extract")
+    skill_bind = BindMount(host_path=staged.files_path.resolve(), container_path=SKILL_FILES_PATH, mode="ro")
+
+    async with scratch_exec_mcp_tool(binds=[skill_bind]) as exec_tool:
+        return await run_game(
+            variant_name=variant_name,
+            model="test-model",
+            api="openai",
+            output_dir=tmp_path,
+            model_client=client,
+            skill_md=staged.md_text,
+            exec_tool=exec_tool,
+        )
 
 
 @pytest.mark.usefixtures("_patch_prompts")
