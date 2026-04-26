@@ -1,6 +1,2 @@
 roles:
   - src: nbigot.ansible-fail2ban # Fail2Ban
-
-collections:
-  - community.general # dconf module
-  - community.sops # sops secret decryption
