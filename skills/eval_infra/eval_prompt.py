@@ -2,35 +2,32 @@
 
 `compose_system_prompt` joins three pieces with `\\n\\n---\\n\\n` separators:
 
-1. An eval-specific preamble (what game / task is being played).
-2. A skill block — inlined SKILL.md plus a one-line pointer at the in-container
-   skill mount. Included whenever `skill_md` is non-empty or `skill_files_path`
-   is not None. The off-arm of a mounted-skill rollout passes empty `skill_md`
-   and a real `skill_files_path`, so the block stays present (consistent
-   sandbox shape) but the inlined `<skill>` payload is empty.
-3. An optional eval-specific scratch-tool note.
+1. An eval-specific preamble (what task is being performed).
+2. A skill block — generic skill-intro line + inlined SKILL.md + a one-line
+   pointer at the in-container skill mount. Included whenever `skill_md` is
+   non-empty or `skill_files_path` is not None. The off-arm of a
+   mounted-skill rollout passes empty `skill_md` and a real
+   `skill_files_path`, so the block stays present (consistent sandbox shape)
+   but the inlined `<skill>` payload is empty. The intro wording is fixed:
+   any eval introducing any skill should phrase it the same way.
+3. An optional eval-specific scratch-tool / submit-tool note.
 
-TQ's `build_guesser_system` and FL's `build_system_prompt` are thin wrappers
-around this. RE's prompt has a different structural shape and does not use it.
+Used by TQ's `build_guesser_system`, FL's `build_system_prompt`, and RE's
+`_build_system_prompt` to give every eval the same skill-block shape.
 """
 
 from pathlib import Path
 
-_SKILL_INTRO = "Follow this information-gathering skill throughout."
+_SKILL_INTRO = "Follow this skill throughout the task."
 
 
 def compose_system_prompt(
-    *,
-    preamble: str,
-    skill_md: str,
-    skill_files_path: Path | None,
-    scratch_note: str | None,
-    skill_intro: str = _SKILL_INTRO,
+    *, preamble: str, skill_md: str, skill_files_path: Path | None, scratch_note: str | None
 ) -> str:
     """See module docstring."""
     parts: list[str] = [preamble]
     if skill_md or skill_files_path is not None:
-        skill_block = f"{skill_intro}\n\n<skill>\n{skill_md}\n</skill>"
+        skill_block = f"{_SKILL_INTRO}\n\n<skill>\n{skill_md}\n</skill>"
         if skill_files_path is not None:
             skill_block += (
                 f"\n\nThe full skill (SKILL.md and any referenced example files) is "

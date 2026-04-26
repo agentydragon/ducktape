@@ -41,6 +41,7 @@ from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_S
 from skills.reverse_engineer.reverse_engineer_skill_spec import SPEC as REVERSE_ENGINEER_SKILL_SPEC
 
 from skills.eval_infra.af_chat_client import build_model_client
+from skills.eval_infra.eval_prompt import compose_system_prompt
 from skills.eval_infra.eval_sandbox import INPUT_PATH, SKILL_PATH, WORK_PATH, eval_sandbox
 from skills.eval_infra.skill_staging import SkillSpec, stage_skill
 from skills.eval_infra.termination import terminate_when
@@ -78,29 +79,29 @@ class RunSummary(BaseModel):
 _TARGET_PATH = INPUT_PATH / "target"
 
 
+_RE_PREAMBLE = (
+    f"You are reverse-engineering a stripped Go binary located at {_TARGET_PATH}.\n"
+    f"Recover its source as Go files under {WORK_PATH}/ (your working directory)."
+)
+
+_RE_SCRATCH_NOTE = (
+    "You have shell access via the `exec` tool — `cmd` is a list of strings, no shell\n"
+    "expansion. Stdout and stderr are returned together. Install whatever you need\n"
+    "(apt-get install -y ..., pip install ..., curl ...). The container has internet.\n"
+    "When you have gone as far as you can, call `submit` with a one-paragraph summary\n"
+    "of what the program does and which parts you are confident vs unsure about."
+)
+
+
 def _build_system_prompt(*, skill_md_text: str) -> str:
-    """Compose the RE system prompt.
+    """Compose the RE system prompt via the shared scaffold.
 
     `skill_md_text` is inlined verbatim. The off-arm passes an empty string
     (the empty-skill tar's SKILL.md is blank), keeping the sandbox shape
     uniform across arms.
     """
-    return (
-        f"You are reverse-engineering a stripped Go binary located at {_TARGET_PATH}.\n"
-        f"Recover its source as Go files under {WORK_PATH}/ (your working directory).\n"
-        "You have shell access via the `exec` tool — `cmd` is a list of strings, no shell\n"
-        "expansion. Stdout and stderr are returned together. Install whatever you need\n"
-        "(apt-get install -y ..., pip install ..., curl ...). The container has internet.\n"
-        "When you have gone as far as you can, call `submit` with a one-paragraph summary\n"
-        "of what the program does and which parts you are confident vs unsure about.\n\n"
-        f"A reverse-engineering skill is available. Its SKILL.md is included below verbatim.\n"
-        f"The files SKILL.md references (e.g. examples/pclntool.go, examples/garble_re_recipe.sh)\n"
-        f"live inside the container at {SKILL_PATH}/. You can read them with "
-        f"`cat {SKILL_PATH}/...`, run scripts with `bash {SKILL_PATH}/examples/...`,\n"
-        f"build Go helpers with `go run {SKILL_PATH}/examples/pclntool.go ...`, etc.\n\n"
-        "--- BEGIN SKILL.md ---\n"
-        f"{skill_md_text}\n"
-        "--- END SKILL.md ---\n"
+    return compose_system_prompt(
+        preamble=_RE_PREAMBLE, skill_md=skill_md_text, skill_files_path=SKILL_PATH, scratch_note=_RE_SCRATCH_NOTE
     )
 
 
@@ -136,7 +137,7 @@ def _make_submit_tool(state: _SubmitState) -> FunctionTool:
 # -- Main --
 
 
-async def _async_main(args: argparse.Namespace) -> int:
+async def _async_main(args: argparse.Namespace) -> None:
     skill_on = args.skill == "on"
     suffix = "skill_on" if skill_on else "skill_off"
     out_dir: Path = args.output_dir
@@ -198,7 +199,6 @@ async def _async_main(args: argparse.Namespace) -> int:
     summary_path.write_text(summary.model_dump_json(indent=2))
     logger.info("Rollout finished. Output dir: %s", out_dir)
     logger.info("Summary: %s", summary.model_dump_json())
-    return 0
 
 
 def main() -> None:
@@ -218,7 +218,7 @@ def main() -> None:
         sys.exit("ANTHROPIC_API_KEY is not set; refusing to run.")
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    sys.exit(asyncio.run(_async_main(args)))
+    asyncio.run(_async_main(args))
 
 
 if __name__ == "__main__":
