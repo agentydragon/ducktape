@@ -26,14 +26,17 @@ from agents import (
 )
 from fastmcp.client import Client
 from mcp.types import TextContent
+from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 
 from mcp_infra.exec.docker.server import ContainerExecServer
+from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.docker_exec import scratch_exec_server
+from skills.eval_infra.eval_sandbox import SKILL_PATH
+from skills.eval_infra.skill_staging import StagedSkill, stage_skill
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
     first_user_message,
     load_sim_prompt,
-    load_skill_prompt,
 )
 from skills.info_gathering.evals.twenty_questions.result_types import Correct, LogEntry, RunSummary, Timeout
 from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
@@ -107,13 +110,14 @@ async def run_twenty_questions(
     variant_name: str,
     api: str,
     output_dir: Path,
+    staged: StagedSkill,
     exec_server: ContainerExecServer | None = None,
 ) -> RunSummary:
     variant = VARIANTS[variant_name]
     calls_path, summary_path = run_output_paths(name, output_dir)
 
     sim_system = load_sim_prompt(secret=variant.secret, turn_limit=variant.turn_limit)
-    guesser_system = build_guesser_system(skill=load_skill_prompt(), has_scratch=True, skill_files_path=None)
+    guesser_system = build_guesser_system(skill=staged.md_text)
     opening = first_user_message(variant.domain_description, variant.turn_limit)
 
     state = GameState(turn_limit=variant.turn_limit)
@@ -252,18 +256,21 @@ async def run_twenty_questions(
 async def _async_main(args: argparse.Namespace) -> None:
     name = f"20q_{args.variant}"
     output_dir = output_dir_from_args(args)
+    staged = stage_skill(INFO_GATHERING_SKILL_SPEC, output_dir / "skill_extract")
+    skill_bind = BindMount(host_path=staged.files_path.resolve(), container_path=SKILL_PATH, mode="ro")
 
     logger.info("=" * 60)
     logger.info("  %s  |  %s  |  openai_agents", name, args.model)
     logger.info("=" * 60)
 
-    async with scratch_exec_server() as server:
+    async with scratch_exec_server(binds=[skill_bind]) as server:
         summary = await run_twenty_questions(
             name=name,
             model=args.model,
             variant_name=args.variant,
             api=args.api,
             output_dir=output_dir,
+            staged=staged,
             exec_server=server,
         )
     logger.info("%s", summary)

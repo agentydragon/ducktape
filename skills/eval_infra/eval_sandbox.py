@@ -1,33 +1,94 @@
-"""Standardized scratch-container shape for skill-eval rollouts.
+"""Standardized scratch-container exec sandbox for skill-eval rollouts.
 
-`eval_sandbox` wraps `scratch_exec_mcp_tool` with the conventional
-SKILL_FILES_PATH bind always in place: every rollout mounts its staged
-skill (real or empty-skill placeholder) at the same in-container path,
-so the agent sees a uniform sandbox shape across `--skill on/off` arms
-and across evals. Callers add their own eval-specific binds (e.g. a
-target binary, a writable workspace) via `extra_binds`.
+Conventional in-container layout: every eval rollout's scratch container has
+
+- ``/skill`` (`SKILL_PATH`)  — read-only bind of the staged skill (real or
+  empty-skill placeholder; eval_sandbox always mounts this).
+- ``/work``  (`WORK_PATH`)   — read-write workspace bind; the agent's default
+  cwd; persisted on the host so the eval can harvest outputs after the run.
+- ``/input`` (`INPUT_PATH`)  — read-only bind of an eval-specific inputs
+  directory (e.g. RE's `target` binary lives at `/input/target`).
+  Optional — pass ``inputs=None`` for evals with no inputs (TQ, FL).
+
+`eval_sandbox` builds an `MCPStdioTool` that launches the
+`mcp_infra.exec.docker.launcher` CLI as a subprocess (which boots a
+`ContainerExecServer`) and speaks MCP over stdio; AF drives tool dispatch
+natively — no FastMCP client, no hand-rolled `FunctionTool` bridge.
+
+Usage:
+
+    async with eval_sandbox(skill=staged, workspace=ws_dir, inputs=None) as exec_tool:
+        agent = Agent(client=..., tools=[exec_tool, ...])
+        await agent.run(...)
 """
 
-from collections.abc import AsyncGenerator, Sequence
+import os
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from agent_framework import MCPStdioTool
 
-from mcp_infra.exec.docker.types import BindMount
-from skills.eval_infra.af_scratch_mcp import scratch_exec_mcp_tool
-from skills.eval_infra.skill_staging import SKILL_FILES_PATH, StagedSkill
+from mcp_infra.exec.docker.types import AlwaysSetTo, BindMount, ContainerExecServerConfig
+from skills.eval_infra.skill_staging import StagedSkill
+from util.bazel.runfiles import get_required_path
+
+# In-container path conventions. Hardcoded — standardizing across rollouts is
+# the whole point of `eval_infra`. See module docstring for the layout.
+SKILL_PATH = Path("/skill")
+WORK_PATH = Path("/work")
+INPUT_PATH = Path("/input")
+
+_LAUNCHER_RLOCATION = "_main/mcp_infra/exec/docker_launcher"
+
+
+def _proxy_env() -> dict[str, str]:
+    """Collect HTTP(S) proxy env vars for container networking."""
+    env: dict[str, str] = {}
+    for var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "NO_PROXY", "no_proxy"):
+        if val := os.environ.get(var):
+            env[var] = val
+    return env
 
 
 @asynccontextmanager
 async def eval_sandbox(
-    *, skill: StagedSkill, extra_binds: Sequence[BindMount] = (), working_dir: Path = Path("/tmp")
+    *, skill: StagedSkill, workspace: Path, inputs: Path | None, image: str = "python:3.13-slim", name: str = "exec"
 ) -> AsyncGenerator[MCPStdioTool]:
-    """Yield an `MCPStdioTool` exposing `exec` against a scratch container with
-    `skill` bind-mounted read-only at `SKILL_FILES_PATH` plus any `extra_binds`."""
+    """Yield an `MCPStdioTool` exposing `exec` against a scratch container.
+
+    Args:
+        skill: Staged skill to bind read-only at `SKILL_PATH`.
+        workspace: Host directory bound read-write at `WORK_PATH`. Becomes the
+            container cwd; the eval harvests anything the agent writes here.
+            Created (with parents) if missing — start-empty is the norm.
+        inputs: Host directory bound read-only at `INPUT_PATH`, or ``None``
+            for evals with no inputs. Caller is responsible for assembling
+            this directory's contents before entering the context.
+        image: Container image. Defaults to `python:3.13-slim`.
+        name: MCPStdioTool tool name (defaults to ``"exec"``).
+
+    The container has host networking, proxy env wired, and `cwd`/`user`/`env`
+    fields hidden from the model.
+    """
+    workspace.mkdir(parents=True, exist_ok=True)
     binds: list[BindMount] = [
-        BindMount(host_path=skill.files_path.resolve(), container_path=SKILL_FILES_PATH, mode="ro"),
-        *extra_binds,
+        BindMount(host_path=skill.files_path.resolve(), container_path=SKILL_PATH, mode="ro"),
+        BindMount(host_path=workspace.resolve(), container_path=WORK_PATH, mode="rw"),
     ]
-    async with scratch_exec_mcp_tool(binds=binds, working_dir=working_dir) as tool:
+    if inputs is not None:
+        binds.append(BindMount(host_path=inputs.resolve(), container_path=INPUT_PATH, mode="ro"))
+
+    config = ContainerExecServerConfig(
+        image=image,
+        working_dir=WORK_PATH,
+        network_mode="host",
+        environment=_proxy_env(),
+        allow_user_field=False,
+        allow_env_field=False,
+        cwd_policy=AlwaysSetTo(value=WORK_PATH),
+        binds=binds,
+    )
+    launcher = get_required_path(_LAUNCHER_RLOCATION)
+    async with MCPStdioTool(name=name, command=str(launcher), args=["--config", config.model_dump_json()]) as tool:
         yield tool

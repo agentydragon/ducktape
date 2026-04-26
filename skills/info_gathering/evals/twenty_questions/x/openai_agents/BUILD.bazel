@@ -5,7 +5,11 @@ py_library(
     srcs = ["twenty_questions.py"],
     deps = [
         "//mcp_infra/exec:docker",
+        "//mcp_infra/exec:docker_types",
         "//skills/eval_infra:docker_exec",
+        "//skills/eval_infra:eval_sandbox",
+        "//skills/eval_infra:skill_staging",
+        "//skills/info_gathering:info_gathering_skill_spec",
         "//skills/info_gathering/evals/twenty_questions:prompts",
         "//skills/info_gathering/evals/twenty_questions:result_types",
         "//skills/info_gathering/evals/twenty_questions/x/shared:cli",

@@ -40,8 +40,7 @@ py_test(
     requires_docker = True,
     deps = [
         ":twenty_questions",
-        "//mcp_infra/exec:docker_types",
-        "//skills/eval_infra:af_scratch_mcp",
+        "//skills/eval_infra:eval_sandbox",
         "//skills/eval_infra:skill_staging",
         "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
         "//skills/info_gathering/evals:replay_client",

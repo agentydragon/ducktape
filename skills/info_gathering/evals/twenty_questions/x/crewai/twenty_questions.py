@@ -23,13 +23,16 @@ from crewai import Agent, Crew, Process, Task
 from crewai.tools import BaseTool
 from fastmcp.client import Client
 from pydantic import BaseModel, Field, PrivateAttr
+from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 
+from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.docker_exec import scratch_exec_server
+from skills.eval_infra.eval_sandbox import SKILL_PATH
+from skills.eval_infra.skill_staging import StagedSkill, stage_skill
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
     first_user_message,
     load_sim_prompt,
-    load_skill_prompt,
 )
 from skills.info_gathering.evals.twenty_questions.result_types import Correct, LogEntry, RunSummary, Timeout
 from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
@@ -342,29 +345,32 @@ def run_twenty_questions_crewai(
     return summary
 
 
-async def _setup_and_run(loop: asyncio.AbstractEventLoop, ready: threading.Event, state: dict[str, Any]) -> None:
+async def _setup_and_run(
+    loop: asyncio.AbstractEventLoop, ready: threading.Event, state: dict[str, Any], skill_bind: BindMount
+) -> None:
     """Enter async context managers for the MCP server+client on *loop*.
 
     Signals *ready* once the client is available in *state*, then waits for
     *state["done"]* to be set before tearing down.
     """
-    async with scratch_exec_server() as server, Client(server) as mcp_client:
+    async with scratch_exec_server(binds=[skill_bind]) as server, Client(server) as mcp_client:
         state["mcp_client"] = mcp_client
         ready.set()
         done_event: asyncio.Event = state["done_event"]
         await done_event.wait()
 
 
-def _run_with_exec(args: argparse.Namespace) -> None:
+def _run_with_exec(args: argparse.Namespace, *, staged: StagedSkill) -> None:
     """Set up an MCP exec bridge on a background event loop, then run the game."""
     bg_loop = asyncio.new_event_loop()
     ready = threading.Event()
     done_async = asyncio.Event()
     state: dict[str, Any] = {"done_event": done_async}
+    skill_bind = BindMount(host_path=staged.files_path.resolve(), container_path=SKILL_PATH, mode="ro")
 
     def _run_bg() -> None:
         asyncio.set_event_loop(bg_loop)
-        bg_loop.run_until_complete(_setup_and_run(bg_loop, ready, state))
+        bg_loop.run_until_complete(_setup_and_run(bg_loop, ready, state, skill_bind))
 
     bg_thread = threading.Thread(target=_run_bg, daemon=True)
     bg_thread.start()
@@ -372,18 +378,18 @@ def _run_with_exec(args: argparse.Namespace) -> None:
 
     try:
         exec_tool = ExecTool(mcp_client=state["mcp_client"], loop=bg_loop)
-        _run_main(args, exec_tool=exec_tool)
+        _run_main(args, staged=staged, exec_tool=exec_tool)
     finally:
         bg_loop.call_soon_threadsafe(done_async.set)
         bg_thread.join(timeout=10)
         bg_loop.close()
 
 
-def _run_main(args: argparse.Namespace, *, exec_tool: ExecTool | None = None) -> None:
+def _run_main(args: argparse.Namespace, *, staged: StagedSkill, exec_tool: ExecTool | None = None) -> None:
     v = VARIANTS[args.variant]
     name = f"20q_{args.variant}"
 
-    guesser_system = build_guesser_system(skill=load_skill_prompt(), has_scratch=True, skill_files_path=None)
+    guesser_system = build_guesser_system(skill=staged.md_text)
     sim_system = load_sim_prompt(secret=v.secret, turn_limit=v.turn_limit)
     first_msg = first_user_message(v.domain_description, v.turn_limit)
     output_dir = output_dir_from_args(args)
@@ -416,7 +422,8 @@ def main() -> None:
     args = p.parse_args()
     resolve_args(args)
 
-    _run_with_exec(args)
+    staged = stage_skill(INFO_GATHERING_SKILL_SPEC, output_dir_from_args(args) / "skill_extract")
+    _run_with_exec(args, staged=staged)
 
 
 if __name__ == "__main__":

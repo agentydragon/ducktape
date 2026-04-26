@@ -48,16 +48,18 @@ py_library(
     name = "eval_prompt",
     srcs = ["eval_prompt.py"],
     visibility = ["//skills:__subpackages__"],
+    deps = [":eval_sandbox"],
 )
 
 py_library(
     name = "eval_sandbox",
     srcs = ["eval_sandbox.py"],
+    data = ["//mcp_infra/exec:docker_launcher"],
     visibility = ["//skills:__subpackages__"],
     deps = [
-        ":af_scratch_mcp",
         ":skill_staging",
         "//mcp_infra/exec:docker_types",
+        "//util/bazel:runfiles",
     ] + _AGENT_FRAMEWORK_DEPS,
 )
 
@@ -65,27 +67,5 @@ py_library(
     name = "af_chat_client",
     srcs = ["af_chat_client.py"],
     visibility = ["//skills:__subpackages__"],
-    deps = [
-        # agent_framework_claude shows up in agent_framework.anthropic's stubs.
-        "@pypi//agent_framework_anthropic",
-        "@pypi//agent_framework_claude",
-        "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",
-    ],
-)
-
-py_library(
-    name = "af_scratch_mcp",
-    srcs = ["af_scratch_mcp.py"],
-    data = ["//mcp_infra/exec:docker_launcher"],
-    visibility = ["//skills:__subpackages__"],
-    deps = [
-        "//mcp_infra/exec:docker_types",
-        "//util/bazel:runfiles",
-        # agent_framework's __init__.py references openai/anthropic stubs.
-        "@pypi//agent_framework_anthropic",
-        "@pypi//agent_framework_claude",
-        "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",
-    ],
+    deps = _AGENT_FRAMEWORK_DEPS,
 )
