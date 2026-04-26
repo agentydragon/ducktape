@@ -25,13 +25,14 @@ from devinfra.claude.env_file import parse_env_null_delimited
 from devinfra.claude.testing import container_e2e
 from util.bazel.runfiles import get_required_path
 
-# Runfiles paths.
+# Runfiles paths — full rlocation (passed directly to get_required_path).
 _TEST_WORKSPACE_MODULE = "_main/devinfra/claude/testdata/test_workspace/MODULE.bazel"
-_WEB_ENV_SH = "_main/devinfra/secrets/web_env.sh"
-_COMMON_SH = "_main/devinfra/secrets/_common.sh"
-_WRITE_KUBECONFIG = "_main/devinfra/claude/scripts/write_kubeconfig.py"
 _TEST_PROFILE = "_main/devinfra/claude/hook_daemon/session_start/container_e2e/test_profile.yaml"
 _SECRETS_DIR_MARKER = "_main/devinfra/claude/hook_daemon/testdata/e2e_secrets/test_age.key"
+
+# Repo-relative paths for files staged into the test project tree.
+# get_required_path() receives "_main/" + path; dest is project / path.
+_STAGED_FILES = ["devinfra/secrets/web_env.sh", "devinfra/secrets/_common.sh", "devinfra/k8s/kubeconfig.py"]
 
 _TEST_SECRET_FILES = [
     "buildbuddy.yaml",
@@ -61,7 +62,7 @@ def _exec_under_env(
 
 def _install_rust(c: container_e2e.E2EContainer) -> None:
     c.install_rust()
-    # write_kubeconfig.py (bg command) imports yaml; the Rust impl has no
+    # kubeconfig.py (bg command) imports yaml; the Rust impl has no
     # Python runtime deps, so install PyYAML explicitly.
     c.exec(["pip", "install", "--break-system-packages", "pyyaml"])
 
@@ -92,14 +93,10 @@ def staged_project(tmp_path: Path) -> Path:
         if src.is_file():
             shutil.copy2(src, project / src.name)
 
-    secrets_dir = project / "devinfra" / "secrets"
-    secrets_dir.mkdir(parents=True)
-    shutil.copy2(get_required_path(_WEB_ENV_SH), secrets_dir / "web_env.sh")
-    shutil.copy2(get_required_path(_COMMON_SH), secrets_dir / "_common.sh")
-
-    scripts_dir = project / "devinfra" / "claude" / "scripts"
-    scripts_dir.mkdir(parents=True)
-    shutil.copy2(get_required_path(_WRITE_KUBECONFIG), scripts_dir / "write_kubeconfig.py")
+    for rel in _STAGED_FILES:
+        dest = project / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(get_required_path(f"_main/{rel}"), dest)
 
     shutil.copy2(get_required_path(_TEST_PROFILE), project / "profile.yaml")
     secrets_fixtures = get_required_path(_SECRETS_DIR_MARKER).parent

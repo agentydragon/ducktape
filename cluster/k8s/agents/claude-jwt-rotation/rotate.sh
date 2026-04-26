@@ -23,7 +23,7 @@ set -euo pipefail
 #    kubectl_sandbox_fixed_groups scope mapping.
 # 2. Commit the JWT (and its expires_unencrypted) to
 #    secrets/claude-web-k8s-jwt.yaml on devel; SOPS encrypts the `jwt`
-#    field, leaves `expires_unencrypted` plaintext. write_kubeconfig.py
+#    field, leaves `expires_unencrypted` plaintext. kubeconfig.py
 #    decrypts at SessionStart and embeds the JWT in the kubeconfig as
 #    user.token.
 #

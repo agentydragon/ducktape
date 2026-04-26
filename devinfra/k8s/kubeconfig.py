@@ -32,8 +32,7 @@ home-manager. See cluster/docs/lessons_learned/
 2026_04_24_k8s_auth_through_mitm_proxy.md for the full investigation.
 
 Usage:
-    python3 "$CLAUDE_PROJECT_DIR/devinfra/claude/scripts/write_kubeconfig.py" \\
-        [OPTIONS] OUTPUT_PATH
+    python3 "$CLAUDE_PROJECT_DIR/devinfra/k8s/kubeconfig.py" --write OUTPUT_PATH
 
 Requires CLAUDE_PROJECT_DIR (to locate secrets/claude-web-k8s-jwt.yaml)
 and SOPS_AGE_KEY (for sops decryption) in the environment.
@@ -42,6 +41,7 @@ and SOPS_AGE_KEY (for sops decryption) in the environment.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -52,40 +52,45 @@ import yaml
 
 _K8S_JWT_SOPS_PATH = "secrets/claude-web-k8s-jwt.yaml"
 
-_DEFAULT_SERVER = "https://kubeapi.allegedly.works"
-_DEFAULT_USER = "claude-code-web"
-_DEFAULT_NAMESPACE = "claude-sandbox"
+DEFAULT_SERVER = "https://kubeapi.allegedly.works"
+DEFAULT_USER = "claude-code-web"
+DEFAULT_NAMESPACE = "claude-sandbox"
 
 
-def _sops_extract(sops_path: Path, key: str) -> str:
-    result = subprocess.run(["sops", "-d", "--extract", f'["{key}"]', str(sops_path)], capture_output=True, check=False)
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"sops -d --extract {key} {sops_path} failed (exit {result.returncode}): "
-            f"{result.stderr.decode(errors='replace').strip()}"
-        )
+def _sops_extract(sops_path: Path, key: str, *, sops_age_key: str | None) -> str:
+    env = {**os.environ}
+    if sops_age_key is not None:
+        env["SOPS_AGE_KEY"] = sops_age_key
+    result = subprocess.run(
+        ["sops", "-d", "--extract", json.dumps([key]), sops_path], capture_output=True, check=True, env=env
+    )
     value = result.stdout.decode(errors="replace").strip()
     if not value:
         raise RuntimeError(f"sops decrypted empty {key} from {sops_path}")
     return value
 
 
-def decrypt_jwt(project_dir: Path) -> str:
+def decrypt_jwt(project_dir: Path, *, sops_age_key: str | None = None) -> str:
     """Return the JWT from the SOPS-encrypted file."""
     sops_path = project_dir / _K8S_JWT_SOPS_PATH
     if not sops_path.is_file():
         raise RuntimeError(f"k8s JWT SOPS file not found: {sops_path}")
-    return _sops_extract(sops_path, "jwt")
+    return _sops_extract(sops_path, "jwt", sops_age_key=sops_age_key)
 
 
-def build_kubeconfig(token: str, server: str, user: str, namespace: str) -> dict:
+def build_kubeconfig(token: str) -> dict:
     return {
         "apiVersion": "v1",
         "kind": "Config",
-        "clusters": [{"cluster": {"server": server}, "name": "cluster"}],
-        "contexts": [{"context": {"cluster": "cluster", "namespace": namespace, "user": user}, "name": user}],
-        "current-context": user,
-        "users": [{"name": user, "user": {"token": token}}],
+        "clusters": [{"cluster": {"server": DEFAULT_SERVER}, "name": "cluster"}],
+        "contexts": [
+            {
+                "context": {"cluster": "cluster", "namespace": DEFAULT_NAMESPACE, "user": DEFAULT_USER},
+                "name": DEFAULT_USER,
+            }
+        ],
+        "current-context": DEFAULT_USER,
+        "users": [{"name": DEFAULT_USER, "user": {"token": token}}],
     }
 
 
@@ -130,10 +135,7 @@ def write_kubeconfig_file(kubeconfig: dict, output_path: Path) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Write a k8s bearer-token kubeconfig from SOPS secrets.")
-    parser.add_argument("output_path", type=Path)
-    parser.add_argument("--server", default=_DEFAULT_SERVER)
-    parser.add_argument("--user", default=_DEFAULT_USER)
-    parser.add_argument("--namespace", default=_DEFAULT_NAMESPACE)
+    parser.add_argument("--write", type=Path, required=True, metavar="PATH")
     args = parser.parse_args(argv)
 
     project_dir_str = os.environ.get("CLAUDE_PROJECT_DIR")
@@ -143,12 +145,9 @@ def main(argv: list[str] | None = None) -> None:
     project_dir = Path(project_dir_str)
 
     token = decrypt_jwt(project_dir)
-
-    kubeconfig = build_kubeconfig(token=token, server=args.server, user=args.user, namespace=args.namespace)
-    write_kubeconfig_file(kubeconfig, args.output_path)
-    print(
-        f"wrote {args.output_path} — server={args.server} user={args.user} namespace={args.namespace}", file=sys.stderr
-    )
+    kubeconfig = build_kubeconfig(token)
+    write_kubeconfig_file(kubeconfig, args.write)
+    print(f"wrote {args.write}", file=sys.stderr)
 
 
 if __name__ == "__main__":

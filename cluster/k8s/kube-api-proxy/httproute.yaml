@@ -14,7 +14,7 @@ metadata:
       which rejects the cluster-CA-signed cert that api.allegedly.works presents
       on the sibling TLSRoute. See ../docs/lessons_learned/ for the full story.
       Auth is bearer-JWT only (client certs die at the MITM boundary; see the
-      write_kubeconfig.py docstring in devinfra/claude/scripts/).
+      kubeconfig.py docstring in devinfra/k8s/kubeconfig.py).
 spec:
   parentRefs:
     - name: cluster-gateway

@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "kubectl-local": {
-      "command": "bash",
-      "args": ["devinfra/claude/kubectl-local-mcp.sh"]
+      "command": "python3",
+      "args": ["devinfra/claude/kubectl_local_mcp.py"]
     },
     "cluster-kubectl-sandbox-diagnostics": {
       "type": "http",

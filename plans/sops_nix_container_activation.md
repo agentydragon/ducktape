@@ -34,13 +34,13 @@ There are **two distinct kubeconfigs**:
 2. **claude-sandbox service account kubeconfig** (`secrets/claude-web-k8s-jwt.yaml`)
    — scoped SA token. Used in **both** environments:
 
-| Consumer                        | Environment | Invocation                                    | Key source                                                       |
-| ------------------------------- | ----------- | --------------------------------------------- | ---------------------------------------------------------------- |
-| `claude-sandbox-kubectl-mcp.sh` | CLI (local) | `claude-hook write-kubeconfig $TMPKC`         | `SOPS_AGE_KEY` derived from `~/.ssh/id_ed25519` via `ssh-to-age` |
-| `claude-sandbox-kubectl-mcp.sh` | Web         | Same script                                   | `SOPS_AGE_KEY` env var from Claude Code UI                       |
-| `web_env.sh`                    | Web         | `claude-hook write-kubeconfig ~/.kube/config` | `SOPS_AGE_KEY` env var                                           |
+| Consumer                | Environment | Invocation                                          | Key source                                                       |
+| ----------------------- | ----------- | --------------------------------------------------- | ---------------------------------------------------------------- |
+| `kubectl_local_mcp.py`  | CLI (local) | `decrypt_jwt()` + `build_kubeconfig()` + memfd exec | `SOPS_AGE_KEY` derived from `~/.ssh/id_ed25519` via `ssh-to-age` |
+| `kubectl_local_mcp.py`  | Web         | Same script                                         | `SOPS_AGE_KEY` env var from Claude Code UI                       |
+| `web_env.sh` bg command | Web         | `kubeconfig.py --write ~/.kube/config`              | `SOPS_AGE_KEY` env var                                           |
 
-All three go through `write_kubeconfig_cli.py` → `_build_kubeconfig()`, so the
+All three go through `kubeconfig.py` → `build_kubeconfig()`, so the
 generation logic is **already deduplicated** in Python. The complexity is in
 runtime parameters the builder injects:
 
@@ -55,7 +55,7 @@ bundle and proxy URL are determined at session start time, not at Nix eval time.
 
 However, the _decryption_ step (`sops -d --extract` of the SA token) is the
 same pattern as BuildBuddy. If we had a shared "decrypt secret X from sops file
-Y" primitive, `write_kubeconfig_cli.py` could consume the decrypted token from
+Y" primitive, `kubeconfig.py` could consume the decrypted token from
 a known path instead of calling `sops` itself.
 
 ### Dedup candidates
@@ -71,7 +71,7 @@ Two categories:
 **Decrypt only** (consumer needs the raw secret, applies its own runtime logic):
 
 - **claude-sandbox k8s token** — already deduplicated at the generation layer
-  (`write_kubeconfig_cli.py`), but the decryption step (`sops -d`) could be
+  (`kubeconfig.py`), but the decryption step (`sops -d`) could be
   shared with a "materialize decrypted secrets to known paths" primitive
 - **Docker mTLS client key** (currently disabled, commented out in
   `_common.sh`). When enabled: `secrets/docker-ci/client-key.sops.pem` is
@@ -256,14 +256,14 @@ separate (HM sets `sops.age.sshKeyPaths`, container sets `SOPS_AGE_KEY` env).
 
 ### Web session secrets
 
-| Secret                          | SOPS file / source                           | Decryption                             | Output                          | Used for                   |
-| ------------------------------- | -------------------------------------------- | -------------------------------------- | ------------------------------- | -------------------------- |
-| `BUILDBUDDY_API_KEY`            | `secrets/buildbuddy.yaml`                    | `sops -d` via `_common.sh`             | env var + bazelrc template      | Bazel RBE                  |
-| `GITHUB_TOKEN`                  | `secrets/github-pat-agentydragon-agent.yaml` | `sops -d` via `web_env.sh`             | env var                         | GitHub CLI, fork remote    |
-| `DUCKTAPE_CI_READ_GITHUB_TOKEN` | `secrets/github-ci-read-pat.yaml`            | `sops -d` via `web_env.sh`             | env var                         | Reading GHA runs/artifacts |
-| k8s SA token                    | `secrets/claude-web-k8s-jwt.yaml`            | `sops -d` in `write_kubeconfig_cli.py` | `~/.kube/config` (Python-built) | kubectl, MCP server        |
-| `DUCKTAPE_OTEL_BEARER_TOKEN`    | k8s Secret `alloy-otlp-bearer-token`         | `kubectl get secret`                   | env var                         | OTEL traces to Alloy       |
-| Docker mTLS key _(disabled)_    | `secrets/docker-ci/client-key.sops.pem`      | `sops -d` via `_common.sh`             | env var (base64)                | Docker CI mTLS             |
+| Secret                          | SOPS file / source                           | Decryption                   | Output                          | Used for                   |
+| ------------------------------- | -------------------------------------------- | ---------------------------- | ------------------------------- | -------------------------- |
+| `BUILDBUDDY_API_KEY`            | `secrets/buildbuddy.yaml`                    | `sops -d` via `_common.sh`   | env var + bazelrc template      | Bazel RBE                  |
+| `GITHUB_TOKEN`                  | `secrets/github-pat-agentydragon-agent.yaml` | `sops -d` via `web_env.sh`   | env var                         | GitHub CLI, fork remote    |
+| `DUCKTAPE_CI_READ_GITHUB_TOKEN` | `secrets/github-ci-read-pat.yaml`            | `sops -d` via `web_env.sh`   | env var                         | Reading GHA runs/artifacts |
+| k8s SA token                    | `secrets/claude-web-k8s-jwt.yaml`            | `sops -d` in `kubeconfig.py` | `~/.kube/config` (Python-built) | kubectl, MCP server        |
+| `DUCKTAPE_OTEL_BEARER_TOKEN`    | k8s Secret `alloy-otlp-bearer-token`         | `kubectl get secret`         | env var                         | OTEL traces to Alloy       |
+| Docker mTLS key _(disabled)_    | `secrets/docker-ci/client-key.sops.pem`      | `sops -d` via `_common.sh`   | env var (base64)                | Docker CI mTLS             |
 
 ### Home-manager secrets (sops-nix)
 

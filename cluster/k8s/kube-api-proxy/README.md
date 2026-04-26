@@ -21,7 +21,7 @@ and validates that upstream cert against public CAs.
   Cilium Gateway, which the Anthropic proxy is happy to validate, and then
   re-encrypts to the apiserver via a `BackendTLSPolicy`. Client certs die at
   the proxy boundary either way, so this route only supports bearer tokens
-  (see `devinfra/claude/scripts/write_kubeconfig.py` for the Authentik
+  (see `devinfra/k8s/kubeconfig.py` for the Authentik
   client_credentials JWT flow).
 
 See `cluster/docs/lessons_learned/2026_04_24_k8s_auth_through_mitm_proxy.md`

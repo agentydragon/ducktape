@@ -64,13 +64,22 @@ egress proxy eats client certs).
 
 ## Kubeconfig Provisioning
 
-Kubeconfig is generated automatically by the session start hook via
-<devinfra/claude/scripts/write_kubeconfig.py>. It decrypts the SOPS-encrypted
-bearer JWT from `secrets/claude-web-k8s-jwt.yaml` and writes a kubeconfig
-with `user.token` auth pointing at `https://kubeapi.allegedly.works` (the
-`HTTPRoute` in <../../kube-api-proxy/httproute.yaml>). The JWT is minted
-biweekly by the `claude-jwt-rotation` CronJob via Authentik's
-`kubectl-sandbox-client-credentials` OAuth2 provider.
+The JWT is minted by the `claude-jwt-rotation` CronJob via Authentik's
+`kubectl-sandbox-client-credentials` OAuth2 provider and committed
+SOPS-encrypted to `secrets/claude-web-k8s-jwt.yaml`. At session start,
+<devinfra/k8s/kubeconfig.py> decrypts it and builds a kubeconfig
+with `user.token` auth pointing at `https://kubeapi.allegedly.works`
+(the `HTTPRoute` in <../../kube-api-proxy/httproute.yaml>).
+
+Two callers, different kubeconfig materialization strategies:
+
+- **Session start hook** (background command in the web profile): writes
+  `~/.kube/config` to a real file for interactive `kubectl` use.
+- **`kubectl-local` MCP server** (<devinfra/claude/kubectl_local_mcp.py>):
+  writes the kubeconfig into an anonymous `memfd_create` file with no
+  filesystem path. The fd is passed as `--kubeconfig /proc/self/fd/<N>`
+  and is inherited across `execvp` into `kubernetes-mcp-server`; it
+  disappears when the server exits.
 
 ## Security Considerations
 

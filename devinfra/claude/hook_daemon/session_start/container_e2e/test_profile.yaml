@@ -3,7 +3,7 @@
 # Exercises the real web session-start flow end-to-end:
 #   - startup_env_script = real devinfra/secrets/web_env.sh
 #       → decrypts test-encrypted secrets at /project/secrets/*.yaml
-#   - kubeconfig bg command runs the standalone write_kubeconfig.py script,
+#   - kubeconfig bg command runs the standalone kubeconfig.py script,
 #     which decrypts /project/secrets/claude-web-k8s-jwt.yaml via sops
 #
 # Stripped (vs real web profile):
@@ -41,7 +41,7 @@ env_exports: |
 
 background_commands:
   - name: kubeconfig
-    command: python3 "$CLAUDE_PROJECT_DIR/devinfra/claude/scripts/write_kubeconfig.py" ~/.kube/config
+    command: python3 "$CLAUDE_PROJECT_DIR/devinfra/k8s/kubeconfig.py" --write ~/.kube/config
     timeout: 30
     after_env: true
   - name: bazelisk warmup (query //...)

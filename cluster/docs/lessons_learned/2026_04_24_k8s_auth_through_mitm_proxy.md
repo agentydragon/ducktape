@@ -63,12 +63,17 @@ not to `api.allegedly.works`. Two independent breakages fall out of this:
 
 ### Latent: `kubectl-local-mcp.sh` clobber-protection crash
 
-`mktemp` creates a zero-byte file. `write_kubeconfig.py`'s safe-write path
-at `devinfra/claude/scripts/write_kubeconfig.py` reads that file, parses it
-as YAML (gets `None`), compares to the new kubeconfig dict, and raises
-`refusing to overwrite …: existing kubeconfig differs from the one we'd
-write`. Every session startup. Fixed by switching to `mktemp -u` which
-reserves a name without creating the file.
+`mktemp` creates a zero-byte file. `kubeconfig.py`'s safe-write path
+reads that file, parses it as YAML (gets `None`), compares to the new
+kubeconfig dict, and raises `refusing to overwrite …: existing kubeconfig
+differs from the one we'd write`. Every session startup. Fixed at the time
+by switching to `mktemp -u` (reserves a name without creating the file);
+subsequently eliminated entirely: the MCP launcher was rewritten as
+`devinfra/claude/kubectl_local_mcp.py`, which uses `memfd_create` to hold
+the kubeconfig in an anonymous in-memory file with no filesystem path. No
+temp file, no clobber check, no EXIT trap — the fd is passed directly to
+`kubernetes-mcp-server` as `--kubeconfig /proc/self/fd/<N>` and disappears
+when the server exits.
 
 ## Why client cert worked before
 
@@ -138,7 +143,7 @@ from the real expiry. When a rotation IS due: `curl` at the Authentik
 token endpoint with the confidential
 client_id + client_secret mounted from an in-cluster Secret, jq-extracts
 `.access_token`, commits it SOPS-encrypted to `secrets/claude-web-k8s-jwt.yaml`.
-`write_kubeconfig.py` decrypts and embeds it as `user.token` at SessionStart.
+`kubeconfig.py` decrypts and embeds it as `user.token` at SessionStart.
 
 Cadence: cron every hour with an early-exit freshness check; Authentik
 token validity 45 days; rotate-below-remaining threshold 24 hours. So an
@@ -172,10 +177,12 @@ the already-minted JWT.
 - **`kubectl-sandbox-mcp`'s `kubectl_sandbox_fixed_groups` scope mapping
   is reusable** for any Authentik OAuth2 provider that wants to issue
   sandbox-scoped JWTs. Don't rebuild it; attach it.
-- **`mktemp` creates the file.** `mktemp -u` doesn't. `write_kubeconfig.py`'s
-  "refuse to clobber" check turned that into a latent crash that was
-  masking the real network failure. Always match tempfile lifecycle to
-  downstream consumer expectations.
+- **`mktemp` creates the file; `memfd_create` doesn't touch the filesystem
+  at all.** The original latent crash (clobber-check against a zero-byte
+  `mktemp` output) was masking the real network failure. Temp-file lifecycle
+  bugs disappear when there is no temp file. For secrets that only a single
+  subprocess needs, prefer an anonymous fd (`memfd_create`, passed as
+  `/proc/self/fd/<N>`) over a filesystem path with permissions + cleanup.
 - **Verification tool that actually nailed the root cause:** `openssl
 s_client -connect <host>:443 | openssl x509 -noout -issuer`. If the
   issuer is the environment's MITM CA, you're not talking to who you think.
@@ -189,7 +196,7 @@ s_client -connect <host>:443 | openssl x509 -noout -issuer`. If the
   `cluster/terraform/main/infrastructure.tf`
 - Gateway API routes: `cluster/k8s/kube-api-proxy/`
 - JWT rotation CronJob: `cluster/k8s/agents/claude-jwt-rotation/`
-- Kubeconfig writer: `devinfra/claude/scripts/write_kubeconfig.py`
+- Kubeconfig writer: `devinfra/k8s/kubeconfig.py`
 - Prior migration: commit `ff3ac18e0` (2026-04-18, token → cert,
   "eliminated the claude-code-web SA subject from ~30 RoleBindings")
 - Background: `cluster/docs/mcp_oauth_authentik_notes.md`
