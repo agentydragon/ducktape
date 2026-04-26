@@ -13,6 +13,7 @@
     ../modules/github-ssh.nix
     ../modules/kubeconfig.nix
     ../modules/talosconfig.nix
+    ../modules/discord-minimized-autostart.nix
   ];
 
   ducktape.githubSsh.sopsFile = ../../../ssh_keys/rugged-github.sops.key;

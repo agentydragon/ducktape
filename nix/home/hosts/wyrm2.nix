@@ -14,6 +14,7 @@
     ../modules/15leroy-ssh.nix
     ../modules/kubeconfig.nix
     ../modules/talosconfig.nix
+    ../modules/discord-minimized-autostart.nix
   ];
 
   ducktape.attic = {

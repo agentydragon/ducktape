@@ -1,9 +1,3 @@
 ---
-# Tasks migrated to Nix home-manager
-# These are kept here for non-Nix systems but skipped on wyrm
-
-# Autostart entries (only the autostart part, not package installation)
-- name: Configure Discord minimized autostart
-  ansible.builtin.include_tasks: discord_minimized_autostart.yml
 - name: Configure Syncthing autostart
   ansible.builtin.include_tasks: syncthing_autostart.yml
