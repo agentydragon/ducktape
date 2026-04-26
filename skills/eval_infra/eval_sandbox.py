@@ -61,6 +61,7 @@ async def eval_sandbox(
         skill: Staged skill to bind read-only at `SKILL_PATH`.
         workspace: Host directory bound read-write at `WORK_PATH`. Becomes the
             container cwd; the eval harvests anything the agent writes here.
+            Created (with parents) if missing — start-empty is the norm.
         inputs: Host directory bound read-only at `INPUT_PATH`, or ``None``
             for evals with no inputs. Caller is responsible for assembling
             this directory's contents before entering the context.
@@ -70,6 +71,7 @@ async def eval_sandbox(
     The container has host networking, proxy env wired, and `cwd`/`user`/`env`
     fields hidden from the model.
     """
+    workspace.mkdir(parents=True, exist_ok=True)
     binds: list[BindMount] = [
         BindMount(host_path=skill.files_path.resolve(), container_path=SKILL_PATH, mode="ro"),
         BindMount(host_path=workspace.resolve(), container_path=WORK_PATH, mode="rw"),

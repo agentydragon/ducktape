@@ -35,7 +35,7 @@ import time
 from pathlib import Path
 from typing import Literal
 
-from agent_framework import Agent, AgentSession, FunctionTool, Message, MiddlewareTermination
+from agent_framework import Agent, AgentSession, FunctionTool, MiddlewareTermination
 from pydantic import BaseModel
 from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
 from skills.reverse_engineer.reverse_engineer_skill_spec import SPEC as REVERSE_ENGINEER_SKILL_SPEC
@@ -144,7 +144,6 @@ async def _async_main(args: argparse.Namespace) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     workspace = out_dir / f"work_{suffix}"
-    workspace.mkdir(parents=True, exist_ok=True)
     transcript_path = out_dir / f"transcript_{suffix}.jsonl"
     summary_path = out_dir / f"summary_{suffix}.json"
 
@@ -169,18 +168,13 @@ async def _async_main(args: argparse.Namespace) -> int:
     end_reason: Literal["submit", "step_cap", "wall_timeout", "error"] = "error"
 
     try:
-        with transcript_path.open("w") as transcript_f:
-            # AF "instructions" don't flow through the Message stream — seed it
-            # manually so the JSONL transcript has the full context at the top.
-            transcript_f.write(Message("system", [system_prompt]).to_json() + "\n")
-            transcript_f.flush()
-
+        with JsonlTranscriptProvider.opened(transcript_path, system_prompt=system_prompt) as transcript:
             async with eval_sandbox(skill=staged, workspace=workspace, inputs=inputs_dir) as exec_tool:
                 agent = Agent(
                     client=model_client,
                     instructions=system_prompt,
                     tools=[exec_tool, submit_tool],
-                    context_providers=[JsonlTranscriptProvider(transcript_f)],
+                    context_providers=[transcript],
                     middleware=[terminate_when(lambda: submit_state.summary is not None, reason="submit called")],
                     default_options={"tool_choice": "required", "allow_multiple_tool_calls": False},
                 )

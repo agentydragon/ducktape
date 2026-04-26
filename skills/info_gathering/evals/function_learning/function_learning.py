@@ -33,7 +33,6 @@ from agent_framework import (
     ChatResponse,
     FunctionTool,
     MCPStdioTool,
-    Message,
     MiddlewareTermination,
 )
 from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
@@ -204,20 +203,15 @@ async def run_game(
 
     calls_path, summary_path = run_output_paths(f"fl_{function_name}_{'hint' if hint else 'nohint'}", output_dir)
 
-    with calls_path.open("w") as log_f:
-        # AF "instructions" don't flow through the Message stream — seed it
-        # manually so the JSONL transcript has the full context at the top.
-        log_f.write(Message("system", [system]).to_json() + "\n")
-        log_f.flush()
+    game = GameContext(turn_limit=turn_limit)
+    play_turn_tool = _make_play_turn_tool(game, secret_fn, scoring_container)
 
-        game = GameContext(turn_limit=turn_limit)
-        play_turn_tool = _make_play_turn_tool(game, secret_fn, scoring_container)
-
+    with JsonlTranscriptProvider.opened(calls_path, system_prompt=system) as transcript:
         agent = Agent(
             client=model_client,
             instructions=system,
             tools=[play_turn_tool, exec_tool],
-            context_providers=[JsonlTranscriptProvider(log_f)],
+            context_providers=[transcript],
             middleware=[_TokenUsageTracker(game), terminate_when(lambda: game.finished, reason="game finished")],
             default_options={"tool_choice": "required", "allow_multiple_tool_calls": False},
         )
@@ -265,10 +259,8 @@ async def _async_main(args: argparse.Namespace) -> None:
     )
 
     staged = stage_skill(SKILL_BY_ARM[args.skill], output_dir / "skill_extract")
-    workspace = output_dir / "work"
-    workspace.mkdir(parents=True, exist_ok=True)
 
-    async with eval_sandbox(skill=staged, workspace=workspace, inputs=None) as exec_tool:
+    async with eval_sandbox(skill=staged, workspace=output_dir / "work", inputs=None) as exec_tool:
         container_name = f"fl-scoring-{uuid.uuid4().hex[:8]}"
         async with aiodocker.Docker() as docker:
             container = await docker.containers.run(

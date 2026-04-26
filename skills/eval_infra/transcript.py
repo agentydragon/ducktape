@@ -11,13 +11,16 @@ By default AF calls `save_messages` once at the end of each `agent.run()`
 the transcript intact even when middleware raises `MiddlewareTermination`,
 because all three middleware pipelines suppress that exception internally.
 
-Note that AF's "instructions" (system prompt) do not flow through the Message
-stream — callers wanting the system prompt in the transcript should write a
-synthetic `Message("system", [...])` line at the top of the JSONL themselves.
+AF's "instructions" (system prompt) do not flow through the Message stream,
+so the convenience factory `JsonlTranscriptProvider.opened(path, ...)` opens
+the JSONL file, seeds it with a synthetic `Message("system", [...])` line,
+and yields a configured provider — used by FL and RE rollouts.
 """
 
-from collections.abc import Sequence
-from typing import IO, Any
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
+from pathlib import Path
+from typing import IO, Any, Self
 
 from agent_framework import InMemoryHistoryProvider, Message
 
@@ -34,6 +37,19 @@ class JsonlTranscriptProvider(InMemoryHistoryProvider):
         super().__init__(source_id=source_id)
         self._log_file = log_file
         self._written_count = 0
+
+    @classmethod
+    @contextmanager
+    def opened(cls, path: Path, *, system_prompt: str) -> Iterator[Self]:
+        """Open `path` for writing, seed with a system Message, yield a provider.
+
+        Single-call replacement for the open-file + manual-system-seed +
+        construct-provider boilerplate every rollout repeats.
+        """
+        with path.open("w") as log_file:
+            log_file.write(Message("system", [system_prompt]).to_json() + "\n")
+            log_file.flush()
+            yield cls(log_file)
 
     async def save_messages(
         self, session_id: str | None, messages: Sequence[Message], *, state: dict[str, Any] | None = None, **kwargs: Any

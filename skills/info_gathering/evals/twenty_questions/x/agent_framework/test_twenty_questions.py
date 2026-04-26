@@ -83,10 +83,8 @@ async def _run_with_replay(
     load_oci_image(PYTHON_3_13_SLIM)
 
     staged = stage_skill(EMPTY_SKILL_SPEC, tmp_path / "skill_extract")
-    workspace = tmp_path / "work"
-    workspace.mkdir()
 
-    async with eval_sandbox(skill=staged, workspace=workspace, inputs=None) as exec_tool:
+    async with eval_sandbox(skill=staged, workspace=tmp_path / "work", inputs=None) as exec_tool:
         return await run_game(
             variant_name=variant_name,
             model="test-model",
