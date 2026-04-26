@@ -41,17 +41,27 @@
       failed_when: datastore_result.rc != 0 and 'already exists' not in datastore_result.stderr
       tags: [proxmox, terraform]
 
-    # Patch the Proxmox web UI to suppress the "no valid subscription" popup.
-    # The check calls Ext.Msg.show(); replacing it with void prevents the dialog.
-    # Patch the Proxmox web UI to suppress the "no valid subscription" popup.
     # Replaces the subscription-status condition with `if (false)` so the
-    # dialog is never shown. Idempotent — patch(1) no-ops if already applied.
+    # "no valid subscription" popup is never shown. Idempotent via --forward.
+    - name: Copy Proxmox no-subscription patch to target
+      ansible.builtin.copy:
+        src: proxmox-no-subscription.patch
+        dest: /tmp/proxmox-no-subscription.patch
+        mode: "0644"
+      tags: [proxmox, ui]
+
     - name: Suppress Proxmox no-subscription popup in web UI
-      ansible.posix.patch:
-        src: files/proxmox-no-subscription.patch
-        dest: /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
-        strip: 1
-        backup: true
+      ansible.builtin.command:
+        argv:
+          - patch
+          - --forward
+          - --backup
+          - --strip=1
+          - /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
+          - /tmp/proxmox-no-subscription.patch
+      register: patch_result
+      changed_when: "'patching file' in patch_result.stdout"
+      failed_when: patch_result.rc != 0 and 'Skipping patch' not in patch_result.stdout
       tags: [proxmox, ui]
 
     - name: Update apt cache after repository changes
