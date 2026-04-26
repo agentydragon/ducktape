@@ -389,7 +389,7 @@ def _run_main(args: argparse.Namespace, *, staged: StagedSkill, exec_tool: ExecT
     v = VARIANTS[args.variant]
     name = f"20q_{args.variant}"
 
-    guesser_system = build_guesser_system(skill=staged.md_text, skill_files_path=SKILL_PATH)
+    guesser_system = build_guesser_system(skill=staged.md_text)
     sim_system = load_sim_prompt(secret=v.secret, turn_limit=v.turn_limit)
     first_msg = first_user_message(v.domain_description, v.turn_limit)
     output_dir = output_dir_from_args(args)

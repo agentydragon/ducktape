@@ -4,8 +4,6 @@ Loads shared prompt templates from text files via Bazel runfiles, providing a
 single source of truth used by all implementations (Python, Rust, Go).
 """
 
-from pathlib import Path
-
 from skills.eval_infra.eval_prompt import compose_system_prompt
 from util.bazel.runfiles import get_required_path
 
@@ -27,20 +25,17 @@ def load_scratch_system_note() -> str:
     return get_required_path(_SCRATCH_NOTE_RLOCATION).read_text().strip()
 
 
-def build_guesser_system(*, skill: str, skill_files_path: Path) -> str:
+def build_guesser_system(*, skill: str) -> str:
     """Compose the guesser's system prompt: preamble + skill block + exec note + game-tools note.
 
     The TQ guesser always has an `exec` container with the skill mounted at
-    `skill_files_path` (`compose_system_prompt` appends the generic exec-tool
+    `SKILL_PATH` (`compose_system_prompt` appends the generic exec-tool
     description and the skill files-path note) plus the
     `ask_yes_no_question` / `guess_answer` game tools (this function appends
     `load_scratch_system_note()` as tool guidance).
     """
     return compose_system_prompt(
-        preamble=_BASE_GUESSER_PREAMBLE,
-        skill_md=skill,
-        skill_files_path=skill_files_path,
-        tool_guidance=load_scratch_system_note(),
+        preamble=_BASE_GUESSER_PREAMBLE, skill_md=skill, tool_guidance=load_scratch_system_note()
     )
 
 

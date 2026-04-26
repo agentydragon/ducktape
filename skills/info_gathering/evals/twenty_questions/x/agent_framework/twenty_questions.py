@@ -38,7 +38,7 @@ from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_S
 from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 
 from skills.eval_infra.af_chat_client import build_model_client
-from skills.eval_infra.eval_sandbox import SKILL_PATH, eval_sandbox
+from skills.eval_infra.eval_sandbox import eval_sandbox
 from skills.eval_infra.skill_staging import SkillSpec, stage_skill
 from skills.eval_infra.termination import terminate_when
 from skills.info_gathering.evals.twenty_questions.prompts import (
@@ -214,7 +214,7 @@ async def run_game(
     """
     variant = VARIANTS[variant_name]
     sim_system = load_sim_prompt(secret=variant.secret, turn_limit=variant.turn_limit)
-    guesser_system = build_guesser_system(skill=skill_md, skill_files_path=SKILL_PATH)
+    guesser_system = build_guesser_system(skill=skill_md)
     opening = first_user_message(variant.domain_description, variant.turn_limit)
 
     game = GameContext(turn_limit=variant.turn_limit)

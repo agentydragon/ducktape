@@ -549,7 +549,7 @@ async def _async_main(args: argparse.Namespace) -> None:
     staged = stage_skill(INFO_GATHERING_SKILL_SPEC, output_dir / "skill_extract")
     skill_bind = BindMount(host_path=staged.files_path.resolve(), container_path=SKILL_PATH, mode="ro")
 
-    guesser_system = build_guesser_system(skill=staged.md_text, skill_files_path=SKILL_PATH)
+    guesser_system = build_guesser_system(skill=staged.md_text)
     sim_system = load_sim_prompt(secret=v.secret, turn_limit=v.turn_limit)
     first_msg = first_user_message(v.domain_description, v.turn_limit)
 

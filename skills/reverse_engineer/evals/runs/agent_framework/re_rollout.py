@@ -41,7 +41,7 @@ from skills.reverse_engineer.reverse_engineer_skill_spec import SPEC as REVERSE_
 
 from skills.eval_infra.af_chat_client import build_model_client
 from skills.eval_infra.eval_prompt import compose_system_prompt
-from skills.eval_infra.eval_sandbox import INPUT_PATH, SKILL_PATH, WORK_PATH, eval_sandbox
+from skills.eval_infra.eval_sandbox import INPUT_PATH, WORK_PATH, eval_sandbox
 from skills.eval_infra.skill_staging import SkillSpec, stage_skill
 from skills.eval_infra.termination import terminate_when
 from skills.eval_infra.transcript import JsonlTranscriptProvider
@@ -96,9 +96,7 @@ def _build_system_prompt(*, skill_md_text: str) -> str:
     (the empty-skill tar's SKILL.md is blank), keeping the sandbox shape
     uniform across arms.
     """
-    return compose_system_prompt(
-        preamble=_RE_PREAMBLE, skill_md=skill_md_text, skill_files_path=SKILL_PATH, tool_guidance=_RE_TOOL_GUIDANCE
-    )
+    return compose_system_prompt(preamble=_RE_PREAMBLE, skill_md=skill_md_text, tool_guidance=_RE_TOOL_GUIDANCE)
 
 
 _FIRST_USER_MESSAGE = (
