@@ -62,10 +62,12 @@ async def _run_with_replay(
     image_tag = load_oci_image(PYTHON_3_13_SLIM)
 
     # Stage the empty skill so the sandbox shape matches production: prompt
-    # claims `SKILL_FILES_PATH` is mounted, and it really is.
+    # claims `SKILL_PATH` is mounted, and it really is.
     staged = stage_skill(EMPTY_SKILL_SPEC, tmp_path / "skill_extract")
+    workspace = tmp_path / "work"
+    workspace.mkdir()
 
-    async with eval_sandbox(skill=staged) as exec_tool, aiodocker.Docker() as docker:
+    async with eval_sandbox(skill=staged, workspace=workspace) as exec_tool, aiodocker.Docker() as docker:
         container = await docker.containers.run(
             config={"Image": image_tag, "Cmd": ["sleep", "300"]}, name=f"fl-test-{uuid.uuid4().hex[:8]}"
         )

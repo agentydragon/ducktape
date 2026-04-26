@@ -39,8 +39,8 @@ from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_S
 from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 
 from skills.eval_infra.af_chat_client import build_model_client
-from skills.eval_infra.eval_sandbox import eval_sandbox
-from skills.eval_infra.skill_staging import SKILL_FILES_PATH, SkillSpec, stage_skill
+from skills.eval_infra.eval_sandbox import SKILL_PATH, eval_sandbox
+from skills.eval_infra.skill_staging import SkillSpec, stage_skill
 from skills.eval_infra.termination import terminate_when
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
@@ -204,12 +204,12 @@ async def run_game(
     The caller owns `model_client`'s lifecycle; this function neither
     constructs nor closes it. The caller also owns staging the skill
     (extracting the tar, mounting the dir into `exec_tool`'s container at
-    `SKILL_FILES_PATH`); `skill_md` is the SKILL.md text to inline (empty
+    `SKILL_PATH`); `skill_md` is the SKILL.md text to inline (empty
     string for the off-arm — the empty-skill tar has an empty SKILL.md).
     """
     variant = VARIANTS[variant_name]
     sim_system = load_sim_prompt(secret=variant.secret, turn_limit=variant.turn_limit)
-    guesser_system = build_guesser_system(skill=skill_md, has_scratch=True, skill_files_path=SKILL_FILES_PATH)
+    guesser_system = build_guesser_system(skill=skill_md, has_scratch=True, skill_files_path=SKILL_PATH)
     opening = first_user_message(variant.domain_description, variant.turn_limit)
 
     game = GameContext(turn_limit=variant.turn_limit)
@@ -271,8 +271,10 @@ async def _async_main(args: argparse.Namespace) -> None:
     )
 
     staged = stage_skill(_SKILL_BY_ARM[args.skill], output_dir / "skill_extract")
+    workspace = output_dir / "work"
+    workspace.mkdir(parents=True, exist_ok=True)
 
-    async with eval_sandbox(skill=staged) as exec_tool:
+    async with eval_sandbox(skill=staged, workspace=workspace) as exec_tool:
         summary = await run_game(
             variant_name=args.variant,
             model=args.model,

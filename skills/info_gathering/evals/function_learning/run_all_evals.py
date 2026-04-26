@@ -98,7 +98,9 @@ async def _async_main(args: argparse.Namespace) -> None:
     async with AsyncExitStack() as stack:
         for arm in ("on", "off"):
             staged = stage_skill(SKILL_BY_ARM[arm], output_dir / f"skill_extract_{arm}")
-            exec_tool = await stack.enter_async_context(eval_sandbox(skill=staged))
+            workspace = output_dir / f"work_{arm}"
+            workspace.mkdir(parents=True, exist_ok=True)
+            exec_tool = await stack.enter_async_context(eval_sandbox(skill=staged, workspace=workspace))
             arms[arm] = (exec_tool, staged.md_text)
 
         docker = await stack.enter_async_context(aiodocker.Docker())
