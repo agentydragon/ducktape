@@ -18,7 +18,6 @@ context window.
 
 import argparse
 import asyncio
-import contextlib
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -129,10 +128,16 @@ def _make_sim_tools(game: GameContext) -> list[FunctionTool]:
 
 
 def _make_game_tools(*, game: GameContext, sim_agent: Agent, sim_session: AgentSession) -> list[FunctionTool]:
+    # CLEANUP(2026-04-26): Consider replacing this closure-based dispatch with
+    # `sim_agent.as_tool(propagate_session=True)` plumbed into the guesser's
+    # tool list. Would expose the simulator as a typed tool with a real
+    # schema, drop the `last_sim_response` shared-state passing, and let AF
+    # manage session inheritance natively. Bigger restructuring — separate PR.
     async def _drive_simulator(text: str) -> None:
-        # Simulator middleware terminates after the single tool call by design.
-        with contextlib.suppress(MiddlewareTermination):
-            await sim_agent.run(text, session=sim_session)
+        # `_SimulatorEndMiddleware` raises `MiddlewareTermination` after the
+        # single tool dispatch; AF's tool loop catches it internally so
+        # `sim_agent.run()` returns normally.
+        await sim_agent.run(text, session=sim_session)
 
     async def ask_yes_no_question(question: str) -> str:
         """Ask a yes/no question. Uses one turn."""
@@ -237,9 +242,9 @@ async def run_game(
     )
     guesser_session = AgentSession()
 
-    # Game-end middleware terminates once `game.result` is set.
-    with contextlib.suppress(MiddlewareTermination):
-        await guesser_agent.run(opening, session=guesser_session)
+    # `terminate_when` raises `MiddlewareTermination` once `game.result` is set;
+    # AF's tool loop catches it internally so this returns normally.
+    await guesser_agent.run(opening, session=guesser_session)
 
     if game.result is None:
         game.result = Timeout(limit=game.turn_limit)

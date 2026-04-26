@@ -15,7 +15,6 @@ individual `Message` objects.
 
 import argparse
 import asyncio
-import contextlib
 import json
 import logging
 import uuid
@@ -34,7 +33,6 @@ from agent_framework import (
     FunctionTool,
     MCPStdioTool,
     Message,
-    MiddlewareTermination,
 )
 from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
 from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
@@ -217,9 +215,9 @@ async def run_game(
             require_per_service_call_history_persistence=True,
         )
 
-        # `terminate_when` raises `MiddlewareTermination` once `game.finished`.
-        with contextlib.suppress(MiddlewareTermination):
-            await agent.run([Message("system", [system]), Message("user", [opening])], session=AgentSession())
+        # `terminate_when` raises `MiddlewareTermination` once `game.finished`;
+        # AF's tool loop catches it internally so `agent.run` returns normally.
+        await agent.run([Message("system", [system]), Message("user", [opening])], session=AgentSession())
 
     per_turn = [tr.score.hamming_loss for tr in game.turn_results]
     per_turn += [0] * (turn_limit - len(per_turn))

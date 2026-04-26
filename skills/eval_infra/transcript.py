@@ -28,9 +28,13 @@ from agent_framework import InMemoryHistoryProvider, Message
 class JsonlTranscriptProvider(InMemoryHistoryProvider):
     """`InMemoryHistoryProvider` that writes each newly-stored Message to JSONL.
 
-    Tracks a per-instance write cursor against the session's stored messages so
-    repeated `save_messages` calls (per-service-call persistence mode) emit only
-    the delta — no duplicates even when AF re-passes earlier inputs.
+    With per-service-call persistence, AF's `_split_service_call_messages`
+    (`agent_framework/_sessions.py:535`) gives `save_messages` an `input_messages`
+    slice that is the *cumulative* unattributed messages — it includes tool-result
+    Messages the agent loop appended in earlier rounds. `InMemoryHistoryProvider`
+    just appends, so to avoid emitting the same message multiple times, we track
+    how much of the underlying `state["messages"]` we've already written and emit
+    only the new tail per call.
     """
 
     def __init__(self, log_file: IO[str], source_id: str | None = None) -> None:

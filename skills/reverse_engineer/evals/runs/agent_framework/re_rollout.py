@@ -26,7 +26,6 @@ Run with:
 
 import argparse
 import asyncio
-import contextlib
 import logging
 import os
 import shutil
@@ -35,7 +34,7 @@ import time
 from pathlib import Path
 from typing import Literal
 
-from agent_framework import Agent, AgentSession, FunctionTool, Message, MiddlewareTermination
+from agent_framework import Agent, AgentSession, FunctionTool, Message
 from pydantic import BaseModel
 from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
 from skills.reverse_engineer.reverse_engineer_skill_spec import SPEC as REVERSE_ENGINEER_SKILL_SPEC
@@ -177,14 +176,16 @@ async def _async_main(args: argparse.Namespace) -> None:
                 require_per_service_call_history_persistence=True,
             )
             try:
-                with contextlib.suppress(MiddlewareTermination):
-                    await asyncio.wait_for(
-                        agent.run(
-                            [Message("system", [system_prompt]), Message("user", [_FIRST_USER_MESSAGE])],
-                            session=AgentSession(),
-                        ),
-                        timeout=args.wall_timeout,
-                    )
+                # `terminate_when` raises `MiddlewareTermination` once submit is
+                # called; AF's tool loop catches it internally so `agent.run`
+                # returns normally.
+                await asyncio.wait_for(
+                    agent.run(
+                        [Message("system", [system_prompt]), Message("user", [_FIRST_USER_MESSAGE])],
+                        session=AgentSession(),
+                    ),
+                    timeout=args.wall_timeout,
+                )
                 end_reason = "submit" if submit_state.summary is not None else "step_cap"
             except TimeoutError:
                 end_reason = "wall_timeout"
