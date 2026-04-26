@@ -70,14 +70,6 @@
 
 - install npm-based tools - cli : Install Node.js CLI tools globally with pnpm	TAGS: [pnpm]
 
-## Consolidation
-
-- [x] Consolidate XDG autostart entries: all per-user autostarts now use
-  `xdg.autostart.entries` (syncthing-gtk in `home.nix`; discord in
-  `discord-minimized-autostart.nix`; flameshot in `flameshot-screenshots.nix`).
-  System-wide autostarts use `environment.etc."xdg/autostart/..."` in NixOS
-  (timekpr-client in `timekpr.nix`).
-
 ## Currently system level but maybe make user-level later
 
 - Nerd Fonts
