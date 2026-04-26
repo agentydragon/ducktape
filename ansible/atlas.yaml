@@ -47,7 +47,7 @@
     # Replaces the subscription-status condition with `if (false)` so the
     # dialog is never shown. Idempotent — patch(1) no-ops if already applied.
     - name: Suppress Proxmox no-subscription popup in web UI
-      ansible.builtin.patch:
+      ansible.posix.patch:
         src: files/proxmox-no-subscription.patch
         dest: /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
         strip: 1
