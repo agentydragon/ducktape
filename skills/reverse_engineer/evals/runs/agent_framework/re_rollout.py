@@ -31,19 +31,17 @@ import logging
 import os
 import sys
 import time
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
-from agent_framework import Agent, AgentSession, FunctionTool, MCPStdioTool, Message, MiddlewareTermination
+from agent_framework import Agent, AgentSession, FunctionTool, Message, MiddlewareTermination
 from pydantic import BaseModel
 from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
 from skills.reverse_engineer.reverse_engineer_skill_spec import SPEC as REVERSE_ENGINEER_SKILL_SPEC
 
 from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.af_chat_client import build_model_client
-from skills.eval_infra.af_scratch_mcp import scratch_exec_mcp_tool
+from skills.eval_infra.eval_sandbox import eval_sandbox
 from skills.eval_infra.skill_staging import SKILL_FILES_PATH, SkillSpec, stage_skill
 from skills.eval_infra.termination import terminate_when
 from skills.eval_infra.transcript import JsonlTranscriptProvider
@@ -133,23 +131,6 @@ def _make_submit_tool(state: _SubmitState) -> FunctionTool:
     )
 
 
-# -- Sandbox + skill --
-
-
-@asynccontextmanager
-async def _re_exec_tool(*, target_binary: Path, workspace: Path, skill_dir: Path) -> AsyncGenerator[MCPStdioTool]:
-    """Yield an MCPStdioTool exposing `exec` against a scratch container with the
-    target binary, recovered/ workspace, and the unpacked skill tar (always
-    present — empty-skill arm mounts the empty-skill tar) bind-mounted in."""
-    binds: list[BindMount] = [
-        BindMount(host_path=target_binary.resolve(), container_path=Path("/work/target"), mode="ro"),
-        BindMount(host_path=workspace.resolve(), container_path=Path("/work/recovered"), mode="rw"),
-        BindMount(host_path=skill_dir.resolve(), container_path=SKILL_FILES_PATH, mode="ro"),
-    ]
-    async with scratch_exec_mcp_tool(binds=binds, working_dir=Path("/work/recovered")) as tool:
-        yield tool
-
-
 # -- Main --
 
 
@@ -186,8 +167,13 @@ async def _async_main(args: argparse.Namespace) -> int:
             transcript_f.write(Message("system", [system_prompt]).to_json() + "\n")
             transcript_f.flush()
 
-            async with _re_exec_tool(
-                target_binary=target_path, workspace=workspace, skill_dir=staged.files_path
+            async with eval_sandbox(
+                skill=staged,
+                extra_binds=[
+                    BindMount(host_path=target_path.resolve(), container_path=Path("/work/target"), mode="ro"),
+                    BindMount(host_path=workspace.resolve(), container_path=Path("/work/recovered"), mode="rw"),
+                ],
+                working_dir=Path("/work/recovered"),
             ) as exec_tool:
                 agent = Agent(
                     client=model_client,

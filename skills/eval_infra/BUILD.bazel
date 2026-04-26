@@ -51,6 +51,17 @@ py_library(
 )
 
 py_library(
+    name = "eval_sandbox",
+    srcs = ["eval_sandbox.py"],
+    visibility = ["//skills:__subpackages__"],
+    deps = [
+        ":af_scratch_mcp",
+        ":skill_staging",
+        "//mcp_infra/exec:docker_types",
+    ] + _AGENT_FRAMEWORK_DEPS,
+)
+
+py_library(
     name = "af_chat_client",
     srcs = ["af_chat_client.py"],
     visibility = ["//skills:__subpackages__"],

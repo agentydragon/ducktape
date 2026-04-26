@@ -38,9 +38,8 @@ from agent_framework import (
 from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
 from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 
-from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.af_chat_client import build_model_client
-from skills.eval_infra.af_scratch_mcp import scratch_exec_mcp_tool
+from skills.eval_infra.eval_sandbox import eval_sandbox
 from skills.eval_infra.skill_staging import SKILL_FILES_PATH, SkillSpec, stage_skill
 from skills.eval_infra.termination import terminate_when
 from skills.info_gathering.evals.twenty_questions.prompts import (
@@ -272,9 +271,8 @@ async def _async_main(args: argparse.Namespace) -> None:
     )
 
     staged = stage_skill(_SKILL_BY_ARM[args.skill], output_dir / "skill_extract")
-    skill_bind = BindMount(host_path=staged.files_path.resolve(), container_path=SKILL_FILES_PATH, mode="ro")
 
-    async with scratch_exec_mcp_tool(binds=[skill_bind]) as exec_tool:
+    async with eval_sandbox(skill=staged) as exec_tool:
         summary = await run_game(
             variant_name=args.variant,
             model=args.model,

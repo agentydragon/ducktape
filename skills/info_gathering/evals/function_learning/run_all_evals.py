@@ -12,10 +12,9 @@ import anyio
 from agent_framework import MCPStdioTool
 from pydantic import BaseModel
 
-from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.af_chat_client import build_model_client
-from skills.eval_infra.af_scratch_mcp import scratch_exec_mcp_tool
-from skills.eval_infra.skill_staging import SKILL_FILES_PATH, stage_skill
+from skills.eval_infra.eval_sandbox import eval_sandbox
+from skills.eval_infra.skill_staging import stage_skill
 from skills.info_gathering.evals.function_learning.function_learning import _MAX_STEPS, SKILL_BY_ARM, run_game
 from skills.info_gathering.evals.function_learning.functions import FUNCTIONS
 from skills.info_gathering.evals.function_learning.result_types import FunctionLearningResult, TokenUsage
@@ -99,8 +98,7 @@ async def _async_main(args: argparse.Namespace) -> None:
     async with AsyncExitStack() as stack:
         for arm in ("on", "off"):
             staged = stage_skill(SKILL_BY_ARM[arm], output_dir / f"skill_extract_{arm}")
-            skill_bind = BindMount(host_path=staged.files_path.resolve(), container_path=SKILL_FILES_PATH, mode="ro")
-            exec_tool = await stack.enter_async_context(scratch_exec_mcp_tool(binds=[skill_bind]))
+            exec_tool = await stack.enter_async_context(eval_sandbox(skill=staged))
             arms[arm] = (exec_tool, staged.md_text)
 
         docker = await stack.enter_async_context(aiodocker.Docker())
