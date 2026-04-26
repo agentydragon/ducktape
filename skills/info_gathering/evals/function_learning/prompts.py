@@ -17,7 +17,7 @@ _BASE_PREAMBLE = (
 )
 
 
-def build_system_prompt(*, skill: str, skill_files_path: Path | None) -> str:
+def build_system_prompt(*, skill: str, skill_files_path: Path) -> str:
     """Compose the FL system prompt: preamble + skill block + exec note.
 
     The `play_turn` tool's `FunctionTool` description is enough for the agent

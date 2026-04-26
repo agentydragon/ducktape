@@ -4,15 +4,14 @@
 
 1. An eval-specific preamble (what task is being performed).
 2. A skill block — generic skill-intro line + inlined SKILL.md + a one-line
-   pointer at the in-container skill mount. Included whenever `skill_md` is
-   non-empty or `skill_files_path` is not None. The off-arm of a
-   mounted-skill rollout passes empty `skill_md` and a real
-   `skill_files_path`, so the block stays present (consistent sandbox shape)
-   but the inlined `<skill>` payload is empty. The intro wording is fixed:
-   any eval introducing any skill should phrase it the same way.
+   pointer at the in-container skill mount. The skill is always mounted
+   (the off-arm of a mounted-skill rollout uses the empty-skill tar; the
+   inlined `<skill>` payload is empty but the path note still applies).
+   The intro wording is fixed: any eval introducing any skill should
+   phrase it the same way.
 3. A generic `exec`-tool description — describes the sandbox container that
    every rollout exposes via `eval_sandbox` / `scratch_exec_server`. Always
-   appended (`compose_system_prompt` assumes the rollout has an exec tool).
+   appended; every caller has an exec tool sandbox.
 4. Optional eval-specific tool guidance (game tools, submit, etc.).
 
 Used by TQ's `build_guesser_system`, FL's `build_system_prompt`, and RE's
@@ -32,20 +31,14 @@ _EXEC_TOOL_NOTE = (
 )
 
 
-def compose_system_prompt(
-    *, preamble: str, skill_md: str, skill_files_path: Path | None, tool_guidance: str | None
-) -> str:
+def compose_system_prompt(*, preamble: str, skill_md: str, skill_files_path: Path, tool_guidance: str | None) -> str:
     """See module docstring."""
-    parts: list[str] = [preamble]
-    if skill_md or skill_files_path is not None:
-        skill_block = f"{_SKILL_INTRO}\n\n<skill>\n{skill_md}\n</skill>"
-        if skill_files_path is not None:
-            skill_block += (
-                f"\n\nThe full skill (SKILL.md and any referenced example files) is "
-                f"available in the container at {skill_files_path}/."
-            )
-        parts.append(skill_block)
-    parts.append(_EXEC_TOOL_NOTE)
+    skill_block = (
+        f"{_SKILL_INTRO}\n\n<skill>\n{skill_md}\n</skill>\n\n"
+        f"The full skill (SKILL.md and any referenced example files) is available in the "
+        f"container at {skill_files_path}/."
+    )
+    parts: list[str] = [preamble, skill_block, _EXEC_TOOL_NOTE]
     if tool_guidance is not None:
         parts.append(tool_guidance)
     return "\n\n---\n\n".join(parts)

@@ -23,7 +23,6 @@ py_library(
         "first_user_message.txt",
         "scratch_system_note.txt",
         "sim.txt",
-        "//skills/info_gathering:SKILL.md",
     ],
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
     deps = [

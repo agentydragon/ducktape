@@ -33,14 +33,17 @@ from langchain_mcp_adapters.tools import load_mcp_tools
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
+from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 
 from mcp_infra.exec.docker.server import ContainerExecServer
+from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.docker_exec import scratch_exec_server
+from skills.eval_infra.eval_sandbox import SKILL_PATH
+from skills.eval_infra.skill_staging import stage_skill
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
     first_user_message,
     load_sim_prompt,
-    load_skill_prompt,
 )
 from skills.info_gathering.evals.twenty_questions.result_types import Correct, LogEntry, Result, RunSummary, Timeout
 from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
@@ -541,17 +544,20 @@ async def run_twenty_questions_langgraph(
 async def _async_main(args: argparse.Namespace) -> None:
     v = VARIANTS[args.variant]
     name = f"20q_{args.variant}"
+    output_dir = output_dir_from_args(args)
 
-    guesser_system = build_guesser_system(skill=load_skill_prompt(), skill_files_path=None)
+    staged = stage_skill(INFO_GATHERING_SKILL_SPEC, output_dir / "skill_extract")
+    skill_bind = BindMount(host_path=staged.files_path.resolve(), container_path=SKILL_PATH, mode="ro")
+
+    guesser_system = build_guesser_system(skill=staged.md_text, skill_files_path=SKILL_PATH)
     sim_system = load_sim_prompt(secret=v.secret, turn_limit=v.turn_limit)
     first_msg = first_user_message(v.domain_description, v.turn_limit)
-    output_dir = output_dir_from_args(args)
 
     logger.info("=" * 60)
     logger.info("  %s  |  %s  |  %s (langgraph)", name, args.model, args.api)
     logger.info("=" * 60)
 
-    async with scratch_exec_server() as exec_server:
+    async with scratch_exec_server(binds=[skill_bind]) as exec_server:
         summary = await run_twenty_questions_langgraph(
             name=name,
             api=args.api,

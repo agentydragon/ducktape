@@ -20,14 +20,17 @@ from pydantic_ai.result import RunContext
 from pydantic_ai.toolsets import AbstractToolset
 from pydantic_ai.toolsets.fastmcp import FastMCPToolset
 from pydantic_ai.toolsets.function import FunctionToolset
+from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 
 from mcp_infra.exec.docker.server import ContainerExecServer
+from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.docker_exec import scratch_exec_server
+from skills.eval_infra.eval_sandbox import SKILL_PATH
+from skills.eval_infra.skill_staging import StagedSkill, stage_skill
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
     first_user_message,
     load_sim_prompt,
-    load_skill_prompt,
 )
 from skills.info_gathering.evals.twenty_questions.result_types import Correct, LogEntry, Result, RunSummary, Timeout
 from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
@@ -225,13 +228,14 @@ async def run_twenty_questions(
     api: str,
     variant_name: str,
     output_dir: Path,
+    staged: StagedSkill,
     exec_server: ContainerExecServer | None = None,
 ) -> RunSummary:
     variant = VARIANTS[variant_name]
     calls_path, summary_path = run_output_paths(name, output_dir)
 
     sim_instructions = load_sim_prompt(secret=variant.secret, turn_limit=variant.turn_limit)
-    guesser_instructions = build_guesser_system(skill=load_skill_prompt(), skill_files_path=None)
+    guesser_instructions = build_guesser_system(skill=staged.md_text, skill_files_path=SKILL_PATH)
     opening = first_user_message(variant.domain_description, variant.turn_limit)
 
     guesser_toolsets: list[AbstractToolset[None]] | None = None
@@ -268,12 +272,14 @@ async def _async_main(args: argparse.Namespace) -> None:
     name = f"20q_{args.variant}"
     output_dir = output_dir_from_args(args)
     model_id = _make_model_id(args.api, args.model)
+    staged = stage_skill(INFO_GATHERING_SKILL_SPEC, output_dir / "skill_extract")
+    skill_bind = BindMount(host_path=staged.files_path.resolve(), container_path=SKILL_PATH, mode="ro")
 
     logger.info("=" * 60)
     logger.info("  %s  |  %s  |  %s (pydantic_ai)", name, args.model, args.api)
     logger.info("=" * 60)
 
-    async with scratch_exec_server() as exec_server:
+    async with scratch_exec_server(binds=[skill_bind]) as exec_server:
         summary = await run_twenty_questions(
             name=name,
             model_id=model_id,
@@ -281,6 +287,7 @@ async def _async_main(args: argparse.Namespace) -> None:
             api=args.api,
             variant_name=args.variant,
             output_dir=output_dir,
+            staged=staged,
             exec_server=exec_server,
         )
     logger.info("%s", summary)
