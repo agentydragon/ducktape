@@ -111,6 +111,14 @@ rules:
       - pods
       - nodes
     verbs: ["get", "list", "watch"]
+  # nodes/proxy allows GET requests proxied through the apiserver to the kubelet HTTP API.
+  # Enables: /stats/summary (resource usage), /metrics, /pods, /logs/<filename> (node system logs).
+  # get-only: dangerous kubelet operations (exec, run, attach, portforward) use POST → require
+  # the "create" verb, which is intentionally not granted here.
+  - apiGroups: [""]
+    resources:
+      - nodes/proxy
+    verbs: ["get"]
   - apiGroups: ["monitoring.coreos.com"]
     resources:
       - prometheuses
