@@ -32,19 +32,21 @@ def load_scratch_system_note() -> str:
     return get_required_path(_SCRATCH_NOTE_RLOCATION).read_text().strip()
 
 
-def build_guesser_system(*, skill: str, has_scratch: bool, skill_files_path: Path | None) -> str:
+def build_guesser_system(*, skill: str, skill_files_path: Path | None) -> str:
     """Compose the guesser's system prompt: preamble + skill block + exec note + game-tools note.
 
-    `skill_files_path=None` is for the four non-AF framework variants that
-    don't mount the skill into a sandbox; AF rollouts always pass a real path.
-    `has_scratch=True` adds the TQ-specific game-tools guidance (the generic
-    exec-tool description is always appended by `compose_system_prompt`).
+    The TQ guesser always has an `exec` container (`compose_system_prompt`
+    appends the generic exec-tool description) and always has the
+    `ask_yes_no_question` / `guess_answer` game tools (this function appends
+    `load_scratch_system_note()` as tool guidance). `skill_files_path=None`
+    is for the four non-AF framework variants that don't mount the skill
+    into the sandbox; AF rollouts always pass a real path.
     """
     return compose_system_prompt(
         preamble=_BASE_GUESSER_PREAMBLE,
         skill_md=skill,
         skill_files_path=skill_files_path,
-        tool_guidance=load_scratch_system_note() if has_scratch else None,
+        tool_guidance=load_scratch_system_note(),
     )
 
 

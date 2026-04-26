@@ -214,7 +214,7 @@ async def run_game(
     """
     variant = VARIANTS[variant_name]
     sim_system = load_sim_prompt(secret=variant.secret, turn_limit=variant.turn_limit)
-    guesser_system = build_guesser_system(skill=skill_md, has_scratch=True, skill_files_path=SKILL_PATH)
+    guesser_system = build_guesser_system(skill=skill_md, skill_files_path=SKILL_PATH)
     opening = first_user_message(variant.domain_description, variant.turn_limit)
 
     game = GameContext(turn_limit=variant.turn_limit)

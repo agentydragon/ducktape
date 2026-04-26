@@ -231,7 +231,7 @@ async def run_twenty_questions(
     calls_path, summary_path = run_output_paths(name, output_dir)
 
     sim_instructions = load_sim_prompt(secret=variant.secret, turn_limit=variant.turn_limit)
-    guesser_instructions = build_guesser_system(skill=load_skill_prompt(), has_scratch=True, skill_files_path=None)
+    guesser_instructions = build_guesser_system(skill=load_skill_prompt(), skill_files_path=None)
     opening = first_user_message(variant.domain_description, variant.turn_limit)
 
     guesser_toolsets: list[AbstractToolset[None]] | None = None
