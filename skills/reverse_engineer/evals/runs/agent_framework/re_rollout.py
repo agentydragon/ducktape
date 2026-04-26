@@ -33,7 +33,6 @@ import contextlib
 import logging
 import os
 import sys
-import tarfile
 import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -54,10 +53,13 @@ from agent_framework import (
     MiddlewareTermination,
 )
 from pydantic import BaseModel
+from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
+from skills.reverse_engineer.reverse_engineer_skill_spec import SPEC as REVERSE_ENGINEER_SKILL_SPEC
 
 from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.af_chat_client import build_model_client
 from skills.eval_infra.af_scratch_mcp import scratch_exec_mcp_tool
+from skills.eval_infra.skill_staging import SKILL_FILES_PATH, SkillSpec, stage_skill
 from util.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
@@ -67,7 +69,11 @@ _DEFAULT_MAX_STEPS = 200
 _DEFAULT_WALL_TIMEOUT_SECONDS = 600
 
 _TARGET_BINARY_RLOCATION = "_main/skills/reverse_engineer/evals/specimens/go_crypto_server/go_crypto_server_garbled.bin"
-_SKILL_TAR_RLOCATION = "_main/skills/reverse_engineer/reverse_engineer_tar.tar"
+
+# Maps the --skill CLI value to a SkillSpec. The "off" arm uses an empty
+# SKILL.md so the sandbox shape is uniform across arms — there is no
+# `if skill_on:` branch.
+_SKILL_BY_ARM: dict[str, SkillSpec] = {"on": REVERSE_ENGINEER_SKILL_SPEC, "off": EMPTY_SKILL_SPEC}
 
 
 # -- Run summary --
@@ -82,42 +88,29 @@ class RunSummary(BaseModel):
     error: str | None = None
 
 
-# -- Skill loading --
-
-
-def _load_skill(extract_dir: Path) -> tuple[Path, str]:
-    """Extract the skill tar; return (host dir to bind-mount, SKILL.md text)."""
-    tar_path = get_required_path(_SKILL_TAR_RLOCATION)
-    with tarfile.open(tar_path) as tf:
-        tf.extractall(extract_dir)
-    skill_dir = extract_dir / "reverse_engineer"
-    skill_md = (skill_dir / "SKILL.md").read_text()
-    return skill_dir, skill_md
-
-
 # -- Prompts --
 
 
-def _build_system_prompt(*, skill_on: bool, skill_md_text: str | None) -> str:
-    base = (
+def _build_system_prompt(*, skill_md_text: str) -> str:
+    """Compose the RE system prompt.
+
+    `skill_md_text` is inlined verbatim. The off-arm passes an empty string
+    (the empty-skill tar's SKILL.md is blank), keeping the sandbox shape
+    uniform across arms.
+    """
+    return (
         "You are reverse-engineering a stripped Go binary located at /work/target.\n"
         "Recover its source as Go files under /work/recovered/ (your working directory).\n"
         "You have shell access via the `exec` tool — `cmd` is a list of strings, no shell\n"
         "expansion. Stdout and stderr are returned together. Install whatever you need\n"
         "(apt-get install -y ..., pip install ..., curl ...). The container has internet.\n"
         "When you have gone as far as you can, call `submit` with a one-paragraph summary\n"
-        "of what the program does and which parts you are confident vs unsure about."
-    )
-    if not skill_on:
-        return base
-    assert skill_md_text is not None, "skill_md_text required when skill_on=True"
-    return (
-        f"{base}\n\n"
-        "A reverse-engineering skill is available. Its SKILL.md is included below verbatim.\n"
-        "The files SKILL.md references (e.g. examples/pclntool.go, examples/garble_re_recipe.sh)\n"
-        "live inside the container at /work/.skill/. You can read them with `cat /work/.skill/...`,\n"
-        "run scripts with `bash /work/.skill/examples/garble_re_recipe.sh ...`, build Go helpers\n"
-        "with `go run /work/.skill/examples/pclntool.go ...`, etc.\n\n"
+        "of what the program does and which parts you are confident vs unsure about.\n\n"
+        f"A reverse-engineering skill is available. Its SKILL.md is included below verbatim.\n"
+        f"The files SKILL.md references (e.g. examples/pclntool.go, examples/garble_re_recipe.sh)\n"
+        f"live inside the container at {SKILL_FILES_PATH}/. You can read them with "
+        f"`cat {SKILL_FILES_PATH}/...`, run scripts with `bash {SKILL_FILES_PATH}/examples/...`,\n"
+        f"build Go helpers with `go run {SKILL_FILES_PATH}/examples/pclntool.go ...`, etc.\n\n"
         "--- BEGIN SKILL.md ---\n"
         f"{skill_md_text}\n"
         "--- END SKILL.md ---\n"
@@ -191,18 +184,15 @@ class _SubmitMiddleware(FunctionMiddleware):
 
 
 @asynccontextmanager
-async def _re_exec_tool(
-    *, target_binary: Path, workspace: Path, skill_dir: Path | None
-) -> AsyncGenerator[MCPStdioTool]:
+async def _re_exec_tool(*, target_binary: Path, workspace: Path, skill_dir: Path) -> AsyncGenerator[MCPStdioTool]:
     """Yield an MCPStdioTool exposing `exec` against a scratch container with the
-    target binary, recovered/ workspace, and (optionally) the unpacked skill tar
-    bind-mounted in."""
+    target binary, recovered/ workspace, and the unpacked skill tar (always
+    present — empty-skill arm mounts the empty-skill tar) bind-mounted in."""
     binds: list[BindMount] = [
         BindMount(host_path=target_binary.resolve(), container_path=Path("/work/target"), mode="ro"),
         BindMount(host_path=workspace.resolve(), container_path=Path("/work/recovered"), mode="rw"),
+        BindMount(host_path=skill_dir.resolve(), container_path=SKILL_FILES_PATH, mode="ro"),
     ]
-    if skill_dir is not None:
-        binds.append(BindMount(host_path=skill_dir.resolve(), container_path=Path("/work/.skill"), mode="ro"))
     async with scratch_exec_mcp_tool(binds=binds, working_dir=Path("/work/recovered")) as tool:
         yield tool
 
@@ -218,19 +208,13 @@ async def _async_main(args: argparse.Namespace) -> int:
 
     workspace = out_dir / f"recovered_{suffix}"
     workspace.mkdir(parents=True, exist_ok=True)
-    skill_extract = out_dir / f"skill_extract_{suffix}"
     transcript_path = out_dir / f"transcript_{suffix}.jsonl"
     summary_path = out_dir / f"summary_{suffix}.json"
 
     target_path = get_required_path(_TARGET_BINARY_RLOCATION)
 
-    skill_md_text: str | None = None
-    skill_dir: Path | None = None
-    if skill_on:
-        skill_extract.mkdir(parents=True, exist_ok=True)
-        skill_dir, skill_md_text = _load_skill(skill_extract)
-
-    system_prompt = _build_system_prompt(skill_on=skill_on, skill_md_text=skill_md_text)
+    staged = stage_skill(_SKILL_BY_ARM[args.skill], out_dir / f"skill_extract_{suffix}")
+    system_prompt = _build_system_prompt(skill_md_text=staged.md_text)
 
     submit_state = _SubmitState()
     submit_tool = _make_submit_tool(submit_state)
@@ -248,7 +232,9 @@ async def _async_main(args: argparse.Namespace) -> int:
             transcript_f.write(Message("user", [_FIRST_USER_MESSAGE]).to_json() + "\n")
             transcript_f.flush()
 
-            async with _re_exec_tool(target_binary=target_path, workspace=workspace, skill_dir=skill_dir) as exec_tool:
+            async with _re_exec_tool(
+                target_binary=target_path, workspace=workspace, skill_dir=staged.files_path
+            ) as exec_tool:
                 agent = Agent(
                     client=model_client,
                     instructions=system_prompt,
