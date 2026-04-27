@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+@dataclass(frozen=True)
+class OidcConfig:
+    issuer: str
+    client_id: str
+    client_secret: str
+    session_secret: bytes
+    public_url: str
 
 
 class Settings(BaseSettings):
@@ -42,6 +52,14 @@ class Settings(BaseSettings):
         description="Public base URL of this app, used to build the OIDC redirect_uri.",
     )
 
-    @property
-    def oidc_enabled(self) -> bool:
-        return all([self.oidc_issuer, self.oidc_client_id, self.oidc_client_secret, self.session_secret])
+    def oidc_config(self) -> OidcConfig | None:
+        """Return fully-typed OIDC config if all four fields are set, else None."""
+        if not (self.oidc_issuer and self.oidc_client_id and self.oidc_client_secret and self.session_secret):
+            return None
+        return OidcConfig(
+            issuer=self.oidc_issuer,
+            client_id=self.oidc_client_id,
+            client_secret=self.oidc_client_secret,
+            session_secret=self.session_secret.encode(),
+            public_url=self.public_url,
+        )

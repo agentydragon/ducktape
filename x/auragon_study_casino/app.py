@@ -91,19 +91,19 @@ def create_app(settings: Settings) -> FastAPI:
             stores[username] = DocStore(data_dir / f"casino-{username}.db")
         return stores[username]
 
-    session_secret_bytes = settings.session_secret.encode() if settings.session_secret else None
-    current_user_dep = make_current_user_dep(session_secret_bytes)
+    oidc = settings.oidc_config()
+    current_user_dep = make_current_user_dep(oidc.session_secret if oidc else None)
 
     app = FastAPI(title="Study Casino", docs_url=None, redoc_url=None)
 
-    if settings.oidc_enabled:
+    if oidc:
         app.include_router(
             create_oidc_router(
-                issuer=settings.oidc_issuer,  # type: ignore[arg-type]
-                client_id=settings.oidc_client_id,  # type: ignore[arg-type]
-                client_secret=settings.oidc_client_secret,  # type: ignore[arg-type]
-                session_secret=session_secret_bytes,  # type: ignore[arg-type]
-                public_url=settings.public_url,
+                issuer=oidc.issuer,
+                client_id=oidc.client_id,
+                client_secret=oidc.client_secret,
+                session_secret=oidc.session_secret,
+                public_url=oidc.public_url,
             )
         )
 
