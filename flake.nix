@@ -278,6 +278,9 @@
         pkgs.gofumpt
         ducktapePkgs.prettier
         pkgs.openssl
+        # Codex setup materializes kubeconfig via devinfra/k8s/kubeconfig.py;
+        # include a guaranteed Python runtime with pyyaml for that path.
+        (pkgs.python3.withPackages (ps: [ ps.pyyaml ]))
         # Infrastructure tools
         pkgs.gh
         pkgs.kubectl

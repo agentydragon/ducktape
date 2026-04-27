@@ -23,40 +23,53 @@ log() {
   printf '[codex-cloud %s] %s\n' "$MODE" "$*"
 }
 
+readonly NIX_DAEMON_PROFILE_SH="/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh"
+readonly BAZELRC_DIR="${HOME}/.config/bazel"
+readonly BBR_BAZELRC_PATH="${BAZELRC_DIR}/bbr.bazelrc"
+readonly CODEX_BAZELRC_PATH="${BAZELRC_DIR}/codex.bazelrc"
+readonly USER_BAZELRC_PATH="${HOME}/.bazelrc"
+
+SOPS_RUNTIME_READY=0
+
 ensure_line() {
   local line="$1"
   local file="$2"
   grep -Fqx "$line" "$file" 2>/dev/null || echo "$line" >>"$file"
 }
 
+init_sops_runtime_prereqs() {
+  if [ -z "${SOPS_AGE_KEY:-}" ]; then
+    log "SOPS_AGE_KEY not set; SOPS-dependent setup steps will be skipped"
+    SOPS_RUNTIME_READY=0
+    return 0
+  fi
+  SOPS_RUNTIME_READY=1
+}
+
 load_agent_secrets() {
+  if [ "$SOPS_RUNTIME_READY" -ne 1 ]; then
+    return 0
+  fi
   # Source the same env script claude-web uses. The codex-cloud-agent age key
   # is a recipient on every SOPS file web_env.sh decrypts, so this populates
   # BUILDBUDDY_API_KEY, GITHUB_TOKEN, DUCKTAPE_OTEL_BEARER_TOKEN, and
   # DUCKTAPE_CI_READ_GITHUB_TOKEN.
-  if [ -z "${SOPS_AGE_KEY:-}" ]; then
-    log "SOPS_AGE_KEY not set; skipping secret decryption"
-    return 0
-  fi
-  if ! command -v sops >/dev/null 2>&1; then
-    log "sops missing on PATH; skipping secret decryption"
-    return 0
-  fi
   log "sourcing devinfra/secrets/web_env.sh"
   # shellcheck source=../secrets/web_env.sh
   source "${REPO_ROOT}/devinfra/secrets/web_env.sh"
 }
 
 source_nix_profile_if_present() {
-  if [ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
+  if [ -f "$NIX_DAEMON_PROFILE_SH" ]; then
     # shellcheck disable=SC1091
-    . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+    . "$NIX_DAEMON_PROFILE_SH"
   fi
 }
 
 reconcile_buildbuddy_remote() {
   # Prefer origin when it already points directly at GitHub. Fallback to
   # github-no-proxy only for proxied origin URLs.
+  local github_remote_url="https://github.com/agentydragon/ducktape"
   if git remote get-url origin >/dev/null 2>&1; then
     local origin_url
     origin_url="$(git remote get-url origin)"
@@ -64,7 +77,6 @@ reconcile_buildbuddy_remote() {
       log "origin is GitHub; using origin for BuildBuddy remote"
       git config buildbuddy.remote-bazel-remote-name origin
     else
-      local github_remote_url="https://github.com/agentydragon/ducktape"
       if git remote get-url github-no-proxy >/dev/null 2>&1; then
         log "origin is proxied; github-no-proxy already present"
       else
@@ -74,8 +86,37 @@ reconcile_buildbuddy_remote() {
       git config buildbuddy.remote-bazel-remote-name github-no-proxy
     fi
   else
-    log "origin remote missing; leaving buildbuddy.remote-bazel-remote-name unchanged"
+    if git remote get-url github-no-proxy >/dev/null 2>&1; then
+      log "origin remote missing; github-no-proxy already present"
+    else
+      git remote add github-no-proxy "$github_remote_url"
+      log "origin remote missing; added github-no-proxy remote"
+    fi
+    git config buildbuddy.remote-bazel-remote-name github-no-proxy
+    log "origin remote missing; using github-no-proxy for BuildBuddy remote"
   fi
+}
+
+ensure_bbr_base_branch() {
+  # bbr expects a local `devel` branch reference for base-branch calculations.
+  if git rev-parse --verify devel >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local remote_ref=""
+  if git show-ref --verify --quiet refs/remotes/github-no-proxy/devel; then
+    remote_ref="github-no-proxy/devel"
+  elif git show-ref --verify --quiet refs/remotes/origin/devel; then
+    remote_ref="origin/devel"
+  fi
+
+  if [ -z "$remote_ref" ]; then
+    log "local 'devel' branch missing and no remote devel ref found; bbr may fail"
+    return 0
+  fi
+
+  git branch devel "$remote_ref" >/dev/null 2>&1 || true
+  log "created local 'devel' branch from ${remote_ref} for bbr compatibility"
 }
 
 install_nix_if_missing() {
@@ -85,29 +126,9 @@ install_nix_if_missing() {
   fi
 
   log "nix not found; installing Determinate Nix installer"
-  local nix_installer_version="v3.17.3"
-  local nix_installer_url="https://github.com/DeterminateSystems/nix-installer/releases/download/${nix_installer_version}/nix-installer-x86_64-linux"
-  local nix_installer_sha256="4a84424a0a598b671de21fca1602ea3e74af214d823020afe7aac0056dc032ac"
-  local nix_installer_bin="/tmp/nix-installer"
-
-  curl -fsSL "$nix_installer_url" -o "$nix_installer_bin"
-  echo "${nix_installer_sha256}  ${nix_installer_bin}" | sha256sum -c
-  chmod +x "$nix_installer_bin"
-
-  local saved_user="${USER:-}"
-  export USER="${USER:-$(id -u -n)}"
-  "$nix_installer_bin" install linux \
-    --no-confirm \
-    --init none \
-    --extra-conf "sandbox = false" \
-    --extra-conf "max-jobs = auto" \
-    --extra-conf "system-features =" \
-    --extra-conf "substituters = https://cache.nixos.org" \
-    --extra-conf "trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+  bash "${REPO_ROOT}/devinfra/install_nix_determinate.sh"
 
   source_nix_profile_if_present
-
-  if [ -z "$saved_user" ]; then unset USER; else USER="$saved_user"; fi
 }
 
 install_or_refresh_devtools() {
@@ -126,38 +147,92 @@ run_buildbuddy_setup() {
   fi
 }
 
+install_precommit_hooks() {
+  log "installing pre-commit hooks"
+  pre-commit install --install-hooks
+}
+
+materialize_kubeconfig_if_possible() {
+  local nix_python="${HOME}/.nix-profile/bin/python3"
+  if [ "$SOPS_RUNTIME_READY" -ne 1 ]; then
+    log "skipping kubeconfig materialization (SOPS prerequisites unavailable)"
+    return 0
+  fi
+  log "materializing ~/.kube/config from SOPS-encrypted JWT"
+  CLAUDE_PROJECT_DIR="${REPO_ROOT}" "$nix_python" "${REPO_ROOT}/devinfra/k8s/kubeconfig.py" --write "${HOME}/.kube/config"
+}
+
+write_codex_bazelrcs() {
+  local session_tag="${CODEX_SESSION_ID:-codex-cloud}"
+
+  mkdir -p "$BAZELRC_DIR"
+
+  cat >"$BBR_BAZELRC_PATH" <<EOF
+# Auto-generated by devinfra/codex_cloud/setup.sh
+build --build_metadata=ROLE=codex-cloud
+build --build_metadata=TAGS=session:${session_tag}
+EOF
+
+  cat >"$CODEX_BAZELRC_PATH" <<EOF
+# Auto-generated by devinfra/codex_cloud/setup.sh
+test --test_tag_filters=-live_openai_api
+try-import ${HOME}/.config/bazel/buildbuddy.bazelrc
+try-import ${BBR_BAZELRC_PATH}
+common --config=ai_agent
+EOF
+}
+
 persist_agent_shell_init() {
-  if [ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
+  local bashrc="${HOME}/.bashrc"
+  local bash_profile="${HOME}/.bash_profile"
+  local shell_file="$bashrc"
+
+  touch "$bashrc"
+  touch "$bash_profile"
+  touch "$USER_BAZELRC_PATH"
+
+  # Ensure login shells (used by many agent command runners) load ~/.bashrc.
+  ensure_line '[ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"' "$bash_profile"
+
+  if [ -f "$NIX_DAEMON_PROFILE_SH" ]; then
     log "persisting nix-daemon profile sourcing into ~/.bashrc"
-    ensure_line '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh' ~/.bashrc
+    ensure_line ". ${NIX_DAEMON_PROFILE_SH}" "$shell_file"
   fi
 
   if [ -n "${SOPS_AGE_KEY:-}" ]; then
     log "persisting SOPS_AGE_KEY into ~/.bashrc for agent shells"
-    ensure_line "export SOPS_AGE_KEY='${SOPS_AGE_KEY}'" ~/.bashrc
+    ensure_line "export SOPS_AGE_KEY='${SOPS_AGE_KEY}'" "$shell_file"
   else
     log "SOPS_AGE_KEY not set (expected unless configured in Codex environment vars)"
   fi
+
+  log "persisting runtime secret hydration and bazel env into ~/.bashrc"
+  ensure_line "[ -n \"\${SOPS_AGE_KEY:-}\" ] && [ -f \"${REPO_ROOT}/devinfra/secrets/web_env.sh\" ] && source \"${REPO_ROOT}/devinfra/secrets/web_env.sh\" >/dev/null 2>&1 || true" "$shell_file"
+  ensure_line "export BBR_BAZELRC='${BBR_BAZELRC_PATH}'" "$shell_file"
+  ensure_line "export SESSION_BAZELRC='${CODEX_BAZELRC_PATH}'" "$shell_file"
+  ensure_line "try-import ${CODEX_BAZELRC_PATH}" "$USER_BAZELRC_PATH"
+}
+
+run_common_setup_steps() {
+  install_or_refresh_devtools
+  run_buildbuddy_setup
+  install_precommit_hooks
+  write_codex_bazelrcs
+  reconcile_buildbuddy_remote
+  ensure_bbr_base_branch
+  materialize_kubeconfig_if_possible
 }
 
 validate_core_tools() {
-  if command -v bb >/dev/null 2>&1; then
-    bb --version >/dev/null
-    log "bb present"
-  else
-    log "WARNING: bb missing"
-  fi
-
-  if command -v bbr >/dev/null 2>&1; then
-    bbr --help >/dev/null
-    log "bbr present"
-  else
-    log "WARNING: bbr missing"
-  fi
+  bb --version >/dev/null
+  log "bb present"
+  bbr --help >/dev/null
+  log "bbr present"
 }
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
+init_sops_runtime_prereqs
 
 log "repo=$REPO_ROOT"
 log "commit=$(git rev-parse HEAD 2>/dev/null || echo unknown)"
@@ -165,18 +240,14 @@ log "commit=$(git rev-parse HEAD 2>/dev/null || echo unknown)"
 case "$MODE" in
   install)
     install_nix_if_missing
-    install_or_refresh_devtools
-    run_buildbuddy_setup
-    reconcile_buildbuddy_remote
+    run_common_setup_steps
     persist_agent_shell_init
     ;;
   maintenance)
     source_nix_profile_if_present
     log "refreshing git remotes"
     git fetch --all --prune
-    run_buildbuddy_setup
-    reconcile_buildbuddy_remote
-    install_or_refresh_devtools
+    run_common_setup_steps
     validate_core_tools
     ;;
   *)

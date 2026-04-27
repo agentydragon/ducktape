@@ -33,8 +33,9 @@ For this repo:
   `cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml` when
   `SOPS_AGE_KEY` is available.
 
-If `SOPS_AGE_KEY` is present during setup, `setup.sh` appends an export to
-`~/.bashrc` so Bash tool sessions inherit it.
+If `SOPS_AGE_KEY` is present during setup, `setup.sh` appends exports to
+`~/.bashrc` and ensures `~/.bash_profile` sources `~/.bashrc`, so both
+interactive and login shell sessions inherit it without duplicate exports.
 
 This is intentional: Codex Cloud docs state setup runs in a separate Bash
 session and recommend `~/.bashrc` for persistence into the agent phase.
@@ -44,15 +45,23 @@ session and recommend `~/.bashrc` for persistence into the agent phase.
 1. Detects repo root and logs commit identity.
 2. Installs Nix (Determinate installer) if missing.
 3. Installs the repo `.#devtools` profile.
-4. Persists nix profile sourcing in `~/.bashrc` so agent Bash sessions get Nix tools on `PATH`.
-5. Decrypts BuildBuddy API key from SOPS (when possible) and runs `devinfra/setup_buildbuddy.sh`.
-6. Configures BuildBuddy remote selection:
+4. Installs repo pre-commit Git hooks (`pre-commit install --install-hooks`).
+5. Persists nix profile sourcing in `~/.bashrc` and ensures `~/.bash_profile` sources `~/.bashrc`, so login and interactive shells get Nix tools on `PATH` once.
+6. Decrypts BuildBuddy API key from SOPS (when possible) and runs `devinfra/setup_buildbuddy.sh`.
+7. Configures BuildBuddy remote selection:
    - uses `origin` when it already points directly to GitHub
-   - falls back to `github-no-proxy` only when `origin` is proxied/non-GitHub
-7. Persists `SOPS_AGE_KEY` into `~/.bashrc` when provided.
+   - falls back to `github-no-proxy` when `origin` is proxied/non-GitHub
+   - if `origin` is missing, creates `github-no-proxy` and selects it
+8. Writes Codex Bazel config files:
+   - `~/.config/bazel/bbr.bazelrc` for BuildBuddy metadata (`ROLE`, session tag)
+   - `~/.config/bazel/codex.bazelrc` with `try-import` wiring for BuildBuddy + bbr metadata
+   - `~/.bazelrc` `try-import` entry for `~/.config/bazel/codex.bazelrc`
+9. Ensures local `devel` branch exists (from `github-no-proxy/devel` or `origin/devel` when available) so `bbr` base-branch detection works.
+10. Materializes `~/.kube/config` from `secrets/claude-web-k8s-jwt.yaml` via the Nix-managed Python interpreter (`~/.nix-profile/bin/python3 devinfra/k8s/kubeconfig.py`) so `pyyaml` is present consistently.
+11. Persists `SOPS_AGE_KEY`, Bazel env vars (`BBR_BAZELRC`, `SESSION_BAZELRC`), and runtime `web_env.sh` sourcing into shell startup files so agent command shells rehydrate `BUILDBUDDY_API_KEY` and use the generated bazelrc files.
 
-Maintenance refreshes git remotes, BuildBuddy config, and devtools profile,
-then validates `bb` / `bbr` availability.
+Maintenance refreshes git remotes, BuildBuddy config, devtools profile, and
+pre-commit hooks, then validates `bb` / `bbr` availability.
 
 ## Known gaps / risks
 
@@ -72,7 +81,7 @@ then validates `bb` / `bbr` availability.
    - If setup exceeds practical time limits, fall back to non-Nix Stage A tooling.
 
 4. **Cloud image assumptions**
-   - Scripts assume Linux x86_64 and that Codex agent Bash sessions source `~/.bashrc` (as documented).
+   - Scripts assume Linux x86_64 and that Codex agent Bash sessions execute shell startup files.
    - If image changes, update install script accordingly.
 
 ## Validation command (inside repo)

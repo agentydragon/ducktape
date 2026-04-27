@@ -45,6 +45,14 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 set -euo pipefail
 
+log() {
+  printf '[%s] %s\n' "$(date -Iseconds)" "$*"
+}
+
+warn() {
+  log "WARNING: $*" >&2
+}
+
 # Hook implementation: python (default) or rust.
 HOOK_IMPL="${DUCKTAPE_CLAUDE_HOOK_IMPL:-python}"
 for arg in "$@"; do
@@ -54,14 +62,14 @@ case "$HOOK_IMPL" in
   python) DEVTOOLS_OUTPUT="devtools" ;;
   rust) DEVTOOLS_OUTPUT="devtools-rust" ;;
   *)
-    echo "Unknown --impl=$HOOK_IMPL (expected python or rust)" >&2
+    warn "Unknown --impl=$HOOK_IMPL (expected python or rust)"
     DEVTOOLS_OUTPUT="devtools"
     ;;
 esac
 
 FLAKE="path:$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SETUP_COMMIT=$(git -C "${FLAKE#path:}" rev-parse HEAD 2>/dev/null || echo 'unknown')
-echo "[$(date -Iseconds)] web_setup.sh commit: $SETUP_COMMIT"
+log "web_setup.sh commit: $SETUP_COMMIT"
 
 # --- Step 1: Install Nix (Determinate Systems installer) ---
 # Uses the Determinate Systems installer instead of the official one because:
@@ -71,60 +79,32 @@ echo "[$(date -Iseconds)] web_setup.sh commit: $SETUP_COMMIT"
 #     installer's nix-env tries to read from a TTY that doesn't exist
 #   - --init none skips systemd/launchd (not available in containers)
 # Pinned binary from GitHub releases, SHA256-verified.
-echo "[$(date -Iseconds)] Installing Nix (Determinate installer)..."
-NIX_INSTALLER_VERSION="v3.17.3"
-NIX_INSTALLER_URL="https://github.com/DeterminateSystems/nix-installer/releases/download/${NIX_INSTALLER_VERSION}/nix-installer-x86_64-linux"
-NIX_INSTALLER_SHA256="4a84424a0a598b671de21fca1602ea3e74af214d823020afe7aac0056dc032ac"
-NIX_INSTALLER_BIN="/tmp/nix-installer"
-curl -fsSL "$NIX_INSTALLER_URL" -o "$NIX_INSTALLER_BIN"
-echo "${NIX_INSTALLER_SHA256}  ${NIX_INSTALLER_BIN}" | sha256sum -c
-chmod +x "$NIX_INSTALLER_BIN"
-# Ensure $USER is set — nix profile sourcing is a no-op when $USER is empty.
-_saved_user="${USER:-}"
-export USER="${USER:-$(id -u -n)}"
-# --no-confirm: fully non-interactive
-# --init none: no systemd/launchd (container environment)
-# --extra-conf: gVisor needs sandbox=false (no kernel namespaces/cgroups),
-#   max-jobs=auto for local symlinkJoin/buildEnv builds not in cache.
-# CLEANUP(2026-03-27): cache.allegedly.works is currently down (503). Falling back to
-#   cache.nixos.org only. Restore once the cache is back:
-#     --extra-conf "substituters = https://cache.allegedly.works/main https://cache.nixos.org"
-#     --extra-conf "trusted-public-keys = cache.allegedly.works-1:OX/cis8G1W13DALkGvhdUZ1OY3yGATbXw8+tIc8J7oA= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
-"$NIX_INSTALLER_BIN" install linux \
-  --no-confirm \
-  --init none \
-  --extra-conf "sandbox = false" \
-  --extra-conf "max-jobs = auto" \
-  --extra-conf "system-features =" \
-  --extra-conf "substituters = https://cache.nixos.org" \
-  --extra-conf "trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+log "Installing Nix (Determinate installer)..."
+bash "${FLAKE#path:}/devinfra/install_nix_determinate.sh"
 # shellcheck disable=SC1091
 . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
-# Restore $USER to its original state so we don't leak a side-effect.
-if [ -z "$_saved_user" ]; then unset USER; else USER="$_saved_user"; fi
-unset _saved_user
-echo "[$(date -Iseconds)] Nix installation complete."
+log "Nix installation complete."
 
 # --- Step 2: Install web session tools ---
 # Debug: dump environment keys for proxy/cert diagnostics (no values — avoids logging JWTs).
-echo "--- environment keys ---"
+log "--- environment keys ---"
 env | cut -d= -f1 | sort
-echo "---"
+log "---"
 
-echo "Connectivity check (cache.nixos.org)..."
-curl -fsSL --max-time 10 https://cache.nixos.org/nix-cache-info || echo "WARNING: cache.nixos.org check failed — continuing anyway" >&2
+log "Connectivity check (cache.nixos.org)..."
+curl -fsSL --max-time 10 https://cache.nixos.org/nix-cache-info || warn "cache.nixos.org check failed — continuing anyway"
 
-echo "--- nix.conf ---"
+log "--- nix.conf ---"
 cat /etc/nix/nix.conf
-echo "--- nix show-config ---"
+log "--- nix show-config ---"
 nix show-config 2>/dev/null | grep -E "max-jobs|sandbox|build-users" || true
-echo "---"
+log "---"
 
-echo "[$(date -Iseconds)] Installing web session tools..."
-echo "  FLAKE=${FLAKE}"
-echo "  pwd=$(pwd)"
-echo "  flake.nix exists: $(test -f flake.nix && echo yes || echo no)"
-echo "  ls pwd:"
+log "Installing web session tools..."
+log "  FLAKE=${FLAKE}"
+log "  pwd=$(pwd)"
+log "  flake.nix exists: $(test -f flake.nix && echo yes || echo no)"
+log "  ls pwd:"
 ls -la
 # Pass --max-jobs explicitly to override any nix.conf misconfiguration.
 #
@@ -145,7 +125,7 @@ ls -la
 nix profile remove devtools 2>/dev/null || true
 nix profile remove devtools-rust 2>/dev/null || true
 nix profile install --max-jobs auto "${FLAKE}#${DEVTOOLS_OUTPUT}"
-echo "[$(date -Iseconds)] Dev tools installed (impl=$HOOK_IMPL)."
+log "Dev tools installed (impl=$HOOK_IMPL)."
 
 # Symlink all Nix-installed binaries into /usr/local/bin so they're on PATH.
 # Claude Code is launched directly (not via login shell), so the Nix profile bin
@@ -174,26 +154,26 @@ PROJECT_DIR="${FLAKE#path:}"
 # Value must be a remote NAME (not a URL) — bb resolves the URL from git config.
 GITHUB_REMOTE_URL="https://github.com/agentydragon/ducktape"
 if git -C "$PROJECT_DIR" remote get-url github-no-proxy &>/dev/null; then
-  echo "[$(date -Iseconds)] git remote 'github-no-proxy' already exists, skipping."
+  log "git remote 'github-no-proxy' already exists, skipping."
 else
   git -C "$PROJECT_DIR" remote add github-no-proxy "$GITHUB_REMOTE_URL"
-  echo "[$(date -Iseconds)] Added git remote 'github-no-proxy' -> $GITHUB_REMOTE_URL"
+  log "Added git remote 'github-no-proxy' -> $GITHUB_REMOTE_URL"
 fi
 git -C "$PROJECT_DIR" config buildbuddy.remote-bazel-remote-name github-no-proxy
-echo "[$(date -Iseconds)] Set buildbuddy.remote-bazel-remote-name=github-no-proxy"
+log "Set buildbuddy.remote-bazel-remote-name=github-no-proxy"
 
 # --- Step 4: Symlink skills into ~/.claude/skills/ ---
 # Per-skill symlinks instead of replacing the directory, so Anthropic's
 # pre-landed default skills are preserved.
-echo "Deploying skills to ~/.claude/skills/..."
+log "Deploying skills to ~/.claude/skills/..."
 mkdir -p ~/.claude/skills
 for skill in "${NIX_PROFILE}"/share/claude-hooks/skills/*/; do
   ln -sfn "$skill" ~/.claude/skills/"$(basename "$skill")"
 done
 
-echo "[$(date -Iseconds)] Setup complete. Log: ${LOG_FILE}"
+log "Setup complete. Log: ${LOG_FILE}"
 
 if [ "${DUCKTAPE_WEB_SETUP_UPLOAD_LOG:-0}" = "1" ]; then
   UPLOAD_URL=$(curl -s -F "f:1=@${LOG_FILE}" ix.io 2>/dev/null || echo "upload failed")
-  echo "[$(date -Iseconds)] Log uploaded: ${UPLOAD_URL}"
+  log "Log uploaded: ${UPLOAD_URL}"
 fi
