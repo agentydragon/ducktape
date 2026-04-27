@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import { packOrderedInitOwnerClosures, planOrderedInitOwnerClosureExtractions } from "../../devinfra/js/debundle/extract/declaration_component_graph_lib.mjs";
+import { packOrderedInitOwnerClosures, planOrderedInitOwnerClosureExtractions } from "../../devinfra/js/debundle/extract/decl_graph.mjs";
 
 function main() {
   const analysisPath = process.argv[2];

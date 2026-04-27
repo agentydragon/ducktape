@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { requireValue } from "../common/workspace_io_lib.mjs";
-import { runTransformSpec } from "./run_transform_lib.mjs";
+import { requireValue } from "../common/io.mjs";
+import { runTransformSpec } from "./runner.mjs";
 
 async function main() {
   const { packageRoots, packagesRoot, specPath } = parseArgs(process.argv.slice(2));

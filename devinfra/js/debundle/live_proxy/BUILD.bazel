@@ -1,20 +1,20 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_test")
 
 filegroup(
-    name = "serve_live_proxy_entry_point",
-    srcs = ["serve_live_proxy.mjs"],
+    name = "serve_entry_point",
+    srcs = ["serve.mjs"],
     visibility = ["//visibility:public"],
 )
 
 filegroup(
     name = "browser_load_test_entry_point",
-    srcs = ["live_proxy_browser_load_test.mjs"],
+    srcs = ["browser_load_test.mjs"],
     visibility = ["//visibility:public"],
 )
 
 js_library(
     name = "libs",
-    srcs = ["live_proxy_lib.mjs"],
+    srcs = ["proxy.mjs"],
     visibility = ["//visibility:public"],
     deps = [
         "//:node_modules/http-mitm-proxy",
@@ -24,26 +24,26 @@ js_library(
 )
 
 js_binary(
-    name = "serve_live_proxy",
+    name = "serve_bin",
     data = [
-        "live_proxy_lib.mjs",
-        ":serve_live_proxy_entry_point",
+        "proxy.mjs",
+        ":serve_entry_point",
         "//:node_modules/http-mitm-proxy",
         "//:node_modules/node-forge",
         "//devinfra/js/debundle/common:libs",
     ],
-    entry_point = ":serve_live_proxy_entry_point",
+    entry_point = ":serve_entry_point",
     visibility = ["//visibility:public"],
 )
 
 js_test(
-    name = "live_proxy_test",
+    name = "proxy_test",
     data = [
-        "live_proxy_lib.mjs",
+        "proxy.mjs",
         "//:node_modules/http-mitm-proxy",
         "//:node_modules/node-forge",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/test_support:sources",
     ],
-    entry_point = "live_proxy_test.mjs",
+    entry_point = "proxy_test.mjs",
 )

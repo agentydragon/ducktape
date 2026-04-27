@@ -3,7 +3,7 @@
 import {
   extractOwnerClosurePlanReport,
   parseOwnerClosurePlanReportArgs,
-} from "./owner_closure_plan_report_lib.mjs";
+} from "./closure_report.mjs";
 
 function usage() {
   return `Usage:

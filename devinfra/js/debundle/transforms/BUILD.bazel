@@ -13,9 +13,9 @@ _JSONC_DEPS = [
 js_library(
     name = "libs",
     srcs = [
-        "rewrite_chunk_entry_specifiers_lib.mjs",
-        "run_transform_lib.mjs",
-        "write_js_tree_lib.mjs",
+        "rewrite_specifiers.mjs",
+        "runner.mjs",
+        "write.mjs",
     ],
     visibility = ["//visibility:public"],
     deps = [

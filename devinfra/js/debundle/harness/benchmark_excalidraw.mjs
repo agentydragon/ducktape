@@ -18,12 +18,12 @@ import { Session } from "node:inspector/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { computeJsAsts } from "../common/compute_js_asts_lib.mjs";
-import { loadJsChunks } from "../common/load_js_chunks_lib.mjs";
-import { getArtifactChunkManifest, listChunkIds } from "../common/pipeline_artifact_lib.mjs";
-import { extractAtomicModules } from "../extract/atomic_modules_stage_lib.mjs";
-import { mergeModules } from "../extract/merge_modules_stage_lib.mjs";
-import { normalizeJsChunks } from "../split/split_function_parts_lib.mjs";
+import { computeJsAsts } from "../common/parse_asts.mjs";
+import { loadJsChunks } from "../common/load_chunks.mjs";
+import { getArtifactChunkManifest, listChunkIds } from "../common/artifact.mjs";
+import { extractAtomicModules } from "../extract/atomic_modules.mjs";
+import { mergeModules } from "../extract/merge.mjs";
+import { normalizeJsChunks } from "../split/function_parts.mjs";
 
 const DEFAULT_FIXTURE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "excalidraw_bundle_assets");
 const DEFAULT_MERGE_COUNT = 20;

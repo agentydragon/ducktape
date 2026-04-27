@@ -12,7 +12,7 @@ js_info_files(
 js_library(
     name = "libs",
     srcs = [
-        "fixture_lib.mjs",
+        "fixtures.mjs",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -24,7 +24,7 @@ js_library(
 js_library(
     name = "pipeline_fixture_lib",
     srcs = [
-        "pipeline_fixture_lib.mjs",
+        "pipeline_fixtures.mjs",
     ],
     visibility = ["//visibility:public"],
     deps = [

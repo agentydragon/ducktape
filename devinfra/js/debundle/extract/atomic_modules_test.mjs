@@ -3,17 +3,17 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { parse } from "@babel/parser";
-import { analyzeRuntimeBoundaryAst, analyzeRuntimeBoundaryCode } from "../analysis/runtime_boundary_metadata_lib.mjs";
-import { computeJsAsts } from "../common/compute_js_asts_lib.mjs";
-import { getChunk, getChunkEntryFile } from "../common/pipeline_artifact_lib.mjs";
-import { DEFAULT_PARSER_OPTIONS } from "../common/js_module_lib.mjs";
-import { loadJsChunks } from "../common/load_js_chunks_lib.mjs";
-import { normalizeJsChunks } from "../split/split_function_parts_lib.mjs";
-import { createWebFixtureRoots, runNodeScript, writeSnapshotFixture } from "../test_support/fixture_lib.mjs";
-import { runTransformSpecObject } from "../transforms/run_transform_lib.mjs";
-import { writeJsTree } from "../transforms/write_js_tree_lib.mjs";
-import { extractAtomicModules } from "./atomic_modules_stage_lib.mjs";
-import { mergeModules } from "./merge_modules_stage_lib.mjs";
+import { analyzeRuntimeBoundaryAst, analyzeRuntimeBoundaryCode } from "../analysis/boundary.mjs";
+import { computeJsAsts } from "../common/parse_asts.mjs";
+import { getChunk, getChunkEntryFile } from "../common/artifact.mjs";
+import { DEFAULT_PARSER_OPTIONS } from "../common/parser_options.mjs";
+import { loadJsChunks } from "../common/load_chunks.mjs";
+import { normalizeJsChunks } from "../split/function_parts.mjs";
+import { createWebFixtureRoots, runNodeScript, writeSnapshotFixture } from "../test_support/fixtures.mjs";
+import { runTransformSpecObject } from "../transforms/runner.mjs";
+import { writeJsTree } from "../transforms/write.mjs";
+import { extractAtomicModules } from "./atomic_modules.mjs";
+import { mergeModules } from "./merge.mjs";
 
 test("extractAtomicModules emits one module per atomic unit and preserves behavior", async () => {
   const { artifact, selectedOwnerIds, snapshotRoot } = await prepareAtomicFixture("debundle-atomic-modules-stage-");

@@ -9,23 +9,23 @@ js_info_files(
 js_library(
     name = "libs",
     srcs = [
-        "compute_js_asts_lib.mjs",
-        "js_module_lib.mjs",
-        "load_js_chunks_lib.mjs",
-        "package_tree_lib.mjs",
-        "pipeline_artifact_lib.mjs",
-        "vendor_runtime_lib.mjs",
-        "workspace_io_lib.mjs",
+        "artifact.mjs",
+        "io.mjs",
+        "load_chunks.mjs",
+        "package_tree.mjs",
+        "parse_asts.mjs",
+        "parser_options.mjs",
+        "vendor_runtime.mjs",
     ],
     visibility = ["//visibility:public"],
 )
 
 js_test(
-    name = "vendor_runtime_lib_test",
+    name = "vendor_runtime_test",
     data = [
-        "vendor_runtime_lib.mjs",
+        "vendor_runtime.mjs",
         ":sources",
         "//devinfra/js/debundle/test_support:sources",
     ],
-    entry_point = "vendor_runtime_lib_test.mjs",
+    entry_point = "vendor_runtime_test.mjs",
 )

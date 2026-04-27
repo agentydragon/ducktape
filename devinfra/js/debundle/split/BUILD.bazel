@@ -10,9 +10,9 @@ _BABEL_DEPS = [
 js_library(
     name = "libs",
     srcs = [
-        "split_chunk_lib.mjs",
-        "split_function_parts_lib.mjs",
-        "split_function_parts_worker.mjs",
+        "chunk.mjs",
+        "function_parts.mjs",
+        "function_parts_worker.mjs",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -21,24 +21,24 @@ js_library(
 )
 
 js_test(
-    name = "split_chunk_test",
+    name = "chunk_test",
     data = [
-        "split_chunk_lib.mjs",
+        "chunk.mjs",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/test_support:sources",
     ] + _BABEL_DEPS,
-    entry_point = "split_chunk_test.mjs",
+    entry_point = "chunk_test.mjs",
 )
 
 js_test(
-    name = "split_function_parts_test",
+    name = "function_parts_test",
     data = [
-        "split_chunk_lib.mjs",
-        "split_function_parts_lib.mjs",
-        "split_function_parts_worker.mjs",
+        "chunk.mjs",
+        "function_parts.mjs",
+        "function_parts_worker.mjs",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/test_support:sources",
         "//devinfra/js/debundle/transforms:libs",
     ] + _BABEL_DEPS,
-    entry_point = "split_function_parts_test.mjs",
+    entry_point = "function_parts_test.mjs",
 )

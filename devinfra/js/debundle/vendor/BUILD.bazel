@@ -10,9 +10,9 @@ _BABEL_DEPS = [
 js_library(
     name = "libs",
     srcs = [
-        "apply_vendor_annotations_lib.mjs",
-        "rename_vendor_exports_lib.mjs",
-        "swap_vendor_chunks_lib.mjs",
+        "annotate.mjs",
+        "exports.mjs",
+        "swap.mjs",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -21,31 +21,31 @@ js_library(
 )
 
 js_test(
-    name = "apply_vendor_annotations_test",
+    name = "annotate_test",
     data = [
-        "apply_vendor_annotations_lib.mjs",
+        "annotate.mjs",
         "//devinfra/js/debundle/test_support:sources",
     ],
-    entry_point = "apply_vendor_annotations_test.mjs",
+    entry_point = "annotate_test.mjs",
 )
 
 js_test(
-    name = "rename_vendor_exports_test",
+    name = "exports_test",
     data = [
-        "rename_vendor_exports_lib.mjs",
+        "exports.mjs",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/test_support:sources",
     ] + _BABEL_DEPS,
-    entry_point = "rename_vendor_exports_test.mjs",
+    entry_point = "exports_test.mjs",
 )
 
 js_test(
-    name = "swap_vendor_chunks_test",
+    name = "swap_test",
     data = [
-        "rename_vendor_exports_lib.mjs",
-        "swap_vendor_chunks_lib.mjs",
+        "exports.mjs",
+        "swap.mjs",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/test_support:sources",
     ] + _BABEL_DEPS,
-    entry_point = "swap_vendor_chunks_test.mjs",
+    entry_point = "swap_test.mjs",
 )

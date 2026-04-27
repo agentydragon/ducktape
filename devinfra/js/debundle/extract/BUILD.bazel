@@ -10,14 +10,14 @@ _BABEL_DEPS = [
 js_library(
     name = "libs",
     srcs = [
-        "atomic_modules_stage_lib.mjs",
-        "declaration_component_graph_lib.mjs",
-        "extract_ordered_init_region_lib.mjs",
-        "extract_ordered_init_regions_lib.mjs",
-        "merge_modules_stage_lib.mjs",
-        "owner_closure_plan_report_lib.mjs",
-        "packed_selected_modules_stage_lib.mjs",
-        "selected_module_planning_lib.mjs",
+        "atomic_modules.mjs",
+        "closure_report.mjs",
+        "decl_graph.mjs",
+        "init_region.mjs",
+        "init_regions.mjs",
+        "merge.mjs",
+        "packed_modules.mjs",
+        "planner.mjs",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -28,38 +28,38 @@ js_library(
 )
 
 js_test(
-    name = "extract_ordered_init_region_test",
+    name = "init_region_test",
     data = [
-        "declaration_component_graph_lib.mjs",
-        "extract_ordered_init_region_lib.mjs",
-        "selected_module_planning_lib.mjs",
+        "decl_graph.mjs",
+        "init_region.mjs",
+        "planner.mjs",
         "//devinfra/js/debundle/analysis:libs",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/split:libs",
         "//devinfra/js/debundle/test_support:sources",
     ] + _BABEL_DEPS,
-    entry_point = "extract_ordered_init_region_test.mjs",
+    entry_point = "init_region_test.mjs",
 )
 
 js_test(
-    name = "declaration_component_graph_test",
+    name = "decl_graph_test",
     data = [
-        "declaration_component_graph_lib.mjs",
-        "extract_ordered_init_region_lib.mjs",
-        "selected_module_planning_lib.mjs",
+        "decl_graph.mjs",
+        "init_region.mjs",
+        "planner.mjs",
         "//devinfra/js/debundle/analysis:libs",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/split:libs",
         "//devinfra/js/debundle/test_support:sources",
     ] + _BABEL_DEPS,
-    entry_point = "declaration_component_graph_test.mjs",
+    entry_point = "decl_graph_test.mjs",
 )
 
 js_test(
-    name = "owner_closure_plan_report_test",
+    name = "closure_report_test",
     data = [
-        "declaration_component_graph_lib.mjs",
-        "owner_closure_plan_report_lib.mjs",
+        "closure_report.mjs",
+        "decl_graph.mjs",
         "//devinfra/js/debundle/analysis:libs",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/rename:libs",
@@ -67,33 +67,33 @@ js_test(
         "//devinfra/js/debundle/test_support:sources",
         "//devinfra/js/debundle/transforms:libs",
     ] + _BABEL_DEPS,
-    entry_point = "owner_closure_plan_report_test.mjs",
+    entry_point = "closure_report_test.mjs",
 )
 
 js_test(
     name = "guided_selected_owner_modules_test",
     data = [
-        "declaration_component_graph_lib.mjs",
-        "extract_ordered_init_region_lib.mjs",
-        "packed_selected_modules_stage_lib.mjs",
-        "selected_module_planning_lib.mjs",
+        "decl_graph.mjs",
+        "init_region.mjs",
+        "packed_modules.mjs",
+        "planner.mjs",
         "//devinfra/js/debundle/analysis:libs",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/split:libs",
         "//devinfra/js/debundle/test_support:sources",
         "//devinfra/js/debundle/transforms:libs",
     ] + _BABEL_DEPS,
-    entry_point = "selected_module_extraction_test.mjs",
+    entry_point = "extraction_test.mjs",
 )
 
 js_test(
     name = "atomic_modules_test",
     data = [
-        "atomic_modules_stage_lib.mjs",
-        "declaration_component_graph_lib.mjs",
-        "extract_ordered_init_region_lib.mjs",
-        "merge_modules_stage_lib.mjs",
-        "selected_module_planning_lib.mjs",
+        "atomic_modules.mjs",
+        "decl_graph.mjs",
+        "init_region.mjs",
+        "merge.mjs",
+        "planner.mjs",
         "//devinfra/js/debundle/analysis:libs",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/split:libs",
@@ -104,17 +104,17 @@ js_test(
 )
 
 js_test(
-    name = "extract_ordered_init_regions_test",
+    name = "init_regions_test",
     data = [
-        "declaration_component_graph_lib.mjs",
-        "extract_ordered_init_region_lib.mjs",
-        "extract_ordered_init_regions_lib.mjs",
-        "selected_module_planning_lib.mjs",
+        "decl_graph.mjs",
+        "init_region.mjs",
+        "init_regions.mjs",
+        "planner.mjs",
         "//devinfra/js/debundle/analysis:libs",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/split:libs",
         "//devinfra/js/debundle/test_support:sources",
         "//devinfra/js/debundle/transforms:libs",
     ] + _BABEL_DEPS,
-    entry_point = "extract_ordered_init_regions_test.mjs",
+    entry_point = "init_regions_test.mjs",
 )

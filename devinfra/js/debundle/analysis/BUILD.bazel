@@ -9,8 +9,8 @@ _BABEL_DEPS = [
 js_library(
     name = "libs",
     srcs = [
-        "runtime_boundary_metadata_lib.mjs",
-        "scrambled_identifier_frequency_lib.mjs",
+        "boundary.mjs",
+        "identifier_frequency.mjs",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -19,21 +19,21 @@ js_library(
 )
 
 js_test(
-    name = "runtime_boundary_metadata_test",
+    name = "boundary_test",
     data = [
-        "runtime_boundary_metadata_lib.mjs",
+        "boundary.mjs",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/test_support:sources",
     ] + _BABEL_DEPS,
-    entry_point = "runtime_boundary_metadata_test.mjs",
+    entry_point = "boundary_test.mjs",
 )
 
 js_test(
-    name = "scrambled_identifier_frequency_test",
+    name = "identifier_frequency_test",
     data = [
-        "scrambled_identifier_frequency_lib.mjs",
+        "identifier_frequency.mjs",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/test_support:sources",
     ] + _BABEL_DEPS,
-    entry_point = "scrambled_identifier_frequency_test.mjs",
+    entry_point = "identifier_frequency_test.mjs",
 )

@@ -10,7 +10,7 @@ _BABEL_DEPS = [
 js_library(
     name = "libs",
     srcs = [
-        "rename_bindings_lib.mjs",
+        "bindings.mjs",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -20,12 +20,12 @@ js_library(
 )
 
 js_test(
-    name = "rename_bindings_test",
+    name = "bindings_test",
     data = [
-        "rename_bindings_lib.mjs",
+        "bindings.mjs",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/split:libs",
         "//devinfra/js/debundle/test_support:sources",
     ] + _BABEL_DEPS,
-    entry_point = "rename_bindings_test.mjs",
+    entry_point = "bindings_test.mjs",
 )
