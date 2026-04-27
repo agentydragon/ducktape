@@ -210,6 +210,81 @@ export function topLevelDeclarationNames(node) {
   return [];
 }
 
+// Names referenced (in expression position) inside `node` from positions
+// that are NOT inside a nested function/method body. Equivalent semantics to
+// a babel-traverse pass with a ReferencedIdentifier visitor that filters out
+// names with a binding in scope; the typical caller passes a single
+// expression whose only "binding in scope" possibilities live inside nested
+// functions (which we skip anyway). Hand-rolled recursion is ~10x cheaper
+// than wrapping in a synthetic File and running traverse with scope.
+export function referencedUndeclaredNames(node) {
+  if (!node) return [];
+  const names = new Set();
+  collectReferencedIdentifierNames(node, names);
+  return [...names];
+}
+
+const FUNCTION_TYPES = new Set([
+  "FunctionExpression",
+  "FunctionDeclaration",
+  "ArrowFunctionExpression",
+  "ObjectMethod",
+  "ClassMethod",
+  "ClassPrivateMethod",
+]);
+
+const NON_AST_KEYS = new Set([
+  "type",
+  "start",
+  "end",
+  "loc",
+  "extra",
+  "leadingComments",
+  "trailingComments",
+  "innerComments",
+  "comments",
+  "tokens",
+  "errors",
+]);
+
+function collectReferencedIdentifierNames(node, names) {
+  if (!node || typeof node !== "object") return;
+  if (Array.isArray(node)) {
+    for (const child of node) collectReferencedIdentifierNames(child, names);
+    return;
+  }
+  if (FUNCTION_TYPES.has(node.type)) return;
+  switch (node.type) {
+    case "Identifier":
+      names.add(node.name);
+      return;
+    case "MemberExpression":
+    case "OptionalMemberExpression":
+      collectReferencedIdentifierNames(node.object, names);
+      if (node.computed) collectReferencedIdentifierNames(node.property, names);
+      return;
+    case "ObjectProperty":
+      if (node.computed) collectReferencedIdentifierNames(node.key, names);
+      collectReferencedIdentifierNames(node.value, names);
+      return;
+    case "VariableDeclarator":
+      // node.id is the declaration target (not a reference)
+      collectReferencedIdentifierNames(node.init, names);
+      return;
+    case "ImportSpecifier":
+    case "ImportDefaultSpecifier":
+    case "ImportNamespaceSpecifier":
+    case "ExportSpecifier":
+      return;
+    default: {
+      for (const key of Object.keys(node)) {
+        if (NON_AST_KEYS.has(key)) continue;
+        collectReferencedIdentifierNames(node[key], names);
+      }
+    }
+  }
+}
+
 export function bindingNames(node) {
   if (!node) return [];
   if (node.type === "Identifier") return [node.name];

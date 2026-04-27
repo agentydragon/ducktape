@@ -1,8 +1,8 @@
 import { parse } from "@babel/parser";
-import traverseModule from "@babel/traverse";
 import * as t from "@babel/types";
 import { analyzeRuntimeBoundaryAst } from "../analysis/boundary.mjs";
 import { DEFAULT_PARSER_OPTIONS } from "../common/parser_options.mjs";
+import { referencedUndeclaredNames } from "../common/program_analysis.mjs";
 import { serializeGeneratedJsFile } from "../split/chunk.mjs";
 import {
   expandOrderedInitOwnerClosurePassOperations,
@@ -13,7 +13,6 @@ import {
   buildSelectedModuleOperations,
 } from "./planner.mjs";
 
-const traverse = traverseModule.default ?? traverseModule;
 
 export function extractOrderedInitRegionsInCode(code, operations, options = {}) {
   const ast = parse(code, options.parser ?? DEFAULT_PARSER_OPTIONS);
@@ -1443,25 +1442,6 @@ function validateVariableDeclarators(statement, operationId, ownerId) {
   }
 }
 
-function referencedUndeclaredNames(node) {
-  if (!node) {
-    return [];
-  }
-  const names = new Set();
-  const file = t.file(t.program([t.expressionStatement(t.cloneNode(node, true))]));
-  traverse(file, {
-    ReferencedIdentifier(path) {
-      if (path.scope.getBinding(path.node.name)) {
-        return;
-      }
-      if (path.findParent((parent) => parent.isFunction() || parent.isObjectMethod() || parent.isClassMethod())) {
-        return;
-      }
-      names.add(path.node.name);
-    },
-  });
-  return [...names];
-}
 
 function cloneNodes(nodes) {
   return nodes.map((node) => t.cloneNode(node, true));
