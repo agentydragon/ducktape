@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 
-import { SyncIcon } from "./SyncBanner.jsx";
+import { SyncIcon } from "./SyncIcon.jsx";
 import { useCasino } from "./use_casino.js";
 
 const SUBJECTS = [
