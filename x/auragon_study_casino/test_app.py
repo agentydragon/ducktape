@@ -113,31 +113,28 @@ def test_me_returns_default_user_without_oidc(client: TestClient) -> None:
 
 
 def test_users_have_isolated_state(tmp_path: Path) -> None:
-    """Two different usernames get separate, independent doc states.
+    """Two users sharing one data_dir get separate, independent doc states."""
+    app = create_app(Settings(data_dir=tmp_path, frontend_dist_dir=tmp_path / "nonexistent_dist"))
+    dep = app.state.current_user_dep
 
-    Without OIDC the dep always returns "default", so we exercise isolation
-    by using two separate apps with different data_dirs to show isolation
-    holds at the DocStore level.
-    """
-    app_alice = create_app(Settings(data_dir=tmp_path / "alice", frontend_dist_dir=tmp_path / "nonexistent_dist"))
-    app_bob = create_app(Settings(data_dir=tmp_path / "bob", frontend_dist_dir=tmp_path / "nonexistent_dist"))
-    (tmp_path / "alice").mkdir()
-    (tmp_path / "bob").mkdir()
+    with TestClient(app) as client:
+        # Alice earns 50 credits.
+        app.dependency_overrides[dep] = lambda: "alice"
+        boot = client.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()
+        casino = Casino.from_update(_unb64(boot["update_b64"]))
+        sv = casino.get_state()
+        casino.balance["credits"] = 50
+        client.post("/sync", json={"state_vector_b64": _b64(sv), "update_b64": _b64(casino.get_update(sv))})
 
-    alice = TestClient(app_alice)
-    bob = TestClient(app_bob)
+        # Bob's state is independent — still at 0.
+        app.dependency_overrides[dep] = lambda: "bob"
+        boot_bob = client.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()
+        bob_casino = Casino.from_update(_unb64(boot_bob["update_b64"]))
+        assert int(bob_casino.balance["credits"]) == 0
 
-    # Alice earns 50 credits.
-    boot = alice.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()
-    casino = Casino.from_update(_unb64(boot["update_b64"]))
-    sv = casino.get_state()
-    casino.balance["credits"] = 50
-    alice.post("/sync", json={"state_vector_b64": _b64(sv), "update_b64": _b64(casino.get_update(sv))})
-
-    # Bob's state is independent — still at 0.
-    boot_bob = bob.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()
-    bob_casino = Casino.from_update(_unb64(boot_bob["update_b64"]))
-    assert int(bob_casino.balance["credits"]) == 0
+        # Separate DB files confirm per-user storage.
+        assert (tmp_path / "casino-alice.db").exists()
+        assert (tmp_path / "casino-bob.db").exists()
 
 
 if __name__ == "__main__":

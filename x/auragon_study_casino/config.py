@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     oidc_client_id: str | None = Field(default=None, description="OAuth2 client_id registered in Authentik")
     oidc_client_secret: str | None = Field(default=None, description="OAuth2 client_secret (confidential client)")
     session_secret: str | None = Field(
-        default=None, description="Secret key for HMAC-signed session cookies. Any string ≥32 chars."
+        default=None, min_length=32, description="Secret key for HMAC-signed session cookies. Must be ≥32 chars."
     )
     public_url: str = Field(
         default="https://casino.allegedly.works",

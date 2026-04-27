@@ -52,6 +52,7 @@ py_library(
     srcs = ["auth.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "@pypi//authlib",
         "@pypi//fastapi",
         "@pypi//httpx",
     ],

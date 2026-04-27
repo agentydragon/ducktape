@@ -32,8 +32,6 @@ Multi-user: each authenticated user gets a separate SQLite database
 back to a single "default" user, keeping existing tests working.
 """
 
-from __future__ import annotations
-
 import base64
 import logging
 import re
@@ -95,6 +93,7 @@ def create_app(settings: Settings) -> FastAPI:
     current_user_dep = make_current_user_dep(oidc.session_secret if oidc else None)
 
     app = FastAPI(title="Study Casino", docs_url=None, redoc_url=None)
+    app.state.current_user_dep = current_user_dep
 
     if oidc:
         app.include_router(

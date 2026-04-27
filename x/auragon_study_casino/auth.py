@@ -1,10 +1,10 @@
 """OIDC authentication for the Study Casino.
 
 Authorization Code flow (confidential client). The backend exchanges the
-code for tokens using `httpx`, then issues an HMAC-SHA256-signed session
-cookie. When OIDC is not configured (settings.oidc_client_id is None),
-all requests are treated as the "default" user so existing tests and
-local dev continue to work unchanged.
+code for tokens using authlib, then calls the userinfo endpoint to get
+the username, and issues an HMAC-SHA256-signed session cookie. When OIDC
+is not configured, all requests are treated as the "default" user so
+existing tests and local dev continue to work unchanged.
 
 Cookie format: base64url(JSON payload) + "." + hex(HMAC-SHA256 signature)
 Payload JSON: {"sub": "<username>", "exp": <unix-ts>}
@@ -19,10 +19,10 @@ import json
 import logging
 import os
 import time
-import urllib.parse
 from typing import Annotated
 
 import httpx
+from authlib.integrations.httpx_client import AsyncOAuth2Client
 from fastapi import APIRouter, Cookie, HTTPException
 from fastapi.responses import RedirectResponse
 
@@ -80,19 +80,11 @@ def create_oidc_router(
     @router.get("/login")
     async def login() -> RedirectResponse:
         disc = await _get_discovery(issuer)
-        auth_ep = disc["authorization_endpoint"]
         state = base64.urlsafe_b64encode(os.urandom(16)).decode().rstrip("=")
         state_sig = _sign(state, session_secret)
-        params = urllib.parse.urlencode(
-            {
-                "client_id": client_id,
-                "response_type": "code",
-                "scope": "openid",
-                "redirect_uri": callback_url,
-                "state": state,
-            }
-        )
-        redirect = RedirectResponse(url=f"{auth_ep}?{params}", status_code=302)
+        async with AsyncOAuth2Client(client_id=client_id, redirect_uri=callback_url) as oauth:
+            url, _ = oauth.create_authorization_url(disc["authorization_endpoint"], state=state, scope="openid profile")
+        redirect = RedirectResponse(url=url, status_code=302)
         redirect.set_cookie(
             "casino_state", f"{state}.{state_sig}", httponly=True, secure=True, samesite="lax", max_age=600
         )
@@ -112,32 +104,21 @@ def create_oidc_router(
             raise HTTPException(status_code=400, detail="state mismatch")
 
         disc = await _get_discovery(issuer)
-        async with httpx.AsyncClient() as client:
-            token_resp = await client.post(
-                disc["token_endpoint"],
-                data={
-                    "grant_type": "authorization_code",
-                    "code": code,
-                    "redirect_uri": callback_url,
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                },
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-                timeout=15,
-            )
-        if token_resp.status_code != 200:
-            raise HTTPException(status_code=502, detail=f"token exchange failed: {token_resp.text[:200]}")
+        try:
+            async with AsyncOAuth2Client(
+                client_id=client_id, client_secret=client_secret, redirect_uri=callback_url
+            ) as oauth:
+                await oauth.fetch_token(disc["token_endpoint"], code=code, grant_type="authorization_code")
+                userinfo_resp = await oauth.get(disc["userinfo_endpoint"])
+                userinfo_resp.raise_for_status()
+                userinfo = userinfo_resp.json()
+        except Exception as exc:
+            logger.warning("OIDC token exchange or userinfo failed: %s", exc)
+            raise HTTPException(status_code=502, detail="authentication failed") from exc
 
-        tokens = token_resp.json()
-        id_token = tokens.get("id_token", "")
-        parts = id_token.split(".")
-        if len(parts) < 2:
-            raise HTTPException(status_code=502, detail="missing id_token")
-        padded = parts[1] + "=" * (-len(parts[1]) % 4)
-        claims = json.loads(base64.urlsafe_b64decode(padded))
-        username = claims.get("preferred_username") or claims.get("sub", "")
+        username = userinfo.get("preferred_username") or userinfo.get("sub", "")
         if not username:
-            raise HTTPException(status_code=502, detail="no username in id_token")
+            raise HTTPException(status_code=502, detail="no username in userinfo")
 
         logger.info("OIDC login: user=%s", username)
         session_token = make_session_token(username, session_secret)
