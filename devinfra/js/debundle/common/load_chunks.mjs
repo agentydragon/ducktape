@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
-import { basename, posix, resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { createEmptyArtifact, createFile, createChunk, setChunk } from "./artifact.mjs";
 import { resolveWorkspacePath } from "./io.mjs";
+import { chunkIdForJsPath, normalizeAssetPath } from "./normalize.mjs";
 
 
 export function loadJsChunks({ inputRoot, jsListPath }) {
@@ -12,7 +13,7 @@ export function loadJsChunks({ inputRoot, jsListPath }) {
 
   for (const sourcePath of jsFiles) {
     const absolutePath = resolve(resolvedInputRoot, ...sourcePath.split("/"));
-    const chunkId = sourcePath.slice(0, -".js".length);
+    const chunkId = chunkIdForJsPath(sourcePath);
     const entryFile = basename(sourcePath);
     setChunk(
       artifact,
@@ -45,7 +46,7 @@ export function loadJsChunks({ inputRoot, jsListPath }) {
         files: jsFiles.length,
       },
       chunks: jsFiles.map((sourcePath) => ({
-        chunkId: sourcePath.slice(0, -".js".length),
+        chunkId: chunkIdForJsPath(sourcePath),
         entryFile: basename(sourcePath),
         sourcePath,
       })),
@@ -65,15 +66,4 @@ function parseJsList(text) {
     throw new Error("JS list contains duplicate paths");
   }
   return paths;
-}
-
-function normalizeAssetPath(path) {
-  const normalized = path.split("\\").join("/");
-  if (normalized === "" || normalized.startsWith("/") || normalized.split("/").includes("..")) {
-    throw new Error(`Invalid input-root-relative JS path: ${path}`);
-  }
-  if (!normalized.endsWith(".js")) {
-    throw new Error(`Expected a .js path in JS list: ${path}`);
-  }
-  return posix.normalize(normalized);
 }

@@ -12,7 +12,7 @@ js_library(
     srcs = [
         "chunk.mjs",
         "function_parts.mjs",
-        "function_parts_worker.mjs",
+        "split_worker.mjs",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -35,7 +35,7 @@ js_test(
     data = [
         "chunk.mjs",
         "function_parts.mjs",
-        "function_parts_worker.mjs",
+        "split_worker.mjs",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/test_support:sources",
         "//devinfra/js/debundle/transforms:libs",

@@ -4,12 +4,20 @@ import generateModule from "@babel/generator";
 import { parse } from "@babel/parser";
 import traverseModule from "@babel/traverse";
 import * as t from "@babel/types";
-import { cloneDefaultParserOptions, DEFAULT_PARSER_OPTIONS } from "../common/parser_options.mjs";
+import { DEFAULT_PARSER_OPTIONS } from "../common/parser_options.mjs";
+import {
+  analyzeProgramShallow,
+  bindingNames,
+  buildChunkManifestFromAnalysis,
+  describeImport,
+  specifierName,
+  topLevelDeclarationNames,
+} from "../common/program_analysis.mjs";
+import { CANONICAL_CHUNK_ENTRY_FILE, normalizeChunkEntryFile } from "../common/normalize.mjs";
 import { requireValue, resolveWorkspacePath } from "../common/io.mjs";
 
 const generate = generateModule.default ?? generateModule;
 const traverse = traverseModule.default ?? traverseModule;
-export const CANONICAL_CHUNK_ENTRY_FILE = "entry.js";
 
 export function parseArgs(argv) {
   const options = {
@@ -70,7 +78,6 @@ export function splitScopeHoistedChunk(
     rewriteEntryImportSource = undefined,
     rewriteRuntimeImportSource = undefined,
     sourcePath,
-    emitParts = true,
   }
 ) {
   const normalizedEntryFile = normalizeChunkEntryFile(entryFile);
@@ -78,7 +85,6 @@ export function splitScopeHoistedChunk(
   return splitScopeHoistedChunkAst(ast, {
     chunkId,
     entryFile: normalizedEntryFile,
-    emitParts,
     includeJsFileAsts,
     rewriteEntryImportSource: rewriteEntryImportSource ?? rewriteRuntimeImportSource ?? identity,
     sourcePath,
@@ -90,7 +96,6 @@ export function splitScopeHoistedChunkAst(
   {
     chunkId,
     entryFile = CANONICAL_CHUNK_ENTRY_FILE,
-    emitParts = true,
     includeJsFileAsts = false,
     rewriteEntryImportSource = identity,
     sourcePath,
@@ -101,26 +106,18 @@ export function splitScopeHoistedChunkAst(
 
   const analysis = analyzeProgram(clonedAst);
   const plan = buildExecutableSplitPlan(analysis);
-  const emittedPlan = emitParts
-    ? plan
-    : {
-        ...plan,
-        partByBinding: new Map(),
-        parts: [],
-        splitOwnerIds: new Set(),
-      };
   const generatedFiles = new Map();
   const generatedJsFiles = new Map();
 
-  generatedJsFiles.set(normalizedEntryFile, buildEntryFile(clonedAst, emittedPlan, rewriteEntryImportSource));
-  for (const part of emittedPlan.parts) {
-    generatedJsFiles.set(part.file, buildPartFile(part, emittedPlan, rewriteEntryImportSource));
+  generatedJsFiles.set(normalizedEntryFile, buildEntryFile(clonedAst, plan, rewriteEntryImportSource));
+  for (const part of plan.parts) {
+    generatedJsFiles.set(part.file, buildPartFile(part, plan, rewriteEntryImportSource));
   }
   for (const [file, jsFile] of generatedJsFiles.entries()) {
     generatedFiles.set(file, serializeGeneratedJsFile(jsFile));
   }
 
-  const manifest = buildManifest(chunkId, normalizedEntryFile, sourcePath, analysis, emittedPlan);
+  const manifest = buildChunkManifestFromAnalysis(chunkId, normalizedEntryFile, sourcePath, analysis, plan);
   generatedFiles.set("manifest.json", `${JSON.stringify(manifest, null, 2)}\n`);
 
   return {
@@ -134,111 +131,12 @@ function identity(value) {
   return value;
 }
 
+// Full program analysis for split: shallow pass (in common/program_analysis.mjs)
+// + a babel-traverse pass that walks every body to record owner-to-owner
+// dependencies. Only split needs the dep graph; normalize uses analyzeProgramShallow
+// directly.
 function analyzeProgram(ast) {
-  const shallow = analyzeProgramShallow(ast);
-  return analyzeProgramDependencies(ast, shallow);
-}
-
-// Shallow program analysis: iterates `ast.program.body` once to identify
-// imports, export aliases, owners (top-level binding declarations), and side
-// effects. Does NOT walk into function bodies to compute the dep graph between
-// owners — that is what `analyzeProgramDependencies` does. Use this directly
-// when only the structural metadata (imports/exports/owner list) is needed,
-// e.g. for the normalize-only pass that does not split anything.
-export function analyzeProgramShallow(ast) {
-  const imports = [];
-  const importByLocalName = new Map();
-  const exportAliases = [];
-  const owners = [];
-  const ownerByTopNode = new Map();
-  const ownerByBinding = new Map();
-  const sideEffects = [];
-  const sideEffectByTopNode = new Map();
-
-  ast.program.body.forEach((node, ordinal) => {
-    if (node.type === "ImportDeclaration") {
-      const importRecord = describeImport(node, imports.length);
-      imports.push(importRecord);
-      for (const specifier of importRecord.specifiers) {
-        importByLocalName.set(specifier.local, {
-          ...specifier,
-          source: importRecord.source,
-        });
-      }
-      return;
-    }
-
-    if (node.type === "ExportNamedDeclaration" && node.specifiers.length > 0) {
-      for (const specifier of node.specifiers) {
-        exportAliases.push({
-          exported: specifierName(specifier.exported),
-          line: node.loc?.start.line ?? null,
-          local: specifierName(specifier.local),
-        });
-      }
-      return;
-    }
-
-    if (node.type === "ExportDefaultDeclaration") {
-      exportAliases.push({
-        exported: "default",
-        line: node.loc?.start.line ?? null,
-        local: node.declaration?.id?.name ?? null,
-      });
-      return;
-    }
-
-    const names = topLevelDeclarationNames(node);
-    if (names.length > 0) {
-      const owner = {
-        dependencies: new Map(),
-        externalImports: new Map(),
-        id: `owner_${owners.length.toString().padStart(5, "0")}`,
-        line: node.loc?.start.line ?? null,
-        names,
-        node,
-        ordinal,
-        type: node.type,
-      };
-      owners.push(owner);
-      ownerByTopNode.set(node, owner);
-      for (const name of names) {
-        ownerByBinding.set(name, owner);
-      }
-      return;
-    }
-
-    const sideEffect = {
-      dependencies: new Set(),
-      externalImports: new Map(),
-      id: `side_effect_${sideEffects.length.toString().padStart(5, "0")}`,
-      line: node.loc?.start.line ?? null,
-      node,
-      ordinal,
-      type: node.type,
-    };
-    sideEffects.push(sideEffect);
-    sideEffectByTopNode.set(node, sideEffect);
-  });
-
-  return {
-    dynamicImportCount: 0,
-    exportAliases,
-    importByLocalName,
-    imports,
-    ownerByBinding,
-    ownerByTopNode,
-    ownerEdges: new Map(owners.map((owner) => [owner.id, new Set()])),
-    owners,
-    sideEffectByTopNode,
-    sideEffects,
-  };
-}
-
-// Adds owner-to-owner dependency edges (and external import edges) by walking
-// the full AST. Mutates the analysis in place. Only needed when downstream
-// will actually split owners into parts; pure normalize calls can skip this.
-function analyzeProgramDependencies(ast, analysis) {
+  const analysis = analyzeProgramShallow(ast);
   const { importByLocalName, ownerByBinding, ownerByTopNode, ownerEdges, sideEffectByTopNode } = analysis;
   let dynamicImportCount = 0;
 
@@ -247,17 +145,14 @@ function analyzeProgramDependencies(ast, analysis) {
     if (!binding || !binding.scope.path.isProgram()) {
       return;
     }
-
     const topPath = topLevelProgramChild(path);
     if (!topPath) {
       return;
     }
-
     const targetOwner = ownerByBinding.get(binding.identifier.name);
     const importRecord = importByLocalName.get(binding.identifier.name);
     const sourceOwner = ownerByTopNode.get(topPath.node);
     const sourceSideEffect = sideEffectByTopNode.get(topPath.node);
-
     if (sourceOwner && targetOwner && sourceOwner.id !== targetOwner.id) {
       addBindingDependency(sourceOwner, targetOwner, binding.identifier.name);
       ownerEdges.get(sourceOwner.id).add(targetOwner.id);
@@ -301,88 +196,6 @@ function analyzeProgramDependencies(ast, analysis) {
 
   analysis.dynamicImportCount = dynamicImportCount;
   return analysis;
-}
-
-const EMPTY_SPLIT_PLAN = Object.freeze({
-  partByBinding: new Map(),
-  partByOwner: new Map(),
-  parts: [],
-  splitOwnerIds: new Set(),
-  unsafeReasons: new Map(),
-});
-
-function describeImport(node, index) {
-  return {
-    id: `import_${index.toString().padStart(5, "0")}`,
-    line: node.loc?.start.line ?? null,
-    source: node.source.value,
-    specifiers: node.specifiers.map((specifier) => {
-      if (specifier.type === "ImportDefaultSpecifier") {
-        return {
-          kind: "default",
-          local: specifier.local.name,
-        };
-      }
-      if (specifier.type === "ImportNamespaceSpecifier") {
-        return {
-          kind: "namespace",
-          local: specifier.local.name,
-        };
-      }
-      return {
-        imported: specifierName(specifier.imported),
-        kind: "named",
-        local: specifier.local.name,
-      };
-    }),
-  };
-}
-
-function specifierName(node) {
-  if (!node) {
-    return null;
-  }
-  if (node.type === "Identifier") {
-    return node.name;
-  }
-  return node.value;
-}
-
-function topLevelDeclarationNames(node) {
-  if (node.type === "FunctionDeclaration" || node.type === "ClassDeclaration") {
-    return node.id ? [node.id.name] : [];
-  }
-  if (node.type === "VariableDeclaration") {
-    return node.declarations.flatMap((declaration) => bindingNames(declaration.id));
-  }
-  return [];
-}
-
-function bindingNames(node) {
-  if (!node) {
-    return [];
-  }
-  if (node.type === "Identifier") {
-    return [node.name];
-  }
-  if (node.type === "RestElement") {
-    return bindingNames(node.argument);
-  }
-  if (node.type === "AssignmentPattern") {
-    return bindingNames(node.left);
-  }
-  if (node.type === "ArrayPattern") {
-    return node.elements.flatMap((element) => bindingNames(element));
-  }
-  if (node.type === "ObjectPattern") {
-    return node.properties.flatMap((property) => {
-      if (property.type === "RestElement") {
-        return bindingNames(property.argument);
-      }
-      return bindingNames(property.value);
-    });
-  }
-  return [];
 }
 
 function assignmentTargetNames(node) {
@@ -815,85 +628,6 @@ function moduleExportName(name) {
   return t.stringLiteral(name);
 }
 
-export function buildChunkManifestFromAnalysis(chunkId, entryFile, sourcePath, analysis, plan = EMPTY_SPLIT_PLAN) {
-  return buildManifest(chunkId, entryFile, sourcePath, analysis, plan);
-}
-
-function buildManifest(chunkId, entryFile, sourcePath, analysis, plan) {
-  const partByOwner = new Map();
-  for (const part of plan.parts) {
-    for (const owner of part.owners) {
-      partByOwner.set(owner.id, part.file);
-    }
-  }
-
-  const unresolvedExports = analysis.exportAliases.filter(
-    (alias) => !analysis.ownerByBinding.has(alias.local) && !analysis.importByLocalName.has(alias.local)
-  );
-  const keptOwners = analysis.owners.filter((owner) => !plan.splitOwnerIds.has(owner.id));
-
-  return {
-    schemaVersion: 1,
-    chunkId,
-    sourcePath,
-    parser: cloneDefaultParserOptions(),
-    entryFile,
-    counts: {
-      dynamicImports: analysis.dynamicImportCount,
-      exportAliases: analysis.exportAliases.length,
-      importDeclarations: analysis.imports.length,
-      keptTopLevelDeclarationOwners: keptOwners.length,
-      parts: plan.parts.length,
-      splitFunctionDeclarations: plan.splitOwnerIds.size,
-      topLevelBindings: analysis.owners.reduce((count, owner) => count + owner.names.length, 0),
-      topLevelDeclarationOwners: analysis.owners.length,
-      topLevelSideEffects: analysis.sideEffects.length,
-      unresolvedExports: unresolvedExports.length,
-    },
-    files: [
-      {
-        file: entryFile,
-        role: "entry",
-      },
-      ...plan.parts.map((part) => ({
-        file: part.file,
-        role: "module",
-      })),
-    ],
-    imports: analysis.imports,
-    exportAliases: analysis.exportAliases,
-    unresolvedExports,
-    keptTopLevelDeclarations: keptOwners.map((owner) => ({
-      id: owner.id,
-      line: owner.line,
-      names: owner.names,
-      type: owner.type,
-      unsafeReason: plan.unsafeReasons.get(owner.id) ?? "not_split",
-    })),
-    parts: plan.parts.map((part) => ({
-      exportedNames: part.exportedNames,
-      externalImports: part.externalImports.map((importRecord) => ({
-        imported: importRecord.imported,
-        kind: importRecord.kind,
-        local: importRecord.local,
-        source: importRecord.source,
-      })),
-      file: part.file,
-      imports: [...part.importedParts.entries()].map(([componentIndex, names]) => ({
-        file: plan.parts[componentIndex].file,
-        names: [...names].sort(),
-      })),
-      owners: part.owners.map((owner) => ({
-        id: owner.id,
-        line: owner.line,
-        names: owner.names,
-        type: owner.type,
-      })),
-    })),
-    ownerToPart: Object.fromEntries([...partByOwner.entries()].sort()),
-  };
-}
-
 export function writeSplitOutput(result, outDir, { force = false } = {}) {
   if (existsSync(outDir)) {
     const entries = readdirSync(outDir);
@@ -911,18 +645,4 @@ export function writeSplitOutput(result, outDir, { force = false } = {}) {
     mkdirSync(dirname(absolutePath), { recursive: true });
     writeFileSync(absolutePath, content);
   }
-}
-
-export function normalizeChunkEntryFile(entryFile) {
-  const normalized = posix.normalize(`${entryFile ?? ""}`.replaceAll("\\", "/"));
-  if (
-    normalized === "" ||
-    normalized === "." ||
-    normalized.startsWith("/") ||
-    normalized.split("/").includes("..") ||
-    !normalized.endsWith(".js")
-  ) {
-    throw new Error(`Invalid split entry file: ${entryFile}`);
-  }
-  return normalized;
 }

@@ -69,7 +69,7 @@ test("splitScopeHoistedChunk rejects invalid entry file paths", () => {
         entryFile: "../entry.js",
         sourcePath: "invalid-entry.js",
       }),
-    /Invalid split entry file/
+    /Invalid chunk entry file/
   );
 });
 

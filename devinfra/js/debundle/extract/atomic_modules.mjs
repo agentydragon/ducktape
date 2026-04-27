@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join, posix } from "node:path";
-import { parse } from "@babel/parser";
+import * as t from "@babel/types";
 import { analyzeRuntimeBoundaryAst } from "../analysis/boundary.mjs";
 import { DEFAULT_PARSER_OPTIONS, writeJsonFile } from "../common/parser_options.mjs";
 import {
@@ -79,7 +79,6 @@ export function extractAtomicModules({
       throw new Error(`extractAtomicModules missing entry AST for chunk: ${chunkId}`);
     }
 
-    const codeBefore = serializeGeneratedJsFile(runtimeFile);
     const runtimeHeaderLines = runtimeFile.headerLines ?? [];
     const runtimeParserOptions = runtimeFile.parserOptions ?? DEFAULT_PARSER_OPTIONS;
     const chunkStartedAt = process.hrtime.bigint();
@@ -98,7 +97,11 @@ export function extractAtomicModules({
     const plan = planSelectedAtomicModules(
       {
         analysis,
-        code: codeBefore,
+        // No source-code input: we cloneNode the AST rather than serialize+
+        // re-parse, so byte counts in atomic-unit metrics are not computed
+        // (manifest reports null for those bytes — a fair tradeoff for a
+        // ~1s saving per chunk).
+        code: null,
         programBody: runtimeFile.ast.program.body,
       },
       {
@@ -106,8 +109,11 @@ export function extractAtomicModules({
       }
     );
     const planningMs = durationMsSince(planningStartedAt);
+    // Lowering destructively mutates the AST; clone the runtime AST so the
+    // original chunk file is preserved (and so a subsequent merge_modules
+    // call can clone it again to start from a clean tree).
     const parseStartedAt = process.hrtime.bigint();
-    const loweringAst = parse(codeBefore, runtimeParserOptions);
+    const loweringAst = t.cloneNode(runtimeFile.ast, true);
     const parseMs = durationMsSince(parseStartedAt);
     const loweringStartedAt = process.hrtime.bigint();
     const result = extractSelectedModulePlanInAst(loweringAst, plan, {
@@ -169,7 +175,10 @@ export function extractAtomicModules({
           headerLines: [...runtimeHeaderLines],
           kind: "js.module_extraction_state",
           mode: "atomic",
-          originalCode: codeBefore,
+          // Original (pre-lowering) AST kept here so subsequent merge_modules
+          // calls can cloneNode it and re-lower in one cheap shot, instead of
+          // re-serializing + re-parsing the chunk source for every merge.
+          originalAst: runtimeFile.ast,
           parserOptions: runtimeParserOptions,
           runtimeFile: targetFile,
           targetDir: normalizeRelativeFile(targetDir),

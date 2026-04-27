@@ -15,7 +15,8 @@ import { computeJsAsts } from "../common/parse_asts.mjs";
 import { loadJsChunks } from "../common/load_chunks.mjs";
 import { rewriteChunkEntrySpecifiers } from "../transforms/rewrite_specifiers.mjs";
 import { writeJsTree } from "../transforms/write.mjs";
-import { normalizeJsChunks, splitFunctionParts } from "./function_parts.mjs";
+import { normalizeJsChunks } from "../common/normalize.mjs";
+import { splitFunctionParts } from "./function_parts.mjs";
 
 const ENTRY_FILE = "entry.js";
 

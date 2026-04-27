@@ -510,6 +510,9 @@ function statementLineCountForItem(itemId, { itemById, programBody }) {
 }
 
 function statementByteCountForItem(itemId, { code, itemById, programBody }) {
+  if (typeof code !== "string") {
+    return 0;
+  }
   const item = itemById.get(itemId);
   const statement = programBody[item?.ordinal];
   if (typeof statement?.start !== "number" || typeof statement?.end !== "number") {

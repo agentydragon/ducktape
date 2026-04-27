@@ -8,7 +8,7 @@ import { getChunkEntryFile } from "../common/artifact.mjs";
 import { DEFAULT_PARSER_OPTIONS } from "../common/parser_options.mjs";
 import { loadJsChunks } from "../common/load_chunks.mjs";
 import { serializeGeneratedJsFile } from "../split/chunk.mjs";
-import { normalizeJsChunks } from "../split/function_parts.mjs";
+import { normalizeJsChunks } from "../common/normalize.mjs";
 import { createTempFixtureRoot, createWebFixtureRoots, runNodeScript, writeRunnableFixture, writeSnapshotFixture } from "../test_support/fixtures.mjs";
 import { writeJsTree } from "../transforms/write.mjs";
 import { extractGuidedSelectedOwnerModulesInAst } from "./init_region.mjs";

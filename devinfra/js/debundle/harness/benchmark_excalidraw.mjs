@@ -23,7 +23,7 @@ import { loadJsChunks } from "../common/load_chunks.mjs";
 import { getArtifactChunkManifest, listChunkIds } from "../common/artifact.mjs";
 import { extractAtomicModules } from "../extract/atomic_modules.mjs";
 import { mergeModules } from "../extract/merge.mjs";
-import { normalizeJsChunks } from "../split/function_parts.mjs";
+import { normalizeJsChunks } from "../common/normalize.mjs";
 
 const DEFAULT_FIXTURE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "excalidraw_bundle_assets");
 const DEFAULT_MERGE_COUNT = 20;

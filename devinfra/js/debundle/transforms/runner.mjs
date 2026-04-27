@@ -15,7 +15,8 @@ import { extractGuidedSelectedOwnerModules } from "../extract/packed_modules.mjs
 import { mergeModules } from "../extract/merge.mjs";
 import { emitBrowserHarness } from "../harness/emit.mjs";
 import { renameBindingsInArtifact } from "../rename/bindings.mjs";
-import { normalizeJsChunks, splitFunctionParts } from "../split/function_parts.mjs";
+import { normalizeJsChunks } from "../common/normalize.mjs";
+import { splitFunctionParts } from "../split/function_parts.mjs";
 import { applyVendorAnnotations } from "../vendor/annotate.mjs";
 import { renameVendorExports } from "../vendor/exports.mjs";
 import { swapVendorChunks } from "../vendor/swap.mjs";

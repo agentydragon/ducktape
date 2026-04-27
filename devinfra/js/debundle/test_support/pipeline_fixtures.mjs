@@ -1,6 +1,6 @@
 import { computeJsAsts } from "../common/parse_asts.mjs";
 import { loadJsChunks } from "../common/load_chunks.mjs";
-import { normalizeJsChunks } from "../split/function_parts.mjs";
+import { normalizeJsChunks } from "../common/normalize.mjs";
 
 export async function buildNormalizedPipelineArtifactFromSnapshot({
   jobs = 1,

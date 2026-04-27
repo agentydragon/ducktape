@@ -1,7 +1,6 @@
 import { join } from "node:path";
-import { parse } from "@babel/parser";
-import { DEFAULT_PARSER_OPTIONS } from "../common/parser_options.mjs";
-import { writeJsonFile } from "../common/parser_options.mjs";
+import * as t from "@babel/types";
+import { DEFAULT_PARSER_OPTIONS, writeJsonFile } from "../common/parser_options.mjs";
 import {
   createChunk,
   createFile,
@@ -81,7 +80,7 @@ export function mergeModules({
       throw new Error(`mergeModules missing chunk ${chunkId}`);
     }
     const state = chunk.metadata?.moduleExtractionState;
-    if (!state?.originalCode || !Array.isArray(state.currentModules)) {
+    if (!state?.originalAst || !Array.isArray(state.currentModules)) {
       throw new Error(`mergeModules requires extractAtomicModules state for chunk ${chunkId}`);
     }
 
@@ -100,8 +99,10 @@ export function mergeModules({
     }
     const parserOptions = state.parserOptions ?? DEFAULT_PARSER_OPTIONS;
     const headerLines = state.headerLines ?? [];
+    // Clone the kept-alive original AST instead of re-parsing the chunk
+    // source for every merge call.
     const parseStartedAt = process.hrtime.bigint();
-    const loweringAst = parse(state.originalCode, parserOptions);
+    const loweringAst = t.cloneNode(state.originalAst, true);
     const parseMs = durationMsSince(parseStartedAt);
     const lowerStartedAt = process.hrtime.bigint();
     const result = extractSelectedModulePlanInAst(
