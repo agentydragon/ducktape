@@ -51,8 +51,9 @@ async function main() {
   artifact = await timeStage("normalize_js_chunks", stageTimings, () => normalizeJsChunks({ artifact }));
 
   // Production usage extracts atoms from a single entry chunk at a time;
-  // pick the largest chunk by source bytes as a proxy for the entry chunk.
-  const entryChunkId = pickLargestChunkId(artifact);
+  // pick the chunk with the most top-level bindings as a proxy for the
+  // deployed entry chunk.
+  const entryChunkId = pickChunkWithMostTopLevelBindings(artifact);
   artifact = await timeStage("extract_atomic_modules", stageTimings, () =>
     extractAtomicModules({ artifact, chunkIds: [entryChunkId], pruneOtherChunks: false })
   );
@@ -156,14 +157,14 @@ async function timeStage(label, timings, runStage) {
   return result.artifact;
 }
 
-function pickLargestChunkId(artifact) {
+function pickChunkWithMostTopLevelBindings(artifact) {
   let bestChunkId = null;
-  let bestBytes = -1;
+  let bestBindings = -1;
   for (const chunkId of listChunkIds(artifact)) {
     const manifest = getArtifactChunkManifest(artifact, chunkId);
-    const bytes = manifest?.counts?.topLevelBindings ?? 0;
-    if (bytes > bestBytes) {
-      bestBytes = bytes;
+    const bindings = manifest?.counts?.topLevelBindings ?? 0;
+    if (bindings > bestBindings) {
+      bestBindings = bindings;
       bestChunkId = chunkId;
     }
   }

@@ -3,11 +3,14 @@ load("//devinfra/oci:defs.bzl", "extract_image_subdir")
 
 # Sourced from the digest-pinned excalidraw/excalidraw image (see
 # devinfra/image_pins.json). The extracted /assets/ directory is the deployed
-# Vite/Rollup ESM webapp, used as the debundler benchmark corpus.
+# Vite/Rollup ESM webapp, used as the debundler benchmark corpus. Tagged
+# `manual` so `bazel build //...` doesn't pull a 30 MB OCI image and run the
+# extraction action — only the manual benchmark targets ever consume it.
 extract_image_subdir(
     name = "excalidraw_bundle_assets",
     image = "@excalidraw_linux_amd64",
     subdir = "usr/share/nginx/html/assets",
+    tags = ["manual"],
     visibility = ["//visibility:public"],
 )
 
