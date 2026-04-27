@@ -369,9 +369,7 @@ attrs==25.4.0 \
 authlib==1.6.9 \
     --hash=sha256:d8f2421e7e5980cc1ddb4e32d3f5fa659cfaf60d8eaf3281ebed192e4ab74f04 \
     --hash=sha256:f08b4c14e08f0861dc18a32357b33fbcfd2ea86cfe3fe149484b4d764c4a0ac3
-    # via
-    #   ducktape (pyproject.toml)
-    #   fastmcp
+    # via fastmcp
 aw-client==0.5.12 \
     --hash=sha256:12bd6cbc02a06e970267f7f192a31a0036b4a9f9ae0852bd0a8bc718b9b8ea5a \
     --hash=sha256:824b5e83abe755d5f089bbbf87eaabdc8895220c1642904a5aa6b66fba09b6ba
