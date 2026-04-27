@@ -16,3 +16,33 @@ py_test(
         "@pypi//uvicorn",
     ],
 )
+
+py_test(
+    name = "test_e2e_browser",
+    srcs = [
+        "conftest.py",
+        "test_e2e_browser.py",
+    ],
+    data = [
+        "//x/auragon_study_casino/frontend:bundle",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+    env = {
+        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+    },
+    # Browser tests need system libraries (libatk, libnss, etc.) that the
+    # linux-sandbox doesn't expose. Disable sandbox so headless_shell can
+    # resolve its shared library dependencies from the RBE worker image.
+    tags = ["no-sandbox"],
+    deps = [
+        "//util:net",
+        "//util:playwright",
+        "//util/bazel:runfiles",
+        "//x/auragon_study_casino:app",
+        "//x/auragon_study_casino:config",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//uvicorn",
+    ],
+)

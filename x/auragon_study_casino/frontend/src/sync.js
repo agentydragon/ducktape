@@ -112,6 +112,16 @@ class CasinoSync {
       this._startPolling();
       this._scheduleSync();
     });
+    // Fallback: if IDB "synced" hasn't fired within 3 s (e.g. headless Chrome
+    // in a container where IDB initialisation stalls), start polling anyway so
+    // the app stays functional. _startPolling is idempotent; calling it a
+    // second time after the real "synced" event is a no-op.
+    setTimeout(() => {
+      if (!this._pollTimer) {
+        this._startPolling();
+        this._scheduleSync();
+      }
+    }, 3000);
 
     // Trigger a debounced push on every locally-originated mutation so the
     // server hears about user actions promptly. Updates we just applied
@@ -157,8 +167,11 @@ class CasinoSync {
   /** Run one round-trip against /sync. Errors land in `this.status`. */
   async syncOnce() {
     this.status.set({ kind: "syncing" });
-    const sv = this.lastServerSV ?? new Uint8Array();
-    const update = Y.encodeStateAsUpdate(this.doc, sv);
+    // Y.encodeStateAsUpdate(doc, new Uint8Array()) throws in yjs 13.6/lib0 0.2 —
+    // an explicitly empty Uint8Array triggers a bounds-check failure when decoding
+    // the state vector. Pass undefined (= no state vector = full update) for the
+    // first sync when we haven't heard from the server yet.
+    const update = Y.encodeStateAsUpdate(this.doc, this.lastServerSV?.byteLength ? this.lastServerSV : undefined);
 
     let response;
     try {
@@ -235,11 +248,17 @@ class CasinoSync {
 
     const serverUpdate = b64ToBytes(body.update_b64);
     if (serverUpdate.byteLength > 0) {
-      // Apply with a remote origin tag so our own update listener doesn't
-      // bounce it back at the server.
-      Y.applyUpdate(this.doc, serverUpdate, ORIGIN_REMOTE);
+      try {
+        // Apply with a remote origin tag so our own update listener doesn't
+        // bounce it back at the server.
+        Y.applyUpdate(this.doc, serverUpdate, ORIGIN_REMOTE);
+      } catch (e) {
+        this.status.set({ kind: "offline", reason: `corrupt server update: ${e.message}` });
+        return;
+      }
     }
-    this.lastServerSV = b64ToBytes(body.state_vector_b64);
+    const sv = b64ToBytes(body.state_vector_b64);
+    this.lastServerSV = sv.byteLength > 0 ? sv : null;
     this.status.set({ kind: "ok", lastSyncedAt: Date.now() });
   }
 

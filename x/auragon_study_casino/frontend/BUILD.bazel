@@ -116,7 +116,10 @@ js_run_binary(
     args = ["dist"],
     chdir = package_name(),
     tool = ":build_bundle",
-    visibility = ["//x/auragon_study_casino:__pkg__"],
+    visibility = [
+        "//x/auragon_study_casino:__pkg__",
+        "//x/auragon_study_casino/tests:__pkg__",
+    ],
 )
 
 # ── Visual regression test ────────────────────────────────────────────────────

@@ -18,6 +18,12 @@ entries:
       authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
       invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
       access_token_validity: "days=30"
+      # The PWA manifest is fetched by the browser in background contexts
+      # (e.g. during installation) without session cookies, causing Authentik
+      # to redirect it to the OAuth authorize endpoint — a cross-origin URL
+      # that triggers a CORS error. Allow the manifest without auth.
+      unauthenticated_paths:
+        - /manifest.webmanifest
 
   - model: authentik_core.application
     id: study-casino-app
