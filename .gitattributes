@@ -16,7 +16,6 @@ props/testing/fixtures/testdata/** rules-lint-ignored=true
 x/sandboxed_jupyter/testdata/** rules-lint-ignored=true
 sysrw/testdata/** rules-lint-ignored=true
 tana/testdata/** rules-lint-ignored=true
-devinfra/js/debundle/harness/testdata/excalidraw_bundle/static/** rules-lint-ignored=true
 
 # Generated lockfiles - large, not useful to diff
 Cargo.Bazel.lock linguist-generated=true

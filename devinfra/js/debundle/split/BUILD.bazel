@@ -11,8 +11,8 @@ js_library(
     name = "libs",
     srcs = [
         "split_chunk_lib.mjs",
-        "split_js_tree_lib.mjs",
-        "split_js_tree_worker.mjs",
+        "split_function_parts_lib.mjs",
+        "split_function_parts_worker.mjs",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -31,14 +31,14 @@ js_test(
 )
 
 js_test(
-    name = "split_js_tree_test",
+    name = "split_function_parts_test",
     data = [
         "split_chunk_lib.mjs",
-        "split_js_tree_lib.mjs",
-        "split_js_tree_worker.mjs",
+        "split_function_parts_lib.mjs",
+        "split_function_parts_worker.mjs",
         "//devinfra/js/debundle/common:sources",
         "//devinfra/js/debundle/test_support:sources",
         "//devinfra/js/debundle/transforms:libs",
     ] + _BABEL_DEPS,
-    entry_point = "split_js_tree_test.mjs",
+    entry_point = "split_function_parts_test.mjs",
 )

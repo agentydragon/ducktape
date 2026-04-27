@@ -1,10 +1,10 @@
 import { parentPort, workerData } from "node:worker_threads";
-import { transformOneJsChunk } from "./split_js_tree_lib.mjs";
+import { transformOneJsChunk } from "./split_function_parts_lib.mjs";
 
 try {
   const result = transformOneJsChunk({
     ...workerData,
-    stageName: workerData.mode === "normalize" ? "normalizeOneJsChunk" : "splitOneJsChunk",
+    stageName: workerData.mode === "normalize" ? "normalizeOneJsChunk" : "splitOneJsChunkIntoFunctionParts",
     emitParts: workerData.mode === "split",
   });
   parentPort.postMessage({

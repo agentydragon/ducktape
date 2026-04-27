@@ -15,7 +15,7 @@ import { computeJsAsts } from "../common/compute_js_asts_lib.mjs";
 import { loadJsChunks } from "../common/load_js_chunks_lib.mjs";
 import { rewriteChunkEntrySpecifiers } from "../transforms/rewrite_chunk_entry_specifiers_lib.mjs";
 import { writeJsTree } from "../transforms/write_js_tree_lib.mjs";
-import { normalizeJsChunks, splitJsTree } from "./split_js_tree_lib.mjs";
+import { normalizeJsChunks, splitFunctionParts } from "./split_function_parts_lib.mjs";
 
 const ENTRY_FILE = "entry.js";
 
@@ -141,7 +141,7 @@ test("normalizeJsChunks uses a fixed canonical entry path", async () => {
   );
 });
 
-test("splitJsTree emits parts when a chunk has safely splittable owners", async () => {
+test("splitFunctionParts emits parts when a chunk has safely splittable owners", async () => {
   const { extractedRoot, snapshotRoot } = writeSplitSnapshotFixture("debundle-split-snapshot-parts-");
 
   const loaded = loadJsChunks({
@@ -155,7 +155,7 @@ test("splitJsTree emits parts when a chunk has safely splittable owners", async 
     artifact: parsed.artifact,
     jobs: 2,
   });
-  const { manifest } = await splitJsTree({
+  const { manifest } = await splitFunctionParts({
     artifact: normalized.artifact,
     jobs: 2,
   });
@@ -165,7 +165,7 @@ test("splitJsTree emits parts when a chunk has safely splittable owners", async 
   assert.ok(manifest.counts.parts > 0);
 });
 
-test("splitJsTree requires normalizeJsChunks first", async () => {
+test("splitFunctionParts requires normalizeJsChunks first", async () => {
   const { extractedRoot, snapshotRoot } = writeSplitSnapshotFixture("debundle-split-snapshot-needs-normalize-");
 
   const loaded = loadJsChunks({
@@ -177,7 +177,7 @@ test("splitJsTree requires normalizeJsChunks first", async () => {
   });
 
   await assert.rejects(
-    splitJsTree({
+    splitFunctionParts({
       artifact: parsed.artifact,
       jobs: 2,
     }),

@@ -32,19 +32,24 @@ export async function normalizeJsChunks({ artifact, jobs, entryFile = undefined 
   });
 }
 
-export async function splitJsTree({ artifact, jobs, emitParts = undefined, entryFile = undefined }) {
+// Conservative top-level extraction: emits one part file per SCC of named
+// FunctionDeclarations whose entire transitive dep set is also extractable.
+// Variables, classes, side-effecting statements, and any function depending on
+// non-extractable code stay in the entry file. This is a strict subset of what
+// extractAtomicModules handles; prefer that for richer extraction.
+export async function splitFunctionParts({ artifact, jobs, emitParts = undefined, entryFile = undefined }) {
   if (emitParts !== undefined) {
-    throw new Error("splitJsTree no longer accepts emitParts; it always runs the naive parts pass");
+    throw new Error("splitFunctionParts no longer accepts emitParts; it always runs the naive parts pass");
   }
   if (entryFile !== undefined) {
-    throw new Error("splitJsTree no longer accepts entryFile; normalizeJsChunks owns entry-file selection");
+    throw new Error("splitFunctionParts no longer accepts entryFile; normalizeJsChunks owns entry-file selection");
   }
-  requireNormalizedArtifact(artifact, "splitJsTree");
+  requireNormalizedArtifact(artifact, "splitFunctionParts");
   return rebuildJsChunks({
     artifact,
     jobs,
-    logLabel: "split",
-    transformChunk: (chunk) => splitOneJsChunk({ artifactChunk: chunk }),
+    logLabel: "split-function-parts",
+    transformChunk: (chunk) => splitOneJsChunkIntoFunctionParts({ artifactChunk: chunk }),
     workerDataForChunk: (chunk) => ({
       artifactChunk: chunk,
       mode: "split",
@@ -68,7 +73,7 @@ async function rebuildJsChunks({ artifact, jobs, logLabel, transformChunk, worke
         });
 
   const nextArtifact = createEmptyArtifact();
-  const manifest = buildJsTreeManifest(chunks);
+  const manifest = buildFunctionPartsManifest(chunks);
 
   const outputChunks = [];
   for (const chunk of chunks) {
@@ -129,12 +134,12 @@ export function normalizeOneJsChunk({ artifactChunk }) {
   });
 }
 
-export function splitOneJsChunk({ artifactChunk }) {
+export function splitOneJsChunkIntoFunctionParts({ artifactChunk }) {
   return transformOneJsChunk({
     artifactChunk,
     emitParts: true,
     entryFile: artifactChunk?.entryFile,
-    stageName: "splitOneJsChunk",
+    stageName: "splitOneJsChunkIntoFunctionParts",
   });
 }
 
@@ -217,7 +222,7 @@ function splitChunksParallel({ workerDataByChunk, jobs }) {
 
 function runWorker(workerData) {
   return new Promise((resolvePromise, rejectPromise) => {
-    const worker = new Worker(new URL("./split_js_tree_worker.mjs", import.meta.url), { workerData });
+    const worker = new Worker(new URL("./split_function_parts_worker.mjs", import.meta.url), { workerData });
     worker.once("message", (message) => {
       if (message.ok) {
         resolvePromise(message.result);
@@ -236,7 +241,7 @@ function runWorker(workerData) {
   });
 }
 
-function buildJsTreeManifest(chunks) {
+function buildFunctionPartsManifest(chunks) {
   return {
     schemaVersion: 1,
     counts: {

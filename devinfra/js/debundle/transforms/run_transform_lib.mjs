@@ -15,7 +15,7 @@ import { extractGuidedSelectedOwnerModules } from "../extract/packed_selected_mo
 import { mergeModules } from "../extract/merge_modules_stage_lib.mjs";
 import { emitBrowserHarness } from "../harness/emit_browser_harness_lib.mjs";
 import { renameBindingsInArtifact } from "../rename/rename_bindings_lib.mjs";
-import { normalizeJsChunks, splitJsTree } from "../split/split_js_tree_lib.mjs";
+import { normalizeJsChunks, splitFunctionParts } from "../split/split_function_parts_lib.mjs";
 import { applyVendorAnnotations } from "../vendor/apply_vendor_annotations_lib.mjs";
 import { renameVendorExports } from "../vendor/rename_vendor_exports_lib.mjs";
 import { swapVendorChunks } from "../vendor/swap_vendor_chunks_lib.mjs";
@@ -27,7 +27,7 @@ const STAGE_HANDLERS = Object.freeze({
   load_js_chunks: loadJsChunks,
   compute_js_asts: computeJsAsts,
   normalize_js_chunks: normalizeJsChunks,
-  split_scope_hoisted_js_tree: splitJsTree,
+  split_function_parts: splitFunctionParts,
   apply_vendor_annotations: applyVendorAnnotations,
   rename_vendor_exports: renameVendorExports,
   rename_bindings: renameBindingsInArtifact,

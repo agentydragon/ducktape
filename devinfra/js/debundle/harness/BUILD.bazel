@@ -1,8 +1,14 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
+load("//devinfra/oci:defs.bzl", "extract_image_subdir")
 
-filegroup(
-    name = "excalidraw_bundle_fixture",
-    srcs = glob(["testdata/excalidraw_bundle/**"]),
+# Sourced from the digest-pinned excalidraw/excalidraw image (see
+# devinfra/image_pins.json). The extracted /assets/ directory is the deployed
+# Vite/Rollup ESM webapp — same shape as Tana's bundles, used as the debundler
+# benchmark corpus.
+extract_image_subdir(
+    name = "excalidraw_bundle_assets",
+    image = "@excalidraw_linux_amd64",
+    subdir = "usr/share/nginx/html/assets",
     visibility = ["//visibility:public"],
 )
 
@@ -10,7 +16,7 @@ js_binary(
     name = "benchmark_excalidraw",
     data = [
         "benchmark_excalidraw.mjs",
-        ":excalidraw_bundle_fixture",
+        ":excalidraw_bundle_assets",
         "//devinfra/js/debundle/common:libs",
         "//devinfra/js/debundle/extract:libs",
         "//devinfra/js/debundle/split:libs",

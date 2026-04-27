@@ -1,33 +1,35 @@
 #!/usr/bin/env node
-// Debundler benchmark on the frozen Excalidraw fixture.
+// Debundler benchmark on the Excalidraw bundle.
 //
 // Pipeline: load_js_chunks -> compute_js_asts -> normalize_js_chunks ->
-//           split_scope_hoisted_js_tree -> extract_atomic_modules ->
-//           merge_modules x N (default 20).
+//           extract_atomic_modules -> merge_modules x N (default 20).
 //
 // Atom IDs are read from the artifact after extract_atomic_modules; merges
 // pair-fold consecutive atoms (atom_0+atom_1, atom_2+atom_3, ...) on the
 // chunk that produced the most atoms. Times each stage and total wall.
+//
+// The Excalidraw bundle is sourced via Bazel from the digest-pinned
+// excalidraw/excalidraw OCI image (see devinfra/image_pins.json) and
+// extracted at build time by //devinfra/oci:extract_image_subdir. The
+// extracted directory lives next to this script in runfiles.
 
-import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { computeJsAsts } from "../common/compute_js_asts_lib.mjs";
 import { loadJsChunks } from "../common/load_js_chunks_lib.mjs";
 import { getArtifactChunkManifest, listChunkIds } from "../common/pipeline_artifact_lib.mjs";
 import { extractAtomicModules } from "../extract/atomic_modules_stage_lib.mjs";
 import { mergeModules } from "../extract/merge_modules_stage_lib.mjs";
-import { normalizeJsChunks, splitJsTree } from "../split/split_js_tree_lib.mjs";
+import { normalizeJsChunks } from "../split/split_function_parts_lib.mjs";
 
-const DEFAULT_FIXTURE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "testdata/excalidraw_bundle");
+const DEFAULT_FIXTURE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "excalidraw_bundle_assets");
 const DEFAULT_MERGE_COUNT = 20;
 
 async function main() {
   const { fixtureDir, mergeCount } = parseArgs(process.argv.slice(2));
-  const jsListPath = resolve(fixtureDir, "js-files.txt");
-  if (!existsSync(jsListPath)) {
-    throw new Error(`Missing fixture js-files.txt at ${jsListPath}`);
-  }
+  const jsListPath = writeJsListForFixtureDir(fixtureDir);
 
   const totalStartedAt = process.hrtime.bigint();
   const stageTimings = [];
@@ -38,7 +40,6 @@ async function main() {
   );
   artifact = await timeStage("compute_js_asts", stageTimings, () => computeJsAsts({ artifact }));
   artifact = await timeStage("normalize_js_chunks", stageTimings, () => normalizeJsChunks({ artifact }));
-  artifact = await timeStage("split_scope_hoisted_js_tree", stageTimings, () => splitJsTree({ artifact }));
 
   const chunkIds = listChunkIds(artifact);
   artifact = await timeStage("extract_atomic_modules", stageTimings, () =>
@@ -78,6 +79,17 @@ function parseArgs(argv) {
     }
   }
   return result;
+}
+
+function writeJsListForFixtureDir(fixtureDir) {
+  const jsFiles = readdirSync(fixtureDir).filter((name) => name.endsWith(".js")).sort();
+  if (jsFiles.length === 0) {
+    throw new Error(`No .js files found under ${fixtureDir}`);
+  }
+  const tmp = mkdtempSync(join(tmpdir(), "benchmark_excalidraw-"));
+  const jsListPath = join(tmp, "js-files.txt");
+  writeFileSync(jsListPath, jsFiles.map((name) => `${name}\n`).join(""));
+  return jsListPath;
 }
 
 function requireValue(argv, index, flag) {

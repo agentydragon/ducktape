@@ -244,7 +244,7 @@ use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "debian_trixie_slim", "d
 # CI workflows update the JSON via devinfra/update_image_pin.py.
 image_pins = use_extension("//devinfra:image_pins.bzl", "image_pins")
 image_pins.from_file(lockfile = "//devinfra:image_pins.json")
-use_repo(image_pins, "freecad_test", "freecad_test_linux_amd64", "image_pins")
+use_repo(image_pins, "excalidraw", "excalidraw_linux_amd64", "freecad_test", "freecad_test_linux_amd64", "image_pins")
 
 # Hermetic deb packages for container images (rules_distroless).
 # Replaces Dockerfile apt-get with lockfile-pinned deb extraction.
