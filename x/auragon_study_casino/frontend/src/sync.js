@@ -17,7 +17,7 @@
 //
 // Error policy (called out in CLAUDE-PR review): the frontend never
 // silently swallows sync failures. Every network or validation error
-// surfaces through `syncStatus`; the SyncIcon in the header renders that store.
+// surfaces through `casinoSync.status`; the SyncIcon in the header renders that store.
 
 import * as Y from "yjs";
 import { IndexeddbPersistence } from "y-indexeddb";

@@ -63,6 +63,8 @@ function iconProps(status) {
   }
 }
 
+const SPIN_KEYFRAMES = `@keyframes sync-spin { to { transform: rotate(360deg); } }`;
+
 export function SyncIcon() {
   const status = useSyncStatus();
   const rejection = useSyncRejection();
@@ -77,28 +79,42 @@ export function SyncIcon() {
 
   const { glyph, color, title, spin, testid, clickable } = iconProps(status);
 
+  const iconStyle = {
+    width: 22,
+    height: 22,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 15,
+    lineHeight: 1,
+    color,
+    animation: spin ? "sync-spin 1.4s linear infinite" : undefined,
+    flexShrink: 0,
+    background: "none",
+    border: "none",
+    padding: 0,
+    cursor: clickable ? "pointer" : "default",
+  };
+
   return (
     <>
-      <div
-        data-testid={testid}
-        title={title}
-        onClick={clickable ? () => casinoSync.syncOnce() : undefined}
-        style={{
-          width: 22,
-          height: 22,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 15,
-          lineHeight: 1,
-          color,
-          cursor: clickable ? "pointer" : "default",
-          animation: spin ? "sync-spin 1.4s linear infinite" : undefined,
-          flexShrink: 0,
-        }}
-      >
-        {glyph}
-      </div>
+      <style>{SPIN_KEYFRAMES}</style>
+      {clickable ? (
+        <button
+          type="button"
+          data-testid={testid}
+          title={title}
+          aria-label={title}
+          onClick={() => casinoSync.syncOnce()}
+          style={iconStyle}
+        >
+          {glyph}
+        </button>
+      ) : (
+        <div data-testid={testid} title={title} aria-label={title} style={iconStyle}>
+          {glyph}
+        </div>
+      )}
 
       {toast && (
         <div

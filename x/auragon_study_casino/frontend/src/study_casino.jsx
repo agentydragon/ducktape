@@ -344,10 +344,6 @@ export default function StudyCasino() {
         .deco-corners::before { top: -1px; left: -1px; border-right: none; border-bottom: none; }
         .deco-corners::after { bottom: -1px; right: -1px; border-left: none; border-top: none; }
 
-        @keyframes sync-spin {
-          from { transform: rotate(0deg); }
-          to   { transform: rotate(360deg); }
-        }
       `}</style>
 
       {/* Header */}
