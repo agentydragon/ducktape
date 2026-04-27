@@ -1,6 +1,6 @@
 # Codex Cloud environment bootstrap for `ducktape`
 
-This directory contains a Codex Cloud setup/maintenance pair for this monorepo,
+This directory contains a unified Codex Cloud setup/maintenance script for this monorepo,
 modeled after the Claude web setup goals:
 
 - bootstrap from monorepo source-of-truth scripts (`devinfra/setup_buildbuddy.sh`)
@@ -9,16 +9,17 @@ modeled after the Claude web setup goals:
 
 ## Files
 
-- `install.sh`: run as Codex Cloud **setup script**
-- `maintenance.sh`: run as Codex Cloud **maintenance script** (cached-container resume)
+- `setup.sh`: unified script with `--mode=install|maintenance`
+- `install.sh`: thin wrapper to `setup.sh --mode=install`
+- `maintenance.sh`: thin wrapper to `setup.sh --mode=maintenance`
 - `codex_cloud_agent_configuration_plan.md`: detailed research/plan doc collected for Cloud behavior, hooks, and rollout strategy
 
 ## Codex Cloud environment configuration
 
 Recommended initial config in Codex Cloud:
 
-- **Setup script**: `bash devinfra/codex_cloud/install.sh`
-- **Maintenance script**: `bash devinfra/codex_cloud/maintenance.sh`
+- **Setup script**: `bash devinfra/codex_cloud/setup.sh --mode=install`
+- **Maintenance script**: `bash devinfra/codex_cloud/setup.sh --mode=maintenance`
 
 ### Environment variables vs secrets
 
@@ -30,11 +31,11 @@ Codex Cloud behavior (per OpenAI docs):
 For this repo:
 
 - Put `SOPS_AGE_KEY` in **Environment variables** if the agent itself must run `sops`.
-- `install.sh` / `maintenance.sh` decrypt the BuildBuddy key from
+- `setup.sh` decrypts the BuildBuddy key from
   `cluster/k8s/agents/shared-secrets/buildbuddy-api-key.sops.yaml` when
   `SOPS_AGE_KEY` is available.
 
-If `SOPS_AGE_KEY` is present during setup, `install.sh` appends an export to
+If `SOPS_AGE_KEY` is present during setup, `setup.sh` appends an export to
 `~/.bashrc` so Bash tool sessions inherit it.
 
 This is intentional: Codex Cloud docs state setup runs in a separate Bash
@@ -81,4 +82,5 @@ then validates `bb` / `bbr` availability.
 ```bash
 bash -n devinfra/codex_cloud/install.sh
 bash -n devinfra/codex_cloud/maintenance.sh
+bash -n devinfra/codex_cloud/setup.sh
 ```

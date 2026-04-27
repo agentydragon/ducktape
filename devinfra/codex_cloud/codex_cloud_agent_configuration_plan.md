@@ -6,6 +6,7 @@ _Last updated: 2026-04-27_
 
 Initial implementation scaffolding now exists under `devinfra/codex_cloud/`:
 
+- `devinfra/codex_cloud/setup.sh` (`--mode=install|maintenance`)
 - `devinfra/codex_cloud/install.sh`
 - `devinfra/codex_cloud/maintenance.sh`
 - `devinfra/codex_cloud/README.md`
