@@ -17,7 +17,7 @@
 //
 // Error policy (called out in CLAUDE-PR review): the frontend never
 // silently swallows sync failures. Every network or validation error
-// surfaces through `syncStatus`; the SyncBanner UI renders that store.
+// surfaces through `syncStatus`; the SyncIcon in the header renders that store.
 
 import * as Y from "yjs";
 import { IndexeddbPersistence } from "y-indexeddb";
@@ -91,7 +91,7 @@ class CasinoSync {
     this.lastServerSV = null;
 
     this.status = new SyncStatusStore();
-    // Tracks the most recent rejection (rule + message); SyncBanner pops a
+    // Tracks the most recent rejection (rule + message); SyncIcon pops a
     // toast for each new value of `rejection.id`.
     this.rejection = new SyncStatusStore();
     this.rejection.set(null);
