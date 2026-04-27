@@ -99,15 +99,26 @@ reconcile_buildbuddy_remote() {
 
 ensure_bbr_base_branch() {
   # bbr expects a local `devel` branch reference for base-branch calculations.
-  if git rev-parse --verify devel >/dev/null 2>&1; then
-    return 0
+  # Prefer tracking the selected BuildBuddy remote's devel branch.
+  local preferred_remote
+  preferred_remote="$(git config --get buildbuddy.remote-bazel-remote-name || true)"
+  if [ -z "$preferred_remote" ]; then
+    preferred_remote="origin"
   fi
 
   local remote_ref=""
-  if git show-ref --verify --quiet refs/remotes/github-no-proxy/devel; then
-    remote_ref="github-no-proxy/devel"
-  elif git show-ref --verify --quiet refs/remotes/origin/devel; then
+  if git ls-remote --exit-code --heads "$preferred_remote" devel >/dev/null 2>&1; then
+    git fetch "$preferred_remote" devel >/dev/null 2>&1 || true
+    if git show-ref --verify --quiet "refs/remotes/${preferred_remote}/devel"; then
+      remote_ref="${preferred_remote}/devel"
+    fi
+  fi
+
+  if [ -z "$remote_ref" ] && git show-ref --verify --quiet refs/remotes/origin/devel; then
     remote_ref="origin/devel"
+  fi
+  if [ -z "$remote_ref" ] && git show-ref --verify --quiet refs/remotes/github-no-proxy/devel; then
+    remote_ref="github-no-proxy/devel"
   fi
 
   if [ -z "$remote_ref" ]; then
@@ -115,8 +126,21 @@ ensure_bbr_base_branch() {
     return 0
   fi
 
-  git branch devel "$remote_ref" >/dev/null 2>&1 || true
-  log "created local 'devel' branch from ${remote_ref} for bbr compatibility"
+  local existing_upstream=""
+  existing_upstream="$(git for-each-ref --format='%(upstream:short)' refs/heads/devel 2>/dev/null || true)"
+
+  if git rev-parse --verify devel >/dev/null 2>&1; then
+    if [ "$existing_upstream" = "$remote_ref" ]; then
+      log "local 'devel' branch already tracks ${remote_ref}"
+      return 0
+    fi
+    git branch --set-upstream-to="$remote_ref" devel >/dev/null 2>&1 || true
+    log "configured local 'devel' branch to track ${remote_ref}"
+    return 0
+  fi
+
+  git branch --track devel "$remote_ref" >/dev/null 2>&1 || git branch devel "$remote_ref" >/dev/null 2>&1 || true
+  log "created local 'devel' branch tracking ${remote_ref} for bbr compatibility"
 }
 
 install_nix_if_missing() {
