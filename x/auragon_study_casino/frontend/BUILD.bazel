@@ -48,8 +48,8 @@ js_library(
 )
 
 js_library(
-    name = "sync_banner",
-    srcs = ["src/SyncBanner.jsx"],
+    name = "sync_icon",
+    srcs = ["src/SyncIcon.jsx"],
     deps = [
         ":node_modules/react",
         ":sync",
@@ -62,7 +62,7 @@ js_library(
     srcs = ["src/study_casino.jsx"],
     deps = [
         ":node_modules/react",
-        ":sync_banner",
+        ":sync_icon",
         ":use_casino",
     ],
 )
