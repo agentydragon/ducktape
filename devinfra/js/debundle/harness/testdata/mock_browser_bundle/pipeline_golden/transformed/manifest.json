@@ -236,7 +236,7 @@
       "preserveRuntimeName": false,
       "owner": null,
       "fingerprint": {
-        "init": "a2 => {\n  const t2 = document.querySelector(\"#app\");\n  t2.dataset.bundle = \"tana-like\";\n  t2.textContent = JSON.stringify(a2);\n}",
+        "init": "a2 => {\n  const t2 = document.querySelector(\"#app\");\n  t2.dataset.bundle = \"mock-app\";\n  t2.textContent = JSON.stringify(a2);\n}",
         "kind": "VariableDeclarator",
         "name": "h",
         "objectPropertyNames": []

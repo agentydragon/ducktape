@@ -200,7 +200,7 @@ test("import-alignment mismatch fails closed naming caller", (t) => {
 
   const artifact = makeArtifact([
     makeChunk("static/katex-BZy9Y_85", { "runtime.js": vendor }),
-    makeChunk("static/index-DI2GynTv", {
+    makeChunk("static/index-AppEntry", {
       "runtime.js": `import { ua as r } from "../katex-BZy9Y_85/runtime.js";\nr();\n`,
     }),
   ]);
@@ -215,7 +215,7 @@ test("import-alignment mismatch fails closed naming caller", (t) => {
       }),
     (err) =>
       /import alignment failed/.test(err.message) &&
-      /static\/index-DI2GynTv/.test(err.message) &&
+      /static\/index-AppEntry/.test(err.message) &&
       /"ua"/.test(err.message)
   );
 });
@@ -268,7 +268,7 @@ test("dynamic-import callers do not trigger alignment failure", (t) => {
 
   const artifact = makeArtifact([
     makeChunk("static/katex-BZy9Y_85", { "runtime.js": vendor }),
-    makeChunk("static/index-DI2GynTv", {
+    makeChunk("static/index-AppEntry", {
       "runtime.js": `async function f() { return await import("../katex-BZy9Y_85/runtime.js"); }\n`,
     }),
   ]);
@@ -290,7 +290,7 @@ test("swaps preserve explicit non-runtime entry file paths in the resolution man
 
   const artifact = makeArtifact([
     makeChunk("static/katex-BZy9Y_85", { "entry.js": vendor }),
-    makeChunk("static/index-DI2GynTv", {
+    makeChunk("static/index-AppEntry", {
       "entry.js": `import { render } from "../katex-BZy9Y_85/entry.js";\nrender();\n`,
     }),
   ]);

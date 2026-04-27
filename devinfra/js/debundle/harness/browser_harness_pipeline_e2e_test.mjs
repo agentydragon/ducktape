@@ -77,7 +77,7 @@ test("generic mock bundle runs through normalize+rename pipeline and passes a br
         total: 11,
       },
     });
-    assert.equal(appBundle, "tana-like");
+    assert.equal(appBundle, "mock-app");
     assert.equal(appText, JSON.stringify(state.summary));
     assert.equal(chipText, "chip:mock-dashboard@7");
     assert.equal(statusText, "Ada Lovelace:11");

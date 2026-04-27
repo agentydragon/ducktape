@@ -32,7 +32,7 @@ import { planGuidedSelectedOwnerModules } from "./selected_module_planning_lib.m
 export function extractGuidedSelectedOwnerModules({
   artifact,
   boundaryAnalysisDir = undefined,
-  chunkIds = ["static/index-DI2GynTv"],
+  chunkIds,
   file = undefined,
   targetDir = "modules",
   filePrefix = "guided_",

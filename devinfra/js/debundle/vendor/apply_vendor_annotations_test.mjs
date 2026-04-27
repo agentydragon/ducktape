@@ -9,7 +9,7 @@ import {
 import { makePipelineArtifact, makePipelineChunk } from "../test_support/fixture_lib.mjs";
 import { applyVendorAnnotations } from "./apply_vendor_annotations_lib.mjs";
 
-function fakeArtifact({ chunkIds = ["static/pdf.worker-U2G3g_2t", "static/index-DI2GynTv"], extra = {} } = {}) {
+function fakeArtifact({ chunkIds = ["static/pdf.worker-U2G3g_2t", "static/index-AppEntry"], extra = {} } = {}) {
   const artifact = makePipelineArtifact(
     chunkIds.map((chunkId) =>
       makePipelineChunk(chunkId, {
@@ -69,7 +69,7 @@ test("happy path: single op annotates the right chunk only", () => {
   assert.equal(annotation.chunkPath, "static/pdf.worker-U2G3g_2t.js");
   assert.equal(annotation.upstreamFamily, "PDF.js");
   assert.equal(annotation.version, "3.2.146");
-  assert.equal(vendor.has("static/index-DI2GynTv"), false);
+  assert.equal(vendor.has("static/index-AppEntry"), false);
 
   assert.equal(manifest.kind, "js.vendor_annotations_manifest");
   assert.equal(manifest.counts.annotations, 1);

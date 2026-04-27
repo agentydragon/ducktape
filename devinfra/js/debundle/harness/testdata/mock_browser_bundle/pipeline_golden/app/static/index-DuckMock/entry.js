@@ -111,7 +111,7 @@ const buildSummaryCard = a2 => ({
 });
 const renderSummaryDom = a2 => {
   const t2 = document.querySelector("#app");
-  t2.dataset.bundle = "tana-like";
+  t2.dataset.bundle = "mock-app";
   t2.textContent = JSON.stringify(a2);
 };
 const renderDashboard = async () => {

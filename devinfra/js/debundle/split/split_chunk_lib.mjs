@@ -135,6 +135,17 @@ function identity(value) {
 }
 
 function analyzeProgram(ast) {
+  const shallow = analyzeProgramShallow(ast);
+  return analyzeProgramDependencies(ast, shallow);
+}
+
+// Shallow program analysis: iterates `ast.program.body` once to identify
+// imports, export aliases, owners (top-level binding declarations), and side
+// effects. Does NOT walk into function bodies to compute the dep graph between
+// owners — that is what `analyzeProgramDependencies` does. Use this directly
+// when only the structural metadata (imports/exports/owner list) is needed,
+// e.g. for the normalize-only pass that does not split anything.
+export function analyzeProgramShallow(ast) {
   const imports = [];
   const importByLocalName = new Map();
   const exportAliases = [];
@@ -210,7 +221,25 @@ function analyzeProgram(ast) {
     sideEffectByTopNode.set(node, sideEffect);
   });
 
-  const ownerEdges = new Map(owners.map((owner) => [owner.id, new Set()]));
+  return {
+    dynamicImportCount: 0,
+    exportAliases,
+    importByLocalName,
+    imports,
+    ownerByBinding,
+    ownerByTopNode,
+    ownerEdges: new Map(owners.map((owner) => [owner.id, new Set()])),
+    owners,
+    sideEffectByTopNode,
+    sideEffects,
+  };
+}
+
+// Adds owner-to-owner dependency edges (and external import edges) by walking
+// the full AST. Mutates the analysis in place. Only needed when downstream
+// will actually split owners into parts; pure normalize calls can skip this.
+function analyzeProgramDependencies(ast, analysis) {
+  const { importByLocalName, ownerByBinding, ownerByTopNode, ownerEdges, sideEffectByTopNode } = analysis;
   let dynamicImportCount = 0;
 
   const recordTopLevelBindingUse = (path, bindingName) => {
@@ -270,17 +299,17 @@ function analyzeProgram(ast) {
     },
   });
 
-  return {
-    dynamicImportCount,
-    exportAliases,
-    importByLocalName,
-    imports,
-    ownerByBinding,
-    ownerEdges,
-    owners,
-    sideEffects,
-  };
+  analysis.dynamicImportCount = dynamicImportCount;
+  return analysis;
 }
+
+const EMPTY_SPLIT_PLAN = Object.freeze({
+  partByBinding: new Map(),
+  partByOwner: new Map(),
+  parts: [],
+  splitOwnerIds: new Set(),
+  unsafeReasons: new Map(),
+});
 
 function describeImport(node, index) {
   return {
@@ -784,6 +813,10 @@ function moduleExportName(name) {
     return t.identifier(name);
   }
   return t.stringLiteral(name);
+}
+
+export function buildChunkManifestFromAnalysis(chunkId, entryFile, sourcePath, analysis, plan = EMPTY_SPLIT_PLAN) {
+  return buildManifest(chunkId, entryFile, sourcePath, analysis, plan);
 }
 
 function buildManifest(chunkId, entryFile, sourcePath, analysis, plan) {

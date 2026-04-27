@@ -27,7 +27,7 @@ const d = (a) => ({
 });
 const h = (a) => {
   const t2 = document.querySelector("#app");
-  t2.dataset.bundle = "tana-like";
+  t2.dataset.bundle = "mock-app";
   t2.textContent = JSON.stringify(a);
 };
 

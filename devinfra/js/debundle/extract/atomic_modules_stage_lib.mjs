@@ -33,7 +33,7 @@ import { deriveSelectedModuleTarget, planSelectedAtomicModules } from "./selecte
 export function extractAtomicModules({
   artifact,
   boundaryAnalysisDir = undefined,
-  chunkIds = ["static/index-DI2GynTv"],
+  chunkIds,
   file = undefined,
   pruneOtherChunks = true,
   force = false,
