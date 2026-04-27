@@ -45,22 +45,23 @@ session and recommend `~/.bashrc` for persistence into the agent phase.
 1. Detects repo root and logs commit identity.
 2. Installs Nix (Determinate installer) if missing.
 3. Installs the repo `.#devtools` profile.
-4. Persists nix profile sourcing in `~/.bashrc` and `~/.bash_profile` so agent Bash sessions get Nix tools on `PATH`.
-5. Decrypts BuildBuddy API key from SOPS (when possible) and runs `devinfra/setup_buildbuddy.sh`.
-6. Configures BuildBuddy remote selection:
+4. Installs repo pre-commit Git hooks (`pre-commit install --install-hooks`).
+5. Persists nix profile sourcing in `~/.bashrc` and `~/.bash_profile` so agent Bash sessions get Nix tools on `PATH`.
+6. Decrypts BuildBuddy API key from SOPS (when possible) and runs `devinfra/setup_buildbuddy.sh`.
+7. Configures BuildBuddy remote selection:
    - uses `origin` when it already points directly to GitHub
    - falls back to `github-no-proxy` when `origin` is proxied/non-GitHub
    - if `origin` is missing, creates `github-no-proxy` and selects it
-7. Writes Codex Bazel config files:
+8. Writes Codex Bazel config files:
    - `~/.config/bazel/bbr.bazelrc` for BuildBuddy metadata (`ROLE`, session tag)
    - `~/.config/bazel/codex.bazelrc` with `try-import` wiring for BuildBuddy + bbr metadata
    - `~/.bazelrc` `try-import` entry for `~/.config/bazel/codex.bazelrc`
-8. Ensures local `devel` branch exists (from `github-no-proxy/devel` or `origin/devel` when available) so `bbr` base-branch detection works.
-9. Materializes `~/.kube/config` from `secrets/claude-web-k8s-jwt.yaml` via the Nix-managed Python interpreter (`~/.nix-profile/bin/python3 devinfra/k8s/kubeconfig.py`) so `pyyaml` is present consistently.
-10. Persists `SOPS_AGE_KEY`, Bazel env vars (`BBR_BAZELRC`, `SESSION_BAZELRC`), and runtime `web_env.sh` sourcing into shell startup files so agent command shells rehydrate `BUILDBUDDY_API_KEY` and use the generated bazelrc files.
+9. Ensures local `devel` branch exists (from `github-no-proxy/devel` or `origin/devel` when available) so `bbr` base-branch detection works.
+10. Materializes `~/.kube/config` from `secrets/claude-web-k8s-jwt.yaml` via the Nix-managed Python interpreter (`~/.nix-profile/bin/python3 devinfra/k8s/kubeconfig.py`) so `pyyaml` is present consistently.
+11. Persists `SOPS_AGE_KEY`, Bazel env vars (`BBR_BAZELRC`, `SESSION_BAZELRC`), and runtime `web_env.sh` sourcing into shell startup files so agent command shells rehydrate `BUILDBUDDY_API_KEY` and use the generated bazelrc files.
 
-Maintenance refreshes git remotes, BuildBuddy config, and devtools profile,
-then validates `bb` / `bbr` availability.
+Maintenance refreshes git remotes, BuildBuddy config, devtools profile, and
+pre-commit hooks, then validates `bb` / `bbr` availability.
 
 ## Known gaps / risks
 

@@ -147,6 +147,11 @@ run_buildbuddy_setup() {
   fi
 }
 
+install_precommit_hooks() {
+  log "installing pre-commit hooks"
+  pre-commit install --install-hooks
+}
+
 materialize_kubeconfig_if_possible() {
   local nix_python="${HOME}/.nix-profile/bin/python3"
   if [ "$SOPS_RUNTIME_READY" -ne 1 ]; then
@@ -219,6 +224,7 @@ persist_agent_shell_init() {
 run_common_setup_steps() {
   run_buildbuddy_setup
   install_or_refresh_devtools
+  install_precommit_hooks
   write_codex_bazelrcs
   reconcile_buildbuddy_remote
   ensure_bbr_base_branch
