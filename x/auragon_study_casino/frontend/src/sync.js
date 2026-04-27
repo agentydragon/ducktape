@@ -25,7 +25,6 @@ import { IndexeddbPersistence } from "y-indexeddb";
 const SYNC_URL = "/sync";
 const POLL_INTERVAL_MS = 30_000;
 const PUSH_DEBOUNCE_MS = 200;
-const IDB_DB_NAME = "casino-doc-v1";
 const ORIGIN_REMOTE = Symbol("remote");
 
 const DEFAULT_PRIZES = [
@@ -104,9 +103,38 @@ class CasinoSync {
       trackedOrigins: new Set([null, undefined]),
     });
 
-    // y-indexeddb auto-persists every doc op into IDB. Once the persistence
-    // layer has hydrated whatever was on disk, kick off the first sync.
-    this.persistence = new IndexeddbPersistence(IDB_DB_NAME, this.doc);
+    // Fetch the current user from /me, then open the per-user IDB namespace
+    // and start syncing. A 401 means the session expired — redirect to login.
+    this._init();
+
+    // Trigger a debounced push on every locally-originated mutation so the
+    // server hears about user actions promptly. Updates we just applied
+    // from the server tunnel through with origin=ORIGIN_REMOTE and skip.
+    this.doc.on("update", (_update, origin) => {
+      if (origin === ORIGIN_REMOTE) return;
+      this._scheduleSync();
+    });
+  }
+
+  async _init() {
+    let username = "default";
+    try {
+      const resp = await fetch("/me", { credentials: "same-origin" });
+      if (resp.status === 401) {
+        window.location.href = "/auth/login";
+        return;
+      }
+      if (resp.ok) {
+        const data = await resp.json();
+        username = data.username || "default";
+      }
+    } catch {
+      // Network error during /me — proceed with "default"; /sync will fail
+      // too and surface the offline state.
+    }
+
+    const idbName = `casino-doc-v1-${username}`;
+    this.persistence = new IndexeddbPersistence(idbName, this.doc);
     this.persistence.once("synced", () => {
       this._seedDefaultPrizesIfEmpty();
       this._startPolling();
@@ -122,14 +150,6 @@ class CasinoSync {
         this._scheduleSync();
       }
     }, 3000);
-
-    // Trigger a debounced push on every locally-originated mutation so the
-    // server hears about user actions promptly. Updates we just applied
-    // from the server tunnel through with origin=ORIGIN_REMOTE and skip.
-    this.doc.on("update", (_update, origin) => {
-      if (origin === ORIGIN_REMOTE) return;
-      this._scheduleSync();
-    });
   }
 
   /** Idempotent default prize seeding. The server seeds these too on first
@@ -187,6 +207,11 @@ class CasinoSync {
     } catch (e) {
       // Pure network error — DNS, TCP refused, CORS, offline.
       this.status.set({ kind: "offline", reason: e.message ?? String(e) });
+      return;
+    }
+
+    if (response.status === 401) {
+      window.location.href = "/auth/login";
       return;
     }
 

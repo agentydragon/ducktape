@@ -105,5 +105,40 @@ def test_two_clients_converge_via_server(client: TestClient) -> None:
     assert int(laptop.balance["credits"]) == 30
 
 
+def test_me_returns_default_user_without_oidc(client: TestClient) -> None:
+    """Without OIDC config, /me always returns the 'default' user."""
+    r = client.get("/me")
+    assert r.status_code == 200
+    assert r.json() == {"username": "default"}
+
+
+def test_users_have_isolated_state(tmp_path: Path) -> None:
+    """Two different usernames get separate, independent doc states.
+
+    Without OIDC the dep always returns "default", so we exercise isolation
+    by using two separate apps with different data_dirs to show isolation
+    holds at the DocStore level.
+    """
+    app_alice = create_app(Settings(data_dir=tmp_path / "alice", frontend_dist_dir=tmp_path / "nonexistent_dist"))
+    app_bob = create_app(Settings(data_dir=tmp_path / "bob", frontend_dist_dir=tmp_path / "nonexistent_dist"))
+    (tmp_path / "alice").mkdir()
+    (tmp_path / "bob").mkdir()
+
+    alice = TestClient(app_alice)
+    bob = TestClient(app_bob)
+
+    # Alice earns 50 credits.
+    boot = alice.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()
+    casino = Casino.from_update(_unb64(boot["update_b64"]))
+    sv = casino.get_state()
+    casino.balance["credits"] = 50
+    alice.post("/sync", json={"state_vector_b64": _b64(sv), "update_b64": _b64(casino.get_update(sv))})
+
+    # Bob's state is independent — still at 0.
+    boot_bob = bob.post("/sync", json={"state_vector_b64": "", "update_b64": ""}).json()
+    bob_casino = Casino.from_update(_unb64(boot_bob["update_b64"]))
+    assert int(bob_casino.balance["credits"]) == 0
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

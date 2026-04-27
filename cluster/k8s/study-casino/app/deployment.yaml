@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: study-casino
   annotations:
-    description: "Single-user habit-tracking casino app. Serves PWA + /state JSON store behind Authentik outpost forward-auth."
+    description: "Habit-tracking casino app. Serves PWA + /sync endpoint with OIDC auth (Authorization Code flow, confidential client)."
 spec:
   # Single replica because the PVC is RWO and SQLite WAL doesn't tolerate
   # concurrent writers across processes.
@@ -39,6 +39,20 @@ spec:
           env:
             - name: STUDY_CASINO_DATA_DIR
               value: /data
+            - name: STUDY_CASINO_OIDC_ISSUER
+              value: "https://auth.allegedly.works/application/o/study-casino/"
+            - name: STUDY_CASINO_OIDC_CLIENT_ID
+              value: "study-casino"
+            - name: STUDY_CASINO_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: study-casino-oidc
+                  key: oidc_client_secret
+            - name: STUDY_CASINO_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: study-casino-oidc
+                  key: session_secret
           resources:
             requests:
               memory: "64Mi"
