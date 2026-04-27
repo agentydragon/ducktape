@@ -96,8 +96,6 @@ export function analyzeRuntimeBoundaryCode(code, options = {}) {
 }
 
 export function analyzeRuntimeBoundaryAst(ast, { chunkId = "<chunk>", manifestPath = null, runtimePath = null } = {}) {
-  const { programPath, programPathByNode } = locateProgramPath(ast);
-
   const imports = [];
   const importByLocalName = new Map();
   const owners = [];
@@ -105,83 +103,92 @@ export function analyzeRuntimeBoundaryAst(ast, { chunkId = "<chunk>", manifestPa
   const ownerByBinding = new Map();
   const itemByTopNode = new Map();
   const programItems = [];
+  const programPathByNode = new WeakMap();
 
-  for (const topPath of programPath.get("body")) {
-    const node = topPath.node;
-    if (topPath.isImportDeclaration()) {
-      const importRecord = describeImport(node, imports.length);
-      imports.push(importRecord);
-      itemByTopNode.set(node, importRecord);
-      programItems.push({
-        id: importRecord.id,
-        kind: "import",
-        line: importRecord.line,
-        names: importRecord.specifiers.map((specifier) => specifier.local).sort(),
-        ordinal: topPath.key,
-        source: importRecord.source,
-        type: node.type,
-      });
-      for (const specifier of importRecord.specifiers) {
-        importByLocalName.set(specifier.local, {
-          ...specifier,
-          id: importRecord.id,
-          source: importRecord.source,
-        });
-      }
-      continue;
-    }
-
-    const names = topLevelDeclarationNames(node);
-    if (names.length > 0) {
-      const owner = createOwnerRecord({
-        id: `owner_${owners.length.toString().padStart(5, "0")}`,
-        line: node.loc?.start.line ?? null,
-        names,
-        node,
-        ordinal: topPath.key,
-        path: topPath,
-        type: node.type,
-      });
-      owner.classFeatures = owner.type === "ClassDeclaration" ? describeClassFeatures(owner.node) : emptyClassFeatures();
-      owners.push(owner);
-      itemByTopNode.set(node, owner);
-      programItems.push({
-        id: owner.id,
-        kind: "declaration",
-        line: owner.line,
-        names: owner.names,
-        ordinal: owner.ordinal,
-        type: owner.type,
-      });
-      for (const name of names) {
-        ownerByBinding.set(name, owner);
-      }
-      continue;
-    }
-
-    const sideEffect = createSideEffectRecord({
-      id: `side_effect_${sideEffects.length.toString().padStart(5, "0")}`,
-      line: node.loc?.start.line ?? null,
-      node,
-      ordinal: topPath.key,
-      path: topPath,
-      type: node.type,
-    });
-    sideEffects.push(sideEffect);
-    itemByTopNode.set(node, sideEffect);
-    programItems.push({
-      id: sideEffect.id,
-      kind: "side_effect",
-      line: sideEffect.line,
-      names: [],
-      ordinal: sideEffect.ordinal,
-      type: sideEffect.type,
-    });
-  }
-
-  programPath.scope.crawl();
-
+  // Single-traverse analysis: classify the program body inside the
+  // Program enter visitor (eliminating the previous separate traverse
+  // just to find programPath). Subsequent expression visitors descend
+  // through the same traverse and use the already-populated maps.
   traverse(ast, {
+    Program: {
+      enter(programPath) {
+        programPathByNode.set(programPath.node, programPath);
+        for (const topPath of programPath.get("body")) {
+          const node = topPath.node;
+          programPathByNode.set(node, topPath);
+          if (topPath.isImportDeclaration()) {
+            const importRecord = describeImport(node, imports.length);
+            imports.push(importRecord);
+            itemByTopNode.set(node, importRecord);
+            programItems.push({
+              id: importRecord.id,
+              kind: "import",
+              line: importRecord.line,
+              names: importRecord.specifiers.map((specifier) => specifier.local).sort(),
+              ordinal: topPath.key,
+              source: importRecord.source,
+              type: node.type,
+            });
+            for (const specifier of importRecord.specifiers) {
+              importByLocalName.set(specifier.local, {
+                ...specifier,
+                id: importRecord.id,
+                source: importRecord.source,
+              });
+            }
+            continue;
+          }
+
+          const names = topLevelDeclarationNames(node);
+          if (names.length > 0) {
+            const owner = createOwnerRecord({
+              id: `owner_${owners.length.toString().padStart(5, "0")}`,
+              line: node.loc?.start.line ?? null,
+              names,
+              node,
+              ordinal: topPath.key,
+              path: topPath,
+              type: node.type,
+            });
+            owner.classFeatures = owner.type === "ClassDeclaration" ? describeClassFeatures(owner.node) : emptyClassFeatures();
+            owners.push(owner);
+            itemByTopNode.set(node, owner);
+            programItems.push({
+              id: owner.id,
+              kind: "declaration",
+              line: owner.line,
+              names: owner.names,
+              ordinal: owner.ordinal,
+              type: owner.type,
+            });
+            for (const name of names) {
+              ownerByBinding.set(name, owner);
+            }
+            continue;
+          }
+
+          const sideEffect = createSideEffectRecord({
+            id: `side_effect_${sideEffects.length.toString().padStart(5, "0")}`,
+            line: node.loc?.start.line ?? null,
+            node,
+            ordinal: topPath.key,
+            path: topPath,
+            type: node.type,
+          });
+          sideEffects.push(sideEffect);
+          itemByTopNode.set(node, sideEffect);
+          programItems.push({
+            id: sideEffect.id,
+            kind: "side_effect",
+            line: sideEffect.line,
+            names: [],
+            ordinal: sideEffect.ordinal,
+            type: sideEffect.type,
+          });
+        }
+        programPath.scope.crawl();
+      },
+    },
     AssignmentExpression(path) {
       if (!isInsideTrackedProgramItem(path, itemByTopNode)) {
         return;
@@ -344,25 +351,6 @@ export function analyzeRuntimeBoundaryAst(ast, { chunkId = "<chunk>", manifestPa
     orderedInitRegions,
     eagerInitComponentDag: eagerInitDag,
   };
-}
-
-function locateProgramPath(ast) {
-  let programPath;
-  const programPathByNode = new WeakMap();
-  traverse(ast, {
-    Program(path) {
-      programPath = path;
-      programPathByNode.set(path.node, path);
-      path.stop();
-    },
-  });
-  if (!programPath) {
-    throw new Error("Unable to locate Program path");
-  }
-  for (const bodyPath of programPath.get("body")) {
-    programPathByNode.set(bodyPath.node, bodyPath);
-  }
-  return { programPath, programPathByNode };
 }
 
 function createOwnerRecord({ id, line, names, node, ordinal, path, type }) {
@@ -1234,24 +1222,79 @@ function effectToReason(effect) {
   return effect;
 }
 
+// Names referenced in `node` from positions that are NOT inside a nested
+// function/method body. Equivalent semantics to a babel-traverse pass with
+// a ReferencedIdentifier visitor that filters out names with a binding in
+// scope; in our use site `node` is a VariableDeclarator init expression,
+// so the only "binding in scope" possibilities are inside nested functions
+// (which we skip anyway). Hand-rolled recursion is ~10x cheaper than
+// wrapping in a synthetic File and running traverse with scope.
 function referencedUndeclaredNames(node) {
-  if (!node) {
-    return [];
-  }
+  if (!node) return [];
   const names = new Set();
-  const file = t.file(t.program([t.expressionStatement(t.cloneNode(node, true))]));
-  traverse(file, {
-    ReferencedIdentifier(path) {
-      if (path.scope.getBinding(path.node.name)) {
-        return;
-      }
-      if (path.findParent((parent) => parent.isFunction() || parent.isObjectMethod() || parent.isClassMethod())) {
-        return;
-      }
-      names.add(path.node.name);
-    },
-  });
+  collectReferencedIdentifierNames(node, names);
   return [...names];
+}
+
+const FUNCTION_TYPES = new Set([
+  "FunctionExpression",
+  "FunctionDeclaration",
+  "ArrowFunctionExpression",
+  "ObjectMethod",
+  "ClassMethod",
+  "ClassPrivateMethod",
+]);
+
+const NON_AST_KEYS = new Set([
+  "type",
+  "start",
+  "end",
+  "loc",
+  "extra",
+  "leadingComments",
+  "trailingComments",
+  "innerComments",
+  "comments",
+  "tokens",
+  "errors",
+]);
+
+function collectReferencedIdentifierNames(node, names) {
+  if (!node || typeof node !== "object") return;
+  if (Array.isArray(node)) {
+    for (const child of node) collectReferencedIdentifierNames(child, names);
+    return;
+  }
+  if (FUNCTION_TYPES.has(node.type)) return;
+  switch (node.type) {
+    case "Identifier":
+      names.add(node.name);
+      return;
+    case "MemberExpression":
+    case "OptionalMemberExpression":
+      collectReferencedIdentifierNames(node.object, names);
+      if (node.computed) collectReferencedIdentifierNames(node.property, names);
+      return;
+    case "ObjectProperty":
+      if (node.computed) collectReferencedIdentifierNames(node.key, names);
+      collectReferencedIdentifierNames(node.value, names);
+      return;
+    case "VariableDeclarator":
+      // node.id is the declaration target (not a reference)
+      collectReferencedIdentifierNames(node.init, names);
+      return;
+    case "ImportSpecifier":
+    case "ImportDefaultSpecifier":
+    case "ImportNamespaceSpecifier":
+    case "ExportSpecifier":
+      return;
+    default: {
+      for (const key of Object.keys(node)) {
+        if (NON_AST_KEYS.has(key)) continue;
+        collectReferencedIdentifierNames(node[key], names);
+      }
+    }
+  }
 }
 
 function sortedAccessNames(accessMap) {

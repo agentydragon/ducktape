@@ -80,13 +80,13 @@ import {
 }
 
 resource "authentik_provider_proxy" "alloy_otlp" {
-  name                  = "alloy-otlp"
-  external_host         = "https://alloy-otlp.allegedly.works"
-  internal_host         = "http://alloy.monitoring.svc.cluster.local:4318"
-  mode                  = "proxy"
-  authentication_flow   = data.authentik_flow.authentication.id
-  authorization_flow    = data.authentik_flow.implicit_consent.id
-  invalidation_flow     = data.authentik_flow.invalidation.id
+  name                = "alloy-otlp"
+  external_host       = "https://alloy-otlp.allegedly.works"
+  internal_host       = "http://alloy.monitoring.svc.cluster.local:4318"
+  mode                = "proxy"
+  authentication_flow = data.authentik_flow.authentication.id
+  authorization_flow  = data.authentik_flow.implicit_consent.id
+  invalidation_flow   = data.authentik_flow.invalidation.id
 
   # The rotator writes the proxy-scoped token that the outpost will actually
   # introspect, not the source provider token used as the JWT-bearer
@@ -195,8 +195,8 @@ resource "kubernetes_secret" "alloy_otlp_client_credentials" {
   }
 
   data = {
-    client_id     = authentik_provider_oauth2.alloy_otlp_client_credentials.client_id
-    client_secret = authentik_provider_oauth2.alloy_otlp_client_credentials.client_secret
+    client_id       = authentik_provider_oauth2.alloy_otlp_client_credentials.client_id
+    client_secret   = authentik_provider_oauth2.alloy_otlp_client_credentials.client_secret
     proxy_client_id = authentik_provider_proxy.alloy_otlp.client_id
   }
 }

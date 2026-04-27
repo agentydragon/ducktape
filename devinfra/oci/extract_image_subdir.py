@@ -57,14 +57,22 @@ def select_platform_manifest(top: dict, platform: str, blobs_dir: Path) -> dict:
     raise SystemExit(f"No manifest found for platform {platform!r}")
 
 
-def apply_layer(blobs_dir: Path, digest: str, rootfs: Path) -> None:
+def apply_layer(blobs_dir: Path, digest: str, rootfs: Path, subdir_prefix: str) -> None:
     algo, hex_digest = digest.split(":", 1)
     with tarfile.open(blobs_dir / algo / hex_digest, "r:*") as tar:
-        members = [member for member in tar.getmembers() if ".wh." not in member.name.split("/")]
-        # filter="data" rejects absolute paths, parent traversals, special
-        # files, and other tar oddities. Even with digest pinning the layer
-        # blob is opaque to us, so we sandbox extraction defensively.
-        tar.extractall(rootfs, members=members, filter="data")
+        members = []
+        for member in tar.getmembers():
+            if ".wh." in member.name.split("/"):
+                continue
+            normalized = member.name.lstrip("./")
+            # Only extract members within the target subdir (or the dir itself).
+            # Avoids touching unrelated members like busybox-style absolute
+            # symlinks under /bin that the safe `data` filter would reject.
+            if not normalized.startswith(subdir_prefix) and normalized != subdir_prefix.rstrip("/"):
+                continue
+            members.append(member)
+        if members:
+            tar.extractall(rootfs, members=members, filter="data")
 
 
 def main() -> None:
@@ -81,12 +89,13 @@ def main() -> None:
     top_manifest = read_blob_json(blobs_dir, index["manifests"][0]["digest"])
     manifest = select_platform_manifest(top_manifest, args.platform, blobs_dir)
 
+    subdir_prefix = args.subdir.strip("/") + "/"
     args.out.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="extract_image_subdir_") as tmp:
         rootfs = Path(tmp) / "rootfs"
         rootfs.mkdir()
         for layer in manifest["layers"]:
-            apply_layer(blobs_dir, layer["digest"], rootfs)
+            apply_layer(blobs_dir, layer["digest"], rootfs, subdir_prefix)
 
         source = rootfs / args.subdir.lstrip("/")
         if not source.is_dir():
