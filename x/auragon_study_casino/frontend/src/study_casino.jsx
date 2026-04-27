@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 
-import { SyncBanner } from "./SyncBanner.jsx";
+import { SyncIcon } from "./SyncBanner.jsx";
 import { useCasino } from "./use_casino.js";
 
 const SUBJECTS = [
@@ -343,6 +343,11 @@ export default function StudyCasino() {
         }
         .deco-corners::before { top: -1px; left: -1px; border-right: none; border-bottom: none; }
         .deco-corners::after { bottom: -1px; right: -1px; border-left: none; border-top: none; }
+
+        @keyframes sync-spin {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
+        }
       `}</style>
 
       {/* Header */}
@@ -413,10 +418,9 @@ export default function StudyCasino() {
               {credits.toLocaleString()}
             </div>
           </div>
+          <SyncIcon />
         </div>
       </header>
-
-      <SyncBanner />
 
       {activeSession && (
         <div
