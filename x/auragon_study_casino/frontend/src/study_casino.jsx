@@ -2762,11 +2762,11 @@ function WinBurst({ amount }) {
   return (
     <div
       style={{
-        position: "absolute",
+        position: "fixed",
         inset: 0,
         pointerEvents: "none",
         overflow: "hidden",
-        zIndex: 30,
+        zIndex: 100,
       }}
     >
       <div
