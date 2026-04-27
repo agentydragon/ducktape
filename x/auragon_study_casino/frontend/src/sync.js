@@ -253,7 +253,7 @@ class CasinoSync {
         // bounce it back at the server.
         Y.applyUpdate(this.doc, serverUpdate, ORIGIN_REMOTE);
       } catch (e) {
-        this.status.set({ kind: "offline", reason: `corrupt server update: ${e.message}` });
+        this.status.set({ kind: "offline", reason: `corrupt server update: ${e.message ?? String(e)}` });
         return;
       }
     }

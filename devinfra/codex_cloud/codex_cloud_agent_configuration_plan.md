@@ -21,6 +21,7 @@ Primary source: OpenAI Codex Cloud docs and changelog.
 - Container caching keeps setup state for up to 12 hours. Follow-up tasks may resume cached state, and cache is invalidated by setup/maintenance script changes and env/secret changes.
 
 References:
+
 - https://developers.openai.com/codex/cloud/environments
 - https://developers.openai.com/codex/cloud/internet-access
 - https://developers.openai.com/codex/changelog
@@ -34,12 +35,13 @@ References:
 - AGENTS.md is explicitly documented and is used for repository-specific instructions.
 
 References:
+
 - https://developers.openai.com/codex/config-basic
 - https://developers.openai.com/codex/config-reference
 - https://developers.openai.com/codex/hooks
 - https://developers.openai.com/codex/guides/agents-md
 
-## 2.2 What is *not* clearly documented for Cloud
+## 2.2 What is _not_ clearly documented for Cloud
 
 I could not find explicit OpenAI documentation stating that delegated Cloud runs execute project/user `hooks.json` from `.codex` inside the Cloud container.
 
@@ -61,6 +63,7 @@ From hooks docs (general Codex hooks surface):
 - Matchers: specific tool names, shell matchers, and event-specific filters
 
 Reference:
+
 - https://developers.openai.com/codex/hooks
 
 ## 2.4 Additional online signals checked
@@ -70,6 +73,7 @@ Reference:
 - Therefore, for Cloud planning in this repo, hooks should be considered experimental until empirically validated in our own environment.
 
 References:
+
 - https://github.com/openai/codex/issues?q=is%3Aissue+hooks+is%3Aopen
 - https://github.com/openai/codex/issues/16226
 - https://github.com/openai/codex/issues/16301
@@ -85,6 +89,7 @@ From this repository's AGENTS/README and current infra:
 - Existing repo script `devinfra/setup_buildbuddy.sh` configures BuildBuddy based on `BUILDBUDDY_API_KEY`.
 
 References:
+
 - `AGENTS.md`
 - `README.md`
 - `flake.nix`

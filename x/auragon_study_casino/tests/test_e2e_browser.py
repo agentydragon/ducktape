@@ -73,6 +73,8 @@ def casino_server(tmp_path: Path) -> Iterator[str]:
     while time.monotonic() < deadline and not server.started:
         time.sleep(0.05)
     if not server.started:
+        server.should_exit = True
+        t.join(timeout=5.0)
         raise RuntimeError("backend did not start within 10s")
     try:
         yield f"http://127.0.0.1:{port}"
