@@ -35,6 +35,10 @@ background_commands:
     command: python3 "$CLAUDE_PROJECT_DIR/devinfra/k8s/kubeconfig.py" --write ~/.kube/config
     timeout: 30
     after_env: true
+  - name: authentik service account token
+    command: bash "$CLAUDE_PROJECT_DIR/devinfra/claude/hook_daemon/authentik_token.sh"
+    timeout: 60
+    after_env: true
   - name: nix nixpkgs check
     command: |
       if ! command -v nix &>/dev/null; then
