@@ -26,6 +26,8 @@ env_exports: |
   # Nix devtools (prettier with svelte plugin, pre-commit, ruff, etc.) must
   # come before /opt/node22/bin so the nix versions are preferred.
   export PATH="${HOME}/.nix-profile/bin:${PATH}"
+  # Pick up the Authentik token fragment written by the authentik_token.sh bg task.
+  [ -n "${DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR:-}" ] && [ -f "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/authentik_token.sh" ] && source "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/authentik_token.sh"
 background_commands:
   # Materializes ~/.kube/config from the SOPS-encrypted JWT in
   # secrets/claude-web-k8s-jwt.yaml. See kubeconfig.py's module

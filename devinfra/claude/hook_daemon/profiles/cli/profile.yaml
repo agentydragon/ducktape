@@ -35,6 +35,8 @@ env_exports: |
   # the agent cd's between directories, direnv picks up the correct .envrc on the
   # next command. The `which` guard avoids errors when direnv isn't installed.
   if command -v direnv >/dev/null 2>&1; then eval "$(direnv export bash 2>/dev/null)"; fi
+  # Pick up the Authentik token fragment written by the authentik_token.sh bg task.
+  [ -n "${DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR:-}" ] && [ -f "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/authentik_token.sh" ] && source "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/authentik_token.sh"
 background_commands:
   - name: authentik service account token
     command: bash "$CLAUDE_PROJECT_DIR/devinfra/claude/hook_daemon/authentik_token.sh"

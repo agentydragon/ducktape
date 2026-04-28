@@ -2,13 +2,13 @@
 # Fetches the Authentik service account API token for Claude sessions.
 # Polls for kubectl availability so it works on web (where kubeconfig is
 # set up by a concurrent background task) and CLI (kubectl ready immediately).
-# On success, appends AUTHENTIK_API_TOKEN to $CLAUDE_ENV_FILE and prints
-# usage context for Claude.
+# On success, writes AUTHENTIK_API_TOKEN to $DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/authentik_token.sh
+# (sourced from env_exports on each tool call) and prints usage context for Claude.
 set -uo pipefail
 
-for i in $(seq 15); do
-  if kubectl cluster-info --request-timeout=5s >/dev/null 2>&1; then break; fi
-  if [ "$i" = "15" ]; then
+for i in $(seq 10); do
+  if kubectl cluster-info --request-timeout=3s >/dev/null 2>&1; then break; fi
+  if [ "$i" = "10" ]; then
     echo "WARNING: kubectl not reachable; Authentik token not loaded"
     exit 0
   fi
@@ -25,7 +25,7 @@ if [ -z "${token:-}" ]; then
   exit 0
 fi
 
-echo "export AUTHENTIK_API_TOKEN='${token}'" >>"$CLAUDE_ENV_FILE"
+echo "export AUTHENTIK_API_TOKEN='${token}'" >"$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/authentik_token.sh"
 echo "AUTHENTIK_API_TOKEN loaded — claude-service-account at ${url}"
 echo "Permissions: audit log, apps, proxy providers, users, groups, sessions, outpost health, flows, policies, system tasks, blueprints."
 echo "NOT available: OAuth2 provider client secrets, access/refresh tokens, certificate keys."
