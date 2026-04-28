@@ -6,9 +6,14 @@
 //     casino.credits / casino.tokens / casino.sessions / ...
 //     casino.startSession("Biochem"); casino.redeem(prize); ...
 //
-// All mutations are server-validated through `/sync` (driven by sync.js);
+// All mutations are server-validated through `/ws` (driven by sync.js);
 // optimistic updates happen because the local Y.Doc updates synchronously
 // while the network round-trip happens in the background.
+//
+// Active sessions live in the `sessions` Y.Map as entries with no
+// `ended_at_ms` field.  `activeSession` is derived by finding the single
+// sessions entry whose `ended_at_ms` is absent; `sessions` returns only
+// completed entries.
 
 import { casinoSync, Y } from "./sync.js";
 import { useYArray, useYMap } from "./y_hooks.js";
@@ -18,7 +23,6 @@ export function useCasino() {
   const sessionsMap = useYMap(casinoSync.sessions);
   const prizesMap = useYMap(casinoSync.prizes);
   const prizeLogArr = useYArray(casinoSync.prizeLog);
-  const activeMap = useYMap(casinoSync.active);
 
   // Derived plain-JS views that downstream JSX expects unchanged. We round
   // the balance numbers because Yjs stores them as float64.
@@ -32,7 +36,9 @@ export function useCasino() {
   const credits = Math.floor(balance.get("credits") ?? 0);
   const tokens = Math.floor(balance.get("tokens") ?? 0);
 
+  // Completed sessions only — those with ended_at_ms set.
   const sessions = [...sessionsMap.entries()]
+    .filter(([, m]) => !!m.get("ended_at_ms"))
     .map(([id, m]) => ({
       id,
       subject: m.get("subject"),
@@ -57,16 +63,18 @@ export function useCasino() {
     }))
     .sort((a, b) => b.at - a.at);
 
-  const activeSession =
-    activeMap.size === 0
-      ? null
-      : {
-          subject: activeMap.get("subject"),
-          startTime: Math.floor(activeMap.get("start_time_ms") ?? 0),
-          paused: !!activeMap.get("paused"),
-          pausedDuration: Math.floor(activeMap.get("paused_duration_ms") ?? 0),
-          pauseStartedAt: activeMap.get("pause_started_at_ms"),
-        };
+  // In-progress session: the single sessions entry without ended_at_ms.
+  const activeRaw = [...sessionsMap.entries()].find(([, m]) => !m.get("ended_at_ms"));
+  const activeSession = activeRaw
+    ? {
+        id: activeRaw[0],
+        subject: activeRaw[1].get("subject"),
+        startTime: Math.floor(activeRaw[1].get("start_time_ms") ?? 0),
+        paused: !!activeRaw[1].get("paused"),
+        pausedDuration: Math.floor(activeRaw[1].get("paused_duration_ms") ?? 0),
+        pauseStartedAt: activeRaw[1].get("pause_started_at_ms"),
+      }
+    : null;
 
   // === Mutations ===
   // Each one wraps `casinoSync.mutate` (which calls doc.transact) so the
@@ -74,21 +82,29 @@ export function useCasino() {
   // server rejection rolls back the whole user-visible action.
 
   const startSession = (subject) => {
+    // Store the in-progress session in the sessions map with no ended_at_ms.
+    // This keeps the active session durable through sync cycles and prevents
+    // the UndoManager drain on a 409 rejection from losing already-synced
+    // session starts (the undo stack is cleared after every successful sync).
+    const id = `active-${Date.now()}`;
     casinoSync.mutate(() => {
-      casinoSync.active.clear();
-      casinoSync.active.set("subject", subject);
-      casinoSync.active.set("start_time_ms", Date.now());
-      casinoSync.active.set("paused", false);
-      casinoSync.active.set("paused_duration_ms", 0);
-      casinoSync.active.set("pause_started_at_ms", null);
+      const sm = new Y.Map();
+      casinoSync.sessions.set(id, sm);
+      sm.set("subject", subject);
+      sm.set("start_time_ms", Date.now());
+      sm.set("paused", false);
+      sm.set("paused_duration_ms", 0);
+      sm.set("pause_started_at_ms", null);
     });
   };
 
   const pauseSession = () => {
     if (!activeSession || activeSession.paused) return;
     casinoSync.mutate(() => {
-      casinoSync.active.set("paused", true);
-      casinoSync.active.set("pause_started_at_ms", Date.now());
+      const m = casinoSync.sessions.get(activeSession.id);
+      if (!m) return;
+      m.set("paused", true);
+      m.set("pause_started_at_ms", Date.now());
     });
   };
 
@@ -97,9 +113,11 @@ export function useCasino() {
     const now = Date.now();
     const pausedFor = now - (activeSession.pauseStartedAt ?? now);
     casinoSync.mutate(() => {
-      casinoSync.active.set("paused", false);
-      casinoSync.active.set("pause_started_at_ms", null);
-      casinoSync.active.set("paused_duration_ms", activeSession.pausedDuration + Math.max(0, pausedFor));
+      const m = casinoSync.sessions.get(activeSession.id);
+      if (!m) return;
+      m.set("paused", false);
+      m.set("pause_started_at_ms", null);
+      m.set("paused_duration_ms", activeSession.pausedDuration + Math.max(0, pausedFor));
     });
   };
 
@@ -113,24 +131,25 @@ export function useCasino() {
     if (!activeSession) return;
     const sec = elapsedSeconds(activeSession);
     const min = Math.floor(sec / 60);
-    const id = `s-${Date.now()}`;
     casinoSync.mutate(() => {
-      if (sec > 0) {
-        const sm = new Y.Map();
-        casinoSync.sessions.set(id, sm);
-        sm.set("subject", activeSession.subject);
-        sm.set("seconds", sec);
-        sm.set("ended_at_ms", Date.now());
-      }
+      const m = casinoSync.sessions.get(activeSession.id);
+      if (!m) return;
+      m.set("seconds", sec);
+      m.set("ended_at_ms", Date.now());
+      // Clear the in-progress fields to keep the completed entry compact.
+      m.delete("start_time_ms");
+      m.delete("paused");
+      m.delete("paused_duration_ms");
+      m.delete("pause_started_at_ms");
       if (min > 0) {
         casinoSync.balance.set("credits", currentCredits() + min);
       }
-      casinoSync.active.clear();
     });
   };
 
   const cancelSession = () => {
-    casinoSync.mutate(() => casinoSync.active.clear());
+    if (!activeSession) return;
+    casinoSync.mutate(() => casinoSync.sessions.delete(activeSession.id));
   };
 
   const editSession = (id, updates) => {
@@ -287,13 +306,16 @@ export function useCasino() {
           pm.set("at_ms", e.at);
         }
       }
-      casinoSync.active.clear();
+      // Restore active session if present (from v3 export or legacy export).
       if (data.activeSession) {
-        casinoSync.active.set("subject", data.activeSession.subject);
-        casinoSync.active.set("start_time_ms", data.activeSession.startTime);
-        casinoSync.active.set("paused", !!data.activeSession.paused);
-        casinoSync.active.set("paused_duration_ms", data.activeSession.pausedDuration ?? 0);
-        casinoSync.active.set("pause_started_at_ms", data.activeSession.pauseStartedAt ?? null);
+        const id = `active-${Date.now()}`;
+        const sm = new Y.Map();
+        casinoSync.sessions.set(id, sm);
+        sm.set("subject", data.activeSession.subject);
+        sm.set("start_time_ms", data.activeSession.startTime ?? Date.now());
+        sm.set("paused", !!data.activeSession.paused);
+        sm.set("paused_duration_ms", data.activeSession.pausedDuration ?? 0);
+        sm.set("pause_started_at_ms", data.activeSession.pauseStartedAt ?? null);
       }
     });
   };
@@ -304,7 +326,6 @@ export function useCasino() {
       casinoSync.balance.set("tokens", 0);
       casinoSync.sessions.clear();
       casinoSync.prizeLog.delete(0, casinoSync.prizeLog.length);
-      casinoSync.active.clear();
       // Prizes intentionally retained; the user re-curates the catalog.
     });
   };

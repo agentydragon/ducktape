@@ -74,23 +74,39 @@ def validate_prize_catalog_shape(casino: Casino) -> None:
 
 
 def validate_session_shape(casino: Casino) -> None:
-    """Completed sessions must have subject (str), seconds (≥0), ended_at_ms (number)."""
+    """Sessions must have a non-empty subject.
+
+    Completed sessions (ended_at_ms present) also need seconds ≥ 0.
+    In-progress sessions (no ended_at_ms) need start_time_ms.
+    """
     for sid, session in casino.sessions.items():
         subject = session.get("subject")
         seconds = session.get("seconds")
         ended_at = session.get("ended_at_ms")
+        start_time = session.get("start_time_ms")
+
         if not isinstance(subject, str) or not subject:
             raise ValidationError(
                 rule="session_subject", message=f"session {sid!r} subject {subject!r} not a non-empty string"
             )
-        if not isinstance(seconds, (int, float)) or seconds < 0:
-            raise ValidationError(
-                rule="session_seconds", message=f"session {sid!r} seconds {seconds!r} not a non-negative number"
-            )
-        if not isinstance(ended_at, (int, float)):
-            raise ValidationError(
-                rule="session_ended_at", message=f"session {sid!r} ended_at_ms {ended_at!r} not a number"
-            )
+
+        if ended_at is None:
+            # In-progress session — must have a numeric start time.
+            if not isinstance(start_time, (int, float)):
+                raise ValidationError(
+                    rule="session_start_time",
+                    message=f"in-progress session {sid!r} start_time_ms {start_time!r} not a number",
+                )
+        else:
+            # Completed session — must have seconds ≥ 0 and numeric ended_at_ms.
+            if not isinstance(seconds, (int, float)) or seconds < 0:
+                raise ValidationError(
+                    rule="session_seconds", message=f"session {sid!r} seconds {seconds!r} not a non-negative number"
+                )
+            if not isinstance(ended_at, (int, float)):
+                raise ValidationError(
+                    rule="session_ended_at", message=f"session {sid!r} ended_at_ms {ended_at!r} not a number"
+                )
 
 
 ALL_VALIDATORS = (validate_credits_nonneg, validate_tokens_nonneg, validate_prize_catalog_shape, validate_session_shape)

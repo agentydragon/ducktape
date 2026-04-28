@@ -32,20 +32,23 @@ Multi-user: each authenticated user gets a separate SQLite database
 back to a single "default" user, keeping existing tests working.
 """
 
+import asyncio
 import base64
+import contextlib
 import logging
 import re
 import sys
+from collections import defaultdict
 from pathlib import Path
 from typing import Annotated
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from x.auragon_study_casino.auth import create_oidc_router, make_current_user_dep
+from x.auragon_study_casino.auth import create_oidc_router, decode_session_token, make_current_user_dep
 from x.auragon_study_casino.config import Settings
 from x.auragon_study_casino.store import Accepted, DocStore, Rejected
 
@@ -53,6 +56,27 @@ logger = logging.getLogger(__name__)
 
 # Only allow filesystem-safe characters in usernames to prevent path traversal.
 _SAFE_USERNAME = re.compile(r"^[a-zA-Z0-9._@-]{1,64}$")
+
+
+class _WSManager:
+    """Per-user WebSocket registry for server-push fan-out across tabs."""
+
+    def __init__(self) -> None:
+        self._connections: dict[str, set[WebSocket]] = defaultdict(set)
+
+    def add(self, username: str, ws: WebSocket) -> None:
+        self._connections[username].add(ws)
+
+    def remove(self, username: str, ws: WebSocket) -> None:
+        self._connections[username].discard(ws)
+
+    async def push(self, username: str, message: dict, exclude: WebSocket | None = None) -> None:
+        """Fan out `message` to every connected client for `username` except `exclude`."""
+        for ws in list(self._connections.get(username, ())):
+            if ws is exclude:
+                continue
+            with contextlib.suppress(Exception):
+                await ws.send_json(message)
 
 
 class SyncRequest(BaseModel):
@@ -91,6 +115,7 @@ def create_app(settings: Settings) -> FastAPI:
 
     oidc = settings.oidc_config()
     current_user_dep = make_current_user_dep(oidc.session_secret if oidc else None)
+    ws_manager = _WSManager()
 
     app = FastAPI(title="Study Casino", docs_url=None, redoc_url=None)
     app.state.current_user_dep = current_user_dep
@@ -113,6 +138,106 @@ def create_app(settings: Settings) -> FastAPI:
     @app.get("/me")
     def me(username: Annotated[str, Depends(current_user_dep)]) -> dict[str, str]:
         return {"username": username}
+
+    @app.websocket("/ws")
+    async def websocket_sync(ws: WebSocket) -> None:
+        """WebSocket sync endpoint.
+
+        Protocol (JSON, both directions):
+          Client → server: {"type":"sync","state_vector_b64":"...","update_b64":"..."}
+          Server → client: {"type":"accepted","update_b64":"...","state_vector_b64":"..."}
+                         | {"type":"rejected","rule":"...","message":"..."}
+                         | {"type":"server_push","update_b64":"..."}  (fan-out from another tab)
+                         | {"type":"error","code":N,"message":"..."}
+        """
+        # Auth: read the HMAC-signed session cookie from the WS upgrade request.
+        if oidc is not None:
+            casino_session = ws.cookies.get("casino_session")
+            if not casino_session:
+                await ws.close(code=4001, reason="not authenticated")
+                return
+            username = decode_session_token(casino_session, oidc.session_secret)
+            if username is None:
+                await ws.close(code=4001, reason="session invalid or expired")
+                return
+        else:
+            username = "default"
+
+        await ws.accept()
+        store = get_store(username)
+        ws_manager.add(username, ws)
+        logger.info("ws connected: user=%s", username)
+
+        # Bootstrap the client with the full canonical state immediately.
+        init_update, init_sv = await asyncio.to_thread(store.snapshot_for_client, None)
+        await ws.send_json(
+            {
+                "type": "accepted",
+                "update_b64": base64.b64encode(init_update).decode("ascii"),
+                "state_vector_b64": base64.b64encode(init_sv).decode("ascii"),
+            }
+        )
+
+        try:
+            while True:
+                try:
+                    data = await ws.receive_json()
+                except Exception:
+                    break
+
+                if data.get("type") != "sync":
+                    continue
+
+                try:
+                    client_sv = base64.b64decode(data.get("state_vector_b64") or "")
+                    client_update = base64.b64decode(data.get("update_b64") or "")
+                except (ValueError, TypeError) as e:
+                    await ws.send_json({"type": "error", "code": 400, "message": f"invalid base64: {e}"})
+                    continue
+
+                if not client_update:
+                    # Pure pull — no new data from client.
+                    srv_update, srv_sv = await asyncio.to_thread(store.snapshot_for_client, client_sv)
+                    await ws.send_json(
+                        {
+                            "type": "accepted",
+                            "update_b64": base64.b64encode(srv_update).decode("ascii"),
+                            "state_vector_b64": base64.b64encode(srv_sv).decode("ascii"),
+                        }
+                    )
+                    continue
+
+                result = await asyncio.to_thread(store.apply_client_update, client_update, client_sv)
+
+                if isinstance(result, Rejected):
+                    logger.info("ws sync rejected: user=%s rule=%s", username, result.rule)
+                    await ws.send_json({"type": "rejected", "rule": result.rule, "message": result.message})
+                    continue
+
+                assert isinstance(result, Accepted)
+                logger.info("ws sync accepted: user=%s", username)
+
+                await ws.send_json(
+                    {
+                        "type": "accepted",
+                        "update_b64": base64.b64encode(result.server_update).decode("ascii"),
+                        "state_vector_b64": base64.b64encode(result.server_state_vector).decode("ascii"),
+                    }
+                )
+
+                # Fan the full canonical state out to every other connected tab for this user.
+                full_update = await asyncio.to_thread(store.get_update_for_client, None)
+                await ws_manager.push(
+                    username,
+                    {"type": "server_push", "update_b64": base64.b64encode(full_update).decode("ascii")},
+                    exclude=ws,
+                )
+
+        except WebSocketDisconnect:
+            pass
+        finally:
+            ws_manager.remove(username, ws)
+            logger.info("ws disconnected: user=%s", username)
 
     @app.post("/sync", response_model=SyncSuccess)
     def sync(body: SyncRequest, username: Annotated[str, Depends(current_user_dep)]) -> SyncSuccess | JSONResponse:

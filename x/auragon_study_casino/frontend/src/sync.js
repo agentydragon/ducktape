@@ -1,30 +1,40 @@
 // CRDT-backed multi-device sync for the Study Casino.
 //
 // Architecture: one Y.Doc per running tab, persisted to IndexedDB by
-// `y-indexeddb`, synced to the server's canonical Y.Doc via HTTP polling
-// against POST /sync. The server speaks the same Yrs/Yjs binary update
-// format and gates writes through the Python validators in validators.py;
-// this module is the wire-format mirror.
+// `y-indexeddb`, synced to the server via a persistent WebSocket at /ws.
+// The server speaks the same Yrs/Yjs binary update format and gates writes
+// through the Python validators in validators.py; this module is the
+// wire-format mirror.
 //
 // The doc shape is documented in `x/auragon_study_casino/doc_shape.py` —
 // keep both in lockstep when adding fields:
 //
 //   doc.getMap("balance")    : { credits: number, tokens: number }
-//   doc.getMap("active")     : current live session, empty when none
-//   doc.getMap("sessions")   : id -> Y.Map({ subject, seconds, ended_at_ms })
+//   doc.getMap("sessions")   : id -> Y.Map — all sessions, in-progress or done.
+//                              In-progress: { subject, start_time_ms, paused,
+//                                            paused_duration_ms, pause_started_at_ms }
+//                              Completed:   { subject, seconds, ended_at_ms }
 //   doc.getMap("prizes")     : id -> Y.Map({ name, cost })
 //   doc.getArray("prize_log"): Y.Map({ id, name, cost, at_ms })
+//   doc.getMap("active")     : legacy map — kept for one-time migration only
 //
-// Error policy (called out in CLAUDE-PR review): the frontend never
-// silently swallows sync failures. Every network or validation error
-// surfaces through `casinoSync.status`; the SyncIcon in the header renders that store.
+// WebSocket protocol (JSON, both directions):
+//   client → server: { type:"sync", state_vector_b64, update_b64 }
+//   server → client: { type:"accepted", update_b64, state_vector_b64 }
+//                  | { type:"rejected", rule, message }
+//                  | { type:"server_push", update_b64 }   ← another tab synced
+//                  | { type:"error", code, message }
+//
+// Error policy: the frontend never silently swallows sync failures. Every
+// network or validation error surfaces through `casinoSync.status`; the
+// SyncIcon in the header renders that store.
 
 import * as Y from "yjs";
 import { IndexeddbPersistence } from "y-indexeddb";
 
-const SYNC_URL = "/sync";
-const POLL_INTERVAL_MS = 30_000;
 const PUSH_DEBOUNCE_MS = 200;
+const WS_RECONNECT_BASE_MS = 1_000;
+const WS_RECONNECT_MAX_MS = 30_000;
 const ORIGIN_REMOTE = Symbol("remote");
 
 const DEFAULT_PRIZES = [
@@ -80,10 +90,11 @@ class CasinoSync {
     // Declare the typed roots up front so `Y.applyUpdate` populates the
     // right handles. Mirrors the pycrdt `Casino` wrapper on the server.
     this.balance = this.doc.getMap("balance");
-    this.active = this.doc.getMap("active");
     this.sessions = this.doc.getMap("sessions");
     this.prizes = this.doc.getMap("prizes");
     this.prizeLog = this.doc.getArray("prize_log");
+    // Legacy map kept only for one-time migration of old in-progress sessions.
+    this.active = this.doc.getMap("active");
 
     // The state vector the server had at our last successful sync. We send
     // it on every push so the server can diff its missing changes for us.
@@ -96,10 +107,15 @@ class CasinoSync {
     this.rejection.set(null);
 
     this._pushTimer = null;
-    this._pollTimer = null;
-    this._undoManager = new Y.UndoManager([this.balance, this.active, this.sessions, this.prizes, this.prizeLog], {
-      // Only track *local* changes so a server-applied change doesn't get
-      // un-done by the rejection rollback below.
+    this._ws = null;
+    this._wsReady = false;
+    this._reconnectTimer = null;
+    this._reconnectDelay = WS_RECONNECT_BASE_MS;
+
+    // UndoManager tracks balance, sessions, prizes, and prize_log but NOT
+    // the legacy active map. Only local-origin changes are tracked so server
+    // updates don't enter the undo stack.
+    this._undoManager = new Y.UndoManager([this.balance, this.sessions, this.prizes, this.prizeLog], {
       trackedOrigins: new Set([null, undefined]),
     });
 
@@ -112,6 +128,7 @@ class CasinoSync {
     // from the server tunnel through with origin=ORIGIN_REMOTE and skip.
     this.doc.on("update", (_update, origin) => {
       if (origin === ORIGIN_REMOTE) return;
+      console.debug("[CasinoSync] local mutation detected, scheduling sync");
       this._scheduleSync();
     });
   }
@@ -127,27 +144,29 @@ class CasinoSync {
       if (resp.ok) {
         const data = await resp.json();
         username = data.username || "default";
+        console.debug("[CasinoSync] authenticated as", username);
       }
-    } catch {
-      // Network error during /me — proceed with "default"; /sync will fail
+    } catch (e) {
+      // Network error during /me — proceed with "default"; WS will fail
       // too and surface the offline state.
+      console.debug("[CasinoSync] /me fetch failed:", e.message);
     }
 
     const idbName = `casino-doc-v1-${username}`;
+    console.debug("[CasinoSync] opening IDB:", idbName);
     this.persistence = new IndexeddbPersistence(idbName, this.doc);
     this.persistence.once("synced", () => {
+      console.debug("[CasinoSync] IDB synced, seeding and connecting WS");
       this._seedDefaultPrizesIfEmpty();
-      this._startPolling();
-      this._scheduleSync();
+      this._migrateActiveSessions();
+      this._connectWebSocket();
     });
-    // Fallback: if IDB "synced" hasn't fired within 3 s (e.g. headless Chrome
-    // in a container where IDB initialisation stalls), start polling anyway so
-    // the app stays functional. _startPolling is idempotent; calling it a
-    // second time after the real "synced" event is a no-op.
+    // Fallback: if IDB hasn't fired "synced" within 3 s (e.g. headless
+    // Chrome in a container), connect anyway.
     setTimeout(() => {
-      if (!this._pollTimer) {
-        this._startPolling();
-        this._scheduleSync();
+      if (!this._ws) {
+        console.debug("[CasinoSync] IDB synced timeout — connecting WS anyway");
+        this._connectWebSocket();
       }
     }, 3000);
   }
@@ -166,125 +185,186 @@ class CasinoSync {
     });
   }
 
-  _startPolling() {
-    if (this._pollTimer) return;
-    this._pollTimer = setInterval(() => this.syncOnce(), POLL_INTERVAL_MS);
-    // Fire one sync the moment the tab regains focus / visibility so a
-    // newly-foregrounded device picks up other-device writes immediately.
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") this._scheduleSync();
+  // CLEANUP(2026-04-28): Remove once all clients have migrated. Moves any
+  // leftover session data from the old `active` Y.Map into the `sessions`
+  // map as an in-progress entry (no ended_at_ms).
+  _migrateActiveSessions() {
+    if (this.active.size === 0) return;
+    const hasInProgress = [...this.sessions.values()].some((m) => !m.get("ended_at_ms"));
+    if (hasInProgress) {
+      // New-style active session already present; just clear the legacy map.
+      console.debug("[CasinoSync] migration: legacy active map has data but new-style active exists, clearing legacy");
+      this.doc.transact(() => this.active.clear());
+      return;
+    }
+    const subject = this.active.get("subject");
+    if (!subject) {
+      this.doc.transact(() => this.active.clear());
+      return;
+    }
+    const id = `migrated-${Date.now()}`;
+    console.debug("[CasinoSync] migrating legacy active session to sessions:", { subject, id });
+    this.doc.transact(() => {
+      const sm = new Y.Map();
+      this.sessions.set(id, sm);
+      sm.set("subject", subject);
+      sm.set("start_time_ms", this.active.get("start_time_ms") ?? Date.now());
+      sm.set("paused", !!this.active.get("paused"));
+      sm.set("paused_duration_ms", this.active.get("paused_duration_ms") ?? 0);
+      sm.set("pause_started_at_ms", this.active.get("pause_started_at_ms") ?? null);
+      this.active.clear();
     });
+  }
+
+  _connectWebSocket() {
+    if (this._ws) return;
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    const url = `${proto}//${location.host}/ws`;
+    console.debug("[CasinoSync] connecting WebSocket:", url);
+
+    const ws = new WebSocket(url);
+    this._ws = ws;
+
+    ws.onopen = () => {
+      console.debug("[CasinoSync] WebSocket connected");
+      this._wsReady = true;
+      this._reconnectDelay = WS_RECONNECT_BASE_MS;
+      this.status.set({ kind: "syncing" });
+      // Server sends a full bootstrap snapshot on connect; no need to push here
+      // unless there are local-only changes the server hasn't seen yet.
+      this._scheduleSync();
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        this._handleMessage(msg);
+      } catch (e) {
+        console.debug("[CasinoSync] failed to parse message:", e.message);
+      }
+    };
+
+    ws.onclose = (event) => {
+      console.debug("[CasinoSync] WebSocket closed:", event.code, event.reason || "(no reason)");
+      this._ws = null;
+      this._wsReady = false;
+      if (event.code === 4001) {
+        // Auth failure — redirect rather than reconnect.
+        window.location.href = "/auth/login";
+        return;
+      }
+      this.status.set({ kind: "offline", reason: "disconnected, reconnecting…" });
+      this._scheduleReconnect();
+    };
+
+    ws.onerror = () => {
+      // Error details are not exposed by the WS spec; the close event follows.
+      console.debug("[CasinoSync] WebSocket error (close follows)");
+    };
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "visible") return;
+      if (this._wsReady) {
+        console.debug("[CasinoSync] tab foregrounded, syncing");
+        this._scheduleSync();
+      } else if (!this._reconnectTimer) {
+        console.debug("[CasinoSync] tab foregrounded, reconnecting");
+        this._connectWebSocket();
+      }
+    });
+  }
+
+  _scheduleReconnect() {
+    if (this._reconnectTimer) return;
+    const delay = this._reconnectDelay;
+    console.debug("[CasinoSync] scheduling reconnect in", delay, "ms");
+    this._reconnectTimer = setTimeout(() => {
+      this._reconnectTimer = null;
+      this._reconnectDelay = Math.min(this._reconnectDelay * 2, WS_RECONNECT_MAX_MS);
+      this._connectWebSocket();
+    }, delay);
   }
 
   _scheduleSync() {
     if (this._pushTimer) return;
     this._pushTimer = setTimeout(() => {
       this._pushTimer = null;
-      this.syncOnce();
+      this._doSync();
     }, PUSH_DEBOUNCE_MS);
   }
 
-  /** Run one round-trip against /sync. Errors land in `this.status`. */
-  async syncOnce() {
-    this.status.set({ kind: "syncing" });
-    // Y.encodeStateAsUpdate(doc, new Uint8Array()) throws in yjs 13.6/lib0 0.2 —
-    // an explicitly empty Uint8Array triggers a bounds-check failure when decoding
-    // the state vector. Pass undefined (= no state vector = full update) for the
-    // first sync when we haven't heard from the server yet.
+  _doSync() {
+    if (!this._wsReady || !this._ws) {
+      console.debug("[CasinoSync] sync skipped — WebSocket not ready");
+      return;
+    }
     const update = Y.encodeStateAsUpdate(this.doc, this.lastServerSV?.byteLength ? this.lastServerSV : undefined);
+    const sv = Y.encodeStateVector(this.doc);
+    console.debug("[CasinoSync] sending sync — update:", update.byteLength, "B, sv:", sv.byteLength, "B");
+    this.status.set({ kind: "syncing" });
+    this._ws.send(
+      JSON.stringify({
+        type: "sync",
+        state_vector_b64: bytesToB64(sv),
+        update_b64: bytesToB64(update),
+      })
+    );
+  }
 
-    let response;
-    try {
-      response = await fetch(SYNC_URL, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          state_vector_b64: bytesToB64(Y.encodeStateVector(this.doc)),
-          update_b64: bytesToB64(update),
-        }),
-      });
-    } catch (e) {
-      // Pure network error — DNS, TCP refused, CORS, offline.
-      this.status.set({ kind: "offline", reason: e.message ?? String(e) });
-      return;
-    }
+  _handleMessage(msg) {
+    console.debug("[CasinoSync] received:", msg.type);
 
-    if (response.status === 401) {
-      window.location.href = "/auth/login";
-      return;
-    }
-
-    if (response.status === 409) {
-      // Server rejected our update. Roll back the last local transaction
-      // via UndoManager so canonical state on this client matches the
-      // server's view, then surface the rejection.
-      //
-      // A single push can carry multiple local transactions (queued
-      // during the debounce window or accumulated while offline). The
-      // server validates the merged result, so a single `undo()` may
-      // leave invalid state behind — drain the entire local-origin
-      // undo stack before resyncing so the next round is built on the
-      // server's known-good view.
-      let body;
-      try {
-        body = await response.json();
-      } catch {
-        body = { rejection: { rule: "malformed", message: response.statusText } };
+    if (msg.type === "accepted") {
+      const serverUpdate = b64ToBytes(msg.update_b64);
+      if (serverUpdate.byteLength > 0) {
+        try {
+          Y.applyUpdate(this.doc, serverUpdate, ORIGIN_REMOTE);
+          console.debug("[CasinoSync] applied server update:", serverUpdate.byteLength, "B");
+        } catch (e) {
+          console.debug("[CasinoSync] corrupt server update:", e.message);
+          this.status.set({ kind: "offline", reason: `corrupt server update: ${e.message ?? String(e)}` });
+          return;
+        }
       }
+      const sv = b64ToBytes(msg.state_vector_b64);
+      this.lastServerSV = sv.byteLength > 0 ? sv : null;
+      // Clear the undo stack so changes already on the server can't be
+      // rolled back by a future 409 rejection of unrelated local edits.
+      this._undoManager.clear();
+      this.status.set({ kind: "ok", lastSyncedAt: Date.now() });
+    }
+
+    if (msg.type === "rejected") {
+      console.debug("[CasinoSync] sync rejected:", msg.rule, msg.message);
+      // Drain undo stack: only contains changes since the last successful
+      // sync (the clear() above keeps the stack bounded).
       while (this._undoManager.undoStack.length > 0) {
         this._undoManager.undo();
       }
-      this.rejection.set({
-        id: Date.now(),
-        rule: body.rejection?.rule ?? "unknown",
-        message: body.rejection?.message ?? "(no detail)",
-      });
-      this.status.set({
-        kind: "rejected",
-        rule: body.rejection?.rule ?? "unknown",
-        message: body.rejection?.message ?? "",
-      });
-      // Force a pull-only sync so the local doc realigns with canonical
-      // before the user retries the action.
-      this._scheduleSync();
-      return;
+      this.rejection.set({ id: Date.now(), rule: msg.rule, message: msg.message });
+      this.status.set({ kind: "rejected", rule: msg.rule, message: msg.message });
+      // Pull from server to realign before the user retries.
+      setTimeout(() => this._doSync(), 100);
     }
 
-    if (!response.ok) {
-      let detail = `HTTP ${response.status}`;
-      try {
-        const t = await response.text();
-        if (t) detail += `: ${t.slice(0, 200)}`;
-      } catch {
-        /* fall through */
-      }
-      this.status.set({ kind: "offline", reason: detail });
-      return;
-    }
-
-    let body;
-    try {
-      body = await response.json();
-    } catch (e) {
-      this.status.set({ kind: "offline", reason: `bad JSON from /sync: ${e.message}` });
-      return;
-    }
-
-    const serverUpdate = b64ToBytes(body.update_b64);
-    if (serverUpdate.byteLength > 0) {
-      try {
-        // Apply with a remote origin tag so our own update listener doesn't
-        // bounce it back at the server.
-        Y.applyUpdate(this.doc, serverUpdate, ORIGIN_REMOTE);
-      } catch (e) {
-        this.status.set({ kind: "offline", reason: `corrupt server update: ${e.message ?? String(e)}` });
-        return;
+    if (msg.type === "server_push") {
+      const serverUpdate = b64ToBytes(msg.update_b64);
+      if (serverUpdate.byteLength > 0) {
+        try {
+          Y.applyUpdate(this.doc, serverUpdate, ORIGIN_REMOTE);
+          console.debug("[CasinoSync] applied server push:", serverUpdate.byteLength, "B");
+        } catch (e) {
+          console.debug("[CasinoSync] server push error:", e.message);
+        }
       }
     }
-    const sv = b64ToBytes(body.state_vector_b64);
-    this.lastServerSV = sv.byteLength > 0 ? sv : null;
-    this.status.set({ kind: "ok", lastSyncedAt: Date.now() });
+
+    if (msg.type === "error") {
+      console.debug("[CasinoSync] server error:", msg.code, msg.message);
+      if (msg.code === 401) {
+        window.location.href = "/auth/login";
+      }
+    }
   }
 
   /** Run a transaction. All UI mutations go through here so the UndoManager

@@ -62,5 +62,26 @@ def test_negative_session_seconds_rejected() -> None:
     assert exc_info.value.rule == "session_seconds"
 
 
+def test_in_progress_session_passes() -> None:
+    casino = Casino.empty()
+    casino.sessions["active-1"] = Map()
+    casino.sessions["active-1"]["subject"] = "Biochem"
+    casino.sessions["active-1"]["start_time_ms"] = 1_700_000_000_000
+    casino.sessions["active-1"]["paused"] = False
+    casino.sessions["active-1"]["paused_duration_ms"] = 0
+    # No ended_at_ms — in-progress
+    validate(casino)  # must not raise
+
+
+def test_in_progress_session_without_start_time_rejected() -> None:
+    casino = Casino.empty()
+    casino.sessions["active-1"] = Map()
+    casino.sessions["active-1"]["subject"] = "Biochem"
+    # No start_time_ms and no ended_at_ms — malformed in-progress session
+    with pytest.raises(ValidationError) as exc_info:
+        validate(casino)
+    assert exc_info.value.rule == "session_start_time"
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

@@ -9,11 +9,13 @@ here must be mirrored in `frontend/src/sync.js`.
 Top-level keys are all on a single root `Doc`:
 
   balance   : Y.Map        # {"credits": int, "tokens": int}
-  active    : Y.Map        # current live study session, or empty when none:
-                           #   {"subject": str, "start_time_ms": int,
-                           #    "paused": bool, "paused_duration_ms": int,
-                           #    "pause_started_at_ms": int|None}
-  sessions  : Y.Map[str, Y.Map]   # completed sessions, keyed by client-generated id:
+  active    : Y.Map        # legacy — kept for migration only; new sessions use `sessions`
+  sessions  : Y.Map[str, Y.Map]   # all sessions, keyed by client-generated id.
+                                  # In-progress (no ended_at_ms):
+                                  #   {"subject": str, "start_time_ms": int,
+                                  #    "paused": bool, "paused_duration_ms": int,
+                                  #    "pause_started_at_ms": int|None}
+                                  # Completed (ended_at_ms set):
                                   #   {"subject": str, "seconds": int, "ended_at_ms": int}
   prizes    : Y.Map[str, Y.Map]   # prize catalog, keyed by prize id:
                                   #   {"name": str, "cost": int}

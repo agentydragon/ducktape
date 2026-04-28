@@ -50,40 +50,35 @@ bindings) are managed by TF at
 
 Y-CRDT, server-authoritative validation. The server holds one Y.Doc
 in memory and persists it as a single binary update blob in SQLite.
-Clients (the Yjs `Y.Doc` running in the React PWA) sync their local
-doc via `POST /sync`, sending base64-encoded
-`{state_vector_b64, update_b64}`:
+Clients sync via a persistent WebSocket at `/ws` (JSON, both directions):
 
-- Server: clones canonical → applies the client update on the trial
-  → runs every validator → on success promotes trial to canonical
-  and persists, then returns the binary diff the client still needs;
-  on failure leaves canonical untouched and returns a 409 with a
-  `{rejection: {rule, message}}` payload.
-- Client: applies the returned server update, surfaces a toast for
-  rejections, and rolls back the offending transaction via
-  `Y.UndoManager` so the local Doc always matches canonical.
+- Client → server: `{"type":"sync","state_vector_b64":"...","update_b64":"..."}`
+- Server → client: `{"type":"accepted",...}` | `{"type":"rejected","rule","message"}`
+  | `{"type":"server_push",...}` (fan-out to other tabs when one tab syncs)
+
+On acceptance the client clears its `Y.UndoManager` undo stack so
+already-synced changes can't be rolled back by a later rejection.
+On rejection the stack (which only contains post-last-sync changes) is
+drained, and the client pulls fresh state from the server.
 
 Document shape — mirrored verbatim between `doc_shape.py` (server)
 and `frontend/src/sync.js` (client):
 
 ```
 balance   : Y.Map { credits: number, tokens: number }
-active    : Y.Map (current live session, or empty when none)
-sessions  : Y.Map[id, Y.Map { subject, seconds, ended_at_ms }]
+sessions  : Y.Map[id, Y.Map] — all sessions, in-progress or completed
+            in-progress (no ended_at_ms): { subject, start_time_ms,
+              paused, paused_duration_ms, pause_started_at_ms }
+            completed: { subject, seconds, ended_at_ms }
 prizes    : Y.Map[id, Y.Map { name, cost }]
 prize_log : Y.Array[Y.Map { id, name, cost, at_ms }]
+active    : Y.Map — legacy, kept for one-time migration only
 ```
 
 CRDTs guarantee convergence but not business rules — the server's
 validators (credits ≥ 0, tokens ≥ 0, prize shape, session shape) are
 the only thing keeping the casino's economy honest. See
 <validators.py> for the rule list and the rejection contract.
-
-The service worker serves the app shell offline but bypasses the
-cache for `/sync` so a stale GET can't defeat cross-device sync.
-While offline, mutations stay in the local Y.Doc + IndexedDB and
-replay on reconnect; the SyncBanner UI surfaces "offline" and any
-rejection so failures are never silent.
 
 ## Build
 
