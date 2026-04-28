@@ -15,9 +15,9 @@ for i in $(seq 15); do
   sleep 2
 done
 
-token=$(kubectl get secret -n authentik claude-authentik-api-token \
+token=$(kubectl get secret -n claude-sandbox claude-authentik-api-token \
   -o "jsonpath={.data.token}" 2>/dev/null | base64 -d 2>/dev/null) || true
-url=$(kubectl get secret -n authentik claude-authentik-api-token \
+url=$(kubectl get secret -n claude-sandbox claude-authentik-api-token \
   -o "jsonpath={.data.url}" 2>/dev/null | base64 -d 2>/dev/null) || true
 
 if [ -z "${token:-}" ]; then
