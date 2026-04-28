@@ -14,5 +14,3 @@ resources:
   - rolebinding-ollama-reader.yaml
   - rolebinding-langfuse-reader.yaml
   - rolebinding-openclaw-reader.yaml
-  - role-authentik-token-reader.yaml
-  - rolebinding-authentik-token-reader.yaml

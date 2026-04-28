@@ -40,7 +40,6 @@ Namespaced Roles + RoleBindings for specific namespaces:
 - Namespace diagnostics (pods, logs, services, configmaps, PVCs, events, deployments, replicasets, statefulsets) in harbor, gatus, authentik-mcp-poc, csi-proxmox, openebs, proxmox-proxy, cnpg-system, nvidia-device-plugin, node-feature-discovery, local-path-storage, cert-manager, litellm, docker-ci, matrix, grocy-sf, grocy-vallejo
 - Extended read in langfuse, ollama (read + consumer), openclaw, props (+ jobs, constrained secrets)
 - Logs/configmaps in monitoring, kube-system, longhorn-system, flux-system, grocy-sf, grocy-vallejo, airlock, authentik
-- `get` on secret `claude-authentik-api-token` in `authentik` namespace (<role-authentik-token-reader.yaml>, <rolebinding-authentik-token-reader.yaml>): the API token for the `claude-service-account` Authentik service account, written by the `sso-providers` Terraform module. Loaded into `AUTHENTIK_API_TOKEN` by the `authentik service account token` background task in the web profile.
 
 ## Authentication
 
