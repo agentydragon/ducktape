@@ -46,7 +46,7 @@ session and recommend `~/.bashrc` for persistence into the agent phase.
 2. Installs Nix (Determinate installer) if missing.
 3. Installs the repo `.#devtools` profile.
 4. Installs repo pre-commit Git hooks (`pre-commit install --install-hooks`).
-5. Persists nix profile sourcing in `~/.bashrc` and ensures `~/.bash_profile` sources `~/.bashrc`, so login and interactive shells get Nix tools on `PATH` once.
+5. Persists nix profile sourcing in `~/.bashrc`, prepends Nix profile bins on `PATH` (so Nix-provided tooling like Prettier wins over user-level installs), and ensures `~/.bash_profile` sources `~/.bashrc`.
 6. Decrypts BuildBuddy API key from SOPS (when possible) and runs `devinfra/setup_buildbuddy.sh`.
 7. Configures BuildBuddy remote selection:
    - uses `origin` when it already points directly to GitHub

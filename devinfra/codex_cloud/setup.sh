@@ -34,7 +34,13 @@ SOPS_RUNTIME_READY=0
 ensure_line() {
   local line="$1"
   local file="$2"
-  grep -Fqx "$line" "$file" 2>/dev/null || echo "$line" >>"$file"
+  if grep -Fqx "$line" "$file" 2>/dev/null; then
+    return 0
+  fi
+  if [ -s "$file" ] && [ "$(tail -c1 "$file" 2>/dev/null || true)" != "" ]; then
+    echo >>"$file"
+  fi
+  echo "$line" >>"$file"
 }
 
 init_sops_runtime_prereqs() {
@@ -221,6 +227,7 @@ persist_agent_shell_init() {
   if [ -f "$NIX_DAEMON_PROFILE_SH" ]; then
     log "persisting nix-daemon profile sourcing into ~/.bashrc"
     ensure_line ". ${NIX_DAEMON_PROFILE_SH}" "$shell_file"
+    ensure_line 'export PATH="$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$PATH"' "$shell_file"
   fi
 
   if [ -n "${SOPS_AGE_KEY:-}" ]; then
@@ -272,6 +279,7 @@ case "$MODE" in
     log "refreshing git remotes"
     git fetch --all --prune
     run_common_setup_steps
+    persist_agent_shell_init
     validate_core_tools
     ;;
   *)
