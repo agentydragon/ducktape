@@ -46,7 +46,7 @@ session and recommend `~/.bashrc` for persistence into the agent phase.
 2. Installs Nix (Determinate installer) if missing.
 3. Installs the repo `.#devtools` profile.
 4. Installs repo pre-commit Git hooks (`pre-commit install --install-hooks`).
-5. Persists nix profile sourcing in `~/.bashrc` and ensures `~/.bash_profile` sources `~/.bashrc`, so login and interactive shells get Nix tools on `PATH` once.
+5. Persists nix profile sourcing in `~/.bashrc`, prepends Nix profile bins on `PATH` (so Nix-provided tooling like Prettier wins over user-level installs), and ensures `~/.bash_profile` sources `~/.bashrc`.
 6. Decrypts BuildBuddy API key from SOPS (when possible) and runs `devinfra/setup_buildbuddy.sh`.
 7. Configures BuildBuddy remote selection:
    - uses `origin` when it already points directly to GitHub
@@ -56,7 +56,7 @@ session and recommend `~/.bashrc` for persistence into the agent phase.
    - `~/.config/bazel/bbr.bazelrc` for BuildBuddy metadata (`ROLE`, session tag)
    - `~/.config/bazel/codex.bazelrc` with `try-import` wiring for BuildBuddy + bbr metadata
    - `~/.bazelrc` `try-import` entry for `~/.config/bazel/codex.bazelrc`
-9. Ensures local `devel` branch exists (from `github-no-proxy/devel` or `origin/devel` when available) so `bbr` base-branch detection works.
+9. Ensures local `devel` branch exists and tracks a remote `devel` branch (preferring the selected BuildBuddy remote, with fallback to `origin/devel` or `github-no-proxy/devel`) so `bbr` base-branch detection works.
 10. Materializes `~/.kube/config` from `secrets/claude-web-k8s-jwt.yaml` via the Nix-managed Python interpreter (`~/.nix-profile/bin/python3 devinfra/k8s/kubeconfig.py`) so `pyyaml` is present consistently.
 11. Persists `SOPS_AGE_KEY`, Bazel env vars (`BBR_BAZELRC`, `SESSION_BAZELRC`), and runtime `web_env.sh` sourcing into shell startup files so agent command shells rehydrate `BUILDBUDDY_API_KEY` and use the generated bazelrc files.
 
@@ -88,4 +88,40 @@ pre-commit hooks, then validates `bb` / `bbr` availability.
 
 ```bash
 bash -n devinfra/codex_cloud/setup.sh
+```
+
+## Passing env vars in Codex command runs
+
+In this Codex execution environment, each command runs in a fresh non-login
+shell process. That means:
+
+- `export FOO=bar` in one command does **not** persist to the next command.
+- `~/.bashrc` updates are persisted to disk, but are not automatically loaded by
+  subsequent command executions.
+
+Practical implication: pass required env vars per command invocation (or via a
+wrapper script that sets env and executes the command) rather than relying on a
+previous command's `export`.
+
+Examples:
+
+```bash
+# One-off per command
+SOPS_AGE_KEY="$SOPS_AGE_KEY" bbr test //path/to:target
+
+# Multiple vars, single invocation
+BUILDBUDDY_API_KEY="$BUILDBUDDY_API_KEY" \
+BBR_BAZELRC="$HOME/.config/bazel/bbr.bazelrc" \
+bbr build //devinfra:bbr
+
+# Wrapper script pattern
+cat > /tmp/run-with-env.sh <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+export BBR_BAZELRC="$HOME/.config/bazel/bbr.bazelrc"
+export SESSION_BAZELRC="$HOME/.config/bazel/codex.bazelrc"
+exec "$@"
+EOF
+chmod +x /tmp/run-with-env.sh
+/tmp/run-with-env.sh bbr test //devinfra:all
 ```
