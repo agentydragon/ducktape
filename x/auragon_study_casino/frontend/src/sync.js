@@ -131,6 +131,19 @@ class CasinoSync {
       console.debug("[CasinoSync] local mutation detected, scheduling sync");
       this._scheduleSync();
     });
+
+    // Register the visibility listener once here — not inside _connectWebSocket
+    // (which is called on every reconnect) to avoid accumulating duplicate handlers.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "visible") return;
+      if (this._ws?.readyState === WebSocket.OPEN) {
+        console.debug("[CasinoSync] tab foregrounded, syncing");
+        this._scheduleSync();
+      } else if (!this._reconnectTimer) {
+        console.debug("[CasinoSync] tab foregrounded, reconnecting");
+        this._connectWebSocket();
+      }
+    });
   }
 
   async _init() {
@@ -261,17 +274,6 @@ class CasinoSync {
       // Error details are not exposed by the WS spec; the close event follows.
       console.debug("[CasinoSync] WebSocket error (close follows)");
     };
-
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState !== "visible") return;
-      if (this._wsReady) {
-        console.debug("[CasinoSync] tab foregrounded, syncing");
-        this._scheduleSync();
-      } else if (!this._reconnectTimer) {
-        console.debug("[CasinoSync] tab foregrounded, reconnecting");
-        this._connectWebSocket();
-      }
-    });
   }
 
   _scheduleReconnect() {
@@ -294,21 +296,29 @@ class CasinoSync {
   }
 
   _doSync() {
-    if (!this._wsReady || !this._ws) {
-      console.debug("[CasinoSync] sync skipped — WebSocket not ready");
+    if (!this._ws || this._ws.readyState !== WebSocket.OPEN) {
+      console.debug("[CasinoSync] sync skipped — WebSocket not open");
       return;
     }
     const update = Y.encodeStateAsUpdate(this.doc, this.lastServerSV?.byteLength ? this.lastServerSV : undefined);
     const sv = Y.encodeStateVector(this.doc);
     console.debug("[CasinoSync] sending sync — update:", update.byteLength, "B, sv:", sv.byteLength, "B");
     this.status.set({ kind: "syncing" });
-    this._ws.send(
-      JSON.stringify({
-        type: "sync",
-        state_vector_b64: bytesToB64(sv),
-        update_b64: bytesToB64(update),
-      })
-    );
+    try {
+      this._ws.send(
+        JSON.stringify({
+          type: "sync",
+          state_vector_b64: bytesToB64(sv),
+          update_b64: bytesToB64(update),
+        })
+      );
+    } catch (e) {
+      console.debug("[CasinoSync] send failed:", e.message);
+      this._wsReady = false;
+      this.status.set({ kind: "offline", reason: "send failed, reconnecting…" });
+      this._ws = null;
+      this._scheduleReconnect();
+    }
   }
 
   _handleMessage(msg) {
@@ -357,6 +367,9 @@ class CasinoSync {
           console.debug("[CasinoSync] server push error:", e.message);
         }
       }
+      // Re-sync to exchange our state vector so lastServerSV stays current and
+      // the server knows what we now have (avoids redundant re-push of stale ops).
+      this._scheduleSync();
     }
 
     if (msg.type === "error") {

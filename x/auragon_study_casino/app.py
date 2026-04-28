@@ -34,7 +34,6 @@ back to a single "default" user, keeping existing tests working.
 
 import asyncio
 import base64
-import contextlib
 import logging
 import re
 import sys
@@ -57,6 +56,9 @@ logger = logging.getLogger(__name__)
 # Only allow filesystem-safe characters in usernames to prevent path traversal.
 _SAFE_USERNAME = re.compile(r"^[a-zA-Z0-9._@-]{1,64}$")
 
+# Maximum base64 payload length accepted over WebSocket — matches HTTP /sync.
+_WS_PAYLOAD_LIMIT = 4 * 1024 * 1024
+
 
 class _WSManager:
     """Per-user WebSocket registry for server-push fan-out across tabs."""
@@ -72,11 +74,16 @@ class _WSManager:
 
     async def push(self, username: str, message: dict, exclude: WebSocket | None = None) -> None:
         """Fan out `message` to every connected client for `username` except `exclude`."""
+        dead: list[WebSocket] = []
         for ws in list(self._connections.get(username, ())):
             if ws is exclude:
                 continue
-            with contextlib.suppress(Exception):
+            try:
                 await ws.send_json(message)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            self._connections[username].discard(ws)
 
 
 class SyncRequest(BaseModel):
@@ -188,9 +195,15 @@ def create_app(settings: Settings) -> FastAPI:
                 if data.get("type") != "sync":
                     continue
 
+                sv_raw = data.get("state_vector_b64") or ""
+                upd_raw = data.get("update_b64") or ""
+                if len(sv_raw) > _WS_PAYLOAD_LIMIT or len(upd_raw) > _WS_PAYLOAD_LIMIT:
+                    await ws.send_json({"type": "error", "code": 413, "message": "payload too large"})
+                    continue
+
                 try:
-                    client_sv = base64.b64decode(data.get("state_vector_b64") or "")
-                    client_update = base64.b64decode(data.get("update_b64") or "")
+                    client_sv = base64.b64decode(sv_raw)
+                    client_update = base64.b64decode(upd_raw)
                 except (ValueError, TypeError) as e:
                     await ws.send_json({"type": "error", "code": 400, "message": f"invalid base64: {e}"})
                     continue

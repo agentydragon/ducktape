@@ -137,5 +137,87 @@ def test_users_have_isolated_state(tmp_path: Path) -> None:
         assert (tmp_path / "casino-bob.db").exists()
 
 
+@pytest.fixture
+def ws_client(tmp_path: Path) -> TestClient:
+    settings = Settings(data_dir=tmp_path, frontend_dist_dir=tmp_path / "nonexistent_dist")
+    return TestClient(create_app(settings))
+
+
+def test_ws_bootstrap_on_connect(ws_client: TestClient) -> None:
+    """Server sends an 'accepted' bootstrap snapshot immediately on WS connect."""
+    with ws_client.websocket_connect("/ws") as ws:
+        msg = ws.receive_json()
+    assert msg["type"] == "accepted"
+    update = _unb64(msg["update_b64"])
+    casino = Casino.from_update(update)
+    assert int(casino.balance["credits"]) == 0
+    assert len(casino.prizes) > 0
+
+
+def test_ws_sync_accepted(ws_client: TestClient) -> None:
+    """Client pushes a credit mutation; server accepts and returns its state vector."""
+    with ws_client.websocket_connect("/ws") as ws:
+        boot = ws.receive_json()
+        casino = Casino.from_update(_unb64(boot["update_b64"]))
+        sv_before = casino.get_state()
+        casino.balance["credits"] = 42
+        ws.send_json(
+            {"type": "sync", "state_vector_b64": _b64(sv_before), "update_b64": _b64(casino.get_update(sv_before))}
+        )
+        msg = ws.receive_json()
+    assert msg["type"] == "accepted"
+    assert msg["state_vector_b64"]  # non-empty SV returned
+
+
+def test_ws_sync_rejected(ws_client: TestClient) -> None:
+    """Server rejects a sync that would make credits negative."""
+    with ws_client.websocket_connect("/ws") as ws:
+        boot = ws.receive_json()
+        casino = Casino.from_update(_unb64(boot["update_b64"]))
+        sv_before = casino.get_state()
+        casino.balance["credits"] = -1
+        ws.send_json(
+            {"type": "sync", "state_vector_b64": _b64(sv_before), "update_b64": _b64(casino.get_update(sv_before))}
+        )
+        msg = ws.receive_json()
+    assert msg["type"] == "rejected"
+    assert msg["rule"] == "credits_nonneg"
+
+
+def test_ws_server_push_to_other_tab(tmp_path: Path) -> None:
+    """When one tab syncs successfully, other tabs receive a server_push."""
+    settings = Settings(data_dir=tmp_path, frontend_dist_dir=tmp_path / "nonexistent_dist")
+    app = create_app(settings)
+    with TestClient(app) as client, client.websocket_connect("/ws") as ws1, client.websocket_connect("/ws") as ws2:
+        # Drain bootstrap messages.
+        boot1 = ws1.receive_json()
+        _ws2_boot = ws2.receive_json()
+
+        casino = Casino.from_update(_unb64(boot1["update_b64"]))
+        sv_before = casino.get_state()
+        casino.balance["credits"] = 7
+        ws1.send_json(
+            {"type": "sync", "state_vector_b64": _b64(sv_before), "update_b64": _b64(casino.get_update(sv_before))}
+        )
+        # ws1 should receive accepted; ws2 should receive server_push.
+        accepted = ws1.receive_json()
+        push = ws2.receive_json()
+
+    assert accepted["type"] == "accepted"
+    assert push["type"] == "server_push"
+    pushed_casino = Casino.from_update(_unb64(push["update_b64"]))
+    assert int(pushed_casino.balance["credits"]) == 7
+
+
+def test_ws_payload_too_large(ws_client: TestClient) -> None:
+    """Server rejects payloads larger than the 4 MiB limit."""
+    with ws_client.websocket_connect("/ws") as ws:
+        ws.receive_json()  # drain bootstrap
+        ws.send_json({"type": "sync", "state_vector_b64": "", "update_b64": "A" * (4 * 1024 * 1024 + 1)})
+        msg = ws.receive_json()
+    assert msg["type"] == "error"
+    assert msg["code"] == 413
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

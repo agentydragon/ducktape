@@ -82,10 +82,7 @@ export function useCasino() {
   // server rejection rolls back the whole user-visible action.
 
   const startSession = (subject) => {
-    // Store the in-progress session in the sessions map with no ended_at_ms.
-    // This keeps the active session durable through sync cycles and prevents
-    // the UndoManager drain on a 409 rejection from losing already-synced
-    // session starts (the undo stack is cleared after every successful sync).
+    if (activeSession) return; // one session at a time — illegal to start while one is running
     const id = `active-${Date.now()}`;
     casinoSync.mutate(() => {
       const sm = new Y.Map();
@@ -132,11 +129,16 @@ export function useCasino() {
     const sec = elapsedSeconds(activeSession);
     const min = Math.floor(sec / 60);
     casinoSync.mutate(() => {
+      if (sec <= 0) {
+        // Zero-elapsed sessions are discarded rather than creating noise in history.
+        casinoSync.sessions.delete(activeSession.id);
+        return;
+      }
       const m = casinoSync.sessions.get(activeSession.id);
       if (!m) return;
       m.set("seconds", sec);
       m.set("ended_at_ms", Date.now());
-      // Clear the in-progress fields to keep the completed entry compact.
+      // Clear in-progress fields to keep the completed entry compact.
       m.delete("start_time_ms");
       m.delete("paused");
       m.delete("paused_duration_ms");
