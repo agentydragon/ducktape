@@ -37,10 +37,35 @@ locals {
   ])
 }
 
-resource "authentik_rbac_permission_user" "claude_diagnostics" {
-  for_each   = local.claude_diagnostics_permissions
-  user       = tonumber(authentik_user.claude_service_account.id)
-  permission = each.value
+# authentik_rbac_permission_user has a read-after-create bug in goauthentik/authentik
+# ~> 2025.10: POST succeeds but the immediate GET-by-ID returns 404, causing
+# "Provider produced inconsistent result after apply" on every run.
+# Work around by calling the Authentik API directly from the TF runner pod
+# (in-cluster access to authentik-server.svc) via null_resource local-exec.
+resource "null_resource" "claude_diagnostics_permissions" {
+  triggers = {
+    user_id     = authentik_user.claude_service_account.id
+    permissions = join(",", sort(tolist(local.claude_diagnostics_permissions)))
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      echo "$PERMISSIONS" | tr ',' '\n' | while IFS= read -r perm; do
+        status=$(curl -s -o /dev/null -w "%%{http_code}" \
+          -X POST \
+          -H "Authorization: Bearer $AUTHENTIK_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d "{\"user\": $USER_ID, \"permission\": \"$perm\"}" \
+          "http://authentik-server.authentik.svc.cluster.local/api/v3/rbac/permissions/users/")
+        echo "permission $perm: HTTP $status"
+      done
+    EOT
+    environment = {
+      AUTHENTIK_TOKEN = data.kubernetes_secret.authentik_bootstrap.data["AUTHENTIK_BOOTSTRAP_TOKEN"]
+      USER_ID         = tostring(tonumber(authentik_user.claude_service_account.id))
+      PERMISSIONS     = join(",", sort(tolist(local.claude_diagnostics_permissions)))
+    }
+  }
 }
 
 resource "authentik_token" "claude_api" {
