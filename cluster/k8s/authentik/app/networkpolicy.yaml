@@ -78,3 +78,13 @@ spec:
         - ports:
             - port: "9000"
               protocol: TCP
+
+    # claude-sandbox: Claude agent reads Authentik API (events, apps, users,
+    # outposts, flows, policies) via AUTHENTIK_API_TOKEN loaded at session start
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: claude-sandbox
+      toPorts:
+        - ports:
+            - port: "9000"
+              protocol: TCP
