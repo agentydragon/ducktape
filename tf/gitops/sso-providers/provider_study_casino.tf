@@ -38,6 +38,15 @@ resource "authentik_provider_oauth2" "study_casino" {
   ]
 }
 
+# The application was created by the blueprint before TF took over management
+# (PR #1411). Import adopts the existing object; TF will reconcile attrs.
+# Policy bindings below may create duplicates of blueprint-created bindings —
+# those orphans are harmless and can be cleaned from the Authentik admin UI.
+import {
+  to = authentik_application.study_casino
+  id = "study-casino"
+}
+
 resource "authentik_application" "study_casino" {
   name              = "Study Casino"
   slug              = "study-casino"
