@@ -37,35 +37,31 @@ locals {
   ])
 }
 
-# authentik_rbac_permission_user has a read-after-create bug in goauthentik/authentik
-# ~> 2025.10: POST succeeds but the immediate GET-by-ID returns 404, causing
-# "Provider produced inconsistent result after apply" on every run.
-# Work around by calling the Authentik API directly from the TF runner pod
-# (in-cluster access to authentik-server.svc) via null_resource local-exec.
-resource "null_resource" "claude_diagnostics_permissions" {
-  triggers = {
-    user_id     = authentik_user.claude_service_account.id
-    permissions = join(",", sort(tolist(local.claude_diagnostics_permissions)))
-  }
+# authentik_rbac_permission_user is broken in ~> 2025.10: the provider's Read
+# function calls GET /api/v3/rbac/permissions/users/{id}/ but Authentik never
+# implemented a retrieve-by-ID endpoint for user permissions (list-only), so
+# every apply fails with "Provider produced inconsistent result after apply".
+# In 2026.x the maintainer acknowledged this by hollowing the resource out with
+# schema.NoopContext and marking it deprecated in favour of authentik_rbac_permission_role.
+#
+# Fix: use the role-based approach. A role is assigned permissions via
+# authentik_rbac_permission_role (which has a working retrieve endpoint), and
+# the service account is placed in a group that carries the role.
 
-  provisioner "local-exec" {
-    command = <<-EOT
-      echo "$PERMISSIONS" | tr ',' '\n' | while IFS= read -r perm; do
-        status=$(curl -s -o /dev/null -w "%%{http_code}" \
-          -X POST \
-          -H "Authorization: Bearer $AUTHENTIK_TOKEN" \
-          -H "Content-Type: application/json" \
-          -d "{\"user\": $USER_ID, \"permission\": \"$perm\"}" \
-          "http://authentik-server.authentik.svc.cluster.local/api/v3/rbac/permissions/users/")
-        echo "permission $perm: HTTP $status"
-      done
-    EOT
-    environment = {
-      AUTHENTIK_TOKEN = data.kubernetes_secret.authentik_bootstrap.data["AUTHENTIK_BOOTSTRAP_TOKEN"]
-      USER_ID         = tostring(tonumber(authentik_user.claude_service_account.id))
-      PERMISSIONS     = join(",", sort(tolist(local.claude_diagnostics_permissions)))
-    }
-  }
+resource "authentik_rbac_role" "claude_diagnostics" {
+  name = "claude-diagnostics"
+}
+
+resource "authentik_rbac_permission_role" "claude_diagnostics" {
+  for_each   = local.claude_diagnostics_permissions
+  role       = authentik_rbac_role.claude_diagnostics.id
+  permission = each.value
+}
+
+resource "authentik_group" "claude_diagnostics" {
+  name  = "claude-diagnostics"
+  roles = [authentik_rbac_role.claude_diagnostics.id]
+  users = [tonumber(authentik_user.claude_service_account.id)]
 }
 
 resource "authentik_token" "claude_api" {
