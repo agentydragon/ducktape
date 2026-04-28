@@ -70,3 +70,8 @@ x/k8s_old/** rules-lint-ignored=true
 # TODO: Delete legacy_* roles once all machines switch to Nix home-manager
 ansible/roles/legacy_*/** rules-lint-ignored=true
 tana/export/references/** rules-lint-ignored=true
+
+# Skill-eval rollout artifacts: transcripts, agent-produced workspaces,
+# model-written code under work_*/. Verbatim records of the rollout, not
+# source — exempt from formatters/linters.
+skills/*/evals/runs/*/rollouts/** rules-lint-ignored=true
