@@ -2,14 +2,14 @@
 #
 # Permissions grant visibility into Authentik state (events, apps, users,
 # outposts, flows, policies) without exposing credential material.
-# The API token is written to a K8s secret in the authentik namespace;
-# the claude-rbac RBAC grants Claude's kubectl identity a get on that
-# specific secret so the session start hook can load it.
+# The API token is written to a K8s secret in the authentik namespace and
+# reflected into claude-sandbox by Reflector for the session hook to load.
 
 resource "authentik_user" "claude_service_account" {
   username = "claude-service-account"
   name     = "Claude Agent (diagnostics)"
   type     = "service_account"
+  path     = "goauthentik.io/service-accounts"
 }
 
 locals {
@@ -45,7 +45,7 @@ resource "authentik_rbac_permission_user" "claude_diagnostics" {
 
 resource "authentik_token" "claude_api" {
   identifier   = "claude-diagnostics-api-token"
-  user         = authentik_user.claude_service_account.username
+  user         = authentik_user.claude_service_account.id
   intent       = "api"
   description  = "Read-only diagnostic API token for Claude agent"
   expiring     = false
