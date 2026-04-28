@@ -45,25 +45,5 @@ resource "github_actions_secret" "sops_age_key_gaffer_private" {
   plaintext_value = data.kubernetes_secret.ci_age_key.data["age-key"]
 }
 
-# CLEANUP(2026-04-09): Old per-secret GHA secrets replaced by SOPS_AGE_KEY.
-# Remove these blocks once GHA workflows are confirmed working with SOPS
-# decryption and the old secrets are deleted from GitHub.
-removed {
-  from = github_actions_secret.buildbuddy_api_key
-  lifecycle { destroy = true }
-}
-removed {
-  from = github_actions_secret.props_registry_username
-  lifecycle { destroy = true }
-}
-removed {
-  from = github_actions_secret.props_registry_password
-  lifecycle { destroy = true }
-}
-removed {
-  from = github_actions_secret.attic_token
-  lifecycle { destroy = true }
-}
-
 # Data sources for harbor_ci_robot, buildbuddy_api_key, attic_push_token
 # were removed (no `removed` block needed for data sources — just delete).

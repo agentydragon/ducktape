@@ -39,13 +39,12 @@ Lives at <https://casino.allegedly.works>.
 
 ## Auth
 
-Forward-auth via Authentik's embedded proxy outpost. The backend reads
-`X-Authentik-Username` purely for logging; there is no per-user scoping
-because this is a single-user app. See
-`cluster/k8s/authentik/app/blueprints/study-casino-sso.yaml` for the
-proxy provider, and
-`cluster/k8s/authentik/proxy-routes/study-casino-httproute.yaml` for the
-public hostname route.
+OIDC Authorization Code flow (confidential client). The backend (`auth.py`)
+handles `/auth/login` → Authentik → `/auth/callback`, then issues an
+HMAC-signed session cookie. Per-user SQLite databases scope state to the
+authenticated user. Authentik resources (OAuth2 provider, application, policy
+bindings) are managed by TF at
+`tf/gitops/sso-providers/provider_study_casino.tf`.
 
 ## State sync
 

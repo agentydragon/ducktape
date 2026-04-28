@@ -3,12 +3,9 @@
 # ============================================================================
 #
 # The casino handles its own OIDC flow (login/callback/logout endpoints),
-# so it no longer needs the Authentik embedded proxy outpost. This resource
-# creates the OAuth2 provider and writes the credentials to a k8s Secret in
-# the study-casino namespace so the pod can read them at startup.
-#
-# The Authentik application and policy bindings are managed by the blueprint
-# at cluster/k8s/authentik/app/blueprints/study-casino-sso.yaml.
+# so it no longer needs the Authentik embedded proxy outpost. This file owns
+# the full Authentik setup: OAuth2 provider, application, and policy bindings,
+# plus the k8s Secret the pod reads for credentials.
 
 resource "random_password" "study_casino_session_secret" {
   length  = 48
@@ -39,6 +36,27 @@ resource "authentik_provider_oauth2" "study_casino" {
       url           = "https://casino.allegedly.works/auth/callback"
     }
   ]
+}
+
+resource "authentik_application" "study_casino" {
+  name              = "Study Casino"
+  slug              = "study-casino"
+  protocol_provider = authentik_provider_oauth2.study_casino.id
+  meta_description  = "Habit-tracking casino (personal)"
+  meta_launch_url   = "https://casino.allegedly.works"
+  open_in_new_tab   = true
+}
+
+resource "authentik_policy_binding" "study_casino_admins" {
+  target = authentik_application.study_casino.uuid
+  group  = data.authentik_group.admins.id
+  order  = 0
+}
+
+resource "authentik_policy_binding" "study_casino_users" {
+  target = authentik_application.study_casino.uuid
+  group  = authentik_group.study_casino.id
+  order  = 1
 }
 
 resource "kubernetes_secret" "study_casino_oidc" {

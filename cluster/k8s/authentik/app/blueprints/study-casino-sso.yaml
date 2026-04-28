@@ -2,7 +2,7 @@ version: 1
 metadata:
   name: SSO - Study Casino
   labels:
-    blueprints.goauthentik.io/description: "Study Casino OIDC SSO - application managed here, provider in TF"
+    blueprints.goauthentik.io/description: "Study Casino — application managed by TF (tf/gitops/sso-providers/provider_study_casino.tf)"
 
 entries:
   # CLEANUP(2026-04-27): Proxy provider tombstone — the casino now uses its
@@ -12,30 +12,3 @@ entries:
     state: absent
     identifiers:
       name: study-casino
-
-  - model: authentik_core.application
-    state: present
-    identifiers:
-      slug: study-casino
-    attrs:
-      name: Study Casino
-      # OAuth2 provider created by tf/gitops/sso-providers/provider_study_casino.tf
-      provider: !Find [authentik_providers_oauth2.oauth2provider, [name, study-casino]]
-      meta_description: "Habit-tracking casino (personal)"
-      meta_launch_url: "https://casino.allegedly.works"
-      open_in_new_tab: true
-
-  - model: authentik_policies.policybinding
-    state: present
-    identifiers:
-      target: !Find [authentik_core.application, [slug, study-casino]]
-      group: !Find [authentik_core.group, [name, authentik Admins]]
-      order: 0
-
-  # The study-casino group is managed by TF (tf/gitops/sso-providers/main.tf).
-  - model: authentik_policies.policybinding
-    state: present
-    identifiers:
-      target: !Find [authentik_core.application, [slug, study-casino]]
-      group: !Find [authentik_core.group, [name, study-casino]]
-      order: 1
