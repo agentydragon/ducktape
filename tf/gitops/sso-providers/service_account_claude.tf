@@ -57,11 +57,11 @@ resource "kubernetes_secret" "claude_authentik_token" {
     name      = "claude-authentik-api-token"
     namespace = "authentik"
     annotations = {
-      "description"                                                        = "Authentik API token for Claude agent read-only diagnostics. Reflected into claude-sandbox by Reflector."
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"                = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"     = "claude-sandbox"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"           = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"        = "claude-sandbox"
+      "description"                                                   = "Authentik API token for Claude agent read-only diagnostics. Reflected into claude-sandbox by Reflector."
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "claude-sandbox"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "claude-sandbox"
     }
   }
   data = {
