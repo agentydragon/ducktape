@@ -1,9 +1,9 @@
 """End-to-end browser tests: real Playwright browser against real uvicorn backend.
 
 Scenarios:
-1. App loads, first sync round-trip completes, syncing banner disappears.
-2. Server returns a malformed Yjs update — status transitions to `offline`
-   (not stuck on `syncing`), exercising the Y.applyUpdate error-handling path.
+1. App loads, first WebSocket sync completes, syncing banner disappears.
+2. Server sends a malformed Yjs update over WebSocket — status transitions to
+   `offline` (not stuck on `syncing`), exercising the Y.applyUpdate error path.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from x.auragon_study_casino.app import create_app
 from x.auragon_study_casino.config import Settings
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Browser, Page, Playwright
+    from playwright.sync_api import Browser, Page, Playwright, WebSocketRoute
 
 
 @pytest.fixture
@@ -119,38 +119,39 @@ def test_initial_sync_completes(page: Page, casino_server: str) -> None:
 
 
 def test_corrupt_server_update_shows_offline_not_stuck_syncing(page: Page, casino_server: str) -> None:
-    """When /sync returns bytes that are not valid Yjs, status should transition
-    to `offline` (error message surfaced) rather than remaining stuck on `syncing`.
-    This exercises the try/catch around Y.applyUpdate in sync.js."""
+    """When the WebSocket server sends bytes that are not valid Yjs, status should
+    transition to `offline` rather than remaining stuck on `syncing`.
+    Exercises the try/catch around Y.applyUpdate in sync.js."""
     logs = _attach_logs(page)
-    sync_calls: list[str] = []
 
-    def handle_sync(route):
-        # Respond with a non-empty update_b64 whose bytes are not valid Yjs.
-        sync_calls.append("intercepted")
-        route.fulfill(
-            status=200,
-            headers={"Content-Type": "application/json"},
-            body=json.dumps(
-                {
-                    "update_b64": "bm90LXlqcy1kYXRh",  # b64("not-yjs-data")
-                    "state_vector_b64": "",
-                }
-            ),
-        )
+    def handle_ws(ws_route: WebSocketRoute) -> None:
+        # Mock the WebSocket: respond to every client message with a corrupt
+        # "accepted" payload so Y.applyUpdate always fails.
+        def on_message(message: str | bytes) -> None:
+            ws_route.send(
+                json.dumps(
+                    {
+                        "type": "accepted",
+                        "update_b64": "bm90LXlqcy1kYXRh",  # b64("not-yjs-data")
+                        "state_vector_b64": "",
+                    }
+                )
+            )
 
-    page.route("**/sync", handle_sync)
+        ws_route.on_message(on_message)
+
+    page.route_web_socket("**/ws", handle_ws)
     page.goto(casino_server)
     print(f"\n[e2e] page loaded for corrupt test, title={page.title()!r}")
 
-    # Wait for syncing banner to appear first (confirms React mounted).
+    # Wait for syncing banner to appear first (confirms React mounted and WS connected).
     page.wait_for_selector("[data-testid='sync-banner-syncing']", state="visible", timeout=15_000)
     print(f"[e2e] syncing banner appeared in corrupt test, logs so far: {logs}")
 
     page.wait_for_selector("[data-testid='sync-banner-offline']", state="visible", timeout=30_000)
-    print(f"[e2e] offline banner appeared, sync_calls={sync_calls}, logs={logs}")
+    print(f"[e2e] offline banner appeared, logs={logs}")
     assert page.locator("[data-testid='sync-banner-syncing']").count() == 0, (
-        f"syncing banner still present\nsync_calls={sync_calls}\nlogs={logs}"
+        f"syncing banner still present\nlogs={logs}"
     )
 
 
