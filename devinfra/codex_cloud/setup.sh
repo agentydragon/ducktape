@@ -237,6 +237,13 @@ persist_agent_shell_init() {
     log "SOPS_AGE_KEY not set (expected unless configured in Codex environment vars)"
   fi
 
+  if [ -n "${BUILDBUDDY_API_KEY:-}" ]; then
+    log "persisting BUILDBUDDY_API_KEY into ~/.bashrc for agent shells"
+    ensure_line "export BUILDBUDDY_API_KEY='${BUILDBUDDY_API_KEY}'" "$shell_file"
+  else
+    log "BUILDBUDDY_API_KEY not set at setup time; runtime sourcing will be used when possible"
+  fi
+
   log "persisting runtime secret hydration and bazel env into ~/.bashrc"
   ensure_line "[ -n \"\${SOPS_AGE_KEY:-}\" ] && [ -f \"${REPO_ROOT}/devinfra/secrets/web_env.sh\" ] && source \"${REPO_ROOT}/devinfra/secrets/web_env.sh\" >/dev/null 2>&1 || true" "$shell_file"
   ensure_line "export BBR_BAZELRC='${BBR_BAZELRC_PATH}'" "$shell_file"

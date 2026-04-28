@@ -58,7 +58,7 @@ session and recommend `~/.bashrc` for persistence into the agent phase.
    - `~/.bazelrc` `try-import` entry for `~/.config/bazel/codex.bazelrc`
 9. Ensures local `devel` branch exists and tracks a remote `devel` branch (preferring the selected BuildBuddy remote, with fallback to `origin/devel` or `github-no-proxy/devel`) so `bbr` base-branch detection works.
 10. Materializes `~/.kube/config` from `secrets/claude-web-k8s-jwt.yaml` via the Nix-managed Python interpreter (`~/.nix-profile/bin/python3 devinfra/k8s/kubeconfig.py`) so `pyyaml` is present consistently.
-11. Persists `SOPS_AGE_KEY`, Bazel env vars (`BBR_BAZELRC`, `SESSION_BAZELRC`), and runtime `web_env.sh` sourcing into shell startup files so agent command shells rehydrate `BUILDBUDDY_API_KEY` and use the generated bazelrc files.
+11. Persists `SOPS_AGE_KEY`, `BUILDBUDDY_API_KEY` (when available during setup), Bazel env vars (`BBR_BAZELRC`, `SESSION_BAZELRC`), and runtime `web_env.sh` sourcing into shell startup files so agent command shells can use BuildBuddy + generated bazelrc files.
 
 Maintenance refreshes git remotes, BuildBuddy config, devtools profile, and
 pre-commit hooks, then validates `bb` / `bbr` availability.
