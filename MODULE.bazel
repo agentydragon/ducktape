@@ -78,7 +78,7 @@ tf.download(
     # Each version must satisfy the constraints of ALL modules that use it.
     # When modules disagree (e.g., ~>3.0 vs ~>3.7.0), use the tighter range.
     mirror = {
-        "authentik": "goauthentik/authentik:2025.12.1",
+        "authentik": "goauthentik/authentik:2026.2.0",
         "aws": "hashicorp/aws:5.100.0",
         "external": "hashicorp/external:2.3.5",
         "flux": "fluxcd/flux:1.7.6",
