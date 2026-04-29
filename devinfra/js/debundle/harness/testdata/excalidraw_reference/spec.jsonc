@@ -1,0 +1,13 @@
+{
+  // Reverse-engineering checkpoint for Excalidraw itself (not vendored React internals).
+  "startAtomicModuleIndex": 120,
+  "moduleCount": 6,
+  "reverseEngineeredNames": [
+    "excalidraw_app_state.js",
+    "excalidraw_canvas_interactions.js",
+    "excalidraw_element_mutations.js",
+    "excalidraw_history_stack.js",
+    "excalidraw_scene_restore.js",
+    "excalidraw_ui_actions.js"
+  ]
+}

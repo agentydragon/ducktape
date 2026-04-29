@@ -10,18 +10,19 @@
 // benchmark aligned with the current first-party materialization path while
 // still exercising non-trivial module regrouping work.
 
-import { mkdtempSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { Session } from "node:inspector/promises";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { analyzeRuntimeBoundaryAst } from "../analysis/boundary.mjs";
-import { getArtifactManifest, getChunkEntryFile, listChunkIds } from "../common/artifact.mjs";
 import { computeJsAsts } from "../common/parse_asts.mjs";
 import { loadJsChunks } from "../common/load_chunks.mjs";
 import { normalizeJsChunks } from "../common/normalize.mjs";
 import { materializeLogicalModules } from "../extract/materialize_logical_modules.mjs";
-import { planSelectedAtomicModules } from "../extract/planner.mjs";
+import {
+  buildPairLogicalModuleOperations,
+  pickChunkWithMostTopLevelBindings,
+  writeJsListForFixtureDir,
+} from "./benchmark_shared.mjs";
 
 const DEFAULT_FIXTURE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "excalidraw_bundle_assets");
 const DEFAULT_MODULE_COUNT = 20;
@@ -42,9 +43,7 @@ async function main() {
   const stageTimings = [];
   let artifact;
 
-  artifact = await timeStage("load_js_chunks", stageTimings, () =>
-    loadJsChunks({ inputRoot: fixtureDir, jsListPath })
-  );
+  artifact = await timeStage("load_js_chunks", stageTimings, () => loadJsChunks({ inputRoot: fixtureDir, jsListPath }));
   artifact = await timeStage("compute_js_asts", stageTimings, () => computeJsAsts({ artifact }));
   artifact = await timeStage("normalize_js_chunks", stageTimings, () => normalizeJsChunks({ artifact }));
 
@@ -97,20 +96,6 @@ function parseArgs(argv) {
   return result;
 }
 
-function writeJsListForFixtureDir(fixtureDir) {
-  const entries = readdirSync(fixtureDir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".js"))
-    .map((entry) => ({ name: entry.name, size: statSync(join(fixtureDir, entry.name)).size }))
-    .sort((left, right) => right.size - left.size);
-  if (entries.length === 0) {
-    throw new Error(`No .js files found under ${fixtureDir}`);
-  }
-  const tmp = mkdtempSync(join(tmpdir(), "benchmark_excalidraw-"));
-  const jsListPath = join(tmp, "js-files.txt");
-  writeFileSync(jsListPath, `${entries[0].name}\n`);
-  return jsListPath;
-}
-
 function requireValue(argv, index, flag) {
   const value = argv[index];
   if (!value || value.startsWith("--")) {
@@ -143,94 +128,6 @@ async function timeStage(label, timings, runStage) {
   timings.push({ label, durationMs });
   process.stdout.write(`stage ${label} ${durationMs.toFixed(1)}ms\n`);
   return result.artifact;
-}
-
-function pickChunkWithMostTopLevelBindings(artifact) {
-  let bestChunkId = null;
-  let bestBindings = -1;
-  for (const chunkId of listChunkIds(artifact)) {
-    const bindings = artifact.extras?.chunkManifests?.[chunkId]?.counts?.topLevelBindings ?? 0;
-    if (bindings > bestBindings) {
-      bestBindings = bindings;
-      bestChunkId = chunkId;
-    }
-  }
-  if (!bestChunkId) {
-    throw new Error("No chunks loaded");
-  }
-  return bestChunkId;
-}
-
-function buildPairLogicalModuleOperations(artifact, chunkId, moduleCount) {
-  const runtimeFile = getChunkEntryFile(artifact, chunkId);
-  if (!runtimeFile?.ast) {
-    throw new Error(`Missing entry AST for benchmark chunk ${chunkId}`);
-  }
-  const artifactManifest = getArtifactManifest(artifact);
-  const analysis = analyzeRuntimeBoundaryAst(runtimeFile.ast, {
-    chunkId,
-    manifestPath: `${chunkId}/manifest.json`,
-    runtimePath: `${chunkId}/${runtimeFile.path}`,
-    uiVersion: artifactManifest?.uiVersion ?? null,
-  });
-  const atomicPlan = planSelectedAtomicModules(
-    {
-      analysis,
-      code: null,
-      programBody: runtimeFile.ast.program.body,
-    },
-    {}
-  );
-
-  const ownerById = new Map(analysis.owners.map((owner) => [owner.id, owner]));
-  const operations = [];
-  for (let pairIndex = 0; pairIndex < moduleCount; pairIndex++) {
-    const left = atomicPlan.modulePlans[pairIndex * 2];
-    const right = atomicPlan.modulePlans[pairIndex * 2 + 1];
-    if (!left || !right) {
-      break;
-    }
-    const selectedModules = [left, right];
-    operations.push({
-      id: `bench_logical_${pairIndex.toString().padStart(3, "0")}`,
-      operation: "define_logical_module",
-      selector: { chunkId },
-      target: { path: `bench/${pairIndex.toString().padStart(3, "0")}` },
-      members: selectedModules.map((modulePlan, moduleIndex) =>
-        createAnchorMember(modulePlan, ownerById, pairIndex, moduleIndex)
-      ),
-    });
-  }
-  if (operations.length === 0) {
-    throw new Error(`No logical module operations could be synthesized (modulePlans=${atomicPlan.modulePlans.length})`);
-  }
-  return operations;
-}
-
-function createAnchorMember(modulePlan, ownerById, pairIndex, moduleIndex) {
-  const owner = ownerById.get(modulePlan.ownerIds[0]) ?? null;
-  const sourceName = owner?.names?.[0] ?? modulePlan.memberNames[0];
-  if (!sourceName) {
-    throw new Error(`Could not derive anchor member for ${modulePlan.id}`);
-  }
-  return {
-    id: `bench_member_${pairIndex.toString().padStart(3, "0")}_${moduleIndex.toString().padStart(2, "0")}`,
-    name: sourceName,
-    selector: {
-      binding: {
-        kind: owner ? selectorBindingKindForOwnerType(owner.type) : null,
-        name: sourceName,
-      },
-      ...(owner ? { owner: { id: owner.id } } : {}),
-    },
-  };
-}
-
-function selectorBindingKindForOwnerType(ownerType) {
-  if (ownerType === "VariableDeclaration") {
-    return "VariableDeclarator";
-  }
-  return ownerType;
 }
 
 function reportResults({ chunkId, operations, stageTimings, totalDurationMs }) {

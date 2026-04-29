@@ -19,7 +19,9 @@ js_binary(
     name = "benchmark_excalidraw",
     data = [
         "benchmark_excalidraw.mjs",
+        "benchmark_shared.mjs",
         ":excalidraw_bundle_assets",
+        "//:node_modules/jsonc-parser",
         "//devinfra/js/debundle/common:libs",
         "//devinfra/js/debundle/extract:libs",
         "//devinfra/js/debundle/split:libs",
@@ -33,6 +35,7 @@ js_test(
     size = "enormous",
     data = [
         "benchmark_excalidraw.mjs",
+        "benchmark_shared.mjs",
         ":excalidraw_bundle_assets",
         "//devinfra/js/debundle/common:libs",
         "//devinfra/js/debundle/extract:libs",
@@ -182,4 +185,63 @@ js_test(
         "//devinfra/js/debundle/test_support:sources",
     ],
     entry_point = "mock_golden_test.mjs",
+)
+
+js_binary(
+    name = "generate_excalidraw_reference",
+    data = [
+        "benchmark_excalidraw.mjs",
+        "benchmark_shared.mjs",
+        "generate_excalidraw_reference.mjs",
+        "testdata/excalidraw_reference/HUMANLIKE_GAPS.md",
+        "testdata/excalidraw_reference/excalidraw_app_state.js",
+        "testdata/excalidraw_reference/excalidraw_canvas_interactions.js",
+        "testdata/excalidraw_reference/excalidraw_element_mutations.js",
+        "testdata/excalidraw_reference/excalidraw_history_stack.js",
+        "testdata/excalidraw_reference/excalidraw_scene_restore.js",
+        "testdata/excalidraw_reference/excalidraw_ui_actions.js",
+        "testdata/excalidraw_reference/spec.jsonc",
+        ":excalidraw_bundle_assets",
+        "//devinfra/js/debundle/common:libs",
+        "//devinfra/js/debundle/extract:libs",
+        "//devinfra/js/debundle/split:libs",
+    ],
+    entry_point = "generate_excalidraw_reference.mjs",
+    node_options = ["--max-old-space-size=8192"],
+)
+
+js_library(
+    name = "generate_excalidraw_reference_lib",
+    srcs = [
+        "benchmark_shared.mjs",
+        "generate_excalidraw_reference.mjs",
+    ],
+    deps = [
+        "//:node_modules/jsonc-parser",
+        "//devinfra/js/debundle/common:libs",
+        "//devinfra/js/debundle/extract:libs",
+        "//devinfra/js/debundle/split:libs",
+    ],
+)
+
+js_test(
+    name = "excalidraw_reference_golden_test",
+    size = "large",
+    data = [
+        "excalidraw_reference_golden_test.mjs",
+        "testdata/excalidraw_reference/HUMANLIKE_GAPS.md",
+        "testdata/excalidraw_reference/README.md",
+        "testdata/excalidraw_reference/excalidraw_app_state.js",
+        "testdata/excalidraw_reference/excalidraw_canvas_interactions.js",
+        "testdata/excalidraw_reference/excalidraw_element_mutations.js",
+        "testdata/excalidraw_reference/excalidraw_history_stack.js",
+        "testdata/excalidraw_reference/excalidraw_scene_restore.js",
+        "testdata/excalidraw_reference/excalidraw_ui_actions.js",
+        "testdata/excalidraw_reference/spec.jsonc",
+        ":excalidraw_bundle_assets",
+        ":generate_excalidraw_reference_lib",
+        "//devinfra/js/debundle/test_support:sources",
+    ],
+    entry_point = "excalidraw_reference_golden_test.mjs",
+    node_options = ["--max-old-space-size=8192"],
 )
