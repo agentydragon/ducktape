@@ -1552,10 +1552,25 @@ function buildExtractedModuleFile(entry, { phaseDurationsMs = null } = {}) {
   const entryBindingRenames = buildEntryBindingRenames(entry);
   const localRenameMap = buildBindingRenameMap(entryBindingRenames);
   const naturalizedBindingNames = naturalizedEntryBindingNameSet(entry);
+  const trivialAliasDeclarations = [];
+  for (const stageRun of entry.stageRuns) {
+    for (const stageEntry of stageRun.stageEntries) {
+      const declaration = trivialAliasDeclaration(stageEntry);
+      if (declaration) {
+        trivialAliasDeclarations.push(declaration);
+      }
+    }
+  }
   const initializedExportBindings = entry.exportBindings.filter(
-    (binding) => !naturalizedBindingNames.has(binding.local)
+    (binding) =>
+      !naturalizedBindingNames.has(binding.local) &&
+      !trivialAliasDeclarations.some(
+        (declaration) =>
+          t.isIdentifier(declaration.declarations[0]?.id) && declaration.declarations[0].id.name === binding.local
+      )
   );
   body.push(...buildNaturalizedDeclarationStatements(entry));
+  body.push(...trivialAliasDeclarations);
   if (initializedExportBindings.length > 0) {
     body.push(
       t.variableDeclaration(
@@ -2949,7 +2964,48 @@ function stageEntryNeedsInitWork(entry, stageEntry) {
   if (stageEntry.kind !== "declaration") {
     return true;
   }
+  if (isTrivialAliasDeclarationEntry(stageEntry)) {
+    return false;
+  }
   return !entry.naturalizedDeclarationKeys?.has(ownerEntryBoundaryKey(stageEntry));
+}
+
+function isTrivialAliasDeclarationEntry(stageEntry) {
+  const declaration = trivialAliasDeclaration(stageEntry);
+  return declaration != null;
+}
+
+function trivialAliasDeclaration(stageEntry) {
+  if (stageEntry.kind !== "declaration") {
+    return null;
+  }
+  const { owner, statement, fragment } = stageEntry;
+  if (owner.type !== "VariableDeclaration" || fragment) {
+    return null;
+  }
+  if (!t.isVariableDeclaration(statement) || statement.declarations.length !== 1) {
+    return null;
+  }
+  const declarator = statement.declarations[0];
+  if (!t.isIdentifier(declarator.id) || !declarator.init) {
+    return null;
+  }
+  if (!isTrivialAliasInitializer(declarator.init)) {
+    return null;
+  }
+  return t.variableDeclaration("const", [
+    t.variableDeclarator(t.cloneNode(declarator.id), t.cloneNode(declarator.init, true)),
+  ]);
+}
+
+function isTrivialAliasInitializer(node) {
+  if (t.isIdentifier(node)) {
+    return true;
+  }
+  if (t.isMemberExpression(node) && !node.computed) {
+    return isTrivialAliasInitializer(node.object) && t.isIdentifier(node.property);
+  }
+  return false;
 }
 
 function publicStageInitName(entry, stageIndex) {
