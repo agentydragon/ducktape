@@ -2162,3 +2162,30 @@ test("keeps let when binding is written more than once", () => {
   assert.equal(body[0].kind, "let");
   assert.equal(body[0].declarations.length, 1);
 });
+
+test("keeps let when later writes happen through assignment patterns", () => {
+  const body = [
+    t.variableDeclaration("let", [t.variableDeclarator(t.identifier("open"))]),
+    t.exportNamedDeclaration(
+      t.functionDeclaration(
+        t.identifier("init_stage_0"),
+        [],
+        t.blockStatement([
+          t.expressionStatement(t.assignmentExpression("=", t.identifier("open"), t.booleanLiteral(false))),
+          t.expressionStatement(
+            t.assignmentExpression(
+              "=",
+              t.objectPattern([t.objectProperty(t.identifier("open"), t.identifier("open"), false, true)]),
+              t.identifier("state")
+            )
+          ),
+        ])
+      )
+    ),
+  ];
+
+  upgradeSingleAssignmentLetsToConst(body);
+
+  assert.equal(body[0].kind, "let");
+  assert.equal(body[0].declarations.length, 1);
+});

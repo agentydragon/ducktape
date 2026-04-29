@@ -1705,14 +1705,14 @@ function collectWriteOccurrencesInNode(node, counts) {
   if (!node) {
     return;
   }
-  if (t.isAssignmentExpression(node) && t.isIdentifier(node.left)) {
-    counts.set(node.left.name, (counts.get(node.left.name) ?? 0) + 1);
+  if (t.isAssignmentExpression(node)) {
+    collectAssignedIdentifiers(node.left, counts);
   }
-  if (t.isUpdateExpression(node) && t.isIdentifier(node.argument)) {
-    counts.set(node.argument.name, (counts.get(node.argument.name) ?? 0) + 1);
+  if (t.isUpdateExpression(node)) {
+    collectAssignedIdentifiers(node.argument, counts);
   }
-  if ((t.isForInStatement(node) || t.isForOfStatement(node)) && t.isIdentifier(node.left)) {
-    counts.set(node.left.name, (counts.get(node.left.name) ?? 0) + 1);
+  if (t.isForInStatement(node) || t.isForOfStatement(node)) {
+    collectAssignedIdentifiers(node.left, counts);
   }
   const keys = t.VISITOR_KEYS[node.type] ?? [];
   for (const key of keys) {
@@ -1724,6 +1724,44 @@ function collectWriteOccurrencesInNode(node, counts) {
     } else {
       collectWriteOccurrencesInNode(value, counts);
     }
+  }
+}
+
+function collectAssignedIdentifiers(node, counts) {
+  if (!node) {
+    return;
+  }
+  if (t.isIdentifier(node)) {
+    counts.set(node.name, (counts.get(node.name) ?? 0) + 1);
+    return;
+  }
+  if (t.isObjectPattern(node)) {
+    for (const property of node.properties) {
+      if (t.isRestElement(property)) {
+        collectAssignedIdentifiers(property.argument, counts);
+      } else if (t.isObjectProperty(property)) {
+        collectAssignedIdentifiers(property.value, counts);
+      }
+    }
+    return;
+  }
+  if (t.isArrayPattern(node)) {
+    for (const element of node.elements) {
+      collectAssignedIdentifiers(element, counts);
+    }
+    return;
+  }
+  if (t.isAssignmentPattern(node)) {
+    collectAssignedIdentifiers(node.left, counts);
+    return;
+  }
+  if (t.isRestElement(node)) {
+    collectAssignedIdentifiers(node.argument, counts);
+    return;
+  }
+  if (t.isParenthesizedExpression(node)) {
+    collectAssignedIdentifiers(node.expression, counts);
+    return;
   }
 }
 

@@ -10,6 +10,9 @@ export function writeJsListForFixtureDir(fixtureDir) {
     .filter((e) => e.isFile() && e.name.endsWith(".js"))
     .map((e) => ({ name: e.name, size: statSync(join(fixtureDir, e.name)).size }))
     .sort((l, r) => r.size - l.size);
+  if (entries.length === 0) {
+    throw new Error(`No JavaScript files found in fixture directory: ${fixtureDir}`);
+  }
   const tmp = mkdtempSync(join(tmpdir(), "benchmark_excalidraw-"));
   const jsListPath = join(tmp, "js-files.txt");
   writeFileSync(jsListPath, `${entries[0].name}\n`);
@@ -17,9 +20,13 @@ export function writeJsListForFixtureDir(fixtureDir) {
 }
 
 export function pickChunkWithMostTopLevelBindings(artifact) {
+  const chunkIds = listChunkIds(artifact);
+  if (chunkIds.length === 0) {
+    throw new Error("Artifact contains no chunks; cannot pick benchmark chunk");
+  }
   let bestChunkId = null;
   let bestBindings = -1;
-  for (const chunkId of listChunkIds(artifact)) {
+  for (const chunkId of chunkIds) {
     const bindings = artifact.extras?.chunkManifests?.[chunkId]?.counts?.topLevelBindings ?? 0;
     if (bindings > bestBindings) {
       bestBindings = bindings;
