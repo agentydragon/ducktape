@@ -1021,6 +1021,87 @@ export { result };
   });
 });
 
+test("alias-lowering elides init wrappers for direct alias reads", () => {
+  const source = `import { importedSymbol } from "./dep.js";
+const a = importedSymbol;
+console.log(JSON.stringify({ a }));
+export { a };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_alias_lowering_elide",
+      ownerNames: ["a"],
+      targetFile: "regions/alias_lowering_elide.js",
+    }),
+  ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const elidedCode = result.files.get("regions/alias_lowering_elide.js");
+
+  assert.match(runtimeCode, /import \{ a \} from "\.\/regions\/alias_lowering_elide\.js"/);
+  assert.doesNotMatch(runtimeCode, /\binit_alias_lowering_elide\(\);/);
+  assert.match(elidedCode, /\bconst a = importedSymbol;/);
+  assert.doesNotMatch(elidedCode, /export function init_alias_lowering_elide/);
+
+  assertRunnableEquivalent({
+    files: {
+      "dep.js": `export const importedSymbol = "imported-value";\n`,
+    },
+    prefix: "debundle-extract-alias-lowering-elide-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("alias-lowering keeps init wrappers for non-elidable alias declarators", () => {
+  const source = `import { importedSymbol, ns, deep, obj, key, callFactory, Ctor } from "./dep.js";
+const memberAlias = ns.member;
+const deepAlias = deep.inner.leaf;
+const computed = obj[key];
+const fromCall = callFactory().member;
+const fromNew = new Ctor().member;
+const { picked } = obj;
+const multiOne = 1, multiTwo = importedSymbol;
+console.log(JSON.stringify({ memberAlias, deepAlias, computed, fromCall, fromNew, picked, multiOne, multiTwo }));
+export { memberAlias, deepAlias, computed, fromCall, fromNew, picked, multiOne, multiTwo };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_alias_lowering_keep_computed",
+      ownerNames: ["memberAlias", "deepAlias", "computed", "fromCall", "fromNew", "picked", "multiOne"],
+      targetFile: "regions/alias_lowering_keep_cases.js",
+    }),
+  ]);
+  const runtimeCode = result.files.get("runtime.js");
+  const extractedCode = result.files.get("regions/alias_lowering_keep_cases.js");
+  assert.match(runtimeCode, /\binit_alias_lowering_keep_computed\(\);/);
+  assert.match(extractedCode, /computed = obj\[key\];/);
+  assert.match(extractedCode, /fromCall = callFactory\(\)\.member;/);
+  assert.match(extractedCode, /fromNew = new Ctor\(\)\.member;/);
+  assert.match(extractedCode, /\(\{\s*picked\s*\} = obj\);/);
+  assert.match(extractedCode, /multiOne = 1,\s*multiTwo = importedSymbol;/s);
+  assert.match(extractedCode, /memberAlias = ns\.member;/);
+  assert.match(extractedCode, /deepAlias = deep\.inner\.leaf;/);
+
+  assertRunnableEquivalent({
+    files: {
+      "dep.js": `export const importedSymbol = "imported-value";
+export const key = "member";
+export const obj = { member: "computed-value" };
+export const callFactory = () => ({ member: "call-value" });
+export class Ctor {
+  constructor() {
+    this.member = "new-value";
+  }
+}
+`,
+    },
+    prefix: "debundle-extract-alias-lowering-keep-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
 test("lower_selected_module_region can split sibling fragments despite lazy member writes between them", () => {
   const source = `const KU = {}, ype = function ype() {
   KU.value = 1;
