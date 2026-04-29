@@ -5,6 +5,7 @@ py_binary(
     srcs = ["re_rollout.py"],
     data = ["//skills/reverse_engineer/evals/specimens/go_crypto_server:go_crypto_server_garbled"],
     deps = [
+        "//openai_utils:pydantic_strict_mode",
         "//skills/eval_infra:af_chat_client",
         "//skills/eval_infra:eval_prompt",
         "//skills/eval_infra:eval_sandbox",

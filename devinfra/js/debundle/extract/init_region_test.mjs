@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import test from "node:test";
+import * as t from "@babel/types";
 import { analyzeRuntimeBoundaryCode } from "../analysis/boundary.mjs";
 import { createTempFixtureRoot, runNodeScript, writeRunnableFixture } from "../test_support/fixtures.mjs";
-import * as t from "@babel/types";
 import { extractOrderedInitRegionsInCode, upgradeSingleAssignmentLetsToConst } from "./init_region.mjs";
 
 test("extracts an ordered-init region and preserves executable behavior", () => {
@@ -46,7 +46,7 @@ export { Box as publicBox, loadFeature as publicLoadFeature, result as publicRes
   );
   assert.match(
     runtimeCode,
-    /import \{ seed, format, Box, loadFeature, result, init_fixture_region \} from "\.\/regions\/fixture_region\.js"/
+    /import \{ Box, loadFeature, result, init_fixture_region \} from "\.\/regions\/fixture_region\.js"/
   );
   assert.match(runtimeCode, /@ducktape-generated-node kind=lowerer-glue stage=selected_module_lowering/);
   assert.match(runtimeCode, /init_fixture_region\(\);/);
@@ -271,6 +271,72 @@ export { render as publicRender };
   assertRunnableEquivalent({
     files: {},
     prefix: "debundle-extract-ordered-init-staged-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("keeps a bare runtime import for private plain-import modules", () => {
+  const source = `const privateSeed = 1;
+function readPrivateSeed() {
+  return privateSeed;
+}
+console.log("runtime-only");
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_private_plain_region",
+      ownerNames: ["privateSeed", "readPrivateSeed"],
+      targetFile: "regions/private_plain_region.js",
+    }),
+  ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const extractedCode = result.files.get("regions/private_plain_region.js");
+  assert.match(runtimeCode, /import "\.\/regions\/private_plain_region\.js";/);
+  assert.doesNotMatch(runtimeCode, /import \{[^}]*privateSeed[^}]*\} from "\.\/regions\/private_plain_region\.js"/);
+  assert.doesNotMatch(runtimeCode, /import \{[^}]*readPrivateSeed[^}]*\} from "\.\/regions\/private_plain_region\.js"/);
+  assert.doesNotMatch(runtimeCode, /\binit_private_plain_region\b/);
+  assert.doesNotMatch(extractedCode, /\bexport\b/);
+
+  assertRunnableEquivalent({
+    prefix: "debundle-extract-private-plain-import-",
+    source,
+    transformedFiles: Object.fromEntries(result.files),
+  });
+});
+
+test("keeps init-wrapper ordering while hiding private initialized state", () => {
+  const source = `const setup = (globalThis.events = [], globalThis.events.push("setup"), 1);
+function readSetup() {
+  return setup;
+}
+const after = (globalThis.events.push("after"), readSetup());
+console.log(globalThis.events.join(","), after);
+export { after };
+`;
+  const result = extractOrderedInitRegionsInCode(source, [
+    selectedModuleOperation(source, {
+      init: "init_private_state_region",
+      ownerNames: ["setup", "readSetup"],
+      targetFile: "regions/private_state_region.js",
+    }),
+  ]);
+
+  const runtimeCode = result.files.get("runtime.js");
+  const extractedCode = result.files.get("regions/private_state_region.js");
+  assert.match(
+    runtimeCode,
+    /import \{ readSetup, init_private_state_region \} from "\.\/regions\/private_state_region\.js"/
+  );
+  assert.doesNotMatch(runtimeCode, /import \{[^}]*\bsetup\b[^}]*\} from "\.\/regions\/private_state_region\.js"/);
+  assert.match(runtimeCode, /init_private_state_region\(\);\nconst after =/);
+  assert.match(extractedCode, /export function init_private_state_region/);
+  assert.match(extractedCode, /export \{ readSetup \};/);
+  assert.doesNotMatch(extractedCode, /export \{[^\n}]*\bsetup\b/);
+
+  assertRunnableEquivalent({
+    prefix: "debundle-extract-private-state-init-order-",
     source,
     transformedFiles: Object.fromEntries(result.files),
   });
@@ -797,7 +863,7 @@ export { readStatus };
 
   const extractedCode = result.files.get("regions/snapshot_variable_owner.js");
   const runtimeCode = result.files.get("runtime.js");
-  assert.match(runtimeCode, /import \{ Status, readStatus \} from "\.\/regions\/snapshot_variable_owner\.js"/);
+  assert.match(runtimeCode, /import \{ readStatus \} from "\.\/regions\/snapshot_variable_owner\.js"/);
   assert.doesNotMatch(runtimeCode, /\binit_snapshot_variable_owner\b/);
   assert.match(extractedCode, /\bvar Status = \(Status2 =>/);
   assert.match(extractedCode, /\bfunction readStatus\(\)/);
@@ -909,10 +975,7 @@ export { gapLabel };
 
   const runtimeCode = result.files.get("runtime.js");
   const extractedCode = result.files.get("regions/plain_multi_stage_region.js");
-  assert.match(
-    runtimeCode,
-    /import \{ alpha, readAlpha, beta, readBeta \} from "\.\/regions\/plain_multi_stage_region\.js"/
-  );
+  assert.match(runtimeCode, /import \{ readAlpha, readBeta \} from "\.\/regions\/plain_multi_stage_region\.js"/);
   assert.doesNotMatch(runtimeCode, /\binit_plain_multi_stage_region\b/);
   assert.match(runtimeCode, /\bconst gapLabel = "gap";/);
   assert.match(extractedCode, /\bconst alpha = 1;/);
@@ -1015,7 +1078,7 @@ export { result };
 
   const runtimeCode = result.files.get("runtime.js");
   const extractedCode = result.files.get("regions/plain_timeout_region.js");
-  assert.match(runtimeCode, /import \{ OVt, readTimeout \} from "\.\/regions\/plain_timeout_region\.js"/);
+  assert.match(runtimeCode, /import \{ readTimeout \} from "\.\/regions\/plain_timeout_region\.js"/);
   assert.doesNotMatch(runtimeCode, /\binit_plain_timeout_region\b/);
   assert.match(extractedCode, /\bconst OVt = 500;/);
   assert.match(extractedCode, /\bfunction readTimeout\(\)/);
@@ -1238,7 +1301,7 @@ export { result };
 
   const runtimeCode = result.files.get("runtime.js");
   const extractedCode = result.files.get("regions/plain_pure_region.js");
-  assert.match(runtimeCode, /import \{ PureBox, renderPureBox \} from "\.\/regions\/plain_pure_region\.js"/);
+  assert.match(runtimeCode, /import \{ renderPureBox \} from "\.\/regions\/plain_pure_region\.js"/);
   assert.doesNotMatch(runtimeCode, /\binit_plain_pure_region\b/);
   assert.match(extractedCode, /\bclass PureBox\b/);
   assert.match(extractedCode, /\bfunction renderPureBox\b/);
@@ -1276,10 +1339,7 @@ export { result };
 
   const runtimeCode = result.files.get("runtime.js");
   const extractedCode = result.files.get("regions/derived_box_region.js");
-  assert.match(
-    runtimeCode,
-    /import \{ BaseBox, DerivedBox, renderDerivedBox \} from "\.\/regions\/derived_box_region\.js"/
-  );
+  assert.match(runtimeCode, /import \{ renderDerivedBox \} from "\.\/regions\/derived_box_region\.js"/);
   assert.doesNotMatch(runtimeCode, /\binit_derived_box_region\b/);
   assert.match(extractedCode, /\bclass DerivedBox extends BaseBox\b/);
   assert.doesNotMatch(extractedCode, /export function init_derived_box_region/);
@@ -1317,10 +1377,7 @@ export { result };
 
   const runtimeCode = result.files.get("runtime.js");
   const extractedCode = result.files.get("regions/imported_derived_box_region.js");
-  assert.match(
-    runtimeCode,
-    /import \{ DerivedBox, renderDerivedBox \} from "\.\/regions\/imported_derived_box_region\.js"/
-  );
+  assert.match(runtimeCode, /import \{ renderDerivedBox \} from "\.\/regions\/imported_derived_box_region\.js"/);
   assert.doesNotMatch(runtimeCode, /\binit_imported_derived_box_region\b/);
   assert.match(extractedCode, /import \{ BaseBox \} from "\.\.\/base_box\.js"/);
   assert.match(extractedCode, /\bclass DerivedBox extends BaseBox\b/);
@@ -1373,7 +1430,7 @@ export { result };
   const extractedCode = result.files.get("regions/retained_superclass_region.js");
   assert.match(
     runtimeCode,
-    /import \{ DerivedBox, renderDerivedBox, init_retained_superclass_region \} from "\.\/regions\/retained_superclass_region\.js"/
+    /import \{ renderDerivedBox, init_retained_superclass_region \} from "\.\/regions\/retained_superclass_region\.js"/
   );
   assert.match(runtimeCode, /init_retained_superclass_region\(\);/);
   assert.match(extractedCode, /export function init_retained_superclass_region/);
@@ -1536,7 +1593,7 @@ export { LaterWidget };
   const extractedCode = result.files.get("regions/later_widget_region.js");
   assert.match(
     runtimeCode,
-    /import \{ readLaterWidgetName, LaterWidget, init_later_widget_region \} from "\.\/regions\/later_widget_region\.js"/
+    /import \{ LaterWidget, init_later_widget_region \} from "\.\/regions\/later_widget_region\.js"/
   );
   assert.match(runtimeCode, /init_later_widget_region\(\);/);
   assert.match(extractedCode, /^\s*function readLaterWidgetName\(\)/m);
@@ -1719,7 +1776,7 @@ export { LaterButton };
   const extractedCode = result.files.get("regions/later_button_region.js");
   assert.match(
     runtimeCode,
-    /import \{ readLaterButtonName, LaterButton, init_later_button_region \} from "\.\/regions\/later_button_region\.js"/
+    /import \{ LaterButton, init_later_button_region \} from "\.\/regions\/later_button_region\.js"/
   );
   assert.match(runtimeCode, /init_later_button_region\(\);/);
   assert.match(extractedCode, /^\s*function readLaterButtonName\(\)/m);
@@ -1923,7 +1980,8 @@ export { isOpen, next, toggle };
   assert.match(extractedCode, /^\s*function toggle\(\)/m);
   assert.match(extractedCode, /^\s*function isOpen\(\)/m);
   assert.match(extractedCode, /let open, initial, next;/);
-  assert.match(extractedCode, /export \{ open, toggle, isOpen, initial, next \};/);
+  assert.match(extractedCode, /export \{ toggle, isOpen, initial, next \};/);
+  assert.doesNotMatch(extractedCode, /export \{[^\n}]*\bopen\b/);
   assert.match(extractedCode, /open = false/);
   assert.doesNotMatch(extractedCode, /toggle = function toggle/);
 
@@ -2112,7 +2170,6 @@ function assertRunnableEquivalent({ entryFile = "runtime.js", files, prefix, sou
   });
   assert.deepEqual(runNodeScript(join(transformedDir, entryFile)), runNodeScript(join(originalDir, entryFile)));
 }
-
 test("promotes single-assignment literal let bindings to const", () => {
   const body = [
     t.variableDeclaration("let", [

@@ -313,6 +313,19 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_exec_input_schema",
+    srcs = ["test_exec_input_schema.py"],
+    deps = [
+        ":docker",
+        ":docker_types",
+        ":models",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 live_openai_py_test(
     name = "test_exec_roundtrip",
     srcs = ["test_exec_roundtrip.py"],

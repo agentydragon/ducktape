@@ -9,12 +9,12 @@ FastMCP server: per-session Docker container exec.
 from __future__ import annotations
 
 from pathlib import PurePosixPath
-from typing import Any
+from typing import Annotated, Any
 
 import aiodocker
 import mcp.types as mcp_types
 from fastmcp.server.context import Context
-from pydantic import Field, create_model
+from pydantic import Field, WithJsonSchema, create_model
 
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.docker.container_session import (
@@ -90,7 +90,13 @@ def _make_exec_input_model(*, allow_user: bool, allow_env: bool, cwd_policy: Cwd
             ),
         ),
         "timeout_ms": (
-            TimeoutMs,
+            # ``TimeoutMs`` is ``Annotated[int, Field(gt=0, le=MAX_EXEC_TIMEOUT_MS)]``,
+            # which lands in the JSON Schema as ``exclusiveMinimum`` / ``maximum``.
+            # Anthropic's strict tool-use mode rejects integer constraints
+            # (``"For 'integer' type, properties exclusiveMinimum, maximum are not
+            # supported"``), so we override the schema to a plain ``{"type": "integer"}``
+            # while keeping the Pydantic runtime validators that ``TimeoutMs`` carries.
+            Annotated[TimeoutMs, WithJsonSchema({"type": "integer"})],
             Field(description="Timeout in milliseconds; sends TERM (exit status becomes TimedOut)"),
         ),
     }

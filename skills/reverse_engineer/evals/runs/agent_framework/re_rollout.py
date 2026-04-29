@@ -35,10 +35,11 @@ from pathlib import Path
 from typing import Literal
 
 from agent_framework import Agent, AgentSession, FunctionTool, Message
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
 from skills.reverse_engineer.reverse_engineer_skill_spec import SPEC as REVERSE_ENGINEER_SKILL_SPEC
 
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from skills.eval_infra.af_chat_client import build_model_client
 from skills.eval_infra.eval_prompt import compose_system_prompt
 from skills.eval_infra.eval_sandbox import INPUT_PATH, WORK_PATH, eval_sandbox
@@ -102,6 +103,15 @@ class _SubmitState:
     summary: str | None = None
 
 
+# Strict-mode-compatible input schema (additionalProperties: false, summary
+# in `required`) so the submit tool can ride alongside `exec` under
+# Anthropic's grammar-constrained tool-use mode. Without this, AF's
+# default schema-from-signature would emit a non-strict shape and the
+# whole request would 400 once strict mode is engaged.
+class _SubmitInput(OpenAIStrictModeBaseModel):
+    summary: str = Field(description="One-paragraph summary noting which parts you are confident vs unsure about.")
+
+
 def _make_submit_tool(state: _SubmitState) -> FunctionTool:
     async def submit(summary: str) -> str:
         """Mark the rollout complete with a final summary."""
@@ -110,10 +120,9 @@ def _make_submit_tool(state: _SubmitState) -> FunctionTool:
 
     return FunctionTool(
         name="submit",
-        description=(
-            "Call when reverse engineering is complete (or you are stuck). Pass a one-paragraph summary of the program."
-        ),
+        description="Call when reverse engineering is complete (or you are stuck).",
         func=submit,
+        input_model=_SubmitInput,
     )
 
 
@@ -144,7 +153,25 @@ async def _async_main(args: argparse.Namespace) -> None:
     submit_tool = _make_submit_tool(submit_state)
 
     model_client = build_model_client(
-        api="anthropic", model=args.model, function_invocation_configuration={"max_iterations": args.max_steps}
+        api="anthropic",
+        model=args.model,
+        function_invocation_configuration={
+            "max_iterations": args.max_steps,
+            # AF defaults to a terse "Error: Argument parsing failed." for tool-arg
+            # validation errors, stashing the actual reason on Content.exception
+            # but never relaying it to the model. Flipping this on inlines the
+            # detail (e.g. "Missing required argument(s) for 'exec': cmd, timeout_ms")
+            # so the model has something concrete to self-correct against. See
+            # agent_framework/_tools.py:1387-1396.
+            "include_detailed_errors": True,
+        },
+        # Anthropic's grammar-constrained tool-use mode — ``strict: true`` on every
+        # custom tool. Makes a malformed call like ``exec({})`` literally impossible
+        # for the model to emit, rather than only post-hoc-rejected by Pydantic.
+        # Requires every tool's input_schema to be strict-compatible
+        # (additionalProperties: false, all fields in `required`); _SubmitInput
+        # above and the exec MCP tool both already use OpenAIStrictModeBaseModel.
+        strict_tools=True,
     )
     t_start = time.monotonic()
     end_reason: Literal["submit", "agent_returned", "wall_timeout"]

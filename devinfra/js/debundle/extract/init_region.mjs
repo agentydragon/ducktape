@@ -130,6 +130,9 @@ export function lowerSelectedModuleRegionsInAst(
   const finalizeImportsStartedAt = process.hrtime.bigint();
   const resolvedByOwnerId = indexResolvedEntriesByOwnerId(resolved);
   for (const entry of resolved) {
+    entry.requiredExportLocalNames = new Set();
+  }
+  for (const entry of resolved) {
     finalizeResolvedEntryImports(entry, resolvedByOwnerId);
   }
   logProgress(
@@ -154,6 +157,7 @@ export function lowerSelectedModuleRegionsInAst(
       ...group.runs.flatMap(buildRuntimeReplacementStatements)
     );
   }
+  finalizeRuntimeImportedBindings(resolved, ast);
 
   if (resolved.length > 0) {
     const importInsertIndex = countLeadingImports(runtimeBody);
@@ -1396,8 +1400,12 @@ function validateResolvedOperations(resolved) {
 }
 
 function buildRuntimeImportDeclaration(entry) {
+  const runtimeImportedBindingNames =
+    entry.runtimeImportedBindingNames ?? new Set(entry.exportBindings.map((binding) => binding.local));
   const specifiers = [
-    ...entry.exportBindings.map((binding) => importSpecifierForLocal(binding.local, binding.exported, "named")),
+    ...entry.exportBindings
+      .filter((binding) => runtimeImportedBindingNames.has(binding.local))
+      .map((binding) => importSpecifierForLocal(binding.local, binding.exported, "named")),
     ...runtimeInitNamesForEntry(entry).map((name) => importSpecifierForLocal(name, name, "named")),
   ];
   return addSelectedModuleLoweringNodeComment(
@@ -1522,6 +1530,52 @@ function addRuntimeRunDependency(providerRun, consumerRun, { outgoing, incomingC
   incomingCount.set(consumerRun, (incomingCount.get(consumerRun) ?? 0) + 1);
 }
 
+function finalizeRuntimeImportedBindings(entries, ast) {
+  const entryByLocalName = new Map();
+  for (const entry of entries) {
+    entry.runtimeImportedBindingNames = new Set();
+    for (const binding of entry.exportBindings) {
+      entryByLocalName.set(binding.local, entry);
+    }
+  }
+  const markRuntimeImported = (name) => {
+    const entry = entryByLocalName.get(name);
+    if (!entry) {
+      return;
+    }
+    entry.runtimeImportedBindingNames.add(name);
+    addRequiredExportLocalName(entry, name);
+  };
+  traverse(t.cloneNode(ast, true), {
+    ExportDefaultDeclaration(path) {
+      const declaration = path.node.declaration;
+      if (t.isIdentifier(declaration)) {
+        markRuntimeImported(declaration.name);
+      }
+    },
+    ExportNamedDeclaration(path) {
+      if (path.node.source) {
+        return;
+      }
+      for (const specifier of path.node.specifiers) {
+        if (t.isExportSpecifier(specifier) && t.isIdentifier(specifier.local)) {
+          markRuntimeImported(specifier.local.name);
+        }
+      }
+    },
+    ReferencedIdentifier(path) {
+      const name = path.node.name;
+      if (!entryByLocalName.has(name)) {
+        return;
+      }
+      if (path.scope.getBinding(name)) {
+        return;
+      }
+      markRuntimeImported(name);
+    },
+  });
+}
+
 function buildInitCallStatement(run) {
   return addSelectedModuleLoweringNodeComment(
     t.expressionStatement(t.callExpression(t.identifier(runtimeInitNameForRun(run)), []))
@@ -1594,14 +1648,7 @@ function buildExtractedModuleFile(entry, { phaseDurationsMs = null } = {}) {
       )
     );
   }
-  body.push(
-    t.exportNamedDeclaration(
-      null,
-      entry.exportBindings.map((binding) =>
-        t.exportSpecifier(t.identifier(binding.local), exportNameNode(binding.exported))
-      )
-    )
-  );
+  pushExportBindingsDeclaration(body, moduleExportBindings(entry));
   upgradeSingleAssignmentLetsToConst(body);
   if (bodyStartedAt) {
     addDurationMs(phaseDurationsMs, "body", durationMsSince(bodyStartedAt));
@@ -1818,14 +1865,7 @@ function buildPlainImportModuleFile(entry, { phaseDurationsMs = null } = {}) {
     previousAtomicBoundaryUnitId = updatePreviousAtomicBoundaryUnitId(previousAtomicBoundaryUnitId, boundaryUnit);
     body.push(...nextStatements);
   }
-  body.push(
-    t.exportNamedDeclaration(
-      null,
-      entry.exportBindings.map((binding) =>
-        t.exportSpecifier(t.identifier(binding.local), exportNameNode(binding.exported))
-      )
-    )
-  );
+  pushExportBindingsDeclaration(body, moduleExportBindings(entry));
   upgradeSingleAssignmentLetsToConst(body);
   if (bodyStartedAt) {
     addDurationMs(phaseDurationsMs, "body", durationMsSince(bodyStartedAt));
@@ -1876,6 +1916,24 @@ function buildPlainImportOwnerStatements(statement, fragment = null) {
 
 function naturalizedEntryBindingNameSet(entry) {
   return new Set((entry.naturalizedDeclarationEntries ?? []).flatMap(selectedEntryBindingNames));
+}
+
+function moduleExportBindings(entry) {
+  const requiredExportLocalNames =
+    entry.requiredExportLocalNames ?? new Set(entry.exportBindings.map((binding) => binding.local));
+  return entry.exportBindings.filter((binding) => requiredExportLocalNames.has(binding.local));
+}
+
+function pushExportBindingsDeclaration(body, exportBindings) {
+  if (exportBindings.length === 0) {
+    return;
+  }
+  body.push(
+    t.exportNamedDeclaration(
+      null,
+      exportBindings.map((binding) => t.exportSpecifier(t.identifier(binding.local), exportNameNode(binding.exported)))
+    )
+  );
 }
 
 function buildNaturalizedDeclarationStatements(entry) {
@@ -3870,6 +3928,13 @@ function recordExtractedDependencyName(index, ownerId, name) {
   index.get(ownerId).add(name);
 }
 
+function addRequiredExportLocalName(entry, name) {
+  if (!entry.requiredExportLocalNames) {
+    entry.requiredExportLocalNames = new Set();
+  }
+  entry.requiredExportLocalNames.add(name);
+}
+
 function indexResolvedEntriesByOwnerId(resolved) {
   const index = new Map();
   for (const entry of resolved) {
@@ -3891,6 +3956,7 @@ function finalizeResolvedEntryImports(entry, resolvedByOwnerId) {
       if (!providerEntry) {
         continue;
       }
+      addRequiredExportLocalName(providerEntry, name);
       if (!importsByTargetFile.has(providerEntry.targetFile)) {
         importsByTargetFile.set(providerEntry.targetFile, new Set());
       }
