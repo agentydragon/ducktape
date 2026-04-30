@@ -1,0 +1,4 @@
+# JS vs Rust golden diff summary
+only_js: 0
+only_rust: 0
+changed: 0

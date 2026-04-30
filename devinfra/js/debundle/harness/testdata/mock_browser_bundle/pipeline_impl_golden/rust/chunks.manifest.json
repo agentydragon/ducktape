@@ -1,0 +1,20 @@
+{
+  "chunks": [
+    {
+      "chunkId": "static/ActivityPanel-DuckMock",
+      "sourcePath": "static/ActivityPanel-DuckMock.js"
+    },
+    {
+      "chunkId": "static/SummaryChip-DuckMock",
+      "sourcePath": "static/SummaryChip-DuckMock.js"
+    },
+    {
+      "chunkId": "static/chunk-DuckMock",
+      "sourcePath": "static/chunk-DuckMock.js"
+    },
+    {
+      "chunkId": "static/index-DuckMock",
+      "sourcePath": "static/index-DuckMock.js"
+    }
+  ]
+}

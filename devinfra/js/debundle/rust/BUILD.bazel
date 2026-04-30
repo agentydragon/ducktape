@@ -1,0 +1,39 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+
+_COMMON_SRCS = [
+    "ast_ir.rs",
+    "emit.rs",
+    "owner_graph.rs",
+    "plan.rs",
+    "pipeline.rs",
+]
+
+_COMMON_DEPS = [
+    "@crates//:anyhow",
+    "@crates//:petgraph",
+    "@crates//:serde",
+    "@crates//:serde_json",
+    "@crates//:tree-sitter",
+    "@crates//:tree-sitter-javascript",
+]
+
+rust_binary(
+    name = "debundle_rust",
+    srcs = ["main.rs"] + _COMMON_SRCS,
+    crate_root = "main.rs",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = _COMMON_DEPS + [
+        "@crates//:clap",
+    ],
+)
+
+rust_test(
+    name = "pipeline_test",
+    srcs = _COMMON_SRCS + ["pipeline_test.rs"],
+    crate_root = "pipeline_test.rs",
+    edition = "2024",
+    deps = _COMMON_DEPS + [
+        "@crates//:tempfile",
+    ],
+)

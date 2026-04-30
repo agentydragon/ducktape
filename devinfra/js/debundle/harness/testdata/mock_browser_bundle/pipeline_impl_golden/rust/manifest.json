@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "scriptSource": "split",
+  "sourceHtml": "__PIPELINE_ROOT__/snapshot/index.html",
+  "snapshotRoot": "__PIPELINE_ROOT__/snapshot",
+  "assetSummaryPath": "__PIPELINE_ROOT__/extracted/asset-summary.json",
+  "chunksManifestPath": "__PIPELINE_ROOT__/app/chunks.manifest.json",
+  "runtimeRoot": "__PIPELINE_ROOT__/app",
+  "outDir": "__PIPELINE_ROOT__/app",
+  "copiedAssets": [
+    "index.html",
+    "preload/app.css"
+  ],
+  "entryScripts": [
+    "static/index-DuckMock.js"
+  ],
+  "modulePreloads": [
+    "static/ActivityPanel-DuckMock.js",
+    "static/SummaryChip-DuckMock.js",
+    "static/chunk-DuckMock.js"
+  ],
+  "vendorManifestPath": null,
+  "vendorResolutions": [],
+  "generated": {
+    "bootstrap": "__PIPELINE_ROOT__/app/bootstrap.js",
+    "chunksManifest": "__PIPELINE_ROOT__/app/chunks.manifest.json",
+    "indexHtml": "__PIPELINE_ROOT__/app/index.html"
+  }
+}
