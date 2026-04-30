@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -35,10 +35,12 @@ pub struct ParsedChunkSummary {
 #[derive(Debug, Clone, Serialize)]
 pub struct AnalysisSummary {
     pub modules: Vec<ModuleAnalysis>,
+    pub owners: Vec<OwnerAnalysis>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ModuleAnalysis {
+    pub member_names: Vec<String>,
     pub source_path: String,
     pub import_specifiers: Vec<String>,
     pub resolved_deps: Vec<String>,
@@ -47,6 +49,38 @@ pub struct ModuleAnalysis {
     pub owner_ids: Vec<String>,
     pub program_item_ids: Vec<String>,
     pub side_effect_ids: Vec<String>,
+    pub replayable_side_effect_ids: Vec<String>,
+    pub runtime_sensitive_effects: bool,
+    pub side_effect_touched_owner_ids: Vec<String>,
+    pub side_effect_records: Vec<SideEffectAnalysis>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SideEffectAnalysis {
+    pub id: String,
+    pub replayable: bool,
+    pub runtime_sensitive: bool,
+    pub touched_names: Vec<String>,
+    pub touched_owner_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OwnerAnalysis {
+    pub id: String,
+    pub module_id: String,
+    pub member_name: String,
+    pub dep_owner_ids: Vec<String>,
+    pub eager_dep_owner_ids: Vec<String>,
+    pub accesses: Vec<OwnerAccessRecord>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OwnerAccessRecord {
+    pub name: String,
+    pub access_kind: String, // "read" | "write"
+    pub phase: String,       // currently "eager"
+    pub owner_id: Option<String>,
+    pub kind: String, // "local_declaration" | "runtime_import"
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,6 +105,8 @@ struct SemanticExtraction {
     owner_ids: Vec<String>,
     program_item_ids: Vec<String>,
     side_effect_ids: Vec<String>,
+    replayable_side_effect_ids: Vec<String>,
+    side_effect_records: Vec<SideEffectAnalysis>,
 }
 
 #[derive(Debug, Serialize)]
@@ -107,7 +143,7 @@ pub fn run(cli: &Cli) -> Result<()> {
     let analysis_summary = analyze_chunks(&chunks, &parse_summary);
     let program_ir = build_program_ir(&analysis_summary);
     let owner_graph = build_owner_graph(&program_ir);
-    let plan_summary = build_plan(&owner_graph);
+    let plan_summary = build_plan(&owner_graph, &analysis_summary);
     emit_js_topology_shell(&cli.out_root, &chunks)?;
     emit_js_harness_index(&cli.out_root, &chunks)?;
     write_js_harness_manifest(cli, &chunks)?;
@@ -235,6 +271,7 @@ fn write_planner_snapshot(
         "selectedModules": plan.selected_modules,
         "extractionGroups": plan.extraction_groups,
         "rationale": plan.rationale,
+        "debug": plan.debug,
     });
     fs::write(
         out_root.join("planner_snapshot.json"),
@@ -358,6 +395,80 @@ pub(crate) fn resolve_dep(source_path: &str, spec: &str) -> Option<String> {
     Some(joined.to_string_lossy().replace('\\', "/"))
 }
 
+fn extract_member_names(content: &str) -> Vec<String> {
+    let mut parser = Parser::new();
+    if parser
+        .set_language(&tree_sitter_javascript::LANGUAGE.into())
+        .is_err()
+    {
+        return Vec::new();
+    }
+    let Some(tree) = parser.parse(content, None) else {
+        return Vec::new();
+    };
+    let root = tree.root_node();
+    let mut cursor = root.walk();
+    let mut names = BTreeSet::new();
+
+    for node in root.children(&mut cursor) {
+        if !node.is_named() {
+            continue;
+        }
+        collect_top_level_declared_names(node, content, &mut names);
+    }
+
+    names.into_iter().collect()
+}
+
+fn collect_top_level_declared_names(
+    node: tree_sitter::Node<'_>,
+    content: &str,
+    out: &mut BTreeSet<String>,
+) {
+    match node.kind() {
+        "function_declaration" | "class_declaration" => {
+            if let Some(name) = node.child_by_field_name("name") {
+                if let Ok(text) = name.utf8_text(content.as_bytes()) {
+                    out.insert(text.to_string());
+                }
+            }
+        }
+        "variable_declaration" | "lexical_declaration" => {
+            let mut c = node.walk();
+            for child in node.named_children(&mut c) {
+                if child.kind() == "variable_declarator" {
+                    if let Some(name) = child.child_by_field_name("name") {
+                        collect_binding_names(name, content, out);
+                    }
+                }
+            }
+        }
+        "export_statement" => {
+            let mut c = node.walk();
+            for child in node.named_children(&mut c) {
+                collect_top_level_declared_names(child, content, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_binding_names(node: tree_sitter::Node<'_>, content: &str, out: &mut BTreeSet<String>) {
+    match node.kind() {
+        "identifier" => {
+            if let Ok(text) = node.utf8_text(content.as_bytes()) {
+                out.insert(text.to_string());
+            }
+        }
+        _ => {
+            let mut c = node.walk();
+            for child in node.named_children(&mut c) {
+                collect_binding_names(child, content, out);
+            }
+        }
+    }
+}
+
 fn classify_top_level_items(content: &str) -> SemanticExtraction {
     let mut parser = Parser::new();
     if parser
@@ -397,6 +508,20 @@ fn classify_top_level_items(content: &str) -> SemanticExtraction {
                 let id = format!("{}_{:05}", kind.id_prefix(), side_effect_idx);
                 side_effect_idx += 1;
                 out.side_effect_ids.push(id.clone());
+                let (uses, _) = identifier_accesses_in_node(node, content);
+                let node_text = node.utf8_text(content.as_bytes()).unwrap_or("");
+                if is_replayable_attached_side_effect_node(node) {
+                    out.replayable_side_effect_ids.push(id.clone());
+                }
+                out.side_effect_records.push(SideEffectAnalysis {
+                    id: id.clone(),
+                    replayable: is_replayable_attached_side_effect_node(node),
+                    runtime_sensitive: node_text.contains("eval(")
+                        || node_text.contains("import.meta")
+                        || node_text.contains("await "),
+                    touched_names: uses.into_iter().collect(),
+                    touched_owner_ids: Vec::new(),
+                });
                 id
             }
         };
@@ -431,6 +556,10 @@ fn classify_program_item_kind(node: tree_sitter::Node<'_>) -> ProgramItemKind {
     }
 }
 
+fn is_replayable_attached_side_effect_node(node: tree_sitter::Node<'_>) -> bool {
+    node.kind() == "expression_statement"
+}
+
 pub fn analyze_chunks(
     chunks: &[SourceChunk],
     parse_summary: &[ParsedChunkSummary],
@@ -442,6 +571,7 @@ pub fn analyze_chunks(
             let semantic = classify_top_level_items(&chunk.content);
             ModuleAnalysis {
                 source_path: chunk.source_path.clone(),
+                member_names: extract_member_names(&chunk.content),
                 import_specifiers: extract_import_specifiers(&chunk.content),
                 resolved_deps: Vec::new(),
                 export_count: parsed.exports,
@@ -451,6 +581,12 @@ pub fn analyze_chunks(
                 owner_ids: semantic.owner_ids,
                 program_item_ids: semantic.program_item_ids,
                 side_effect_ids: semantic.side_effect_ids,
+                replayable_side_effect_ids: semantic.replayable_side_effect_ids,
+                runtime_sensitive_effects: chunk.content.contains("eval(")
+                    || chunk.content.contains("import.meta")
+                    || chunk.content.contains("await "),
+                side_effect_touched_owner_ids: Vec::new(),
+                side_effect_records: semantic.side_effect_records,
             }
         })
         .collect();
@@ -463,7 +599,387 @@ pub fn analyze_chunks(
             .filter(|dep| universe.contains(dep))
             .collect();
     }
-    AnalysisSummary { modules }
+    let owner_ids_by_module = modules
+        .iter()
+        .map(|m| {
+            (
+                m.source_path.clone(),
+                m.member_names
+                    .iter()
+                    .map(|member| format!("{}::{}", m.source_path, member))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    for (module, chunk) in modules.iter_mut().zip(chunks.iter()) {
+        let side_effect_uses =
+            top_level_side_effect_identifier_uses(&chunk.content, &module.member_names);
+        let mut touched_owner_ids = Vec::new();
+        for owner_id in owner_ids_by_module
+            .get(&module.source_path)
+            .cloned()
+            .unwrap_or_default()
+        {
+            if let Some(owner_name) = owner_id.rsplit("::").next() {
+                if side_effect_uses.contains(owner_name) {
+                    touched_owner_ids.push(owner_id);
+                }
+            }
+        }
+        for dep in &module.resolved_deps {
+            for owner_id in owner_ids_by_module.get(dep).cloned().unwrap_or_default() {
+                if let Some(owner_name) = owner_id.rsplit("::").next() {
+                    if side_effect_uses.contains(owner_name) {
+                        touched_owner_ids.push(owner_id);
+                    }
+                }
+            }
+        }
+        touched_owner_ids.sort();
+        touched_owner_ids.dedup();
+        module.side_effect_touched_owner_ids = touched_owner_ids.clone();
+        for side_effect_record in &mut module.side_effect_records {
+            let mut record_touched = Vec::new();
+            for owner_id in owner_ids_by_module
+                .get(&module.source_path)
+                .cloned()
+                .unwrap_or_default()
+            {
+                if let Some(owner_name) = owner_id.rsplit("::").next() {
+                    if side_effect_record
+                        .touched_names
+                        .iter()
+                        .any(|n| n == owner_name)
+                    {
+                        record_touched.push(owner_id);
+                    }
+                }
+            }
+            for dep in &module.resolved_deps {
+                for owner_id in owner_ids_by_module.get(dep).cloned().unwrap_or_default() {
+                    if let Some(owner_name) = owner_id.rsplit("::").next() {
+                        if side_effect_record
+                            .touched_names
+                            .iter()
+                            .any(|n| n == owner_name)
+                        {
+                            record_touched.push(owner_id);
+                        }
+                    }
+                }
+            }
+            record_touched.sort();
+            record_touched.dedup();
+            side_effect_record.touched_owner_ids = record_touched;
+        }
+    }
+    let owners = build_owner_analyses(chunks, &modules);
+    AnalysisSummary { modules, owners }
+}
+
+fn top_level_side_effect_identifier_uses(
+    content: &str,
+    module_member_names: &[String],
+) -> HashSet<String> {
+    let mut parser = Parser::new();
+    if parser
+        .set_language(&tree_sitter_javascript::LANGUAGE.into())
+        .is_err()
+    {
+        return HashSet::new();
+    }
+    let Some(tree) = parser.parse(content, None) else {
+        return HashSet::new();
+    };
+    let root = tree.root_node();
+    let member_name_set = module_member_names.iter().cloned().collect::<HashSet<_>>();
+    let mut cursor = root.walk();
+    let mut uses = HashSet::new();
+    for node in root.children(&mut cursor) {
+        if !node.is_named() || node.kind() == "comment" {
+            continue;
+        }
+        let mut declared = BTreeSet::new();
+        collect_top_level_declared_names(node, content, &mut declared);
+        // only side-effect-ish top-level nodes: nodes that don't declare new owners
+        if !declared.is_empty() && declared.iter().any(|name| member_name_set.contains(name)) {
+            continue;
+        }
+        let (node_uses, _) = identifier_accesses_in_node(node, content);
+        uses.extend(node_uses);
+    }
+    uses
+}
+
+fn build_owner_analyses(chunks: &[SourceChunk], modules: &[ModuleAnalysis]) -> Vec<OwnerAnalysis> {
+    let module_by_path = modules
+        .iter()
+        .map(|m| (m.source_path.as_str(), m))
+        .collect::<HashMap<_, _>>();
+    let mut owners = Vec::new();
+    for chunk in chunks {
+        let Some(module) = module_by_path.get(chunk.source_path.as_str()) else {
+            continue;
+        };
+        let owner_uses = owner_identifier_uses_by_member(&chunk.content);
+        let owner_writes = owner_identifier_writes_by_member(&chunk.content);
+        for member_name in &module.member_names {
+            let owner_id = format!("{}::{}", module.source_path, member_name);
+            let mut dep_owner_ids = Vec::new();
+            let uses = owner_uses
+                .get(member_name.as_str())
+                .cloned()
+                .unwrap_or_default();
+            let writes = owner_writes
+                .get(member_name.as_str())
+                .cloned()
+                .unwrap_or_default();
+            // local declaration references
+            for local_member in &module.member_names {
+                if local_member == member_name {
+                    continue;
+                }
+                if uses.contains(local_member.as_str()) {
+                    dep_owner_ids.push(format!("{}::{}", module.source_path, local_member));
+                }
+            }
+            // imported module references (still coarse; ties to dep modules)
+            for dep in &module.resolved_deps {
+                if let Some(dep_module) = module_by_path.get(dep.as_str()) {
+                    for dep_member in &dep_module.member_names {
+                        if uses.contains(dep_member.as_str()) {
+                            dep_owner_ids.push(format!("{}::{}", dep, dep_member));
+                        }
+                    }
+                }
+            }
+            dep_owner_ids.sort();
+            dep_owner_ids.dedup();
+            let mut eager_dep_owner_ids = dep_owner_ids
+                .iter()
+                .filter(|dep_owner_id| {
+                    dep_owner_id
+                        .rsplit("::")
+                        .next()
+                        .map(|name| writes.contains(name))
+                        .unwrap_or(false)
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            eager_dep_owner_ids.sort();
+            eager_dep_owner_ids.dedup();
+            owners.push(OwnerAnalysis {
+                id: owner_id,
+                module_id: module.source_path.clone(),
+                member_name: member_name.clone(),
+                dep_owner_ids,
+                eager_dep_owner_ids,
+                accesses: build_owner_access_records(
+                    member_name,
+                    &uses,
+                    &writes,
+                    module,
+                    &module_by_path,
+                ),
+            });
+        }
+    }
+    owners.sort_by(|l, r| l.id.cmp(&r.id));
+    owners
+}
+
+fn build_owner_access_records(
+    member_name: &str,
+    uses: &HashSet<String>,
+    writes: &HashSet<String>,
+    module: &ModuleAnalysis,
+    module_by_path: &HashMap<&str, &ModuleAnalysis>,
+) -> Vec<OwnerAccessRecord> {
+    let mut accesses = Vec::new();
+    for local_member in &module.member_names {
+        if local_member == member_name {
+            continue;
+        }
+        let is_read = uses.contains(local_member);
+        let is_write = writes.contains(local_member);
+        if !is_read && !is_write {
+            continue;
+        }
+        accesses.push(OwnerAccessRecord {
+            name: local_member.clone(),
+            access_kind: if is_write { "write" } else { "read" }.to_string(),
+            phase: "eager".to_string(),
+            owner_id: Some(format!("{}::{}", module.source_path, local_member)),
+            kind: "local_declaration".to_string(),
+        });
+    }
+    for dep in &module.resolved_deps {
+        if let Some(dep_module) = module_by_path.get(dep.as_str()) {
+            for dep_member in &dep_module.member_names {
+                let is_read = uses.contains(dep_member);
+                let is_write = writes.contains(dep_member);
+                if !is_read && !is_write {
+                    continue;
+                }
+                accesses.push(OwnerAccessRecord {
+                    name: dep_member.clone(),
+                    access_kind: if is_write { "write" } else { "read" }.to_string(),
+                    phase: "eager".to_string(),
+                    owner_id: Some(format!("{}::{}", dep, dep_member)),
+                    kind: "local_declaration".to_string(),
+                });
+            }
+        }
+    }
+    // Any remaining symbol access that is not resolved to a local/known dep owner
+    // is represented as runtime import access in the IR contract.
+    let known_names = accesses
+        .iter()
+        .map(|a| a.name.clone())
+        .collect::<HashSet<_>>();
+    for name in uses {
+        if known_names.contains(name) {
+            continue;
+        }
+        accesses.push(OwnerAccessRecord {
+            name: name.clone(),
+            access_kind: if writes.contains(name) {
+                "write"
+            } else {
+                "read"
+            }
+            .to_string(),
+            phase: "eager".to_string(),
+            owner_id: None,
+            kind: "runtime_import".to_string(),
+        });
+    }
+    accesses.sort_by(|l, r| {
+        l.kind
+            .cmp(&r.kind)
+            .then_with(|| l.name.cmp(&r.name))
+            .then_with(|| l.access_kind.cmp(&r.access_kind))
+            .then_with(|| l.phase.cmp(&r.phase))
+    });
+    accesses
+}
+
+fn owner_identifier_writes_by_member(content: &str) -> HashMap<String, HashSet<String>> {
+    let mut parser = Parser::new();
+    if parser
+        .set_language(&tree_sitter_javascript::LANGUAGE.into())
+        .is_err()
+    {
+        return HashMap::new();
+    }
+    let Some(tree) = parser.parse(content, None) else {
+        return HashMap::new();
+    };
+    let root = tree.root_node();
+    let mut cursor = root.walk();
+    let mut out = HashMap::<String, HashSet<String>>::new();
+    for node in root.children(&mut cursor) {
+        if !node.is_named() {
+            continue;
+        }
+        let mut declared = BTreeSet::new();
+        collect_top_level_declared_names(node, content, &mut declared);
+        if declared.is_empty() {
+            continue;
+        }
+        let (_, writes) = identifier_accesses_in_node(node, content);
+        for name in declared {
+            out.entry(name).or_default().extend(writes.iter().cloned());
+        }
+    }
+    out
+}
+
+fn owner_identifier_uses_by_member(content: &str) -> HashMap<String, HashSet<String>> {
+    let mut parser = Parser::new();
+    if parser
+        .set_language(&tree_sitter_javascript::LANGUAGE.into())
+        .is_err()
+    {
+        return HashMap::new();
+    }
+    let Some(tree) = parser.parse(content, None) else {
+        return HashMap::new();
+    };
+    let root = tree.root_node();
+    let mut cursor = root.walk();
+    let mut out = HashMap::<String, HashSet<String>>::new();
+    for node in root.children(&mut cursor) {
+        if !node.is_named() {
+            continue;
+        }
+        let mut declared = BTreeSet::new();
+        collect_top_level_declared_names(node, content, &mut declared);
+        if declared.is_empty() {
+            continue;
+        }
+        let (uses, _) = identifier_accesses_in_node(node, content);
+        for name in declared {
+            out.entry(name).or_default().extend(uses.iter().cloned());
+        }
+    }
+    out
+}
+
+fn identifier_accesses_in_node(
+    node: tree_sitter::Node<'_>,
+    content: &str,
+) -> (HashSet<String>, HashSet<String>) {
+    let mut uses = HashSet::new();
+    let mut writes = HashSet::new();
+    let mut stack = vec![node];
+    while let Some(current) = stack.pop() {
+        if current.kind() == "identifier" {
+            let Ok(name) = current.utf8_text(content.as_bytes()) else {
+                continue;
+            };
+            if name.is_empty() {
+                continue;
+            }
+            uses.insert(name.to_string());
+            if is_write_identifier(current) {
+                writes.insert(name.to_string());
+            }
+        }
+        let mut cursor = current.walk();
+        for child in current.named_children(&mut cursor) {
+            stack.push(child);
+        }
+    }
+    (uses, writes)
+}
+
+fn is_write_identifier(identifier: tree_sitter::Node<'_>) -> bool {
+    let Some(parent) = identifier.parent() else {
+        return false;
+    };
+    if parent.kind() == "assignment_expression" {
+        if let Some(left) = parent.child_by_field_name("left") {
+            return left.id() == identifier.id() || node_contains(left, identifier.id());
+        }
+    }
+    if parent.kind() == "update_expression" {
+        return true;
+    }
+    false
+}
+
+fn node_contains(node: tree_sitter::Node<'_>, target_id: usize) -> bool {
+    if node.id() == target_id {
+        return true;
+    }
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        if node_contains(child, target_id) {
+            return true;
+        }
+    }
+    false
 }
 
 #[allow(dead_code)]
@@ -558,6 +1074,68 @@ mod tests {
     }
 
     #[test]
+    fn planner_marks_external_side_effect_dependency_as_blocking() {
+        let chunks = vec![
+            SourceChunk {
+                source_path: "a.js".to_string(),
+                entry_file: "a.js".to_string(),
+                content: "import { b } from './b.js'; window.a = b;".to_string(),
+            },
+            SourceChunk {
+                source_path: "b.js".to_string(),
+                entry_file: "b.js".to_string(),
+                content: "window.b = 1; export const b = 1;".to_string(),
+            },
+        ];
+        let parsed = parse_chunks(&chunks).expect("parse chunks");
+        let analysis = analyze_chunks(&chunks, &parsed);
+        let program_ir = build_program_ir(&analysis);
+        let graph = build_owner_graph(&program_ir);
+        let plan = build_plan(&graph, &analysis);
+        let has_blocking = plan.debug.candidates.iter().any(|candidate| {
+            candidate
+                .blocking_reasons
+                .iter()
+                .any(|reason| reason.starts_with("written_by_outside_item:"))
+        });
+        assert!(
+            has_blocking,
+            "expected written_by_outside_item blocking reason"
+        );
+    }
+
+    #[test]
+    fn planner_marks_effectful_dependency_order_blocking() {
+        let chunks = vec![
+            SourceChunk {
+                source_path: "a.js".to_string(),
+                entry_file: "a.js".to_string(),
+                content: "import { b } from './b.js'; window.a = b;".to_string(),
+            },
+            SourceChunk {
+                source_path: "b.js".to_string(),
+                entry_file: "b.js".to_string(),
+                content: "window.b = 1; export const b = 1;".to_string(),
+            },
+        ];
+        let parsed = parse_chunks(&chunks).expect("parse chunks");
+        let analysis = analyze_chunks(&chunks, &parsed);
+        let program_ir = build_program_ir(&analysis);
+        let graph = build_owner_graph(&program_ir);
+        let plan = build_plan(&graph, &analysis);
+        let has_order_blocking = plan.debug.candidates.iter().any(|candidate| {
+            candidate
+                .blocking_reasons
+                .iter()
+                .any(|reason| reason.starts_with("unsupported_forward_eager_dependency:"))
+        });
+        assert!(
+            has_order_blocking,
+            "expected unsupported_forward_eager_dependency blocking reason"
+        );
+    }
+
+    #[test]
     fn analysis_and_plan_select_no_import_module() {
         let chunks = vec![
             SourceChunk {
@@ -575,7 +1153,7 @@ mod tests {
         let analysis = analyze_chunks(&chunks, &parsed);
         let program_ir = build_program_ir(&analysis);
         let graph = build_owner_graph(&program_ir);
-        let plan = build_plan(&graph);
+        let plan = build_plan(&graph, &analysis);
         assert!(plan.selected_modules.contains(&"b.js".to_string()));
         assert!(!plan.extraction_groups.is_empty());
     }

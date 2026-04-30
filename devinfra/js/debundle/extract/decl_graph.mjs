@@ -1073,6 +1073,10 @@ function selectedModuleAccessView(record) {
   return view;
 }
 
+export function getOrderedInitPlannerStateForTesting(analysis, ownerById = null) {
+  return getOrderedInitPlannerState(analysis, ownerById);
+}
+
 function getOrderedInitPlannerState(analysis, ownerById = null) {
   const cached = SELECTED_MODULE_PLANNER_STATE_CACHE.get(analysis);
   if (cached) {
