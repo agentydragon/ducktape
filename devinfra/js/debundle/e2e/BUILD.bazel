@@ -1,4 +1,5 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load(":defs.bzl", "e2e_test")
 
 # End-to-end tests treating the debundler as a black-box binary.
 # `support` and `black_box` only depend on node stdlib and the run_transform
@@ -16,39 +17,10 @@ js_library(
     deps = [":black_box"],
 )
 
-_E2E_DATA = [
-    ":support",
-    "//devinfra/js/debundle/transforms:run_transform",
-]
+e2e_test(name = "lowering_test")
 
-_E2E_ENV = {
-    "DUCKTAPE_RUN_TRANSFORM_BIN": "$(rootpath //devinfra/js/debundle/transforms:run_transform)",
-}
+e2e_test(name = "cross_module_test")
 
-js_test(
-    name = "lowering_test",
-    data = _E2E_DATA + ["lowering_test.mjs"],
-    entry_point = "lowering_test.mjs",
-    env = _E2E_ENV,
-)
+e2e_test(name = "naturalization_test")
 
-js_test(
-    name = "cross_module_test",
-    data = _E2E_DATA + ["cross_module_test.mjs"],
-    entry_point = "cross_module_test.mjs",
-    env = _E2E_ENV,
-)
-
-js_test(
-    name = "naturalization_test",
-    data = _E2E_DATA + ["naturalization_test.mjs"],
-    entry_point = "naturalization_test.mjs",
-    env = _E2E_ENV,
-)
-
-js_test(
-    name = "url_rebase_test",
-    data = _E2E_DATA + ["url_rebase_test.mjs"],
-    entry_point = "url_rebase_test.mjs",
-    env = _E2E_ENV,
-)
+e2e_test(name = "url_rebase_test")
