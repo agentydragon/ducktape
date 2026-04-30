@@ -167,7 +167,7 @@ const server = createServer(async (req, res) => {
   } catch (err) {
     if (err.code === "ENOENT") {
       res.writeHead(404);
-      res.end("Not found: " + urlPath);
+      res.end("Not found");
     } else {
       res.writeHead(500);
       res.end("Server error: " + err.message);
