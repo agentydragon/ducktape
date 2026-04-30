@@ -32,6 +32,9 @@ function listFiles(root, prefix = "") {
   const entries = readdirSync(directory, { withFileTypes: true });
   const files = [];
   for (const entry of entries) {
+    // Sibling notes (e.g. HUMANLIKE_GAPS.md) live alongside the golden but
+    // are not part of the generator output.
+    if (entry.name.endsWith(".md")) continue;
     const relativePath = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
     if (entry.isDirectory()) {
       files.push(...listFiles(root, relativePath));

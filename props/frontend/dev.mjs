@@ -8,7 +8,7 @@ import tailwindcss from "esbuild-plugin-tailwindcss";
 import { createServer } from "http";
 import { readFile } from "fs/promises";
 import { fileURLToPath } from "url";
-import { dirname, resolve, join, extname } from "path";
+import { dirname, resolve, extname } from "path";
 import { existsSync } from "fs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -143,6 +143,16 @@ if (!skipBackend) {
   backendHealthy = await waitForBackend();
 }
 
+const DIST_ROOT = resolve(__dirname, "dist");
+const FRONTEND_ROOT = resolve(__dirname);
+
+function resolveSafe(root, urlPath) {
+  // Strip leading slashes and resolve to an absolute path. Reject anything
+  // that escapes `root` after normalization. Closes CodeQL js/path-injection.
+  const candidate = resolve(root, urlPath.replace(/^\/+/, ""));
+  return candidate === root || candidate.startsWith(root + "/") ? candidate : null;
+}
+
 // Start HTTP server
 const server = createServer(async (req, res) => {
   let urlPath = req.url.split("?")[0];
@@ -152,13 +162,18 @@ const server = createServer(async (req, res) => {
     urlPath = "/index.html";
   }
 
-  // Try to serve from dist first, then from root
-  let filePath = join(__dirname, "dist", urlPath);
-  if (!existsSync(filePath)) {
-    filePath = join(__dirname, urlPath);
+  // Try to serve from dist first, then from root. Reject path-traversal.
+  let filePath = resolveSafe(DIST_ROOT, urlPath);
+  if (filePath === null || !existsSync(filePath)) {
+    filePath = resolveSafe(FRONTEND_ROOT, urlPath);
   }
 
   try {
+    if (filePath === null) {
+      const err = new Error("ENOENT");
+      err.code = "ENOENT";
+      throw err;
+    }
     const content = await readFile(filePath);
     const ext = extname(filePath);
     res.setHeader("Content-Type", CONTENT_TYPES[ext] || "application/octet-stream");

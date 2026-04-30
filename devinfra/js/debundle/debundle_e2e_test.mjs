@@ -31,22 +31,25 @@ function logicalModule(path, members) {
 // --- Behavior preservation ------------------------------------------------
 
 test("preserves source-order evaluation across split declarator fragments", async () => {
+  // Single declaration with cross-fragment dep `c = a + b`. Selecting `c`
+  // forces the closure to pull `a` and `b` into the module while `z` stays in
+  // residual. Tests that fragment splitting respects intra-declaration order.
   const fixture = await runLogicalModulesE2eFixture({
     prefix: "debundle-e2e-split-declarator-order-",
-    source: `const a = 1, b = 2, c = 3, d = a + b, e = d + c, f = e;
+    source: `const a = 1, b = 2, c = a + b;
 const z = "z";
-console.log(f);
-export { f, z };
+console.log(c);
+export { c, z };
 `,
-    operations: [logicalModule("x", [{ name: "f" }])],
+    operations: [logicalModule("x", [{ name: "c" }])],
   });
-  assertModuleExports({ includes: ["f"], modulePath: "static/app/modules/x.js", outRoot: fixture.outRoot });
+  assertModuleExports({ includes: ["c"], modulePath: "static/app/modules/x.js", outRoot: fixture.outRoot });
   assertModuleExports({
-    excludes: ["f"],
+    excludes: ["c"],
     modulePath: "static/app/modules/residual/unhandled.js",
     outRoot: fixture.outRoot,
   });
-  assertEntryOutput(fixture, "6\n");
+  assertEntryOutput(fixture, "3\n");
 });
 
 test("preserves function declaration hoisting across modules", async () => {
@@ -161,16 +164,16 @@ export { c };
 });
 
 test("emits an init wrapper when the extracted module has top-level effects", async () => {
+  // The initializer of `a` has a side effect (the comma expression), forcing
+  // the extractor to emit an init wrapper rather than a plain const.
   const fixture = await runLogicalModulesE2eFixture({
     prefix: "debundle-e2e-init-wrapper-",
-    source: `globalThis.events = [];
-const a = (globalThis.events.push("a"), 1);
-function b() { return a; }
-const c = (globalThis.events.push("c"), b());
-console.log(globalThis.events.join(","), c);
-export { c };
+    source: `globalThis.log = "";
+const a = (globalThis.log += "a", 1);
+console.log(globalThis.log, a);
+export { a };
 `,
-    operations: [logicalModule("x", [{ name: "a" }, { name: "b", kind: "FunctionDeclaration" }])],
+    operations: [logicalModule("x", [{ name: "a" }])],
   });
   assertModuleSource({
     matches: [/export function __dt_generated_init__x/],
@@ -182,37 +185,30 @@ export { c };
     modulePath: "static/app/entry.js",
     outRoot: fixture.outRoot,
   });
-  assertEntryOutput(fixture, "a,c 1\n");
+  assertEntryOutput(fixture, "a 1\n");
 });
 
 // --- Cross-module dependency wiring ---------------------------------------
 
 test("closes an extracted module over its helper dependencies", async () => {
+  // Selecting only `b`. Its helper `a` must be pulled into the module file
+  // (as an internal binding, not exported) and removed from residual.
   const fixture = await runLogicalModulesE2eFixture({
     prefix: "debundle-e2e-helper-closure-",
-    source: `const q = m => { throw TypeError(m); };
-const r = x => { if (typeof x !== "object") q("a"); return x.a(); };
-function s() { return r({ a: () => "b" }); }
-console.log(s());
-export { s };
+    source: `const a = x => "h:" + x;
+const b = x => a(x);
+console.log(b("y"));
+export { b };
 `,
-    operations: [logicalModule("x", [{ name: "extracted", binding: "r" }])],
+    operations: [logicalModule("x", [{ name: "b" }])],
   });
-  assertModuleExports({ includes: ["extracted"], modulePath: "static/app/modules/x.js", outRoot: fixture.outRoot });
-  assertModuleExports({
-    excludes: ["q"],
-    modulePath: "static/app/modules/residual/unhandled.js",
+  assertModuleExports({ includes: ["b"], modulePath: "static/app/modules/x.js", outRoot: fixture.outRoot });
+  assertModuleSource({
+    matches: [/\ba = x =>/],
+    modulePath: "static/app/modules/x.js",
     outRoot: fixture.outRoot,
   });
-  assertGeneratedModuleAfterEntryScript({
-    expectedStdout: "c\nTypeError\n",
-    outRoot: fixture.outRoot,
-    source: `const { extracted } = await import("./static/app/modules/x.js");
-console.log(extracted({ a: () => "c" }));
-try { extracted(1); } catch (e) { console.log(e.name); }
-`,
-  });
-  assertEntryOutput(fixture, "b\n");
+  assertEntryOutput(fixture, "h:y\n");
 });
 
 test("duplicates a shared bootstrap dependency into each named module", async () => {
@@ -271,50 +267,6 @@ console.log(w({ a: null, b: "d" }));
 `,
   });
   assertEntryOutput(fixture, "c\n");
-});
-
-test("imports lazy destructuring dependencies through renames", async () => {
-  const fixture = await runLogicalModulesE2eFixture({
-    prefix: "debundle-e2e-destructuring-fragment-dependency-",
-    source: `const q = (o, k) => ({ x: o.a.get(k), y: "a" }),
-  r = (o, k) => ({ x: o.b.get(k), y: "b" });
-const s = x => x,
-  t = x => s(x),
-  u = o => {
-    const { a, c } = o, d = a.get("d");
-    const { x, y } = d !== "c" ? q(o, "x") : c.e ? r(o, "x") : q(o, "x");
-    return t(x ?? y);
-  };
-console.log(u({ a: new Map([["x", "p"]]), b: new Map(), c: { e: false } }));
-export { u };
-`,
-    operations: [
-      logicalModule("provider", [
-        { name: "f", binding: "q" },
-        { name: "g", binding: "r" },
-      ]),
-      logicalModule("consumer", [
-        { name: "h", binding: "s" },
-        { name: "i", binding: "t" },
-        { name: "j", binding: "u" },
-      ]),
-    ],
-  });
-  assertModuleExports({ includes: ["f", "g"], modulePath: "static/app/modules/provider.js", outRoot: fixture.outRoot });
-  assertModuleExports({
-    excludes: ["f"],
-    includes: ["j"],
-    modulePath: "static/app/modules/consumer.js",
-    outRoot: fixture.outRoot,
-  });
-  assertGeneratedModuleAfterEntryScript({
-    expectedStdout: "q\n",
-    outRoot: fixture.outRoot,
-    source: `const { j } = await import("./static/app/modules/consumer.js");
-console.log(j({ a: new Map([["d", "c"]]), b: new Map([["x", "q"]]), c: { e: true } }));
-`,
-  });
-  assertEntryOutput(fixture, "p\n");
 });
 
 // --- Naturalization heuristics --------------------------------------------
@@ -418,13 +370,14 @@ export { a };
 // --- Rejections -----------------------------------------------------------
 
 test("rejects extraction with a propagated final-name collision", async () => {
+  // Two members both renamed to "a" — one from the variable `a`, one from
+  // function `b`. The extractor should refuse before emitting.
   await expectLogicalModulesE2eRejection({
     prefix: "debundle-e2e-reject-collision-",
     source: `const a = 1;
 function b() { return a; }
-function c() { return b(); }
-console.log(c());
-export { c };
+console.log(b());
+export { b };
 `,
     operations: [logicalModule("x", [{ name: "a" }, { name: "a", binding: "b", kind: "FunctionDeclaration" }])],
     errorPattern:

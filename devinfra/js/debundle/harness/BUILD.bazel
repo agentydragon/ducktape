@@ -192,13 +192,6 @@ js_binary(
     name = "generate_excalidraw_reference",
     data = [
         "benchmark_excalidraw.mjs",
-        "testdata/excalidraw_reference/HUMANLIKE_GAPS.md",
-        "testdata/excalidraw_reference/excalidraw_app_state.js",
-        "testdata/excalidraw_reference/excalidraw_canvas_interactions.js",
-        "testdata/excalidraw_reference/excalidraw_element_mutations.js",
-        "testdata/excalidraw_reference/excalidraw_history_stack.js",
-        "testdata/excalidraw_reference/excalidraw_scene_restore.js",
-        "testdata/excalidraw_reference/excalidraw_ui_actions.js",
         "testdata/excalidraw_reference/spec.jsonc",
         ":excalidraw_bundle_assets",
         ":generate_excalidraw_reference_lib",
@@ -229,8 +222,6 @@ js_test(
     size = "large",
     data = [
         "excalidraw_reference_golden_test.mjs",
-        "testdata/excalidraw_reference/HUMANLIKE_GAPS.md",
-        "testdata/excalidraw_reference/README.md",
         "testdata/excalidraw_reference/excalidraw_app_state.js",
         "testdata/excalidraw_reference/excalidraw_canvas_interactions.js",
         "testdata/excalidraw_reference/excalidraw_element_mutations.js",

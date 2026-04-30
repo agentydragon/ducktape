@@ -59,13 +59,7 @@ export async function buildExcalidrawReferenceGolden(outDir, options = {}) {
     mkdirSync(dirname(outputPath), { recursive: true });
     writeFileSync(outputPath, serializeGeneratedJsFile(file));
   }
-  writeFileSync(
-    join(resolvedOutDir, "README.md"),
-    `# Excalidraw debundler semi-recovered reference output\n\nChunk: ${chunkId}\n\nGenerated modules: ${files.length}.\n\nSpec source: testdata/excalidraw_reference/spec.jsonc\n`
-  );
   writeFileSync(join(resolvedOutDir, "spec.jsonc"), readFileSync(specPath, "utf8"));
-  const gapsPath = join(dirname(specPath), "HUMANLIKE_GAPS.md");
-  writeFileSync(join(resolvedOutDir, "HUMANLIKE_GAPS.md"), readFileSync(gapsPath, "utf8"));
 }
 
 function parseSpec(text, sourceName) {
