@@ -2,19 +2,13 @@ load("@aspect_rules_js//js:defs.bzl", "js_library")
 load(":defs.bzl", "e2e_test")
 
 # End-to-end tests treating the debundler as a black-box binary.
-# `support` and `black_box` only depend on node stdlib and the run_transform
-# binary — no debundler-internal modules — so a re-implementation in another
+# `support` only depends on node stdlib and the run_transform binary —
+# no debundler-internal modules — so a re-implementation in another
 # language can drive these tests verbatim.
-
-js_library(
-    name = "black_box",
-    srcs = ["black_box.mjs"],
-)
 
 js_library(
     name = "support",
     srcs = ["support.mjs"],
-    deps = [":black_box"],
 )
 
 e2e_test(name = "lowering_test")

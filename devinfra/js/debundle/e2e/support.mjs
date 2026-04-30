@@ -3,12 +3,40 @@
 // re-implementation in another language can drive these tests verbatim.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { createWebFixtureRoots, runNodeScript, writeSnapshotFixture } from "./black_box.mjs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 
 let moduleExportProbeCounter = 0;
 let generatedModuleScriptCounter = 0;
+
+function createWebFixtureRoots(prefix) {
+  const root = mkdtempSync(join(tmpdir(), prefix));
+  return {
+    extractedRoot: join(root, "extracted"),
+    outRoot: join(root, "out"),
+    snapshotRoot: join(root, "snapshot"),
+  };
+}
+
+function writeTextFile(path, content) {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, content);
+}
+
+function writeSnapshotFixture({ extractedRoot, files, jsFiles, snapshotRoot }) {
+  // Mark the snapshot tree as ESM so node loads emitted .js files as modules.
+  writeTextFile(join(snapshotRoot, "package.json"), `${JSON.stringify({ type: "module" }, null, 2)}\n`);
+  for (const [relPath, content] of Object.entries(files)) {
+    writeTextFile(join(snapshotRoot, relPath), content);
+  }
+  mkdirSync(extractedRoot, { recursive: true });
+  writeTextFile(join(extractedRoot, "js-files.txt"), `${jsFiles.join("\n")}\n`);
+}
+
+function runNodeScript(path) {
+  return spawnSync(process.execPath, [path], { encoding: "utf8" });
+}
 
 export function logicalModule(path, members) {
   return {
@@ -224,10 +252,9 @@ export function assertNodeOutput(
   path,
   { expectedSignal = null, expectedStatus = 0, expectedStderr = "", expectedStdout }
 ) {
-  assert.deepEqual(runNodeScript(path), {
-    signal: expectedSignal,
-    status: expectedStatus,
-    stderr: expectedStderr,
-    stdout: expectedStdout,
-  });
+  const { signal, status, stderr, stdout } = runNodeScript(path);
+  assert.deepEqual(
+    { signal, status, stderr, stdout },
+    { signal: expectedSignal, status: expectedStatus, stderr: expectedStderr, stdout: expectedStdout }
+  );
 }
