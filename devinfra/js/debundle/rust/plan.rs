@@ -1,5 +1,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
+use petgraph::algo::tarjan_scc;
+use petgraph::graph::DiGraph;
 use serde::Serialize;
 
 use crate::owner_graph::OwnerGraph;
@@ -78,8 +80,15 @@ struct OwnerRecord {
     id: String,
     module_id: String,
     member_name: String,
+    ordinal: usize,
     dep_owner_ids: Vec<String>,
     eager_dep_owner_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProgramItemKind {
+    Declaration,
+    NonDeclaration,
 }
 
 pub fn build_plan(owner_graph: &OwnerGraph, analysis: &AnalysisSummary) -> PlanSummaryV2 {
@@ -135,16 +144,44 @@ fn build_closure_candidates(
     analysis: &AnalysisSummary,
 ) -> Vec<ClosureCandidate> {
     let planner_state = build_ordered_init_planner_state(analysis);
-    let owner_records = build_owner_records(analysis);
+    let (owner_ordinal_by_id, program_item_kind_by_ordinal) = build_program_item_ordinals(analysis);
+    let owner_records = build_owner_records(analysis, &owner_ordinal_by_id);
     let owner_by_id = owner_records
         .iter()
         .map(|record| (record.id.as_str(), record))
         .collect::<HashMap<_, _>>();
 
+    let components = build_owner_components(&owner_records);
+    let mut component_by_id = HashMap::new();
+    let mut component_id_by_owner_id = HashMap::<String, String>::new();
+    for component in &components {
+        component_by_id.insert(component.id.as_str(), component);
+        for owner_id in &component.owner_ids {
+            component_id_by_owner_id.insert(owner_id.clone(), component.id.clone());
+        }
+    }
+    let mut closure_ids_cache = HashMap::<String, Vec<String>>::new();
+    let owner_by_ordinal = owner_records
+        .iter()
+        .map(|owner| (owner.ordinal, owner.id.clone()))
+        .collect::<HashMap<_, _>>();
+
     let mut candidates = Vec::new();
-    for (index, seed) in owner_records.iter().enumerate() {
-        let mut closure_owner_ids = BTreeSet::new();
-        collect_owner_closure(seed.id.as_str(), &owner_by_id, &mut closure_owner_ids);
+    let mut seen_closure_signatures = BTreeSet::new();
+    for seed_component in &components {
+        let required_component_ids = collect_component_closure_ids(
+            seed_component.id.as_str(),
+            &component_by_id,
+            &mut closure_ids_cache,
+        );
+        let closure_owner_ids = expand_contiguous_envelope_owner_ids(
+            &required_component_ids,
+            &component_by_id,
+            &component_id_by_owner_id,
+            &owner_by_ordinal,
+            &program_item_kind_by_ordinal,
+            &mut closure_ids_cache,
+        );
 
         let mut member_names = BTreeSet::new();
         for owner_id in &closure_owner_ids {
@@ -155,7 +192,11 @@ fn build_closure_candidates(
         if member_names.is_empty() {
             continue;
         }
-        let owner_ids = closure_owner_ids.into_iter().collect::<Vec<_>>();
+        let owner_ids = closure_owner_ids;
+        let closure_signature = owner_ids.join("\n");
+        if !seen_closure_signatures.insert(closure_signature) {
+            continue;
+        }
         let semantic_blocking_reasons = derive_blocking_reasons(&owner_ids, &owner_by_id, analysis);
         let mut attached_item_ids = BTreeSet::new();
         let mut covered_module_ordinals = BTreeSet::new();
@@ -207,8 +248,9 @@ fn build_closure_candidates(
             out.into_iter().collect::<Vec<_>>()
         };
         let attached_item_ids_vec = attached_item_ids.iter().cloned().collect::<Vec<_>>();
+        let candidate_id = format!("selected_module_group_{:04}", candidates.len());
         candidates.push(ClosureCandidate {
-            id: format!("selected_module_group_{index:04}"),
+            id: candidate_id.clone(),
             owner_ids: owner_ids.clone(),
             estimated_size: member_names.len(),
             blocking_reasons: blocking_reasons.clone(),
@@ -218,7 +260,7 @@ fn build_closure_candidates(
                 analysis
                     .modules
                     .iter()
-                    .position(|m| m.source_path == seed.module_id)
+                    .position(|m| m.source_path == seed_component.module_id_hint)
                     .unwrap_or(usize::MAX)
             } else {
                 start_ordinal
@@ -226,7 +268,7 @@ fn build_closure_candidates(
             shell_item_ids,
             semantic_blocking_reasons,
             stage_runs: build_stage_runs(
-                &format!("selected_module_group_{index:04}"),
+                &candidate_id,
                 &owner_ids,
                 &attached_item_ids_vec,
                 analysis,
@@ -244,6 +286,213 @@ fn build_closure_candidates(
     candidates
 }
 
+fn expand_contiguous_envelope_owner_ids(
+    initial_component_ids: &[String],
+    component_by_id: &HashMap<&str, &OwnerComponent>,
+    component_id_by_owner_id: &HashMap<String, String>,
+    owner_by_ordinal: &HashMap<usize, String>,
+    program_item_kind_by_ordinal: &HashMap<usize, ProgramItemKind>,
+    closure_ids_cache: &mut HashMap<String, Vec<String>>,
+) -> Vec<String> {
+    let mut selected_component_ids = initial_component_ids
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+
+    let mut changed = true;
+    while changed {
+        changed = false;
+        let mut selected_owner_ids =
+            owners_for_component_ids(&selected_component_ids, component_by_id);
+        if selected_owner_ids.is_empty() {
+            break;
+        }
+        selected_owner_ids.sort_by_key(|(_, ordinal)| *ordinal);
+        let start_ordinal = selected_owner_ids.first().map(|(_, ord)| *ord).unwrap_or(0);
+        let end_ordinal = selected_owner_ids.last().map(|(_, ord)| *ord).unwrap_or(0);
+        for ordinal in start_ordinal..=end_ordinal {
+            let Some(program_item_kind) = program_item_kind_by_ordinal.get(&ordinal).copied()
+            else {
+                // Missing-program-item barrier.
+                changed = false;
+                break;
+            };
+            if program_item_kind != ProgramItemKind::Declaration {
+                // Non-declaration barrier.
+                changed = false;
+                break;
+            }
+            let Some(owner_id) = owner_by_ordinal.get(&ordinal) else {
+                // Missing-declaration barrier.
+                changed = false;
+                break;
+            };
+            let Some(component_id) = component_id_by_owner_id.get(owner_id) else {
+                // JS contiguous-envelope behavior treats missing component mapping
+                // as envelope barrier.
+                changed = false;
+                break;
+            };
+            if selected_component_ids.insert(component_id.clone()) {
+                changed = true;
+                for dep_component_id in collect_component_closure_ids(
+                    component_id.as_str(),
+                    component_by_id,
+                    closure_ids_cache,
+                ) {
+                    if selected_component_ids.insert(dep_component_id) {
+                        changed = true;
+                    }
+                }
+            }
+        }
+    }
+    let mut owners = Vec::new();
+    let mut seen = HashSet::new();
+    for (owner_id, _) in owners_for_component_ids(&selected_component_ids, component_by_id) {
+        if seen.insert(owner_id.clone()) {
+            owners.push(owner_id);
+        }
+    }
+    owners
+}
+
+fn owners_for_component_ids(
+    component_ids: &BTreeSet<String>,
+    component_by_id: &HashMap<&str, &OwnerComponent>,
+) -> Vec<(String, usize)> {
+    let mut owners = component_ids
+        .iter()
+        .filter_map(|component_id| component_by_id.get(component_id.as_str()).copied())
+        .flat_map(|component| {
+            component
+                .owner_ids
+                .iter()
+                .zip(component.owner_ordinals.iter())
+                .map(|(owner_id, ordinal)| (owner_id.clone(), *ordinal))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    owners.sort_by_key(|(_, ordinal)| *ordinal);
+    owners
+}
+
+#[derive(Debug, Clone)]
+struct OwnerComponent {
+    id: String,
+    owner_ids: Vec<String>,
+    owner_ordinals: Vec<usize>,
+    module_id_hint: String,
+    direct_dependency_component_ids: Vec<String>,
+}
+
+fn build_owner_components(owner_records: &[OwnerRecord]) -> Vec<OwnerComponent> {
+    let mut graph = DiGraph::<String, ()>::new();
+    let mut node_by_owner_id = HashMap::new();
+    for owner in owner_records {
+        let node = graph.add_node(owner.id.clone());
+        node_by_owner_id.insert(owner.id.as_str(), node);
+    }
+    for owner in owner_records {
+        let Some(from) = node_by_owner_id.get(owner.id.as_str()).copied() else {
+            continue;
+        };
+        for dep in &owner.dep_owner_ids {
+            let Some(to) = node_by_owner_id.get(dep.as_str()).copied() else {
+                continue;
+            };
+            graph.add_edge(from, to, ());
+        }
+    }
+    let owner_by_id = owner_records
+        .iter()
+        .map(|o| (o.id.as_str(), o))
+        .collect::<HashMap<_, _>>();
+    let mut components = tarjan_scc(&graph)
+        .into_iter()
+        .filter_map(|nodes| {
+            let mut owners = nodes
+                .into_iter()
+                .filter_map(|n| graph.node_weight(n))
+                .filter_map(|id| owner_by_id.get(id.as_str()).copied())
+                .collect::<Vec<_>>();
+            if owners.is_empty() {
+                return None;
+            }
+            owners.sort_by_key(|o| o.ordinal);
+            Some(owners)
+        })
+        .collect::<Vec<_>>();
+    components.sort_by_key(|owners| owners[0].ordinal);
+    let mut component_id_by_owner_id = HashMap::<String, String>::new();
+    let mut out = components
+        .into_iter()
+        .enumerate()
+        .map(|(index, owners)| OwnerComponent {
+            id: format!("owner_component_{index:04}"),
+            owner_ids: owners.iter().map(|o| o.id.clone()).collect(),
+            owner_ordinals: owners.iter().map(|o| o.ordinal).collect(),
+            module_id_hint: owners[0].module_id.clone(),
+            direct_dependency_component_ids: Vec::new(),
+        })
+        .collect::<Vec<_>>();
+    for component in &out {
+        for owner_id in &component.owner_ids {
+            component_id_by_owner_id.insert(owner_id.clone(), component.id.clone());
+        }
+    }
+    let deps_by_owner_id = owner_records
+        .iter()
+        .map(|owner| (owner.id.as_str(), owner.dep_owner_ids.clone()))
+        .collect::<HashMap<_, _>>();
+    for component in &mut out {
+        let mut deps = BTreeSet::new();
+        for owner_id in &component.owner_ids {
+            for dep_owner_id in deps_by_owner_id
+                .get(owner_id.as_str())
+                .cloned()
+                .unwrap_or_default()
+            {
+                let Some(dep_component_id) = component_id_by_owner_id.get(dep_owner_id.as_str())
+                else {
+                    continue;
+                };
+                if dep_component_id != &component.id {
+                    deps.insert(dep_component_id.clone());
+                }
+            }
+        }
+        component.direct_dependency_component_ids = deps.into_iter().collect();
+    }
+    out
+}
+
+fn collect_component_closure_ids(
+    seed_component_id: &str,
+    component_by_id: &HashMap<&str, &OwnerComponent>,
+    cache: &mut HashMap<String, Vec<String>>,
+) -> Vec<String> {
+    if let Some(ids) = cache.get(seed_component_id) {
+        return ids.clone();
+    }
+    let mut closure = BTreeSet::new();
+    let mut stack = vec![seed_component_id.to_string()];
+    while let Some(component_id) = stack.pop() {
+        if !closure.insert(component_id.clone()) {
+            continue;
+        }
+        let Some(component) = component_by_id.get(component_id.as_str()) else {
+            continue;
+        };
+        for dependency_component_id in &component.direct_dependency_component_ids {
+            stack.push(dependency_component_id.clone());
+        }
+    }
+    let result = closure.into_iter().collect::<Vec<_>>();
+    cache.insert(seed_component_id.to_string(), result.clone());
+    result
+}
+
 struct ReplayableSideEffectState {
     id: String,
     runtime_sensitive: bool,
@@ -257,6 +506,9 @@ struct OrderedInitPlannerState {
 
 fn build_ordered_init_planner_state(analysis: &AnalysisSummary) -> OrderedInitPlannerState {
     let mut replayable_side_effect_ids_by_owner_id = HashMap::<String, Vec<String>>::new();
+    for owner in &analysis.owners {
+        replayable_side_effect_ids_by_owner_id.insert(owner.id.clone(), Vec::new());
+    }
     let mut replayable_side_effect_state_by_id =
         HashMap::<String, ReplayableSideEffectState>::new();
     for module in &analysis.modules {
@@ -285,6 +537,10 @@ fn build_ordered_init_planner_state(analysis: &AnalysisSummary) -> OrderedInitPl
                     .push(side_effect.id.clone());
             }
         }
+    }
+    for side_effect_ids in replayable_side_effect_ids_by_owner_id.values_mut() {
+        side_effect_ids.sort();
+        side_effect_ids.dedup();
     }
     OrderedInitPlannerState {
         replayable_side_effect_ids_by_owner_id,
@@ -431,7 +687,32 @@ fn build_stage_runs(
     runs
 }
 
-fn build_owner_records(analysis: &AnalysisSummary) -> Vec<OwnerRecord> {
+fn build_program_item_ordinals(
+    analysis: &AnalysisSummary,
+) -> (HashMap<String, usize>, HashMap<usize, ProgramItemKind>) {
+    let mut owner_ordinal_by_id = HashMap::<String, usize>::new();
+    let mut program_item_kind_by_ordinal = HashMap::<usize, ProgramItemKind>::new();
+    let mut ordinal = 0usize;
+    for module in &analysis.modules {
+        let owner_id_set = module.owner_ids.iter().collect::<HashSet<_>>();
+        for program_item_id in &module.program_item_ids {
+            let kind = if owner_id_set.contains(program_item_id) {
+                owner_ordinal_by_id.insert(program_item_id.clone(), ordinal);
+                ProgramItemKind::Declaration
+            } else {
+                ProgramItemKind::NonDeclaration
+            };
+            program_item_kind_by_ordinal.insert(ordinal, kind);
+            ordinal += 1;
+        }
+    }
+    (owner_ordinal_by_id, program_item_kind_by_ordinal)
+}
+
+fn build_owner_records(
+    analysis: &AnalysisSummary,
+    owner_ordinal_by_id: &HashMap<String, usize>,
+) -> Vec<OwnerRecord> {
     let mut records = analysis
         .owners
         .iter()
@@ -439,11 +720,21 @@ fn build_owner_records(analysis: &AnalysisSummary) -> Vec<OwnerRecord> {
             id: owner.id.clone(),
             module_id: owner.module_id.clone(),
             member_name: owner.member_name.clone(),
+            ordinal: owner_ordinal_by_id
+                .get(owner.id.as_str())
+                .copied()
+                .unwrap_or(usize::MAX),
             dep_owner_ids: owner
                 .accesses
                 .iter()
                 .filter_map(|access| {
-                    if access.kind != "local_declaration" {
+                    if access.kind != "local_declaration"
+                        || access.phase != "eager"
+                        || !matches!(
+                            access.access_kind.as_str(),
+                            "read" | "write" | "member_write"
+                        )
+                    {
                         return None;
                     }
                     access.owner_id.clone()
@@ -453,7 +744,13 @@ fn build_owner_records(analysis: &AnalysisSummary) -> Vec<OwnerRecord> {
                 .accesses
                 .iter()
                 .filter_map(|access| {
-                    if access.kind != "local_declaration" || access.access_kind != "write" {
+                    if access.kind != "local_declaration"
+                        || access.phase != "eager"
+                        || !matches!(
+                            access.access_kind.as_str(),
+                            "read" | "write" | "member_write"
+                        )
+                    {
                         return None;
                     }
                     access.owner_id.clone()
@@ -463,24 +760,6 @@ fn build_owner_records(analysis: &AnalysisSummary) -> Vec<OwnerRecord> {
         .collect::<Vec<_>>();
     records.sort_by(|l, r| l.id.cmp(&r.id));
     records
-}
-
-fn collect_owner_closure(
-    seed_owner_id: &str,
-    owner_by_id: &HashMap<&str, &OwnerRecord>,
-    out: &mut BTreeSet<String>,
-) {
-    let mut stack = vec![seed_owner_id.to_string()];
-    while let Some(owner_id) = stack.pop() {
-        if !out.insert(owner_id.clone()) {
-            continue;
-        }
-        if let Some(owner) = owner_by_id.get(owner_id.as_str()) {
-            for dep in &owner.dep_owner_ids {
-                stack.push(dep.clone());
-            }
-        }
-    }
 }
 
 fn derive_blocking_reasons(

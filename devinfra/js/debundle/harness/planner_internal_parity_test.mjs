@@ -56,6 +56,11 @@ test("planner internals parity: rust extraction groups exactly match js planner 
 
   const rustPlanner = JSON.parse(readFileSync(join(rustOut, "planner_snapshot.json"), "utf8"));
   assert.deepEqual(
+    normalizeCandidateUniverse(rustPlanner.debug?.candidates ?? []),
+    normalizeCandidateUniverse(jsCandidatesDebug),
+    "rust pre-packing candidate universe diverged from js candidate universe"
+  );
+  assert.deepEqual(
     normalizeGroups(rustPlanner.extractionGroups),
     normalizeGroups(jsExtractionGroups),
     "rust extraction groups diverged from js planner semantic owner groups"
@@ -107,6 +112,22 @@ function normalizeSelectedDebug(records) {
       stageRuns: normalizeStageRuns(record.stageRuns ?? record.stage_runs ?? []),
     }))
     .sort((left, right) => left.memberNames.join("\n").localeCompare(right.memberNames.join("\n")));
+}
+
+function normalizeCandidateUniverse(records) {
+  return records
+    .map((record) => ({
+      ownerIds: [...(record.ownerIds ?? record.owner_ids ?? [])].sort(),
+      memberNames: [...(record.memberNames ?? record.member_names ?? [])].sort(),
+      estimatedSize: Number(record.estimatedSize ?? record.estimated_size ?? 0),
+      semanticBlockingReasons: [
+        ...(record.semanticBlockingReasons ?? record.semantic_blocking_reasons ?? []),
+      ].sort(),
+    }))
+    .sort((left, right) =>
+      left.ownerIds.join("\n").localeCompare(right.ownerIds.join("\n")) ||
+      left.memberNames.join("\n").localeCompare(right.memberNames.join("\n"))
+    );
 }
 
 function normalizeStageRuns(stageRuns) {

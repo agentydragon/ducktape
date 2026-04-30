@@ -1,342 +1,219 @@
 # Debundle Rust Rewrite Tracker
 
-Status: **in progress — no claim of JS semantic parity**
-Last updated: 2026-04-30 (next-step refresh)
+Status: **in progress — not at JS semantic parity yet**
+Last updated: 2026-04-30 (program-item envelope barriers ported in Rust planner)
 Owner: debundle maintainers
 
-## Scope and standard
+## Scope and strict parity bar
 
 This tracker documents **material algorithmic divergences** between:
 
-- JS source-of-truth planner pipeline (`analysis/boundary.mjs` + `extract/decl_graph.mjs`), and
-- Rust rewrite planner pipeline (`rust/pipeline.rs` + `rust/plan.rs`).
+- JS source of truth pipeline (`analysis/*`, `extract/*`, `split/*`, `harness/*`), and
+- Rust rewrite pipeline (`rust/pipeline.rs`, `rust/plan.rs`, `rust/emit.rs`).
 
-The bar is strict conformance: **same semantic inputs, same candidate space, same blocking classes/payloads, same selection outcomes**.
+Parity means **exactly the same algorithmic behavior**:
 
----
-
-## Topological divergence list (pipeline order)
-
-## 1) Analysis IR contract mismatch (pipeline start)
-
-### Current Rust divergence
-
-- Rust `OwnerAnalysis` is synthesized from per-declaration identifier scans and module/member maps.
-- JS planner consumes richer owner/access state derived from boundary analysis with explicit access descriptors and planner state caches.
-- Rust lacks explicit JS-equivalent per-access metadata (`kind`, `accessKind`, `phase`, ownership resolution parity).
-
-### Why this is material
-
-Every downstream planner stage (closure, shell scan, blocking classes, occupancy interactions) depends on these semantics.
-
-### Required conformance implementation
-
-1. Define a Rust owner-access IR mirroring JS planner-consumed access records.
-2. Build it from AST semantics (not token heuristics) with explicit:
-   - access kind (read/write-like/eager-read-like semantics required by planner),
-   - target owner resolution parity,
-   - ordering/ordinal references used by shell scan.
-3. Ensure deterministic serialization in snapshots for parity diffing.
-
-### 2026-04-30 progress
-
-- Rust `OwnerAnalysis` now carries explicit `accesses` records wired from AST traversal:
-  - `kind`,
-  - `access_kind`,
-  - `phase`,
-  - `owner_id`,
-  - `name`.
-- Planner owner-record seeding now derives dependency/eager edges from these access records instead of raw token-derived dependency lists.
-- Access IR now distinguishes unresolved symbol accesses as `runtime_import` (with `owner_id: null`) rather than forcing them into local declaration edges.
+1. same semantic inputs,
+2. same intermediate planner state,
+3. same candidate set and blocking payloads,
+4. same selected output,
+5. same emitted artifacts,
+6. same runtime/e2e outcomes.
 
 ---
 
-## 2) Ordered-init planner state parity mismatch
+## Current observed state (2026-04-30)
 
-### Current Rust divergence
+From the latest parity/e2e harness run:
 
-- Rust does not implement a true equivalent of JS ordered-init planner state (replayable side effects, touched owner mapping, runtime-sensitive flags parity).
-- `attached_item_ids` and shell scaffolding are currently derived via approximations.
+### Passing
 
-### Why this is material
+- `//devinfra/js/debundle/harness:analysis_parity_test`
+- `//devinfra/js/debundle/harness:pipeline_impl_analysis_parity_fixture_test`
+- `//devinfra/js/debundle/harness:js_e2e_test`
 
-JS staged-shell behavior relies on these state maps to decide attachability and blocking legality.
+### Failing
 
-### Required conformance implementation
+- `//devinfra/js/debundle/harness:planner_parity_test`
+- `//devinfra/js/debundle/harness:rust_e2e_test`
+- `//devinfra/js/debundle/harness:dual_e2e_test`
 
-1. Port JS planner-state construction semantics into Rust:
-   - replayable side-effect state,
-   - touched-owner adjacency maps,
-   - runtime-sensitive exclusions.
-2. Drive attachability decisions from this state only.
+### Interpretation
 
-### 2026-04-30 progress
-
-- Added Rust ordered-init planner-state scaffolding in planner construction:
-  - replayable side-effect ids by owner id,
-  - replayable side-effect state by side-effect id (`runtime_sensitive`, `touched_owner_ids`).
-- Candidate attached-item derivation now consumes this planner-state map and applies attachability filtering from state instead of unconditional module-level side-effect attachment.
-- Runtime-sensitive flag derivation now uses explicit runtime-sensitive effect detection (`eval`, `import.meta`, `await`) instead of generic top-level-effect proxy.
-- Touched-owner sets now come from AST-derived top-level side-effect identifier access (not token-touch proxy) and are consumed by attachability filtering.
-- Replayable side-effect selection now filters to expression-statement side-effect nodes (`replayable_side_effect_ids`) before ordered-init attachability checks.
-- Ordered-init state now consumes per-side-effect records (`replayable`, `runtime_sensitive`, `touched_owner_ids`) instead of module-level side-effect aggregates.
-- Remaining divergence: replayability and runtime-sensitive/touch semantics still need exact JS ordered-init logic (phase-aware access graph + side-effect replay rules).
-
-### Immediate next implementation slice (to close item #2)
-
-1. Implement JS-equivalent replayability predicate for side effects (not just expression-statement gate), including exclusions used by staged-shell attachability.
-2. Port runtime-sensitive detection to the same planner-state source used by JS, instead of mixed module-level fallbacks.
-3. Replace current touched-owner derivation with phase-aware access graph parity and preserve JS payload ordering rules.
-4. Add direct parity assertions for ordered-init state maps in internal harness snapshots:
-   - `replayableSideEffectIdsByOwnerId`,
-   - `replayableSideEffectStateById`.
+- Analysis parity is partially green.
+- Planner parity is not yet exact.
+- Rust and dual e2e failures confirm planner/output deltas still leak into runtime behavior.
 
 ---
 
-## 3) Dependency component / closure formation mismatch
+## Pipeline-ordered divergence list (start → end)
 
-### Current Rust divergence
+## Stage 1 — Analysis IR contract parity (pipeline entry)
 
-- Rust closure construction uses owner records with simplified dependency edges.
-- JS uses dependency components + closure plans with semantic envelope summary behavior.
+### Current Rust state
 
-### Why this is material
+- Rust now carries explicit owner-access records (`kind`, `access_kind`, `phase`, `owner_id`, `name`).
+- Dependency/eager seeds derive from access records rather than token-only heuristics.
+- Unresolved accesses are represented as runtime-import-like accesses.
 
-Candidate universe differs before ranking/packing, so perfect selection parity is impossible.
+### Remaining gap to exactness
 
-### Required conformance implementation
+- Confirm full one-to-one parity with JS access descriptor semantics and ordinal ordering used downstream.
+- Eliminate any residual fallback paths that do not originate from JS-equivalent access modeling.
 
-1. Implement component construction/closure expansion equivalent to JS planner flow.
-2. Ensure closure IDs and owner sets match JS closure plans.
-3. Add parity assertions at candidate universe level (before packing).
+### Required done condition
 
-### Immediate next implementation slice (to close item #3)
-
-1. Port JS dependency-component construction exactly (owner grouping and expansion frontier rules).
-2. Emit stable closure identifiers equivalent to JS closure plan identities.
-3. Snapshot and assert candidate-universe equality before any blocking/packing stage.
+- Analysis parity fixtures assert exact access-record equivalence (including ordering) for JS vs Rust.
 
 ---
 
-## 4) Staged-shell batch-plan construction mismatch
+## Stage 2 — Ordered-init planner state parity
 
-### Current Rust divergence
+### Current Rust state
 
-- Rust stage runs and shell item fields are scaffolding and not fully derived through JS-equivalent staged-shell expansion.
-- Missing parity for:
-  - staged attached owner expansion,
-  - replayable side-effect attachment filtering,
-  - selected item interleave semantics.
+- Rust includes ordered-init scaffolding with replayable side-effect maps and runtime-sensitive/touched-owner fields.
+- Attachability uses this state more than before.
 
-### Why this is material
+### Remaining gap to exactness
 
-`stageRuns`, `shellItemIds`, and derived blocking classes depend on exact staged construction.
+- Replayability predicate is still not proven equivalent to JS.
+- Runtime-sensitive source and touched-owner derivation still have parity risk.
+- Planner parity test currently fails with ordered-init state present in mismatch context.
 
-### Required conformance implementation
+### Required done condition
 
-1. Port JS staged-shell batch-plan builder semantics one-to-one.
-2. Produce equivalent candidate batch structures (`semanticOwnerIds`, `semanticMemberNames`, `shellItemIds`, `stageRuns`).
+- `replayableSideEffectIdsByOwnerId` and `replayableSideEffectStateById` deep-equal JS with no normalization exceptions.
 
-### Immediate next implementation slice (to close item #4)
+### 2026-04-30 progress update
 
-1. Port staged owner-attachment expansion order exactly (including interleaving of selected and attached items).
-2. Encode shell-item materialization parity (same item boundaries and ordering).
-3. Assert deep parity for `stageRuns` and `shellItemIds` in strict harness tests.
-
----
-
-## 5) Blocking reason derivation mismatch (class payload semantics)
-
-### Current Rust divergence
-
-- Rust now emits JS class names and ordering contract, but several class payloads are still heuristic.
-- Shell/eager classes are not fully sourced from JS-equivalent access graph semantics.
-
-### Why this is material
-
-Blocking reasons are first-class ranking/filtering inputs; payload mismatches change selected output.
-
-### Required conformance implementation
-
-1. Port all JS class derivations exactly from access/planner state, including payload member ordering and dedup rules.
-2. Remove all placeholder/proxy derivations (module-order-only proxies, synthetic shell assumptions).
-3. Add per-class fixture tests asserting exact payload equality.
-
-### Immediate next implementation slice (to close item #5)
-
-1. Remove remaining heuristic payload construction paths.
-2. Rebuild eager/shell blocking payloads from parity access graph and ordered-init maps only.
-3. Add class-by-class golden checks for payload member ordering + dedup parity.
+- Added dedicated strict ordered-init parity harness target: `//devinfra/js/debundle/harness:ordered_init_parity_test` (green).
+- Rust ordered-init map builder now:
+  - pre-seeds owner-key map entries for all owners,
+  - sorts/dedups side-effect ids per owner for deterministic parity assertions.
+- Remaining failure has moved upstream in the pipeline: candidate universe / closure parity still diverges in `planner_internal_parity_test` before ordered-init assertions are the limiting factor.
 
 ---
 
-## 6) Selection/packing edge-rule mismatch
+## Stage 3 — Dependency component + closure formation parity
 
-### Current Rust divergence
+### Current Rust state
 
-- Rust has preselected path and occupancy scaffolding, but does not yet guarantee full edge-rule parity for staged attached items and preselection interactions as JS applies them.
+- Rust now builds owner SCC components and derives closure candidates from component-level transitive dependency closure.
+- Dependency edges are constrained to eager local-declaration forward-style accesses for component construction.
+- Rust now performs contiguous-envelope component expansion over owner ordinals; remaining behavior is still simplified vs JS in envelope barrier handling and closure identity ordering.
 
-### Why this is material
+### 2026-04-30 progress update
 
-Even with equal candidates, selection can diverge on overlap or preselection collisions.
+- Rust closure seeding now starts from owner **SCC components** with component-level transitive dependency closure expansion (Stage 3 kickoff implementation).
+- Owner dependency edges used for component construction are now constrained to eager local-declaration forward-dependency-like accesses (`phase: eager`, `access_kind in {read, write, member_write}`).
+- Rust contiguous-envelope growth now applies explicit program-item barrier categories via ordinal map: missing program item, non-declaration program item, and missing declaration barriers all stop expansion.
+- Missing-owner-to-component mapping also stops envelope expansion (JS-equivalent barrier category).
+- Closure candidates are now deduped by closure owner-set signature before packing, and candidate IDs are re-numbered contiguously from surviving closure order to reduce identity drift.
+- Planner-internal harness now includes explicit pre-packing candidate-universe assertions before selected/packed comparisons to isolate Stage-3 drift earlier in the pipeline.
+- Result: ordered-init parity remains green, but `planner_internal_parity_test` remains red; remaining drift is concentrated in envelope barrier completeness and closure identity/order parity.
 
-### Required conformance implementation
+### Remaining gap to exactness
 
-1. Port JS selection flow exactly:
-   - preselected pass,
-   - blocked filtering,
-   - owner/item occupancy collision policy,
-   - final ordering semantics.
-2. Assert parity on selected candidate IDs and full debug payload.
+- Candidate universe can diverge before ranking/packing.
+- Closure identities and expansion frontier rules are not yet locked to JS behavior.
 
-### Immediate next implementation slice (to close item #6)
+### Required done condition
 
-1. Port JS preselected-candidate pass ordering exactly.
-2. Port collision policy for owner/item occupancy as-is, including tie-break semantics.
-3. Assert parity for selected candidate IDs, reasons, and final packed grouping order.
-
----
-
-## 7) Fixture/corpus parity gap
-
-### Current Rust divergence
-
-- Strict planner parity is still concentrated on mock/synthetic fixture paths.
-- Non-mock full-bundle planner parity gating is missing.
-
-### Why this is material
-
-Current green status may be overfit to fixture shape.
-
-### Required conformance implementation
-
-1. Add at least one non-mock full-bundle strict planner parity target.
-2. Keep mock canary + non-mock gate in CI progression.
-
-### Immediate next implementation slice (to close item #7)
-
-1. Introduce one representative non-mock bundle fixture for strict planner parity.
-2. Run strict internal parity and public parity harnesses against both mock + non-mock fixtures.
-3. Promote non-mock fixture to CI gate after deterministic stability is demonstrated.
+- Pre-packing candidate universe parity (IDs, owner sets, closure membership/order) is exact.
 
 ---
 
-## 8) Post-planner (emitter/lowering) parity gap
+## Stage 4 — Staged-shell batch construction parity
 
-### Current Rust divergence
+### Current Rust state
 
-- Rust emit/lowering is not yet JS-equivalent and remains outside planner parity completion.
+- `stageRuns`/`shellItemIds` scaffolding exists.
 
-### Required conformance implementation
+### Remaining gap to exactness
 
-- Start emitter parity only after planner parity is strict-green on mock + non-mock.
+- Expansion/interleave/materialization rules are not guaranteed one-to-one with JS.
 
----
+### Required done condition
 
-## Ordered execution plan (non-hacky rewrite path)
-
-1. **Analysis IR parity** (owner access model parity).
-2. **Ordered-init planner state parity** (replayable side-effects/touched-owner maps).
-3. **Component/closure parity** (candidate universe parity).
-4. **Staged-shell batch-plan parity** (stage runs + shell items parity).
-5. **Blocking reason payload parity** (all classes exact).
-6. **Selection/packing edge-rule parity** (preselection + occupancy exactness).
-7. **Strict non-mock planner parity gate**.
-8. **Emitter/lowering parity workstream**.
+- Deep-equal parity for `stageRuns`, `shellItemIds`, `semanticOwnerIds`, `semanticMemberNames`.
 
 ---
 
-## Next work chunks (sized for execution)
+## Stage 5 — Blocking reason class + payload parity
 
-### Chunk 1 (small, 1 PR): Ordered-init map exactness lock-in
+### Current Rust state
 
-- Objective: stabilize and prove JS-equivalent ordered-init map payloads.
-- Scope:
-  1. align replayability predicate to JS record-type gate + exclusions,
-  2. align touched-owner derivation and ordering to JS access-view flow,
-  3. align runtime-sensitive source to record-level JS predicate only,
-  4. keep strict ordered-init deep-equality assertions in harness green.
-- Success check:
-  - internal and public planner parity harnesses pass for ordered-init maps with no normalization exceptions.
+- Class names/order are closer to JS.
 
-### Chunk 2 (medium, 1 PR): Dependency components + closure identity parity
+### Remaining gap to exactness
 
-- Objective: make candidate-universe identity match JS before packing.
-- Scope:
-  1. port JS dependency-component construction one-to-one,
-  2. port closure expansion frontier/ordering,
-  3. port closure/candidate IDs to exact JS identity rules,
-  4. add candidate-universe parity assertion (IDs + owner sets) pre-packing.
-- Success check:
-  - candidate universe (count, IDs, owner membership) exactly matches JS on mock fixture.
+- Some payload construction remains heuristic.
+- Eager/shell payloads are not fully guaranteed to derive only from parity access/planner state.
 
-### Chunk 3 (medium, 1 PR): Staged-shell item/run construction parity
+### Required done condition
 
-- Objective: match JS `shellItemIds` + `stageRuns` semantics exactly.
-- Scope:
-  1. port selected+attached item interleave behavior,
-  2. port staged run coalescing boundaries,
-  3. port shell item materialization/ordering,
-  4. enforce deep stage-run/shell-item equality in strict parity tests.
-- Success check:
-  - `shellItemIds` and `stageRuns` are exact-equal in internal parity snapshot.
-
-### Chunk 4 (medium, 1 PR): Blocking payload exactness
-
-- Objective: remove all heuristic blocking payload derivations.
-- Scope:
-  1. port eager/shell/runtime-import payload generation from JS access/planner state,
-  2. port payload ordering + dedup behavior,
-  3. add per-class parity checks for payload equality.
-- Success check:
-  - class names and payload strings deep-equal for all candidate and selected plans.
-
-### Chunk 5 (medium, 1 PR): Selection/packing edge-rule parity
-
-- Objective: align final selected outputs once candidate/debug parity is exact.
-- Scope:
-  1. port preselected pass ordering,
-  2. port occupancy collision resolution/tie-break semantics,
-  3. port final output ordering semantics,
-  4. assert selected IDs + full selected debug parity.
-- Success check:
-  - selected output deep-equality passes on strict planner parity tests.
-
-### Chunk 6 (small/medium, 1 PR): Non-mock gate activation
-
-- Objective: prevent mock-only overfitting.
-- Scope:
-  1. add one representative non-mock fixture,
-  2. run strict internal + public parity on mock + non-mock,
-  3. wire non-mock parity target into CI gate.
-- Success check:
-  - strict parity green on both fixtures in CI.
+- Per-class payload parity (content, ordering, dedup) is exact for candidate and selected views.
 
 ---
 
-## Definition of done for planner parity
+## Stage 6 — Selection/packing parity
 
-Planner parity is complete only when all are true:
+### Current Rust state
 
-- Rust and JS candidate universes are structurally equal.
-- Rust and JS selected outputs are structurally equal.
-- Rust and JS blocking reason classes + payloads are exactly equal.
-- Rust and JS staged-shell debug payloads (`shellItemIds`, `stageRuns`, semantic fields) are exactly equal.
-- Above holds on mock + at least one non-mock full-bundle fixture.
+- Preselection and occupancy scaffolding exist.
+
+### Remaining gap to exactness
+
+- Edge rules for collisions, preselected interactions, and tie-break ordering are not yet guaranteed exact.
+
+### Required done condition
+
+- Selected IDs and full debug payload match JS exactly.
 
 ---
 
-## Latest execution progress and immediate next plan
+## Stage 7 — Emitter/lowering artifact parity
 
-### Reached in this pass
+### Current Rust state
 
-- Completed AST-based owner access extraction + IR emission with explicit access records.
-- Added runtime-import access classification in the IR (`kind = runtime_import`) to align blocking class derivation inputs with JS planner concepts.
-- Added ordered-init planner-state scaffolding and partial attachability filtering driven by replayable side-effect maps.
+- Rust emitter path exists but is not yet validated as exact JS-equivalent lowering.
 
-### Still open before declaring gap closed
+### Remaining gap to exactness
 
-1. Replace module/token approximations in touched-owner and runtime-sensitive state with full JS-equivalent ordered-init semantics.
-2. Drive all blocking payload derivations from access IR + ordered-init state only (remove remaining proxy logic).
-3. Port staged-shell batch-plan expansion semantics fully (attached-owner expansion, shell scan parity).
-4. Add strict non-mock planner parity gate and require green before moving to emitter parity.
+- Generated artifact trees can still diverge semantically and textually beyond allowed normalizations.
+
+### Required done condition
+
+- Strict artifact parity on parity corpus (with explicit, documented non-semantic exclusions only).
+
+---
+
+## Stage 8 — Runtime/e2e parity
+
+### Current Rust state
+
+- JS e2e target passes; Rust and dual e2e targets currently fail.
+
+### Remaining gap to exactness
+
+- Runtime behavior differs once Rust planner/emitter output is exercised end-to-end.
+
+### Required done condition
+
+- Rust e2e and dual e2e both pass consistently using the same fixtures and assertions as JS.
+
+---
+
+## Stage 9 — Corpus + CI gate parity (promotion readiness)
+
+### Current Rust state
+
+- Parity signal is still concentrated on mock/synthetic paths with partial non-mock coverage.
+
+### Remaining gap to exactness
+
+- Need sustained strict parity across mock + representative non-mock bundle fixtures.
+
+### Required done condition
+
+- CI enforces planner + artifact + runtime parity gates over mock and non-mock corpus before default flip.
