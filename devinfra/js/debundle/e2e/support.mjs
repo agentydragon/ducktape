@@ -7,7 +7,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createWebFixtureRoots, runNodeScript, writeSnapshotFixture } from "./black_box.mjs";
 
-let moduleExportAssertionCounter = 0;
+let moduleExportProbeCounter = 0;
 let generatedModuleScriptCounter = 0;
 
 export function logicalModule(path, members) {
@@ -159,26 +159,33 @@ export function assertEntryOutput(fixture, expectedStdout) {
   assertNodeOutput(fixture.entryPath, { expectedStdout });
 }
 
-export function assertModuleExports({ excludes = [], includes = [], modulePath, outRoot }) {
-  const assertionPath = join(outRoot, `assert_module_exports_${moduleExportAssertionCounter++}.mjs`);
+export function listModuleExports({ modulePath, outRoot }) {
+  // Probe the emitted module by spawning node, importing it, and printing
+  // its exported names as JSON. Keeping the probe script trivial moves all
+  // assertion logic to the test side, where failures show up as ordinary
+  // node:assert diagnostics instead of generic "Expected X to be exported".
+  const probePath = join(outRoot, `__probe_module_exports_${moduleExportProbeCounter++}.mjs`);
   writeFileSync(
-    assertionPath,
+    probePath,
     `const mod = await import(${JSON.stringify(`./${modulePath}`)});
-const includes = ${JSON.stringify(includes)};
-const excludes = ${JSON.stringify(excludes)};
-for (const name of includes) {
-  if (!Object.prototype.hasOwnProperty.call(mod, name)) {
-    throw new Error(\`Expected \${name} to be exported by ${modulePath}\`);
-  }
-}
-for (const name of excludes) {
-  if (Object.prototype.hasOwnProperty.call(mod, name)) {
-    throw new Error(\`Expected \${name} not to be exported by ${modulePath}\`);
-  }
-}
+process.stdout.write(JSON.stringify(Object.keys(mod)));
 `
   );
-  assertNodeOutput(assertionPath, { expectedStdout: "" });
+  const result = runNodeScript(probePath);
+  assert.equal(result.signal, null);
+  assert.equal(result.status, 0, `probing ${modulePath} exited ${result.status}\nstderr:\n${result.stderr}`);
+  return JSON.parse(result.stdout);
+}
+
+export function assertModuleExports({ excludes = [], includes = [], modulePath, outRoot }) {
+  const exported = new Set(listModuleExports({ modulePath, outRoot }));
+  const summary = exported.size === 0 ? "<none>" : [...exported].sort().join(", ");
+  for (const name of includes) {
+    assert.ok(exported.has(name), `expected ${modulePath} to export ${name}; actual exports: ${summary}`);
+  }
+  for (const name of excludes) {
+    assert.ok(!exported.has(name), `expected ${modulePath} to not export ${name}; actual exports: ${summary}`);
+  }
 }
 
 export function assertModuleSource({ doesNotMatch = [], matches = [], modulePath, outRoot }) {
