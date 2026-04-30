@@ -1,6 +1,6 @@
 # Debundler JS↔Rust Full Parity Plan (Pipeline-Ordered Execution)
 
-Last updated: 2026-04-30 (Stage 2 lock-in complete; Stage 3 started)
+Last updated: 2026-04-30 (Stage 3A complete; Stage 3B active; Phase A edge-only plumbing + strict invariants landed; first failing seed locked)
 Owner: debundle maintainers
 
 ## Objective
@@ -15,225 +15,220 @@ Achieve **exact JS parity** for the Rust debundler:
 - same browser/runtime behavior,
 - and passing the same existing e2e tests.
 
-This plan is intentionally ordered from **pipeline start to pipeline end**.
-
 ---
 
 ## Current checkpoint (evidence)
 
-Latest targeted harness run status:
+Latest targeted harness status:
 
-- ✅ pass: `analysis_parity_test`
-- ✅ pass: `pipeline_impl_analysis_parity_fixture_test`
-- ✅ pass: `js_e2e_test`
-- ✅ pass: `ordered_init_parity_test`
-- ❌ fail: `planner_internal_parity_test`
-- ❌ fail: `planner_parity_test`
-- ❌ fail: `rust_e2e_test`
-- ❌ fail: `dual_e2e_test`
+- ✅ `analysis_parity_test`
+- ✅ `pipeline_impl_analysis_parity_fixture_test`
+- ✅ `ordered_init_parity_test`
+- ✅ `js_e2e_test`
+- ❌ `planner_internal_parity_test`
+- ❌ `planner_parity_test`
+- ❌ `rust_e2e_test`
+- ❌ `dual_e2e_test`
 
-Implication: ordered-init map parity is now isolated and green; the active critical path is Stage 3 candidate-universe/closure parity.
+Implication: Stages 1/2 are locked; remaining critical path is Stage 3B planner candidate-universe parity and downstream stages.
 
----
+Recent progress (2026-04-30):
 
-## Stage-by-stage execution plan (strict order)
+- ✅ AST-carry refactor cleanup complete (removed legacy parse shims; analysis path now consistently uses cached `Tree` values).
+- ✅ Envelope expansion edge-rule tightened (removed transitive auto-add during contiguous envelope scan).
+- ✅ Frontier trace debug now emitted in planner snapshot (`seed_component_id`, required component IDs, closure owner IDs) for first-divergence diagnosis.
+- ✅ Candidate semantic blocking-reason parity noise removed from candidate-universe comparisons (first mismatch moved past blocking payload drift).
+- ✅ Candidate size modeling now uses owner-span basis (moving off member-count sizing), but exact JS span parity still has residual deltas to close.
+- ✅ Root-cause analysis isolated semantic mismatch: Rust closure graph previously mixed member-level owners with semantic-owner IDs; planner now collapses to semantic-owner granularity before SCC/closure.
+- ✅ Rust owner dependency derivation no longer uses direct name-scanning loops in `build_owner_analyses`; dep/eager-dep now come from semantic access records.
+- ✅ Legacy dep-list compatibility chain removed from planner owner-record construction; dependency closure inputs now come from explicit dependency edges only.
+- ✅ Strict invariants added in analysis path: local-declaration accesses must carry `owner_id`, and owner-linked local accesses must materialize dep edges.
+- 🔴 Remaining Stage 3B deltas are concentrated in exact JS closure expansion semantics (required-closure owner/component sets per seed) and envelope parity payload completeness in the harness.
 
-## Stage 1 — Lock analysis IR equivalence (entry contract)
+Current first failing seed (locked target):
 
-### Goal
+- Gate: `requiredClosureOwnerIds`
+- Seed: `owner_component_0002`
+- Rust: `["owner_00002"]`
+- JS: `["owner_00000","owner_00001","owner_00002","owner_00003"]`
 
-Make Rust planner input IR exactly match JS planner-consumed access semantics.
-
-### Work
-
-1. Freeze JS-equivalent access record schema and ordering contract.
-2. Remove any residual non-JS fallback derivations in Rust analysis.
-3. Add deep parity assertions at access-record level.
-
-### Exit gate
-
-- Access-level parity snapshots deep-equal on parity fixtures.
-
----
-
-## Stage 2 — Port ordered-init state exactly ✅ completed (2026-04-30)
-
-### Goal
-
-Make ordered-init state maps exact JS equivalents.
-
-### Work
-
-1. Port JS replayability predicate (including exclusions) one-to-one.
-2. Port touched-owner derivation from JS access/phase model one-to-one.
-3. Port runtime-sensitive detection source one-to-one.
-4. Assert exact equality for:
-   - `replayableSideEffectIdsByOwnerId`
-   - `replayableSideEffectStateById`
-
-### Exit gate
-
-- Ordered-init state deep-equal in strict planner parity snapshots.
+This mismatch is the active fix target and must be driven to zero before any Stage 4+ work.
 
 ---
 
-## Stage 3 — Port dependency components + closure construction
+## Completed stages (squashed)
 
-### Goal
+### Stage 1 — Analysis IR/access contract ✅ complete
 
-Make candidate universe generation identical before packing.
+- Access-level planner inputs parity-locked against JS.
 
-### Work
+### Stage 2 — Ordered-init state parity ✅ complete
 
-1. Port dependency-component formation rules exactly.
-2. Port closure expansion frontier and owner grouping exactly.
-3. Port closure identity/ID generation rules exactly.
-4. Add pre-packing candidate-universe parity assertion.
+- `replayableSideEffectIdsByOwnerId` parity achieved.
+- `replayableSideEffectStateById` parity achieved.
 
-### Exit gate
+### Stage 3A — Dependency component seeding ✅ complete
 
-- Candidate universe (IDs, owner sets, membership, ordering) deep-equal JS.
-
-### 2026-04-30 implementation progress
-
-- Implemented owner SCC component construction in Rust planner and switched closure seeding to component-level transitive dependency closure.
-- Tightened dependency-edge extraction to eager forward-style local-declaration accesses.
-- Current status: stage-3 now includes contiguous-envelope expansion with explicit program-item-kind/missing-item barriers plus missing-component barriers, and candidate-closure dedupe/contiguous ID normalization. Planner-internal parity remains red; next slice is exact closure ordering/identity parity and remaining envelope edge rules.
+- Owner SCC/component formation and component-seeded closure bootstrap aligned.
 
 ---
 
-## Stage 4 — Port staged-shell batch construction
+## Active divergence tracker (merged from prior tracker doc)
 
-### Goal
-
-Make staged item/run construction exactly match JS.
-
-### Work
-
-1. Port staged owner attachment expansion and interleave order.
-2. Port shell item materialization boundaries/ordering.
-3. Port stage run segmentation and ordinals.
-
-### Exit gate
-
-- `shellItemIds`, `stageRuns`, semantic owner/member lists deep-equal JS.
+| ID   | Pipeline slice                                       | Status        | Current signal                           | What remains                                                                                                       |
+| ---- | ---------------------------------------------------- | ------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| D-01 | Stage 3B closure frontier visitation/closure sets    | 🔴 Critical   | `planner_internal_parity_test` red       | Match JS required-closure owner/component expansion exactly per seed.                                              |
+| D-02 | Stage 3B owner semantic granularity/canonicalization | 🟠 High       | frontier/candidate IDs still drift       | Finish mapping and ordering so semantic owner IDs correspond to JS owner statements 1:1.                           |
+| D-03 | Stage 3B envelope expansion edge rules/payload       | 🔴 High       | planner parity diffs after closure build | Close remaining barrier/boundary gaps and ensure JS trace fields are complete for apples-to-apples envelope diffs. |
+| D-04 | Stage 4 staged-shell construction/runs               | 🔴 Blocked    | downstream planner parity diffs          | Unblock after D-01..D-03 are green.                                                                                |
+| D-05 | Stage 5 blocking payload derivation                  | 🔴 Blocked    | mixed planner payload diffs              | Class-by-class ordering/dedup exactness.                                                                           |
+| D-06 | Stage 6 selection/packing edge rules                 | 🔴 Blocked    | selected-set mismatch                    | Preselected/occupancy/tie-break/final-order parity.                                                                |
+| D-07 | Stage 8/9 emitted output + runtime parity            | 🔴 Downstream | `rust_e2e_test`, `dual_e2e_test` red     | Artifact and runtime behavior parity once planner stages are green.                                                |
 
 ---
 
-## Stage 5 — Port blocking reason derivation exactly
+## Stages we need to handle next (in order)
 
-### Goal
+### Next Stage A — Stage 3B closure/candidate universe parity (D-01..D-03)
 
-Make blocking classes and payloads identical.
+**Goal:** make Rust pre-packing candidate universe deep-equal JS.
 
-### Work
+**Concrete next steps:**
 
-1. Remove remaining heuristic payload construction.
-2. Derive eager/shell blocking payloads only from parity access/planner state.
-3. Add class-by-class payload parity assertions (order + dedup).
+1. Enforce semantic-owner granularity end-to-end in Rust closure graph inputs (done in planner record collapse; verify no remaining member-level leaks).
+2. Match JS required-closure expansion per seed by comparing `requiredComponentIds` + `requiredClosureOwnerIds` before envelope logic.
+3. Align owner canonicalization ordering/materialization exactly with JS owner-statement order.
+4. Finish envelope expansion edge-rule parity and ensure harness compares complete envelope payload fields.
+5. Keep strict pre-packing first-divergence gate and burn down mismatches one seed at a time.
 
-### Exit gate
+**Exit gate:** `planner_internal_parity_test` candidate universe diff reaches zero.
 
-- All blocking classes/payloads deep-equal JS for candidate + selected sets.
+### Next Stage B — Stage 4 staged-shell construction parity (D-04)
 
----
+**Goal:** shell item/run structure deep-equal JS once Stage 3B is green.
 
-## Stage 6 — Port selection/packing edge rules exactly
+**Exit gate:** `shellItemIds` and `stageRuns` parity.
 
-### Goal
+### Next Stage C — Stage 5/6 blocking + selection parity (D-05, D-06)
 
-Make final selected result set identical.
+**Goal:** blocking payloads and final selected set semantics deep-equal JS.
 
-### Work
+**Exit gate:** `planner_parity_test` green.
 
-1. Port preselected pass ordering and interactions.
-2. Port occupancy collision policy and tie-break behavior.
-3. Port final selected ordering semantics.
+### Next Stage D — Stage 7/8/9 planner-to-runtime closure (D-07)
 
-### Exit gate
+**Goal:** artifact + runtime parity closure and e2e parity.
 
-- Selected candidate IDs and full selection debug payload deep-equal JS.
+**Exit gate:** `rust_e2e_test` and `dual_e2e_test` green.
 
----
+### Next Stage E — Stage 10 CI/cutover enforcement
 
-## Stage 7 — Achieve planner parity green gates
-
-### Goal
-
-Turn strict planner parity tests fully green.
-
-### Work
-
-1. Keep `planner_parity_test` strict (no new normalizations).
-2. Keep internal planner parity fixture tests strict for all key maps.
-3. Add/retain at least one representative non-mock planner parity fixture.
-
-### Exit gate
-
-- Planner parity test suite fully green on mock + non-mock fixtures.
+**Goal:** strict parity gates required in CI with documented promotion/rollback.
 
 ---
 
-## Stage 8 — Port emitter/lowering to artifact parity
+## Immediate execution queue (next PR slices)
 
-### Goal
-
-Make generated output tree equivalent to JS output.
-
-### Work
-
-1. Port JS lowering/rewrite semantics one-to-one.
-2. Tighten artifact comparisons to strict parity.
-3. Keep any allowed non-semantic exclusions explicit and minimal.
-
-### Exit gate
-
-- Rust-vs-JS artifact-tree parity green on parity corpus.
+1. **PR-2A1:** Add Stage 3B frontier/candidate trace diff tooling and wire first-divergence reporting.
+2. **PR-2A2:** Use emitted frontier traces to implement first-divergence assertion output (seed + frontier + closure-owner delta).
+3. **PR-2B:** Canonicalize candidate identity parity exactly (owner ordering, member ordering, signature materialization).
+4. **PR-2C:** Implement Stage 4 staged-shell parity after Stage 3B gate is green.
+5. **PR-3:** Stage 5/6 blocking payload + selection/packing parity.
+6. **PR-4:** Stage 7/8/9 planner/runtime closure.
+7. **PR-5:** Stage 10 CI enforcement + cutover docs.
 
 ---
 
-## Stage 9 — Runtime/e2e parity closure
+## Heuristic-elimination program (Rust → exact JS implementation)
 
-### Goal
+This section tracks every known Rust heuristic that can drift from JS and the replacement plan.
 
-Pass the same e2e expectations with Rust implementation.
+### H-01 (Critical): owner dependency edges inferred from name matching
 
-### Work
+- **Current Rust behavior**: planner dependency edges are still synthesized from per-owner `uses/writes` identifier sets + module member-name scans.
+- **Drift mode**: symbol-name collisions/minification/canonicalization can produce missing or wrong owner-owner edges.
+- **JS source of truth**: owner dependency edges used by closure/component graph construction in JS decl graph/planner.
+- **Replacement**:
+  1. Introduce explicit Rust owner dependency edge records in analysis IR.
+  2. Build planner closure/component edges directly from those records.
+  3. Remove name-scan-derived edge synthesis from planner inputs.
+- **Phase**: A.
+- **Status**: 🔴 In progress (not yet complete).
+  - 2026-04-30 execution update: Rust now materializes explicit owner dependency edges from access records before deriving dep/eager-dep owner sets; planner is not yet wired to a fully JS-equivalent dependency-edge IR source.
 
-1. Drive failures from `rust_e2e_test` and `dual_e2e_test` to zero.
-2. Ensure dual mode asserts both outputs and runtime behavior parity.
-3. Keep JS e2e as control target to detect fixture drift.
+### H-02 (High): module top-level-effects flag via string `contains(...)`
 
-### Exit gate
+- **Current Rust behavior**: `has_top_level_effects` derived from `new/window/document` substring checks.
+- **Drift mode**: false positives/negatives drive blocking-reason and runtime-sensitivity divergence.
+- **Replacement**: compute from semantic analysis side-effect records only.
+- **Phase**: B.
+- **Status**: ✅ Completed in this PR.
 
-- `js_e2e_test`, `rust_e2e_test`, and `dual_e2e_test` all green.
+### H-03 (High): runtime-sensitive effects via string `contains(...)`
+
+- **Current Rust behavior**: `runtime_sensitive_effects` and side-effect sensitivity had string scans.
+- **Drift mode**: misses AST-context-sensitive semantics; diverges from JS.
+- **Replacement**: compute from semantic side-effect records / AST-derived classification only.
+- **Phase**: B.
+- **Status**: ✅ Completed at module-level in this PR; keep parity check against JS runtime-sensitive payloads.
+
+### H-04 (Medium): permissive `unwrap_or_default` on critical dep paths
+
+- **Current Rust behavior**: silently drops missing analysis data into empty sets in critical paths.
+- **Drift mode**: missing edges become “no dependency” instead of deterministic failure.
+- **Replacement**:
+  1. Add parity-mode invariants for required dependency maps.
+  2. Fail fast with seed/owner diagnostics when required maps are missing.
+- **Phase**: A/B follow-up.
+- **Status**: 🟠 Planned.
+
+### Phase A — dependency-edge source replacement (execute now)
+
+1. Add Rust IR for owner dependency edge records (semantic owner ids + phase + access kind).
+2. Populate IR from AST/semantic analysis (not name scanning against member lists).
+3. Rewire planner component graph builder to consume this IR directly.
+4. Delete legacy edge synthesis path from `build_owner_access_records` as planner input source.
+5. Gate with staged parity assertions:
+   - `requiredComponentIds`
+   - `requiredClosureOwnerIds`.
+
+**Phase A exit gate:** first failing seed no longer under-expands closure owners/components.
+
+#### Phase A remaining micro-plan (single-seed burn-down)
+
+1. Emit Rust dep-edge expansion trace for seed `owner_component_0002`:
+   - seed owners
+   - direct dep owners
+   - direct dep components
+   - transitive closure iterations
+2. Emit equivalent JS closure-edge trace for the same seed.
+3. Diff edge-source inputs **before** closure traversal.
+4. Patch semantic edge extraction until seed-level closure set matches.
+5. Repeat seed-by-seed until Stage 3B closure gates are green.
+
+#### Phase A gated milestones
+
+- **A1 gate:** seed `owner_component_0002` passes `requiredClosureOwnerIds`.
+- **A2 gate:** all seeds pass `requiredClosureOwnerIds`.
+- **A3 gate:** all seeds pass `requiredComponentIds`.
+- **A4 gate:** candidate universe deep-equal in `planner_internal_parity_test`.
+
+Work on Stage 4+ is blocked until A2/A3 are green.
+
+### Phase B — effect-sensitivity parity replacement
+
+1. Eliminate content-string heuristics for module/effect sensitivity.
+2. Use semantic side-effect records exclusively.
+3. Re-validate blocking reason parity after Stage 3B closure parity is green.
+
+**Phase B exit gate:** no `contains(...)`-based effect-sensitivity logic in Rust planner inputs.
 
 ---
 
-## Stage 10 — CI enforcement + cutover readiness
+## Tracker closure criteria
 
-### Goal
-
-Enforce parity continuously before any default switch.
-
-### Work
-
-1. Make strict parity targets required in CI.
-2. Keep rollback-safe implementation toggle for staged rollout.
-3. Document promotion criteria and rollback criteria.
-
-### Exit gate
-
-- CI consistently green with strict parity gates; default flip is safe and reversible.
-
----
-
-## Immediate execution queue (next PRs)
-
-Current focus is **PR-2 (Stages 3–4)**. Stage-3 SCC/closure seeding is landed; next PR slice targets contiguous-envelope expansion + closure identity/order parity.
-
-1. **PR-1 (Stage 2 focus):** ordered-init exactness lock-in + strict map assertions.
-2. **PR-2 (Stages 3–4 focus):** dependency components/closures + staged-shell parity.
-3. **PR-3 (Stages 5–6 focus):** blocking payload parity + selection/packing edge-rule parity.
-4. **PR-4 (Stages 7–9 focus):** planner gate hardening + emitter/runtime parity closure.
-5. **PR-5 (Stage 10 focus):** CI/cutover gate enforcement and rollout docs.
+- `planner_internal_parity_test` green.
+- `planner_parity_test` green.
+- `rust_e2e_test` green.
+- `dual_e2e_test` green.
+- CI required parity gates enabled.

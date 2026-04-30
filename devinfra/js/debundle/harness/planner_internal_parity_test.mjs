@@ -18,6 +18,7 @@ test("planner internals parity: rust extraction groups exactly match js planner 
   const chunkManifest = JSON.parse(readFileSync(join(jsOut, "chunks.manifest.json"), "utf8"));
   const jsExtractionGroups = [];
   const jsCandidatesDebug = [];
+  const jsFrontierDebug = [];
   const jsSelectedDebug = [];
   const jsOrderedInitStates = [];
   for (const chunk of chunkManifest.chunks) {
@@ -31,6 +32,20 @@ test("planner internals parity: rust extraction groups exactly match js planner 
     const packed = packSelectedModuleGroups(plan, { lowering: "staged_shell" });
     jsOrderedInitStates.push(normalizeOrderedInitState(getOrderedInitPlannerStateForTesting(analysis)));
     for (const batchPlan of packed.candidateBatchPlans ?? []) {
+      jsFrontierDebug.push({
+        seedComponentId: batchPlan.seedComponentId ?? null,
+        requiredComponentIds: [
+          ...(batchPlan.requiredClosureComponentIds ?? batchPlan.closureComponentIds ?? []),
+        ].sort(),
+        requiredClosureOwnerIds: [...(batchPlan.requiredClosureOwnerIds ?? batchPlan.ownerIds ?? [])].sort(),
+        contiguousEnvelopeComponentIds: [...(batchPlan.contiguousEnvelopeComponentIds ?? [])].sort(),
+        closureOwnerIds: [...(batchPlan.ownerIds ?? [])].sort(),
+        envelopeStartOrdinal: Number(batchPlan.contiguousEnvelopeStartOrdinal ?? 0),
+        envelopeEndOrdinal: Number(batchPlan.contiguousEnvelopeEndOrdinal ?? 0),
+        envelopeBarrierItemIds: [...(batchPlan.contiguousEnvelopeBlockingReasons ?? [])]
+          .filter((reason) => reason.startsWith("non_declaration_in_envelope:"))
+          .sort(),
+      });
       jsCandidatesDebug.push({
         ownerIds: [...batchPlan.semanticOwnerIds].sort(),
         memberNames: [...batchPlan.semanticMemberNames].sort(),
@@ -55,9 +70,67 @@ test("planner internals parity: rust extraction groups exactly match js planner 
   }
 
   const rustPlanner = JSON.parse(readFileSync(join(rustOut, "planner_snapshot.json"), "utf8"));
+  const rustFrontierSummary = (rustPlanner.debug?.frontierTraces ?? rustPlanner.debug?.frontier_traces ?? [])
+    .map((trace) => ({
+      seedComponentId: trace.seedComponentId ?? trace.seed_component_id,
+      requiredComponentIds: trace.requiredComponentIds ?? trace.required_component_ids ?? [],
+      requiredClosureOwnerIds:
+        trace.requiredClosureOwnerIds ?? trace.required_closure_owner_ids ?? [],
+      contiguousEnvelopeComponentIds:
+        trace.contiguousEnvelopeComponentIds ?? trace.contiguous_envelope_component_ids ?? [],
+      closureOwnerIds: trace.closureOwnerIds ?? trace.closure_owner_ids ?? [],
+      envelopeStartOrdinal: Number(trace.envelopeStartOrdinal ?? trace.envelope_start_ordinal ?? 0),
+      envelopeEndOrdinal: Number(trace.envelopeEndOrdinal ?? trace.envelope_end_ordinal ?? 0),
+      envelopeBarrierItemIds: trace.envelopeBarrierItemIds ?? trace.envelope_barrier_item_ids ?? [],
+    }));
+  const normalizedJsFrontier = normalizeFrontierTraces(jsFrontierDebug);
+  const normalizedRustFrontier = normalizeFrontierTraces(rustFrontierSummary);
+  for (const gate of [
+    { label: "requiredComponentIds", projector: (trace) => trace.requiredComponentIds },
+    { label: "requiredClosureOwnerIds", projector: (trace) => trace.requiredClosureOwnerIds },
+    { label: "contiguousEnvelopeComponentIds", projector: (trace) => trace.contiguousEnvelopeComponentIds },
+    { label: "closureOwnerIds", projector: (trace) => trace.closureOwnerIds },
+  ]) {
+    const rustGate = normalizedRustFrontier.map((trace) => ({
+      seedComponentId: trace.seedComponentId,
+      values: [...gate.projector(trace)].sort(),
+    }));
+    const jsGate = normalizedJsFrontier.map((trace) => ({
+      seedComponentId: trace.seedComponentId,
+      values: [...gate.projector(trace)].sort(),
+    }));
+    const firstGateDelta = firstCandidateUniverseDelta(rustGate, jsGate);
+    if (firstGateDelta) {
+      assert.fail(
+        [
+          `frontier layer gate failed: ${gate.label}`,
+          `first mismatch index: ${firstGateDelta.index}`,
+          `rust: ${JSON.stringify(firstGateDelta.rust, null, 2)}`,
+          `js: ${JSON.stringify(firstGateDelta.js, null, 2)}`,
+        ].join("\n")
+      );
+    }
+  }
+  const normalizedRustCandidates = normalizeCandidateUniverse(rustPlanner.debug?.candidates ?? []);
+  const normalizedJsCandidates = normalizeCandidateUniverse(jsCandidatesDebug);
+  const firstCandidateDelta = firstCandidateUniverseDelta(normalizedRustCandidates, normalizedJsCandidates);
+  if (firstCandidateDelta) {
+    const firstFrontierDelta = firstCandidateUniverseDelta(normalizedRustFrontier, normalizedJsFrontier);
+    assert.fail(
+      [
+        "rust pre-packing candidate universe diverged from js candidate universe",
+        `first mismatch index: ${firstCandidateDelta.index}`,
+        `rust candidate: ${JSON.stringify(firstCandidateDelta.rust, null, 2)}`,
+        `js candidate: ${JSON.stringify(firstCandidateDelta.js, null, 2)}`,
+        `first frontier mismatch: ${JSON.stringify(firstFrontierDelta, null, 2)}`,
+        `rust frontier traces (first 5): ${JSON.stringify(normalizedRustFrontier.slice(0, 5), null, 2)}`,
+        `js frontier traces (first 5): ${JSON.stringify(normalizedJsFrontier.slice(0, 5), null, 2)}`,
+      ].join("\n")
+    );
+  }
   assert.deepEqual(
-    normalizeCandidateUniverse(rustPlanner.debug?.candidates ?? []),
-    normalizeCandidateUniverse(jsCandidatesDebug),
+    normalizedRustCandidates,
+    normalizedJsCandidates,
     "rust pre-packing candidate universe diverged from js candidate universe"
   );
   assert.deepEqual(
@@ -90,6 +163,18 @@ function resolveRustBin() {
   const rel = process.env.RUST_DEBUNDLE_BIN;
   assert.ok(runfiles && workspace && rel, "bazel runfiles env for rust bin missing");
   return join(runfiles, workspace, rel);
+}
+
+function firstCandidateUniverseDelta(rust, js) {
+  const max = Math.max(rust.length, js.length);
+  for (let idx = 0; idx < max; idx++) {
+    const left = rust[idx] ?? null;
+    const right = js[idx] ?? null;
+    if (JSON.stringify(left) !== JSON.stringify(right)) {
+      return { index: idx, rust: left, js: right };
+    }
+  }
+  return null;
 }
 
 
@@ -144,6 +229,32 @@ function normalizeStageRuns(stageRuns) {
       (left, right) =>
         left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id)
     );
+}
+
+function normalizeFrontierTraces(traces) {
+  const normalized = traces
+    .map((trace) => ({
+      seedComponentId: trace.seedComponentId ?? null,
+      requiredComponentIds: [...(trace.requiredComponentIds ?? [])].sort(),
+      requiredClosureOwnerIds: [...(trace.requiredClosureOwnerIds ?? [])].sort(),
+      contiguousEnvelopeComponentIds: [...(trace.contiguousEnvelopeComponentIds ?? [])].sort(),
+      closureOwnerIds: [...(trace.closureOwnerIds ?? [])].sort(),
+      envelopeStartOrdinal: Number(trace.envelopeStartOrdinal ?? 0),
+      envelopeEndOrdinal: Number(trace.envelopeEndOrdinal ?? 0),
+      envelopeBarrierItemIds: [...(trace.envelopeBarrierItemIds ?? [])].sort(),
+    }))
+    .sort((left, right) => (left.seedComponentId ?? "").localeCompare(right.seedComponentId ?? ""));
+  const deduped = [];
+  const seen = new Set();
+  for (const record of normalized) {
+    const key = JSON.stringify(record);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(record);
+  }
+  return deduped;
 }
 
 function normalizeOrderedInitState(state) {
