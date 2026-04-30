@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createWebFixtureRoots, runNodeScript, writeSnapshotFixture } from "./test_support/black_box.mjs";
+import { createWebFixtureRoots, runNodeScript, writeSnapshotFixture } from "./black_box.mjs";
 
 let moduleExportAssertionCounter = 0;
 let generatedModuleScriptCounter = 0;

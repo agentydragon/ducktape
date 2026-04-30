@@ -12,7 +12,7 @@ import {
   expectLogicalModulesE2eRejection,
   logicalModule,
   runLogicalModulesE2eFixture,
-} from "./pipeline_e2e_support.mjs";
+} from "./support.mjs";
 
 // --- Behavior preservation ------------------------------------------------
 

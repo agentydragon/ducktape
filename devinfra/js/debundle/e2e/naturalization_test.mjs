@@ -3,12 +3,7 @@
 // surround them. Black-box: runs run_transform with a JSONC spec and
 // regex-matches the emitted module file.
 import test from "node:test";
-import {
-  assertEntryOutput,
-  assertModuleSource,
-  logicalModule,
-  runLogicalModulesE2eFixture,
-} from "./pipeline_e2e_support.mjs";
+import { assertEntryOutput, assertModuleSource, logicalModule, runLogicalModulesE2eFixture } from "./support.mjs";
 
 test("renames destructured object params to readable shorthand", async (t) => {
   const fixture = await runLogicalModulesE2eFixture(t, {

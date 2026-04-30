@@ -9,16 +9,6 @@ js_info_files(
     visibility = ["//visibility:public"],
 )
 
-# Black-box test helpers with no dependency on debundler internals.
-# Suitable for tests that drive run_transform as an external binary.
-js_library(
-    name = "black_box_lib",
-    srcs = [
-        "black_box.mjs",
-    ],
-    visibility = ["//visibility:public"],
-)
-
 js_library(
     name = "libs",
     srcs = [

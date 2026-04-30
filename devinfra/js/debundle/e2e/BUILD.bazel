@@ -1,0 +1,44 @@
+load("@aspect_rules_js//js:defs.bzl", "js_test")
+
+# End-to-end tests treating the debundler as a black-box binary.
+# `support.mjs` and `black_box.mjs` only depend on node stdlib and the
+# run_transform binary — no debundler-internal modules — so a re-implementation
+# in another language can drive these tests verbatim.
+
+_E2E_DATA = [
+    "black_box.mjs",
+    "support.mjs",
+    "//devinfra/js/debundle/transforms:run_transform",
+]
+
+_E2E_ENV = {
+    "DUCKTAPE_RUN_TRANSFORM_BIN": "$(rootpath //devinfra/js/debundle/transforms:run_transform)",
+}
+
+js_test(
+    name = "lowering_test",
+    data = _E2E_DATA + ["lowering_test.mjs"],
+    entry_point = "lowering_test.mjs",
+    env = _E2E_ENV,
+)
+
+js_test(
+    name = "cross_module_test",
+    data = _E2E_DATA + ["cross_module_test.mjs"],
+    entry_point = "cross_module_test.mjs",
+    env = _E2E_ENV,
+)
+
+js_test(
+    name = "naturalization_test",
+    data = _E2E_DATA + ["naturalization_test.mjs"],
+    entry_point = "naturalization_test.mjs",
+    env = _E2E_ENV,
+)
+
+js_test(
+    name = "url_rebase_test",
+    data = _E2E_DATA + ["url_rebase_test.mjs"],
+    entry_point = "url_rebase_test.mjs",
+    env = _E2E_ENV,
+)

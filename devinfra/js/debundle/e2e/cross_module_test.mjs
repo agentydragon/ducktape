@@ -8,7 +8,7 @@ import {
   assertModuleSource,
   logicalModule,
   runLogicalModulesE2eFixture,
-} from "./pipeline_e2e_support.mjs";
+} from "./support.mjs";
 
 test("closes an extracted module over its helper dependencies", async (t) => {
   // Selecting only `b`. Its helper `a` must be pulled into the module file
