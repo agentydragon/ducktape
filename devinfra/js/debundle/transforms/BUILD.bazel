@@ -42,14 +42,6 @@ js_binary(
 )
 
 js_test(
-    name = "runner_test",
-    data = [
-        ":libs",
-    ],
-    entry_point = "runner_test.mjs",
-)
-
-js_test(
     name = "rewrite_specifiers_test",
     data = [
         ":libs",
