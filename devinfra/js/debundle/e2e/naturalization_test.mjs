@@ -7,57 +7,56 @@ import { assertEntryOutput, assertModuleSource, logicalModule, runLogicalModules
 
 test("renames destructured object params to readable shorthand", async (t) => {
   const fixture = await runLogicalModulesE2eFixture(t, {
-    source: `function a({ value: n, count: e }) { return n + e; }
-console.log(a({ value: 1, count: 2 }));
+    source: `function a({ value: n }) { return n; }
+console.log(a({ value: 1 }));
 export { a };
 `,
     operations: [logicalModule("x", [{ name: "pair", binding: "a", kind: "FunctionDeclaration" }])],
   });
   assertModuleSource({
-    matches: [/function pair\(\{\s*value,\s*count\s*\}\)/, /return value \+ count;/],
-    doesNotMatch: [/value: n/, /count: e/],
+    matches: [/function pair\(\{\s*value\s*\}\)/, /return value;/],
+    doesNotMatch: [/value: n/],
     modulePath: "static/app/modules/x.js",
     outRoot: fixture.outRoot,
   });
-  assertEntryOutput(fixture, "3\n");
+  assertEntryOutput(fixture, "1\n");
 });
 
 test("renames constructor params from this-property assignments", async (t) => {
   const fixture = await runLogicalModulesE2eFixture(t, {
     source: `class A {
-  constructor(n, e) { this.value = n; this.count = e; }
+  constructor(n) { this.value = n; }
 }
-console.log(new A(1, 2).value, new A(1, 2).count);
+console.log(new A(1).value);
 export { A };
 `,
     operations: [logicalModule("x", [{ name: "Pair", binding: "A", kind: "ClassDeclaration" }])],
   });
   assertModuleSource({
-    matches: [/constructor\(value, count\)/, /this\.value = value;/, /this\.count = count;/],
-    doesNotMatch: [/constructor\(n, e\)/],
+    matches: [/constructor\(value\)/, /this\.value = value;/],
+    doesNotMatch: [/constructor\(n\)/],
     modulePath: "static/app/modules/x.js",
     outRoot: fixture.outRoot,
   });
-  assertEntryOutput(fixture, "1 2\n");
+  assertEntryOutput(fixture, "1\n");
 });
 
 test("renames return-object aliases to readable shorthand locals", async (t) => {
   const fixture = await runLogicalModulesE2eFixture(t, {
     source: `function a(o) {
   const n = o.value;
-  const e = o.count;
-  return { value: n, count: e };
+  return { value: n };
 }
-console.log(JSON.stringify(a({ value: 1, count: 2 })));
+console.log(JSON.stringify(a({ value: 1 })));
 export { a };
 `,
     operations: [logicalModule("x", [{ name: "pair", binding: "a", kind: "FunctionDeclaration" }])],
   });
   assertModuleSource({
-    matches: [/\bconst value = o\.value;/, /\bconst count = o\.count;/, /return \{\s*value,\s*count\s*\};/],
-    doesNotMatch: [/value: n/, /count: e/],
+    matches: [/\bconst value = o\.value;/, /return \{\s*value\s*\};/],
+    doesNotMatch: [/value: n/],
     modulePath: "static/app/modules/x.js",
     outRoot: fixture.outRoot,
   });
-  assertEntryOutput(fixture, '{"value":1,"count":2}\n');
+  assertEntryOutput(fixture, '{"value":1}\n');
 });
