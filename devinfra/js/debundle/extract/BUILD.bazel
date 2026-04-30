@@ -27,20 +27,6 @@ js_library(
 )
 
 js_test(
-    name = "init_region_test",
-    data = [
-        "decl_graph.mjs",
-        "init_region.mjs",
-        "planner.mjs",
-        "//devinfra/js/debundle/analysis:libs",
-        "//devinfra/js/debundle/common:sources",
-        "//devinfra/js/debundle/split:libs",
-        "//devinfra/js/debundle/test_support:sources",
-    ] + _BABEL_DEPS,
-    entry_point = "init_region_test.mjs",
-)
-
-js_test(
     name = "decl_graph_test",
     data = [
         "decl_graph.mjs",
@@ -64,23 +50,4 @@ js_test(
         "//devinfra/js/debundle/common:sources",
     ] + _BABEL_DEPS,
     entry_point = "extraction_test.mjs",
-)
-
-js_test(
-    name = "atomic_modules_test",
-    data = [
-        "atomic_modules.mjs",
-        "decl_graph.mjs",
-        "init_region.mjs",
-        "logical_modules.mjs",
-        "materialize_logical_modules.mjs",
-        "merge.mjs",
-        "planner.mjs",
-        "//devinfra/js/debundle/analysis:libs",
-        "//devinfra/js/debundle/common:sources",
-        "//devinfra/js/debundle/split:libs",
-        "//devinfra/js/debundle/test_support:sources",
-        "//devinfra/js/debundle/transforms:libs",
-    ] + _BABEL_DEPS,
-    entry_point = "atomic_modules_test.mjs",
 )

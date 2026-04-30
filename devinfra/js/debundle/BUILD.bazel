@@ -3,14 +3,14 @@ load("@aspect_rules_js//js:defs.bzl", "js_test")
 package(default_visibility = ["//visibility:public"])
 
 js_test(
-    name = "module_pipeline_e2e_test",
+    name = "debundle_e2e_test",
     data = [
-        "module_pipeline_e2e_test.mjs",
+        "debundle_e2e_test.mjs",
         "pipeline_e2e_support.mjs",
         "//devinfra/js/debundle/test_support:sources",
         "//devinfra/js/debundle/transforms:run_transform",
     ],
-    entry_point = "module_pipeline_e2e_test.mjs",
+    entry_point = "debundle_e2e_test.mjs",
     env = {
         "DUCKTAPE_RUN_TRANSFORM_BIN": "$(rootpath //devinfra/js/debundle/transforms:run_transform)",
     },
