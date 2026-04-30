@@ -29,4 +29,4 @@ export function __dt_generated_init__atomic_module_0004__R5_WO_jO() {
   R5.jsxs = WO;
   jO.exports = R5;
 }
-export { jO, R5, $$typeof as aee, lee, WO };
+export { jO };
