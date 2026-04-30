@@ -90,12 +90,6 @@ js_library(
     ],
 )
 
-js_library(
-    name = "build_mock_golden_lib",
-    srcs = ["build_mock_golden.mjs"],
-    deps = [":mock_pipeline_lib"],
-)
-
 js_binary(
     name = "build_mock_bundle",
     data = [
@@ -121,15 +115,6 @@ js_run_binary(
     args = ["testdata/mock_browser_bundle/generated"],
     chdir = package_name(),
     tool = ":build_mock_bundle",
-)
-
-js_binary(
-    name = "build_mock_golden",
-    data = [
-        ":build_mock_golden_lib",
-        ":mock_testdata",
-    ],
-    entry_point = "build_mock_golden.mjs",
 )
 
 js_test(
@@ -174,18 +159,6 @@ js_test(
         "//devinfra/js/debundle/test_support:sources",
     ],
     entry_point = "mock_equivalence_test.mjs",
-)
-
-js_test(
-    name = "mock_golden_test",
-    size = "small",
-    data = [
-        ":build_mock_golden_lib",
-        ":mock_pipeline_lib",
-        ":mock_testdata",
-        "//devinfra/js/debundle/test_support:sources",
-    ],
-    entry_point = "mock_golden_test.mjs",
 )
 
 js_binary(

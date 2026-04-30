@@ -8,7 +8,7 @@ import tailwindcss from "esbuild-plugin-tailwindcss";
 import { createServer } from "http";
 import { readFile } from "fs/promises";
 import { fileURLToPath } from "url";
-import { dirname, resolve, extname } from "path";
+import { dirname, extname, join, resolve } from "path";
 import { existsSync } from "fs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -147,10 +147,16 @@ const DIST_ROOT = resolve(__dirname, "dist");
 const FRONTEND_ROOT = resolve(__dirname);
 
 function resolveSafe(root, urlPath) {
-  // Strip leading slashes and resolve to an absolute path. Reject anything
-  // that escapes `root` after normalization. Closes CodeQL js/path-injection.
-  const candidate = resolve(root, urlPath.replace(/^\/+/, ""));
-  return candidate === root || candidate.startsWith(root + "/") ? candidate : null;
+  // Walk path segments and reject anything that could escape `root`:
+  // `..`, absolute segments, or null bytes. Then join — this avoids feeding
+  // user input through `path.resolve`, which CodeQL flags as a sink.
+  const segments = urlPath.split("/").filter((s) => s !== "" && s !== ".");
+  for (const segment of segments) {
+    if (segment === ".." || segment.includes("\0") || segment.includes("\\")) {
+      return null;
+    }
+  }
+  return segments.length === 0 ? root : join(root, ...segments);
 }
 
 // Start HTTP server
