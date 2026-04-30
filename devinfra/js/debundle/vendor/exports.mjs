@@ -15,9 +15,7 @@ const RELEVANT_LEVELS = new Set(["boundary-rename", "swap"]);
 export function renameVendorExports({ artifact, operations, operationCatalog }) {
   requirePipelineArtifact(artifact, "renameVendorExports");
   const catalog = operations ?? operationCatalog ?? [];
-  const ops = catalog.filter(
-    (op) => op?.operation === "mark_vendor" && RELEVANT_LEVELS.has(op.level)
-  );
+  const ops = catalog.filter((op) => op?.operation === "mark_vendor" && RELEVANT_LEVELS.has(op.level));
 
   let totalRewrites = 0;
   let chunksWithMapping = 0;
@@ -33,9 +31,7 @@ export function renameVendorExports({ artifact, operations, operationCatalog }) 
       );
     }
     if (!vendorEntryFile.ast) {
-      throw new Error(
-        `renameVendorExports operation ${op.id} vendor chunk ${chunkId} is missing entry AST`
-      );
+      throw new Error(`renameVendorExports operation ${op.id} vendor chunk ${chunkId} is missing entry AST`);
     }
     const mapping = collectBoundaryMapping(vendorEntryFile.ast);
     if (mapping.size === 0) {
@@ -138,7 +134,16 @@ function collectBoundaryMapping(ast) {
   return mapping;
 }
 
-function rewriteImportsInFile({ artifact, ast, callerChunkId, callerFile, targetChunkId, targetEntryFile, mapping, opId }) {
+function rewriteImportsInFile({
+  artifact,
+  ast,
+  callerChunkId,
+  callerFile,
+  targetChunkId,
+  targetEntryFile,
+  mapping,
+  opId,
+}) {
   let rewrites = 0;
   if (!Array.isArray(ast?.program?.body)) {
     return 0;

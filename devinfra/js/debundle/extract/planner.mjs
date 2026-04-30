@@ -1,6 +1,9 @@
 import * as t from "@babel/types";
 import { analyzeVariableDeclarationFragmentAccesses } from "../analysis/boundary.mjs";
-import { referencedUndeclaredNames, referencedUndeclaredNamesInVariableDeclarator } from "../common/program_analysis.mjs";
+import {
+  referencedUndeclaredNames,
+  referencedUndeclaredNamesInVariableDeclarator,
+} from "../common/program_analysis.mjs";
 import { packSelectedModuleGroups, planSelectedModuleGroupExtractions } from "./decl_graph.mjs";
 
 const SELECTED_ATOMIC_UNIT_ID_PREFIX = "selected_atomic_unit_";
@@ -149,15 +152,11 @@ export function deriveSelectedModuleTarget(
   { filePrefix = "", initPrefix = GENERATED_INIT_PREFIX, targetDir = "modules" } = {}
 ) {
   const normalizedTargetDir = normalizeOptionalRelativeDir(targetDir);
-  const modulePath =
-    modulePlan.modulePath ??
-    `${modulePlan.id}__${modulePlan.nameHint ?? `module_${index}`}`;
+  const modulePath = modulePlan.modulePath ?? `${modulePlan.id}__${modulePlan.nameHint ?? `module_${index}`}`;
   return {
     file:
       modulePlan.targetFile ??
-      (normalizedTargetDir
-        ? `${normalizedTargetDir}/${filePrefix}${modulePath}.js`
-        : `${filePrefix}${modulePath}.js`),
+      (normalizedTargetDir ? `${normalizedTargetDir}/${filePrefix}${modulePath}.js` : `${filePrefix}${modulePath}.js`),
     init: modulePlan.initName ?? sanitizeIdentifier(`${initPrefix}${modulePath}`),
   };
 }
@@ -347,7 +346,10 @@ function buildSelectedAtomicUnits({ analysis, ownerById, selectedOwnerIds }) {
   return units;
 }
 
-function splitSplittableVariableDeclarationAtomicUnits(rawAtomicUnits, { analysis, ownerById, programBody, sideEffectById }) {
+function splitSplittableVariableDeclarationAtomicUnits(
+  rawAtomicUnits,
+  { analysis, ownerById, programBody, sideEffectById }
+) {
   const expanded = [];
   const localDeclarationNames = localDeclarationNamesForAnalysis(analysis);
   for (const unit of rawAtomicUnits) {
@@ -400,7 +402,9 @@ function splitSplittableVariableDeclarationAtomicUnit(
     return null;
   }
   if (unit.attachedItemIds.length === 0) {
-    const groupedUnits = buildVariableDeclarationAtomicUnitsFromGroupedFragments(splitUnits, dependencyDisjoint, { owner });
+    const groupedUnits = buildVariableDeclarationAtomicUnitsFromGroupedFragments(splitUnits, dependencyDisjoint, {
+      owner,
+    });
     return groupedUnits.length > 1 ? groupedUnits : null;
   }
   const groupedUnits = splitVariableDeclarationUnitWithAttachedSideEffects(unit, splitUnits, {
@@ -432,9 +436,7 @@ function buildSplittableVariableDeclarationUnits(owner, declarators, { localDecl
     fragments.push(buildGroupedVariableDeclaratorFragment(owner, declarators, remainderDeclaratorIndices));
   }
   return fragments.sort(
-    (left, right) =>
-      (left.orderIndex ?? 0) - (right.orderIndex ?? 0) ||
-      left.id.localeCompare(right.id)
+    (left, right) => (left.orderIndex ?? 0) - (right.orderIndex ?? 0) || left.id.localeCompare(right.id)
   );
 }
 
@@ -472,15 +474,17 @@ function buildGroupedVariableDeclaratorFragment(owner, declarators, declaratorIn
     declaratorIndices: [...declaratorIndices],
     id: `${owner.id}::declarator_group_${declaratorIndices.join("_")}`,
     kind: "variable_declarator_group",
-    memberNames: declaratorIndices
-      .flatMap((index) => bindingNamesForVariableDeclarator(declarators[index]))
-      .sort(),
+    memberNames: declaratorIndices.flatMap((index) => bindingNamesForVariableDeclarator(declarators[index])).sort(),
     orderIndex: declaratorIndices[0] ?? 0,
     ownerId: owner.id,
   };
 }
 
-function splitVariableDeclarationUnitWithAttachedSideEffects(unit, fragments, { dependencyDisjoint, owner, sideEffectById }) {
+function splitVariableDeclarationUnitWithAttachedSideEffects(
+  unit,
+  fragments,
+  { dependencyDisjoint, owner, sideEffectById }
+) {
   if (!(sideEffectById instanceof Map)) {
     return null;
   }
@@ -654,7 +658,12 @@ function buildVariableDeclarationAtomicUnitsFromGroupedFragments(
     .map(({ orderIndex, ...unit }) => unit);
 }
 
-function buildVariableDeclarationFragmentDependencyDisjointSet(owner, declarators, fragments, { analysis = null, programBody = null, statement = null } = {}) {
+function buildVariableDeclarationFragmentDependencyDisjointSet(
+  owner,
+  declarators,
+  fragments,
+  { analysis = null, programBody = null, statement = null } = {}
+) {
   const disjoint = createDisjointSet(fragments.length);
   const fragmentIndexByMemberName = new Map();
   const fragmentIndexByDeclaratorIndex = new Map();
@@ -837,11 +846,7 @@ function isLazyClassFragmentInitializer(node) {
     return false;
   }
   return node.body.body.every((member) => {
-    if (
-      t.isClassMethod(member) ||
-      t.isClassPrivateMethod(member) ||
-      t.isTSDeclareMethod(member)
-    ) {
+    if (t.isClassMethod(member) || t.isClassPrivateMethod(member) || t.isTSDeclareMethod(member)) {
       return !member.computed && (member.decorators?.length ?? 0) === 0;
     }
     return false;
@@ -1190,9 +1195,7 @@ function normalizeOptionalRelativeDir(value) {
 }
 
 function sanitizeIdentifier(value) {
-  return value
-    .replace(/[^A-Za-z0-9_$]+/g, "_")
-    .replace(/^[^A-Za-z_$]+/, "_");
+  return value.replace(/[^A-Za-z0-9_$]+/g, "_").replace(/^[^A-Za-z_$]+/, "_");
 }
 
 function unwrapTopLevelDeclarationNode(node) {

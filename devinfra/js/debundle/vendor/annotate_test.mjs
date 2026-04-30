@@ -93,10 +93,7 @@ test("multiple ops on distinct chunks attach each annotation", () => {
   assert.equal(vendor.get("static/a").identity, "lib-a");
   assert.equal(vendor.get("static/b").identity, "lib-b");
   assert.equal(vendor.has("static/c"), false);
-  assert.deepEqual(
-    manifest.annotations.map((entry) => entry.id).sort(),
-    ["op_a", "op_b"]
-  );
+  assert.deepEqual(manifest.annotations.map((entry) => entry.id).sort(), ["op_a", "op_b"]);
 });
 
 test("chunkPath maps to chunkId by stripping .js", () => {

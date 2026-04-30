@@ -80,7 +80,9 @@ export { readBuildBeta };`,
   assert.ok(
     fragments.some(
       (fragment) =>
-        fragment.kind === "variable_declarator" && fragment.memberNames.length === 1 && fragment.memberNames[0] === "buildBeta"
+        fragment.kind === "variable_declarator" &&
+        fragment.memberNames.length === 1 &&
+        fragment.memberNames[0] === "buildBeta"
     )
   );
 });
@@ -128,7 +130,9 @@ export { beta, alpha, gamma };`,
     {}
   );
 
-  const ownerWithAlphaAndBeta = plan.atomicUnits.find((unit) => unit.memberNames.includes("alpha") && unit.memberNames.includes("beta"));
+  const ownerWithAlphaAndBeta = plan.atomicUnits.find(
+    (unit) => unit.memberNames.includes("alpha") && unit.memberNames.includes("beta")
+  );
   const gammaUnit = plan.atomicUnits.find((unit) => unit.memberNames.includes("gamma"));
 
   assert.ok(ownerWithAlphaAndBeta);
@@ -147,7 +151,11 @@ export { beta, alpha, gamma };`,
         fragment.memberNames[0] === "alpha"
     )
   );
-  assert.ok(gammaUnit.ownerFragments?.some((fragment) => fragment.memberNames.length === 1 && fragment.memberNames[0] === "gamma"));
+  assert.ok(
+    gammaUnit.ownerFragments?.some(
+      (fragment) => fragment.memberNames.length === 1 && fragment.memberNames[0] === "gamma"
+    )
+  );
 });
 
 test("planSelectedAtomicModules does not split class declarators across eager class-definition reads", () => {
@@ -247,7 +255,9 @@ export { count, bump, gamma };`,
     {}
   );
 
-  const coupledUnit = plan.atomicUnits.find((unit) => unit.memberNames.includes("count") && unit.memberNames.includes("bump"));
+  const coupledUnit = plan.atomicUnits.find(
+    (unit) => unit.memberNames.includes("count") && unit.memberNames.includes("bump")
+  );
   const gammaUnit = plan.atomicUnits.find((unit) => unit.memberNames.length === 1 && unit.memberNames[0] === "gamma");
 
   assert.ok(coupledUnit);
@@ -335,22 +345,30 @@ export { KU, ype };`,
   const statement = ast.program.body[0];
   const [owner] = analysis.owners;
 
-  const kuAccesses = analyzeVariableDeclarationFragmentAccesses(statement, {
-    declaratorIndices: [0],
-    memberNames: ["KU"],
-    ownerId: owner.id,
-  }, {
-    owners: analysis.owners,
-    runtimeImports: analysis.runtimeImports,
-  });
-  const ypeAccesses = analyzeVariableDeclarationFragmentAccesses(statement, {
-    declaratorIndices: [1],
-    memberNames: ["ype"],
-    ownerId: owner.id,
-  }, {
-    owners: analysis.owners,
-    runtimeImports: analysis.runtimeImports,
-  });
+  const kuAccesses = analyzeVariableDeclarationFragmentAccesses(
+    statement,
+    {
+      declaratorIndices: [0],
+      memberNames: ["KU"],
+      ownerId: owner.id,
+    },
+    {
+      owners: analysis.owners,
+      runtimeImports: analysis.runtimeImports,
+    }
+  );
+  const ypeAccesses = analyzeVariableDeclarationFragmentAccesses(
+    statement,
+    {
+      declaratorIndices: [1],
+      memberNames: ["ype"],
+      ownerId: owner.id,
+    },
+    {
+      owners: analysis.owners,
+      runtimeImports: analysis.runtimeImports,
+    }
+  );
 
   assert.deepEqual(kuAccesses.memberWritesTopLevel.lazy, []);
   assert.equal(ypeAccesses.memberWritesTopLevel.lazy.length, 1);
@@ -407,9 +425,7 @@ export { useFocusService, readIndependentValue };`,
   );
 
   const selectedNames = new Set(
-    analysis.owners
-      .filter((owner) => selectedOwnerIds.has(owner.id))
-      .flatMap((owner) => owner.names)
+    analysis.owners.filter((owner) => selectedOwnerIds.has(owner.id)).flatMap((owner) => owner.names)
   );
   assert.ok(selectedNames.has("useFocusService"));
   assert.ok(selectedNames.has("FocusService"));
@@ -477,9 +493,7 @@ export { readAliasMap };`,
   );
 
   const selectedNames = new Set(
-    analysis.owners
-      .filter((owner) => selectedOwnerIds.has(owner.id))
-      .flatMap((owner) => owner.names)
+    analysis.owners.filter((owner) => selectedOwnerIds.has(owner.id)).flatMap((owner) => owner.names)
   );
   assert.ok(selectedNames.has("palette"));
   assert.ok(selectedNames.has("pickerStyles"));
@@ -510,9 +524,7 @@ export { useFocusService };`,
     callerName: "test closeSelectedOwnerIdsOverDependencyGraph",
   });
   const selectedNames = new Set(
-    analysis.owners
-      .filter((owner) => selectedOwnerIds.has(owner.id))
-      .flatMap((owner) => owner.names)
+    analysis.owners.filter((owner) => selectedOwnerIds.has(owner.id)).flatMap((owner) => owner.names)
   );
   assert.ok(selectedNames.has("useFocusService"));
   assert.ok(selectedNames.has("FocusService"));
@@ -742,7 +754,9 @@ test("buildLogicalModulePlans does not let one incompatible atomic module poison
     chunkId: "static/app",
     targetDir: "modules",
   });
-  const schemaCore = plan.modules.find((modulePlan) => modulePlan.modulePath === "local_api/contract/schema_language_core");
+  const schemaCore = plan.modules.find(
+    (modulePlan) => modulePlan.modulePath === "local_api/contract/schema_language_core"
+  );
   assert.ok(schemaCore);
   assert.deepEqual(schemaCore.ownerIds, ["owner_00001"]);
   assert.equal(plan.counts.blockedMembers, 1);

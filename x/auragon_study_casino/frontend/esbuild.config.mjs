@@ -45,9 +45,7 @@ const FONT_ASSETS = ["fonts/fonts.css", "fonts/Outfit-latin.woff2", "fonts/Playf
 
 async function copyStatic() {
   await Promise.all(
-    [...STATIC_ASSETS, ...FONT_ASSETS].map((name) =>
-      copyFile(resolve(__dirname, name), resolve(outdir, name)),
-    ),
+    [...STATIC_ASSETS, ...FONT_ASSETS].map((name) => copyFile(resolve(__dirname, name), resolve(outdir, name)))
   );
 }
 

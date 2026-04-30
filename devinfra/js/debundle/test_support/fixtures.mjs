@@ -110,15 +110,17 @@ export function writeChunkFixture({
     parser: manifest.parser ?? cloneDefaultParserOptions(),
     entryFile,
     ...manifest,
-    files:
-      manifest.files ??
-      [
-        { file: entryFile, role: "entry" },
-        ...Object.keys(parts)
-          .sort()
-          .map((file) => ({ file, role: "module" })),
-      ],
-    parts: manifest.parts ?? Object.keys(parts).sort().map((file) => ({ file })),
+    files: manifest.files ?? [
+      { file: entryFile, role: "entry" },
+      ...Object.keys(parts)
+        .sort()
+        .map((file) => ({ file, role: "module" })),
+    ],
+    parts:
+      manifest.parts ??
+      Object.keys(parts)
+        .sort()
+        .map((file) => ({ file })),
   };
   writeJsonFile(join(chunkRoot, "manifest.json"), manifestValue);
   return {
@@ -147,7 +149,9 @@ export function parseModuleCode(code, parserOptions = DEFAULT_PARSER_OPTIONS) {
 
 export function makePipelineChunk(chunkId, files, { manifest } = {}) {
   const parser = manifest?.parser ?? cloneDefaultParserOptions();
-  const entryFile = manifest?.entryFile ?? (Object.prototype.hasOwnProperty.call(files, "runtime.js") ? "runtime.js" : Object.keys(files).sort()[0]);
+  const entryFile =
+    manifest?.entryFile ??
+    (Object.prototype.hasOwnProperty.call(files, "runtime.js") ? "runtime.js" : Object.keys(files).sort()[0]);
   const normalizedManifest = {
     schemaVersion: 1,
     chunkId,
@@ -199,10 +203,7 @@ export function makePipelineChunk(chunkId, files, { manifest } = {}) {
   };
 }
 
-export function makePipelineArtifact(
-  chunks,
-  { annotations, manifest = {} } = {}
-) {
+export function makePipelineArtifact(chunks, { annotations, manifest = {} } = {}) {
   const artifact = createArtifact({
     chunks: chunks.map((chunk) => ({
       chunkId: chunk.chunkId,

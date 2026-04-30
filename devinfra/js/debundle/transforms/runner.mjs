@@ -1,8 +1,6 @@
 import { readFileSync } from "node:fs";
 import { parse as parseJsonc } from "jsonc-parser";
-import {
-  extractScrambledIdentifierFrequencies,
-} from "../analysis/identifier_frequency.mjs";
+import { extractScrambledIdentifierFrequencies } from "../analysis/identifier_frequency.mjs";
 import { computeJsAsts } from "../common/parse_asts.mjs";
 import { createEmptyArtifact } from "../common/artifact.mjs";
 import { loadJsChunks } from "../common/load_chunks.mjs";

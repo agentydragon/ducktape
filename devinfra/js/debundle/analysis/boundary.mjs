@@ -4,17 +4,34 @@ import { parse } from "@babel/parser";
 import traverseModule from "@babel/traverse";
 import * as t from "@babel/types";
 import { DEFAULT_PARSER_OPTIONS, writeJsonFile } from "../common/parser_options.mjs";
-import { getArtifactManifestChunks, getChunkEntryFile, getChunkEntryPath, requirePipelineArtifact } from "../common/artifact.mjs";
-import { formatDurationSince, logProgress, prepareOutputDir, relativeWorkspacePath, resolveWorkspacePath } from "../common/io.mjs";
-import { referencedUndeclaredNames, referencedUndeclaredNamesInVariableDeclarator } from "../common/program_analysis.mjs";
+import {
+  getArtifactManifestChunks,
+  getChunkEntryFile,
+  getChunkEntryPath,
+  requirePipelineArtifact,
+} from "../common/artifact.mjs";
+import {
+  formatDurationSince,
+  logProgress,
+  prepareOutputDir,
+  relativeWorkspacePath,
+  resolveWorkspacePath,
+} from "../common/io.mjs";
+import {
+  referencedUndeclaredNames,
+  referencedUndeclaredNamesInVariableDeclarator,
+} from "../common/program_analysis.mjs";
 
 const traverse = traverseModule.default ?? traverseModule;
 
 const RUNTIME_SENSITIVE_EFFECTS = new Set(["containsDirectEval", "containsImportMeta", "containsTopLevelAwait"]);
-const SELECTED_MODULE_SUPPORTED_OWNER_TYPES = new Set(["FunctionDeclaration", "ClassDeclaration", "VariableDeclaration"]);
+const SELECTED_MODULE_SUPPORTED_OWNER_TYPES = new Set([
+  "FunctionDeclaration",
+  "ClassDeclaration",
+  "VariableDeclaration",
+]);
 const FRAGMENT_IMPORT_BY_LOCAL_CACHE = new WeakMap();
 const FRAGMENT_OWNER_BY_BINDING_CACHE = new WeakMap();
-
 
 export function extractRuntimeBoundaryMetadata(options) {
   const artifact = requirePipelineArtifact(options.artifact, "extractRuntimeBoundaryMetadata");
@@ -153,7 +170,8 @@ export function analyzeRuntimeBoundaryAst(ast, { chunkId = "<chunk>", manifestPa
               path: topPath,
               type: node.type,
             });
-            owner.classFeatures = owner.type === "ClassDeclaration" ? describeClassFeatures(owner.node) : emptyClassFeatures();
+            owner.classFeatures =
+              owner.type === "ClassDeclaration" ? describeClassFeatures(owner.node) : emptyClassFeatures();
             owners.push(owner);
             itemByTopNode.set(node, owner);
             programItems.push({
@@ -207,11 +225,7 @@ export function analyzeRuntimeBoundaryAst(ast, { chunkId = "<chunk>", manifestPa
       recordEffectOccurrence(path, "containsTopLevelAwait", { itemByTopNode, programPathByNode });
     },
     CallExpression(path) {
-      if (
-        t.isIdentifier(path.node.callee) &&
-        path.node.callee.name === "eval" &&
-        !path.scope.getBinding("eval")
-      ) {
+      if (t.isIdentifier(path.node.callee) && path.node.callee.name === "eval" && !path.scope.getBinding("eval")) {
         recordEffectOccurrence(path.get("callee"), "containsDirectEval", { itemByTopNode, programPathByNode });
       }
       if (path.node.callee.type === "Import") {
@@ -833,11 +847,7 @@ function recordEffectOccurrence(path, effect, context) {
     sourceItem.effects[key]++;
     return;
   }
-  if (
-    effect === "containsDirectEval" ||
-    effect === "containsImportMeta" ||
-    effect === "containsRuntimeSourceRebase"
-  ) {
+  if (effect === "containsDirectEval" || effect === "containsImportMeta" || effect === "containsRuntimeSourceRebase") {
     sourceItem.effects[effect] = true;
     return;
   }
@@ -855,7 +865,7 @@ function sourceItemForPath(path, { itemByTopNode, programPathByNode }) {
   if (record) {
     return record;
   }
-  return programPathByNode.get(topPath.node) ? itemByTopNode.get(topPath.node) ?? null : null;
+  return programPathByNode.get(topPath.node) ? (itemByTopNode.get(topPath.node) ?? null) : null;
 }
 
 function isSafeRootRelativeImportMetaUrlUse(metaPath) {
@@ -998,9 +1008,10 @@ function classifyAccessPhase(path, sourceItem) {
   while (current.parentPath && current.parentPath !== sourceItem.path.parentPath) {
     const parent = current.parentPath;
     if (parent.isClassMethod() || parent.isClassPrivateMethod() || parent.isObjectMethod()) {
-      classSite = current.key === "key" && parent.node.computed
-        ? { phase: "eager", siteKind: "class_computed_key" }
-        : { phase: "lazy", siteKind: "class_method_body" };
+      classSite =
+        current.key === "key" && parent.node.computed
+          ? { phase: "eager", siteKind: "class_computed_key" }
+          : { phase: "lazy", siteKind: "class_method_body" };
       break;
     }
     if (parent.isClassProperty() || parent.isClassPrivateProperty()) {
@@ -1362,9 +1373,7 @@ function finalizeOwnerModes(owners) {
   const ownerById = new Map(owners.map((owner) => [owner.id, owner]));
   const interactionAdjacency = new Map(owners.map((owner) => [owner.id, collectLocalInteractionTargets(owner)]));
 
-  let plainSeeds = new Set(
-    owners.filter((owner) => isBasePlainImportEligible(owner)).map((owner) => owner.id)
-  );
+  let plainSeeds = new Set(owners.filter((owner) => isBasePlainImportEligible(owner)).map((owner) => owner.id));
   let changed = true;
   while (changed) {
     changed = false;
@@ -1395,9 +1404,7 @@ function finalizeOwnerModes(owners) {
       .sort();
     owner.extractionReasons = [
       ...reasons,
-      ...(blockingDependencies.length > 0
-        ? [`blocked_by_non_plain_dependency:${blockingDependencies.join(",")}`]
-        : []),
+      ...(blockingDependencies.length > 0 ? [`blocked_by_non_plain_dependency:${blockingDependencies.join(",")}`] : []),
     ];
   }
 }
@@ -1490,7 +1497,9 @@ function collectLocalInteractionTargets(owner) {
 }
 
 function collectLocalTargets(accessMap) {
-  return [...accessMap.values()].filter((access) => access.kind === "local_declaration" && access.ownerId).map((access) => access.ownerId);
+  return [...accessMap.values()]
+    .filter((access) => access.kind === "local_declaration" && access.ownerId)
+    .map((access) => access.ownerId);
 }
 
 function buildOwnerComponents(owners, edges, prefix) {
@@ -1498,7 +1507,10 @@ function buildOwnerComponents(owners, edges, prefix) {
   for (const edge of edges) {
     adjacency.get(edge.from)?.add(edge.to);
   }
-  const components = stronglyConnectedComponents(owners.map((owner) => owner.id), adjacency);
+  const components = stronglyConnectedComponents(
+    owners.map((owner) => owner.id),
+    adjacency
+  );
   const ownerById = new Map(owners.map((owner) => [owner.id, owner]));
   return components
     .sort((left, right) => minOwnerOrdinal(left, ownerById) - minOwnerOrdinal(right, ownerById))
@@ -1511,7 +1523,10 @@ function buildWeakOwnerComponents(owners, edges, prefix) {
     adjacency.get(edge.from)?.add(edge.to);
     adjacency.get(edge.to)?.add(edge.from);
   }
-  const components = connectedComponents(owners.map((owner) => owner.id), adjacency);
+  const components = connectedComponents(
+    owners.map((owner) => owner.id),
+    adjacency
+  );
   const ownerById = new Map(owners.map((owner) => [owner.id, owner]));
   return components
     .sort((left, right) => minOwnerOrdinal(left, ownerById) - minOwnerOrdinal(right, ownerById))
@@ -1596,7 +1611,9 @@ function minOwnerOrdinal(component, ownerById) {
 }
 
 function finalizeComponent(component, index, prefix, ownerById, edges, { cyclic = component.length > 1 } = {}) {
-  const ownerIds = [...component].sort((left, right) => (ownerById.get(left)?.ordinal ?? 0) - (ownerById.get(right)?.ordinal ?? 0));
+  const ownerIds = [...component].sort(
+    (left, right) => (ownerById.get(left)?.ordinal ?? 0) - (ownerById.get(right)?.ordinal ?? 0)
+  );
   const members = ownerIds.map((ownerId) => ownerById.get(ownerId));
   const dependencyIds = new Set();
   for (const edge of edges) {
@@ -1974,7 +1991,8 @@ function summarizeBoundaryCounts({
     keepRuntimeCandidates: ownerOutput.filter((owner) => owner.extractionMode === "keep_runtime").length,
     selectedModuleExtractableRegions: selectedModuleRegions.filter((region) => region.selectedModuleExtractable).length,
     selectedModuleRegions: selectedModuleRegions.length,
-    selectedModuleCandidates: ownerOutput.filter((owner) => owner.extractionMode === "selected_module_candidate").length,
+    selectedModuleCandidates: ownerOutput.filter((owner) => owner.extractionMode === "selected_module_candidate")
+      .length,
     plainImportCandidates: ownerOutput.filter((owner) => owner.extractionMode === "plain_import_candidate").length,
     programItems: programItemOutput.length,
     sideEffects: sideEffectOutput.length,
@@ -1998,7 +2016,10 @@ function buildBoundarySummary({ chunkSummaries, inputRoot, inputManifestPath, ou
         0
       ),
       selectedModuleRegions: chunkSummaries.reduce((count, chunk) => count + chunk.counts.selectedModuleRegions, 0),
-      selectedModuleCandidates: chunkSummaries.reduce((count, chunk) => count + chunk.counts.selectedModuleCandidates, 0),
+      selectedModuleCandidates: chunkSummaries.reduce(
+        (count, chunk) => count + chunk.counts.selectedModuleCandidates,
+        0
+      ),
       plainImportCandidates: chunkSummaries.reduce((count, chunk) => count + chunk.counts.plainImportCandidates, 0),
       sideEffects: chunkSummaries.reduce((count, chunk) => count + chunk.counts.sideEffects, 0),
     },

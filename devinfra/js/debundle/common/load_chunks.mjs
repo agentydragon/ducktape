@@ -4,7 +4,6 @@ import { createEmptyArtifact, createFile, createChunk, setChunk } from "./artifa
 import { resolveWorkspacePath } from "./io.mjs";
 import { chunkIdForJsPath, normalizeAssetPath } from "./normalize.mjs";
 
-
 export function loadJsChunks({ inputRoot, jsListPath }) {
   const resolvedInputRoot = resolveWorkspacePath(inputRoot);
   const resolvedJsListPath = resolveWorkspacePath(jsListPath);

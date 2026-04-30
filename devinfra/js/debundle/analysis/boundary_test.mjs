@@ -12,10 +12,7 @@ import {
   makePipelineChunk,
 } from "../test_support/fixtures.mjs";
 import { createFile, createArtifact } from "../common/artifact.mjs";
-import {
-  analyzeRuntimeBoundaryCode,
-  extractRuntimeBoundaryMetadata,
-} from "./boundary.mjs";
+import { analyzeRuntimeBoundaryCode, extractRuntimeBoundaryMetadata } from "./boundary.mjs";
 
 test("classifies plain-import, ordered-init, and keep-runtime boundaries", () => {
   const analysis = analyzeRuntimeBoundaryCode(
@@ -41,9 +38,7 @@ console.log(target);
     }
   );
 
-  const ownerByName = new Map(
-    analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner]))
-  );
+  const ownerByName = new Map(analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner])));
 
   assert.equal(ownerByName.get("plainA").extractionMode, "plain_import_candidate");
   assert.equal(ownerByName.get("plainB").extractionMode, "plain_import_candidate");
@@ -110,9 +105,7 @@ const awaited = await Promise.resolve(1);
     }
   );
 
-  const ownerByName = new Map(
-    analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner]))
-  );
+  const ownerByName = new Map(analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner])));
 
   assert.equal(ownerByName.get("usesMeta").extractionMode, "keep_runtime");
   assert.match(ownerByName.get("usesMeta").extractionReasons.join(","), /contains_import_meta/);
@@ -140,9 +133,7 @@ function loadRelativeAsset() {
     }
   );
 
-  const ownerByName = new Map(
-    analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner]))
-  );
+  const ownerByName = new Map(analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner])));
 
   assert.equal(ownerByName.get("loadWorkerUrl").effects.containsImportMeta, false);
   assert.equal(ownerByName.get("loadWorkerUrl").effects.containsRuntimeSourceRebase, false);
@@ -174,9 +165,7 @@ function spawnSharedWorker() {
     }
   );
 
-  const ownerByName = new Map(
-    analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner]))
-  );
+  const ownerByName = new Map(analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner])));
 
   assert.equal(ownerByName.get("loadFeature").effects.containsRuntimeSourceRebase, true);
   assert.equal(ownerByName.get("spawnWorker").effects.containsRuntimeSourceRebase, true);
@@ -199,14 +188,18 @@ console.log(typeof runner);
     }
   );
 
-  const ownerByName = new Map(
-    analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner]))
-  );
+  const ownerByName = new Map(analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner])));
   const runner = ownerByName.get("runner");
   assert.ok(runner);
   assert.equal(runner.effects.containsTopLevelAwait, false);
-  assert.deepEqual(runner.readsTopLevel.eager.map((record) => record.name), []);
-  assert.deepEqual(runner.readsTopLevel.lazy.map((record) => record.name), ["shared"]);
+  assert.deepEqual(
+    runner.readsTopLevel.eager.map((record) => record.name),
+    []
+  );
+  assert.deepEqual(
+    runner.readsTopLevel.lazy.map((record) => record.name),
+    ["shared"]
+  );
   assert.equal(runner.extractionMode, "selected_module_candidate");
   assert.doesNotMatch(runner.extractionReasons.join(","), /contains_top_level_await/);
 });
@@ -234,10 +227,22 @@ console.log(typeof window.installCacheDebug);
 
   const sideEffect = analysis.sideEffects.find((record) => record.ordinal === 2);
   assert.ok(sideEffect);
-  assert.deepEqual(sideEffect.readsTopLevel.eager.map((record) => record.name), []);
-  assert.deepEqual(sideEffect.memberWritesTopLevel.eager.map((record) => record.name), []);
-  assert.deepEqual(sideEffect.readsTopLevel.lazy.map((record) => record.name), ["CacheTracker"]);
-  assert.deepEqual(sideEffect.writesTopLevel.lazy.map((record) => record.name), ["debugFlag"]);
+  assert.deepEqual(
+    sideEffect.readsTopLevel.eager.map((record) => record.name),
+    []
+  );
+  assert.deepEqual(
+    sideEffect.memberWritesTopLevel.eager.map((record) => record.name),
+    []
+  );
+  assert.deepEqual(
+    sideEffect.readsTopLevel.lazy.map((record) => record.name),
+    ["CacheTracker"]
+  );
+  assert.deepEqual(
+    sideEffect.writesTopLevel.lazy.map((record) => record.name),
+    ["debugFlag"]
+  );
 });
 
 test("reports contiguous ordered-init regions and their outside-local blockers", () => {
@@ -269,12 +274,11 @@ function readLocalOnly() { return bumpLocalOnly(); }
   assert.ok(blockedRegion.memberNames.includes("inside2"));
   assert.ok(blockedRegion.memberNames.includes("state"));
   assert.deepEqual(blockedRegion.outsideLocalDependencyNames, ["helper"]);
-  assert.match(
-    blockedRegion.selectedModuleBlockingReasons.join(","),
-    /depends_on_outside_local_owner:/
-  );
+  assert.match(blockedRegion.selectedModuleBlockingReasons.join(","), /depends_on_outside_local_owner:/);
 
-  const extractableRegion = analysis.selectedModuleRegions.find((region) => region.memberNames.includes("bumpLocalOnly"));
+  const extractableRegion = analysis.selectedModuleRegions.find((region) =>
+    region.memberNames.includes("bumpLocalOnly")
+  );
   assert.ok(extractableRegion);
   assert.equal(extractableRegion.selectedModuleExtractable, true);
   assert.deepEqual(extractableRegion.outsideLocalDependencyOwnerIds, []);
@@ -365,10 +369,7 @@ console.log(first);
   );
   assert.ok(region);
   assert.equal(region.selectedModuleExtractable, true);
-  assert.deepEqual(
-    region.memberNames,
-    ["DeferredRenderCounter", "counter", "first"]
-  );
+  assert.deepEqual(region.memberNames, ["DeferredRenderCounter", "counter", "first"]);
   assert.deepEqual(region.outsideLocalDependencyNames, []);
 });
 
@@ -392,9 +393,7 @@ export { readDecodedValue };
     }
   );
 
-  const ownerByName = new Map(
-    analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner]))
-  );
+  const ownerByName = new Map(analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner])));
 
   assert.equal(ownerByName.get("decodeUpper").currentExtractorCompatible, true);
   assert.equal(ownerByName.get("decodeUpper").currentExtractorLowering, "standard");
@@ -415,9 +414,7 @@ export { readChosen };
     }
   );
 
-  const ownerByName = new Map(
-    analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner]))
-  );
+  const ownerByName = new Map(analysis.owners.flatMap((owner) => owner.names.map((name) => [name, owner])));
 
   assert.equal(ownerByName.get("chosen").currentExtractorCompatible, true);
   assert.equal(ownerByName.get("chosen").currentExtractorLowering, "snapshot_variable_declaration");
@@ -484,5 +481,8 @@ test("file-mode extraction writes per-chunk reports and summary", () => {
   const chunkReport = JSON.parse(readUtf8(join(outDir, "static", "a.json")));
   assert.equal(chunkReport.chunkId, "static/a");
   assert.equal(chunkReport.counts.declarationOwners, 2);
-  assert.equal(chunkReport.owners.some((owner) => owner.names.includes("read")), true);
+  assert.equal(
+    chunkReport.owners.some((owner) => owner.names.includes("read")),
+    true
+  );
 });

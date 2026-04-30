@@ -135,10 +135,7 @@ export function buildChunkManifestFromAnalysis(chunkId, entryFile, sourcePath, a
       topLevelSideEffects: analysis.sideEffects.length,
       unresolvedExports: unresolvedExports.length,
     },
-    files: [
-      { file: entryFile, role: "entry" },
-      ...plan.parts.map((part) => ({ file: part.file, role: "module" })),
-    ],
+    files: [{ file: entryFile, role: "entry" }, ...plan.parts.map((part) => ({ file: part.file, role: "module" }))],
     imports: analysis.imports,
     exportAliases: analysis.exportAliases,
     unresolvedExports,

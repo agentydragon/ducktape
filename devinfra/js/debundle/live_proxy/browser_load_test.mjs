@@ -84,7 +84,9 @@ async function main() {
     );
     assert.deepEqual(pageErrors, [], `page errors:\n${pageErrors.join("\n")}\nconsole:\n${consoleMessages.join("\n")}`);
     assert.deepEqual(
-      failedRequests.filter((request) => request.url.startsWith(`${handles.config.targetOrigin}${handles.config.internalPrefix}/`)),
+      failedRequests.filter((request) =>
+        request.url.startsWith(`${handles.config.targetOrigin}${handles.config.internalPrefix}/`)
+      ),
       [],
       `failed internal asset requests:\n${formatJson(failedRequests)}\nconsole:\n${consoleMessages.join("\n")}`
     );

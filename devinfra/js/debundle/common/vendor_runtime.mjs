@@ -14,20 +14,13 @@ export function loadVendorResolutionManifest(manifestPath) {
   return raw.resolutions ?? {};
 }
 
-export function loadVendorRuntimeIndex({
-  manifestPath,
-  outRoot,
-  packageRoots,
-  packagesRoot,
-}) {
+export function loadVendorRuntimeIndex({ manifestPath, outRoot, packageRoots, packagesRoot }) {
   const resolutions = loadVendorResolutionManifest(manifestPath);
   const byChunkId = new Map();
   for (const [resolutionChunkPath, entry] of Object.entries(resolutions)) {
     const chunkPath = entry.chunkPath ?? resolutionChunkPath;
     if (!entry.package || !entry.subpath || !entry.version) {
-      throw new Error(
-        `Vendor resolution for ${chunkPath} is missing package/version/subpath in ${manifestPath}`
-      );
+      throw new Error(`Vendor resolution for ${chunkPath} is missing package/version/subpath in ${manifestPath}`);
     }
     const chunkId = chunkIdForChunkPath(chunkPath);
     const entryFile = resolveVendorManifestEntryFile(entry, { chunkPath, manifestPath });
@@ -48,10 +41,7 @@ export function loadVendorRuntimeIndex({
       version: entry.version,
       ...(entry.generatedWrapperPath
         ? {
-            generatedWrapperPath: resolve(
-              outRoot ?? dirname(dirname(manifestPath)),
-              entry.generatedWrapperPath
-            ),
+            generatedWrapperPath: resolve(outRoot ?? dirname(dirname(manifestPath)), entry.generatedWrapperPath),
             wrapperShape: entry.wrapperShape ?? "generated-wrapper",
           }
         : {}),
@@ -65,7 +55,9 @@ export function resolveVendorRuntimeRequest(relativePath, vendorRuntimeIndex) {
     return null;
   }
   const normalizedPath = normalizeRelativePath(relativePath);
-  const candidatePaths = normalizedPath.startsWith("app/") ? [normalizedPath, normalizedPath.slice("app/".length)] : [normalizedPath];
+  const candidatePaths = normalizedPath.startsWith("app/")
+    ? [normalizedPath, normalizedPath.slice("app/".length)]
+    : [normalizedPath];
   for (const candidatePath of candidatePaths) {
     for (const entry of vendorRuntimeIndex.values()) {
       const prefix = `${entry.chunkId}/`;
@@ -128,12 +120,7 @@ function aliasVendorEntryPath(entry, suffix) {
 
 function normalizeEntryFile(entryFile) {
   const normalized = posix.normalize(`${entryFile ?? ""}`.replaceAll("\\", "/"));
-  if (
-    normalized === "" ||
-    normalized === "." ||
-    normalized.startsWith("/") ||
-    normalized.split("/").includes("..")
-  ) {
+  if (normalized === "" || normalized === "." || normalized.startsWith("/") || normalized.split("/").includes("..")) {
     throw new Error(`Invalid vendor entry file: ${entryFile}`);
   }
   return normalized;
@@ -148,12 +135,7 @@ function resolveVendorManifestEntryFile(entry, { chunkPath, manifestPath } = {})
 
 function normalizeMountedRelativePath(relativePath) {
   const normalized = posix.normalize(`${relativePath ?? ""}`.replaceAll("\\", "/"));
-  if (
-    normalized === "" ||
-    normalized === "." ||
-    normalized.startsWith("/") ||
-    normalized.split("/").includes("..")
-  ) {
+  if (normalized === "" || normalized === "." || normalized.startsWith("/") || normalized.split("/").includes("..")) {
     throw new Error(`Invalid mounted vendor path: ${relativePath}`);
   }
   return normalized;

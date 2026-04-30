@@ -580,7 +580,9 @@ function rewriteRuntimeSourcesInNode(node, rewriteImportSource, shadowedRuntimeC
     rewriteClassRuntimeSources(node, rewriteImportSource, shadowedRuntimeConstructors);
     return;
   }
-  visitChildNodes(node, (child) => rewriteRuntimeSourcesInNode(child, rewriteImportSource, shadowedRuntimeConstructors));
+  visitChildNodes(node, (child) =>
+    rewriteRuntimeSourcesInNode(child, rewriteImportSource, shadowedRuntimeConstructors)
+  );
 }
 
 function visitChildNodes(node, visitor) {
@@ -675,8 +677,7 @@ function rewriteFunctionLikeRuntimeSources(node, rewriteImportSource, shadowedRu
 }
 
 function rewriteBlockRuntimeSources(statements, rewriteImportSource, shadowedRuntimeConstructors) {
-  const blockShadowedRuntimeConstructors =
-    shadowedRuntimeConstructors | collectBlockScopedShadowMask(statements);
+  const blockShadowedRuntimeConstructors = shadowedRuntimeConstructors | collectBlockScopedShadowMask(statements);
   for (const statement of statements) {
     rewriteRuntimeSourcesInNode(statement, rewriteImportSource, blockShadowedRuntimeConstructors);
   }
@@ -684,8 +685,7 @@ function rewriteBlockRuntimeSources(statements, rewriteImportSource, shadowedRun
 
 function rewriteSwitchRuntimeSources(node, rewriteImportSource, shadowedRuntimeConstructors) {
   rewriteRuntimeSourcesInNode(node.discriminant, rewriteImportSource, shadowedRuntimeConstructors);
-  const switchShadowedRuntimeConstructors =
-    shadowedRuntimeConstructors | collectSwitchScopedShadowMask(node.cases);
+  const switchShadowedRuntimeConstructors = shadowedRuntimeConstructors | collectSwitchScopedShadowMask(node.cases);
   for (const switchCase of node.cases) {
     rewriteRuntimeSourcesInNode(switchCase.test, rewriteImportSource, switchShadowedRuntimeConstructors);
     for (const statement of switchCase.consequent) {
@@ -705,8 +705,7 @@ function isLoopNodeWithLexicalScope(node) {
 }
 
 function rewriteLoopRuntimeSources(node, rewriteImportSource, shadowedRuntimeConstructors) {
-  const loopShadowedRuntimeConstructors =
-    shadowedRuntimeConstructors | collectLoopScopedShadowMask(node);
+  const loopShadowedRuntimeConstructors = shadowedRuntimeConstructors | collectLoopScopedShadowMask(node);
   if (t.isForStatement(node)) {
     rewriteRuntimeSourcesInNode(node.init, rewriteImportSource, loopShadowedRuntimeConstructors);
     rewriteRuntimeSourcesInNode(node.test, rewriteImportSource, loopShadowedRuntimeConstructors);
@@ -724,8 +723,7 @@ function rewriteClassRuntimeSources(node, rewriteImportSource, shadowedRuntimeCo
     rewriteRuntimeSourcesInNode(decorator, rewriteImportSource, shadowedRuntimeConstructors);
   }
   rewriteRuntimeSourcesInNode(node.superClass, rewriteImportSource, shadowedRuntimeConstructors);
-  const classShadowedRuntimeConstructors =
-    shadowedRuntimeConstructors | runtimeConstructorBindingShadowMask(node.id);
+  const classShadowedRuntimeConstructors = shadowedRuntimeConstructors | runtimeConstructorBindingShadowMask(node.id);
   rewriteRuntimeSourcesInNode(node.body, rewriteImportSource, classShadowedRuntimeConstructors);
 }
 
@@ -742,7 +740,9 @@ function collectFunctionVarShadowMaskInNode(node, recordShadowMask) {
     return;
   }
   if (t.isVariableDeclaration(node) && node.kind === "var") {
-    recordShadowMask(runtimeConstructorBindingShadowMaskForNodes(node.declarations.map((declaration) => declaration.id)));
+    recordShadowMask(
+      runtimeConstructorBindingShadowMaskForNodes(node.declarations.map((declaration) => declaration.id))
+    );
   }
   visitChildNodes(node, (child) => collectFunctionVarShadowMaskInNode(child, recordShadowMask));
 }
@@ -751,7 +751,9 @@ function collectBlockScopedShadowMask(statements) {
   let shadowMask = RUNTIME_CONSTRUCTOR_SHADOW_NONE;
   for (const statement of statements) {
     if (t.isVariableDeclaration(statement) && statement.kind !== "var") {
-      shadowMask |= runtimeConstructorBindingShadowMaskForNodes(statement.declarations.map((declaration) => declaration.id));
+      shadowMask |= runtimeConstructorBindingShadowMaskForNodes(
+        statement.declarations.map((declaration) => declaration.id)
+      );
       continue;
     }
     if (t.isFunctionDeclaration(statement) || t.isClassDeclaration(statement)) {
@@ -773,7 +775,11 @@ function collectLoopScopedShadowMask(node) {
   if (t.isForStatement(node) && t.isVariableDeclaration(node.init) && node.init.kind !== "var") {
     return runtimeConstructorBindingShadowMaskForNodes(node.init.declarations.map((declaration) => declaration.id));
   }
-  if ((t.isForInStatement(node) || t.isForOfStatement(node)) && t.isVariableDeclaration(node.left) && node.left.kind !== "var") {
+  if (
+    (t.isForInStatement(node) || t.isForOfStatement(node)) &&
+    t.isVariableDeclaration(node.left) &&
+    node.left.kind !== "var"
+  ) {
     return runtimeConstructorBindingShadowMaskForNodes(node.left.declarations.map((declaration) => declaration.id));
   }
   return RUNTIME_CONSTRUCTOR_SHADOW_NONE;

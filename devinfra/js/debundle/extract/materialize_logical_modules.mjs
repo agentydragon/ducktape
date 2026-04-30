@@ -32,7 +32,11 @@ import {
   closeSelectedOwnerIdsOverDependencyGraph,
   logicalSelectedOwnerIdsForChunk,
 } from "./logical_modules.mjs";
-import { defaultSelectedOwnerIdsForAnalysis, deriveSelectedModuleTarget, planSelectedAtomicModules } from "./planner.mjs";
+import {
+  defaultSelectedOwnerIdsForAnalysis,
+  deriveSelectedModuleTarget,
+  planSelectedAtomicModules,
+} from "./planner.mjs";
 
 export function materializeLogicalModules({
   artifact,
@@ -93,15 +97,18 @@ export function materializeLogicalModules({
     const runtimeParserOptions = runtimeFile.parserOptions ?? DEFAULT_PARSER_OPTIONS;
     const chunkStartedAt = process.hrtime.bigint();
     const analysisStartedAt = process.hrtime.bigint();
-    const boundaryAnalysisPath = resolvedBoundaryAnalysisDir ? join(resolvedBoundaryAnalysisDir, `${chunkId}.json`) : null;
-    const analysis = boundaryAnalysisPath && existsSync(boundaryAnalysisPath)
-      ? readBoundaryAnalysis(boundaryAnalysisPath)
-      : analyzeRuntimeBoundaryAst(runtimeFile.ast, {
-          chunkId,
-          manifestPath: `${chunkId}/manifest.json`,
-          runtimePath: `${chunkId}/${targetFile}`,
-          uiVersion: artifactManifest?.uiVersion ?? null,
-        });
+    const boundaryAnalysisPath = resolvedBoundaryAnalysisDir
+      ? join(resolvedBoundaryAnalysisDir, `${chunkId}.json`)
+      : null;
+    const analysis =
+      boundaryAnalysisPath && existsSync(boundaryAnalysisPath)
+        ? readBoundaryAnalysis(boundaryAnalysisPath)
+        : analyzeRuntimeBoundaryAst(runtimeFile.ast, {
+            chunkId,
+            manifestPath: `${chunkId}/manifest.json`,
+            runtimePath: `${chunkId}/${targetFile}`,
+            uiVersion: artifactManifest?.uiVersion ?? null,
+          });
     if (boundaryAnalysisPath && !existsSync(boundaryAnalysisPath)) {
       writeJsonFile(boundaryAnalysisPath, analysis);
     }
@@ -109,8 +116,7 @@ export function materializeLogicalModules({
     logProgress(`logical-modules chunk=${chunkId} analysis done duration=${formatDuration(analysisMs)}`);
     const planningStartedAt = process.hrtime.bigint();
     const baseSelectionStartedAt = process.hrtime.bigint();
-    const baseSelectedOwnerIds =
-      selectedOwnerIdsCache?.[chunkId] ?? defaultSelectedOwnerIdsForAnalysis(analysis);
+    const baseSelectedOwnerIds = selectedOwnerIdsCache?.[chunkId] ?? defaultSelectedOwnerIdsForAnalysis(analysis);
     if (selectedOwnerIdsCache && !selectedOwnerIdsCache[chunkId]) {
       selectedOwnerIdsCache[chunkId] = [...baseSelectedOwnerIds].sort();
     }
@@ -216,9 +222,10 @@ export function materializeLogicalModules({
             role: relativePath === targetFile ? "entry" : "module",
             ...(relativePath === targetFile ? {} : { generated: buildSelectedModuleLoweringMetadata() }),
             ...(modulePlan
-                ? {
-                    moduleExtraction: {
-                      atomicBoundaryUnits: modulePlan.atomicBoundaryUnits?.map((unit) => ({
+              ? {
+                  moduleExtraction: {
+                    atomicBoundaryUnits:
+                      modulePlan.atomicBoundaryUnits?.map((unit) => ({
                         attachedItemIds: [...unit.attachedItemIds],
                         id: unit.id,
                         memberNames: [...unit.memberNames],
@@ -227,11 +234,11 @@ export function materializeLogicalModules({
                         startOrdinal: unit.startOrdinal,
                         unitIds: [...unit.unitIds],
                       })) ?? [],
-                      id: modulePlan.id,
-                      kind: "logical",
-                      nameHint: modulePlan.nameHint,
-                      ownerIds: [...modulePlan.ownerIds],
-                      ownerFragments: cloneOwnerFragments(modulePlan.ownerFragments),
+                    id: modulePlan.id,
+                    kind: "logical",
+                    nameHint: modulePlan.nameHint,
+                    ownerIds: [...modulePlan.ownerIds],
+                    ownerFragments: cloneOwnerFragments(modulePlan.ownerFragments),
                     unitIds: [...modulePlan.unitIds],
                   },
                 }
@@ -274,15 +281,16 @@ export function materializeLogicalModules({
     });
 
     const finalModules = logicalModules.modules.map((modulePlan) => ({
-      atomicBoundaryUnits: modulePlan.atomicBoundaryUnits?.map((unit) => ({
-        attachedItemIds: [...unit.attachedItemIds],
-        id: unit.id,
-        memberNames: [...unit.memberNames],
-        ownerIds: [...unit.ownerIds],
-        ownerFragments: cloneOwnerFragments(unit.ownerFragments),
-        startOrdinal: unit.startOrdinal,
-        unitIds: [...unit.unitIds],
-      })) ?? [],
+      atomicBoundaryUnits:
+        modulePlan.atomicBoundaryUnits?.map((unit) => ({
+          attachedItemIds: [...unit.attachedItemIds],
+          id: unit.id,
+          memberNames: [...unit.memberNames],
+          ownerIds: [...unit.ownerIds],
+          ownerFragments: cloneOwnerFragments(unit.ownerFragments),
+          startOrdinal: unit.startOrdinal,
+          unitIds: [...unit.unitIds],
+        })) ?? [],
       file: modulePlan.targetFile,
       id: modulePlan.id,
       memberNames: [...modulePlan.memberNames],

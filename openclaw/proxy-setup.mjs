@@ -10,14 +10,9 @@
 // function itself.
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
 
-const hasProxy = [
-  "HTTP_PROXY",
-  "HTTPS_PROXY",
-  "ALL_PROXY",
-  "http_proxy",
-  "https_proxy",
-  "all_proxy",
-].some((k) => process.env[k]?.trim());
+const hasProxy = ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"].some((k) =>
+  process.env[k]?.trim()
+);
 
 if (hasProxy) {
   const proxyAgent = new EnvHttpProxyAgent();
@@ -27,6 +22,5 @@ if (hasProxy) {
   // Primary: capture proxyAgent in closure so proxy survives Telegram's later
   // setGlobalDispatcher(new Agent({autoSelectFamily:true})) call.
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (input, init) =>
-    originalFetch(input, { ...init, dispatcher: proxyAgent });
+  globalThis.fetch = (input, init) => originalFetch(input, { ...init, dispatcher: proxyAgent });
 }

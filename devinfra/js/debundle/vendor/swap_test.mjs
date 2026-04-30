@@ -4,10 +4,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { parse } from "@babel/parser";
 import { writeJsonFile, writeTextFile } from "../common/parser_options.mjs";
-import {
-  getArtifactVendorAnnotations,
-  listChunkIds,
-} from "../common/artifact.mjs";
+import { getArtifactVendorAnnotations, listChunkIds } from "../common/artifact.mjs";
 import { createTempFixtureRoot, makePipelineArtifact, makePipelineChunk } from "../test_support/fixtures.mjs";
 import { swapVendorChunks } from "./swap.mjs";
 
@@ -38,7 +35,13 @@ function swapOp(overrides = {}) {
   };
 }
 
-function setupFixture({ pkgName = "katex", installed = "0.16.11", upstreamBody, subpath = "dist/katex.mjs", pkgPresent = true } = {}) {
+function setupFixture({
+  pkgName = "katex",
+  installed = "0.16.11",
+  upstreamBody,
+  subpath = "dist/katex.mjs",
+  pkgPresent = true,
+} = {}) {
   const dir = createTempFixtureRoot("swap-vendor-");
   const packagesRoot = join(dir, "node_modules");
   const wrapperDir = join(dir, "vendors", "generated");
@@ -78,7 +81,11 @@ test("happy path: trivial single-file package, chunk dropped, manifest written",
   const artifact = makeArtifact([makeChunk("static/katex-BZy9Y_85", { "runtime.js": vendor })]);
   const outManifestPath = join(fx.dir, "out", "vendor-resolutions.json");
 
-  const { manifest, artifact: outArtifact, outputManifestPath } = swapVendorChunks({
+  const {
+    manifest,
+    artifact: outArtifact,
+    outputManifestPath,
+  } = swapVendorChunks({
     artifact,
     operations: [swapOp()],
     packagesRoot: fx.packagesRoot,
@@ -119,10 +126,7 @@ test("version mismatch fails closed naming both versions", (t) => {
         packagesRoot: fx.packagesRoot,
         write: false,
       }),
-    (err) =>
-      /version mismatch/.test(err.message) &&
-      /0\.16\.11/.test(err.message) &&
-      /0\.16\.10/.test(err.message)
+    (err) => /version mismatch/.test(err.message) && /0\.16\.11/.test(err.message) && /0\.16\.10/.test(err.message)
   );
 });
 

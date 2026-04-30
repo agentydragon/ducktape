@@ -1,9 +1,4 @@
-export function createMockBrowserBundleTransformSpec({
-  appRoot,
-  assetSummaryPath,
-  jsListPath,
-  snapshotRoot,
-}) {
+export function createMockBrowserBundleTransformSpec({ appRoot, assetSummaryPath, jsListPath, snapshotRoot }) {
   return {
     kind: "js.ast_transform_spec",
     pipeline: [

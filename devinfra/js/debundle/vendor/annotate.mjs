@@ -24,9 +24,7 @@ export function applyVendorAnnotations({ artifact, operations, operationCatalog 
     }
     if (seenChunkPaths.has(op.chunkPath)) {
       const priorId = seenChunkPaths.get(op.chunkPath);
-      throw new Error(
-        `mark_vendor operations ${priorId} and ${op.id} both target chunkPath ${op.chunkPath}`
-      );
+      throw new Error(`mark_vendor operations ${priorId} and ${op.id} both target chunkPath ${op.chunkPath}`);
     }
     seenChunkPaths.set(op.chunkPath, op.id);
 
@@ -67,11 +65,11 @@ export function applyVendorAnnotations({ artifact, operations, operationCatalog 
     artifact,
     manifest: {
       kind: "js.vendor_annotations_manifest",
-        counts: {
-          annotations: annotations.size,
-          considered: catalog.length,
-          applied: ops.length,
-        },
+      counts: {
+        annotations: annotations.size,
+        considered: catalog.length,
+        applied: ops.length,
+      },
       annotations: summaries,
     },
   };
@@ -97,13 +95,14 @@ function validateOp(op) {
     for (const field of SWAP_REQUIRED) {
       const value = op[field];
       if (value === undefined || value === null || value === "") {
-        throw new Error(
-          `mark_vendor operation ${op.id} level "swap" is missing required field: ${field}`
-        );
+        throw new Error(`mark_vendor operation ${op.id} level "swap" is missing required field: ${field}`);
       }
     }
   }
-  if (op.exportShape !== undefined && (op.exportShape === null || typeof op.exportShape !== "object" || Array.isArray(op.exportShape))) {
+  if (
+    op.exportShape !== undefined &&
+    (op.exportShape === null || typeof op.exportShape !== "object" || Array.isArray(op.exportShape))
+  ) {
     throw new Error(`mark_vendor operation ${op.id} exportShape must be an object`);
   }
   if (op.fingerprint !== undefined) {

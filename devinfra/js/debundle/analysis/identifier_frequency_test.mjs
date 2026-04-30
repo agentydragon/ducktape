@@ -12,10 +12,7 @@ import {
   writeChunkFixture,
   writeSnapshotManifest,
 } from "../test_support/fixtures.mjs";
-import {
-  extractScrambledIdentifierFrequencies,
-  isScrambledIdentifier,
-} from "./identifier_frequency.mjs";
+import { extractScrambledIdentifierFrequencies, isScrambledIdentifier } from "./identifier_frequency.mjs";
 
 function writeScrambledIdentifierFixture(prefix) {
   const { analysisRoot: outDir, root, transformedRoot: inputRoot } = createWebFixtureRoots(prefix);
@@ -219,9 +216,18 @@ test("extractScrambledIdentifierFrequencies writes binding-resolved report witho
   assert.equal(zzSymbol.bindings, 1);
   assert.equal(zzSymbol.references, 1);
 
-  assert.equal(report.symbols.some((symbol) => symbol.name === "_x"), false);
-  assert.equal(report.symbols.some((symbol) => symbol.name === "e"), false);
-  assert.equal(report.symbols.some((symbol) => symbol.name === "x"), false);
+  assert.equal(
+    report.symbols.some((symbol) => symbol.name === "_x"),
+    false
+  );
+  assert.equal(
+    report.symbols.some((symbol) => symbol.name === "e"),
+    false
+  );
+  assert.equal(
+    report.symbols.some((symbol) => symbol.name === "x"),
+    false
+  );
 
   const persisted = JSON.parse(readUtf8(join(fixture.outDir, "scrambled-identifiers.json")));
   assert.equal(persisted.symbols[0].id, report.symbols[0].id);
@@ -356,6 +362,9 @@ test("extractScrambledIdentifierFrequencies works without manifests and with no 
   });
 
   assert.equal(report.counts.files, 1);
-  assert.equal(report.symbols.some((symbol) => symbol.name === "qGt"), true);
+  assert.equal(
+    report.symbols.some((symbol) => symbol.name === "qGt"),
+    true
+  );
   assert.ok(existsSync(join(outDir, "scrambled-identifiers.json")));
 });

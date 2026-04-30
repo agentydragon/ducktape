@@ -17,10 +17,7 @@ import {
   setArtifactManifest,
   setArtifactVendorAnnotations,
 } from "../common/artifact.mjs";
-import {
-  readInstalledPackageMetadata,
-  resolvePackageSubpath,
-} from "../common/package_tree.mjs";
+import { readInstalledPackageMetadata, resolvePackageSubpath } from "../common/package_tree.mjs";
 import { resolveWorkspacePath } from "../common/io.mjs";
 import { resolveImportToChunkId } from "./exports.mjs";
 
@@ -37,9 +34,7 @@ export function swapVendorChunks({
 }) {
   requirePipelineArtifact(artifact, "swapVendorChunks");
   const catalog = operations ?? operationCatalog ?? [];
-  const ops = catalog.filter(
-    (op) => op?.operation === "mark_vendor" && op.level === "swap"
-  );
+  const ops = catalog.filter((op) => op?.operation === "mark_vendor" && op.level === "swap");
   const resolvedOutputManifestPath = outputManifestPath ? resolveWorkspacePath(outputManifestPath) : null;
   const resolvedOutputWrapperDir = outputWrapperDir ? resolveWorkspacePath(outputWrapperDir) : null;
 
@@ -58,9 +53,7 @@ export function swapVendorChunks({
       );
     }
     if (!entryFile.ast) {
-      throw new Error(
-        `swapVendorChunks operation ${op.id} vendor chunk ${chunkId} is missing entry AST`
-      );
+      throw new Error(`swapVendorChunks operation ${op.id} vendor chunk ${chunkId} is missing entry AST`);
     }
 
     // 1. Resolve upstream version from the Bazel-provided package tree.
@@ -121,11 +114,7 @@ export function swapVendorChunks({
       generatedWrapperPath = wrapperRelPath;
     } else if (op.wrapperShape === "named-from-module-default") {
       const upstreamAst = parse(upstreamCode, DEFAULT_PARSER_OPTIONS);
-      const wrapperSource = generateNamedFromModuleDefaultWrapper(
-        upstreamAst,
-        [...vendorExports].sort(),
-        op
-      );
+      const wrapperSource = generateNamedFromModuleDefaultWrapper(upstreamAst, [...vendorExports].sort(), op);
       const wrapperRelPath = `vendors/generated/${chunkId}/${entryRelativeFile}`;
       if (write && resolvedOutputWrapperDir) {
         const wrapperAbsPath = join(resolvedOutputWrapperDir, chunkId, ...entryRelativeFile.split("/"));
@@ -203,7 +192,9 @@ export function swapVendorChunks({
   setArtifactVendorAnnotations(artifact, vendorAnnotations);
 
   if (snapshotManifest) {
-    const removedChunkIds = new Set(Object.keys(resolutions).map((chunkPath) => chunkIdFromChunkPath(chunkPath, "manifest")));
+    const removedChunkIds = new Set(
+      Object.keys(resolutions).map((chunkPath) => chunkIdFromChunkPath(chunkPath, "manifest"))
+    );
     setArtifactManifest(artifact, {
       ...snapshotManifest,
       counts: {
@@ -422,11 +413,7 @@ function collectDefaultExportObjectKeys(ast, op) {
     const keys = new Set();
     for (const prop of decl.properties) {
       if (t.isObjectProperty(prop)) {
-        const key = t.isIdentifier(prop.key)
-          ? prop.key.name
-          : t.isStringLiteral(prop.key)
-            ? prop.key.value
-            : null;
+        const key = t.isIdentifier(prop.key) ? prop.key.name : t.isStringLiteral(prop.key) ? prop.key.value : null;
         if (key != null) {
           keys.add(key);
         }
@@ -434,9 +421,7 @@ function collectDefaultExportObjectKeys(ast, op) {
     }
     return keys;
   }
-  throw new Error(
-    `swapVendorChunks operation ${op.id} named-from-default: upstream has no export default declaration`
-  );
+  throw new Error(`swapVendorChunks operation ${op.id} named-from-default: upstream has no export default declaration`);
 }
 
 function generateNamedFromDefaultWrapper(upstreamCode, namedExports, op) {
@@ -486,9 +471,7 @@ function generateNamedFromModuleDefaultWrapper(upstreamAst, vendorExports, op) {
         );
       } else {
         rewrittenBody.push(
-          t.variableDeclaration("const", [
-            t.variableDeclarator(t.identifier(defaultLocalName), decl),
-          ])
+          t.variableDeclaration("const", [t.variableDeclarator(t.identifier(defaultLocalName), decl)])
         );
       }
       continue;
@@ -538,23 +521,17 @@ function generateNamedFromModuleDefaultWrapper(upstreamAst, vendorExports, op) {
   }
 
   if (!foundDefault) {
-    throw new Error(
-      `swapVendorChunks operation ${op.id} named-from-module-default: upstream has no default export`
-    );
+    throw new Error(`swapVendorChunks operation ${op.id} named-from-module-default: upstream has no default export`);
   }
 
-  rewrittenBody.push(
-    t.exportDefaultDeclaration(t.identifier(defaultLocalName))
-  );
+  rewrittenBody.push(t.exportDefaultDeclaration(t.identifier(defaultLocalName)));
   for (const exportName of vendorExports) {
     if (exportName === "default") {
       continue;
     }
     rewrittenBody.push(
       t.exportNamedDeclaration(
-        t.variableDeclaration("const", [
-          t.variableDeclarator(t.identifier(exportName), t.identifier(defaultLocalName)),
-        ])
+        t.variableDeclaration("const", [t.variableDeclarator(t.identifier(exportName), t.identifier(defaultLocalName))])
       )
     );
   }

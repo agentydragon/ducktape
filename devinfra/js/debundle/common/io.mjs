@@ -13,8 +13,7 @@ export function resolveWorkspacePath(path) {
   if (isAbsolute(path)) {
     return path;
   }
-  const workspace =
-    process.env.BUILD_WORKSPACE_DIRECTORY ?? process.env.BUILD_WORKING_DIRECTORY ?? process.env.PWD;
+  const workspace = process.env.BUILD_WORKSPACE_DIRECTORY ?? process.env.BUILD_WORKING_DIRECTORY ?? process.env.PWD;
   if (workspace) {
     return resolve(workspace, path);
   }
@@ -45,8 +44,7 @@ export function ensureOutputDir(outDir) {
 }
 
 export function relativeWorkspacePath(path) {
-  const workspace =
-    process.env.BUILD_WORKSPACE_DIRECTORY ?? process.env.BUILD_WORKING_DIRECTORY ?? process.env.PWD;
+  const workspace = process.env.BUILD_WORKSPACE_DIRECTORY ?? process.env.BUILD_WORKING_DIRECTORY ?? process.env.PWD;
   if (!workspace) {
     return path;
   }

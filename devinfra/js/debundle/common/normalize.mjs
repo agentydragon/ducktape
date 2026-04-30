@@ -88,7 +88,7 @@ function normalizeOneChunk(artifactChunk) {
     artifactChunk.chunkId,
     CANONICAL_CHUNK_ENTRY_FILE,
     inputPath,
-    analysis,
+    analysis
   );
   return {
     chunkId: artifactChunk.chunkId,
@@ -105,7 +105,10 @@ function buildArtifactManifest(chunkManifests) {
       chunks: chunkManifests.length,
       parts: 0,
       splitFunctionDeclarations: 0,
-      keptTopLevelDeclarationOwners: chunkManifests.reduce((n, m) => n + (m.counts?.keptTopLevelDeclarationOwners ?? 0), 0),
+      keptTopLevelDeclarationOwners: chunkManifests.reduce(
+        (n, m) => n + (m.counts?.keptTopLevelDeclarationOwners ?? 0),
+        0
+      ),
       topLevelSideEffects: chunkManifests.reduce((n, m) => n + (m.counts?.topLevelSideEffects ?? 0), 0),
       exportAliases: chunkManifests.reduce((n, m) => n + (m.counts?.exportAliases ?? 0), 0),
       unresolvedExports: chunkManifests.reduce((n, m) => n + (m.counts?.unresolvedExports ?? 0), 0),

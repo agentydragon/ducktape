@@ -10,10 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, posix, relative, resolve, sep } from "node:path";
-import {
-  DEFAULT_GENERATED_JS_GLOBALS,
-  createGeneratedJsSyntaxValidator,
-} from "../common/generated_syntax.mjs";
+import { DEFAULT_GENERATED_JS_GLOBALS, createGeneratedJsSyntaxValidator } from "../common/generated_syntax.mjs";
 import { modulePackageJson, writeJsonFile, writeTextFile } from "../common/parser_options.mjs";
 import {
   getArtifactChunkManifest,

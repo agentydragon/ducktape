@@ -7,9 +7,7 @@ import { createMockBrowserBundleTransformSpec } from "./mock_spec.mjs";
 
 const FIXTURE_ROOT = new URL("./testdata/mock_browser_bundle/", import.meta.url);
 
-export async function runMockBrowserBundlePipeline({
-  prefix = "debundle-browser-harness-pipeline-",
-} = {}) {
+export async function runMockBrowserBundlePipeline({ prefix = "debundle-browser-harness-pipeline-" } = {}) {
   const roots = createWebFixtureRoots(prefix);
   copyFixtureTree(roots.snapshotRoot, "generated/snapshot");
   copyFixtureTree(roots.extractedRoot, "generated/extracted");

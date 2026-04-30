@@ -19,9 +19,7 @@ test("clean path — no query string", () => {
 });
 
 test("path with query params", () => {
-  const { pathname, searchParams } = parseHash(
-    "#/runs?definition=sha256%3Afoo&split=valid&kind=whole_snapshot"
-  );
+  const { pathname, searchParams } = parseHash("#/runs?definition=sha256%3Afoo&split=valid&kind=whole_snapshot");
   assert.equal(pathname, "/runs");
   assert.equal(searchParams.get("definition"), "sha256:foo");
   assert.equal(searchParams.get("split"), "valid");

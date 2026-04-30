@@ -86,12 +86,7 @@ test("generic mock bundle runs through the normalize pipeline and passes a brows
 
 async function launchBrowser() {
   return launchPuppeteerBrowser({
-    args: [
-      "--allow-file-access-from-files",
-      "--disable-dev-shm-usage",
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-    ],
+    args: ["--allow-file-access-from-files", "--disable-dev-shm-usage", "--no-sandbox", "--disable-setuid-sandbox"],
     headless: true,
   });
 }

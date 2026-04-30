@@ -11,27 +11,27 @@
  * regardless of whether the containing directory has a package.json with
  * "type": "module".  The shebang is added via esbuild's banner option.
  */
-import esbuild from 'esbuild';
-import { resolve } from 'path';
+import esbuild from "esbuild";
+import { resolve } from "path";
 
 const outfile = process.argv[2];
 if (!outfile) {
-  console.error('Usage: bundle_mcporter.mjs <outfile>');
+  console.error("Usage: bundle_mcporter.mjs <outfile>");
   process.exit(1);
 }
 
 await esbuild.build({
   // 'mcporter/cli' follows the package exports map → dist/cli.js
-  entryPoints: ['mcporter/cli'],
+  entryPoints: ["mcporter/cli"],
   bundle: true,
-  platform: 'node',
-  target: 'node22',
-  format: 'cjs',
+  platform: "node",
+  target: "node22",
+  format: "cjs",
   outfile,
   // Add shebang so the file is directly executable with #!/usr/bin/env node
-  banner: { js: '#!/usr/bin/env node' },
+  banner: { js: "#!/usr/bin/env node" },
   // Follow Bazel symlinks in node_modules
-  nodePaths: [resolve(process.cwd(), 'node_modules')],
+  nodePaths: [resolve(process.cwd(), "node_modules")],
   preserveSymlinks: false,
-  logLevel: 'info',
+  logLevel: "info",
 });

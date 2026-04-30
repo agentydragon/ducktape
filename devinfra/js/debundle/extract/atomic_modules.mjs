@@ -80,15 +80,14 @@ export function extractAtomicModules({
     const runtimeParserOptions = runtimeFile.parserOptions ?? DEFAULT_PARSER_OPTIONS;
     const chunkStartedAt = process.hrtime.bigint();
     const analysisStartedAt = process.hrtime.bigint();
-    const analysis =
-      resolvedBoundaryAnalysisDir
-        ? readBoundaryAnalysis(join(resolvedBoundaryAnalysisDir, `${chunkId}.json`))
-        : analyzeRuntimeBoundaryAst(runtimeFile.ast, {
-            chunkId,
-            manifestPath: `${chunkId}/manifest.json`,
-            runtimePath: `${chunkId}/${targetFile}`,
-            uiVersion: artifactManifest?.uiVersion ?? null,
-          });
+    const analysis = resolvedBoundaryAnalysisDir
+      ? readBoundaryAnalysis(join(resolvedBoundaryAnalysisDir, `${chunkId}.json`))
+      : analyzeRuntimeBoundaryAst(runtimeFile.ast, {
+          chunkId,
+          manifestPath: `${chunkId}/manifest.json`,
+          runtimePath: `${chunkId}/${targetFile}`,
+          uiVersion: artifactManifest?.uiVersion ?? null,
+        });
     const analysisMs = durationMsSince(analysisStartedAt);
     const planningStartedAt = process.hrtime.bigint();
     const plan = planSelectedAtomicModules(
@@ -280,7 +279,9 @@ export function extractAtomicModules({
     writeJsonFile(resolvedReportSummaryPath, manifest);
   }
 
-  logProgress(`atomic-modules done chunks=${reports.length} modules=${manifest.counts.modules} duration=${formatDurationSince(startedAt)}`);
+  logProgress(
+    `atomic-modules done chunks=${reports.length} modules=${manifest.counts.modules} duration=${formatDurationSince(startedAt)}`
+  );
   return {
     artifact,
     manifest,

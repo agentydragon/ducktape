@@ -1,11 +1,16 @@
 import { readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import { packOrderedInitOwnerClosures, planOrderedInitOwnerClosureExtractions } from "../../devinfra/js/debundle/extract/decl_graph.mjs";
+import {
+  packOrderedInitOwnerClosures,
+  planOrderedInitOwnerClosureExtractions,
+} from "../../devinfra/js/debundle/extract/decl_graph.mjs";
 
 function main() {
   const analysisPath = process.argv[2];
   if (!analysisPath) {
-    throw new Error("usage: node x/benchmarks/ordered_init_owner_closure_packing_benchmark.mjs <boundary-analysis.json>");
+    throw new Error(
+      "usage: node x/benchmarks/ordered_init_owner_closure_packing_benchmark.mjs <boundary-analysis.json>"
+    );
   }
 
   const resolvedAnalysisPath = resolve(analysisPath);

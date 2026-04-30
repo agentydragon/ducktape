@@ -131,7 +131,8 @@ export function mergeModules({
       mergedModules.push({
         bytes: modulePlan.bytes,
         file:
-          modulePlan.targetFile ?? deriveSelectedModuleTarget(modulePlan, modulePlan.index, { targetDir: resolvedTargetDir }).file,
+          modulePlan.targetFile ??
+          deriveSelectedModuleTarget(modulePlan, modulePlan.index, { targetDir: resolvedTargetDir }).file,
         id: modulePlan.id,
         lines: modulePlan.lines,
         ownerCount: modulePlan.ownerIds.length,
@@ -287,7 +288,9 @@ function normalizeMergeOperations(operations) {
         const hasModuleSelectors =
           Array.isArray(operation?.selector?.moduleSelectors) && operation.selector.moduleSelectors.length > 0;
         if (hasModuleIds === hasModuleSelectors) {
-          throw new Error(`merge_module ${operation.id} requires exactly one of selector.moduleIds or selector.moduleSelectors`);
+          throw new Error(
+            `merge_module ${operation.id} requires exactly one of selector.moduleIds or selector.moduleSelectors`
+          );
         }
         return {
           ...operation,
@@ -331,7 +334,9 @@ function buildMergedModulePlans(currentModules, operations, { targetDir }) {
       return operation;
     }
     if (!orderedModules) {
-      orderedModules = [...currentModules].sort((left, right) => left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id));
+      orderedModules = [...currentModules].sort(
+        (left, right) => left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id)
+      );
       orderedModuleMemberNameSets = orderedModules.map((modulePlan) => new Set(modulePlan.memberNames));
     }
     return {
@@ -422,17 +427,32 @@ function resolveModuleSelectors(orderedModules, orderedModuleMemberNameSets, ope
       .sort((left, right) => left.startOrdinal - right.startOrdinal || left.id.localeCompare(right.id))
       .map((modulePlan) => modulePlan.id);
     if (!sameStringArray(resolvedModuleIds, sortedResolvedModuleIds)) {
-      throw new Error(`merge_module ${operation.id} ordered moduleSelectors did not match ascending startOrdinal order`);
+      throw new Error(
+        `merge_module ${operation.id} ordered moduleSelectors did not match ascending startOrdinal order`
+      );
     }
   }
   return resolvedModuleIds;
 }
 
-function resolveModuleSelector(orderedModules, orderedModuleMemberNameSets, moduleSelector, { operationId, selectorIndex }) {
+function resolveModuleSelector(
+  orderedModules,
+  orderedModuleMemberNameSets,
+  moduleSelector,
+  { operationId, selectorIndex }
+) {
   const matches = [];
   for (let index = 0; index < orderedModules.length; index++) {
     const modulePlan = orderedModules[index];
-    if (matchesModuleSelector(modulePlan, orderedModuleMemberNameSets[index], moduleSelector, orderedModuleMemberNameSets, index)) {
+    if (
+      matchesModuleSelector(
+        modulePlan,
+        orderedModuleMemberNameSets[index],
+        moduleSelector,
+        orderedModuleMemberNameSets,
+        index
+      )
+    ) {
       matches.push(modulePlan);
     }
   }
@@ -449,7 +469,13 @@ function resolveModuleSelector(orderedModules, orderedModuleMemberNameSets, modu
   return matches[0];
 }
 
-function matchesModuleSelector(modulePlan, moduleMemberNamesSet, moduleSelector, orderedModuleMemberNameSets, moduleIndex) {
+function matchesModuleSelector(
+  modulePlan,
+  moduleMemberNamesSet,
+  moduleSelector,
+  orderedModuleMemberNameSets,
+  moduleIndex
+) {
   // Selectors match against the full current `memberNames` set on each module
   // plan. Authors can provide an exact full set or a unique identifying subset;
   // ambiguity is rejected at resolution time rather than guessed away here.
@@ -464,13 +490,19 @@ function matchesModuleSelector(modulePlan, moduleMemberNamesSet, moduleSelector,
   }
   if (moduleSelector.nearbyStructure?.previousSymbols) {
     const previousModuleMemberNames = orderedModuleMemberNameSets[moduleIndex - 1];
-    if (!previousModuleMemberNames || !containsAllStrings(previousModuleMemberNames, moduleSelector.nearbyStructure.previousSymbols)) {
+    if (
+      !previousModuleMemberNames ||
+      !containsAllStrings(previousModuleMemberNames, moduleSelector.nearbyStructure.previousSymbols)
+    ) {
       return false;
     }
   }
   if (moduleSelector.nearbyStructure?.nextSymbols) {
     const nextModuleMemberNames = orderedModuleMemberNameSets[moduleIndex + 1];
-    if (!nextModuleMemberNames || !containsAllStrings(nextModuleMemberNames, moduleSelector.nearbyStructure.nextSymbols)) {
+    if (
+      !nextModuleMemberNames ||
+      !containsAllStrings(nextModuleMemberNames, moduleSelector.nearbyStructure.nextSymbols)
+    ) {
       return false;
     }
   }
@@ -485,7 +517,10 @@ function normalizeModuleSelector(moduleSelector, operationId, index) {
     throw new Error(`merge_module ${operationId} moduleSelector[${index}] requires symbols`);
   }
   const normalized = {
-    symbols: normalizeSelectorNameList(moduleSelector.symbols, `merge_module ${operationId} moduleSelector[${index}].symbols`),
+    symbols: normalizeSelectorNameList(
+      moduleSelector.symbols,
+      `merge_module ${operationId} moduleSelector[${index}].symbols`
+    ),
   };
   if (moduleSelector.nearbyStructure) {
     const nearbyStructure = {};
@@ -515,7 +550,9 @@ function normalizeModuleSelector(moduleSelector, operationId, index) {
       `merge_module ${operationId} moduleSelector[${index}].ordinalWindow.end`
     );
     if (end < start) {
-      throw new Error(`merge_module ${operationId} moduleSelector[${index}] requires ordinalWindow.end >= ordinalWindow.start`);
+      throw new Error(
+        `merge_module ${operationId} moduleSelector[${index}] requires ordinalWindow.end >= ordinalWindow.start`
+      );
     }
     normalized.ordinalWindow = { end, start };
   }

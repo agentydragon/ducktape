@@ -1,5 +1,9 @@
 export const PLAN_SELECTED_MODULE_GROUPS_OPERATION = "plan_selected_module_groups";
-const SELECTED_MODULE_SUPPORTED_OWNER_TYPES = new Set(["FunctionDeclaration", "ClassDeclaration", "VariableDeclaration"]);
+const SELECTED_MODULE_SUPPORTED_OWNER_TYPES = new Set([
+  "FunctionDeclaration",
+  "ClassDeclaration",
+  "VariableDeclaration",
+]);
 const RUNTIME_SENSITIVE_EFFECTS = new Set(["containsDirectEval", "containsImportMeta", "containsTopLevelAwait"]);
 const SELECTED_MODULE_ACCESS_VIEW_CACHE = new WeakMap();
 const SELECTED_MODULE_PLANNER_STATE_CACHE = new WeakMap();
@@ -82,11 +86,7 @@ export function planSelectedModuleGroupExtractions(analysis, options = {}) {
   const programItemByOrdinal = new Map(analysis.programItems.map((item) => [item.ordinal, item]));
   const plannerState = getOrderedInitPlannerState(analysis, ownerById);
   const includeReportDetails = options.includeReportDetails === true;
-  const {
-    componentById,
-    componentByOwnerId,
-    components,
-  } = buildOwnerDependencyComponents(analysis, ownerById);
+  const { componentById, componentByOwnerId, components } = buildOwnerDependencyComponents(analysis, ownerById);
   const closureComponentIdsBySeedComponentId = new Map();
 
   const closurePlans = dedupeOwnerClosurePlans(
@@ -151,21 +151,21 @@ export function buildSelectedModuleGroupOperations(planOrBatchPlan, options = {}
   }
   const batchPlans = planOrBatchPlan.batchPlans ?? packSelectedModuleGroups(planOrBatchPlan, options).batchPlans;
   return batchPlans.map((batchPlan) => ({
-      id: `${options.idPrefix ?? "selected_module_group"}__${batchPlan.id}`,
-      graphGenerated: true,
-      lowering: batchPlan.lowering ?? lowering,
-      operation: "lower_selected_module_region",
-      selector: {
-        attachedItemIds: [...(batchPlan.attachedItemIds ?? [])],
-        chunkId,
-        ownerIds: [...batchPlan.ownerIds],
-        ...(file ? { file } : {}),
-      },
-      target: {
-        file: `${targetDir}/${filePrefix}${batchPlan.id}.js`,
-        init: sanitizeIdentifier(`${initPrefix}${batchPlan.id}`),
-      },
-    }));
+    id: `${options.idPrefix ?? "selected_module_group"}__${batchPlan.id}`,
+    graphGenerated: true,
+    lowering: batchPlan.lowering ?? lowering,
+    operation: "lower_selected_module_region",
+    selector: {
+      attachedItemIds: [...(batchPlan.attachedItemIds ?? [])],
+      chunkId,
+      ownerIds: [...batchPlan.ownerIds],
+      ...(file ? { file } : {}),
+    },
+    target: {
+      file: `${targetDir}/${filePrefix}${batchPlan.id}.js`,
+      init: sanitizeIdentifier(`${initPrefix}${batchPlan.id}`),
+    },
+  }));
 }
 
 function buildOwnerDependencyComponents(analysis, ownerById) {
@@ -211,9 +211,7 @@ function buildOwnerDependencyComponents(analysis, ownerById) {
     const sortedOwners = [...componentOwners].sort((left, right) => left.ordinal - right.ordinal);
     return {
       id: `owner_component_${index.toString().padStart(4, "0")}`,
-      cyclic:
-        sortedOwners.length > 1 ||
-        sortedOwners.some((owner) => adjacency.get(owner.id)?.has(owner.id)),
+      cyclic: sortedOwners.length > 1 || sortedOwners.some((owner) => adjacency.get(owner.id)?.has(owner.id)),
       dependencies: [],
       directDependencyComponentIds: [],
       endOrdinal: sortedOwners.at(-1).ordinal,
@@ -436,20 +434,19 @@ function buildStagedShellBatchPlans(plan, options) {
     summarizeEnvelope: 0,
   };
   const buildCandidatePlansStartedAt = process.hrtime.bigint();
-  const candidateBatchPlans = [...plan.closurePlans]
-    .map((closurePlan) =>
-      buildStagedShellBatchPlan(closurePlan, {
-        options,
-        owners: analysisContext.owners,
-        ownerById,
-        ownerAdjacency,
-        plannerState,
-        programItemByOrdinal,
-        recordById,
-        sideEffects: analysisContext.sideEffects,
-        timingTotals,
-      })
-    );
+  const candidateBatchPlans = [...plan.closurePlans].map((closurePlan) =>
+    buildStagedShellBatchPlan(closurePlan, {
+      options,
+      owners: analysisContext.owners,
+      ownerById,
+      ownerAdjacency,
+      plannerState,
+      programItemByOrdinal,
+      recordById,
+      sideEffects: analysisContext.sideEffects,
+      timingTotals,
+    })
+  );
   const buildCandidatePlansMs = durationMsSince(buildCandidatePlansStartedAt);
   const sortCandidatePlansStartedAt = process.hrtime.bigint();
   candidateBatchPlans.sort(compareOwnerClosureBatchPlans);
@@ -507,7 +504,17 @@ function selectPackedOwnerClosureBatchPlans(candidateBatchPlans, options) {
 
 function buildStagedShellBatchPlan(
   plan,
-  { options, owners, ownerAdjacency, ownerById, plannerState, programItemByOrdinal, recordById, sideEffects, timingTotals }
+  {
+    options,
+    owners,
+    ownerAdjacency,
+    ownerById,
+    plannerState,
+    programItemByOrdinal,
+    recordById,
+    sideEffects,
+    timingTotals,
+  }
 ) {
   const expandStartedAt = process.hrtime.bigint();
   const expandedOwners = expandStagedAttachedOwners(plan.ownerIds, { ownerAdjacency, ownerById });
@@ -1109,11 +1116,15 @@ function getOrderedInitPlannerState(analysis, ownerById = null) {
     if (!isReplayableAttachedSideEffectNode(record)) {
       continue;
     }
-    const touchedOwnerIds = [...new Set(
-      selectedModuleAccessView(record).all
-        .filter((access) => access.kind === "local_declaration" && access.ownerId && resolvedOwnerById.has(access.ownerId))
-        .map((access) => access.ownerId)
-    )].sort();
+    const touchedOwnerIds = [
+      ...new Set(
+        selectedModuleAccessView(record)
+          .all.filter(
+            (access) => access.kind === "local_declaration" && access.ownerId && resolvedOwnerById.has(access.ownerId)
+          )
+          .map((access) => access.ownerId)
+      ),
+    ].sort();
     if (touchedOwnerIds.length === 0) {
       continue;
     }
@@ -1234,9 +1245,7 @@ function buildSelectedModuleBlockingReasons({
   unsupportedRuntimeImportWrites,
 }) {
   return [
-    ...(unsupportedOwnerIds.size > 0
-      ? [`unsupported_owner:${[...unsupportedOwnerIds].sort().join(",")}`]
-      : []),
+    ...(unsupportedOwnerIds.size > 0 ? [`unsupported_owner:${[...unsupportedOwnerIds].sort().join(",")}`] : []),
     ...(runtimeSensitiveOwnerIds.size > 0
       ? [`runtime_sensitive_owner:${[...runtimeSensitiveOwnerIds].sort().join(",")}`]
       : []),

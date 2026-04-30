@@ -2,10 +2,7 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import puppeteer from "puppeteer";
 
-export async function launchPuppeteerBrowser({
-  args = [],
-  headless = true,
-} = {}) {
+export async function launchPuppeteerBrowser({ args = [], headless = true } = {}) {
   const launchOptions = {
     args,
     headless,

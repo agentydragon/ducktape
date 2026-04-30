@@ -56,7 +56,10 @@ test("happy path: scrambled import rewritten to real upstream name", () => {
   assert.equal(manifest.counts.considered, 1);
   assert.equal(manifest.counts.chunksWithMapping, 1);
   assert.equal(manifest.counts.rewrites, 1);
-  assert.match(chunkCode(artifact, "static/index-AppEntry"), /import\s*\{\s*render as r\s*\}\s*from\s*"\.\.\/katex-BZy9Y_85\/runtime\.js"/);
+  assert.match(
+    chunkCode(artifact, "static/index-AppEntry"),
+    /import\s*\{\s*render as r\s*\}\s*from\s*"\.\.\/katex-BZy9Y_85\/runtime\.js"/
+  );
 });
 
 test("source-path imports are rewritten before late chunk-entry realization", () => {
@@ -157,15 +160,11 @@ test("default and namespace imports are not rewritten", () => {
 });
 
 test("missing vendor chunk fails closed naming op id and chunkId", () => {
-  const artifact = makeArtifact([
-    makeChunk("static/index-AppEntry", { "runtime.js": "export {};\n" }),
-  ]);
+  const artifact = makeArtifact([makeChunk("static/index-AppEntry", { "runtime.js": "export {};\n" })]);
   assert.throws(
     () => renameVendorExports({ artifact, operations: [vendorOp()] }),
     (err) =>
-      /op_katex/.test(err.message) &&
-      /static\/katex-BZy9Y_85/.test(err.message) &&
-      /missing chunk/.test(err.message)
+      /op_katex/.test(err.message) && /static\/katex-BZy9Y_85/.test(err.message) && /missing chunk/.test(err.message)
   );
 });
 
@@ -212,7 +211,14 @@ test("multiple vendor ops across multiple consumers all rewritten", () => {
   const { manifest } = renameVendorExports({
     artifact,
     operations: [
-      vendorOp({ id: "op_katex", chunkPath: "static/katex-BZy9Y_85.js", level: "swap", package: "katex", version: "0.16.11", subpath: "dist/katex.mjs" }),
+      vendorOp({
+        id: "op_katex",
+        chunkPath: "static/katex-BZy9Y_85.js",
+        level: "swap",
+        package: "katex",
+        version: "0.16.11",
+        subpath: "dist/katex.mjs",
+      }),
       vendorOp({ id: "op_other", chunkPath: "static/other-vendor.js", level: "boundary-rename" }),
     ],
   });
@@ -264,5 +270,8 @@ test("non-runtime chunk entry files are rewritten using the imported entry file"
   });
 
   assert.equal(manifest.counts.rewrites, 1);
-  assert.match(chunkCode(artifact, "static/index-AppEntry"), /import\s*\{\s*render as r\s*\}\s*from\s*"\.\.\/katex-BZy9Y_85\/entry\.js"/);
+  assert.match(
+    chunkCode(artifact, "static/index-AppEntry"),
+    /import\s*\{\s*render as r\s*\}\s*from\s*"\.\.\/katex-BZy9Y_85\/entry\.js"/
+  );
 });

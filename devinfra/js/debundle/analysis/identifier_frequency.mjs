@@ -395,7 +395,10 @@ function isBindingIdentifierPath(path) {
   return false;
 }
 
-function topLevelBindingForIdentifier(path, { name, programPath, role, shadowedBeforeProgramCache, topLevelBindingsByName }) {
+function topLevelBindingForIdentifier(
+  path,
+  { name, programPath, role, shadowedBeforeProgramCache, topLevelBindingsByName }
+) {
   if (!programPath) {
     return null;
   }

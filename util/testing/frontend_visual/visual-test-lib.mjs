@@ -102,7 +102,9 @@ function compareBaseline(name, screenshot, outputDir, baselineDir, updateWriteDi
   }
 
   if (numDiffPixels > 0) {
-    console.log(`  ~ ${numDiffPixels} pixels differ (${diffPercent.toFixed(1)}% within ${PIXEL_DIFF_PERCENT}% tolerance)`);
+    console.log(
+      `  ~ ${numDiffPixels} pixels differ (${diffPercent.toFixed(1)}% within ${PIXEL_DIFF_PERCENT}% tolerance)`
+    );
   }
   return { passed: true };
 }
@@ -135,9 +137,7 @@ export async function main(scenarioName, callerUrl = null, options = {}) {
     }
   }
   if (!baselineDir) {
-    baselineDir = callerUrl
-      ? join(dirname(fileURLToPath(callerUrl)), "baselines")
-      : DEFAULT_BASELINE_DIR;
+    baselineDir = callerUrl ? join(dirname(fileURLToPath(callerUrl)), "baselines") : DEFAULT_BASELINE_DIR;
   }
   const harnessPath = process.env.HARNESS_PATH || join(__dirname, "harness/dist/harness.js");
   const distDir = dirname(harnessPath);
