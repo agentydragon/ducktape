@@ -1,8 +1,11 @@
+// Black-box test harness for the run_transform binary. Only depends on node
+// stdlib and the binary itself — no internal debundler modules — so a
+// re-implementation in another language can drive these tests verbatim.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
-import { createWebFixtureRoots, runNodeScript, writeSnapshotFixture } from "./test_support/fixtures.mjs";
+import { createWebFixtureRoots, runNodeScript, writeSnapshotFixture } from "./test_support/black_box.mjs";
 
 let moduleExportAssertionCounter = 0;
 let generatedModuleScriptCounter = 0;

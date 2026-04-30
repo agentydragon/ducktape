@@ -7,7 +7,7 @@ js_test(
     data = [
         "debundle_e2e_test.mjs",
         "pipeline_e2e_support.mjs",
-        "//devinfra/js/debundle/test_support:sources",
+        "//devinfra/js/debundle/test_support:black_box_lib",
         "//devinfra/js/debundle/transforms:run_transform",
     ],
     entry_point = "debundle_e2e_test.mjs",
