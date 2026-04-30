@@ -10,6 +10,20 @@ import { createWebFixtureRoots, runNodeScript, writeSnapshotFixture } from "./te
 let moduleExportAssertionCounter = 0;
 let generatedModuleScriptCounter = 0;
 
+export function logicalModule(path, members) {
+  return {
+    id: `logical__${path.replace(/\//g, "_")}`,
+    operation: "define_logical_module",
+    selector: { chunkId: "static/app" },
+    target: { path },
+    members: members.map(({ name, kind = "VariableDeclarator", binding = name, alias }) => ({
+      id: `member__${name}`,
+      name: alias ?? name,
+      selector: { binding: { kind, name: binding } },
+    })),
+  };
+}
+
 const DEFAULT_PIPELINE = (snapshotRoot, jsListPath, outRoot) => [
   {
     id: "load",
@@ -44,6 +58,16 @@ function buildSpec({ chunkId, operations, snapshotRoot, jsListPath, outRoot, inc
   };
 }
 
+function prefixFromTestContext(t) {
+  // Slugify the test name into a temp-dir prefix so failed runs are easy to
+  // pick out of /tmp without the test file having to repeat its own name.
+  const slug = t.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `debundle-e2e-${slug}-`;
+}
+
 function setupFixture({ chunkId, prefix, source, extraFiles = {} }) {
   const { extractedRoot, outRoot, snapshotRoot } = createWebFixtureRoots(prefix);
   const entryFile = `${chunkId}.js`;
@@ -66,15 +90,16 @@ function spawnTransform(specPath) {
   return spawnSync(runTransformBin, ["--spec", specPath], { encoding: "utf8" });
 }
 
-export async function runLogicalModulesE2eFixture({
-  chunkId = "static/app",
-  extraFiles,
-  includeResidual = true,
-  operations,
-  prefix,
-  source,
-}) {
-  const { extractedRoot, outRoot, snapshotRoot } = setupFixture({ chunkId, prefix, source, extraFiles });
+export async function runLogicalModulesE2eFixture(
+  t,
+  { chunkId = "static/app", extraFiles, includeResidual = true, operations, source }
+) {
+  const { extractedRoot, outRoot, snapshotRoot } = setupFixture({
+    chunkId,
+    extraFiles,
+    prefix: prefixFromTestContext(t),
+    source,
+  });
   const specPath = join(outRoot, "transform_spec.jsonc");
   writeJsonFile(
     specPath,
@@ -99,15 +124,15 @@ export async function runLogicalModulesE2eFixture({
   };
 }
 
-export async function expectLogicalModulesE2eRejection({
-  chunkId = "static/app",
-  errorPattern,
-  includeResidual = true,
-  operations,
-  prefix,
-  source,
-}) {
-  const { extractedRoot, outRoot, snapshotRoot } = setupFixture({ chunkId, prefix, source });
+export async function expectLogicalModulesE2eRejection(
+  t,
+  { chunkId = "static/app", errorPattern, includeResidual = true, operations, source }
+) {
+  const { extractedRoot, outRoot, snapshotRoot } = setupFixture({
+    chunkId,
+    prefix: prefixFromTestContext(t),
+    source,
+  });
   const specPath = join(outRoot, "transform_spec.jsonc");
   writeJsonFile(
     specPath,
