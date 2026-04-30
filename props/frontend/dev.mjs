@@ -169,8 +169,9 @@ const server = createServer(async (req, res) => {
       res.writeHead(404);
       res.end("Not found");
     } else {
+      console.error("[dev-server] Unexpected error while serving request:", err);
       res.writeHead(500);
-      res.end("Server error: " + err.message);
+      res.end("Server error");
     }
   }
 });
