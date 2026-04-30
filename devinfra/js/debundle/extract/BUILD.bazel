@@ -10,12 +10,10 @@ _BABEL_DEPS = [
 js_library(
     name = "libs",
     srcs = [
-        "atomic_modules.mjs",
         "decl_graph.mjs",
         "init_region.mjs",
         "logical_modules.mjs",
         "materialize_logical_modules.mjs",
-        "merge.mjs",
         "planner.mjs",
     ],
     visibility = ["//visibility:public"],
