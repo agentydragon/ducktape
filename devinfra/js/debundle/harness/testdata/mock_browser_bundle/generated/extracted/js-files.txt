@@ -1,4 +1,0 @@
-static/ActivityPanel-DuckMock.js
-static/SummaryChip-DuckMock.js
-static/chunk-DuckMock.js
-static/index-DuckMock.js

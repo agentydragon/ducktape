@@ -1,20 +1,44 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library")
-load(":defs.bzl", "e2e_test")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
 # End-to-end tests treating the debundler as a black-box binary.
-# `support` only depends on node stdlib and the run_transform binary —
-# no debundler-internal modules — so a re-implementation in another
-# language can drive these tests verbatim.
 
-js_library(
+rust_library(
     name = "support",
-    srcs = ["support.mjs"],
+    srcs = ["support.rs"],
+    crate_name = "debundle_e2e_support",
+    crate_root = "support.rs",
+    data = [
+        "//devinfra/js/debundle:debundle_rust",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+        "@rules_rust//tools/runfiles",
+    ],
 )
 
-e2e_test(name = "lowering_test")
-
-e2e_test(name = "cross_module_test")
-
-e2e_test(name = "naturalization_test")
-
-e2e_test(name = "url_rebase_test")
+[
+    rust_test(
+        name = name,
+        srcs = ["{}.rs".format(name)],
+        crate_root = "{}.rs".format(name),
+        data = [
+            "//devinfra/js/debundle:debundle_rust",
+            "@nodejs_linux_amd64//:bin/node",
+        ],
+        edition = "2024",
+        deps = [
+            ":support",
+            "@crates//:serde_json",
+            "@rules_rust//tools/runfiles",
+        ],
+    )
+    for name in [
+        "lowering_test",
+        "cross_module_test",
+        "naturalization_test",
+        "url_rebase_test",
+    ]
+]

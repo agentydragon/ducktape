@@ -1,1 +1,62 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+
 package(default_visibility = ["//visibility:public"])
+
+_COMMON_SRCS = [
+    "artifact.rs",
+    "ast_ir.rs",
+    "emit_harness.rs",
+    "js_ast.rs",
+    "lib.rs",
+    "logical_modules.rs",
+    "module_path.rs",
+    "normalize.rs",
+    "owner_graph.rs",
+    "pipeline.rs",
+    "plan.rs",
+    "program_analysis.rs",
+    "rewrite_specifiers.rs",
+    "vendor.rs",
+    "write_tree.rs",
+]
+
+_COMMON_DEPS = [
+    "@crates//:anyhow",
+    "@crates//:petgraph",
+    "@crates//:serde",
+    "@crates//:serde_json",
+    "@crates//:swc_common",
+    "@crates//:swc_ecma_ast",
+    "@crates//:swc_ecma_codegen",
+    "@crates//:swc_ecma_parser",
+    "@crates//:swc_ecma_visit",
+]
+
+rust_library(
+    name = "debundle_rust_lib",
+    srcs = _COMMON_SRCS,
+    crate_name = "debundle_rust",
+    crate_root = "lib.rs",
+    edition = "2024",
+    deps = _COMMON_DEPS,
+)
+
+rust_binary(
+    name = "debundle_rust",
+    srcs = ["main.rs"],
+    crate_root = "main.rs",
+    edition = "2024",
+    deps = [
+        ":debundle_rust_lib",
+        "@crates//:anyhow",
+    ],
+)
+
+rust_test(
+    name = "pipeline_test",
+    crate = ":debundle_rust_lib",
+    edition = "2024",
+    deps = [
+        "@crates//:tempfile",
+    ],
+)
