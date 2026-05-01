@@ -13,12 +13,23 @@ pub struct PlannerDebugSnapshot {
     pub selected: Vec<PlannerCandidateDebug>,
     pub ordered_init_state: PlannerOrderedInitStateDebug,
     pub frontier_traces: Vec<PlannerFrontierTraceDebug>,
+    pub owner_analyses: Vec<PlannerOwnerAnalysisDebug>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PlannerOwnerAnalysisDebug {
+    pub id: String,
+    pub module_id: String,
+    pub member_name: String,
+    pub dep_owner_ids: Vec<String>,
+    pub eager_dep_owner_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PlannerFrontierTraceDebug {
     pub seed_component_id: String,
     pub seed_component_owner_ids: Vec<String>,
+    pub seed_component_member_names: Vec<String>,
     pub seed_component_dep_owner_ids: Vec<String>,
     pub seed_component_direct_dependency_component_ids: Vec<String>,
     pub required_component_ids: Vec<String>,
@@ -175,8 +186,43 @@ pub fn build_plan(owner_graph: &OwnerGraph, analysis: &AnalysisSummary) -> PlanS
                     ..trace
                 })
                 .collect(),
+            owner_analyses: owner_analysis_debug(analysis),
         },
     }
+}
+
+fn owner_analysis_debug(analysis: &AnalysisSummary) -> Vec<PlannerOwnerAnalysisDebug> {
+    analysis
+        .owners
+        .iter()
+        .map(|owner| {
+            let mut dep_owner_ids = owner
+                .dep_edges
+                .iter()
+                .map(|edge| edge.to_owner_id.clone())
+                .collect::<Vec<_>>();
+            dep_owner_ids.sort();
+            dep_owner_ids.dedup();
+            let mut eager_dep_owner_ids = owner
+                .dep_edges
+                .iter()
+                .filter(|edge| {
+                    edge.phase == "eager"
+                        && matches!(edge.access_kind.as_str(), "read" | "write" | "member_write")
+                })
+                .map(|edge| edge.to_owner_id.clone())
+                .collect::<Vec<_>>();
+            eager_dep_owner_ids.sort();
+            eager_dep_owner_ids.dedup();
+            PlannerOwnerAnalysisDebug {
+                id: owner.id.clone(),
+                module_id: owner.module_id.clone(),
+                member_name: owner.member_name.clone(),
+                dep_owner_ids,
+                eager_dep_owner_ids,
+            }
+        })
+        .collect()
 }
 
 fn planner_state_debug(analysis: &AnalysisSummary) -> PlannerOrderedInitStateDebug {
@@ -246,6 +292,14 @@ fn build_closure_candidates(
             &component_by_id,
             &mut closure_ids_cache,
         );
+        let required_component_debug_ids = required_component_ids
+            .iter()
+            .filter_map(|component_id| {
+                component_by_id
+                    .get(component_id.as_str())
+                    .map(|component| component.debug_id.clone())
+            })
+            .collect::<Vec<_>>();
         let envelope = expand_contiguous_envelope_owner_ids(
             &required_component_ids,
             &component_by_id,
@@ -253,15 +307,24 @@ fn build_closure_candidates(
             &owner_by_ordinal,
             &program_item_kind_by_ordinal,
         );
-        let required_closure_owner_ids =
-            owners_for_component_ids_set(&required_component_ids, &component_by_id)
-                .into_iter()
-                .map(|(owner_id, _)| owner_id)
-                .collect::<Vec<_>>();
+        let required_closure_owner_ids = collect_owner_closure_owner_ids(
+            &seed_component.owner_ids,
+            &owner_by_id,
+            Some(seed_component.module_id_hint.as_str()),
+        );
         let closure_owner_ids = envelope.owner_ids.clone();
         frontier_traces.push(PlannerFrontierTraceDebug {
-            seed_component_id: seed_component.id.clone(),
+            seed_component_id: seed_component.debug_id.clone(),
             seed_component_owner_ids: seed_component.owner_ids.clone(),
+            seed_component_member_names: seed_component
+                .owner_ids
+                .iter()
+                .filter_map(|owner_id| {
+                    owner_by_id
+                        .get(owner_id.as_str())
+                        .map(|owner| owner.member_name.clone())
+                })
+                .collect(),
             seed_component_dep_owner_ids: seed_component
                 .owner_ids
                 .iter()
@@ -280,10 +343,24 @@ fn build_closure_candidates(
                 .collect(),
             seed_component_direct_dependency_component_ids: seed_component
                 .direct_dependency_component_ids
-                .clone(),
-            required_component_ids: required_component_ids.clone(),
+                .iter()
+                .filter_map(|component_id| {
+                    component_by_id
+                        .get(component_id.as_str())
+                        .map(|component| component.debug_id.clone())
+                })
+                .collect(),
+            required_component_ids: required_component_debug_ids,
             required_closure_owner_ids,
-            contiguous_envelope_component_ids: envelope.component_ids.clone(),
+            contiguous_envelope_component_ids: envelope
+                .component_ids
+                .iter()
+                .filter_map(|component_id| {
+                    component_by_id
+                        .get(component_id.as_str())
+                        .map(|component| component.debug_id.clone())
+                })
+                .collect(),
             closure_owner_ids: closure_owner_ids.clone(),
             envelope_start_ordinal: envelope.start_ordinal,
             envelope_end_ordinal: envelope.end_ordinal,
@@ -512,9 +589,43 @@ fn owners_for_component_ids(
     owners
 }
 
+fn collect_owner_closure_owner_ids(
+    seed_owner_ids: &[String],
+    owner_by_id: &HashMap<&str, &OwnerRecord>,
+    module_scope: Option<&str>,
+) -> Vec<String> {
+    let mut seen = BTreeSet::<String>::new();
+    let mut queue = seed_owner_ids.to_vec();
+    while let Some(owner_id) = queue.pop() {
+        if !seen.insert(owner_id.clone()) {
+            continue;
+        }
+        let Some(owner) = owner_by_id.get(owner_id.as_str()) else {
+            continue;
+        };
+        for dep_owner_id in owner
+            .dep_owner_ids
+            .iter()
+            .chain(owner.eager_dep_owner_ids.iter())
+        {
+            if let Some(scope) = module_scope {
+                let Some(dep_owner) = owner_by_id.get(dep_owner_id.as_str()) else {
+                    continue;
+                };
+                if dep_owner.module_id != scope {
+                    continue;
+                }
+            }
+            queue.push(dep_owner_id.clone());
+        }
+    }
+    seen.into_iter().collect()
+}
+
 #[derive(Debug, Clone)]
 struct OwnerComponent {
     id: String,
+    debug_id: String,
     owner_ids: Vec<String>,
     owner_ordinals: Vec<usize>,
     module_id_hint: String,
@@ -524,6 +635,10 @@ struct OwnerComponent {
 fn build_owner_components(owner_records: &[OwnerRecord]) -> Vec<OwnerComponent> {
     let mut graph = DiGraph::<String, ()>::new();
     let mut node_by_owner_id = HashMap::new();
+    let module_by_owner_id = owner_records
+        .iter()
+        .map(|owner| (owner.id.as_str(), owner.module_id.as_str()))
+        .collect::<HashMap<_, _>>();
     for owner in owner_records {
         let node = graph.add_node(owner.id.clone());
         node_by_owner_id.insert(owner.id.as_str(), node);
@@ -533,6 +648,9 @@ fn build_owner_components(owner_records: &[OwnerRecord]) -> Vec<OwnerComponent> 
             continue;
         };
         for dep in &owner.dep_owner_ids {
+            if module_by_owner_id.get(dep.as_str()).copied() != Some(owner.module_id.as_str()) {
+                continue;
+            }
             let Some(to) = node_by_owner_id.get(dep.as_str()).copied() else {
                 continue;
             };
@@ -560,17 +678,24 @@ fn build_owner_components(owner_records: &[OwnerRecord]) -> Vec<OwnerComponent> 
         .collect::<Vec<_>>();
     components.sort_by_key(|owners| owners[0].ordinal);
     let mut component_id_by_owner_id = HashMap::<String, String>::new();
-    let mut out = components
-        .into_iter()
-        .enumerate()
-        .map(|(index, owners)| OwnerComponent {
-            id: format!("owner_component_{index:04}"),
+    let mut local_component_index_by_module = HashMap::<String, usize>::new();
+    let mut out = Vec::with_capacity(components.len());
+    for owners in components {
+        let module_id = owners[0].module_id.clone();
+        let local_index = local_component_index_by_module
+            .entry(module_id.clone())
+            .and_modify(|index| *index += 1)
+            .or_insert(0);
+        let debug_id = format!("owner_component_{local_index:04}");
+        out.push(OwnerComponent {
+            id: format!("{module_id}::{debug_id}"),
+            debug_id,
             owner_ids: owners.iter().map(|o| o.id.clone()).collect(),
             owner_ordinals: owners.iter().map(|o| o.ordinal).collect(),
-            module_id_hint: owners[0].module_id.clone(),
+            module_id_hint: module_id,
             direct_dependency_component_ids: Vec::new(),
-        })
-        .collect::<Vec<_>>();
+        });
+    }
     for component in &out {
         for owner_id in &component.owner_ids {
             component_id_by_owner_id.insert(owner_id.clone(), component.id.clone());
@@ -600,6 +725,11 @@ fn build_owner_components(owner_records: &[OwnerRecord]) -> Vec<OwnerComponent> 
             dep_owner_ids.sort();
             dep_owner_ids.dedup();
             for dep_owner_id in dep_owner_ids {
+                if module_by_owner_id.get(dep_owner_id.as_str()).copied()
+                    != Some(component.module_id_hint.as_str())
+                {
+                    continue;
+                }
                 let Some(dep_component_id) = component_id_by_owner_id.get(dep_owner_id.as_str())
                 else {
                     continue;
@@ -859,15 +989,12 @@ fn build_program_item_ordinals(
                 {
                     owner_ordinal_by_id.insert(canonical_owner_id.clone(), ordinal);
                 }
-                program_item_kind_by_ordinal.insert(ordinal, ProgramItemKind::Declaration);
-                ordinal += 1;
                 ProgramItemKind::Declaration
             } else {
                 ProgramItemKind::NonDeclaration
             };
-            if kind == ProgramItemKind::NonDeclaration {
-                continue;
-            }
+            program_item_kind_by_ordinal.insert(ordinal, kind);
+            ordinal += 1;
         }
     }
     (owner_ordinal_by_id, program_item_kind_by_ordinal)
@@ -913,27 +1040,15 @@ fn build_owner_records(
             .dep_edges
             .iter()
             .map(|edge| edge.to_owner_id.clone())
-            .map(|dep| {
-                canonical_to_semantic
-                    .get(dep.as_str())
-                    .cloned()
-                    .unwrap_or(dep)
-            })
             .collect::<Vec<_>>();
         let eager_dep_owner_ids = owner
             .dep_edges
             .iter()
             .filter(|edge| {
                 edge.phase == "eager"
-                    && matches!(edge.access_kind.as_str(), "write" | "member_write")
+                    && matches!(edge.access_kind.as_str(), "read" | "write" | "member_write")
             })
             .map(|edge| edge.to_owner_id.clone())
-            .map(|dep| {
-                canonical_to_semantic
-                    .get(dep.as_str())
-                    .cloned()
-                    .unwrap_or(dep)
-            })
             .collect::<Vec<_>>();
 
         let entry = merged.entry(semantic_id.clone()).or_insert(OwnerRecord {

@@ -361,3 +361,18 @@ js_test(
         "RUST_DEBUNDLE_BIN": "$(rootpath //devinfra/js/debundle/rust:debundle_rust)",
     },
 )
+
+js_test(
+    name = "planner_internal_tiny_repro_test",
+    size = "small",
+    data = [
+        "planner_internal_tiny_repro_test.mjs",
+        "//devinfra/js/debundle/analysis:libs",
+        "//devinfra/js/debundle/extract:libs",
+        "//devinfra/js/debundle/rust:debundle_rust",
+    ],
+    entry_point = "planner_internal_tiny_repro_test.mjs",
+    env = {
+        "RUST_DEBUNDLE_BIN": "$(rootpath //devinfra/js/debundle/rust:debundle_rust)",
+    },
+)

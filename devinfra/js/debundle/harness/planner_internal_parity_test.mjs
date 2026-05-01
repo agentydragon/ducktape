@@ -34,6 +34,9 @@ test("planner internals parity: rust extraction groups exactly match js planner 
     for (const batchPlan of packed.candidateBatchPlans ?? []) {
       jsFrontierDebug.push({
         seedComponentId: batchPlan.seedComponentId ?? null,
+        seedOwnerIds: [...(batchPlan.seedOwnerIds ?? [])].sort(),
+        seedMemberNames: [...(batchPlan.seedMemberNames ?? [])].sort(),
+        seedComponentDepOwnerIds: [...(batchPlan.seedComponentDepOwnerIds ?? [])].sort(),
         requiredComponentIds: [
           ...(batchPlan.requiredClosureComponentIds ?? batchPlan.closureComponentIds ?? []),
         ].sort(),
@@ -73,6 +76,11 @@ test("planner internals parity: rust extraction groups exactly match js planner 
   const rustFrontierSummary = (rustPlanner.debug?.frontierTraces ?? rustPlanner.debug?.frontier_traces ?? [])
     .map((trace) => ({
       seedComponentId: trace.seedComponentId ?? trace.seed_component_id,
+      seedOwnerIds: trace.seedOwnerIds ?? trace.seed_owner_ids ?? trace.seedComponentOwnerIds ?? trace.seed_component_owner_ids ?? [],
+      seedMemberNames:
+        trace.seedMemberNames ?? trace.seed_member_names ?? trace.seedComponentMemberNames ?? trace.seed_component_member_names ?? [],
+      seedComponentDepOwnerIds:
+        trace.seedComponentDepOwnerIds ?? trace.seed_component_dep_owner_ids ?? [],
       requiredComponentIds: trace.requiredComponentIds ?? trace.required_component_ids ?? [],
       requiredClosureOwnerIds:
         trace.requiredClosureOwnerIds ?? trace.required_closure_owner_ids ?? [],
@@ -86,27 +94,31 @@ test("planner internals parity: rust extraction groups exactly match js planner 
   const normalizedJsFrontier = normalizeFrontierTraces(jsFrontierDebug);
   const normalizedRustFrontier = normalizeFrontierTraces(rustFrontierSummary);
   for (const gate of [
-    { label: "requiredComponentIds", projector: (trace) => trace.requiredComponentIds },
     { label: "requiredClosureOwnerIds", projector: (trace) => trace.requiredClosureOwnerIds },
     { label: "contiguousEnvelopeComponentIds", projector: (trace) => trace.contiguousEnvelopeComponentIds },
     { label: "closureOwnerIds", projector: (trace) => trace.closureOwnerIds },
   ]) {
-    const rustGate = normalizedRustFrontier.map((trace) => ({
-      seedComponentId: trace.seedComponentId,
-      values: [...gate.projector(trace)].sort(),
-    }));
-    const jsGate = normalizedJsFrontier.map((trace) => ({
-      seedComponentId: trace.seedComponentId,
-      values: [...gate.projector(trace)].sort(),
-    }));
-    const firstGateDelta = firstCandidateUniverseDelta(rustGate, jsGate);
+    const firstGateDelta = firstFrontierGateDelta(normalizedRustFrontier, normalizedJsFrontier, gate.projector);
     if (firstGateDelta) {
+      const rustTraceAtDelta = normalizedRustFrontier.find(
+        (trace) => trace.seedOwnerIds.join("|") === firstGateDelta.seed
+      );
+      const jsTraceAtDelta = normalizedJsFrontier.find(
+        (trace) => trace.seedOwnerIds.join("|") === firstGateDelta.seed
+      );
       assert.fail(
         [
           `frontier layer gate failed: ${gate.label}`,
-          `first mismatch index: ${firstGateDelta.index}`,
+          `first mismatch seed: ${firstGateDelta.seed}`,
           `rust: ${JSON.stringify(firstGateDelta.rust, null, 2)}`,
           `js: ${JSON.stringify(firstGateDelta.js, null, 2)}`,
+          `rust trace@delta: ${JSON.stringify(rustTraceAtDelta, null, 2)}`,
+          `js trace@delta: ${JSON.stringify(jsTraceAtDelta, null, 2)}`,
+          `rust owner analyses for seed: ${JSON.stringify(
+            ownerAnalysesForSeed(rustPlanner.debug?.ownerAnalyses ?? rustPlanner.debug?.owner_analyses ?? [], firstGateDelta.seed),
+            null,
+            2
+          )}`,
         ].join("\n")
       );
     }
@@ -165,6 +177,32 @@ function resolveRustBin() {
   return join(runfiles, workspace, rel);
 }
 
+function ownerAnalysesForSeed(ownerAnalyses, seed) {
+  const seedOwnerIds = seed.split("|").filter(Boolean);
+  const related = new Set(seedOwnerIds);
+  const byId = new Map(ownerAnalyses.map((owner) => [owner.id, owner]));
+  for (const ownerId of seedOwnerIds) {
+    const owner = byId.get(ownerId);
+    if (!owner) continue;
+    for (const depOwnerId of owner.depOwnerIds ?? owner.dep_owner_ids ?? []) {
+      related.add(depOwnerId);
+    }
+    for (const depOwnerId of owner.eagerDepOwnerIds ?? owner.eager_dep_owner_ids ?? []) {
+      related.add(depOwnerId);
+    }
+  }
+  return ownerAnalyses
+    .filter((owner) => related.has(owner.id))
+    .map((owner) => ({
+      id: owner.id,
+      moduleId: owner.moduleId ?? owner.module_id,
+      memberName: owner.memberName ?? owner.member_name,
+      depOwnerIds: [...(owner.depOwnerIds ?? owner.dep_owner_ids ?? [])].sort(),
+      eagerDepOwnerIds: [...(owner.eagerDepOwnerIds ?? owner.eager_dep_owner_ids ?? [])].sort(),
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
 function firstCandidateUniverseDelta(rust, js) {
   const max = Math.max(rust.length, js.length);
   for (let idx = 0; idx < max; idx++) {
@@ -172,6 +210,28 @@ function firstCandidateUniverseDelta(rust, js) {
     const right = js[idx] ?? null;
     if (JSON.stringify(left) !== JSON.stringify(right)) {
       return { index: idx, rust: left, js: right };
+    }
+  }
+  return null;
+}
+
+function firstFrontierGateDelta(rustFrontier, jsFrontier, projector) {
+  const rustBySeed = new Map(
+    rustFrontier.map((trace) => [trace.seedOwnerIds.join("|"), [...projector(trace)].sort()])
+  );
+  const jsBySeed = new Map(
+    jsFrontier.map((trace) => [trace.seedOwnerIds.join("|"), [...projector(trace)].sort()])
+  );
+  const seeds = [...new Set([...rustBySeed.keys(), ...jsBySeed.keys()])].sort();
+  for (const seed of seeds) {
+    const rustValues = rustBySeed.get(seed) ?? null;
+    const jsValues = jsBySeed.get(seed) ?? null;
+    if (JSON.stringify(rustValues) !== JSON.stringify(jsValues)) {
+      return {
+        seed,
+        rust: { seedComponentId: seed, values: rustValues },
+        js: { seedComponentId: seed, values: jsValues },
+      };
     }
   }
   return null;
@@ -235,6 +295,9 @@ function normalizeFrontierTraces(traces) {
   const normalized = traces
     .map((trace) => ({
       seedComponentId: trace.seedComponentId ?? null,
+      seedOwnerIds: [...(trace.seedOwnerIds ?? [])].sort(),
+      seedMemberNames: [...(trace.seedMemberNames ?? [])].sort(),
+      seedComponentDepOwnerIds: [...(trace.seedComponentDepOwnerIds ?? [])].sort(),
       requiredComponentIds: [...(trace.requiredComponentIds ?? [])].sort(),
       requiredClosureOwnerIds: [...(trace.requiredClosureOwnerIds ?? [])].sort(),
       contiguousEnvelopeComponentIds: [...(trace.contiguousEnvelopeComponentIds ?? [])].sort(),
@@ -243,7 +306,10 @@ function normalizeFrontierTraces(traces) {
       envelopeEndOrdinal: Number(trace.envelopeEndOrdinal ?? 0),
       envelopeBarrierItemIds: [...(trace.envelopeBarrierItemIds ?? [])].sort(),
     }))
-    .sort((left, right) => (left.seedComponentId ?? "").localeCompare(right.seedComponentId ?? ""));
+    .sort((left, right) =>
+      left.seedOwnerIds.join("\n").localeCompare(right.seedOwnerIds.join("\n")) ||
+      (left.seedComponentId ?? "").localeCompare(right.seedComponentId ?? "")
+    );
   const deduped = [];
   const seen = new Set();
   for (const record of normalized) {

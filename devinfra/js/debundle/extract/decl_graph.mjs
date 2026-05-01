@@ -301,6 +301,10 @@ function buildOwnerClosurePlan(
     closureComponentIdsBySeedComponentId
   );
   const semanticOwners = ownersForComponentIds(requiredClosureComponentIds, componentById, ownerById);
+  const seedComponentDepOwnerIds = [...new Set(
+    (seedComponent.directDependencyComponentIds ?? [])
+      .flatMap((componentId) => componentById.get(componentId)?.ownerIds ?? [])
+  )].sort();
   const semanticSummary = summarizeOwnerClosureEnvelope({
     owners: analysis.owners,
     ownerById,
@@ -320,6 +324,7 @@ function buildOwnerClosurePlan(
     ownerIds: [...semanticSummary.ownerIds],
     requiredClosureComponentIds: [...requiredClosureComponentIds],
     requiredClosureOwnerIds: semanticOwners.map((owner) => owner.id),
+    seedComponentDepOwnerIds,
     seedComponentId: seedComponent.id,
     seedMemberNames: [...seedComponent.memberNames],
     seedOwnerIds: [...seedComponent.ownerIds],

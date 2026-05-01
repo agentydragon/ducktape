@@ -766,31 +766,45 @@ fn build_owner_analyses(
         }
     }
     for chunk in chunks {
-        let Some(module) = module_by_path.get(chunk.source_path.as_str()) else {
-            continue;
-        };
-        let owner_uses = ast_by_path
+        let module = module_by_path
             .get(chunk.source_path.as_str())
-            .map(|tree| owner_identifier_uses_by_member_from_tree(tree, &chunk.content))
-            .unwrap_or_default();
-        let owner_writes = ast_by_path
+            .unwrap_or_else(|| {
+                panic!(
+                    "missing module analysis for chunk source_path {}",
+                    chunk.source_path
+                )
+            });
+        let tree = ast_by_path
             .get(chunk.source_path.as_str())
-            .map(|tree| owner_identifier_writes_by_member_from_tree(tree, &chunk.content))
-            .unwrap_or_default();
-        let owner_decl_lines = ast_by_path
-            .get(chunk.source_path.as_str())
-            .map(|tree| owner_declaration_lines_from_tree(tree, &chunk.content))
-            .unwrap_or_default();
+            .unwrap_or_else(|| {
+                panic!(
+                    "missing parsed AST for chunk source_path {}",
+                    chunk.source_path
+                )
+            });
+        let owner_uses = owner_identifier_uses_by_member_from_tree(tree, &chunk.content);
+        let owner_writes = owner_identifier_writes_by_member_from_tree(tree, &chunk.content);
+        let owner_decl_lines = owner_declaration_lines_from_tree(tree, &chunk.content);
         for member_name in &module.member_names {
             let owner_id = format!("{}::{}", module.source_path, member_name);
             let uses = owner_uses
                 .get(member_name.as_str())
                 .cloned()
-                .unwrap_or_default();
+                .unwrap_or_else(|| {
+                    panic!(
+                        "missing owner uses set for member {} in module {}",
+                        member_name, module.source_path
+                    )
+                });
             let writes = owner_writes
                 .get(member_name.as_str())
                 .cloned()
-                .unwrap_or_default();
+                .unwrap_or_else(|| {
+                    panic!(
+                        "missing owner writes set for member {} in module {}",
+                        member_name, module.source_path
+                    )
+                });
             let accesses =
                 build_owner_access_records(member_name, &uses, &writes, module, &module_by_path);
             let dep_edges =
@@ -821,7 +835,12 @@ fn build_owner_analyses(
                 line: owner_decl_lines
                     .get(member_name)
                     .copied()
-                    .unwrap_or_default(),
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "missing declaration line for owner {} in module {}",
+                            member_name, module.source_path
+                        )
+                    }),
                 dep_edges,
                 accesses,
             });
