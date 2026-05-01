@@ -1,0 +1,68 @@
+.quota-indicator {
+  spacing: 4px;
+}
+
+.quota-provider {
+  spacing: 2px;
+  padding: 0 2px;
+}
+
+.quota-icon {
+  icon-size: 16px;
+  color: #bebebe;
+}
+
+.quota-icon.quota-cool {
+  color: #4a90d9;
+}
+
+.quota-icon.quota-ok {
+  color: #bebebe;
+}
+
+.quota-icon.quota-warn {
+  color: #f5c211;
+}
+
+.quota-icon.quota-hot {
+  color: #e01b24;
+}
+
+.quota-icon.quota-unknown {
+  color: #6e6e6e;
+}
+
+.quota-icon.quota-stale {
+  color: #6e6e6e;
+}
+
+.quota-pace {
+  font-feature-settings: "tnum";
+  font-size: 10pt;
+  color: #bebebe;
+}
+
+.quota-pace.quota-cool {
+  color: #4a90d9;
+}
+
+.quota-pace.quota-warn {
+  color: #f5c211;
+}
+
+.quota-pace.quota-hot {
+  color: #e01b24;
+}
+
+.quota-pace.quota-unknown {
+  color: #6e6e6e;
+}
+
+.quota-popup-row {
+  font-feature-settings: "tnum";
+}
+
+.quota-popup-forecast {
+  color: #888;
+  font-size: 0.9em;
+}

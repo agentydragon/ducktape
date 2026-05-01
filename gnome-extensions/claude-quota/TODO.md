@@ -1,56 +1,52 @@
 # TODO
 
-## Panel label: show the most urgent / most restrictive limit
+See `DESIGN.md` for the UX design and rationale; this file lists deferred work.
 
-Right now the panel shows both windows (5h and 7d for Claude, primary/secondary for Codex)
-unconditionally. Most of the time the short burst window (5h / primary) is not the binding
-constraint — the weekly one is. The label should surface whichever limit is tightest (highest
-`used_percent`, or closest to reset if both are high), so a quick glance immediately shows the
-real pressure. Only show the non-binding window if it is itself close to exhausted.
+## v0 follow-ups (settings)
 
-Current state observed: 7d at 93%, 5h at 3% — panel still leads with the 5h number.
+The v0 implementation hard-codes the following constants in `extension.js`. Move
+them to a `Gio.Settings` schema (and a preferences UI) once the design has
+shaken out:
 
-## Show staleness indicator when data is old
+- `POLL_INTERVAL_SECONDS`
+- `STALE_AFTER_SECONDS`
+- `PACE_COOL_BELOW`, `PACE_WARN_ABOVE`, `PACE_HOT_ABOVE`
+- `SHORT_WIN_HOT_PERCENT`
+- `STABLE_FRACTION`
+- Toggles: `show-pace-numeral`, `show-percent`, `show-short-window-bar`
 
-If the last successful fetch was more than ~5 minutes ago (e.g. network down, machine
-suspended and resumed), add a visual cue so stale data is not mistaken for live. Options:
-a `⚠` prefix, greyed-out text via CSS (`opacity: 0.5`), or a trailing `·` dot. Record
-`this._lastFetchTime = Date.now()` on each successful parse and check the age in
-`_updateLabel()`.
+## Pace label currently tracks the long window only
 
-## More compact + graphical presentation
+`_renderProvider` shows `formatPace(longPace)` next to the icon. The icon's
+_tint_ already follows the binding window (short overrides long when hot), but
+the numeral always shows the long window's deviation. When the short window is
+the binding one, the numeral and the tint can disagree (icon red, numeral
+shows a small long-window deviation). Fix: track which window's tint won and
+show that window's pace numeral.
 
-Replace raw `%` text in the panel label with a small visual indicator (e.g. a Unicode block
-fill character like `▁▂▃▄▅▆▇█`, or a simple filled/empty bar using `■□`) so quota level is
-legible at a glance without parsing numbers. Something like:
+## v2: burn rate over a rolling history window
 
-```
-C ▆ | O ▂
-```
+The cumulative pace metric (used now) answers "will I make it to reset?". A
+separate "burn rate over the last 30 minutes" metric would answer "am I
+overspending right now?", which is the question worth asking before kicking
+off a heavy task. Requires the extension to keep a small ring buffer of
+`(timestamp, used_percent)` samples and finite-difference them. Surface as an
+extra popup line: `burn (30m): 4%/h → exhausts in 5h12m at this rate`.
 
-where the block height encodes used percentage. The detailed popup can still show exact numbers.
+## Per-model breakdown for Claude
 
-## Use provider icons instead of "C" / "O" text prefixes
+The Claude usage API also returns `seven_day_opus` and `seven_day_sonnet`.
+Hide behind `show-model-breakdown` (default off) so the popup doesn't get
+crowded for users who don't care.
 
-Replace the `C` and `O` letter prefixes in the panel label with the actual brand icons. Both
-providers use SVG logos that are available publicly:
+## Option E (logo-as-pie / water fill)
 
-- Claude: the Anthropic/Claude icon (the angular "A" or Claude face mark)
-- Codex/OpenAI: the OpenAI logo (the swirl/bloom mark)
+`DESIGN.md` lists this as the cutest panel rendering but the most expensive
+to implement (Cairo path-clipped fill on a non-convex SVG mark, illegible
+under ~25% / over ~75% fill). Skip unless someone specifically wants it.
 
-In GNOME Shell extensions, panel icons are typically `St.Icon` with a `gicon` set to a
-`Gio.FileIcon` pointing to an SVG, or embedded as a `St.Icon` with `icon-name` if the icon
-is in the theme. Ship small SVG files in the extension directory and load them via
-`Gio.File.new_for_path(extension.path + '/icons/claude.svg')`. Scale to ~16px.
+## Sparkline of historical pace in the popup
 
-## Align detail popup format between Claude and Codex
-
-Claude popup: `Claude  5h: 3% ↻4h35m  7d: 93% ↻90h48m`
-Codex popup: `Codex  primary: 3% ↻4h35m  secondary: 93% ↻90h48m`
-
-Rename to consistent labels and align spacing so the two rows look parallel. Suggested:
-
-```
-Claude  burst: 3% ↻4h35m   weekly: 93% ↻90h48m
-Codex   burst: 3% ↻4h35m   weekly: 93% ↻90h48m
-```
+Once the rolling history exists for v2 burn rate, render a tiny sparkline of
+"used % over the window so far" beside each row in the popup. Implementation:
+`St.DrawingArea` plus Cairo, ~60×16px.
