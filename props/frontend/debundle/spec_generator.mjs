@@ -49,12 +49,21 @@ function requireValue(argv, index, flag) {
 }
 
 function readVendorChunkMap() {
+  // vendor-chunks.json reaches the spec generator via `data=` on
+  // `:spec_generator_lib`, surfaced in the binary's runfiles tree.
+  // The js_binary launcher chdir's to BAZEL_BINDIR (target config),
+  // but the runfiles live under the *exec*-config bin tree
+  // (`bazel-out/<exec>/bin/.../spec_generator.runfiles/_main/…`).
+  // Walk a small list of candidate roots and pick the first match.
   const workspaceRoot = process.env.BUILD_WORKSPACE_DIRECTORY ?? process.env.BUILD_WORKING_DIRECTORY ?? process.cwd();
-  // The js_binary launcher chdir's to BAZEL_BINDIR; vendor-chunks.json
-  // sits at the workspace-relative path under bazel-bin/.
-  for (const root of [process.env.BAZEL_BINDIR, workspaceRoot, "."]) {
-    if (!root) continue;
-    const candidate = resolve(root, VENDOR_CHUNKS_PATH);
+  const runfilesDir = process.env.RUNFILES_DIR;
+  const runfilesWorkspace = process.env.JS_BINARY__RUNFILES;
+  const candidates = [];
+  if (runfilesWorkspace) candidates.push(resolve(runfilesWorkspace, "_main", VENDOR_CHUNKS_PATH));
+  if (runfilesDir) candidates.push(resolve(runfilesDir, "_main", VENDOR_CHUNKS_PATH));
+  if (process.env.BAZEL_BINDIR) candidates.push(resolve(process.env.BAZEL_BINDIR, VENDOR_CHUNKS_PATH));
+  candidates.push(resolve(workspaceRoot, VENDOR_CHUNKS_PATH));
+  for (const candidate of candidates) {
     try {
       return JSON.parse(readFileSync(candidate, "utf8"));
     } catch (error) {
@@ -62,7 +71,7 @@ function readVendorChunkMap() {
     }
   }
   throw new Error(
-    `Could not read ${VENDOR_CHUNKS_PATH}; ensure //props/frontend/debundle:snapshot has built before invoking the spec generator.`
+    `Could not read ${VENDOR_CHUNKS_PATH}; tried ${candidates.join(", ")}. Ensure //props/frontend/debundle:snapshot has built before invoking the spec generator.`
   );
 }
 
