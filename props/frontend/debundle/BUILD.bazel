@@ -92,6 +92,7 @@ js_run_binary(
     outs = [
         "extracted/asset-summary.json",
         "extracted/js-files.txt",
+        "extracted/vendor-chunks.json",
         "snapshot/index.html",
     ],
     args = [
@@ -105,6 +106,8 @@ js_run_binary(
         "$(execpath extracted/asset-summary.json)",
         "--js-list-out",
         "$(execpath extracted/js-files.txt)",
+        "--vendor-map-out",
+        "$(execpath extracted/vendor-chunks.json)",
     ],
     out_dirs = ["snapshot/dist"],
     tool = ":prepare_snapshot_bin",
@@ -123,6 +126,7 @@ filegroup(
     srcs = [
         "extracted/asset-summary.json",
         "extracted/js-files.txt",
+        "extracted/vendor-chunks.json",
     ],
 )
 
@@ -133,6 +137,7 @@ filegroup(
 js_library(
     name = "spec_generator_lib",
     srcs = ["spec_generator.mjs"],
+    data = ["extracted/vendor-chunks.json"],
 )
 
 js_binary(
