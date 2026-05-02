@@ -87,9 +87,10 @@ fn assert_wrapper_named_from_module_default(fixture: &VendorSwapFixture) {
         "wrapper should not re-emit the original upstream `export {{ ... as default }}` once the wrapper has its own default export:\n{wrapper_source}",
     );
 
-    // Cross-check the resolution manifest: the recorded `generatedWrapperPath`
-    // (workspace-relative) must resolve to the wrapper file the test located
-    // by following the `outputWrapperDir` convention.
+    // Cross-check the resolution manifest: `generatedWrapperPath` is recorded
+    // relative to the manifest's own directory, so resolving it against
+    // `dirname(manifest_path)` must produce the wrapper file's actual
+    // on-disk path.
     let manifest: Value =
         serde_json::from_str(&fs::read_to_string(&fixture.manifest_path).expect("manifest exists"))
             .expect("manifest parses as JSON");
@@ -99,7 +100,11 @@ fn assert_wrapper_named_from_module_default(fixture: &VendorSwapFixture) {
         .and_then(|r| r.get("generatedWrapperPath"))
         .and_then(Value::as_str)
         .expect("manifest records generatedWrapperPath");
-    let resolved = fixture.workspace_root.join(recorded);
+    let manifest_dir = fixture
+        .manifest_path
+        .parent()
+        .expect("manifest path has a parent");
+    let resolved = manifest_dir.join(recorded);
     assert_eq!(
         fs::canonicalize(&resolved).expect("resolved manifest path canonicalizes"),
         fs::canonicalize(&fixture.wrapper_path).expect("wrapper path canonicalizes"),
@@ -113,7 +118,6 @@ struct VendorSwapFixture {
     chunk_path: String,
     wrapper_path: PathBuf,
     manifest_path: PathBuf,
-    workspace_root: PathBuf,
     _root: TempDir,
 }
 
@@ -125,10 +129,11 @@ fn run_named_from_module_default_fixture(upstream_source: &str) -> VendorSwapFix
 
     let root =
         TempDir::with_prefix("vendor-swap-named-from-module-default-").expect("create tempdir");
-    // Mirror the gaffer layout: the manifest's `generatedWrapperPath` is a
-    // workspace-relative `vendors/generated/<chunk_id>/<entry>` string, and
-    // `outputWrapperDir` must be the matching `<workspace>/vendors/generated`
-    // for the on-disk file and the recorded path to agree.
+    // Output paths the binary writes to are absolute (the new contract — no
+    // workspace lookup in the binary). The vendor manifest lives at
+    // `<root>/workspace/vendors/manifest.json`; wrappers go to its sibling
+    // `generated/<chunk_id>/<entry>`, so manifest-relative emission produces
+    // `generated/<chunk_id>/<entry>` strings.
     let workspace_root = root.path().join("workspace");
     let extracted_root = workspace_root.join("extracted");
     let snapshot_root = workspace_root.join("snapshot");
@@ -190,7 +195,6 @@ fn run_named_from_module_default_fixture(upstream_source: &str) -> VendorSwapFix
         chunk_path: CHUNK_PATH.to_string(),
         wrapper_path,
         manifest_path,
-        workspace_root,
         _root: root,
     }
 }

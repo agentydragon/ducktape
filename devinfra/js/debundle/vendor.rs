@@ -9,7 +9,7 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 use artifact::{
-    JsPipelineArtifact, get_chunk_entry_path, list_chunk_file_paths,
+    JsPipelineArtifact, get_chunk_entry_path, list_chunk_file_paths, manifest_relative_path,
     resolve_artifact_import_reference, resolve_artifact_source_import_reference, split_posix_path,
 };
 use js_ast::{ParsedJsModule, emit_js_module, parse_js_module, str_value};
@@ -338,7 +338,7 @@ pub fn swap_vendor_chunks(
         let upstream_code = fs::read_to_string(&upstream_path)
             .with_context(|| format!("reading {}", upstream_path.display()))?;
         let vendor_exports = collect_exported_names(&entry_ast.module, false);
-        let mut generated_wrapper_path = None::<String>;
+        let mut generated_wrapper_path = None::<PathBuf>;
 
         match value_str(op, "wrapperShape") {
             Some("named-from-default") => {
@@ -464,10 +464,12 @@ pub fn swap_vendor_chunks(
                 Value::String(wrapper_shape.to_string()),
             );
         }
-        if let Some(path) = &generated_wrapper_path {
+        if let Some(path) = &generated_wrapper_path
+            && let Some(manifest_path) = options.output_manifest_path.as_deref()
+        {
             swap_entry.insert(
                 "generatedWrapperPath".to_string(),
-                Value::String(path.clone()),
+                Value::String(manifest_relative_path(manifest_path, path)),
             );
         }
         let mut annotation = artifact
@@ -506,8 +508,13 @@ pub fn swap_vendor_chunks(
                 Value::String(wrapper_shape.to_string()),
             );
         }
-        if let Some(path) = generated_wrapper_path {
-            resolution.insert("generatedWrapperPath".to_string(), Value::String(path));
+        if let Some(path) = generated_wrapper_path
+            && let Some(manifest_path) = options.output_manifest_path.as_deref()
+        {
+            resolution.insert(
+                "generatedWrapperPath".to_string(),
+                Value::String(manifest_relative_path(manifest_path, &path)),
+            );
         }
         resolutions.insert(chunk_path.to_string(), Value::Object(resolution));
     }
@@ -1298,18 +1305,20 @@ fn write_wrapper_if_requested(
     chunk_id: &str,
     entry_file: &str,
     source: &str,
-) -> Result<Option<String>> {
-    let wrapper_rel_path = format!("vendors/generated/{chunk_id}/{entry_file}");
-    if write && let Some(output_wrapper_dir) = output_wrapper_dir {
-        let wrapper_abs_path = output_wrapper_dir
-            .join(split_posix_path(chunk_id))
-            .join(split_posix_path(entry_file));
+) -> Result<Option<PathBuf>> {
+    let Some(output_wrapper_dir) = output_wrapper_dir else {
+        return Ok(None);
+    };
+    let wrapper_abs_path = output_wrapper_dir
+        .join(split_posix_path(chunk_id))
+        .join(split_posix_path(entry_file));
+    if write {
         if let Some(parent) = wrapper_abs_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(wrapper_abs_path, source)?;
+        fs::write(&wrapper_abs_path, source)?;
     }
-    Ok(Some(wrapper_rel_path))
+    Ok(Some(wrapper_abs_path))
 }
 
 fn set_diff(left: &BTreeSet<String>, right: &BTreeSet<String>) -> BTreeSet<String> {

@@ -5,8 +5,8 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
 use artifact::{
-    JsPipelineArtifact, chunk_id_for_js_path, materialize_artifact_scripts, path_to_posix,
-    split_posix_path,
+    JsPipelineArtifact, chunk_id_for_js_path, manifest_relative_path, materialize_artifact_scripts,
+    path_to_posix, split_posix_path,
 };
 use rewrite_specifiers::runtime_js_href;
 
@@ -96,14 +96,16 @@ pub fn emit_browser_harness(
                 .clone(),
         }))? + "\n",
     )?;
+    let manifest_path = options.out_dir.join("manifest.json");
+    let rel = |target: &Path| manifest_relative_path(&manifest_path, target);
     let manifest = HarnessManifest {
         schema_version: 1,
-        source_html: path_to_posix(&source_html_path),
-        snapshot_root: path_to_posix(&options.snapshot_root),
-        asset_summary_path: path_to_posix(&options.asset_summary_path),
-        chunks_manifest_path: path_to_posix(&options.out_dir.join("chunks.manifest.json")),
-        runtime_root: path_to_posix(&options.out_dir),
-        out_dir: path_to_posix(&options.out_dir),
+        source_html: rel(&source_html_path),
+        snapshot_root: rel(&options.snapshot_root),
+        asset_summary_path: rel(&options.asset_summary_path),
+        chunks_manifest_path: rel(&options.out_dir.join("chunks.manifest.json")),
+        runtime_root: rel(&options.out_dir),
+        out_dir: rel(&options.out_dir),
         copied_assets,
         entry_scripts,
         module_preloads: preload_entries
@@ -111,13 +113,13 @@ pub fn emit_browser_harness(
             .map(|entry| entry.path.clone())
             .collect(),
         generated: HarnessGeneratedManifest {
-            bootstrap: path_to_posix(&options.out_dir.join("bootstrap.js")),
-            chunks_manifest: path_to_posix(&options.out_dir.join("chunks.manifest.json")),
-            index_html: path_to_posix(&options.out_dir.join("index.html")),
+            bootstrap: rel(&options.out_dir.join("bootstrap.js")),
+            chunks_manifest: rel(&options.out_dir.join("chunks.manifest.json")),
+            index_html: rel(&options.out_dir.join("index.html")),
         },
     };
     fs::write(
-        options.out_dir.join("manifest.json"),
+        &manifest_path,
         serde_json::to_string_pretty(&manifest)? + "\n",
     )?;
     fs::write(

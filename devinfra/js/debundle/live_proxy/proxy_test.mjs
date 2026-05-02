@@ -133,16 +133,20 @@ test("loadLiveProxyConfiguration falls back to SOURCE.json for the target base U
   assert.equal(config.bootstrapUrl, "/_debundle/live/source-fallback/app/bootstrap.js");
 });
 
-test("loadLiveProxyConfiguration resolves manifest-relative workspace paths from an absolute manifest location", () => {
+test("loadLiveProxyConfiguration resolves manifest-dir-relative paths from an absolute manifest location", () => {
   const fixture = writeBaseLiveProxyFixture("debundle-live-proxy-runfiles-manifest-", {
     sourceBaseUrl: "https://app.example.com",
     uiVersion: "runfiles",
   });
   writeJsonFile(fixture.assetSummaryPath, {});
+  // The pipeline emits paths relative to the manifest's own directory.
+  // appManifest sits at <root>/app/manifest.json; outDir is the manifest's
+  // own dir, asset-summary.json is the parent dir, sourceHtml is in the
+  // sibling source/ tree.
   writeJsonFile(fixture.appManifestPath, {
-    assetSummaryPath: "asset-summary.json",
-    outDir: "app",
-    sourceHtml: "source/index.html",
+    assetSummaryPath: "../asset-summary.json",
+    outDir: ".",
+    sourceHtml: "../source/index.html",
     uiVersion: "runfiles",
   });
 

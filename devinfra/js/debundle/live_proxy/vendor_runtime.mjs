@@ -14,9 +14,10 @@ export function loadVendorResolutionManifest(manifestPath) {
   return raw.resolutions ?? {};
 }
 
-export function loadVendorRuntimeIndex({ manifestPath, outRoot, packageRoots, packagesRoot }) {
+export function loadVendorRuntimeIndex({ manifestPath, packageRoots, packagesRoot }) {
   const resolutions = loadVendorResolutionManifest(manifestPath);
   const byChunkId = new Map();
+  const manifestDir = dirname(manifestPath);
   for (const [resolutionChunkPath, entry] of Object.entries(resolutions)) {
     const chunkPath = entry.chunkPath ?? resolutionChunkPath;
     if (!entry.package || !entry.subpath || !entry.version) {
@@ -24,9 +25,9 @@ export function loadVendorRuntimeIndex({ manifestPath, outRoot, packageRoots, pa
     }
     const chunkId = chunkIdForChunkPath(chunkPath);
     const entryFile = resolveVendorManifestEntryFile(entry, { chunkPath, manifestPath });
-    const filePath = entry.generatedWrapperPath
-      ? resolve(outRoot ?? dirname(dirname(manifestPath)), entry.generatedWrapperPath)
-      : resolvePackageSubpath(entry.package, entry.subpath, { packageRoots, packagesRoot });
+    const wrapperAbsPath = entry.generatedWrapperPath ? resolve(manifestDir, entry.generatedWrapperPath) : null;
+    const filePath =
+      wrapperAbsPath ?? resolvePackageSubpath(entry.package, entry.subpath, { packageRoots, packagesRoot });
     const mountRoot = resolveMountRoot(filePath, entryFile);
     const mountedEntryFile = normalizeMountedRelativePath(relative(mountRoot, filePath));
     byChunkId.set(chunkId, {
@@ -39,9 +40,9 @@ export function loadVendorRuntimeIndex({ manifestPath, outRoot, packageRoots, pa
       package: entry.package,
       subpath: entry.subpath,
       version: entry.version,
-      ...(entry.generatedWrapperPath
+      ...(wrapperAbsPath
         ? {
-            generatedWrapperPath: resolve(outRoot ?? dirname(dirname(manifestPath)), entry.generatedWrapperPath),
+            generatedWrapperPath: wrapperAbsPath,
             wrapperShape: entry.wrapperShape ?? "generated-wrapper",
           }
         : {}),

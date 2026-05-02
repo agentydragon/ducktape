@@ -13,11 +13,10 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use artifact::{
     ArtifactCounts, ArtifactManifest, ChunkFileRecord, ChunkLogicalModulesSummary, ChunkMetadata,
     FileMetadata, JsChunk, JsFile, JsPipelineArtifact, RootLogicalModulesSummary,
-    SelectedModuleLowering, get_chunk_entry_path, normalize_relative_path, posix_join,
-    posix_relative,
+    SelectedModuleLowering, get_chunk_entry_path, manifest_relative_path, normalize_relative_path,
+    path_to_posix, posix_join, posix_relative,
 };
 use js_ast::{ParsedJsModule, set_str_value, str_value};
-use write_tree::resolve_workspace_path;
 
 const LOWERING_FILE_PRAGMA: &str =
     "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";
@@ -150,9 +149,8 @@ pub fn materialize_logical_modules(
 
     let mut report_out_dir = None;
     if let Some(dir) = &options.report_out_dir {
-        let resolved = resolve_workspace_path(dir)?;
-        prepare_output_dir(&resolved, options.force)?;
-        report_out_dir = Some(resolved);
+        prepare_output_dir(dir, options.force)?;
+        report_out_dir = Some(dir.clone());
     }
 
     if options.prune_other_chunks {
@@ -380,18 +378,23 @@ pub fn materialize_logical_modules(
         chunks: reports,
         duration_ms: started.elapsed().as_secs_f64() * 1000.0,
         kind: "js.logical_module_manifest",
-        report_out_dir: report_out_dir
-            .as_ref()
-            .map(|path| path.to_string_lossy().replace('\\', "/")),
+        report_out_dir: report_out_dir.as_ref().map(|path| {
+            options
+                .report_summary_path
+                .as_ref()
+                .map_or_else(|| path_to_posix(path), |s| manifest_relative_path(s, path))
+        }),
         schema_version: 1,
     };
 
     if let Some(summary_path) = options.report_summary_path {
-        let resolved = resolve_workspace_path(&summary_path)?;
-        if let Some(parent) = resolved.parent() {
+        if let Some(parent) = summary_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(resolved, serde_json::to_string_pretty(&manifest)? + "\n")?;
+        fs::write(
+            summary_path,
+            serde_json::to_string_pretty(&manifest)? + "\n",
+        )?;
     }
     Ok(manifest)
 }

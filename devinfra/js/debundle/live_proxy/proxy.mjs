@@ -1,5 +1,5 @@
 import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { extname, isAbsolute, join, normalize, resolve, sep } from "node:path";
+import { dirname, extname, isAbsolute, join, normalize, resolve } from "node:path";
 import { createServer as createHttpsServer } from "node:https";
 import { Agent as HttpsAgent } from "node:https";
 
@@ -141,7 +141,6 @@ export function loadLiveProxyConfiguration(rawOptions) {
     : join(appRoot, "vendors", "manifest.json");
   const vendorRuntimeIndex = loadVendorRuntimeIndex({
     manifestPath: vendorManifestPath,
-    outRoot: appRoot,
     ...(options.packageRoots ? { packageRoots: options.packageRoots } : {}),
     ...(options.packagesRoot ? { packagesRoot: options.packagesRoot } : {}),
   });
@@ -200,28 +199,11 @@ function resolveAppBaseUrl({ appManifest, assetSummary, manifestContext }) {
   return sourceMetadata.baseUrl ?? null;
 }
 
-function resolveManifestReferencedPath(value, { appManifest, appManifestPath }) {
+function resolveManifestReferencedPath(value, { appManifestPath }) {
   if (isAbsolute(value)) {
     return resolvePath(value);
   }
-  const workspaceRoot = deriveManifestWorkspaceRoot(appManifestPath, appManifest);
-  if (workspaceRoot) {
-    return resolve(workspaceRoot, value);
-  }
-  return resolveWorkspacePath(value);
-}
-
-function deriveManifestWorkspaceRoot(appManifestPath, appManifest) {
-  if (!appManifestPath || !appManifest?.outDir) {
-    return null;
-  }
-  const normalizedManifestPath = resolvePath(appManifestPath).split(sep).join("/");
-  const normalizedOutDir = normalizeRelativePath(appManifest.outDir);
-  const suffix = `/${normalizedOutDir}/manifest.json`;
-  if (!normalizedManifestPath.endsWith(suffix)) {
-    return null;
-  }
-  return normalizedManifestPath.slice(0, -suffix.length);
+  return resolve(dirname(appManifestPath), value);
 }
 
 function normalizeRelativePath(value) {
