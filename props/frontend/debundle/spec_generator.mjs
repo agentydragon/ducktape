@@ -192,7 +192,7 @@ function buildVendorOps(vendorChunkMap) {
 function buildPipeline(outRoot) {
   return [
     {
-      id: "materialize_logical_modules",
+      id: "materialize_logical_module_files",
       operation: "materialize_logical_modules",
       args: {
         chunkIds: ["dist/main"],
@@ -213,9 +213,9 @@ function buildPipeline(outRoot) {
         write: true,
       },
     },
-    { id: "rewrite_chunk_entry_specifiers", operation: "rewrite_chunk_entry_specifiers" },
+    { id: "realize_chunk_entry_specifiers", operation: "rewrite_chunk_entry_specifiers" },
     {
-      id: "emit_browser_harness",
+      id: "emit_browser_test_app",
       operation: "emit_browser_harness",
       args: {
         assetSummaryPath: ASSET_SUMMARY_PATH,
