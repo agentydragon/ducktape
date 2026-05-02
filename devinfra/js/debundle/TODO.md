@@ -110,6 +110,59 @@ smaller minimised e2e under `devinfra/js/debundle/e2e/`) rather than
 only fixing Tana behind the private repo. The latter loses the
 public-CI signal and the public-bug-report leverage.
 
+## Import-binding collisions after rename
+
+When `define_logical_module` renames an exported scrambled symbol on a
+materialized module, the import-rewrite in consumer chunks emits the new
+export name aliased back to the original local binding (the scrambled
+name the consumer used in source). If the consumer file _also_ imports a
+distinct scrambled symbol — from a different module — that happens to
+share the same scrambled name, the local binding collides and the file
+fails to parse with `SyntaxError: Identifier '<X>' has already been
+declared`.
+
+Tana's `static/index-DI2GynTv/entry.js` currently has 429 such collisions
+across the renamed-symbol set, with the canonical pattern:
+
+```js
+import { aH } from "./ai/mcp/prompting_runtime.js";
+import { buildTaskContextPrompt as aH } from "./ai/mcp/prompting/templates.js";
+```
+
+(plus a re-export `s3t as aH` further down). Two distinct source modules
+both used the scrambled letter pair `aH` for unrelated symbols; the
+mangler-rolled chunk that became `entry.js` resolved that internally,
+but the post-debundle import-rewrite re-introduces the clash because it
+preserves the consumer-side local-binding name verbatim.
+
+**Minimal fix (do soon, separate PR):** when emitting a consumer import
+of a renamed symbol, scan the file's existing import bindings; if the
+alias-back to the original scrambled local name would collide with an
+already-bound local from another import (or with an existing top-level
+declaration / re-export name), mint a fresh local name (e.g., `aH$1`,
+`aH$2`, ...) and rewrite all references to that local in the consumer
+body to use the fresh name. Lives at the seam between rename and
+import-statement rewrite in `logical_modules.rs` / `pipeline.rs`. This
+unblocks the Tana smoke without doing the larger fold below.
+
+**Future — propagate readable rename across consumers:** the minimal
+fix above keeps the consumer-side body referring to the original
+scrambled name (just possibly suffixed). A nicer endpoint is to fold
+the new readable name through every consumer too: re-emit the
+import as plain `import { buildTaskContextPrompt }` (no alias) and
+rename every reference in the consumer body from the scrambled letter
+pair to `buildTaskContextPrompt`. That's pure readability gain across
+the whole tree once a rename lands, but it interacts with consumer
+local-scope name collisions (a consumer that already has its own
+`buildTaskContextPrompt` declaration must keep an alias) and with
+chains of re-exports. Treat as a follow-up to the minimal fix — both
+phases use the same scope-tracking infrastructure.
+
+Until the minimal fix lands, `//tana/re/web/live_proxy:load_78d928dca7`
+(Tana smoke) is expected to fail at JS parse on `entry.js`, blocking
+the unauth-view selector swap and the no-console-errors /
+no-failed-asset-requests tightening (otherwise gated A4 work).
+
 ## RE coverage side-output
 
 Re-introduce the deleted `extract_scrambled_identifier_frequencies` analysis
