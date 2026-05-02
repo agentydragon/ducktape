@@ -1,6 +1,6 @@
 use std::path::Path;
 
-pub(crate) fn resolve_dep(source_path: &str, spec: &str) -> Option<String> {
+pub fn resolve_dep(source_path: &str, spec: &str) -> Option<String> {
     if !(spec.starts_with("./") || spec.starts_with("../")) {
         return None;
     }

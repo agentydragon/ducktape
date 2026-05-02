@@ -9,11 +9,11 @@ use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
-use crate::artifact::{
+use artifact::{
     JsPipelineArtifact, get_chunk_entry_path, list_chunk_file_paths,
     resolve_artifact_import_reference, resolve_artifact_source_import_reference, split_posix_path,
 };
-use crate::js_ast::{ParsedJsModule, emit_js_module, parse_js_module, str_value};
+use js_ast::{ParsedJsModule, emit_js_module, parse_js_module, str_value};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct VendorAnnotationsManifest {
@@ -621,10 +621,10 @@ fn validate_mark_vendor_op(op: &Value) -> Result<()> {
             required_str(op, "id")?
         );
     }
-    if !op
+    if op
         .get("evidence")
         .and_then(Value::as_array)
-        .is_some_and(|evidence| !evidence.is_empty())
+        .is_none_or(|evidence| evidence.is_empty())
     {
         bail!(
             "mark_vendor operation {} requires a non-empty evidence array",
@@ -725,7 +725,6 @@ impl VisitMut for VendorImportRenamer<'_> {
             &self.caller_chunk_id,
             &self.caller_file,
         )
-        .map(|(chunk_id, file)| (chunk_id, file))
         .or_else(|| {
             resolve_artifact_source_import_reference(
                 self.artifact,
@@ -1180,7 +1179,7 @@ fn generate_named_from_module_default_wrapper(
                                 declare: false,
                                 function: function.function.clone(),
                             }))));
-                            body.push(const_alias(default_local_name, &ident.sym.to_string()));
+                            body.push(const_alias(default_local_name, ident.sym.as_ref()));
                         } else {
                             bail!(
                                 "swapVendorChunks operation {op_id} named-from-module-default: anonymous default function is unsupported by Rust AST wrapper"
@@ -1194,7 +1193,7 @@ fn generate_named_from_module_default_wrapper(
                                 declare: false,
                                 class: class.class.clone(),
                             }))));
-                            body.push(const_alias(default_local_name, &ident.sym.to_string()));
+                            body.push(const_alias(default_local_name, ident.sym.as_ref()));
                         } else {
                             bail!(
                                 "swapVendorChunks operation {op_id} named-from-module-default: anonymous default class is unsupported by Rust AST wrapper"

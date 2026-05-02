@@ -5,28 +5,17 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 
-use crate::js_ast::{ParsedJsModule, emit_js_module, parse_js_module};
+use js_ast::{ParsedJsModule, emit_js_module, parse_js_module};
 
 pub const CANONICAL_CHUNK_ENTRY_FILE: &str = "entry.js";
 
+#[derive(Default)]
 pub struct JsPipelineArtifact {
     pub chunk_order: Vec<String>,
     pub chunks: BTreeMap<String, JsChunk>,
     pub root_manifest: Option<ArtifactManifest>,
     pub chunk_manifests: BTreeMap<String, ChunkManifest>,
     pub vendor_annotations: BTreeMap<String, serde_json::Value>,
-}
-
-impl Default for JsPipelineArtifact {
-    fn default() -> Self {
-        Self {
-            chunk_order: Vec::new(),
-            chunks: BTreeMap::new(),
-            root_manifest: None,
-            chunk_manifests: BTreeMap::new(),
-            vendor_annotations: BTreeMap::new(),
-        }
-    }
 }
 
 pub struct JsChunk {

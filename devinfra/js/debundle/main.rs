@@ -1,6 +1,6 @@
 use std::process::ExitCode;
 
-use debundle_rust::pipeline::{
+use pipeline::{
     self, ParsedTransformCli, parse_transform_cli_args, render_transform_summary, run_transform_cli,
 };
 

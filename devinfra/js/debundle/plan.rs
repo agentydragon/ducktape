@@ -4,11 +4,11 @@ use petgraph::algo::tarjan_scc;
 use petgraph::graph::DiGraph;
 use serde::Serialize;
 
-use crate::owner_graph::OwnerGraph;
-use crate::pipeline::{
+use analysis_summary::{
     AnalysisSummary, ModuleAnalysis, OwnerAccessRecord, OwnerAnalysis, OwnerDependencyEdge,
     SideEffectAnalysis,
 };
+use owner_graph::OwnerGraph;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1312,7 +1312,7 @@ impl PlannerCandidateDebug {
 mod tests {
     use std::collections::{HashMap, HashSet};
 
-    use crate::pipeline::{AnalysisSummary, ModuleAnalysis};
+    use analysis_summary::{AnalysisSummary, ModuleAnalysis};
 
     use super::{
         ClosureCandidate, build_shell_blocking_reasons, pack_candidates,

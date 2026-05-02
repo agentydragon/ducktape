@@ -1,0 +1,45 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_test")
+
+filegroup(
+    name = "serve_entry_point",
+    srcs = ["serve.mjs"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "browser_load_test_entry_point",
+    srcs = ["browser_load_test.mjs"],
+    visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "libs",
+    srcs = [
+        "io.mjs",
+        "package_tree.mjs",
+        "parser_options.mjs",
+        "proxy.mjs",
+        "vendor_runtime.mjs",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:node_modules/http-mitm-proxy",
+        "//:node_modules/node-forge",
+    ],
+)
+
+js_binary(
+    name = "serve_bin",
+    data = [":libs"],
+    entry_point = ":serve_entry_point",
+    visibility = ["//visibility:public"],
+)
+
+js_test(
+    name = "proxy_test",
+    data = [
+        "test_helpers.mjs",
+        ":libs",
+    ],
+    entry_point = "proxy_test.mjs",
+)

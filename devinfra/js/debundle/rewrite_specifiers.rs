@@ -7,11 +7,11 @@ use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
-use crate::artifact::{
+use artifact::{
     JsFile, JsPipelineArtifact, get_chunk_entry_path, posix_join, posix_relative,
     resolve_artifact_import_reference, resolve_artifact_source_import_reference,
 };
-use crate::js_ast::{set_str_value, str_value};
+use js_ast::{set_str_value, str_value};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RewriteChunkEntrySpecifiersManifest {
@@ -118,10 +118,7 @@ pub fn runtime_js_href(
     let entry_path = runtime_root
         .join(chunk_id.split('/').collect::<std::path::PathBuf>())
         .join(entry_file.split('/').collect::<std::path::PathBuf>());
-    Ok(crate::artifact::relative_module_specifier(
-        out_dir,
-        &entry_path,
-    ))
+    Ok(artifact::relative_module_specifier(out_dir, &entry_path))
 }
 
 fn should_rewrite_file(file: &JsFile) -> bool {
@@ -210,13 +207,12 @@ impl VisitMut for RuntimeSourceRewriter<'_> {
     }
 
     fn visit_mut_call_expr(&mut self, node: &mut CallExpr) {
-        if matches!(node.callee, Callee::Import(_)) {
-            if let Some(first) = node.args.first_mut()
-                && first.spread.is_none()
-                && let Expr::Lit(Lit::Str(string)) = &mut *first.expr
-            {
-                self.rewrite_str(string);
-            }
+        if matches!(node.callee, Callee::Import(_))
+            && let Some(first) = node.args.first_mut()
+            && first.spread.is_none()
+            && let Expr::Lit(Lit::Str(string)) = &mut *first.expr
+        {
+            self.rewrite_str(string);
         }
         node.visit_mut_children_with(self);
     }

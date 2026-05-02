@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-use crate::artifact::{
+use artifact::{
     JsPipelineArtifact, chunk_id_for_js_path, materialize_artifact_scripts, path_to_posix,
     split_posix_path,
 };
-use crate::rewrite_specifiers::runtime_js_href;
+use rewrite_specifiers::runtime_js_href;
 
 pub struct EmitBrowserHarnessOptions {
     pub asset_summary_path: PathBuf,
@@ -410,7 +410,7 @@ fn normalize_url_path(url: &str) -> Result<String> {
         .unwrap_or(without_query)
         .strip_prefix("./")
         .unwrap_or(without_query.strip_prefix('/').unwrap_or(without_query));
-    crate::artifact::normalize_relative_path(stripped)
+    ::artifact::normalize_relative_path(stripped)
 }
 
 fn prepare_harness_output_dir(out_dir: &Path, force: bool) -> Result<()> {

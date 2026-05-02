@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 
-use crate::artifact::{JsPipelineArtifact, list_chunk_file_paths, split_posix_path};
-use crate::js_ast::emit_js_module;
+use artifact::{JsPipelineArtifact, list_chunk_file_paths, split_posix_path};
+use js_ast::emit_js_module;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

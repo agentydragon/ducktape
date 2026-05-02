@@ -6,18 +6,19 @@ use std::time::Instant;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-use crate::artifact::{JsPipelineArtifact, compute_js_asts, load_js_chunks};
-use crate::emit_harness::{EmitBrowserHarnessOptions, emit_browser_harness};
-use crate::logical_modules::{MaterializeLogicalModulesOptions, materialize_logical_modules};
-use crate::normalize::normalize_js_chunks;
-use crate::owner_graph::{build_owner_graph, build_program_ir};
-use crate::plan::{PlanSummaryV2, build_plan};
-use crate::program_analysis::analyze_modules;
-use crate::rewrite_specifiers::rewrite_chunk_entry_specifiers;
-use crate::vendor::{
+use analysis_summary::AnalysisSummary;
+use artifact::{JsPipelineArtifact, compute_js_asts, load_js_chunks};
+use emit_harness::{EmitBrowserHarnessOptions, emit_browser_harness};
+use logical_modules::{MaterializeLogicalModulesOptions, materialize_logical_modules};
+use normalize::normalize_js_chunks;
+use owner_graph::{build_owner_graph, build_program_ir};
+use plan::{PlanSummaryV2, build_plan};
+use program_analysis::analyze_modules;
+use rewrite_specifiers::rewrite_chunk_entry_specifiers;
+use vendor::{
     SwapVendorOptions, apply_vendor_annotations, rename_vendor_exports, swap_vendor_chunks,
 };
-use crate::write_tree::write_js_tree;
+use write_tree::write_js_tree;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransformCli {
@@ -120,65 +121,6 @@ struct WriteJsTreeArgs {
 #[derive(Default)]
 struct TransformState {
     artifact: JsPipelineArtifact,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct AnalysisSummary {
-    pub modules: Vec<ModuleAnalysis>,
-    pub owners: Vec<OwnerAnalysis>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ModuleAnalysis {
-    pub member_names: Vec<String>,
-    pub source_path: String,
-    pub import_specifiers: Vec<String>,
-    pub resolved_deps: Vec<String>,
-    pub export_count: usize,
-    pub has_top_level_effects: bool,
-    pub owner_ids: Vec<String>,
-    pub owner_semantic_id_by_member_name: HashMap<String, String>,
-    pub program_item_ids: Vec<String>,
-    pub side_effect_ids: Vec<String>,
-    pub replayable_side_effect_ids: Vec<String>,
-    pub runtime_sensitive_effects: bool,
-    pub side_effect_touched_owner_ids: Vec<String>,
-    pub side_effect_records: Vec<SideEffectAnalysis>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct SideEffectAnalysis {
-    pub id: String,
-    pub replayable: bool,
-    pub runtime_sensitive: bool,
-    pub touched_names: Vec<String>,
-    pub touched_owner_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct OwnerAnalysis {
-    pub id: String,
-    pub module_id: String,
-    pub member_name: String,
-    pub line: usize,
-    pub dep_edges: Vec<OwnerDependencyEdge>,
-    pub accesses: Vec<OwnerAccessRecord>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct OwnerAccessRecord {
-    pub name: String,
-    pub access_kind: String,
-    pub phase: String,
-    pub owner_id: Option<String>,
-    pub kind: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct OwnerDependencyEdge {
-    pub to_owner_id: String,
-    pub phase: String,
-    pub access_kind: String,
 }
 
 pub fn transform_cli_help() -> &'static str {
@@ -545,7 +487,7 @@ fn analyze_artifact(artifact: &JsPipelineArtifact) -> AnalysisSummary {
         let Some(chunk) = artifact.chunks.get(&chunk_id) else {
             continue;
         };
-        let Some(entry_file) = crate::artifact::get_chunk_entry_path(artifact, &chunk_id) else {
+        let Some(entry_file) = ::artifact::get_chunk_entry_path(artifact, &chunk_id) else {
             continue;
         };
         let Some(file) = chunk.files.get(&entry_file) else {
@@ -572,7 +514,7 @@ fn analyze_artifact(artifact: &JsPipelineArtifact) -> AnalysisSummary {
     analyze_modules(modules, &export_counts)
 }
 
-fn count_export_module_decls(parsed: &crate::js_ast::ParsedJsModule) -> usize {
+fn count_export_module_decls(parsed: &js_ast::ParsedJsModule) -> usize {
     parsed
         .module
         .body
@@ -657,7 +599,7 @@ fn write_planner_snapshot(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::artifact::parse_js_list;
+    use artifact::parse_js_list;
 
     #[test]
     fn parse_js_list_rejects_duplicates() {

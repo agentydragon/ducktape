@@ -12,7 +12,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tempfile::TempDir;
 
-const DEBUNDLER_RLOCATION: &str = "_main/devinfra/js/debundle/debundle_rust";
+const DEBUNDLER_RLOCATION: &str = "_main/devinfra/js/debundle/debundle";
 const NODE_RLOCATION: &str = "nodejs_linux_amd64/bin/node";
 
 static MODULE_EXPORT_PROBE_COUNTER: AtomicUsize = AtomicUsize::new(0);

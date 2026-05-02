@@ -4,16 +4,16 @@ use swc_common::Spanned;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
-use crate::artifact::{
-    ChunkCounts, ChunkFileRecord, ChunkManifest, ExportAliasRecord, ImportRecord,
-    ImportSpecifierRecord, KeptTopLevelDeclarationRecord, ParserOptionsRecord,
-};
-use crate::js_ast::{ParsedJsModule, line_for_span, str_value};
-use crate::module_path::resolve_dep;
-use crate::pipeline::{
+use analysis_summary::{
     AnalysisSummary, ModuleAnalysis, OwnerAccessRecord, OwnerAnalysis, OwnerDependencyEdge,
     SideEffectAnalysis,
 };
+use artifact::{
+    ChunkCounts, ChunkFileRecord, ChunkManifest, ExportAliasRecord, ImportRecord,
+    ImportSpecifierRecord, KeptTopLevelDeclarationRecord, ParserOptionsRecord,
+};
+use js_ast::{ParsedJsModule, line_for_span, str_value};
+use module_path::resolve_dep;
 
 pub struct ProgramAnalysis {
     pub imports: Vec<ImportRecord>,

@@ -10,13 +10,13 @@ use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
-use crate::artifact::{
+use artifact::{
     ArtifactCounts, ArtifactManifest, ChunkFileRecord, ChunkMetadata, FileMetadata, JsChunk,
     JsFile, JsPipelineArtifact, get_chunk_entry_path, normalize_relative_path, posix_join,
     posix_relative,
 };
-use crate::js_ast::{ParsedJsModule, set_str_value, str_value};
-use crate::write_tree::resolve_workspace_path;
+use js_ast::{ParsedJsModule, set_str_value, str_value};
+use write_tree::resolve_workspace_path;
 
 const LOWERING_FILE_PRAGMA: &str =
     "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";
@@ -786,6 +786,7 @@ fn close_module_bindings_over_dependencies(
         .iter()
         .map(|decl| (decl.ordinal, decl))
         .collect::<BTreeMap<_, _>>();
+    #[allow(clippy::needless_range_loop)]
     for module_index in 0..module_plans.len() {
         let mut queue = module_plans[module_index]
             .bindings
@@ -1747,15 +1748,12 @@ fn entry_exports_for_moved_bindings(
 ) -> Vec<ModuleItem> {
     let mut exports = BTreeMap::<String, String>::new();
     for item in &runtime_ast.module.body {
-        match item {
-            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
-                for name in declaration_names(&export_decl.decl) {
-                    if binding_assignment.contains_key(&name) {
-                        exports.insert(name.clone(), name);
-                    }
+        if let ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) = item {
+            for name in declaration_names(&export_decl.decl) {
+                if binding_assignment.contains_key(&name) {
+                    exports.insert(name.clone(), name);
                 }
             }
-            _ => {}
         }
     }
     if exports.is_empty() {
@@ -1806,7 +1804,7 @@ fn update_root_manifest(
             chunks: artifact
                 .list_chunk_ids()
                 .into_iter()
-                .map(|chunk_id| crate::artifact::ArtifactChunkRecord {
+                .map(|chunk_id| ::artifact::ArtifactChunkRecord {
                     source_path: artifact
                         .chunk_source_path(&chunk_id)
                         .unwrap_or_else(|| format!("{chunk_id}.js")),

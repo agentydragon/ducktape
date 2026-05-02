@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use petgraph::graph::DiGraph;
 use serde::Serialize;
 
-use crate::ast_ir::{ModuleIr, ProgramIr};
-use crate::module_path::resolve_dep;
-use crate::pipeline::AnalysisSummary;
+use analysis_summary::AnalysisSummary;
+use ast_ir::{ModuleIr, ProgramIr};
+use module_path::resolve_dep;
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub enum EdgeKind {
