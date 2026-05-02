@@ -6,14 +6,10 @@ use std::time::Instant;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-use analysis_summary::AnalysisSummary;
 use artifact::{JsPipelineArtifact, compute_js_asts, load_js_chunks};
 use emit_harness::{EmitBrowserHarnessOptions, emit_browser_harness};
 use logical_modules::{MaterializeLogicalModulesOptions, materialize_logical_modules};
 use normalize::normalize_js_chunks;
-use owner_graph::{build_owner_graph, build_program_ir};
-use plan::{PlanSummaryV2, build_plan};
-use program_analysis::analyze_modules;
 use rewrite_specifiers::rewrite_chunk_entry_specifiers;
 use vendor::{
     SwapVendorOptions, apply_vendor_annotations, rename_vendor_exports, swap_vendor_chunks,
@@ -332,7 +328,6 @@ fn run_transform_stage(
         "emit_browser_harness" => {
             let args: EmitBrowserHarnessArgs =
                 serde_json::from_value(args.context("emit_browser_harness requires args")?)?;
-            let out_dir = args.out_dir.clone();
             emit_browser_harness(
                 &state.artifact,
                 &EmitBrowserHarnessOptions {
@@ -343,12 +338,6 @@ fn run_transform_stage(
                     snapshot_root: args.snapshot_root,
                 },
             )?;
-            let analysis_summary = analyze_artifact(&state.artifact);
-            let program_ir = build_program_ir(&analysis_summary);
-            let owner_graph = build_owner_graph(&program_ir);
-            let plan_summary = build_plan(&owner_graph, &analysis_summary);
-            write_planner_snapshot(&out_dir, &analysis_summary, &plan_summary)?;
-            write_analysis_snapshot(&out_dir, &analysis_summary)?;
             Ok(None)
         }
         _ => bail!("No registered stage handler for operation {operation}"),
@@ -478,122 +467,6 @@ fn strip_jsonc_comments(text: &str) -> String {
         }
     }
     out
-}
-
-fn analyze_artifact(artifact: &JsPipelineArtifact) -> AnalysisSummary {
-    let mut export_counts = HashMap::new();
-    let mut modules = Vec::new();
-    for chunk_id in artifact.list_chunk_ids() {
-        let Some(chunk) = artifact.chunks.get(&chunk_id) else {
-            continue;
-        };
-        let Some(entry_file) = ::artifact::get_chunk_entry_path(artifact, &chunk_id) else {
-            continue;
-        };
-        let Some(file) = chunk.files.get(&entry_file) else {
-            continue;
-        };
-        let Some(parsed) = file.ast.as_ref() else {
-            continue;
-        };
-        let source_path = file
-            .metadata
-            .source_path
-            .clone()
-            .or_else(|| chunk.metadata.source_path.clone())
-            .or_else(|| {
-                artifact
-                    .chunk_manifests
-                    .get(&chunk_id)
-                    .map(|manifest| manifest.source_path.clone())
-            })
-            .unwrap_or_else(|| format!("{chunk_id}.js"));
-        export_counts.insert(source_path.clone(), count_export_module_decls(parsed));
-        modules.push((source_path, entry_file, parsed));
-    }
-    analyze_modules(modules, &export_counts)
-}
-
-fn count_export_module_decls(parsed: &js_ast::ParsedJsModule) -> usize {
-    parsed
-        .module
-        .body
-        .iter()
-        .filter(|item| {
-            matches!(
-                item,
-                swc_ecma_ast::ModuleItem::ModuleDecl(
-                    swc_ecma_ast::ModuleDecl::ExportDecl(_)
-                        | swc_ecma_ast::ModuleDecl::ExportNamed(_)
-                        | swc_ecma_ast::ModuleDecl::ExportDefaultDecl(_)
-                        | swc_ecma_ast::ModuleDecl::ExportDefaultExpr(_)
-                        | swc_ecma_ast::ModuleDecl::ExportAll(_)
-                )
-            )
-        })
-        .count()
-}
-
-fn write_analysis_snapshot(out_root: &Path, analysis: &AnalysisSummary) -> Result<()> {
-    let modules = analysis
-        .modules
-        .iter()
-        .enumerate()
-        .map(|(idx, module)| {
-            serde_json::json!({
-                "moduleId": module.source_path,
-                "ownerId": format!("owner_{idx:04}"),
-                "programItemId": format!("item_{idx:04}"),
-                "imports": module.resolved_deps,
-                "hasTopLevelEffects": module.has_top_level_effects,
-                "exportCount": module.export_count,
-                "ownerIds": module.owner_ids.clone(),
-                "programItemIds": module.program_item_ids.clone(),
-                "sideEffectIds": module.side_effect_ids.clone(),
-                "ownerCount": module.owner_ids.len(),
-                "programItemCount": module.program_item_ids.len(),
-                "sideEffectCount": module.side_effect_ids.len(),
-            })
-        })
-        .collect::<Vec<_>>();
-    let snapshot = serde_json::json!({
-        "schemaVersion": 1,
-        "contract": "analysis_ir_parity_v1",
-        "modules": modules,
-    });
-    fs::create_dir_all(out_root)?;
-    fs::write(
-        out_root.join("analysis_snapshot.json"),
-        serde_json::to_string_pretty(&snapshot)? + "\n",
-    )?;
-    Ok(())
-}
-
-fn write_planner_snapshot(
-    out_root: &Path,
-    analysis: &AnalysisSummary,
-    plan: &PlanSummaryV2,
-) -> Result<()> {
-    let snapshot = serde_json::json!({
-        "schemaVersion": 1,
-        "modules": analysis.modules.iter().map(|module| {
-            serde_json::json!({
-                "id": module.source_path,
-                "imports": module.resolved_deps,
-                "hasTopLevelEffects": module.has_top_level_effects,
-            })
-        }).collect::<Vec<_>>(),
-        "selectedModules": plan.selected_modules,
-        "extractionGroups": plan.extraction_groups,
-        "rationale": plan.rationale,
-        "debug": plan.debug,
-    });
-    fs::create_dir_all(out_root)?;
-    fs::write(
-        out_root.join("planner_snapshot.json"),
-        serde_json::to_string_pretty(&snapshot)? + "\n",
-    )?;
-    Ok(())
 }
 
 #[cfg(test)]
@@ -729,8 +602,6 @@ mod tests {
         assert!(out.join("manifest.json").exists());
         let entry = fs::read_to_string(out.join("static/index-DuckMock/entry.js"))?;
         assert!(entry.contains("../chunk-DuckMock/entry.js"));
-        assert!(out.join("analysis_snapshot.json").exists());
-        assert!(out.join("planner_snapshot.json").exists());
         Ok(())
     }
 }

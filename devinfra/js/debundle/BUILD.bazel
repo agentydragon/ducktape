@@ -3,22 +3,6 @@ load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 package(default_visibility = ["//visibility:public"])
 
 rust_library(
-    name = "analysis_summary",
-    srcs = ["analysis_summary.rs"],
-    crate_root = "analysis_summary.rs",
-    edition = "2024",
-    deps = ["@crates//:serde"],
-)
-
-rust_library(
-    name = "ast_ir",
-    srcs = ["ast_ir.rs"],
-    crate_root = "ast_ir.rs",
-    edition = "2024",
-    deps = ["@crates//:serde"],
-)
-
-rust_library(
     name = "module_path",
     srcs = ["module_path.rs"],
     crate_root = "module_path.rs",
@@ -49,20 +33,6 @@ rust_library(
         "@crates//:anyhow",
         "@crates//:serde",
         "@crates//:serde_json",
-    ],
-)
-
-rust_library(
-    name = "owner_graph",
-    srcs = ["owner_graph.rs"],
-    crate_root = "owner_graph.rs",
-    edition = "2024",
-    deps = [
-        ":analysis_summary",
-        ":ast_ir",
-        ":module_path",
-        "@crates//:petgraph",
-        "@crates//:serde",
     ],
 )
 
@@ -151,7 +121,6 @@ rust_library(
     crate_root = "program_analysis.rs",
     edition = "2024",
     deps = [
-        ":analysis_summary",
         ":artifact",
         ":js_ast",
         ":module_path",
@@ -174,46 +143,21 @@ rust_library(
 )
 
 rust_library(
-    name = "plan",
-    srcs = ["plan.rs"],
-    crate_root = "plan.rs",
-    edition = "2024",
-    deps = [
-        ":analysis_summary",
-        ":owner_graph",
-        "@crates//:petgraph",
-        "@crates//:serde",
-    ],
-)
-
-rust_test(
-    name = "plan_test",
-    crate = ":plan",
-    edition = "2024",
-)
-
-rust_library(
     name = "pipeline",
     srcs = ["pipeline.rs"],
     crate_root = "pipeline.rs",
     edition = "2024",
     deps = [
-        ":analysis_summary",
         ":artifact",
         ":emit_harness",
-        ":js_ast",
         ":logical_modules",
         ":normalize",
-        ":owner_graph",
-        ":plan",
-        ":program_analysis",
         ":rewrite_specifiers",
         ":vendor",
         ":write_tree",
         "@crates//:anyhow",
         "@crates//:serde",
         "@crates//:serde_json",
-        "@crates//:swc_ecma_ast",
     ],
 )
 
