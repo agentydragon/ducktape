@@ -122,7 +122,6 @@ rust_library(
     deps = [
         ":artifact",
         ":js_ast",
-        ":module_path",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",

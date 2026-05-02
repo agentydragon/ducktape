@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use swc_common::Spanned;
 use swc_ecma_ast::*;
@@ -9,7 +9,6 @@ use artifact::{
     ImportSpecifierRecord, KeptTopLevelDeclarationRecord, ModuleItemKind, ParserOptionsRecord,
 };
 use js_ast::{ParsedJsModule, line_for_span, str_value};
-use module_path::resolve_dep;
 
 pub struct ProgramAnalysis {
     pub imports: Vec<ImportRecord>,
@@ -78,24 +77,6 @@ pub struct IdentifierAccesses {
     lazy_writes: HashSet<String>,
     eager_member_writes: HashSet<String>,
     lazy_member_writes: HashSet<String>,
-}
-
-impl IdentifierAccesses {
-    fn touched_names(&self) -> Vec<String> {
-        let mut names = self
-            .eager_reads
-            .iter()
-            .chain(self.lazy_reads.iter())
-            .chain(self.eager_writes.iter())
-            .chain(self.lazy_writes.iter())
-            .chain(self.eager_member_writes.iter())
-            .chain(self.lazy_member_writes.iter())
-            .cloned()
-            .collect::<Vec<_>>();
-        names.sort();
-        names.dedup();
-        names
-    }
 }
 
 pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
@@ -310,16 +291,6 @@ fn export_default_decl_name(decl: &ExportDefaultDecl) -> Option<String> {
 fn top_level_declaration_names(item: &ModuleItem) -> Vec<String> {
     match item {
         ModuleItem::Stmt(Stmt::Decl(decl)) => declaration_names(decl),
-        _ => Vec::new(),
-    }
-}
-
-fn runtime_boundary_declaration_names(item: &ModuleItem) -> Vec<String> {
-    match item {
-        ModuleItem::Stmt(Stmt::Decl(decl)) => declaration_names(decl),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
-            declaration_names(&export_decl.decl)
-        }
         _ => Vec::new(),
     }
 }
