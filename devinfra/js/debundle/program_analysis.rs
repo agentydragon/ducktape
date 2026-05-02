@@ -6,7 +6,8 @@ use swc_ecma_visit::{Visit, VisitWith};
 
 use artifact::{
     ChunkCounts, ChunkFileRecord, ChunkManifest, ExportAliasRecord, ImportRecord,
-    ImportSpecifierRecord, KeptTopLevelDeclarationRecord, ModuleItemKind, ParserOptionsRecord,
+    ImportSpecifierRecord, KeptTopLevelDeclarationRecord, ParserOptionsRecord,
+    TopLevelDeclarationKind,
 };
 use js_ast::{ParsedJsModule, line_for_span, str_value};
 
@@ -25,39 +26,44 @@ pub struct OwnerRecord {
     pub line: Option<usize>,
     pub names: Vec<String>,
     pub ordinal: usize,
-    pub kind: ModuleItemKind,
+    pub kind: TopLevelDeclarationKind,
     pub accesses: IdentifierAccesses,
 }
 
-fn module_item_kind_of(item: &ModuleItem) -> ModuleItemKind {
-    match item {
-        ModuleItem::ModuleDecl(ModuleDecl::Import(_)) => ModuleItemKind::ImportDeclaration,
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(_)) => ModuleItemKind::ExportDeclaration,
-        ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(_)) => {
-            ModuleItemKind::ExportNamedDeclaration
-        }
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(_)) => {
-            ModuleItemKind::ExportDefaultDeclaration
-        }
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(_)) => {
-            ModuleItemKind::ExportDefaultExpression
-        }
-        ModuleItem::ModuleDecl(ModuleDecl::ExportAll(_)) => ModuleItemKind::ExportAllDeclaration,
-        ModuleItem::Stmt(Stmt::Decl(Decl::Fn(_))) => ModuleItemKind::FunctionDeclaration,
-        ModuleItem::Stmt(Stmt::Decl(Decl::Class(_))) => ModuleItemKind::ClassDeclaration,
-        ModuleItem::Stmt(Stmt::Decl(Decl::Var(_))) => ModuleItemKind::VariableDeclaration,
-        ModuleItem::Stmt(Stmt::Expr(_)) => ModuleItemKind::ExpressionStatement,
-        ModuleItem::Stmt(_) => ModuleItemKind::Statement,
-        _ => ModuleItemKind::ModuleDeclaration,
+/// If `item` is a top-level declaration of a kind we anchor extraction on,
+/// classify it and pull its bound names. Otherwise return `None` and the
+/// caller treats the item as a side effect.
+fn classify_top_level_decl(item: &ModuleItem) -> Option<(TopLevelDeclarationKind, Vec<String>)> {
+    let ModuleItem::Stmt(Stmt::Decl(decl)) = item else {
+        return None;
+    };
+    match decl {
+        Decl::Fn(function) => Some((
+            TopLevelDeclarationKind::Function,
+            vec![function.ident.sym.to_string()],
+        )),
+        Decl::Class(class) => Some((
+            TopLevelDeclarationKind::Class,
+            vec![class.ident.sym.to_string()],
+        )),
+        Decl::Var(var) => Some((
+            TopLevelDeclarationKind::Variable,
+            var.decls
+                .iter()
+                .flat_map(|decl| binding_names(&decl.name))
+                .collect(),
+        )),
+        _ => None,
     }
 }
 
-fn access_source_kind_for(kind: ModuleItemKind) -> AccessSourceKind {
-    match kind {
-        ModuleItemKind::VariableDeclaration => AccessSourceKind::Variable,
-        ModuleItemKind::FunctionDeclaration => AccessSourceKind::Function,
-        ModuleItemKind::ClassDeclaration => AccessSourceKind::Class,
-        _ => AccessSourceKind::TopLevelDeclaration,
+impl From<TopLevelDeclarationKind> for AccessSourceKind {
+    fn from(kind: TopLevelDeclarationKind) -> Self {
+        match kind {
+            TopLevelDeclarationKind::Function => AccessSourceKind::Function,
+            TopLevelDeclarationKind::Class => AccessSourceKind::Class,
+            TopLevelDeclarationKind::Variable => AccessSourceKind::Variable,
+        }
     }
 }
 
@@ -139,10 +145,8 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
             continue;
         }
 
-        let names = top_level_declaration_names(item);
-        if !names.is_empty() {
-            let kind = module_item_kind_of(item);
-            let accesses = identifier_accesses_in_module_item(item, access_source_kind_for(kind));
+        if let Some((kind, names)) = classify_top_level_decl(item) {
+            let accesses = identifier_accesses_in_module_item(item, kind.into());
             owners.push(OwnerRecord {
                 id: format!("owner_{:05}", owners.len()),
                 line: item_line(parsed, item),
@@ -288,26 +292,6 @@ fn export_default_decl_name(decl: &ExportDefaultDecl) -> Option<String> {
     }
 }
 
-fn top_level_declaration_names(item: &ModuleItem) -> Vec<String> {
-    match item {
-        ModuleItem::Stmt(Stmt::Decl(decl)) => declaration_names(decl),
-        _ => Vec::new(),
-    }
-}
-
-fn declaration_names(decl: &Decl) -> Vec<String> {
-    match decl {
-        Decl::Fn(function) => vec![function.ident.sym.to_string()],
-        Decl::Class(class) => vec![class.ident.sym.to_string()],
-        Decl::Var(var) => var
-            .decls
-            .iter()
-            .flat_map(|decl| binding_names(&decl.name))
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
 fn binding_names(pattern: &Pat) -> Vec<String> {
     match pattern {
         Pat::Ident(ident) => vec![ident.id.sym.to_string()],
@@ -348,7 +332,6 @@ enum AccessSourceKind {
     Function,
     Class,
     SideEffect,
-    TopLevelDeclaration,
 }
 
 fn identifier_accesses_in_module_item(
