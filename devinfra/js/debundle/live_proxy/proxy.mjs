@@ -165,6 +165,7 @@ export function loadLiveProxyConfiguration(rawOptions) {
       serviceWorker: `${internalPrefix}/sw.js`,
     },
     injectedHtml: rewriteHtmlForLiveProxy(sourceHtml, {
+      appAssetPrefix,
       bootstrapUrl: `${appAssetPrefix}/bootstrap.js`,
       uiVersion,
     }),
@@ -213,9 +214,20 @@ function normalizeRelativePath(value) {
     .join("/");
 }
 
-export function rewriteHtmlForLiveProxy(sourceHtml, { bootstrapUrl, uiVersion }) {
+export function rewriteHtmlForLiveProxy(sourceHtml, { appAssetPrefix, bootstrapUrl, uiVersion }) {
   let html = sourceHtml.replace(MODULE_SCRIPT_RE, "");
   html = html.replace(MODULE_PRELOAD_RE, "");
+
+  // Re-target absolute-path static-asset references (CSS, fonts, images,
+  // service-worker bootstrap scripts) at the proxy's internal prefix so
+  // they're served from the snapshot harness instead of forwarded to
+  // upstream Tana, where the pinned hashes may have rotated. The
+  // `appAssetPrefix` is callable-conditional because old test fixtures
+  // construct manifests with absolute paths and never rewrite —
+  // skipping the rewrite leaves their behavior unchanged.
+  if (appAssetPrefix) {
+    html = rewriteSnapshotAssetUrls(html, appAssetPrefix);
+  }
 
   const injected = `${liveProxyPreludeScript({ bootstrapUrl, uiVersion })}
     <script type="module" crossorigin src="${escapeHtmlAttr(bootstrapUrl)}"></script>`;
@@ -231,6 +243,26 @@ export function rewriteHtmlForLiveProxy(sourceHtml, { bootstrapUrl, uiVersion })
     html = html.replace(/<head>/i, `<head>\n    <!-- ${comment} -->`);
   }
   return html.endsWith("\n") ? html : `${html}\n`;
+}
+
+// Path prefixes the harness mirrors from the upstream snapshot. Anything
+// matching these in an absolute-path `href`/`src` attribute should be
+// served from the harness, not forwarded to upstream where the pinned
+// hashes have likely rotated.
+const SNAPSHOT_ASSET_PREFIXES = ["/static/", "/preload/"];
+const SNAPSHOT_ASSET_RE = new RegExp(
+  `(\\b(?:href|src)\\s*=\\s*["'])((?:${SNAPSHOT_ASSET_PREFIXES.map(escapeRegex).join("|")})[^"'?#]*)(["'?#])`,
+  "gi"
+);
+
+function rewriteSnapshotAssetUrls(html, appAssetPrefix) {
+  return html.replace(SNAPSHOT_ASSET_RE, (_match, attrLead, path, suffixLead) => {
+    return `${attrLead}${appAssetPrefix}${path}${suffixLead}`;
+  });
+}
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export function isTargetDocumentRequest(request, config) {

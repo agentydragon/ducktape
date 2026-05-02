@@ -187,6 +187,37 @@ test("loadLiveProxyConfiguration treats outDir as the app root even when it is n
   assert.equal(fileMapping.filePath, join(fixture.appRoot, "bootstrap.js"));
 });
 
+test("rewriteHtmlForLiveProxy retargets snapshot-asset paths at the internal prefix", () => {
+  // Source HTML references the upstream's static/preload paths directly.
+  // Without rewriting, the browser fetches them from the live target host
+  // — where the snapshot-pinned hashes may have rotated and the request
+  // 504s. The rewrite re-anchors them at `appAssetPrefix` so the proxy
+  // serves them from the harness tree's mirrored snapshot.
+  const sourceHtml = [
+    "<!doctype html>",
+    "<html><head>",
+    '  <link href="/preload/style.css" rel="stylesheet" />',
+    '  <link rel="stylesheet" crossorigin href="/static/index-Example.css">',
+    '  <link rel="icon" href="/favicon.ico">',
+    '  <script type="module" crossorigin src="/static/index-Example.js"></script>',
+    '</head><body><div id="app"></div></body></html>',
+  ].join("\n");
+  const rewritten = rewriteHtmlForLiveProxy(sourceHtml, {
+    appAssetPrefix: "/_debundle/live/example/app",
+    bootstrapUrl: "/_debundle/live/example/app/bootstrap.js",
+    uiVersion: "example",
+  });
+  // Snapshot-asset prefixes (`/preload/`, `/static/`) get retargeted.
+  assert.ok(rewritten.includes('href="/_debundle/live/example/app/preload/style.css"'));
+  assert.ok(rewritten.includes('href="/_debundle/live/example/app/static/index-Example.css"'));
+  // Original absolute paths to those prefixes should be gone.
+  assert.ok(!rewritten.includes('href="/preload/style.css"'));
+  assert.ok(!rewritten.includes('href="/static/index-Example.css"'));
+  // Out-of-scope absolute paths (`/favicon.ico`) stay as-is so they
+  // forward to upstream where they live.
+  assert.ok(rewritten.includes('href="/favicon.ico"'));
+});
+
 test("isTargetDocumentRequest recognizes top-level HTML navigations", () => {
   const config = {
     targetHost: "example.test",
