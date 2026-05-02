@@ -2,7 +2,7 @@
 
 ## AST Requirement
 
-JavaScript transformation work must use proper AST-based operations on the
+JavaScript-source transformations must use proper AST operations on the
 SWC-parsed input. Do not use raw text rewrites, string scanning, regex
 rewriting, ad hoc source patching, or other text-based mutation as a
 substitute for AST transformations.
@@ -19,16 +19,15 @@ correct fix, do the deeper correct fix or stop and explain the blocker.
 bug almost always manifests as something an outside observer can see — the
 emitted JS is not executable, an expected exported symbol is missing, the
 extracted module shape is wrong, runtime behavior differs from the input
-bundle. Reach for the e2e harness in `e2e/` (`debundle_rust` invoked
+bundle. Reach for the e2e harness in `e2e/` (the `debundle` CLI invoked
 through `support.rs`) before reaching into internals.
 
 This applies even when you're chasing a bug or feature that lives in one
 internal stage. If the symptom is observable in the unbundled output —
 exported symbol set, runtime behavior, file layout, source shape — write
 the regression as an e2e test driving the real CLI. Do not mock the
-pipeline, do not snapshot the planner's intermediate state, and do not
-construct internal types directly when an input fixture reaches the same
-code path.
+pipeline and do not construct internal types directly when an input
+fixture reaches the same code path.
 
 ### Assertion helpers
 
@@ -62,32 +61,28 @@ by checking the shape of debundled output, the test belongs in `e2e/`.
 ### Forbidden test shapes
 
 - Mocking the pipeline or any of its stages.
-- Constructing `JsPipelineArtifact`, `AnalysisSummary`, planner snapshots,
-  or other intermediate types by hand to drive a stage in isolation, when
-  feeding an input fixture through the real pipeline reaches the same code
-  path.
-- Comparing serialized planner debug snapshots as the primary signal —
-  these were parity-test scaffolding from when JS was a parallel impl. If
-  a behavior matters, prove it by what comes out the far end.
+- Constructing `JsPipelineArtifact`, `ChunkManifest`, or other intermediate
+  pipeline types by hand to drive a stage in isolation, when feeding an
+  input fixture through the real pipeline reaches the same code path.
 
-## Native Rust over JS-Shoehorn Shapes
+## Native Rust Shapes
 
-The earlier Rust port mirrored the JS implementation's data shapes (babel
-AST node-type strings like `"VariableDeclarator"` / `"FunctionDeclaration"`,
-camelCase JSON conventions for internal-only state, snake-shape parity
-diagnostics). Those existed so the JS and Rust paths could be diffed
-field-for-field. JS is gone; that diffing requirement is gone with it.
+Internal pipeline types are pure Rust. Stringly-typed `node_type` fields,
+`Vec<serde_json::Value>` payloads with known shape, and `Map<String,
+Value>` blobs that mirror an external JSON shape are smells — replace
+them with typed structs and enums.
 
-When you touch one of these layers, prefer native Rust shapes:
+- Use Rust enums (frequently a thin wrapper over an SWC AST variant) over
+  stringly-typed kind fields.
+- Drop `#[serde(rename_all = "camelCase")]` on types that aren't actually
+  serialized to disk or sent over the wire — internal manifests that the
+  pipeline orchestrator only reads `kind` from don't need to derive
+  `Serialize` at all.
+- Replace `Vec<Value>` / `Map<String, Value>` payloads with typed structs
+  whenever the shape is known. `serde_json::Value` is appropriate only
+  when the value is genuinely polymorphic (spec args, `#[serde(flatten)]`
+  extension slots) or comes straight from an external JSON input.
 
-- Use Rust enums (often holding the SWC AST type) over stringly-typed kind
-  fields.
-- Drop `#[serde(rename_all = "camelCase")]` from internal-only types that
-  are no longer compared against the JS pipeline.
-- Replace `Map<String, Value>` / `Vec<Value>` payloads with concrete
-  Pydantic-style structs where the serde value was only there to mirror
-  what JS emitted.
-
-The public spec format consumed by `--spec` is a separate concern —
-external callers may still send that schema, so be deliberate about
-changing it. Internal intermediate types have no such constraint.
+The public spec format consumed by `--spec` and the on-disk artifact
+manifests are external contracts — be deliberate about changing them.
+Internal intermediate types have no such constraint.

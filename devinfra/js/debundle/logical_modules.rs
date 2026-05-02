@@ -21,8 +21,7 @@ use write_tree::resolve_workspace_path;
 
 const LOWERING_FILE_PRAGMA: &str =
     "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";
-const LOWERING_GENERATOR_HEADER: &str =
-    "// @ducktape-generator devinfra/js/debundle/extract/init_region.mjs";
+const LOWERING_GENERATOR_HEADER: &str = "// @ducktape-generator selected_module_lowering";
 
 /// Per-stage manifest returned by `materialize_logical_modules`.
 ///

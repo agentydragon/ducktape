@@ -1,8 +1,7 @@
-//! Black-box harness for the debundler binary.
+//! Black-box harness for the `debundle` binary.
 //!
-//! Equivalent to the former `support.mjs`: drives the `debundle_rust` CLI
-//! through a JSONC spec and asserts on the emitted file tree by reading
-//! files and re-running them under `node`.
+//! Drives the CLI through a JSONC spec and asserts on the emitted file
+//! tree by reading files and re-running them under `node`.
 
 use runfiles::{Runfiles, rlocation};
 use serde_json::{Value, json};

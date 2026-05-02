@@ -241,11 +241,9 @@ pub struct KeptTopLevelDeclarationRecord {
     pub unsafe_reason: &'static str,
 }
 
-/// The three top-level declaration variants we anchor extraction on. Lines up
-/// with the SWC `Decl` arms where `analyze_program_shallow` produces an
-/// `OwnerRecord`. Earlier ports carried a 12-variant enum mirroring babel
-/// AST node-type strings; only these three are ever populated, so the
-/// enum stays narrow.
+/// The three top-level declaration variants we anchor extraction on.
+/// Mirrors the SWC `Decl` arms where `analyze_program_shallow` produces
+/// an `OwnerRecord`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TopLevelDeclarationKind {

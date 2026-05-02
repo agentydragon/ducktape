@@ -120,7 +120,7 @@ struct TransformState {
 }
 
 pub fn transform_cli_help() -> &'static str {
-    "Usage:\n  run_transform --spec <spec.jsonc> [--package-root <pkg>=<dir>]... [--packages-root <dir>]\n\nRuns the JavaScript transform pipeline described by the spec. Pipeline stages\ndispatch directly to registered functions; this target does not invoke Bazel\nfrom inside the pipeline. Specs are parsed as JSON with comments.\n"
+    "Usage:\n  debundle --spec <spec.jsonc> [--package-root <pkg>=<dir>]... [--packages-root <dir>]\n\nRuns the transform pipeline described by the spec. Pipeline stages\ndispatch directly to registered functions; this target does not invoke Bazel\nfrom inside the pipeline. Specs are parsed as JSON with comments.\n"
 }
 
 pub fn parse_transform_cli_args(argv: &[String]) -> Result<ParsedTransformCli> {

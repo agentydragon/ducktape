@@ -16,9 +16,9 @@ Still to do:
 
 ## Vendor swap edge cases
 
-- `named-from-default`: settle the upstream-formatting acceptance criteria.
-  The previous JS impl required source to start with literal
-  `export default `; SWC is more liberal. Pick one and document it.
+- `named-from-default`: settle and document the upstream-formatting
+  acceptance criteria — currently SWC parses anything that yields a default
+  export, which may be more liberal than callers expect.
 - `named-from-module-default`: handle anonymous default function/class
   declarations (currently rejected).
 
