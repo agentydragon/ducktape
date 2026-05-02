@@ -254,11 +254,6 @@ fn run_transform_stage(
     cli: &TransformCli,
 ) -> Result<Option<String>> {
     match operation {
-        "load_js_chunks" | "compute_js_asts" | "normalize_js_chunks" => {
-            bail!(
-                "{operation} is no longer a pipeline operation; configure inputs at the spec level"
-            )
-        }
         "rewrite_chunk_entry_specifiers" => {
             let manifest = rewrite_chunk_entry_specifiers(&mut state.artifact)?;
             Ok(Some(manifest.kind.to_string()))
