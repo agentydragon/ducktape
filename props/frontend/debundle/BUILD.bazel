@@ -115,10 +115,12 @@ js_run_binary(
 
 filegroup(
     name = "snapshot_dir",
-    srcs = [
-        "snapshot/dist",
-        "snapshot/index.html",
-    ],
+    # `:snapshot` declares both the `snapshot/dist` tree artifact and
+    # the `snapshot/index.html` file. Listing the parent target here
+    # picks up everything under `snapshot/` (and the extracted
+    # outputs), which is what the debundle pipeline's input_data
+    # expects.
+    srcs = [":snapshot"],
 )
 
 filegroup(
