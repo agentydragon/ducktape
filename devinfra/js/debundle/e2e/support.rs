@@ -400,14 +400,14 @@ fn current_test_prefix() -> String {
     format!("debundle-e2e-{compact}-")
 }
 
-fn write_text_file(path: &Path, content: &str) {
+pub fn write_text_file(path: &Path, content: &str) {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).unwrap();
     }
     fs::write(path, content).unwrap();
 }
 
-fn write_json_file(path: &Path, value: &Value) {
+pub fn write_json_file(path: &Path, value: &Value) {
     fs::write(
         path,
         format!("{}\n", serde_json::to_string_pretty(value).unwrap()),
@@ -415,7 +415,7 @@ fn write_json_file(path: &Path, value: &Value) {
     .unwrap();
 }
 
-fn debundler_path() -> PathBuf {
+pub fn debundler_path() -> PathBuf {
     let r = Runfiles::create().expect("create runfiles");
     rlocation!(r, DEBUNDLER_RLOCATION)
         .unwrap_or_else(|| panic!("could not resolve debundler runfile: {DEBUNDLER_RLOCATION}"))
@@ -427,17 +427,29 @@ fn node_path() -> PathBuf {
         .unwrap_or_else(|| panic!("could not resolve node runfile: {NODE_RLOCATION}"))
 }
 
-struct CommandResult {
-    stdout: String,
-    stderr: String,
-    status: std::process::ExitStatus,
+pub struct CommandResult {
+    pub stdout: String,
+    pub stderr: String,
+    pub status: std::process::ExitStatus,
 }
 
 fn spawn_transform(spec_path: &Path) -> CommandResult {
+    run_debundler(spec_path, &[])
+}
+
+/// Run `debundle --spec <path> [--package-root <name>=<dir> ...]` and return its
+/// captured stdio + exit status. Used by tests that exercise pipeline stages
+/// outside the logical-modules harness in [`run_logical_modules_e2e_fixture`].
+pub fn run_debundler(spec_path: &Path, package_roots: &[(&str, &Path)]) -> CommandResult {
     let bin = debundler_path();
-    let output = Command::new(&bin)
-        .arg("--spec")
-        .arg(spec_path)
+    let mut command = Command::new(&bin);
+    command.arg("--spec").arg(spec_path);
+    for (name, dir) in package_roots {
+        command
+            .arg("--package-root")
+            .arg(format!("{name}={}", dir.display()));
+    }
+    let output = command
         .output()
         .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display()));
     CommandResult {

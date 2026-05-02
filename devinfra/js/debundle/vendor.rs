@@ -1204,6 +1204,40 @@ fn generate_named_from_module_default_wrapper(
                     DefaultDecl::TsInterfaceDecl(_) => {}
                 }
             }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named_decl)) => {
+                if named_decl.src.is_some() {
+                    body.push(item.clone());
+                    continue;
+                }
+                let mut remaining = Vec::with_capacity(named_decl.specifiers.len());
+                for specifier in &named_decl.specifiers {
+                    let ExportSpecifier::Named(named_specifier) = specifier else {
+                        remaining.push(specifier.clone());
+                        continue;
+                    };
+                    let exported_name = named_specifier
+                        .exported
+                        .as_ref()
+                        .map(module_export_name)
+                        .unwrap_or_else(|| module_export_name(&named_specifier.orig));
+                    if exported_name != "default" {
+                        remaining.push(specifier.clone());
+                        continue;
+                    }
+                    let ModuleExportName::Ident(local) = &named_specifier.orig else {
+                        bail!(
+                            "swapVendorChunks operation {op_id} named-from-module-default: \"export {{ ... as default }}\" must alias a local identifier"
+                        );
+                    };
+                    found_default = true;
+                    body.push(const_alias(default_local_name, local.sym.as_ref()));
+                }
+                if !remaining.is_empty() {
+                    let mut kept = named_decl.clone();
+                    kept.specifiers = remaining;
+                    body.push(ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(kept)));
+                }
+            }
             _ => body.push(item.clone()),
         }
     }

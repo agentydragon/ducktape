@@ -32,6 +32,7 @@ rust_library(
         deps = [
             ":support",
             "@crates//:serde_json",
+            "@crates//:tempfile",
             "@rules_rust//tools/runfiles",
         ],
     )
@@ -40,5 +41,6 @@ rust_library(
         "cross_module_test",
         "naturalization_test",
         "url_rebase_test",
+        "vendor_swap_test",
     ]
 ]
