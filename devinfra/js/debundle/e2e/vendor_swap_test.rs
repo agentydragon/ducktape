@@ -5,7 +5,7 @@
 use debundle_e2e_support::{CommandResult, run_debundler, write_json_file, write_text_file};
 use serde_json::{Value, json};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 #[test]
@@ -18,11 +18,27 @@ const aux = "side";
 export { lib as default, aux };
 "#;
 
-    let fixture = run_named_from_module_default_fixture(NamedFromModuleDefaultOpts {
-        chunk_source: "export { x as default };\nconst x = 0;\n",
-        upstream_source,
-    });
+    let fixture = run_named_from_module_default_fixture(upstream_source);
 
+    assert_wrapper_named_from_module_default(&fixture);
+}
+
+#[test]
+fn named_from_module_default_handles_export_named_as_default_before_local_decl() {
+    // ESM allows `export { lib as default };` to appear *before* the local
+    // declaration. The generated wrapper's
+    // `const __vendor_default__ = lib;` must therefore live after the
+    // declaration to avoid a TDZ at module init.
+    let upstream_source = r#"export { lib as default };
+const lib = { ping() { return "pong"; } };
+"#;
+
+    let fixture = run_named_from_module_default_fixture(upstream_source);
+
+    assert_wrapper_named_from_module_default(&fixture);
+}
+
+fn assert_wrapper_named_from_module_default(fixture: &VendorSwapFixture) {
     assert!(
         fixture.result.status.success(),
         "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
@@ -44,22 +60,38 @@ export { lib as default, aux };
         !wrapper_source.contains("as default"),
         "wrapper should not re-emit the original upstream `export {{ ... as default }}` once the wrapper has its own default export:\n{wrapper_source}",
     );
-}
 
-struct NamedFromModuleDefaultOpts<'a> {
-    chunk_source: &'a str,
-    upstream_source: &'a str,
+    // Cross-check the resolution manifest: the recorded `generatedWrapperPath`
+    // (workspace-relative) must resolve to the wrapper file the test located
+    // by following the `outputWrapperDir` convention.
+    let manifest: Value =
+        serde_json::from_str(&fs::read_to_string(&fixture.manifest_path).expect("manifest exists"))
+            .expect("manifest parses as JSON");
+    let recorded = manifest
+        .get("resolutions")
+        .and_then(|r| r.get(&fixture.chunk_path))
+        .and_then(|r| r.get("generatedWrapperPath"))
+        .and_then(Value::as_str)
+        .expect("manifest records generatedWrapperPath");
+    let resolved = fixture.workspace_root.join(recorded);
+    assert_eq!(
+        fs::canonicalize(&resolved).expect("resolved manifest path canonicalizes"),
+        fs::canonicalize(&fixture.wrapper_path).expect("wrapper path canonicalizes"),
+        "manifest's generatedWrapperPath ({recorded}) must resolve to the wrapper file ({:?})",
+        fixture.wrapper_path,
+    );
 }
 
 struct VendorSwapFixture {
     result: CommandResult,
-    wrapper_path: std::path::PathBuf,
+    chunk_path: String,
+    wrapper_path: PathBuf,
+    manifest_path: PathBuf,
+    workspace_root: PathBuf,
     _root: TempDir,
 }
 
-fn run_named_from_module_default_fixture(
-    opts: NamedFromModuleDefaultOpts<'_>,
-) -> VendorSwapFixture {
+fn run_named_from_module_default_fixture(upstream_source: &str) -> VendorSwapFixture {
     const PACKAGE_NAME: &str = "lib";
     const PACKAGE_VERSION: &str = "1.0.0";
     const SUBPATH: &str = "dist/index.mjs";
@@ -67,11 +99,16 @@ fn run_named_from_module_default_fixture(
 
     let root =
         TempDir::with_prefix("vendor-swap-named-from-module-default-").expect("create tempdir");
-    let extracted_root = root.path().join("extracted");
-    let snapshot_root = root.path().join("snapshot");
-    let out_root = root.path().join("out");
-    let wrapper_root = root.path().join("vendors");
-    let manifest_path = wrapper_root.join("manifest.json");
+    // Mirror the gaffer layout: the manifest's `generatedWrapperPath` is a
+    // workspace-relative `vendors/generated/<chunk_id>/<entry>` string, and
+    // `outputWrapperDir` must be the matching `<workspace>/vendors/generated`
+    // for the on-disk file and the recorded path to agree.
+    let workspace_root = root.path().join("workspace");
+    let extracted_root = workspace_root.join("extracted");
+    let snapshot_root = workspace_root.join("snapshot");
+    let out_root = workspace_root.join("out");
+    let wrapper_root = workspace_root.join("vendors").join("generated");
+    let manifest_path = workspace_root.join("vendors").join("manifest.json");
     let package_root = root.path().join("upstream");
     fs::create_dir_all(&extracted_root).unwrap();
     fs::create_dir_all(&snapshot_root).unwrap();
@@ -81,7 +118,10 @@ fn run_named_from_module_default_fixture(
     fs::create_dir_all(snapshot_root.join(Path::new(CHUNK_PATH).parent().unwrap())).unwrap();
     fs::create_dir_all(package_root.join("dist")).unwrap();
 
-    write_text_file(&snapshot_root.join(CHUNK_PATH), opts.chunk_source);
+    write_text_file(
+        &snapshot_root.join(CHUNK_PATH),
+        "export { x as default };\nconst x = 0;\n",
+    );
     let js_list_path = extracted_root.join("js-files.txt");
     write_text_file(&js_list_path, &format!("{CHUNK_PATH}\n"));
 
@@ -96,7 +136,7 @@ fn run_named_from_module_default_fixture(
             .unwrap(),
         ),
     );
-    write_text_file(&package_root.join(SUBPATH), opts.upstream_source);
+    write_text_file(&package_root.join(SUBPATH), upstream_source);
 
     let spec_path = root.path().join("transform_spec.jsonc");
     let spec = build_named_from_module_default_spec(BuildSpecArgs {
@@ -121,7 +161,10 @@ fn run_named_from_module_default_fixture(
     let wrapper_path = wrapper_root.join(chunk_id).join("entry.js");
     VendorSwapFixture {
         result,
+        chunk_path: CHUNK_PATH.to_string(),
         wrapper_path,
+        manifest_path,
+        workspace_root,
         _root: root,
     }
 }

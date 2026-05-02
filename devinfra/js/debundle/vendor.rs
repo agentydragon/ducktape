@@ -1149,6 +1149,7 @@ fn generate_named_from_module_default_wrapper(
 ) -> Result<String> {
     let default_local_name = "__vendor_default__";
     let mut found_default = false;
+    let mut deferred_default_alias: Option<String> = None;
     let mut body = Vec::new();
     for item in &upstream_ast.module.body {
         match item {
@@ -1229,8 +1230,18 @@ fn generate_named_from_module_default_wrapper(
                             "swapVendorChunks operation {op_id} named-from-module-default: \"export {{ ... as default }}\" must alias a local identifier"
                         );
                     };
+                    if deferred_default_alias.is_some() {
+                        bail!(
+                            "swapVendorChunks operation {op_id} named-from-module-default: upstream declares more than one default export"
+                        );
+                    }
                     found_default = true;
-                    body.push(const_alias(default_local_name, local.sym.as_ref()));
+                    // Defer the `const __vendor_default__ = <local>;` emission
+                    // to the end of the body. ESM allows `export { lib as default };
+                    // const lib = ...;`, so emitting the alias at the original
+                    // export position would TDZ on `lib` if the export sits before
+                    // the local declaration.
+                    deferred_default_alias = Some(local.sym.to_string());
                 }
                 if !remaining.is_empty() {
                     let mut kept = named_decl.clone();
@@ -1240,6 +1251,9 @@ fn generate_named_from_module_default_wrapper(
             }
             _ => body.push(item.clone()),
         }
+    }
+    if let Some(local) = deferred_default_alias {
+        body.push(const_alias(default_local_name, &local));
     }
     if !found_default {
         bail!(
