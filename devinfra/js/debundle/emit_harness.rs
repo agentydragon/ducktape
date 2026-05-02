@@ -14,7 +14,6 @@ pub struct EmitBrowserHarnessOptions {
     pub asset_summary_path: PathBuf,
     pub force: bool,
     pub out_dir: PathBuf,
-    pub script_source: String,
     pub snapshot_root: PathBuf,
 }
 
@@ -39,9 +38,6 @@ pub fn emit_browser_harness(
     artifact: &JsPipelineArtifact,
     options: &EmitBrowserHarnessOptions,
 ) -> Result<()> {
-    if options.script_source != "split" {
-        bail!("Unsupported scriptSource: {}", options.script_source);
-    }
     let asset_summary: AssetSummary = serde_json::from_str(
         &fs::read_to_string(&options.asset_summary_path)
             .with_context(|| format!("reading {}", options.asset_summary_path.display()))?,
@@ -102,7 +98,6 @@ pub fn emit_browser_harness(
     )?;
     let manifest = HarnessManifest {
         schema_version: 1,
-        script_source: "split".to_string(),
         source_html: path_to_posix(&source_html_path),
         snapshot_root: path_to_posix(&options.snapshot_root),
         asset_summary_path: path_to_posix(&options.asset_summary_path),
@@ -136,7 +131,6 @@ pub fn emit_browser_harness(
 #[serde(rename_all = "camelCase")]
 struct HarnessManifest {
     schema_version: u8,
-    script_source: String,
     source_html: String,
     snapshot_root: String,
     asset_summary_path: String,

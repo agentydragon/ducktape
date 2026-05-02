@@ -90,15 +90,12 @@ pub struct RequestedLogicalModule {
 
 #[derive(Debug, Clone)]
 pub struct MaterializeLogicalModulesOptions {
-    pub boundary_analysis_dir: Option<PathBuf>,
     pub chunk_ids: Vec<String>,
     pub file: Option<String>,
     pub prune_other_chunks: bool,
     pub force: bool,
     pub report_out_dir: Option<PathBuf>,
     pub report_summary_path: Option<PathBuf>,
-    pub selected_owner_ids_by_chunk_path: Option<PathBuf>,
-    pub selected_owner_ids_by_chunk: Option<Value>,
     pub target_dir: String,
 }
 
@@ -396,21 +393,6 @@ pub fn materialize_logical_modules(
         }
         fs::write(resolved, serde_json::to_string_pretty(&manifest)? + "\n")?;
     }
-    if let Some(path) = options.selected_owner_ids_by_chunk_path {
-        let resolved = resolve_workspace_path(&path)?;
-        if let Some(parent) = resolved.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(
-            resolved,
-            serde_json::to_string_pretty(&json!({
-                "chunkOwnerIds": options.selected_owner_ids_by_chunk.unwrap_or_else(|| json!({})),
-                "kind": "js.selected_owner_ids_cache",
-                "schemaVersion": 1,
-            }))? + "\n",
-        )?;
-    }
-    let _ = options.boundary_analysis_dir;
     Ok(manifest)
 }
 
@@ -671,7 +653,7 @@ fn logical_requests_for_chunk(
     if requests.is_empty() {
         requests.push(LogicalRequest {
             id: "logical_module_0".to_string(),
-            target_path: format!("{target_dir}/unhandled"),
+            target_path: posix_join(&[target_dir, "unhandled"]),
             residual: true,
             members: Vec::new(),
         });
@@ -1319,16 +1301,10 @@ impl RuntimeSourceRewriter {
             .and_then(Path::to_str)
             .unwrap_or("")
             .replace('\\', "/");
-        let runtime_dir = if target_dir == "modules" || target_dir.starts_with("modules/") {
-            String::new()
-        } else {
-            self.target_file
-                .split_once("/modules/")
-                .map(|(chunk_root, _)| chunk_root.to_string())
-                .unwrap_or_else(|| target_dir.clone())
-        };
-        let original_abs = posix_join(&[&runtime_dir, &original]);
-        let mut rel = posix_relative(&target_dir, &original_abs);
+        // Original import sources in lowered module bodies are chunk-root-relative;
+        // the lowered file lives at <target_dir>/<basename> within the chunk, so the
+        // rewritten specifier walks up out of target_dir to chunk root.
+        let mut rel = posix_relative(&target_dir, &original);
         if !rel.starts_with('.') {
             rel = format!("./{rel}");
         }
@@ -1556,6 +1532,9 @@ fn target_file_for_request(target_dir: &str, target_path: &str) -> Result<String
 }
 
 fn normalize_optional_relative_dir(value: &str) -> Result<String> {
+    if value.is_empty() {
+        return Ok(String::new());
+    }
     normalize_relative_path(value)
 }
 

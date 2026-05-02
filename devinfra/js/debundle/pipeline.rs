@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
+use runfiles::{Runfiles, rlocation};
 use serde::{Deserialize, Serialize};
 
 use artifact::{JsPipelineArtifact, compute_js_asts, load_js_chunks};
@@ -55,8 +56,6 @@ struct TransformSpec {
 struct TransformStage {
     id: Option<String>,
     operation: Option<String>,
-    disabled: Option<bool>,
-    implementation: Option<serde_json::Value>,
     args: Option<serde_json::Value>,
 }
 
@@ -69,18 +68,10 @@ struct LoadJsChunksArgs {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct NormalizeJsChunksArgs {
-    jobs: Option<usize>,
-    entry_file: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct EmitBrowserHarnessArgs {
     asset_summary_path: PathBuf,
     force: Option<bool>,
     out_dir: PathBuf,
-    script_source: Option<String>,
     snapshot_root: PathBuf,
 }
 
@@ -95,15 +86,12 @@ struct SwapVendorChunksArgs {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MaterializeLogicalModulesArgs {
-    boundary_analysis_dir: Option<PathBuf>,
     chunk_ids: Vec<String>,
     file: Option<String>,
     prune_other_chunks: Option<bool>,
     force: Option<bool>,
     report_out_dir: Option<PathBuf>,
     report_summary_path: Option<PathBuf>,
-    selected_owner_ids_by_chunk_path: Option<PathBuf>,
-    selected_owner_ids_by_chunk: Option<serde_json::Value>,
     target_dir: Option<String>,
 }
 
@@ -124,6 +112,7 @@ pub fn transform_cli_help() -> &'static str {
 }
 
 pub fn parse_transform_cli_args(argv: &[String]) -> Result<ParsedTransformCli> {
+    let runfiles = Runfiles::create().ok();
     let mut package_roots = HashMap::new();
     let mut packages_root = None;
     let mut spec_path = None;
@@ -132,22 +121,29 @@ pub fn parse_transform_cli_args(argv: &[String]) -> Result<ParsedTransformCli> {
         match argv[index].as_str() {
             "--spec" => {
                 index += 1;
-                spec_path = Some(require_arg_value(argv, index, "--spec")?);
+                let value = require_arg_value(argv, index, "--spec")?;
+                spec_path = Some(resolve_runfiles_path(
+                    PathBuf::from(value),
+                    runfiles.as_ref(),
+                ));
             }
             "--package-root" => {
                 index += 1;
                 let value = require_arg_value(argv, index, "--package-root")?;
                 let (package_name, package_root) =
                     parse_package_root_arg(&value, "--package-root")?;
-                package_roots.insert(package_name, package_root);
+                package_roots.insert(
+                    package_name,
+                    resolve_runfiles_path(package_root, runfiles.as_ref()),
+                );
             }
             "--packages-root" => {
                 index += 1;
-                packages_root = Some(PathBuf::from(require_arg_value(
-                    argv,
-                    index,
-                    "--packages-root",
-                )?));
+                let value = require_arg_value(argv, index, "--packages-root")?;
+                packages_root = Some(resolve_runfiles_path(
+                    PathBuf::from(value),
+                    runfiles.as_ref(),
+                ));
             }
             "--help" | "-h" => return Ok(ParsedTransformCli::Help),
             arg => bail!("Unknown argument: {arg}"),
@@ -158,10 +154,32 @@ pub fn parse_transform_cli_args(argv: &[String]) -> Result<ParsedTransformCli> {
         bail!("--spec is required");
     };
     Ok(ParsedTransformCli::Run(TransformCli {
-        spec_path: PathBuf::from(spec_path),
+        spec_path,
         package_roots,
         packages_root,
     }))
+}
+
+/// Resolve a path through Bazel runfiles when present, otherwise pass through.
+///
+/// Lets the binary work as a standalone CLI (filesystem paths) and as a
+/// Bazel-run target (runfiles-relative paths produced by `$(rlocationpath ...)`)
+/// without a launcher wrapper. A path is treated as runfiles-relative only
+/// when it actually resolves to a file inside the runfiles tree; otherwise
+/// it's left for the caller's filesystem semantics.
+fn resolve_runfiles_path(path: PathBuf, runfiles: Option<&Runfiles>) -> PathBuf {
+    if path.is_absolute() {
+        return path;
+    }
+    let Some(runfiles) = runfiles else {
+        return path;
+    };
+    let Some(s) = path.to_str() else {
+        return path;
+    };
+    rlocation!(runfiles, s)
+        .filter(|resolved| resolved.exists())
+        .unwrap_or(path)
 }
 
 pub fn render_transform_summary(summary: &TransformRunSummary) -> String {
@@ -198,15 +216,6 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
     for stage in pipeline {
         let id = stage.id.unwrap_or_default();
         let operation = stage.operation.unwrap_or_default();
-        if stage.disabled.unwrap_or(false) {
-            steps.push(TransformStepSummary {
-                id,
-                operation,
-                duration_ms: Some(0.0),
-                manifest_kind: None,
-            });
-            continue;
-        }
         let stage_started = Instant::now();
         let manifest_kind =
             run_transform_stage(&mut state, &operation, stage.args, &operations, cli)?;
@@ -245,19 +254,7 @@ fn run_transform_stage(
             Ok(Some(manifest.kind.to_string()))
         }
         "normalize_js_chunks" => {
-            let args = args
-                .map(serde_json::from_value::<NormalizeJsChunksArgs>)
-                .transpose()?
-                .unwrap_or(NormalizeJsChunksArgs {
-                    jobs: None,
-                    entry_file: None,
-                });
-            if args.entry_file.is_some() {
-                bail!(
-                    "normalizeJsChunks no longer accepts entryFile; normalized chunks always use entry.js"
-                );
-            }
-            let _ = args.jobs;
+            let _ = args;
             let artifact = std::mem::take(&mut state.artifact);
             let (artifact, _manifest) = normalize_js_chunks(artifact)?;
             state.artifact = artifact;
@@ -304,16 +301,13 @@ fn run_transform_stage(
                 &mut state.artifact,
                 operations,
                 MaterializeLogicalModulesOptions {
-                    boundary_analysis_dir: args.boundary_analysis_dir,
                     chunk_ids: args.chunk_ids,
                     file: args.file,
                     prune_other_chunks: args.prune_other_chunks.unwrap_or(true),
                     force: args.force.unwrap_or(false),
                     report_out_dir: args.report_out_dir,
                     report_summary_path: args.report_summary_path,
-                    selected_owner_ids_by_chunk_path: args.selected_owner_ids_by_chunk_path,
-                    selected_owner_ids_by_chunk: args.selected_owner_ids_by_chunk,
-                    target_dir: args.target_dir.unwrap_or_else(|| "modules".to_string()),
+                    target_dir: args.target_dir.unwrap_or_default(),
                 },
             )?;
             Ok(Some(manifest.kind.to_string()))
@@ -334,7 +328,6 @@ fn run_transform_stage(
                     asset_summary_path: args.asset_summary_path,
                     force: args.force.unwrap_or(false),
                     out_dir: args.out_dir,
-                    script_source: args.script_source.unwrap_or_else(|| "split".to_string()),
                     snapshot_root: args.snapshot_root,
                 },
             )?;
@@ -376,11 +369,6 @@ fn validate_transform_spec(spec: &TransformSpec) -> Result<()> {
         }
         if !seen_stage_ids.insert(id.to_string()) {
             bail!("Duplicate pipeline stage id: {id}");
-        }
-        if stage.implementation.is_some() {
-            bail!(
-                "Pipeline stage {id} uses legacy implementation wiring; stages now dispatch by operation only"
-            );
         }
     }
     Ok(())
@@ -583,7 +571,6 @@ mod tests {
                             "assetSummaryPath": extracted.join("asset-summary.json"),
                             "force": true,
                             "outDir": out,
-                            "scriptSource": "split",
                             "snapshotRoot": snapshot,
                         },
                     },

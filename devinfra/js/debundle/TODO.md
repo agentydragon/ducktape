@@ -3,6 +3,20 @@
 Forward-looking gaps in the Rust debundler. Items are written to be removed
 once closed; this file is not a changelog.
 
+## RE coverage side-output
+
+Re-introduce the deleted `extract_scrambled_identifier_frequencies` analysis
+(JS source of truth was `analysis/identifier_frequency.mjs`, ~600 LOC) as a
+**side output of every pipeline run** rather than a separate stage with its
+own `force` / `limit` / `excludedSymbolFiles` knobs. The intent: emit a
+machine-readable coverage summary that ranks the still-scrambled top-level
+symbols by frequency, so RE workflows can see "% of bundle understood" and
+prioritize the next rename wave. Keep the report keyed by stable selector
+identity so it stays meaningful across upstream version bumps.
+
+Until this lands, downstream specs should not invoke a scrambled-identifier
+stage; gaffer-private's spec generator currently drops it.
+
 ## Logical materialization breadth
 
 The current `materialize_logical_modules` covers top-level

@@ -360,7 +360,7 @@ fn build_spec(
             {
                 "id": "logical",
                 "operation": "materialize_logical_modules",
-                "args": { "chunkIds": [chunk_id], "pruneOtherChunks": false },
+                "args": { "chunkIds": [chunk_id], "pruneOtherChunks": false, "targetDir": "modules" },
             },
             { "id": "write", "operation": "write_js_tree", "args": { "force": true, "outDir": out_root } },
         ],

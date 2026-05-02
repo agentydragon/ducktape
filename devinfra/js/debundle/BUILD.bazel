@@ -156,6 +156,7 @@ rust_library(
         "@crates//:anyhow",
         "@crates//:serde",
         "@crates//:serde_json",
+        "@rules_rust//tools/runfiles",
     ],
 )
 

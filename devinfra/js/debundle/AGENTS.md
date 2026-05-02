@@ -86,3 +86,28 @@ them with typed structs and enums.
 The public spec format consumed by `--spec` and the on-disk artifact
 manifests are external contracts — be deliberate about changing them.
 Internal intermediate types have no such constraint.
+
+## Path Resolution Contract
+
+The CLI accepts relative or absolute paths for `--spec`, `--package-root
+<pkg>=<dir>`, and `--packages-root`. When the binary runs inside a Bazel
+runfiles context (`bazel run`, `bb run`, or otherwise with `RUNFILES_DIR` /
+`RUNFILES_MANIFEST_FILE` set), each relative path is first resolved through
+runfiles via the standard `runfiles` crate; if the resolution points at an
+existing file the runfiles path is used, otherwise the path is left as-is for
+the caller's filesystem semantics. Outside Bazel the binary behaves as a
+plain CLI — runfiles resolution is opt-in by environment, not a build-time
+mode.
+
+This lets downstream Bazel targets compose absolute-equivalent paths with
+just `$(rlocationpath <label>)` (no shell wrappers, no `$$RUNFILES_DIR`
+substitutions) while keeping the binary usable as a standalone tool outside
+the Bazel tree.
+
+## Materialize logical-modules `targetDir`
+
+`materialize_logical_modules` accepts an optional `targetDir`. Absent or
+empty means "no subdirectory" — lowered files land directly under their
+chunk root (`<out_dir>/<chunkId>/<target.path>.js`). A non-empty value adds
+that prefix (`<out_dir>/<chunkId>/<targetDir>/<target.path>.js`). Tests that
+want the legacy `modules/` layout pass `"targetDir": "modules"` explicitly.
