@@ -170,7 +170,7 @@ function buildVendorOps(vendorChunkMap) {
       confidence: "confirmed",
       identity: "highlight.js (smoke)",
       upstreamFamily: "highlight.js",
-      evidence: [],
+      evidence: [{ path: vendorChunkMap.chunks["highlight.js"], line: 1, text: "smoke marker chunk: highlight.js" }],
     },
     {
       id: "mark_vendor_datatable",
@@ -184,7 +184,13 @@ function buildVendorOps(vendorChunkMap) {
       confidence: "confirmed",
       identity: "@careswitch/svelte-data-table (smoke)",
       upstreamFamily: "@careswitch/svelte-data-table",
-      evidence: [],
+      evidence: [
+        {
+          path: vendorChunkMap.chunks["@careswitch/svelte-data-table"],
+          line: 1,
+          text: "smoke marker chunk: @careswitch/svelte-data-table",
+        },
+      ],
     },
   ];
 }
