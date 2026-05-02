@@ -1276,6 +1276,23 @@ impl VisitMut for IdentifierRenamer {
             computed.visit_mut_children_with(self);
         }
     }
+
+    fn visit_mut_named_export(&mut self, named: &mut NamedExport) {
+        // Re-export specifiers' orig field (`export { x } from "./mod"`) is
+        // the imported name in the source module, not a local binding here,
+        // so don't touch it. Without `from`, orig is a local binding —
+        // recurse into specifiers so visit_mut_export_named_specifier can
+        // narrow which fields to rewrite.
+        if named.src.is_none() {
+            named.specifiers.visit_mut_with(self);
+        }
+    }
+
+    fn visit_mut_export_named_specifier(&mut self, spec: &mut ExportNamedSpecifier) {
+        // The `exported` field is a public-API name, not a local binding,
+        // so it must not be rewritten when a colliding local is renamed.
+        spec.orig.visit_mut_with(self);
+    }
 }
 
 struct ShorthandNaturalizer;
