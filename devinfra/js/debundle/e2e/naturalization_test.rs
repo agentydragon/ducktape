@@ -7,16 +7,13 @@ use debundle_e2e_support::*;
 
 #[test]
 fn renames_destructured_object_params_to_readable_shorthand() {
-    let fixture = run_logical_modules_e2e_fixture(
-        "renames destructured object params to readable shorthand",
-        FixtureOpts::new(
-            r#"function a({ value: n }) { return n; }
+    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+        r#"function a({ value: n }) { return n; }
 console.log(a({ value: 1 }));
 export { a };
 "#,
-            vec![logical_module("x", &[Member::renamed("pair", "a")])],
-        ),
-    );
+        vec![logical_module("x", &[Member::renamed("pair", "a")])],
+    ));
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/x.js",
@@ -28,10 +25,8 @@ export { a };
 
 #[test]
 fn keeps_outer_aliases_when_nested_readable_candidates_reuse_the_same_target() {
-    let fixture = run_logical_modules_e2e_fixture(
-        "keeps outer aliases when nested readable candidates reuse the same target",
-        FixtureOpts::new(
-            r#"function z() {
+    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+        r#"function z() {
   return "z";
 }
 var b = ({
@@ -54,26 +49,22 @@ var b = ({
 console.log(g.r() + h.r() + z());
 export { z, b, f };
 "#,
-            vec![logical_module("z", &[Member::new("z")])],
-        ),
-    );
+        vec![logical_module("z", &[Member::new("z")])],
+    ));
     assert_entry_output(&fixture, "ppz\n");
 }
 
 #[test]
 fn renames_constructor_params_from_this_property_assignments() {
-    let fixture = run_logical_modules_e2e_fixture(
-        "renames constructor params from this-property assignments",
-        FixtureOpts::new(
-            r#"class A {
+    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+        r#"class A {
   constructor(n) { this.value = n; }
 }
 console.log(new A(1).value);
 export { A };
 "#,
-            vec![logical_module("x", &[Member::renamed("Pair", "A")])],
-        ),
-    );
+        vec![logical_module("x", &[Member::renamed("Pair", "A")])],
+    ));
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/x.js",
@@ -85,19 +76,16 @@ export { A };
 
 #[test]
 fn renames_return_object_aliases_to_readable_shorthand_locals() {
-    let fixture = run_logical_modules_e2e_fixture(
-        "renames return-object aliases to readable shorthand locals",
-        FixtureOpts::new(
-            r#"function a(o) {
+    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+        r#"function a(o) {
   const n = o.value;
   return { value: n };
 }
 console.log(JSON.stringify(a({ value: 1 })));
 export { a };
 "#,
-            vec![logical_module("x", &[Member::renamed("pair", "a")])],
-        ),
-    );
+        vec![logical_module("x", &[Member::renamed("pair", "a")])],
+    ));
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/x.js",

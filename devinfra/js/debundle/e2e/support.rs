@@ -98,8 +98,8 @@ pub struct Fixture {
     _root: TempDir,
 }
 
-pub fn run_logical_modules_e2e_fixture(test_name: &str, opts: FixtureOpts<'_>) -> Fixture {
-    let setup = setup_fixture(test_name, &opts);
+pub fn run_logical_modules_e2e_fixture(opts: FixtureOpts<'_>) -> Fixture {
+    let setup = setup_fixture(&opts);
     let spec_path = setup.out_root.join("transform_spec.jsonc");
     let spec = build_spec(
         opts.chunk_id,
@@ -134,11 +134,10 @@ pub fn run_logical_modules_e2e_fixture(test_name: &str, opts: FixtureOpts<'_>) -
 }
 
 pub fn expect_logical_modules_e2e_rejection(
-    test_name: &str,
     opts: FixtureOpts<'_>,
     error_substring_alternatives: &[&str],
 ) {
-    let setup = setup_fixture(test_name, &opts);
+    let setup = setup_fixture(&opts);
     let spec_path = setup.out_root.join("transform_spec.jsonc");
     let spec = build_spec(
         opts.chunk_id,
@@ -296,9 +295,8 @@ struct FixtureSetup {
     js_list_path: PathBuf,
 }
 
-fn setup_fixture(test_name: &str, opts: &FixtureOpts<'_>) -> FixtureSetup {
-    let prefix = prefix_from_test_name(test_name);
-    let root = TempDir::with_prefix(prefix).expect("create tempdir");
+fn setup_fixture(opts: &FixtureOpts<'_>) -> FixtureSetup {
+    let root = TempDir::with_prefix(current_test_prefix()).expect("create tempdir");
     let extracted_root = root.path().join("extracted");
     let out_root = root.path().join("out");
     let snapshot_root = root.path().join("snapshot");
@@ -370,7 +368,12 @@ fn build_spec(
     })
 }
 
-fn prefix_from_test_name(name: &str) -> String {
+/// Slugified test path for the current `#[test]` thread, used as the
+/// tempdir prefix so failed runs are easy to pick out of `/tmp` without
+/// each test having to repeat its own name.
+fn current_test_prefix() -> String {
+    let thread = std::thread::current();
+    let name = thread.name().unwrap_or("unknown");
     let slug: String = name
         .chars()
         .map(|c| {
