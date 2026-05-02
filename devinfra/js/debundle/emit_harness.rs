@@ -9,6 +9,7 @@ use artifact::{
     path_to_posix, split_posix_path,
 };
 use rewrite_specifiers::runtime_js_href;
+use scrambled_id_frequencies::{compute_scrambled_identifier_frequencies, write_queue};
 
 pub struct EmitBrowserHarnessOptions {
     pub asset_summary_path: PathBuf,
@@ -111,6 +112,11 @@ pub fn emit_browser_harness(
     fs::copy(&options.asset_summary_path, &asset_summary_in_tree)?;
     let manifest_path = options.out_dir.join("manifest.json");
     let rel = |target: &Path| manifest_relative_path(&manifest_path, target);
+    // The scrambled-identifier frequency queue is a side output of every
+    // harness emit; write it now so its path can be recorded in the
+    // manifest.
+    let queue = compute_scrambled_identifier_frequencies(artifact)?;
+    let queue_path = write_queue(&options.out_dir, &queue)?;
     let manifest = HarnessManifest {
         schema_version: 1,
         source_html: rel(&source_html_in_tree),
@@ -124,6 +130,7 @@ pub fn emit_browser_harness(
             .iter()
             .map(|entry| entry.path.clone())
             .collect(),
+        scrambled_identifier_frequencies: rel(&queue_path),
         generated: HarnessGeneratedManifest {
             bootstrap: rel(&options.out_dir.join("bootstrap.js")),
             chunks_manifest: rel(&options.out_dir.join("chunks.manifest.json")),
@@ -153,6 +160,9 @@ struct HarnessManifest {
     copied_assets: Vec<String>,
     entry_scripts: Vec<String>,
     module_preloads: Vec<String>,
+    /// Path to the scrambled-identifier frequency queue JSON (always
+    /// emitted as a side output). Manifest-relative.
+    scrambled_identifier_frequencies: String,
     generated: HarnessGeneratedManifest,
 }
 

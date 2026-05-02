@@ -4,8 +4,11 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 
-use artifact::{JsPipelineArtifact, list_chunk_file_paths, split_posix_path};
+use artifact::{
+    JsPipelineArtifact, list_chunk_file_paths, manifest_relative_path, split_posix_path,
+};
 use js_ast::emit_js_module;
+use scrambled_id_frequencies::{compute_scrambled_identifier_frequencies, write_queue};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -62,10 +65,19 @@ pub fn write_js_tree(
         }
     }
 
+    // The scrambled-identifier frequency queue is a side output of every
+    // pipeline run that writes a tree manifest. Emit it now and record
+    // its manifest-relative path on the root manifest.
+    let queue = compute_scrambled_identifier_frequencies(artifact)?;
+    let queue_path = write_queue(out_dir, &queue)?;
     if let Some(root_manifest) = &artifact.root_manifest {
+        let manifest_path = out_dir.join("manifest.json");
+        let mut root_manifest = root_manifest.clone();
+        root_manifest.scrambled_identifier_frequencies =
+            Some(manifest_relative_path(&manifest_path, &queue_path));
         fs::write(
-            out_dir.join("manifest.json"),
-            serde_json::to_string_pretty(root_manifest)? + "\n",
+            &manifest_path,
+            serde_json::to_string_pretty(&root_manifest)? + "\n",
         )?;
     }
     for chunk_id in &chunk_ids {

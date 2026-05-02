@@ -127,17 +127,25 @@ the disambiguation pass already builds.
 
 ## RE coverage side-output
 
-Re-introduce the deleted `extract_scrambled_identifier_frequencies` analysis
-(JS source of truth was `analysis/identifier_frequency.mjs`, ~600 LOC) as a
-**side output of every pipeline run** rather than a separate stage with its
-own `force` / `limit` / `excludedSymbolFiles` knobs. The intent: emit a
-machine-readable coverage summary that ranks the still-scrambled top-level
-symbols by frequency, so RE workflows can see "% of bundle understood" and
-prioritize the next rename wave. Keep the report keyed by stable selector
-identity so it stays meaningful across upstream version bumps.
+Implemented in <scrambled_id_frequencies.rs> as a side output of every
+manifest-emitting pipeline run (`emit_browser_harness`, `write_js_tree`).
+The JSON lands at `<out_dir>/scrambled-identifier-frequencies.json` and
+the path is recorded on the stage's manifest under
+`scrambledIdentifierFrequencies`.
 
-Until this lands, downstream specs should not invoke a scrambled-identifier
-stage; gaffer-private's spec generator currently drops it.
+The scrambled-name heuristic in `is_scrambled_name` is intentionally
+conservative on the side of "scrambled"; documented edge cases live in
+the focused unit tests at the bottom of the module. Two known
+tunability concerns recorded as in-code TODOs:
+
+- The length-5 mixed-case arm flags `setId`-shaped names as scrambled.
+  This is technically a false positive for some hand-written short
+  developer names. Tightening once we have real-bundle calibration data
+  is recorded inline.
+- `__name`-style identifiers (length > 4 with `__` prefix) are flagged
+  scrambled because they're typically compiler/runtime internals. If a
+  developer codebase deliberately uses leading-underscore short names,
+  this surfaces them.
 
 ## Logical materialization breadth
 

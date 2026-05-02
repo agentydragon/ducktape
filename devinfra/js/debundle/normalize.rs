@@ -113,6 +113,7 @@ fn build_artifact_manifest(chunk_manifests: &[::artifact::ChunkManifest]) -> Art
             .collect(),
         logical_modules: None,
         selected_module_lowerings: None,
+        scrambled_identifier_frequencies: None,
         extra: Default::default(),
     }
 }

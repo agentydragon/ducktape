@@ -46,5 +46,6 @@ rust_library(
         "url_rebase_test",
         "vendor_swap_test",
         "import_collision_test",
+        "scrambled_id_frequencies_test",
     ]
 ]

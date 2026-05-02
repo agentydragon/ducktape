@@ -44,6 +44,7 @@ rust_library(
     deps = [
         ":artifact",
         ":js_ast",
+        ":scrambled_id_frequencies",
         "@crates//:anyhow",
         "@crates//:serde",
         "@crates//:serde_json",
@@ -90,6 +91,7 @@ rust_library(
     deps = [
         ":artifact",
         ":rewrite_specifiers",
+        ":scrambled_id_frequencies",
         "@crates//:anyhow",
         "@crates//:serde",
         "@crates//:serde_json",
@@ -141,6 +143,29 @@ rust_library(
 )
 
 rust_library(
+    name = "scrambled_id_frequencies",
+    srcs = ["scrambled_id_frequencies.rs"],
+    crate_root = "scrambled_id_frequencies.rs",
+    edition = "2024",
+    deps = [
+        ":artifact",
+        ":js_ast",
+        "@crates//:anyhow",
+        "@crates//:chrono",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_test(
+    name = "scrambled_id_frequencies_test",
+    crate = ":scrambled_id_frequencies",
+    edition = "2024",
+)
+
+rust_library(
     name = "pipeline",
     srcs = ["pipeline.rs"],
     crate_root = "pipeline.rs",
@@ -151,6 +176,7 @@ rust_library(
         ":logical_modules",
         ":normalize",
         ":rewrite_specifiers",
+        ":scrambled_id_frequencies",
         ":vendor",
         ":write_tree",
         "@crates//:anyhow",
