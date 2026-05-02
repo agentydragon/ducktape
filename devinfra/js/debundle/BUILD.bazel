@@ -154,6 +154,7 @@ rust_library(
         ":vendor",
         ":write_tree",
         "@crates//:anyhow",
+        "@crates//:clap",
         "@crates//:serde",
         "@crates//:serde_json",
         "@rules_rust//tools/runfiles",
@@ -175,5 +176,6 @@ rust_binary(
     deps = [
         ":pipeline",
         "@crates//:anyhow",
+        "@crates//:clap",
     ],
 )

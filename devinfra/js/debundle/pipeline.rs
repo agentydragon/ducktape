@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
+use clap::Parser;
 use runfiles::{Runfiles, rlocation};
 use serde::{Deserialize, Serialize};
 
@@ -24,10 +25,65 @@ pub struct TransformCli {
     pub packages_root: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ParsedTransformCli {
-    Help,
-    Run(TransformCli),
+/// Command-line arguments for the debundle transform pipeline.
+///
+/// Use [`TransformArgs::resolve`] to obtain a [`TransformCli`] with paths
+/// resolved against Bazel runfiles when running as a `bazel run` target.
+#[derive(Parser, Debug)]
+#[command(
+    name = "debundle",
+    version,
+    about = "Run the debundle transform pipeline described by --spec.",
+    long_about = "Runs the transform pipeline described by the spec. Pipeline stages \
+                  dispatch directly to registered functions; this target does not invoke \
+                  Bazel from inside the pipeline. Specs are parsed as JSON with comments."
+)]
+pub struct TransformArgs {
+    /// Path to the transform spec (JSON with comments).
+    #[arg(long)]
+    pub spec: PathBuf,
+    /// Map a package name to its source directory: `<pkg>=<dir>`. May be repeated.
+    #[arg(long = "package-root", value_parser = parse_package_root_kv)]
+    pub package_roots: Vec<(String, PathBuf)>,
+    /// Root directory containing per-package sources (alternative to repeated --package-root).
+    #[arg(long)]
+    pub packages_root: Option<PathBuf>,
+}
+
+impl TransformArgs {
+    /// Resolve all path arguments against Bazel runfiles (when present) and
+    /// collapse `--package-root` pairs into a `HashMap`.
+    pub fn resolve(self) -> TransformCli {
+        let runfiles = Runfiles::create().ok();
+        TransformCli {
+            spec_path: resolve_runfiles_path(self.spec, runfiles.as_ref()),
+            package_roots: self
+                .package_roots
+                .into_iter()
+                .map(|(name, dir)| (name, resolve_runfiles_path(dir, runfiles.as_ref())))
+                .collect(),
+            packages_root: self
+                .packages_root
+                .map(|dir| resolve_runfiles_path(dir, runfiles.as_ref())),
+        }
+    }
+}
+
+fn parse_package_root_kv(value: &str) -> Result<(String, PathBuf), String> {
+    let Some(separator) = value.find('=') else {
+        return Err(format!(
+            "--package-root must be in <package>=<dir> form, got {value}"
+        ));
+    };
+    if separator == 0 || separator == value.len() - 1 {
+        return Err(format!(
+            "--package-root must be in <package>=<dir> form, got {value}"
+        ));
+    }
+    Ok((
+        value[..separator].to_string(),
+        PathBuf::from(&value[separator + 1..]),
+    ))
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -105,59 +161,6 @@ struct WriteJsTreeArgs {
 #[derive(Default)]
 struct TransformState {
     artifact: JsPipelineArtifact,
-}
-
-pub fn transform_cli_help() -> &'static str {
-    "Usage:\n  debundle --spec <spec.jsonc> [--package-root <pkg>=<dir>]... [--packages-root <dir>]\n\nRuns the transform pipeline described by the spec. Pipeline stages\ndispatch directly to registered functions; this target does not invoke Bazel\nfrom inside the pipeline. Specs are parsed as JSON with comments.\n"
-}
-
-pub fn parse_transform_cli_args(argv: &[String]) -> Result<ParsedTransformCli> {
-    let runfiles = Runfiles::create().ok();
-    let mut package_roots = HashMap::new();
-    let mut packages_root = None;
-    let mut spec_path = None;
-    let mut index = 0usize;
-    while index < argv.len() {
-        match argv[index].as_str() {
-            "--spec" => {
-                index += 1;
-                let value = require_arg_value(argv, index, "--spec")?;
-                spec_path = Some(resolve_runfiles_path(
-                    PathBuf::from(value),
-                    runfiles.as_ref(),
-                ));
-            }
-            "--package-root" => {
-                index += 1;
-                let value = require_arg_value(argv, index, "--package-root")?;
-                let (package_name, package_root) =
-                    parse_package_root_arg(&value, "--package-root")?;
-                package_roots.insert(
-                    package_name,
-                    resolve_runfiles_path(package_root, runfiles.as_ref()),
-                );
-            }
-            "--packages-root" => {
-                index += 1;
-                let value = require_arg_value(argv, index, "--packages-root")?;
-                packages_root = Some(resolve_runfiles_path(
-                    PathBuf::from(value),
-                    runfiles.as_ref(),
-                ));
-            }
-            "--help" | "-h" => return Ok(ParsedTransformCli::Help),
-            arg => bail!("Unknown argument: {arg}"),
-        }
-        index += 1;
-    }
-    let Some(spec_path) = spec_path else {
-        bail!("--spec is required");
-    };
-    Ok(ParsedTransformCli::Run(TransformCli {
-        spec_path,
-        package_roots,
-        packages_root,
-    }))
 }
 
 /// Resolve a path through Bazel runfiles when present, otherwise pass through.
@@ -374,25 +377,6 @@ fn validate_transform_spec(spec: &TransformSpec) -> Result<()> {
     Ok(())
 }
 
-fn require_arg_value(argv: &[String], index: usize, flag: &str) -> Result<String> {
-    argv.get(index)
-        .cloned()
-        .with_context(|| format!("{flag} requires a value"))
-}
-
-fn parse_package_root_arg(value: &str, flag: &str) -> Result<(String, PathBuf)> {
-    let Some(separator) = value.find('=') else {
-        bail!("{flag} must be in <package>=<dir> form, got {value}");
-    };
-    if separator == 0 || separator == value.len() - 1 {
-        bail!("{flag} must be in <package>=<dir> form, got {value}");
-    }
-    Ok((
-        value[..separator].to_string(),
-        PathBuf::from(&value[separator + 1..]),
-    ))
-}
-
 fn elapsed_ms(started: Instant) -> f64 {
     started.elapsed().as_secs_f64() * 1000.0
 }
@@ -476,18 +460,17 @@ mod tests {
 
     #[test]
     fn parse_transform_cli_args_matches_js_surface() {
-        let parsed = parse_transform_cli_args(&[
-            "--spec".to_string(),
-            "spec.jsonc".to_string(),
-            "--package-root".to_string(),
-            "pkg=/tmp/pkg".to_string(),
-            "--packages-root".to_string(),
-            "/tmp/packages".to_string(),
+        let args = TransformArgs::try_parse_from([
+            "debundle",
+            "--spec",
+            "spec.jsonc",
+            "--package-root",
+            "pkg=/tmp/pkg",
+            "--packages-root",
+            "/tmp/packages",
         ])
         .expect("parse cli");
-        let ParsedTransformCli::Run(cli) = parsed else {
-            panic!("expected run cli");
-        };
+        let cli = args.resolve();
         assert_eq!(cli.spec_path, PathBuf::from("spec.jsonc"));
         assert_eq!(
             cli.package_roots.get("pkg"),
