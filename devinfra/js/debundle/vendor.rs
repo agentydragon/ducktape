@@ -1183,9 +1183,15 @@ fn generate_named_from_module_default_wrapper(
                             }))));
                             body.push(const_alias(default_local_name, ident.sym.as_ref()));
                         } else {
-                            bail!(
-                                "swapVendorChunks operation {op_id} named-from-module-default: anonymous default function is unsupported by Rust AST wrapper"
-                            );
+                            // Anonymous `export default function () { ... }`
+                            // collapses to `const __vendor_default__ = function () { ... };`.
+                            body.push(const_init_with_expr(
+                                default_local_name,
+                                Expr::Fn(FnExpr {
+                                    ident: None,
+                                    function: function.function.clone(),
+                                }),
+                            ));
                         }
                     }
                     DefaultDecl::Class(class) => {
@@ -1197,9 +1203,15 @@ fn generate_named_from_module_default_wrapper(
                             }))));
                             body.push(const_alias(default_local_name, ident.sym.as_ref()));
                         } else {
-                            bail!(
-                                "swapVendorChunks operation {op_id} named-from-module-default: anonymous default class is unsupported by Rust AST wrapper"
-                            );
+                            // Anonymous `export default class { ... }` collapses
+                            // to `const __vendor_default__ = class { ... };`.
+                            body.push(const_init_with_expr(
+                                default_local_name,
+                                Expr::Class(ClassExpr {
+                                    ident: None,
+                                    class: class.class.clone(),
+                                }),
+                            ));
                         }
                     }
                     DefaultDecl::TsInterfaceDecl(_) => {}
@@ -1364,6 +1376,13 @@ fn export_const_ident(export_name: &str, local_name: &str) -> ModuleItem {
 }
 
 fn const_alias(alias: &str, target: &str) -> ModuleItem {
+    const_init_with_expr(
+        alias,
+        Expr::Ident(Ident::new_no_ctxt(target.into(), DUMMY_SP)),
+    )
+}
+
+fn const_init_with_expr(alias: &str, init: Expr) -> ModuleItem {
     ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(VarDecl {
         span: DUMMY_SP,
         ctxt: SyntaxContext::empty(),
@@ -1375,10 +1394,7 @@ fn const_alias(alias: &str, target: &str) -> ModuleItem {
                 id: Ident::new_no_ctxt(alias.into(), DUMMY_SP),
                 type_ann: None,
             }),
-            init: Some(Box::new(Expr::Ident(Ident::new_no_ctxt(
-                target.into(),
-                DUMMY_SP,
-            )))),
+            init: Some(Box::new(init)),
             definite: false,
         }],
     }))))

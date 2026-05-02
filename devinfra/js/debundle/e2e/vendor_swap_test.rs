@@ -38,6 +38,32 @@ const lib = { ping() { return "pong"; } };
     assert_wrapper_named_from_module_default(&fixture);
 }
 
+#[test]
+fn named_from_module_default_handles_anonymous_default_function() {
+    // `export default function () { ... }` collapses into
+    // `const __vendor_default__ = function () { ... };`.
+    let upstream_source = r#"export default function () { return "ping"; }
+"#;
+
+    let fixture = run_named_from_module_default_fixture(upstream_source);
+
+    assert_wrapper_named_from_module_default(&fixture);
+}
+
+#[test]
+fn named_from_module_default_handles_anonymous_default_class() {
+    // `export default class { ... }` collapses into
+    // `const __vendor_default__ = class { ... };`.
+    let upstream_source = r#"export default class {
+  ping() { return "ping"; }
+}
+"#;
+
+    let fixture = run_named_from_module_default_fixture(upstream_source);
+
+    assert_wrapper_named_from_module_default(&fixture);
+}
+
 fn assert_wrapper_named_from_module_default(fixture: &VendorSwapFixture) {
     assert!(
         fixture.result.status.success(),
@@ -202,14 +228,8 @@ fn build_named_from_module_default_spec(args: BuildSpecArgs<'_>) -> Value {
                 "text": "export { x as default }",
             }],
         }],
+        "inputs": { "inputRoot": args.snapshot_root, "jsListPath": args.js_list_path },
         "pipeline": [
-            {
-                "id": "load",
-                "operation": "load_js_chunks",
-                "args": { "inputRoot": args.snapshot_root, "jsListPath": args.js_list_path },
-            },
-            { "id": "parse", "operation": "compute_js_asts" },
-            { "id": "normalize", "operation": "normalize_js_chunks" },
             { "id": "annotate_vendor", "operation": "apply_vendor_annotations" },
             { "id": "rename_vendor", "operation": "rename_vendor_exports" },
             {
