@@ -104,6 +104,7 @@ pub struct TransformStepSummary {
 #[derive(Debug, Clone, Deserialize)]
 struct TransformSpec {
     kind: Option<String>,
+    inputs: Option<LoadJsChunksArgs>,
     pipeline: Option<Vec<TransformStage>>,
     operations: Option<Vec<serde_json::Value>>,
 }
@@ -210,10 +211,18 @@ pub fn render_transform_summary(summary: &TransformRunSummary) -> String {
 pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
     let spec = load_transform_spec(&cli.spec_path)?;
     validate_transform_spec(&spec)?;
+    let inputs = spec
+        .inputs
+        .expect("validate_transform_spec ensures inputs is present");
     let pipeline = spec.pipeline.unwrap_or_default();
     let operations = spec.operations.unwrap_or_default();
     let started = Instant::now();
     let mut state = TransformState::default();
+    let (artifact, _load_manifest) = load_js_chunks(&inputs.input_root, &inputs.js_list_path)?;
+    state.artifact = artifact;
+    compute_js_asts(&mut state.artifact, true)?;
+    let (artifact, _normalize_manifest) = normalize_js_chunks(std::mem::take(&mut state.artifact))?;
+    state.artifact = artifact;
     let mut steps = Vec::new();
 
     for stage in pipeline {
@@ -245,23 +254,10 @@ fn run_transform_stage(
     cli: &TransformCli,
 ) -> Result<Option<String>> {
     match operation {
-        "load_js_chunks" => {
-            let args: LoadJsChunksArgs =
-                serde_json::from_value(args.context("load_js_chunks requires args")?)?;
-            let (artifact, manifest) = load_js_chunks(&args.input_root, &args.js_list_path)?;
-            state.artifact = artifact;
-            Ok(Some(manifest.kind.to_string()))
-        }
-        "compute_js_asts" => {
-            let manifest = compute_js_asts(&mut state.artifact, true)?;
-            Ok(Some(manifest.kind.to_string()))
-        }
-        "normalize_js_chunks" => {
-            let _ = args;
-            let artifact = std::mem::take(&mut state.artifact);
-            let (artifact, _manifest) = normalize_js_chunks(artifact)?;
-            state.artifact = artifact;
-            Ok(None)
+        "load_js_chunks" | "compute_js_asts" | "normalize_js_chunks" => {
+            bail!(
+                "{operation} is no longer a pipeline operation; configure inputs at the spec level"
+            )
         }
         "rewrite_chunk_entry_specifiers" => {
             let manifest = rewrite_chunk_entry_specifiers(&mut state.artifact)?;
@@ -352,6 +348,16 @@ fn validate_transform_spec(spec: &TransformSpec) -> Result<()> {
     let kind = spec.kind.as_deref().unwrap_or("<missing>");
     if kind != "js.ast_transform_spec" {
         bail!("Unsupported transform spec kind: {kind}");
+    }
+    let inputs = spec
+        .inputs
+        .as_ref()
+        .context("Transform spec must contain an inputs object with inputRoot and jsListPath")?;
+    if inputs.input_root.as_os_str().is_empty() {
+        bail!("Transform spec inputs.inputRoot must not be empty");
+    }
+    if inputs.js_list_path.as_os_str().is_empty() {
+        bail!("Transform spec inputs.jsListPath must not be empty");
     }
     let pipeline = spec
         .pipeline
@@ -526,23 +532,11 @@ mod tests {
             &spec_path,
             serde_json::to_string_pretty(&serde_json::json!({
                 "kind": "js.ast_transform_spec",
+                "inputs": {
+                    "inputRoot": snapshot,
+                    "jsListPath": extracted.join("js-files.txt"),
+                },
                 "pipeline": [
-                    {
-                        "id": "load",
-                        "operation": "load_js_chunks",
-                        "args": {
-                            "inputRoot": snapshot,
-                            "jsListPath": extracted.join("js-files.txt"),
-                        },
-                    },
-                    {
-                        "id": "parse",
-                        "operation": "compute_js_asts",
-                    },
-                    {
-                        "id": "normalize",
-                        "operation": "normalize_js_chunks",
-                    },
                     {
                         "id": "rewrite",
                         "operation": "rewrite_chunk_entry_specifiers",
@@ -567,7 +561,7 @@ mod tests {
             packages_root: None,
         })?;
 
-        assert_eq!(summary.steps.len(), 5);
+        assert_eq!(summary.steps.len(), 2);
         assert!(out.join("bootstrap.js").exists());
         assert!(out.join("manifest.json").exists());
         let entry = fs::read_to_string(out.join("static/index-DuckMock/entry.js"))?;

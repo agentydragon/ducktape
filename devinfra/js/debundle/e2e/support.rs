@@ -348,15 +348,9 @@ fn build_spec(
     }
     json!({
         "kind": "js.ast_transform_spec",
+        "inputs": { "inputRoot": snapshot_root, "jsListPath": js_list_path },
         "operations": all_operations,
         "pipeline": [
-            {
-                "id": "load",
-                "operation": "load_js_chunks",
-                "args": { "inputRoot": snapshot_root, "jsListPath": js_list_path },
-            },
-            { "id": "parse", "operation": "compute_js_asts" },
-            { "id": "normalize", "operation": "normalize_js_chunks", "args": { "jobs": 1 } },
             {
                 "id": "logical",
                 "operation": "materialize_logical_modules",

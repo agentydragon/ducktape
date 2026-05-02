@@ -104,6 +104,14 @@ just `$(rlocationpath <label>)` (no shell wrappers, no `$$RUNFILES_DIR`
 substitutions) while keeping the binary usable as a standalone tool outside
 the Bazel tree.
 
+## Spec-level `inputs`
+
+`load_js_chunks`, `compute_js_asts`, and `normalize_js_chunks` are always-on
+startup steps run before the pipeline loop — they are not pipeline operations.
+The spec configures them via a top-level `inputs: { inputRoot, jsListPath }`
+object. Listing any of these three operations as a pipeline stage is a hard
+error.
+
 ## Materialize logical-modules `targetDir`
 
 `materialize_logical_modules` accepts an optional `targetDir`. Absent or
