@@ -13,7 +13,7 @@
 // The shape mirrors gaffer's tana/upstream/web/{snapshots,extracted}/<version>/.
 
 import { copyFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 
 function parseArgs(argv) {
   const options = {};
@@ -66,11 +66,11 @@ function rewriteIndexHtml(html, mainHref) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  const bundleDir = resolve(options.bundle);
-  const indexHtmlPath = resolve(options.index_html);
-  const snapshotOut = resolve(options.snapshot_out);
-  const assetSummaryOut = resolve(options.asset_summary_out);
-  const jsListOut = resolve(options.js_list_out);
+  const bundleDir = options.bundle;
+  const indexHtmlPath = options.index_html;
+  const snapshotOut = options.snapshot_out;
+  const assetSummaryOut = options.asset_summary_out;
+  const jsListOut = options.js_list_out;
 
   await mkdir(snapshotOut, { recursive: true });
   await mkdir(join(snapshotOut, "dist"), { recursive: true });
