@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 
 export function requireValue(argv, index, flag) {
   const value = argv[index];
@@ -41,18 +41,6 @@ export function ensureOutputDir(outDir) {
     throw new Error(`Output path exists and is not a directory: ${outDir}`);
   }
   mkdirSync(outDir, { recursive: true });
-}
-
-export function relativeWorkspacePath(path) {
-  const workspace = process.env.BUILD_WORKSPACE_DIRECTORY ?? process.env.BUILD_WORKING_DIRECTORY ?? process.env.PWD;
-  if (!workspace) {
-    return path;
-  }
-  const rel = relative(workspace, path);
-  if (rel === "" || rel.startsWith("..")) {
-    return path;
-  }
-  return rel.split(sep).join("/");
 }
 
 export function logProgress(message) {
