@@ -639,17 +639,15 @@ pub fn path_to_posix(path: &Path) -> String {
 
 /// Render `target` as a path string for inclusion in a manifest serialized at
 /// `manifest_path`. If `target` is under `manifest_path`'s parent, the result
-/// is relative to that parent (so the manifest tree is portable across
-/// machines). Otherwise the absolute form is returned. Callers are expected
-/// to pass absolute paths for both arguments; relative inputs are returned
-/// verbatim.
+/// is relative to that parent (so the manifest tree is portable). Otherwise
+/// `target` is returned verbatim. The two paths must share an anchor —
+/// either both absolute or both relative to the same cwd; mixing the two
+/// produces a degenerate "no common prefix" result and `target` falls
+/// through unchanged.
 pub fn manifest_relative_path(manifest_path: &Path, target: &Path) -> String {
     let Some(manifest_dir) = manifest_path.parent() else {
         return path_to_posix(target);
     };
-    if !manifest_dir.is_absolute() || !target.is_absolute() {
-        return path_to_posix(target);
-    }
     if let Ok(rel) = target.strip_prefix(manifest_dir) {
         if rel.as_os_str().is_empty() {
             return ".".to_string();
