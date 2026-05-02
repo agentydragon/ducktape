@@ -561,6 +561,35 @@ mod tests {
         assert!(out.join("manifest.json").exists());
         let entry = fs::read_to_string(out.join("static/index-DuckMock/entry.js"))?;
         assert!(entry.contains("../chunk-DuckMock/entry.js"));
+
+        // The harness tree must be self-contained: every path the manifest
+        // records resolves to a file inside `out_dir`, with no leakage to
+        // the original `extracted/` or `snapshots/` input trees. Consumers
+        // (live proxy, downstream tools) may receive the manifest through
+        // runfiles where the original input trees aren't co-located.
+        let manifest: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(out.join("manifest.json"))?)?;
+        for field in [
+            "sourceHtml",
+            "assetSummaryPath",
+            "chunksManifestPath",
+            "runtimeRoot",
+            "outDir",
+        ] {
+            let value = manifest
+                .get(field)
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_else(|| panic!("manifest is missing {field}"));
+            assert!(
+                !value.starts_with('/') && !value.starts_with(".."),
+                "manifest.{field} = {value:?} escapes the harness tree"
+            );
+            let resolved = out.join(value);
+            assert!(
+                resolved.exists(),
+                "manifest.{field} = {value:?} resolves to {resolved:?} which does not exist"
+            );
+        }
         Ok(())
     }
 }

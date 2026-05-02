@@ -114,7 +114,6 @@ pub fn emit_browser_harness(
     let manifest = HarnessManifest {
         schema_version: 1,
         source_html: rel(&source_html_in_tree),
-        snapshot_root: rel(&options.snapshot_root),
         asset_summary_path: rel(&asset_summary_in_tree),
         chunks_manifest_path: rel(&options.out_dir.join("chunks.manifest.json")),
         runtime_root: rel(&options.out_dir),
@@ -147,7 +146,6 @@ pub fn emit_browser_harness(
 struct HarnessManifest {
     schema_version: u8,
     source_html: String,
-    snapshot_root: String,
     asset_summary_path: String,
     chunks_manifest_path: String,
     runtime_root: String,
