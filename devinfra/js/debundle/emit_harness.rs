@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use artifact::{
     JsPipelineArtifact, chunk_id_for_js_path, materialize_artifact_scripts, path_to_posix,
-    split_posix_path,
+    resolve_workspace_path, split_posix_path,
 };
 use rewrite_specifiers::runtime_js_href;
 
@@ -76,17 +76,23 @@ pub fn emit_browser_harness(
         }
     }
 
-    prepare_harness_output_dir(&options.out_dir, options.force)?;
-    materialize_artifact_scripts(artifact, &options.out_dir)?;
-    let copied_assets = copy_snapshot_assets(&options.snapshot_root, &options.out_dir)?;
-    let bootstrap = build_bootstrap(artifact, &entry_scripts, &options.out_dir, &options.out_dir)?;
+    let resolved_out_dir = resolve_workspace_path(&options.out_dir)?;
+    prepare_harness_output_dir(&resolved_out_dir, options.force)?;
+    materialize_artifact_scripts(artifact, &resolved_out_dir)?;
+    let copied_assets = copy_snapshot_assets(&options.snapshot_root, &resolved_out_dir)?;
+    let bootstrap = build_bootstrap(
+        artifact,
+        &entry_scripts,
+        &resolved_out_dir,
+        &resolved_out_dir,
+    )?;
     let index_html =
-        rewrite_index_html(artifact, &source_html, &options.out_dir, &options.out_dir)?;
+        rewrite_index_html(artifact, &source_html, &resolved_out_dir, &resolved_out_dir)?;
 
-    fs::write(options.out_dir.join("index.html"), index_html)?;
-    fs::write(options.out_dir.join("bootstrap.js"), bootstrap)?;
+    fs::write(resolved_out_dir.join("index.html"), index_html)?;
+    fs::write(resolved_out_dir.join("bootstrap.js"), bootstrap)?;
     fs::write(
-        options.out_dir.join("chunks.manifest.json"),
+        resolved_out_dir.join("chunks.manifest.json"),
         serde_json::to_string_pretty(&serde_json::json!({
             "chunks": artifact
                 .root_manifest
@@ -101,9 +107,9 @@ pub fn emit_browser_harness(
         source_html: path_to_posix(&source_html_path),
         snapshot_root: path_to_posix(&options.snapshot_root),
         asset_summary_path: path_to_posix(&options.asset_summary_path),
-        chunks_manifest_path: path_to_posix(&options.out_dir.join("chunks.manifest.json")),
-        runtime_root: path_to_posix(&options.out_dir),
-        out_dir: path_to_posix(&options.out_dir),
+        chunks_manifest_path: path_to_posix(&resolved_out_dir.join("chunks.manifest.json")),
+        runtime_root: path_to_posix(&resolved_out_dir),
+        out_dir: path_to_posix(&resolved_out_dir),
         copied_assets,
         entry_scripts,
         module_preloads: preload_entries
@@ -111,17 +117,17 @@ pub fn emit_browser_harness(
             .map(|entry| entry.path.clone())
             .collect(),
         generated: HarnessGeneratedManifest {
-            bootstrap: path_to_posix(&options.out_dir.join("bootstrap.js")),
-            chunks_manifest: path_to_posix(&options.out_dir.join("chunks.manifest.json")),
-            index_html: path_to_posix(&options.out_dir.join("index.html")),
+            bootstrap: path_to_posix(&resolved_out_dir.join("bootstrap.js")),
+            chunks_manifest: path_to_posix(&resolved_out_dir.join("chunks.manifest.json")),
+            index_html: path_to_posix(&resolved_out_dir.join("index.html")),
         },
     };
     fs::write(
-        options.out_dir.join("manifest.json"),
+        resolved_out_dir.join("manifest.json"),
         serde_json::to_string_pretty(&manifest)? + "\n",
     )?;
     fs::write(
-        options.out_dir.join("package.json"),
+        resolved_out_dir.join("package.json"),
         "{\n  \"type\": \"module\"\n}\n",
     )?;
     Ok(())

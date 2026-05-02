@@ -435,6 +435,17 @@ fn spawn_transform(spec_path: &Path) -> CommandResult {
 /// captured stdio + exit status. Used by tests that exercise pipeline stages
 /// outside the logical-modules harness in [`run_logical_modules_e2e_fixture`].
 pub fn run_debundler(spec_path: &Path, package_roots: &[(&str, &Path)]) -> CommandResult {
+    run_debundler_with_env(spec_path, package_roots, &[])
+}
+
+/// Like [`run_debundler`], but also overrides specific environment variables
+/// on the spawned process (e.g. `BUILD_WORKSPACE_DIRECTORY` to exercise the
+/// stage-side `resolve_workspace_path` behaviour).
+pub fn run_debundler_with_env(
+    spec_path: &Path,
+    package_roots: &[(&str, &Path)],
+    env: &[(&str, &Path)],
+) -> CommandResult {
     let bin = debundler_path();
     let mut command = Command::new(&bin);
     command.arg("--spec").arg(spec_path);
@@ -442,6 +453,9 @@ pub fn run_debundler(spec_path: &Path, package_roots: &[(&str, &Path)]) -> Comma
         command
             .arg("--package-root")
             .arg(format!("{name}={}", dir.display()));
+    }
+    for (key, value) in env {
+        command.env(key, value);
     }
     let output = command
         .output()

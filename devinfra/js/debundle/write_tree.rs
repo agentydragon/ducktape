@@ -1,10 +1,13 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 
-use artifact::{JsPipelineArtifact, list_chunk_file_paths, split_posix_path};
+use artifact::{
+    JsPipelineArtifact, list_chunk_file_paths, relative_workspace_path, resolve_workspace_path,
+    split_posix_path,
+};
 use js_ast::emit_js_module;
 
 #[derive(Debug, Clone, Serialize)]
@@ -96,19 +99,6 @@ pub fn write_js_tree(
     })
 }
 
-pub fn resolve_workspace_path(path: &Path) -> Result<PathBuf> {
-    if path.is_absolute() {
-        return Ok(path.to_path_buf());
-    }
-    let workspace = std::env::var("BUILD_WORKSPACE_DIRECTORY")
-        .or_else(|_| std::env::var("BUILD_WORKING_DIRECTORY"))
-        .or_else(|_| std::env::var("PWD"))
-        .ok()
-        .map(PathBuf::from)
-        .unwrap_or(std::env::current_dir()?);
-    Ok(workspace.join(path))
-}
-
 fn prepare_output_dir(out_dir: &Path, force: bool) -> Result<()> {
     if out_dir.exists() {
         let metadata = fs::metadata(out_dir)?;
@@ -130,21 +120,4 @@ fn prepare_output_dir(out_dir: &Path, force: bool) -> Result<()> {
     }
     fs::create_dir_all(out_dir)?;
     Ok(())
-}
-
-fn relative_workspace_path(path: &Path) -> String {
-    let workspace = std::env::var("BUILD_WORKSPACE_DIRECTORY")
-        .or_else(|_| std::env::var("BUILD_WORKING_DIRECTORY"))
-        .or_else(|_| std::env::var("PWD"))
-        .ok()
-        .map(PathBuf::from);
-    if let Some(workspace) = workspace
-        && let Ok(rel) = path.strip_prefix(&workspace)
-    {
-        if rel.as_os_str().is_empty() {
-            return path.to_string_lossy().replace('\\', "/");
-        }
-        return rel.to_string_lossy().replace('\\', "/");
-    }
-    path.to_string_lossy().replace('\\', "/")
 }

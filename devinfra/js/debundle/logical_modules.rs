@@ -14,10 +14,9 @@ use artifact::{
     ArtifactCounts, ArtifactManifest, ChunkFileRecord, ChunkLogicalModulesSummary, ChunkMetadata,
     FileMetadata, JsChunk, JsFile, JsPipelineArtifact, RootLogicalModulesSummary,
     SelectedModuleLowering, get_chunk_entry_path, normalize_relative_path, posix_join,
-    posix_relative,
+    posix_relative, resolve_workspace_path,
 };
 use js_ast::{ParsedJsModule, set_str_value, str_value};
-use write_tree::resolve_workspace_path;
 
 const LOWERING_FILE_PRAGMA: &str =
     "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";

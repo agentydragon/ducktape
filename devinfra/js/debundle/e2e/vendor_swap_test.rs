@@ -2,7 +2,9 @@
 //! re-exports a synthetic upstream package, runs the swap pipeline, and
 //! asserts the generated wrapper.
 
-use debundle_e2e_support::{CommandResult, run_debundler, write_json_file, write_text_file};
+use debundle_e2e_support::{
+    CommandResult, run_debundler_with_env, write_json_file, write_text_file,
+};
 use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -99,21 +101,24 @@ fn run_named_from_module_default_fixture(upstream_source: &str) -> VendorSwapFix
 
     let root =
         TempDir::with_prefix("vendor-swap-named-from-module-default-").expect("create tempdir");
-    // Mirror the gaffer layout: the manifest's `generatedWrapperPath` is a
-    // workspace-relative `vendors/generated/<chunk_id>/<entry>` string, and
-    // `outputWrapperDir` must be the matching `<workspace>/vendors/generated`
-    // for the on-disk file and the recorded path to agree.
+    // The fixture passes RELATIVE output paths (`vendors/generated`,
+    // `vendors/manifest.json`, `out`) plus `BUILD_WORKSPACE_DIRECTORY` set
+    // to the test's synthetic workspace. The pipeline must resolve these
+    // against the workspace, not against the launcher's cwd, otherwise
+    // outputs land somewhere unrelated when invoked via `bazel run`.
     let workspace_root = root.path().join("workspace");
-    let extracted_root = workspace_root.join("extracted");
-    let snapshot_root = workspace_root.join("snapshot");
-    let out_root = workspace_root.join("out");
-    let wrapper_root = workspace_root.join("vendors").join("generated");
-    let manifest_path = workspace_root.join("vendors").join("manifest.json");
+    let snapshot_rel = Path::new("snapshot");
+    let extracted_rel = Path::new("extracted");
+    let out_rel = Path::new("out");
+    let wrapper_rel = Path::new("vendors/generated");
+    let manifest_rel = Path::new("vendors/manifest.json");
+    let snapshot_root = workspace_root.join(snapshot_rel);
+    let extracted_root = workspace_root.join(extracted_rel);
+    let wrapper_root = workspace_root.join(wrapper_rel);
+    let manifest_path = workspace_root.join(manifest_rel);
     let package_root = root.path().join("upstream");
     fs::create_dir_all(&extracted_root).unwrap();
     fs::create_dir_all(&snapshot_root).unwrap();
-    fs::create_dir_all(&out_root).unwrap();
-    fs::create_dir_all(&wrapper_root).unwrap();
     fs::create_dir_all(&package_root).unwrap();
     fs::create_dir_all(snapshot_root.join(Path::new(CHUNK_PATH).parent().unwrap())).unwrap();
     fs::create_dir_all(package_root.join("dist")).unwrap();
@@ -143,20 +148,25 @@ fn run_named_from_module_default_fixture(upstream_source: &str) -> VendorSwapFix
         chunk_path: CHUNK_PATH,
         js_list_path: &js_list_path,
         snapshot_root: &snapshot_root,
-        out_root: &out_root,
-        manifest_path: &manifest_path,
-        wrapper_root: &wrapper_root,
+        out_root: out_rel,
+        manifest_path: manifest_rel,
+        wrapper_root: wrapper_rel,
         package_name: PACKAGE_NAME,
         package_version: PACKAGE_VERSION,
         subpath: SUBPATH,
     });
     write_json_file(&spec_path, &spec);
 
-    let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
+    let result = run_debundler_with_env(
+        &spec_path,
+        &[(PACKAGE_NAME, &package_root)],
+        &[("BUILD_WORKSPACE_DIRECTORY", &workspace_root)],
+    );
 
     // Wrapper layout: <output_wrapper_dir>/<chunk_id>/<entry_file>. chunk_id
     // is the chunk path with the trailing `.js` stripped; the normalized
-    // chunk's entry file is always `entry.js`.
+    // chunk's entry file is always `entry.js`. The pipeline resolves the
+    // relative `vendors/generated` against `BUILD_WORKSPACE_DIRECTORY`.
     let chunk_id = CHUNK_PATH.strip_suffix(".js").unwrap_or(CHUNK_PATH);
     let wrapper_path = wrapper_root.join(chunk_id).join("entry.js");
     VendorSwapFixture {
@@ -202,14 +212,8 @@ fn build_named_from_module_default_spec(args: BuildSpecArgs<'_>) -> Value {
                 "text": "export { x as default }",
             }],
         }],
+        "inputs": { "inputRoot": args.snapshot_root, "jsListPath": args.js_list_path },
         "pipeline": [
-            {
-                "id": "load",
-                "operation": "load_js_chunks",
-                "args": { "inputRoot": args.snapshot_root, "jsListPath": args.js_list_path },
-            },
-            { "id": "parse", "operation": "compute_js_asts" },
-            { "id": "normalize", "operation": "normalize_js_chunks" },
             { "id": "annotate_vendor", "operation": "apply_vendor_annotations" },
             { "id": "rename_vendor", "operation": "rename_vendor_exports" },
             {

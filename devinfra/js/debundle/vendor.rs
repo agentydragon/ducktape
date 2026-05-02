@@ -9,8 +9,9 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 use artifact::{
-    JsPipelineArtifact, get_chunk_entry_path, list_chunk_file_paths,
-    resolve_artifact_import_reference, resolve_artifact_source_import_reference, split_posix_path,
+    JsPipelineArtifact, get_chunk_entry_path, list_chunk_file_paths, relative_workspace_path,
+    resolve_artifact_import_reference, resolve_artifact_source_import_reference,
+    resolve_workspace_path, split_posix_path,
 };
 use js_ast::{ParsedJsModule, emit_js_module, parse_js_module, str_value};
 
@@ -527,11 +528,12 @@ pub fn swap_vendor_chunks(
     if options.write
         && let Some(output_manifest_path) = options.output_manifest_path
     {
-        if let Some(parent) = output_manifest_path.parent() {
+        let resolved_manifest_path = resolve_workspace_path(&output_manifest_path)?;
+        if let Some(parent) = resolved_manifest_path.parent() {
             fs::create_dir_all(parent)?;
         }
         fs::write(
-            output_manifest_path,
+            resolved_manifest_path,
             serde_json::to_string_pretty(&json!({
                 "kind": "js.vendor_resolution_manifest",
                 "resolutions": resolutions,
@@ -1287,17 +1289,20 @@ fn write_wrapper_if_requested(
     entry_file: &str,
     source: &str,
 ) -> Result<Option<String>> {
-    let wrapper_rel_path = format!("vendors/generated/{chunk_id}/{entry_file}");
-    if write && let Some(output_wrapper_dir) = output_wrapper_dir {
-        let wrapper_abs_path = output_wrapper_dir
-            .join(split_posix_path(chunk_id))
-            .join(split_posix_path(entry_file));
+    let Some(output_wrapper_dir) = output_wrapper_dir else {
+        return Ok(None);
+    };
+    let resolved_dir = resolve_workspace_path(output_wrapper_dir)?;
+    let wrapper_abs_path = resolved_dir
+        .join(split_posix_path(chunk_id))
+        .join(split_posix_path(entry_file));
+    if write {
         if let Some(parent) = wrapper_abs_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(wrapper_abs_path, source)?;
+        fs::write(&wrapper_abs_path, source)?;
     }
-    Ok(Some(wrapper_rel_path))
+    Ok(Some(relative_workspace_path(&wrapper_abs_path)))
 }
 
 fn set_diff(left: &BTreeSet<String>, right: &BTreeSet<String>) -> BTreeSet<String> {

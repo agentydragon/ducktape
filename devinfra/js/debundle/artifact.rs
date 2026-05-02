@@ -633,6 +633,45 @@ pub fn split_posix_path(path: &str) -> PathBuf {
     path.split('/').collect()
 }
 
+/// Resolve a path against the workspace root for output writes.
+///
+/// `bazel run` sets `BUILD_WORKSPACE_DIRECTORY` to the source workspace; we
+/// fall back to `BUILD_WORKING_DIRECTORY`, then `PWD`, then the process cwd.
+/// Absolute paths pass through unchanged so callers can also pass concrete
+/// destinations from outside Bazel.
+pub fn resolve_workspace_path(path: &Path) -> Result<PathBuf> {
+    if path.is_absolute() {
+        return Ok(path.to_path_buf());
+    }
+    let workspace = std::env::var("BUILD_WORKSPACE_DIRECTORY")
+        .or_else(|_| std::env::var("BUILD_WORKING_DIRECTORY"))
+        .or_else(|_| std::env::var("PWD"))
+        .ok()
+        .map(PathBuf::from)
+        .unwrap_or(std::env::current_dir()?);
+    Ok(workspace.join(path))
+}
+
+/// Render a workspace-relative path for inclusion in manifests.
+///
+/// Strips the resolved workspace root if `path` lies inside it, otherwise
+/// returns the absolute path unchanged. Always uses POSIX separators so the
+/// result is stable across platforms.
+pub fn relative_workspace_path(path: &Path) -> String {
+    let workspace = std::env::var("BUILD_WORKSPACE_DIRECTORY")
+        .or_else(|_| std::env::var("BUILD_WORKING_DIRECTORY"))
+        .or_else(|_| std::env::var("PWD"))
+        .ok()
+        .map(PathBuf::from);
+    if let Some(workspace) = workspace
+        && let Ok(rel) = path.strip_prefix(&workspace)
+        && !rel.as_os_str().is_empty()
+    {
+        return rel.to_string_lossy().replace('\\', "/");
+    }
+    path.to_string_lossy().replace('\\', "/")
+}
+
 pub fn path_to_posix(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
