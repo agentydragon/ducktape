@@ -476,20 +476,50 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         }
     }
     let mut entry_imports = Vec::<ModuleItem>::new();
+    let mut occupied = collect_occupied_local_names(&entry_body);
+    let mut body_renames = BTreeMap::<String, String>::new();
     for (module_index, plan) in module_plans.iter().enumerate() {
         if plan.bindings.is_empty() {
             continue;
         }
-        let mut bindings = plan.bindings.clone();
+        let mut emit_renames = BTreeMap::<String, String>::new();
+        let mut resolved =
+            disambiguate_import_locals(&plan.bindings, &mut occupied, &mut emit_renames);
         if requires_init_by_module.contains(&module_index) {
             let init_name = init_name_for_plan(plan);
-            bindings.insert(init_name.clone(), init_name);
+            resolved.insert(init_name.clone(), init_name);
+        }
+        // A rename only propagates to consumer-body references when the
+        // moved decl actually belongs to this plan. Plans that listed a
+        // binding without owning the decl emit a dangling import; the
+        // body refs continue to resolve to whichever binding owned the
+        // original local name.
+        for (local, fresh) in emit_renames {
+            if binding_assignment.get(&local).copied() == Some(module_index) {
+                body_renames.insert(local, fresh);
+            }
         }
         entry_imports.push(import_decl_for_plan(
             entry_file,
             &plan.target_file,
-            &bindings,
+            &resolved,
         ));
+    }
+    if !body_renames.is_empty() {
+        // Re-exports `export { local }` (without `from`) collapse `local`
+        // and the public exported name into a single ident. Renaming the
+        // orig would also rename the public name, breaking downstream
+        // consumers — so rewrite them to `export { fresh as local }`
+        // before the generic renamer visits the rest.
+        for item in entry_body.iter_mut() {
+            preserve_export_specifier_names(item, &body_renames);
+        }
+        let mut renamer = IdentifierRenamer {
+            renames: body_renames,
+        };
+        for item in entry_body.iter_mut() {
+            item.visit_mut_with(&mut renamer);
+        }
     }
     for import in entry_imports.into_iter().rev() {
         entry_body.insert(import_insert_index, import);
@@ -1640,6 +1670,121 @@ fn assigned_module_for_names(
         .iter()
         .filter_map(|name| binding_assignment.get(name).copied())
         .next()
+}
+
+/// Names occupying the file-scope binding namespace of `body`.
+///
+/// Used to disambiguate consumer-side `import { exportedName as localName }`
+/// emissions whose `localName` would collide with another binding in the
+/// same scope (e.g. a surviving import or top-level declaration that
+/// already uses the scrambled name). `export { name }` re-exports without
+/// `from` are references, not bindings, so they aren't tracked here; the
+/// IdentifierRenamer pass that follows the disambiguation rewrites their
+/// `orig` ident along with every other body reference.
+fn collect_occupied_local_names(body: &[ModuleItem]) -> BTreeSet<String> {
+    let mut occupied = BTreeSet::new();
+    for item in body {
+        match item {
+            ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => {
+                for specifier in &import.specifiers {
+                    match specifier {
+                        ImportSpecifier::Named(named) => {
+                            occupied.insert(named.local.sym.to_string());
+                        }
+                        ImportSpecifier::Default(default) => {
+                            occupied.insert(default.local.sym.to_string());
+                        }
+                        ImportSpecifier::Namespace(namespace) => {
+                            occupied.insert(namespace.local.sym.to_string());
+                        }
+                    }
+                }
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
+                for name in declaration_names(&export_decl.decl) {
+                    occupied.insert(name);
+                }
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(default_decl)) => {
+                if let DefaultDecl::Class(class) = &default_decl.decl
+                    && let Some(ident) = &class.ident
+                {
+                    occupied.insert(ident.sym.to_string());
+                }
+                if let DefaultDecl::Fn(function) = &default_decl.decl
+                    && let Some(ident) = &function.ident
+                {
+                    occupied.insert(ident.sym.to_string());
+                }
+            }
+            ModuleItem::Stmt(Stmt::Decl(decl)) => {
+                for name in declaration_names(decl) {
+                    occupied.insert(name);
+                }
+            }
+            _ => {}
+        }
+    }
+    occupied
+}
+
+/// Map plan-side `local -> exported` to `actual_local -> exported`,
+/// minting a fresh `<local>$N` whenever the requested local would collide
+/// with `occupied`. Records original-to-fresh entries in `renames` so the
+/// caller can rewrite consumer-body references after emission.
+fn disambiguate_import_locals(
+    bindings: &BTreeMap<String, String>,
+    occupied: &mut BTreeSet<String>,
+    renames: &mut BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    bindings
+        .iter()
+        .map(|(local, exported)| {
+            let actual = if occupied.contains(local) {
+                let fresh = mint_fresh_local_name(local, occupied);
+                renames.insert(local.clone(), fresh.clone());
+                fresh
+            } else {
+                local.clone()
+            };
+            occupied.insert(actual.clone());
+            (actual, exported.clone())
+        })
+        .collect()
+}
+
+/// Pre-fill `exported` on `export { local }` re-export specifiers whose
+/// `local` is about to be renamed, so the public export name survives.
+fn preserve_export_specifier_names(item: &mut ModuleItem, renames: &BTreeMap<String, String>) {
+    let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) = item else {
+        return;
+    };
+    for specifier in &mut named.specifiers {
+        let ExportSpecifier::Named(spec) = specifier else {
+            continue;
+        };
+        if spec.exported.is_some() {
+            continue;
+        }
+        let ModuleExportName::Ident(orig) = &spec.orig else {
+            continue;
+        };
+        if !renames.contains_key(&orig.sym.to_string()) {
+            continue;
+        }
+        spec.exported = Some(spec.orig.clone());
+    }
+}
+
+fn mint_fresh_local_name(base: &str, occupied: &BTreeSet<String>) -> String {
+    let mut suffix = 1usize;
+    loop {
+        let candidate = format!("{base}${suffix}");
+        if !occupied.contains(&candidate) {
+            return candidate;
+        }
+        suffix += 1;
+    }
 }
 
 fn import_decl_for_plan(

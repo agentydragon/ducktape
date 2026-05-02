@@ -32,6 +32,9 @@ rust_library(
         deps = [
             ":support",
             "@crates//:serde_json",
+            "@crates//:swc_common",
+            "@crates//:swc_ecma_ast",
+            "@crates//:swc_ecma_parser",
             "@crates//:tempfile",
             "@rules_rust//tools/runfiles",
         ],
@@ -42,5 +45,6 @@ rust_library(
         "naturalization_test",
         "url_rebase_test",
         "vendor_swap_test",
+        "import_collision_test",
     ]
 ]
