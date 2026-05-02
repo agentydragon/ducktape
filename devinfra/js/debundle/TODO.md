@@ -6,79 +6,109 @@ once closed; this file is not a changelog.
 ## Excalidraw live-browser smoke
 
 Build an open-source analog of gaffer's `tana/re/web/live_proxy:load_*`
-test inside ducktape, against Excalidraw. The motivation: when a Tana
-debundler issue surfaces (proxy crash, AST corruption, missing chunk,
-emit shape regression), reproducing the failure on Excalidraw lets us
-share the repro in a public bug report, write a regression test that
-runs in ducktape's open CI, and avoid leaking proprietary Tana bundle
-detail. Excalidraw is open source (Apache-2 / MIT mix), so its
-debundled output can live in this repo. It's also a good representative
-of "real React-driven web app with vendored chunks, dynamic imports,
-service worker," which exercises most of the debundler features.
+test inside ducktape, against a Bazel-managed Excalidraw bundle. The
+motivation: when a Tana debundler issue surfaces (proxy crash, AST
+corruption, missing chunk, emit shape regression, optimisation
+behaviour bug), reproducing the failure on Excalidraw lets us share
+the repro in a public bug report, write a regression test that runs
+in ducktape's open CI, and avoid leaking proprietary Tana bundle
+detail. Excalidraw is open-source and broadly representative of "real
+React + vendored chunks + dynamic imports + service worker."
 
-The smoke target's contract:
+### Bundle build
+
+Use a Bazel-managed Excalidraw build. Two viable paths:
+
+- **Pull a prebuilt deploy** (snapshot a specific `excalidraw.com`
+  publish into `tana/x/upstream/excalidraw/snapshots/<version>/`
+  — analogous to `tana/upstream/web/snapshots/`). Requires keeping
+  the snapshot fresh enough that upstream's auxiliary endpoints (if
+  any) still work. Easier to bootstrap.
+- **Build from source under Bazel** — Excalidraw's `excalidraw-app/`
+  builds with Vite; reproduce that build (npm + vite via
+  aspect_rules_js, or via a `genrule` shelling to npm) and feed the
+  output into the pipeline. More work upfront, but the bundle is
+  reproducible from a single git pin and we control the optimisation
+  level / minifier settings.
+
+Either way, the build configuration must roughly match Tana's: minify
+on, scrambled identifiers, production-tree-shaken, real chunk-split
+boundaries. A development build (with un-mangled names and source
+maps inlined) won't exercise the debundler's RE-relevant code paths.
+
+### Spec scope
+
+Not the round-trip minimum — the spec should exercise realistic-ish
+module extraction and rename paths, the same shape the Tana spec
+runs. Concretely:
+
+- `apply_vendor_annotations` + `swap_vendor_chunks` over a couple of
+  Excalidraw's actual vendor chunks (React, Roughjs, Pointers, etc.)
+  so vendor-swap edge cases (named-from-default,
+  named-from-module-default, default-only, JSON-default) get covered
+  on a real bundle, not only synthetic fixtures.
+- `materialize_logical_modules` over a handful of pre-identified
+  Excalidraw source modules — pick ones whose shape is recognisable
+  in the compiled output (a clearly-bounded React component, a pure
+  geometry helper, a state slice). Goal: prove the materialiser
+  recovers approximately the right symbols/files from a real
+  scrambled bundle.
+- A small set of `define_logical_module` rename operations on
+  identifiers visible in the compiled output. Goal: exercise the
+  rename pipeline at the same aggressiveness Tana uses.
+- `rewrite_chunk_entry_specifiers` + `emit_browser_harness` so the
+  output is a runnable app the live proxy can serve.
+
+The exact module list / rename list is part of the implementation —
+pick stable shapes that are unlikely to drift wildly when Excalidraw
+upgrades. Stale picks become a self-test: if the materialiser fails
+to find them, that's a real signal (either the bundle moved or our
+matchers regressed).
+
+### Smoke target contract
 
 - runs `bazel test //devinfra/js/debundle/excalidraw:load_test` (or
   similar);
 - builds the Excalidraw bundle through the same pipeline rule shape
   gaffer uses (`debundle_pipeline` from
-  `tana/re/web/transforms/pipeline.bzl` — promote to ducktape if not
-  already there);
-- starts the live-proxy binary against the resulting harness and a
-  pinned Excalidraw upstream;
-- drives a headless Chromium through the proxy at the Excalidraw URL,
-  asserts: no failed asset requests, no console errors, the canvas
-  toolbar is visible (e.g. `[data-testid="toolbar"]` or whichever
-  stable-looking selector Excalidraw exposes), and a small interaction
-  works (click the rectangle tool, click on the canvas, verify a shape
-  was added — the interaction's main job is to prove the React app is
-  reactive after debundle, not to test Excalidraw itself).
+  `tana/re/web/transforms/pipeline.bzl` — promote to ducktape as a
+  prerequisite);
+- starts the live-proxy binary against the resulting harness;
+- drives a headless Chromium through the proxy, asserts:
+  - no failed asset requests,
+  - no console errors,
+  - the canvas toolbar is visible (e.g. `[data-testid="toolbar"]`
+    or whichever stable selector Excalidraw exposes),
+  - a small interaction works (click the rectangle tool, click on
+    the canvas, verify a shape was added — proves the React app is
+    reactive after debundle).
 
-Open design questions to resolve when picking this up:
+### Hosting
 
-1. **Where the Excalidraw bundle comes from.** Three options:
-   - a. Pin a published Excalidraw release and download the prebuilt
-     artifact via `http_archive` / `nix-prefetch-url`. Requires
-     Excalidraw to publish prebuilt artifacts (verify; their releases
-     may be source-only, in which case fall through to (b) or (c)).
-   - b. Build Excalidraw from source as a Bazel rule, using their
-     `excalidraw-app/` directory. Heavier — requires reproducing
-     their build (vite). Pro: bundle is reproducible from a single
-     git pin.
-   - c. Snapshot a specific public deploy of `https://excalidraw.com`
-     the same way `tana/upstream/web/snapshots/` snapshots a Tana
-     deploy. Easiest but couples to their CDN cache lifetime; the
-     same staleness/CSS-rotation problem the Tana smoke just hit.
-2. **Self-host or proxy real Excalidraw.** Tana's smoke has to MITM
-   the live host because Tana auth/data is server-side. Excalidraw
-   runs entirely in the browser with optional collaboration; a
-   self-hosted Excalidraw is a fully working app. Self-hosting
-   removes the network dependency and CDN-rotation flakiness — the
-   test stays green even when excalidraw.com is down. Strongly
-   prefer self-host; reserve "proxy real upstream" for a separate
-   target if we want to test against rotating production specifically.
-3. **What spec to run.** Start with the minimum: just chunk-split,
-   parse, normalize. No `materialize_logical_modules` (Excalidraw's
-   reverse-engineering target isn't this repo's mission), no vendor
-   swap (Excalidraw's vendors are the same React/etc. ecosystem we'd
-   already be running through aspect_rules_js — could vendor-swap
-   them, optional). Smoke proves the debundler can round-trip a real
-   bundle into a working app, not that we're decomposing it
-   semantically.
+Self-hosted, no MITM. Tana's smoke has to MITM the live host because
+Tana auth/data is server-side; Excalidraw runs entirely in the
+browser, so a self-hosted bundle is a fully working app. Self-hosting
+removes the network dependency and CDN-rotation flakiness (the test
+stays green even when excalidraw.com is down) and matches the
+"reproduce against Excalidraw" workflow goal — a public, deterministic
+smoke that doesn't depend on third-party uptime.
 
-The pipeline rule used for gaffer (`debundle_pipeline` in
-`tana/re/web/transforms/pipeline.bzl`) is gaffer-side today. As part of
-this task it should move to ducktape (`devinfra/js/debundle/` or
-similar) so the Excalidraw target can use it without a circular
-gaffer→ducktape→gaffer dep, and so future open-source corpora can use
-it without depending on gaffer.
+### Prerequisite
 
-Workflow rule for downstream: when a Tana-side debundling issue is
-tractable on Excalidraw too, prefer to land the regression test on
-this Excalidraw target (or a smaller minimised e2e under
-`devinfra/js/debundle/e2e/`) rather than only fixing Tana behind the
-private repo. The latter loses the public-CI signal and the public-
-bug-report leverage.
+The pipeline rule (`debundle_pipeline` in
+`tana/re/web/transforms/pipeline.bzl`) lives in gaffer-private today.
+Promote it to ducktape (likely `devinfra/js/debundle/pipeline.bzl`)
+before this work — otherwise the Excalidraw target needs a
+gaffer→ducktape→gaffer circular dep, and other open-source corpora
+can't use it without depending on gaffer.
+
+### Workflow rule
+
+When a Tana-side debundling issue is tractable on Excalidraw too,
+prefer landing the regression test on this Excalidraw target (or a
+smaller minimised e2e under `devinfra/js/debundle/e2e/`) rather than
+only fixing Tana behind the private repo. The latter loses the
+public-CI signal and the public-bug-report leverage.
 
 ## RE coverage side-output
 
