@@ -244,16 +244,16 @@ pub fn materialize_logical_modules(
             }
         }
 
-        let lowered = lower_chunk(
+        let lowered = lower_chunk(LowerChunkInputs {
             runtime_ast,
-            &header_lines,
-            &target_file,
-            &chunk_id,
-            &source_path,
-            &declarations,
-            &module_plans,
-            &binding_assignment,
-        )?;
+            header_lines: &header_lines,
+            entry_file: &target_file,
+            chunk_id: &chunk_id,
+            source_path: &source_path,
+            declarations: &declarations,
+            module_plans: &module_plans,
+            binding_assignment: &binding_assignment,
+        })?;
 
         let mut files = BTreeMap::new();
         for file in lowered.files {
@@ -428,16 +428,28 @@ struct LoweredChunk {
     applied: Vec<Value>,
 }
 
-fn lower_chunk(
-    runtime_ast: &ParsedJsModule,
-    header_lines: &[String],
-    entry_file: &str,
-    chunk_id: &str,
-    source_path: &str,
-    declarations: &[TopLevelDecl],
-    module_plans: &[ModulePlan],
-    binding_assignment: &BTreeMap<String, usize>,
-) -> Result<LoweredChunk> {
+struct LowerChunkInputs<'a> {
+    runtime_ast: &'a ParsedJsModule,
+    header_lines: &'a [String],
+    entry_file: &'a str,
+    chunk_id: &'a str,
+    source_path: &'a str,
+    declarations: &'a [TopLevelDecl],
+    module_plans: &'a [ModulePlan],
+    binding_assignment: &'a BTreeMap<String, usize>,
+}
+
+fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
+    let LowerChunkInputs {
+        runtime_ast,
+        header_lines,
+        entry_file,
+        chunk_id,
+        source_path,
+        declarations,
+        module_plans,
+        binding_assignment,
+    } = inputs;
     let mut selected_ordinals = BTreeSet::new();
     for decl in declarations {
         if decl
@@ -786,41 +798,51 @@ fn close_module_bindings_over_dependencies(
         .iter()
         .map(|decl| (decl.ordinal, decl))
         .collect::<BTreeMap<_, _>>();
-    #[allow(clippy::needless_range_loop)]
-    for module_index in 0..module_plans.len() {
-        let mut queue = module_plans[module_index]
-            .bindings
-            .keys()
-            .filter_map(|name| declaration_by_name.get(name).copied())
-            .collect::<VecDeque<_>>();
-        while let Some(ordinal) = queue.pop_front() {
-            let Some(uses) = uses_by_ordinal.get(&ordinal) else {
+    for (module_index, plan) in module_plans.iter_mut().enumerate() {
+        expand_plan_to_transitive_dependencies(
+            plan,
+            module_index,
+            binding_assignment,
+            declaration_by_name,
+            &declaration_by_ordinal,
+            uses_by_ordinal,
+        );
+    }
+}
+
+fn expand_plan_to_transitive_dependencies(
+    plan: &mut ModulePlan,
+    module_index: usize,
+    binding_assignment: &mut BTreeMap<String, usize>,
+    declaration_by_name: &BTreeMap<String, usize>,
+    declaration_by_ordinal: &BTreeMap<usize, &TopLevelDecl>,
+    uses_by_ordinal: &BTreeMap<usize, BTreeSet<String>>,
+) {
+    let mut queue = plan
+        .bindings
+        .keys()
+        .filter_map(|name| declaration_by_name.get(name).copied())
+        .collect::<VecDeque<_>>();
+    while let Some(ordinal) = queue.pop_front() {
+        let Some(uses) = uses_by_ordinal.get(&ordinal) else {
+            continue;
+        };
+        for used in uses {
+            let Some(dep_ordinal) = declaration_by_name.get(used).copied() else {
                 continue;
             };
-            for used in uses {
-                let Some(dep_ordinal) = declaration_by_name.get(used).copied() else {
-                    continue;
-                };
-                if let Some(existing) = binding_assignment.get(used) {
-                    if *existing == module_index {
-                        continue;
-                    }
-                    continue;
-                }
-                binding_assignment.insert(used.clone(), module_index);
-                module_plans[module_index]
-                    .bindings
-                    .insert(used.clone(), used.clone());
-                if let Some(dep_decl) = declaration_by_ordinal.get(&dep_ordinal) {
-                    for dep_name in &dep_decl.names {
-                        binding_assignment.insert(dep_name.clone(), module_index);
-                        module_plans[module_index]
-                            .bindings
-                            .insert(dep_name.clone(), dep_name.clone());
-                    }
-                }
-                queue.push_back(dep_ordinal);
+            if binding_assignment.contains_key(used) {
+                continue;
             }
+            binding_assignment.insert(used.clone(), module_index);
+            plan.bindings.insert(used.clone(), used.clone());
+            if let Some(dep_decl) = declaration_by_ordinal.get(&dep_ordinal) {
+                for dep_name in &dep_decl.names {
+                    binding_assignment.insert(dep_name.clone(), module_index);
+                    plan.bindings.insert(dep_name.clone(), dep_name.clone());
+                }
+            }
+            queue.push_back(dep_ordinal);
         }
     }
 }

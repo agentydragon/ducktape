@@ -10,7 +10,7 @@ use analysis_summary::{
 };
 use artifact::{
     ChunkCounts, ChunkFileRecord, ChunkManifest, ExportAliasRecord, ImportRecord,
-    ImportSpecifierRecord, KeptTopLevelDeclarationRecord, ParserOptionsRecord,
+    ImportSpecifierRecord, KeptTopLevelDeclarationRecord, ModuleItemKind, ParserOptionsRecord,
 };
 use js_ast::{ParsedJsModule, line_for_span, str_value};
 use module_path::resolve_dep;
@@ -30,8 +30,40 @@ pub struct OwnerRecord {
     pub line: Option<usize>,
     pub names: Vec<String>,
     pub ordinal: usize,
-    pub node_type: String,
+    pub node_kind: ModuleItemKind,
     pub accesses: IdentifierAccesses,
+}
+
+fn module_item_kind_of(item: &ModuleItem) -> ModuleItemKind {
+    match item {
+        ModuleItem::ModuleDecl(ModuleDecl::Import(_)) => ModuleItemKind::ImportDeclaration,
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(_)) => ModuleItemKind::ExportDeclaration,
+        ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(_)) => {
+            ModuleItemKind::ExportNamedDeclaration
+        }
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(_)) => {
+            ModuleItemKind::ExportDefaultDeclaration
+        }
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(_)) => {
+            ModuleItemKind::ExportDefaultExpression
+        }
+        ModuleItem::ModuleDecl(ModuleDecl::ExportAll(_)) => ModuleItemKind::ExportAllDeclaration,
+        ModuleItem::Stmt(Stmt::Decl(Decl::Fn(_))) => ModuleItemKind::FunctionDeclaration,
+        ModuleItem::Stmt(Stmt::Decl(Decl::Class(_))) => ModuleItemKind::ClassDeclaration,
+        ModuleItem::Stmt(Stmt::Decl(Decl::Var(_))) => ModuleItemKind::VariableDeclaration,
+        ModuleItem::Stmt(Stmt::Expr(_)) => ModuleItemKind::ExpressionStatement,
+        ModuleItem::Stmt(_) => ModuleItemKind::Statement,
+        _ => ModuleItemKind::ModuleDeclaration,
+    }
+}
+
+fn access_source_kind_for(kind: ModuleItemKind) -> AccessSourceKind {
+    match kind {
+        ModuleItemKind::VariableDeclaration => AccessSourceKind::Variable,
+        ModuleItemKind::FunctionDeclaration => AccessSourceKind::Function,
+        ModuleItemKind::ClassDeclaration => AccessSourceKind::Class,
+        _ => AccessSourceKind::TopLevelDeclaration,
+    }
 }
 
 pub struct SideEffectRecord {
@@ -132,16 +164,15 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
 
         let names = top_level_declaration_names(item);
         if !names.is_empty() {
-            let accesses = identifier_accesses_in_module_item(
-                item,
-                access_source_kind_for_module_item(module_item_type(item)),
-            );
+            let node_kind = module_item_kind_of(item);
+            let accesses =
+                identifier_accesses_in_module_item(item, access_source_kind_for(node_kind));
             owners.push(OwnerRecord {
                 id: format!("owner_{:05}", owners.len()),
                 line: item_line(parsed, item),
                 names,
                 ordinal,
-                node_type: module_item_type(item).to_string(),
+                node_kind,
                 accesses,
             });
             continue;
@@ -191,16 +222,15 @@ pub fn analyze_runtime_boundary_program(parsed: &ParsedJsModule) -> ProgramAnaly
 
         let names = runtime_boundary_declaration_names(item);
         if !names.is_empty() {
-            let accesses = identifier_accesses_in_module_item(
-                item,
-                access_source_kind_for_module_item(runtime_boundary_module_item_type(item)),
-            );
+            let node_kind = module_item_kind_of(item);
+            let accesses =
+                identifier_accesses_in_module_item(item, access_source_kind_for(node_kind));
             owners.push(OwnerRecord {
                 id: format!("owner_{:05}", owners.len()),
                 line: item_line(parsed, item),
                 names,
                 ordinal,
-                node_type: runtime_boundary_module_item_type(item).to_string(),
+                node_kind,
                 accesses,
             });
             continue;
@@ -254,7 +284,7 @@ pub fn build_chunk_manifest_from_analysis(
             id: owner.id.clone(),
             line: owner.line,
             names: owner.names.clone(),
-            node_type: owner.node_type.clone(),
+            node_kind: owner.node_kind,
             unsafe_reason: "not_split",
         })
         .collect::<Vec<_>>();
@@ -600,32 +630,6 @@ fn item_line(parsed: &ParsedJsModule, item: &ModuleItem) -> Option<usize> {
     line_for_span(parsed, item.span())
 }
 
-fn module_item_type(item: &ModuleItem) -> &'static str {
-    match item {
-        ModuleItem::ModuleDecl(ModuleDecl::Import(_)) => "ImportDeclaration",
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(_)) => "ExportDeclaration",
-        ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(_)) => "ExportNamedDeclaration",
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(_)) => "ExportDefaultDeclaration",
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(_)) => "ExportDefaultExpression",
-        ModuleItem::ModuleDecl(ModuleDecl::ExportAll(_)) => "ExportAllDeclaration",
-        ModuleItem::Stmt(Stmt::Decl(Decl::Fn(_))) => "FunctionDeclaration",
-        ModuleItem::Stmt(Stmt::Decl(Decl::Class(_))) => "ClassDeclaration",
-        ModuleItem::Stmt(Stmt::Decl(Decl::Var(_))) => "VariableDeclaration",
-        ModuleItem::Stmt(Stmt::Expr(_)) => "ExpressionStatement",
-        ModuleItem::Stmt(_) => "Statement",
-        _ => "ModuleDeclaration",
-    }
-}
-
-fn runtime_boundary_module_item_type(item: &ModuleItem) -> &'static str {
-    match item {
-        // Babel represents `export const/function/class ...` as an
-        // ExportNamedDeclaration with a declaration payload.
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(_)) => "ExportNamedDeclaration",
-        _ => module_item_type(item),
-    }
-}
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AccessPhase {
     Eager,
@@ -639,15 +643,6 @@ enum AccessSourceKind {
     Class,
     SideEffect,
     TopLevelDeclaration,
-}
-
-fn access_source_kind_for_module_item(item_type: &str) -> AccessSourceKind {
-    match item_type {
-        "VariableDeclaration" => AccessSourceKind::Variable,
-        "FunctionDeclaration" => AccessSourceKind::Function,
-        "ClassDeclaration" => AccessSourceKind::Class,
-        _ => AccessSourceKind::TopLevelDeclaration,
-    }
 }
 
 fn identifier_accesses_in_module_item(

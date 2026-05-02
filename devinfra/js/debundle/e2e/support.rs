@@ -18,58 +18,30 @@ const NODE_RLOCATION: &str = "nodejs_linux_amd64/bin/node";
 static MODULE_EXPORT_PROBE_COUNTER: AtomicUsize = AtomicUsize::new(0);
 static GENERATED_MODULE_SCRIPT_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
+/// One member of a `define_logical_module` request.
+///
+/// `name` is the exported name in the materialized module; `binding` is the
+/// original top-level binding to extract. When `binding` is `None`, the
+/// exported name and the original binding are the same.
 pub struct Member {
     pub name: &'static str,
     pub binding: Option<&'static str>,
-    pub kind: &'static str,
 }
 
 impl Member {
-    pub fn var(name: &'static str) -> Self {
+    /// Extract a binding under its original name.
+    pub fn new(name: &'static str) -> Self {
         Self {
             name,
             binding: None,
-            kind: "VariableDeclarator",
         }
     }
 
-    pub fn func(name: &'static str) -> Self {
-        Self {
-            name,
-            binding: None,
-            kind: "FunctionDeclaration",
-        }
-    }
-
-    pub fn class(name: &'static str) -> Self {
-        Self {
-            name,
-            binding: None,
-            kind: "ClassDeclaration",
-        }
-    }
-
-    pub fn renamed_var(name: &'static str, binding: &'static str) -> Self {
+    /// Extract `binding` and re-export it as `name`.
+    pub fn renamed(name: &'static str, binding: &'static str) -> Self {
         Self {
             name,
             binding: Some(binding),
-            kind: "VariableDeclarator",
-        }
-    }
-
-    pub fn renamed_func(name: &'static str, binding: &'static str) -> Self {
-        Self {
-            name,
-            binding: Some(binding),
-            kind: "FunctionDeclaration",
-        }
-    }
-
-    pub fn renamed_class(name: &'static str, binding: &'static str) -> Self {
-        Self {
-            name,
-            binding: Some(binding),
-            kind: "ClassDeclaration",
         }
     }
 }
@@ -83,7 +55,7 @@ pub fn logical_module(path: &str, members: &[Member]) -> Value {
             json!({
                 "id": format!("member__{}", m.name),
                 "name": m.name,
-                "selector": { "binding": { "kind": m.kind, "name": binding } },
+                "selector": { "binding": { "name": binding } },
             })
         })
         .collect();

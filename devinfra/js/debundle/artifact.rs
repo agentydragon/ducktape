@@ -248,10 +248,29 @@ pub struct KeptTopLevelDeclarationRecord {
     pub id: String,
     pub line: Option<usize>,
     pub names: Vec<String>,
-    #[serde(rename = "type")]
-    pub node_type: String,
+    #[serde(rename = "kind")]
+    pub node_kind: ModuleItemKind,
     #[serde(rename = "unsafeReason")]
     pub unsafe_reason: &'static str,
+}
+
+/// Native classification of a top-level module item. Replaces the babel-
+/// AST-style stringly-typed `node_type` field that the JS port carried.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModuleItemKind {
+    ImportDeclaration,
+    ExportDeclaration,
+    ExportNamedDeclaration,
+    ExportDefaultDeclaration,
+    ExportDefaultExpression,
+    ExportAllDeclaration,
+    FunctionDeclaration,
+    ClassDeclaration,
+    VariableDeclaration,
+    ExpressionStatement,
+    Statement,
+    ModuleDeclaration,
 }
 
 impl JsPipelineArtifact {
