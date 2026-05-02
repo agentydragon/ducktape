@@ -376,6 +376,14 @@ fn validate_transform_spec(spec: &TransformSpec) -> Result<()> {
         if id == operation {
             bail!("Pipeline stage {id} must differ from operation {operation}");
         }
+        if matches!(
+            operation,
+            "load_js_chunks" | "compute_js_asts" | "normalize_js_chunks"
+        ) {
+            bail!(
+                "Pipeline stage {id} uses {operation}, which is no longer a pipeline operation; configure inputs at the spec level"
+            );
+        }
         if !seen_stage_ids.insert(id.to_string()) {
             bail!("Duplicate pipeline stage id: {id}");
         }
@@ -566,6 +574,60 @@ mod tests {
         assert!(out.join("manifest.json").exists());
         let entry = fs::read_to_string(out.join("static/index-DuckMock/entry.js"))?;
         assert!(entry.contains("../chunk-DuckMock/entry.js"));
+        Ok(())
+    }
+
+    #[test]
+    fn run_transform_cli_rejects_legacy_load_parse_normalize_pipeline_stages() -> Result<()> {
+        for legacy_op in ["load_js_chunks", "compute_js_asts", "normalize_js_chunks"] {
+            let temp = tempfile::tempdir()?;
+            let root = temp.path();
+            let snapshot = root.join("snapshot");
+            let extracted = root.join("extracted");
+            fs::create_dir_all(&snapshot)?;
+            fs::create_dir_all(&extracted)?;
+            fs::write(extracted.join("js-files.txt"), "")?;
+            // Pair the legacy stage with `write_js_tree` first so a failure in
+            // staging order — i.e. the bad stage runs only at dispatch time —
+            // would visibly create an output dir before bailing. Spec-level
+            // validation must reject the spec before any stage runs.
+            let out = root.join("out");
+            let spec_path = root.join("transform-spec.jsonc");
+            fs::write(
+                &spec_path,
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "kind": "js.ast_transform_spec",
+                    "inputs": {
+                        "inputRoot": snapshot,
+                        "jsListPath": extracted.join("js-files.txt"),
+                    },
+                    "pipeline": [
+                        {
+                            "id": "write",
+                            "operation": "write_js_tree",
+                            "args": { "force": true, "outDir": out },
+                        },
+                        { "id": "legacy", "operation": legacy_op },
+                    ],
+                }))?,
+            )?;
+
+            let result = run_transform_cli(&TransformCli {
+                spec_path,
+                package_roots: HashMap::new(),
+                packages_root: None,
+            });
+            let err = result.expect_err("legacy stage must be rejected");
+            let message = format!("{err:#}");
+            assert!(
+                message.contains("no longer a pipeline operation"),
+                "expected migration error, got: {message}",
+            );
+            assert!(
+                !out.exists(),
+                "validation must reject the spec before write_js_tree runs (legacy op = {legacy_op})",
+            );
+        }
         Ok(())
     }
 }
