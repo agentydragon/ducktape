@@ -39,9 +39,14 @@ function parseArgs(argv) {
 }
 
 async function listChunks(bundleDir) {
+  // Bazel materializes tree-artifact entries as symlinks back to the
+  // execroot, so `withFileTypes: true` returns DirEntries with
+  // `isSymbolicLink() === true`. Filter on the .js extension and on
+  // either real-file or symlink — anything other than a directory is
+  // a chunk.
   const entries = await readdir(bundleDir, { withFileTypes: true });
   return entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".js"))
+    .filter((entry) => !entry.isDirectory() && entry.name.endsWith(".js"))
     .map((entry) => entry.name)
     .sort();
 }
