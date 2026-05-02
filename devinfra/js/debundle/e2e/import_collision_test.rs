@@ -116,6 +116,58 @@ export { aH };
     assert_entry_output(&fixture, "7\n");
 }
 
+#[test]
+fn does_not_collapse_two_distinct_locals_onto_the_same_readable_name() {
+    // Two readable-rename rules in one logical module pick the same
+    // target name from different inputs. The destructured-pattern rule
+    // sees `{ readable: o }` and queues `o -> readable`; the
+    // return-object-alias rule sees `return { readable: u }` and queues
+    // `u -> readable`. Both rewrites land in the module-wide rename map.
+    // The naive renamer then rewrites every `o` and every `u` to
+    // `readable`. Any function that happens to bind both `o` and `u`
+    // (param + local) ends up with two `readable` decls in the same
+    // scope and Node refuses to load it with `Identifier 'readable'
+    // has already been declared`.
+    let opts = FixtureOpts::new(
+        r#"function destructure({ readable: o }) {
+  return o;
+}
+function alias() {
+  const u = "y";
+  return { readable: u };
+}
+function consumer({ readable: o }) {
+  const u = String(o) + "x";
+  return u;
+}
+console.log(destructure({ readable: 0 }), alias().readable, consumer({ readable: "v" }));
+export { destructure, alias, consumer };
+"#,
+        vec![logical_module(
+            "mod_x",
+            &[
+                Member::new("destructure"),
+                Member::new("alias"),
+                Member::new("consumer"),
+            ],
+        )],
+    );
+    let fixture = run_logical_modules_e2e_fixture(opts);
+    let module_path = fixture.out_root.join("static/app/modules/mod_x.js");
+    let module_src = fs::read_to_string(&module_path).expect("read modules/mod_x.js");
+
+    // Module body must parse — colliding `readable` decls in the same
+    // scope would surface as a duplicate-decl SyntaxError.
+    parse_module(&module_src);
+    // Each function-body scope binds `readable` at most once. This
+    // mirrors the lexical-binding constraint Node enforces at module
+    // load time.
+    assert_unique_lexical_decls_per_scope(&module_src, "readable");
+
+    // Module behaviour preserved: `consumer` still produces "vx".
+    assert_entry_output(&fixture, "0 y vx\n");
+}
+
 /// Parse `source` and assert that every named import specifier binds a
 /// distinct local symbol. Mirrors the duplicate-declaration check Node
 /// would perform at module-load time.
@@ -191,6 +243,121 @@ fn assert_export_named_specifier(
         expected_exported_as,
         "export {{ {expected_orig} ... }} `as` clause mismatch in:\n{source}",
     );
+}
+
+/// Assert that no function-body scope in `source` declares `target_name`
+/// more than once (counting destructured params and `let/const/var`
+/// decls). Mirrors Node's lexical-binding duplicate check.
+fn assert_unique_lexical_decls_per_scope(source: &str, target_name: &str) {
+    use swc_ecma_ast::{
+        BindingIdent, BlockStmtOrExpr, Decl, Expr, FnDecl, Function, ModuleItem, ObjectPatProp,
+        Pat, Stmt, VarDeclarator,
+    };
+
+    fn pat_binds(pat: &Pat, target: &str) -> bool {
+        match pat {
+            Pat::Ident(BindingIdent { id, .. }) => id.sym.as_ref() == target,
+            Pat::Object(object) => object.props.iter().any(|prop| match prop {
+                ObjectPatProp::KeyValue(kv) => pat_binds(&kv.value, target),
+                ObjectPatProp::Assign(assign) => assign.key.id.sym.as_ref() == target,
+                ObjectPatProp::Rest(rest) => pat_binds(&rest.arg, target),
+            }),
+            Pat::Array(array) => array
+                .elems
+                .iter()
+                .flatten()
+                .any(|elem| pat_binds(elem, target)),
+            Pat::Assign(assign) => pat_binds(&assign.left, target),
+            Pat::Rest(rest) => pat_binds(&rest.arg, target),
+            _ => false,
+        }
+    }
+
+    fn check_function(function: &Function, target: &str, source: &str) {
+        let Some(body) = &function.body else {
+            return;
+        };
+        let mut count = 0;
+        for param in &function.params {
+            if pat_binds(&param.pat, target) {
+                count += 1;
+            }
+        }
+        for stmt in &body.stmts {
+            if let Stmt::Decl(Decl::Var(var)) = stmt {
+                for declarator in &var.decls {
+                    if pat_binds(&declarator.name, target) {
+                        count += 1;
+                    }
+                }
+            }
+        }
+        assert!(
+            count <= 1,
+            "scope binds `{target}` {count} times in:\n{source}",
+        );
+        for stmt in &body.stmts {
+            descend_stmt(stmt, target, source);
+        }
+    }
+
+    fn descend_stmt(stmt: &Stmt, target: &str, source: &str) {
+        match stmt {
+            Stmt::Decl(Decl::Fn(FnDecl { function, .. })) => {
+                check_function(function, target, source)
+            }
+            Stmt::Decl(Decl::Var(var)) => {
+                for VarDeclarator { init, .. } in &var.decls {
+                    if let Some(init) = init {
+                        descend_expr(init, target, source);
+                    }
+                }
+            }
+            Stmt::Block(block) => {
+                for stmt in &block.stmts {
+                    descend_stmt(stmt, target, source);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn descend_expr(expr: &Expr, target: &str, source: &str) {
+        match expr {
+            Expr::Fn(fn_expr) => check_function(&fn_expr.function, target, source),
+            Expr::Arrow(arrow) => {
+                let mut count = 0;
+                for param in &arrow.params {
+                    if pat_binds(param, target) {
+                        count += 1;
+                    }
+                }
+                if let BlockStmtOrExpr::BlockStmt(block) = &*arrow.body {
+                    for stmt in &block.stmts {
+                        if let Stmt::Decl(Decl::Var(var)) = stmt {
+                            for declarator in &var.decls {
+                                if pat_binds(&declarator.name, target) {
+                                    count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+                assert!(
+                    count <= 1,
+                    "arrow scope binds `{target}` {count} times in:\n{source}",
+                );
+            }
+            _ => {}
+        }
+    }
+
+    let module = parse_module(source);
+    for item in &module.body {
+        if let ModuleItem::Stmt(stmt) = item {
+            descend_stmt(stmt, target_name, source);
+        }
+    }
 }
 
 fn parse_module(source: &str) -> swc_ecma_ast::Module {
