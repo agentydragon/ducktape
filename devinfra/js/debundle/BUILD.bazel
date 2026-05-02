@@ -75,7 +75,6 @@ rust_library(
         ":artifact",
         ":js_ast",
         "@crates//:anyhow",
-        "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",

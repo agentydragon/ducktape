@@ -3,7 +3,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use serde::Serialize;
 use serde_json::{Map, Value, json};
 use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
@@ -15,37 +14,39 @@ use artifact::{
 };
 use js_ast::{ParsedJsModule, emit_js_module, parse_js_module, str_value};
 
-#[derive(Debug, Clone, Serialize)]
+// These manifests are returned by the vendor stages but the pipeline
+// orchestrator only reads `kind` for stage logging. They are not
+// serialized externally — drop `Serialize` to make that explicit.
+
+#[derive(Debug, Clone)]
 pub struct VendorAnnotationsManifest {
     pub kind: &'static str,
     pub counts: VendorAnnotationCounts,
     pub annotations: Vec<Value>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct VendorAnnotationCounts {
     pub annotations: usize,
     pub considered: usize,
     pub applied: usize,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct RenameVendorExportsManifest {
     pub kind: &'static str,
     pub counts: RenameVendorExportsCounts,
     pub details: Vec<RenameVendorExportsDetail>,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone)]
 pub struct RenameVendorExportsCounts {
     pub considered: usize,
     pub chunks_with_mapping: usize,
     pub rewrites: usize,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone)]
 pub struct RenameVendorExportsDetail {
     pub op_id: String,
     pub chunk_id: String,
@@ -54,20 +55,20 @@ pub struct RenameVendorExportsDetail {
     pub callers: Vec<RenameVendorExportsCaller>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct RenameVendorExportsCaller {
     pub file: String,
     pub rewrites: usize,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct VendorResolutionManifest {
     pub kind: &'static str,
     pub resolutions: BTreeMap<String, Value>,
     pub counts: VendorResolutionCounts,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct VendorResolutionCounts {
     pub swapped: usize,
 }

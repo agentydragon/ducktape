@@ -11,8 +11,9 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use artifact::{
-    ArtifactCounts, ArtifactManifest, ChunkFileRecord, ChunkMetadata, FileMetadata, JsChunk,
-    JsFile, JsPipelineArtifact, get_chunk_entry_path, normalize_relative_path, posix_join,
+    ArtifactCounts, ArtifactManifest, ChunkFileRecord, ChunkLogicalModulesSummary, ChunkMetadata,
+    FileMetadata, JsChunk, JsFile, JsPipelineArtifact, RootLogicalModulesSummary,
+    SelectedModuleLowering, get_chunk_entry_path, normalize_relative_path, posix_join,
     posix_relative,
 };
 use js_ast::{ParsedJsModule, set_str_value, str_value};
@@ -23,6 +24,12 @@ const LOWERING_FILE_PRAGMA: &str =
 const LOWERING_GENERATOR_HEADER: &str =
     "// @ducktape-generator devinfra/js/debundle/extract/init_region.mjs";
 
+/// Per-stage manifest returned by `materialize_logical_modules`.
+///
+/// Pipeline currently consumes only `kind` for stage logging; the
+/// remaining fields are written to disk when a spec sets
+/// `report_summary_path`. Keep them serializable so that callers using
+/// that argument get a typed payload.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogicalModuleManifest {
@@ -39,7 +46,6 @@ pub struct LogicalModuleManifest {
 #[serde(rename_all = "camelCase")]
 pub struct LogicalModuleCounts {
     pub applied: usize,
-    pub blocked_members: usize,
     pub final_modules: usize,
     pub explicit_logical_modules: usize,
     pub residual_logical_modules: usize,
@@ -50,8 +56,8 @@ pub struct LogicalModuleCounts {
 pub struct LogicalChunkReport {
     pub chunk_id: String,
     pub counts: LogicalChunkCounts,
-    pub final_module_contents: Vec<Value>,
-    pub requested_logical_modules: Vec<Value>,
+    pub final_module_contents: Vec<FinalModuleContent>,
+    pub requested_logical_modules: Vec<RequestedLogicalModule>,
     pub timings_ms: BTreeMap<String, f64>,
 }
 
@@ -59,14 +65,28 @@ pub struct LogicalChunkReport {
 #[serde(rename_all = "camelCase")]
 pub struct LogicalChunkCounts {
     pub applied: usize,
-    pub atomic_modules: usize,
-    pub atomic_units: usize,
-    pub blocked_members: usize,
     pub explicit_logical_modules: usize,
     pub final_modules: usize,
     pub residual_logical_modules: usize,
     pub selected_owners: usize,
-    pub unmatched_members: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FinalModuleContent {
+    pub file: String,
+    pub id: String,
+    pub member_names: Vec<String>,
+    pub path: String,
+    pub owner_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestedLogicalModule {
+    pub id: String,
+    pub target_path: String,
+    pub residual: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -144,7 +164,7 @@ pub fn materialize_logical_modules(
     }
 
     let mut reports = Vec::new();
-    let mut applied = Vec::<Value>::new();
+    let mut applied = Vec::<SelectedModuleLowering>::new();
     for chunk_id in selected_chunk_ids {
         let chunk_started = Instant::now();
         let target_file = options
@@ -291,69 +311,46 @@ pub fn materialize_logical_modules(
                     role: if role == "entry" { "entry" } else { "module" },
                 })
                 .collect();
-            manifest.logical_modules = Some(json!({
-                "count": module_plans.len(),
-                "moduleIds": module_plans.iter().map(|plan| plan.id.clone()).collect::<Vec<_>>(),
-                "targetDir": target_dir,
-            }));
-            manifest.selected_module_lowerings = Some(Value::Array(selected_lowerings.clone()));
+            manifest.logical_modules = Some(ChunkLogicalModulesSummary {
+                count: module_plans.len(),
+                module_ids: module_plans.iter().map(|plan| plan.id.clone()).collect(),
+                target_dir: target_dir.clone(),
+            });
+            manifest.selected_module_lowerings = Some(selected_lowerings.clone());
         }
 
         let final_modules = module_plans
             .iter()
-            .map(|plan| {
-                let owner_ids = plan.bindings.keys().cloned().collect::<Vec<_>>();
-                json!({
-                    "atomicBoundaryUnits": [],
-                    "file": plan.target_file,
-                    "id": plan.id,
-                    "memberNames": plan.bindings.values().cloned().collect::<Vec<_>>(),
-                    "path": plan.requested.target_path,
-                    "ownerIds": owner_ids,
-                    "ownerFragments": [],
-                    "startOrdinal": 0,
-                    "unitIds": [],
-                })
+            .map(|plan| FinalModuleContent {
+                file: plan.target_file.clone(),
+                id: plan.id.clone(),
+                member_names: plan.bindings.values().cloned().collect(),
+                path: plan.requested.target_path.clone(),
+                owner_ids: plan.bindings.keys().cloned().collect(),
             })
             .collect::<Vec<_>>();
         let report = LogicalChunkReport {
             chunk_id: chunk_id.clone(),
             counts: LogicalChunkCounts {
                 applied: selected_lowerings.len(),
-                atomic_modules: module_plans.len(),
-                atomic_units: module_plans.len(),
-                blocked_members: 0,
                 explicit_logical_modules: module_plans.iter().filter(|plan| plan.explicit).count(),
                 final_modules: module_plans.len(),
                 residual_logical_modules: module_plans.iter().filter(|plan| !plan.explicit).count(),
                 selected_owners: binding_assignment.len(),
-                unmatched_members: explicit_requests
-                    .iter()
-                    .flat_map(|request| request.members.iter())
-                    .filter(|member| !declaration_by_name.contains_key(&member.binding))
-                    .count(),
             },
             final_module_contents: final_modules,
             requested_logical_modules: requests
                 .iter()
-                .map(|request| {
-                    json!({
-                        "id": request.id,
-                        "targetPath": request.target_path,
-                        "residual": request.residual,
-                    })
+                .map(|request| RequestedLogicalModule {
+                    id: request.id.clone(),
+                    target_path: request.target_path.clone(),
+                    residual: request.residual,
                 })
                 .collect(),
-            timings_ms: BTreeMap::from([
-                ("analysis".to_string(), 0.0),
-                ("plan".to_string(), 0.0),
-                ("lower".to_string(), 0.0),
-                (
-                    "total".to_string(),
-                    chunk_started.elapsed().as_secs_f64() * 1000.0,
-                ),
-                ("writeback".to_string(), 0.0),
-            ]),
+            timings_ms: BTreeMap::from([(
+                "total".to_string(),
+                chunk_started.elapsed().as_secs_f64() * 1000.0,
+            )]),
         };
         if let Some(report_out_dir) = &report_out_dir {
             let report_path = report_out_dir.join(format!("{chunk_id}.json"));
@@ -371,10 +368,6 @@ pub fn materialize_logical_modules(
         chunk_count: reports.len(),
         counts: LogicalModuleCounts {
             applied: applied.len(),
-            blocked_members: reports
-                .iter()
-                .map(|report| report.counts.blocked_members)
-                .sum(),
             final_modules: reports
                 .iter()
                 .map(|report| report.counts.final_modules)
@@ -425,7 +418,7 @@ pub fn materialize_logical_modules(
 struct LoweredChunk {
     files: Vec<JsFile>,
     file_records: Vec<(String, String)>,
-    applied: Vec<Value>,
+    applied: Vec<SelectedModuleLowering>,
 }
 
 struct LowerChunkInputs<'a> {
@@ -592,34 +585,18 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
                 role: Some("module".to_string()),
                 source_path: Some(source_path.to_string()),
                 generated_stage: Some("selected_module_lowering".to_string()),
-                generated: Some(json!({
-                    "kind": "lowerer_helper",
-                    "stage": "selected_module_lowering",
-                    "generator": "devinfra/js/debundle/extract/init_region.mjs",
-                    "ignoreByDefault": true,
-                })),
-                module_extraction: Some(json!({
-                    "id": plan.id,
-                    "kind": "logical",
-                    "nameHint": plan.requested.target_path,
-                    "ownerIds": owner_ids,
-                    "ownerFragments": [],
-                    "unitIds": [],
-                    "atomicBoundaryUnits": [],
-                })),
             },
         });
         file_records.push((plan.target_file.clone(), "module".to_string()));
-        applied.push(json!({
-            "chunkId": chunk_id,
-            "exportedNames": plan.bindings.values().cloned().collect::<Vec<_>>(),
-            "file": entry_file,
-            "id": plan.id,
-            "init": Value::Null,
-            "operation": "lower_selected_module_region",
-            "ownerIds": plan.bindings.keys().cloned().collect::<Vec<_>>(),
-            "targetFile": plan.target_file,
-        }));
+        applied.push(SelectedModuleLowering {
+            chunk_id: chunk_id.to_string(),
+            exported_names: plan.bindings.values().cloned().collect(),
+            file: entry_file.to_string(),
+            id: plan.id.clone(),
+            operation: "lower_selected_module_region",
+            owner_ids: plan.bindings.keys().cloned().collect(),
+            target_file: plan.target_file.clone(),
+        });
     }
 
     Ok(LoweredChunk {
@@ -1807,15 +1784,13 @@ fn prune_artifact_to_chunk_ids(artifact: &mut JsPipelineArtifact, selected: &[St
 fn update_root_manifest(
     artifact: &mut JsPipelineArtifact,
     reports: &[LogicalChunkReport],
-    applied: &[Value],
+    applied: &[SelectedModuleLowering],
 ) {
     if artifact.root_manifest.is_none() {
         artifact.root_manifest = Some(ArtifactManifest {
             schema_version: 1,
             counts: ArtifactCounts {
                 chunks: artifact.list_chunk_ids().len(),
-                parts: 0,
-                split_function_declarations: 0,
                 kept_top_level_declaration_owners: 0,
                 top_level_side_effects: 0,
                 export_aliases: 0,
@@ -1842,11 +1817,11 @@ fn update_root_manifest(
         return;
     };
     root_manifest.counts.selected_module_lowerings = Some(applied.len());
-    root_manifest.logical_modules = Some(json!({
-        "chunkCount": reports.len(),
-        "moduleCount": reports.iter().map(|report| report.counts.final_modules).sum::<usize>(),
-    }));
-    root_manifest.selected_module_lowerings = Some(Value::Array(applied.to_vec()));
+    root_manifest.logical_modules = Some(RootLogicalModulesSummary {
+        chunk_count: reports.len(),
+        module_count: reports.iter().map(|r| r.counts.final_modules).sum(),
+    });
+    root_manifest.selected_module_lowerings = Some(applied.to_vec());
 }
 
 fn prepare_output_dir(out_dir: &Path, force: bool) -> Result<()> {

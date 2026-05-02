@@ -115,8 +115,6 @@ pub fn emit_browser_harness(
             .iter()
             .map(|entry| entry.path.clone())
             .collect(),
-        vendor_manifest_path: None,
-        vendor_resolutions: Vec::new(),
         generated: HarnessGeneratedManifest {
             bootstrap: path_to_posix(&options.out_dir.join("bootstrap.js")),
             chunks_manifest: path_to_posix(&options.out_dir.join("chunks.manifest.json")),
@@ -135,42 +133,27 @@ pub fn emit_browser_harness(
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct HarnessManifest {
-    #[serde(rename = "schemaVersion")]
     schema_version: u8,
-    #[serde(rename = "scriptSource")]
     script_source: String,
-    #[serde(rename = "sourceHtml")]
     source_html: String,
-    #[serde(rename = "snapshotRoot")]
     snapshot_root: String,
-    #[serde(rename = "assetSummaryPath")]
     asset_summary_path: String,
-    #[serde(rename = "chunksManifestPath")]
     chunks_manifest_path: String,
-    #[serde(rename = "runtimeRoot")]
     runtime_root: String,
-    #[serde(rename = "outDir")]
     out_dir: String,
-    #[serde(rename = "copiedAssets")]
     copied_assets: Vec<String>,
-    #[serde(rename = "entryScripts")]
     entry_scripts: Vec<String>,
-    #[serde(rename = "modulePreloads")]
     module_preloads: Vec<String>,
-    #[serde(rename = "vendorManifestPath")]
-    vendor_manifest_path: Option<String>,
-    #[serde(rename = "vendorResolutions")]
-    vendor_resolutions: Vec<serde_json::Value>,
     generated: HarnessGeneratedManifest,
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct HarnessGeneratedManifest {
     bootstrap: String,
-    #[serde(rename = "chunksManifest")]
     chunks_manifest: String,
-    #[serde(rename = "indexHtml")]
     index_html: String,
 }
 

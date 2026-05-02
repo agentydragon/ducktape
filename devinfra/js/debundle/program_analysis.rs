@@ -26,7 +26,7 @@ pub struct OwnerRecord {
     pub line: Option<usize>,
     pub names: Vec<String>,
     pub ordinal: usize,
-    pub node_kind: ModuleItemKind,
+    pub kind: ModuleItemKind,
     pub accesses: IdentifierAccesses,
 }
 
@@ -160,15 +160,14 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
 
         let names = top_level_declaration_names(item);
         if !names.is_empty() {
-            let node_kind = module_item_kind_of(item);
-            let accesses =
-                identifier_accesses_in_module_item(item, access_source_kind_for(node_kind));
+            let kind = module_item_kind_of(item);
+            let accesses = identifier_accesses_in_module_item(item, access_source_kind_for(kind));
             owners.push(OwnerRecord {
                 id: format!("owner_{:05}", owners.len()),
                 line: item_line(parsed, item),
                 names,
                 ordinal,
-                node_kind,
+                kind,
                 accesses,
             });
             continue;
@@ -222,7 +221,7 @@ pub fn build_chunk_manifest_from_analysis(
             id: owner.id.clone(),
             line: owner.line,
             names: owner.names.clone(),
-            node_kind: owner.node_kind,
+            kind: owner.kind,
             unsafe_reason: "not_split",
         })
         .collect::<Vec<_>>();
@@ -238,8 +237,6 @@ pub fn build_chunk_manifest_from_analysis(
             export_aliases: analysis.export_aliases.len(),
             import_declarations: analysis.imports.len(),
             kept_top_level_declaration_owners: analysis.owners.len(),
-            parts: 0,
-            split_function_declarations: 0,
             top_level_bindings: analysis.owners.iter().map(|owner| owner.names.len()).sum(),
             top_level_declaration_owners: analysis.owners.len(),
             top_level_side_effects: analysis.side_effects.len(),
@@ -253,8 +250,6 @@ pub fn build_chunk_manifest_from_analysis(
         export_aliases: analysis.export_aliases.clone(),
         unresolved_exports,
         kept_top_level_declarations,
-        parts: Vec::new(),
-        owner_to_part: BTreeMap::new(),
         logical_modules: None,
         selected_module_lowerings: None,
         extra: BTreeMap::new(),

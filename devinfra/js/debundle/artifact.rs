@@ -40,15 +40,12 @@ pub struct ChunkMetadata {
 }
 
 #[derive(Debug, Clone, Default)]
-#[allow(dead_code)]
 pub struct FileMetadata {
     pub chunk_id: Option<String>,
     pub chunk_file: Option<String>,
     pub role: Option<String>,
     pub source_path: Option<String>,
     pub generated_stage: Option<String>,
-    pub generated: Option<serde_json::Value>,
-    pub module_extraction: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -89,93 +86,94 @@ pub struct ComputeJsAstsCounts {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ArtifactManifest {
-    #[serde(rename = "schemaVersion")]
     pub schema_version: u32,
     pub counts: ArtifactCounts,
     pub chunks: Vec<ArtifactChunkRecord>,
-    #[serde(rename = "logicalModules", skip_serializing_if = "Option::is_none")]
-    pub logical_modules: Option<serde_json::Value>,
-    #[serde(
-        rename = "selectedModuleLowerings",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub selected_module_lowerings: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub logical_modules: Option<RootLogicalModulesSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selected_module_lowerings: Option<Vec<SelectedModuleLowering>>,
     #[serde(flatten)]
     pub extra: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ArtifactCounts {
     pub chunks: usize,
-    pub parts: usize,
-    #[serde(rename = "splitFunctionDeclarations")]
-    pub split_function_declarations: usize,
-    #[serde(rename = "keptTopLevelDeclarationOwners")]
     pub kept_top_level_declaration_owners: usize,
-    #[serde(rename = "topLevelSideEffects")]
     pub top_level_side_effects: usize,
-    #[serde(rename = "exportAliases")]
     pub export_aliases: usize,
-    #[serde(rename = "unresolvedExports")]
     pub unresolved_exports: usize,
-    #[serde(
-        rename = "selectedModuleLowerings",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub selected_module_lowerings: Option<usize>,
     #[serde(flatten)]
     pub extra: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct ArtifactChunkRecord {
-    #[serde(rename = "chunkId")]
+#[serde(rename_all = "camelCase")]
+pub struct RootLogicalModulesSummary {
+    pub chunk_count: usize,
+    pub module_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChunkLogicalModulesSummary {
+    pub count: usize,
+    pub module_ids: Vec<String>,
+    pub target_dir: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SelectedModuleLowering {
     pub chunk_id: String,
-    #[serde(rename = "sourcePath")]
+    pub exported_names: Vec<String>,
+    pub file: String,
+    pub id: String,
+    pub operation: &'static str,
+    pub owner_ids: Vec<String>,
+    pub target_file: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactChunkRecord {
+    pub chunk_id: String,
     pub source_path: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ChunkManifest {
-    #[serde(rename = "schemaVersion")]
     pub schema_version: u32,
-    #[serde(rename = "chunkId")]
     pub chunk_id: String,
-    #[serde(rename = "sourcePath")]
     pub source_path: String,
     pub parser: ParserOptionsRecord,
-    #[serde(rename = "entryFile")]
     pub entry_file: String,
     pub counts: ChunkCounts,
     pub files: Vec<ChunkFileRecord>,
     pub imports: Vec<ImportRecord>,
-    #[serde(rename = "exportAliases")]
     pub export_aliases: Vec<ExportAliasRecord>,
-    #[serde(rename = "unresolvedExports")]
     pub unresolved_exports: Vec<ExportAliasRecord>,
-    #[serde(rename = "keptTopLevelDeclarations")]
     pub kept_top_level_declarations: Vec<KeptTopLevelDeclarationRecord>,
-    pub parts: Vec<serde_json::Value>,
-    #[serde(rename = "ownerToPart")]
-    pub owner_to_part: BTreeMap<String, String>,
-    #[serde(rename = "logicalModules", skip_serializing_if = "Option::is_none")]
-    pub logical_modules: Option<serde_json::Value>,
-    #[serde(
-        rename = "selectedModuleLowerings",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub selected_module_lowerings: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub logical_modules: Option<ChunkLogicalModulesSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selected_module_lowerings: Option<Vec<SelectedModuleLowering>>,
     #[serde(flatten)]
     pub extra: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ParserOptionsRecord {
-    #[serde(rename = "allowUndeclaredExports")]
     pub allow_undeclared_exports: bool,
     pub plugins: Vec<&'static str>,
-    #[serde(rename = "sourceType")]
     pub source_type: &'static str,
 }
 
@@ -190,25 +188,15 @@ impl Default for ParserOptionsRecord {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ChunkCounts {
-    #[serde(rename = "dynamicImports")]
     pub dynamic_imports: usize,
-    #[serde(rename = "exportAliases")]
     pub export_aliases: usize,
-    #[serde(rename = "importDeclarations")]
     pub import_declarations: usize,
-    #[serde(rename = "keptTopLevelDeclarationOwners")]
     pub kept_top_level_declaration_owners: usize,
-    pub parts: usize,
-    #[serde(rename = "splitFunctionDeclarations")]
-    pub split_function_declarations: usize,
-    #[serde(rename = "topLevelBindings")]
     pub top_level_bindings: usize,
-    #[serde(rename = "topLevelDeclarationOwners")]
     pub top_level_declaration_owners: usize,
-    #[serde(rename = "topLevelSideEffects")]
     pub top_level_side_effects: usize,
-    #[serde(rename = "unresolvedExports")]
     pub unresolved_exports: usize,
 }
 
@@ -244,13 +232,12 @@ pub struct ExportAliasRecord {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct KeptTopLevelDeclarationRecord {
     pub id: String,
     pub line: Option<usize>,
     pub names: Vec<String>,
-    #[serde(rename = "kind")]
-    pub node_kind: ModuleItemKind,
-    #[serde(rename = "unsafeReason")]
+    pub kind: ModuleItemKind,
     pub unsafe_reason: &'static str,
 }
 

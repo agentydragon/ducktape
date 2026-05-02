@@ -85,8 +85,6 @@ fn build_artifact_manifest(chunk_manifests: &[::artifact::ChunkManifest]) -> Art
         schema_version: 1,
         counts: ArtifactCounts {
             chunks: chunk_manifests.len(),
-            parts: 0,
-            split_function_declarations: 0,
             kept_top_level_declaration_owners: chunk_manifests
                 .iter()
                 .map(|manifest| manifest.counts.kept_top_level_declaration_owners)
