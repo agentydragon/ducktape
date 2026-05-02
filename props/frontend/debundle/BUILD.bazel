@@ -1,0 +1,162 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
+load("//devinfra/js/debundle:pipeline.bzl", "debundle_pipeline")
+
+# Smoke target for the debundle pipeline against props/frontend.
+#
+# Wiring mirrors gaffer's tana/re/web/transforms/BUILD.bazel:
+# spec_generator emits a transform spec that drives the canonical
+# pipeline (vendor-swap → materialize → rename → emit_browser_harness).
+# The output is a self-contained harness tree the load test serves
+# over a static-file server (no MITM — props/frontend has no
+# server-side dependency).
+#
+# The smoke ships its own UI shell (`smoke_shell.svelte`) rather than
+# reusing the production `App.svelte`. That's because:
+#   - the production library `:app` is package-private — opting it
+#     into a wider visibility for one downstream is more invasive
+#     than keeping the shell local;
+#   - the production pages all hit the backend on mount, which the
+#     static-file harness would 404 and which would pollute the
+#     load test's "no console errors" assertion;
+#   - the shell still uses the same `$lib/router` + selector shape
+#     (`nav`, `<h1>Props</h1>`, nav links) so the load test asserts
+#     against the same surface as production.
+
+# ============================================================
+# Smoke bundle: multi-chunk variant tuned for the debundle pipeline.
+# ============================================================
+
+js_library(
+    name = "smoke_lib",
+    srcs = [
+        "smoke_main.ts",
+        "smoke_shell.svelte",
+        "vendor_datatable_marker.ts",
+        "vendor_highlight_marker.ts",
+        "vendor_marker.ts",
+    ],
+    deps = [
+        "//props/frontend/src/lib:highlighting",
+        "//props/frontend/src/lib:router",
+    ],
+)
+
+js_binary(
+    name = "build_smoke_bundle_bin",
+    chdir = "props/frontend",
+    data = [
+        "esbuild.smoke.config.mjs",
+        ":smoke_lib",
+        "//props/frontend:node_modules",
+    ],
+    entry_point = "esbuild.smoke.config.mjs",
+)
+
+# Output is a tree artifact under
+# `bazel-bin/props/frontend/debundle/smoke_bundle/`. The js_binary
+# `chdir`s into `props/frontend`, so the esbuild config receives the
+# `outdir` arg relative to that CWD: `debundle/smoke_bundle`.
+js_run_binary(
+    name = "smoke_bundle",
+    srcs = [
+        "esbuild.smoke.config.mjs",
+        ":smoke_lib",
+    ],
+    args = ["debundle/smoke_bundle"],
+    out_dirs = ["smoke_bundle"],
+    tool = ":build_smoke_bundle_bin",
+)
+
+# ============================================================
+# Snapshot inputs: index.html plus extracted/asset-summary.json
+# generated from the smoke bundle's metafile.
+# ============================================================
+
+js_library(
+    name = "prepare_snapshot_lib",
+    srcs = ["prepare_snapshot.mjs"],
+)
+
+js_binary(
+    name = "prepare_snapshot_bin",
+    data = [":prepare_snapshot_lib"],
+    entry_point = "prepare_snapshot.mjs",
+)
+
+js_run_binary(
+    name = "snapshot",
+    srcs = [
+        "smoke_index.html",
+        ":smoke_bundle",
+    ],
+    outs = [
+        "extracted/asset-summary.json",
+        "extracted/js-files.txt",
+        "snapshot/index.html",
+    ],
+    args = [
+        "--bundle",
+        "$(execpath :smoke_bundle)",
+        "--index-html",
+        "$(execpath smoke_index.html)",
+        "--snapshot-out",
+        "$(RULEDIR)/snapshot",
+        "--asset-summary-out",
+        "$(execpath extracted/asset-summary.json)",
+        "--js-list-out",
+        "$(execpath extracted/js-files.txt)",
+    ],
+    out_dirs = ["snapshot/dist"],
+    tool = ":prepare_snapshot_bin",
+)
+
+filegroup(
+    name = "snapshot_dir",
+    srcs = [
+        "snapshot/dist",
+        "snapshot/index.html",
+    ],
+)
+
+filegroup(
+    name = "extracted_inputs",
+    srcs = [
+        "extracted/asset-summary.json",
+        "extracted/js-files.txt",
+    ],
+)
+
+# ============================================================
+# Spec generator + debundle pipeline.
+# ============================================================
+
+js_library(
+    name = "spec_generator_lib",
+    srcs = ["spec_generator.mjs"],
+)
+
+js_binary(
+    name = "spec_generator",
+    data = [":spec_generator_lib"],
+    entry_point = "spec_generator.mjs",
+)
+
+# Vendor packages the smoke swaps. Mirrors gaffer's swap_package_root
+# helpers in tana/re/web/vendor/defs.bzl, kept inline here so the open-source
+# corpus owns its own list.
+_SMOKE_VENDOR_PACKAGES = {
+    "//props/frontend:node_modules/highlight.js/dir": "highlight.js",
+    "//props/frontend:node_modules/@careswitch/svelte-data-table/dir": "@careswitch/svelte-data-table",
+}
+
+debundle_pipeline(
+    name = "debundle_props_frontend",
+    debundler = "//devinfra/js/debundle",
+    input_data = [
+        ":snapshot_dir",
+        ":extracted_inputs",
+    ],
+    package_roots = _SMOKE_VENDOR_PACKAGES,
+    spec_generator = ":spec_generator",
+    visibility = ["//visibility:public"],
+)
