@@ -70,11 +70,10 @@ export { aH };
     // Public re-export name `aH` must survive even though the local is
     // now `aH$1`: the re-export becomes `export { aH$1 as aH }` rather
     // than `export { aH$1 }` (which would silently change the public
-    // name downstream consumers see).
-    assert!(
-        entry.contains("aH$1 as aH"),
-        "expected re-export to preserve public name aH; entry was:\n{entry}",
-    );
+    // name downstream consumers see). A substring check would also accept
+    // the broken `aH$1 as aH$1` shape (it contains `aH$1 as aH`), so
+    // this asserts on the parsed specifier instead.
+    assert_export_named_specifier(&entry, "aH$1", Some("aH"));
 
     // SWC parses the result without a duplicate-decl error: every named
     // import specifier in the file binds a distinct local.
@@ -122,9 +121,81 @@ export { aH };
 /// would perform at module-load time.
 fn assert_unique_import_locals(source: &str) {
     use std::collections::BTreeSet;
+    use swc_ecma_ast::{ImportSpecifier, ModuleDecl, ModuleItem};
+
+    let module = parse_module(source);
+    let mut seen = BTreeSet::new();
+    for item in &module.body {
+        let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+            continue;
+        };
+        for specifier in &import.specifiers {
+            let local = match specifier {
+                ImportSpecifier::Named(named) => named.local.sym.to_string(),
+                ImportSpecifier::Default(default) => default.local.sym.to_string(),
+                ImportSpecifier::Namespace(namespace) => namespace.local.sym.to_string(),
+            };
+            assert!(
+                seen.insert(local.clone()),
+                "duplicate import local `{local}` in:\n{source}",
+            );
+        }
+    }
+}
+
+/// Parse `source` and assert exactly one `export { ... }` specifier has
+/// `orig.sym == expected_orig`, with its `exported` either absent (when
+/// `expected_exported_as` is `None`) or `Ident { sym: expected_exported_as }`.
+/// Walks the parsed specifier tree so a corrupted `export { aH$1 as aH$1 }`
+/// fails — a substring check on `aH$1 as aH` would accept both shapes.
+fn assert_export_named_specifier(
+    source: &str,
+    expected_orig: &str,
+    expected_exported_as: Option<&str>,
+) {
+    use swc_ecma_ast::{ExportSpecifier, ModuleDecl, ModuleExportName, ModuleItem};
+
+    let module = parse_module(source);
+    let matched: Vec<_> = module
+        .body
+        .iter()
+        .filter_map(|item| match item {
+            ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) => Some(named),
+            _ => None,
+        })
+        .flat_map(|named| named.specifiers.iter())
+        .filter_map(|spec| match spec {
+            ExportSpecifier::Named(named) => Some(named),
+            _ => None,
+        })
+        .filter(|spec| {
+            let ModuleExportName::Ident(ident) = &spec.orig else {
+                return false;
+            };
+            ident.sym.as_ref() == expected_orig
+        })
+        .collect();
+    assert_eq!(
+        matched.len(),
+        1,
+        "expected exactly one `export {{ {expected_orig} ... }}` specifier; got {} in:\n{source}",
+        matched.len(),
+    );
+    let actual = match &matched[0].exported {
+        Some(ModuleExportName::Ident(ident)) => Some(ident.sym.to_string()),
+        Some(ModuleExportName::Str(_)) => panic!("unexpected string export in:\n{source}"),
+        None => None,
+    };
+    assert_eq!(
+        actual.as_deref(),
+        expected_exported_as,
+        "export {{ {expected_orig} ... }} `as` clause mismatch in:\n{source}",
+    );
+}
+
+fn parse_module(source: &str) -> swc_ecma_ast::Module {
     use swc_common::FileName;
     use swc_common::sync::Lrc;
-    use swc_ecma_ast::{ImportSpecifier, ModuleDecl, ModuleItem};
     use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer};
 
     let cm: Lrc<swc_common::SourceMap> = Default::default();
@@ -143,24 +214,7 @@ fn assert_unique_import_locals(source: &str) {
         StringInput::from(&*fm),
         None,
     );
-    let module = Parser::new_from(lexer)
+    Parser::new_from(lexer)
         .parse_module()
-        .unwrap_or_else(|err| panic!("entry must parse, got {err:?}; source:\n{source}"));
-    let mut seen = BTreeSet::new();
-    for item in &module.body {
-        let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
-            continue;
-        };
-        for specifier in &import.specifiers {
-            let local = match specifier {
-                ImportSpecifier::Named(named) => named.local.sym.to_string(),
-                ImportSpecifier::Default(default) => default.local.sym.to_string(),
-                ImportSpecifier::Namespace(namespace) => namespace.local.sym.to_string(),
-            };
-            assert!(
-                seen.insert(local.clone()),
-                "duplicate import local `{local}` in:\n{source}",
-            );
-        }
-    }
+        .unwrap_or_else(|err| panic!("entry must parse, got {err:?}; source:\n{source}"))
 }
