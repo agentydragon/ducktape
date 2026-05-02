@@ -1021,9 +1021,11 @@ fn naturalize_module_body(body: &mut [ModuleItem], plan: &ModulePlan) -> BTreeMa
             renames.insert(local.clone(), exported.clone());
         }
     }
-    for item in body.iter_mut() {
-        collect_naturalization_renames_from_item(item, &mut renames);
+    let mut heuristic = BTreeMap::<String, String>::new();
+    for item in body.iter() {
+        collect_naturalization_renames_from_item(item, &mut heuristic);
     }
+    let renames = drop_target_collisions(renames, heuristic);
     if !renames.is_empty() {
         for item in body.iter_mut() {
             item.visit_mut_with(&mut IdentifierRenamer {
@@ -1037,82 +1039,102 @@ fn naturalize_module_body(body: &mut [ModuleItem], plan: &ModulePlan) -> BTreeMa
     renames
 }
 
+/// Merge `heuristic` into `plan_driven`, dropping any heuristic mapping
+/// whose target is either already claimed by `plan_driven` or shared with
+/// another heuristic source. Two sources renamed onto the same target
+/// would collapse distinct bindings into a duplicate decl as soon as both
+/// happen to live in the same scope.
+fn drop_target_collisions(
+    mut plan_driven: BTreeMap<String, String>,
+    heuristic: BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for target in plan_driven.values().chain(heuristic.values()) {
+        *counts.entry(target.clone()).or_default() += 1;
+    }
+    for (local, target) in heuristic {
+        if plan_driven.contains_key(&local) {
+            continue;
+        }
+        if counts.get(&target).copied().unwrap_or(0) > 1 {
+            continue;
+        }
+        plan_driven.insert(local, target);
+    }
+    plan_driven
+}
+
 fn collect_naturalization_renames_from_item(
-    item: &mut ModuleItem,
+    item: &ModuleItem,
     renames: &mut BTreeMap<String, String>,
 ) {
     match item {
         ModuleItem::Stmt(Stmt::Decl(Decl::Fn(function))) => {
-            collect_naturalization_renames_from_function(&mut function.function, renames);
+            collect_naturalization_renames_from_function(&function.function, renames);
         }
         ModuleItem::Stmt(Stmt::Decl(Decl::Class(class))) => {
-            collect_naturalization_renames_from_class(&mut class.class, renames);
+            collect_naturalization_renames_from_class(&class.class, renames);
         }
         ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => {
-            for declarator in &mut var.decls {
-                if let Some(init) = declarator.init.as_mut() {
+            for declarator in &var.decls {
+                if let Some(init) = declarator.init.as_ref() {
                     collect_naturalization_renames_from_expr(init, renames);
                 }
             }
         }
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
-            match &mut export_decl.decl {
-                Decl::Fn(function) => {
-                    collect_naturalization_renames_from_function(&mut function.function, renames);
-                }
-                Decl::Class(class) => {
-                    collect_naturalization_renames_from_class(&mut class.class, renames);
-                }
-                Decl::Var(var) => {
-                    for declarator in &mut var.decls {
-                        if let Some(init) = declarator.init.as_mut() {
-                            collect_naturalization_renames_from_expr(init, renames);
-                        }
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => match &export_decl.decl {
+            Decl::Fn(function) => {
+                collect_naturalization_renames_from_function(&function.function, renames);
+            }
+            Decl::Class(class) => {
+                collect_naturalization_renames_from_class(&class.class, renames);
+            }
+            Decl::Var(var) => {
+                for declarator in &var.decls {
+                    if let Some(init) = declarator.init.as_ref() {
+                        collect_naturalization_renames_from_expr(init, renames);
                     }
                 }
-                _ => {}
             }
-        }
+            _ => {}
+        },
         _ => {}
     }
 }
 
-fn collect_naturalization_renames_from_expr(
-    expr: &mut Expr,
-    renames: &mut BTreeMap<String, String>,
-) {
+fn collect_naturalization_renames_from_expr(expr: &Expr, renames: &mut BTreeMap<String, String>) {
     match expr {
         Expr::Fn(function) => {
-            collect_naturalization_renames_from_function(&mut function.function, renames)
+            collect_naturalization_renames_from_function(&function.function, renames)
         }
         Expr::Arrow(arrow) => {
-            for param in &mut arrow.params {
+            for param in &arrow.params {
                 collect_naturalization_renames_from_pattern(param, renames);
             }
         }
-        Expr::Class(class) => collect_naturalization_renames_from_class(&mut class.class, renames),
+        Expr::Class(class) => collect_naturalization_renames_from_class(&class.class, renames),
         _ => {}
     }
 }
 
 fn collect_naturalization_renames_from_function(
-    function: &mut Box<Function>,
+    function: &Function,
     renames: &mut BTreeMap<String, String>,
 ) {
-    for param in &mut function.params {
-        collect_naturalization_renames_from_pattern(&mut param.pat, renames);
+    for param in &function.params {
+        collect_naturalization_renames_from_pattern(&param.pat, renames);
     }
-    let Some(body) = function.body.as_mut() else {
+    let Some(body) = function.body.as_ref() else {
         return;
     };
     collect_return_object_alias_renames(&body.stmts, renames);
 }
 
 fn collect_naturalization_renames_from_class(
-    class: &mut Box<Class>,
+    class: &Class,
     renames: &mut BTreeMap<String, String>,
 ) {
-    for member in &mut class.body {
+    for member in &class.body {
         let ClassMember::Constructor(constructor) = member else {
             continue;
         };
@@ -1133,13 +1155,10 @@ fn collect_naturalization_renames_from_class(
     }
 }
 
-fn collect_naturalization_renames_from_pattern(
-    pat: &mut Pat,
-    renames: &mut BTreeMap<String, String>,
-) {
+fn collect_naturalization_renames_from_pattern(pat: &Pat, renames: &mut BTreeMap<String, String>) {
     match pat {
         Pat::Object(object) => {
-            for prop in &mut object.props {
+            for prop in &object.props {
                 match prop {
                     ObjectPatProp::KeyValue(key_value) => {
                         if let PropName::Ident(key) = &key_value.key
@@ -1148,34 +1167,24 @@ fn collect_naturalization_renames_from_pattern(
                             let from = value.id.sym.to_string();
                             let to = key.sym.to_string();
                             if from != to && is_identifier_like(&to) {
-                                renames.insert(from, to.clone());
-                                *prop = ObjectPatProp::Assign(AssignPatProp {
-                                    span: DUMMY_SP,
-                                    key: BindingIdent {
-                                        id: Ident::new_no_ctxt(to.into(), DUMMY_SP),
-                                        type_ann: None,
-                                    },
-                                    value: None,
-                                });
+                                renames.insert(from, to);
                             }
                         }
                     }
                     ObjectPatProp::Assign(_) => {}
                     ObjectPatProp::Rest(rest) => {
-                        collect_naturalization_renames_from_pattern(&mut rest.arg, renames);
+                        collect_naturalization_renames_from_pattern(&rest.arg, renames);
                     }
                 }
             }
         }
         Pat::Array(array) => {
-            for elem in array.elems.iter_mut().flatten() {
+            for elem in array.elems.iter().flatten() {
                 collect_naturalization_renames_from_pattern(elem, renames);
             }
         }
-        Pat::Assign(assign) => {
-            collect_naturalization_renames_from_pattern(&mut assign.left, renames)
-        }
-        Pat::Rest(rest) => collect_naturalization_renames_from_pattern(&mut rest.arg, renames),
+        Pat::Assign(assign) => collect_naturalization_renames_from_pattern(&assign.left, renames),
+        Pat::Rest(rest) => collect_naturalization_renames_from_pattern(&rest.arg, renames),
         _ => {}
     }
 }
