@@ -96,13 +96,26 @@ pub fn emit_browser_harness(
                 .clone(),
         }))? + "\n",
     )?;
+    // Make the harness tree self-contained: copy the upstream source HTML
+    // and asset-summary into the output dir so the live proxy (and any
+    // other consumer reading the manifest) only needs the manifest's own
+    // directory in its runfiles, not the unrelated `extracted/` and
+    // `snapshots/` input trees. The recursive snapshot copy above already
+    // brought in SOURCE.json and other static assets; the source HTML's
+    // pre-rewrite copy gets a stable `source.html` name (the snapshot's
+    // copy at `<html_path>` is overwritten by the rewritten index above
+    // when the two collide).
+    let source_html_in_tree = options.out_dir.join("source.html");
+    fs::write(&source_html_in_tree, &source_html)?;
+    let asset_summary_in_tree = options.out_dir.join("asset-summary.json");
+    fs::copy(&options.asset_summary_path, &asset_summary_in_tree)?;
     let manifest_path = options.out_dir.join("manifest.json");
     let rel = |target: &Path| manifest_relative_path(&manifest_path, target);
     let manifest = HarnessManifest {
         schema_version: 1,
-        source_html: rel(&source_html_path),
+        source_html: rel(&source_html_in_tree),
         snapshot_root: rel(&options.snapshot_root),
-        asset_summary_path: rel(&options.asset_summary_path),
+        asset_summary_path: rel(&asset_summary_in_tree),
         chunks_manifest_path: rel(&options.out_dir.join("chunks.manifest.json")),
         runtime_root: rel(&options.out_dir),
         out_dir: rel(&options.out_dir),
