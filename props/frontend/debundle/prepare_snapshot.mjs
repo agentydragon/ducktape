@@ -66,11 +66,22 @@ function rewriteIndexHtml(html, mainHref) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  const bundleDir = options.bundle;
-  const indexHtmlPath = options.index_html;
-  const snapshotOut = options.snapshot_out;
-  const assetSummaryOut = options.asset_summary_out;
-  const jsListOut = options.js_list_out;
+  // The js_binary launcher chdir's to `BAZEL_BINDIR` (the root of
+  // the bazel-out tree) before invoking node. Path args from
+  // `$(execpath …)` arrive execroot-relative, so we strip the
+  // `BAZEL_BINDIR/` prefix when present to get a path relative to
+  // the script's cwd.
+  const bindir = process.env.BAZEL_BINDIR;
+  const stripBindir = (path) => {
+    if (!bindir) return path;
+    const prefix = `${bindir}/`;
+    return path.startsWith(prefix) ? path.slice(prefix.length) : path;
+  };
+  const bundleDir = stripBindir(options.bundle);
+  const indexHtmlPath = stripBindir(options.index_html);
+  const snapshotOut = stripBindir(options.snapshot_out);
+  const assetSummaryOut = stripBindir(options.asset_summary_out);
+  const jsListOut = stripBindir(options.js_list_out);
 
   await mkdir(snapshotOut, { recursive: true });
   await mkdir(join(snapshotOut, "dist"), { recursive: true });
