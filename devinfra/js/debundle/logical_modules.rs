@@ -110,6 +110,16 @@ struct LogicalRequest {
 struct MemberRequest {
     binding: String,
     export_name: String,
+    /// When `Some`, the member's source is an import specifier in the
+    /// source chunk (not a top-level decl). The materializer rewrites
+    /// it to a re-import in the destination module.
+    import: Option<ImportSpecifierInfo>,
+}
+
+#[derive(Debug, Clone)]
+struct ImportSpecifierInfo {
+    source: String,
+    imported: String,
 }
 
 #[derive(Debug, Clone)]
@@ -126,6 +136,19 @@ struct ModulePlan {
     explicit: bool,
     requested: LogicalRequest,
     bindings: BTreeMap<String, String>,
+    /// `binding.kind: ImportSpecifier` members. Each entry produces an
+    /// `import { <imported> as <export_name> } from "<source>";` plus
+    /// `export { <export_name> };` in the destination module body. The
+    /// local in the source chunk's import is a different name; it
+    /// stays untouched so the source-chunk consumers continue to work.
+    import_members: Vec<ImportSpecifierMember>,
+}
+
+#[derive(Debug, Clone)]
+struct ImportSpecifierMember {
+    export_name: String,
+    source: String,
+    imported: String,
 }
 
 pub fn materialize_logical_modules(
@@ -211,8 +234,19 @@ pub fn materialize_logical_modules(
         let mut module_plans = Vec::new();
         for (index, request) in explicit_requests.iter_mut().enumerate() {
             let mut bindings = BTreeMap::new();
+            let mut import_members = Vec::new();
             for member in &request.members {
-                bindings.insert(member.binding.clone(), member.export_name.clone());
+                if let Some(import) = &member.import {
+                    // ImportSpecifier-bound: emit a re-import in the
+                    // destination module, not a top-level decl move.
+                    import_members.push(ImportSpecifierMember {
+                        export_name: member.export_name.clone(),
+                        source: import.source.clone(),
+                        imported: import.imported.clone(),
+                    });
+                } else {
+                    bindings.insert(member.binding.clone(), member.export_name.clone());
+                }
             }
             for binding in bindings.keys() {
                 if declaration_by_name.contains_key(binding) {
@@ -225,6 +259,7 @@ pub fn materialize_logical_modules(
                 explicit: true,
                 requested: request.clone(),
                 bindings,
+                import_members,
             });
         }
 
@@ -254,6 +289,7 @@ pub fn materialize_logical_modules(
                     explicit: false,
                     requested: residual,
                     bindings: residual_bindings,
+                    import_members: Vec::new(),
                 });
             }
         }
@@ -564,13 +600,45 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         module_imports.append(&mut body);
         body = module_imports;
         rewrite_runtime_sources_for_target(&mut body, &plan.target_file);
-        if let Some(exports) = selected_exports_by_module.get(&index) {
-            let exports = final_module_exports(exports, &local_renames);
+        // ImportSpecifier-bound members: emit a re-import in the
+        // destination module for each, plus mirror the export. The
+        // re-imports go at the top of the body, after the cross-module
+        // imports already inserted.
+        let mut import_member_exports = BTreeMap::<String, String>::new();
+        if !plan.import_members.is_empty() {
+            let import_count = body
+                .iter()
+                .take_while(|item| matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
+                .count();
+            for (offset, member) in plan.import_members.iter().enumerate() {
+                let decl = import_specifier_member_decl(
+                    entry_file,
+                    &plan.target_file,
+                    &member.source,
+                    &member.imported,
+                    &member.export_name,
+                );
+                body.insert(import_count + offset, decl);
+                import_member_exports
+                    .insert(member.export_name.clone(), member.export_name.clone());
+            }
+        }
+        let exports_have_top_level_decls = selected_exports_by_module.contains_key(&index);
+        if exports_have_top_level_decls {
+            let exports = selected_exports_by_module.get(&index).expect("checked");
+            let mut exports = final_module_exports(exports, &local_renames);
+            exports.extend(
+                import_member_exports
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone())),
+            );
             if requires_init_by_module.contains(&index) {
                 body = initialized_module_body(plan, body, &exports)?;
             } else {
                 body.push(export_named_for_bindings(&exports));
             }
+        } else if !import_member_exports.is_empty() {
+            body.push(export_named_for_bindings(&import_member_exports));
         }
         let owner_ids = plan.bindings.keys().cloned().collect::<Vec<_>>();
         let header = vec![
@@ -659,19 +727,36 @@ fn logical_requests_for_chunk(
             .into_iter()
             .flatten()
             .filter_map(|member| {
-                let binding = member
-                    .get("selector")
-                    .and_then(|selector| selector.get("binding"))
-                    .and_then(|binding| binding.get("name"))
-                    .and_then(Value::as_str)?;
+                let selector = member.get("selector")?;
+                let binding_node = selector.get("binding")?;
+                let binding = binding_node.get("name").and_then(Value::as_str)?;
                 let export_name = member
                     .get("name")
                     .and_then(Value::as_str)
                     .unwrap_or(binding)
                     .to_string();
+                // ImportSpecifier-bound members carry an `import` block
+                // pointing at the source chunk's import statement; the
+                // materializer turns the rename into a re-import in the
+                // destination module.
+                let import = if binding_node.get("kind").and_then(Value::as_str)
+                    == Some("ImportSpecifier")
+                {
+                    selector.get("import").and_then(|info| {
+                        let source = info.get("source").and_then(Value::as_str)?;
+                        let imported = info.get("imported").and_then(Value::as_str)?;
+                        Some(ImportSpecifierInfo {
+                            source: source.to_string(),
+                            imported: imported.to_string(),
+                        })
+                    })
+                } else {
+                    None
+                };
                 Some(MemberRequest {
                     binding: binding.to_string(),
                     export_name,
+                    import,
                 })
             })
             .collect();
@@ -1826,6 +1911,51 @@ fn mint_fresh_local_name(base: &str, occupied: &BTreeSet<String>) -> String {
         }
         suffix += 1;
     }
+}
+
+/// Build an `import { <imported> as <local> } from "<rewritten_source>";`
+/// for an `ImportSpecifier` member moved into a destination module.
+/// The spec's `import.source` is relative to the source chunk's entry
+/// file; the destination's relative path differs, so re-resolve.
+fn import_specifier_member_decl(
+    source_chunk_entry_file: &str,
+    destination_target_file: &str,
+    import_source: &str,
+    imported: &str,
+    local: &str,
+) -> ModuleItem {
+    let source_dir = std::path::Path::new(source_chunk_entry_file)
+        .parent()
+        .and_then(std::path::Path::to_str)
+        .unwrap_or("")
+        .replace('\\', "/");
+    let absolute_target = posix_join(&[&source_dir, import_source]);
+    let absolute_normalized = normalize_relative_path(&absolute_target).unwrap_or(absolute_target);
+    let rewritten = relative_source(destination_target_file, &absolute_normalized);
+    ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
+        span: DUMMY_SP,
+        specifiers: vec![ImportSpecifier::Named(ImportNamedSpecifier {
+            span: DUMMY_SP,
+            local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+            imported: if local == imported {
+                None
+            } else {
+                Some(ModuleExportName::Ident(Ident::new_no_ctxt(
+                    imported.into(),
+                    DUMMY_SP,
+                )))
+            },
+            is_type_only: false,
+        })],
+        src: Box::new(Str {
+            span: DUMMY_SP,
+            value: rewritten.into(),
+            raw: None,
+        }),
+        type_only: false,
+        with: None,
+        phase: ImportPhase::Evaluation,
+    }))
 }
 
 fn import_decl_for_plan(
