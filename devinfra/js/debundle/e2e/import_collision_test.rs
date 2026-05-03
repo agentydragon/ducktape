@@ -9,7 +9,16 @@
 
 use debundle_e2e_support::*;
 use serde_json::json;
+use std::collections::BTreeSet;
 use std::fs;
+use swc_common::FileName;
+use swc_common::sync::Lrc;
+use swc_ecma_ast::{
+    BindingIdent, BlockStmtOrExpr, Decl, ExportSpecifier, Expr, FnDecl, Function, ImportSpecifier,
+    Module, ModuleDecl, ModuleExportName, ModuleItem, ObjectPatProp, Pat, Stmt, VarDeclKind,
+    VarDeclarator,
+};
+use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer};
 
 #[test]
 fn renames_consumer_import_local_when_a_second_plan_claims_the_same_scrambled_binding() {
@@ -172,9 +181,6 @@ export { destructure, alias, consumer };
 /// distinct local symbol. Mirrors the duplicate-declaration check Node
 /// would perform at module-load time.
 fn assert_unique_import_locals(source: &str) {
-    use std::collections::BTreeSet;
-    use swc_ecma_ast::{ImportSpecifier, ModuleDecl, ModuleItem};
-
     let module = parse_module(source);
     let mut seen = BTreeSet::new();
     for item in &module.body {
@@ -205,8 +211,6 @@ fn assert_export_named_specifier(
     expected_orig: &str,
     expected_exported_as: Option<&str>,
 ) {
-    use swc_ecma_ast::{ExportSpecifier, ModuleDecl, ModuleExportName, ModuleItem};
-
     let module = parse_module(source);
     let matched: Vec<_> = module
         .body
@@ -250,11 +254,6 @@ fn assert_export_named_specifier(
 /// `var` is excluded because it allows redeclaration in the same scope).
 /// Mirrors Node's lexical-binding duplicate check.
 fn assert_unique_lexical_decls_per_scope(source: &str, target_name: &str) {
-    use swc_ecma_ast::{
-        BindingIdent, BlockStmtOrExpr, Decl, Expr, FnDecl, Function, ModuleItem, ObjectPatProp,
-        Pat, Stmt, VarDeclKind, VarDeclarator,
-    };
-
     fn pat_binds(pat: &Pat, target: &str) -> bool {
         match pat {
             Pat::Ident(BindingIdent { id, .. }) => id.sym.as_ref() == target,
@@ -368,11 +367,7 @@ fn assert_unique_lexical_decls_per_scope(source: &str, target_name: &str) {
     }
 }
 
-fn parse_module(source: &str) -> swc_ecma_ast::Module {
-    use swc_common::FileName;
-    use swc_common::sync::Lrc;
-    use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer};
-
+fn parse_module(source: &str) -> Module {
     let cm: Lrc<swc_common::SourceMap> = Default::default();
     let fm = cm.new_source_file(
         FileName::Custom("entry.js".into()).into(),
