@@ -110,16 +110,15 @@ struct LogicalRequest {
 struct MemberRequest {
     binding: String,
     export_name: String,
-    /// When `Some`, the member's source is an import specifier in the
-    /// source chunk (not a top-level decl). The materializer rewrites
-    /// it to a re-import in the destination module.
-    import: Option<ImportSpecifierInfo>,
-}
-
-#[derive(Debug, Clone)]
-struct ImportSpecifierInfo {
-    source: String,
-    imported: String,
+    /// When `true`, the member's source is an import specifier in the
+    /// source chunk (not a top-level decl). The materializer looks up
+    /// the actual import statement and rewrites it to a re-import in
+    /// the destination module. The spec also carries `import.source` /
+    /// `import.imported` for identification, but the import statement
+    /// in the chunk's normalized body is the authoritative source for
+    /// the path and imported name (the rewrite stage may have updated
+    /// the path since the spec was authored).
+    is_import_specifier: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -141,14 +140,18 @@ struct ModulePlan {
     /// `export { <export_name> };` in the destination module body. The
     /// local in the source chunk's import is a different name; it
     /// stays untouched so the source-chunk consumers continue to work.
+    /// The actual `imported` and `source` are looked up from the
+    /// source chunk's body at lowering time so the path stays in sync
+    /// with whatever the rewrite stage produced.
     import_members: Vec<ImportSpecifierMember>,
 }
 
 #[derive(Debug, Clone)]
 struct ImportSpecifierMember {
+    /// Local name in the source chunk's import statement. Used to
+    /// look up the actual import + specifier in the runtime AST.
+    source_local: String,
     export_name: String,
-    source: String,
-    imported: String,
 }
 
 pub fn materialize_logical_modules(
@@ -236,13 +239,12 @@ pub fn materialize_logical_modules(
             let mut bindings = BTreeMap::new();
             let mut import_members = Vec::new();
             for member in &request.members {
-                if let Some(import) = &member.import {
+                if member.is_import_specifier {
                     // ImportSpecifier-bound: emit a re-import in the
                     // destination module, not a top-level decl move.
                     import_members.push(ImportSpecifierMember {
+                        source_local: member.binding.clone(),
                         export_name: member.export_name.clone(),
-                        source: import.source.clone(),
-                        imported: import.imported.clone(),
                     });
                 } else {
                     bindings.insert(member.binding.clone(), member.export_name.clone());
@@ -612,12 +614,11 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
                 .count();
             for (offset, member) in plan.import_members.iter().enumerate() {
                 let decl = import_specifier_member_decl(
-                    entry_file,
+                    &runtime_ast.module.body,
                     &plan.target_file,
-                    &member.source,
-                    &member.imported,
+                    &member.source_local,
                     &member.export_name,
-                );
+                )?;
                 body.insert(import_count + offset, decl);
                 import_member_exports
                     .insert(member.export_name.clone(), member.export_name.clone());
@@ -735,28 +736,12 @@ fn logical_requests_for_chunk(
                     .and_then(Value::as_str)
                     .unwrap_or(binding)
                     .to_string();
-                // ImportSpecifier-bound members carry an `import` block
-                // pointing at the source chunk's import statement; the
-                // materializer turns the rename into a re-import in the
-                // destination module.
-                let import = if binding_node.get("kind").and_then(Value::as_str)
-                    == Some("ImportSpecifier")
-                {
-                    selector.get("import").and_then(|info| {
-                        let source = info.get("source").and_then(Value::as_str)?;
-                        let imported = info.get("imported").and_then(Value::as_str)?;
-                        Some(ImportSpecifierInfo {
-                            source: source.to_string(),
-                            imported: imported.to_string(),
-                        })
-                    })
-                } else {
-                    None
-                };
+                let is_import_specifier =
+                    binding_node.get("kind").and_then(Value::as_str) == Some("ImportSpecifier");
                 Some(MemberRequest {
                     binding: binding.to_string(),
                     export_name,
-                    import,
+                    is_import_specifier,
                 })
             })
             .collect();
@@ -1913,31 +1898,33 @@ fn mint_fresh_local_name(base: &str, occupied: &BTreeSet<String>) -> String {
     }
 }
 
-/// Build an `import { <imported> as <local> } from "<rewritten_source>";`
-/// for an `ImportSpecifier` member moved into a destination module.
-/// The spec's `import.source` is relative to the source chunk's entry
-/// file; the destination's relative path differs, so re-resolve.
+/// Look up the source chunk's import statement that binds `source_local`,
+/// and build the destination's re-import. The chunk's import lives at the
+/// chunk root; the destination lives deeper, so prepend `../` for each
+/// path segment that separates `destination_target_file` from the chunk
+/// root.
 fn import_specifier_member_decl(
-    source_chunk_entry_file: &str,
+    runtime_body: &[ModuleItem],
     destination_target_file: &str,
-    import_source: &str,
-    imported: &str,
-    local: &str,
-) -> ModuleItem {
-    let source_dir = std::path::Path::new(source_chunk_entry_file)
+    source_local: &str,
+    export_name: &str,
+) -> Result<ModuleItem> {
+    let (imported, src_path) =
+        lookup_import_specifier(runtime_body, source_local).with_context(|| {
+            format!("no import specifier found for `{source_local}` in source chunk")
+        })?;
+    let depth = std::path::Path::new(destination_target_file)
         .parent()
-        .and_then(std::path::Path::to_str)
-        .unwrap_or("")
-        .replace('\\', "/");
-    let absolute_target = posix_join(&[&source_dir, import_source]);
-    let absolute_normalized = normalize_relative_path(&absolute_target).unwrap_or(absolute_target);
-    let rewritten = relative_source(destination_target_file, &absolute_normalized);
-    ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
+        .map(|parent| parent.iter().count())
+        .unwrap_or(0);
+    let prefix = "../".repeat(depth);
+    let rewritten = format!("{prefix}{src_path}");
+    Ok(ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
         span: DUMMY_SP,
         specifiers: vec![ImportSpecifier::Named(ImportNamedSpecifier {
             span: DUMMY_SP,
-            local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
-            imported: if local == imported {
+            local: Ident::new_no_ctxt(export_name.into(), DUMMY_SP),
+            imported: if export_name == imported {
                 None
             } else {
                 Some(ModuleExportName::Ident(Ident::new_no_ctxt(
@@ -1955,7 +1942,32 @@ fn import_specifier_member_decl(
         type_only: false,
         with: None,
         phase: ImportPhase::Evaluation,
-    }))
+    })))
+}
+
+/// Find the `(imported_name, src_path)` for the chunk's import specifier
+/// whose local matches `source_local`.
+fn lookup_import_specifier(body: &[ModuleItem], source_local: &str) -> Option<(String, String)> {
+    for item in body {
+        let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+            continue;
+        };
+        for specifier in &import.specifiers {
+            let ImportSpecifier::Named(named) = specifier else {
+                continue;
+            };
+            if named.local.sym.as_ref() != source_local {
+                continue;
+            }
+            let imported = match &named.imported {
+                Some(ModuleExportName::Ident(ident)) => ident.sym.to_string(),
+                Some(ModuleExportName::Str(s)) => str_value(s),
+                None => named.local.sym.to_string(),
+            };
+            return Some((imported, str_value(&import.src)));
+        }
+    }
+    None
 }
 
 fn import_decl_for_plan(
