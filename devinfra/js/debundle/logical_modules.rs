@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -264,10 +264,6 @@ pub fn materialize_logical_modules(
             .iter()
             .flat_map(|decl| decl.names.iter().map(|name| (name.clone(), decl.ordinal)))
             .collect::<BTreeMap<_, _>>();
-        let uses_by_ordinal = declarations
-            .iter()
-            .map(|decl| (decl.ordinal, collect_referenced_idents(&decl.item)))
-            .collect::<BTreeMap<_, _>>();
 
         let mut binding_assignment = BTreeMap::<String, usize>::new();
         let mut module_plans = Vec::new();
@@ -306,14 +302,6 @@ pub fn materialize_logical_modules(
                 import_members,
             });
         }
-
-        close_module_bindings_over_dependencies(
-            &mut module_plans,
-            &mut binding_assignment,
-            &declarations,
-            &declaration_by_name,
-            &uses_by_ordinal,
-        );
 
         if let Some(residual) = residual_request {
             let residual_index = module_plans.len();
@@ -1027,71 +1015,6 @@ impl Visit for RefCollector {
     fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
 
     fn visit_import_decl(&mut self, _node: &ImportDecl) {}
-}
-
-fn close_module_bindings_over_dependencies(
-    module_plans: &mut [ModulePlan],
-    binding_assignment: &mut BTreeMap<String, usize>,
-    declarations: &[TopLevelDecl],
-    declaration_by_name: &BTreeMap<String, usize>,
-    uses_by_ordinal: &BTreeMap<usize, BTreeSet<String>>,
-) {
-    let declaration_by_ordinal = declarations
-        .iter()
-        .map(|decl| (decl.ordinal, decl))
-        .collect::<BTreeMap<_, _>>();
-    for (module_index, plan) in module_plans.iter_mut().enumerate() {
-        expand_plan_to_transitive_dependencies(
-            plan,
-            module_index,
-            binding_assignment,
-            declaration_by_name,
-            &declaration_by_ordinal,
-            uses_by_ordinal,
-        );
-    }
-}
-
-fn expand_plan_to_transitive_dependencies(
-    plan: &mut ModulePlan,
-    module_index: usize,
-    binding_assignment: &mut BTreeMap<String, usize>,
-    declaration_by_name: &BTreeMap<String, usize>,
-    declaration_by_ordinal: &BTreeMap<usize, &TopLevelDecl>,
-    uses_by_ordinal: &BTreeMap<usize, BTreeSet<String>>,
-) {
-    let mut queue = plan
-        .bindings
-        .keys()
-        .filter_map(|name| declaration_by_name.get(name).copied())
-        .collect::<VecDeque<_>>();
-    while let Some(ordinal) = queue.pop_front() {
-        let Some(uses) = uses_by_ordinal.get(&ordinal) else {
-            continue;
-        };
-        for used in uses {
-            let Some(dep_ordinal) = declaration_by_name.get(used).copied() else {
-                continue;
-            };
-            if binding_assignment.contains_key(used) {
-                continue;
-            }
-            binding_assignment.insert(used.clone(), module_index);
-            plan.bindings.insert(used.clone(), used.clone());
-            if let Some(dep_decl) = declaration_by_ordinal.get(&dep_ordinal) {
-                // Sibling declarators may already be claimed by another plan's
-                // explicit spec or earlier closure. Don't steal them — split_var_decl
-                // already routes per-declarator destinations correctly.
-                for dep_name in &dep_decl.names {
-                    if !binding_assignment.contains_key(dep_name) {
-                        binding_assignment.insert(dep_name.clone(), module_index);
-                        plan.bindings.insert(dep_name.clone(), dep_name.clone());
-                    }
-                }
-            }
-            queue.push_back(dep_ordinal);
-        }
-    }
 }
 
 fn reject_duplicate_export_names(

@@ -4,9 +4,10 @@
 use debundle_e2e_support::*;
 
 #[test]
-fn closes_an_extracted_module_over_its_helper_dependencies() {
-    // Selecting only `b`. Its helper `a` must be pulled into the module file
-    // (as an internal binding, not exported) and removed from residual.
+fn extracted_module_imports_unowned_helper_from_residual() {
+    // Spec claims only `b` for mod_x. Its helper `a` is unclaimed,
+    // so post Phase 1.7 (no closure pass), `a` stays in the
+    // residual entry; mod_x imports it.
     let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
         r#"const a = x => "h:" + x;
 const b = x => a(x);
@@ -16,12 +17,24 @@ export { b };
         vec![logical_module("x", &[Member::new("b")])],
     ));
     assert_module_exports(&fixture.out_root, "static/app/modules/x.js", &["b"], &[]);
-    assert_module_source(&fixture.out_root, "static/app/modules/x.js", &["a = "], &[]);
+    // mod_x imports `a` from residual rather than carrying its
+    // declaration locally — the explicit spec is the only routing,
+    // closure no longer pulls helpers along.
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/x.js",
+        &["import { a }"],
+        &["a = "],
+    );
     assert_entry_output(&fixture, "h:y\n");
 }
 
 #[test]
-fn duplicates_a_shared_bootstrap_dependency_into_each_named_module() {
+fn explicit_modules_share_a_residual_helper_via_imports() {
+    // Without closure, helper `r` (unclaimed by either explicit
+    // module) stays in residual. Both `inner` (owns `s`, which
+    // calls `r`) and `outer` (owns `t`, which calls `s` and `r`)
+    // import `r` from residual.
     let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
         r#"const q = "a";
 function r() { return q; }
@@ -38,8 +51,8 @@ export { t, s };
     assert_module_exports(
         &fixture.out_root,
         "static/app/modules/inner.js",
-        &["r", "s"],
-        &[],
+        &["s"],
+        &["r", "t"],
     );
     assert_module_exports(
         &fixture.out_root,
