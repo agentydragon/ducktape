@@ -491,16 +491,16 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         if plan.bindings.is_empty() {
             continue;
         }
-        // Only export bindings that were actually assigned to this
-        // module. A spec member whose source binding doesn't exist as
-        // a top-level decl in the chunk has no entry in
-        // `binding_assignment`; emitting an export for it would
-        // produce `export { Foo }` with no backing decl and Node
-        // bails with `SyntaxError: Export 'Foo' is not defined`.
+        // Drop bindings that don't exist anywhere (no entry in
+        // `binding_assignment`). Without this, a stale spec entry
+        // for a binding that is not a top-level decl in the chunk
+        // would emit `export { <renamed> }` with no backing decl
+        // and Node bails at module load with `SyntaxError: Export
+        // '<renamed>' is not defined in module`.
         let exports: BTreeMap<String, String> = plan
             .bindings
             .iter()
-            .filter(|(name, _)| binding_assignment.get(*name) == Some(&module_index))
+            .filter(|(name, _)| binding_assignment.contains_key(*name))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         if !exports.is_empty() {
@@ -541,9 +541,23 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         if plan.bindings.is_empty() {
             continue;
         }
+        // Drop bindings that don't exist anywhere (no entry in
+        // `binding_assignment`). Bindings owned by another plan stay
+        // in the import — they're a separate "two plans claim the
+        // same binding" disambiguation case handled by
+        // `disambiguate_import_locals`.
+        let live_bindings: BTreeMap<String, String> = plan
+            .bindings
+            .iter()
+            .filter(|(name, _)| binding_assignment.contains_key(*name))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        if live_bindings.is_empty() && !requires_init_by_module.contains(&module_index) {
+            continue;
+        }
         let mut emit_renames = BTreeMap::<String, String>::new();
         let mut resolved =
-            disambiguate_import_locals(&plan.bindings, &mut occupied, &mut emit_renames);
+            disambiguate_import_locals(&live_bindings, &mut occupied, &mut emit_renames);
         if requires_init_by_module.contains(&module_index) {
             let init_name = init_name_for_plan(plan);
             resolved.insert(init_name.clone(), init_name);
