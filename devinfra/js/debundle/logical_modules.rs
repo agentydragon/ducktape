@@ -149,6 +149,10 @@ struct ImportSpecifierMember {
     export_name: String,
     source: String,
     imported: String,
+    /// Local name of the source-chunk import specifier this member is
+    /// claiming. Used to trim the matching specifier from the source
+    /// chunk's import statement once the member has moved out.
+    local: String,
 }
 
 pub fn materialize_logical_modules(
@@ -243,6 +247,7 @@ pub fn materialize_logical_modules(
                         export_name: member.export_name.clone(),
                         source: import.source.clone(),
                         imported: import.imported.clone(),
+                        local: member.binding.clone(),
                     });
                 } else {
                     bindings.insert(member.binding.clone(), member.export_name.clone());
@@ -487,12 +492,6 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
 
     let mut entry_body = Vec::new();
     let mut called_init_modules = BTreeSet::<usize>::new();
-    let import_insert_index = runtime_ast
-        .module
-        .body
-        .iter()
-        .take_while(|item| matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
-        .count();
     for (ordinal, item) in runtime_ast.module.body.iter().enumerate() {
         if !selected_ordinals.contains(&ordinal) {
             entry_body.push(item.clone());
@@ -511,6 +510,28 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             )));
         }
     }
+    // Trim source-chunk import specifiers whose member moved out via an
+    // ImportSpecifier-bound plan. Each such member is now re-imported in
+    // its destination module; the original specifier in the source chunk
+    // is dead. Collect drops across all plans first so the multi-plan
+    // case (two plans claim different specifiers from the same import)
+    // collapses both removals before either fires.
+    let mut import_specifier_drops: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for plan in module_plans {
+        for member in &plan.import_members {
+            import_specifier_drops
+                .entry(member.source.clone())
+                .or_default()
+                .insert(member.local.clone());
+        }
+    }
+    if !import_specifier_drops.is_empty() {
+        trim_source_chunk_import_specifiers(&mut entry_body, &import_specifier_drops);
+    }
+    let import_insert_index = entry_body
+        .iter()
+        .take_while(|item| matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
+        .count();
     let mut entry_imports = Vec::<ModuleItem>::new();
     let mut occupied = collect_occupied_local_names(&entry_body);
     let mut body_renames = BTreeMap::<String, String>::new();
@@ -1910,6 +1931,55 @@ fn mint_fresh_local_name(base: &str, occupied: &BTreeSet<String>) -> String {
             return candidate;
         }
         suffix += 1;
+    }
+}
+
+/// Trim source-chunk import specifiers whose locals moved out into a
+/// destination module via an `ImportSpecifier`-bound plan.
+///
+/// `drops` maps an `import.source` (the literal `from "..."` value as
+/// written in the source chunk) to the set of local names whose
+/// matching specifier should be removed. When a single ImportDecl ends
+/// up with no specifiers left, the whole `import` statement is dropped.
+///
+/// This walks `body` in place. The trim is confined to leading
+/// imports — non-Import items elsewhere are left untouched — but the
+/// loop scans the full body for safety. After this returns, the
+/// caller should recompute the `import_insert_index` for cross-module
+/// import insertion since fully-dropped imports shift later items.
+fn trim_source_chunk_import_specifiers(
+    body: &mut Vec<ModuleItem>,
+    drops: &BTreeMap<String, BTreeSet<String>>,
+) {
+    let mut index = 0;
+    while index < body.len() {
+        let drop_whole = match &mut body[index] {
+            ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => {
+                let source_str = str_value(&import.src);
+                if let Some(locals) = drops.get(&source_str) {
+                    import.specifiers.retain(|spec| match spec {
+                        ImportSpecifier::Named(named) => {
+                            !locals.contains(&named.local.sym.to_string())
+                        }
+                        ImportSpecifier::Default(default) => {
+                            !locals.contains(&default.local.sym.to_string())
+                        }
+                        ImportSpecifier::Namespace(namespace) => {
+                            !locals.contains(&namespace.local.sym.to_string())
+                        }
+                    });
+                    import.specifiers.is_empty()
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        };
+        if drop_whole {
+            body.remove(index);
+        } else {
+            index += 1;
+        }
     }
 }
 

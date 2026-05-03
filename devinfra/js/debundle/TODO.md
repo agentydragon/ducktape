@@ -99,50 +99,6 @@ smaller minimised e2e under `devinfra/js/debundle/e2e/`) rather than
 only fixing it behind the private repo. The latter loses the
 public-CI signal and the public-bug-report leverage.
 
-## `define_logical_module` member with `binding.kind: ImportSpecifier`
-
-Spec members can declare a rename whose source is an _import specifier_
-in the source chunk rather than a top-level declaration:
-
-```jsonc
-{
-  "name": "Readable",
-  "selector": {
-    "chunkId": "<chunk>",
-    "binding": { "name": "<local>", "kind": "ImportSpecifier" },
-    "import": { "source": "<other-chunk>", "imported": "<exported>" },
-  },
-}
-```
-
-`materialize_logical_modules` today only walks top-level decls
-(`VariableDeclarator`, `FunctionDeclaration`, `ClassDeclaration`).
-`ImportSpecifier` members never make it into `binding_assignment`, so the
-destination module ends up with `export { Readable }` but no backing
-declaration or re-import — `SyntaxError: Export 'Readable' is not
-defined in module` at module load.
-
-Fix shape: when a plan claims an ImportSpecifier-bound member, the
-materializer should rewrite it to a re-import in the destination
-module:
-
-```js
-import { <exported> as Readable } from "<other-chunk>";
-export { Readable };
-```
-
-The rewrite must drop (or trim) the matching specifier from the source
-chunk's import statement. If no other binding from the same import
-statement remains, drop the whole `import` line.
-
-Minimal-e2e shape (to add when the fix lands): two chunks; the
-destination chunk has `import { x as a } from "./other.js";`;
-spec member `{ name: "Readable", binding: { name: "a", kind:
-"ImportSpecifier" }, import: { source: "./other.js", imported: "x" } }`.
-The materialized destination module must end up with `import { x as
-Readable } from "./other.js"; export { Readable };` (and the source
-chunk's import line trimmed).
-
 ## Propagate readable rename across consumers
 
 When `define_logical_module` renames a scrambled binding `<scrambled>`

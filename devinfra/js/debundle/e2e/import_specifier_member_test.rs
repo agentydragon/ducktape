@@ -55,4 +55,19 @@ export { a };
         mod_x.contains("export {") && mod_x.contains("Readable"),
         "mod_x.js must export Readable; got:\n{mod_x}",
     );
+
+    // Source chunk's entry must have the moved specifier trimmed: `a`
+    // is now re-imported in mod_x.js, so the original `import { x as a }
+    // from "./vendor.js"` line is dead. With only that one specifier
+    // present, the whole import statement should be gone.
+    let entry = fs::read_to_string(&fixture.entry_path).expect("read entry.js");
+    assert!(
+        !entry.contains("vendor.js"),
+        "entry.js should no longer import from vendor.js after the ImportSpecifier-bound \
+         member moved out; got:\n{entry}",
+    );
+    assert!(
+        !entry.contains("x as a"),
+        "entry.js should not retain the `x as a` vendor specifier; got:\n{entry}",
+    );
 }
