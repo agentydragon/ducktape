@@ -14,6 +14,9 @@ rust_library(
     edition = "2024",
     deps = [
         "@crates//:serde_json",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_parser",
         "@crates//:tempfile",
         "@rules_rust//tools/runfiles",
     ],
@@ -41,22 +44,14 @@ rust_library(
     )
     for name in [
         "lowering_test",
-        "cross_module_test",
         "naturalization_test",
         "url_rebase_test",
         "vendor_swap_test",
-        "import_collision_test",
         "scrambled_id_frequencies_test",
         "sibling_declarator_steal_test",
-        "import_specifier_member_test",
         "missing_binding_member_test",
-        "runtime_import_reference_test",
-        "init_call_order_test",
-        "validator_rejects_cycle_test",
         "source_order_emit_test",
-        "multi_module_re_export_test",
-        "lazy_back_edge_cycle_test",
-        "side_effect_ordering_test",
-        "comma_list_split_owners_test",
+        "realizability_test",
+        "cross_module_emission_test",
     ]
 ]

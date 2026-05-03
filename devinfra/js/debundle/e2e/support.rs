@@ -5,10 +5,19 @@
 
 use runfiles::{Runfiles, rlocation};
 use serde_json::{Value, json};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use swc_common::FileName;
+use swc_common::sync::Lrc;
+use swc_ecma_ast::{
+    BindingIdent, BlockStmtOrExpr, Decl, ExportSpecifier, Expr, FnDecl, Function, ImportSpecifier,
+    Module, ModuleDecl, ModuleExportName, ModuleItem, ObjectPatProp, Pat, Stmt, VarDeclKind,
+    VarDeclarator,
+};
+use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer};
 use tempfile::TempDir;
 
 const DEBUNDLER_RLOCATION: &str = "_main/devinfra/js/debundle/debundle";
@@ -507,5 +516,223 @@ fn run_node_script(path: &Path) -> CommandResult {
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
         status: output.status,
+    }
+}
+
+// --- AST-walking assertion helpers ---------------------------------------
+
+/// Parse `source` as an ESM module and return the SWC AST. Tests use this
+/// when the substring-on-emit checks aren't precise enough — e.g. when
+/// they need to walk specifiers to disambiguate `aH$1 as aH` (correct)
+/// from `aH$1 as aH$1` (corrupt).
+pub fn parse_module(source: &str) -> Module {
+    let cm: Lrc<swc_common::SourceMap> = Default::default();
+    let fm = cm.new_source_file(
+        FileName::Custom("entry.js".into()).into(),
+        source.to_string(),
+    );
+    let lexer = Lexer::new(
+        Syntax::Typescript(TsSyntax {
+            tsx: true,
+            decorators: true,
+            no_early_errors: true,
+            ..Default::default()
+        }),
+        Default::default(),
+        StringInput::from(&*fm),
+        None,
+    );
+    Parser::new_from(lexer)
+        .parse_module()
+        .unwrap_or_else(|err| panic!("entry must parse, got {err:?}; source:\n{source}"))
+}
+
+/// Parse `source` and assert that every named import specifier binds a
+/// distinct local symbol. Mirrors the duplicate-declaration check Node
+/// would perform at module-load time.
+pub fn assert_unique_import_locals(source: &str) {
+    let module = parse_module(source);
+    let mut seen = BTreeSet::new();
+    for item in &module.body {
+        let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+            continue;
+        };
+        for specifier in &import.specifiers {
+            let local = match specifier {
+                ImportSpecifier::Named(named) => named.local.sym.to_string(),
+                ImportSpecifier::Default(default) => default.local.sym.to_string(),
+                ImportSpecifier::Namespace(namespace) => namespace.local.sym.to_string(),
+            };
+            assert!(
+                seen.insert(local.clone()),
+                "duplicate import local `{local}` in:\n{source}",
+            );
+        }
+    }
+}
+
+/// Parse `source` and assert exactly one `export { ... }` specifier has
+/// `orig.sym == expected_orig`, with its `exported` either absent (when
+/// `expected_exported_as` is `None`) or `Ident { sym: expected_exported_as }`.
+/// Walks the parsed specifier tree so a corrupted `export { aH$1 as aH$1 }`
+/// fails — a substring check on `aH$1 as aH` would accept both shapes.
+pub fn assert_export_named_specifier(
+    source: &str,
+    expected_orig: &str,
+    expected_exported_as: Option<&str>,
+) {
+    let module = parse_module(source);
+    let matched: Vec<_> = module
+        .body
+        .iter()
+        .filter_map(|item| match item {
+            ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) => Some(named),
+            _ => None,
+        })
+        .flat_map(|named| named.specifiers.iter())
+        .filter_map(|spec| match spec {
+            ExportSpecifier::Named(named) => Some(named),
+            _ => None,
+        })
+        .filter(|spec| {
+            let ModuleExportName::Ident(ident) = &spec.orig else {
+                return false;
+            };
+            ident.sym.as_ref() == expected_orig
+        })
+        .collect();
+    assert_eq!(
+        matched.len(),
+        1,
+        "expected exactly one `export {{ {expected_orig} ... }}` specifier; got {} in:\n{source}",
+        matched.len(),
+    );
+    let actual = match &matched[0].exported {
+        Some(ModuleExportName::Ident(ident)) => Some(ident.sym.to_string()),
+        Some(ModuleExportName::Str(_)) => panic!("unexpected string export in:\n{source}"),
+        None => None,
+    };
+    assert_eq!(
+        actual.as_deref(),
+        expected_exported_as,
+        "export {{ {expected_orig} ... }} `as` clause mismatch in:\n{source}",
+    );
+}
+
+/// Assert that no function-body scope in `source` declares `target_name`
+/// more than once (counting destructured params and `let`/`const` decls;
+/// `var` is excluded because it allows redeclaration in the same scope).
+/// Mirrors Node's lexical-binding duplicate check.
+pub fn assert_unique_lexical_decls_per_scope(source: &str, target_name: &str) {
+    fn pat_binds(pat: &Pat, target: &str) -> bool {
+        match pat {
+            Pat::Ident(BindingIdent { id, .. }) => id.sym.as_ref() == target,
+            Pat::Object(object) => object.props.iter().any(|prop| match prop {
+                ObjectPatProp::KeyValue(kv) => pat_binds(&kv.value, target),
+                ObjectPatProp::Assign(assign) => assign.key.id.sym.as_ref() == target,
+                ObjectPatProp::Rest(rest) => pat_binds(&rest.arg, target),
+            }),
+            Pat::Array(array) => array
+                .elems
+                .iter()
+                .flatten()
+                .any(|elem| pat_binds(elem, target)),
+            Pat::Assign(assign) => pat_binds(&assign.left, target),
+            Pat::Rest(rest) => pat_binds(&rest.arg, target),
+            _ => false,
+        }
+    }
+
+    fn check_function(function: &Function, target: &str, source: &str) {
+        let Some(body) = &function.body else {
+            return;
+        };
+        let mut count = 0;
+        for param in &function.params {
+            if pat_binds(&param.pat, target) {
+                count += 1;
+            }
+        }
+        for stmt in &body.stmts {
+            // `var` allows redeclaration in the same scope (and `function f(a){var a;}`
+            // is legal); only `let`/`const`/`class`/`function` are subject to the
+            // "Identifier 'X' has already been declared" lexical check.
+            if let Stmt::Decl(Decl::Var(var)) = stmt
+                && matches!(var.kind, VarDeclKind::Let | VarDeclKind::Const)
+            {
+                for declarator in &var.decls {
+                    if pat_binds(&declarator.name, target) {
+                        count += 1;
+                    }
+                }
+            }
+        }
+        assert!(
+            count <= 1,
+            "scope binds `{target}` {count} times in:\n{source}",
+        );
+        for stmt in &body.stmts {
+            descend_stmt(stmt, target, source);
+        }
+    }
+
+    fn descend_stmt(stmt: &Stmt, target: &str, source: &str) {
+        match stmt {
+            Stmt::Decl(Decl::Fn(FnDecl { function, .. })) => {
+                check_function(function, target, source)
+            }
+            Stmt::Decl(Decl::Var(var)) => {
+                for VarDeclarator { init, .. } in &var.decls {
+                    if let Some(init) = init {
+                        descend_expr(init, target, source);
+                    }
+                }
+            }
+            Stmt::Block(block) => {
+                for stmt in &block.stmts {
+                    descend_stmt(stmt, target, source);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn descend_expr(expr: &Expr, target: &str, source: &str) {
+        match expr {
+            Expr::Fn(fn_expr) => check_function(&fn_expr.function, target, source),
+            Expr::Arrow(arrow) => {
+                let mut count = 0;
+                for param in &arrow.params {
+                    if pat_binds(param, target) {
+                        count += 1;
+                    }
+                }
+                if let BlockStmtOrExpr::BlockStmt(block) = &*arrow.body {
+                    for stmt in &block.stmts {
+                        if let Stmt::Decl(Decl::Var(var)) = stmt
+                            && matches!(var.kind, VarDeclKind::Let | VarDeclKind::Const)
+                        {
+                            for declarator in &var.decls {
+                                if pat_binds(&declarator.name, target) {
+                                    count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+                assert!(
+                    count <= 1,
+                    "arrow scope binds `{target}` {count} times in:\n{source}",
+                );
+            }
+            _ => {}
+        }
+    }
+
+    let module = parse_module(source);
+    for item in &module.body {
+        if let ModuleItem::Stmt(stmt) = item {
+            descend_stmt(stmt, target_name, source);
+        }
     }
 }
