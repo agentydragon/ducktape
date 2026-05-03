@@ -3,6 +3,11 @@
 Forward-looking gaps in the Rust debundler. Items are written to be removed
 once closed; this file is not a changelog.
 
+The big architectural item — replacing the legacy init-wrapper
+lowering with a static schedule validator + source-order emit — is
+tracked in <DESIGN.md> ("Status" table). Read that first; the
+items in this file are the smaller, mostly-orthogonal cleanups.
+
 ## Excalidraw live-browser smoke
 
 Build an open-source live-browser smoke test for the debundler against

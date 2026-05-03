@@ -99,6 +99,28 @@ rust_library(
 )
 
 rust_library(
+    name = "schedule_validator",
+    srcs = ["schedule_validator.rs"],
+    crate_root = "schedule_validator.rs",
+    edition = "2024",
+    deps = [
+        "@crates//:serde",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_test(
+    name = "schedule_validator_test",
+    crate = ":schedule_validator",
+    edition = "2024",
+    deps = [
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_parser",
+    ],
+)
+
+rust_library(
     name = "logical_modules",
     srcs = ["logical_modules.rs"],
     crate_root = "logical_modules.rs",
@@ -106,6 +128,7 @@ rust_library(
     deps = [
         ":artifact",
         ":js_ast",
+        ":schedule_validator",
         ":write_tree",
         "@crates//:anyhow",
         "@crates//:serde",

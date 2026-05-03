@@ -1,5 +1,12 @@
 # Debundler Implementation Constraints
 
+> The canonical design — what debundling means as a problem, what
+> emit strategies are correct under which conditions, and the
+> realizability theorem the validator enforces — lives in
+> <DESIGN.md>. Read that first when working on the splitting
+> pipeline. This file documents agent-facing operating principles
+> on top of the design.
+
 ## Mission
 
 The debundler is a peeling toolkit. Its purpose is to recover a

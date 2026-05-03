@@ -17,6 +17,9 @@ use artifact::{
     path_to_posix, posix_join, posix_relative, resolve_artifact_source_import_reference,
 };
 use js_ast::{ParsedJsModule, set_str_value, str_value};
+use schedule_validator::{
+    RESIDUAL_ENTRY_INDEX, analyze_chunk_facts, build_module_dep_graph, validate_schedule,
+};
 
 const LOWERING_FILE_PRAGMA: &str =
     "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";
@@ -303,6 +306,30 @@ pub fn materialize_logical_modules(
             }
         }
 
+        // Phase 1 of the principled redesign (see DESIGN.md): run the
+        // schedule validator in report-only mode against the binding
+        // assignment we just computed. Emits a per-chunk JSON listing
+        // any cycles in the at-init module dep graph. The validator
+        // does not gate emit yet — Phase 3 promotes it to a hard
+        // error. Computed here (before `lower_chunk` mutates the
+        // artifact) to keep the immutable borrow on `runtime_ast`
+        // simple.
+        let schedule_report = {
+            let facts = analyze_chunk_facts(&runtime_ast.module);
+            let graph = build_module_dep_graph(&facts, &binding_assignment);
+            let module_name = |idx: usize| -> String {
+                if idx == RESIDUAL_ENTRY_INDEX {
+                    "<residual_entry>".to_string()
+                } else {
+                    module_plans
+                        .get(idx)
+                        .map(|plan| plan.id.clone())
+                        .unwrap_or_else(|| format!("<module#{idx}>"))
+                }
+            };
+            validate_schedule(&graph, &module_name)
+        };
+
         let lowered = lower_chunk(LowerChunkInputs {
             artifact,
             runtime_ast,
@@ -398,6 +425,16 @@ pub fn materialize_logical_modules(
                 fs::create_dir_all(parent)?;
             }
             fs::write(&report_path, serde_json::to_string_pretty(&report)? + "\n")?;
+        }
+        if let Some(report_out_dir) = &report_out_dir {
+            let schedule_path = report_out_dir.join(format!("{chunk_id}.schedule.json"));
+            if let Some(parent) = schedule_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(
+                &schedule_path,
+                serde_json::to_string_pretty(&schedule_report)? + "\n",
+            )?;
         }
         applied.extend(selected_lowerings);
         reports.push(report);
