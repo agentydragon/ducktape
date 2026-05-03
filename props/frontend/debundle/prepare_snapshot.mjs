@@ -178,42 +178,14 @@ async function main() {
   if (chunkNames.length === 0) {
     throw new Error(`No .js chunks found in ${bundleDir}`);
   }
-  for (const chunkName of chunkNames) {
-    await copyFile(join(bundleDir, chunkName), join(snapshotOut, "dist", chunkName));
-  }
-  for (const auxName of ["main.css"]) {
-    try {
-      await copyFile(join(bundleDir, auxName), join(snapshotOut, "dist", auxName));
-    } catch (error) {
-      if (error?.code !== "ENOENT") throw error;
-    }
-  }
 
-  const mainChunk = chunkNames.find((name) => name === "main.js");
-  if (!mainChunk) {
-    throw new Error(`Smoke bundle is missing main.js (chunks: ${chunkNames.join(", ")})`);
-  }
-  const indexHtml = rewriteIndexHtml(await readFile(indexHtmlPath, "utf8"), `dist/${mainChunk}`);
-  await writeFile(join(snapshotOut, "index.html"), indexHtml);
-
-  const jsRelPaths = chunkNames.map((name) => `dist/${name}`);
-  await writeFile(jsListOut, `${jsRelPaths.join("\n")}\n`);
-
-  const assetSummary = {
-    counts: {
-      htmlFiles: 1,
-      jsChunks: chunkNames.length,
-      jsFiles: chunkNames.length,
-    },
-    entryPoints: {
-      html: "index.html",
-      js: [`dist/${mainChunk}`],
-    },
-  };
-  await writeFile(assetSummaryOut, `${JSON.stringify(assetSummary, null, 2)}\n`);
-
-  // Classify chunks via the metafile so the spec generator's
-  // vendor-mark ops can pin to the correct hashed chunk filenames.
+  // Classify the hashed chunks via the esbuild metafile *before*
+  // copying them out. Esbuild embeds absolute source paths in CJS
+  // helper preambles, so the same content gets a different hash in
+  // exec vs. target build configs. Renaming the relevant chunks to
+  // deterministic names here gives the spec generator (which runs in
+  // exec config) and the debundler (which runs in target config) a
+  // shared filename to pin against.
   const metafilePath = join(bundleDir, "metafile.json");
   const metafile = JSON.parse(await readFile(metafilePath, "utf8"));
   const vendorMap = classifyChunks(metafile);
@@ -227,10 +199,77 @@ async function main() {
       `Could not classify @careswitch/svelte-data-table chunk in smoke bundle metafile (chunks: ${chunkNames.join(", ")})`
     );
   }
+  const renames = new Map([
+    [vendorMap.highlight, "vendor-highlight.js"],
+    [vendorMap.datatable, "vendor-datatable.js"],
+  ]);
+  const renameTarget = (name) => renames.get(name) ?? name;
+
+  // Copy and (for vendor chunks) rename. Each chunk's own source is
+  // bytes-for-bytes preserved; only the filenames change. Cross-chunk
+  // import specifiers get rewritten in a second pass below.
+  for (const chunkName of chunkNames) {
+    await copyFile(join(bundleDir, chunkName), join(snapshotOut, "dist", renameTarget(chunkName)));
+  }
+  for (const auxName of ["main.css"]) {
+    try {
+      await copyFile(join(bundleDir, auxName), join(snapshotOut, "dist", auxName));
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+
+  // Patch import specifiers across chunks to use the renamed filenames.
+  // Only the vendor chunks themselves get renamed, but the chunks
+  // that import them still hold the old hashed paths in their
+  // `import "./chunk-XXX.js"` strings.
+  for (const chunkName of chunkNames) {
+    const targetName = renameTarget(chunkName);
+    const filePath = join(snapshotOut, "dist", targetName);
+    let source = await readFile(filePath, "utf8");
+    let mutated = false;
+    for (const [oldName, newName] of renames) {
+      if (oldName === chunkName) continue;
+      const oldRef = `./${oldName}`;
+      const newRef = `./${newName}`;
+      if (source.includes(oldRef)) {
+        source = source.split(oldRef).join(newRef);
+        mutated = true;
+      }
+    }
+    if (mutated) {
+      await writeFile(filePath, source);
+    }
+  }
+
+  const renamedChunkNames = chunkNames.map(renameTarget);
+  const mainChunk = renamedChunkNames.find((name) => name === "main.js");
+  if (!mainChunk) {
+    throw new Error(`Smoke bundle is missing main.js (chunks: ${chunkNames.join(", ")})`);
+  }
+  const indexHtml = rewriteIndexHtml(await readFile(indexHtmlPath, "utf8"), `dist/${mainChunk}`);
+  await writeFile(join(snapshotOut, "index.html"), indexHtml);
+
+  const jsRelPaths = renamedChunkNames.map((name) => `dist/${name}`);
+  await writeFile(jsListOut, `${jsRelPaths.join("\n")}\n`);
+
+  const assetSummary = {
+    counts: {
+      htmlFiles: 1,
+      jsChunks: renamedChunkNames.length,
+      jsFiles: renamedChunkNames.length,
+    },
+    entryPoints: {
+      html: "index.html",
+      js: [`dist/${mainChunk}`],
+    },
+  };
+  await writeFile(assetSummaryOut, `${JSON.stringify(assetSummary, null, 2)}\n`);
+
   const vendorMapPayload = {
     chunks: {
-      "highlight.js": `dist/${vendorMap.highlight}`,
-      "@careswitch/svelte-data-table": `dist/${vendorMap.datatable}`,
+      "highlight.js": "dist/vendor-highlight.js",
+      "@careswitch/svelte-data-table": "dist/vendor-datatable.js",
     },
   };
   await writeFile(vendorMapOut, `${JSON.stringify(vendorMapPayload, null, 2)}\n`);
