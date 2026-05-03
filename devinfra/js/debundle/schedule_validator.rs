@@ -235,13 +235,69 @@ pub enum StatementKind {
 
 /// Walk the chunk's module body and produce one `StatementFacts`
 /// entry per top-level statement, in source order.
+///
+/// Multi-declarator `var/let/const` statements are split into
+/// per-declarator entries before analysis, so each row declares
+/// a single name and `stmt_owner` (in `build_module_dep_graph`)
+/// returns an unambiguous owner. Without the split, a chunk like
+/// `const A = 1, B = readsX;` with `{A → mod_a, B → mod_b}`
+/// would attribute `B`'s read of `X` to `mod_a` (the first
+/// declared name's owner), inventing or hiding cycles. The
+/// emitter splits the same comma-lists separately at lower-time
+/// (`split_var_decl` in `logical_modules.rs`); this pre-split
+/// just teaches the analyzer the same view.
 pub fn analyze_chunk_facts(module: &Module) -> Vec<StatementFacts> {
-    module
-        .body
-        .iter()
+    let body = split_comma_list_var_decls(&module.body);
+    body.iter()
         .enumerate()
         .map(|(ordinal, item)| analyze_item(StatementOrdinal(ordinal), item))
         .collect()
+}
+
+/// Replace every multi-declarator top-level `var/let/const`
+/// (including the form nested in an `export` decl) with N
+/// single-declarator statements preserving source order. Other
+/// statement kinds pass through unchanged.
+fn split_comma_list_var_decls(body: &[ModuleItem]) -> Vec<ModuleItem> {
+    let mut out = Vec::with_capacity(body.len());
+    for item in body {
+        match item {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) if var.decls.len() > 1 => {
+                for decl in &var.decls {
+                    let single = VarDecl {
+                        span: var.span,
+                        ctxt: var.ctxt,
+                        kind: var.kind,
+                        declare: var.declare,
+                        decls: vec![decl.clone()],
+                    };
+                    out.push(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(single)))));
+                }
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
+                match &export_decl.decl {
+                    Decl::Var(var) if var.decls.len() > 1 => {
+                        for decl in &var.decls {
+                            let single = VarDecl {
+                                span: var.span,
+                                ctxt: var.ctxt,
+                                kind: var.kind,
+                                declare: var.declare,
+                                decls: vec![decl.clone()],
+                            };
+                            out.push(ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                                span: export_decl.span,
+                                decl: Decl::Var(Box::new(single)),
+                            })));
+                        }
+                    }
+                    _ => out.push(item.clone()),
+                }
+            }
+            _ => out.push(item.clone()),
+        }
+    }
+    out
 }
 
 fn analyze_item(ordinal: StatementOrdinal, item: &ModuleItem) -> StatementFacts {
@@ -1558,13 +1614,168 @@ mod tests {
 
     #[test]
     fn multi_declarator_var_decl_is_side_effecting_if_any_init_is() {
+        // After the comma-list pre-split, a multi-declarator
+        // var-decl becomes one row per declarator. So a
+        // mixed-purity comma-list produces both a Pure row and
+        // an Impure row, not a single conservative row.
         assert_eq!(
             has_side_effect_for("const A = 1, B = compute();"),
-            vec![true]
+            vec![false, true]
         );
         assert_eq!(
             has_side_effect_for("const A = 1, B = 2, C = 3;"),
-            vec![false]
+            vec![false, false, false]
+        );
+    }
+
+    // --- Comma-list splitter -------------------------------------------------
+
+    fn statement_kinds(source: &str) -> Vec<StatementKind> {
+        let module = parse(source);
+        analyze_chunk_facts(&module)
+            .into_iter()
+            .map(|f| f.kind)
+            .collect()
+    }
+
+    fn declared_per_statement(source: &str) -> Vec<Vec<String>> {
+        let module = parse(source);
+        analyze_chunk_facts(&module)
+            .into_iter()
+            .map(|f| f.declared.into_iter().collect::<Vec<_>>())
+            .collect()
+    }
+
+    #[test]
+    fn split_two_declarator_const() {
+        assert_eq!(
+            statement_kinds("const A = 1, B = 2;"),
+            vec![StatementKind::VarDecl, StatementKind::VarDecl]
+        );
+        assert_eq!(
+            declared_per_statement("const A = 1, B = 2;"),
+            vec![vec!["A".to_string()], vec!["B".to_string()]]
+        );
+    }
+
+    #[test]
+    fn split_three_declarator_let() {
+        assert_eq!(
+            declared_per_statement("let A = 1, B = 2, C = 3;"),
+            vec![
+                vec!["A".to_string()],
+                vec!["B".to_string()],
+                vec!["C".to_string()],
+            ]
+        );
+    }
+
+    #[test]
+    fn split_export_const_with_comma_list() {
+        // `export const A = 1, B = 2;` splits into two ExportDecls,
+        // each declaring one name. Kind stays VarDecl (per
+        // classify_item, ExportDecl-of-Var classifies as VarDecl).
+        assert_eq!(
+            statement_kinds("export const A = 1, B = 2;"),
+            vec![StatementKind::VarDecl, StatementKind::VarDecl]
+        );
+        assert_eq!(
+            declared_per_statement("export const A = 1, B = 2;"),
+            vec![vec!["A".to_string()], vec!["B".to_string()]]
+        );
+    }
+
+    #[test]
+    fn single_declarator_var_decl_is_unchanged() {
+        assert_eq!(statement_kinds("var A;"), vec![StatementKind::VarDecl]);
+        assert_eq!(
+            declared_per_statement("var A;"),
+            vec![vec!["A".to_string()]]
+        );
+    }
+
+    #[test]
+    fn non_var_decl_statements_are_not_split() {
+        // function / class declarations have no comma-list shape.
+        // Mixed source: const + function + class + bare expression.
+        assert_eq!(
+            statement_kinds("const A = 1; function f() {} class C {} 'side-effecting-string';"),
+            vec![
+                StatementKind::VarDecl,
+                StatementKind::FnDecl,
+                StatementKind::ClassDecl,
+                StatementKind::SideEffect,
+            ]
+        );
+    }
+
+    // --- Comma-list owner attribution in build_module_dep_graph -------------
+
+    #[test]
+    fn split_comma_list_attributes_reads_per_declarator() {
+        // `const A = 1, B = X;` — A → mod_0, B → mod_1, X → mod_1.
+        // Pre-split, `stmt_owner` would pick A's owner (mod_0)
+        // for the whole comma-list and attribute `B`'s read of X
+        // to mod_0, creating an R-edge mod_0 → mod_1 even though
+        // the actual emitted module for B is mod_1. Post-split,
+        // each declarator is its own statement: A's row owns
+        // nothing readwise (literal init), B's row owns the read
+        // of X but its home is mod_1 — so no edge (B reads X
+        // within its own module).
+        let schedule = schedule_for(
+            "const A = 1, B = X; const X = 42;",
+            &[("A", logical(0)), ("B", logical(1)), ("X", logical(1))],
+        );
+        let edges = &schedule.dep_graph.edges;
+        // No cross-module read edges should exist: A's init is
+        // pure, B reads X (same module).
+        let mod_0 = ModuleId::Logical(LogicalModuleIndex(0));
+        let mod_1 = ModuleId::Logical(LogicalModuleIndex(1));
+        assert!(
+            edges
+                .get(&mod_0)
+                .is_none_or(|targets| !targets.contains(&mod_1)),
+            "no edge mod_0 → mod_1 expected, got: {:?}",
+            edges.get(&mod_0),
+        );
+        assert!(
+            edges
+                .get(&mod_1)
+                .is_none_or(|targets| !targets.contains(&mod_0)),
+            "no edge mod_1 → mod_0 expected, got: {:?}",
+            edges.get(&mod_1),
+        );
+    }
+
+    #[test]
+    fn split_comma_list_surfaces_real_cross_declarator_cycle() {
+        // `const A = X, B = 1;` — A → mod_a, B → mod_b, X → mod_b.
+        // mod_a's `A` reads X from mod_b → R-edge mod_a → mod_b.
+        // Now also `const Y = A;` in mod_b reads A from mod_a:
+        // → R-edge mod_b → mod_a. Cycle.
+        //
+        // Pre-split, the comma-list `const A = X, B = 1;` would
+        // attribute the read of X to mod_a (A is declared first,
+        // owner mod_a). So the edge is mod_a → mod_b. mod_b's
+        // `Y = A` adds mod_b → mod_a. Cycle detected (correctly,
+        // by accident). Post-split, A's row attributes the read
+        // to mod_a, B's row to mod_b — same edges, same cycle.
+        // This case demonstrates the split doesn't *miss* real
+        // cycles either: the bug bit when multiple declarators
+        // had differently-owned reads on the same line.
+        let schedule = schedule_for(
+            "const A = X, B = 1; const X = 42; const Y = A;",
+            &[
+                ("A", logical(0)),
+                ("B", logical(1)),
+                ("X", logical(1)),
+                ("Y", logical(1)),
+            ],
+        );
+        let report = schedule.validate();
+        assert!(
+            !report.cycles.is_empty(),
+            "expected a real cycle to be reported"
         );
     }
 }

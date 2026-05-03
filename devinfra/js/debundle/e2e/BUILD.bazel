@@ -57,5 +57,6 @@ rust_library(
         "multi_module_re_export_test",
         "lazy_back_edge_cycle_test",
         "side_effect_ordering_test",
+        "comma_list_split_owners_test",
     ]
 ]
