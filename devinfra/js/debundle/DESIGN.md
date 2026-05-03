@@ -66,11 +66,85 @@ Two consequences are central to debundling:
 
 ## Definitions
 
+### Bindings, names, and keys
+
+A _binding_ is a named slot in a chunk's top-level lexical scope. Two
+syntactic positions introduce a binding into that scope:
+
+1. **Declaration**: `var X = ...`, `let X = ...`, `const X = ...`,
+   `function X(){}`, `class X{}` introduce `X` as a _declared
+   binding_. The value lives in this chunk; we own it.
+2. **Import specifier**: `import { Y as X } from "<other-chunk>"`
+   introduces `X` as an _imported binding_. `X` is a local alias
+   for an export of another chunk; the value lives elsewhere.
+
+Within a single chunk's top-level scope, a name `X` is introduced
+_at most once_ — JavaScript rejects duplicate top-level
+declarations, and a redeclaration through an import is a
+SyntaxError. So the pair `(chunk_id, name)` is a one-to-one
+identifier for a binding.
+
+We use that pair as the canonical _binding key_. Concretely:
+
+```rust
+pub struct BindingId {
+    pub chunk: ChunkId,
+    pub name: String,  // local name in the chunk's top-level scope
+}
+```
+
+Within a single chunk's pipeline (the common path — most of the
+debundler operates per-chunk), the key collapses to just `name`,
+and the chunk is contextual. Outside that context (e.g. in tools
+that walk multiple chunks at once, or in cross-chunk dep edges),
+the full pair is required.
+
+Names are stable across the readability rename pass. The rename
+pass changes the _emitted_ identifier in the destination module's
+text; it does not change what a binding _is_. The schedule keys
+on the original (scrambled) source-chunk local; the rename pass
+applies as a final post-processing step that reads
+`LogicalModule.rename_map` and rewrites the emitted source.
+
+### Two binding kinds
+
+A binding's _kind_ records which of the two introducing positions
+made it, plus the metadata downstream stages need:
+
+```rust
+pub enum BindingKind {
+    /// Declared by a top-level `var/let/const/function/class` in
+    /// this chunk. The spec (or the closure pass) assigns it to
+    /// a `ModuleId` that owns the declaration after the split.
+    Owned { owner: ModuleId },
+    /// Introduced by an `import { imported_name as <name> } from "<chunk>"`
+    /// at the chunk's top. The value lives in `imported_from`;
+    /// our chunk merely aliases it. A logical module can choose
+    /// to *re-export* this alias under its module path, but it
+    /// cannot *own* the value — the chunk on the other side does.
+    Imported {
+        imported_from: ChunkId,
+        imported_name: String,
+        re_exported_by: BTreeSet<ModuleId>,
+    },
+}
+```
+
+Distinguishing the two kinds in the data model is the key reason
+the legacy code grew the parallel `import_members` channel: the
+`binding_assignment: BTreeMap<String, usize>` of the legacy model
+has no slot for "this binding is owned elsewhere; we just want to
+re-export it from these logical modules." The unified model has
+that slot built in.
+
+### Statements
+
 Let the input _chunk_ be a sequence of top-level statements
 `S_1, ..., S_n` in source order. Let the spec be a partial map
-`owner: Bindings → Modules`; bindings without an explicit owner
-default to the _residual entry_ module (a synthetic module that
-holds whatever is left over).
+`owner: BindingId → ModuleId` (over keys with kind `Owned`);
+bindings without an explicit owner default to the _residual
+entry_ module (a synthetic module that holds whatever is left
+over).
 
 For each statement `S`:
 
@@ -433,60 +507,102 @@ parallel reimplementation.
 
 ### The unified schedule
 
+The schedule is keyed per-chunk; the chunk is contextual within
+the schedule, so binding keys collapse to just `name`. Keys for
+the dep graph extend `ModuleId` with an `ExternalChunk(ChunkId)`
+variant so cross-chunk reads are first-class.
+
 ```rust
+pub enum ModuleId {
+    /// A logical module within the current chunk's split.
+    Logical(usize),
+    /// The synthetic residual-entry module of the current chunk.
+    ResidualEntry,
+    /// Another chunk we depend on. Edges to `ExternalChunk` mean
+    /// "we read a binding owned by that chunk at init time."
+    ExternalChunk(ChunkId),
+}
+
 pub struct Schedule {
+    /// Identity of the chunk this schedule was computed from.
+    pub chunk: ChunkId,
     /// Per-statement analysis (one entry per top-level statement
     /// in the source chunk, in source order).
     pub facts: Vec<StatementFacts>,
-    /// owner(b): which module owns each binding declared in the
-    /// chunk. The synthetic residual-entry module is represented
-    /// by `ModuleId::ResidualEntry`; logical modules use
-    /// `ModuleId::Logical(idx)`.
-    pub ownership: BTreeMap<String, ModuleId>,
+    /// All bindings introduced in the chunk's top-level scope,
+    /// keyed by their local name (unique within a chunk).
+    pub bindings: BTreeMap<String, BindingKind>,
     /// Logical modules from the spec (paths, ids, rename maps).
-    pub modules: Vec<LogicalModule>,
-    /// At-init module dep graph G ∪ G' (cross-module reads + side-
-    /// effect ordering edges).
+    pub logical_modules: Vec<LogicalModule>,
+    /// At-init module dep graph G ∪ G'. Nodes are `ModuleId`s;
+    /// edges are read-at-init or side-effect-order constraints.
     pub dep_graph: ModuleDepGraph,
 }
 ```
 
-Everything Phase 3's emit path needs is here:
+Everything downstream needs is here:
 
-- `home(stmt) = ownership.get(stmt.declared.first())` (or
-  `ResidualEntry` if `stmt.declared.empty()`).
+- `home(stmt)`: for statements with `declared(stmt) ≠ ∅`, look
+  up any declared name in `bindings` — its `Owned.owner` is
+  `home`. For statements with empty `declared`, `home` is
+  `ResidualEntry`.
 - "What statements live in module M" = `facts.filter(home == M)`.
-- "What does M export" = bindings whose owner is M.
-- "What imports does M need" = cross-module reads in M's
-  statements (already encoded in `dep_graph.edges[M]`).
+- "What does M export" = bindings whose `Owned.owner == M` plus
+  bindings whose `Imported.re_exported_by ∋ M`.
+- "What imports does M need" =
+  - For each `b ∈ reads_at_init(stmt)` with `home(stmt) == M`:
+    - If `b` is `Owned { owner: other }`: `import b from <other>`.
+    - If `b` is `Imported { imported_from, imported_name, .. }`:
+      `import { imported_name as b } from <imported_from>`.
+- "Identity of cross-chunk deps" = `bindings.values()` filtered
+  to `Imported { imported_from, .. }` give us the set of
+  external chunks our schedule talks to; that's the
+  `ExternalChunk(_)` nodes in `dep_graph`.
+
+The two reasons to make `BindingKind` explicit (rather than
+collapsing imports into the same `Owned` map):
+
+1. **Re-export semantics aren't ownership.** A logical module
+   that re-exports `import { Y as X } from "<vendor>"` does
+   not own `X` — modifying our spec to "claim" `X` should not
+   rename `Y` in the vendor chunk; it should emit a re-export
+   in our logical module. The legacy `binding_assignment` of
+   `X → mod_x_idx` lied about this, and the parallel
+   `import_members` channel patched around it.
+2. **Multiple modules can re-export the same imported binding.**
+   Two logical modules in the same chunk could both want to
+   surface `vendor.j` (the JSX runtime) under their own module
+   paths. With `Owned { owner }` the data model forbids this;
+   with `Imported { re_exported_by: BTreeSet<ModuleId> }` it's
+   natural.
 
 ### Old → new vocabulary
 
-| Legacy name                                                                                                                                                                 | Status                                                      | Replacement                                                                                                                                          |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `binding_assignment: BTreeMap<String, usize>`                                                                                                                               | Renamed                                                     | `Schedule.ownership: BTreeMap<String, ModuleId>`                                                                                                     |
-| `ModulePlan`                                                                                                                                                                | Trimmed and renamed → `LogicalModule`                       | Drop the `bindings` and `import_members` fields; both are derivable from `Schedule.ownership`                                                        |
-| `ModulePlan.bindings: BTreeMap<String, String>`                                                                                                                             | Split                                                       | `LogicalModule.rename_map: BTreeMap<String, String>` (only the local→public renames; ownership is in `Schedule.ownership`)                           |
-| `selected_by_module: BTreeMap<usize, Vec<ModuleItem>>`                                                                                                                      | Derivable                                                   | Project `Schedule.facts` by `home`                                                                                                                   |
-| `selected_exports_by_module: BTreeMap<usize, BTreeMap<String, String>>`                                                                                                     | Derivable                                                   | Project `Schedule.ownership`                                                                                                                         |
-| `is_plain_import_safe_initializer`                                                                                                                                          | **Delete**                                                  | The dep graph answers the real question (does this read another module's binding at init?)                                                           |
-| `is_plain_import_safe_propname`                                                                                                                                             | **Delete**                                                  | Same                                                                                                                                                 |
-| `var_requires_init_wrapper_for_module`                                                                                                                                      | **Delete**                                                  | Same                                                                                                                                                 |
-| `item_requires_init_wrapper_for_module`                                                                                                                                     | **Delete**                                                  | Same                                                                                                                                                 |
-| `init_required_modules`                                                                                                                                                     | **Delete**                                                  | No init wrappers                                                                                                                                     |
-| `initialized_module_body`                                                                                                                                                   | **Delete**                                                  | Source-order emit replaces it                                                                                                                        |
-| `push_initialized_var_decl`                                                                                                                                                 | **Delete**                                                  | Same                                                                                                                                                 |
-| `init_dep_names_for_body`                                                                                                                                                   | **Delete**                                                  | ESM imports express the dep graph natively                                                                                                           |
-| `assignment_statement_for_declarator`                                                                                                                                       | **Delete**                                                  | Same                                                                                                                                                 |
-| `init_flag_name` / `init_flag_decl` / `idempotency_guard_stmt` / `set_flag_stmt` / `init_call_stmt` / `export_init_function` / `init_call_statement` / `init_name_for_plan` | **Delete**                                                  | All idempotency-guard / wrapper helpers                                                                                                              |
-| `__dt_generated_init__*` symbol scheme                                                                                                                                      | **Delete**                                                  | Dropped from the emit                                                                                                                                |
-| `cross_module_imports_for_body`                                                                                                                                             | Keep, take `Schedule`                                       | Build cross-module imports from the dep graph                                                                                                        |
-| `source_chunk_imports_for_moved_body`                                                                                                                                       | Keep, take `Schedule`                                       | The "moved code references a source-chunk import" case is just a cross-module read where the owner is a sibling chunk                                |
-| `import_specifier_member_decl` / `ImportSpecifierMember` / `resolve_import_specifier_member` / `lookup_import_specifier`                                                    | Trimmed                                                     | An "ImportSpecifier-bound member" is just a binding that's owned by a different chunk; ownership map handles it                                      |
-| `LogicalRequest` / `MemberRequest`                                                                                                                                          | Keep                                                        | Spec-language AST, distinct from the resolved `Schedule`                                                                                             |
-| `close_module_bindings_over_dependencies` / `expand_plan_to_transitive_dependencies`                                                                                        | Keep, take `Schedule`                                       | The closure pass mutates `Schedule.ownership`; cycle-aware refusal added in Phase 2                                                                  |
-| `naturalize_module_body` / `IdentifierRenamer` / `ShorthandNaturalizer`                                                                                                     | Keep, separate phase                                        | The readability rename pass is orthogonal to scheduling; it consumes `Schedule.modules[*].rename_map` and rewrites identifiers in the emitted source |
-| `collect_referenced_idents` (the old visitor)                                                                                                                               | Replace with `StatementFacts::reads_at_init`-style visitors | `StatementFacts` already gives the eager-vs-lazy split; the old collector returned the union which is wrong for the dep graph                        |
+| Legacy name                                                                                                                                                                 | Status                                                      | Replacement                                                                                                                                                                                                                                                       |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `binding_assignment: BTreeMap<String, usize>` (key = scrambled local name, implicit per-chunk; value = module index)                                                        | Replaced                                                    | `Schedule.bindings: BTreeMap<String, BindingKind>` (key = local name in chunk's top-level scope, explicit per-chunk via the surrounding `Schedule.chunk`; value distinguishes `Owned { owner }` from `Imported { imported_from, imported_name, re_exported_by }`) |
+| `ModulePlan`                                                                                                                                                                | Trimmed and renamed → `LogicalModule`                       | Drop the `bindings` and `import_members` fields; both are derivable from `Schedule.bindings`                                                                                                                                                                      |
+| `ModulePlan.bindings: BTreeMap<String, String>`                                                                                                                             | Split                                                       | `LogicalModule.rename_map: BTreeMap<String, String>` (only the local→public renames; ownership is in `Schedule.ownership`)                                                                                                                                        |
+| `selected_by_module: BTreeMap<usize, Vec<ModuleItem>>`                                                                                                                      | Derivable                                                   | Project `Schedule.facts` by `home`                                                                                                                                                                                                                                |
+| `selected_exports_by_module: BTreeMap<usize, BTreeMap<String, String>>`                                                                                                     | Derivable                                                   | Project `Schedule.ownership`                                                                                                                                                                                                                                      |
+| `is_plain_import_safe_initializer`                                                                                                                                          | **Delete**                                                  | The dep graph answers the real question (does this read another module's binding at init?)                                                                                                                                                                        |
+| `is_plain_import_safe_propname`                                                                                                                                             | **Delete**                                                  | Same                                                                                                                                                                                                                                                              |
+| `var_requires_init_wrapper_for_module`                                                                                                                                      | **Delete**                                                  | Same                                                                                                                                                                                                                                                              |
+| `item_requires_init_wrapper_for_module`                                                                                                                                     | **Delete**                                                  | Same                                                                                                                                                                                                                                                              |
+| `init_required_modules`                                                                                                                                                     | **Delete**                                                  | No init wrappers                                                                                                                                                                                                                                                  |
+| `initialized_module_body`                                                                                                                                                   | **Delete**                                                  | Source-order emit replaces it                                                                                                                                                                                                                                     |
+| `push_initialized_var_decl`                                                                                                                                                 | **Delete**                                                  | Same                                                                                                                                                                                                                                                              |
+| `init_dep_names_for_body`                                                                                                                                                   | **Delete**                                                  | ESM imports express the dep graph natively                                                                                                                                                                                                                        |
+| `assignment_statement_for_declarator`                                                                                                                                       | **Delete**                                                  | Same                                                                                                                                                                                                                                                              |
+| `init_flag_name` / `init_flag_decl` / `idempotency_guard_stmt` / `set_flag_stmt` / `init_call_stmt` / `export_init_function` / `init_call_statement` / `init_name_for_plan` | **Delete**                                                  | All idempotency-guard / wrapper helpers                                                                                                                                                                                                                           |
+| `__dt_generated_init__*` symbol scheme                                                                                                                                      | **Delete**                                                  | Dropped from the emit                                                                                                                                                                                                                                             |
+| `cross_module_imports_for_body`                                                                                                                                             | Keep, take `Schedule`                                       | Build cross-module imports from the dep graph                                                                                                                                                                                                                     |
+| `source_chunk_imports_for_moved_body`                                                                                                                                       | Keep, take `Schedule`                                       | The "moved code references a source-chunk import" case is just a cross-module read where the owner is a sibling chunk                                                                                                                                             |
+| `import_specifier_member_decl` / `ImportSpecifierMember` / `resolve_import_specifier_member` / `lookup_import_specifier`                                                    | Trimmed                                                     | An "ImportSpecifier-bound member" is just a binding that's owned by a different chunk; ownership map handles it                                                                                                                                                   |
+| `LogicalRequest` / `MemberRequest`                                                                                                                                          | Keep                                                        | Spec-language AST, distinct from the resolved `Schedule`                                                                                                                                                                                                          |
+| `close_module_bindings_over_dependencies` / `expand_plan_to_transitive_dependencies`                                                                                        | Keep, take `Schedule`                                       | The closure pass mutates `Schedule.ownership`; cycle-aware refusal added in Phase 2                                                                                                                                                                               |
+| `naturalize_module_body` / `IdentifierRenamer` / `ShorthandNaturalizer`                                                                                                     | Keep, separate phase                                        | The readability rename pass is orthogonal to scheduling; it consumes `Schedule.modules[*].rename_map` and rewrites identifiers in the emitted source                                                                                                              |
+| `collect_referenced_idents` (the old visitor)                                                                                                                               | Replace with `StatementFacts::reads_at_init`-style visitors | `StatementFacts` already gives the eager-vs-lazy split; the old collector returned the union which is wrong for the dep graph                                                                                                                                     |
 
 Roughly: the legacy file has ~1500 LOC, of which ~500 LOC of init-
 wrapper/heuristic machinery deletes outright once the consolidation
