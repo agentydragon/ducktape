@@ -18,7 +18,8 @@ use artifact::{
 };
 use js_ast::{ParsedJsModule, set_str_value, str_value};
 use schedule_validator::{
-    RESIDUAL_ENTRY_INDEX, analyze_chunk_facts, build_module_dep_graph, validate_schedule,
+    LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId, Schedule,
+    analyze_chunk_facts,
 };
 
 const LOWERING_FILE_PRAGMA: &str =
@@ -314,21 +315,21 @@ pub fn materialize_logical_modules(
         // error. Computed here (before `lower_chunk` mutates the
         // artifact) to keep the immutable borrow on `runtime_ast`
         // simple.
-        let schedule_report = {
+        let schedule = {
             let facts = analyze_chunk_facts(&runtime_ast.module);
-            let graph = build_module_dep_graph(&facts, &binding_assignment);
-            let module_name = |idx: usize| -> String {
-                if idx == RESIDUAL_ENTRY_INDEX {
-                    "<residual_entry>".to_string()
-                } else {
-                    module_plans
-                        .get(idx)
-                        .map(|plan| plan.id.clone())
-                        .unwrap_or_else(|| format!("<module#{idx}>"))
-                }
-            };
-            validate_schedule(&graph, &module_name)
+            let ownership: BTreeMap<String, ModuleId> = binding_assignment
+                .iter()
+                .map(|(name, &idx)| (name.clone(), ModuleId::Logical(LogicalModuleIndex(idx))))
+                .collect();
+            let logical_modules: Vec<ScheduleLogicalModule> = module_plans
+                .iter()
+                .map(|plan| ScheduleLogicalModule {
+                    id: plan.id.clone(),
+                })
+                .collect();
+            Schedule::build(chunk_id.clone(), facts, ownership, logical_modules)
         };
+        let schedule_report = schedule.validate();
 
         let lowered = lower_chunk(LowerChunkInputs {
             artifact,

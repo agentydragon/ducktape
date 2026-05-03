@@ -31,16 +31,112 @@ use serde::Serialize;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
-/// The residual entry "module" is given a synthetic index so cycles
-/// involving it surface in the report just like cycles between
-/// logical modules.
-pub const RESIDUAL_ENTRY_INDEX: usize = usize::MAX;
+/// Index into the materializer's `module_plans` list, identifying a
+/// logical module produced by the spec.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct LogicalModuleIndex(pub usize);
+
+/// Identity of a module the schedule validator reasons about. The
+/// residual entry is a first-class variant rather than a sentinel
+/// index, so callers can't accidentally treat it as a normal logical
+/// module.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum ModuleId {
+    Logical(LogicalModuleIndex),
+    ResidualEntry,
+}
+
+/// Position of a top-level statement in a chunk's source body.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
+#[serde(transparent)]
+pub struct StatementOrdinal(pub usize);
+
+/// Local name of a binding in a chunk's top-level scope. Stays a
+/// plain `String` (the actual JavaScript identifier text); the alias
+/// is documentation. See DESIGN.md "Identifiers and types".
+pub type BindingName = String;
+
+/// How a top-level binding in the chunk relates to the split. See
+/// DESIGN.md "Two binding kinds".
+///
+/// The legacy code only knows `Owned`; the `Imported` variant is
+/// reserved for the Phase 2/3 migration that surfaces re-exports
+/// of source-chunk imports through the schedule (today these flow
+/// through the parallel `import_members` channel).
+#[derive(Debug, Clone)]
+pub enum BindingKind {
+    Owned { owner: ModuleId },
+}
+
+/// A logical module produced by the spec for the current chunk.
+/// Minimal projection of `ModulePlan` — just the fields the
+/// validator + report need today. Fuller migration of the emit
+/// helpers will widen this struct.
+#[derive(Debug, Clone)]
+pub struct LogicalModule {
+    pub id: String,
+}
+
+/// Single per-chunk schedule. Carries everything downstream code
+/// needs to validate cycles and (eventually, after the emit-side
+/// migration) emit modules in source order.
+#[derive(Debug, Clone)]
+pub struct Schedule {
+    pub chunk_id: String,
+    pub facts: Vec<StatementFacts>,
+    pub bindings: BTreeMap<BindingName, BindingKind>,
+    pub logical_modules: Vec<LogicalModule>,
+    pub dep_graph: ModuleDepGraph,
+}
+
+impl Schedule {
+    /// Build a schedule from chunk facts + ownership + spec-derived
+    /// logical modules. `ownership` maps each `Owned` binding's
+    /// local name to the logical module that claimed it.
+    pub fn build(
+        chunk_id: String,
+        facts: Vec<StatementFacts>,
+        ownership: BTreeMap<BindingName, ModuleId>,
+        logical_modules: Vec<LogicalModule>,
+    ) -> Self {
+        let dep_graph = build_module_dep_graph(&facts, &ownership);
+        let bindings = ownership
+            .into_iter()
+            .map(|(name, owner)| (name, BindingKind::Owned { owner }))
+            .collect();
+        Self {
+            chunk_id,
+            facts,
+            bindings,
+            logical_modules,
+            dep_graph,
+        }
+    }
+
+    /// Render `id` to a human-readable label (used in cycle reports).
+    pub fn module_name(&self, id: ModuleId) -> String {
+        match id {
+            ModuleId::ResidualEntry => "<residual_entry>".to_string(),
+            ModuleId::Logical(LogicalModuleIndex(idx)) => self
+                .logical_modules
+                .get(idx)
+                .map(|m| m.id.clone())
+                .unwrap_or_else(|| format!("<module#{idx}>")),
+        }
+    }
+
+    /// Run SCC analysis over the dep graph and return a structured
+    /// cycle report.
+    pub fn validate(&self) -> ScheduleReport {
+        validate_schedule(&self.dep_graph, &|id| self.module_name(id))
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct StatementFacts {
-    pub ordinal: usize,
-    pub declared: BTreeSet<String>,
-    pub reads_at_init: BTreeSet<String>,
+    pub ordinal: StatementOrdinal,
+    pub declared: BTreeSet<BindingName>,
+    pub reads_at_init: BTreeSet<BindingName>,
     pub has_side_effect: bool,
     pub kind: StatementKind,
 }
@@ -71,11 +167,11 @@ pub fn analyze_chunk_facts(module: &Module) -> Vec<StatementFacts> {
         .body
         .iter()
         .enumerate()
-        .map(|(ordinal, item)| analyze_item(ordinal, item))
+        .map(|(ordinal, item)| analyze_item(StatementOrdinal(ordinal), item))
         .collect()
 }
 
-fn analyze_item(ordinal: usize, item: &ModuleItem) -> StatementFacts {
+fn analyze_item(ordinal: StatementOrdinal, item: &ModuleItem) -> StatementFacts {
     let kind = classify_item(item);
     let declared = collect_declared_names(item);
     let mut reads_collector = AtInitReadCollector::default();
@@ -283,30 +379,29 @@ impl Visit for AtInitReadCollector {
 }
 
 /// Module dep graph built from per-statement facts and a binding →
-/// module-index assignment.
+/// module assignment.
 #[derive(Debug, Clone)]
 pub struct ModuleDepGraph {
-    /// Nodes are module indices; the residual entry is
-    /// `RESIDUAL_ENTRY_INDEX`.
-    pub edges: BTreeMap<usize, BTreeSet<usize>>,
+    pub edges: BTreeMap<ModuleId, BTreeSet<ModuleId>>,
     /// Evidence map: `((from, to), reasons)` where each reason is
     /// `(statement_ordinal, binding)`. Used to render the cycle
     /// report.
-    pub evidence: BTreeMap<(usize, usize), Vec<(usize, String)>>,
+    pub evidence: BTreeMap<(ModuleId, ModuleId), Vec<(StatementOrdinal, BindingName)>>,
 }
 
 pub fn build_module_dep_graph(
     facts: &[StatementFacts],
-    binding_assignment: &BTreeMap<String, usize>,
+    binding_assignment: &BTreeMap<BindingName, ModuleId>,
 ) -> ModuleDepGraph {
-    let mut edges = BTreeMap::<usize, BTreeSet<usize>>::new();
-    let mut evidence = BTreeMap::<(usize, usize), Vec<(usize, String)>>::new();
-    let stmt_owner = |stmt: &StatementFacts| -> usize {
+    let mut edges = BTreeMap::<ModuleId, BTreeSet<ModuleId>>::new();
+    let mut evidence =
+        BTreeMap::<(ModuleId, ModuleId), Vec<(StatementOrdinal, BindingName)>>::new();
+    let stmt_owner = |stmt: &StatementFacts| -> ModuleId {
         stmt.declared
             .iter()
             .filter_map(|name| binding_assignment.get(name).copied())
             .next()
-            .unwrap_or(RESIDUAL_ENTRY_INDEX)
+            .unwrap_or(ModuleId::ResidualEntry)
     };
     for stmt in facts {
         let from = stmt_owner(stmt);
@@ -345,8 +440,8 @@ pub struct CycleEdge {
     pub from: String,
     pub to: String,
     #[serde(rename = "statementOrdinal")]
-    pub statement_ordinal: usize,
-    pub binding: String,
+    pub statement_ordinal: StatementOrdinal,
+    pub binding: BindingName,
 }
 
 /// Find SCCs in the dep graph and produce a report listing every
@@ -354,12 +449,12 @@ pub struct CycleEdge {
 /// non-self-loop SCCs are dropped.
 pub fn validate_schedule(
     graph: &ModuleDepGraph,
-    module_name: &dyn Fn(usize) -> String,
+    module_name: &dyn Fn(ModuleId) -> String,
 ) -> ScheduleReport {
     let sccs = tarjan_sccs(&graph.edges);
     let mut cycles = Vec::new();
     for scc in sccs {
-        let in_scc: HashSet<usize> = scc.iter().copied().collect();
+        let in_scc: HashSet<ModuleId> = scc.iter().copied().collect();
         let is_cycle = scc.len() > 1
             || (scc.len() == 1
                 && graph
@@ -396,17 +491,17 @@ pub fn validate_schedule(
 
 /// Tarjan's strongly-connected-components algorithm. Returns SCCs in
 /// reverse topological order.
-fn tarjan_sccs(edges: &BTreeMap<usize, BTreeSet<usize>>) -> Vec<Vec<usize>> {
-    let mut nodes: BTreeSet<usize> = edges.keys().copied().collect();
+fn tarjan_sccs(edges: &BTreeMap<ModuleId, BTreeSet<ModuleId>>) -> Vec<Vec<ModuleId>> {
+    let mut nodes: BTreeSet<ModuleId> = edges.keys().copied().collect();
     for targets in edges.values() {
         nodes.extend(targets.iter().copied());
     }
     let mut index_counter = 0usize;
-    let mut indices = HashMap::<usize, usize>::new();
-    let mut lowlinks = HashMap::<usize, usize>::new();
-    let mut on_stack = HashSet::<usize>::new();
-    let mut stack = Vec::<usize>::new();
-    let mut sccs = Vec::<Vec<usize>>::new();
+    let mut indices = HashMap::<ModuleId, usize>::new();
+    let mut lowlinks = HashMap::<ModuleId, usize>::new();
+    let mut on_stack = HashSet::<ModuleId>::new();
+    let mut stack = Vec::<ModuleId>::new();
+    let mut sccs = Vec::<Vec<ModuleId>>::new();
     for &node in &nodes {
         if !indices.contains_key(&node) {
             strong_connect(
@@ -426,20 +521,20 @@ fn tarjan_sccs(edges: &BTreeMap<usize, BTreeSet<usize>>) -> Vec<Vec<usize>> {
 
 #[allow(clippy::too_many_arguments)]
 fn strong_connect(
-    v: usize,
-    edges: &BTreeMap<usize, BTreeSet<usize>>,
+    v: ModuleId,
+    edges: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
     index_counter: &mut usize,
-    indices: &mut HashMap<usize, usize>,
-    lowlinks: &mut HashMap<usize, usize>,
-    on_stack: &mut HashSet<usize>,
-    stack: &mut Vec<usize>,
-    sccs: &mut Vec<Vec<usize>>,
+    indices: &mut HashMap<ModuleId, usize>,
+    lowlinks: &mut HashMap<ModuleId, usize>,
+    on_stack: &mut HashSet<ModuleId>,
+    stack: &mut Vec<ModuleId>,
+    sccs: &mut Vec<Vec<ModuleId>>,
 ) {
     // Iterative Tarjan: emulate the recursive call stack so deep
     // graphs don't blow the Rust stack.
     enum Frame {
-        Visit(usize),
-        Resume(usize, std::vec::IntoIter<usize>),
+        Visit(ModuleId),
+        Resume(ModuleId, std::vec::IntoIter<ModuleId>),
     }
     let mut frames = VecDeque::<Frame>::new();
     frames.push_back(Frame::Visit(v));
@@ -451,7 +546,7 @@ fn strong_connect(
                 *index_counter += 1;
                 stack.push(v);
                 on_stack.insert(v);
-                let neighbours: Vec<usize> = edges
+                let neighbours: Vec<ModuleId> = edges
                     .get(&v)
                     .map(|set| set.iter().copied().collect())
                     .unwrap_or_default();
@@ -471,7 +566,7 @@ fn strong_connect(
                     // Combine lowlinks of children: when a child has
                     // resolved we adjust `v`'s lowlink to whichever
                     // is smaller.
-                    let neighbours: Vec<usize> = edges
+                    let neighbours: Vec<ModuleId> = edges
                         .get(&v)
                         .map(|set| set.iter().copied().collect())
                         .unwrap_or_default();
@@ -573,6 +668,17 @@ mod tests {
         assert!(!facts[0].reads_at_init.contains("Y"));
     }
 
+    fn logical(idx: usize) -> ModuleId {
+        ModuleId::Logical(LogicalModuleIndex(idx))
+    }
+
+    fn render(id: ModuleId) -> String {
+        match id {
+            ModuleId::Logical(LogicalModuleIndex(idx)) => format!("mod_{idx}"),
+            ModuleId::ResidualEntry => "<residual>".to_string(),
+        }
+    }
+
     #[test]
     fn cycle_detected_between_two_modules() {
         // mod_a owns A; A's init reads B (owned by mod_b).
@@ -580,10 +686,10 @@ mod tests {
         let module = parse("const A = B + 1; const B = A + 1;");
         let facts = analyze_chunk_facts(&module);
         let mut binding_assignment = BTreeMap::new();
-        binding_assignment.insert("A".to_string(), 0);
-        binding_assignment.insert("B".to_string(), 1);
+        binding_assignment.insert("A".to_string(), logical(0));
+        binding_assignment.insert("B".to_string(), logical(1));
         let graph = build_module_dep_graph(&facts, &binding_assignment);
-        let report = validate_schedule(&graph, &|idx| format!("mod_{idx}"));
+        let report = validate_schedule(&graph, &render);
         assert_eq!(report.cycles.len(), 1);
         assert_eq!(report.cycles[0].modules.len(), 2);
     }
@@ -593,11 +699,11 @@ mod tests {
         let module = parse("const A = 1; const B = A + 1; const C = B + A;");
         let facts = analyze_chunk_facts(&module);
         let mut binding_assignment = BTreeMap::new();
-        binding_assignment.insert("A".to_string(), 0);
-        binding_assignment.insert("B".to_string(), 1);
-        binding_assignment.insert("C".to_string(), 2);
+        binding_assignment.insert("A".to_string(), logical(0));
+        binding_assignment.insert("B".to_string(), logical(1));
+        binding_assignment.insert("C".to_string(), logical(2));
         let graph = build_module_dep_graph(&facts, &binding_assignment);
-        let report = validate_schedule(&graph, &|idx| format!("mod_{idx}"));
+        let report = validate_schedule(&graph, &render);
         assert!(
             report.cycles.is_empty(),
             "expected no cycles, got {:?}",
