@@ -1,33 +1,5 @@
-//! Cross-module emission shape: imports, exports, and local-name
-//! disambiguation in modules produced by
-//! `materialize_logical_modules`.
-//!
-//! Each test feeds a fixture spec through the pipeline and
-//! asserts on the **emitted source** of the resulting modules
-//! (export sets, import directives, local-name disambiguation,
-//! source-chunk re-imports for moved bodies). Behaviour
-//! preservation under Node is asserted alongside the shape
-//! checks where relevant.
-//!
-//! Sections:
-//!
-//! - **Cross-module dependency wiring** — extracted modules
-//!   import unowned helpers from the residual entry; multiple
-//!   plans share a residual helper; rename targets propagate
-//!   through cross-module imports across split declarators.
-//! - **Consumer-side import-local disambiguation** — two plans
-//!   claim the same scrambled local; the second emit gets a
-//!   fresh `$N` suffix so the imports don't shadow.
-//! - **`ImportSpecifier`-bound members** — a plan member whose
-//!   binding is an import specifier from another chunk; the
-//!   destination re-imports the source-chunk binding.
-//! - **`BindingKind::Imported.re_exported_by`** — two logical
-//!   modules can re-export the same imported binding under
-//!   different public names.
-//! - **Source-chunk re-imports for moved bodies** — moved code
-//!   that references a source-chunk import-specifier local
-//!   carries a re-import in the destination module so Node can
-//!   resolve the free variable.
+//! Emit-side imports, exports, and local-name disambiguation in
+//! modules produced by `materialize_logical_modules`.
 
 use debundle_e2e_support::*;
 use serde_json::json;
@@ -37,9 +9,9 @@ use std::fs;
 
 #[test]
 fn extracted_module_imports_unowned_helper_from_residual() {
-    // Spec claims only `b` for mod_x. Its helper `a` is unclaimed,
-    // so `a` stays in the residual entry; mod_x imports it.
-    // Nothing is implicit — the spec is the only routing.
+    // Spec claims only `b`. Its helper `a` is unclaimed, so `a`
+    // stays in residual; mod_x imports it (no implicit closure
+    // pull).
     let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
         r#"const a = x => "h:" + x;
 const b = x => a(x);
@@ -49,9 +21,6 @@ export { b };
         vec![logical_module("x", &[Member::new("b")])],
     ));
     assert_module_exports(&fixture.out_root, "static/app/modules/x.js", &["b"], &[]);
-    // mod_x imports `a` from residual rather than carrying its
-    // declaration locally — the explicit spec is the only routing,
-    // closure no longer pulls helpers along.
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/x.js",
@@ -63,10 +32,8 @@ export { b };
 
 #[test]
 fn explicit_modules_share_a_residual_helper_via_imports() {
-    // Without closure, helper `r` (unclaimed by either explicit
-    // module) stays in residual. Both `inner` (owns `s`, which
-    // calls `r`) and `outer` (owns `t`, which calls `s` and `r`)
-    // import `r` from residual.
+    // Helper `r` is unclaimed; both `inner` (owns `s`) and
+    // `outer` (owns `t`) import it from residual.
     let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
         r#"const q = "a";
 function r() { return q; }
@@ -137,12 +104,10 @@ console.log(w({ a: null, b: "d" }));
 
 #[test]
 fn renames_consumer_import_local_when_a_second_plan_claims_the_same_scrambled_binding() {
-    // Two `define_logical_module` requests both list the same
-    // scrambled `binding`, producing two
-    // `import { ... as <local> } from ...` lines into the entry
-    // body. Without disambiguation the second emit shadows the
-    // first and the file fails to parse. The materializer
-    // should mint a fresh `$1` suffix on the second emit.
+    // Two plans claim the same scrambled `binding`. Without
+    // disambiguation the second emit's import shadows the first
+    // and the file fails to parse. The materializer mints a
+    // `$N` suffix on the second.
     let opts = FixtureOpts::new(
         r#"const aH = 42;
 console.log(aH);
@@ -174,11 +139,8 @@ export { aH };
         ],
     );
     let fixture = run_logical_modules_e2e_fixture(opts);
-
     let entry = fs::read_to_string(&fixture.entry_path).expect("read entry.js");
 
-    // The first emit keeps the scrambled local `aH`; the second emit must
-    // mint a fresh `aH$1` so the two `import` declarations don't collide.
     assert!(
         entry.contains(r#"import { readableA as aH } from "./modules/mod_a.js""#),
         "expected unrenamed-local mod_a import; entry was:\n{entry}",
@@ -187,34 +149,22 @@ export { aH };
         entry.contains(r#"import { plainAh as aH$1 } from "./modules/mod_b.js""#),
         "expected fresh-suffix mod_b import; entry was:\n{entry}",
     );
-
-    // Body refs that resolve to the moved decl (now imported under the
-    // fresh local) must follow the rename. The decl moved to mod_b
-    // because the second plan was last to claim the binding, so refs
-    // point at `aH$1`.
+    // Body refs to the second-claimed binding follow the rename.
     assert!(
         entry.contains("console.log(aH$1)"),
         "expected console.log to be rewritten to aH$1; entry was:\n{entry}",
     );
-
-    // Public re-export name `aH` must survive even though the local is
-    // now `aH$1`: the re-export becomes `export { aH$1 as aH }` rather
-    // than `export { aH$1 }` (which would silently change the public
-    // name downstream consumers see). A substring check would also accept
-    // the broken `aH$1 as aH$1` shape (it contains `aH$1 as aH`), so
-    // this asserts on the parsed specifier instead.
+    // Public re-export name survives: `export { aH$1 as aH }`,
+    // not `export { aH$1 }`. AST walk so a corrupt
+    // `aH$1 as aH$1` doesn't slip past a substring match.
     assert_export_named_specifier(&entry, "aH$1", Some("aH"));
-
-    // SWC parses the result without a duplicate-decl error: every named
-    // import specifier in the file binds a distinct local.
     assert_unique_import_locals(&entry);
 }
 
 #[test]
 fn keeps_unrelated_consumer_import_locals_unchanged() {
-    // Single plan, no collision: the emitted import keeps the scrambled
-    // local verbatim and body refs are not rewritten. Sanity check that
-    // the disambiguation pass is no-op when there's nothing to fix.
+    // Single-plan sanity: disambiguation is a no-op with no
+    // collision.
     let opts = FixtureOpts::new(
         r#"const aH = 7;
 console.log(aH);
@@ -248,16 +198,12 @@ export { aH };
 
 #[test]
 fn does_not_collapse_two_distinct_locals_onto_the_same_readable_name() {
-    // Two readable-rename rules in one logical module pick the same
-    // target name from different inputs. The destructured-pattern rule
-    // sees `{ readable: o }` and queues `o -> readable`; the
-    // return-object-alias rule sees `return { readable: u }` and queues
-    // `u -> readable`. Both rewrites land in the module-wide rename map.
-    // The naive renamer then rewrites every `o` and every `u` to
-    // `readable`. Any function that happens to bind both `o` and `u`
-    // (param + local) ends up with two `readable` decls in the same
-    // scope and Node refuses to load it with `Identifier 'readable'
-    // has already been declared`.
+    // Two heuristic readable-rename rules pick the same target
+    // for different inputs (`o → readable` from destructuring,
+    // `u → readable` from a return-object alias). A naive
+    // rewriter renames both, so any scope binding both `o` and
+    // `u` ends up with duplicate `readable` decls and Node
+    // refuses to load it.
     let opts = FixtureOpts::new(
         r#"function destructure({ readable: o }) {
   return o;
@@ -286,15 +232,8 @@ export { destructure, alias, consumer };
     let module_path = fixture.out_root.join("static/app/modules/mod_x.js");
     let module_src = fs::read_to_string(&module_path).expect("read modules/mod_x.js");
 
-    // Module body must parse — colliding `readable` decls in the same
-    // scope would surface as a duplicate-decl SyntaxError.
     parse_module(&module_src);
-    // Each function-body scope binds `readable` at most once. This
-    // mirrors the lexical-binding constraint Node enforces at module
-    // load time.
     assert_unique_lexical_decls_per_scope(&module_src, "readable");
-
-    // Module behaviour preserved: `consumer` still produces "vx".
     assert_entry_output(&fixture, "0 y vx\n");
 }
 
@@ -302,11 +241,9 @@ export { destructure, alias, consumer };
 
 #[test]
 fn import_specifier_member_emits_reimport_in_destination() {
-    // The chunk imports `x` as local `a` from `./vendor.js`. The spec
-    // claims that import as a member of mod_x with rename `Readable`.
-    // Materialized mod_x.js must end up with a re-import like
-    // `import { x as Readable } from "../vendor.js"` plus
-    // `export { Readable };` so Node can resolve the export.
+    // Chunk imports `x` as local `a`. Spec claims that import
+    // as a mod_x member renamed `Readable`. Destination must
+    // emit a re-import + export so Node can resolve the export.
     let mut opts = FixtureOpts::new(
         r#"import { x as a } from "./vendor.js";
 console.log(a);
@@ -349,13 +286,10 @@ export { a };
 
 #[test]
 fn imported_binding_re_exported_under_two_different_names() {
-    // The chunk imports `j` from a vendor under local `a`, then
-    // uses `a` once. Two logical modules each re-export `a`
-    // under different public names — `jsxRuntime` and `__jsx`.
-    // Both emit successfully with their own re-import paths;
-    // the entries share one `BindingKind::Imported` whose
-    // `re_exported_by` map carries each module's chosen public
-    // name.
+    // Two logical modules each re-export the same imported
+    // binding under different public names. They share one
+    // `BindingKind::Imported` whose `re_exported_by` map carries
+    // each module's chosen public name.
     let mut opts = FixtureOpts::new(
         r#"import { j as a } from "./vendor.js";
 console.log(a());
@@ -389,7 +323,6 @@ export { a };
     opts.extra_files = &[("static/vendor.js", "export const j = () => 42;\n")];
     let fixture = run_logical_modules_e2e_fixture(opts);
 
-    // Each module exports the binding under its own chosen name.
     assert_module_exports(
         &fixture.out_root,
         "static/app/modules/mod_jsx_runtime.js",
@@ -408,12 +341,10 @@ export { a };
 
 #[test]
 fn moved_body_re_imports_runtime_specifier_local() {
-    // When `materialize_logical_modules` moves a top-level decl
-    // whose body references a name that was an
-    // `import { foo as gge }` in the source chunk, the
-    // destination module must carry along a re-import for `gge`.
-    // Without it the moved code references a free variable and
-    // Node throws `ReferenceError: gge is not defined`.
+    // A moved top-level decl whose body references a
+    // source-chunk import-specifier local needs a re-import in
+    // the destination module — otherwise the moved code has a
+    // free variable and Node throws `ReferenceError`.
     let mut opts = FixtureOpts::new(
         r#"import { mu as gge } from "./vendor.js";
 function bridge() {
@@ -446,8 +377,6 @@ export { bridge };
         mod_x.contains("gge") && mod_x.contains("import"),
         "mod_x.js must re-import the source-chunk specifier; got:\n{mod_x}",
     );
-    // The destination still references `gge` — confirms the moved body
-    // wasn't rewritten away.
     assert!(
         mod_x.contains("gge.decode"),
         "mod_x.js body must still reference `gge.decode`; got:\n{mod_x}",
