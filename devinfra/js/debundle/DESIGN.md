@@ -412,18 +412,131 @@ What stays (unchanged or lightly renamed):
 - Naturalization renames — moved to a clearly-separate
   post-processor pass, not intertwined with init.
 
+## Concept consolidation
+
+After Phase 1 landed, the codebase carries two parallel views of
+the splitting problem: the **legacy data model** (built around
+`binding_assignment` + `ModulePlan` + `selected_by_module` +
+init-wrapper bookkeeping) and the **principled data model** (built
+around `StatementFacts` + the at-init dep graph). They overlap —
+both encode "which module owns each binding" — but in different
+shapes and through different code paths. That's a debt: every
+future change has to keep both views in sync, and naming drift
+between them already obscures intent.
+
+This section pins the consolidation: a single canonical data
+structure, names that match the design vocabulary, and an
+itemised list of legacy concepts to delete or rename. The
+consolidation is a refactor that does not change behaviour but
+makes Phase 3 (source-order emit) a small change instead of a
+parallel reimplementation.
+
+### The unified schedule
+
+```rust
+pub struct Schedule {
+    /// Per-statement analysis (one entry per top-level statement
+    /// in the source chunk, in source order).
+    pub facts: Vec<StatementFacts>,
+    /// owner(b): which module owns each binding declared in the
+    /// chunk. The synthetic residual-entry module is represented
+    /// by `ModuleId::ResidualEntry`; logical modules use
+    /// `ModuleId::Logical(idx)`.
+    pub ownership: BTreeMap<String, ModuleId>,
+    /// Logical modules from the spec (paths, ids, rename maps).
+    pub modules: Vec<LogicalModule>,
+    /// At-init module dep graph G ∪ G' (cross-module reads + side-
+    /// effect ordering edges).
+    pub dep_graph: ModuleDepGraph,
+}
+```
+
+Everything Phase 3's emit path needs is here:
+
+- `home(stmt) = ownership.get(stmt.declared.first())` (or
+  `ResidualEntry` if `stmt.declared.empty()`).
+- "What statements live in module M" = `facts.filter(home == M)`.
+- "What does M export" = bindings whose owner is M.
+- "What imports does M need" = cross-module reads in M's
+  statements (already encoded in `dep_graph.edges[M]`).
+
+### Old → new vocabulary
+
+| Legacy name                                                                                                                                                                 | Status                                                      | Replacement                                                                                                                                          |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `binding_assignment: BTreeMap<String, usize>`                                                                                                                               | Renamed                                                     | `Schedule.ownership: BTreeMap<String, ModuleId>`                                                                                                     |
+| `ModulePlan`                                                                                                                                                                | Trimmed and renamed → `LogicalModule`                       | Drop the `bindings` and `import_members` fields; both are derivable from `Schedule.ownership`                                                        |
+| `ModulePlan.bindings: BTreeMap<String, String>`                                                                                                                             | Split                                                       | `LogicalModule.rename_map: BTreeMap<String, String>` (only the local→public renames; ownership is in `Schedule.ownership`)                           |
+| `selected_by_module: BTreeMap<usize, Vec<ModuleItem>>`                                                                                                                      | Derivable                                                   | Project `Schedule.facts` by `home`                                                                                                                   |
+| `selected_exports_by_module: BTreeMap<usize, BTreeMap<String, String>>`                                                                                                     | Derivable                                                   | Project `Schedule.ownership`                                                                                                                         |
+| `is_plain_import_safe_initializer`                                                                                                                                          | **Delete**                                                  | The dep graph answers the real question (does this read another module's binding at init?)                                                           |
+| `is_plain_import_safe_propname`                                                                                                                                             | **Delete**                                                  | Same                                                                                                                                                 |
+| `var_requires_init_wrapper_for_module`                                                                                                                                      | **Delete**                                                  | Same                                                                                                                                                 |
+| `item_requires_init_wrapper_for_module`                                                                                                                                     | **Delete**                                                  | Same                                                                                                                                                 |
+| `init_required_modules`                                                                                                                                                     | **Delete**                                                  | No init wrappers                                                                                                                                     |
+| `initialized_module_body`                                                                                                                                                   | **Delete**                                                  | Source-order emit replaces it                                                                                                                        |
+| `push_initialized_var_decl`                                                                                                                                                 | **Delete**                                                  | Same                                                                                                                                                 |
+| `init_dep_names_for_body`                                                                                                                                                   | **Delete**                                                  | ESM imports express the dep graph natively                                                                                                           |
+| `assignment_statement_for_declarator`                                                                                                                                       | **Delete**                                                  | Same                                                                                                                                                 |
+| `init_flag_name` / `init_flag_decl` / `idempotency_guard_stmt` / `set_flag_stmt` / `init_call_stmt` / `export_init_function` / `init_call_statement` / `init_name_for_plan` | **Delete**                                                  | All idempotency-guard / wrapper helpers                                                                                                              |
+| `__dt_generated_init__*` symbol scheme                                                                                                                                      | **Delete**                                                  | Dropped from the emit                                                                                                                                |
+| `cross_module_imports_for_body`                                                                                                                                             | Keep, take `Schedule`                                       | Build cross-module imports from the dep graph                                                                                                        |
+| `source_chunk_imports_for_moved_body`                                                                                                                                       | Keep, take `Schedule`                                       | The "moved code references a source-chunk import" case is just a cross-module read where the owner is a sibling chunk                                |
+| `import_specifier_member_decl` / `ImportSpecifierMember` / `resolve_import_specifier_member` / `lookup_import_specifier`                                                    | Trimmed                                                     | An "ImportSpecifier-bound member" is just a binding that's owned by a different chunk; ownership map handles it                                      |
+| `LogicalRequest` / `MemberRequest`                                                                                                                                          | Keep                                                        | Spec-language AST, distinct from the resolved `Schedule`                                                                                             |
+| `close_module_bindings_over_dependencies` / `expand_plan_to_transitive_dependencies`                                                                                        | Keep, take `Schedule`                                       | The closure pass mutates `Schedule.ownership`; cycle-aware refusal added in Phase 2                                                                  |
+| `naturalize_module_body` / `IdentifierRenamer` / `ShorthandNaturalizer`                                                                                                     | Keep, separate phase                                        | The readability rename pass is orthogonal to scheduling; it consumes `Schedule.modules[*].rename_map` and rewrites identifiers in the emitted source |
+| `collect_referenced_idents` (the old visitor)                                                                                                                               | Replace with `StatementFacts::reads_at_init`-style visitors | `StatementFacts` already gives the eager-vs-lazy split; the old collector returned the union which is wrong for the dep graph                        |
+
+Roughly: the legacy file has ~1500 LOC, of which ~500 LOC of init-
+wrapper/heuristic machinery deletes outright once the consolidation
+is in place. The remainder splits cleanly into spec parsing
+(`logical_requests_for_chunk`), schedule construction (the closure
+pass, talking to `Schedule.ownership`), and emission
+(`lower_chunk` rewritten as `emit_module(schedule, module_id)`).
+
+### Refactor sequence
+
+The consolidation runs entirely on the ducktape side and does not
+touch the gaffer spec or its smoke. It can land before Phase 2
+(spec cleanup) and is recommended as such — Phase 2 is data-driven
+by the schedule, and a clean schedule API makes those edits easier.
+
+1. Introduce `Schedule` and `ModuleId` as new types in
+   <schedule_validator.rs>; re-export from there.
+2. In `materialize_logical_modules`, build a `Schedule` once after
+   the closure pass settles. The `binding_assignment` local stays
+   as a compatibility view (`schedule.ownership` projected to
+   `BTreeMap<String, usize>`) until callers are migrated.
+3. Migrate `validate_schedule`, `cross_module_imports_for_body`,
+   `source_chunk_imports_for_moved_body`,
+   `init_dep_names_for_body`, and the closure pass to take
+   `&Schedule`. Each migration is a self-contained refactor.
+4. Migrate `lower_chunk` last. After it consumes `Schedule`, the
+   old `selected_by_module` / `selected_exports_by_module` locals
+   disappear.
+5. Now Phase 3 is small: replace the init-wrapper branch in
+   `lower_chunk` with source-order emit. Both branches read the
+   same `Schedule`, so the change is local.
+6. Phase 4 deletes the marked-Delete legacy functions in one
+   sweep.
+
+Each step keeps the build green and the tests passing. No big-
+bang refactor; no spec churn until Phase 2.
+
 ## Status
 
-| Phase | Description                                                                                          | State                                                                                                             |
-| ----- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| 1.1   | `StatementFacts` analyzer producing `(declared, reads_at_init, has_side_effect, kind)` per statement | **Done** (<schedule_validator.rs:69>; 7 unit tests pass)                                                          |
-| 1.2   | `ModuleDepGraph` builder (`G ∪ G'`)                                                                  | **Done** (<schedule_validator.rs:243>)                                                                            |
-| 1.3   | Tarjan SCC validator + JSON report                                                                   | **Done** (<schedule_validator.rs:283>)                                                                            |
-| 1.4   | Wire the validator into `materialize_logical_modules` as a report-only side output                   | In flight                                                                                                         |
-| 1.5   | Run against Tana spec; record every cycle                                                            | **Done.** Spec produces 1 SCC of 9 modules, 99 edges (see [Phase 1 findings](#phase-1-findings-tana-78d928dca7)). |
-| 2     | Update gaffer spec to break each surfaced cycle                                                      | In flight                                                                                                         |
-| 3     | Switch emit to source-order; drop init-wrapper machinery                                             | Pending 2                                                                                                         |
-| 4     | Cleanup: remove legacy code, update e2e fixtures, update AGENTS.md                                   | Pending 3                                                                                                         |
+| Phase | Description                                                                                                                                     | State                                                                                                             |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 1.1   | `StatementFacts` analyzer producing `(declared, reads_at_init, has_side_effect, kind)` per statement                                            | **Done** (<schedule_validator.rs:69>; 7 unit tests pass)                                                          |
+| 1.2   | `ModuleDepGraph` builder (`G ∪ G'`)                                                                                                             | **Done** (<schedule_validator.rs:243>)                                                                            |
+| 1.3   | Tarjan SCC validator + JSON report                                                                                                              | **Done** (<schedule_validator.rs:283>)                                                                            |
+| 1.4   | Wire the validator into `materialize_logical_modules` as a report-only side output                                                              | In flight                                                                                                         |
+| 1.5   | Run against Tana spec; record every cycle                                                                                                       | **Done.** Spec produces 1 SCC of 9 modules, 99 edges (see [Phase 1 findings](#phase-1-findings-tana-78d928dca7)). |
+| 1.6   | Concept consolidation — unify the legacy and validator data models on a single `Schedule` (see [Concept consolidation](#concept-consolidation)) | Pending; recommended before Phase 2                                                                               |
+| 2     | Update gaffer spec to break each surfaced cycle                                                                                                 | Pending 1.6                                                                                                       |
+| 3     | Switch emit to source-order; drop init-wrapper machinery                                                                                        | Pending 2                                                                                                         |
+| 4     | Cleanup: remove legacy code, update e2e fixtures, update AGENTS.md                                                                              | Pending 3                                                                                                         |
 
 The work that landed during the legacy-design era — cross-module
 import emission, ImportSpecifier handling, source-chunk re-import
