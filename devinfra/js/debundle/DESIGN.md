@@ -414,22 +414,73 @@ What stays (unchanged or lightly renamed):
 
 ## Status
 
-| Phase | Description                                                                                          | State                                                    |
-| ----- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| 1.1   | `StatementFacts` analyzer producing `(declared, reads_at_init, has_side_effect, kind)` per statement | **Done** (<schedule_validator.rs:69>; 7 unit tests pass) |
-| 1.2   | `ModuleDepGraph` builder (`G ∪ G'`)                                                                  | **Done** (<schedule_validator.rs:243>)                   |
-| 1.3   | Tarjan SCC validator + JSON report                                                                   | **Done** (<schedule_validator.rs:283>)                   |
-| 1.4   | Wire the validator into `materialize_logical_modules` as a report-only side output                   | In flight                                                |
-| 1.5   | Run against Tana spec; record every cycle                                                            | Pending 1.4                                              |
-| 2     | Update gaffer spec to break each surfaced cycle                                                      | Pending 1.5                                              |
-| 3     | Switch emit to source-order; drop init-wrapper machinery                                             | Pending 2                                                |
-| 4     | Cleanup: remove legacy code, update e2e fixtures, update AGENTS.md                                   | Pending 3                                                |
+| Phase | Description                                                                                          | State                                                                                                             |
+| ----- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 1.1   | `StatementFacts` analyzer producing `(declared, reads_at_init, has_side_effect, kind)` per statement | **Done** (<schedule_validator.rs:69>; 7 unit tests pass)                                                          |
+| 1.2   | `ModuleDepGraph` builder (`G ∪ G'`)                                                                  | **Done** (<schedule_validator.rs:243>)                                                                            |
+| 1.3   | Tarjan SCC validator + JSON report                                                                   | **Done** (<schedule_validator.rs:283>)                                                                            |
+| 1.4   | Wire the validator into `materialize_logical_modules` as a report-only side output                   | In flight                                                                                                         |
+| 1.5   | Run against Tana spec; record every cycle                                                            | **Done.** Spec produces 1 SCC of 9 modules, 99 edges (see [Phase 1 findings](#phase-1-findings-tana-78d928dca7)). |
+| 2     | Update gaffer spec to break each surfaced cycle                                                      | In flight                                                                                                         |
+| 3     | Switch emit to source-order; drop init-wrapper machinery                                             | Pending 2                                                                                                         |
+| 4     | Cleanup: remove legacy code, update e2e fixtures, update AGENTS.md                                   | Pending 3                                                                                                         |
 
 The work that landed during the legacy-design era — cross-module
 import emission, ImportSpecifier handling, source-chunk re-import
 logic, spec parsing — survives the migration. What dies is the
 init-wrapper substrate. The phased rollout keeps every interim
 state shippable.
+
+## Phase 1 findings: Tana 78d928dca7
+
+Running the validator (commit 23b300154) against the Tana spec
+produces a single strongly-connected component containing
+**9 modules** and **99 evidence edges**:
+
+```
+ai_mcp_prompting_runtime
+  ↔ ai_tooling_fetch_website_tool
+  ↔ runtime_calendar_journal_nodes
+  ↔ workspace_system_bootstrap_command_schema
+  ↔ runtime_logging_boot_platform_services
+  ↔ commands_search_runtime_actions
+  ↔ billing_redeem_code_widget
+  ↔ runtime_app_state_search_commands_core
+  ↔ graph_core_node_model
+```
+
+`ai_mcp_prompting_runtime` is the centre — it has the most in/out
+edges and corresponds to the 49,742-line generated module that the
+spec defines as a giant catch-all. Most of the cycle dissolves
+once that module is split into smaller, dependency-coherent
+pieces.
+
+The legacy init-wrapper machinery has been silently coping with
+this cycle by deferring binding initialization through
+`__dt_generated_init__*` calls. Each Tana smoke failure of the
+"TDZ" / "TypeError on undefined" / "Cannot access X before
+initialization" shape we have hand-patched was a different
+manifestation of the same SCC.
+
+Phase 2's job is to redraw the spec so this SCC dissolves. Three
+techniques apply:
+
+1. **Pull the giant `ai_mcp_prompting_runtime` apart.** The
+   right boundary is "real React component" or "domain feature"
+   — not the current bag of everything that touches AI. Each
+   smaller module's at-init reads will fall outside the SCC.
+2. **Colocate cyclic-coupled bindings.** For pairs of modules
+   where the cycle is small (e.g. CSS-class identifiers consumed
+   only by one component), move the bindings into the
+   consuming module.
+3. **Push reads into function bodies.** Rare; only applies if
+   the read can be deferred without changing semantics. Usually
+   path 1 is preferable.
+
+The full evidence list is in
+`bazel-bin/tana/re/web/transforms/debundle_78d928dca7.out/analysis/logical_modules/static/index-DI2GynTv.schedule.json`
+on a built artifact; aggregating by `(from, to)` pair gives a
+direct work list for spec edits.
 
 ## Open design questions
 
