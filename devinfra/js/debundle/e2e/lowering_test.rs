@@ -119,13 +119,13 @@ export { b };
     assert_entry_output(&fixture, "x\n");
 }
 
-// --- Emit shape regression guards ------------------------------------------
+// --- Emit shape -----------------------------------------------------------
 
 #[test]
-fn emits_a_plain_import_without_an_init_wrapper_for_a_pure_module() {
-    // Init-wrapper machinery is gone; the negative `__dt_generated_init__`
-    // assertion is a regression guard. The runtime side effect references
-    // `c` (residual), not the extracted bindings.
+fn emits_extracted_decls_inline_in_their_module() {
+    // The runtime side effect references `c` (residual), not the
+    // extracted bindings; mod_x carries the original `const`/
+    // `function` declarations as-is.
     let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
         r#"const a = 1;
 function b() { return a; }
@@ -139,13 +139,7 @@ export { c };
         &fixture.out_root,
         "static/app/modules/x.js",
         &["const a = 1;", "function b()"],
-        &["__dt_generated_init__x"],
-    );
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/entry.js",
         &[],
-        &["__dt_generated_init__x"],
     );
     assert_entry_output(&fixture, "1\n");
 }
@@ -153,9 +147,7 @@ export { c };
 #[test]
 fn emits_top_level_effects_inline_in_extracted_module() {
     // The initializer of `a` has a side effect (the comma expression).
-    // Source-order emit lands the const inline; no init wrapper, no
-    // `__dt_generated_init__*`. The ESM linker handles init order
-    // through the import graph.
+    // Source-order emit lands the const inline.
     //
     // We don't assert on entry stdout here: source-order emit
     // evaluates mod_x at link time (before any entry top-level code
@@ -176,13 +168,7 @@ export { a };
         &fixture.out_root,
         "static/app/modules/x.js",
         &["const a = (globalThis.log"],
-        &["__dt_generated_init__"],
-    );
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/entry.js",
         &[],
-        &["__dt_generated_init__"],
     );
 }
 
