@@ -112,12 +112,8 @@ struct MemberRequest {
     export_name: String,
     /// When `true`, the member's source is an import specifier in the
     /// source chunk (not a top-level decl). The materializer looks up
-    /// the actual import statement and rewrites it to a re-import in
-    /// the destination module. The spec also carries `import.source` /
-    /// `import.imported` for identification, but the import statement
-    /// in the chunk's normalized body is the authoritative source for
-    /// the path and imported name (the rewrite stage may have updated
-    /// the path since the spec was authored).
+    /// the import statement by `binding` in the chunk body and rewrites
+    /// it to a re-import in the destination module.
     is_import_specifier: bool,
 }
 

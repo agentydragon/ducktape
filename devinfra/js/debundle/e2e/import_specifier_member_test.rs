@@ -6,6 +6,11 @@
 //! top-level decl. Without that handling, the destination has
 //! `export { Readable }` but no backing decl and Node fails to load
 //! it with `SyntaxError: Export 'Readable' is not defined in module`.
+//!
+//! The materializer locates the import statement in the source chunk
+//! by the binding's local name, so the spec only needs
+//! `binding: { name, kind: "ImportSpecifier" }` — the import's source
+//! and imported name are read from the chunk body.
 
 use debundle_e2e_support::*;
 use serde_json::json;
@@ -33,7 +38,6 @@ export { a };
                 "name": "Readable",
                 "selector": {
                     "binding": { "name": "a", "kind": "ImportSpecifier" },
-                    "import": { "source": "./vendor.js", "imported": "x" },
                 },
             }],
         })],
