@@ -52,5 +52,6 @@ rust_library(
         "missing_binding_member_test",
         "runtime_import_reference_test",
         "init_wrapper_var_placeholder_test",
+        "init_call_order_test",
     ]
 ]

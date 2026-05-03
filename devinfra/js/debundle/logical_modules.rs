@@ -636,6 +636,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             &body,
             module_plans,
             binding_assignment,
+            &requires_init_by_module,
         );
         // Re-import any source-chunk import-specifier-bound locals that
         // moved code in `body` references but no top-level decl
@@ -682,7 +683,14 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
                     .map(|(k, v)| (k.clone(), v.clone())),
             );
             if requires_init_by_module.contains(&index) {
-                body = initialized_module_body(plan, body, &exports)?;
+                let dep_init_names = init_dep_names_for_body(
+                    index,
+                    &body,
+                    module_plans,
+                    binding_assignment,
+                    &requires_init_by_module,
+                );
+                body = initialized_module_body(plan, body, &exports, &dep_init_names)?;
             } else {
                 body.push(export_named_for_bindings(&exports));
             }
@@ -1087,6 +1095,7 @@ fn cross_module_imports_for_body(
     body: &[ModuleItem],
     module_plans: &[ModulePlan],
     binding_assignment: &BTreeMap<String, usize>,
+    requires_init: &BTreeSet<usize>,
 ) -> Vec<ModuleItem> {
     let mut imports_by_provider = BTreeMap::<usize, BTreeMap<String, String>>::new();
     for item in body {
@@ -1107,6 +1116,20 @@ fn cross_module_imports_for_body(
                 .entry(provider_index)
                 .or_default()
                 .insert(name, exported_name.clone());
+        }
+    }
+    // For each provider that requires init, also import its init
+    // function so we can call it from our own init's prelude.
+    if requires_init.contains(&module_index) {
+        for (provider_index, bindings) in imports_by_provider.iter_mut() {
+            if !requires_init.contains(provider_index) {
+                continue;
+            }
+            let Some(provider_plan) = module_plans.get(*provider_index) else {
+                continue;
+            };
+            let init_name = init_name_for_plan(provider_plan);
+            bindings.insert(init_name.clone(), init_name);
         }
     }
     imports_by_provider
@@ -1585,6 +1608,7 @@ fn initialized_module_body(
     plan: &ModulePlan,
     body: Vec<ModuleItem>,
     exports: &BTreeMap<String, String>,
+    dep_init_names: &[String],
 ) -> Result<Vec<ModuleItem>> {
     let mut out = Vec::new();
     let mut init_statements = Vec::new();
@@ -1602,12 +1626,129 @@ fn initialized_module_body(
             other => out.push(other),
         }
     }
-    out.push(export_init_function(
-        &init_name_for_plan(plan),
-        init_statements,
-    ));
+    let init_name = init_name_for_plan(plan);
+    let flag_name = init_flag_name(&init_name);
+    // Idempotency guard for the init function: ensures the body
+    // runs at most once even when a circular module graph causes
+    // multiple inits to call into each other.
+    out.push(init_flag_decl(&flag_name));
+    let mut prelude = vec![
+        idempotency_guard_stmt(&flag_name),
+        set_flag_stmt(&flag_name),
+    ];
+    // Call cross-module init deps before our own assignments. This
+    // makes the init order follow the dependency direction rather
+    // than the source-ordinal-of-first-triggering-item order, so
+    // an init body that reads `B.foo` works even when the entry
+    // happens to call `init_A` first.
+    for dep_name in dep_init_names {
+        prelude.push(init_call_stmt(dep_name));
+    }
+    prelude.extend(init_statements);
+    out.push(export_init_function(&init_name, prelude));
     out.push(export_named_for_bindings(exports));
     Ok(out)
+}
+
+fn init_dep_names_for_body(
+    module_index: usize,
+    body: &[ModuleItem],
+    module_plans: &[ModulePlan],
+    binding_assignment: &BTreeMap<String, usize>,
+    requires_init: &BTreeSet<usize>,
+) -> Vec<String> {
+    let mut deps = BTreeSet::<usize>::new();
+    for item in body {
+        for name in collect_referenced_idents(item) {
+            let Some(provider) = binding_assignment.get(&name).copied() else {
+                continue;
+            };
+            if provider == module_index {
+                continue;
+            }
+            if !requires_init.contains(&provider) {
+                continue;
+            }
+            deps.insert(provider);
+        }
+    }
+    deps.into_iter()
+        .filter_map(|idx| module_plans.get(idx).map(init_name_for_plan))
+        .collect()
+}
+
+fn init_flag_name(init_name: &str) -> String {
+    format!(
+        "__dt_inited{}",
+        init_name.trim_start_matches("__dt_generated_init")
+    )
+}
+
+fn init_flag_decl(flag_name: &str) -> ModuleItem {
+    ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(VarDecl {
+        span: DUMMY_SP,
+        ctxt: SyntaxContext::empty(),
+        kind: VarDeclKind::Var,
+        declare: false,
+        decls: vec![VarDeclarator {
+            span: DUMMY_SP,
+            name: Pat::Ident(BindingIdent {
+                id: Ident::new_no_ctxt(flag_name.into(), DUMMY_SP),
+                type_ann: None,
+            }),
+            init: Some(Box::new(Expr::Lit(Lit::Bool(Bool {
+                span: DUMMY_SP,
+                value: false,
+            })))),
+            definite: false,
+        }],
+    }))))
+}
+
+fn idempotency_guard_stmt(flag_name: &str) -> Stmt {
+    Stmt::If(IfStmt {
+        span: DUMMY_SP,
+        test: Box::new(Expr::Ident(Ident::new_no_ctxt(flag_name.into(), DUMMY_SP))),
+        cons: Box::new(Stmt::Return(ReturnStmt {
+            span: DUMMY_SP,
+            arg: None,
+        })),
+        alt: None,
+    })
+}
+
+fn set_flag_stmt(flag_name: &str) -> Stmt {
+    Stmt::Expr(ExprStmt {
+        span: DUMMY_SP,
+        expr: Box::new(Expr::Assign(AssignExpr {
+            span: DUMMY_SP,
+            op: AssignOp::Assign,
+            left: AssignTarget::Simple(SimpleAssignTarget::Ident(BindingIdent {
+                id: Ident::new_no_ctxt(flag_name.into(), DUMMY_SP),
+                type_ann: None,
+            })),
+            right: Box::new(Expr::Lit(Lit::Bool(Bool {
+                span: DUMMY_SP,
+                value: true,
+            }))),
+        })),
+    })
+}
+
+fn init_call_stmt(name: &str) -> Stmt {
+    Stmt::Expr(ExprStmt {
+        span: DUMMY_SP,
+        expr: Box::new(Expr::Call(CallExpr {
+            span: DUMMY_SP,
+            ctxt: SyntaxContext::empty(),
+            callee: Callee::Expr(Box::new(Expr::Ident(Ident::new_no_ctxt(
+                name.into(),
+                DUMMY_SP,
+            )))),
+            args: Vec::new(),
+            type_args: None,
+        })),
+    })
 }
 
 fn push_initialized_var_decl(
