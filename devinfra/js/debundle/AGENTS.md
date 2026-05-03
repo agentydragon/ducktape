@@ -180,6 +180,59 @@ If a proposed change improves a test result without improving real
 correctness, do not make that change. If the easiest fix is not the deepest
 correct fix, do the deeper correct fix or stop and explain the blocker.
 
+## Soundness over completeness
+
+The debundler's contract: **any spec the validator accepts must
+emit a debundled bundle that runs correctly.** Over-restriction
+(rejecting a spec that would have produced a working output) is
+an acceptable failure mode — the user can rework the spec or we
+can loosen the validator. Under-restriction (accepting a spec
+that produces a broken bundle) is a soundness violation and is
+not acceptable.
+
+This rule applies to every static analysis the validator runs —
+purity classification, side-effect graph construction, top-level-
+await detection, dependency-graph cycles, etc.
+
+### Pure-call whitelist soundness
+
+The purity classifier's `PURE_STATIC_PROPS`, `PURE_STATIC_CALLS`,
+and `PURE_GLOBAL_CALLS` whitelists in
+<schedule_validator.rs> directly drive S-edge construction. An
+over-approximating entry — a built-in flagged Pure that can in
+fact fire user code on some argument — drops S edges the
+realizability theorem needs, and can let a cyclic spec slip past
+the validator and emit a bundle whose runtime ordering breaks.
+
+**Admission rule for new entries:**
+
+- The operation must fire **no user-defined code on any argument
+  type**. That means: no `ToNumber` / `ToString` / `ToPrimitive`
+  / `ToPropertyKey` coercion of the args (these can fire
+  `valueOf` / `toString` / `[Symbol.toPrimitive]`); no iterator
+  protocol (`[Symbol.iterator]`); no proxy traps; no own-property
+  `[[Get]]` / `[[Set]]` (which fire user accessors); no mutation
+  of any reachable object; no `toJSON` callback path.
+- Cite the ECMA-262 clause that establishes this. "Common in
+  production bundles" is not a soundness argument.
+- "Often called with a fresh-literal target / primitive args in
+  practice" is also not a soundness argument — the validator does
+  not infer types and cannot rely on argument shape unless it is
+  enforced syntactically at the call site (e.g., a future
+  primitive-only purity bit applied to arguments).
+
+**If the whitelist is too restrictive in practice:** that is the
+expected failure mode. Loosen it only in safe ways — by adding
+operations that are universally pure (no user-callback path on
+any arg), or by introducing stronger argument analysis (e.g., a
+"statically-primitive" classification) that lets a wider set of
+operations be admitted _under syntactic gates_ on the arguments.
+Never add an entry "because the common case is fine."
+
+The schedule validator carries an inline TODO listing patterns
+that would become admissible once a primitive-arg gate exists —
+treat that as the queue for safe whitelist growth.
+
 ## Testing Philosophy
 
 **Default to end-to-end tests that drive the real pipeline.** A debundler

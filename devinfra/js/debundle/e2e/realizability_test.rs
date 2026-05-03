@@ -233,3 +233,43 @@ export { A, B, fromB, a_in_x };
         &["cycle", "mod_x", "mod_y"],
     );
 }
+
+// --- Top-level await is rejected (DESIGN.md A2) --------------------------
+
+#[test]
+fn top_level_await_is_rejected() {
+    // `await` at module-top isn't covered by the realizability
+    // theorem (A2). The materializer rejects before fact analysis
+    // runs.
+    expect_logical_modules_e2e_rejection_containing_all(
+        FixtureOpts::new(
+            r#"async function fetchData() { return 42; }
+const value = await fetchData();
+console.log(value);
+export { value };
+"#,
+            vec![logical_module("mod_x", &[Member::new("value")])],
+        ),
+        &["top-level", "await", "TLA"],
+    );
+}
+
+#[test]
+fn await_inside_async_function_is_allowed() {
+    // `await` inside an async function body is fine — the lazy
+    // boundary keeps the module synchronous.
+    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+        r#"async function fetchData() {
+  return await Promise.resolve(42);
+}
+const promise = fetchData();
+promise.then((v) => console.log(v));
+export { fetchData, promise };
+"#,
+        vec![logical_module(
+            "mod_x",
+            &[Member::new("fetchData"), Member::new("promise")],
+        )],
+    ));
+    assert_entry_output(&fixture, "42\n");
+}

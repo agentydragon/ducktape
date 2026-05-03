@@ -251,11 +251,67 @@ pub enum StatementKind {
 /// emitter splits the same comma-lists separately at lower-time
 /// (`split_var_decl` in `logical_modules.rs`); this pre-split
 /// just teaches the analyzer the same view.
+/// Locate the first top-level `await` expression in `module`'s
+/// body, if any. Returns the source-order ordinal of the offending
+/// statement (in the post-comma-list-split view that
+/// `analyze_chunk_facts` uses, so reports align with statement
+/// indices in `<chunk_id>.schedule.json`).
+///
+/// "Top-level" excludes function/method/arrow/getter/setter
+/// bodies and class instance-field initializers — those are lazy
+/// scopes that may legitimately contain `await` without making
+/// the module a top-level-await module.
+pub fn find_top_level_await(module: &Module) -> Option<StatementOrdinal> {
+    let body = split_comma_list_var_decls(&module.body);
+    for (ordinal, item) in body.iter().enumerate() {
+        let mut finder = TopLevelAwaitFinder::default();
+        item.visit_with(&mut finder);
+        if finder.found {
+            return Some(StatementOrdinal(ordinal));
+        }
+    }
+    None
+}
+
+#[derive(Default)]
+struct TopLevelAwaitFinder {
+    found: bool,
+}
+
+impl Visit for TopLevelAwaitFinder {
+    fn visit_await_expr(&mut self, _node: &AwaitExpr) {
+        self.found = true;
+    }
+
+    // Lazy boundaries — `await` inside any of these is the body's
+    // own concern (and only legal if the body is itself `async`).
+    fn visit_function(&mut self, _node: &Function) {}
+    fn visit_arrow_expr(&mut self, _node: &ArrowExpr) {}
+    fn visit_method_prop(&mut self, _node: &MethodProp) {}
+    fn visit_getter_prop(&mut self, _node: &GetterProp) {}
+    fn visit_setter_prop(&mut self, _node: &SetterProp) {}
+
+    fn visit_class_member(&mut self, member: &ClassMember) {
+        match member {
+            // Static blocks and static-prop initializers run at
+            // class-decl time. If the class is at module-top,
+            // an `await` there is top-level.
+            ClassMember::StaticBlock(_) | ClassMember::ClassProp(_) => {
+                member.visit_children_with(self);
+            }
+            // Instance fields, methods, accessors, constructors —
+            // lazy.
+            _ => {}
+        }
+    }
+}
+
 pub fn analyze_chunk_facts(module: &Module) -> Vec<StatementFacts> {
     let body = split_comma_list_var_decls(&module.body);
+    let shadowed = compute_shadowed_globals(&body);
     body.iter()
         .enumerate()
-        .map(|(ordinal, item)| analyze_item(StatementOrdinal(ordinal), item))
+        .map(|(ordinal, item)| analyze_item(StatementOrdinal(ordinal), item, &shadowed))
         .collect()
 }
 
@@ -305,14 +361,40 @@ fn split_comma_list_var_decls(body: &[ModuleItem]) -> Vec<ModuleItem> {
     out
 }
 
-fn analyze_item(ordinal: StatementOrdinal, item: &ModuleItem) -> StatementFacts {
+/// Walk `body` and collect the subset of `WHITELIST_RECEIVERS`
+/// that are declared at the chunk's top-level scope. The
+/// classifier consults this set to skip the whitelist for any
+/// receiver the chunk shadows — `const Math = …` makes
+/// `Math.PI` an unknown read, not the global constant. See
+/// DESIGN.md A8.
+fn compute_shadowed_globals(body: &[ModuleItem]) -> BTreeSet<&'static str> {
+    let mut shadowed = BTreeSet::new();
+    for item in body {
+        for name in collect_declared_names(item) {
+            if let Some(global) = WHITELIST_RECEIVERS
+                .iter()
+                .copied()
+                .find(|r| *r == name.as_str())
+            {
+                shadowed.insert(global);
+            }
+        }
+    }
+    shadowed
+}
+
+fn analyze_item(
+    ordinal: StatementOrdinal,
+    item: &ModuleItem,
+    shadowed: &BTreeSet<&'static str>,
+) -> StatementFacts {
     let kind = classify_item(item);
     let declared = collect_declared_names(item);
     let mut at_init = AtInitReadCollector::default();
     item.visit_with(&mut at_init);
     let mut lazy = LazyReadCollector::default();
     item.visit_with(&mut lazy);
-    let has_side_effect = item_has_side_effect(item, kind);
+    let has_side_effect = item_has_side_effect(item, kind, shadowed);
     StatementFacts {
         ordinal,
         declared,
@@ -349,7 +431,120 @@ impl Purity {
     }
 }
 
-fn classify_expr_purity(expr: &Expr) -> Purity {
+/// Static-property reads on these globals are Pure (no
+/// observable side effect, no getter to fire). Indexed as
+/// `(receiver_ident, property_name)`.
+const PURE_STATIC_PROPS: &[(&str, &str)] = &[
+    ("Math", "PI"),
+    ("Math", "E"),
+    ("Math", "LN2"),
+    ("Math", "LN10"),
+    ("Math", "LOG2E"),
+    ("Math", "LOG10E"),
+    ("Math", "SQRT2"),
+    ("Math", "SQRT1_2"),
+    ("Number", "EPSILON"),
+    ("Number", "MAX_SAFE_INTEGER"),
+    ("Number", "MIN_SAFE_INTEGER"),
+    ("Number", "MAX_VALUE"),
+    ("Number", "MIN_VALUE"),
+    ("Number", "POSITIVE_INFINITY"),
+    ("Number", "NEGATIVE_INFINITY"),
+    ("Number", "NaN"),
+    ("Symbol", "iterator"),
+    ("Symbol", "asyncIterator"),
+    ("Symbol", "toStringTag"),
+    ("Symbol", "toPrimitive"),
+    ("Symbol", "hasInstance"),
+    ("Symbol", "species"),
+    ("Symbol", "isConcatSpreadable"),
+    ("Symbol", "match"),
+    ("Symbol", "replace"),
+    ("Symbol", "search"),
+    ("Symbol", "split"),
+];
+
+/// Static methods that are Pure regardless of argument values.
+/// Everything in this table must satisfy: per ECMA-262, the call
+/// fires no user-defined code on any argument type — no `ToNumber`
+/// / `ToString` / `ToPrimitive` / `ToPropertyKey` coercion, no
+/// iterator protocol, no proxy trap, no own-property `[[Get]]`,
+/// no mutation of any reachable object. See DESIGN.md A8 for the
+/// admission contract; AGENTS.md "Pure-call whitelist soundness"
+/// for the agent-facing rule. New entries land only with a spec
+/// citation showing no user-callback path; "common in practice"
+/// is not sufficient.
+const PURE_STATIC_CALLS: &[(&str, &str)] = &[
+    // Type predicate — checks the IsArray internal slot. Spec
+    // explicitly says: "does not perform a call to ToObject on its
+    // argument".
+    ("Array", "isArray"),
+    // Number predicates — `Type(arg) is not Number ⇒ false`,
+    // otherwise inspect the value. No coercion path.
+    ("Number", "isFinite"),
+    ("Number", "isInteger"),
+    ("Number", "isNaN"),
+    ("Number", "isSafeInteger"),
+];
+
+/// Pure global callables (no receiver). Same admission contract as
+/// `PURE_STATIC_CALLS`: the call must fire no user code on any
+/// argument value.
+const PURE_GLOBAL_CALLS: &[&str] = &[
+    // ToBoolean is type-cased and fires no callbacks (objects are
+    // unconditionally `true`; primitives are checked structurally).
+    "Boolean",
+];
+
+/// Receiver / global-callable names whose whitelist firing depends
+/// on the chunk not having shadowed them at top level.
+/// `analyze_chunk_facts` populates the shadowed-globals set, and
+/// the classifier suppresses whitelist hits for any name in it —
+/// e.g. `const Math = …` makes `Math.PI` fall back to `Unknown`.
+const WHITELIST_RECEIVERS: &[&str] = &["Math", "Array", "Symbol", "Number", "Boolean"];
+
+// TODO: extend the call whitelist with operations that are *Pure
+// when their arguments are statically known to be primitives*
+// (Number / String / Boolean / null / undefined / BigInt
+// literals, or fresh literals built from those). Examples that
+// become admissible under that stronger argument analysis:
+//
+//   - `Math.{abs, floor, ceil, round, trunc, sign, sqrt, cbrt,
+//     min, max, pow, exp, log, log2, log10, log1p, sin, cos, tan,
+//     asin, acos, atan, atan2, sinh, cosh, tanh, hypot, fround,
+//     clz32, imul}` — `ToNumber` on a literal Number does not
+//     fire user code.
+//   - `JSON.parse(str)` for a `StringLiteral` argument — `ToString`
+//     on a string is identity.
+//   - `JSON.stringify(prim)` for a primitive literal — no
+//     `toJSON` / `Symbol.toPrimitive` / `valueOf` path.
+//   - `Number.parseInt(str[, radix])`, `Number.parseFloat(str)`
+//     for a `StringLiteral` first arg and (optional) `Number`
+//     second.
+//   - `String.{fromCharCode, fromCodePoint}(...nums)` for all-
+//     `NumberLiteral` args.
+//   - `Array.of(...prims)` — `CreateDataPropertyOrThrow` on a
+//     fresh array does not fire user code; the open question is
+//     just "could a non-primitive arg do anything observable",
+//     which a primitive-only gate avoids.
+//   - `Object.{keys, values, entries, fromEntries, freeze,
+//     getOwnPropertyNames, getOwnPropertyDescriptor, isFrozen,
+//     hasOwn, assign}` — these *do* observe user callbacks
+//     (getter on `[[Get]]`, ownKeys/getOwnPropertyDescriptor
+//     traps on `Proxy`, mutation), so they remain UNSAFE for
+//     general args. They become Pure only if the receiver is
+//     itself a fresh ordinary-object literal with no accessors —
+//     a separate, stricter analysis.
+//
+// Adding any of these requires (a) a Purity::Primitive variant
+// (or a side analysis that classifies an Expr as
+// "evaluates-to-primitive"), and (b) an updated admission rule
+// here that gates the whitelist on that classification. Soundness
+// rule: never relax in a way that admits a path firing user code
+// on any argument shape (see AGENTS.md "Pure-call whitelist
+// soundness").
+
+fn classify_expr_purity(expr: &Expr, shadowed: &BTreeSet<&'static str>) -> Purity {
     match expr {
         Expr::Lit(_) => Purity::Pure,
         Expr::Ident(_) => Purity::Pure,
@@ -357,32 +552,34 @@ fn classify_expr_purity(expr: &Expr) -> Purity {
         Expr::Tpl(tpl) => tpl
             .exprs
             .iter()
-            .map(|e| classify_expr_purity(e))
+            .map(|e| classify_expr_purity(e, shadowed))
             .fold(Purity::Pure, Purity::worst),
         Expr::Fn(_) | Expr::Arrow(_) => Purity::Pure,
         Expr::Class(class_expr) => {
-            if class_has_static_observable(&class_expr.class) {
+            if class_has_static_observable(&class_expr.class, shadowed) {
                 Purity::Impure
             } else {
                 Purity::Pure
             }
         }
-        Expr::Paren(p) => classify_expr_purity(&p.expr),
+        Expr::Paren(p) => classify_expr_purity(&p.expr, shadowed),
         Expr::Unary(u) => match u.op {
             UnaryOp::Delete => Purity::Impure,
             // typeof / void / +/-/!/~ on a pure operand are pure
             // (they may coerce, but coercion of an Ident or Lit
             // doesn't run user code).
-            _ => classify_expr_purity(&u.arg),
+            _ => classify_expr_purity(&u.arg, shadowed),
         },
-        Expr::Bin(b) => classify_expr_purity(&b.left).worst(classify_expr_purity(&b.right)),
-        Expr::Cond(c) => classify_expr_purity(&c.test)
-            .worst(classify_expr_purity(&c.cons))
-            .worst(classify_expr_purity(&c.alt)),
+        Expr::Bin(b) => {
+            classify_expr_purity(&b.left, shadowed).worst(classify_expr_purity(&b.right, shadowed))
+        }
+        Expr::Cond(c) => classify_expr_purity(&c.test, shadowed)
+            .worst(classify_expr_purity(&c.cons, shadowed))
+            .worst(classify_expr_purity(&c.alt, shadowed)),
         Expr::Seq(s) => s
             .exprs
             .iter()
-            .map(|e| classify_expr_purity(e))
+            .map(|e| classify_expr_purity(e, shadowed))
             .fold(Purity::Pure, Purity::worst),
         Expr::Array(arr) => {
             let mut acc = Purity::Pure;
@@ -392,23 +589,31 @@ fn classify_expr_purity(expr: &Expr) -> Purity {
                     // be impure even on a literal.
                     acc = acc.worst(Purity::Unknown);
                 }
-                acc = acc.worst(classify_expr_purity(&elem.expr));
+                acc = acc.worst(classify_expr_purity(&elem.expr, shadowed));
             }
             acc
         }
         Expr::Object(obj) => {
             let mut acc = Purity::Pure;
             for prop in &obj.props {
-                acc = acc.worst(classify_prop_purity(prop));
+                acc = acc.worst(classify_prop_purity(prop, shadowed));
             }
             acc
         }
-        // Member access is `Unknown` — `obj.prop` on an arbitrary
-        // object can fire a getter; we can't tell statically.
-        Expr::Member(_) | Expr::SuperProp(_) | Expr::OptChain(_) => Purity::Unknown,
-        // Calls / `new` / tagged templates / dynamic import / yield-style:
-        // unknown side effects.
-        Expr::Call(_) | Expr::New(_) | Expr::TaggedTpl(_) => Purity::Unknown,
+        Expr::Member(member) => {
+            if let Some((recv, prop)) = static_member_pair(member)
+                && !shadowed.contains(recv)
+                && PURE_STATIC_PROPS.contains(&(recv, prop))
+            {
+                return Purity::Pure;
+            }
+            // `obj.prop` on an arbitrary object can fire a getter;
+            // we can't tell statically.
+            Purity::Unknown
+        }
+        Expr::SuperProp(_) | Expr::OptChain(_) => Purity::Unknown,
+        Expr::Call(call) => classify_call_purity(call, shadowed),
+        Expr::New(_) | Expr::TaggedTpl(_) => Purity::Unknown,
         Expr::Assign(_) | Expr::Update(_) => Purity::Impure,
         Expr::Await(_) | Expr::Yield(_) => Purity::Impure,
         // Anything we didn't enumerate falls into the Unknown
@@ -417,20 +622,87 @@ fn classify_expr_purity(expr: &Expr) -> Purity {
     }
 }
 
-fn classify_prop_purity(prop: &PropOrSpread) -> Purity {
+/// `(receiver_ident, prop_name)` for `Receiver.prop` where
+/// `Receiver` is a plain `Ident` and `prop` is a static name.
+/// Returns `None` for computed access (`obj[k]`), private fields,
+/// or non-Ident receivers.
+fn static_member_pair(member: &MemberExpr) -> Option<(&'static str, &'static str)> {
+    let recv_sym = match member.obj.as_ref() {
+        Expr::Ident(ident) => ident.sym.as_ref(),
+        _ => return None,
+    };
+    let prop_sym = match &member.prop {
+        MemberProp::Ident(ident) => ident.sym.as_ref(),
+        _ => return None,
+    };
+    let recv = WHITELIST_RECEIVERS
+        .iter()
+        .copied()
+        .find(|r| *r == recv_sym)?;
+    // `prop_sym` may be borrowed from the AST; intern via the
+    // whitelist tables so we return `&'static str` for downstream
+    // `contains` checks.
+    let prop = PURE_STATIC_PROPS
+        .iter()
+        .find_map(|(r, p)| (*r == recv && *p == prop_sym).then_some(*p))
+        .or_else(|| {
+            PURE_STATIC_CALLS
+                .iter()
+                .find_map(|(r, p)| (*r == recv && *p == prop_sym).then_some(*p))
+        })?;
+    Some((recv, prop))
+}
+
+fn classify_call_purity(call: &CallExpr, shadowed: &BTreeSet<&'static str>) -> Purity {
+    let Callee::Expr(callee_expr) = &call.callee else {
+        return Purity::Unknown;
+    };
+    // `Recv.method(args)` against PURE_STATIC_CALLS.
+    if let Expr::Member(member) = callee_expr.as_ref()
+        && let Some((recv, prop)) = static_member_pair(member)
+        && !shadowed.contains(recv)
+        && PURE_STATIC_CALLS.contains(&(recv, prop))
+    {
+        return all_args_pure(&call.args, shadowed);
+    }
+    // `globalCallable(args)` against PURE_GLOBAL_CALLS.
+    if let Expr::Ident(ident) = callee_expr.as_ref()
+        && let Some(name) = PURE_GLOBAL_CALLS
+            .iter()
+            .copied()
+            .find(|n| *n == ident.sym.as_ref())
+        && !shadowed.contains(name)
+    {
+        return all_args_pure(&call.args, shadowed);
+    }
+    Purity::Unknown
+}
+
+fn all_args_pure(args: &[ExprOrSpread], shadowed: &BTreeSet<&'static str>) -> Purity {
+    let mut acc = Purity::Pure;
+    for arg in args {
+        if arg.spread.is_some() {
+            // Spread arg's iterator could fire side effects.
+            acc = acc.worst(Purity::Unknown);
+        }
+        acc = acc.worst(classify_expr_purity(&arg.expr, shadowed));
+    }
+    acc
+}
+
+fn classify_prop_purity(prop: &PropOrSpread, shadowed: &BTreeSet<&'static str>) -> Purity {
     match prop {
         PropOrSpread::Spread(spread) => {
             // Spreading an arbitrary expression invokes its
             // iterator (array spread) or property iteration
             // (object spread). Either can fire a getter or a
             // user-defined `[Symbol.iterator]`.
-            classify_expr_purity(&spread.expr).worst(Purity::Unknown)
+            classify_expr_purity(&spread.expr, shadowed).worst(Purity::Unknown)
         }
         PropOrSpread::Prop(prop) => match prop.as_ref() {
             Prop::Shorthand(_) => Purity::Pure,
-            Prop::KeyValue(kv) => {
-                classify_propname_purity(&kv.key).worst(classify_expr_purity(&kv.value))
-            }
+            Prop::KeyValue(kv) => classify_propname_purity(&kv.key, shadowed)
+                .worst(classify_expr_purity(&kv.value, shadowed)),
             Prop::Assign(_) => Purity::Impure,
             // `{ get x() {}, set x(v) {}, m() {} }` — defining a
             // method or accessor is pure; invoking it is not, and
@@ -440,12 +712,12 @@ fn classify_prop_purity(prop: &PropOrSpread) -> Purity {
     }
 }
 
-fn classify_propname_purity(name: &PropName) -> Purity {
+fn classify_propname_purity(name: &PropName, shadowed: &BTreeSet<&'static str>) -> Purity {
     match name {
         PropName::Ident(_) | PropName::Str(_) | PropName::Num(_) | PropName::BigInt(_) => {
             Purity::Pure
         }
-        PropName::Computed(c) => classify_expr_purity(&c.expr),
+        PropName::Computed(c) => classify_expr_purity(&c.expr, shadowed),
     }
 }
 
@@ -455,38 +727,44 @@ fn classify_propname_purity(name: &PropName) -> Purity {
 /// runs, but `extends` references are tracked as `R`-edges
 /// elsewhere — here we only report whether the class itself
 /// _additionally_ has observable side-effecting init code.
-fn class_has_static_observable(class: &Class) -> bool {
+fn class_has_static_observable(class: &Class, shadowed: &BTreeSet<&'static str>) -> bool {
     class.body.iter().any(|member| match member {
         ClassMember::StaticBlock(_) => true,
         ClassMember::ClassProp(prop) if prop.is_static => prop
             .value
             .as_deref()
-            .map(|v| classify_expr_purity(v) != Purity::Pure)
+            .map(|v| classify_expr_purity(v, shadowed) != Purity::Pure)
             .unwrap_or(false),
         ClassMember::PrivateProp(prop) if prop.is_static => prop
             .value
             .as_deref()
-            .map(|v| classify_expr_purity(v) != Purity::Pure)
+            .map(|v| classify_expr_purity(v, shadowed) != Purity::Pure)
             .unwrap_or(false),
         _ => false,
     })
 }
 
-fn item_has_side_effect(item: &ModuleItem, kind: StatementKind) -> bool {
+fn item_has_side_effect(
+    item: &ModuleItem,
+    kind: StatementKind,
+    shadowed: &BTreeSet<&'static str>,
+) -> bool {
     match kind {
         StatementKind::Import | StatementKind::Export | StatementKind::FnDecl => false,
         StatementKind::VarDecl => var_decl_of_item(item)
             .iter()
             .flat_map(|var| var.decls.iter())
             .any(|d| match d.init.as_deref() {
-                Some(init) => classify_expr_purity(init) != Purity::Pure,
+                Some(init) => classify_expr_purity(init, shadowed) != Purity::Pure,
                 None => false,
             }),
         StatementKind::ClassDecl => class_of_item(item)
-            .map(class_has_static_observable)
+            .map(|c| class_has_static_observable(c, shadowed))
             .unwrap_or(false),
         StatementKind::SideEffect => match item {
-            ModuleItem::Stmt(Stmt::Expr(expr)) => classify_expr_purity(&expr.expr) != Purity::Pure,
+            ModuleItem::Stmt(Stmt::Expr(expr)) => {
+                classify_expr_purity(&expr.expr, shadowed) != Purity::Pure
+            }
             // Bare blocks, control flow, loops, etc. — soundness-first.
             _ => true,
         },
@@ -1465,7 +1743,21 @@ mod tests {
             other => panic!("expected `const _ = ...;`, got {other:?}"),
         };
         let init = var.decls[0].init.as_deref().expect("init expected");
-        classify_expr_purity(init)
+        classify_expr_purity(init, &BTreeSet::new())
+    }
+
+    /// Run the classifier against `src` after computing the
+    /// chunk-top-level shadowed-globals set from a wrapping
+    /// module. Lets tests check the shadowing fallback.
+    fn classify_with_module(prefix: &str, expr_src: &str) -> Purity {
+        let module = parse(&format!("{prefix}\nconst _ = {expr_src};"));
+        let shadowed = compute_shadowed_globals(&module.body);
+        let var = match module.body.last().expect("non-empty body") {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
+            other => panic!("expected last stmt to be `const _ = …;`, got {other:?}"),
+        };
+        let init = var.decls[0].init.as_deref().expect("init expected");
+        classify_expr_purity(init, &shadowed)
     }
 
     #[test]
@@ -1564,6 +1856,155 @@ mod tests {
         assert_eq!(classify("(A, B, C)"), Purity::Pure);
         assert_eq!(classify("(A, foo(), C)"), Purity::Unknown);
         assert_eq!(classify("(A, x = 1, C)"), Purity::Impure);
+    }
+
+    // --- Whitelist: pure static property reads -------------------------------
+
+    #[test]
+    fn whitelist_static_props_are_pure() {
+        // Math / Number / Symbol constants: pure internal-slot
+        // reads, no coercion.
+        assert_eq!(classify("Math.PI"), Purity::Pure);
+        assert_eq!(classify("Math.E"), Purity::Pure);
+        assert_eq!(classify("Math.SQRT2"), Purity::Pure);
+        assert_eq!(classify("Number.EPSILON"), Purity::Pure);
+        assert_eq!(classify("Number.MAX_SAFE_INTEGER"), Purity::Pure);
+        assert_eq!(classify("Symbol.iterator"), Purity::Pure);
+        assert_eq!(classify("Symbol.toStringTag"), Purity::Pure);
+    }
+
+    #[test]
+    fn whitelist_misses_fall_back_to_unknown() {
+        // Same receivers, properties that aren't on the whitelist:
+        // could be a getter / a coercing call. Stays Unknown.
+        assert_eq!(classify("Math.unknownProp"), Purity::Unknown);
+        assert_eq!(classify("Number.unknownProp"), Purity::Unknown);
+        assert_eq!(classify("Symbol.unknownProp"), Purity::Unknown);
+    }
+
+    // --- Whitelist: pure calls -----------------------------------------------
+
+    #[test]
+    fn whitelist_static_calls_are_pure_regardless_of_arg() {
+        // Type predicates do not coerce or read user props on the
+        // argument, so any Pure-classified arg keeps the call Pure.
+        assert_eq!(classify("Array.isArray(x)"), Purity::Pure);
+        assert_eq!(classify("Array.isArray([1, 2, 3])"), Purity::Pure);
+        assert_eq!(classify("Number.isNaN(x)"), Purity::Pure);
+        assert_eq!(classify("Number.isFinite(x)"), Purity::Pure);
+        assert_eq!(classify("Number.isInteger(x)"), Purity::Pure);
+        assert_eq!(classify("Number.isSafeInteger(x)"), Purity::Pure);
+    }
+
+    #[test]
+    fn whitelist_static_calls_unknown_arg_infects() {
+        // An argument whose evaluation may itself fire user code
+        // poisons the whole call: even though `Array.isArray` is
+        // a pure operation, evaluating `io()` first is not.
+        assert_eq!(classify("Array.isArray(io())"), Purity::Unknown);
+        assert_eq!(classify("Number.isNaN(o.x)"), Purity::Unknown);
+    }
+
+    #[test]
+    fn whitelist_global_callables_are_pure() {
+        // Boolean(x) is `ToBoolean(x)`; per spec, no path fires
+        // user code (objects → true unconditionally; primitives
+        // are case-analysed structurally).
+        assert_eq!(classify("Boolean(x)"), Purity::Pure);
+        assert_eq!(classify("Boolean(0)"), Purity::Pure);
+        assert_eq!(classify("Boolean({})"), Purity::Pure);
+    }
+
+    #[test]
+    fn unsafe_global_callables_stay_unknown() {
+        // ToNumber / ToString / ToPrimitive can call user
+        // `valueOf` / `toString` / `[Symbol.toPrimitive]` on
+        // object args; we don't track types, so these remain
+        // Unknown to keep the whitelist sound.
+        assert_eq!(classify("Number(x)"), Purity::Unknown);
+        assert_eq!(classify("String(x)"), Purity::Unknown);
+        assert_eq!(classify("Symbol(x)"), Purity::Unknown);
+        assert_eq!(classify("parseInt(x, 10)"), Purity::Unknown);
+        assert_eq!(classify("parseFloat(x)"), Purity::Unknown);
+        assert_eq!(classify("isNaN(x)"), Purity::Unknown);
+        assert_eq!(classify("isFinite(x)"), Purity::Unknown);
+    }
+
+    #[test]
+    fn unsafe_static_calls_stay_unknown() {
+        // Anything that coerces / iterates / fires getters /
+        // mutates / reads through proxies is *not* on the
+        // whitelist. These all stay Unknown.
+        for src in [
+            "Array.from(x)",
+            "Array.of(1, 2, 3)",
+            "Math.abs(x)",
+            "Math.max(1, 2)",
+            "Math.floor(x)",
+            "Math.round(x)",
+            "Math.sqrt(x)",
+            "Object.keys(x)",
+            "Object.values(x)",
+            "Object.entries(x)",
+            "Object.freeze(x)",
+            "Object.assign({}, x)",
+            "Object.fromEntries(x)",
+            "Object.getOwnPropertyDescriptor(x, 'k')",
+            "Object.hasOwn(x, 'k')",
+            "JSON.parse(x)",
+            "JSON.stringify(x)",
+            "Number.parseInt(x)",
+            "Number.parseFloat(x)",
+            "String.fromCharCode(65)",
+            "String.fromCodePoint(65)",
+            "Symbol.for('k')",
+            "Symbol.keyFor(s)",
+        ] {
+            assert_eq!(
+                classify(src),
+                Purity::Unknown,
+                "expected {src} to stay Unknown (would fire user code)"
+            );
+        }
+    }
+
+    // --- Whitelist: shadowing fallback ---------------------------------------
+
+    #[test]
+    fn shadowed_receiver_disables_whitelist() {
+        // A chunk-top-level binding for `Math` makes `Math.PI` no
+        // longer reach the global; the whitelist must fall back
+        // to Unknown.
+        assert_eq!(
+            classify_with_module("const Math = userland;", "Math.PI"),
+            Purity::Unknown
+        );
+        assert_eq!(
+            classify_with_module("function Math() {}", "Math.E"),
+            Purity::Unknown
+        );
+        assert_eq!(
+            classify_with_module("const Array = X;", "Array.isArray(x)"),
+            Purity::Unknown
+        );
+        assert_eq!(
+            classify_with_module("let Number = X;", "Number.isNaN(x)"),
+            Purity::Unknown
+        );
+        assert_eq!(
+            classify_with_module("const Boolean = X;", "Boolean(x)"),
+            Purity::Unknown
+        );
+    }
+
+    #[test]
+    fn unshadowed_receiver_keeps_whitelist() {
+        // A chunk that declares an unrelated binding leaves the
+        // whitelist active — only same-named shadowing disables.
+        assert_eq!(
+            classify_with_module("const other = userland;", "Math.PI"),
+            Purity::Pure
+        );
     }
 
     // --- has_side_effect refinement ------------------------------------------

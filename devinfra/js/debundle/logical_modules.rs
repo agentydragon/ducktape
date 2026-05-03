@@ -19,7 +19,7 @@ use artifact::{
 use js_ast::{ParsedJsModule, set_str_value, str_value};
 use schedule_validator::{
     BindingKind, BindingName, LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId,
-    Schedule, analyze_chunk_facts,
+    Schedule, analyze_chunk_facts, find_top_level_await,
 };
 
 const LOWERING_FILE_PRAGMA: &str =
@@ -296,6 +296,21 @@ pub fn materialize_logical_modules(
                     bindings: residual_bindings,
                 });
             }
+        }
+
+        // Refuse chunks with top-level `await`. DESIGN.md
+        // assumption A2 — the proof's reverse-DFS argument
+        // doesn't apply to AsyncCycleRoot semantics, so the
+        // realizability theorem doesn't extend. Rejecting here
+        // turns the assumption into an enforced precondition.
+        if let Some(ord) = find_top_level_await(&runtime_ast.module) {
+            anyhow::bail!(
+                "materialize_logical_modules: chunk {chunk_id} has top-level `await` \
+                 at statement #{ordinal} (TLA); the debundler's realizability theorem \
+                 does not cover async modules (DESIGN.md A2). Wrap the awaited code \
+                 in an async function or rewrite as a synchronous initialization.",
+                ordinal = ord.0,
+            );
         }
 
         // Run the schedule validator (see <DESIGN.md>). Computed here
@@ -643,6 +658,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
     for export in entry_exports_for_moved_bindings(runtime_ast, binding_assignment) {
         entry_body.push(export);
     }
+    trim_dead_named_specifiers(&mut entry_body, &schedule.bindings);
 
     let mut files = vec![JsFile {
         path: entry_file.to_string(),
@@ -944,6 +960,52 @@ impl Visit for RefCollector {
     fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
 
     fn visit_import_decl(&mut self, _node: &ImportDecl) {}
+}
+
+/// Drop `ImportSpecifier::Named` specifiers from a residual entry
+/// body whose locals are unused after a logical-module move and
+/// whose binding name is claimed by `Schedule.bindings`. If all
+/// of an import directive's specifiers are dropped, the directive
+/// itself is dropped — the imported source-module's side effects
+/// remain triggered through the moved logical module's own
+/// import (which carries the `claimed` binding into the moved
+/// module's import statement).
+///
+/// Default and namespace specifiers are kept conservatively (a
+/// namespace access can be hidden behind a computed property
+/// read; defaults are similarly hard to ref-count safely).
+/// Side-effect-only imports (`import "./mod.js"`) pass through
+/// unchanged — they had no specifiers to begin with.
+fn trim_dead_named_specifiers(
+    body: &mut Vec<ModuleItem>,
+    bindings: &BTreeMap<BindingName, BindingKind>,
+) {
+    let mut refs = BTreeSet::<String>::new();
+    for item in body.iter() {
+        let mut collector = RefCollector::default();
+        item.visit_with(&mut collector);
+        refs.append(&mut collector.names);
+    }
+    body.retain_mut(|item| {
+        let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+            return true;
+        };
+        // Side-effect-only imports never had specifiers; leave
+        // them alone (they exist to evaluate the imported module).
+        if import.specifiers.is_empty() {
+            return true;
+        }
+        import.specifiers.retain(|spec| match spec {
+            ImportSpecifier::Default(_) | ImportSpecifier::Namespace(_) => true,
+            ImportSpecifier::Named(named) => {
+                let local = named.local.sym.as_ref();
+                let claimed = bindings.contains_key(local);
+                let unused = !refs.contains(local);
+                !(claimed && unused)
+            }
+        });
+        !import.specifiers.is_empty()
+    });
 }
 
 fn reject_duplicate_export_names(

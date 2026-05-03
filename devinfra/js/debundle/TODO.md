@@ -10,42 +10,6 @@ including the `BindingKind::Imported` collapse that closes out
 the parallel `import_members` channel. The items in this file
 are smaller, mostly-orthogonal cleanups.
 
-## Top-level-await hard rejection
-
-DESIGN.md assumption A2 ("no top-level `await` in any emitted
-module") is documented as an _input-shape assumption_, not an
-enforced check. `program_analysis.rs` marks `AwaitExpr` as
-runtime-sensitive during shallow analysis, but
-`materialize_logical_modules` doesn't refuse the chunk when it
-appears at module-top.
-
-Fix: scan `Module.body` for top-level `AwaitExpr` (not inside
-any `Function` / `ArrowExpr` / `MethodProp` / etc.) before fact
-analysis runs; `bail!` with a clear message naming the offending
-statement ordinal. Aligns the implementation with the proof's
-A2 guarantee.
-
-## Pure-call whitelist in `classify_expr_purity`
-
-The S analyzer's purity classifier (`schedule_validator.rs`)
-treats `Call`, `New`, `TaggedTpl`, `Member`, `OptChain`, etc.
-as `Unknown` (treated as Impure). For built-ins that are
-demonstrably pure — `Math.X` reads, `Object.freeze`,
-`Object.assign({}, ...)`, `Symbol(...)`, `Object.keys`,
-`Array.isArray`, … — flagging Pure would tighten S-edge
-precision and reduce spurious cycle-rejections on chunks heavy
-in those calls.
-
-Implementation shape: a small allowlist consulted by
-`classify_expr_purity` for `Expr::Call` / `Expr::New` /
-`Expr::Member` whose receiver is a known global. Conservative
-on shadowing — only fire when the receiver Ident isn't bound
-by anything in `Schedule.bindings` or as a function/local in
-scope. Tracked as a follow-up to the precise-purity classifier
-that landed with the S-edge work (PR #1478 + S analyzer); not
-pressing until a real spec exposes a spurious S cycle from
-this gap.
-
 ## Excalidraw live-browser smoke
 
 Build an open-source live-browser smoke test for the debundler against
@@ -141,17 +105,6 @@ prefer landing the regression test on this Excalidraw target (or a
 smaller minimised e2e under `devinfra/js/debundle/e2e/`) rather than
 only fixing it behind the private repo. The latter loses the
 public-CI signal and the public-bug-report leverage.
-
-## Trim source-chunk import line after `ImportSpecifier`-bound member move
-
-`materialize_logical_modules` re-emits the `import { <imported> as
-<readable> }` in the destination module (via
-`import_specifier_member_decl`), but it does not trim the matching
-specifier from the source chunk's import statement. The local stays
-unused in the source chunk after the move; if no other specifier from
-the same import statement remains, the entire `import` line should
-also be dropped. Cosmetic — produces dead-import warnings, not load
-errors.
 
 ## Propagate readable rename across consumers
 

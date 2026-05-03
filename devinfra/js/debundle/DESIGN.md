@@ -366,14 +366,14 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   (TC39 §16.2.1.5.4 + §16.2.1.5.5). The proof's reverse-DFS
   argument doesn't apply unmodified — async modules form their own
   ordering hazards, and a cycle through two async modules has
-  semantics this design has not analyzed. The proof treats A2 as
-  an input-shape **assumption**: Production chunks we target are TLA-free
-  (grep-verifiable on `bazel-bin/.../static/index-DI2GynTv.js`);
-  the SWC parser enables `topLevelAwait`, and `program_analysis.rs`
-  marks any `AwaitExpr` it finds during shallow analysis as
-  runtime-sensitive — but no materialize-time hard rejection exists
-  yet. If a future bundle introduces TLA, add an explicit refusal
-  in `materialize_logical_modules` before the validator runs.
+  semantics this design has not analyzed. **Enforced**:
+  `materialize_logical_modules` calls `find_top_level_await`
+  before fact analysis and `bail!`s with the offending statement
+  ordinal if any module-top `AwaitExpr` is found (excluding lazy
+  positions like function/arrow/method/getter/setter bodies and
+  instance class fields). Production chunks we target are TLA-free
+  in practice; the rejection turns the assumption into a verified
+  precondition.
 - **A3. No `import()` of debundled internal modules.** Dynamic
   imports of vendor / route chunks are fine — the proof treats
   those as black-box leaves with their own evaluation. Internal
@@ -396,12 +396,36 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   unions every chunk's `I` and `S`; the same theorem applies to
   the union iff every chunk satisfies A1–A6 and the union graph
   is acyclic.
+- **A8. Whitelisted globals are not shadowed at chunk top level.**
+  `S`-edge construction consults a small purity whitelist —
+  `Math.PI`, `Number.isNaN(...)`, `Boolean(...)`, etc. — that
+  classifies certain built-in property reads and calls as `Pure`.
+  Soundness depends on those names referring to the global
+  built-ins; if a chunk re-declares any of them at module top
+  level (`const Math = userland; …; Math.PI`), the call dispatches
+  through the user-bound value, which can fire arbitrary code.
+  The validator's classifier consults a `compute_shadowed_globals`
+  pass and falls the whitelist back to `Unknown` for any
+  shadowed name, so a chunk that does shadow remains sound (just
+  conservatively over-restricted). The "no shadowing" form
+  documented here is the _unrestricted-whitelist_ version: chunks
+  that satisfy A8 reach the precise S-edge classification; chunks
+  that violate it still validate correctly, with strictly more
+  S edges than necessary.
+
+  The whitelist itself is admission-restricted: every entry must
+  fire no user-defined code on any argument value (no `ToNumber` /
+  `ToString` / `ToPrimitive` coercion paths, no iterator protocol,
+  no proxy traps, no own-property `[[Get]]`, no mutation). See
+  AGENTS.md "Pure-call whitelist soundness" for the contract that
+  governs adding new entries; soundness is preserved iff the
+  contract is preserved.
 
 For the production downstream corpus: the chunks is grep-verifiably free of
 top-level `await`, dynamic `import()` of internal paths, `eval`,
 and `with`. We rely on A6 by observation (the unmodified bundle
 loads in the browser); A7 by virtue of esbuild's vendor-leaf
-chunking.
+chunking; A8 by inspection of the chunk-top declared-name set.
 
 ### Lemmas
 

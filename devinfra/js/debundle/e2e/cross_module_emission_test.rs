@@ -448,3 +448,64 @@ export { bridge };
     // `ReferenceError` at module-load time.
     assert_entry_output(&fixture, "42\n");
 }
+
+// --- Dead source-chunk specifier trim ------------------------------------
+
+#[test]
+fn drops_specifier_for_imported_binding_claimed_and_unused_in_residual() {
+    // Source chunk imports `dep` from vendor and uses it only to
+    // build `composed`. Spec claims `composed` for mod_x AND
+    // claims `dep` (as an ImportSpecifier-bound member) for
+    // mod_dep. After the move, the residual entry never
+    // references `dep` anywhere — `composed` lives in mod_x
+    // (with its own re-import of `dep`), and the residual's
+    // re-export references `composed`. The original
+    // `import { dep } from "./vendor.js"` line is dead in the
+    // residual; the trim drops the directive (mod_x preserves
+    // vendor.js evaluation through its own import).
+    let mut opts = FixtureOpts::new(
+        r#"import { dep } from "./vendor.js";
+const composed = dep + 1;
+console.log(composed);
+export { composed };
+"#,
+        vec![
+            json!({
+                "id": "logical__mod_x",
+                "operation": "define_logical_module",
+                "selector": { "chunkId": "static/app" },
+                "target": { "path": "mod_x" },
+                "members": [{
+                    "id": "m_composed",
+                    "name": "Composed",
+                    "selector": { "binding": { "name": "composed" } },
+                }],
+            }),
+            json!({
+                "id": "logical__mod_dep",
+                "operation": "define_logical_module",
+                "selector": { "chunkId": "static/app" },
+                "target": { "path": "mod_dep" },
+                "members": [{
+                    "id": "m_dep",
+                    "name": "Dep",
+                    "selector": { "binding": { "name": "dep", "kind": "ImportSpecifier" } },
+                }],
+            }),
+        ],
+    );
+    opts.extra_files = &[("static/app/vendor.js", "export const dep = 41;\n")];
+    let fixture = run_logical_modules_e2e_fixture(opts);
+
+    let entry = fs::read_to_string(fixture.out_root.join("static/app/entry.js"))
+        .expect("read residual entry");
+    assert!(
+        !entry.contains("./vendor.js"),
+        "residual must drop the dead `import {{ dep }} from \"./vendor.js\"` line; got:\n{entry}",
+    );
+
+    // Behaviour preservation: vendor.js is still evaluated via
+    // mod_x's own re-import of `dep`, so `composed = dep + 1 = 42`
+    // and the re-export keeps the original public surface.
+    assert_entry_output(&fixture, "42\n");
+}
