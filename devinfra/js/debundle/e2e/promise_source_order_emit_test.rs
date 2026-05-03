@@ -23,7 +23,6 @@
 use debundle_e2e_support::*;
 use std::fs;
 
-#[ignore = "Phase 3 promise: source-order emit replaces init wrappers"]
 #[test]
 fn realizable_spec_emits_source_order_modules_without_init_wrappers() {
     // `f()` and `g()` are unsafe inits per the legacy heuristic.

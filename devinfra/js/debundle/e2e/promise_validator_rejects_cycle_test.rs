@@ -22,7 +22,6 @@
 use debundle_e2e_support::*;
 use serde_json::json;
 
-#[ignore = "Phase 3 promise: validator rejects cyclic specs at materialize time"]
 #[test]
 fn cyclic_spec_is_rejected_with_clear_error() {
     // Source: A and C are independent decls; B reads A at-init,

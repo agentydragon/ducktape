@@ -125,7 +125,6 @@ struct MemberRequest {
 struct TopLevelDecl {
     ordinal: usize,
     names: Vec<String>,
-    item: ModuleItem,
 }
 
 #[derive(Debug, Clone)]
@@ -320,6 +319,19 @@ pub fn materialize_logical_modules(
             Schedule::build(chunk_id.clone(), facts, ownership, logical_modules)
         };
         let schedule_report = schedule.validate();
+
+        // Phase 3 hard gate: a cyclic spec is unrealizable; refuse to
+        // emit instead of producing a runtime-broken bundle. Cycles
+        // are reported with the responsible (statement, binding)
+        // pairs so the spec author can locate and break each cycle.
+        if !schedule_report.cycles.is_empty() {
+            let serialized = serde_json::to_string_pretty(&schedule_report.cycles)
+                .unwrap_or_else(|_| "<failed to serialize cycles>".to_string());
+            bail!(
+                "materialize_logical_modules: chunk {chunk_id} has {} cycle(s) in the at-init module dep graph; spec is unrealizable. Resolve by colocating cyclically-coupled bindings or making the offending reads lazy. Cycle evidence:\n{serialized}",
+                schedule_report.cycles.len(),
+            );
+        }
 
         let lowered = lower_chunk(LowerChunkInputs {
             artifact,
@@ -517,8 +529,6 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         }
     }
 
-    let requires_init_by_module =
-        init_required_modules(declarations, binding_assignment, module_plans.len());
     let mut selected_by_module = BTreeMap::<usize, Vec<ModuleItem>>::new();
     let mut selected_exports_by_module = BTreeMap::<usize, BTreeMap<String, String>>::new();
     for (module_index, plan) in module_plans.iter().enumerate() {
@@ -543,7 +553,6 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
     }
 
     let mut entry_body = Vec::new();
-    let mut called_init_modules = BTreeSet::<usize>::new();
     let import_insert_index = runtime_ast
         .module
         .body
@@ -555,18 +564,9 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             entry_body.push(item.clone());
             continue;
         }
-        let selected_module_index = assigned_module_for_item(item, binding_assignment);
         let mut remaining =
             remaining_item_after_selection(item, binding_assignment, &mut selected_by_module)?;
         entry_body.append(&mut remaining);
-        if let Some(module_index) = selected_module_index
-            && requires_init_by_module.contains(&module_index)
-            && called_init_modules.insert(module_index)
-        {
-            entry_body.push(init_call_statement(&init_name_for_plan(
-                &module_plans[module_index],
-            )));
-        }
     }
     let mut entry_imports = Vec::<ModuleItem>::new();
     let mut occupied = collect_occupied_local_names(&entry_body);
@@ -586,16 +586,11 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             .filter(|(name, _)| binding_assignment.contains_key(*name))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
-        if live_bindings.is_empty() && !requires_init_by_module.contains(&module_index) {
+        if live_bindings.is_empty() {
             continue;
         }
         let mut emit_renames = BTreeMap::<String, String>::new();
-        let mut resolved =
-            disambiguate_import_locals(&live_bindings, &mut occupied, &mut emit_renames);
-        if requires_init_by_module.contains(&module_index) {
-            let init_name = init_name_for_plan(plan);
-            resolved.insert(init_name.clone(), init_name);
-        }
+        let resolved = disambiguate_import_locals(&live_bindings, &mut occupied, &mut emit_renames);
         // A rename only propagates to consumer-body references when the
         // moved decl actually belongs to this plan. Plans that listed a
         // binding without owning the decl emit a dangling import; the
@@ -661,14 +656,8 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
     for (index, plan) in module_plans.iter().enumerate() {
         let mut body = selected_by_module.remove(&index).unwrap_or_default();
         let local_renames = naturalize_module_body(&mut body, plan);
-        let mut module_imports = cross_module_imports_for_body(
-            index,
-            &plan.target_file,
-            &body,
-            schedule,
-            module_plans,
-            &requires_init_by_module,
-        );
+        let mut module_imports =
+            cross_module_imports_for_body(index, &plan.target_file, &body, schedule, module_plans);
         // Re-import any source-chunk import-specifier-bound locals that
         // moved code in `body` references but no top-level decl
         // satisfies (e.g. `const { decode } = gge;` where `gge` was an
@@ -713,18 +702,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone())),
             );
-            if requires_init_by_module.contains(&index) {
-                let dep_init_names = init_dep_names_for_body(
-                    index,
-                    &body,
-                    module_plans,
-                    binding_assignment,
-                    &requires_init_by_module,
-                );
-                body = initialized_module_body(plan, body, &exports, &dep_init_names)?;
-            } else {
-                body.push(export_named_for_bindings(&exports));
-            }
+            body.push(export_named_for_bindings(&exports));
         } else if !import_member_exports.is_empty() {
             body.push(export_named_for_bindings(&import_member_exports));
         }
@@ -858,11 +836,7 @@ fn collect_top_level_declarations(module: &Module) -> Vec<TopLevelDecl> {
         if names.is_empty() {
             continue;
         }
-        out.push(TopLevelDecl {
-            ordinal,
-            names,
-            item: item.clone(),
-        });
+        out.push(TopLevelDecl { ordinal, names });
     }
     out
 }
@@ -956,122 +930,12 @@ fn reject_duplicate_export_names(
     Ok(())
 }
 
-fn init_required_modules(
-    declarations: &[TopLevelDecl],
-    binding_assignment: &BTreeMap<String, usize>,
-    module_count: usize,
-) -> BTreeSet<usize> {
-    let mut required = BTreeSet::new();
-    for decl in declarations {
-        let Some(module_index) = assigned_module_for_names(&decl.names, binding_assignment) else {
-            continue;
-        };
-        if module_index >= module_count {
-            continue;
-        }
-        if item_requires_init_wrapper_for_module(&decl.item, module_index, binding_assignment) {
-            required.insert(module_index);
-        }
-    }
-    required
-}
-
-fn item_requires_init_wrapper_for_module(
-    item: &ModuleItem,
-    module_index: usize,
-    binding_assignment: &BTreeMap<String, usize>,
-) -> bool {
-    match item {
-        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => {
-            var_requires_init_wrapper_for_module(var, module_index, binding_assignment)
-        }
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => match &export_decl.decl {
-            Decl::Var(var) => {
-                var_requires_init_wrapper_for_module(var, module_index, binding_assignment)
-            }
-            _ => false,
-        },
-        _ => false,
-    }
-}
-
-fn var_requires_init_wrapper_for_module(
-    var: &VarDecl,
-    module_index: usize,
-    binding_assignment: &BTreeMap<String, usize>,
-) -> bool {
-    if var.kind == VarDeclKind::Var {
-        return false;
-    }
-    var.decls.iter().any(|declarator| {
-        let names = binding_names(&declarator.name);
-        if !names
-            .iter()
-            .any(|name| binding_assignment.get(name) == Some(&module_index))
-        {
-            return false;
-        }
-        declarator
-            .init
-            .as_deref()
-            .is_some_and(|init| !is_plain_import_safe_initializer(init))
-    })
-}
-
-fn is_plain_import_safe_initializer(expr: &Expr) -> bool {
-    match expr {
-        Expr::Lit(_) | Expr::Ident(_) | Expr::Fn(_) | Expr::Arrow(_) | Expr::Class(_) => true,
-        Expr::Unary(unary) => is_plain_import_safe_initializer(&unary.arg),
-        Expr::Bin(binary) => {
-            is_plain_import_safe_initializer(&binary.left)
-                && is_plain_import_safe_initializer(&binary.right)
-        }
-        Expr::Tpl(template) => template
-            .exprs
-            .iter()
-            .all(|expr| is_plain_import_safe_initializer(expr)),
-        Expr::Array(array) => array
-            .elems
-            .iter()
-            .flatten()
-            .all(|element| is_plain_import_safe_initializer(&element.expr)),
-        Expr::Object(object) => object.props.iter().all(|prop| match prop {
-            PropOrSpread::Spread(spread) => is_plain_import_safe_initializer(&spread.expr),
-            PropOrSpread::Prop(prop) => match &**prop {
-                Prop::KeyValue(key_value) => {
-                    is_plain_import_safe_propname(&key_value.key)
-                        && is_plain_import_safe_initializer(&key_value.value)
-                }
-                Prop::Shorthand(_) => true,
-                Prop::Method(_) | Prop::Getter(_) | Prop::Setter(_) => true,
-                Prop::Assign(assign) => is_plain_import_safe_initializer(&assign.value),
-            },
-        }),
-        _ => false,
-    }
-}
-
-fn is_plain_import_safe_propname(name: &PropName) -> bool {
-    match name {
-        PropName::Computed(computed) => is_plain_import_safe_initializer(&computed.expr),
-        _ => true,
-    }
-}
-
-fn assigned_module_for_item(
-    item: &ModuleItem,
-    binding_assignment: &BTreeMap<String, usize>,
-) -> Option<usize> {
-    assigned_module_for_names(&top_level_declaration_names(item), binding_assignment)
-}
-
 fn cross_module_imports_for_body(
     module_index: usize,
     from_file: &str,
     body: &[ModuleItem],
     schedule: &Schedule,
-    module_plans: &[ModulePlan],
-    requires_init: &BTreeSet<usize>,
+    _module_plans: &[ModulePlan],
 ) -> Vec<ModuleItem> {
     let mut imports_by_provider = BTreeMap::<usize, BTreeMap<String, String>>::new();
     for item in body {
@@ -1094,21 +958,6 @@ fn cross_module_imports_for_body(
                 .entry(provider_index)
                 .or_default()
                 .insert(name, exported_name.clone());
-        }
-    }
-    // For each provider that requires init, also import its init
-    // function so we can call it from our own init's prelude.
-    // (Init-wrapper machinery; deleted in Phase 3.)
-    if requires_init.contains(&module_index) {
-        for (provider_index, bindings) in imports_by_provider.iter_mut() {
-            if !requires_init.contains(provider_index) {
-                continue;
-            }
-            let Some(provider_plan) = module_plans.get(*provider_index) else {
-                continue;
-            };
-            let init_name = init_name_for_plan(provider_plan);
-            bindings.insert(init_name.clone(), init_name);
         }
     }
     imports_by_provider
@@ -1581,264 +1430,6 @@ fn is_identifier_like(name: &str) -> bool {
         return false;
     }
     chars.all(|ch| ch == '_' || ch == '$' || ch.is_ascii_alphanumeric())
-}
-
-fn initialized_module_body(
-    plan: &ModulePlan,
-    body: Vec<ModuleItem>,
-    exports: &BTreeMap<String, String>,
-    dep_init_names: &[String],
-) -> Result<Vec<ModuleItem>> {
-    let mut out = Vec::new();
-    let mut init_statements = Vec::new();
-    for item in body {
-        match item {
-            ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => {
-                push_initialized_var_decl(*var, &mut out, &mut init_statements)?;
-            }
-            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => match export_decl.decl {
-                Decl::Var(var) => {
-                    push_initialized_var_decl(*var, &mut out, &mut init_statements)?;
-                }
-                decl => out.push(ModuleItem::Stmt(Stmt::Decl(decl))),
-            },
-            other => out.push(other),
-        }
-    }
-    let init_name = init_name_for_plan(plan);
-    let flag_name = init_flag_name(&init_name);
-    // Idempotency guard for the init function: ensures the body
-    // runs at most once even when a circular module graph causes
-    // multiple inits to call into each other.
-    out.push(init_flag_decl(&flag_name));
-    let mut prelude = vec![
-        idempotency_guard_stmt(&flag_name),
-        set_flag_stmt(&flag_name),
-    ];
-    // Call cross-module init deps before our own assignments. This
-    // makes the init order follow the dependency direction rather
-    // than the source-ordinal-of-first-triggering-item order, so
-    // an init body that reads `B.foo` works even when the entry
-    // happens to call `init_A` first.
-    for dep_name in dep_init_names {
-        prelude.push(init_call_stmt(dep_name));
-    }
-    prelude.extend(init_statements);
-    out.push(export_init_function(&init_name, prelude));
-    out.push(export_named_for_bindings(exports));
-    Ok(out)
-}
-
-fn init_dep_names_for_body(
-    module_index: usize,
-    body: &[ModuleItem],
-    module_plans: &[ModulePlan],
-    binding_assignment: &BTreeMap<String, usize>,
-    requires_init: &BTreeSet<usize>,
-) -> Vec<String> {
-    let mut deps = BTreeSet::<usize>::new();
-    for item in body {
-        for name in collect_referenced_idents(item) {
-            let Some(provider) = binding_assignment.get(&name).copied() else {
-                continue;
-            };
-            if provider == module_index {
-                continue;
-            }
-            if !requires_init.contains(&provider) {
-                continue;
-            }
-            deps.insert(provider);
-        }
-    }
-    deps.into_iter()
-        .filter_map(|idx| module_plans.get(idx).map(init_name_for_plan))
-        .collect()
-}
-
-fn init_flag_name(init_name: &str) -> String {
-    format!(
-        "__dt_inited{}",
-        init_name.trim_start_matches("__dt_generated_init")
-    )
-}
-
-fn init_flag_decl(flag_name: &str) -> ModuleItem {
-    ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(VarDecl {
-        span: DUMMY_SP,
-        ctxt: SyntaxContext::empty(),
-        kind: VarDeclKind::Var,
-        declare: false,
-        decls: vec![VarDeclarator {
-            span: DUMMY_SP,
-            name: Pat::Ident(BindingIdent {
-                id: Ident::new_no_ctxt(flag_name.into(), DUMMY_SP),
-                type_ann: None,
-            }),
-            init: Some(Box::new(Expr::Lit(Lit::Bool(Bool {
-                span: DUMMY_SP,
-                value: false,
-            })))),
-            definite: false,
-        }],
-    }))))
-}
-
-fn idempotency_guard_stmt(flag_name: &str) -> Stmt {
-    Stmt::If(IfStmt {
-        span: DUMMY_SP,
-        test: Box::new(Expr::Ident(Ident::new_no_ctxt(flag_name.into(), DUMMY_SP))),
-        cons: Box::new(Stmt::Return(ReturnStmt {
-            span: DUMMY_SP,
-            arg: None,
-        })),
-        alt: None,
-    })
-}
-
-fn set_flag_stmt(flag_name: &str) -> Stmt {
-    Stmt::Expr(ExprStmt {
-        span: DUMMY_SP,
-        expr: Box::new(Expr::Assign(AssignExpr {
-            span: DUMMY_SP,
-            op: AssignOp::Assign,
-            left: AssignTarget::Simple(SimpleAssignTarget::Ident(BindingIdent {
-                id: Ident::new_no_ctxt(flag_name.into(), DUMMY_SP),
-                type_ann: None,
-            })),
-            right: Box::new(Expr::Lit(Lit::Bool(Bool {
-                span: DUMMY_SP,
-                value: true,
-            }))),
-        })),
-    })
-}
-
-fn init_call_stmt(name: &str) -> Stmt {
-    Stmt::Expr(ExprStmt {
-        span: DUMMY_SP,
-        expr: Box::new(Expr::Call(CallExpr {
-            span: DUMMY_SP,
-            ctxt: SyntaxContext::empty(),
-            callee: Callee::Expr(Box::new(Expr::Ident(Ident::new_no_ctxt(
-                name.into(),
-                DUMMY_SP,
-            )))),
-            args: Vec::new(),
-            type_args: None,
-        })),
-    })
-}
-
-fn push_initialized_var_decl(
-    var: VarDecl,
-    out: &mut Vec<ModuleItem>,
-    init_statements: &mut Vec<Stmt>,
-) -> Result<()> {
-    let mut declarations = Vec::new();
-    for declarator in var.decls {
-        if let Some(init) = declarator.init.clone() {
-            init_statements.push(assignment_statement_for_declarator(&declarator, init)?);
-        }
-        declarations.push(VarDeclarator {
-            init: None,
-            ..declarator
-        });
-    }
-    // `var`, not `let`: a circular module-load can read the binding
-    // before this placeholder line executes (the source chunk's
-    // imports may pull a consumer module that reads our exports at
-    // top level). Under `let`, that's TDZ — `ReferenceError: Cannot
-    // access 'X' before initialization`. Under `var`, the binding is
-    // hoisted and reads as `undefined`. The init function we own is
-    // the only writer, so the let-style "no double init" guarantee
-    // is meaningless here.
-    out.push(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(VarDecl {
-        span: var.span,
-        ctxt: var.ctxt,
-        kind: VarDeclKind::Var,
-        declare: var.declare,
-        decls: declarations,
-    })))));
-    Ok(())
-}
-
-fn assignment_statement_for_declarator(
-    declarator: &VarDeclarator,
-    init: Box<Expr>,
-) -> Result<Stmt> {
-    let left: AssignTarget = declarator.name.clone().try_into().map_err(|_| {
-        anyhow::anyhow!("init-wrapper lowering only supports assignable binding patterns")
-    })?;
-    Ok(Stmt::Expr(ExprStmt {
-        span: DUMMY_SP,
-        expr: Box::new(Expr::Assign(AssignExpr {
-            span: DUMMY_SP,
-            op: AssignOp::Assign,
-            left,
-            right: init,
-        })),
-    }))
-}
-
-fn export_init_function(name: &str, statements: Vec<Stmt>) -> ModuleItem {
-    ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
-        span: DUMMY_SP,
-        decl: Decl::Fn(FnDecl {
-            ident: Ident::new_no_ctxt(name.into(), DUMMY_SP),
-            declare: false,
-            function: Box::new(Function {
-                params: Vec::new(),
-                decorators: Vec::new(),
-                span: DUMMY_SP,
-                ctxt: SyntaxContext::empty(),
-                body: Some(BlockStmt {
-                    span: DUMMY_SP,
-                    ctxt: SyntaxContext::empty(),
-                    stmts: statements,
-                }),
-                is_generator: false,
-                is_async: false,
-                type_params: None,
-                return_type: None,
-            }),
-        }),
-    }))
-}
-
-fn init_call_statement(name: &str) -> ModuleItem {
-    ModuleItem::Stmt(Stmt::Expr(ExprStmt {
-        span: DUMMY_SP,
-        expr: Box::new(Expr::Call(CallExpr {
-            span: DUMMY_SP,
-            ctxt: SyntaxContext::empty(),
-            callee: Callee::Expr(Box::new(Expr::Ident(Ident::new_no_ctxt(
-                name.into(),
-                DUMMY_SP,
-            )))),
-            args: Vec::new(),
-            type_args: None,
-        })),
-    }))
-}
-
-fn init_name_for_plan(plan: &ModulePlan) -> String {
-    sanitize_identifier(&format!(
-        "__dt_generated_init__{}",
-        plan.requested.target_path
-    ))
-}
-
-fn sanitize_identifier(value: &str) -> String {
-    let mut out = String::new();
-    for (index, ch) in value.chars().enumerate() {
-        let valid = ch == '_' || ch == '$' || ch.is_ascii_alphanumeric();
-        if index == 0 && ch.is_ascii_digit() {
-            out.push('_');
-        }
-        out.push(if valid { ch } else { '_' });
-    }
-    if out.is_empty() { "_".to_string() } else { out }
 }
 
 fn target_file_for_request(target_dir: &str, target_path: &str) -> Result<String> {

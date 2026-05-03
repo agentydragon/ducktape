@@ -150,9 +150,18 @@ export { c };
 }
 
 #[test]
-fn emits_an_init_wrapper_when_the_extracted_module_has_top_level_effects() {
-    // The initializer of `a` has a side effect (the comma expression),
-    // forcing the extractor to emit an init wrapper rather than a plain const.
+fn emits_top_level_effects_inline_in_extracted_module() {
+    // The initializer of `a` has a side effect (the comma expression).
+    // Phase 3 emits source-order — the const lands inline in the
+    // module file, no init wrapper, no `__dt_generated_init__*`. The
+    // ESM linker handles init order through the import graph.
+    //
+    // We don't assert on entry stdout here: source-order emit
+    // evaluates mod_x at link time (before any entry top-level code
+    // runs), which is semantically different from the original
+    // chunk's "evaluate inline at this source ordinal". Specs that
+    // care about exact side-effect interleaving must declare the
+    // G' edges (Phase 3.5 work).
     let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
         r#"globalThis.log = "";
 const a = (globalThis.log += "a", 1);
@@ -164,16 +173,15 @@ export { a };
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/x.js",
-        &["export function __dt_generated_init__x"],
-        &[],
+        &["const a = (globalThis.log"],
+        &["__dt_generated_init__"],
     );
     assert_module_source(
         &fixture.out_root,
         "static/app/entry.js",
-        &["__dt_generated_init__x();"],
         &[],
+        &["__dt_generated_init__"],
     );
-    assert_entry_output(&fixture, "a 1\n");
 }
 
 // --- Rejections ------------------------------------------------------------
