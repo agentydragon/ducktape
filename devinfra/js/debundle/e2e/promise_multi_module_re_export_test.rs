@@ -1,23 +1,12 @@
-//! Phase 3 promise: two logical modules can re-export the same
-//! imported binding under different public names.
+//! Two logical modules can re-export the same imported binding
+//! under different public names.
 //!
-//! The legacy `binding_assignment: BTreeMap<String, usize>`
-//! pins one owner module per binding name. An
-//! `ImportSpecifier`-bound local from a vendor chunk can only
-//! be claimed by a single logical module; a second
-//! `define_logical_module` op naming the same binding either
-//! silently loses to the first or errors out via
-//! `reject_duplicate_export_names`.
-//!
-//! The new `BindingKind::Imported { re_exported_by:
-//! BTreeMap<ModuleId, BindingName> }` lets each logical module
-//! pick its own public name for the same vendor-side binding.
-//! Concrete use case: two parts of an app want to surface
-//! `vendor.j` (the JSX runtime), one as `jsxRuntime` and the
-//! other as `__jsx`, without colliding.
-//!
-//! The test below sets up that scenario. Phase 3 makes both
-//! logical modules emit cleanly side by side.
+//! `BindingKind::Imported { re_exported_by: BTreeMap<ModuleId,
+//! BindingName> }` lets each logical module pick its own public
+//! name for the same source-chunk binding. Concrete use case:
+//! two parts of an app surface `vendor.j` (the JSX runtime) —
+//! one as `jsxRuntime`, the other as `__jsx` — without
+//! colliding.
 
 use debundle_e2e_support::*;
 use serde_json::json;

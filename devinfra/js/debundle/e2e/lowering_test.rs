@@ -119,12 +119,13 @@ export { b };
     assert_entry_output(&fixture, "x\n");
 }
 
-// --- Module structure: plain-import vs. init-wrapper -----------------------
+// --- Emit shape regression guards ------------------------------------------
 
 #[test]
 fn emits_a_plain_import_without_an_init_wrapper_for_a_pure_module() {
-    // The runtime side effect references `c` (residual), not the extracted
-    // bindings, so nothing gets attached to the module's init wrapper.
+    // Init-wrapper machinery is gone; the negative `__dt_generated_init__`
+    // assertion is a regression guard. The runtime side effect references
+    // `c` (residual), not the extracted bindings.
     let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
         r#"const a = 1;
 function b() { return a; }
@@ -152,16 +153,17 @@ export { c };
 #[test]
 fn emits_top_level_effects_inline_in_extracted_module() {
     // The initializer of `a` has a side effect (the comma expression).
-    // Phase 3 emits source-order — the const lands inline in the
-    // module file, no init wrapper, no `__dt_generated_init__*`. The
-    // ESM linker handles init order through the import graph.
+    // Source-order emit lands the const inline; no init wrapper, no
+    // `__dt_generated_init__*`. The ESM linker handles init order
+    // through the import graph.
     //
     // We don't assert on entry stdout here: source-order emit
     // evaluates mod_x at link time (before any entry top-level code
     // runs), which is semantically different from the original
     // chunk's "evaluate inline at this source ordinal". Specs that
-    // care about exact side-effect interleaving must declare the
-    // G' edges (Phase 3.5 work).
+    // care about exact side-effect interleaving need G' edge
+    // tracking, which is a known limitation (see DESIGN.md "Side-
+    // effect ordering").
     let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
         r#"globalThis.log = "";
 const a = (globalThis.log += "a", 1);

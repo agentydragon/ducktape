@@ -1,37 +1,26 @@
-//! Init-call order across modules.
+//! Init order across modules.
 //!
-//! When `materialize_logical_modules` routes two plans through the
-//! init-wrapper pattern and one plan's init body references the
-//! other's binding, the order in which the init functions are
-//! called from the residual entry must follow the dependency
-//! direction: the dependency target (`modB`'s init) must run
-//! before the dependent (`modA`'s init).
-//!
-//! Today the entry calls inits in source-ordinal-of-first-triggering-
-//! item order. When `modA`'s first binding precedes `modB`'s in
-//! source but `modA`'s later body references `modB`'s binding,
-//! `modA`'s init runs first, reads `modB`'s binding (still
-//! `undefined` under the var-placeholder shape), and any property
-//! access on it throws `TypeError: Cannot read properties of
-//! undefined`. This mirrors the Tana smoke's
-//! `m.dataTypeNumberId` failure where `m` belongs to
-//! `runtime_vendor_symbols` (init at line 381) but the init body
-//! that reads it lives in `ai_mcp_prompting_runtime` (init at line
-//! 282).
+//! When `modA`'s body reads a binding owned by `modB` at-init,
+//! `modB` must evaluate first. Source-order emit hands this off
+//! to the ESM linker via cross-module imports: the import line
+//! in `modA` declares the dep, and the linker topologically
+//! sorts before evaluation. The fixture below verifies that
+//! semantic via stdout — even when the modules' source bindings
+//! interleave in a way the legacy init-wrapper pattern got
+//! wrong.
 
 use debundle_e2e_support::*;
 use serde_json::json;
 
 #[test]
 fn init_call_order_respects_cross_module_dependency() {
-    // - `modA` owns `x1` (source item 1, unsafe init) and `x2`
-    //   (source item 3; init reads `y.id`).
-    // - `modB` owns `y` (source item 2, unsafe init).
+    // - `modA` owns `x1` (source item 1) and `x2` (source item 3;
+    //   init reads `y.id`).
+    // - `modB` owns `y` (source item 2).
     //
-    // Source order has `x1` first, so `modA`'s init is called by
-    // the entry first. `modA`'s init body has `x2 = { [y.id]: "v" }`;
-    // if `modB`'s init hasn't run yet, `y` is `undefined` and the
-    // computed-key access throws TypeError on module load.
+    // Source order has `x1` first, but `modA`'s body reads `y`
+    // at-init through `{ [y.id]: "v" }`. The cross-module import
+    // declares the dep and the ESM linker evaluates `modB` first.
     let opts = FixtureOpts::new(
         r#"function f() { return { id: "k" }; }
 const x1 = f();

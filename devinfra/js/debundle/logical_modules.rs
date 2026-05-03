@@ -131,8 +131,11 @@ struct TopLevelDecl {
 struct ModulePlan {
     id: String,
     target_file: String,
+    /// Logical module path the spec asked for (e.g. `"ai/mcp/foo"`).
+    /// Distinct from `target_file`, which is the chunk-relative
+    /// emitted file path (e.g. `"modules/foo.js"`).
+    target_path: String,
     explicit: bool,
-    requested: LogicalRequest,
     /// Local-name → public-export-name for every owned binding this
     /// plan claims (i.e. members whose `selector.binding.kind` is
     /// _not_ `ImportSpecifier`). ImportSpecifier-bound members live
@@ -260,8 +263,8 @@ pub fn materialize_logical_modules(
             module_plans.push(ModulePlan {
                 id: request.id.clone(),
                 target_file: dest_target_file,
+                target_path: request.target_path.clone(),
                 explicit: true,
-                requested: request.clone(),
                 bindings,
             });
         }
@@ -288,8 +291,8 @@ pub fn materialize_logical_modules(
                 module_plans.push(ModulePlan {
                     id: residual.id.clone(),
                     target_file: target_file_for_request(&target_dir, &residual.target_path)?,
+                    target_path: residual.target_path.clone(),
                     explicit: false,
-                    requested: residual,
                     bindings: residual_bindings,
                 });
             }
@@ -390,7 +393,7 @@ pub fn materialize_logical_modules(
                 file: plan.target_file.clone(),
                 id: plan.id.clone(),
                 member_names: plan.bindings.values().cloned().collect(),
-                path: plan.requested.target_path.clone(),
+                path: plan.target_path.clone(),
                 owner_ids: plan.bindings.keys().cloned().collect(),
             })
             .collect::<Vec<_>>();

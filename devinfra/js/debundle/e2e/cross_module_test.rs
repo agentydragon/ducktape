@@ -6,8 +6,8 @@ use debundle_e2e_support::*;
 #[test]
 fn extracted_module_imports_unowned_helper_from_residual() {
     // Spec claims only `b` for mod_x. Its helper `a` is unclaimed,
-    // so post Phase 1.7 (no closure pass), `a` stays in the
-    // residual entry; mod_x imports it.
+    // so `a` stays in the residual entry; mod_x imports it.
+    // Nothing is implicit — the spec is the only routing.
     let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
         r#"const a = x => "h:" + x;
 const b = x => a(x);

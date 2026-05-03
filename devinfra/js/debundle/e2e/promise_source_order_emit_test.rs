@@ -1,24 +1,14 @@
-//! Phase 3 promise: a realizable spec emits source-order ESM
-//! modules with no init-wrapper scaffolding.
+//! A realizable spec emits source-order ESM modules with no
+//! init-wrapper scaffolding.
 //!
-//! The legacy lowering wraps any module whose source has even
-//! one "unsafe" initializer (function call, member access,
-//! anything the conservative `is_plain_import_safe_initializer`
-//! check rejects) in an `__dt_generated_init__<plan>()`
-//! function called from the residual entry. Every binding in
-//! the module gets demoted to a `var X;` placeholder whose
-//! value is assigned inside that init function.
-//!
-//! Under the new design, the emitted module is a plain ESM
-//! file: imports, declarations in source order with their
-//! original kind (`const`/`let`/`class`/`function`), exports.
-//! The ESM linker handles cross-module init order through the
-//! dep graph. There is no `__dt_generated_init__` symbol, no
-//! idempotency flag, no `var X; X = ...` placeholder pattern.
-//!
-//! The test below pins the new emit's shape on a simple split
-//! that the legacy emit handles via the wrapper. Phase 3 makes
-//! this assertion pass.
+//! Each emitted module is a plain ESM file: imports,
+//! declarations in source order with their original kind
+//! (`const`/`let`/`class`/`function`), exports. The ESM linker
+//! handles cross-module init order through the dep graph. There
+//! is no `__dt_generated_init__` symbol, no idempotency flag,
+//! no `var X; X = ...` placeholder pattern. This test pins that
+//! shape on a simple split where every initializer is a function
+//! call (which the legacy emit treated as "unsafe" and wrapped).
 
 use debundle_e2e_support::*;
 use std::fs;

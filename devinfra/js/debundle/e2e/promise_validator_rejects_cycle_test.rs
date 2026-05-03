@@ -1,23 +1,12 @@
-//! Phase 3 promise: a spec that produces a cycle in the at-init
-//! module dep graph is rejected by `materialize_logical_modules`
-//! with a clear error before any emit happens.
+//! A spec that produces a cycle in the at-init module dep graph
+//! is rejected by `materialize_logical_modules` with a clear
+//! error before any emit happens.
 //!
-//! Today the legacy emit silently produces an init-wrapper
-//! cascade that papers over the cycle at runtime, often by
-//! reading TDZ bindings or undefined values (the smoke errors
-//! we hand-debugged were all symptoms of cycles the legacy
-//! emitted anyway). The new design surfaces the cycle as a
-//! structured error during the materialize pipeline stage,
-//! before the bundle ever loads.
-//!
-//! The test fixture below sets up a small chunk where two
-//! modules read each other's init-time bindings — mod_x reads
-//! a binding owned by mod_y, mod_y reads a binding owned by
-//! mod_x. The legacy emit accepts this and produces a runtime
-//! crash; the new design rejects with a clear message.
-//!
-//! This test is `#[ignore]`'d until Phase 3 lands; running it
-//! with `--include-ignored` verifies the new contract.
+//! The fixture below sets up a small chunk where two modules
+//! read each other's init-time bindings — mod_x reads a binding
+//! owned by mod_y, mod_y reads a binding owned by mod_x. No
+//! ESM evaluation order can satisfy this; the validator surfaces
+//! it at materialize time so it never reaches the browser.
 
 use debundle_e2e_support::*;
 use serde_json::json;

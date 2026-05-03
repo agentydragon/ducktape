@@ -18,7 +18,7 @@
 //!    unrealizable case — no ESM evaluation order can satisfy the
 //!    spec's assignment without papering over the cycle at runtime.
 //!    `materialize_logical_modules` aborts when this validator
-//!    reports cycles (Phase 3).
+//!    reports cycles.
 //!
 //! The output is a JSON report listing the cycles + their evidence
 //! (which `(statement, binding)` pairs form each cycle), plus
@@ -91,11 +91,7 @@ pub enum BindingKind {
 /// A logical module produced by the spec for the current chunk.
 /// Projection of `ModulePlan` carrying the fields downstream emit
 /// helpers consume (`cross_module_imports_for_body`,
-/// `source_chunk_imports_for_moved_body`, etc.). Spec-side
-/// bookkeeping (`requested: LogicalRequest`, `import_members`)
-/// stays on `ModulePlan`; the import-members migration into
-/// `BindingKind::Imported` is the open follow-on listed in
-/// DESIGN.md's Phase 4.
+/// `source_chunk_imports_for_moved_body`, etc.).
 #[derive(Debug, Clone)]
 pub struct LogicalModule {
     pub id: String,
