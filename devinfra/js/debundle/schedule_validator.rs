@@ -291,17 +291,56 @@ impl Visit for TopLevelAwaitFinder {
     fn visit_getter_prop(&mut self, _node: &GetterProp) {}
     fn visit_setter_prop(&mut self, _node: &SetterProp) {}
 
+    // Class-member handling mirrors `AtInitReadCollector::visit_class_member`:
+    //   - computed property keys are eager (evaluated at class-decl
+    //     time) regardless of `is_static`;
+    //   - `is_static` field initializers + static blocks are eager;
+    //   - instance field initializers are evaluated per-`new`, so
+    //     they're lazy from the class-decl's POV;
+    //   - method bodies are functions and the `visit_function`
+    //     override above keeps them lazy.
     fn visit_class_member(&mut self, member: &ClassMember) {
         match member {
-            // Static blocks and static-prop initializers run at
-            // class-decl time. If the class is at module-top,
-            // an `await` there is top-level.
-            ClassMember::StaticBlock(_) | ClassMember::ClassProp(_) => {
-                member.visit_children_with(self);
+            ClassMember::Method(method) => {
+                self.visit_prop_name(&method.key);
             }
-            // Instance fields, methods, accessors, constructors —
-            // lazy.
-            _ => {}
+            ClassMember::PrivateMethod(_) => {}
+            ClassMember::Constructor(_) => {}
+            ClassMember::ClassProp(prop) => {
+                self.visit_prop_name(&prop.key);
+                if prop.is_static
+                    && let Some(value) = &prop.value
+                {
+                    value.visit_with(self);
+                }
+            }
+            ClassMember::PrivateProp(prop) => {
+                if prop.is_static
+                    && let Some(value) = &prop.value
+                {
+                    value.visit_with(self);
+                }
+            }
+            ClassMember::StaticBlock(block) => {
+                block.visit_with(self);
+            }
+            ClassMember::TsIndexSignature(_) | ClassMember::Empty(_) => {}
+            ClassMember::AutoAccessor(accessor) => {
+                if let Key::Public(name) = &accessor.key {
+                    self.visit_prop_name(name);
+                }
+                if accessor.is_static
+                    && let Some(value) = &accessor.value
+                {
+                    value.visit_with(self);
+                }
+            }
+        }
+    }
+
+    fn visit_prop_name(&mut self, name: &PropName) {
+        if let PropName::Computed(computed) = name {
+            computed.expr.visit_with(self);
         }
     }
 }
@@ -362,21 +401,32 @@ fn split_comma_list_var_decls(body: &[ModuleItem]) -> Vec<ModuleItem> {
 }
 
 /// Walk `body` and collect the subset of `WHITELIST_RECEIVERS`
-/// that are declared at the chunk's top-level scope. The
-/// classifier consults this set to skip the whitelist for any
-/// receiver the chunk shadows — `const Math = …` makes
-/// `Math.PI` an unknown read, not the global constant. See
-/// DESIGN.md A8.
+/// that are declared at the chunk's top-level scope (`var/let/const`,
+/// `function`, `class`, exported decls) or bound by an import
+/// specifier (default / namespace / named). The classifier consults
+/// this set to skip the whitelist for any receiver the chunk
+/// shadows — `const Math = …` and
+/// `import { Math } from "./userland"` both make `Math.PI` an
+/// Unknown read, not the global constant. See DESIGN.md A8.
 fn compute_shadowed_globals(body: &[ModuleItem]) -> BTreeSet<&'static str> {
     let mut shadowed = BTreeSet::new();
+    let try_shadow = |name: &str, into: &mut BTreeSet<&'static str>| {
+        if let Some(global) = WHITELIST_RECEIVERS.iter().copied().find(|r| *r == name) {
+            into.insert(global);
+        }
+    };
     for item in body {
         for name in collect_declared_names(item) {
-            if let Some(global) = WHITELIST_RECEIVERS
-                .iter()
-                .copied()
-                .find(|r| *r == name.as_str())
-            {
-                shadowed.insert(global);
+            try_shadow(name.as_str(), &mut shadowed);
+        }
+        if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {
+            for spec in &import.specifiers {
+                let local = match spec {
+                    ImportSpecifier::Named(named) => named.local.sym.as_ref(),
+                    ImportSpecifier::Default(default) => default.local.sym.as_ref(),
+                    ImportSpecifier::Namespace(namespace) => namespace.local.sym.as_ref(),
+                };
+                try_shadow(local, &mut shadowed);
             }
         }
     }
@@ -2004,6 +2054,38 @@ mod tests {
         assert_eq!(
             classify_with_module("const other = userland;", "Math.PI"),
             Purity::Pure
+        );
+    }
+
+    #[test]
+    fn import_specifier_locals_shadow_whitelist() {
+        // Import bindings are top-level lexical decls and shadow
+        // the global the same way `const Math = …` does. The
+        // classifier must reach the same Unknown fallback. (Soundness
+        // matters: the imported value can be anything, so
+        // `<imported>.<prop>` is a property read that may fire a
+        // user-defined getter.)
+        assert_eq!(
+            classify_with_module(r#"import { Math } from "./userland.js";"#, "Math.PI"),
+            Purity::Unknown
+        );
+        assert_eq!(
+            classify_with_module(r#"import Boolean from "./userland.js";"#, "Boolean(x)"),
+            Purity::Unknown
+        );
+        assert_eq!(
+            classify_with_module(
+                r#"import * as Number from "./userland.js";"#,
+                "Number.isNaN(x)"
+            ),
+            Purity::Unknown
+        );
+        assert_eq!(
+            classify_with_module(
+                r#"import { something as Array } from "./userland.js";"#,
+                "Array.isArray(x)"
+            ),
+            Purity::Unknown
         );
     }
 

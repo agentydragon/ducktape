@@ -966,18 +966,21 @@ impl Visit for RefCollector {
 /// body whose locals are unused after a logical-module move and
 /// whose binding name is claimed by `Schedule.bindings`. If all
 /// of an import directive's specifiers are dropped, the directive
-/// itself is dropped — the imported source-module's side effects
-/// remain triggered through the moved logical module's own
-/// import (which carries the `claimed` binding into the moved
-/// module's import statement).
+/// is converted to a side-effect-only `import "<src>";` rather
+/// than removed — the imported source-module's evaluation must
+/// still be triggered from the residual entry, since some plans
+/// (e.g. ImportSpecifier-only logical modules with no `Owned`
+/// bindings) are not imported by the residual at runtime and so
+/// cannot stand in for the source-module evaluation.
 ///
-/// Default and namespace specifiers are kept conservatively (a
-/// namespace access can be hidden behind a computed property
-/// read; defaults are similarly hard to ref-count safely).
-/// Side-effect-only imports (`import "./mod.js"`) pass through
-/// unchanged — they had no specifiers to begin with.
+/// Default and namespace specifiers are kept as-is (a namespace
+/// access can be hidden behind a computed property read;
+/// defaults are similarly hard to ref-count safely).
+/// Side-effect-only imports (`import "./mod.js"` with no
+/// specifiers) pass through unchanged — they had no specifiers
+/// to begin with.
 fn trim_dead_named_specifiers(
-    body: &mut Vec<ModuleItem>,
+    body: &mut [ModuleItem],
     bindings: &BTreeMap<BindingName, BindingKind>,
 ) {
     let mut refs = BTreeSet::<String>::new();
@@ -986,14 +989,14 @@ fn trim_dead_named_specifiers(
         item.visit_with(&mut collector);
         refs.append(&mut collector.names);
     }
-    body.retain_mut(|item| {
+    for item in body.iter_mut() {
         let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
-            return true;
+            continue;
         };
         // Side-effect-only imports never had specifiers; leave
         // them alone (they exist to evaluate the imported module).
         if import.specifiers.is_empty() {
-            return true;
+            continue;
         }
         import.specifiers.retain(|spec| match spec {
             ImportSpecifier::Default(_) | ImportSpecifier::Namespace(_) => true,
@@ -1004,8 +1007,12 @@ fn trim_dead_named_specifiers(
                 !(claimed && unused)
             }
         });
-        !import.specifiers.is_empty()
-    });
+        // The directive's `specifiers: vec![]` shape is itself a
+        // side-effect-only import — `import "./mod.js";`. Keeping
+        // it preserves the source-module evaluation that the
+        // original entry depended on, regardless of whether any
+        // moved logical module is loaded by the residual.
+    }
 }
 
 fn reject_duplicate_export_names(

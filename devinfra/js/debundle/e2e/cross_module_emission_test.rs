@@ -459,10 +459,14 @@ fn drops_specifier_for_imported_binding_claimed_and_unused_in_residual() {
     // mod_dep. After the move, the residual entry never
     // references `dep` anywhere — `composed` lives in mod_x
     // (with its own re-import of `dep`), and the residual's
-    // re-export references `composed`. The original
-    // `import { dep } from "./vendor.js"` line is dead in the
-    // residual; the trim drops the directive (mod_x preserves
-    // vendor.js evaluation through its own import).
+    // re-export references `composed`. The trim drops the dead
+    // `dep` specifier from the residual's vendor import; the
+    // directive is preserved as a side-effect-only
+    // `import "./vendor.js";` so vendor's evaluation is not
+    // skipped (mod_dep, an ImportSpecifier-only logical module
+    // with no `Owned` bindings, isn't imported by the residual
+    // at runtime, so vendor evaluation must come from the
+    // residual itself).
     let mut opts = FixtureOpts::new(
         r#"import { dep } from "./vendor.js";
 const composed = dep + 1;
@@ -500,12 +504,16 @@ export { composed };
     let entry = fs::read_to_string(fixture.out_root.join("static/app/entry.js"))
         .expect("read residual entry");
     assert!(
-        !entry.contains("./vendor.js"),
-        "residual must drop the dead `import {{ dep }} from \"./vendor.js\"` line; got:\n{entry}",
+        !entry.contains("{ dep }") && !entry.contains("{dep}"),
+        "residual must drop the dead `dep` named specifier; got:\n{entry}",
+    );
+    assert!(
+        entry.contains("./vendor.js"),
+        "residual must keep `./vendor.js` as a side-effect-only import to preserve evaluation; got:\n{entry}",
     );
 
     // Behaviour preservation: vendor.js is still evaluated via
-    // mod_x's own re-import of `dep`, so `composed = dep + 1 = 42`
+    // the side-effect-only import, so `composed = dep + 1 = 42`
     // and the re-export keeps the original public surface.
     assert_entry_output(&fixture, "42\n");
 }

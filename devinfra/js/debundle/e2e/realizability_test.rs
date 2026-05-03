@@ -273,3 +273,72 @@ export { fetchData, promise };
     ));
     assert_entry_output(&fixture, "42\n");
 }
+
+#[test]
+fn await_in_instance_class_field_is_allowed() {
+    // Instance field initializers run on `new`, not at class-decl
+    // time. An `await` there is *not* top-level. (Per spec the
+    // host method must be `async` for the `await` to be syntactically
+    // valid; we use a lazy method here.)
+    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+        r#"class C {
+  async run() { return await Promise.resolve("ok"); }
+}
+const c = new C();
+c.run().then((v) => console.log(v));
+export { C };
+"#,
+        vec![logical_module("mod_x", &[Member::new("C")])],
+    ));
+    assert_entry_output(&fixture, "ok\n");
+}
+
+#[test]
+fn await_in_static_class_field_is_rejected() {
+    // Static field initializers run at class-decl time. If the
+    // class is at module-top, an `await` in a static field is
+    // top-level. Wrap the await in an IIFE — `static x = await …`
+    // is a SyntaxError outside async contexts, but the visitor
+    // rejects any reachable AwaitExpr regardless of whether the
+    // surrounding host is well-formed.
+    expect_logical_modules_e2e_rejection_containing_all(
+        FixtureOpts::new(
+            r#"async function f() { return 1; }
+class C {
+  static x = (async () => await f())();
+  static y = await f();
+}
+console.log(C.x, C.y);
+export { C };
+"#,
+            vec![logical_module(
+                "mod_x",
+                &[Member::new("C"), Member::new("f")],
+            )],
+        ),
+        &["top-level", "await", "TLA"],
+    );
+}
+
+#[test]
+fn await_in_computed_class_method_key_is_rejected() {
+    // Computed property keys are evaluated at class-decl time
+    // (eager) regardless of `is_static`. An `await` there is
+    // top-level.
+    expect_logical_modules_e2e_rejection_containing_all(
+        FixtureOpts::new(
+            r#"async function k() { return "m"; }
+class C {
+  [await k()]() {}
+}
+console.log(C);
+export { C };
+"#,
+            vec![logical_module(
+                "mod_x",
+                &[Member::new("C"), Member::new("k")],
+            )],
+        ),
+        &["top-level", "await", "TLA"],
+    );
+}
