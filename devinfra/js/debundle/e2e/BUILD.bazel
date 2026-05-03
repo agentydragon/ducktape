@@ -53,5 +53,8 @@ rust_library(
         "runtime_import_reference_test",
         "init_wrapper_var_placeholder_test",
         "init_call_order_test",
+        "promise_validator_rejects_cycle_test",
+        "promise_source_order_emit_test",
+        "promise_multi_module_re_export_test",
     ]
 ]

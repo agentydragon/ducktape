@@ -120,12 +120,18 @@ pub enum BindingKind {
     /// Introduced by an `import { imported_name as <name> } from "<chunk>"`
     /// at the chunk's top. The value lives in `imported_from`;
     /// our chunk merely aliases it. A logical module can choose
-    /// to *re-export* this alias under its module path, but it
-    /// cannot *own* the value — the chunk on the other side does.
+    /// to *re-export* this alias under its module path (with its
+    /// own choice of public name), but it cannot *own* the value
+    /// — the chunk on the other side does.
     Imported {
         imported_from: ChunkId,
         imported_name: String,
-        re_exported_by: BTreeSet<ModuleId>,
+        /// Each module that re-exports this binding, mapped to
+        /// the public name it gives the export. Different modules
+        /// may pick different names for the same imported binding
+        /// (e.g. one module surfaces `vendor.j` as `jsxRuntime`,
+        /// another as `__jsx`).
+        re_exported_by: BTreeMap<ModuleId, BindingName>,
     },
 }
 ```
@@ -201,14 +207,24 @@ These edges encode "S must execute before T," which under ESM means
 
 ## The realizability theorem
 
-> **Theorem.** A spec assignment is _realizable_ — there exists an
-> emitted multi-module ESM bundle that is observationally
+> **Theorem.** A _post-closure_ assignment is _realizable_ — there
+> exists an emitted multi-module ESM bundle that is observationally
 > equivalent to the input chunk — iff the combined dep graph
-> `G ∪ G'` is acyclic.
+> `G ∪ G'` (built over that assignment) is acyclic.
 
-Realizability is exactly acyclicity. A spec that introduces a cycle
-is unrealizable: no emit strategy can make the resulting bundle
-behave like the input.
+The closure pass mutates the spec's partial assignment by routing
+unowned bindings to logical modules (see [closure rules](#closure-pass)).
+A spec that _would_ be realizable in isolation can become
+unrealizable after closure if the closure pulls a transitive dep
+into a module that creates a back-edge — and conversely, a closure
+that's careful enough never to create new edges can leave a
+realizable spec realizable. So the theorem applies to the final
+post-closure assignment, not to the spec author's explicit member
+list. The closure rules are part of the realizability contract.
+
+Realizability is exactly acyclicity. A spec whose post-closure
+assignment introduces a cycle is unrealizable: no emit strategy
+can make the resulting bundle behave like the input.
 
 ### Proof
 
@@ -272,6 +288,35 @@ first). When `M_1`'s body reaches its witness:
 Either witness produces a difference between the emitted bundle
 and the input. So no realization exists. ∎
 
+### Multi-chunk extension
+
+The theorem above is stated for a single chunk. Real bundles have
+many chunks (entry, code-split routes, vendor bundles), each with
+its own logical-module split. Cross-chunk dependencies are
+edges from one chunk's logical module to another chunk's logical
+module (via `Imported` bindings).
+
+The extended theorem is the natural lift: take the union of every
+chunk's `G ∪ G'`, with `Imported` edges contributing
+cross-chunk edges. The spec is realizable iff this combined
+graph is acyclic.
+
+In practice vendor chunks are leaves — they don't import from
+us, so they emit no edges into user-chunks. User-chunk to
+user-chunk cycles can occur (an `index-DI2GynTv` ↔
+`StoryIndex-DrlmoZTE` cycle is conceivable in any
+code-split bundle) and the multi-chunk validator detects them.
+A user→vendor edge that ends up being a user→user→vendor cycle
+is an even rarer pathological case (a vendor chunk that
+re-exports something from a user-chunk); the validator detects
+it but the right fix lives in the bundler's chunking config,
+not in the spec.
+
+For Phase 1 the validator runs per-chunk; cross-chunk edges
+appear as `ExternalChunk(_)` leaves in the per-chunk graph. The
+multi-chunk lift is a Phase 1.6 follow-up: `validate_schedule`
+takes a `BTreeMap<ChunkId, Schedule>` and walks the union graph.
+
 ### Corollary: the role of the validator
 
 The pipeline runs:
@@ -295,6 +340,73 @@ under the source-order strategy described in the proof. There is
 no class of correct-input that the validator rejects, and no
 class of incorrect-input that the validator misses (modulo
 cleanly-defined precision of `reads_at_init` and `has_side_effect`).
+
+## Closure pass
+
+The spec's explicit member list is partial: a `define_logical_module`
+op names a few bindings the spec author cares about, and trusts
+the system to extend that to a coherent module by pulling in
+transitive deps.
+
+**Closure rule (Phase 2-and-onward).** For each binding `b` not
+yet assigned by the spec, the closure pass picks an owner using
+the following rule, applied in order:
+
+1. **At-init dependency closure.** If `b` is read at-init by a
+   statement in some logical module `M`, and `b` is _not_ read
+   at-init by any other module's statements, assign `b → M`.
+2. **Single-consumer heuristic for lazy reads.** If `b` is read
+   only inside function/method bodies of _one_ module's
+   statements, assign `b → M`. (Lazy reads can cross module
+   boundaries via cross-module imports, so this is an
+   optimization, not a correctness requirement.)
+3. **Otherwise → residual entry.** If `b` is read by multiple
+   modules, or by no module, leave it in the residual entry.
+   The residual entry imports cleanly from logical modules,
+   not the other way around, so this is always safe.
+
+The closure pass does _not_ pull bindings whose ownership would
+introduce a new edge to the dep graph. Concretely: before
+assigning `b → M`, the closure checks whether `M` already has a
+back-edge to `b`'s would-be owner; if so, refuses and surfaces
+a cycle error to the spec author. This makes the closure
+**dep-graph-monotonic**: it cannot worsen the graph it observed
+on entry, only refine it (or abort with a precise error).
+
+This rule guarantees the realizability theorem composes with the
+closure: a spec whose post-closure assignment is acyclic remains
+acyclic regardless of which order the closure considers bindings
+in.
+
+## Comma-list var-decls with split owners
+
+The spec's `owner` is a function from binding name to module.
+Comma-list var-decls (`const A = e1, B = e2, C = e3`) declare
+multiple bindings at once; the spec can assign them to different
+modules. Before any of the per-statement reasoning in this doc
+applies, the materializer rewrites such a comma-list into
+separate single-binding declarations:
+
+```
+const A = e1, B = e2, C = e3
+   →
+const A = e1;
+const B = e2;
+const C = e3;
+```
+
+The split is semantically transparent within a single module —
+all three statements run in source order regardless of whether
+they're written as one comma-list or three separate
+declarations. After splitting, each declaration has a single
+declared binding, the spec's `owner` map is well-defined per
+statement, and `home(S)` resolves cleanly.
+
+The rewrite must happen _before_ statement-fact analysis. Each
+split-out statement gets its own ordinal (in source order); each
+gets its own `reads_at_init` and `has_side_effect`. The dep
+graph captures any cross-declarator reads (e.g. `C = A.x`'s read
+of `A`) automatically.
 
 ## Cycle resolution
 
@@ -345,6 +457,26 @@ Within `materialize_logical_modules`, the substages are:
 6. **Source-order emission** — each module's body in source order;
    cross-module imports + source-chunk re-imports; `export { ... }`.
    No init wrappers.
+
+## Empty logical modules
+
+A spec entry that ends up with zero owned bindings (after
+closure) and no re-exports comes out as an effectively-empty
+file. Either:
+
+- The spec author wrote a `define_logical_module` whose explicit
+  members all turned out to be names that don't exist in the
+  chunk (typo, stale spec). The validator surfaces a
+  `MissingMember` warning per name; emit proceeds with whatever
+  _did_ resolve.
+- All listed members are `Imported` bindings with no `Owned`
+  members. The module is a re-export-only file (just `import` +
+  `export {}`). Valid, common for "barrel" modules; no warning.
+
+The validator distinguishes the two and only warns on the first.
+A logical module with literally zero members in either category
+is rejected (the spec author probably meant to define something
+that didn't materialize).
 
 ## Invariants
 
@@ -547,8 +679,10 @@ Everything downstream needs is here:
   `home`. For statements with empty `declared`, `home` is
   `ResidualEntry`.
 - "What statements live in module M" = `facts.filter(home == M)`.
-- "What does M export" = bindings whose `Owned.owner == M` plus
-  bindings whose `Imported.re_exported_by ∋ M`.
+- "What does M export" = bindings whose `Owned.owner == M`
+  (under their original or rename-pass-rewritten name) plus
+  bindings whose `Imported.re_exported_by` has key `M` (under
+  the public name that map's value gives).
 - "What imports does M need" =
   - For each `b ∈ reads_at_init(stmt)` with `home(stmt) == M`:
     - If `b` is `Owned { owner: other }`: `import b from <other>`.
@@ -569,12 +703,13 @@ collapsing imports into the same `Owned` map):
    in our logical module. The legacy `binding_assignment` of
    `X → mod_x_idx` lied about this, and the parallel
    `import_members` channel patched around it.
-2. **Multiple modules can re-export the same imported binding.**
-   Two logical modules in the same chunk could both want to
-   surface `vendor.j` (the JSX runtime) under their own module
-   paths. With `Owned { owner }` the data model forbids this;
-   with `Imported { re_exported_by: BTreeSet<ModuleId> }` it's
-   natural.
+2. **Multiple modules can re-export the same imported binding,
+   under different names.** Two logical modules in the same
+   chunk could both want to surface `vendor.j` (the JSX runtime),
+   one as `jsxRuntime` and another as `__jsx`. With
+   `Owned { owner }` the data model forbids this entirely; with
+   `Imported { re_exported_by: BTreeMap<ModuleId, BindingName> }`
+   each module picks its own export name independently.
 
 ### Old → new vocabulary
 
@@ -838,45 +973,24 @@ direct work list for spec edits.
 
 ## Known sharp edges
 
-These are concrete gaps, oversimplifications, or unsound corners I
-spotted re-reading the doc. Pinning them so they don't bite during
-Phase 1.6 / Phase 3.
+These are concrete gaps, oversimplifications, or unsound corners
+that aren't yet folded into the design body. Pinning them so they
+don't bite during Phase 1.6 / Phase 3. (Items resolved by design
+tweaks have been moved into the relevant body sections; this list
+is the residual.)
 
 ### Soundness gaps
-
-#### The realizability theorem applies to the _post-closure_ assignment
-
-The theorem statement says "a spec assignment is realizable iff
-the dep graph is acyclic." But the spec assignment is partial —
-the closure pass extends it before emit. The graph that has to
-be acyclic is built over the **post-closure** assignment, not the
-spec's explicit member list. Two consequences:
-
-- A spec that looks fine in isolation can become unrealizable
-  after the closure pulls a transitive dep into a module that
-  already had a back-edge to that dep's owner. The validator
-  has to run after closure; running it on the spec's explicit
-  assignment alone would miss real cycles.
-- The closure pass's _behaviour_ is part of the realizability
-  contract. If the closure changes (e.g. switches from "first
-  module to claim wins" to "single-consumer wins"), specs that
-  used to be realizable can become un-realizable and vice
-  versa. The closure rules need to be specified as carefully as
-  the theorem.
-
-The proof is correct as written but the _target_ of the theorem
-should say "post-closure assignment" explicitly.
 
 #### Backward-direction proof is loose on "WLOG M₁ is first"
 
 The proof says "some module has to be first" in the cycle. ESM
 doesn't actually let us pick the starting module — it's
-determined by the entry's import graph and reverse-DFS order. So
-"WLOG" hides a small detail: regardless of which cycle member
-ESM picks as the first to evaluate, _some_ cycle edge will fire
-in the wrong order (because a cycle has no topological linearizer
-that respects all edges). Spelling that out makes the proof
-airtight; the gist is correct already.
+determined by the entry's import graph and reverse-DFS order.
+The argument that _needs_ to be there: regardless of which cycle
+member ESM picks as the first to evaluate, _some_ cycle edge
+will fire in the wrong order (because a cycle has no topological
+linearizer that respects all edges). The current text's gist is
+correct; tightening it is a doc edit, not a design change.
 
 #### Side effects we can't see locally
 
@@ -905,24 +1019,6 @@ already there; bundled output rarely depends on these patterns,
 because bundlers can't preserve them across boundaries either.
 If we hit such a case in real Tana, surface it as a
 "spec-author-side known limitation."
-
-#### `re_exported_by` should be a map, not a set
-
-```rust
-re_exported_by: BTreeSet<ModuleId>
-```
-
-is wrong. Different modules can re-export the same imported
-binding under _different_ names (e.g. one module re-exports
-`vendor.j as jsxRuntime`, another as `__jsx`). The set forgets
-the rename. Correct shape:
-
-```rust
-re_exported_by: BTreeMap<ModuleId, BindingName>
-```
-
-— per-module rename. Update the data model before Phase 1.6
-implementation; this is cheap to fix now and expensive later.
 
 ### Coverage audits the analyzer needs
 
@@ -997,86 +1093,6 @@ without runtime-dynamic effects. These features are out of scope:
 Each of these should produce a clear analyzer warning if
 detected, not silent acceptance.
 
-### Semantic clarifications the doc handwaves
-
-#### Closure pass formalization
-
-The doc says the closure "pulls in any binding referenced by a
-moved decl, even if doing so creates a cycle (Phase 2: refuses
-on cycle)." But it doesn't pin _which_ references count: only
-`reads_at_init`, or all references including lazy
-function-body reads?
-
-Recommended rule: closure pulls bindings that are referenced
-_from at-init positions_ in already-claimed code, plus any
-binding whose declaring statement has at-init reads of already-
-claimed bindings (so the unclaimed binding's home doesn't
-create a residual-entry-to-logical-module dep). Lazy references
-are fine across module boundaries (the linker handles them via
-imports), so they don't need pulling.
-
-This rule guarantees the closure makes the dep graph _smaller_,
-not larger — and in particular, the closure either resolves a
-cycle (by colocating cycle members) or doesn't introduce new
-cycles. Without this rule the closure can cause cycles
-unpredictably.
-
-#### Mixed-owner comma-list var-decls
-
-The doc says: "Comma-list var-decls with split owners are split
-into separate var-decls before this step." That's a real
-transform on the AST that needs spelling out:
-
-`const A = e1, B = e2, C = e3` → `const A = e1; const B = e2;
-const C = e3` if the spec assigns A, B, C to different modules.
-
-Correctness: each declarator's RHS evaluates in source order;
-splitting into separate `const` statements preserves that
-within a single module. _Across_ modules, the dep graph
-captures any RHS-to-LHS reads (e.g. `C = A.x` adds C-home →
-A-home edge). The split is semantically transparent if the dep
-graph is acyclic.
-
-What if the comma-list has interleaved side effects?
-`const A = setupA(), B = setupB(), C = wrap(A, B)` — `setupA`
-and `setupB` might have observable effects that need to fire
-in source order. After splitting, source order within A's
-module and B's module is preserved; cross-module ordering
-needs side-effect edges in `G'`. The validator catches this.
-
-#### Multi-chunk dep graphs
-
-The current schedule is per-chunk. Cross-chunk dependencies go
-through `ExternalChunk(ChunkId)` nodes in the dep graph. But
-the realizability theorem is only stated for a single chunk's
-schedule.
-
-Real Tana has many user-chunks plus vendor chunks. Cycles
-between user-chunks (e.g. `static/index-DI2GynTv` ↔
-`static/StoryIndex-DrlmoZTE`) are conceivable. The right move
-is to extend the theorem to a multi-chunk schedule:
-realizability iff the _combined_ dep graph (all chunks
-contributing nodes for their logical modules + each other as
-`ExternalChunk` nodes) is acyclic.
-
-In practice vendor chunks are leaves (they don't import from
-us) so vendor↔user cycles can't happen. User↔user cycles
-_can_ happen and are worth detecting.
-
-#### Empty logical modules
-
-A spec entry whose member list is satisfied entirely by import-
-specifier-bound bindings (now `Imported.re_exported_by`) ends up
-with no `Owned` bindings. Today's emit produces an effectively-
-empty file (just imports + re-exports). This is _correct_ but
-worth a clearer name in the data model — it's a re-export-only
-module, not a logical module that owns code.
-
-Similarly, a spec entry whose explicit members all turn out to
-not exist in the chunk (from the closure-pass perspective) ends
-up empty after filtering. The legacy code papers over this
-silently; the new design should warn.
-
 ### Validator's incomplete view today
 
 Phase 1's validator runs on the **legacy `binding_assignment`**,
@@ -1096,31 +1112,6 @@ This matters for Phase 2: don't declare "spec is acyclic" until
 the validator is running on the unified `Schedule`. The current
 report is useful for surfacing the obvious 9-module SCC, not
 for proving an absence of cycles.
-
-### Validator UX gaps
-
-The cycle report today is JSON: list of SCCs with
-`(from, to, statement_ordinal, binding)` tuples. Useful for
-tooling, painful for humans. A spec author looking at 99 edges
-will not know where to start.
-
-Wanted: a human-readable rendering keyed off source positions,
-with concrete colocation suggestions. Approximate shape:
-
-```
-Cycle: prompting_runtime ↔ vendor_symbols
-  reason: prompting_runtime statement at source line 22745
-    reads `m.dataTypeNumberId` (binding `m`, owned by
-    vendor_symbols)
-  reason: vendor_symbols statement at source line 41100
-    reads `ut.forwardRef(...)` (binding `ut`, owned by
-    prompting_runtime)
-  Resolution suggestion: colocate {`m`, `ut`} in one module.
-```
-
-Phase 1.6 should produce something close to this. Plain JSON
-is fine for the schedule report; the human-readable version
-is a renderer over the same data.
 
 ## Open design questions
 
