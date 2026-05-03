@@ -1,6 +1,15 @@
 # Manual-only: update non-release Nix flake inputs (nixpkgs, home-manager, etc.).
 # CI-released inputs (ducktape-wheel, claude-hooks-wheel, etc.) are updated
 # automatically by the release.yml update-downstream job.
+#
+# TODO(branch-protection): when the default branch flips to main and the
+# main ruleset starts gating direct pushes, replace GITHUB_TOKEN with an
+# installation token from the ducktape-automation GitHub App
+# (actions/create-github-app-token) — see
+# secrets/ducktape-automation.README.md. The App is registered as a
+# ruleset bypass actor; github-actions can't be on personal-account
+# repos. Workflow already takes ${{ github.ref_name }} so no devel→main
+# string change is needed here.
 name: Update Nix flake inputs
 
 on:

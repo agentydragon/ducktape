@@ -2,6 +2,15 @@ name: Sync artifact pins
 # Periodically sync npins/sources.json with the latest GitHub Releases.
 # Replaces per-commit dispatch from bb_release.py — one commit per cycle
 # regardless of how many releases landed since the last sync.
+#
+# TODO(branch-protection): switch hardcoded `devel` (ref + push target)
+# to `main` when the default branch flips, and replace
+# secrets.GITHUB_TOKEN with an installation token minted from the
+# ducktape-automation GitHub App (actions/create-github-app-token) —
+# see secrets/ducktape-automation.README.md. Required because
+# github-actions can't be a ruleset bypass actor on personal-account
+# repos, so once main is gated this workflow's direct push will fail
+# until it pushes as the App.
 "on":
   schedule:
     # GitHub throttles scheduled workflows to ~30 min intervals regardless of cron.

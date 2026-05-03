@@ -149,6 +149,14 @@ jobs:
           cache_from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/rtl-tcp:buildcache
           cache_to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/rtl-tcp:buildcache,mode=max
 
+  # TODO(branch-protection): when the default branch flips to main and
+  # the main ruleset starts gating direct pushes, replace github.token
+  # with an installation token from the ducktape-automation GitHub App
+  # (actions/create-github-app-token) — see
+  # secrets/ducktape-automation.README.md. The App is registered as a
+  # ruleset bypass actor; github-actions can't be on personal-account
+  # repos. The job already pushes to ${GITHUB_REF_NAME} so no devel→main
+  # string change is needed here.
   pin-digests:
     name: Pin Digests
     needs: [rbe-image, freecad-image]
