@@ -141,11 +141,54 @@ pub fn run_logical_modules_e2e_fixture(opts: FixtureOpts<'_>) -> Fixture {
     }
 }
 
+/// Run the materializer over `opts` and assert it rejects the spec
+/// with stderr containing at least one of `error_substring_alternatives`
+/// (case-insensitive). Use this helper when the rejection's exact
+/// wording isn't pinned — e.g. when several rejection paths converge
+/// on the same outcome and the caller is fine with any of them.
+///
+/// For tests that need to assert *specific evidence* in the error
+/// (e.g. "the cycle report names mod_a AND mod_b"), use
+/// [`expect_logical_modules_e2e_rejection_containing_all`] instead.
 pub fn expect_logical_modules_e2e_rejection(
     opts: FixtureOpts<'_>,
     error_substring_alternatives: &[&str],
 ) {
-    let setup = setup_fixture(&opts);
+    let stderr = run_and_assert_rejected(&opts);
+    let stderr_lower = stderr.to_lowercase();
+    assert!(
+        error_substring_alternatives
+            .iter()
+            .any(|s| stderr_lower.contains(&s.to_lowercase())),
+        "stderr did not contain any of {error_substring_alternatives:?}\nstderr:\n{stderr}",
+    );
+}
+
+/// Stricter sibling of [`expect_logical_modules_e2e_rejection`]: the
+/// stderr must contain **every** substring in `required_substrings`,
+/// not just one. Use when the test's contract is that the error
+/// names specific evidence (every module in a cycle, every binding
+/// in a collision, etc.); a generic-but-empty error wouldn't pass
+/// the contract.
+pub fn expect_logical_modules_e2e_rejection_containing_all(
+    opts: FixtureOpts<'_>,
+    required_substrings: &[&str],
+) {
+    let stderr = run_and_assert_rejected(&opts);
+    let stderr_lower = stderr.to_lowercase();
+    let missing: Vec<&str> = required_substrings
+        .iter()
+        .copied()
+        .filter(|s| !stderr_lower.contains(&s.to_lowercase()))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "stderr missing required substrings {missing:?}\nstderr:\n{stderr}",
+    );
+}
+
+fn run_and_assert_rejected(opts: &FixtureOpts<'_>) -> String {
+    let setup = setup_fixture(opts);
     let spec_path = setup.out_root.join("transform_spec.jsonc");
     let spec = build_spec(
         opts.chunk_id,
@@ -164,15 +207,7 @@ pub fn expect_logical_modules_e2e_rejection(
         result.stdout,
         result.stderr,
     );
-    let stderr_lower = result.stderr.to_lowercase();
-    assert!(
-        error_substring_alternatives
-            .iter()
-            .any(|s| stderr_lower.contains(&s.to_lowercase())),
-        "stderr did not contain any of {:?}\nstderr:\n{}",
-        error_substring_alternatives,
-        result.stderr,
-    );
+    result.stderr
 }
 
 pub fn assert_entry_output(fixture: &Fixture, expected_stdout: &str) {

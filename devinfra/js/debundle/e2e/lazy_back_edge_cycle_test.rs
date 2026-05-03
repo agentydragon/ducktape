@@ -22,7 +22,7 @@ use debundle_e2e_support::*;
 
 #[test]
 fn rejects_cycle_through_lazy_back_edge() {
-    expect_logical_modules_e2e_rejection(
+    expect_logical_modules_e2e_rejection_containing_all(
         FixtureOpts::new(
             // mod_b reads A from mod_a at-init (B's initializer);
             // mod_a's `readB` body reads B from mod_b lazily.
@@ -37,6 +37,9 @@ export { A, B, readB };
                 logical_module("mod_b", &[Member::new("B")]),
             ],
         ),
+        // Require every substring to appear: a generic "cycle"
+        // mention that fails to name the implicated modules
+        // wouldn't satisfy the test's contract.
         &["cycle", "mod_a", "mod_b"],
     );
 }

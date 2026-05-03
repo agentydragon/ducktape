@@ -31,7 +31,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use petgraph::algo::tarjan_scc;
+use petgraph::algo::{tarjan_scc, toposort};
 use petgraph::graphmap::DiGraphMap;
 use serde::Serialize;
 use swc_ecma_ast::*;
@@ -109,8 +109,8 @@ pub struct LogicalModule {
 }
 
 /// Single per-chunk schedule. Carries everything downstream code
-/// needs to validate cycles and (eventually, after the emit-side
-/// migration) emit modules in source order.
+/// needs to validate cycles and emit modules in an order that
+/// respects `I ∪ S`.
 #[derive(Debug, Clone)]
 pub struct Schedule {
     pub chunk_id: String,
@@ -118,6 +118,15 @@ pub struct Schedule {
     pub bindings: BTreeMap<BindingName, BindingKind>,
     pub logical_modules: Vec<LogicalModule>,
     pub dep_graph: ModuleDepGraph,
+    /// Topological linearization of `I ∪ S`, dependency-first
+    /// (the module at index 0 must evaluate before any other; the
+    /// last module — typically the residual entry — evaluates
+    /// last). Empty when `dep_graph` has cycles (validation will
+    /// reject the spec). Used by the emitter to author each
+    /// module's `import` directive list in an order that steers
+    /// ECMA-262's linker DFS toward an `I ∪ S`-respecting
+    /// evaluation order; see DESIGN.md "Lemma 2".
+    pub linker_order: Vec<ModuleId>,
 }
 
 impl Schedule {
@@ -133,13 +142,23 @@ impl Schedule {
     ) -> Self {
         let ownership = owned_view(&bindings);
         let dep_graph = build_module_dep_graph(&facts, &ownership);
+        let linker_order = compute_linker_order(&dep_graph.edges, &logical_modules);
         Self {
             chunk_id,
             facts,
             bindings,
             logical_modules,
             dep_graph,
+            linker_order,
         }
+    }
+
+    /// Position of `id` in `linker_order`, if present. Used by the
+    /// emitter to sort each module's `import` directives so that
+    /// ECMA-262's depth-first link traversal evaluates dependencies
+    /// before dependents.
+    pub fn linker_position(&self, id: ModuleId) -> Option<usize> {
+        self.linker_order.iter().position(|&m| m == id)
     }
 
     /// Render `id` to a human-readable label (used in cycle reports).
@@ -588,8 +607,12 @@ pub struct ModuleDepGraph {
 /// — so the graph constructed here is exactly the graph the ESM
 /// linker walks for evaluation order.
 ///
-/// `reads_at_init` and `reads_lazy` are disjoint per statement;
-/// their union is the full reference set.
+/// A binding referenced both eagerly and lazily inside the same
+/// statement (e.g. `class A extends B { method() { return B; } }`)
+/// shows up in both `reads_at_init` and `reads_lazy`. Iterating
+/// both still produces the right edge set for `I`: the edge is
+/// recorded once in `edges` (it's a `BTreeSet`) and twice in
+/// `evidence`. Cycle detection only consults `edges`.
 pub fn build_module_dep_graph(
     facts: &[StatementFacts],
     binding_assignment: &BTreeMap<BindingName, ModuleId>,
@@ -633,6 +656,18 @@ pub fn build_module_dep_graph(
             record(from, binding, stmt.ordinal, &mut edges, &mut evidence);
         }
     }
+
+    // The DESIGN's "S" (side-effect ordering) sub-graph would add
+    // an edge `(home(S₂), home(S₁))` for every source-order pair
+    // of side-effecting statements with different homes. We do
+    // not construct it today: the current `has_side_effect`
+    // analyzer over-approximates aggressively (every var-decl is
+    // marked side-effecting, even pure ones like `const X = 42`),
+    // and adding S edges with that approximation rejects nearly
+    // every realistic spec for trivially pure initializers
+    // appearing in source order across modules. Adding S requires
+    // a precise purity analyzer first; tracked as a TODO.
+
     ModuleDepGraph { edges, evidence }
 }
 
@@ -872,6 +907,41 @@ fn sccs_of(edges: &BTreeMap<ModuleId, BTreeSet<ModuleId>>) -> Vec<Vec<ModuleId>>
         }
     }
     tarjan_scc(&graph)
+}
+
+/// Topological linearization of the dep graph, dependency-first.
+/// Empty if the graph has cycles (`tarjan_scc` plus the validator
+/// gate handle that case).
+///
+/// The dep-graph edge convention is `(M, M')` meaning `M` depends
+/// on `M'`. `petgraph::algo::toposort` returns `u`-before-`v` for
+/// every edge `(u, v)`, which under our convention puts dependents
+/// before dependencies. The returned order is reversed so the
+/// dependency comes first — matching the order ECMA-262's link
+/// traversal needs to evaluate (deepest leaf first).
+fn compute_linker_order(
+    edges: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+    logical_modules: &[LogicalModule],
+) -> Vec<ModuleId> {
+    let mut graph = DiGraphMap::<ModuleId, ()>::new();
+    // Add every module the schedule knows about so the order
+    // covers them even if they have no dep-graph edges (singleton
+    // leaves still need a deterministic position for emit ordering).
+    graph.add_node(ModuleId::ResidualEntry);
+    for idx in 0..logical_modules.len() {
+        graph.add_node(ModuleId::Logical(LogicalModuleIndex(idx)));
+    }
+    for (&from, targets) in edges {
+        graph.add_node(from);
+        for &to in targets {
+            graph.add_node(to);
+            graph.add_edge(from, to, ());
+        }
+    }
+    match toposort(&graph, None) {
+        Ok(order) => order.into_iter().rev().collect(),
+        Err(_) => Vec::new(),
+    }
 }
 
 #[cfg(test)]

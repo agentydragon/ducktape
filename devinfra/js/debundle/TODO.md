@@ -10,6 +10,36 @@ including the `BindingKind::Imported` collapse that closes out
 the parallel `import_members` channel. The items in this file
 are smaller, mostly-orthogonal cleanups.
 
+## Comma-list owner attribution in `build_module_dep_graph`
+
+`build_module_dep_graph` (in `schedule_validator.rs`) computes
+`stmt_owner` once per `StatementFacts`, taking the owner of the
+first declared name. The emit-time pipeline splits comma-list
+`var/let/const` declarations into per-declarator statements
+(`split_var_decl` in `logical_modules.rs:1512`), so a chunk like
+`const a = 1, b = c, d = e;` with `a → mod_x`, `b → mod_y`, `d
+→ mod_z` lands `b` and `d` in different modules than `a`.
+
+The validator never sees that split — it builds edges as if the
+whole comma-list lived with `a`'s owner. Reads from `b`'s and
+`d`'s initializers (e.g. `c`, `e`) are attributed to mod_x's
+home, even though `b` and `d` actually emit into mod_y and
+mod_z. SCC detection can therefore miss real cross-module
+cycles or invent fake ones.
+
+Fix shape: split comma-list var-decls _before_ `analyze_chunk_facts`
+so each declarator has its own `StatementFacts` row with one
+declared name. This requires either:
+
+1. running the splitter on the chunk's `Module` ahead of fact
+   analysis (preferred — the emitter then operates on already-
+   split body), or
+2. teaching `StatementFacts` and `stmt_owner` about per-declarator
+   owners (more invasive).
+
+Surfaced as Copilot review comment on PR #1478:
+<https://github.com/agentydragon/ducktape/pull/1478#discussion_r3178610097>.
+
 ## `source_chunk_imports_for_moved_body` skip filter is too broad
 
 In `logical_modules.rs` (~line 1805), the skip

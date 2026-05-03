@@ -565,7 +565,15 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             remaining_item_after_selection(item, binding_assignment, &mut selected_by_module)?;
         entry_body.append(&mut remaining);
     }
-    let mut entry_imports = Vec::<ModuleItem>::new();
+    // Two passes: build entry imports in plan order (so the
+    // first plan to claim a binding wins disambiguation), then
+    // sort the resulting imports by `linker_order` so ECMA-262's
+    // depth-first link traversal evaluates dependencies first.
+    // Plan-order disambiguation + linker-order placement keeps
+    // the import-collision contract while satisfying Lemma 2's
+    // emit-side constraint. See DESIGN.md "Module dep graphs"
+    // and "Lemma 2".
+    let mut entry_imports: Vec<(usize, ModuleItem)> = Vec::new();
     let mut occupied = collect_occupied_local_names(&entry_body);
     let mut body_renames = BTreeMap::<String, String>::new();
     for (module_index, plan) in module_plans.iter().enumerate() {
@@ -598,12 +606,21 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
                 body_renames.insert(local, fresh);
             }
         }
-        entry_imports.push(import_decl_for_plan(
-            entry_file,
-            &plan.target_file,
-            &resolved,
+        entry_imports.push((
+            module_index,
+            import_decl_for_plan(entry_file, &plan.target_file, &resolved),
         ));
     }
+    // Sort the (plan-order-disambiguated) imports by linker_order
+    // so the first import in the entry source corresponds to the
+    // earliest-in-L provider. Stable sort preserves plan-order for
+    // ties (e.g. when two providers have no dep-graph relation).
+    entry_imports.sort_by_key(|(idx, _)| {
+        schedule
+            .linker_position(ModuleId::Logical(LogicalModuleIndex(*idx)))
+            .unwrap_or(usize::MAX)
+    });
+    let entry_imports: Vec<ModuleItem> = entry_imports.into_iter().map(|(_, it)| it).collect();
     if !body_renames.is_empty() {
         // Re-exports `export { local }` (without `from`) collapse `local`
         // and the public exported name into a single ident. Renaming the
@@ -980,9 +997,25 @@ fn cross_module_imports_for_body(
                 .insert(name, exported_name.clone());
         }
     }
-    imports_by_provider
+
+    // Sort providers by their position in the schedule's
+    // `linker_order` (a topological linearization of `I ∪ S`).
+    // ECMA-262's depth-first link traversal visits each module's
+    // `import` directives in source order, and the deepest leaf
+    // reached first evaluates first. Putting the earliest-in-`L`
+    // provider at the top of the import list steers the traversal
+    // toward an `I ∪ S`-respecting evaluation order. See DESIGN.md
+    // "Lemma 2".
+    let mut providers: Vec<usize> = imports_by_provider.keys().copied().collect();
+    providers.sort_by_key(|&idx| {
+        schedule
+            .linker_position(ModuleId::Logical(LogicalModuleIndex(idx)))
+            .unwrap_or(usize::MAX)
+    });
+    providers
         .into_iter()
-        .filter_map(|(provider_index, bindings)| {
+        .filter_map(|provider_index| {
+            let bindings = imports_by_provider.remove(&provider_index)?;
             schedule
                 .logical_module(LogicalModuleIndex(provider_index))
                 .map(|provider| import_decl_for_plan(from_file, &provider.target_file, &bindings))
