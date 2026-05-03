@@ -22,10 +22,6 @@
 use debundle_e2e_support::*;
 use serde_json::json;
 
-#[ignore = "Phase 4+: needs BindingKind::Imported migration (closes the parallel \
-            import_members channel) plus a fix for the import-path rewrite when \
-            the same source-chunk import is re-exported from multiple modules at \
-            different depths"]
 #[test]
 fn imported_binding_re_exported_under_two_different_names() {
     // The chunk imports `j` from a vendor under local `a`, then

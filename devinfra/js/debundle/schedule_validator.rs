@@ -59,14 +59,33 @@ pub type BindingName = String;
 
 /// How a top-level binding in the chunk relates to the split. See
 /// DESIGN.md "Two binding kinds".
-///
-/// The legacy code only knows `Owned`; the `Imported` variant is
-/// reserved for the Phase 2/3 migration that surfaces re-exports
-/// of source-chunk imports through the schedule (today these flow
-/// through the parallel `import_members` channel).
 #[derive(Debug, Clone)]
 pub enum BindingKind {
+    /// Declared by a top-level `var/let/const/function/class` in this
+    /// chunk; the spec assigns it to a logical module (or the
+    /// residual entry).
     Owned { owner: ModuleId },
+    /// Introduced by an `import { imported_name as <local> } from
+    /// "<source>"` in the chunk's top-level body. The value lives in
+    /// another chunk; logical modules can re-export it under their
+    /// own public name. Multiple modules may re-export the same
+    /// imported binding (under different public names).
+    Imported {
+        /// The original imported name from the source chunk (e.g. "j"
+        /// for `import { j as a } from "..."`).
+        imported_name: BindingName,
+        /// Output-tree-rooted absolute path of the import source
+        /// (e.g. `"static/vendor.js"`). Already resolved against the
+        /// chunk's directory + the artifact's source-chunk index;
+        /// emit-time path resolution is just `relative(dest_dir,
+        /// imported_from)`.
+        imported_from: String,
+        /// `module → public export name` for each logical module that
+        /// re-exports this binding. Empty when no logical module
+        /// re-exports it (read-only references stay implicit and are
+        /// resolved by `source_chunk_imports_for_moved_body`).
+        re_exported_by: BTreeMap<ModuleId, BindingName>,
+    },
 }
 
 /// A logical module produced by the spec for the current chunk.
@@ -101,20 +120,18 @@ pub struct Schedule {
 }
 
 impl Schedule {
-    /// Build a schedule from chunk facts + ownership + spec-derived
-    /// logical modules. `ownership` maps each `Owned` binding's
-    /// local name to the logical module that claimed it.
+    /// Build a schedule from chunk facts + the binding catalogue +
+    /// spec-derived logical modules. `bindings` should already have
+    /// every `Owned` binding the spec assigned and every `Imported`
+    /// binding the spec re-exports.
     pub fn build(
         chunk_id: String,
         facts: Vec<StatementFacts>,
-        ownership: BTreeMap<BindingName, ModuleId>,
+        bindings: BTreeMap<BindingName, BindingKind>,
         logical_modules: Vec<LogicalModule>,
     ) -> Self {
+        let ownership = owned_view(&bindings);
         let dep_graph = build_module_dep_graph(&facts, &ownership);
-        let bindings = ownership
-            .into_iter()
-            .map(|(name, owner)| (name, BindingKind::Owned { owner }))
-            .collect();
         Self {
             chunk_id,
             facts,
@@ -136,12 +153,13 @@ impl Schedule {
         }
     }
 
-    /// Which module owns a binding (by local name), if any. Returns
-    /// `None` for names that aren't tracked in this schedule (e.g.
-    /// globals, source-chunk imports we don't re-export).
+    /// Which logical module owns a binding (by local name), if any.
+    /// Returns `None` for names that aren't `Owned` in this schedule
+    /// (e.g. globals, imported bindings, names not in the spec).
     pub fn owner_of(&self, name: &str) -> Option<ModuleId> {
-        self.bindings.get(name).map(|kind| match kind {
-            BindingKind::Owned { owner } => *owner,
+        self.bindings.get(name).and_then(|kind| match kind {
+            BindingKind::Owned { owner } => Some(*owner),
+            BindingKind::Imported { .. } => None,
         })
     }
 
@@ -694,14 +712,23 @@ pub fn validate_schedule(
 /// Lazy-only readers are always cycle-safe (lazy reads don't
 /// constrain init order). At-init readers' cycle safety is checked
 /// by tentatively assigning the binding and re-running SCC analysis.
-fn build_recommendations(schedule: &Schedule) -> Vec<AssignmentRecommendation> {
-    let owned: BTreeMap<BindingName, ModuleId> = schedule
-        .bindings
+/// Project a `bindings` catalogue down to the `Owned` entries' owner
+/// map — what the dep-graph builder, recommender and cycle-safety
+/// check operate on. `Imported` bindings don't create at-init module
+/// dep edges; their resolution is via the source chunk, not via
+/// other logical modules.
+fn owned_view(bindings: &BTreeMap<BindingName, BindingKind>) -> BTreeMap<BindingName, ModuleId> {
+    bindings
         .iter()
-        .map(|(name, kind)| match kind {
-            BindingKind::Owned { owner } => (name.clone(), *owner),
+        .filter_map(|(name, kind)| match kind {
+            BindingKind::Owned { owner } => Some((name.clone(), *owner)),
+            BindingKind::Imported { .. } => None,
         })
-        .collect();
+        .collect()
+}
+
+fn build_recommendations(schedule: &Schedule) -> Vec<AssignmentRecommendation> {
+    let owned = owned_view(&schedule.bindings);
     let declared: BTreeSet<BindingName> = schedule
         .facts
         .iter()
@@ -771,13 +798,7 @@ fn is_assignment_cycle_safe(
     binding: &BindingName,
     candidate: ModuleId,
 ) -> bool {
-    let mut augmented: BTreeMap<BindingName, ModuleId> = schedule
-        .bindings
-        .iter()
-        .map(|(name, kind)| match kind {
-            BindingKind::Owned { owner } => (name.clone(), *owner),
-        })
-        .collect();
+    let mut augmented = owned_view(&schedule.bindings);
     augmented.insert(binding.clone(), candidate);
     let graph = build_module_dep_graph(&schedule.facts, &augmented);
     let sccs = tarjan_sccs(&graph.edges);
@@ -1016,10 +1037,10 @@ mod tests {
     fn schedule_for(source: &str, ownership: &[(&str, ModuleId)]) -> Schedule {
         let module = parse(source);
         let facts = analyze_chunk_facts(&module);
-        let mut owners = BTreeMap::new();
+        let mut bindings = BTreeMap::new();
         let mut max_idx = 0usize;
         for (name, id) in ownership {
-            owners.insert(name.to_string(), *id);
+            bindings.insert(name.to_string(), BindingKind::Owned { owner: *id });
             if let ModuleId::Logical(LogicalModuleIndex(i)) = id {
                 max_idx = max_idx.max(*i);
             }
@@ -1031,7 +1052,7 @@ mod tests {
                 rename_map: BTreeMap::new(),
             })
             .collect();
-        Schedule::build("test_chunk".to_string(), facts, owners, logical_modules)
+        Schedule::build("test_chunk".to_string(), facts, bindings, logical_modules)
     }
 
     #[test]

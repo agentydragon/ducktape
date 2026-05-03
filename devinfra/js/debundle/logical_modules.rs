@@ -18,8 +18,8 @@ use artifact::{
 };
 use js_ast::{ParsedJsModule, set_str_value, str_value};
 use schedule_validator::{
-    LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId, Schedule,
-    analyze_chunk_facts,
+    BindingKind, BindingName, LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId,
+    Schedule, analyze_chunk_facts,
 };
 
 const LOWERING_FILE_PRAGMA: &str =
@@ -133,29 +133,12 @@ struct ModulePlan {
     target_file: String,
     explicit: bool,
     requested: LogicalRequest,
+    /// Local-name → public-export-name for every owned binding this
+    /// plan claims (i.e. members whose `selector.binding.kind` is
+    /// _not_ `ImportSpecifier`). ImportSpecifier-bound members live
+    /// in `Schedule.bindings` as `BindingKind::Imported` and their
+    /// emit is driven from there.
     bindings: BTreeMap<String, String>,
-    /// `binding.kind: ImportSpecifier` members. Each entry produces an
-    /// `import { <imported> as <export_name> } from "<source>";` plus
-    /// `export { <export_name> };` in the destination module body. The
-    /// local in the source chunk's import is a different name; it
-    /// stays untouched so the source-chunk consumers continue to work.
-    /// The actual `imported` and `source` are looked up from the
-    /// source chunk's body at lowering time so the path stays in sync
-    /// with whatever the rewrite stage produced.
-    import_members: Vec<ImportSpecifierMember>,
-}
-
-#[derive(Debug, Clone)]
-struct ImportSpecifierMember {
-    export_name: String,
-    /// Imported name in the source chunk's import statement.
-    imported: String,
-    /// Module specifier to emit in the destination's re-import. This
-    /// is computed at plan time using the artifact's source-chunk
-    /// index so it is correct relative to the destination's location
-    /// in the chunk tree, independent of `rewrite_chunk_entry_specifiers`
-    /// (which skips materialized module files).
-    rewritten_source: String,
 }
 
 pub fn materialize_logical_modules(
@@ -235,23 +218,34 @@ pub fn materialize_logical_modules(
 
         let mut binding_assignment = BTreeMap::<String, usize>::new();
         let mut module_plans = Vec::new();
+        let mut bindings_catalogue = BTreeMap::<BindingName, BindingKind>::new();
         for (index, request) in explicit_requests.iter_mut().enumerate() {
             let mut bindings = BTreeMap::new();
             let dest_target_file = target_file_for_request(&target_dir, &request.target_path)?;
-            let mut import_members = Vec::new();
+            let module_id = ModuleId::Logical(LogicalModuleIndex(index));
             for member in &request.members {
                 if member.is_import_specifier {
-                    // ImportSpecifier-bound: emit a re-import in the
-                    // destination module, not a top-level decl move.
-                    import_members.push(resolve_import_specifier_member(
+                    // ImportSpecifier-bound: re-export of a source-chunk
+                    // import. Accumulate into BindingKind::Imported so
+                    // multiple modules can re-export the same binding
+                    // under different public names.
+                    let (imported_name, imported_from) = resolve_imported_binding(
                         artifact,
                         &runtime_ast.module.body,
                         &chunk_id,
                         &target_file,
-                        &dest_target_file,
                         &member.binding,
-                        &member.export_name,
-                    )?);
+                    )?;
+                    let entry = bindings_catalogue
+                        .entry(member.binding.clone())
+                        .or_insert_with(|| BindingKind::Imported {
+                            imported_name: imported_name.clone(),
+                            imported_from: imported_from.clone(),
+                            re_exported_by: BTreeMap::new(),
+                        });
+                    if let BindingKind::Imported { re_exported_by, .. } = entry {
+                        re_exported_by.insert(module_id, member.export_name.clone());
+                    }
                 } else {
                     bindings.insert(member.binding.clone(), member.export_name.clone());
                 }
@@ -259,6 +253,8 @@ pub fn materialize_logical_modules(
             for binding in bindings.keys() {
                 if declaration_by_name.contains_key(binding) {
                     binding_assignment.insert(binding.clone(), index);
+                    bindings_catalogue
+                        .insert(binding.clone(), BindingKind::Owned { owner: module_id });
                 }
             }
             module_plans.push(ModulePlan {
@@ -267,18 +263,24 @@ pub fn materialize_logical_modules(
                 explicit: true,
                 requested: request.clone(),
                 bindings,
-                import_members,
             });
         }
 
         if let Some(residual) = residual_request {
             let residual_index = module_plans.len();
+            let residual_module_id = ModuleId::Logical(LogicalModuleIndex(residual_index));
             let mut residual_bindings = BTreeMap::new();
             for decl in &declarations {
                 for name in &decl.names {
                     if !binding_assignment.contains_key(name) {
                         binding_assignment.insert(name.clone(), residual_index);
                         residual_bindings.insert(name.clone(), name.clone());
+                        bindings_catalogue.insert(
+                            name.clone(),
+                            BindingKind::Owned {
+                                owner: residual_module_id,
+                            },
+                        );
                     }
                 }
             }
@@ -289,7 +291,6 @@ pub fn materialize_logical_modules(
                     explicit: false,
                     requested: residual,
                     bindings: residual_bindings,
-                    import_members: Vec::new(),
                 });
             }
         }
@@ -301,10 +302,6 @@ pub fn materialize_logical_modules(
         // pipeline.
         let schedule = {
             let facts = analyze_chunk_facts(&runtime_ast.module);
-            let ownership: BTreeMap<String, ModuleId> = binding_assignment
-                .iter()
-                .map(|(name, &idx)| (name.clone(), ModuleId::Logical(LogicalModuleIndex(idx))))
-                .collect();
             let logical_modules: Vec<ScheduleLogicalModule> = module_plans
                 .iter()
                 .map(|plan| ScheduleLogicalModule {
@@ -313,7 +310,7 @@ pub fn materialize_logical_modules(
                     rename_map: plan.bindings.clone(),
                 })
                 .collect();
-            Schedule::build(chunk_id.clone(), facts, ownership, logical_modules)
+            Schedule::build(chunk_id.clone(), facts, bindings_catalogue, logical_modules)
         };
         let schedule_report = schedule.validate();
 
@@ -674,21 +671,44 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         module_imports.append(&mut body);
         body = module_imports;
         rewrite_runtime_sources_for_target(&mut body, &plan.target_file);
-        // ImportSpecifier-bound members: emit a re-import in the
-        // destination module for each, plus mirror the export. The
-        // re-imports go at the top of the body, after the cross-module
-        // imports already inserted.
+        // ImportSpecifier-bound members (`BindingKind::Imported` in
+        // `schedule.bindings`): for each `Imported` binding whose
+        // `re_exported_by` map names this module, emit a re-import
+        // (using the local name as the alias) plus mirror the
+        // public-name export. Per-destination relative paths are
+        // computed here so multiple modules at different output
+        // depths each get a correctly-relativised path.
+        let module_id = ModuleId::Logical(LogicalModuleIndex(index));
         let mut import_member_exports = BTreeMap::<String, String>::new();
-        if !plan.import_members.is_empty() {
-            let import_count = body
-                .iter()
-                .take_while(|item| matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
-                .count();
-            for (offset, member) in plan.import_members.iter().enumerate() {
-                body.insert(import_count + offset, import_specifier_member_decl(member));
-                import_member_exports
-                    .insert(member.export_name.clone(), member.export_name.clone());
-            }
+        let import_count = body
+            .iter()
+            .take_while(|item| matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
+            .count();
+        // `imported_from` on `BindingKind::Imported` is output-tree-
+        // rooted absolute; `plan.target_file` is chunk-rooted. Lift
+        // the destination to the same coordinate system before
+        // computing the relative path.
+        let dest_abs = posix_join(&[chunk_id, &plan.target_file]);
+        let mut offset = 0;
+        for (local, kind) in &schedule.bindings {
+            let BindingKind::Imported {
+                imported_name,
+                imported_from,
+                re_exported_by,
+            } = kind
+            else {
+                continue;
+            };
+            let Some(public_name) = re_exported_by.get(&module_id) else {
+                continue;
+            };
+            let src = relative_source(&dest_abs, imported_from);
+            body.insert(
+                import_count + offset,
+                imported_binding_import_decl(local, imported_name, &src),
+            );
+            offset += 1;
+            import_member_exports.insert(local.clone(), public_name.clone());
         }
         let exports_have_top_level_decls = selected_exports_by_module.contains_key(&index);
         if exports_have_top_level_decls {
@@ -1662,57 +1682,43 @@ fn mint_fresh_local_name(base: &str, occupied: &BTreeSet<String>) -> String {
     }
 }
 
-/// Resolve an `ImportSpecifier`-bound member to the values needed to
-/// emit the destination's re-import. Looks up the source chunk's import
-/// statement by `source_local`, then resolves its module specifier to a
-/// target chunk via the artifact's source-chunk index and computes the
-/// path relative to the destination's location in the chunk tree. This
-/// runs at plan time because the rewriter (`rewrite_chunk_entry_specifiers`)
-/// skips materialized module files, so the destination must carry the
-/// final post-rewrite path itself.
-fn resolve_import_specifier_member(
+/// Look up an `ImportSpecifier`-bound member's source-chunk import
+/// statement and resolve it to `(imported_name, imported_from)` where
+/// `imported_from` is the output-tree-rooted absolute path of the
+/// import source (suitable for storing on `BindingKind::Imported`).
+/// Per-destination relative paths are computed at emit time via
+/// `relative_source(dest_target_file, imported_from)`.
+fn resolve_imported_binding(
     artifact: &JsPipelineArtifact,
     runtime_body: &[ModuleItem],
     source_chunk_id: &str,
     source_runtime_file: &str,
-    dest_target_file: &str,
     source_local: &str,
-    export_name: &str,
-) -> Result<ImportSpecifierMember> {
+) -> Result<(String, String)> {
     let (imported, src_path) =
         lookup_import_specifier(runtime_body, source_local).with_context(|| {
             format!("no import specifier found for `{source_local}` in source chunk")
         })?;
-    let dest_dir = posix_join(&[source_chunk_id, &posix_dirname(dest_target_file)]);
-    let rewritten_source = if let Some((target_chunk_id, target_entry_file, _path)) =
-        resolve_artifact_source_import_reference(
-            artifact,
-            &src_path,
-            source_chunk_id,
-            source_runtime_file,
-        )? {
-        let target_path = posix_join(&[&target_chunk_id, &target_entry_file]);
-        let mut relative = posix_relative(&dest_dir, &target_path);
-        if !relative.starts_with('.') {
-            relative = format!("./{relative}");
-        }
-        relative
+    let imported_from = if let Some((_, _, path)) = resolve_artifact_source_import_reference(
+        artifact,
+        &src_path,
+        source_chunk_id,
+        source_runtime_file,
+    )? {
+        path
     } else {
-        // Source path doesn't reference a known chunk (e.g. a synthetic
-        // e2e snapshot file with no entry in the artifact). Fall back to
-        // walking the destination back up to the chunk root and appending
-        // the chunk-root-relative source as-is.
-        let depth = std::path::Path::new(dest_target_file)
-            .parent()
-            .map(|parent| parent.iter().count())
-            .unwrap_or(0);
-        format!("{}{}", "../".repeat(depth), src_path)
+        // Source path doesn't reference a known chunk (e.g. a
+        // synthetic e2e snapshot file with no entry in the artifact).
+        // Resolve relative to the source chunk's directory in the
+        // output tree (chunk_id includes the directory prefix; the
+        // runtime file is chunk-relative).
+        let chunk_runtime_abs = posix_join(&[
+            &posix_dirname(source_chunk_id),
+            &posix_dirname(source_runtime_file),
+        ]);
+        posix_join(&[&chunk_runtime_abs, &src_path])
     };
-    Ok(ImportSpecifierMember {
-        export_name: export_name.to_string(),
-        imported,
-        rewritten_source,
-    })
+    Ok((imported, imported_from))
 }
 
 /// Build re-imports for source-chunk ImportSpecifier-bound locals that
@@ -1881,18 +1887,19 @@ fn build_runtime_reimport(local: &str, info: &RuntimeImportInfo, src: &str) -> M
     }))
 }
 
-fn import_specifier_member_decl(member: &ImportSpecifierMember) -> ModuleItem {
-    let local = member.export_name.clone();
+/// Emit `import { <imported> as <local> } from "<src>"` (or just
+/// `import { <local> } from "<src>"` when local == imported).
+fn imported_binding_import_decl(local: &str, imported: &str, src: &str) -> ModuleItem {
     ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
         span: DUMMY_SP,
         specifiers: vec![ImportSpecifier::Named(ImportNamedSpecifier {
             span: DUMMY_SP,
-            local: Ident::new_no_ctxt(local.clone().into(), DUMMY_SP),
-            imported: if local == member.imported {
+            local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+            imported: if local == imported {
                 None
             } else {
                 Some(ModuleExportName::Ident(Ident::new_no_ctxt(
-                    member.imported.clone().into(),
+                    imported.into(),
                     DUMMY_SP,
                 )))
             },
@@ -1900,7 +1907,7 @@ fn import_specifier_member_decl(member: &ImportSpecifierMember) -> ModuleItem {
         })],
         src: Box::new(Str {
             span: DUMMY_SP,
-            value: member.rewritten_source.clone().into(),
+            value: src.into(),
             raw: None,
         }),
         type_only: false,

@@ -119,6 +119,15 @@ pub fn run_logical_modules_e2e_fixture(opts: FixtureOpts<'_>) -> Fixture {
         result.stderr,
     );
 
+    // Mirror `extra_files` into out_root after the transform runs, so
+    // re-imports emitted by the materializer can resolve through
+    // their relative paths under out_root. (write_js_tree wipes
+    // out_root with `force=true` before emitting; mirroring earlier
+    // would lose these files.)
+    for (rel_path, content) in opts.extra_files {
+        write_text_file(&setup.out_root.join(rel_path), content);
+    }
+
     let entry_path = setup
         .out_root
         .join(opts.chunk_id.split('/').collect::<PathBuf>())
