@@ -491,7 +491,21 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         if plan.bindings.is_empty() {
             continue;
         }
-        selected_exports_by_module.insert(module_index, plan.bindings.clone());
+        // Only export bindings that were actually assigned to this
+        // module. A spec member whose source binding doesn't exist as
+        // a top-level decl in the chunk has no entry in
+        // `binding_assignment`; emitting an export for it would
+        // produce `export { Foo }` with no backing decl and Node
+        // bails with `SyntaxError: Export 'Foo' is not defined`.
+        let exports: BTreeMap<String, String> = plan
+            .bindings
+            .iter()
+            .filter(|(name, _)| binding_assignment.get(*name) == Some(&module_index))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        if !exports.is_empty() {
+            selected_exports_by_module.insert(module_index, exports);
+        }
     }
 
     let mut entry_body = Vec::new();
