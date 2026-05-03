@@ -10,6 +10,29 @@ including the `BindingKind::Imported` collapse that closes out
 the parallel `import_members` channel. The items in this file
 are smaller, mostly-orthogonal cleanups.
 
+## `source_chunk_imports_for_moved_body` skip filter is too broad
+
+In `logical_modules.rs` (~line 1805), the skip
+`if schedule.bindings.contains_key(&name) { continue; }` rules
+out every name in `Schedule.bindings` — including
+`BindingKind::Imported` entries that may be re-exported by some
+_other_ logical module. If moved code in the current module
+references such an imported local, this filter skips it (no
+source-chunk re-import gets emitted) and
+`cross_module_imports_for_body` won't import it either
+(`Schedule::owner_of` returns `None` for `Imported`). Result:
+free variable in the emitted module → `ReferenceError` at
+runtime.
+
+Fix: narrow the skip to bindings actually provided via cross-
+module imports — e.g. `schedule.owner_of(name).is_some()` (the
+`Owned` case) — or skip only when the current module has
+already inserted an import for that `Imported` binding.
+
+Surfaced as Copilot review comment on PR #1477:
+<https://github.com/agentydragon/ducktape/pull/1477#discussion_r3178520375>.
+Orthogonal to Phase 5 (#1478); separate small PR.
+
 ## Excalidraw live-browser smoke
 
 Build an open-source live-browser smoke test for the debundler against
