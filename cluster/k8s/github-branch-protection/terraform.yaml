@@ -1,0 +1,24 @@
+---
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: github-branch-protection
+  namespace: flux-system
+spec:
+  interval: 15m
+  refreshBeforeApply: true
+  path: ./tf/gitops/github-branch-protection
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+
+  serviceAccountName: tf-runner
+  approvePlan: "auto"
+
+  backendConfig:
+    customConfiguration: |
+      backend "kubernetes" {
+        secret_suffix = "github-branch-protection"
+        namespace     = "flux-system"
+      }

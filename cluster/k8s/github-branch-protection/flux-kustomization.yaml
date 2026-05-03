@@ -1,0 +1,30 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: github-branch-protection
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  path: ./cluster/k8s/github-branch-protection
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 10m
+  wait: true
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: github-branch-protection
+      namespace: flux-system
+  dependsOn:
+    # tofu-controller runs the Terraform CR.
+    - name: tofu-controller
+    # Provides github-secrets-sync-pat (Administration:R/W on ducktape).
+    - name: github-secrets-sync-secrets
+    # Provides github-pat-gaffer-private-flux (Administration:R/W on
+    # gaffer-private). gaffer-private-source's flux-kustomization
+    # deploys this PAT alongside the gaffer-private GitRepository
+    # source and the deploy-key tofu module.
+    - name: gaffer-private-source
