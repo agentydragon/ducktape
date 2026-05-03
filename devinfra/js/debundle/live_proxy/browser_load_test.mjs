@@ -58,9 +58,22 @@ async function main() {
       timeout: options.waitTimeoutMs,
     });
     if (options.waitForSelector) {
-      await page.waitForSelector(options.waitForSelector, {
-        timeout: options.waitTimeoutMs,
-      });
+      // Race the selector wait against a page-error sentinel so the
+      // smoke surfaces a script load failure within seconds rather
+      // than after the full selector-wait timeout. The diagnostics
+      // bundle in the catch block still reports every collected
+      // signal regardless of which side of the race fires.
+      const errorSentinel = startPageErrorSentinel(pageErrors);
+      try {
+        await Promise.race([
+          page.waitForSelector(options.waitForSelector, {
+            timeout: options.waitTimeoutMs,
+          }),
+          errorSentinel.promise,
+        ]);
+      } finally {
+        errorSentinel.cancel();
+      }
     }
     await delay(1000);
 
@@ -83,6 +96,12 @@ async function main() {
       `missing transformed static asset response under ${staticPrefix}\nresponses:\n${formatJson(responses)}`
     );
     assert.deepEqual(pageErrors, [], `page errors:\n${pageErrors.join("\n")}\nconsole:\n${consoleMessages.join("\n")}`);
+    const consoleErrors = consoleMessages.filter((message) => message.startsWith("[error] "));
+    assert.deepEqual(
+      consoleErrors,
+      [],
+      `console errors:\n${consoleErrors.join("\n")}\nfailed requests:\n${formatJson(failedRequests)}`
+    );
     assert.deepEqual(
       failedRequests.filter((request) =>
         request.url.startsWith(`${handles.config.targetOrigin}${handles.config.internalPrefix}/`)
@@ -174,6 +193,32 @@ function delay(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function startPageErrorSentinel(pageErrors) {
+  // Polls the shared `pageErrors` buffer (filled by the puppeteer
+  // `pageerror` listener) and rejects as soon as anything lands.
+  // The caller `cancel()`s once the race resolves so the interval
+  // doesn't leak past the test.
+  let interval = null;
+  const promise = new Promise((_, reject) => {
+    interval = setInterval(() => {
+      if (pageErrors.length > 0) {
+        clearInterval(interval);
+        interval = null;
+        reject(new Error(`page errored before selector resolved:\n${pageErrors.join("\n")}`));
+      }
+    }, 200);
+  });
+  return {
+    promise,
+    cancel() {
+      if (interval !== null) {
+        clearInterval(interval);
+        interval = null;
+      }
+    },
+  };
 }
 
 function formatJson(value) {
