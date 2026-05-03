@@ -40,6 +40,7 @@ gnome-extensions/** filename-conventions-ignored=true
 cluster/** filename-conventions-ignored=true
 terraform/** filename-conventions-ignored=true
 tf/** filename-conventions-ignored=true
+secrets/** filename-conventions-ignored=true
 
 # Logseq page names - dashes are part of the page title
 llm/instruct_logseq/pages/** filename-conventions-ignored=true
