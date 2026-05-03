@@ -18,7 +18,7 @@ use artifact::{
 };
 use js_ast::{ParsedJsModule, set_str_value, str_value};
 use schedule_validator::{
-    LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId, Schedule,
+    LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId, Schedule, StatementKind,
     analyze_chunk_facts,
 };
 
@@ -114,6 +114,12 @@ struct AssignmentLogicalModule {
 struct AssignmentBinding {
     name: String,
     module_index: usize,
+    /// Declaration kind matching the spec's selector vocabulary
+    /// (`FunctionDeclaration` / `ClassDeclaration` / `VariableDeclarator`
+    /// / `ImportSpecifier`). `None` for names whose declaring item
+    /// the materializer hasn't classified.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kind: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -475,6 +481,20 @@ pub fn materialize_logical_modules(
             if let Some(parent) = assignments_path.parent() {
                 fs::create_dir_all(parent)?;
             }
+            let mut kind_by_name = BTreeMap::<String, &'static str>::new();
+            for fact in &schedule.facts {
+                let kind_str = match fact.kind {
+                    StatementKind::VarDecl => Some("VariableDeclarator"),
+                    StatementKind::FnDecl => Some("FunctionDeclaration"),
+                    StatementKind::ClassDecl => Some("ClassDeclaration"),
+                    _ => None,
+                };
+                if let Some(s) = kind_str {
+                    for name in &fact.declared {
+                        kind_by_name.insert(name.clone(), s);
+                    }
+                }
+            }
             let assignments = AssignmentsDump {
                 kind: "js.assignments_dump",
                 chunk_id: &chunk_id,
@@ -493,6 +513,7 @@ pub fn materialize_logical_modules(
                     .map(|(name, &idx)| AssignmentBinding {
                         name: name.clone(),
                         module_index: idx,
+                        kind: kind_by_name.get(name).map(|s| s.to_string()),
                     })
                     .collect(),
             };
