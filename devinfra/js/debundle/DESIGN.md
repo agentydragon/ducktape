@@ -114,8 +114,8 @@ made it, plus the metadata downstream stages need:
 ```rust
 pub enum BindingKind {
     /// Declared by a top-level `var/let/const/function/class` in
-    /// this chunk. The spec (or the closure pass) assigns it to
-    /// a `ModuleId` that owns the declaration after the split.
+    /// this chunk. The spec assigns each owned binding to a
+    /// `ModuleId` (defaulting to `ResidualEntry` when unclaimed).
     Owned { owner: ModuleId },
     /// Introduced by an `import { imported_name as <name> } from "<chunk>"`
     /// at the chunk's top. The value lives in `imported_from`;
@@ -207,23 +207,19 @@ These edges encode "S must execute before T," which under ESM means
 
 ## The realizability theorem
 
-> **Theorem.** A _post-closure_ assignment is _realizable_ — there
-> exists an emitted multi-module ESM bundle that is observationally
-> equivalent to the input chunk — iff the combined dep graph
-> `G ∪ G'` (built over that assignment) is acyclic.
+> **Theorem.** A spec assignment `owner: BindingId → ModuleId` is
+> _realizable_ — there exists an emitted multi-module ESM bundle
+> that is observationally equivalent to the input chunk — iff the
+> combined dep graph `G ∪ G'` (built over that assignment) is
+> acyclic.
 
-The closure pass mutates the spec's partial assignment by routing
-unowned bindings to logical modules (see [closure rules](#closure-pass)).
-A spec that _would_ be realizable in isolation can become
-unrealizable after closure if the closure pulls a transitive dep
-into a module that creates a back-edge — and conversely, a closure
-that's careful enough never to create new edges can leave a
-realizable spec realizable. So the theorem applies to the final
-post-closure assignment, not to the spec author's explicit member
-list. The closure rules are part of the realizability contract.
-
-Realizability is exactly acyclicity. A spec whose post-closure
-assignment introduces a cycle is unrealizable: no emit strategy
+Here "spec assignment" means whatever the validator sees: every
+declared binding either has an explicit `owner` from the spec or
+defaults to `ModuleId::ResidualEntry` (see [Spec explicitness
+— closure as recommender](#spec-explicitness--closure-as-recommender)).
+There is no implicit transformation between the spec and the
+assignment the theorem reasons about. A spec whose assignment
+introduces a cycle in `G ∪ G'` is unrealizable: no emit strategy
 can make the resulting bundle behave like the input.
 
 ### Proof
@@ -326,13 +322,17 @@ parse chunk
   ↓
 analyze per-statement facts (declared, reads_at_init, has_side_effect)
   ↓
-apply spec assignment (+ closure)
+apply spec assignment (unowned bindings → ResidualEntry)
   ↓
 build G ∪ G'
   ↓
 validate: acyclic?       ←—— Phase 1 lives here.
-  ↓                                         ↓ no
-emit (source-order)                  reject with cycle evidence
+  ↓        ↓ no                       (sidecar)
+  ↓        ↓                  recommendations for unowned bindings
+  ↓                                        (see Spec explicitness)
+emit (source-order)
+  ↓ no
+reject with cycle evidence
 ```
 
 A spec that passes validation is _guaranteed_ to emit correctly
@@ -341,42 +341,122 @@ no class of correct-input that the validator rejects, and no
 class of incorrect-input that the validator misses (modulo
 cleanly-defined precision of `reads_at_init` and `has_side_effect`).
 
-## Closure pass
+## Spec explicitness — closure as recommender
 
-The spec's explicit member list is partial: a `define_logical_module`
-op names a few bindings the spec author cares about, and trusts
-the system to extend that to a coherent module by pulling in
-transitive deps.
+The legacy materializer runs an _automatic closure pass_: when
+the spec assigns binding `A` to module `M` and `A`'s init reads
+`B`, the closure silently assigns `B → M` too (unless `B` is
+already claimed). The intent was ergonomic — let the spec author
+name just the bindings they care about and trust the system to
+fill in transitive deps.
 
-**Closure rule (Phase 2-and-onward).** For each binding `b` not
-yet assigned by the spec, the closure pass picks an owner using
-the following rule, applied in order:
+In practice the trade-off is wrong:
 
-1. **At-init dependency closure.** If `b` is read at-init by a
-   statement in some logical module `M`, and `b` is _not_ read
-   at-init by any other module's statements, assign `b → M`.
-2. **Single-consumer heuristic for lazy reads.** If `b` is read
-   only inside function/method bodies of _one_ module's
-   statements, assign `b → M`. (Lazy reads can cross module
-   boundaries via cross-module imports, so this is an
-   optimization, not a correctness requirement.)
-3. **Otherwise → residual entry.** If `b` is read by multiple
-   modules, or by no module, leave it in the residual entry.
-   The residual entry imports cleanly from logical modules,
-   not the other way around, so this is always safe.
+1. **Spec stops being the source of truth.** What bindings end up
+   in module `M` depends on a heuristic the author can't see at
+   spec-edit time.
+2. **Splitting co-pulled bindings is fighting a heuristic.** If
+   `A` and `B` are co-pulled by closure but the author wants them
+   in different modules, they have to write an explicit
+   counter-claim somewhere. The "fight" is invisible — you can't
+   read the spec and tell what's a counter-claim.
+3. **Cycles introduced by closure are invisible at spec time.**
+   The Tana 9-module SCC we just discovered is exactly this: the
+   spec author never wrote down that `runtime_app_state_search_
+commands_core` and `ai_mcp_prompting_runtime` would end up
+   reading each other's bindings. The closure produced that
+   coupling.
+4. **No spec-size win at the limit.** When every scrambled symbol
+   gets a meaningful name (the eventual goal for Tana), the spec
+   already enumerates every binding. Adding ownership info per
+   binding is the same `O(num_bindings)` size — closure isn't
+   saving spec size, just hiding which binding ended up where.
 
-The closure pass does _not_ pull bindings whose ownership would
-introduce a new edge to the dep graph. Concretely: before
-assigning `b → M`, the closure checks whether `M` already has a
-back-edge to `b`'s would-be owner; if so, refuses and surfaces
-a cycle error to the spec author. This makes the closure
-**dep-graph-monotonic**: it cannot worsen the graph it observed
-on entry, only refine it (or abort with a precise error).
+**Design rule.** The spec is fully explicit. Every owned binding
+has its `owner` named in the spec or defaults to
+`ModuleId::ResidualEntry`. There is no implicit pulling.
 
-This rule guarantees the realizability theorem composes with the
-closure: a spec whose post-closure assignment is acyclic remains
-acyclic regardless of which order the closure considers bindings
-in.
+The closure's logic doesn't disappear; it relocates. Instead of
+running on the runtime path, it runs as part of validation as a
+**recommender**:
+
+```rust
+pub struct AssignmentRecommendation {
+    /// The binding the spec author hasn't claimed yet.
+    pub binding: BindingName,
+    /// Modules that read this binding (at-init or lazily).
+    pub candidate_owners: Vec<RecommendationCandidate>,
+}
+
+pub struct RecommendationCandidate {
+    pub module: ModuleId,
+    pub read_kind: RecommendationReadKind,
+    /// True iff assigning `binding → module` would not introduce
+    /// a cycle in `G ∪ G'`. Cycle-safe candidates are preferred.
+    pub cycle_safe: bool,
+}
+
+pub enum RecommendationReadKind {
+    /// The candidate module reads this binding at-init (e.g. in
+    /// a `const X = b + 1` initializer, an `extends b` clause, a
+    /// computed property key, etc.).
+    AtInit,
+    /// The candidate module reads this binding only inside
+    /// function/method bodies — lazy. Lazy reads can cross
+    /// module boundaries via cross-module imports without
+    /// constraining init order, so any owner is cycle-safe for
+    /// lazy-only readers.
+    LazyOnly,
+}
+```
+
+`ScheduleReport` carries a `recommendations: Vec<...>` list
+alongside the existing `cycles: Vec<...>` list. The validator
+emits both; the report is one-shot — re-running the validator on
+an updated spec produces a fresh report.
+
+### Workflow
+
+1. Spec author writes / edits a spec — possibly partial.
+2. Pipeline runs the validator. The report flags:
+   - **Cycles** in the explicit-only assignment, if any.
+   - **Recommendations** for every binding with no owner (i.e.
+     defaulted to `ResidualEntry` or transitively required).
+3. Spec author resolves: for each recommendation, copy the
+   chosen owner into the spec, or restructure to break a cycle.
+   The recommender flags cycle-safe candidates so the author
+   can pick one without re-running.
+4. Re-run validator. Iterate until the report's `cycles` and
+   (optionally) `recommendations` are both empty.
+
+The spec is now fully explicit. The validator is a one-shot
+predicate: "given this spec, is the bundle realizable?" — no
+implicit transformation in the middle.
+
+### One-shot migration tool
+
+The existing Tana spec doesn't have explicit owners for most
+bindings — it relied on the legacy closure to fill them in.
+Bridging:
+
+1. Run the legacy closure once on the existing spec; capture
+   the resulting full assignment as JSON.
+2. Mechanically rewrite the gaffer spec
+   (<tana/re/web/transforms/78d928dca7/operations/logical/...>)
+   so every binding has an explicit `owner` member entry. The
+   rewrite is reversible and deterministic — no information is
+   lost, since the legacy closure was deterministic.
+3. Drop `close_module_bindings_over_dependencies` from the
+   ducktape runtime; replace with the recommender side-output
+   described above.
+
+After migration the gaffer spec is the same as today modulo
+verbosity, but with the assignment fully visible to the spec
+author.
+
+This is tracked as **Phase 1.7** in the [status table](#status),
+and runs before Phase 2 (the cycle-breaking spec edits) since it
+fixes the spec language Phase 2 will be editing.
 
 ## Comma-list var-decls with split owners
 
@@ -446,11 +526,14 @@ Within `materialize_logical_modules`, the substages are:
 1. **Spec parsing** → `LogicalRequest` / `ModulePlan` per chunk.
 2. **Statement-facts analysis** (<schedule_validator.rs>:
    `analyze_chunk_facts`) → `Vec<StatementFacts>`.
-3. **Binding assignment** → `BTreeMap<String, usize>` (module
-   index per binding). Explicit assignments first, then closure
-   over dependencies.
+3. **Binding assignment** → `BTreeMap<BindingName, ModuleId>` from
+   the spec's explicit member list. Bindings with no spec entry
+   default to `ResidualEntry`; nothing pulls implicitly. (See
+   [Spec explicitness](#spec-explicitness--closure-as-recommender).)
 4. **Module dep graph + validation** (<schedule_validator.rs>:
-   `build_module_dep_graph`, `validate_schedule`).
+   `build_module_dep_graph`, `validate_schedule`). The validator
+   also emits `recommendations` for every unowned binding so the
+   spec author can update the spec.
 5. **Cycle resolution gate** — if the validator finds cycles,
    the pipeline aborts with the cycle evidence. (Phase 1: warn-
    only; Phase 3: hard error.)
@@ -548,11 +631,11 @@ class A { … }
 class B extends A { … }
 ```
 
-If `mod_a` imports anything from `mod_b` at module-top (say through
-the closure pulling a transitive dep), the cycle `mod_a ↔ mod_b`
-contains a class extends-clause read. Class declarations are TDZ-
-prone, so this fails at module load with `ReferenceError: Cannot
-access A before initialization`.
+If `mod_a` imports anything from `mod_b` at module-top (say
+because the spec assigned a binding `mod_a` reads to `mod_b`),
+the cycle `mod_a ↔ mod_b` contains a class extends-clause read.
+Class declarations are TDZ-prone, so this fails at module load
+with `ReferenceError: Cannot access A before initialization`.
 
 Resolution: colocate `A` and `B`, or move the cross-`mod_a` import
 inside a function body so it becomes lazy.
@@ -568,8 +651,8 @@ const dataTypeIconMap = { [m.dataTypeNumberId]: numberIcon };
 ```
 
 `mod_b → mod_a` edge through the computed key. If `mod_a` doesn't
-edge back to `mod_b`, fine. If it does (because the closure
-disagreed about ownership), cycle, rejected.
+edge back to `mod_b`, fine. If it does (because the spec assigned
+something `mod_a` reads to `mod_b`), cycle, rejected.
 
 The legacy emit handled this via heuristics in
 `is_plain_import_safe_initializer` that special-cased computed
@@ -608,8 +691,6 @@ What is being removed (Phase 3-4):
 What stays (unchanged or lightly renamed):
 
 - Spec parsing into `LogicalRequest` / `ModulePlan`.
-- `close_module_bindings_over_dependencies` (with cycle-aware
-  refusal — Phase 2 enhancement).
 - `cross_module_imports_for_body`,
   `source_chunk_imports_for_moved_body`,
   `import_specifier_member_decl`.
@@ -617,6 +698,14 @@ What stays (unchanged or lightly renamed):
   pipeline.
 - Naturalization renames — moved to a clearly-separate
   post-processor pass, not intertwined with init.
+
+What relocates (Phase 1.7):
+
+- `close_module_bindings_over_dependencies` /
+  `expand_plan_to_transitive_dependencies` — moved off the
+  runtime path into a one-shot migration tool, then deleted.
+  Their logic lives on as the validator's recommender side-
+  output. See [Spec explicitness](#spec-explicitness--closure-as-recommender).
 
 ## Concept consolidation
 
@@ -735,16 +824,18 @@ collapsing imports into the same `Owned` map):
 | `source_chunk_imports_for_moved_body`                                                                                                                                       | Keep, take `Schedule`                                       | The "moved code references a source-chunk import" case is just a cross-module read where the owner is a sibling chunk                                                                                                                                             |
 | `import_specifier_member_decl` / `ImportSpecifierMember` / `resolve_import_specifier_member` / `lookup_import_specifier`                                                    | Trimmed                                                     | An "ImportSpecifier-bound member" is just a binding that's owned by a different chunk; ownership map handles it                                                                                                                                                   |
 | `LogicalRequest` / `MemberRequest`                                                                                                                                          | Keep                                                        | Spec-language AST, distinct from the resolved `Schedule`                                                                                                                                                                                                          |
-| `close_module_bindings_over_dependencies` / `expand_plan_to_transitive_dependencies`                                                                                        | Keep, take `Schedule`                                       | The closure pass mutates `Schedule.ownership`; cycle-aware refusal added in Phase 2                                                                                                                                                                               |
+| `close_module_bindings_over_dependencies` / `expand_plan_to_transitive_dependencies`                                                                                        | **Delete** after Phase 1.7                                  | Replaced by the validator's recommender side-output (`AssignmentRecommendation`); the spec becomes fully explicit, the runtime never pulls implicitly. See [Spec explicitness](#spec-explicitness--closure-as-recommender)                                        |
 | `naturalize_module_body` / `IdentifierRenamer` / `ShorthandNaturalizer`                                                                                                     | Keep, separate phase                                        | The readability rename pass is orthogonal to scheduling; it consumes `Schedule.modules[*].rename_map` and rewrites identifiers in the emitted source                                                                                                              |
 | `collect_referenced_idents` (the old visitor)                                                                                                                               | Replace with `StatementFacts::reads_at_init`-style visitors | `StatementFacts` already gives the eager-vs-lazy split; the old collector returned the union which is wrong for the dep graph                                                                                                                                     |
 
-Roughly: the legacy file has ~1500 LOC, of which ~500 LOC of init-
-wrapper/heuristic machinery deletes outright once the consolidation
-is in place. The remainder splits cleanly into spec parsing
-(`logical_requests_for_chunk`), schedule construction (the closure
-pass, talking to `Schedule.ownership`), and emission
-(`lower_chunk` rewritten as `emit_module(schedule, module_id)`).
+Roughly: the legacy file has ~1500 LOC, of which ~500 LOC of
+init-wrapper/heuristic machinery deletes outright once Phase 3
+lands, plus ~200 LOC of closure-pass machinery deletes after
+Phase 1.7. The remainder splits cleanly into spec parsing
+(`logical_requests_for_chunk`), schedule construction (just
+collecting the spec's explicit `owner` entries into
+`Schedule.bindings`), and emission (`lower_chunk` rewritten as
+`emit_module(schedule, module_id)`).
 
 ### Identifiers and types
 
@@ -879,22 +970,29 @@ touch the gaffer spec or its smoke. It can land before Phase 2
 by the schedule, and a clean schedule API makes those edits easier.
 
 1. Introduce `Schedule` and `ModuleId` as new types in
-   <schedule_validator.rs>; re-export from there.
-2. In `materialize_logical_modules`, build a `Schedule` once after
-   the closure pass settles. The `binding_assignment` local stays
-   as a compatibility view (`schedule.ownership` projected to
-   `BTreeMap<String, usize>`) until callers are migrated.
+   <schedule*validator.rs>; re-export from there. *(Done — Phase
+   1.6.1–1.6.3.)\_
+2. In `materialize_logical_modules`, build a `Schedule` once
+   after the binding assignment settles. _(Done — Phase 1.6.3;
+   `binding_assignment: BTreeMap<String, usize>` still lives
+   alongside as a compatibility view until 1.7 deletes the
+   closure pass.)_
 3. Migrate `validate_schedule`, `cross_module_imports_for_body`,
-   `source_chunk_imports_for_moved_body`,
-   `init_dep_names_for_body`, and the closure pass to take
-   `&Schedule`. Each migration is a self-contained refactor.
-4. Migrate `lower_chunk` last. After it consumes `Schedule`, the
+   `source_chunk_imports_for_moved_body`, and
+   `init_dep_names_for_body` to take `&Schedule`. _(Done — Phase
+   1.6.4 for the first two; the third dies in Phase 3.)_
+4. Phase 1.7: drop the closure pass from the runtime path
+   entirely (replaced by recommender side-output); the gaffer
+   spec is mechanically rewritten so every binding has an
+   explicit owner. After 1.7, `binding_assignment` is just the
+   spec's explicit map — no implicit transformation.
+5. Migrate `lower_chunk` last. After it consumes `Schedule`, the
    old `selected_by_module` / `selected_exports_by_module` locals
    disappear.
-5. Now Phase 3 is small: replace the init-wrapper branch in
+6. Phase 3 is then small: replace the init-wrapper branch in
    `lower_chunk` with source-order emit. Both branches read the
    same `Schedule`, so the change is local.
-6. Phase 4 deletes the marked-Delete legacy functions in one
+7. Phase 4 deletes the marked-Delete legacy functions in one
    sweep.
 
 Each step keeps the build green and the tests passing. No big-
@@ -913,8 +1011,9 @@ bang refactor; no spec churn until Phase 2.
 | 1.6.2 | `BindingName` type alias + `StatementOrdinal` newtype threaded through validator API                                                                                                                           | **Done** (<schedule_validator.rs>; `ModuleDepGraph::evidence` + `CycleEdge` typed)                                                         |
 | 1.6.3 | `Schedule` type with `BindingKind::Owned` + `LogicalModule`; validator goes through `Schedule::validate`                                                                                                       | **Done** (<schedule_validator.rs>; <logical_modules.rs:317> constructs `Schedule` after closure)                                           |
 | 1.6.4 | Migrate `cross_module_imports_for_body` + `source_chunk_imports_for_moved_body` to `&Schedule`; widen `LogicalModule` with `target_file` + `rename_map`; add `Schedule::owner_of` + `logical_module` accessors | **Done** (<logical_modules.rs>; `init_dep_names_for_body` left for Phase 3 deletion)                                                       |
-| 1.6.5 | Migrate closure pass to `&mut Schedule` with cycle-aware refusal                                                                                                                                               | Folded into Phase 2 — the cycle-aware refusal is the actual behavioural change, and shape-only API migration without it has minimal payoff |
-| 2     | Update gaffer spec to break each surfaced cycle                                                                                                                                                                | Pending 1.6                                                                                                                                |
+| 1.6.5 | Migrate closure pass to `&mut Schedule` with cycle-aware refusal                                                                                                                                               | Folded into Phase 1.7 — the closure leaves the runtime path entirely; cycle-aware refusal becomes recommender output, not closure mutation |
+| 1.7   | Spec-explicitness migration: validator emits `recommendations` for unowned bindings; one-shot tool rewrites gaffer spec with explicit owners; drop `close_module_bindings_over_dependencies` from runtime      | Pending; precedes Phase 2 (it shapes the spec language Phase 2 edits)                                                                      |
+| 2     | Update gaffer spec to break each surfaced cycle                                                                                                                                                                | Pending 1.7                                                                                                                                |
 | 3     | Switch emit to source-order; drop init-wrapper machinery                                                                                                                                                       | Pending 2                                                                                                                                  |
 | 4     | Cleanup: remove legacy code, update e2e fixtures, update AGENTS.md                                                                                                                                             | Pending 3                                                                                                                                  |
 
@@ -1134,18 +1233,15 @@ exploration before crossing the relevant phase.
 2. **Side-effect classification precision.** Without alias analysis
    we have to assume `const X = f()` is side-effecting if `f` is
    any function call. This over-imposes side-effect edges, which
-   may force more closures than necessary. Pure-call inference is
-   future work.
-3. **Closure refusal vs. rejection.** When the closure pass
-   considers pulling `B` into module `M` because `M` reads `B`,
-   but the pull would create a cycle, options are:
-   - Refuse and surface a cycle error to the spec author.
-   - Try the alternative (leaving `B` un-pulled) and re-check.
-   - Pull anyway and let the validator reject downstream.
-
-   Phase 2 picks "refuse and surface"; the spec author fixes the
-   spec. This is the strict path consistent with the realizability
-   theorem.
+   may flag more recommendations than strictly necessary. Pure-
+   call inference is future work.
+3. **Recommender determinism on ties.** When binding `B` is read
+   only by module `M`, the recommendation is unambiguous: `B → M`.
+   When `B` is read by multiple modules `{M₁, M₂}`, all
+   cycle-safe, the recommender has to either pick one (loses
+   determinism between author and tool) or surface the choice for
+   human resolution. Leaning toward surfacing — the recommender's
+   value is in being explicit about ambiguity, not hiding it.
 
 4. **Vendor chunk modeling.** Vendor chunks are pre-existing module
    boundaries that we don't control. They appear in the dep graph
