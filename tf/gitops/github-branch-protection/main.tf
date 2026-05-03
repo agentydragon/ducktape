@@ -10,8 +10,10 @@
 # container-images:pin-digests) can keep working after migration to
 # actions/create-github-app-token. See secrets/ducktape_automation.README.md.
 #
-# On gaffer-private, main is already the default branch — protection
-# becomes effective on apply.
+# On gaffer-private, main is already the default branch, but the ruleset
+# is created with enforcement = "disabled" pending the Flux App-auth
+# migration (see the NOTE on github_repository_ruleset.gaffer_main below
+# and plans/branch_protection.md).
 #
 # Auth uses the per-repo PATs already present in flux-system:
 #   - github-secrets-sync-pat (Administration:R/W on ducktape; deployed
