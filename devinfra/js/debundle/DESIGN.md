@@ -836,6 +836,292 @@ The full evidence list is in
 on a built artifact; aggregating by `(from, to)` pair gives a
 direct work list for spec edits.
 
+## Known sharp edges
+
+These are concrete gaps, oversimplifications, or unsound corners I
+spotted re-reading the doc. Pinning them so they don't bite during
+Phase 1.6 / Phase 3.
+
+### Soundness gaps
+
+#### The realizability theorem applies to the _post-closure_ assignment
+
+The theorem statement says "a spec assignment is realizable iff
+the dep graph is acyclic." But the spec assignment is partial —
+the closure pass extends it before emit. The graph that has to
+be acyclic is built over the **post-closure** assignment, not the
+spec's explicit member list. Two consequences:
+
+- A spec that looks fine in isolation can become unrealizable
+  after the closure pulls a transitive dep into a module that
+  already had a back-edge to that dep's owner. The validator
+  has to run after closure; running it on the spec's explicit
+  assignment alone would miss real cycles.
+- The closure pass's _behaviour_ is part of the realizability
+  contract. If the closure changes (e.g. switches from "first
+  module to claim wins" to "single-consumer wins"), specs that
+  used to be realizable can become un-realizable and vice
+  versa. The closure rules need to be specified as carefully as
+  the theorem.
+
+The proof is correct as written but the _target_ of the theorem
+should say "post-closure assignment" explicitly.
+
+#### Backward-direction proof is loose on "WLOG M₁ is first"
+
+The proof says "some module has to be first" in the cycle. ESM
+doesn't actually let us pick the starting module — it's
+determined by the entry's import graph and reverse-DFS order. So
+"WLOG" hides a small detail: regardless of which cycle member
+ESM picks as the first to evaluate, _some_ cycle edge will fire
+in the wrong order (because a cycle has no topological linearizer
+that respects all edges). Spelling that out makes the proof
+airtight; the gist is correct already.
+
+#### Side effects we can't see locally
+
+`reads_at_init(S)` only catches local-name reads. These ordering
+constraints are real but invisible to the analyzer:
+
+- `globalThis.X = ...` / `window.X = ...` writes that another
+  module reads via `globalThis.X`. Module A "sets" the value, B
+  "reads" it; the dep graph has no edge.
+- `eval(some_string)` running arbitrary code at init.
+- `new Function(...)` likewise.
+- `with` statements scoping things our visitor doesn't track.
+- Mutations to objects passed across imports
+  (`vendor.someConfig.foo = bar` — `vendor.someConfig` was
+  imported, the mutation is observable).
+
+The conservative `has_side_effect = true` for any function call
+catches _some_ of these cases (it forces a side-effect-order
+edge), but won't catch e.g. two pure-looking modules where one
+quietly writes a global and the other reads it. The validator
+will accept a spec that produces wrong observable behaviour at
+runtime.
+
+Mitigation: the conservative side-effect classification is
+already there; bundled output rarely depends on these patterns,
+because bundlers can't preserve them across boundaries either.
+If we hit such a case in real Tana, surface it as a
+"spec-author-side known limitation."
+
+#### `re_exported_by` should be a map, not a set
+
+```rust
+re_exported_by: BTreeSet<ModuleId>
+```
+
+is wrong. Different modules can re-export the same imported
+binding under _different_ names (e.g. one module re-exports
+`vendor.j as jsxRuntime`, another as `__jsx`). The set forgets
+the rename. Correct shape:
+
+```rust
+re_exported_by: BTreeMap<ModuleId, BindingName>
+```
+
+— per-module rename. Update the data model before Phase 1.6
+implementation; this is cheap to fix now and expensive later.
+
+### Coverage audits the analyzer needs
+
+#### Lazy positions: complete list pending tests
+
+Current visitor handles: function bodies, method bodies (via
+`visit_function`), arrow bodies, getter/setter prop bodies,
+class instance fields, class method bodies, computed prop names
+on class members.
+
+Not yet pinned by tests (and at least some not implemented):
+
+- **Default parameter values** (`function f(x = compute()) {}`)
+  — per spec, these evaluate on call, so lazy.
+- **Decorator expressions** (`@decorator class C {}`) — eager
+  (run at class-decl time).
+- **Object literal getter/setter bodies** (vs `MethodProp`).
+- **Tagged template strings** (`` tag`...` ``) — eager (tag
+  function is read).
+- **Spread elements** (`[...x]`, `{...x}`) — eager (read x).
+- **Dynamic `import(expr)` argument** — eager (expr evaluates).
+- **Optional chaining / nullish coalescing** — eager.
+- **Top-level await** (`await expr`) at module top — eager;
+  also blocks the importer's evaluation, which our model
+  doesn't track.
+- **JSX** — usually transformed to function calls, so eager;
+  if transform isn't applied, the JSX visitor needs explicit
+  handling.
+
+Action: add a unit test per case to <schedule_validator.rs>;
+fill the visitor's gaps. Aim for an exhaustive table.
+
+#### Side-effect classification is conservative
+
+Right now `has_side_effect = true` for any non-pure expression
+(function calls, member access on possibly-mutating objects,
+etc.). That over-imposes side-effect-order edges in `G'`,
+potentially creating cycles that aren't really there.
+
+For Tana this hasn't bitten yet because the SCC we found is from
+real `reads_at_init` edges, not side-effect edges. But the next
+spec we look at could have `G'`-only cycles that are entirely
+spurious (two side-effecting modules that don't actually
+observe each other). Pure-call inference is the long-term fix;
+pragmatic short-term: only add `G'` edges when both statements'
+side effects are _observable_ (write to global, throw, console,
+DOM, network), not pure-by-pattern (literal-only initializers).
+
+### Out-of-scope JS features
+
+The model assumes a synchronous, single-pass ESM evaluation
+without runtime-dynamic effects. These features are out of scope:
+
+- **Top-level await.** Our model treats module evaluation as
+  synchronous; TLA changes that. Bundled output today doesn't
+  use TLA but vendored libs increasingly do. If a TLA pattern
+  appears, the cycle analysis is unsound — the awaited promise
+  yields, the importer continues evaluating with the awaited
+  value still pending. We'd need an "async-eval" extension to
+  the model.
+- **`eval` / `new Function`.** Arbitrary code at init time.
+  We can't statically see what they read or write. Conservative
+  approach: classify as side-effecting and refuse to split
+  modules that contain them across cycle boundaries.
+- **Generators with side-effecting `next()` calls** — same as
+  function calls, we treat the call site as side-effecting and
+  rely on the conservative classification.
+- **`with` statements.** Lexical scoping changes; our visitor
+  treats names as referring to a global scope. JS strict mode
+  forbids `with` so bundled output doesn't use it.
+
+Each of these should produce a clear analyzer warning if
+detected, not silent acceptance.
+
+### Semantic clarifications the doc handwaves
+
+#### Closure pass formalization
+
+The doc says the closure "pulls in any binding referenced by a
+moved decl, even if doing so creates a cycle (Phase 2: refuses
+on cycle)." But it doesn't pin _which_ references count: only
+`reads_at_init`, or all references including lazy
+function-body reads?
+
+Recommended rule: closure pulls bindings that are referenced
+_from at-init positions_ in already-claimed code, plus any
+binding whose declaring statement has at-init reads of already-
+claimed bindings (so the unclaimed binding's home doesn't
+create a residual-entry-to-logical-module dep). Lazy references
+are fine across module boundaries (the linker handles them via
+imports), so they don't need pulling.
+
+This rule guarantees the closure makes the dep graph _smaller_,
+not larger — and in particular, the closure either resolves a
+cycle (by colocating cycle members) or doesn't introduce new
+cycles. Without this rule the closure can cause cycles
+unpredictably.
+
+#### Mixed-owner comma-list var-decls
+
+The doc says: "Comma-list var-decls with split owners are split
+into separate var-decls before this step." That's a real
+transform on the AST that needs spelling out:
+
+`const A = e1, B = e2, C = e3` → `const A = e1; const B = e2;
+const C = e3` if the spec assigns A, B, C to different modules.
+
+Correctness: each declarator's RHS evaluates in source order;
+splitting into separate `const` statements preserves that
+within a single module. _Across_ modules, the dep graph
+captures any RHS-to-LHS reads (e.g. `C = A.x` adds C-home →
+A-home edge). The split is semantically transparent if the dep
+graph is acyclic.
+
+What if the comma-list has interleaved side effects?
+`const A = setupA(), B = setupB(), C = wrap(A, B)` — `setupA`
+and `setupB` might have observable effects that need to fire
+in source order. After splitting, source order within A's
+module and B's module is preserved; cross-module ordering
+needs side-effect edges in `G'`. The validator catches this.
+
+#### Multi-chunk dep graphs
+
+The current schedule is per-chunk. Cross-chunk dependencies go
+through `ExternalChunk(ChunkId)` nodes in the dep graph. But
+the realizability theorem is only stated for a single chunk's
+schedule.
+
+Real Tana has many user-chunks plus vendor chunks. Cycles
+between user-chunks (e.g. `static/index-DI2GynTv` ↔
+`static/StoryIndex-DrlmoZTE`) are conceivable. The right move
+is to extend the theorem to a multi-chunk schedule:
+realizability iff the _combined_ dep graph (all chunks
+contributing nodes for their logical modules + each other as
+`ExternalChunk` nodes) is acyclic.
+
+In practice vendor chunks are leaves (they don't import from
+us) so vendor↔user cycles can't happen. User↔user cycles
+_can_ happen and are worth detecting.
+
+#### Empty logical modules
+
+A spec entry whose member list is satisfied entirely by import-
+specifier-bound bindings (now `Imported.re_exported_by`) ends up
+with no `Owned` bindings. Today's emit produces an effectively-
+empty file (just imports + re-exports). This is _correct_ but
+worth a clearer name in the data model — it's a re-export-only
+module, not a logical module that owns code.
+
+Similarly, a spec entry whose explicit members all turn out to
+not exist in the chunk (from the closure-pass perspective) ends
+up empty after filtering. The legacy code papers over this
+silently; the new design should warn.
+
+### Validator's incomplete view today
+
+Phase 1's validator runs on the **legacy `binding_assignment`**,
+which only includes `Owned` bindings — `ImportSpecifier`-bound
+locals are tracked through the parallel `import_members` channel
+and _not_ fed to the validator. So the SCC the validator just
+reported (9 modules, 99 edges) is a **lower bound** on the
+cycles in the Tana spec.
+
+There may be more cycles that pass through ImportSpecifier-bound
+bindings (e.g. a re-exported vendor binding that one logical
+module reads from another logical module's re-export). Phase
+1.6's data-model unification will give the validator full
+visibility; the cycle list might grow then.
+
+This matters for Phase 2: don't declare "spec is acyclic" until
+the validator is running on the unified `Schedule`. The current
+report is useful for surfacing the obvious 9-module SCC, not
+for proving an absence of cycles.
+
+### Validator UX gaps
+
+The cycle report today is JSON: list of SCCs with
+`(from, to, statement_ordinal, binding)` tuples. Useful for
+tooling, painful for humans. A spec author looking at 99 edges
+will not know where to start.
+
+Wanted: a human-readable rendering keyed off source positions,
+with concrete colocation suggestions. Approximate shape:
+
+```
+Cycle: prompting_runtime ↔ vendor_symbols
+  reason: prompting_runtime statement at source line 22745
+    reads `m.dataTypeNumberId` (binding `m`, owned by
+    vendor_symbols)
+  reason: vendor_symbols statement at source line 41100
+    reads `ut.forwardRef(...)` (binding `ut`, owned by
+    prompting_runtime)
+  Resolution suggestion: colocate {`m`, `ut`} in one module.
+```
+
+Phase 1.6 should produce something close to this. Plain JSON
+is fine for the schedule report; the human-readable version
+is a renderer over the same data.
+
 ## Open design questions
 
 These are unresolved precision issues. Each is worth its own
