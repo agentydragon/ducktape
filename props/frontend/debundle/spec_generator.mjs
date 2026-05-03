@@ -166,7 +166,13 @@ function buildVendorOps(vendorChunkMap) {
       package: "highlight.js",
       version: "11.11.1",
       subpath: "es/index.js",
-      wrapperShape: "named-from-default",
+      // highlight.js `es/index.js` is `import x from "..."; export
+      // default x;` — the named-from-module-default wrapper shape
+      // matches that pattern (rename a re-exported module default
+      // back to a named export). The named-from-default shape would
+      // require an object-literal default, which highlight.js's
+      // identifier-based default doesn't satisfy.
+      wrapperShape: "named-from-module-default",
       confidence: "confirmed",
       identity: "highlight.js (smoke)",
       upstreamFamily: "highlight.js",
