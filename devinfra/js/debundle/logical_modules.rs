@@ -304,6 +304,7 @@ pub fn materialize_logical_modules(
         }
 
         let lowered = lower_chunk(LowerChunkInputs {
+            artifact,
             runtime_ast,
             header_lines: &header_lines,
             entry_file: &target_file,
@@ -451,6 +452,7 @@ struct LoweredChunk {
 }
 
 struct LowerChunkInputs<'a> {
+    artifact: &'a JsPipelineArtifact,
     runtime_ast: &'a ParsedJsModule,
     header_lines: &'a [String],
     entry_file: &'a str,
@@ -463,6 +465,7 @@ struct LowerChunkInputs<'a> {
 
 fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
     let LowerChunkInputs {
+        artifact,
         runtime_ast,
         header_lines,
         entry_file,
@@ -634,6 +637,22 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             module_plans,
             binding_assignment,
         );
+        // Re-import any source-chunk import-specifier-bound locals that
+        // moved code in `body` references but no top-level decl
+        // satisfies (e.g. `const { decode } = gge;` where `gge` was an
+        // ImportSpecifier in the source chunk's runtime body). Without
+        // this, the moved code references a free variable and Node
+        // throws `ReferenceError: gge is not defined` at runtime.
+        let mut runtime_reimports = source_chunk_imports_for_moved_body(
+            artifact,
+            &runtime_ast.module.body,
+            chunk_id,
+            entry_file,
+            &plan.target_file,
+            &body,
+            binding_assignment,
+        )?;
+        module_imports.append(&mut runtime_reimports);
         module_imports.append(&mut body);
         body = module_imports;
         rewrite_runtime_sources_for_target(&mut body, &plan.target_file);
@@ -1978,6 +1997,172 @@ fn resolve_import_specifier_member(
         imported,
         rewritten_source,
     })
+}
+
+/// Build re-imports for source-chunk ImportSpecifier-bound locals that
+/// `body` (the moved code for this destination module) references but
+/// no enclosing import or local decl provides. Each emitted import
+/// uses a destination-relative path resolved through the artifact's
+/// source-chunk index, so it stays correct after the rewriter (which
+/// skips materialized files).
+fn source_chunk_imports_for_moved_body(
+    artifact: &JsPipelineArtifact,
+    runtime_body: &[ModuleItem],
+    source_chunk_id: &str,
+    source_runtime_file: &str,
+    dest_target_file: &str,
+    body: &[ModuleItem],
+    binding_assignment: &BTreeMap<String, usize>,
+) -> Result<Vec<ModuleItem>> {
+    let mut runtime_imports = BTreeMap::<String, RuntimeImportInfo>::new();
+    for item in runtime_body {
+        let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+            continue;
+        };
+        let src = str_value(&import.src);
+        for specifier in &import.specifiers {
+            match specifier {
+                ImportSpecifier::Named(named) => {
+                    let local = named.local.sym.to_string();
+                    let imported = match &named.imported {
+                        Some(ModuleExportName::Ident(ident)) => ident.sym.to_string(),
+                        Some(ModuleExportName::Str(s)) => str_value(s),
+                        None => named.local.sym.to_string(),
+                    };
+                    runtime_imports.insert(
+                        local,
+                        RuntimeImportInfo {
+                            kind: RuntimeImportKind::Named { imported },
+                            src: src.clone(),
+                        },
+                    );
+                }
+                ImportSpecifier::Default(default) => {
+                    runtime_imports.insert(
+                        default.local.sym.to_string(),
+                        RuntimeImportInfo {
+                            kind: RuntimeImportKind::Default,
+                            src: src.clone(),
+                        },
+                    );
+                }
+                ImportSpecifier::Namespace(namespace) => {
+                    runtime_imports.insert(
+                        namespace.local.sym.to_string(),
+                        RuntimeImportInfo {
+                            kind: RuntimeImportKind::Namespace,
+                            src: src.clone(),
+                        },
+                    );
+                }
+            }
+        }
+    }
+    let mut already_imported = BTreeSet::<String>::new();
+    for item in body {
+        if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {
+            for specifier in &import.specifiers {
+                let local = match specifier {
+                    ImportSpecifier::Named(named) => named.local.sym.to_string(),
+                    ImportSpecifier::Default(default) => default.local.sym.to_string(),
+                    ImportSpecifier::Namespace(namespace) => namespace.local.sym.to_string(),
+                };
+                already_imported.insert(local);
+            }
+        }
+    }
+    let mut needed = BTreeMap::<String, &RuntimeImportInfo>::new();
+    for item in body {
+        for name in collect_referenced_idents(item) {
+            if already_imported.contains(&name) {
+                continue;
+            }
+            if binding_assignment.contains_key(&name) {
+                // Provided by another plan via cross_module_imports.
+                continue;
+            }
+            if let Some(info) = runtime_imports.get(&name) {
+                needed.insert(name, info);
+            }
+        }
+    }
+    let mut result = Vec::new();
+    for (local, info) in needed {
+        let dest_dir = posix_join(&[source_chunk_id, &posix_dirname(dest_target_file)]);
+        let rewritten_source = if let Some((target_chunk_id, target_entry_file, _path)) =
+            resolve_artifact_source_import_reference(
+                artifact,
+                &info.src,
+                source_chunk_id,
+                source_runtime_file,
+            )? {
+            let target_path = posix_join(&[&target_chunk_id, &target_entry_file]);
+            let mut rel = posix_relative(&dest_dir, &target_path);
+            if !rel.starts_with('.') {
+                rel = format!("./{rel}");
+            }
+            rel
+        } else {
+            let depth = std::path::Path::new(dest_target_file)
+                .parent()
+                .map(|parent| parent.iter().count())
+                .unwrap_or(0);
+            format!("{}{}", "../".repeat(depth), info.src)
+        };
+        result.push(build_runtime_reimport(&local, info, &rewritten_source));
+    }
+    Ok(result)
+}
+
+#[derive(Debug)]
+struct RuntimeImportInfo {
+    kind: RuntimeImportKind,
+    src: String,
+}
+
+#[derive(Debug)]
+enum RuntimeImportKind {
+    Named { imported: String },
+    Default,
+    Namespace,
+}
+
+fn build_runtime_reimport(local: &str, info: &RuntimeImportInfo, src: &str) -> ModuleItem {
+    let specifier = match &info.kind {
+        RuntimeImportKind::Named { imported } => ImportSpecifier::Named(ImportNamedSpecifier {
+            span: DUMMY_SP,
+            local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+            imported: if imported == local {
+                None
+            } else {
+                Some(ModuleExportName::Ident(Ident::new_no_ctxt(
+                    imported.clone().into(),
+                    DUMMY_SP,
+                )))
+            },
+            is_type_only: false,
+        }),
+        RuntimeImportKind::Default => ImportSpecifier::Default(ImportDefaultSpecifier {
+            span: DUMMY_SP,
+            local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+        }),
+        RuntimeImportKind::Namespace => ImportSpecifier::Namespace(ImportStarAsSpecifier {
+            span: DUMMY_SP,
+            local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+        }),
+    };
+    ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
+        span: DUMMY_SP,
+        specifiers: vec![specifier],
+        src: Box::new(Str {
+            span: DUMMY_SP,
+            value: src.into(),
+            raw: None,
+        }),
+        type_only: false,
+        with: None,
+        phase: ImportPhase::Evaluation,
+    }))
 }
 
 fn import_specifier_member_decl(member: &ImportSpecifierMember) -> ModuleItem {

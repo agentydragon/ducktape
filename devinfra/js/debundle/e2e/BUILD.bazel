@@ -50,5 +50,6 @@ rust_library(
         "sibling_declarator_steal_test",
         "import_specifier_member_test",
         "missing_binding_member_test",
+        "runtime_import_reference_test",
     ]
 ]
