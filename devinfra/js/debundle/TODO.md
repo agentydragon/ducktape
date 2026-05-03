@@ -5,50 +5,10 @@ once closed; this file is not a changelog.
 
 The big architectural item — replacing the legacy init-wrapper
 lowering with a static schedule validator + source-order emit —
-landed in phases 1 → 4 (see <DESIGN.md> "Status" table). The
-remaining design-doc follow-on is the `BindingKind::Imported`
-migration: collapse the parallel `import_members` channel into
-the unified binding kind and fix multi-module re-export of
-source-chunk imports (currently pinned by
-`promise_multi_module_re_export_test`). The items in this file
+landed in phases 1 → 4 (see <DESIGN.md> "Status" table),
+including the `BindingKind::Imported` collapse that closes out
+the parallel `import_members` channel. The items in this file
 are smaller, mostly-orthogonal cleanups.
-
-## `BindingKind::Imported` migration
-
-Collapse the parallel `import_members: Vec<ImportSpecifierMember>`
-channel on `ModulePlan` into the unified `BindingKind::Imported`
-variant on `Schedule.bindings`. Today's data model:
-
-- Owned bindings flow through `Schedule.bindings` /
-  `BindingKind::Owned`.
-- ImportSpecifier-bound bindings (re-exports of source-chunk
-  imports) flow through `ModulePlan.import_members` —
-  hand-resolved to a single destination `rewritten_source` at
-  parse time.
-
-This split breaks the "two logical modules re-export the same
-source-chunk import under different public names" case:
-`promise_multi_module_re_export_test` is pinned with `#[ignore]`
-flagging it. The fix:
-
-1. Add `BindingKind::Imported { imported_from: ChunkId,
-imported_name: BindingName, re_exported_by: BTreeMap<ModuleId,
-BindingName> }` (already pinned in DESIGN.md).
-2. Spec parser populates `Schedule.bindings` with `Imported`
-   entries (one entry per source-chunk-import binding,
-   accumulating multiple `re_exported_by` targets).
-3. Emit-side: per-module re-import path is computed at emit time
-   from `imported_from` + the destination's path, so each
-   destination gets its own correctly-relativised path.
-4. Drop `ModulePlan.import_members` and
-   `resolve_import_specifier_member`'s pre-computation of
-   `rewritten_source`.
-
-The path bug behind the failing test is structural — the current
-`ImportSpecifierMember.rewritten_source` is a single string per
-binding, so different destinations can't get different paths.
-Both the data-model migration and the path-resolution move-to-
-emit-time are part of the same change.
 
 ## Excalidraw live-browser smoke
 
