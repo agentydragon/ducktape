@@ -180,19 +180,23 @@ export { tagsA, tagsB, cfgA, cfgB, reA, reB };
 #[test]
 #[ignore = "purity inference unimplemented"]
 fn inferred_pure_static_object_method_aliasing_emits_no_s_cycle() {
-    // `const f = Object.defineProperty;` is bare-member-access
-    // aliasing of a statically-known pure built-in. Today the
-    // classifier marks `MemberExpression` as `Unknown` because
-    // any object can have a getter; for the well-known
-    // `Object` global, the analyzer should recognize that no
-    // standard property is a getter.
+    // The expression being classified here is bare member
+    // access — `const define = Object.defineProperty;` reads
+    // a property off the `Object` global without invoking it.
+    // (Calling `Object.defineProperty(...)` mutates its
+    // target; that's not what's classified pure here.) Today
+    // the classifier marks any `MemberExpression` as
+    // `Unknown` because any object can have a getter; for the
+    // well-known `Object` global, the analyzer should
+    // recognize that no standard property is a getter, so
+    // reading the function reference is side-effect-free.
     let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
         r#"const define = Object.defineProperty;
 const freeze = Object.freeze;
 const values = Object.values;
 const keys = Object.keys;
 const obj = freeze({ x: 1 });
-console.log(values(obj), keys(obj));
+console.log(values(obj)[0], keys(obj)[0]);
 export { define, freeze, values, keys };
 "#,
         vec![
@@ -200,7 +204,10 @@ export { define, freeze, values, keys };
             logical_module("mod_b", &[Member::new("freeze"), Member::new("keys")]),
         ],
     ));
-    assert_entry_output(&fixture, "[ 1 ] [ 'x' ]\n");
+    // Log primitives directly: Node's `util.inspect` array
+    // formatting (`[ 1 ]` vs `[1]`) shifts across versions; a
+    // primitive comparison is version-stable.
+    assert_entry_output(&fixture, "1 x\n");
 }
 
 #[test]
@@ -458,16 +465,19 @@ export { A, B, D, wrap };
 
 #[test]
 #[ignore = "spec-level purity declarations unimplemented"]
-fn declared_pure_only_applies_to_annotated_member() {
-    // Two HOFs in the chunk: `pureWrap` and `impureWrap`.
-    // The author annotates only `pureWrap` as pure;
-    // `impureWrap` legitimately writes to `globalThis`.
-    // Calls to `pureWrap` should drop their `S` edges; calls
-    // to `impureWrap` keep theirs. A spec that interleaves
-    // `pureWrap(...)` calls across modules is fine; one that
-    // interleaves `impureWrap(...)` calls is still rejected.
+fn declared_pure_annotation_applies_only_to_annotated_member_positive() {
+    // Two HOFs in the chunk: `pureWrap` (has no observable
+    // side effects) and `impureWrap` (legitimately writes to
+    // `globalThis`). The author annotates only `pureWrap` as
+    // pure; `impureWrap` is left at the default
+    // (conservatively impure) classification.
     //
-    // First: positive — pure-only interleaving accepts.
+    // Positive half of the contract: a spec that interleaves
+    // `pureWrap(...)` calls across modules accepts — the
+    // annotation drops the `S` edges that would otherwise
+    // close a cycle. The companion `..._negative` test pins
+    // the other half: the annotation does not bleed onto
+    // unannotated members.
     let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
         r#"function pureWrap(x) { return { val: x }; }
 function impureWrap(x) { globalThis.lastWrap = x; return { val: x }; }
@@ -513,4 +523,64 @@ export { A, B, C, pureWrap, impureWrap };
         ],
     ));
     assert_entry_output(&fixture, "a b c\n");
+}
+
+#[test]
+#[ignore = "spec-level purity declarations unimplemented"]
+fn declared_pure_annotation_applies_only_to_annotated_member_negative() {
+    // Same chunk shape as the `..._positive` companion (two
+    // HOFs, `pureWrap` annotated pure, `impureWrap` not), but
+    // the spec interleaves `impureWrap(...)` calls across
+    // mod_a and mod_b. Because `impureWrap` carries no
+    // annotation and its body writes `globalThis.lastWrap`,
+    // each call is classified side-effecting; the resulting
+    // `S` graph has cross-module edges in both directions and
+    // the gate must reject. The `pureWrap` annotation does
+    // not bleed onto sibling members.
+    expect_logical_modules_e2e_rejection_containing_all(
+        FixtureOpts::new(
+            r#"function pureWrap(x) { return { val: x }; }
+function impureWrap(x) { globalThis.lastWrap = x; return { val: x }; }
+const A = impureWrap("a");
+const B = impureWrap("b");
+const C = impureWrap("c");
+console.log(A.val, B.val, C.val, globalThis.lastWrap);
+export { A, B, C, pureWrap, impureWrap };
+"#,
+            vec![
+                json!({
+                    "id": "logical__mod_a",
+                    "operation": "define_logical_module",
+                    "selector": { "chunkId": "static/app" },
+                    "target": { "path": "mod_a" },
+                    "members": [
+                        { "id": "m_a", "name": "A", "selector": { "binding": { "name": "A" } } },
+                        { "id": "m_c", "name": "C", "selector": { "binding": { "name": "C" } } },
+                        {
+                            "id": "m_pure_wrap",
+                            "name": "pureWrap",
+                            "selector": { "binding": { "name": "pureWrap" } },
+                            "purity": "pure",
+                        },
+                        {
+                            "id": "m_impure_wrap",
+                            "name": "impureWrap",
+                            "selector": { "binding": { "name": "impureWrap" } },
+                            // Deliberately unannotated.
+                        },
+                    ],
+                }),
+                json!({
+                    "id": "logical__mod_b",
+                    "operation": "define_logical_module",
+                    "selector": { "chunkId": "static/app" },
+                    "target": { "path": "mod_b" },
+                    "members": [
+                        { "id": "m_b", "name": "B", "selector": { "binding": { "name": "B" } } },
+                    ],
+                }),
+            ],
+        ),
+        &["cycle", "mod_a", "mod_b", "side-effect"],
+    );
 }
