@@ -10,7 +10,8 @@
 //! ## Heuristic
 //!
 //! [`is_scrambled_name`] decides whether a top-level binding name still
-//! looks like the Tana/Vite minifier's letter-pair output. The heuristic:
+//! looks like a production minifier's letter-pair output (the shape
+//! Vite/esbuild/terser produce on `minify: true`). The heuristic:
 //!
 //! - Length ≤ 4: scrambled (covers 1-3 letters + optional `$N` digits;
 //!   includes `aH`, `aH$1`, `a`, `_x`, `__t`).
@@ -26,20 +27,21 @@
 //!
 //! ## Stable selector
 //!
-//! The selector encodes a symbol identity that survives Tana version
-//! bumps even when the scrambled letter pair regenerates:
+//! The selector encodes a symbol identity that survives upstream
+//! version bumps even when the scrambled letter pair regenerates:
 //!
 //! - `chunk_id`: the chunk source path (e.g. `static/index-DI2GynTv`).
 //!   Vite-emitted chunk filenames carry a content hash; the unhashed
 //!   prefix is the stable part the spec generator uses, but we keep the
-//!   full chunk_id because Tana's hashes are stable across patch builds.
+//!   full chunk_id because Vite-generated hashes are stable across
+//!   patch builds.
 //! - `owner_file`: the chunk-relative file path the declaration lands in
 //!   *after* pipeline execution (post-rename, post-materialize). For a
 //!   pure entry chunk this is `entry.js`; after `materialize_logical_modules`
 //!   it might be `modules/foo/bar.js`.
 //! - `owner_ordinal`: the zero-based ordinal of the top-level declaration
 //!   in `owner_file`'s module body. Stable across patch builds; can shift
-//!   when the upstream source adds/removes top-level declarations, but
+//!   when upstream source adds/removes top-level declarations, but
 //!   shifts are local — the ordering of the queue's top entries is what
 //!   matters, and a shift of one symbol doesn't perturb the rest.
 //!
@@ -76,7 +78,8 @@ pub const OUTPUT_FILENAME: &str = "scrambled-identifier-frequencies.json";
 pub const KIND: &str = "js.scrambled_identifier_frequencies";
 
 /// Decide whether `name` is a developer-readable identifier or the kind
-/// of scrambled letter-pair the Tana/Vite minifier produces.
+/// of scrambled letter-pair a production minifier produces (Vite,
+/// esbuild, terser, swc-minify on `minify: true`).
 ///
 /// See module-level docs for the heuristic rationale; the test module at
 /// the bottom of this file exercises every documented edge case.
@@ -93,7 +96,7 @@ pub fn is_scrambled_name(name: &str) -> bool {
         return false;
     }
     let len = name.chars().count();
-    // Length ≤ 4 covers the Tana minifier's letter pairs (`aH`, `aB$1`)
+    // Length ≤ 4 covers production-minifier letter pairs (`aH`, `aB$1`)
     // and short developer-internal names (`__t`, `_x`, `a`).
     if len <= 4 {
         return true;
@@ -553,7 +556,7 @@ mod tests {
 
     #[test]
     fn is_scrambled_name_handles_documented_edge_cases() {
-        // Letter pairs (Tana/Vite minifier output): scrambled.
+        // Letter pairs (production minifier output): scrambled.
         assert!(is_scrambled_name("aH"));
         assert!(is_scrambled_name("aH$1"));
         // Length-1 letter: scrambled.

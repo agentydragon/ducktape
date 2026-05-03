@@ -220,8 +220,8 @@ export function rewriteHtmlForLiveProxy(sourceHtml, { appAssetPrefix, bootstrapU
 
   // Re-target absolute-path static-asset references (CSS, fonts, images,
   // service-worker bootstrap scripts) at the proxy's internal prefix so
-  // they're served from the snapshot harness instead of forwarded to
-  // upstream Tana, where the pinned hashes may have rotated. The
+  // they're served from the snapshot harness instead of forwarded to the
+  // upstream host, where the pinned hashes may have rotated. The
   // `appAssetPrefix` is callable-conditional because old test fixtures
   // construct manifests with absolute paths and never rewrite —
   // skipping the rewrite leaves their behavior unchanged.
