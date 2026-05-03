@@ -55,5 +55,6 @@ rust_library(
         "validator_rejects_cycle_test",
         "source_order_emit_test",
         "multi_module_re_export_test",
+        "lazy_back_edge_cycle_test",
     ]
 ]
