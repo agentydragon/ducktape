@@ -20,7 +20,6 @@
 
 use debundle_e2e_support::*;
 
-#[ignore = "phase 5: un-ignore once build_module_dep_graph walks reads_lazy too"]
 #[test]
 fn rejects_cycle_through_lazy_back_edge() {
     expect_logical_modules_e2e_rejection(

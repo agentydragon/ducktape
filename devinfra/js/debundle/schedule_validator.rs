@@ -11,14 +11,17 @@
 //!    ordinal.
 //! 2. Map each statement to its destination module (logical module
 //!    or residual entry) using the spec's binding assignment.
-//! 3. Build a directed module dep graph: edge `M_S → M_b` for every
-//!    `(S, b)` where statement `S` lives in module `M_S` and
-//!    `b ∈ reads_at_init(S)` is owned by module `M_b ≠ M_S`.
-//! 4. Validate: the dep graph must be acyclic. Cycles are the
+//! 3. Build the imports graph `I`: edge `M_S → M_b` for every
+//!    `(S, b)` where statement `S` lives in module `M_S` and `b`
+//!    is owned by `M_b ≠ M_S`, irrespective of whether the read is
+//!    at-init or lazy. Each edge of `I` corresponds to one
+//!    emitted `import` directive — `I` is exactly the graph the
+//!    ESM linker walks for evaluation order.
+//! 4. Validate: `I ∪ S` must be acyclic. Cycles are the
 //!    unrealizable case — no ESM evaluation order can satisfy the
-//!    spec's assignment without papering over the cycle at runtime.
-//!    `materialize_logical_modules` aborts when this validator
-//!    reports cycles.
+//!    spec's assignment without TDZ on at-init reads or wrong
+//!    side-effect ordering. `materialize_logical_modules` aborts
+//!    when this validator reports cycles.
 //!
 //! The output is a JSON report listing the cycles + their evidence
 //! (which `(statement, binding)` pairs form each cycle), plus
@@ -26,8 +29,10 @@
 //! module reads. The report is written next to the existing
 //! manifests as `<chunk_id>.schedule.json`.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+use petgraph::algo::tarjan_scc;
+use petgraph::graphmap::DiGraphMap;
 use serde::Serialize;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
@@ -353,6 +358,16 @@ impl Visit for AtInitReadCollector {
 
     fn visit_import_decl(&mut self, _node: &ImportDecl) {}
 
+    // Export specifiers don't fire reads at module-init: ESM treats
+    // them as a static export entry, linked lazily when consumers
+    // import. Counting them as at-init reads adds spurious `R`
+    // edges (and, post-Phase-5 where R ⊆ I, spurious `I` edges).
+    // `export var X = ...` / `export class X {}` etc. are still
+    // visited via `ExportDecl`; only the bare-specifier forms are
+    // suppressed here.
+    fn visit_named_export(&mut self, _node: &NamedExport) {}
+    fn visit_export_all(&mut self, _node: &ExportAll) {}
+
     // Function bodies are lazy — references inside don't read at-init.
     fn visit_function(&mut self, _node: &Function) {}
     fn visit_fn_decl(&mut self, _node: &FnDecl) {}
@@ -566,6 +581,15 @@ pub struct ModuleDepGraph {
     pub evidence: BTreeMap<(ModuleId, ModuleId), Vec<(StatementOrdinal, BindingName)>>,
 }
 
+/// Build the imports graph `I` (per DESIGN.md "Module dep
+/// graphs"): an edge `(M, M')` for every cross-module reference,
+/// at-init or lazy. Each edge of `I` corresponds to exactly one
+/// emitted `import { b } from "<M'>"` directive in `M`'s body
+/// — so the graph constructed here is exactly the graph the ESM
+/// linker walks for evaluation order.
+///
+/// `reads_at_init` and `reads_lazy` are disjoint per statement;
+/// their union is the full reference set.
 pub fn build_module_dep_graph(
     facts: &[StatementFacts],
     binding_assignment: &BTreeMap<BindingName, ModuleId>,
@@ -580,20 +604,33 @@ pub fn build_module_dep_graph(
             .next()
             .unwrap_or(ModuleId::ResidualEntry)
     };
+    let record = |from: ModuleId,
+                  binding: &BindingName,
+                  ordinal: StatementOrdinal,
+                  edges: &mut BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+                  evidence: &mut BTreeMap<
+        (ModuleId, ModuleId),
+        Vec<(StatementOrdinal, BindingName)>,
+    >| {
+        let Some(&to) = binding_assignment.get(binding) else {
+            return; // not a chunk-owned binding (global, ImportSpecifier, never-declared)
+        };
+        if to == from {
+            return;
+        }
+        edges.entry(from).or_default().insert(to);
+        evidence
+            .entry((from, to))
+            .or_default()
+            .push((ordinal, binding.clone()));
+    };
     for stmt in facts {
         let from = stmt_owner(stmt);
         for binding in &stmt.reads_at_init {
-            let Some(&to) = binding_assignment.get(binding) else {
-                continue; // not a chunk-owned binding (could be a global, an import, or a never-declared name)
-            };
-            if to == from {
-                continue;
-            }
-            edges.entry(from).or_default().insert(to);
-            evidence
-                .entry((from, to))
-                .or_default()
-                .push((stmt.ordinal, binding.clone()));
+            record(from, binding, stmt.ordinal, &mut edges, &mut evidence);
+        }
+        for binding in &stmt.reads_lazy {
+            record(from, binding, stmt.ordinal, &mut edges, &mut evidence);
         }
     }
     ModuleDepGraph { edges, evidence }
@@ -650,8 +687,11 @@ pub enum RecommendationReadKind {
     AtInit,
     /// The candidate module reads this binding only inside lazy
     /// positions (function/method bodies, instance class-field
-    /// initializers, getter/setter bodies). Lazy reads don't
-    /// constrain init order, so any owner is cycle-safe.
+    /// initializers, getter/setter bodies). Contributes to the
+    /// imports graph `I` (the emit must carry the corresponding
+    /// `import` directive), but not to the at-init read sub-graph
+    /// `R`. Lazy-only candidates need the same SCC check as
+    /// at-init ones — see [`is_assignment_cycle_safe`].
     LazyOnly,
 }
 
@@ -662,7 +702,7 @@ pub fn validate_schedule(
     graph: &ModuleDepGraph,
     module_name: &dyn Fn(ModuleId) -> String,
 ) -> ScheduleReport {
-    let sccs = tarjan_sccs(&graph.edges);
+    let sccs = sccs_of(&graph.edges);
     let mut cycles = Vec::new();
     for scc in sccs {
         let in_scc: HashSet<ModuleId> = scc.iter().copied().collect();
@@ -705,9 +745,13 @@ pub fn validate_schedule(
 /// the chunk but not owned by any logical module, list the modules
 /// that read it, mark each candidate's `cycle_safe` flag.
 ///
-/// Lazy-only readers are always cycle-safe (lazy reads don't
-/// constrain init order). At-init readers' cycle safety is checked
-/// by tentatively assigning the binding and re-running SCC analysis.
+/// Cycle-safety is checked by tentatively assigning the binding to
+/// the candidate, rebuilding `I ∪ S` (via `build_module_dep_graph`),
+/// and looking for non-trivial SCCs. Lazy-only candidates also need
+/// this check, because lazy reads still emit `import` directives —
+/// they still contribute to `I` — and the strict gating rule (see
+/// DESIGN.md "The realizability theorem") rejects all `I ∪ S`
+/// cycles, not just `R ∪ S` ones.
 /// Project a `bindings` catalogue down to the `Owned` entries' owner
 /// map — what the dep-graph builder, recommender and cycle-safety
 /// check operate on. `Imported` bindings don't create at-init module
@@ -771,10 +815,15 @@ fn build_recommendations(schedule: &Schedule) -> Vec<AssignmentRecommendation> {
             });
         }
         for m in any_modules.difference(&at_init_modules) {
+            // Lazy reads still emit `import` directives — they
+            // contribute to `I` even when they're absent from `R`.
+            // So lazy-only candidates need the same SCC check as
+            // at-init ones; they are not free of cycle risk.
+            let cycle_safe = is_assignment_cycle_safe(schedule, name, *m);
             candidates.push(RecommendationCandidate {
                 module: schedule.module_name(*m),
                 read_kind: RecommendationReadKind::LazyOnly,
-                cycle_safe: true,
+                cycle_safe,
             });
         }
         if !candidates.is_empty() {
@@ -797,7 +846,7 @@ fn is_assignment_cycle_safe(
     let mut augmented = owned_view(&schedule.bindings);
     augmented.insert(binding.clone(), candidate);
     let graph = build_module_dep_graph(&schedule.facts, &augmented);
-    let sccs = tarjan_sccs(&graph.edges);
+    let sccs = sccs_of(&graph.edges);
     !sccs.iter().any(|scc| {
         scc.len() > 1
             || (scc.len() == 1
@@ -808,108 +857,21 @@ fn is_assignment_cycle_safe(
     })
 }
 
-/// Tarjan's strongly-connected-components algorithm. Returns SCCs in
-/// reverse topological order.
-fn tarjan_sccs(edges: &BTreeMap<ModuleId, BTreeSet<ModuleId>>) -> Vec<Vec<ModuleId>> {
-    let mut nodes: BTreeSet<ModuleId> = edges.keys().copied().collect();
-    for targets in edges.values() {
-        nodes.extend(targets.iter().copied());
-    }
-    let mut index_counter = 0usize;
-    let mut indices = HashMap::<ModuleId, usize>::new();
-    let mut lowlinks = HashMap::<ModuleId, usize>::new();
-    let mut on_stack = HashSet::<ModuleId>::new();
-    let mut stack = Vec::<ModuleId>::new();
-    let mut sccs = Vec::<Vec<ModuleId>>::new();
-    for &node in &nodes {
-        if !indices.contains_key(&node) {
-            strong_connect(
-                node,
-                edges,
-                &mut index_counter,
-                &mut indices,
-                &mut lowlinks,
-                &mut on_stack,
-                &mut stack,
-                &mut sccs,
-            );
+/// Strongly-connected components of the dep graph, via petgraph's
+/// `tarjan_scc`. Each SCC is a `Vec<ModuleId>` in reverse
+/// topological order (SCCs appear after their dependencies).
+fn sccs_of(edges: &BTreeMap<ModuleId, BTreeSet<ModuleId>>) -> Vec<Vec<ModuleId>> {
+    let mut graph = DiGraphMap::<ModuleId, ()>::new();
+    // Ensure isolated nodes (only on the receive side of an edge or
+    // standalone in the assignment) appear in the graph.
+    for (&from, targets) in edges {
+        graph.add_node(from);
+        for &to in targets {
+            graph.add_node(to);
+            graph.add_edge(from, to, ());
         }
     }
-    sccs
-}
-
-#[allow(clippy::too_many_arguments)]
-fn strong_connect(
-    v: ModuleId,
-    edges: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
-    index_counter: &mut usize,
-    indices: &mut HashMap<ModuleId, usize>,
-    lowlinks: &mut HashMap<ModuleId, usize>,
-    on_stack: &mut HashSet<ModuleId>,
-    stack: &mut Vec<ModuleId>,
-    sccs: &mut Vec<Vec<ModuleId>>,
-) {
-    // Iterative Tarjan: emulate the recursive call stack so deep
-    // graphs don't blow the Rust stack.
-    enum Frame {
-        Visit(ModuleId),
-        Resume(ModuleId, std::vec::IntoIter<ModuleId>),
-    }
-    let mut frames = VecDeque::<Frame>::new();
-    frames.push_back(Frame::Visit(v));
-    while let Some(frame) = frames.pop_back() {
-        match frame {
-            Frame::Visit(v) => {
-                indices.insert(v, *index_counter);
-                lowlinks.insert(v, *index_counter);
-                *index_counter += 1;
-                stack.push(v);
-                on_stack.insert(v);
-                let neighbours: Vec<ModuleId> = edges
-                    .get(&v)
-                    .map(|set| set.iter().copied().collect())
-                    .unwrap_or_default();
-                frames.push_back(Frame::Resume(v, neighbours.into_iter()));
-            }
-            Frame::Resume(v, mut iter) => {
-                if let Some(w) = iter.next() {
-                    frames.push_back(Frame::Resume(v, iter));
-                    if !indices.contains_key(&w) {
-                        frames.push_back(Frame::Visit(w));
-                    } else if on_stack.contains(&w) {
-                        let lw = lowlinks[&w];
-                        let lv = lowlinks[&v];
-                        lowlinks.insert(v, lv.min(lw));
-                    }
-                } else {
-                    // Combine lowlinks of children: when a child has
-                    // resolved we adjust `v`'s lowlink to whichever
-                    // is smaller.
-                    let neighbours: Vec<ModuleId> = edges
-                        .get(&v)
-                        .map(|set| set.iter().copied().collect())
-                        .unwrap_or_default();
-                    for w in neighbours {
-                        if let (Some(&lv), Some(&lw)) = (lowlinks.get(&v), lowlinks.get(&w)) {
-                            lowlinks.insert(v, lv.min(lw));
-                        }
-                    }
-                    if lowlinks[&v] == indices[&v] {
-                        let mut component = Vec::new();
-                        loop {
-                            let w = stack.pop().expect("non-empty SCC stack");
-                            on_stack.remove(&w);
-                            component.push(w);
-                            if w == v {
-                                break;
-                            }
-                        }
-                        sccs.push(component);
-                    }
-                }
-            }
-        }
-    }
+    tarjan_scc(&graph)
 }
 
 #[cfg(test)]
