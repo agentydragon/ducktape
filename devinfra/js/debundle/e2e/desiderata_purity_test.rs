@@ -196,14 +196,8 @@ console.log(values(obj), keys(obj));
 export { define, freeze, values, keys };
 "#,
         vec![
-            logical_module(
-                "mod_a",
-                &[Member::new("define"), Member::new("values")],
-            ),
-            logical_module(
-                "mod_b",
-                &[Member::new("freeze"), Member::new("keys")],
-            ),
+            logical_module("mod_a", &[Member::new("define"), Member::new("values")]),
+            logical_module("mod_b", &[Member::new("freeze"), Member::new("keys")]),
         ],
     ));
     assert_entry_output(&fixture, "[ 1 ] [ 'x' ]\n");
@@ -247,14 +241,8 @@ console.log(fourEven, fiveOdd);
 export { even, odd, fourEven, fiveOdd };
 "#,
         vec![
-            logical_module(
-                "mod_a",
-                &[Member::new("even"), Member::new("fourEven")],
-            ),
-            logical_module(
-                "mod_b",
-                &[Member::new("odd"), Member::new("fiveOdd")],
-            ),
+            logical_module("mod_a", &[Member::new("even"), Member::new("fourEven")]),
+            logical_module("mod_b", &[Member::new("odd"), Member::new("fiveOdd")]),
         ],
     ));
     assert_entry_output(&fixture, "true true\n");
