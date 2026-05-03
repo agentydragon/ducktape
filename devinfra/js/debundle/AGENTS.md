@@ -6,8 +6,9 @@ The debundler is a peeling toolkit. Its purpose is to recover a
 production-minified JavaScript bundle into something that reads like a
 hand-written modular codebase — stable names, real module seams,
 narrow public surfaces, residual / generated noise driven down over
-time. Each release of an upstream app (Tana, props/frontend, etc.) is
-re-peeled from a versioned spec; the spec is the source of truth for
+time. Each release of an upstream app (props/frontend, private
+downstream corpora, etc.) is re-peeled from a versioned spec; the
+spec is the source of truth for
 which symbols belong where and what they should be called. The
 debundler executes the spec, emits side-output analyses (priority
 queue of still-scrambled symbols, etc.) that drive the next wave of
@@ -50,11 +51,12 @@ on a specific upstream-bundle quirk that's hard to mimic), say so
 explicitly in the PR body and add coverage at the next-coarsest level
 (props/frontend smoke, dedicated corpus fixture, etc.).
 
-Pipeline-level bugs that surface only in the Tana smoke and have no
-obvious synthetic reproducer should also be reproduced against
-**props/frontend's debundle pipeline** before fixing — that smoke is
-the open-source proxy for "real React/Svelte + chunk-split + vendored
-production bundle" and lets a regression test land in public CI.
+Pipeline-level bugs that surface only against a private downstream
+corpus and have no obvious synthetic reproducer should also be
+reproduced against **props/frontend's debundle pipeline** before
+fixing — that smoke is the open-source proxy for a real
+React/Svelte chunk-split vendored production bundle and lets a
+regression test land in public CI.
 
 ## Verification corpora
 
@@ -64,15 +66,16 @@ Two debundle corpora live in this repo:
   pipeline stage / bug class. Most tests live here.
 - **`props/frontend/debundle/`** — realistic-shape corpus (Svelte 5,
   esbuild splitting, real prod npm vendor packages). Use as the
-  verification step _before_ claiming a fix applies to the full Tana
-  bundle. Failures here surface chunk-graph / vendor-shape /
-  rename-pipeline issues without needing the private Tana repo.
+  verification step _before_ claiming a fix applies to a full
+  private downstream bundle. Failures here surface chunk-graph /
+  vendor-shape / rename-pipeline issues without needing access to
+  a private corpus.
 
 When a fix lands, the order is: synthetic e2e green → props/frontend
-debundle green → Tana smoke green. Skipping the props/frontend layer
-means a regression that survives synthetic tests will only show up on
-Tana, where iteration is slower and the repro can't be shared
-publicly.
+debundle green → private-corpus smoke green. Skipping the
+props/frontend layer means a regression that survives synthetic
+tests will only show up against the private corpus, where iteration
+is slower and the repro can't be shared publicly.
 
 ## Test shape preferences
 
