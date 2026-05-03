@@ -253,3 +253,227 @@ fn build_named_from_module_default_spec(args: BuildSpecArgs<'_>) -> Value {
         ],
     })
 }
+
+#[test]
+fn named_from_default_handles_object_literal_with_keyvalue_props() {
+    // Canonical accepted shape: upstream's `export default` is an
+    // object literal whose keys are `KeyValue` props with `Ident` (or
+    // `Str`) names. The wrapper picks up each key and re-exports it as
+    // a named export.
+    let upstream_source = r#"export default {
+  ping: () => "pong",
+  pong: () => "ping",
+};
+"#;
+
+    let fixture = run_named_from_default_fixture(NamedFromDefaultFixtureArgs {
+        upstream_source,
+        chunk_source: "export { ping, pong } from \"lib\";\n",
+    });
+
+    assert!(
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+
+    let wrapper_source = fs::read_to_string(&fixture.wrapper_path).expect("wrapper exists");
+    // The wrapper hoists upstream's default into a `const _d = { ... }`
+    // and re-emits each named export as `export const ping = _d.ping;`.
+    assert!(
+        wrapper_source.contains("export const ping = _d.ping"),
+        "wrapper should emit a named-export pull for `ping`:\n{wrapper_source}",
+    );
+    assert!(
+        wrapper_source.contains("export const pong = _d.pong"),
+        "wrapper should emit a named-export pull for `pong`:\n{wrapper_source}",
+    );
+    assert!(
+        wrapper_source.contains("export default _d"),
+        "wrapper should preserve the default export:\n{wrapper_source}",
+    );
+}
+
+#[test]
+fn named_from_default_rejects_shorthand_props_silently_today() {
+    // Documented gap: `collect_default_export_object_keys` only walks
+    // `Prop::KeyValue` props, so `Prop::Shorthand` (`{ ping, pong }`)
+    // is silently skipped — the wrapper fails the missing-keys check
+    // because the upstream "object" yields zero detectable keys.
+    //
+    // This test pins the current behavior so a future relaxation
+    // (accepting Shorthand) flips it from failing-with-missing-keys to
+    // succeeding. Until then, vendor authors must use explicit
+    // `KeyValue` props in the upstream `export default`.
+    let upstream_source = r#"const ping = () => "pong";
+const pong = () => "ping";
+export default { ping, pong };
+"#;
+
+    let fixture = run_named_from_default_fixture(NamedFromDefaultFixtureArgs {
+        upstream_source,
+        chunk_source: "export { ping, pong } from \"lib\";\n",
+    });
+
+    assert!(
+        !fixture.result.status.success(),
+        "debundler should fail on shorthand-only object today:\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    assert!(
+        fixture
+            .result
+            .stderr
+            .contains("named-from-default wrapper shape mismatch"),
+        "expected wrapper-shape-mismatch error; got stderr:\n{}",
+        fixture.result.stderr,
+    );
+}
+
+#[test]
+fn named_from_default_rejects_non_object_literal_default() {
+    // `export default class { ... }` is an `ExportDefaultDecl`, not
+    // an `ExportDefaultExpr`, so the search bails with "no export
+    // default declaration" before the object-literal check. Future
+    // relaxation could fold class- or function-shaped defaults into
+    // the same wrapper path.
+    let upstream_source = r#"export default class {
+  ping() { return "pong"; }
+}
+"#;
+
+    let fixture = run_named_from_default_fixture(NamedFromDefaultFixtureArgs {
+        upstream_source,
+        chunk_source: "export { ping } from \"lib\";\n",
+    });
+
+    assert!(
+        !fixture.result.status.success(),
+        "debundler should fail on class default for named-from-default shape",
+    );
+    assert!(
+        fixture
+            .result
+            .stderr
+            .contains("named-from-default: upstream has no export default declaration"),
+        "expected no-export-default error; got stderr:\n{}",
+        fixture.result.stderr,
+    );
+}
+
+struct NamedFromDefaultFixtureArgs<'a> {
+    upstream_source: &'a str,
+    chunk_source: &'a str,
+}
+
+fn run_named_from_default_fixture(args: NamedFromDefaultFixtureArgs<'_>) -> VendorSwapFixture {
+    const PACKAGE_NAME: &str = "lib";
+    const PACKAGE_VERSION: &str = "1.0.0";
+    const SUBPATH: &str = "dist/index.mjs";
+    const CHUNK_PATH: &str = "static/lib-X.js";
+
+    let root = TempDir::with_prefix("vendor-swap-named-from-default-").expect("create tempdir");
+    let workspace_root = root.path().join("workspace");
+    let extracted_root = workspace_root.join("extracted");
+    let snapshot_root = workspace_root.join("snapshot");
+    let out_root = workspace_root.join("out");
+    let wrapper_root = workspace_root.join("vendors").join("generated");
+    let manifest_path = workspace_root.join("vendors").join("manifest.json");
+    let package_root = root.path().join("upstream");
+    fs::create_dir_all(&extracted_root).unwrap();
+    fs::create_dir_all(&snapshot_root).unwrap();
+    fs::create_dir_all(&out_root).unwrap();
+    fs::create_dir_all(&wrapper_root).unwrap();
+    fs::create_dir_all(&package_root).unwrap();
+    fs::create_dir_all(snapshot_root.join(Path::new(CHUNK_PATH).parent().unwrap())).unwrap();
+    fs::create_dir_all(package_root.join("dist")).unwrap();
+
+    write_text_file(&snapshot_root.join(CHUNK_PATH), args.chunk_source);
+    let js_list_path = extracted_root.join("js-files.txt");
+    write_text_file(&js_list_path, &format!("{CHUNK_PATH}\n"));
+
+    write_text_file(
+        &package_root.join("package.json"),
+        &format!(
+            "{}\n",
+            serde_json::to_string_pretty(&json!({
+                "name": PACKAGE_NAME,
+                "version": PACKAGE_VERSION,
+            }))
+            .unwrap(),
+        ),
+    );
+    write_text_file(&package_root.join(SUBPATH), args.upstream_source);
+
+    let spec_path = root.path().join("transform_spec.jsonc");
+    let spec = build_named_from_default_spec(BuildSpecArgs {
+        chunk_path: CHUNK_PATH,
+        js_list_path: &js_list_path,
+        snapshot_root: &snapshot_root,
+        out_root: &out_root,
+        manifest_path: &manifest_path,
+        wrapper_root: &wrapper_root,
+        package_name: PACKAGE_NAME,
+        package_version: PACKAGE_VERSION,
+        subpath: SUBPATH,
+    });
+    write_json_file(&spec_path, &spec);
+
+    let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
+
+    let chunk_id = CHUNK_PATH.strip_suffix(".js").unwrap_or(CHUNK_PATH);
+    let wrapper_path = wrapper_root.join(chunk_id).join("entry.js");
+    VendorSwapFixture {
+        result,
+        chunk_path: CHUNK_PATH.to_string(),
+        wrapper_path,
+        manifest_path,
+        _root: root,
+    }
+}
+
+fn build_named_from_default_spec(args: BuildSpecArgs<'_>) -> Value {
+    json!({
+        "kind": "js.ast_transform_spec",
+        "operations": [{
+            "id": "mark_vendor_lib",
+            "operation": "mark_vendor",
+            "level": "swap",
+            "chunkPath": args.chunk_path,
+            "identity": format!("{}/{}", args.package_name, args.subpath),
+            "upstreamFamily": "Lib",
+            "package": args.package_name,
+            "version": args.package_version,
+            "subpath": args.subpath,
+            "wrapperShape": "named-from-default",
+            "confidence": "confirmed",
+            "evidence": [{
+                "path": args.chunk_path,
+                "line": 1,
+                "text": "export default { ... }",
+            }],
+        }],
+        "inputs": { "inputRoot": args.snapshot_root, "jsListPath": args.js_list_path },
+        "pipeline": [
+            { "id": "annotate_vendor", "operation": "apply_vendor_annotations" },
+            { "id": "rename_vendor", "operation": "rename_vendor_exports" },
+            {
+                "id": "swap_vendor",
+                "operation": "swap_vendor_chunks",
+                "args": {
+                    "outputManifestPath": args.manifest_path,
+                    "outputWrapperDir": args.wrapper_root,
+                    "write": true,
+                },
+            },
+            {
+                "id": "write",
+                "operation": "write_js_tree",
+                "args": { "force": true, "outDir": args.out_root },
+            },
+        ],
+    })
+}

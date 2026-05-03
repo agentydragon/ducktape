@@ -149,9 +149,24 @@ Still to do:
 
 ## Vendor swap edge cases
 
-- `named-from-default`: settle and document the upstream-formatting
-  acceptance criteria — currently SWC parses anything that yields a default
-  export, which may be more liberal than callers expect.
+- `named-from-default`: documented acceptance contract is "upstream
+  default export is an object literal whose keys are `Prop::KeyValue`
+  with `Ident` or `Str` names". `e2e/vendor_swap_test.rs` pins the
+  accepted shape and explicitly rejects two adjacent shapes:
+  - **Shorthand props** (`export default { ping, pong }` where `ping`
+    and `pong` are local refs) are silently skipped by
+    `collect_default_export_object_keys` and the wrapper fails the
+    missing-keys check. Real-world vendor `index.mjs` files commonly
+    use shorthand, so accepting them is a useful relaxation. Fix:
+    extend the prop-walk to read shorthand keys from the prop's own
+    name. Should be a few-line change with one new accepted-shape
+    test.
+  - **Class / function default declarations** (`export default class
+{}`) don't surface as `ExportDefaultExpr` and bail with "no
+    export default declaration". Open whether to accept (less common
+    for "named-from-default" wrapper shape) or document as
+    intentionally out-of-scope.
+
 - `named-from-module-default`: handle anonymous default function/class
   declarations (currently rejected).
 
