@@ -46,6 +46,23 @@ the order is:
    bump away from regressing silently.
 3. **Then fix.** Land both the fixture and the fix in the same PR.
 
+### Fixture minimization
+
+A bug-reproducing fixture should be the **smallest** input that still
+triggers the bug. After the failure shape is reproduced, strip every
+feature that can be removed while the test still fails — extra
+bindings, extra modules, extra plan members, longer source bodies,
+realistic-flavored names. Use generic placeholder names (`a`, `b`,
+`mod_x`, `readable`) over names borrowed from the original
+upstream-corpus shape. A reader of a future regression should be
+able to point at the fixture and see what specifically triggers the
+bug, not have to mentally peel off layers of irrelevant detail.
+
+Don't add fixtures for invariants the materializer already upholds.
+If a candidate fixture passes against `origin/devel` before the fix
+is applied, it isn't testing the bug — drop it or move it into a
+separate PR documenting the invariant.
+
 If a bug genuinely cannot be reproduced synthetically (e.g. it depends
 on a specific upstream-bundle quirk that's hard to mimic), say so
 explicitly in the PR body and add coverage at the next-coarsest level

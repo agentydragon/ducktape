@@ -101,18 +101,30 @@ public-CI signal and the public-bug-report leverage.
 
 ## Propagate readable rename across consumers
 
-The disambiguation pass in `logical_modules.rs` keeps the consumer-side
-body referring to the original scrambled name (with a `$N` suffix on
-collisions). A nicer endpoint is to fold the new readable name through
-every consumer too: re-emit the import as plain `import {
-buildTaskContextPrompt }` (no alias) and rename every reference in the
-consumer body from the scrambled letter pair to
-`buildTaskContextPrompt`. That's pure readability gain across the
-whole tree once a rename lands, but it interacts with consumer
-local-scope name collisions (a consumer that already has its own
-`buildTaskContextPrompt` declaration must keep an alias) and with
-chains of re-exports. Reuse the same scope-tracking infrastructure
-the disambiguation pass already builds.
+When `define_logical_module` renames a scrambled binding `<scrambled>`
+to readable `<readable>`, the consumer-side import is currently
+emitted as `import { <readable> as <scrambled> } from "..."` and every
+reference in the consumer body still spells the original scrambled
+local. The disambiguation pass in `logical_modules.rs` only mints a
+fresh `<scrambled>$N` when the original local would collide.
+
+A nicer endpoint is to fold the new readable name through every
+consumer too: drop the alias (`import { <readable> }`) and rename
+every reference in the consumer body from `<scrambled>` to
+`<readable>`. That's pure readability gain — instead of `fp(x)` in a
+consumer's body, the body reads `<readable>(x)`.
+
+Edge cases the implementation must handle:
+
+- A consumer that already has its own top-level `<readable>` decl
+  must keep the alias (collision in the consumer's own scope).
+- Chains of re-exports (`export { <scrambled> } from "..."`) need the
+  re-export's `orig` rewritten too.
+- Locals that shadow `<readable>` inside a function body must not be
+  rewritten.
+
+Reuse the scope-tracking infrastructure the disambiguation pass
+already builds.
 
 ## RE coverage side-output
 
