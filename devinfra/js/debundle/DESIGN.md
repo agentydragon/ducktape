@@ -458,6 +458,362 @@ This is tracked as **Phase 1.7** in the [status table](#status),
 and runs before Phase 2 (the cycle-breaking spec edits) since it
 fixes the spec language Phase 2 will be editing.
 
+## Selector vocabulary and matching
+
+Phase 1.7 makes the spec fully explicit: every owned binding has
+a spec entry naming which logical module owns it. The chunk's
+top-level bindings are scrambled (`Y5`, `b8`, `Q3` …) and the
+entry's **selector** is how the spec author points at the right
+one. Because the spec is now `O(num_bindings)`, selector
+ergonomics dominate spec-author cost.
+
+### Selectors are narrowing predicates, not unique identifiers
+
+Each selector is a conjunction of constraints (`kind` ∧
+`memberNames` ∧ `astPattern` ∧ …). Evaluated against the chunk,
+it produces a **candidate set** of bindings — possibly 0, 1, or
+many. Resolution is then a constraint-satisfaction problem
+across all spec entries.
+
+This decouples per-entry tightness from global resolvability:
+spec authors don't have to write fingerprints precise enough to
+match exactly one binding. They write predicates that are
+"specific enough in context"; the matcher disambiguates by
+elimination as other entries lock in their unique candidates.
+
+### Resolution algorithm
+
+Iterated bipartite forcing to a fixed point:
+
+```rust
+fn resolve(entries: &[SpecEntry], chunk: &Chunk) -> Result<Assignment, ResolveError> {
+    let mut candidates: BTreeMap<EntryId, BTreeSet<BindingId>> = entries
+        .iter()
+        .map(|e| (e.id, e.candidate_set(chunk)))
+        .collect();
+    let mut assignments: BTreeMap<EntryId, BindingId> = BTreeMap::new();
+    let mut available: BTreeSet<BindingId> = chunk.bindings();
+
+    loop {
+        let mut progressed = false;
+
+        // Forcing on entry side: an entry whose live candidates
+        // collapse to exactly one.
+        for (id, cands) in candidates.clone() {
+            let live: BTreeSet<_> = cands.intersection(&available).copied().collect();
+            if live.len() == 1 {
+                let b = *live.iter().next().unwrap();
+                assignments.insert(id, b);
+                available.remove(&b);
+                candidates.remove(&id);
+                progressed = true;
+            }
+        }
+
+        // Forcing on binding side: a binding with exactly one
+        // entry that wants it.
+        for &b in available.clone().iter() {
+            let claimers: Vec<EntryId> = candidates
+                .iter()
+                .filter_map(|(id, cs)| cs.contains(&b).then_some(*id))
+                .collect();
+            if claimers.len() == 1 {
+                let id = claimers[0];
+                assignments.insert(id, b);
+                available.remove(&b);
+                candidates.remove(&id);
+                progressed = true;
+            }
+        }
+
+        if !progressed {
+            break;
+        }
+    }
+
+    if !candidates.is_empty() {
+        return Err(diagnose(&candidates, &available));
+    }
+    Ok(Assignment(assignments))
+}
+```
+
+Soundness: if a unique solution exists and is reachable by
+iterated cardinality-1 inference (the "naked singles" rule from
+constraint propagation), the algorithm finds it. Solutions that
+require search past a forcing fixed point are reported as
+ambiguous — that's the spec author's signal to add a
+disambiguating predicate to one of the competing entries.
+
+The algorithm runs _strata-by-strata_ under relational
+selectors (see [Relational selectors](#relational-selectors)
+below).
+
+### Primitive predicates
+
+Selectors are JSON objects whose keys are primitive predicates;
+the predicate set is the conjunction.
+
+#### Static facts (drift-resilient)
+
+| primitive                  | applies to | semantics                                                                                                                    |
+| -------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `kind`                     | any        | exact match on `FunctionDeclaration` / `ClassDeclaration` / `VariableDeclarator` / `ImportSpecifier`                         |
+| `paramCount: N`            | functions  | exact match on parameter list length                                                                                         |
+| `memberNames: [a, b, ...]` | classes    | every name in the list appears as a class member (instance or static; method, prop, accessor)                                |
+| `minMembers: N`            | classes    | class has ≥ N members                                                                                                        |
+| `superClass: <selector>`   | classes    | the class extends a binding that itself matches `<selector>` (recursive — see [Relational selectors](#relational-selectors)) |
+
+These are stable across re-minifications: minifiers preserve
+declaration kinds, param counts, class member name strings, and
+super-class structural relationships.
+
+#### AST pattern
+
+| primitive              | semantics                                                                                                       |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `astPattern: "<code>"` | the binding's source contains a subtree matching `<code>` interpreted as a JS pattern with identifier wildcards |
+
+Pattern syntax:
+
+- Identifiers spelled `_` (single underscore) are **independent
+  wildcards** — any identifier matches each `_` independently.
+  No cross-position consistency.
+- Other identifiers are matched **literally**. Useful for
+  patterns anchored on well-known names that survive
+  minification — `useState`, `console.log`, `Symbol.iterator`,
+  framework hooks.
+- Operators, keywords, control flow shape, literal values
+  (numeric, string, boolean) match exactly.
+
+Examples:
+
+```json
+{ "astPattern": "for (var _ = 0; _ < _; _++) _;" }
+```
+
+A C-style for-loop with constant-zero start, simple comparison,
+postfix-increment, single-statement body. Loose: matches any
+identifier names, any comparison RHS, any body.
+
+```json
+{ "astPattern": "useEffect(() => { _; }, [_])" }
+```
+
+A `useEffect` call with an arrow callback containing a single
+expression-statement and a single dep. Tight on `useEffect` (the
+literal name must match), loose on contents.
+
+```json
+{ "astPattern": "throw new Error(\"unreachable: \" + _)" }
+```
+
+A throw of an `Error` whose message starts with the literal
+prefix `"unreachable: "`. Pinpoint when this string is unique.
+
+Subtree match semantics: at each AST node in the binding's body,
+attempt a recursive structural match against the pattern's AST.
+A match exists if any subtree matches anywhere in the binding's
+syntactic span.
+
+A future extension (not in this iteration): named captures
+(`$name`) for cross-position consistency. Simple wildcards are
+adequate for selector use today; captures become useful when
+patterns describe relationships ("the same identifier appears
+both as the loop variable and in the body").
+
+#### Source text
+
+| primitive               | semantics                                                                                                 |
+| ----------------------- | --------------------------------------------------------------------------------------------------------- |
+| `containsString: "..."` | the binding's source contains the literal string anywhere — typically inside a string literal in the body |
+
+Useful for unique strings: error messages, RPC names, prop
+keys, debug labels, regex sources, embedded GraphQL or JSON.
+Stable to the extent the literal survives minification (most
+do; minifiers don't rewrite string contents).
+
+#### Relational selectors
+
+These reference _other_ spec entries:
+
+| primitive                  | semantics                                                                                            |
+| -------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `calls: <selector>`        | the binding's body contains a call to a binding that itself matches `<selector>`                     |
+| `calledBy: <selector>`     | the binding is called from inside the body of a binding that matches `<selector>`                    |
+| `references: <selector>`   | the binding reads (call, member access, etc.) a binding matching `<selector>` — broader than `calls` |
+| `referencedBy: <selector>` | converse — somebody matching `<selector>` reads this one                                             |
+| `superClass: <selector>`   | (also listed above) class-only — extends a binding matching `<selector>`                             |
+| `renamedName: "..."`       | shortcut: the binding's spec entry renames it to `"..."`                                             |
+
+Relational selectors create **selector-resolution dependencies**:
+to evaluate `calls: { renamedName: "JsxRuntime" }`, the matcher
+must first know which binding gets the renamedName `"JsxRuntime"`,
+which means resolving the entry that defines that rename.
+
+The matcher computes a topological order over entries based on
+their selector-reference deps. Strata-by-strata: leaf entries
+(no relational deps) resolve first; then entries whose
+relational deps now point at known bindings; etc. Within a
+stratum, the bipartite forcing algorithm runs.
+
+A cycle in selector-resolution deps is an error
+(`SelectorRefCycle`). Note this is **separate** from the at-init
+module dep graph; selector-ref cycles are entirely within the
+spec layer and are usually a spec author's mistake (`A.calledBy:
+B`, `B.calledBy: A`). Resolution: anchor one of them with a
+non-relational predicate (kind + astPattern, etc.) so the cycle
+breaks at one node.
+
+#### Direct (drift-prone, escape hatches)
+
+| primitive    | issue                                                                                                                          |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `name: "Y5"` | the scrambled local name. Minifier renames between builds → spec re-pin needed. Use only when no stable predicate is available |
+
+#### Removed primitives
+
+These existed in the legacy spec but are dropped or never make
+it into the runtime:
+
+| primitive                                     | issue                                                                                                                                                                                            |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `owner.line`                                  | Tana source is prettified; line numbers shift with formatter changes. No semantic stability                                                                                                      |
+| `owner.id` (`owner_NNNNN`)                    | opaque sequential index minted by program analysis; carries no identity (see [Identifiers and types](#identifiers-and-types))                                                                    |
+| `bodyHash` (function sha)                     | whitespace, minor edits, and minifier comment-stripping invalidate constantly. Use `astPattern` or `containsString` instead                                                                      |
+| `fingerprint.memberNamesPrefix` (gaffer-only) | this gaffer-side resolution helper is what the runtime now exposes as a first-class `memberNames` predicate; "prefix" was a quirk of how gaffer extracted member lists, not a stability property |
+
+### Composition rules
+
+- Selectors are JSON objects with one or more primitive keys; the
+  selector is the conjunction.
+- `kind` is the most common refinement; combines with anything.
+- `paramCount` / `memberNames` / `minMembers` / `superClass` are
+  kind-specific; using them on a binding of the wrong kind makes
+  the candidate set empty (which is fine — that's how
+  disambiguation works).
+- Multiple primitives of the same shape (`memberNames: [a, b]`
+  _and_ `memberNames: [c]`) are not currently meaningful;
+  collapse to `memberNames: [a, b, c]`.
+- An empty selector `{}` matches every binding in the chunk —
+  which is rarely useful, but the matcher's forcing algorithm
+  still handles it (it gets resolved last by elimination).
+
+### Errors
+
+All errors are validate-time. Each carries enough evidence for a
+spec author to fix the spec without re-running the tool.
+
+```text
+SelectorResolution::Unsatisfiable
+  entry "ai/mcp/jsx_runtime/JsxRuntime"
+    selector: { kind: ClassDeclaration, memberNames: ["render", "create"] }
+  reason: after forcing, candidate set is empty.
+    Y5 (the only binding with this shape) was claimed by entry
+    "mcp/dom/Component" via its more specific `astPattern`.
+  resolve by: relaxing this entry's selector, or moving the
+    `Component` entry to a different binding so Y5 is freed.
+```
+
+```text
+SelectorResolution::Ambiguous
+  entries: [
+    "ai/mcp/jsx_runtime/JsxRuntime"  selector { kind: ClassDeclaration, memberNames: ["render", "mount"] },
+    "ai/mcp/dom/Component"           selector { kind: ClassDeclaration, memberNames: ["render", "mount"] },
+  ]
+  candidates: [Y5 (line 12345), X4 (line 23456), Q3 (line 34567)]
+  reason: no cardinality-1 forcing remains; both entries match
+    all three candidates equally.
+  resolve by: adding a disambiguating predicate (an `astPattern`,
+    a `containsString` for a unique literal, a `superClass`
+    referring to one's parent class) to at least one entry.
+```
+
+```text
+SelectorRefCycle
+  cycle: ["entry_a", "entry_b", "entry_a"]
+  reason: entry_a's selector references entry_b via `calls`,
+    and entry_b's selector references entry_a via `calledBy`.
+  resolve by: anchoring one with a non-relational predicate
+    (kind + astPattern, etc.) so its candidate set can be
+    resolved before the other.
+```
+
+### Resolution example
+
+Three classes share a `memberNames` shape; one extends a known
+base, another contains a unique string literal:
+
+```json
+[
+  {
+    "id": "spec_component",
+    "selector": {
+      "kind": "ClassDeclaration",
+      "containsString": "instanceof Element"
+    },
+    "rename": "Component"
+  },
+  {
+    "id": "spec_widget",
+    "selector": {
+      "kind": "ClassDeclaration",
+      "memberNames": ["render", "mount"],
+      "superClass": { "renamedName": "Component" }
+    }
+  },
+  {
+    "id": "spec_other",
+    "selector": {
+      "kind": "ClassDeclaration",
+      "memberNames": ["render", "mount"]
+    }
+  }
+]
+```
+
+Trace:
+
+1. Selector-ref dep order: `spec_component` (no relational
+   deps), then `spec_widget` (depends on `spec_component`'s
+   rename), then `spec_other` (no relational deps but resolved
+   last by elimination).
+2. **Stratum 1.** `spec_component`'s candidate set: classes
+   whose source contains `instanceof Element`. Suppose only `Y5`.
+   Force `spec_component → Y5`. The rename map now has `Y5 →
+"Component"`.
+3. **Stratum 2.** `spec_widget`'s `superClass` resolves to `Y5`.
+   Candidate set: classes extending `Y5` with `["render",
+"mount"]` members. Suppose only `b8`. Force `spec_widget →
+b8`.
+4. **Stratum 3.** `spec_other`'s candidate set: classes with
+   `["render", "mount"]` members. After excluding `Y5` and `b8`,
+   only `Q3` remains. Force `spec_other → Q3`.
+
+All entries assigned, no ambiguity.
+
+### Design trade-offs surfaced by the algorithm
+
+- **No silent best-effort.** The matcher refuses to produce a
+  partial assignment with "best guesses." Every entry resolves
+  to exactly one binding, or the spec is rejected with a
+  diagnosable error. Same philosophy as the validator's cycle
+  rejection.
+- **Failure surface is per-entry.** Errors point at specific
+  entries, candidate bindings, and remediations. The spec author
+  edits one entry at a time and re-runs.
+- **Selector strength is local.** A loose selector elsewhere
+  can still tighten one entry, because it shrinks the
+  available-bindings set. So spec authors can write the simplest
+  predicate that works "in context" rather than the most
+  precise.
+- **Reference depth is bounded by selector-ref dep order.**
+  Even relational selectors resolve in a single pass per
+  stratum; the matcher doesn't iterate the whole bipartite
+  forcing across all entries indefinitely. Worst-case complexity
+  is O(entries × bindings) per stratum × strata-depth, which is
+  fine at Tana's scale.
+
 ## Comma-list var-decls with split owners
 
 The spec's `owner` is a function from binding name to module.
