@@ -197,17 +197,11 @@ function buildVendorOps(vendorChunkMap) {
 
 function buildPipeline(outRoot) {
   return [
-    {
-      id: "materialize_logical_module_files",
-      operation: "materialize_logical_modules",
-      args: {
-        chunkIds: ["dist/main"],
-        force: true,
-        targetDir: "modules",
-        reportOutDir: `${outRoot}/analysis/logical_modules`,
-        reportSummaryPath: `${outRoot}/analysis/logical_modules/summary.json`,
-      },
-    },
+    // Run vendor stages before materialize so the vendor chunks are
+    // visible at annotate time. Materialize's default settings keep
+    // other chunks intact, but reordering hedges against future
+    // materializer behavior changes — and matches the gaffer Tana
+    // pipeline order more closely.
     { id: "annotate_vendor_chunks", operation: "apply_vendor_annotations" },
     { id: "rewrite_vendor_export_imports", operation: "rename_vendor_exports" },
     {
@@ -217,6 +211,17 @@ function buildPipeline(outRoot) {
         outputManifestPath: `${outRoot}/vendors/manifest.json`,
         outputWrapperDir: `${outRoot}/vendors/generated`,
         write: true,
+      },
+    },
+    {
+      id: "materialize_logical_module_files",
+      operation: "materialize_logical_modules",
+      args: {
+        chunkIds: ["dist/main"],
+        force: true,
+        targetDir: "modules",
+        reportOutDir: `${outRoot}/analysis/logical_modules`,
+        reportSummaryPath: `${outRoot}/analysis/logical_modules/summary.json`,
       },
     },
     { id: "realize_chunk_entry_specifiers", operation: "rewrite_chunk_entry_specifiers" },
