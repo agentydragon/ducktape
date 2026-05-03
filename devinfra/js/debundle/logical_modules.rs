@@ -91,6 +91,31 @@ pub struct RequestedLogicalModule {
     pub residual: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AssignmentsDump<'a> {
+    kind: &'static str,
+    chunk_id: &'a str,
+    logical_modules: Vec<AssignmentLogicalModule>,
+    bindings: Vec<AssignmentBinding>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AssignmentLogicalModule {
+    index: usize,
+    id: String,
+    target_path: String,
+    target_file: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AssignmentBinding {
+    name: String,
+    module_index: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct MaterializeLogicalModulesOptions {
     pub chunk_ids: Vec<String>,
@@ -438,6 +463,42 @@ pub fn materialize_logical_modules(
             fs::write(
                 &schedule_path,
                 serde_json::to_string_pretty(&schedule_report)? + "\n",
+            )?;
+        }
+        if let Some(report_out_dir) = &report_out_dir {
+            // Per-chunk dump of the post-closure binding → logical
+            // module assignment. Consumed by gaffer-side migration
+            // tooling that rewrites the spec to be fully explicit
+            // (Phase 1.7). Stable side-output that survives the
+            // closure-pass deletion.
+            let assignments_path = report_out_dir.join(format!("{chunk_id}.assignments.json"));
+            if let Some(parent) = assignments_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let assignments = AssignmentsDump {
+                kind: "js.assignments_dump",
+                chunk_id: &chunk_id,
+                logical_modules: module_plans
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, plan)| AssignmentLogicalModule {
+                        index: idx,
+                        id: plan.id.clone(),
+                        target_path: plan.requested.target_path.clone(),
+                        target_file: plan.target_file.clone(),
+                    })
+                    .collect(),
+                bindings: binding_assignment
+                    .iter()
+                    .map(|(name, &idx)| AssignmentBinding {
+                        name: name.clone(),
+                        module_index: idx,
+                    })
+                    .collect(),
+            };
+            fs::write(
+                &assignments_path,
+                serde_json::to_string_pretty(&assignments)? + "\n",
             )?;
         }
         applied.extend(selected_lowerings);
