@@ -56,5 +56,6 @@ rust_library(
         "source_order_emit_test",
         "multi_module_re_export_test",
         "lazy_back_edge_cycle_test",
+        "side_effect_ordering_test",
     ]
 ]

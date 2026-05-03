@@ -251,8 +251,7 @@ fn analyze_item(ordinal: StatementOrdinal, item: &ModuleItem) -> StatementFacts 
     item.visit_with(&mut at_init);
     let mut lazy = LazyReadCollector::default();
     item.visit_with(&mut lazy);
-    let has_side_effect = matches!(kind, StatementKind::VarDecl | StatementKind::SideEffect)
-        || (kind == StatementKind::ClassDecl && class_has_static_init(item));
+    let has_side_effect = item_has_side_effect(item, kind);
     StatementFacts {
         ordinal,
         declared,
@@ -260,6 +259,202 @@ fn analyze_item(ordinal: StatementOrdinal, item: &ModuleItem) -> StatementFacts 
         reads_lazy: lazy.names,
         has_side_effect,
         kind,
+    }
+}
+
+/// Three-state expression-level purity (DESIGN.md "Module dep
+/// graphs"). `Pure` is statically provably free of observable
+/// side effects; `Impure` is provably side-effecting (assignment,
+/// update, await, yield); `Unknown` covers the long tail (calls,
+/// `new`, member access — could be a getter — etc.) and is
+/// treated as `Impure` by `has_side_effect` for soundness.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum Purity {
+    Pure,
+    Impure,
+    Unknown,
+}
+
+impl Purity {
+    /// Combine two purity assessments — the worst (most
+    /// side-effecting) wins. `Impure` dominates `Unknown`
+    /// dominates `Pure`.
+    fn worst(self, other: Self) -> Self {
+        match (self, other) {
+            (Purity::Impure, _) | (_, Purity::Impure) => Purity::Impure,
+            (Purity::Unknown, _) | (_, Purity::Unknown) => Purity::Unknown,
+            _ => Purity::Pure,
+        }
+    }
+}
+
+fn classify_expr_purity(expr: &Expr) -> Purity {
+    match expr {
+        Expr::Lit(_) => Purity::Pure,
+        Expr::Ident(_) => Purity::Pure,
+        Expr::This(_) | Expr::MetaProp(_) => Purity::Pure,
+        Expr::Tpl(tpl) => tpl
+            .exprs
+            .iter()
+            .map(|e| classify_expr_purity(e))
+            .fold(Purity::Pure, Purity::worst),
+        Expr::Fn(_) | Expr::Arrow(_) => Purity::Pure,
+        Expr::Class(class_expr) => {
+            if class_has_static_observable(&class_expr.class) {
+                Purity::Impure
+            } else {
+                Purity::Pure
+            }
+        }
+        Expr::Paren(p) => classify_expr_purity(&p.expr),
+        Expr::Unary(u) => match u.op {
+            UnaryOp::Delete => Purity::Impure,
+            // typeof / void / +/-/!/~ on a pure operand are pure
+            // (they may coerce, but coercion of an Ident or Lit
+            // doesn't run user code).
+            _ => classify_expr_purity(&u.arg),
+        },
+        Expr::Bin(b) => classify_expr_purity(&b.left).worst(classify_expr_purity(&b.right)),
+        Expr::Cond(c) => classify_expr_purity(&c.test)
+            .worst(classify_expr_purity(&c.cons))
+            .worst(classify_expr_purity(&c.alt)),
+        Expr::Seq(s) => s
+            .exprs
+            .iter()
+            .map(|e| classify_expr_purity(e))
+            .fold(Purity::Pure, Purity::worst),
+        Expr::Array(arr) => {
+            let mut acc = Purity::Pure;
+            for elem in arr.elems.iter().flatten() {
+                if elem.spread.is_some() {
+                    // Spread invokes the iterator protocol; could
+                    // be impure even on a literal.
+                    acc = acc.worst(Purity::Unknown);
+                }
+                acc = acc.worst(classify_expr_purity(&elem.expr));
+            }
+            acc
+        }
+        Expr::Object(obj) => {
+            let mut acc = Purity::Pure;
+            for prop in &obj.props {
+                acc = acc.worst(classify_prop_purity(prop));
+            }
+            acc
+        }
+        // Member access is `Unknown` — `obj.prop` on an arbitrary
+        // object can fire a getter; we can't tell statically.
+        Expr::Member(_) | Expr::SuperProp(_) | Expr::OptChain(_) => Purity::Unknown,
+        // Calls / `new` / tagged templates / dynamic import / yield-style:
+        // unknown side effects.
+        Expr::Call(_) | Expr::New(_) | Expr::TaggedTpl(_) => Purity::Unknown,
+        Expr::Assign(_) | Expr::Update(_) => Purity::Impure,
+        Expr::Await(_) | Expr::Yield(_) => Purity::Impure,
+        // Anything we didn't enumerate falls into the Unknown
+        // bucket — soundness-first.
+        _ => Purity::Unknown,
+    }
+}
+
+fn classify_prop_purity(prop: &PropOrSpread) -> Purity {
+    match prop {
+        PropOrSpread::Spread(spread) => {
+            // Spreading an arbitrary expression invokes its
+            // iterator (array spread) or property iteration
+            // (object spread). Either can fire a getter or a
+            // user-defined `[Symbol.iterator]`.
+            classify_expr_purity(&spread.expr).worst(Purity::Unknown)
+        }
+        PropOrSpread::Prop(prop) => match prop.as_ref() {
+            Prop::Shorthand(_) => Purity::Pure,
+            Prop::KeyValue(kv) => {
+                classify_propname_purity(&kv.key).worst(classify_expr_purity(&kv.value))
+            }
+            Prop::Assign(_) => Purity::Impure,
+            // `{ get x() {}, set x(v) {}, m() {} }` — defining a
+            // method or accessor is pure; invoking it is not, and
+            // we don't invoke it during init.
+            Prop::Getter(_) | Prop::Setter(_) | Prop::Method(_) => Purity::Pure,
+        },
+    }
+}
+
+fn classify_propname_purity(name: &PropName) -> Purity {
+    match name {
+        PropName::Ident(_) | PropName::Str(_) | PropName::Num(_) | PropName::BigInt(_) => {
+            Purity::Pure
+        }
+        PropName::Computed(c) => classify_expr_purity(&c.expr),
+    }
+}
+
+/// Whether a class declaration runs observable code at class-decl
+/// time. Static blocks always run; static fields run their
+/// initializer. `extends <expr>` is at-init: the expression itself
+/// runs, but `extends` references are tracked as `R`-edges
+/// elsewhere — here we only report whether the class itself
+/// _additionally_ has observable side-effecting init code.
+fn class_has_static_observable(class: &Class) -> bool {
+    class.body.iter().any(|member| match member {
+        ClassMember::StaticBlock(_) => true,
+        ClassMember::ClassProp(prop) if prop.is_static => prop
+            .value
+            .as_deref()
+            .map(|v| classify_expr_purity(v) != Purity::Pure)
+            .unwrap_or(false),
+        ClassMember::PrivateProp(prop) if prop.is_static => prop
+            .value
+            .as_deref()
+            .map(|v| classify_expr_purity(v) != Purity::Pure)
+            .unwrap_or(false),
+        _ => false,
+    })
+}
+
+fn item_has_side_effect(item: &ModuleItem, kind: StatementKind) -> bool {
+    match kind {
+        StatementKind::Import | StatementKind::Export | StatementKind::FnDecl => false,
+        StatementKind::VarDecl => var_decl_of_item(item)
+            .iter()
+            .flat_map(|var| var.decls.iter())
+            .any(|d| match d.init.as_deref() {
+                Some(init) => classify_expr_purity(init) != Purity::Pure,
+                None => false,
+            }),
+        StatementKind::ClassDecl => class_of_item(item)
+            .map(class_has_static_observable)
+            .unwrap_or(false),
+        StatementKind::SideEffect => match item {
+            ModuleItem::Stmt(Stmt::Expr(expr)) => classify_expr_purity(&expr.expr) != Purity::Pure,
+            // Bare blocks, control flow, loops, etc. — soundness-first.
+            _ => true,
+        },
+    }
+}
+
+fn var_decl_of_item(item: &ModuleItem) -> Option<&VarDecl> {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => Some(var),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => match &decl.decl {
+            Decl::Var(var) => Some(var),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn class_of_item(item: &ModuleItem) -> Option<&Class> {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Class(cls))) => Some(&cls.class),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => match &decl.decl {
+            Decl::Class(cls) => Some(&cls.class),
+            _ => None,
+        },
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(decl)) => match &decl.decl {
+            DefaultDecl::Class(cls) => Some(&cls.class),
+            _ => None,
+        },
+        _ => None,
     }
 }
 
@@ -278,23 +473,6 @@ fn classify_item(item: &ModuleItem) -> StatementKind {
         ModuleItem::Stmt(Stmt::Decl(Decl::Class(_))) => StatementKind::ClassDecl,
         _ => StatementKind::SideEffect,
     }
-}
-
-fn class_has_static_init(item: &ModuleItem) -> bool {
-    let class = match item {
-        ModuleItem::Stmt(Stmt::Decl(Decl::Class(cls))) => &cls.class,
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => match &decl.decl {
-            Decl::Class(cls) => &cls.class,
-            _ => return false,
-        },
-        _ => return false,
-    };
-    class.body.iter().any(|member| match member {
-        ClassMember::ClassProp(prop) => prop.is_static,
-        ClassMember::PrivateProp(prop) => prop.is_static,
-        ClassMember::StaticBlock(_) => true,
-        _ => false,
-    })
 }
 
 fn collect_declared_names(item: &ModuleItem) -> BTreeSet<String> {
@@ -657,16 +835,50 @@ pub fn build_module_dep_graph(
         }
     }
 
-    // The DESIGN's "S" (side-effect ordering) sub-graph would add
-    // an edge `(home(S₂), home(S₁))` for every source-order pair
-    // of side-effecting statements with different homes. We do
-    // not construct it today: the current `has_side_effect`
-    // analyzer over-approximates aggressively (every var-decl is
-    // marked side-effecting, even pure ones like `const X = 42`),
-    // and adding S edges with that approximation rejects nearly
-    // every realistic spec for trivially pure initializers
-    // appearing in source order across modules. Adding S requires
-    // a precise purity analyzer first; tracked as a TODO.
+    // Side-effect ordering edges (`S` per DESIGN.md "Module dep
+    // graphs"). For every pair of side-effecting statements
+    // (S₁, S₂) with `S₁.ordinal < S₂.ordinal` and
+    // `home(S₁) ≠ home(S₂)`, add edge `(home(S₂), home(S₁))` —
+    // home(S₂) depends on home(S₁), so home(S₁) must evaluate
+    // first.
+    //
+    // Walk in source order; track which modules have already
+    // contributed a side-effect statement. For each new
+    // side-effecting statement, the home of the new statement
+    // must come *after* every previously-seen side-effecting
+    // module — add an edge to each such predecessor.
+    //
+    // `has_side_effect` is computed by `classify_expr_purity` so
+    // pure literal initializers (`const X = 42`,
+    // `const X = { a: 1 }`, function/class declarations without
+    // observable static init) don't contribute to S. Without
+    // that precision the cross-module S graph would be dense
+    // enough to reject realistic specs for trivially pure const
+    // sequences.
+    let mut seen_modules: BTreeSet<ModuleId> = BTreeSet::new();
+    for stmt in facts.iter().filter(|s| s.has_side_effect) {
+        let from = stmt_owner(stmt);
+        let predecessors: Vec<ModuleId> = seen_modules
+            .iter()
+            .copied()
+            .filter(|&m| m != from)
+            .collect();
+        for to in predecessors {
+            let inserted = edges.entry(from).or_default().insert(to);
+            if inserted {
+                // First-time edge — record one evidence entry per
+                // (from, to) pair so the cycle report doesn't fan
+                // out into thousands of side-effect rows. The
+                // ordinal is the *later* statement; the earlier
+                // one is implicit in `home(to)`.
+                evidence
+                    .entry((from, to))
+                    .or_default()
+                    .push((stmt.ordinal, "<side-effect>".to_string()));
+            }
+        }
+        seen_modules.insert(from);
+    }
 
     ModuleDepGraph { edges, evidence }
 }
@@ -1171,6 +1383,188 @@ mod tests {
             report.recommendations.is_empty(),
             "fully-explicit spec should produce no recommendations, got {:?}",
             report.recommendations
+        );
+    }
+
+    // --- Purity classifier ---------------------------------------------------
+
+    fn classify(src: &str) -> Purity {
+        // Wrap the expression in a const so we can parse a module.
+        let module = parse(&format!("const _ = {src};"));
+        let var = match &module.body[0] {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
+            other => panic!("expected `const _ = ...;`, got {other:?}"),
+        };
+        let init = var.decls[0].init.as_deref().expect("init expected");
+        classify_expr_purity(init)
+    }
+
+    #[test]
+    fn classify_literal_kinds_are_pure() {
+        assert_eq!(classify("42"), Purity::Pure);
+        assert_eq!(classify("\"hi\""), Purity::Pure);
+        assert_eq!(classify("true"), Purity::Pure);
+        assert_eq!(classify("null"), Purity::Pure);
+        assert_eq!(classify("/foo/g"), Purity::Pure);
+        assert_eq!(classify("`literal`"), Purity::Pure);
+    }
+
+    #[test]
+    fn classify_ident_read_is_pure() {
+        assert_eq!(classify("FOO"), Purity::Pure);
+    }
+
+    #[test]
+    fn classify_pure_unary_and_binary() {
+        assert_eq!(classify("-1"), Purity::Pure);
+        assert_eq!(classify("!FOO"), Purity::Pure);
+        assert_eq!(classify("typeof FOO"), Purity::Pure);
+        assert_eq!(classify("A + 1"), Purity::Pure);
+        assert_eq!(classify("A && B"), Purity::Pure);
+        assert_eq!(classify("A ? B : C"), Purity::Pure);
+    }
+
+    #[test]
+    fn classify_delete_is_impure() {
+        assert_eq!(classify("delete o.x"), Purity::Impure);
+    }
+
+    #[test]
+    fn classify_assignment_and_update_are_impure() {
+        assert_eq!(classify("(x = 1)"), Purity::Impure);
+        assert_eq!(classify("x++"), Purity::Impure);
+    }
+
+    #[test]
+    fn classify_call_new_tagged_template_are_unknown() {
+        assert_eq!(classify("foo()"), Purity::Unknown);
+        assert_eq!(classify("new Foo()"), Purity::Unknown);
+        assert_eq!(classify("tag`hi ${x}`"), Purity::Unknown);
+    }
+
+    #[test]
+    fn classify_member_access_is_unknown() {
+        assert_eq!(classify("o.x"), Purity::Unknown);
+        assert_eq!(classify("o[k]"), Purity::Unknown);
+        assert_eq!(classify("o?.x"), Purity::Unknown);
+    }
+
+    #[test]
+    fn classify_object_literal_pure_when_props_pure() {
+        assert_eq!(classify("({ a: 1, b: 'x' })"), Purity::Pure);
+        assert_eq!(classify("({ [k]: 1 })"), Purity::Pure);
+        // Computed key with member access — getter could fire.
+        assert_eq!(classify("({ [k.x]: 1 })"), Purity::Unknown);
+        // Spread of an arbitrary expr — iterator could fire.
+        assert_eq!(classify("({ ...other })"), Purity::Unknown);
+        // Method definitions are pure (defining, not calling).
+        assert_eq!(classify("({ m() { return io(); } })"), Purity::Pure);
+    }
+
+    #[test]
+    fn classify_array_literal_pure_when_elements_pure() {
+        assert_eq!(classify("[1, 2, 'x']"), Purity::Pure);
+        assert_eq!(classify("[A, B]"), Purity::Pure);
+        assert_eq!(classify("[1, foo()]"), Purity::Unknown);
+        // Spread is `Unknown` even on an array literal.
+        assert_eq!(classify("[...other]"), Purity::Unknown);
+    }
+
+    #[test]
+    fn classify_function_and_arrow_are_pure() {
+        assert_eq!(classify("function () { return io(); }"), Purity::Pure);
+        assert_eq!(classify("() => io()"), Purity::Pure);
+    }
+
+    #[test]
+    fn classify_class_expr_pure_without_static_init() {
+        assert_eq!(classify("class { m() { return io(); } }"), Purity::Pure);
+        assert_eq!(classify("class { static x = 1 }"), Purity::Pure);
+        assert_eq!(classify("class { static x = io() }"), Purity::Impure);
+        assert_eq!(classify("class { static {} }"), Purity::Impure);
+    }
+
+    #[test]
+    fn classify_template_with_pure_exprs_is_pure() {
+        assert_eq!(classify("`a${A}b${1+2}c`"), Purity::Pure);
+        assert_eq!(classify("`a${foo()}`"), Purity::Unknown);
+    }
+
+    #[test]
+    fn classify_sequence_takes_worst() {
+        assert_eq!(classify("(A, B, C)"), Purity::Pure);
+        assert_eq!(classify("(A, foo(), C)"), Purity::Unknown);
+        assert_eq!(classify("(A, x = 1, C)"), Purity::Impure);
+    }
+
+    // --- has_side_effect refinement ------------------------------------------
+
+    fn has_side_effect_for(src: &str) -> Vec<bool> {
+        let module = parse(src);
+        analyze_chunk_facts(&module)
+            .into_iter()
+            .map(|f| f.has_side_effect)
+            .collect()
+    }
+
+    #[test]
+    fn pure_const_decl_is_not_side_effecting() {
+        assert_eq!(has_side_effect_for("const X = 42;"), vec![false]);
+        assert_eq!(has_side_effect_for("const X = { a: 1 };"), vec![false]);
+        assert_eq!(has_side_effect_for("const X = [1, 2, 3];"), vec![false]);
+        assert_eq!(has_side_effect_for("const X = OTHER;"), vec![false]);
+        assert_eq!(has_side_effect_for("const X = A + B;"), vec![false]);
+    }
+
+    #[test]
+    fn impure_const_decl_is_side_effecting() {
+        assert_eq!(has_side_effect_for("const X = compute();"), vec![true]);
+        assert_eq!(has_side_effect_for("const X = new Foo();"), vec![true]);
+        assert_eq!(has_side_effect_for("const X = (y = 1, y);"), vec![true]);
+    }
+
+    #[test]
+    fn function_decl_is_not_side_effecting() {
+        assert_eq!(
+            has_side_effect_for("function f() { return io(); }"),
+            vec![false]
+        );
+    }
+
+    #[test]
+    fn class_decl_pure_without_static_init() {
+        assert_eq!(
+            has_side_effect_for("class C { m() { return io(); } }"),
+            vec![false]
+        );
+        assert_eq!(
+            has_side_effect_for("class C { static x = 1; }"),
+            vec![false]
+        );
+        assert_eq!(
+            has_side_effect_for("class C { static x = io(); }"),
+            vec![true]
+        );
+        assert_eq!(has_side_effect_for("class C { static {} }"), vec![true]);
+    }
+
+    #[test]
+    fn bare_expression_classified_by_purity() {
+        // Plain ident-read expression statement: pure.
+        assert_eq!(has_side_effect_for("X;"), vec![false]);
+        // Function call expression statement: side-effecting.
+        assert_eq!(has_side_effect_for("io();"), vec![true]);
+    }
+
+    #[test]
+    fn multi_declarator_var_decl_is_side_effecting_if_any_init_is() {
+        assert_eq!(
+            has_side_effect_for("const A = 1, B = compute();"),
+            vec![true]
+        );
+        assert_eq!(
+            has_side_effect_for("const A = 1, B = 2, C = 3;"),
+            vec![false]
         );
     }
 }

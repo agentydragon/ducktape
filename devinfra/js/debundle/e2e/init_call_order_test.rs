@@ -14,19 +14,20 @@ use serde_json::json;
 
 #[test]
 fn init_call_order_respects_cross_module_dependency() {
-    // - `modA` owns `x1` (source item 1) and `x2` (source item 3;
+    // - `modA` owns `x1` (source item 0) and `x2` (source item 2;
     //   init reads `y.id`).
-    // - `modB` owns `y` (source item 2).
+    // - `modB` owns `y` (source item 1).
     //
-    // Source order has `x1` first, but `modA`'s body reads `y`
-    // at-init through `{ [y.id]: "v" }`. The cross-module import
-    // declares the dep and the ESM linker evaluates `modB` first.
+    // The pure-object initializers don't trigger `S` edges — the
+    // only constraints are the `R`/`I` edge from `mod_a → mod_b`
+    // (x2 reads y at-init) and the entry's reads of x1/x2/y. The
+    // ESM linker evaluates `mod_b` before `mod_a` because of the
+    // cross-module import.
     let opts = FixtureOpts::new(
-        r#"function f() { return { id: "k" }; }
-const x1 = f();
-const y = f();
+        r#"const x1 = { id: "x1" };
+const y = { id: "k" };
 const x2 = { [y.id]: "v" };
-console.log(x1.id, y.id, x2.k);
+console.log(x1.id, y.id, x2[y.id]);
 export { x1, y, x2 };
 "#,
         vec![
@@ -64,8 +65,8 @@ export { x1, y, x2 };
     let fixture = run_logical_modules_e2e_fixture(opts);
 
     // Behaviour preservation under correct init-call ordering:
-    // entry should print "k k v". Today (without the init-order
+    // entry should print "x1 k v". Today (without the init-order
     // fix) entry crashes at module load with `TypeError: Cannot
     // read properties of undefined (reading 'id')`.
-    assert_entry_output(&fixture, "k k v\n");
+    assert_entry_output(&fixture, "x1 k v\n");
 }

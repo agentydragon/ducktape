@@ -146,20 +146,18 @@ export { c };
 
 #[test]
 fn emits_top_level_effects_inline_in_extracted_module() {
-    // The initializer of `a` has a side effect (the comma expression).
-    // Source-order emit lands the const inline.
+    // The initializer of `a` has a side effect (the comma expression
+    // mutates `globalThis.log`). Source-order emit lands the const
+    // inline.
     //
-    // We don't assert on entry stdout here: source-order emit
-    // evaluates mod_x at link time (before any entry top-level code
-    // runs), which is semantically different from the original
-    // chunk's "evaluate inline at this source ordinal". Specs that
-    // care about exact side-effect interleaving need G' edge
-    // tracking, which is a known limitation (see DESIGN.md "Side-
-    // effect ordering").
+    // The source has exactly one cross-module side-effect ordering
+    // pair — `a`'s init in mod_x precedes the residual entry's
+    // `console.log(a)` — and an at-init read of `a` in the residual.
+    // Both run in the same direction (mod_x evaluates before the
+    // residual), so `I ∪ S` is acyclic and the materializer emits.
     let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
-        r#"globalThis.log = "";
-const a = (globalThis.log += "a", 1);
-console.log(globalThis.log, a);
+        r#"const a = (globalThis.log = "hi", 1);
+console.log(a);
 export { a };
 "#,
         vec![logical_module("x", &[Member::new("a")])],
