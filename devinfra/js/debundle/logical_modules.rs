@@ -1625,10 +1625,18 @@ fn push_initialized_var_decl(
             ..declarator
         });
     }
+    // `var`, not `let`: a circular module-load can read the binding
+    // before this placeholder line executes (the source chunk's
+    // imports may pull a consumer module that reads our exports at
+    // top level). Under `let`, that's TDZ — `ReferenceError: Cannot
+    // access 'X' before initialization`. Under `var`, the binding is
+    // hoisted and reads as `undefined`. The init function we own is
+    // the only writer, so the let-style "no double init" guarantee
+    // is meaningless here.
     out.push(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(VarDecl {
         span: var.span,
         ctxt: var.ctxt,
-        kind: VarDeclKind::Let,
+        kind: VarDeclKind::Var,
         declare: var.declare,
         decls: declarations,
     })))));
