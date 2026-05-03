@@ -14,7 +14,7 @@ use artifact::{
     ArtifactCounts, ArtifactManifest, ChunkFileRecord, ChunkLogicalModulesSummary, ChunkMetadata,
     FileMetadata, JsChunk, JsFile, JsPipelineArtifact, RootLogicalModulesSummary,
     SelectedModuleLowering, get_chunk_entry_path, manifest_relative_path, normalize_relative_path,
-    path_to_posix, posix_join, posix_relative,
+    path_to_posix, posix_join, posix_relative, resolve_artifact_source_import_reference,
 };
 use js_ast::{ParsedJsModule, set_str_value, str_value};
 
@@ -144,10 +144,15 @@ struct ModulePlan {
 
 #[derive(Debug, Clone)]
 struct ImportSpecifierMember {
-    /// Local name in the source chunk's import statement. Used to
-    /// look up the actual import + specifier in the runtime AST.
-    source_local: String,
     export_name: String,
+    /// Imported name in the source chunk's import statement.
+    imported: String,
+    /// Module specifier to emit in the destination's re-import. This
+    /// is computed at plan time using the artifact's source-chunk
+    /// index so it is correct relative to the destination's location
+    /// in the chunk tree, independent of `rewrite_chunk_entry_specifiers`
+    /// (which skips materialized module files).
+    rewritten_source: String,
 }
 
 pub fn materialize_logical_modules(
@@ -233,15 +238,21 @@ pub fn materialize_logical_modules(
         let mut module_plans = Vec::new();
         for (index, request) in explicit_requests.iter_mut().enumerate() {
             let mut bindings = BTreeMap::new();
+            let dest_target_file = target_file_for_request(&target_dir, &request.target_path)?;
             let mut import_members = Vec::new();
             for member in &request.members {
                 if member.is_import_specifier {
                     // ImportSpecifier-bound: emit a re-import in the
                     // destination module, not a top-level decl move.
-                    import_members.push(ImportSpecifierMember {
-                        source_local: member.binding.clone(),
-                        export_name: member.export_name.clone(),
-                    });
+                    import_members.push(resolve_import_specifier_member(
+                        artifact,
+                        &runtime_ast.module.body,
+                        &chunk_id,
+                        &target_file,
+                        &dest_target_file,
+                        &member.binding,
+                        &member.export_name,
+                    )?);
                 } else {
                     bindings.insert(member.binding.clone(), member.export_name.clone());
                 }
@@ -253,7 +264,7 @@ pub fn materialize_logical_modules(
             }
             module_plans.push(ModulePlan {
                 id: request.id.clone(),
-                target_file: target_file_for_request(&target_dir, &request.target_path)?,
+                target_file: dest_target_file,
                 explicit: true,
                 requested: request.clone(),
                 bindings,
@@ -609,13 +620,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
                 .take_while(|item| matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
                 .count();
             for (offset, member) in plan.import_members.iter().enumerate() {
-                let decl = import_specifier_member_decl(
-                    &runtime_ast.module.body,
-                    &plan.target_file,
-                    &member.source_local,
-                    &member.export_name,
-                )?;
-                body.insert(import_count + offset, decl);
+                body.insert(import_count + offset, import_specifier_member_decl(member));
                 import_member_exports
                     .insert(member.export_name.clone(), member.export_name.clone());
             }
@@ -1894,37 +1899,71 @@ fn mint_fresh_local_name(base: &str, occupied: &BTreeSet<String>) -> String {
     }
 }
 
-/// Look up the source chunk's import statement that binds `source_local`,
-/// and build the destination's re-import. The chunk's import lives at the
-/// chunk root; the destination lives deeper, so prepend `../` for each
-/// path segment that separates `destination_target_file` from the chunk
-/// root.
-fn import_specifier_member_decl(
+/// Resolve an `ImportSpecifier`-bound member to the values needed to
+/// emit the destination's re-import. Looks up the source chunk's import
+/// statement by `source_local`, then resolves its module specifier to a
+/// target chunk via the artifact's source-chunk index and computes the
+/// path relative to the destination's location in the chunk tree. This
+/// runs at plan time because the rewriter (`rewrite_chunk_entry_specifiers`)
+/// skips materialized module files, so the destination must carry the
+/// final post-rewrite path itself.
+fn resolve_import_specifier_member(
+    artifact: &JsPipelineArtifact,
     runtime_body: &[ModuleItem],
-    destination_target_file: &str,
+    source_chunk_id: &str,
+    source_runtime_file: &str,
+    dest_target_file: &str,
     source_local: &str,
     export_name: &str,
-) -> Result<ModuleItem> {
+) -> Result<ImportSpecifierMember> {
     let (imported, src_path) =
         lookup_import_specifier(runtime_body, source_local).with_context(|| {
             format!("no import specifier found for `{source_local}` in source chunk")
         })?;
-    let depth = std::path::Path::new(destination_target_file)
-        .parent()
-        .map(|parent| parent.iter().count())
-        .unwrap_or(0);
-    let prefix = "../".repeat(depth);
-    let rewritten = format!("{prefix}{src_path}");
-    Ok(ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
+    let dest_dir = posix_join(&[source_chunk_id, &posix_dirname(dest_target_file)]);
+    let rewritten_source = if let Some((target_chunk_id, target_entry_file, _path)) =
+        resolve_artifact_source_import_reference(
+            artifact,
+            &src_path,
+            source_chunk_id,
+            source_runtime_file,
+        )? {
+        let target_path = posix_join(&[&target_chunk_id, &target_entry_file]);
+        let mut relative = posix_relative(&dest_dir, &target_path);
+        if !relative.starts_with('.') {
+            relative = format!("./{relative}");
+        }
+        relative
+    } else {
+        // Source path doesn't reference a known chunk (e.g. a synthetic
+        // e2e snapshot file with no entry in the artifact). Fall back to
+        // walking the destination back up to the chunk root and appending
+        // the chunk-root-relative source as-is.
+        let depth = std::path::Path::new(dest_target_file)
+            .parent()
+            .map(|parent| parent.iter().count())
+            .unwrap_or(0);
+        format!("{}{}", "../".repeat(depth), src_path)
+    };
+    Ok(ImportSpecifierMember {
+        export_name: export_name.to_string(),
+        imported,
+        rewritten_source,
+    })
+}
+
+fn import_specifier_member_decl(member: &ImportSpecifierMember) -> ModuleItem {
+    let local = member.export_name.clone();
+    ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
         span: DUMMY_SP,
         specifiers: vec![ImportSpecifier::Named(ImportNamedSpecifier {
             span: DUMMY_SP,
-            local: Ident::new_no_ctxt(export_name.into(), DUMMY_SP),
-            imported: if export_name == imported {
+            local: Ident::new_no_ctxt(local.clone().into(), DUMMY_SP),
+            imported: if local == member.imported {
                 None
             } else {
                 Some(ModuleExportName::Ident(Ident::new_no_ctxt(
-                    imported.into(),
+                    member.imported.clone().into(),
                     DUMMY_SP,
                 )))
             },
@@ -1932,13 +1971,13 @@ fn import_specifier_member_decl(
         })],
         src: Box::new(Str {
             span: DUMMY_SP,
-            value: rewritten.into(),
+            value: member.rewritten_source.clone().into(),
             raw: None,
         }),
         type_only: false,
         with: None,
         phase: ImportPhase::Evaluation,
-    })))
+    }))
 }
 
 /// Find the `(imported_name, src_path)` for the chunk's import specifier
@@ -1964,6 +2003,14 @@ fn lookup_import_specifier(body: &[ModuleItem], source_local: &str) -> Option<(S
         }
     }
     None
+}
+
+fn posix_dirname(path: &str) -> String {
+    std::path::Path::new(path)
+        .parent()
+        .and_then(|p| p.to_str())
+        .unwrap_or("")
+        .replace('\\', "/")
 }
 
 fn import_decl_for_plan(
