@@ -186,7 +186,13 @@ function buildVendorOps(vendorChunkMap) {
       package: "@careswitch/svelte-data-table",
       version: "0.6.3",
       subpath: "dist/index.js",
-      wrapperShape: "named-from-module-default",
+      // svelte-data-table's `dist/index.js` is a plain re-export
+      // (`export { DataTable } from "./DataTable.svelte.js"`) — no
+      // default to wrap, just a same-named pass-through. Omitting
+      // `wrapperShape` selects the no-wrapper path: the debundler
+      // swaps the chunk for the upstream package directly and
+      // verifies that every vendor-side named export is present
+      // upstream.
       confidence: "confirmed",
       identity: "@careswitch/svelte-data-table (smoke)",
       upstreamFamily: "@careswitch/svelte-data-table",
