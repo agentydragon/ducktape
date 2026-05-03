@@ -828,9 +828,14 @@ fn expand_plan_to_transitive_dependencies(
             binding_assignment.insert(used.clone(), module_index);
             plan.bindings.insert(used.clone(), used.clone());
             if let Some(dep_decl) = declaration_by_ordinal.get(&dep_ordinal) {
+                // Sibling declarators may already be claimed by another plan's
+                // explicit spec or earlier closure. Don't steal them — split_var_decl
+                // already routes per-declarator destinations correctly.
                 for dep_name in &dep_decl.names {
-                    binding_assignment.insert(dep_name.clone(), module_index);
-                    plan.bindings.insert(dep_name.clone(), dep_name.clone());
+                    if !binding_assignment.contains_key(dep_name) {
+                        binding_assignment.insert(dep_name.clone(), module_index);
+                        plan.bindings.insert(dep_name.clone(), dep_name.clone());
+                    }
                 }
             }
             queue.push_back(dep_ordinal);

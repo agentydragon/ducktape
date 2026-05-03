@@ -47,5 +47,6 @@ rust_library(
         "vendor_swap_test",
         "import_collision_test",
         "scrambled_id_frequencies_test",
+        "sibling_declarator_steal_test",
     ]
 ]
