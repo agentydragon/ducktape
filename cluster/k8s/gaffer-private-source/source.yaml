@@ -7,6 +7,7 @@ metadata:
     description: "Private companion monorepo. Reconciled from main branch via the ducktape-automation GitHub App (also used to push image-pin commits back here)."
 spec:
   interval: 1m
+  provider: github
   ref:
     branch: main
   secretRef:
