@@ -1,148 +1,137 @@
-# Branch protection for `agentydragon/ducktape`
+# Branch protection for `agentydragon/ducktape` and `agentydragon/gaffer-private`
 
 ## Goal
 
-Enforce that commits merged to the default branch (`devel` now, `main` later)
-have passed CI checks — specifically `Pre-commit checks` and `bazel-ci / Test &
-Build`. The primary motivation is to prevent a red commit from silently landing
-on `devel` and breaking downstream work, regardless of whether the commit came
-from a PR merge, a direct push, or an automated workflow.
+Enforce that commits landing on the default branch of either repo have passed
+CI checks. Concretely, gate on:
 
-This is separate from (but related to) protecting against force-pushes and
-branch deletion, which is a cheap extra we'd also pick up.
+- ducktape: `bazel-ci / Test & Build` and `Pre-commit checks`
+- gaffer-private: `Bazel CI / Test & Build` (and `Pre-commit checks` once
+  gaffer's pre-commit workflow is created — separate PR)
 
-## Status: blocked, not started
+Plus the cheap extras: block branch deletion, force-push, non-linear merge
+commits.
 
-- The first attempt (commit `c23edda`, PR #1312) was reverted in a follow-up PR
-  because the Terraform apply couldn't succeed against a personal-account repo.
-- No repository ruleset exists on the repo as of 2026-04-15.
-- This doc captures what we tried, what we learned, and the options for a
-  second attempt so we don't re-derive everything.
+## Current state (as of this commit)
 
-## What we tried in PR #1312
+- `tf/gitops/github-branch-protection/` — module landed. Two
+  `github_repository_ruleset` resources, both targeting `refs/heads/main`,
+  authenticated via the existing per-repo PATs (`github-secrets-sync-pat` for
+  ducktape, `github-pat-gaffer-private-flux` for gaffer).
+- ducktape main: `enforcement = "active"`. No-op today because main is not the
+  default branch (`devel` still is) and nothing pushes to main. Will start
+  gating direct pushes once the default branch flips to main.
+- gaffer-private main: `enforcement = "disabled"`. Active enforcement is
+  blocked on Flux's `gaffer-images` ImageUpdateAutomation, which pushes to
+  main via SSH using `gaffer-private-deploy-key` — deploy keys are not a
+  user/App identity, so neither the `RepositoryRole=admin` nor the
+  `Integration=ducktape-automation` bypass actor matches them. See "Pending:
+  Flux App migration" below.
+- Bypass actors on both rulesets:
+  - `RepositoryRole=admin` (id 5) — covers in-cluster automations pushing as
+    the owner via PAT (`claude-token-rotation`, `attic-jwt-rotation` CronJobs).
+  - `Integration=ducktape-automation` (App ID 3590331) — covers any GHA
+    workflow that mints an installation token via
+    `actions/create-github-app-token`. Currently no workflow uses the App;
+    the three direct-push workflows on ducktape (`sync-pins.yml`,
+    `nix-flake-update.yml`, `container-images.yml`'s `pin-digests` job) carry
+    TODO markers about migrating when ducktape's default flips.
 
-A tofu-controller-managed `github_repository_ruleset` at
-`tf/gitops/github-repo-rulesets/`, wired into Flux via
-`cluster/k8s/github-repo-rulesets/`. The module was shaped like the existing
-`github-secrets-sync`, `flux-webhook-token`, and `harbor-ci` modules (same k8s
-backend, same PAT data source, same pattern).
+The `ducktape-automation` GitHub App is registered on the
+`agentydragon` personal account; public identifiers and permissions are
+documented at <secrets/ducktape-automation.README.md>. The private key is
+SOPS-encrypted at <secrets/ducktape-automation.2026-05-03.private-key.sops.pem>.
 
-The ruleset definition:
+## Pending: Flux App migration (separate PR)
 
-- Target: `refs/heads/devel`, `refs/heads/main` (one ruleset covering both so
-  the protection survives an eventual default-branch rename with no gap).
-- Rules: `deletion`, `non_fast_forward`, `required_linear_history`, `pull_request`
-  (0 approvals required — it's a solo repo), `required_status_checks` with
-  `Pre-commit checks` and `bazel-ci / Test & Build`.
-- Bypass actors:
-  - `RepositoryRole` actor_id=5 (admin): covers the owner account, and
-    therefore any automation pushing with a PAT owned by the owner. Covers
-    Flux `ImageUpdateAutomation` and the `claude-token-rotation` CronJob.
-  - `Integration` actor_id=15368 (the `github-actions` built-in app):
-    intended to cover the three GHA workflows that direct-push to `devel`
-    via `GITHUB_TOKEN` — `sync-pins.yml`, `nix-flake-update.yml`, and the
-    `pin-digests` job in `container-images.yml`.
+To activate the gaffer-private ruleset and prepare ducktape for the eventual
+default-branch flip, Flux's git push auth needs to move from SSH deploy keys
+to ducktape-automation App auth. Flux source-controller and
+image-automation-controller (≥ v2.5) accept Secrets containing
+`githubAppID`, `githubAppInstallationID`, `githubAppPrivateKey` (and
+optionally `githubAppBaseURL` for GHE).
 
-## What went wrong
+### Migration runbook
 
-Two failures, in order:
+1. **Verify App installation.** `ducktape-automation` must be installed on
+   both `agentydragon/ducktape` and `agentydragon/gaffer-private`. Check at
+   <https://github.com/settings/installations>; install if missing. Note
+   each installation ID — visible in the URL of the install's page
+   (`https://github.com/settings/installations/<id>`).
+2. **Author SOPS-encrypted Secrets** (one per repo) at
+   `cluster/k8s/github-app-automation/secrets/{ducktape,gaffer}-flux-auth.sops.yaml`,
+   each containing `githubAppID`, `githubAppInstallationID`,
+   `githubAppPrivateKey`. Encrypted to `admin + cluster-secrets` recipients
+   so Flux can decrypt. The private key is the plaintext PEM extracted from
+   `secrets/ducktape-automation.2026-05-03.private-key.sops.pem`.
+3. **Wire the Secrets into Flux** via a new `cluster/k8s/github-app-automation/`
+   Kustomization (mirrors the shape of `cluster/k8s/github-secrets-sync/secrets/`).
+4. **Swap `secretRef`** on:
+   - `cluster/k8s/flux-system/gotk-sync.yaml` (the `flux-system` GitRepository) —
+     URL also flips from `ssh://...` to `https://github.com/...`.
+   - `cluster/k8s/gaffer-private-source/source.yaml` (the `gaffer-private`
+     GitRepository) — same URL transition.
+5. **Verify Flux pushes succeed.** Force a reconcile of `gaffer-images`
+   ImageUpdateAutomation; confirm a commit lands on gaffer's `main` attributed
+   to the App. Force a reconcile of ducktape's `all-images` similarly.
+6. **Activate the gaffer ruleset.** Flip
+   `github_repository_ruleset.gaffer_main.enforcement` from `"disabled"` to
+   `"active"` in `tf/gitops/github-branch-protection/main.tf`.
+7. **Retire the deploy keys** in a follow-up tombstone commit:
+   `tf/gitops/gaffer-private-flux/` and the equivalent ducktape flux-system
+   deploy-key setup. Both currently have `prevent_destroy` lifecycle blocks
+   that need removal first.
 
-1. **403 on apply.** The shared fine-grained PAT (`github-secrets-sync-pat`)
-   didn't have `Administration: Read and write` repo permission, which the
-   `POST /repos/{owner}/{repo}/rulesets` endpoint requires. Resolved by the
-   owner adding the scope to the existing PAT.
+The migration is intentionally split from this PR because step 5 is a
+"watch the logs" cutover — clean failure modes are important and rolling
+back a multi-file change is more annoying than rolling back the
+ruleset-only change.
 
-2. **422 on apply.** With the right scope, the API then rejected the
-   `Integration` bypass actor:
+## Workflow migration (also pending, ducktape-side, lower urgency)
 
-   > Actor GitHub Actions integration must be part of the ruleset source or
-   > owner organization
-
-   Verified from the GitHub web UI: on this personal-account repo, "GitHub
-   Actions" simply does not appear in the bypass-actor picker at all. Other
-   third-party apps installed on the repo (e.g. BuildBuddy) do appear. The
-   built-in `github-actions` service isn't exposed as a bypass actor on
-   personal-account repos via any mechanism we could find — neither the API
-   nor the UI. This is a GitHub limitation for user-owned repos, not a bug in
-   our Terraform or PAT scope.
-
-## What this means for a second attempt
-
-Without a GitHub Actions bypass, the three workflows that currently direct-push
-to `devel` with `GITHUB_TOKEN` would start failing once the ruleset is active.
-Those workflows are:
+When ducktape's default branch flips from `devel` to `main`, the three GHA
+workflows that direct-push to the default branch need to migrate from
+`GITHUB_TOKEN` to App-minted installation tokens. In-place TODOs already
+mark each:
 
 | Workflow                                   | Cadence       | What it pushes                  |
 | ------------------------------------------ | ------------- | ------------------------------- |
 | `sync-pins.yml`                            | every 30m     | `npins/sources.json` updates    |
-| `nix-flake-update.yml`                     | (scheduled)   | `flake.lock` updates            |
+| `nix-flake-update.yml`                     | manual        | `flake.lock` updates            |
 | `container-images.yml` (`pin-digests` job) | on image push | `cluster/**` image digest bumps |
 
-In-cluster automations that already push as the owner user via the PAT are
-unaffected — they already bypass via `RepositoryRole=admin`:
+The migration pattern per workflow:
 
-- Flux `ImageUpdateAutomation` (uses `github-secrets-sync-pat`)
-- `claude-token-rotation` CronJob (uses `github-secrets-sync-pat`)
+```yaml
+- uses: actions/create-github-app-token@v1
+  id: app-token
+  with:
+    app-id: ${{ vars.AUTOMATION_APP_ID }} # or hardcode 3590331
+    private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+- uses: actions/checkout@v6
+  with:
+    token: ${{ steps.app-token.outputs.token }}
+# … push step uses GITHUB_TOKEN → swap to ${{ steps.app-token.outputs.token }}
+```
 
-So the open question is how to handle those three GHA workflows. Two paths,
-both unappealing:
+The PEM is in `secrets/` and decryptable in CI (the SOPS file is encrypted
+to the `&ci` recipient = the GHA SOPS_AGE_KEY), so the workflow can simply
+`sops -d` it inline rather than going through a fresh
+`github-secrets-sync` round-trip into GHA Actions Secrets. `sync-pins.yml`
+additionally has a hardcoded `devel` ref + push target that has to flip to
+`main` at the same time.
 
-### Option A — PAT push
+## Historical context
 
-Sync `github-secrets-sync-pat` into a GitHub Actions secret (e.g.
-`GH_ADMIN_PAT`) via the existing `github-secrets-sync` tofu module, then change
-the three workflows to push using it. Commits become owner-attributed (bypass
-via `RepositoryRole=admin`).
-
-Pros: small workflow diff, in-cluster PAT rotation already handled.
-Cons: the admin PAT now lives as a GHA secret, accessible to any workflow that
-gets permission-creep. The owner's contribution graph fills with
-`sync-pins` auto-commits (~48/day). Also makes it easy to accidentally grant
-admin-token access to a workflow that shouldn't have it.
-
-### Option B — PR-based auto-updates
-
-Change the three workflows to open PRs via `peter-evans/create-pull-request`
-instead of direct-pushing. Flux `ImageUpdateAutomation` similarly gets changed
-to push to a feature branch and open a PR (non-trivial — Flux's
-`ImageUpdatePolicy` pushes directly, no native PR mode; would likely need
-changing the push target to a `flux-image-updates` branch and a separate job
-to open the PR).
-
-Pros: everything goes through the same gate. Honest audit trail. No shared
-admin token in CI.
-Cons: a _lot_ of PRs — 48+/day from sync-pins alone, plus flake-update,
-plus every image build. Each one triggers CI. Each one needs auto-merge
-configured. Auto-merge on required-status-checks rulesets is a whole
-separate setup (and has historically been finicky).
-
-### Option C — partial protection
-
-Only gate `main` (future default) and leave `devel` unprotected. Buys nothing
-today but sets up the ruleset so a future rename protects the then-default.
-
-### Option D — skip bypass, accept broken workflows
-
-Turn the ruleset on with no bypass, let the three workflows break, fix them
-one at a time in follow-up PRs. Aggressive but honest — forces the decision
-per-workflow.
-
-## Recommendation
-
-Probably Option A as a pragmatic first step, with a clear "rotate this PAT"
-runbook and a tight audit on which workflows reference the new GHA secret. The
-contribution-graph noise is cosmetic, and the security delta over today is
-small — the PAT already exists in-cluster and is already used for pushes, we're
-just granting CI runners access to it.
-
-Decision deferred — see tracking issue.
+PR #1312 (commit `c23edda`, reverted) was the first attempt. It targeted
+both `devel` and `main` in one ruleset and tried to use the built-in
+`github-actions` (Integration id=15368) as a bypass actor. The latter failed
+with a 422 because GitHub doesn't expose `github-actions` as a bypass actor
+on personal-account repos — only third-party Apps (e.g. BuildBuddy) appear
+in the picker. The fix is registering our own App (`ducktape-automation`)
+and using it as the Integration bypass actor; that's the path this work
+has taken.
 
 ## Tracking
 
 - GitHub issue: agentydragon/ducktape#1314
-- Related files to restore when the second attempt lands:
-  - `tf/gitops/github-repo-rulesets/` (module)
-  - `cluster/k8s/github-repo-rulesets/` (Flux wiring)
-  - `cluster/k8s/kustomization.yaml` (root resource list)
-- The PAT must have `Administration: Read and write` fine-grained scope before
-  apply — this is already set as of 2026-04-15.

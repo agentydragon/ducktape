@@ -5,6 +5,13 @@ metadata:
   namespace: flux-system
   annotations:
     description: "Private companion monorepo. Reconciled from main branch via SSH deploy key (write-scoped — image automation pushes back here)."
+    # TODO(branch-protection): swap secretRef from gaffer-private-deploy-key
+    # to a Secret with ducktape-automation App credentials
+    # (githubAppID / githubAppInstallationID / githubAppPrivateKey) so
+    # Flux pushes are recognised by the gaffer-private main ruleset's
+    # Integration bypass actor. Required before flipping
+    # github_repository_ruleset.gaffer_main enforcement to "active".
+    # See plans/branch_protection.md for the migration runbook.
 spec:
   interval: 1m
   ref:

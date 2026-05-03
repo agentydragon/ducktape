@@ -120,12 +120,23 @@ resource "github_repository_ruleset" "ducktape_main" {
 }
 
 # --- gaffer-private main ---
+#
+# NOTE: enforcement is "disabled" pending Flux migration to App auth.
+# main is gaffer's default branch and Flux's gaffer-images
+# ImageUpdateAutomation (cluster/k8s/gaffer-private-source/) pushes commits
+# back to main using gaffer-private-deploy-key — an SSH deploy key. Deploy
+# keys aren't a user/App identity, so neither RepositoryRole=admin nor
+# Integration=ducktape-automation matches them, and the push would be
+# rejected by an active ruleset. Flip to "active" once Flux's gaffer-private
+# GitRepository secretRef has been swapped to ducktape-automation App auth
+# (githubAppID / githubAppInstallationID / githubAppPrivateKey) — see
+# plans/branch_protection.md for the migration runbook.
 resource "github_repository_ruleset" "gaffer_main" {
   provider    = github.gaffer
   name        = "main-protection"
   repository  = "gaffer-private"
   target      = "branch"
-  enforcement = "active"
+  enforcement = "disabled"
 
   conditions {
     ref_name {
