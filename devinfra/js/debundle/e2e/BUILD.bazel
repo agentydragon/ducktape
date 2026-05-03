@@ -52,8 +52,8 @@ rust_library(
         "missing_binding_member_test",
         "runtime_import_reference_test",
         "init_call_order_test",
-        "promise_validator_rejects_cycle_test",
-        "promise_source_order_emit_test",
-        "promise_multi_module_re_export_test",
+        "validator_rejects_cycle_test",
+        "source_order_emit_test",
+        "multi_module_re_export_test",
     ]
 ]
