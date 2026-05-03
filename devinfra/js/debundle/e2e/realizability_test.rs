@@ -56,8 +56,11 @@ export { A, B, C, D };
 fn rejects_cycle_through_lazy_back_edge() {
     // mod_b reads A from mod_a at-init (B's initializer);
     // mod_a's `readB` body reads B from mod_b lazily. `R` is
-    // acyclic; the lazy read still emits an `import` directive
-    // so `I` is cyclic — validator must reject.
+    // acyclic by itself, but the SCC `{mod_a, mod_b}` in `I ∪ S`
+    // contains the at-init `mod_b → mod_a` edge — that single
+    // `R` cross-module edge inside the SCC is enough for the
+    // realizability gate to bail. (Without the bail the linker
+    // would TDZ on B's initializer.)
     expect_logical_modules_e2e_rejection_containing_all(
         FixtureOpts::new(
             r#"const A = "a-value";
@@ -73,6 +76,39 @@ export { A, B, readB };
         ),
         &["cycle", "mod_a", "mod_b"],
     );
+}
+
+#[test]
+fn accepts_cycle_when_all_back_edges_are_lazy() {
+    // mod_a owns A and readB; readB() lazily reads B.
+    // mod_b owns B and readA; readA() lazily reads A.
+    // No cross-module read fires at-init: when the linker
+    // evaluates either module, no top-level statement reaches
+    // into the other one. The function bodies only run *after*
+    // both modules finish evaluating — no TDZ.
+    //
+    // The SCC in the imports graph `I` is `{mod_a, mod_b}`, but
+    // it carries no at-init (`R`) and no side-effect (`S`)
+    // cross-module edges — only `L` edges. The realizability
+    // gate must accept this spec; rejecting would over-restrict
+    // the realizable subset of `I ∪ S` cycles.
+    let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
+        r#"const A = "a-value";
+const B = "b-value";
+function readA() { return A; }
+function readB() { return B; }
+console.log(readA(), readB());
+export { A, B, readA, readB };
+"#,
+        vec![
+            logical_module("mod_a", &[Member::new("A"), Member::new("readB")]),
+            logical_module("mod_b", &[Member::new("B"), Member::new("readA")]),
+        ],
+    ));
+    // ESM evaluates both modules to completion before the
+    // residual entry's `console.log(readA(), readB())` fires;
+    // both function bodies see fully-assigned bindings.
+    assert_entry_output(&fixture, "a-value b-value\n");
 }
 
 // --- Acyclic specs and cross-module init order ----------------------------

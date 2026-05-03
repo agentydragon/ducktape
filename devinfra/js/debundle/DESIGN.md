@@ -1,25 +1,21 @@
 # Debundler — Design
 
-> Status: phases 1 → 5 landed. The legacy init-wrapper lowering is
-> gone; the validator gates on the imports graph `I` (the ESM
-> linker's view); `lower_chunk` emits source-order only.
-> Production specs are fully explicit (every binding has an
-> owner; closure pass deleted). The parallel `import_members`
-> channel is gone too — Imported bindings flow through
-> `Schedule.bindings` / `BindingKind::Imported`, with multi-module
-> re-exports accumulating into one entry's `re_exported_by` map.
->
-> Phase 5 closed a soundness gap surfaced by a live-proxy run
-> against a real downstream corpus: the validator was building
-> the at-init read graph `R`, but the realizability graph is the
-> linker's import graph `I ⊇ R` (lazy reads still emit `import`
-> directives). The realizability theorem is now stated and proved
-> over `I` (with `S` deferred — see the proof's coverage gaps),
-> with explicit JS-subset assumptions (A1–A7) and lemma-by-lemma
-> chaining; the validator's edge construction matches. See
-> [Erratum: I vs R](#erratum-i-vs-r) for the conceptual misstep
-> and the [realizability theorem](#the-realizability-theorem) for
-> the proof.
+> Summary of the design: the debundler takes a bundler-emitted
+> ESM chunk and a path-first logical-module spec, and emits a
+> multi-module ESM bundle observationally equivalent to the
+> input. The validator builds the imports graph `I` plus a
+> side-effect ordering graph `S` over the spec, runs SCC
+> detection, and accepts the spec iff every `I ∪ S` SCC's
+> cross-module edges are all `LazyRead` — i.e. no at-init read
+> and no side-effect ordering edge crosses an SCC boundary. The
+> emit is source-order: each logical module's body is its
+> assigned statements in original chunk order, with explicit
+> `import` / `export` declarations. There is no init-wrapper
+> machinery, no closure pass, no implicit binding pulls — every
+> owned binding is named explicitly in the spec, and `Imported`
+> bindings flow through `Schedule.bindings` / `BindingKind::Imported`,
+> with multi-module re-exports accumulating into one entry's
+> `re_exported_by` map.
 
 ## Mission
 
@@ -152,12 +148,13 @@ pub enum BindingKind {
 }
 ```
 
-Distinguishing the two kinds in the data model is the key reason
-the legacy code grew the parallel `import_members` channel: the
-`binding_assignment: BTreeMap<String, usize>` of the legacy model
-has no slot for "this binding is owned elsewhere; we just want to
-re-export it from these logical modules." The unified model has
-that slot built in.
+Distinguishing the two kinds in the data model is what gives
+the validator and emitter a single source of truth for binding
+ownership: an `Owned` entry says "this logical module
+contributes this binding to the chunk's namespace"; an
+`Imported` entry says "this binding originates elsewhere; these
+modules just re-export it." Without the distinction the spec
+needs a parallel side-channel to express re-export semantics.
 
 ### Statements
 
@@ -294,23 +291,37 @@ I  ∪  S            the full constraint graph
 
 ## The realizability theorem
 
-> **Theorem (correctness).** If `I ∪ S` is acyclic, the source-
+> **Theorem (correctness).** If `R ∪ S` is acyclic, the source-
 > order emit construction below produces a multi-module ESM bundle
-> observationally equivalent to the input chunk.
+> observationally equivalent to the input chunk. (Note this is
+> stated over `R ∪ S`, not `I ∪ S` — see "Gating rule" below.)
 >
 > **Design rule (gating).** The materializer accepts a spec iff
-> `I ∪ S` is acyclic. Specs whose `I ∪ S` has any cycle are
-> rejected with cycle evidence — even cycles whose at-init
-> projection (`R ∪ S`) is acyclic, where the bundle could in
-> principle be made to work by careful entry-import ordering.
+> every SCC in the imports + side-effect graph `I ∪ S` is
+> realizable. An SCC is realizable iff every cross-module edge
+> between its members is a `LazyRead` — equivalently, the SCC
+> contributes no `R` (at-init) and no `S` (side-effect-ordering)
+> cross-module edges. Cycles whose only back-edges are lazy reads
+> are accepted: the ESM linker walks `I` to pick _some_
+> evaluation order for the SCC, every module finishes evaluating
+> with all bindings assigned, and the lazy reads only fire later
+> (after `L`'s call sites run). Cycles with `R` or `S`
+> cross-module edges are rejected: `R` would TDZ during cycle
+> evaluation; `S` has no consistent topological emit order.
 >
-> **Implementation status.** Both `I` and `S` are constructed by
-> the validator. `I` walks every cross-module reference (at-init
-> or lazy). `S` walks pairs of side-effecting statements —
-> `has_side_effect` uses a precise expression-level purity
-> classifier (`classify_expr_purity`) so pure literal
+> **Implementation.** Each `(from, to)` edge in the dep-graph
+> carries one or more `EdgeReason`s tagged with their `EdgeKind`
+> — `AtInitRead`, `LazyRead`, or `SideEffect` — alongside the
+> triggering statement ordinal and binding name. The graph is a
+> `petgraph::DiGraphMap<ModuleId, EdgeMetadata>`. Cycle detection
+> runs `tarjan_scc` over `graph.graph`; the realizability filter
+> checks `EdgeMetadata::constrains_realizability` (i.e.
+> `has_at_init_read || has_side_effect_ordering`) on every edge
+> between SCC members. `S` walks pairs of side-effecting
+> statements — `has_side_effect` uses a precise expression-level
+> purity classifier (`classify_expr_purity`) so pure literal
 > initializers like `const X = 42` don't contribute spurious S
-> edges. The strict gate runs on `I ∪ S`.
+> edges.
 
 Here "spec assignment" means whatever the validator sees: every
 declared binding either has an explicit `owner` from the spec or
@@ -319,33 +330,37 @@ defaults to `ModuleId::ResidualEntry` (see [Spec explicitness
 There is no implicit transformation between the spec and the
 assignment the theorem reasons about.
 
-The gating rule is strictly stronger than the correctness theorem
-needs. We could in principle accept some specs with `I ∪ S` cycles
-where `R ∪ S` is acyclic: the linker would have to evaluate one
-SCC member first, but if no at-init back-edge points into that
-member, lazy reads from inside the SCC don't fire until after the
-linker finishes (function bodies don't run during linking), and
-the bundle works. We don't accept these because:
+### Why the gate is over `I ∪ S`, not `R ∪ S` or full `I ∪ S` acyclicity
 
-1. **Architectural fragility.** Any future edit promoting a lazy
-   read inside the SCC to an at-init read silently TDZs the
-   bundle. The boundary the spec describes is not actually a
-   separable cut — the modules are bound together in the linker's
-   graph; the spec is lying about their independence.
-2. **Linker ordering is non-local.** "Lazy reads don't fire
-   during linking" is a property of the entire program graph and
-   any imported callsite. A vendor library that calls back into
-   user code during its own evaluation would invalidate the
-   assumption. We cannot statically rule that out.
-3. **The cyclic spec is always rewritable.** Colocating the
-   bindings on the back-edge into one module dissolves the cycle
-   without losing any factoring the human author actually
-   wanted.
+The validator builds the imports graph `I` (every cross-module
+reference, at-init or lazy) plus the side-effect ordering graph
+`S` (one edge per pair of cross-module side-effecting top-level
+statements in source order). It runs SCC detection on `I ∪ S`,
+then accepts SCCs whose cross-module edges are all `LazyRead`.
 
-Calling cyclic specs "unrealizable" is therefore a deliberate
-design choice, not a forced consequence. We adopt it because the
-permissive variant is a footgun every other invariant in this
-design works to prevent.
+Two strictly weaker checks would be wrong:
+
+1. **Building only `R ∪ S`.** A cycle in `I` whose at-init
+   projection (`R`) is acyclic still affects the linker: lazy
+   reads emit `import` directives that the linker uses for its
+   DFS evaluation order. A spec where two modules mutually
+   import — one direction at-init, the other lazy — has acyclic
+   `R` but cyclic `I`; the linker enters the SCC, picks an
+   evaluation order, and the at-init read TDZs when the
+   late-evaluated module hasn't finished its body. Building `I`
+   directly catches this.
+2. **Rejecting any `I ∪ S` cycle.** A cycle whose only
+   cross-module back-edges are `LazyRead` is realizable: the
+   linker still walks `I` and picks some evaluation order, but
+   no read fires until all SCC members have finished evaluating.
+   Function bodies don't run during linking; the lazy reads only
+   resolve when their call-sites do, after the entire SCC is
+   live. Rejecting these cycles would over-restrict the
+   realizable subset of `I ∪ S` and force colocation of bindings
+   whose only inter-module relationship is mutual lazy reference.
+
+The gate as stated picks the largest realizable subset of
+`I ∪ S` and rejects everything strictly outside it.
 
 ### Conditions on the input chunk (assumptions A1–A7)
 
@@ -421,11 +436,17 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   governs adding new entries; soundness is preserved iff the
   contract is preserved.
 
-For the production downstream corpus: the chunks is grep-verifiably free of
-top-level `await`, dynamic `import()` of internal paths, `eval`,
-and `with`. We rely on A6 by observation (the unmodified bundle
-loads in the browser); A7 by virtue of esbuild's vendor-leaf
-chunking; A8 by inspection of the chunk-top declared-name set.
+A1–A5 are statically checkable on each chunk: grep for top-level
+`await`, dynamic `import()` of internal paths, `eval`, and `with`.
+A2 in particular is enforced by `find_top_level_await` —
+materialization `bail!`s with the offending statement ordinal
+before fact analysis runs. A6 (no module-eval reentry) is relied
+on by observation: the unmodified bundle loads in the browser.
+A7 (multi-chunk DAG) is satisfied by typical bundlers' vendor-leaf
+chunking. A8 (whitelist receivers not shadowed) is dropped to
+`Unknown` per-name by `compute_shadowed_globals` whenever the
+chunk-top declared-name set claims one of the whitelist receivers,
+so chunks that violate A8 still validate soundly.
 
 ### Lemmas
 
@@ -477,10 +498,12 @@ constraints aren't already implied by `I`. Specs that satisfy
 principle (a chunk where two side-effecting top-level statements
 in different modules have no read dependency between them); for
 those, the materializer would need to actually realize the choice
-this lemma proves possible. As of Phase 5 this is a known gap, not
-a bug — the gate already rejects all the unrealizable cases; the
-remaining gap is "lemma proves something stronger than the emitter
-exercises." Tracked as a follow-up if a real spec exposes it.
+this lemma proves possible. **Known impl gap**: the emitter does
+not steer for a specific `L` today; the gate still rejects all
+the unrealizable cases, but if a spec ever requires `L`-steering
+for `S` to satisfy a constraint that's invisible to ESM's default
+DFS, the emit would silently violate it. Tracked as a follow-up
+if a real spec exposes it.
 
 **Lemma 3 (At-init read correctness).**
 Under any evaluation order `L` respecting `I`, every at-init read
@@ -527,19 +550,28 @@ preserved by the source-order invariant. ∎
 
 ### Theorem and proof
 
-**Theorem (correctness).** Under assumptions A1–A7, if `I ∪ S`
-is acyclic, then the source-order emit construction produces a
-multi-module ESM bundle whose observation-trace under ECMA-262
-evaluation is identical to the input chunk's evaluation.
+**Theorem (correctness).** Under assumptions A1–A7, if `R ∪ S`
+is acyclic and every cycle in `I ∪ S` has only `LazyRead`
+cross-module edges between SCC members, then the source-order
+emit construction produces a multi-module ESM bundle whose
+observation-trace under ECMA-262 evaluation is identical to the
+input chunk's evaluation.
 
-_Proof._ Acyclic `I ∪ S` admits a topological linearization `L`
-respecting both `I` and `S`. By Lemma 2 we author each emitted
-module's import directive list to make ECMA-262 produce `L`. By
-Lemmas 3 and 4 every binding read in the emitted bundle sees an
-initialized value identical to the input chunk's read at the
-same source ordinal. By Lemma 5 every side-effecting statement
-fires in the same relative order as in the input chunk. By the
-emit's same-module source-order invariant, statements within a
+_Proof._ Acyclic `R ∪ S` admits a topological linearization `L`
+of the at-init read + side-effect graph. The full graph `I` may
+have additional cycles, but every such cycle has only `LazyRead`
+cross-module edges by hypothesis; the ESM linker may pick any
+DFS order through these cycles, and Lemma 4 (Lazy-read
+correctness) shows the resulting evaluation order is sound for
+lazy reads regardless of which member the DFS enters first. By
+Lemma 2 we author each emitted module's import directive list
+to make ECMA-262 produce a linker order respecting both `R` and
+`S`. By Lemmas 3 and 4 every binding read in the emitted bundle
+sees an initialized value identical to the input chunk's read
+at the same source ordinal. By Lemma 5 every side-effecting
+statement fires in the same relative order as in the input
+chunk. By the emit's same-module source-order invariant,
+statements within a
 module fire in their original source ordinal order. The
 observation-trace of the emitted bundle is therefore identical
 to the input chunk's. ∎
@@ -564,17 +596,19 @@ It does not establish:
   evaluation rules don't apply to CJS modules; a CJS module's
   `module.exports` mutation can fire mid-evaluation in arbitrary
   order. We require vendor chunks to be ESM (production corpora we target satisfy this).
-- **Permissive cycles** (the lazy-only-cyclic case discussed in
-  the gating rule above): observationally equivalent in narrow
-  conditions but architecturally fragile. The strict gate rejects
-  them; the proof does not consider them.
+- **Lazy-only cycles** are _accepted_ by the realizability gate.
+  The theorem stated above (over `R ∪ S` acyclicity) covers
+  them: the linker walks `I` and picks some evaluation order for
+  the cycle, every module finishes evaluating with all bindings
+  assigned, and the lazy reads only fire later (after `L`'s
+  call-sites run). The architectural-fragility worry — a future
+  edit promoting a lazy read to at-init — is caught by the
+  validator the moment the new `R` edge enters the SCC.
 
-### Stress-test against the broken example
+### Worked example: cycle through a lazy back-edge
 
-The previous formulation of this theorem (revisions before
-Phase 5) was stated over `R` only; the validator computed `R`
-and checked it for cycles. The live-proxy regression that motivated this rewrite
-showed that this is unsound in practice:
+A spec that's acyclic in `R` alone but cyclic in `I` once
+lazy back-edges are counted:
 
 ```
 mod_a:                                      mod_b:
@@ -584,84 +618,46 @@ mod_a:                                      mod_b:
   // mod_a → mod_b                           // residual entry's `readB()` call)
 ```
 
-`R = {(mod_b, mod_a)}` — acyclic. The previous validator passed.
-The materializer emitted. The runtime behavior:
+`R = {(mod_b, mod_a)}` — acyclic. But the lazy `readB` body
+still emits `import { B } from "./mod_b"` in mod_a, contributing
+edge `(mod_a, mod_b)` to `I`. The `I ∪ S` SCC is `{mod_a, mod_b}`,
+and it carries the at-init `(mod_b, mod_a)` edge — so the
+realizability gate rejects.
 
-- Linker DFS from entry: enters one of `{mod_a, mod_b}` first. If
-  the entry imports `B` (via `mod_b`'s export) before `readB`
-  (via `mod_a`), DFS goes `entry → mod_b → mod_a → mod_b (cycle,
-return)`. mod_a evaluates first. mod_a's `const A = …` runs.
-  mod_b evaluates next. mod_b reads `A` at-init from mod_a's
-  exports; A is initialized. ✓
-- If the entry imports `readB` first, DFS goes `entry → mod_a →
-mod_b → mod_a (cycle, return)`. mod_b evaluates first. mod_b's
-  `const B = A + "-postfix"` runs; A is **TDZ** (mod_a hasn't
-  evaluated yet). ✗
+If the gate did _not_ fire, runtime behavior would depend on
+linker DFS order: if entry imports `B` first, DFS goes
+`entry → mod_b → mod_a → mod_b (cycle, return)`, mod_a
+evaluates first, A is initialized when mod_b reads it. If entry
+imports `readB` first, DFS goes `entry → mod_a → mod_b → mod_a
+(cycle, return)`, mod_b evaluates first, mod_b's
+`const B = A + "-postfix"` runs while A is in TDZ. The bundle
+works or breaks depending on entry-import ordering.
 
-The bundle works or breaks depending on entry-import ordering.
-Author intent on the entry side is enough to accidentally flip
-it. The strict gating rule rejects this spec; the new proof
-notices the I-cycle (the lazy `readB` body still emits an
-`import { B }` directive in mod_a, contributing edge
-`(mod_a, mod_b)` to `I`); the validator surfaces the cycle and
-the spec author colocates `B` with `readB` to dissolve it.
+The realizable fix is to colocate `B` with `readB` in one
+module, dissolving the SCC.
 
-The synthetic minimization is in
-<e2e/lazy_back_edge_cycle_test.rs>; the production shape was
-a 3-module SCC the live-proxy run minimised to `mod_a ↔ mod_b ↔ mod_c
-↔ mod_a` (mixed at-init / lazy back-edges).
+The synthetic minimization is in <e2e/realizability_test.rs>
+(`rejects_cycle_through_lazy_back_edge`).
 
-### Why a strict gate, not a runtime check
-
-### Why a strict gate, not a runtime check
+### Why a static gate, not a runtime check
 
 The gating rule is enforced **statically** by the validator. The
 materializer either emits a bundle whose `I ∪ S` is provably
-acyclic (and therefore observationally equivalent by the theorem
-above), or refuses with cycle evidence. There is no runtime
-check, no init-wrapper safety net, no per-load TDZ guard. By
-construction, the emitter never produces JavaScript that the ESM
-linker has to puzzle through a cyclic import graph for. If the
-spec describes a cyclic decomposition, the spec is wrong; we
-report the cycle and let the author fix it.
+realizable (every SCC has only `LazyRead` cross-module edges)
+and therefore observationally equivalent by the theorem above,
+or refuses with cycle evidence. There is no runtime check, no
+init-wrapper safety net, no per-load TDZ guard. By construction,
+the emitter never produces JavaScript that the ESM linker has to
+puzzle through a cyclic at-init read graph for. If the spec
+describes an unrealizable decomposition (`R` or `S` cycles), the
+spec is wrong; we report the cycle and let the author fix it.
 
 This is the contract the user-visible artifact relies on. Any
-escape hatch — accepting cyclic specs that happen to work, or
-deferring cycle detection to runtime — gives back the property
-that "an emitted bundle from this materializer is, by inspection
-of its module graph alone, free of TDZ and side-effect-ordering
-hazards."
-
-### Erratum: I vs R
-
-Earlier revisions of this document defined a single graph `G` with
-edges only over `reads_at_init` and stated the realizability
-theorem as "`G ∪ G'` acyclic." That conflated two distinct
-graphs:
-
-- The graph the linker walks (one edge per emitted `import`
-  directive — what is now called **`I`**).
-- The sub-graph capturing only at-init reads (what is now called
-  **`R`**, with `R ⊆ I`).
-
-The earlier theorem was stated over `R ∪ S`, not `I ∪ S`. That is
-unsound: lazy reads still emit `import` directives, which the
-linker still uses for evaluation order. A spec where two modules
-mutually import each other only via lazy reads has acyclic `R`
-but cyclic `I`; the linker enters the SCC, picks an evaluation
-order, and any subsequent edit promoting a lazy read to at-init
-silently TDZs the bundle. The downstream-corpus regression that motivated this section
-(at-init read on a vendor-symbols import, lazy back-edges
-closing a 3-module cycle) is exactly
-this shape: `R ∪ S` is acyclic, `I ∪ S` is not, the previous
-validator passed it, the bundle TDZ'd at runtime.
-
-The correction lifts the validator's edge construction from `R`
-to `I`. `R` is retained in the design as an analytic sub-graph
-useful in the proof (every at-init read is satisfied by the
-linker's `I` order), but it is **not** the realizability graph.
-
-The fix is tracked as Phase 5 in the [status table](#status).
+escape hatch — accepting `R` cyclic specs that happen to work in
+testing, or deferring cycle detection to runtime — gives back
+the property that "an emitted bundle from this materializer is,
+by inspection of its module graph alone, free of TDZ and
+side-effect-ordering hazards."
 
 ### Multi-chunk extension
 
@@ -687,10 +683,10 @@ re-exports something from a user-chunk); the validator detects
 it but the right fix lives in the bundler's chunking config,
 not in the spec.
 
-For Phase 1 the validator runs per-chunk; cross-chunk edges
-appear as `ExternalChunk(_)` leaves in the per-chunk graph. The
-multi-chunk lift is a Phase 1.6 follow-up: `validate_schedule`
-takes a `BTreeMap<ChunkId, Schedule>` and walks the union graph.
+The validator currently runs per-chunk; cross-chunk edges appear
+as `ExternalChunk(_)` leaves in the per-chunk graph. **Future
+work**: a multi-chunk lift would have `validate_schedule` take a
+`BTreeMap<ChunkId, Schedule>` and walk the union graph.
 
 ### Corollary: the role of the validator
 
@@ -706,7 +702,7 @@ apply spec assignment (unowned bindings → ResidualEntry)
   ↓
 build I, R, S
   ↓
-validate: I ∪ S acyclic?     ←—— Phase 1 lives here.
+validate: realizability gate over I ∪ S
   ↓        ↓ no                       (sidecar)
   ↓        ↓                  recommendations for unowned bindings
   ↓                                        (see Spec explicitness)
@@ -723,14 +719,13 @@ cleanly-defined precision of `reads_at_init` and `has_side_effect`).
 
 ## Spec explicitness — closure as recommender
 
-The legacy materializer runs an _automatic closure pass_: when
-the spec assigns binding `A` to module `M` and `A`'s init reads
-`B`, the closure silently assigns `B → M` too (unless `B` is
-already claimed). The intent was ergonomic — let the spec author
-name just the bindings they care about and trust the system to
-fill in transitive deps.
+A tempting design for spec ergonomics is an _automatic closure
+pass_: when the spec assigns binding `A` to module `M` and `A`'s
+init reads `B`, the closure silently assigns `B → M` too (unless
+`B` is already claimed). The author names just the bindings they
+care about and the system fills in transitive deps.
 
-In practice the trade-off is wrong:
+The trade-off doesn't pay off in practice:
 
 1. **Spec stops being the source of truth.** What bindings end up
    in module `M` depends on a heuristic the author can't see at
@@ -741,15 +736,15 @@ In practice the trade-off is wrong:
    counter-claim somewhere. The "fight" is invisible — you can't
    read the spec and tell what's a counter-claim.
 3. **Cycles introduced by closure are invisible at spec time.**
-   The 9-module SCC the downstream corpus first surfaced is
-   exactly this: the spec author never wrote down that two
-   modules `module_a` and `module_b` would end up reading each
-   other's bindings. The closure produced that coupling.
-4. **No spec-size win at the limit.** When every scrambled symbol
-   gets a meaningful name (the eventual goal for the downstream corpus), the spec
-   already enumerates every binding. Adding ownership info per
-   binding is the same `O(num_bindings)` size — closure isn't
-   saving spec size, just hiding which binding ended up where.
+   The spec author never wrote down that two modules `module_a`
+   and `module_b` would end up reading each other's bindings;
+   the closure produced that coupling, and the cycle only shows
+   up at runtime.
+4. **No spec-size win at the limit.** When every binding has a
+   meaningful name, the spec already enumerates every binding.
+   Adding ownership info per binding is the same
+   `O(num_bindings)` size — closure isn't saving spec size,
+   just hiding which binding ended up where.
 
 **Design rule.** The spec is fully explicit. Every owned binding
 has its `owner` named in the spec or defaults to
@@ -817,46 +812,19 @@ The spec is now fully explicit. The validator is a one-shot
 predicate: "given this spec, is the bundle realizable?" — no
 implicit transformation in the middle.
 
-### One-shot migration tool
-
-The existing downstream spec doesn't have explicit owners for most
-bindings — it relied on the legacy closure to fill them in.
-Bridging:
-
-1. Run the legacy closure once on the existing spec; capture
-   the resulting full assignment as JSON.
-2. Mechanically rewrite the gaffer spec
-   (the gaffer-side operations directory)
-   so every binding has an explicit `owner` member entry. The
-   rewrite is reversible and deterministic — no information is
-   lost, since the legacy closure was deterministic.
-3. Drop `close_module_bindings_over_dependencies` from the
-   ducktape runtime; replace with the recommender side-output
-   described above.
-
-After migration the gaffer spec is the same as today modulo
-verbosity, but with the assignment fully visible to the spec
-author.
-
-This is tracked as **Phase 1.7** in the [status table](#status),
-and runs before Phase 2 (the cycle-breaking spec edits) since it
-fixes the spec language Phase 2 will be editing.
-
 ## Selector vocabulary and matching
 
-> **Deferred.** This section pins the _target_ selector model.
-> The Phase 1.7 implementation went with a simpler scope per user
-> direction: keep the existing parser primitives (`name`, `kind`,
-> `owner.id`, `owner.line`) — even though they're drift-prone —
-> and handle minifier drift with a per-version port tool when a
-> second downstream-corpus version arrives. The richer vocabulary below
-> (fingerprint / astPattern / containsString / relational) and
-> the bipartite forcing matcher are aspirational. Revisit after
-> we have a second downstream-corpus version and see whether the simple
-> selectors plus diff-based porting suffice. If they do, this
-> section may be retired entirely.
+> **Aspirational.** This section pins a _target_ selector model.
+> The current implementation uses simpler primitives (`name`,
+> `kind`, `owner.id`, `owner.line`) — drift-prone but adequate
+> while no second-version port has exercised the limits. The
+> richer vocabulary below (fingerprint / astPattern /
+> containsString / relational) and the bipartite forcing
+> matcher are not yet implemented. Revisit when a real
+> second-version port either validates the simple primitives
+> or surfaces a concrete failure.
 
-Phase 1.7 makes the spec fully explicit: every owned binding has
+The spec is fully explicit: every owned binding has
 a spec entry naming which logical module owns it. The chunk's
 top-level bindings are scrambled (`Y5`, `b8`, `Q3` …) and the
 entry's **selector** is how the spec author points at the right
@@ -1067,15 +1035,15 @@ so the cycle breaks at one node.
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------ |
 | `name: "Y5"` | the scrambled local name. Minifier renames between builds → spec re-pin needed. Use only when no stable predicate is available |
 
-#### Removed primitives
+#### Rejected primitives
 
-These existed in the legacy spec but are dropped or never make
-it into the runtime:
+These have been considered and rejected; they don't make it
+into the runtime:
 
 | primitive                                     | issue                                                                                                                                                                                            |
 | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `owner.line`                                  | Downstream-corpus source is prettified; line numbers shift with formatter changes. No semantic stability                                                                                         |
-| `owner.id` (`owner_NNNNN`)                    | opaque sequential index minted by program analysis; carries no identity (see [Identifiers and types](#identifiers-and-types))                                                                    |
+| `owner.line`                                  | Source is typically prettified; line numbers shift with formatter changes. No semantic stability                                                                                                 |
+| `owner.id` (`owner_NNNNN`)                    | opaque sequential index minted by program analysis; carries no identity (see [Identifiers are typed, not stringly-typed](#identifiers-are-typed-not-stringly-typed))                             |
 | `bodyHash` (function sha)                     | whitespace, minor edits, and minifier comment-stripping invalidate constantly. Use `astPattern` or `containsString` instead                                                                      |
 | `fingerprint.memberNamesPrefix` (gaffer-only) | this gaffer-side resolution helper is what the runtime now exposes as a first-class `memberNames` predicate; "prefix" was a quirk of how gaffer extracted member lists, not a stability property |
 
@@ -1208,7 +1176,7 @@ All entries assigned, no ambiguity.
   stratum; the matcher doesn't iterate the whole bipartite
   forcing across all entries indefinitely. Worst-case complexity
   is O(entries × bindings) per stratum × strata-depth, which is
-  fine at downstream-corpus scale.
+  fine at typical bundle scale.
 
 ## Comma-list var-decls with split owners
 
@@ -1290,9 +1258,9 @@ Within `materialize_logical_modules`, the substages are:
    `build_module_dep_graph`, `validate_schedule`). The validator
    also emits `recommendations` for every unowned binding so the
    spec author can update the spec.
-5. **Cycle resolution gate** — if the validator finds cycles,
-   the pipeline aborts with the cycle evidence. (Phase 1: warn-
-   only; Phase 3: hard error.)
+5. **Cycle resolution gate** — if the validator finds an
+   unrealizable cycle, the pipeline aborts with the cycle
+   evidence.
 6. **Source-order emission** — each module's body in source order;
    cross-module imports + source-chunk re-imports; `export { ... }`.
    No init wrappers.
@@ -1351,9 +1319,8 @@ The implementation must maintain:
 
 ## What this design rejects
 
-Examples of unrealizable splits — these are real shapes that have
-surfaced in the downstream corpus and that the legacy emit silently
-papered over:
+Examples of unrealizable splits — shapes that the realizability
+gate refuses:
 
 ### Cycle through two logical modules
 
@@ -1425,11 +1392,8 @@ picks an order; whichever module evaluates second sees its
 imports as TDZ at init time. `mod_a`'s `m.askAICommandId` read
 fails with `Cannot access 'm' before initialization`.
 
-This is a real-world cycle the live-proxy run minimised against as
-a 3-module cycle in a downstream-corpus live-proxy run, which
-the synthetic fixture above minimises. Resolution:
-colocate one back-edge's binding with its reader so the `I`
-cycle dissolves.
+Resolution: colocate one back-edge's binding with its reader so
+the `I` cycle dissolves.
 
 ### Computed property key reading another module
 
@@ -1445,79 +1409,16 @@ const dataTypeIconMap = { [m.dataTypeNumberId]: numberIcon };
 edge back to `mod_b`, fine. If it does (because the spec assigned
 something `mod_a` reads to `mod_b`), cycle, rejected.
 
-The legacy emit handled this via heuristics in
-`is_plain_import_safe_initializer` that special-cased computed
-keys. The new design just reads the dep graph and lets the
-validator decide.
+Computed keys aren't special: they read identifiers at-init like
+any other expression, and the dep graph captures that read
+without any special-case logic.
 
-## Migration from the legacy init-wrapper design
+## Schedule: the unified per-chunk data structure
 
-The legacy lowering sat on an ad-hoc runtime: every module that
-contained any "unsafe" initializer was wrapped in a
-`__dt_generated_init__<plan>()` function, called from the residual
-entry's body in source-ordinal order. Cross-module init deps were
-threaded through an idempotency-guarded cascade. Symptomatic of the
-gap: heuristic safety checks, `var`-vs-`let` debates for the
-placeholder, idempotency flags to break runtime cycles.
-
-The fundamental issue: the legacy design _fights_ ESM. ESM's linker
-computes a topological eval order from static imports. Any init-
-order constraint expressed only through runtime function calls is
-invisible to the linker, so the linker can pick an arbitrary order
-that violates the constraint. The wrapper runtime is a hand-rolled
-re-implementation of what ESM already does — and worse, because it
-can't see class declarations, partial initialization across module-
-top reads, or side-effect ordering.
-
-What is being removed (Phase 3-4):
-
-- `is_plain_import_safe_initializer` and the heuristic prop-name check.
-- `var_requires_init_wrapper_for_module`, `init_required_modules`.
-- `initialized_module_body`, `push_initialized_var_decl`,
-  `init_dep_names_for_body`.
-- The init flag declaration helpers, the idempotency-guard helpers.
-- All `__dt_generated_init__*` emission.
-- `init_call_statement` from the entry assembly path.
-
-What stays (unchanged or lightly renamed):
-
-- Spec parsing into `LogicalRequest` / `ModulePlan`.
-- `cross_module_imports_for_body`,
-  `source_chunk_imports_for_moved_body`,
-  `import_specifier_member_decl`.
-- `rewrite_chunk_entry_specifiers` and the rest of the orthogonal
-  pipeline.
-- Naturalization renames — moved to a clearly-separate
-  post-processor pass, not intertwined with init.
-
-What relocates (Phase 1.7):
-
-- `close_module_bindings_over_dependencies` /
-  `expand_plan_to_transitive_dependencies` — moved off the
-  runtime path into a one-shot migration tool, then deleted.
-  Their logic lives on as the validator's recommender side-
-  output. See [Spec explicitness](#spec-explicitness--closure-as-recommender).
-
-## Concept consolidation
-
-After Phase 1 landed, the codebase carries two parallel views of
-the splitting problem: the **legacy data model** (built around
-`binding_assignment` + `ModulePlan` + `selected_by_module` +
-init-wrapper bookkeeping) and the **principled data model** (built
-around `StatementFacts` + the at-init dep graph). They overlap —
-both encode "which module owns each binding" — but in different
-shapes and through different code paths. That's a debt: every
-future change has to keep both views in sync, and naming drift
-between them already obscures intent.
-
-This section pins the consolidation: a single canonical data
-structure, names that match the design vocabulary, and an
-itemised list of legacy concepts to delete or rename. The
-consolidation is a refactor that does not change behaviour but
-makes Phase 3 (source-order emit) a small change instead of a
-parallel reimplementation.
-
-### The unified schedule
+The runtime data structure the validator and emitter both
+consume is a single per-chunk `Schedule`: it carries the
+chunk's statement facts, the binding catalogue, the spec's
+logical modules, and the dep graph derived from them.
 
 The schedule is keyed per-chunk; the chunk is contextual within
 the schedule, so binding keys collapse to just `name`. Keys for
@@ -1582,9 +1483,9 @@ collapsing imports into the same `Owned` map):
    that re-exports `import { Y as X } from "<vendor>"` does
    not own `X` — modifying our spec to "claim" `X` should not
    rename `Y` in the vendor chunk; it should emit a re-export
-   in our logical module. The legacy `binding_assignment` of
-   `X → mod_x_idx` lied about this, and the parallel
-   `import_members` channel patched around it.
+   in our logical module. A flat `BindingName → ModuleId` map
+   conflates these two cases; tagging via `Owned` vs `Imported`
+   keeps them distinct.
 2. **Multiple modules can re-export the same imported binding,
    under different names.** Two logical modules in the same
    chunk could both want to surface `vendor.j` (the JSX runtime),
@@ -1593,88 +1494,29 @@ collapsing imports into the same `Owned` map):
    `Imported { re_exported_by: BTreeMap<ModuleId, BindingName> }`
    each module picks its own export name independently.
 
-### Old → new vocabulary
+### Identifiers are typed, not stringly-typed
 
-| Legacy name                                                                                                                                                                 | Status                                                      | Replacement                                                                                                                                                                                                                                                       |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `binding_assignment: BTreeMap<String, usize>` (key = scrambled local name, implicit per-chunk; value = module index)                                                        | Replaced                                                    | `Schedule.bindings: BTreeMap<String, BindingKind>` (key = local name in chunk's top-level scope, explicit per-chunk via the surrounding `Schedule.chunk`; value distinguishes `Owned { owner }` from `Imported { imported_from, imported_name, re_exported_by }`) |
-| `ModulePlan`                                                                                                                                                                | Trimmed and renamed → `LogicalModule`                       | Drop the `bindings` and `import_members` fields; both are derivable from `Schedule.bindings`                                                                                                                                                                      |
-| `ModulePlan.bindings: BTreeMap<String, String>`                                                                                                                             | Split                                                       | `LogicalModule.rename_map: BTreeMap<String, String>` (only the local→public renames; ownership is in `Schedule.ownership`)                                                                                                                                        |
-| `selected_by_module: BTreeMap<usize, Vec<ModuleItem>>`                                                                                                                      | Derivable                                                   | Project `Schedule.facts` by `home`                                                                                                                                                                                                                                |
-| `selected_exports_by_module: BTreeMap<usize, BTreeMap<String, String>>`                                                                                                     | Derivable                                                   | Project `Schedule.ownership`                                                                                                                                                                                                                                      |
-| `is_plain_import_safe_initializer`                                                                                                                                          | **Delete**                                                  | The dep graph answers the real question (does this read another module's binding at init?)                                                                                                                                                                        |
-| `is_plain_import_safe_propname`                                                                                                                                             | **Delete**                                                  | Same                                                                                                                                                                                                                                                              |
-| `var_requires_init_wrapper_for_module`                                                                                                                                      | **Delete**                                                  | Same                                                                                                                                                                                                                                                              |
-| `item_requires_init_wrapper_for_module`                                                                                                                                     | **Delete**                                                  | Same                                                                                                                                                                                                                                                              |
-| `init_required_modules`                                                                                                                                                     | **Delete**                                                  | No init wrappers                                                                                                                                                                                                                                                  |
-| `initialized_module_body`                                                                                                                                                   | **Delete**                                                  | Source-order emit replaces it                                                                                                                                                                                                                                     |
-| `push_initialized_var_decl`                                                                                                                                                 | **Delete**                                                  | Same                                                                                                                                                                                                                                                              |
-| `init_dep_names_for_body`                                                                                                                                                   | **Delete**                                                  | ESM imports express the dep graph natively                                                                                                                                                                                                                        |
-| `assignment_statement_for_declarator`                                                                                                                                       | **Delete**                                                  | Same                                                                                                                                                                                                                                                              |
-| `init_flag_name` / `init_flag_decl` / `idempotency_guard_stmt` / `set_flag_stmt` / `init_call_stmt` / `export_init_function` / `init_call_statement` / `init_name_for_plan` | **Delete**                                                  | All idempotency-guard / wrapper helpers                                                                                                                                                                                                                           |
-| `__dt_generated_init__*` symbol scheme                                                                                                                                      | **Delete**                                                  | Dropped from the emit                                                                                                                                                                                                                                             |
-| `cross_module_imports_for_body`                                                                                                                                             | Keep, take `Schedule`                                       | Build cross-module imports from the dep graph                                                                                                                                                                                                                     |
-| `source_chunk_imports_for_moved_body`                                                                                                                                       | Keep, take `Schedule`                                       | The "moved code references a source-chunk import" case is just a cross-module read where the owner is a sibling chunk                                                                                                                                             |
-| `import_specifier_member_decl` / `ImportSpecifierMember` / `resolve_import_specifier_member` / `lookup_import_specifier`                                                    | Trimmed                                                     | An "ImportSpecifier-bound member" is just a binding that's owned by a different chunk; ownership map handles it                                                                                                                                                   |
-| `LogicalRequest` / `MemberRequest`                                                                                                                                          | Keep                                                        | Spec-language AST, distinct from the resolved `Schedule`                                                                                                                                                                                                          |
-| `close_module_bindings_over_dependencies` / `expand_plan_to_transitive_dependencies`                                                                                        | **Delete** after Phase 1.7                                  | Replaced by the validator's recommender side-output (`AssignmentRecommendation`); the spec becomes fully explicit, the runtime never pulls implicitly. See [Spec explicitness](#spec-explicitness--closure-as-recommender)                                        |
-| `naturalize_module_body` / `IdentifierRenamer` / `ShorthandNaturalizer`                                                                                                     | Keep, separate phase                                        | The readability rename pass is orthogonal to scheduling; it consumes `Schedule.modules[*].rename_map` and rewrites identifiers in the emitted source                                                                                                              |
-| `collect_referenced_idents` (the old visitor)                                                                                                                               | Replace with `StatementFacts::reads_at_init`-style visitors | `StatementFacts` already gives the eager-vs-lazy split; the old collector returned the union which is wrong for the dep graph                                                                                                                                     |
+Strings that identify a thing of a known kind get a newtype.
+Untyped `String` is reserved for free-form text (error messages,
+log lines, the actual JavaScript identifier _as text_). The
+risks `String` introduces:
 
-Roughly: the legacy file has ~1500 LOC, of which ~500 LOC of
-init-wrapper/heuristic machinery deletes outright once Phase 3
-lands, plus ~200 LOC of closure-pass machinery deletes after
-Phase 1.7. The remainder splits cleanly into spec parsing
-(`logical_requests_for_chunk`), schedule construction (just
-collecting the spec's explicit `owner` entries into
-`Schedule.bindings`), and emission (`lower_chunk` rewritten as
-`emit_module(schedule, module_id)`).
-
-### Identifiers and types
-
-The legacy code types most identifiers as raw `String`. That's
-hidden untyped state. Three concrete failure modes have surfaced:
-
-1. **Same-shape strings, different things.** A chunk id
-   (`"static/index-DI2GynTv"`), a logical-module path
-   (`"feature/some_module"`), and a destination file path
-   within a chunk (`"runtime/vendor/symbols.js"`) are all
-   `String`. Every function that takes one of these has a
-   plausible-looking signature even when called with the wrong
-   one. The cross-chunk import-path drift in PR #1473 was
-   exactly this — we passed a `chunk-relative path` where a
-   `chunk id` was expected and the rewriter silently produced a
-   wrong string.
-
-2. **Opaque numeric ids.** `program_analysis.rs:151` mints
-   `format!("owner_{:05}", owners.len())` — a stringified
-   sequential index of "the Nth top-level decl in this chunk's
-   source order." The gaffer spec then references these as
-   `selector.owner.id = "owner_03565"`. Two problems:
-   - The string is meaningless. `owner_03565` doesn't tell a
-     reader anything about what binding it is. They have to
-     grep the chunk-analysis output to find out.
-   - It's drift-sensitive. If the chunk source changes, every
-     decl after the inserted point shifts ordinal, and every
-     spec entry that referenced anything past the change
-     breaks. The spec already has two un-ambiguous handles
-     (the binding name and the source line) — the synthetic
-     `owner_NNNNN` ID adds indirection without identity.
-
-3. **Stringified module ids.** `ModulePlan.id =
-format!("logical__{}", path.replace('/', "_"))` is then used
-   as the suffix of `__dt_generated_init__` symbols, as a
-   key in the report JSON, and as a referent for cross-module
-   relationships in spec output. After Phase 3 the init-symbol
-   use disappears; the remaining uses (report keys, references)
-   want a stable id that's distinct from the path.
-
-The rule going forward:
-
-> If a string identifies a thing of a known kind, it gets a
-> newtype. Untyped `String` is reserved for free-form text
-> (error messages, log lines, the actual JavaScript identifier
-> _as text_).
+1. **Same-shape strings, different things.** A chunk id, a
+   logical-module path, and a destination file path within a
+   chunk are all stringly-shaped. A function that takes one of
+   these has a plausible-looking signature even when called
+   with the wrong one. Newtypes turn that into a compile error.
+2. **Opaque numeric ids drift.** Synthesizing a stringified
+   sequential index per top-level decl (`owner_03565`) is
+   drift-sensitive: any source insert shifts every later
+   ordinal. The validator addresses this by identifying
+   bindings by `binding.name` (unique within a chunk's
+   top-level scope) plus optional `owner.line` for drift
+   detection.
+3. **Stringly-typed module ids leak into emit.** A module id
+   that doubles as a JS identifier suffix or a JSON report key
+   ties three unrelated concerns together; separating them
+   keeps the emit clean.
 
 The principled set of identifier types:
 
@@ -1748,116 +1590,15 @@ Replacing it:
   but no longer mints a synthetic `id` field. Tools that
   cross-reference do so by name + ordinal + line.
 - `OwnerRecord` shrinks to a debug record without the `id`.
-- Gaffer spec entries that currently set `owner.id =
-"owner_03565"` are noise — the validator will detect that
-  the binding identified by `binding.name = "m"` is the same
-  one the `owner.id` referenced, so the field can be dropped.
-  Phase 4 cleanup includes a sweep through gaffer to remove
-  dead `owner.id` fields.
-
-### Refactor sequence
-
-The consolidation runs entirely on the ducktape side and does not
-touch the gaffer spec or its smoke. It can land before Phase 2
-(spec cleanup) and is recommended as such — Phase 2 is data-driven
-by the schedule, and a clean schedule API makes those edits easier.
-
-1. Introduce `Schedule` and `ModuleId` as new types in
-   <schedule*validator.rs>; re-export from there. *(Done — Phase
-   1.6.1–1.6.3.)\_
-2. In `materialize_logical_modules`, build a `Schedule` once
-   after the binding assignment settles. _(Done — Phase 1.6.3;
-   `binding_assignment: BTreeMap<String, usize>` still lives
-   alongside as a compatibility view until 1.7 deletes the
-   closure pass.)_
-3. Migrate `validate_schedule`, `cross_module_imports_for_body`,
-   `source_chunk_imports_for_moved_body`, and
-   `init_dep_names_for_body` to take `&Schedule`. _(Done — Phase
-   1.6.4 for the first two; the third dies in Phase 3.)_
-4. Phase 1.7: drop the closure pass from the runtime path
-   entirely (replaced by recommender side-output); the gaffer
-   spec is mechanically rewritten so every binding has an
-   explicit owner. After 1.7, `binding_assignment` is just the
-   spec's explicit map — no implicit transformation.
-5. Migrate `lower_chunk` last. After it consumes `Schedule`, the
-   old `selected_by_module` / `selected_exports_by_module` locals
-   disappear.
-6. Phase 3 is then small: replace the init-wrapper branch in
-   `lower_chunk` with source-order emit. Both branches read the
-   same `Schedule`, so the change is local.
-7. Phase 4 deletes the marked-Delete legacy functions in one
-   sweep.
-
-Each step keeps the build green and the tests passing. No big-
-bang refactor; no spec churn until Phase 2.
-
-## Status
-
-| Phase | Description                                                                                                                                                                                                                                                                  | State                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1.1   | `StatementFacts` analyzer producing `(declared, reads_at_init, has_side_effect, kind)` per statement                                                                                                                                                                         | **Done** (<schedule_validator.rs:69>; 7 unit tests pass)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| 1.2   | `ModuleDepGraph` builder (`I ∪ S`)                                                                                                                                                                                                                                           | **Done.** Phase 1 built `R` only; Phase 5 extended to `I` (walks `reads_lazy` so every cross-module reference contributes); the precise-purity follow-up added `S` (an edge per source-order pair of side-effecting statements landing in different modules, with `has_side_effect` driven by `classify_expr_purity` so pure literal initializers don't fire). SCC + cycle gating runs over `I ∪ S`.                                                                                                                                                                                                           |
-| 1.3   | Tarjan SCC validator + JSON report                                                                                                                                                                                                                                           | **Done** (<schedule_validator.rs:283>)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| 1.4   | Wire the validator into `materialize_logical_modules` as a report-only side output                                                                                                                                                                                           | **Done** (<logical_modules.rs>: emits `<chunk_id>.schedule.json`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| 1.5   | Run against the downstream corpus spec; record every cycle                                                                                                                                                                                                                   | **Done.** Spec produces 1 SCC of 9 modules, 99 edges (see [Phase 1 findings](#phase-1-findings-a-real-downstream-corpus)).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| 1.6.1 | `LogicalModuleIndex` + `ModuleId` newtypes; drop `RESIDUAL_ENTRY_INDEX` sentinel                                                                                                                                                                                             | **Done** (<schedule_validator.rs>; validator + caller migrated)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| 1.6.2 | `BindingName` type alias + `StatementOrdinal` newtype threaded through validator API                                                                                                                                                                                         | **Done** (<schedule_validator.rs>; `ModuleDepGraph::evidence` + `CycleEdge` typed)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| 1.6.3 | `Schedule` type with `BindingKind::Owned` + `LogicalModule`; validator goes through `Schedule::validate`                                                                                                                                                                     | **Done** (<schedule_validator.rs>; <logical_modules.rs:317> constructs `Schedule` after closure)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| 1.6.4 | Migrate `cross_module_imports_for_body` + `source_chunk_imports_for_moved_body` to `&Schedule`; widen `LogicalModule` with `target_file` + `rename_map`; add `Schedule::owner_of` + `logical_module` accessors                                                               | **Done** (<logical_modules.rs>; `init_dep_names_for_body` left for Phase 3 deletion)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| 1.6.5 | Migrate closure pass to `&mut Schedule` with cycle-aware refusal                                                                                                                                                                                                             | Folded into Phase 1.7 — the closure leaves the runtime path entirely; cycle-aware refusal becomes recommender output, not closure mutation                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| 1.7   | Spec-explicitness migration: validator emits `recommendations` for unowned bindings; one-shot tool rewrites gaffer spec with explicit owners; drop `close_module_bindings_over_dependencies` from runtime                                                                    | **Done.** 6283 closure-pulled bindings made explicit in gaffer (`closure_pulled_post_migration.mjs`); closure pass deleted; migration tool retired; selector vocabulary stays at today's `name`/`kind`/`owner.id`/`owner.line` per scope decision (rich vocabulary deferred — see <#selector-vocabulary-and-matching>)                                                                                                                                                                                                                                                                                         |
-| 2     | Update gaffer spec to break each surfaced cycle                                                                                                                                                                                                                              | **Done.** Agent-driven sweep moved 150+ bindings across 14 commits (gaffer 6ed00ca); SCC eliminated. Edge trajectory: 99 → 90 → 79 → 67 → 64 → 56 → 48 (SCC 9→8) → 37 → 31 → 27 → 23 → 22 → 19 → 8 (SCC 8→3) → 5 (SCC 3→2) → 0                                                                                                                                                                                                                                                                                                                                                                                 |
-| 3     | Switch emit to source-order; drop init-wrapper machinery                                                                                                                                                                                                                     | **Done** (ducktape 6ef003f5c, gaffer 85f240f). Validator gate hardened to `bail!` on cycles; `lower_chunk` source-order only; ~525 lines of init-wrapper helpers deleted; `validator_rejects_cycle_test` + `source_order_emit_test` un-ignored and pass; downstream-corpus bundle has 0 `__dt_generated_init__`                                                                                                                                                                                                                                                                                                |
-| 4     | Cleanup: remove legacy code, update e2e fixtures, update AGENTS.md; collapse `import_members` into `BindingKind::Imported`                                                                                                                                                   | **Done.** Doc + Phase-N comment cleanup landed (ducktape `1533788bd`, `ef0a7a75e`). `BindingKind::Imported` migration landed (ducktape `04220beb2b04`, gaffer `fccd978`): ImportSpecifier-bound re-exports now flow through `Schedule.bindings`; multi-module re-export of the same source-chunk import works (`multi_module_re_export_test` un-ignored and passing)                                                                                                                                                                                                                                           |
-| 5     | **Realizability gate over `I`, not `R`.** Extend `build_module_dep_graph` to add an edge for every cross-module reference (at-init or lazy) — i.e. compute `I`, not just `R`. Switch SCC to `petgraph::algo::tarjan_scc`. The validator becomes a true realizability oracle. | **Done** (Phase 5 PR). `build_module_dep_graph` walks both `reads_at_init` and `reads_lazy`. SCC computation switched to petgraph, replacing a hand-rolled iterative Tarjan whose lowlink propagation was unsound. `cycle_safe` recommender flag now runs the SCC simulation for `LazyOnly` candidates too. `AtInitReadCollector` no longer counts export-specifier idents as reads. Synthetic e2e fixture (`lazy_back_edge_cycle_test`) covers the regression shape; the proof of the realizability theorem (assumptions A1–A7 + lemmas L1–L5) is in [The realizability theorem](#the-realizability-theorem). |
-
-The work that landed during the legacy-design era — cross-module
-import emission, ImportSpecifier handling, source-chunk re-import
-logic, spec parsing — survives the migration. What dies is the
-init-wrapper substrate. The phased rollout keeps every interim
-state shippable.
-
-## Phase 1 findings: a real downstream corpus
-
-The first downstream-corpus run of the validator surfaced a
-single strongly-connected component of **9 modules** and **99
-evidence edges**, centered on a 49,742-line generated module
-that the spec had defined as a catch-all bag-of-features.
-
-The legacy init-wrapper machinery had been silently coping with
-this cycle by deferring binding initialization through
-`__dt_generated_init__*` calls. Each downstream smoke failure of
-the "TDZ" / "TypeError on undefined" / "Cannot access X before
-initialization" shape we hand-patched over the years was a
-different manifestation of the same SCC.
-
-Phase 2's job is to redraw the spec so this SCC dissolves. Three
-techniques apply:
-
-1. **Pull the giant catch-all module apart.** The right
-   boundary is "real React component" or "domain feature" — not
-   the bag of everything that happens to touch one subsystem.
-   Each smaller module's at-init reads will fall outside the SCC.
-2. **Colocate cyclic-coupled bindings.** For pairs of modules
-   where the cycle is small (e.g. CSS-class identifiers consumed
-   only by one component), move the bindings into the
-   consuming module.
-3. **Push reads into function bodies.** Rare; only applies if
-   the read can be deferred without changing semantics. Usually
-   path 1 is preferable.
-
-The full evidence list lives in the built artifact's
-`<chunk_id>.schedule.json` next to the lowered modules;
-aggregating by `(from, to)` pair gives a direct work list for
-spec edits.
+- Spec entries that set a synthetic `owner.id = "owner_03565"`
+  in addition to `binding.name` are noise: the validator
+  resolves binding identity via `name` + `kind` (+ optional
+  drift-detection `line`), so the synthetic id can be dropped.
 
 ## Known sharp edges
 
-These are concrete gaps, oversimplifications, or unsound corners
-that aren't yet folded into the design body. Pinning them so they
-don't bite during Phase 1.6 / Phase 3. (Items resolved by design
-tweaks have been moved into the relevant body sections; this list
-is the residual.)
+Concrete gaps, oversimplifications, or unsound corners not yet
+folded into the design body.
 
 ### Soundness gaps
 
@@ -1897,8 +1638,8 @@ runtime.
 Mitigation: the conservative side-effect classification is
 already there; bundled output rarely depends on these patterns,
 because bundlers can't preserve them across boundaries either.
-If we hit such a case in a real downstream corpus, surface it as a
-"spec-author-side known limitation."
+If a real spec ever exhibits this, the response is to surface it
+as a known spec-author-side limitation.
 
 ### Coverage audits the analyzer needs
 
@@ -1938,13 +1679,14 @@ Right now `has_side_effect = true` for any non-pure expression
 etc.). That over-imposes side-effect-order edges in `G'`,
 potentially creating cycles that aren't really there.
 
-For the downstream corpus this hasn't bitten yet because the SCC we found is from
-real `reads_at_init` edges, not side-effect edges. But the next
-spec we look at could have `G'`-only cycles that are entirely
-spurious (two side-effecting modules that don't actually
-observe each other). Pure-call inference is the long-term fix;
-pragmatic short-term: only add `G'` edges when both statements'
-side effects are _observable_ (write to global, throw, console,
+A spec where both modules' side-effecting statements are
+mutually independent (don't observe each other's effects) can
+still produce a spurious `S` cycle under the conservative
+`has_side_effect = true` for any function call. **Known impl
+gap**: pure-call inference would let the validator drop edges
+between observably-independent side effects. Pragmatic
+short-term: only add `S` edges when both statements' side
+effects are _observable_ (write to global, throw, console,
 DOM, network), not pure-by-pattern (literal-only initializers).
 
 ### Out-of-scope JS features
@@ -1972,26 +1714,6 @@ without runtime-dynamic effects. These features are out of scope:
 
 Each of these should produce a clear analyzer warning if
 detected, not silent acceptance.
-
-### Validator's incomplete view today
-
-Phase 1's validator runs on the **legacy `binding_assignment`**,
-which only includes `Owned` bindings — `ImportSpecifier`-bound
-locals are tracked through the parallel `import_members` channel
-and _not_ fed to the validator. So the SCC the validator just
-reported (9 modules, 99 edges) is a **lower bound** on the
-cycles in the downstream-corpus spec.
-
-There may be more cycles that pass through ImportSpecifier-bound
-bindings (e.g. a re-exported vendor binding that one logical
-module reads from another logical module's re-export). Phase
-1.6's data-model unification will give the validator full
-visibility; the cycle list might grow then.
-
-This matters for Phase 2: don't declare "spec is acyclic" until
-the validator is running on the unified `Schedule`. The current
-report is useful for surfacing the obvious 9-module SCC, not
-for proving an absence of cycles.
 
 ## Open design questions
 
@@ -2027,26 +1749,19 @@ exploration before crossing the relevant phase.
    this; a vendor that imports back into the user-chunk is a
    pathological case worth detecting.
 5. **Validator UX.** The cycle report should be actionable. A
-   shape like "Cycle modules [M_a, M_b]; evidence:
-   stmt#42 in M_a reads `X` (owned by M_b); stmt#107 in M_b
-   reads `Y` (owned by M_a). Resolution: colocate X and Y in
-   one module" is the goal. Worth prototyping against real
-   downstream-corpus cycles.
-6. **Spec backward compatibility.** During the migration window
-   (between Phases 1 and 3), the legacy emit is still active and
-   the validator runs in report-only mode. After Phase 3 the
-   validator is hard. Existing specs that violate the rules need
-   to be updated atomically with the cutover; otherwise a stale
-   spec will fail-closed.
+   shape like "Cycle modules [M_a, M_b]; evidence: stmt#42 in
+   M_a reads `X` (owned by M_b); stmt#107 in M_b reads `Y`
+   (owned by M_a). Resolution: colocate X and Y in one module"
+   is the goal.
 
 ## What this design does not solve
 
 - **Intentional cyclic init semantics.** If the original chunk
-  _relied_ on partial-eval state during a cyclic load (a rare but
-  legal pattern), the input is inherently un-debundle-able into
-  clean ESM modules. None of the surfaced downstream-corpus cases fall into
-  this category — they are all spec choices that drew the cut in
-  the wrong place.
+  _relied_ on partial-eval state during a cyclic load (a rare
+  but legal pattern), the input is inherently un-debundle-able
+  into clean ESM modules. The realizability gate would surface
+  the cycle; the resolution is to leave that subset of bindings
+  as residual rather than fight ESM semantics.
 - **Choosing module boundaries.** The debundler executes the
   spec; it does not author it. Higher-level analysis tools
   (React component detection, big-string clustering, scrambled-
@@ -2063,8 +1778,7 @@ Primary:
 - <DESIGN.md> — this document.
 - <schedule_validator.rs> — `StatementFacts` analyzer,
   `ModuleDepGraph` builder, `validate_schedule`.
-- <logical_modules.rs> — main pipeline stage; legacy init-
-  wrapper machinery (slated for removal in Phase 3).
+- <logical_modules.rs> — main pipeline stage.
 - <pipeline.rs> — pipeline composition.
 - <program_analysis.rs> — chunk metadata + side-effect
   classification (used as input to the analyzer).
@@ -2073,12 +1787,7 @@ Secondary:
 
 - <vendor.rs>, <rewrite_specifiers.rs>, <emit_harness.rs>,
   <write_tree.rs>, <scrambled_id_frequencies.rs> — orthogonal
-  pipeline stages, unaffected by the migration.
-
-Spec authoring:
-
-- the spec entry-point in the gaffer repo
-  - sibling member files (private repo) — downstream-corpus spec input.
+  pipeline stages.
 
 Tracking:
 

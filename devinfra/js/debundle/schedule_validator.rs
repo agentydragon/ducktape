@@ -142,7 +142,7 @@ impl Schedule {
     ) -> Self {
         let ownership = owned_view(&bindings);
         let dep_graph = build_module_dep_graph(&facts, &ownership);
-        let linker_order = compute_linker_order(&dep_graph.edges, &logical_modules);
+        let linker_order = compute_linker_order(&dep_graph, &logical_modules);
         Self {
             chunk_id,
             facts,
@@ -1156,37 +1156,179 @@ impl Visit for LazyReadCollector {
     }
 }
 
-/// Module dep graph built from per-statement facts and a binding →
-/// module assignment.
-#[derive(Debug, Clone)]
-pub struct ModuleDepGraph {
-    pub edges: BTreeMap<ModuleId, BTreeSet<ModuleId>>,
-    /// Evidence map: `((from, to), reasons)` where each reason is
-    /// `(statement_ordinal, binding)`. Used to render the cycle
-    /// report.
-    pub evidence: BTreeMap<(ModuleId, ModuleId), Vec<(StatementOrdinal, BindingName)>>,
+/// Why a particular `(from, to)` edge exists in the module dep
+/// graph. The realizability gate distinguishes them: `AtInitRead`
+/// edges constrain ESM evaluation order under TDZ semantics,
+/// `LazyRead` edges only constrain it via the linker's depth-first
+/// walk (lazy reads themselves don't fire until after evaluation
+/// completes), and `SideEffect` edges encode source-order
+/// ordering of side-effecting top-level statements between two
+/// modules. Cycles in `R ∪ S` are unrealizable; cycles in
+/// `I = R ∪ L` whose intersection with `R` is empty (i.e. all
+/// back-edges are lazy or side-effect) are realizable — ESM
+/// evaluates them in some linker-determined order with no TDZ.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum EdgeKind {
+    /// At-init read: a top-level statement in `from` reads a
+    /// binding owned by `to` synchronously, before any function
+    /// body in `from` runs. `R ⊆ I`. Cross-module at-init reads
+    /// inside an `I ∪ S` SCC make the spec unrealizable (TDZ).
+    AtInitRead,
+    /// Lazy read: a function/method/getter body inside `from`
+    /// references a binding owned by `to`. The reference still
+    /// emits an `import` directive in `from`'s body (so the edge
+    /// is in `I`), but the read itself doesn't fire at-init —
+    /// only after `to` has finished evaluating. Lazy-only cycles
+    /// in `I` are realizable.
+    LazyRead,
+    /// Side-effect ordering: `from` has a side-effecting
+    /// top-level statement that appears *after* a side-effecting
+    /// statement in `to` in original source order. For ESM emit
+    /// to preserve the original side-effect order, `to` must
+    /// evaluate before `from`. `S` cycles are unrealizable
+    /// (no consistent evaluation order satisfies the constraint).
+    SideEffect,
 }
 
-/// Build the imports graph `I` (per DESIGN.md "Module dep
+/// One reason an edge `(from, to)` exists, with the source
+/// statement ordinal that produced it.
+#[derive(Debug, Clone)]
+pub struct EdgeReason {
+    pub kind: EdgeKind,
+    pub statement_ordinal: StatementOrdinal,
+    /// Binding being read, or the literal `<side-effect>` for
+    /// `EdgeKind::SideEffect` rows.
+    pub binding: BindingName,
+}
+
+/// Per-edge metadata. One physical `(from, to)` ESM `import`
+/// directive can be backed by multiple reasons (e.g. several
+/// at-init reads of bindings owned by the same target module);
+/// they're all kept here so cycle reports can show every
+/// triggering statement.
+#[derive(Debug, Clone, Default)]
+pub struct EdgeMetadata {
+    pub reasons: Vec<EdgeReason>,
+}
+
+impl EdgeMetadata {
+    /// `true` if at least one reason is an at-init read. The
+    /// realizability gate uses this to decide whether an
+    /// `I ∪ S` SCC contains an `R` cross-module edge.
+    pub fn has_at_init_read(&self) -> bool {
+        self.reasons.iter().any(|r| r.kind == EdgeKind::AtInitRead)
+    }
+
+    /// `true` if at least one reason is a side-effect ordering
+    /// edge. `S` edges in an SCC make it unrealizable: the
+    /// constraint is "predecessor must evaluate before
+    /// successor", and a cycle has no topological emit order
+    /// satisfying every such edge.
+    pub fn has_side_effect_ordering(&self) -> bool {
+        self.reasons.iter().any(|r| r.kind == EdgeKind::SideEffect)
+    }
+
+    /// `true` if this edge constrains the realizable evaluation
+    /// order — an at-init read (`R`) or a side-effect ordering
+    /// (`S`) edge. Lazy-only edges don't, because the reads they
+    /// represent fire after every module in the cycle has
+    /// finished evaluating.
+    pub fn constrains_realizability(&self) -> bool {
+        self.has_at_init_read() || self.has_side_effect_ordering()
+    }
+}
+
+/// Module dep graph built from per-statement facts and a binding →
+/// module assignment.
+///
+/// Backed by `petgraph::DiGraphMap`: one edge per directed
+/// `(from, to)` pair, weight = `EdgeMetadata`. Multiple reasons
+/// for the same physical edge (e.g. several at-init reads of
+/// bindings owned by the same target module) accumulate into the
+/// edge's reason list. Cycle detection runs through petgraph's
+/// `tarjan_scc`.
+#[derive(Debug, Clone, Default)]
+pub struct ModuleDepGraph {
+    pub graph: DiGraphMap<ModuleId, EdgeMetadata>,
+}
+
+impl ModuleDepGraph {
+    fn record_reason(
+        &mut self,
+        from: ModuleId,
+        to: ModuleId,
+        kind: EdgeKind,
+        statement_ordinal: StatementOrdinal,
+        binding: BindingName,
+    ) {
+        if from == to {
+            return;
+        }
+        if !self.graph.contains_edge(from, to) {
+            self.graph.add_edge(from, to, EdgeMetadata::default());
+        }
+        // Safe: we just ensured the edge exists.
+        let weight = self
+            .graph
+            .edge_weight_mut(from, to)
+            .expect("edge was just added");
+        weight.reasons.push(EdgeReason {
+            kind,
+            statement_ordinal,
+            binding,
+        });
+    }
+
+    /// Iterate edges as `(from, to, &EdgeMetadata)`.
+    pub fn iter_edges(&self) -> impl Iterator<Item = (ModuleId, ModuleId, &EdgeMetadata)> + '_ {
+        self.graph
+            .all_edges()
+            .map(|(from, to, weight)| (from, to, weight))
+    }
+
+    /// Edge metadata, if the edge exists.
+    pub fn edge(&self, from: ModuleId, to: ModuleId) -> Option<&EdgeMetadata> {
+        self.graph.edge_weight(from, to)
+    }
+
+    /// `true` if the directed edge `(from, to)` is present and at
+    /// least one of its reasons is an at-init read.
+    pub fn has_at_init_edge(&self, from: ModuleId, to: ModuleId) -> bool {
+        self.graph
+            .edge_weight(from, to)
+            .is_some_and(EdgeMetadata::has_at_init_read)
+    }
+
+    /// `true` if the edge `(from, to)` exists and constrains
+    /// realizable evaluation order (at-init read or side-effect
+    /// ordering). Used by the realizability gate to decide
+    /// whether an `I ∪ S` SCC is unrealizable.
+    pub fn has_realizability_constraining_edge(&self, from: ModuleId, to: ModuleId) -> bool {
+        self.graph
+            .edge_weight(from, to)
+            .is_some_and(EdgeMetadata::constrains_realizability)
+    }
+}
+
+/// Build the imports graph `I ∪ S` (per DESIGN.md "Module dep
 /// graphs"): an edge `(M, M')` for every cross-module reference,
-/// at-init or lazy. Each edge of `I` corresponds to exactly one
-/// emitted `import { b } from "<M'>"` directive in `M`'s body
-/// — so the graph constructed here is exactly the graph the ESM
-/// linker walks for evaluation order.
+/// at-init or lazy, plus side-effect ordering edges between any
+/// two modules with side-effecting top-level statements. Each
+/// `I` edge corresponds to exactly one emitted `import { b } from
+/// "<M'>"` directive in `M`'s body — so the graph's `I` slice is
+/// exactly the graph the ESM linker walks for evaluation order.
 ///
 /// A binding referenced both eagerly and lazily inside the same
 /// statement (e.g. `class A extends B { method() { return B; } }`)
-/// shows up in both `reads_at_init` and `reads_lazy`. Iterating
-/// both still produces the right edge set for `I`: the edge is
-/// recorded once in `edges` (it's a `BTreeSet`) and twice in
-/// `evidence`. Cycle detection only consults `edges`.
+/// produces two `EdgeReason`s on the same `(from, to)` edge: one
+/// `AtInitRead` (the extends-clause) and one `LazyRead` (the
+/// method body). The realizability gate cares about the kind, so
+/// keep both.
 pub fn build_module_dep_graph(
     facts: &[StatementFacts],
     binding_assignment: &BTreeMap<BindingName, ModuleId>,
 ) -> ModuleDepGraph {
-    let mut edges = BTreeMap::<ModuleId, BTreeSet<ModuleId>>::new();
-    let mut evidence =
-        BTreeMap::<(ModuleId, ModuleId), Vec<(StatementOrdinal, BindingName)>>::new();
+    let mut graph = ModuleDepGraph::default();
     let stmt_owner = |stmt: &StatementFacts| -> ModuleId {
         stmt.declared
             .iter()
@@ -1194,33 +1336,29 @@ pub fn build_module_dep_graph(
             .next()
             .unwrap_or(ModuleId::ResidualEntry)
     };
-    let record = |from: ModuleId,
-                  binding: &BindingName,
-                  ordinal: StatementOrdinal,
-                  edges: &mut BTreeMap<ModuleId, BTreeSet<ModuleId>>,
-                  evidence: &mut BTreeMap<
-        (ModuleId, ModuleId),
-        Vec<(StatementOrdinal, BindingName)>,
-    >| {
+    let record_read = |graph: &mut ModuleDepGraph,
+                       from: ModuleId,
+                       binding: &BindingName,
+                       ordinal: StatementOrdinal,
+                       kind: EdgeKind| {
         let Some(&to) = binding_assignment.get(binding) else {
             return; // not a chunk-owned binding (global, ImportSpecifier, never-declared)
         };
-        if to == from {
-            return;
-        }
-        edges.entry(from).or_default().insert(to);
-        evidence
-            .entry((from, to))
-            .or_default()
-            .push((ordinal, binding.clone()));
+        graph.record_reason(from, to, kind, ordinal, binding.clone());
     };
     for stmt in facts {
         let from = stmt_owner(stmt);
         for binding in &stmt.reads_at_init {
-            record(from, binding, stmt.ordinal, &mut edges, &mut evidence);
+            record_read(
+                &mut graph,
+                from,
+                binding,
+                stmt.ordinal,
+                EdgeKind::AtInitRead,
+            );
         }
         for binding in &stmt.reads_lazy {
-            record(from, binding, stmt.ordinal, &mut edges, &mut evidence);
+            record_read(&mut graph, from, binding, stmt.ordinal, EdgeKind::LazyRead);
         }
     }
 
@@ -1244,6 +1382,12 @@ pub fn build_module_dep_graph(
     // that precision the cross-module S graph would be dense
     // enough to reject realistic specs for trivially pure const
     // sequences.
+    //
+    // Each `(from, to)` S-edge is recorded once even if the same
+    // pair has multiple side-effecting statements crossing it —
+    // the cycle report doesn't need to fan out into thousands of
+    // S rows when the cycle structure is determined by the first
+    // crossing.
     let mut seen_modules: BTreeSet<ModuleId> = BTreeSet::new();
     for stmt in facts.iter().filter(|s| s.has_side_effect) {
         let from = stmt_owner(stmt);
@@ -1253,23 +1397,23 @@ pub fn build_module_dep_graph(
             .filter(|&m| m != from)
             .collect();
         for to in predecessors {
-            let inserted = edges.entry(from).or_default().insert(to);
-            if inserted {
-                // First-time edge — record one evidence entry per
-                // (from, to) pair so the cycle report doesn't fan
-                // out into thousands of side-effect rows. The
-                // ordinal is the *later* statement; the earlier
-                // one is implicit in `home(to)`.
-                evidence
-                    .entry((from, to))
-                    .or_default()
-                    .push((stmt.ordinal, "<side-effect>".to_string()));
+            let already_has_side_effect = graph
+                .edge(from, to)
+                .is_some_and(|md| md.reasons.iter().any(|r| r.kind == EdgeKind::SideEffect));
+            if !already_has_side_effect {
+                graph.record_reason(
+                    from,
+                    to,
+                    EdgeKind::SideEffect,
+                    stmt.ordinal,
+                    "<side-effect>".to_string(),
+                );
             }
         }
         seen_modules.insert(from);
     }
 
-    ModuleDepGraph { edges, evidence }
+    graph
 }
 
 /// Result of validating a module dep graph.
@@ -1303,6 +1447,13 @@ pub struct CycleEdge {
     #[serde(rename = "statementOrdinal")]
     pub statement_ordinal: StatementOrdinal,
     pub binding: BindingName,
+    /// Edge kind — `at-init`, `lazy`, or `side-effect`. Lets
+    /// downstream consumers (cycle-evidence visualizers, spec
+    /// authors triaging which edges to break) tell at a glance
+    /// which reasons are actually realizability-constraining
+    /// (`at-init` and `side-effect`) vs. inert-but-graph-present
+    /// (`lazy`).
+    pub kind: &'static str,
 }
 
 /// Spec author actionable: "binding X has no owner; here are the
@@ -1345,30 +1496,46 @@ pub fn validate_schedule(
     graph: &ModuleDepGraph,
     module_name: &dyn Fn(ModuleId) -> String,
 ) -> ScheduleReport {
-    let sccs = sccs_of(&graph.edges);
+    let sccs = tarjan_scc(&graph.graph);
     let mut cycles = Vec::new();
     for scc in sccs {
         let in_scc: HashSet<ModuleId> = scc.iter().copied().collect();
-        let is_cycle = scc.len() > 1
-            || (scc.len() == 1
-                && graph
-                    .edges
-                    .get(&scc[0])
-                    .is_some_and(|targets| targets.contains(&scc[0])));
+        let is_cycle =
+            scc.len() > 1 || (scc.len() == 1 && graph.graph.contains_edge(scc[0], scc[0]));
         if !is_cycle {
             continue;
         }
+        // Realizability filter (per DESIGN.md "The realizability
+        // theorem"): an `I ∪ S` SCC is unrealizable iff at least
+        // one cross-module edge between its members carries a
+        // realizability-constraining reason — an at-init read
+        // (`R`) or a side-effect ordering edge (`S`). Lazy reads
+        // alone don't constrain it: the ESM linker evaluates the
+        // SCC in *some* order, and the lazy reads only fire
+        // afterwards (no TDZ, no missed side-effect ordering).
+        let scc_constrains_evaluation_order = scc.iter().any(|&from| {
+            scc.iter()
+                .any(|&to| from != to && graph.has_realizability_constraining_edge(from, to))
+        });
+        if !scc_constrains_evaluation_order {
+            continue;
+        }
         let mut evidence = Vec::new();
-        for (&(from, to), reasons) in &graph.evidence {
+        for (from, to, weight) in graph.iter_edges() {
             if !in_scc.contains(&from) || !in_scc.contains(&to) {
                 continue;
             }
-            for (ordinal, binding) in reasons {
+            for reason in &weight.reasons {
                 evidence.push(CycleEdge {
                     from: module_name(from),
                     to: module_name(to),
-                    statement_ordinal: *ordinal,
-                    binding: binding.clone(),
+                    statement_ordinal: reason.statement_ordinal,
+                    binding: reason.binding.clone(),
+                    kind: match reason.kind {
+                        EdgeKind::AtInitRead => "at-init",
+                        EdgeKind::LazyRead => "lazy",
+                        EdgeKind::SideEffect => "side-effect",
+                    },
                 });
             }
         }
@@ -1481,7 +1648,10 @@ fn build_recommendations(schedule: &Schedule) -> Vec<AssignmentRecommendation> {
 }
 
 /// Tentatively assign `binding → candidate`, rebuild the dep graph,
-/// and check that no SCC of size > 1 (and no self-loop) appears.
+/// and check that no realizability-violating cycle appears. Mirrors
+/// `validate_schedule`'s gate: an SCC is unsafe iff it contains a
+/// cross-module edge that constrains evaluation order — an at-init
+/// read (`R`) or a side-effect ordering edge (`S`).
 fn is_assignment_cycle_safe(
     schedule: &Schedule,
     binding: &BindingName,
@@ -1490,32 +1660,18 @@ fn is_assignment_cycle_safe(
     let mut augmented = owned_view(&schedule.bindings);
     augmented.insert(binding.clone(), candidate);
     let graph = build_module_dep_graph(&schedule.facts, &augmented);
-    let sccs = sccs_of(&graph.edges);
+    let sccs = tarjan_scc(&graph.graph);
     !sccs.iter().any(|scc| {
-        scc.len() > 1
-            || (scc.len() == 1
-                && graph
-                    .edges
-                    .get(&scc[0])
-                    .is_some_and(|targets| targets.contains(&scc[0])))
-    })
-}
-
-/// Strongly-connected components of the dep graph, via petgraph's
-/// `tarjan_scc`. Each SCC is a `Vec<ModuleId>` in reverse
-/// topological order (SCCs appear after their dependencies).
-fn sccs_of(edges: &BTreeMap<ModuleId, BTreeSet<ModuleId>>) -> Vec<Vec<ModuleId>> {
-    let mut graph = DiGraphMap::<ModuleId, ()>::new();
-    // Ensure isolated nodes (only on the receive side of an edge or
-    // standalone in the assignment) appear in the graph.
-    for (&from, targets) in edges {
-        graph.add_node(from);
-        for &to in targets {
-            graph.add_node(to);
-            graph.add_edge(from, to, ());
+        let is_cycle =
+            scc.len() > 1 || (scc.len() == 1 && graph.graph.contains_edge(scc[0], scc[0]));
+        if !is_cycle {
+            return false;
         }
-    }
-    tarjan_scc(&graph)
+        scc.iter().any(|&from| {
+            scc.iter()
+                .any(|&to| from != to && graph.has_realizability_constraining_edge(from, to))
+        })
+    })
 }
 
 /// Topological linearization of the dep graph, dependency-first.
@@ -1529,7 +1685,7 @@ fn sccs_of(edges: &BTreeMap<ModuleId, BTreeSet<ModuleId>>) -> Vec<Vec<ModuleId>>
 /// dependency comes first — matching the order ECMA-262's link
 /// traversal needs to evaluate (deepest leaf first).
 fn compute_linker_order(
-    edges: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+    dep_graph: &ModuleDepGraph,
     logical_modules: &[LogicalModule],
 ) -> Vec<ModuleId> {
     let mut graph = DiGraphMap::<ModuleId, ()>::new();
@@ -1540,12 +1696,10 @@ fn compute_linker_order(
     for idx in 0..logical_modules.len() {
         graph.add_node(ModuleId::Logical(LogicalModuleIndex(idx)));
     }
-    for (&from, targets) in edges {
+    for (from, to, _) in dep_graph.iter_edges() {
         graph.add_node(from);
-        for &to in targets {
-            graph.add_node(to);
-            graph.add_edge(from, to, ());
-        }
+        graph.add_node(to);
+        graph.add_edge(from, to, ());
     }
     match toposort(&graph, None) {
         Ok(order) => order.into_iter().rev().collect(),
@@ -2262,24 +2416,19 @@ mod tests {
             "const A = 1, B = X; const X = 42;",
             &[("A", logical(0)), ("B", logical(1)), ("X", logical(1))],
         );
-        let edges = &schedule.dep_graph.edges;
         // No cross-module read edges should exist: A's init is
         // pure, B reads X (same module).
         let mod_0 = ModuleId::Logical(LogicalModuleIndex(0));
         let mod_1 = ModuleId::Logical(LogicalModuleIndex(1));
         assert!(
-            edges
-                .get(&mod_0)
-                .is_none_or(|targets| !targets.contains(&mod_1)),
+            !schedule.dep_graph.graph.contains_edge(mod_0, mod_1),
             "no edge mod_0 → mod_1 expected, got: {:?}",
-            edges.get(&mod_0),
+            schedule.dep_graph.graph.edge_weight(mod_0, mod_1),
         );
         assert!(
-            edges
-                .get(&mod_1)
-                .is_none_or(|targets| !targets.contains(&mod_0)),
+            !schedule.dep_graph.graph.contains_edge(mod_1, mod_0),
             "no edge mod_1 → mod_0 expected, got: {:?}",
-            edges.get(&mod_1),
+            schedule.dep_graph.graph.edge_weight(mod_1, mod_0),
         );
     }
 
