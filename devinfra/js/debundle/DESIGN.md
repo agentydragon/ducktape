@@ -611,6 +611,131 @@ is in place. The remainder splits cleanly into spec parsing
 pass, talking to `Schedule.ownership`), and emission
 (`lower_chunk` rewritten as `emit_module(schedule, module_id)`).
 
+### Identifiers and types
+
+The legacy code types most identifiers as raw `String`. That's
+hidden untyped state. Three concrete failure modes have surfaced:
+
+1. **Same-shape strings, different things.** A chunk id
+   (`"static/index-DI2GynTv"`), a logical-module path
+   (`"ai/mcp/prompting_runtime"`), and a destination file path
+   within a chunk (`"runtime/vendor/symbols.js"`) are all
+   `String`. Every function that takes one of these has a
+   plausible-looking signature even when called with the wrong
+   one. The cross-chunk import-path drift in PR #1473 was
+   exactly this — we passed a `chunk-relative path` where a
+   `chunk id` was expected and the rewriter silently produced a
+   wrong string.
+
+2. **Opaque numeric ids.** `program_analysis.rs:151` mints
+   `format!("owner_{:05}", owners.len())` — a stringified
+   sequential index of "the Nth top-level decl in this chunk's
+   source order." The gaffer spec then references these as
+   `selector.owner.id = "owner_03565"`. Two problems:
+   - The string is meaningless. `owner_03565` doesn't tell a
+     reader anything about what binding it is. They have to
+     grep the chunk-analysis output to find out.
+   - It's drift-sensitive. If the chunk source changes, every
+     decl after the inserted point shifts ordinal, and every
+     spec entry that referenced anything past the change
+     breaks. The spec already has two un-ambiguous handles
+     (the binding name and the source line) — the synthetic
+     `owner_NNNNN` ID adds indirection without identity.
+
+3. **Stringified module ids.** `ModulePlan.id =
+format!("logical__{}", path.replace('/', "_"))` is then used
+   as the suffix of `__dt_generated_init__` symbols, as a
+   key in the report JSON, and as a referent for cross-module
+   relationships in spec output. After Phase 3 the init-symbol
+   use disappears; the remaining uses (report keys, references)
+   want a stable id that's distinct from the path.
+
+The rule going forward:
+
+> If a string identifies a thing of a known kind, it gets a
+> newtype. Untyped `String` is reserved for free-form text
+> (error messages, log lines, the actual JavaScript identifier
+> _as text_).
+
+The principled set of identifier types:
+
+```rust
+/// Path-style identifier for a chunk. Never a path inside a
+/// chunk; never a logical-module path.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ChunkId(String);
+
+/// Path within a single chunk's emitted file tree, relative to
+/// the chunk's root. E.g. `runtime/vendor/symbols.js`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ChunkRelativePath(String);
+
+/// Path of a logical module as named by the spec. E.g.
+/// `ai/mcp/prompting_runtime`. Does *not* include `.js`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LogicalModulePath(String);
+
+/// Stable id for a logical module within a chunk. Internal,
+/// distinct from `LogicalModulePath` (different abstraction
+/// — paths can change in a spec edit; ids stay stable through
+/// a single materialize run). Implemented as a `usize` index
+/// into `Schedule.logical_modules`; wrapped to keep it from
+/// being mistaken for `StatementOrdinal` etc.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LogicalModuleIndex(usize);
+
+/// Position of a top-level statement in a chunk's source body.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StatementOrdinal(usize);
+
+/// Local name of a binding in a chunk's top-level scope. Used
+/// as a key in `Schedule.bindings`. The string itself is the
+/// JavaScript identifier (scrambled in source, possibly
+/// renamed in emit).
+pub type BindingName = String;
+```
+
+`BindingName` stays a plain `String` (with a type alias for
+documentation) because it _is_ the actual identifier text — a
+JavaScript identifier passed to `Ident::new_no_ctxt()` and
+emitted into source. Wrapping it would force `.0` everywhere a
+real-text-vs-id distinction doesn't exist. The other four are
+genuinely different things and earn a wrapper.
+
+`ModuleId` (already in <schedule_validator.rs>) is a tagged
+union over these:
+
+```rust
+pub enum ModuleId {
+    Logical(LogicalModuleIndex),
+    ResidualEntry,
+    ExternalChunk(ChunkId),
+}
+```
+
+#### Killing the `owner_NNNNN` opaque id
+
+The `OwnerRecord.id` system in <program_analysis.rs> mints a
+stringified sequential index per top-level decl, exposes it in
+the chunk analysis output, and the gaffer spec references it.
+Replacing it:
+
+- Spec entries continue to identify bindings by `binding.name`
+  (already done) and optionally `owner.line` for drift
+  detection (already done). Both are meaningful and unambiguous
+  within a chunk's top-level scope.
+- The chunk analysis output continues to enumerate top-level
+  decls with their `ordinal`, `name`, `kind`, `line`, etc.,
+  but no longer mints a synthetic `id` field. Tools that
+  cross-reference do so by name + ordinal + line.
+- `OwnerRecord` shrinks to a debug record without the `id`.
+- Gaffer spec entries that currently set `owner.id =
+"owner_03565"` are noise — the validator will detect that
+  the binding identified by `binding.name = "m"` is the same
+  one the `owner.id` referenced, so the field can be dropped.
+  Phase 4 cleanup includes a sweep through gaffer to remove
+  dead `owner.id` fields.
+
 ### Refactor sequence
 
 The consolidation runs entirely on the ducktape side and does not
