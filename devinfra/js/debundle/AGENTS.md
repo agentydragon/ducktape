@@ -204,7 +204,9 @@ fixture reaches the same code path.
   module exports include `abc` and exclude listed names.
 - `assert_module_source(out_root, "foo/bar.js", &["needle"], &["antineedle"])`
   — substring-match against the emitted source. Useful for shape checks
-  ("`class A` appears", "no `__dt_generated_init__` wrapper").
+  ("`class A` appears", "no `__dt_generated_init__`" — Phase 3+
+  source-order emit produces no init wrappers; the negative check is a
+  regression guard).
 - `assert_entry_output(fixture, "expected stdout\n")` — runs the entire
   emitted tree under node and asserts the bundle's runtime behavior is
   preserved.

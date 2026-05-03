@@ -4,9 +4,12 @@ Forward-looking gaps in the Rust debundler. Items are written to be removed
 once closed; this file is not a changelog.
 
 The big architectural item — replacing the legacy init-wrapper
-lowering with a static schedule validator + source-order emit — is
-tracked in <DESIGN.md> ("Status" table). Read that first; the
-items in this file are the smaller, mostly-orthogonal cleanups.
+lowering with a static schedule validator + source-order emit —
+landed in phases 1 → 3 (see <DESIGN.md> "Status" table). Phase 4
+cleanup is in progress (parallel `import_members` channel
+collapse via `BindingKind::Imported`, dead `ModulePlan` fields).
+The items in this file are the smaller, mostly-orthogonal
+cleanups.
 
 ## Excalidraw live-browser smoke
 

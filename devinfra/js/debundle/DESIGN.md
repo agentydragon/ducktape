@@ -1,9 +1,12 @@
 # Debundler — Design
 
-> Status: in active migration. The legacy "init wrapper" lowering is
-> still in place; a static schedule validator is being introduced
-> alongside it (Phase 1; see <#status>). This doc describes the
-> _target_ design and is updated as we land each phase.
+> Status: phases 1 → 3 landed. The legacy init-wrapper lowering is
+> gone; the validator is a hard gate; `lower_chunk` emits source-
+> order only. The Tana spec is fully explicit (every binding has an
+> owner; closure pass deleted) and acyclic (Phase 2 broke the
+> 9-module SCC). Phase 4 cleanup is in flight: drop the parallel
+> `import_members` channel via `BindingKind::Imported`, retire dead
+> `ModulePlan` fields, finalize docs.
 
 ## Mission
 
@@ -1381,9 +1384,9 @@ bang refactor; no spec churn until Phase 2.
 | 1.6.4 | Migrate `cross_module_imports_for_body` + `source_chunk_imports_for_moved_body` to `&Schedule`; widen `LogicalModule` with `target_file` + `rename_map`; add `Schedule::owner_of` + `logical_module` accessors | **Done** (<logical_modules.rs>; `init_dep_names_for_body` left for Phase 3 deletion)                                                                                                                                                                                                                                   |
 | 1.6.5 | Migrate closure pass to `&mut Schedule` with cycle-aware refusal                                                                                                                                               | Folded into Phase 1.7 — the closure leaves the runtime path entirely; cycle-aware refusal becomes recommender output, not closure mutation                                                                                                                                                                             |
 | 1.7   | Spec-explicitness migration: validator emits `recommendations` for unowned bindings; one-shot tool rewrites gaffer spec with explicit owners; drop `close_module_bindings_over_dependencies` from runtime      | **Done.** 6283 closure-pulled bindings made explicit in gaffer (`closure_pulled_post_migration.mjs`); closure pass deleted; migration tool retired; selector vocabulary stays at today's `name`/`kind`/`owner.id`/`owner.line` per scope decision (rich vocabulary deferred — see <#selector-vocabulary-and-matching>) |
-| 2     | Update gaffer spec to break each surfaced cycle                                                                                                                                                                | Pending 1.7                                                                                                                                                                                                                                                                                                            |
-| 3     | Switch emit to source-order; drop init-wrapper machinery                                                                                                                                                       | Pending 2                                                                                                                                                                                                                                                                                                              |
-| 4     | Cleanup: remove legacy code, update e2e fixtures, update AGENTS.md                                                                                                                                             | Pending 3                                                                                                                                                                                                                                                                                                              |
+| 2     | Update gaffer spec to break each surfaced cycle                                                                                                                                                                | **Done.** Agent-driven sweep moved 150+ bindings across 14 commits (gaffer 6ed00ca); SCC eliminated. Edge trajectory: 99 → 90 → 79 → 67 → 64 → 56 → 48 (SCC 9→8) → 37 → 31 → 27 → 23 → 22 → 19 → 8 (SCC 8→3) → 5 (SCC 3→2) → 0                                                                                         |
+| 3     | Switch emit to source-order; drop init-wrapper machinery                                                                                                                                                       | **Done** (ducktape 6ef003f5c, gaffer 85f240f). Validator gate hardened to `bail!` on cycles; `lower_chunk` source-order only; ~525 lines of init-wrapper helpers deleted; `promise_validator_rejects_cycle_test` + `promise_source_order_emit_test` un-ignored and pass; Tana bundle has 0 `__dt_generated_init__`     |
+| 4     | Cleanup: remove legacy code, update e2e fixtures, update AGENTS.md                                                                                                                                             | In progress                                                                                                                                                                                                                                                                                                            |
 
 The work that landed during the legacy-design era — cross-module
 import emission, ImportSpecifier handling, source-chunk re-import
