@@ -8,17 +8,17 @@
 //! is no `__dt_generated_init__` symbol, no idempotency flag,
 //! no `var X; X = ...` placeholder pattern. This test pins that
 //! shape on a simple split where every initializer is a function
-//! call (which the legacy emit treated as "unsafe" and wrapped).
+//! call.
 
 use debundle_e2e_support::*;
 use std::fs;
 
 #[test]
 fn realizable_spec_emits_source_order_modules_without_init_wrappers() {
-    // `f()` and `g()` are unsafe inits per the legacy heuristic.
-    // The legacy emit wraps mod_a's body in an init function;
-    // the new design emits source-order `const A = f();` /
-    // `const B = g();` with cross-module imports as needed.
+    // `A = f()` / `B = g()` are call-initialised consts. Source-
+    // order emit lands them inline as `const A = f();` /
+    // `const B = g();` in their respective modules with cross-
+    // module imports as needed.
     let fixture = run_logical_modules_e2e_fixture(FixtureOpts::new(
         r#"function f() { return "a"; }
 function g() { return "b"; }

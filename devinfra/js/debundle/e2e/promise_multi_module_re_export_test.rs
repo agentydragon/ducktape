@@ -16,10 +16,10 @@ fn imported_binding_re_exported_under_two_different_names() {
     // The chunk imports `j` from a vendor under local `a`, then
     // uses `a` once. Two logical modules each re-export `a`
     // under different public names — `jsxRuntime` and `__jsx`.
-    // Today the second `define_logical_module` op either loses
-    // the duplicate-binding race or fails the duplicate-export
-    // check. Phase 3 makes both emit successfully, each with
-    // its own re-import path.
+    // Both emit successfully with their own re-import paths;
+    // the entries share one `BindingKind::Imported` whose
+    // `re_exported_by` map carries each module's chosen public
+    // name.
     let mut opts = FixtureOpts::new(
         r#"import { j as a } from "./vendor.js";
 console.log(a());
