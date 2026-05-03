@@ -1,5 +1,122 @@
 # Debundler Implementation Constraints
 
+## Mission
+
+The debundler is a peeling toolkit. Its purpose is to recover a
+production-minified JavaScript bundle into something that reads like a
+hand-written modular codebase — stable names, real module seams,
+narrow public surfaces, residual / generated noise driven down over
+time. Each release of an upstream app (Tana, props/frontend, etc.) is
+re-peeled from a versioned spec; the spec is the source of truth for
+which symbols belong where and what they should be called. The
+debundler executes the spec, emits side-output analyses (priority
+queue of still-scrambled symbols, etc.) that drive the next wave of
+spec edits, and is itself improved as new shapes / bugs / heuristic
+opportunities surface.
+
+Three things that should follow from that:
+
+- **Spec authoring is high-value, low-friction.** Build tools,
+  side-output analyses, and heuristic generators that make spec
+  authoring nice and convenient — fewer clicks, fewer round-trips,
+  no peeking into git history. The pipeline emits machine-readable
+  artifacts so consuming tools can suggest module decompositions /
+  rename targets / chunk seams; the spec author reviews and commits
+  decisions explicitly.
+- **Heuristics surface signals, the spec makes decisions.** Heuristic
+  outputs are recommendations only. They never make extraction or
+  rename decisions on their own — the spec language extends to
+  consume them (e.g. "this React component scope, except symbols
+  X and Y") so reviewers can see and adjust what gets applied.
+- **The debundler is itself a living target.** When a new bundle
+  shape exposes a missing capability, extend the debundler — but
+  reproduce the failure with a minimal e2e first (see "Bug-fix
+  discipline" below).
+
+## Bug-fix discipline
+
+When a debundler bug surfaces at the e2e / smoke / pipeline layer,
+the order is:
+
+1. **Localize the failure** — file path, line numbers, exact shape.
+2. **Reproduce with a minimal e2e fixture under `e2e/`** that fails
+   for the same reason on synthetic inputs. The e2e flipping green is
+   the contract for the fix; without it, the bug is one upstream
+   bump away from regressing silently.
+3. **Then fix.** Land both the fixture and the fix in the same PR.
+
+If a bug genuinely cannot be reproduced synthetically (e.g. it depends
+on a specific upstream-bundle quirk that's hard to mimic), say so
+explicitly in the PR body and add coverage at the next-coarsest level
+(props/frontend smoke, dedicated corpus fixture, etc.).
+
+Pipeline-level bugs that surface only in the Tana smoke and have no
+obvious synthetic reproducer should also be reproduced against
+**props/frontend's debundle pipeline** before fixing — that smoke is
+the open-source proxy for "real React/Svelte + chunk-split + vendored
+production bundle" and lets a regression test land in public CI.
+
+## Verification corpora
+
+Two debundle corpora live in this repo:
+
+- **Synthetic e2e fixtures** (`e2e/`) — focused, fast, exercise one
+  pipeline stage / bug class. Most tests live here.
+- **`props/frontend/debundle/`** — realistic-shape corpus (Svelte 5,
+  esbuild splitting, real prod npm vendor packages). Use as the
+  verification step _before_ claiming a fix applies to the full Tana
+  bundle. Failures here surface chunk-graph / vendor-shape /
+  rename-pipeline issues without needing the private Tana repo.
+
+When a fix lands, the order is: synthetic e2e green → props/frontend
+debundle green → Tana smoke green. Skipping the props/frontend layer
+means a regression that survives synthetic tests will only show up on
+Tana, where iteration is slower and the repro can't be shared
+publicly.
+
+## Test shape preferences
+
+Strongly prefer **executable e2e tests with high-level assertions**
+over implementation-specific unit tests:
+
+- "module `foo/bar.js` exports `abc` and not `xyz`" (parse the emitted
+  module; check the export set)
+- "running the emitted entry under Node prints `expected output`"
+- "module body parses and binds `readable` at most once per scope"
+
+These assertions test the debundler's external contract — what
+downstream consumers see — and survive internal refactors. They also
+build up a reusable library of fixture cases with very similar shape
+(the `e2e/support.rs` helpers exist for exactly this), so adding the
+N+1th fixture is cheap.
+
+Reach for unit-tests-on-internals only for combinatorial corner cases
+of pure functions (path resolution, name-disambiguation logic, etc.)
+where exposing the input/output via the CLI would be awkward. The
+"Testing Philosophy" and "Forbidden test shapes" sections below are
+the long-form rules.
+
+## Worktree discipline for parallel agents
+
+When multiple worker agents may simultaneously edit code in this
+repo (or any other Bazel-managed repo here), **each agent must work
+in its own git worktree.** The Agent tool's `isolation: "worktree"`
+parameter does this automatically; without it, agents share the
+single working tree at `/home/user/ducktape` and stomp on each
+other's uncommitted changes when one agent's `git checkout` happens
+between another agent's edits and commit.
+
+Symptoms of missed isolation: working-tree changes that span
+multiple agents' files at once, agents reporting "my work
+disappeared", `git status` showing files belonging to a branch that
+isn't checked out. If you see these, bail out — re-dispatch the
+affected agents with `isolation: "worktree"` rather than trying to
+recover from contamination.
+
+The orchestrator agent (the one dispatching workers) keeps the main
+worktree for itself and never disturbs in-flight worker working
+trees.
+
 ## AST Requirement
 
 JavaScript-source transformations must use proper AST operations on the
