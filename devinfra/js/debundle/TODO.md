@@ -46,22 +46,6 @@ that landed with the S-edge work (PR #1478 + S analyzer); not
 pressing until a real spec exposes a spurious S cycle from
 this gap.
 
-## Surface `Schedule.linker_order` in `<chunk_id>.schedule.json`
-
-`Schedule.linker_order` (the topological linearization of
-`I ∪ S` used to steer ECMA-262's depth-first link traversal,
-per Lemma 2 in DESIGN.md) is computed at schedule-build time
-but isn't exposed in the emitted `<chunk_id>.schedule.json`
-alongside cycle reports and recommendations. Adding it would
-make the emitter's import ordering verifiable from the
-artifact and useful for debug-tooling that wants to see the
-linker's evaluation order without re-running materialization.
-
-Shape: extend `ScheduleReport` with a
-`linker_order: Vec<String>` (module names in evaluation
-order). Empty when the dep graph has cycles (validation rejects
-anyway). No consumer change required.
-
 ## Excalidraw live-browser smoke
 
 Build an open-source live-browser smoke test for the debundler against

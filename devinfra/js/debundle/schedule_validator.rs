@@ -195,6 +195,11 @@ impl Schedule {
     pub fn validate(&self) -> ScheduleReport {
         let mut report = validate_schedule(&self.dep_graph, &|id| self.module_name(id));
         report.recommendations = build_recommendations(self);
+        report.linker_order = self
+            .linker_order
+            .iter()
+            .map(|id| self.module_name(*id))
+            .collect();
         report
     }
 }
@@ -948,6 +953,13 @@ pub struct ScheduleReport {
     /// referenced by at least one logical module. Spec authors
     /// resolve each entry by copying a chosen owner into the spec.
     pub recommendations: Vec<AssignmentRecommendation>,
+    /// Topological linearization of `I ∪ S` rooted at the entry,
+    /// dependency-first. Empty when the dep graph has cycles
+    /// (validation rejects). Captured here so debug tooling can
+    /// see the linker's evaluation order without re-running
+    /// materialization. See DESIGN.md "Lemma 2".
+    #[serde(rename = "linkerOrder")]
+    pub linker_order: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1041,6 +1053,7 @@ pub fn validate_schedule(
         kind: "js.schedule_validator_report",
         cycles,
         recommendations: Vec::new(),
+        linker_order: Vec::new(),
     }
 }
 
@@ -1776,6 +1789,60 @@ mod tests {
         assert!(
             !report.cycles.is_empty(),
             "expected a real cycle to be reported"
+        );
+    }
+
+    // --- linker_order in ScheduleReport --------------------------------------
+
+    #[test]
+    fn validate_surfaces_linker_order_for_acyclic_spec() {
+        // mod_0 reads B from mod_1 at-init → mod_1 must precede
+        // mod_0 in the linker's evaluation order.
+        let schedule = schedule_for(
+            "const A = B + 1; const B = 42;",
+            &[("A", logical(0)), ("B", logical(1))],
+        );
+        let report = schedule.validate();
+        let order = &report.linker_order;
+        let pos = |name: &str| -> usize {
+            order
+                .iter()
+                .position(|m| m == name)
+                .unwrap_or_else(|| panic!("module {name} not in {order:?}"))
+        };
+        assert!(
+            pos("mod_1") < pos("mod_0"),
+            "mod_1 must precede mod_0 in linker_order; got {order:?}",
+        );
+    }
+
+    #[test]
+    fn validate_returns_empty_linker_order_for_cyclic_spec() {
+        // mod_0 reads B (mod_1); mod_1 reads A (mod_0). Cycle.
+        let schedule = schedule_for(
+            "const A = B + 1; const B = A + 1;",
+            &[("A", logical(0)), ("B", logical(1))],
+        );
+        let report = schedule.validate();
+        assert!(!report.cycles.is_empty(), "expected a cycle in {report:?}",);
+        assert!(
+            report.linker_order.is_empty(),
+            "linker_order must be empty when the dep graph is cyclic; got {:?}",
+            report.linker_order,
+        );
+    }
+
+    #[test]
+    fn schedule_report_serializes_linker_order_as_camel_case() {
+        let schedule = schedule_for(
+            "const A = 1; const B = A + 1;",
+            &[("A", logical(0)), ("B", logical(1))],
+        );
+        let report = schedule.validate();
+        let json = serde_json::to_string(&report).expect("serialize ScheduleReport");
+        assert!(
+            json.contains(r#""linkerOrder""#),
+            "ScheduleReport must serialize linker_order as `linkerOrder`; got: {json}",
         );
     }
 }

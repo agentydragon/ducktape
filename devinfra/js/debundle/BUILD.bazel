@@ -116,6 +116,7 @@ rust_test(
     crate = ":schedule_validator",
     edition = "2024",
     deps = [
+        "@crates//:serde_json",
         "@crates//:swc_common",
         "@crates//:swc_ecma_parser",
     ],
