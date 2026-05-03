@@ -1163,10 +1163,12 @@ impl Visit for LazyReadCollector {
 /// walk (lazy reads themselves don't fire until after evaluation
 /// completes), and `SideEffect` edges encode source-order
 /// ordering of side-effecting top-level statements between two
-/// modules. Cycles in `R ∪ S` are unrealizable; cycles in
-/// `I = R ∪ L` whose intersection with `R` is empty (i.e. all
-/// back-edges are lazy or side-effect) are realizable — ESM
-/// evaluates them in some linker-determined order with no TDZ.
+/// modules. An `I ∪ S` SCC is realizable iff every cross-module
+/// edge between its members is a `LazyRead` — `AtInitRead` and
+/// `SideEffect` cross-module edges both make the SCC
+/// unrealizable (`AtInitRead` causes TDZ during cycle
+/// evaluation; `SideEffect` has no consistent topological emit
+/// order satisfying the constraint).
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum EdgeKind {
     /// At-init read: a top-level statement in `from` reads a
