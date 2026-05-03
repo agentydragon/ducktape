@@ -246,8 +246,9 @@ fn assert_export_named_specifier(
 }
 
 /// Assert that no function-body scope in `source` declares `target_name`
-/// more than once (counting destructured params and `let/const/var`
-/// decls). Mirrors Node's lexical-binding duplicate check.
+/// more than once (counting destructured params and `let`/`const` decls;
+/// `var` is excluded because it allows redeclaration in the same scope).
+/// Mirrors Node's lexical-binding duplicate check.
 fn assert_unique_lexical_decls_per_scope(source: &str, target_name: &str) {
     use swc_ecma_ast::{
         BindingIdent, BlockStmtOrExpr, Decl, Expr, FnDecl, Function, ModuleItem, ObjectPatProp,
@@ -339,7 +340,9 @@ fn assert_unique_lexical_decls_per_scope(source: &str, target_name: &str) {
                 }
                 if let BlockStmtOrExpr::BlockStmt(block) = &*arrow.body {
                     for stmt in &block.stmts {
-                        if let Stmt::Decl(Decl::Var(var)) = stmt {
+                        if let Stmt::Decl(Decl::Var(var)) = stmt
+                            && matches!(var.kind, VarDeclKind::Let | VarDeclKind::Const)
+                        {
                             for declarator in &var.decls {
                                 if pat_binds(&declarator.name, target) {
                                     count += 1;
