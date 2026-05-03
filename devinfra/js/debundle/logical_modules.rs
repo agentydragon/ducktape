@@ -1615,32 +1615,85 @@ fn push_initialized_var_decl(
     out: &mut Vec<ModuleItem>,
     init_statements: &mut Vec<Stmt>,
 ) -> Result<()> {
-    let mut declarations = Vec::new();
+    // Split declarators by whether their init is hoistable (a literal
+    // or a tree of literals). Hoistable ones stay inline at module
+    // top with the original `const` / `let` / `var` kind, so a
+    // cyclic consumer that reads them at its own top sees the value
+    // immediately. Non-hoistable ones (Call, MemberExpr, anything
+    // referencing other bindings) go through the wrapper: `var X;`
+    // placeholder + assignment in the init function called by the
+    // residual entry.
+    //
+    // The placeholder must be `var`, not `let`: under `let`, a
+    // cyclic read before the placeholder line executes TDZ-errors
+    // with `ReferenceError: Cannot access 'X' before initialization`.
+    // Under `var`, the binding is hoisted to module load and reads
+    // as `undefined` until the init runs. The init function is the
+    // only writer, so the let-style "no double init" guarantee was
+    // meaningless from the start.
+    let mut inline_decls = Vec::new();
+    let mut wrapped_decls = Vec::new();
     for declarator in var.decls {
-        if let Some(init) = declarator.init.clone() {
+        let hoistable = declarator
+            .init
+            .as_deref()
+            .is_none_or(is_hoistable_initializer);
+        if hoistable {
+            inline_decls.push(declarator);
+        } else {
+            let init = declarator.init.clone().expect("non-hoistable arm has init");
             init_statements.push(assignment_statement_for_declarator(&declarator, init)?);
+            wrapped_decls.push(VarDeclarator {
+                init: None,
+                ..declarator
+            });
         }
-        declarations.push(VarDeclarator {
-            init: None,
-            ..declarator
-        });
     }
-    // `var`, not `let`: a circular module-load can read the binding
-    // before this placeholder line executes (the source chunk's
-    // imports may pull a consumer module that reads our exports at
-    // top level). Under `let`, that's TDZ — `ReferenceError: Cannot
-    // access 'X' before initialization`. Under `var`, the binding is
-    // hoisted and reads as `undefined`. The init function we own is
-    // the only writer, so the let-style "no double init" guarantee
-    // is meaningless here.
-    out.push(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(VarDecl {
-        span: var.span,
-        ctxt: var.ctxt,
-        kind: VarDeclKind::Var,
-        declare: var.declare,
-        decls: declarations,
-    })))));
+    if !inline_decls.is_empty() {
+        out.push(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(VarDecl {
+            span: var.span,
+            ctxt: var.ctxt,
+            kind: var.kind,
+            declare: var.declare,
+            decls: inline_decls,
+        })))));
+    }
+    if !wrapped_decls.is_empty() {
+        out.push(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(VarDecl {
+            span: var.span,
+            ctxt: var.ctxt,
+            kind: VarDeclKind::Var,
+            declare: var.declare,
+            decls: wrapped_decls,
+        })))));
+    }
     Ok(())
+}
+
+/// Conservative "literal-only" init check for the safe-inline path
+/// in `push_initialized_var_decl`. Excludes anything that could read
+/// another binding (Ident, Shorthand, MemberExpr, Call, etc.) so
+/// hoisting can't accidentally read an unrelated binding before its
+/// own init runs. Stricter than `is_plain_import_safe_initializer`
+/// which is fine for the "module needs wrapper at all" check but
+/// would break the cycle-safety property if used here.
+fn is_hoistable_initializer(expr: &Expr) -> bool {
+    match expr {
+        Expr::Lit(_) => true,
+        Expr::Array(array) => array
+            .elems
+            .iter()
+            .flatten()
+            .all(|element| is_hoistable_initializer(&element.expr)),
+        Expr::Object(object) => object.props.iter().all(|prop| match prop {
+            PropOrSpread::Spread(_) => false,
+            PropOrSpread::Prop(prop) => match &**prop {
+                Prop::KeyValue(kv) => is_hoistable_initializer(&kv.value),
+                _ => false,
+            },
+        }),
+        _ => false,
+    }
 }
 
 fn assignment_statement_for_declarator(
