@@ -1,15 +1,14 @@
 //! Static schedule validation for `materialize_logical_modules`.
 //!
-//! Background: see `plans/your-terminal-goal-is-iridescent-meteor.md`
-//! ("Debundler — principled redesign"). This module is Phase 1 of
-//! that redesign — a *report-only* pass that runs alongside the
-//! existing init-wrapper machinery.
-//!
-//! The pass treats debundling as a scheduling problem:
+//! Background: see <DESIGN.md>. This module is the validator core
+//! of the principled debundler design. It treats debundling as a
+//! scheduling problem:
 //!
 //! 1. For each top-level statement in the source chunk, compute the
-//!    bindings it declares, the bindings it reads at-init, whether
-//!    it has an observable side effect, and its source ordinal.
+//!    bindings it declares, the bindings it reads at-init, the
+//!    bindings it reads lazily (inside function/method bodies, etc.),
+//!    whether it has an observable side effect, and its source
+//!    ordinal.
 //! 2. Map each statement to its destination module (logical module
 //!    or residual entry) using the spec's binding assignment.
 //! 3. Build a directed module dep graph: edge `M_S → M_b` for every
@@ -18,12 +17,14 @@
 //! 4. Validate: the dep graph must be acyclic. Cycles are the
 //!    unrealizable case — no ESM evaluation order can satisfy the
 //!    spec's assignment without papering over the cycle at runtime.
+//!    `materialize_logical_modules` aborts when this validator
+//!    reports cycles (Phase 3).
 //!
 //! The output is a JSON report listing the cycles + their evidence
-//! (which `(statement, binding)` pairs form each cycle). The report
-//! is written next to the existing manifests; the existing emit path
-//! continues unchanged. Phase 3 (later) switches the emit path to
-//! source-order and turns cycles into hard errors.
+//! (which `(statement, binding)` pairs form each cycle), plus
+//! recommendations for any unowned bindings that some logical
+//! module reads. The report is written next to the existing
+//! manifests as `<chunk_id>.schedule.json`.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
@@ -73,7 +74,9 @@ pub enum BindingKind {
 /// helpers consume (`cross_module_imports_for_body`,
 /// `source_chunk_imports_for_moved_body`, etc.). Spec-side
 /// bookkeeping (`requested: LogicalRequest`, `import_members`)
-/// stays on `ModulePlan` until Phase 4 unifies them.
+/// stays on `ModulePlan`; the import-members migration into
+/// `BindingKind::Imported` is the open follow-on listed in
+/// DESIGN.md's Phase 4.
 #[derive(Debug, Clone)]
 pub struct LogicalModule {
     pub id: String,

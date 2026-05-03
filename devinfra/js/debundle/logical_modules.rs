@@ -294,14 +294,11 @@ pub fn materialize_logical_modules(
             }
         }
 
-        // Phase 1 of the principled redesign (see DESIGN.md): run the
-        // schedule validator in report-only mode against the binding
-        // assignment we just computed. Emits a per-chunk JSON listing
-        // any cycles in the at-init module dep graph. The validator
-        // does not gate emit yet — Phase 3 promotes it to a hard
-        // error. Computed here (before `lower_chunk` mutates the
-        // artifact) to keep the immutable borrow on `runtime_ast`
-        // simple.
+        // Run the schedule validator (see <DESIGN.md>). Computed here
+        // (before `lower_chunk` mutates the artifact) to keep the
+        // immutable borrow on `runtime_ast` simple. The report is
+        // emitted as `<chunk_id>.schedule.json`; cycles abort the
+        // pipeline.
         let schedule = {
             let facts = analyze_chunk_facts(&runtime_ast.module);
             let ownership: BTreeMap<String, ModuleId> = binding_assignment
@@ -320,10 +317,10 @@ pub fn materialize_logical_modules(
         };
         let schedule_report = schedule.validate();
 
-        // Phase 3 hard gate: a cyclic spec is unrealizable; refuse to
-        // emit instead of producing a runtime-broken bundle. Cycles
-        // are reported with the responsible (statement, binding)
-        // pairs so the spec author can locate and break each cycle.
+        // Hard gate: a cyclic spec is unrealizable; refuse to emit
+        // instead of producing a runtime-broken bundle. Cycles are
+        // reported with the responsible (statement, binding) pairs
+        // so the spec author can locate and break each cycle.
         if !schedule_report.cycles.is_empty() {
             let serialized = serde_json::to_string_pretty(&schedule_report.cycles)
                 .unwrap_or_else(|_| "<failed to serialize cycles>".to_string());
