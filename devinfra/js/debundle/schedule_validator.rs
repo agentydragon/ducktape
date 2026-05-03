@@ -69,12 +69,20 @@ pub enum BindingKind {
 }
 
 /// A logical module produced by the spec for the current chunk.
-/// Minimal projection of `ModulePlan` — just the fields the
-/// validator + report need today. Fuller migration of the emit
-/// helpers will widen this struct.
+/// Projection of `ModulePlan` carrying the fields downstream emit
+/// helpers consume (`cross_module_imports_for_body`,
+/// `source_chunk_imports_for_moved_body`, etc.). Spec-side
+/// bookkeeping (`requested: LogicalRequest`, `import_members`)
+/// stays on `ModulePlan` until Phase 4 unifies them.
 #[derive(Debug, Clone)]
 pub struct LogicalModule {
     pub id: String,
+    /// Chunk-relative path the module emits to (e.g. `"runtime/foo.js"`).
+    pub target_file: String,
+    /// Local-name → exported-name map for the bindings this module
+    /// owns. Empty when the module re-exports only imported
+    /// bindings.
+    pub rename_map: BTreeMap<BindingName, BindingName>,
 }
 
 /// Single per-chunk schedule. Carries everything downstream code
@@ -123,6 +131,20 @@ impl Schedule {
                 .map(|m| m.id.clone())
                 .unwrap_or_else(|| format!("<module#{idx}>")),
         }
+    }
+
+    /// Which module owns a binding (by local name), if any. Returns
+    /// `None` for names that aren't tracked in this schedule (e.g.
+    /// globals, source-chunk imports we don't re-export).
+    pub fn owner_of(&self, name: &str) -> Option<ModuleId> {
+        self.bindings.get(name).map(|kind| match kind {
+            BindingKind::Owned { owner } => *owner,
+        })
+    }
+
+    /// Lookup a logical module by index.
+    pub fn logical_module(&self, idx: LogicalModuleIndex) -> Option<&LogicalModule> {
+        self.logical_modules.get(idx.0)
     }
 
     /// Run SCC analysis over the dep graph and return a structured

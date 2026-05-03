@@ -325,6 +325,8 @@ pub fn materialize_logical_modules(
                 .iter()
                 .map(|plan| ScheduleLogicalModule {
                     id: plan.id.clone(),
+                    target_file: plan.target_file.clone(),
+                    rename_map: plan.bindings.clone(),
                 })
                 .collect();
             Schedule::build(chunk_id.clone(), facts, ownership, logical_modules)
@@ -341,6 +343,7 @@ pub fn materialize_logical_modules(
             declarations: &declarations,
             module_plans: &module_plans,
             binding_assignment: &binding_assignment,
+            schedule: &schedule,
         })?;
 
         let mut files = BTreeMap::new();
@@ -499,6 +502,7 @@ struct LowerChunkInputs<'a> {
     declarations: &'a [TopLevelDecl],
     module_plans: &'a [ModulePlan],
     binding_assignment: &'a BTreeMap<String, usize>,
+    schedule: &'a Schedule,
 }
 
 fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
@@ -512,6 +516,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         declarations,
         module_plans,
         binding_assignment,
+        schedule,
     } = inputs;
     let mut selected_ordinals = BTreeSet::new();
     for decl in declarations {
@@ -672,8 +677,8 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             index,
             &plan.target_file,
             &body,
+            schedule,
             module_plans,
-            binding_assignment,
             &requires_init_by_module,
         );
         // Re-import any source-chunk import-specifier-bound locals that
@@ -689,7 +694,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             entry_file,
             &plan.target_file,
             &body,
-            binding_assignment,
+            schedule,
         )?;
         module_imports.append(&mut runtime_reimports);
         module_imports.append(&mut body);
@@ -1141,23 +1146,25 @@ fn cross_module_imports_for_body(
     module_index: usize,
     from_file: &str,
     body: &[ModuleItem],
+    schedule: &Schedule,
     module_plans: &[ModulePlan],
-    binding_assignment: &BTreeMap<String, usize>,
     requires_init: &BTreeSet<usize>,
 ) -> Vec<ModuleItem> {
     let mut imports_by_provider = BTreeMap::<usize, BTreeMap<String, String>>::new();
     for item in body {
         for name in collect_referenced_idents(item) {
-            let Some(provider_index) = binding_assignment.get(&name).copied() else {
+            let Some(ModuleId::Logical(LogicalModuleIndex(provider_index))) =
+                schedule.owner_of(&name)
+            else {
                 continue;
             };
             if provider_index == module_index {
                 continue;
             }
-            let Some(provider_plan) = module_plans.get(provider_index) else {
+            let Some(provider) = schedule.logical_module(LogicalModuleIndex(provider_index)) else {
                 continue;
             };
-            let Some(exported_name) = provider_plan.bindings.get(&name) else {
+            let Some(exported_name) = provider.rename_map.get(&name) else {
                 continue;
             };
             imports_by_provider
@@ -1168,6 +1175,7 @@ fn cross_module_imports_for_body(
     }
     // For each provider that requires init, also import its init
     // function so we can call it from our own init's prelude.
+    // (Init-wrapper machinery; deleted in Phase 3.)
     if requires_init.contains(&module_index) {
         for (provider_index, bindings) in imports_by_provider.iter_mut() {
             if !requires_init.contains(provider_index) {
@@ -1183,8 +1191,8 @@ fn cross_module_imports_for_body(
     imports_by_provider
         .into_iter()
         .filter_map(|(provider_index, bindings)| {
-            module_plans
-                .get(provider_index)
+            schedule
+                .logical_module(LogicalModuleIndex(provider_index))
                 .map(|provider| import_decl_for_plan(from_file, &provider.target_file, &bindings))
         })
         .collect()
@@ -2209,7 +2217,7 @@ fn source_chunk_imports_for_moved_body(
     source_runtime_file: &str,
     dest_target_file: &str,
     body: &[ModuleItem],
-    binding_assignment: &BTreeMap<String, usize>,
+    schedule: &Schedule,
 ) -> Result<Vec<ModuleItem>> {
     let mut runtime_imports = BTreeMap::<String, RuntimeImportInfo>::new();
     for item in runtime_body {
@@ -2274,7 +2282,7 @@ fn source_chunk_imports_for_moved_body(
             if already_imported.contains(&name) {
                 continue;
             }
-            if binding_assignment.contains_key(&name) {
+            if schedule.bindings.contains_key(&name) {
                 // Provided by another plan via cross_module_imports.
                 continue;
             }
