@@ -10,28 +10,57 @@ including the `BindingKind::Imported` collapse that closes out
 the parallel `import_members` channel. The items in this file
 are smaller, mostly-orthogonal cleanups.
 
-## `source_chunk_imports_for_moved_body` skip filter is too broad
+## Top-level-await hard rejection
 
-In `logical_modules.rs` (~line 1805), the skip
-`if schedule.bindings.contains_key(&name) { continue; }` rules
-out every name in `Schedule.bindings` — including
-`BindingKind::Imported` entries that may be re-exported by some
-_other_ logical module. If moved code in the current module
-references such an imported local, this filter skips it (no
-source-chunk re-import gets emitted) and
-`cross_module_imports_for_body` won't import it either
-(`Schedule::owner_of` returns `None` for `Imported`). Result:
-free variable in the emitted module → `ReferenceError` at
-runtime.
+DESIGN.md assumption A2 ("no top-level `await` in any emitted
+module") is documented as an _input-shape assumption_, not an
+enforced check. `program_analysis.rs` marks `AwaitExpr` as
+runtime-sensitive during shallow analysis, but
+`materialize_logical_modules` doesn't refuse the chunk when it
+appears at module-top.
 
-Fix: narrow the skip to bindings actually provided via cross-
-module imports — e.g. `schedule.owner_of(name).is_some()` (the
-`Owned` case) — or skip only when the current module has
-already inserted an import for that `Imported` binding.
+Fix: scan `Module.body` for top-level `AwaitExpr` (not inside
+any `Function` / `ArrowExpr` / `MethodProp` / etc.) before fact
+analysis runs; `bail!` with a clear message naming the offending
+statement ordinal. Aligns the implementation with the proof's
+A2 guarantee.
 
-Surfaced as Copilot review comment on PR #1477:
-<https://github.com/agentydragon/ducktape/pull/1477#discussion_r3178520375>.
-Orthogonal to Phase 5 (#1478); separate small PR.
+## Pure-call whitelist in `classify_expr_purity`
+
+The S analyzer's purity classifier (`schedule_validator.rs`)
+treats `Call`, `New`, `TaggedTpl`, `Member`, `OptChain`, etc.
+as `Unknown` (treated as Impure). For built-ins that are
+demonstrably pure — `Math.X` reads, `Object.freeze`,
+`Object.assign({}, ...)`, `Symbol(...)`, `Object.keys`,
+`Array.isArray`, … — flagging Pure would tighten S-edge
+precision and reduce spurious cycle-rejections on chunks heavy
+in those calls.
+
+Implementation shape: a small allowlist consulted by
+`classify_expr_purity` for `Expr::Call` / `Expr::New` /
+`Expr::Member` whose receiver is a known global. Conservative
+on shadowing — only fire when the receiver Ident isn't bound
+by anything in `Schedule.bindings` or as a function/local in
+scope. Tracked as a follow-up to the precise-purity classifier
+that landed with the S-edge work (PR #1478 + S analyzer); not
+pressing until a real spec exposes a spurious S cycle from
+this gap.
+
+## Surface `Schedule.linker_order` in `<chunk_id>.schedule.json`
+
+`Schedule.linker_order` (the topological linearization of
+`I ∪ S` used to steer ECMA-262's depth-first link traversal,
+per Lemma 2 in DESIGN.md) is computed at schedule-build time
+but isn't exposed in the emitted `<chunk_id>.schedule.json`
+alongside cycle reports and recommendations. Adding it would
+make the emitter's import ordering verifiable from the
+artifact and useful for debug-tooling that wants to see the
+linker's evaluation order without re-running materialization.
+
+Shape: extend `ScheduleReport` with a
+`linker_order: Vec<String>` (module names in evaluation
+order). Empty when the dep graph has cycles (validation rejects
+anyway). No consumer change required.
 
 ## Excalidraw live-browser smoke
 

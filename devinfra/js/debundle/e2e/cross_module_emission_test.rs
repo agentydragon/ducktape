@@ -382,3 +382,69 @@ export { bridge };
         "mod_x.js body must still reference `gge.decode`; got:\n{mod_x}",
     );
 }
+
+#[test]
+fn moved_body_re_imports_specifier_re_exported_by_another_plan() {
+    // mod_a re-exports a vendor binding (`a` → public `Re`),
+    // making it `BindingKind::Imported` in `Schedule.bindings`.
+    // mod_b moves a body that references the same local `a`.
+    // The source-chunk re-import filter must NOT skip `a` just
+    // because it's in `Schedule.bindings` — `cross_module_imports_for_body`
+    // can't satisfy it (Imported bindings have `owner_of() == None`),
+    // so without the source-chunk re-import mod_b has a free
+    // variable and `ReferenceError: a is not defined` at runtime.
+    //
+    // The source chunk lives at `static/app/`; place vendor.js
+    // there too so the entry's `./vendor.js` resolves (and
+    // mod_b's emitted re-import resolves through the same
+    // chunk-relative path rewrite).
+    let mut opts = FixtureOpts::new(
+        r#"import { x as a } from "./vendor.js";
+function bridge() {
+  return a;
+}
+console.log(bridge());
+export { bridge };
+"#,
+        vec![
+            json!({
+                "id": "logical__mod_a",
+                "operation": "define_logical_module",
+                "selector": { "chunkId": "static/app" },
+                "target": { "path": "mod_a" },
+                "members": [{
+                    "id": "m_re",
+                    "name": "Re",
+                    "selector": { "binding": { "name": "a", "kind": "ImportSpecifier" } },
+                }],
+            }),
+            json!({
+                "id": "logical__mod_b",
+                "operation": "define_logical_module",
+                "selector": { "chunkId": "static/app" },
+                "target": { "path": "mod_b" },
+                "members": [{
+                    "id": "m_bridge",
+                    "name": "bridge",
+                    "selector": { "binding": { "name": "bridge" } },
+                }],
+            }),
+        ],
+    );
+    opts.extra_files = &[("static/app/vendor.js", "export const x = 42;\n")];
+    let fixture = run_logical_modules_e2e_fixture(opts);
+
+    let mod_b = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_b.js"))
+        .expect("read mod_b.js");
+    // mod_b's bridge body references `a`; mod_b must carry a
+    // source-chunk re-import for `a` (the vendor binding) so the
+    // moved body resolves at link time.
+    assert!(
+        mod_b.contains("import") && mod_b.contains("vendor"),
+        "mod_b.js must re-import the vendor specifier; got:\n{mod_b}",
+    );
+    // Behaviour preservation: `bridge()` returns the imported
+    // vendor value. Without the filter narrowing this would
+    // `ReferenceError` at module-load time.
+    assert_entry_output(&fixture, "42\n");
+}

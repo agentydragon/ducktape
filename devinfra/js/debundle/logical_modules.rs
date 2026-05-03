@@ -1835,8 +1835,12 @@ fn source_chunk_imports_for_moved_body(
             if already_imported.contains(&name) {
                 continue;
             }
-            if schedule.bindings.contains_key(&name) {
-                // Provided by another plan via cross_module_imports.
+            if schedule.owner_of(&name).is_some() {
+                // Owned by some logical module — `cross_module_imports_for_body`
+                // emits a cross-module import for it. (Imported bindings have
+                // `owner_of(...) == None`; they fall through to the
+                // source-chunk re-import below since no plan can satisfy the
+                // moved code's reference cross-module.)
                 continue;
             }
             if let Some(info) = runtime_imports.get(&name) {
