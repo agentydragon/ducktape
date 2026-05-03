@@ -1,4 +1,4 @@
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
 load("//devinfra/js/debundle:pipeline.bzl", "debundle_pipeline")
 
 # Smoke target for the debundle pipeline against props/frontend.
@@ -165,5 +165,61 @@ debundle_pipeline(
     ],
     package_roots = _SMOKE_VENDOR_PACKAGES,
     spec_generator = ":spec_generator",
+    visibility = ["//visibility:public"],
+)
+
+# ============================================================
+# Live-browser smoke (self-hosted; no MITM).
+# ============================================================
+# props/frontend has no server-side dependency, so unlike gaffer's
+# `tana/re/web/live_proxy:load_*` (which intercepts a real upstream
+# host with an MITM proxy), this load test serves the harness over
+# a local http server and points headless Chromium at it directly.
+#
+# The `static_load_test.mjs` driver is a thin reimplementation of
+# what `js_debundle_live_proxy_load_test` does, minus the MITM
+# pieces. Reusing the macro would require a second variant skipping
+# the proxy; for the open-source corpus a self-hosted driver here
+# is simpler and avoids leaking the MITM machinery into a target
+# that doesn't need it.
+
+# Each vendor package's `:dir` filegroup gets passed verbatim
+# (`<name>=<rlocationpath>`) to the load-test binary so it can resolve
+# vendor chunks back to package files. Mirrors
+# `swap_package_root_fixed_args` in gaffer's vendor/defs.bzl.
+_VENDOR_PACKAGE_ROOT_ARGS = [
+    arg
+    for label, name in _SMOKE_VENDOR_PACKAGES.items()
+    for arg in [
+        "--package-root",
+        "{}=\"$$JS_BINARY__RUNFILES\"/$(rlocationpath {})".format(name, label),
+    ]
+]
+
+js_test(
+    name = "load_props_frontend",
+    chdir = package_name(),
+    data = [
+        "static_load_test.mjs",
+        ":debundle_props_frontend",
+        "//util/testing/frontend_visual:puppeteer_lib",
+        "@playwright_browsers//:chromium-headless-shell",
+    ] + _SMOKE_VENDOR_PACKAGES.keys(),
+    entry_point = "static_load_test.mjs",
+    env = {
+        "PUPPETEER_EXECUTABLE_PATH": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+    },
+    fixed_args = [
+        "--app-manifest",
+        "\"$$JS_BINARY__RUNFILES\"/$(rlocationpath :debundle_props_frontend)/manifest.json",
+        "--wait-for-selector",
+        "nav",
+        "--wait-timeout-ms",
+        "30000",
+        "--goto-timeout-ms",
+        "30000",
+        "--assert-nav-interaction",
+    ] + _VENDOR_PACKAGE_ROOT_ARGS,
+    tags = ["requires-network"],
     visibility = ["//visibility:public"],
 )
