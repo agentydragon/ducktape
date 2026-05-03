@@ -147,10 +147,14 @@ impl Schedule {
         self.logical_modules.get(idx.0)
     }
 
-    /// Run SCC analysis over the dep graph and return a structured
-    /// cycle report.
+    /// Run SCC analysis over the dep graph + compute assignment
+    /// recommendations for unowned bindings. Spec authors consume the
+    /// resulting report to (a) fix any cycles and (b) make implicit
+    /// assignments explicit.
     pub fn validate(&self) -> ScheduleReport {
-        validate_schedule(&self.dep_graph, &|id| self.module_name(id))
+        let mut report = validate_schedule(&self.dep_graph, &|id| self.module_name(id));
+        report.recommendations = build_recommendations(self);
+        report
     }
 }
 
@@ -159,6 +163,12 @@ pub struct StatementFacts {
     pub ordinal: StatementOrdinal,
     pub declared: BTreeSet<BindingName>,
     pub reads_at_init: BTreeSet<BindingName>,
+    /// Reads happening only inside lazy syntactic positions (function
+    /// bodies, instance class-field initializers, getters/setters,
+    /// constructor bodies). May overlap with `reads_at_init` if the
+    /// same name appears in both eager and lazy positions of the
+    /// statement.
+    pub reads_lazy: BTreeSet<BindingName>,
     pub has_side_effect: bool,
     pub kind: StatementKind,
 }
@@ -196,15 +206,17 @@ pub fn analyze_chunk_facts(module: &Module) -> Vec<StatementFacts> {
 fn analyze_item(ordinal: StatementOrdinal, item: &ModuleItem) -> StatementFacts {
     let kind = classify_item(item);
     let declared = collect_declared_names(item);
-    let mut reads_collector = AtInitReadCollector::default();
-    item.visit_with(&mut reads_collector);
-    let reads_at_init = reads_collector.names;
+    let mut at_init = AtInitReadCollector::default();
+    item.visit_with(&mut at_init);
+    let mut lazy = LazyReadCollector::default();
+    item.visit_with(&mut lazy);
     let has_side_effect = matches!(kind, StatementKind::VarDecl | StatementKind::SideEffect)
         || (kind == StatementKind::ClassDecl && class_has_static_init(item));
     StatementFacts {
         ordinal,
         declared,
-        reads_at_init,
+        reads_at_init: at_init.names,
+        reads_lazy: lazy.names,
         has_side_effect,
         kind,
     }
@@ -400,6 +412,132 @@ impl Visit for AtInitReadCollector {
     }
 }
 
+/// Visitor that collects ident reads happening inside lazy syntactic
+/// positions only — function bodies, method bodies, constructor
+/// bodies, instance class-field initializers, getter/setter bodies.
+/// Inverse boundary semantics from `AtInitReadCollector`.
+#[derive(Default)]
+struct LazyReadCollector {
+    names: BTreeSet<String>,
+    in_lazy: bool,
+}
+
+impl LazyReadCollector {
+    fn descend_lazy<F: FnOnce(&mut Self)>(&mut self, f: F) {
+        let prev = std::mem::replace(&mut self.in_lazy, true);
+        f(self);
+        self.in_lazy = prev;
+    }
+}
+
+impl Visit for LazyReadCollector {
+    fn visit_ident(&mut self, node: &Ident) {
+        if self.in_lazy {
+            self.names.insert(node.sym.to_string());
+        }
+    }
+
+    fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
+
+    fn visit_import_decl(&mut self, _node: &ImportDecl) {}
+
+    fn visit_function(&mut self, node: &Function) {
+        self.descend_lazy(|s| node.visit_children_with(s));
+    }
+    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
+        self.descend_lazy(|s| node.visit_children_with(s));
+    }
+    fn visit_method_prop(&mut self, node: &MethodProp) {
+        node.key.visit_with(self);
+        self.descend_lazy(|s| node.function.visit_with(s));
+    }
+    fn visit_getter_prop(&mut self, node: &GetterProp) {
+        node.key.visit_with(self);
+        self.descend_lazy(|s| {
+            if let Some(body) = &node.body {
+                body.visit_with(s);
+            }
+        });
+    }
+    fn visit_setter_prop(&mut self, node: &SetterProp) {
+        node.key.visit_with(self);
+        node.param.visit_with(self);
+        self.descend_lazy(|s| {
+            if let Some(body) = &node.body {
+                body.visit_with(s);
+            }
+        });
+    }
+
+    fn visit_class(&mut self, node: &Class) {
+        for decorator in &node.decorators {
+            decorator.visit_with(self);
+        }
+        if let Some(super_class) = &node.super_class {
+            super_class.visit_with(self);
+        }
+        for member in &node.body {
+            self.visit_class_member(member);
+        }
+    }
+
+    fn visit_class_member(&mut self, member: &ClassMember) {
+        match member {
+            ClassMember::Method(method) => {
+                self.visit_prop_name(&method.key);
+                self.descend_lazy(|s| method.function.visit_with(s));
+            }
+            ClassMember::PrivateMethod(method) => {
+                self.descend_lazy(|s| method.function.visit_with(s));
+            }
+            ClassMember::Constructor(ctor) => {
+                self.descend_lazy(|s| ctor.visit_children_with(s));
+            }
+            ClassMember::ClassProp(prop) => {
+                self.visit_prop_name(&prop.key);
+                if prop.is_static {
+                    if let Some(value) = &prop.value {
+                        value.visit_with(self);
+                    }
+                } else if let Some(value) = &prop.value {
+                    self.descend_lazy(|s| value.visit_with(s));
+                }
+            }
+            ClassMember::PrivateProp(prop) => {
+                if prop.is_static {
+                    if let Some(value) = &prop.value {
+                        value.visit_with(self);
+                    }
+                } else if let Some(value) = &prop.value {
+                    self.descend_lazy(|s| value.visit_with(s));
+                }
+            }
+            ClassMember::StaticBlock(block) => {
+                block.visit_with(self);
+            }
+            ClassMember::TsIndexSignature(_) | ClassMember::Empty(_) => {}
+            ClassMember::AutoAccessor(accessor) => {
+                if let Key::Public(name) = &accessor.key {
+                    self.visit_prop_name(name);
+                }
+                if accessor.is_static {
+                    if let Some(value) = &accessor.value {
+                        value.visit_with(self);
+                    }
+                } else if let Some(value) = &accessor.value {
+                    self.descend_lazy(|s| value.visit_with(s));
+                }
+            }
+        }
+    }
+
+    fn visit_prop_name(&mut self, name: &PropName) {
+        if let PropName::Computed(computed) = name {
+            computed.expr.visit_with(self);
+        }
+    }
+}
+
 /// Module dep graph built from per-statement facts and a binding →
 /// module assignment.
 #[derive(Debug, Clone)]
@@ -449,6 +587,10 @@ pub fn build_module_dep_graph(
 pub struct ScheduleReport {
     pub kind: &'static str,
     pub cycles: Vec<CycleReport>,
+    /// One entry per binding the spec hasn't claimed but that is
+    /// referenced by at least one logical module. Spec authors
+    /// resolve each entry by copying a chosen owner into the spec.
+    pub recommendations: Vec<AssignmentRecommendation>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -464,6 +606,36 @@ pub struct CycleEdge {
     #[serde(rename = "statementOrdinal")]
     pub statement_ordinal: StatementOrdinal,
     pub binding: BindingName,
+}
+
+/// Spec author actionable: "binding X has no owner; here are the
+/// modules that read it, and which assignments are cycle-safe."
+#[derive(Debug, Clone, Serialize)]
+pub struct AssignmentRecommendation {
+    pub binding: BindingName,
+    pub candidates: Vec<RecommendationCandidate>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RecommendationCandidate {
+    pub module: String,
+    #[serde(rename = "readKind")]
+    pub read_kind: RecommendationReadKind,
+    #[serde(rename = "cycleSafe")]
+    pub cycle_safe: bool,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecommendationReadKind {
+    /// The candidate module reads this binding at-init (initializer
+    /// expression, extends-clause, computed key, etc.).
+    AtInit,
+    /// The candidate module reads this binding only inside lazy
+    /// positions (function/method bodies, instance class-field
+    /// initializers, getter/setter bodies). Lazy reads don't
+    /// constrain init order, so any owner is cycle-safe.
+    LazyOnly,
 }
 
 /// Find SCCs in the dep graph and produce a report listing every
@@ -508,7 +680,112 @@ pub fn validate_schedule(
     ScheduleReport {
         kind: "js.schedule_validator_report",
         cycles,
+        recommendations: Vec::new(),
     }
+}
+
+/// Build the recommender side-output: for each binding declared in
+/// the chunk but not owned by any logical module, list the modules
+/// that read it, mark each candidate's `cycle_safe` flag.
+///
+/// Lazy-only readers are always cycle-safe (lazy reads don't
+/// constrain init order). At-init readers' cycle safety is checked
+/// by tentatively assigning the binding and re-running SCC analysis.
+fn build_recommendations(schedule: &Schedule) -> Vec<AssignmentRecommendation> {
+    let owned: BTreeMap<BindingName, ModuleId> = schedule
+        .bindings
+        .iter()
+        .map(|(name, kind)| match kind {
+            BindingKind::Owned { owner } => (name.clone(), *owner),
+        })
+        .collect();
+    let declared: BTreeSet<BindingName> = schedule
+        .facts
+        .iter()
+        .flat_map(|f| f.declared.iter().cloned())
+        .collect();
+
+    let stmt_home = |stmt: &StatementFacts| -> ModuleId {
+        stmt.declared
+            .iter()
+            .filter_map(|name| owned.get(name).copied())
+            .next()
+            .unwrap_or(ModuleId::ResidualEntry)
+    };
+
+    let mut recs = Vec::new();
+    for name in &declared {
+        if owned.contains_key(name) {
+            continue;
+        }
+        let mut at_init_modules = BTreeSet::<ModuleId>::new();
+        let mut any_modules = BTreeSet::<ModuleId>::new();
+        for stmt in &schedule.facts {
+            let home = stmt_home(stmt);
+            if stmt.reads_at_init.contains(name) {
+                at_init_modules.insert(home);
+            }
+            if stmt.reads_at_init.contains(name) || stmt.reads_lazy.contains(name) {
+                any_modules.insert(home);
+            }
+        }
+        // A reader from ResidualEntry doesn't introduce a meaningful
+        // candidate — assigning the binding to ResidualEntry leaves
+        // it where it already is.
+        at_init_modules.remove(&ModuleId::ResidualEntry);
+        any_modules.remove(&ModuleId::ResidualEntry);
+
+        let mut candidates = Vec::new();
+        for &m in &at_init_modules {
+            let cycle_safe = is_assignment_cycle_safe(schedule, name, m);
+            candidates.push(RecommendationCandidate {
+                module: schedule.module_name(m),
+                read_kind: RecommendationReadKind::AtInit,
+                cycle_safe,
+            });
+        }
+        for m in any_modules.difference(&at_init_modules) {
+            candidates.push(RecommendationCandidate {
+                module: schedule.module_name(*m),
+                read_kind: RecommendationReadKind::LazyOnly,
+                cycle_safe: true,
+            });
+        }
+        if !candidates.is_empty() {
+            recs.push(AssignmentRecommendation {
+                binding: name.clone(),
+                candidates,
+            });
+        }
+    }
+    recs
+}
+
+/// Tentatively assign `binding → candidate`, rebuild the dep graph,
+/// and check that no SCC of size > 1 (and no self-loop) appears.
+fn is_assignment_cycle_safe(
+    schedule: &Schedule,
+    binding: &BindingName,
+    candidate: ModuleId,
+) -> bool {
+    let mut augmented: BTreeMap<BindingName, ModuleId> = schedule
+        .bindings
+        .iter()
+        .map(|(name, kind)| match kind {
+            BindingKind::Owned { owner } => (name.clone(), *owner),
+        })
+        .collect();
+    augmented.insert(binding.clone(), candidate);
+    let graph = build_module_dep_graph(&schedule.facts, &augmented);
+    let sccs = tarjan_sccs(&graph.edges);
+    !sccs.iter().any(|scc| {
+        scc.len() > 1
+            || (scc.len() == 1
+                && graph
+                    .edges
+                    .get(&scc[0])
+                    .is_some_and(|targets| targets.contains(&scc[0])))
+    })
 }
 
 /// Tarjan's strongly-connected-components algorithm. Returns SCCs in
@@ -730,6 +1007,118 @@ mod tests {
             report.cycles.is_empty(),
             "expected no cycles, got {:?}",
             report.cycles
+        );
+    }
+
+    fn schedule_for(source: &str, ownership: &[(&str, ModuleId)]) -> Schedule {
+        let module = parse(source);
+        let facts = analyze_chunk_facts(&module);
+        let mut owners = BTreeMap::new();
+        let mut max_idx = 0usize;
+        for (name, id) in ownership {
+            owners.insert(name.to_string(), *id);
+            if let ModuleId::Logical(LogicalModuleIndex(i)) = id {
+                max_idx = max_idx.max(*i);
+            }
+        }
+        let logical_modules: Vec<LogicalModule> = (0..=max_idx)
+            .map(|i| LogicalModule {
+                id: format!("mod_{i}"),
+                target_file: format!("mod_{i}.js"),
+                rename_map: BTreeMap::new(),
+            })
+            .collect();
+        Schedule::build("test_chunk".to_string(), facts, owners, logical_modules)
+    }
+
+    #[test]
+    fn lazy_only_read_yields_lazy_only_candidate() {
+        // mod_0 owns helper; helper's body lazily reads X. X is unowned.
+        let schedule = schedule_for(
+            "function helper() { return X; } const X = 42;",
+            &[("helper", logical(0))],
+        );
+        let report = schedule.validate();
+        let rec = report
+            .recommendations
+            .iter()
+            .find(|r| r.binding == "X")
+            .expect("expected a recommendation for X");
+        assert_eq!(rec.candidates.len(), 1);
+        assert_eq!(rec.candidates[0].module, "mod_0");
+        assert_eq!(
+            rec.candidates[0].read_kind,
+            RecommendationReadKind::LazyOnly
+        );
+        assert!(
+            rec.candidates[0].cycle_safe,
+            "lazy-only candidates are always cycle-safe"
+        );
+    }
+
+    #[test]
+    fn at_init_read_acyclic_is_cycle_safe() {
+        // mod_0 owns A; A reads X at-init. mod_1 owns B; B reads A. X
+        // is unowned. Assigning X → mod_0 is cycle-safe.
+        let schedule = schedule_for(
+            "const A = X + 1; const B = A + 1; const X = 42;",
+            &[("A", logical(0)), ("B", logical(1))],
+        );
+        let report = schedule.validate();
+        let rec = report
+            .recommendations
+            .iter()
+            .find(|r| r.binding == "X")
+            .expect("expected a recommendation for X");
+        let mod_0 = rec
+            .candidates
+            .iter()
+            .find(|c| c.module == "mod_0")
+            .expect("mod_0 should be an at-init candidate (it reads X)");
+        assert_eq!(mod_0.read_kind, RecommendationReadKind::AtInit);
+        assert!(mod_0.cycle_safe, "X → mod_0 should be cycle-safe");
+    }
+
+    #[test]
+    fn at_init_read_creating_cycle_is_not_cycle_safe() {
+        // mod_0 owns A; A reads X at-init. mod_1 owns B; B reads A.
+        // X has its own statement reading B at-init. Assigning X →
+        // mod_0 creates the cycle mod_0 ↔ mod_1 (X's body would now
+        // run from mod_0 and read mod_1's B).
+        let schedule = schedule_for(
+            "const A = X + 1; const B = A + 1; const X = B + 1;",
+            &[("A", logical(0)), ("B", logical(1))],
+        );
+        let report = schedule.validate();
+        let rec = report
+            .recommendations
+            .iter()
+            .find(|r| r.binding == "X")
+            .expect("expected a recommendation for X");
+        let mod_0 = rec
+            .candidates
+            .iter()
+            .find(|c| c.module == "mod_0")
+            .expect("mod_0 reads X so should appear");
+        assert_eq!(mod_0.read_kind, RecommendationReadKind::AtInit);
+        assert!(
+            !mod_0.cycle_safe,
+            "X → mod_0 closes a cycle and must be flagged"
+        );
+    }
+
+    #[test]
+    fn owned_bindings_get_no_recommendation() {
+        // Every binding has an explicit owner.
+        let schedule = schedule_for(
+            "const A = 1; const B = A + 1;",
+            &[("A", logical(0)), ("B", logical(1))],
+        );
+        let report = schedule.validate();
+        assert!(
+            report.recommendations.is_empty(),
+            "fully-explicit spec should produce no recommendations, got {:?}",
+            report.recommendations
         );
     }
 }
