@@ -1072,13 +1072,23 @@ fn is_plain_import_safe_initializer(expr: &Expr) -> bool {
         Expr::Object(object) => object.props.iter().all(|prop| match prop {
             PropOrSpread::Spread(spread) => is_plain_import_safe_initializer(&spread.expr),
             PropOrSpread::Prop(prop) => match &**prop {
-                Prop::KeyValue(key_value) => is_plain_import_safe_initializer(&key_value.value),
+                Prop::KeyValue(key_value) => {
+                    is_plain_import_safe_propname(&key_value.key)
+                        && is_plain_import_safe_initializer(&key_value.value)
+                }
                 Prop::Shorthand(_) => true,
                 Prop::Method(_) | Prop::Getter(_) | Prop::Setter(_) => true,
                 Prop::Assign(assign) => is_plain_import_safe_initializer(&assign.value),
             },
         }),
         _ => false,
+    }
+}
+
+fn is_plain_import_safe_propname(name: &PropName) -> bool {
+    match name {
+        PropName::Computed(computed) => is_plain_import_safe_initializer(&computed.expr),
+        _ => true,
     }
 }
 
