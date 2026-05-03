@@ -1048,8 +1048,18 @@ fn drop_target_collisions(
     mut plan_driven: BTreeMap<String, String>,
     heuristic: BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
+    // Only effective heuristic mappings (locals not already in plan_driven)
+    // contribute to the collision count. Counting skipped entries inflates
+    // counts[target] and can drop unrelated heuristic mappings that have only
+    // one effective claimant.
     let mut counts = BTreeMap::<String, usize>::new();
-    for target in plan_driven.values().chain(heuristic.values()) {
+    for target in plan_driven.values() {
+        *counts.entry(target.clone()).or_default() += 1;
+    }
+    for (local, target) in &heuristic {
+        if plan_driven.contains_key(local) {
+            continue;
+        }
         *counts.entry(target.clone()).or_default() += 1;
     }
     for (local, target) in heuristic {

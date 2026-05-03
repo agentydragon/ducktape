@@ -251,7 +251,7 @@ fn assert_export_named_specifier(
 fn assert_unique_lexical_decls_per_scope(source: &str, target_name: &str) {
     use swc_ecma_ast::{
         BindingIdent, BlockStmtOrExpr, Decl, Expr, FnDecl, Function, ModuleItem, ObjectPatProp,
-        Pat, Stmt, VarDeclarator,
+        Pat, Stmt, VarDeclKind, VarDeclarator,
     };
 
     fn pat_binds(pat: &Pat, target: &str) -> bool {
@@ -284,7 +284,12 @@ fn assert_unique_lexical_decls_per_scope(source: &str, target_name: &str) {
             }
         }
         for stmt in &body.stmts {
-            if let Stmt::Decl(Decl::Var(var)) = stmt {
+            // `var` allows redeclaration in the same scope (and `function f(a){var a;}`
+            // is legal); only `let`/`const`/`class`/`function` are subject to the
+            // "Identifier 'X' has already been declared" lexical check.
+            if let Stmt::Decl(Decl::Var(var)) = stmt
+                && matches!(var.kind, VarDeclKind::Let | VarDeclKind::Const)
+            {
                 for declarator in &var.decls {
                     if pat_binds(&declarator.name, target) {
                         count += 1;
