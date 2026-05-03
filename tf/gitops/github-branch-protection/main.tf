@@ -8,7 +8,7 @@
 # GitHub App added as a bypass actor so the three GHA workflows that
 # direct-push to the default branch (sync-pins, nix-flake-update,
 # container-images:pin-digests) can keep working after migration to
-# actions/create-github-app-token. See secrets/ducktape-automation.README.md.
+# actions/create-github-app-token. See secrets/ducktape_automation.README.md.
 #
 # On gaffer-private, main is already the default branch — protection
 # becomes effective on apply.
@@ -51,7 +51,7 @@ locals {
   # claude-token-rotation CronJob). Constant across all repos.
   admin_repo_role_id = 5
 
-  # ducktape-automation GitHub App; see secrets/ducktape-automation.README.md.
+  # ducktape-automation GitHub App; see secrets/ducktape_automation.README.md.
   # Used as the Integration bypass actor so workflows authenticated via
   # actions/create-github-app-token bypass the rulesets — github-actions
   # cannot be a bypass actor on personal-account repos, which is why we

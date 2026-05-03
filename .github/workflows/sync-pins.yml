@@ -7,7 +7,7 @@ name: Sync artifact pins
 # to `main` when the default branch flips, and replace
 # secrets.GITHUB_TOKEN with an installation token minted from the
 # ducktape-automation GitHub App (actions/create-github-app-token) —
-# see secrets/ducktape-automation.README.md. Required because
+# see secrets/ducktape_automation.README.md. Required because
 # github-actions can't be a ruleset bypass actor on personal-account
 # repos, so once main is gated this workflow's direct push will fail
 # until it pushes as the App.

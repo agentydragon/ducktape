@@ -39,7 +39,7 @@ commits.
 
 The `ducktape-automation` GitHub App is registered on the
 `agentydragon` personal account; public identifiers and permissions are
-documented at <secrets/ducktape-automation.README.md>. The private key is
+documented at <secrets/ducktape_automation.README.md>. The private key is
 SOPS-encrypted at <secrets/ducktape-automation.2026-05-03.private-key.sops.pem>.
 
 ## Pending: Flux App migration (separate PR)
