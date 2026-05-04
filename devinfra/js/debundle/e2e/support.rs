@@ -26,7 +26,7 @@ const NODE_RLOCATION: &str = "nodejs_linux_amd64/bin/node";
 static MODULE_EXPORT_PROBE_COUNTER: AtomicUsize = AtomicUsize::new(0);
 static GENERATED_MODULE_SCRIPT_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-/// One member of a `define_logical_module` request.
+/// One member of a [`LogicalModuleEntry`].
 ///
 /// `name` is the exported name in the materialized module; `binding` is the
 /// original top-level binding to extract. When `binding` is `None`, the
@@ -54,46 +54,74 @@ impl Member {
     }
 }
 
-pub fn logical_module(path: &str, members: &[Member]) -> Value {
+/// One entry of the spec's `logicalModules[chunkId]` map: the target path
+/// (the map key) plus its body (id + members).
+pub type LogicalModuleEntry = (String, Value);
+
+pub fn logical_module(path: &str, members: &[Member]) -> LogicalModuleEntry {
     let id = format!("logical__{}", path.replace('/', "_"));
     let member_values: Vec<Value> = members
         .iter()
         .map(|m| {
             let binding = m.binding.unwrap_or(m.name);
             json!({
-                "id": format!("member__{}", m.name),
+                "name": m.name,
+                "selector": { "binding": { "name": binding } },
+            })
+        })
+        .collect();
+    (
+        path.to_string(),
+        json!({ "id": id, "members": member_values }),
+    )
+}
+
+pub struct FixtureOpts<'a> {
+    pub source: &'a str,
+    pub logical_modules: Vec<LogicalModuleEntry>,
+    /// Replaces the default residual entry for this chunk. When set,
+    /// `include_residual` is ignored. Use the [`residual_module`] helper
+    /// to build typical bodies.
+    pub residual: Option<Value>,
+    pub chunk_id: &'a str,
+    /// When `residual` is `None` and this is `true`, the harness emits an
+    /// empty residual module (`target: "residual/unhandled"`) for this
+    /// chunk so unclaimed bindings still flow somewhere.
+    pub include_residual: bool,
+    pub extra_files: &'a [(&'a str, &'a str)],
+}
+
+impl<'a> FixtureOpts<'a> {
+    pub fn new(source: &'a str, logical_modules: Vec<LogicalModuleEntry>) -> Self {
+        Self {
+            source,
+            logical_modules,
+            residual: None,
+            chunk_id: "static/app",
+            include_residual: true,
+            extra_files: &[],
+        }
+    }
+}
+
+/// Build a `residualModules[chunkId]` body. `members` may contain rename
+/// directives that apply to bindings staying in the residual catch-all.
+pub fn residual_module(target: &str, members: &[Member]) -> Value {
+    let member_values: Vec<Value> = members
+        .iter()
+        .map(|m| {
+            let binding = m.binding.unwrap_or(m.name);
+            json!({
                 "name": m.name,
                 "selector": { "binding": { "name": binding } },
             })
         })
         .collect();
     json!({
-        "id": id,
-        "operation": "define_logical_module",
-        "selector": { "chunkId": "static/app" },
-        "target": { "path": path },
+        "id": "logical__residual_unhandled",
+        "target": target,
         "members": member_values,
     })
-}
-
-pub struct FixtureOpts<'a> {
-    pub source: &'a str,
-    pub operations: Vec<Value>,
-    pub chunk_id: &'a str,
-    pub include_residual: bool,
-    pub extra_files: &'a [(&'a str, &'a str)],
-}
-
-impl<'a> FixtureOpts<'a> {
-    pub fn new(source: &'a str, operations: Vec<Value>) -> Self {
-        Self {
-            source,
-            operations,
-            chunk_id: "static/app",
-            include_residual: true,
-            extra_files: &[],
-        }
-    }
 }
 
 pub struct Fixture {
@@ -109,14 +137,7 @@ pub struct Fixture {
 pub fn run_logical_modules_e2e_fixture(opts: FixtureOpts<'_>) -> Fixture {
     let setup = setup_fixture(&opts);
     let spec_path = setup.out_root.join("transform_spec.jsonc");
-    let spec = build_spec(
-        opts.chunk_id,
-        opts.include_residual,
-        &setup.js_list_path,
-        &opts.operations,
-        &setup.out_root,
-        &setup.snapshot_root,
-    );
+    let spec = build_spec(&opts, &setup);
     write_json_file(&spec_path, &spec);
 
     let result = spawn_transform(&spec_path);
@@ -199,14 +220,7 @@ pub fn expect_logical_modules_e2e_rejection_containing_all(
 fn run_and_assert_rejected(opts: &FixtureOpts<'_>) -> String {
     let setup = setup_fixture(opts);
     let spec_path = setup.out_root.join("transform_spec.jsonc");
-    let spec = build_spec(
-        opts.chunk_id,
-        opts.include_residual,
-        &setup.js_list_path,
-        &opts.operations,
-        &setup.out_root,
-        &setup.snapshot_root,
-    );
+    let spec = build_spec(opts, &setup);
     write_json_file(&spec_path, &spec);
 
     let result = spawn_transform(&spec_path);
@@ -382,34 +396,40 @@ fn setup_fixture(opts: &FixtureOpts<'_>) -> FixtureSetup {
     }
 }
 
-fn build_spec(
-    chunk_id: &str,
-    include_residual: bool,
-    js_list_path: &Path,
-    operations: &[Value],
-    out_root: &Path,
-    snapshot_root: &Path,
-) -> Value {
-    let mut all_operations: Vec<Value> = operations.to_vec();
-    if include_residual {
-        all_operations.push(json!({
-            "id": "logical__residual_unhandled",
-            "operation": "define_residual_module",
-            "selector": { "chunkId": chunk_id },
-            "target": { "path": "residual/unhandled" },
-        }));
-    }
+fn build_spec(opts: &FixtureOpts<'_>, setup: &FixtureSetup) -> Value {
+    let chunk_id = opts.chunk_id;
+    let logical_modules_for_chunk: serde_json::Map<String, Value> = opts
+        .logical_modules
+        .iter()
+        .map(|(path, body)| (path.clone(), body.clone()))
+        .collect();
+    let logical_modules = if logical_modules_for_chunk.is_empty() {
+        json!({})
+    } else {
+        json!({ chunk_id: Value::Object(logical_modules_for_chunk) })
+    };
+    let residual_modules = match (&opts.residual, opts.include_residual) {
+        (Some(residual), _) => json!({ chunk_id: residual }),
+        (None, true) => json!({
+            chunk_id: {
+                "id": "logical__residual_unhandled",
+                "target": "residual/unhandled",
+            }
+        }),
+        (None, false) => json!({}),
+    };
     json!({
         "kind": "js.ast_transform_spec",
-        "inputs": { "inputRoot": snapshot_root, "jsListPath": js_list_path },
-        "operations": all_operations,
+        "inputs": { "inputRoot": setup.snapshot_root, "jsListPath": setup.js_list_path },
+        "logicalModules": logical_modules,
+        "residualModules": residual_modules,
         "pipeline": [
             {
                 "id": "logical",
                 "operation": "materialize_logical_modules",
                 "args": { "chunkIds": [chunk_id], "pruneOtherChunks": false, "targetDir": "modules" },
             },
-            { "id": "write", "operation": "write_js_tree", "args": { "force": true, "outDir": out_root } },
+            { "id": "write", "operation": "write_js_tree", "args": { "force": true, "outDir": setup.out_root } },
         ],
     })
 }

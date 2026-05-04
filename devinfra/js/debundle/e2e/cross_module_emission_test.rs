@@ -114,28 +114,20 @@ console.log(aH);
 export { aH };
 "#,
         vec![
-            json!({
-                "id": "logical__mod_a",
-                "operation": "define_logical_module",
-                "selector": { "chunkId": "static/app" },
-                "target": { "path": "mod_a" },
-                "members": [{
-                    "id": "member__readableA",
-                    "name": "readableA",
-                    "selector": { "binding": { "name": "aH" } },
-                }],
-            }),
-            json!({
-                "id": "logical__mod_b",
-                "operation": "define_logical_module",
-                "selector": { "chunkId": "static/app" },
-                "target": { "path": "mod_b" },
-                "members": [{
-                    "id": "member__plainAh",
-                    "name": "plainAh",
-                    "selector": { "binding": { "name": "aH" } },
-                }],
-            }),
+            (
+                "mod_a".to_string(),
+                json!({
+                    "id": "logical__mod_a",
+                    "members": [{ "name": "readableA", "selector": { "binding": { "name": "aH" } } }],
+                }),
+            ),
+            (
+                "mod_b".to_string(),
+                json!({
+                    "id": "logical__mod_b",
+                    "members": [{ "name": "plainAh", "selector": { "binding": { "name": "aH" } } }],
+                }),
+            ),
         ],
     );
     let fixture = run_logical_modules_e2e_fixture(opts);
@@ -170,17 +162,13 @@ fn keeps_unrelated_consumer_import_locals_unchanged() {
 console.log(aH);
 export { aH };
 "#,
-        vec![json!({
-            "id": "logical__mod_a",
-            "operation": "define_logical_module",
-            "selector": { "chunkId": "static/app" },
-            "target": { "path": "mod_a" },
-            "members": [{
-                "id": "member__readableA",
-                "name": "readableA",
-                "selector": { "binding": { "name": "aH" } },
-            }],
-        })],
+        vec![(
+            "mod_a".to_string(),
+            json!({
+                "id": "logical__mod_a",
+                "members": [{ "name": "readableA", "selector": { "binding": { "name": "aH" } } }],
+            }),
+        )],
     );
     let fixture = run_logical_modules_e2e_fixture(opts);
     let entry = fs::read_to_string(&fixture.entry_path).expect("read entry.js");
@@ -249,19 +237,18 @@ fn import_specifier_member_emits_reimport_in_destination() {
 console.log(a);
 export { a };
 "#,
-        vec![json!({
-            "id": "logical__mod_x",
-            "operation": "define_logical_module",
-            "selector": { "chunkId": "static/app" },
-            "target": { "path": "mod_x" },
-            "members": [{
-                "id": "m_a",
-                "name": "Readable",
-                "selector": {
-                    "binding": { "name": "a", "kind": "ImportSpecifier" },
-                },
-            }],
-        })],
+        vec![(
+            "mod_x".to_string(),
+            json!({
+                "id": "logical__mod_x",
+                "members": [{
+                    "name": "Readable",
+                    "selector": {
+                        "binding": { "name": "a", "kind": "ImportSpecifier" },
+                    },
+                }],
+            }),
+        )],
     );
     opts.extra_files = &[(
         "static/vendor.js",
@@ -296,28 +283,26 @@ console.log(a());
 export { a };
 "#,
         vec![
-            json!({
-                "id": "logical__mod_jsx_runtime",
-                "operation": "define_logical_module",
-                "selector": { "chunkId": "static/app" },
-                "target": { "path": "mod_jsx_runtime" },
-                "members": [{
-                    "id": "m_jsx_runtime",
-                    "name": "jsxRuntime",
-                    "selector": { "binding": { "name": "a", "kind": "ImportSpecifier" } },
-                }],
-            }),
-            json!({
-                "id": "logical__mod_dunder_jsx",
-                "operation": "define_logical_module",
-                "selector": { "chunkId": "static/app" },
-                "target": { "path": "mod_dunder_jsx" },
-                "members": [{
-                    "id": "m_dunder_jsx",
-                    "name": "__jsx",
-                    "selector": { "binding": { "name": "a", "kind": "ImportSpecifier" } },
-                }],
-            }),
+            (
+                "mod_jsx_runtime".to_string(),
+                json!({
+                    "id": "logical__mod_jsx_runtime",
+                    "members": [{
+                        "name": "jsxRuntime",
+                        "selector": { "binding": { "name": "a", "kind": "ImportSpecifier" } },
+                    }],
+                }),
+            ),
+            (
+                "mod_dunder_jsx".to_string(),
+                json!({
+                    "id": "logical__mod_dunder_jsx",
+                    "members": [{
+                        "name": "__jsx",
+                        "selector": { "binding": { "name": "a", "kind": "ImportSpecifier" } },
+                    }],
+                }),
+            ),
         ],
     );
     opts.extra_files = &[("static/vendor.js", "export const j = () => 42;\n")];
@@ -353,17 +338,13 @@ function bridge() {
 console.log(bridge()());
 export { bridge };
 "#,
-        vec![json!({
-            "id": "logical__mod_x",
-            "operation": "define_logical_module",
-            "selector": { "chunkId": "static/app" },
-            "target": { "path": "mod_x" },
-            "members": [{
-                "id": "m_bridge",
-                "name": "bridge",
-                "selector": { "binding": { "name": "bridge" } },
-            }],
-        })],
+        vec![(
+            "mod_x".to_string(),
+            json!({
+                "id": "logical__mod_x",
+                "members": [{ "name": "bridge", "selector": { "binding": { "name": "bridge" } } }],
+            }),
+        )],
     );
     opts.extra_files = &[(
         "static/vendor.js",
@@ -407,28 +388,23 @@ console.log(bridge());
 export { bridge };
 "#,
         vec![
-            json!({
-                "id": "logical__mod_a",
-                "operation": "define_logical_module",
-                "selector": { "chunkId": "static/app" },
-                "target": { "path": "mod_a" },
-                "members": [{
-                    "id": "m_re",
-                    "name": "Re",
-                    "selector": { "binding": { "name": "a", "kind": "ImportSpecifier" } },
-                }],
-            }),
-            json!({
-                "id": "logical__mod_b",
-                "operation": "define_logical_module",
-                "selector": { "chunkId": "static/app" },
-                "target": { "path": "mod_b" },
-                "members": [{
-                    "id": "m_bridge",
-                    "name": "bridge",
-                    "selector": { "binding": { "name": "bridge" } },
-                }],
-            }),
+            (
+                "mod_a".to_string(),
+                json!({
+                    "id": "logical__mod_a",
+                    "members": [{
+                        "name": "Re",
+                        "selector": { "binding": { "name": "a", "kind": "ImportSpecifier" } },
+                    }],
+                }),
+            ),
+            (
+                "mod_b".to_string(),
+                json!({
+                    "id": "logical__mod_b",
+                    "members": [{ "name": "bridge", "selector": { "binding": { "name": "bridge" } } }],
+                }),
+            ),
         ],
     );
     opts.extra_files = &[("static/app/vendor.js", "export const x = 42;\n")];
@@ -474,28 +450,26 @@ console.log(composed);
 export { composed };
 "#,
         vec![
-            json!({
-                "id": "logical__mod_x",
-                "operation": "define_logical_module",
-                "selector": { "chunkId": "static/app" },
-                "target": { "path": "mod_x" },
-                "members": [{
-                    "id": "m_composed",
-                    "name": "Composed",
-                    "selector": { "binding": { "name": "composed" } },
-                }],
-            }),
-            json!({
-                "id": "logical__mod_dep",
-                "operation": "define_logical_module",
-                "selector": { "chunkId": "static/app" },
-                "target": { "path": "mod_dep" },
-                "members": [{
-                    "id": "m_dep",
-                    "name": "Dep",
-                    "selector": { "binding": { "name": "dep", "kind": "ImportSpecifier" } },
-                }],
-            }),
+            (
+                "mod_x".to_string(),
+                json!({
+                    "id": "logical__mod_x",
+                    "members": [{
+                        "name": "Composed",
+                        "selector": { "binding": { "name": "composed" } },
+                    }],
+                }),
+            ),
+            (
+                "mod_dep".to_string(),
+                json!({
+                    "id": "logical__mod_dep",
+                    "members": [{
+                        "name": "Dep",
+                        "selector": { "binding": { "name": "dep", "kind": "ImportSpecifier" } },
+                    }],
+                }),
+            ),
         ],
     );
     opts.extra_files = &[("static/app/vendor.js", "export const dep = 41;\n")];

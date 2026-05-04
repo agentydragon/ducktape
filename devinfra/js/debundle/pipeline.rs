@@ -13,6 +13,7 @@ use emit_harness::{EmitBrowserHarnessOptions, emit_browser_harness};
 use logical_modules::{MaterializeLogicalModulesOptions, materialize_logical_modules};
 use normalize::normalize_js_chunks;
 use rewrite_specifiers::rewrite_chunk_entry_specifiers;
+use spec::TransformSpec;
 use vendor::{
     SwapVendorOptions, apply_vendor_annotations, rename_vendor_exports, swap_vendor_chunks,
 };
@@ -99,28 +100,6 @@ pub struct TransformStepSummary {
     pub operation: String,
     pub duration_ms: Option<f64>,
     pub manifest_kind: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct TransformSpec {
-    kind: Option<String>,
-    inputs: Option<LoadJsChunksArgs>,
-    pipeline: Option<Vec<TransformStage>>,
-    operations: Option<Vec<serde_json::Value>>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct TransformStage {
-    id: Option<String>,
-    operation: Option<String>,
-    args: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LoadJsChunksArgs {
-    input_root: PathBuf,
-    js_list_path: PathBuf,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -211,29 +190,22 @@ pub fn render_transform_summary(summary: &TransformRunSummary) -> String {
 pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
     let spec = load_transform_spec(&cli.spec_path)?;
     validate_transform_spec(&spec)?;
-    let inputs = spec
-        .inputs
-        .expect("validate_transform_spec ensures inputs is present");
-    let pipeline = spec.pipeline.unwrap_or_default();
-    let operations = spec.operations.unwrap_or_default();
     let started = Instant::now();
     let mut state = TransformState::default();
-    let (artifact, _load_manifest) = load_js_chunks(&inputs.input_root, &inputs.js_list_path)?;
+    let (artifact, _load_manifest) =
+        load_js_chunks(&spec.inputs.input_root, &spec.inputs.js_list_path)?;
     state.artifact = artifact;
     compute_js_asts(&mut state.artifact, true)?;
     let (artifact, _normalize_manifest) = normalize_js_chunks(std::mem::take(&mut state.artifact))?;
     state.artifact = artifact;
     let mut steps = Vec::new();
 
-    for stage in pipeline {
-        let id = stage.id.unwrap_or_default();
-        let operation = stage.operation.unwrap_or_default();
+    for stage in &spec.pipeline {
         let stage_started = Instant::now();
-        let manifest_kind =
-            run_transform_stage(&mut state, &operation, stage.args, &operations, cli)?;
+        let manifest_kind = run_transform_stage(&mut state, stage, &spec, cli)?;
         steps.push(TransformStepSummary {
-            id,
-            operation,
+            id: stage.id.clone(),
+            operation: stage.operation.clone(),
             duration_ms: Some(elapsed_ms(stage_started)),
             manifest_kind,
         });
@@ -248,22 +220,23 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
 
 fn run_transform_stage(
     state: &mut TransformState,
-    operation: &str,
-    args: Option<serde_json::Value>,
-    operations: &[serde_json::Value],
+    stage: &spec::TransformStage,
+    spec: &TransformSpec,
     cli: &TransformCli,
 ) -> Result<Option<String>> {
+    let args = stage.args.clone();
+    let operation = stage.operation.as_str();
     match operation {
         "rewrite_chunk_entry_specifiers" => {
             let manifest = rewrite_chunk_entry_specifiers(&mut state.artifact)?;
             Ok(Some(manifest.kind.to_string()))
         }
         "apply_vendor_annotations" => {
-            let manifest = apply_vendor_annotations(&mut state.artifact, operations)?;
+            let manifest = apply_vendor_annotations(&state.artifact, &spec.vendor)?;
             Ok(Some(manifest.kind.to_string()))
         }
         "rename_vendor_exports" => {
-            let manifest = rename_vendor_exports(&mut state.artifact, operations)?;
+            let manifest = rename_vendor_exports(&mut state.artifact, &spec.vendor)?;
             Ok(Some(manifest.kind.to_string()))
         }
         "swap_vendor_chunks" => {
@@ -277,7 +250,7 @@ fn run_transform_stage(
                 });
             let manifest = swap_vendor_chunks(
                 &mut state.artifact,
-                operations,
+                &spec.vendor,
                 SwapVendorOptions {
                     package_roots: &cli.package_roots,
                     packages_root: &cli.packages_root,
@@ -293,7 +266,8 @@ fn run_transform_stage(
                 serde_json::from_value(args.context("materialize_logical_modules requires args")?)?;
             let manifest = materialize_logical_modules(
                 &mut state.artifact,
-                operations,
+                &spec.logical_modules,
+                &spec.residual_modules,
                 MaterializeLogicalModulesOptions {
                     chunk_ids: args.chunk_ids,
                     file: args.file,
@@ -340,39 +314,26 @@ fn load_transform_spec(spec_path: &Path) -> Result<TransformSpec> {
 }
 
 fn validate_transform_spec(spec: &TransformSpec) -> Result<()> {
-    let kind = spec.kind.as_deref().unwrap_or("<missing>");
-    if kind != "js.ast_transform_spec" {
-        bail!("Unsupported transform spec kind: {kind}");
+    if spec.kind != "js.ast_transform_spec" {
+        bail!("Unsupported transform spec kind: {}", spec.kind);
     }
-    let inputs = spec
-        .inputs
-        .as_ref()
-        .context("Transform spec must contain an inputs object with inputRoot and jsListPath")?;
-    if inputs.input_root.as_os_str().is_empty() {
+    if spec.inputs.input_root.as_os_str().is_empty() {
         bail!("Transform spec inputs.inputRoot must not be empty");
     }
-    if inputs.js_list_path.as_os_str().is_empty() {
+    if spec.inputs.js_list_path.as_os_str().is_empty() {
         bail!("Transform spec inputs.jsListPath must not be empty");
     }
-    let pipeline = spec
-        .pipeline
-        .as_ref()
-        .context("Transform spec must contain a pipeline array")?;
     let mut seen_stage_ids = HashSet::new();
-    for stage in pipeline {
-        let id = stage
-            .id
-            .as_deref()
-            .context("Pipeline stage is missing id")?;
-        let operation = stage
-            .operation
-            .as_deref()
-            .with_context(|| format!("Pipeline stage {id} is missing operation"))?;
-        if id == operation {
-            bail!("Pipeline stage {id} must differ from operation {operation}");
+    for stage in &spec.pipeline {
+        if stage.id == stage.operation {
+            bail!(
+                "Pipeline stage {} must differ from operation {}",
+                stage.id,
+                stage.operation,
+            );
         }
-        if !seen_stage_ids.insert(id.to_string()) {
-            bail!("Duplicate pipeline stage id: {id}");
+        if !seen_stage_ids.insert(stage.id.clone()) {
+            bail!("Duplicate pipeline stage id: {}", stage.id);
         }
     }
     Ok(())

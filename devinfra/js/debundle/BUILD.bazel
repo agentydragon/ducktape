@@ -68,6 +68,17 @@ rust_library(
 )
 
 rust_library(
+    name = "spec",
+    srcs = ["spec.rs"],
+    crate_root = "spec.rs",
+    edition = "2024",
+    deps = [
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_library(
     name = "vendor",
     srcs = ["vendor.rs"],
     crate_root = "vendor.rs",
@@ -75,7 +86,9 @@ rust_library(
     deps = [
         ":artifact",
         ":js_ast",
+        ":spec",
         "@crates//:anyhow",
+        "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
@@ -131,6 +144,7 @@ rust_library(
         ":artifact",
         ":js_ast",
         ":schedule_validator",
+        ":spec",
         ":write_tree",
         "@crates//:anyhow",
         "@crates//:serde",
@@ -202,6 +216,7 @@ rust_library(
         ":normalize",
         ":rewrite_specifiers",
         ":scrambled_id_frequencies",
+        ":spec",
         ":vendor",
         ":write_tree",
         "@crates//:anyhow",

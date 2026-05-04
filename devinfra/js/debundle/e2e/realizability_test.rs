@@ -25,26 +25,26 @@ console.log(B.ref, D.ref);
 export { A, B, C, D };
 "#,
         vec![
-            json!({
-                "id": "logical__mod_x",
-                "operation": "define_logical_module",
-                "selector": { "chunkId": "static/app" },
-                "target": { "path": "mod_x" },
-                "members": [
-                    { "id": "m_a", "name": "A", "selector": { "binding": { "name": "A" } } },
-                    { "id": "m_d", "name": "D", "selector": { "binding": { "name": "D" } } },
-                ],
-            }),
-            json!({
-                "id": "logical__mod_y",
-                "operation": "define_logical_module",
-                "selector": { "chunkId": "static/app" },
-                "target": { "path": "mod_y" },
-                "members": [
-                    { "id": "m_b", "name": "B", "selector": { "binding": { "name": "B" } } },
-                    { "id": "m_c", "name": "C", "selector": { "binding": { "name": "C" } } },
-                ],
-            }),
+            (
+                "mod_x".to_string(),
+                json!({
+                    "id": "logical__mod_x",
+                    "members": [
+                        { "name": "A", "selector": { "binding": { "name": "A" } } },
+                        { "name": "D", "selector": { "binding": { "name": "D" } } },
+                    ],
+                }),
+            ),
+            (
+                "mod_y".to_string(),
+                json!({
+                    "id": "logical__mod_y",
+                    "members": [
+                        { "name": "B", "selector": { "binding": { "name": "B" } } },
+                        { "name": "C", "selector": { "binding": { "name": "C" } } },
+                    ],
+                }),
+            ),
         ],
     );
     expect_logical_modules_e2e_rejection(opts, &["cycle", "mod_x", "mod_y"]);
@@ -125,27 +125,25 @@ console.log(x1.id, y.id, x2[y.id]);
 export { x1, y, x2 };
 "#,
         vec![
-            json!({
-                "id": "logical__mod_a",
-                "operation": "define_logical_module",
-                "selector": { "chunkId": "static/app" },
-                "target": { "path": "mod_a" },
-                "members": [
-                    { "id": "m_x1", "name": "x1", "selector": { "binding": { "name": "x1" } } },
-                    { "id": "m_x2", "name": "x2", "selector": { "binding": { "name": "x2" } } },
-                ],
-            }),
-            json!({
-                "id": "logical__mod_b",
-                "operation": "define_logical_module",
-                "selector": { "chunkId": "static/app" },
-                "target": { "path": "mod_b" },
-                "members": [{
-                    "id": "m_y",
-                    "name": "y",
-                    "selector": { "binding": { "name": "y" } },
-                }],
-            }),
+            (
+                "mod_a".to_string(),
+                json!({
+                    "id": "logical__mod_a",
+                    "members": [
+                        { "name": "x1", "selector": { "binding": { "name": "x1" } } },
+                        { "name": "x2", "selector": { "binding": { "name": "x2" } } },
+                    ],
+                }),
+            ),
+            (
+                "mod_b".to_string(),
+                json!({
+                    "id": "logical__mod_b",
+                    "members": [
+                        { "name": "y", "selector": { "binding": { "name": "y" } } },
+                    ],
+                }),
+            ),
         ],
     ));
     assert_entry_output(&fixture, "x1 k v\n");

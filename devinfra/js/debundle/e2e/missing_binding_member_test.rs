@@ -19,24 +19,16 @@ fn missing_binding_member_does_not_leak_undefined_export() {
 console.log(a());
 export { a };
 "#,
-        vec![json!({
-            "id": "logical__mod_x",
-            "operation": "define_logical_module",
-            "selector": { "chunkId": "static/app" },
-            "target": { "path": "mod_x" },
-            "members": [
-                {
-                    "id": "m_a",
-                    "name": "Foo",
-                    "selector": { "binding": { "name": "a" } },
-                },
-                {
-                    "id": "m_missing",
-                    "name": "Bar",
-                    "selector": { "binding": { "name": "b" } },
-                },
-            ],
-        })],
+        vec![(
+            "mod_x".to_string(),
+            json!({
+                "id": "logical__mod_x",
+                "members": [
+                    { "name": "Foo", "selector": { "binding": { "name": "a" } } },
+                    { "name": "Bar", "selector": { "binding": { "name": "b" } } },
+                ],
+            }),
+        )],
     );
     let fixture = run_logical_modules_e2e_fixture(opts);
     assert_module_exports(

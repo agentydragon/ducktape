@@ -388,6 +388,23 @@ The spec configures them via a top-level `inputs: { inputRoot, jsListPath }`
 object. Listing any of these three operations as a pipeline stage is a hard
 error.
 
+## Spec-level declarative sections
+
+The spec carries three declarative top-level maps. There is no `operations[]`
+array; pipeline stages read these maps directly via typed serde structs in
+<spec.rs>.
+
+- `vendor` — keyed by chunk path (`"static/lib.js"` → `VendorMark`). The
+  `level` discriminator selects between `suppress` / `boundary-rename` /
+  `swap`; only `swap` requires `package`/`version`/`subpath` (parse-time
+  guarantee via the `VendorLevel::Swap` enum variant). Map-key uniqueness
+  makes "two entries target the same chunk path" unrepresentable.
+- `logicalModules` — keyed by chunk id, then target path (`"static/app"` →
+  `"foo/bar/baz.js"` → `LogicalModule`). Two-level nesting makes
+  `(chunkId, targetPath)` uniqueness a parser property.
+- `residualModules` — keyed by chunk id (`"static/app"` → `ResidualModule`).
+  The map shape encodes the "at most one residual per chunk" invariant.
+
 ## Materialize logical-modules `targetDir`
 
 `materialize_logical_modules` accepts an optional `targetDir`. Absent or

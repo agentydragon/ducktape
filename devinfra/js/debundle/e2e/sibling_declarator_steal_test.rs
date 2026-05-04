@@ -24,28 +24,20 @@ console.log(a, b);
 export { a, b, c };
 "#,
         vec![
-            json!({
-                "id": "logical__mod_x",
-                "operation": "define_logical_module",
-                "selector": { "chunkId": "static/app" },
-                "target": { "path": "mod_x" },
-                "members": [{
-                    "id": "m_a",
-                    "name": "readableA",
-                    "selector": { "binding": { "name": "a" } },
-                }],
-            }),
-            json!({
-                "id": "logical__mod_y",
-                "operation": "define_logical_module",
-                "selector": { "chunkId": "static/app" },
-                "target": { "path": "mod_y" },
-                "members": [{
-                    "id": "m_c",
-                    "name": "readableC",
-                    "selector": { "binding": { "name": "c" } },
-                }],
-            }),
+            (
+                "mod_x".to_string(),
+                json!({
+                    "id": "logical__mod_x",
+                    "members": [{ "name": "readableA", "selector": { "binding": { "name": "a" } } }],
+                }),
+            ),
+            (
+                "mod_y".to_string(),
+                json!({
+                    "id": "logical__mod_y",
+                    "members": [{ "name": "readableC", "selector": { "binding": { "name": "c" } } }],
+                }),
+            ),
         ],
     );
     let fixture = run_logical_modules_e2e_fixture(opts);

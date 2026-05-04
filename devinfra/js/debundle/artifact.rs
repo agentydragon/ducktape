@@ -15,7 +15,6 @@ pub struct JsPipelineArtifact {
     pub chunks: BTreeMap<String, JsChunk>,
     pub root_manifest: Option<ArtifactManifest>,
     pub chunk_manifests: BTreeMap<String, ChunkManifest>,
-    pub vendor_annotations: BTreeMap<String, serde_json::Value>,
 }
 
 pub struct JsChunk {

@@ -60,9 +60,9 @@ spec runs. Concretely:
   geometry helper, a state slice). Goal: prove the materialiser
   recovers approximately the right symbols/files from a real
   scrambled bundle.
-- A small set of `define_logical_module` rename operations on
-  identifiers visible in the compiled output. Goal: exercise the
-  rename pipeline at realistic aggressiveness.
+- A small set of `logicalModules` rename entries on identifiers
+  visible in the compiled output. Goal: exercise the rename pipeline
+  at realistic aggressiveness.
 - `rewrite_chunk_entry_specifiers` + `emit_browser_harness` so the
   output is a runnable app the live proxy can serve.
 
@@ -108,7 +108,7 @@ public-CI signal and the public-bug-report leverage.
 
 ## Propagate readable rename across consumers
 
-When `define_logical_module` renames a scrambled binding `<scrambled>`
+When a `logicalModules` entry renames a scrambled binding `<scrambled>`
 to readable `<readable>`, the consumer-side import is currently
 emitted as `import { <readable> as <scrambled> } from "..."` and every
 reference in the consumer body still spells the original scrambled

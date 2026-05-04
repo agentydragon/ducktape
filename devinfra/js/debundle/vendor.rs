@@ -3,7 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use serde_json::{Map, Value, json};
+use serde::Serialize;
+use serde_json::Value;
 use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
@@ -13,6 +14,7 @@ use artifact::{
     resolve_artifact_import_reference, resolve_artifact_source_import_reference, split_posix_path,
 };
 use js_ast::{ParsedJsModule, emit_js_module, parse_js_module, str_value};
+use spec::{SwapMark, VendorLevel, VendorMark, WrapperShape};
 
 // These manifests are returned by the vendor stages but the pipeline
 // orchestrator only reads `kind` for stage logging. They are not
@@ -22,14 +24,33 @@ use js_ast::{ParsedJsModule, emit_js_module, parse_js_module, str_value};
 pub struct VendorAnnotationsManifest {
     pub kind: &'static str,
     pub counts: VendorAnnotationCounts,
-    pub annotations: Vec<Value>,
+    pub annotations: Vec<VendorAnnotationSummary>,
 }
 
 #[derive(Debug, Clone)]
 pub struct VendorAnnotationCounts {
     pub annotations: usize,
-    pub considered: usize,
-    pub applied: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VendorAnnotationSummary {
+    pub id: String,
+    pub chunk_path: String,
+    pub chunk_id: String,
+    pub identity: String,
+    pub level: String,
+    pub role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upstream_family: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subpath: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -64,8 +85,23 @@ pub struct RenameVendorExportsCaller {
 #[derive(Debug, Clone)]
 pub struct VendorResolutionManifest {
     pub kind: &'static str,
-    pub resolutions: BTreeMap<String, Value>,
+    pub resolutions: BTreeMap<String, VendorResolution>,
     pub counts: VendorResolutionCounts,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VendorResolution {
+    pub chunk_id: String,
+    pub chunk_path: String,
+    pub entry_file: String,
+    pub package: String,
+    pub version: String,
+    pub subpath: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wrapper_shape: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generated_wrapper_path: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -83,107 +119,81 @@ pub struct SwapVendorOptions<'a> {
 }
 
 pub fn apply_vendor_annotations(
-    artifact: &mut JsPipelineArtifact,
-    operations: &[Value],
+    artifact: &JsPipelineArtifact,
+    vendor: &BTreeMap<String, VendorMark>,
 ) -> Result<VendorAnnotationsManifest> {
-    let ops = mark_vendor_ops(operations)
-        .into_iter()
-        .filter(|op| value_str(op, "operation") == Some("mark_vendor"))
-        .collect::<Vec<_>>();
-    let mut seen_chunk_paths = BTreeMap::<String, String>::new();
-    artifact.vendor_annotations.clear();
-    let mut summaries = Vec::new();
-
-    for op in &ops {
-        validate_mark_vendor_op(op)?;
-        let op_id = required_str(op, "id")?;
-        let chunk_path = required_str(op, "chunkPath")?;
-        let chunk_id = chunk_id_from_chunk_path(chunk_path, op_id, "mark_vendor")?;
+    let mut summaries = Vec::with_capacity(vendor.len());
+    for (chunk_path, mark) in vendor {
+        validate_evidence(mark)?;
+        let chunk_id = chunk_id_from_chunk_path(chunk_path, &mark.id, "mark_vendor")?;
         if get_chunk_entry_path(artifact, &chunk_id).is_none() {
             bail!(
-                "mark_vendor operation {op_id} targets missing chunk: chunkPath={chunk_path} (chunkId={chunk_id})"
+                "mark_vendor operation {} targets missing chunk: chunkPath={chunk_path} (chunkId={chunk_id})",
+                mark.id,
             );
         }
-        if let Some(prior_id) = seen_chunk_paths.insert(chunk_path.to_string(), op_id.to_string()) {
-            bail!(
-                "mark_vendor operations {prior_id} and {op_id} both target chunkPath {chunk_path}"
-            );
-        }
-
-        let mut annotation = Map::new();
-        insert_required(&mut annotation, op, "id");
-        insert_required(&mut annotation, op, "level");
-        insert_required(&mut annotation, op, "chunkPath");
-        annotation.insert("chunkId".to_string(), Value::String(chunk_id.clone()));
-        insert_required(&mut annotation, op, "identity");
-        insert_required(&mut annotation, op, "evidence");
-        for key in [
-            "upstreamFamily",
-            "version",
-            "confidence",
-            "notes",
-            "package",
-            "subpath",
-            "exportShape",
-            "fingerprint",
-        ] {
-            insert_optional(&mut annotation, op, key);
-        }
-        annotation.insert(
-            "role".to_string(),
-            Value::String(value_str(op, "role").unwrap_or("module").to_string()),
-        );
-        artifact
-            .vendor_annotations
-            .insert(chunk_id.clone(), Value::Object(annotation.clone()));
-
-        let mut summary = Map::new();
-        for key in ["id", "chunkPath", "identity", "level"] {
-            insert_required(&mut summary, op, key);
-        }
-        summary.insert("chunkId".to_string(), Value::String(chunk_id));
-        for key in [
-            "upstreamFamily",
-            "version",
-            "confidence",
-            "package",
-            "subpath",
-        ] {
-            insert_optional(&mut summary, op, key);
-        }
-        summary.insert(
-            "role".to_string(),
-            Value::String(value_str(op, "role").unwrap_or("module").to_string()),
-        );
-        summaries.push(Value::Object(summary));
+        let (package, version, subpath) = match &mark.level {
+            VendorLevel::Swap(swap) => (
+                Some(swap.package.clone()),
+                Some(swap.version.clone()),
+                Some(swap.subpath.clone()),
+            ),
+            _ => (None, None, None),
+        };
+        summaries.push(VendorAnnotationSummary {
+            id: mark.id.clone(),
+            chunk_path: chunk_path.clone(),
+            chunk_id,
+            identity: mark.identity.clone(),
+            level: mark.level.as_str().to_string(),
+            role: mark.role.as_str().to_string(),
+            upstream_family: mark.upstream_family.clone(),
+            version: version.clone(),
+            confidence: mark.confidence.clone(),
+            package,
+            subpath,
+        });
     }
 
     Ok(VendorAnnotationsManifest {
         kind: "js.vendor_annotations_manifest",
         counts: VendorAnnotationCounts {
-            annotations: artifact.vendor_annotations.len(),
-            considered: operations.len(),
-            applied: ops.len(),
+            annotations: vendor.len(),
         },
         annotations: summaries,
     })
 }
 
+fn validate_evidence(mark: &VendorMark) -> Result<()> {
+    if mark.evidence.is_empty() {
+        bail!(
+            "mark_vendor operation {} requires a non-empty evidence array",
+            mark.id,
+        );
+    }
+    Ok(())
+}
+
 pub fn rename_vendor_exports(
     artifact: &mut JsPipelineArtifact,
-    operations: &[Value],
+    vendor: &BTreeMap<String, VendorMark>,
 ) -> Result<RenameVendorExportsManifest> {
-    let ops = mark_vendor_ops(operations)
-        .into_iter()
-        .filter(|op| matches!(value_str(op, "level"), Some("boundary-rename" | "swap")))
-        .collect::<Vec<_>>();
+    let ops: Vec<(&String, &VendorMark)> = vendor
+        .iter()
+        .filter(|(_, mark)| {
+            matches!(
+                mark.level,
+                VendorLevel::BoundaryRename | VendorLevel::Swap(_)
+            )
+        })
+        .collect();
+    let considered = ops.len();
     let mut total_rewrites = 0usize;
     let mut chunks_with_mapping = 0usize;
     let mut details = Vec::new();
 
-    for op in &ops {
-        let op_id = required_str(op, "id")?;
-        let chunk_path = required_str(op, "chunkPath")?;
+    for (chunk_path, mark) in &ops {
+        let op_id = mark.id.as_str();
         let chunk_id = chunk_id_from_chunk_path(chunk_path, op_id, "renameVendorExports")?;
         let vendor_entry_relative_file = get_chunk_entry_path(artifact, &chunk_id).with_context(|| {
             format!(
@@ -277,7 +287,7 @@ pub fn rename_vendor_exports(
     Ok(RenameVendorExportsManifest {
         kind: "js.rename_vendor_exports_manifest",
         counts: RenameVendorExportsCounts {
-            considered: ops.len(),
+            considered,
             chunks_with_mapping,
             rewrites: total_rewrites,
         },
@@ -287,19 +297,21 @@ pub fn rename_vendor_exports(
 
 pub fn swap_vendor_chunks(
     artifact: &mut JsPipelineArtifact,
-    operations: &[Value],
+    vendor: &BTreeMap<String, VendorMark>,
     options: SwapVendorOptions<'_>,
 ) -> Result<VendorResolutionManifest> {
-    let ops = mark_vendor_ops(operations)
-        .into_iter()
-        .filter(|op| value_str(op, "level") == Some("swap"))
-        .collect::<Vec<_>>();
+    let ops: Vec<(&String, &VendorMark, &SwapMark)> = vendor
+        .iter()
+        .filter_map(|(chunk_path, mark)| match &mark.level {
+            VendorLevel::Swap(swap) => Some((chunk_path, mark, swap)),
+            _ => None,
+        })
+        .collect();
     let import_alignment_index = build_import_alignment_index(artifact)?;
-    let mut resolutions = BTreeMap::<String, Value>::new();
+    let mut resolutions = BTreeMap::<String, VendorResolution>::new();
 
-    for op in &ops {
-        let op_id = required_str(op, "id")?;
-        let chunk_path = required_str(op, "chunkPath")?;
+    for (chunk_path, mark, swap) in &ops {
+        let op_id = mark.id.as_str();
         let chunk_id = chunk_id_from_chunk_path(chunk_path, op_id, "swapVendorChunks")?;
         let entry_relative_file = get_chunk_entry_path(artifact, &chunk_id).with_context(|| {
             format!(
@@ -314,9 +326,9 @@ pub fn swap_vendor_chunks(
             .with_context(|| {
                 format!("swapVendorChunks operation {op_id} vendor chunk {chunk_id} is missing entry AST")
             })?;
-        let package = required_str(op, "package")?;
-        let version = required_str(op, "version")?;
-        let subpath = required_str(op, "subpath")?;
+        let package = swap.package.as_str();
+        let version = swap.version.as_str();
+        let subpath = swap.subpath.as_str();
         let installed =
             read_installed_package_metadata(package, options.package_roots, options.packages_root)
                 .with_context(|| format!("reading metadata for package {package}"))?;
@@ -340,8 +352,8 @@ pub fn swap_vendor_chunks(
         let vendor_exports = collect_exported_names(&entry_ast.module, false);
         let mut generated_wrapper_path = None::<PathBuf>;
 
-        match value_str(op, "wrapperShape") {
-            Some("named-from-default") => {
+        match swap.wrapper_shape {
+            Some(WrapperShape::NamedFromDefault) => {
                 let upstream_ast =
                     parse_js_module(&upstream_path.display().to_string(), &upstream_code)?;
                 let object_keys = collect_default_export_object_keys(&upstream_ast.module, op_id)?;
@@ -367,7 +379,7 @@ pub fn swap_vendor_chunks(
                     &wrapper,
                 )?;
             }
-            Some("named-from-json-default") => {
+            Some(WrapperShape::NamedFromJsonDefault) => {
                 let upstream_json = serde_json::from_str::<Value>(&upstream_code).with_context(|| {
                     format!("swapVendorChunks operation {op_id} named-from-json-default: upstream JSON parse failed")
                 })?;
@@ -397,7 +409,7 @@ pub fn swap_vendor_chunks(
                     &wrapper,
                 )?;
             }
-            Some("named-from-module-default") => {
+            Some(WrapperShape::NamedFromModuleDefault) => {
                 let upstream_ast =
                     parse_js_module(&upstream_path.display().to_string(), &upstream_code)?;
                 let wrapper = generate_named_from_module_default_wrapper(
@@ -412,9 +424,6 @@ pub fn swap_vendor_chunks(
                     &entry_relative_file,
                     &wrapper,
                 )?;
-            }
-            Some(other) => {
-                bail!("swapVendorChunks operation {op_id} has unsupported wrapperShape {other}")
             }
             None => {
                 let upstream_ast =
@@ -450,73 +459,23 @@ pub fn swap_vendor_chunks(
             .chunk_order
             .retain(|candidate| candidate != &chunk_id);
         artifact.chunk_manifests.remove(&chunk_id);
-        let mut swap_entry = Map::new();
-        swap_entry.insert("package".to_string(), Value::String(package.to_string()));
-        swap_entry.insert("version".to_string(), Value::String(version.to_string()));
-        swap_entry.insert("subpath".to_string(), Value::String(subpath.to_string()));
-        swap_entry.insert(
-            "verification".to_string(),
-            Value::String("structural".to_string()),
-        );
-        if let Some(wrapper_shape) = value_str(op, "wrapperShape") {
-            swap_entry.insert(
-                "wrapperShape".to_string(),
-                Value::String(wrapper_shape.to_string()),
-            );
-        }
-        if let Some(path) = &generated_wrapper_path
-            && let Some(manifest_path) = options.output_manifest_path.as_deref()
-        {
-            swap_entry.insert(
-                "generatedWrapperPath".to_string(),
-                Value::String(manifest_relative_path(manifest_path, path)),
-            );
-        }
-        let mut annotation = artifact
-            .vendor_annotations
-            .get(&chunk_id)
-            .and_then(Value::as_object)
-            .cloned()
-            .unwrap_or_default();
-        annotation.insert("chunkId".to_string(), Value::String(chunk_id.clone()));
-        annotation.insert(
-            "chunkPath".to_string(),
-            Value::String(chunk_path.to_string()),
-        );
-        annotation.insert("level".to_string(), Value::String("swap".to_string()));
-        annotation
-            .entry("id".to_string())
-            .or_insert_with(|| Value::String(op_id.to_string()));
-        annotation.insert("swap".to_string(), Value::Object(swap_entry.clone()));
-        artifact
-            .vendor_annotations
-            .insert(chunk_id.clone(), Value::Object(annotation));
-
-        let mut resolution = Map::new();
-        resolution.insert("chunkId".to_string(), Value::String(chunk_id));
-        resolution.insert(
-            "chunkPath".to_string(),
-            Value::String(chunk_path.to_string()),
-        );
-        resolution.insert("entryFile".to_string(), Value::String(entry_relative_file));
-        resolution.insert("package".to_string(), Value::String(package.to_string()));
-        resolution.insert("version".to_string(), Value::String(version.to_string()));
-        resolution.insert("subpath".to_string(), Value::String(subpath.to_string()));
-        if let Some(wrapper_shape) = value_str(op, "wrapperShape") {
-            resolution.insert(
-                "wrapperShape".to_string(),
-                Value::String(wrapper_shape.to_string()),
-            );
-        }
-        if let Some(path) = generated_wrapper_path
-            && let Some(manifest_path) = options.output_manifest_path.as_deref()
-        {
-            resolution.insert(
-                "generatedWrapperPath".to_string(),
-                Value::String(manifest_relative_path(manifest_path, &path)),
-            );
-        }
-        resolutions.insert(chunk_path.to_string(), Value::Object(resolution));
+        let generated_wrapper_path_str = generated_wrapper_path.as_ref().and_then(|path| {
+            options
+                .output_manifest_path
+                .as_deref()
+                .map(|manifest_path| manifest_relative_path(manifest_path, path))
+        });
+        let resolution = VendorResolution {
+            chunk_id: chunk_id.clone(),
+            chunk_path: chunk_path.to_string(),
+            entry_file: entry_relative_file,
+            package: package.to_string(),
+            version: version.to_string(),
+            subpath: subpath.to_string(),
+            wrapper_shape: swap.wrapper_shape.map(|s| s.as_str().to_string()),
+            generated_wrapper_path: generated_wrapper_path_str,
+        };
+        resolutions.insert(chunk_path.to_string(), resolution);
     }
 
     let chunk_count = artifact.list_chunk_ids().len();
@@ -537,12 +496,17 @@ pub fn swap_vendor_chunks(
         if let Some(parent) = output_manifest_path.parent() {
             fs::create_dir_all(parent)?;
         }
+        #[derive(Serialize)]
+        struct OnDiskResolutionManifest<'a> {
+            kind: &'static str,
+            resolutions: &'a BTreeMap<String, VendorResolution>,
+        }
         fs::write(
             output_manifest_path,
-            serde_json::to_string_pretty(&json!({
-                "kind": "js.vendor_resolution_manifest",
-                "resolutions": resolutions,
-            }))? + "\n",
+            serde_json::to_string_pretty(&OnDiskResolutionManifest {
+                kind: "js.vendor_resolution_manifest",
+                resolutions: &resolutions,
+            })? + "\n",
         )?;
     }
 
@@ -552,126 +516,6 @@ pub fn swap_vendor_chunks(
         resolutions,
         counts: VendorResolutionCounts { swapped },
     })
-}
-
-fn mark_vendor_ops(operations: &[Value]) -> Vec<&Value> {
-    operations
-        .iter()
-        .filter(|op| value_str(op, "operation") == Some("mark_vendor"))
-        .collect()
-}
-
-fn validate_mark_vendor_op(op: &Value) -> Result<()> {
-    let op_id = value_str(op, "id").unwrap_or("<unknown>");
-    for field in [
-        "id",
-        "operation",
-        "level",
-        "chunkPath",
-        "identity",
-        "evidence",
-    ] {
-        if value_is_missing(op.get(field)) {
-            bail!("mark_vendor operation {op_id} is missing required field: {field}");
-        }
-    }
-    if value_str(op, "operation") != Some("mark_vendor") {
-        bail!(
-            "mark_vendor operation {} has unexpected operation: {}",
-            required_str(op, "id")?,
-            value_str(op, "operation").unwrap_or("<missing>")
-        );
-    }
-    if !matches!(
-        value_str(op, "level"),
-        Some("suppress" | "boundary-rename" | "swap")
-    ) {
-        bail!(
-            "mark_vendor operation {} has unknown level: {}",
-            required_str(op, "id")?,
-            value_str(op, "level").unwrap_or("<missing>")
-        );
-    }
-    if let Some(role) = value_str(op, "role")
-        && role != "module"
-        && role != "worker"
-    {
-        bail!(
-            "mark_vendor operation {} has invalid role: {role}",
-            required_str(op, "id")?
-        );
-    }
-    if value_str(op, "level") == Some("swap") {
-        for field in ["package", "version", "subpath"] {
-            if value_is_missing(op.get(field)) {
-                bail!(
-                    "mark_vendor operation {} level \"swap\" is missing required field: {field}",
-                    required_str(op, "id")?
-                );
-            }
-        }
-    }
-    if let Some(export_shape) = op.get("exportShape")
-        && !export_shape.is_object()
-    {
-        bail!(
-            "mark_vendor operation {} exportShape must be an object",
-            required_str(op, "id")?
-        );
-    }
-    if let Some(fp) = op.get("fingerprint")
-        && (!fp.is_object()
-            || fp.get("algorithm").and_then(Value::as_str).is_none()
-            || fp.get("hash").and_then(Value::as_str).is_none())
-    {
-        bail!(
-            "mark_vendor operation {} fingerprint must have algorithm and hash strings",
-            required_str(op, "id")?
-        );
-    }
-    if op
-        .get("evidence")
-        .and_then(Value::as_array)
-        .is_none_or(|evidence| evidence.is_empty())
-    {
-        bail!(
-            "mark_vendor operation {} requires a non-empty evidence array",
-            required_str(op, "id")?
-        );
-    }
-    Ok(())
-}
-
-fn value_is_missing(value: Option<&Value>) -> bool {
-    match value {
-        None | Some(Value::Null) => true,
-        Some(Value::String(text)) => text.is_empty(),
-        _ => false,
-    }
-}
-
-fn required_str<'a>(value: &'a Value, key: &str) -> Result<&'a str> {
-    value
-        .get(key)
-        .and_then(Value::as_str)
-        .filter(|text| !text.is_empty())
-        .with_context(|| format!("missing required string field {key}"))
-}
-
-fn value_str<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
-    value.get(key).and_then(Value::as_str)
-}
-
-fn insert_required(target: &mut Map<String, Value>, source: &Value, key: &str) {
-    if let Some(value) = source.get(key) {
-        target.insert(key.to_string(), value.clone());
-    }
-}
-
-fn insert_optional(target: &mut Map<String, Value>, source: &Value, key: &str) {
-    if let Some(value) = source.get(key) {
-        target.insert(key.to_string(), value.clone());
-    }
 }
 
 fn chunk_id_from_chunk_path(chunk_path: &str, op_id: &str, stage: &str) -> Result<String> {

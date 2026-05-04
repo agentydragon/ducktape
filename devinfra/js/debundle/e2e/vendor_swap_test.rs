@@ -214,24 +214,24 @@ struct BuildSpecArgs<'a> {
 fn build_named_from_module_default_spec(args: BuildSpecArgs<'_>) -> Value {
     json!({
         "kind": "js.ast_transform_spec",
-        "operations": [{
-            "id": "mark_vendor_lib",
-            "operation": "mark_vendor",
-            "level": "swap",
-            "chunkPath": args.chunk_path,
-            "identity": format!("{}/{}", args.package_name, args.subpath),
-            "upstreamFamily": "Lib",
-            "package": args.package_name,
-            "version": args.package_version,
-            "subpath": args.subpath,
-            "wrapperShape": "named-from-module-default",
-            "confidence": "confirmed",
-            "evidence": [{
-                "path": args.chunk_path,
-                "line": 1,
-                "text": "export { x as default }",
-            }],
-        }],
+        "vendor": {
+            args.chunk_path: {
+                "id": "mark_vendor_lib",
+                "level": "swap",
+                "identity": format!("{}/{}", args.package_name, args.subpath),
+                "upstreamFamily": "Lib",
+                "package": args.package_name,
+                "version": args.package_version,
+                "subpath": args.subpath,
+                "wrapperShape": "named-from-module-default",
+                "confidence": "confirmed",
+                "evidence": [{
+                    "path": args.chunk_path,
+                    "line": 1,
+                    "text": "export { x as default }",
+                }],
+            },
+        },
         "inputs": { "inputRoot": args.snapshot_root, "jsListPath": args.js_list_path },
         "pipeline": [
             { "id": "annotate_vendor", "operation": "apply_vendor_annotations" },
@@ -438,24 +438,24 @@ fn run_named_from_default_fixture(args: NamedFromDefaultFixtureArgs<'_>) -> Vend
 fn build_named_from_default_spec(args: BuildSpecArgs<'_>) -> Value {
     json!({
         "kind": "js.ast_transform_spec",
-        "operations": [{
-            "id": "mark_vendor_lib",
-            "operation": "mark_vendor",
-            "level": "swap",
-            "chunkPath": args.chunk_path,
-            "identity": format!("{}/{}", args.package_name, args.subpath),
-            "upstreamFamily": "Lib",
-            "package": args.package_name,
-            "version": args.package_version,
-            "subpath": args.subpath,
-            "wrapperShape": "named-from-default",
-            "confidence": "confirmed",
-            "evidence": [{
-                "path": args.chunk_path,
-                "line": 1,
-                "text": "export default { ... }",
-            }],
-        }],
+        "vendor": {
+            args.chunk_path: {
+                "id": "mark_vendor_lib",
+                "level": "swap",
+                "identity": format!("{}/{}", args.package_name, args.subpath),
+                "upstreamFamily": "Lib",
+                "package": args.package_name,
+                "version": args.package_version,
+                "subpath": args.subpath,
+                "wrapperShape": "named-from-default",
+                "confidence": "confirmed",
+                "evidence": [{
+                    "path": args.chunk_path,
+                    "line": 1,
+                    "text": "export default { ... }",
+                }],
+            },
+        },
         "inputs": { "inputRoot": args.snapshot_root, "jsListPath": args.js_list_path },
         "pipeline": [
             { "id": "annotate_vendor", "operation": "apply_vendor_annotations" },

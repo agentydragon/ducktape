@@ -9,7 +9,6 @@
 //! name.
 
 use debundle_e2e_support::*;
-use serde_json::json;
 
 #[test]
 fn define_residual_module_members_apply_renames() {
@@ -19,23 +18,13 @@ function b() { return 2; }
 console.log(a(), b());
 export { a, b };
 "#,
-        // No `define_logical_module` — every binding stays in residual.
-        // The residual op carries a renaming member entry for `a`. We
-        // construct the residual op explicitly here (instead of letting
-        // `include_residual: true` produce a memberless one).
-        operations: vec![json!({
-            "id": "logical__residual_unhandled",
-            "operation": "define_residual_module",
-            "selector": { "chunkId": "static/app" },
-            "target": { "path": "residual/unhandled" },
-            "members": [
-                {
-                    "id": "rename_a",
-                    "name": "FirstFn",
-                    "selector": { "binding": { "name": "a" } },
-                },
-            ],
-        })],
+        // No logical modules — every binding stays in residual. The
+        // residual carries a renaming member entry for `a`.
+        logical_modules: vec![],
+        residual: Some(residual_module(
+            "residual/unhandled",
+            &[Member::renamed("FirstFn", "a")],
+        )),
         chunk_id: "static/app",
         include_residual: false,
         extra_files: &[],

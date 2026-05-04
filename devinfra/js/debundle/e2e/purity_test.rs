@@ -374,35 +374,34 @@ console.log(A.handled, B.handled, C.handled);
 export { A, B, C, dispatcher };
 "#,
         vec![
-            json!({
-                "id": "logical__mod_a",
-                "operation": "define_logical_module",
-                "selector": { "chunkId": "static/app" },
-                "target": { "path": "mod_a" },
-                "members": [
-                    { "id": "m_a", "name": "A", "selector": { "binding": { "name": "A" } } },
-                    { "id": "m_c", "name": "C", "selector": { "binding": { "name": "C" } } },
-                    {
-                        "id": "m_dispatcher",
-                        "name": "dispatcher",
-                        "selector": { "binding": { "name": "dispatcher" } },
-                        // ↓ author asserts: calls to `dispatcher`
-                        //   have no observable side effects. Both
-                        //   call sites in mod_a (A, C) and the
-                        //   one in mod_b (B) drop their `S` edges.
-                        "purity": "pure",
-                    },
-                ],
-            }),
-            json!({
-                "id": "logical__mod_b",
-                "operation": "define_logical_module",
-                "selector": { "chunkId": "static/app" },
-                "target": { "path": "mod_b" },
-                "members": [
-                    { "id": "m_b", "name": "B", "selector": { "binding": { "name": "B" } } },
-                ],
-            }),
+            (
+                "mod_a".to_string(),
+                json!({
+                    "id": "logical__mod_a",
+                    "members": [
+                        { "name": "A", "selector": { "binding": { "name": "A" } } },
+                        { "name": "C", "selector": { "binding": { "name": "C" } } },
+                        {
+                            "name": "dispatcher",
+                            "selector": { "binding": { "name": "dispatcher" } },
+                            // ↓ author asserts: calls to `dispatcher`
+                            //   have no observable side effects. Both
+                            //   call sites in mod_a (A, C) and the
+                            //   one in mod_b (B) drop their `S` edges.
+                            "purity": "pure",
+                        },
+                    ],
+                }),
+            ),
+            (
+                "mod_b".to_string(),
+                json!({
+                    "id": "logical__mod_b",
+                    "members": [
+                        { "name": "B", "selector": { "binding": { "name": "B" } } },
+                    ],
+                }),
+            ),
         ],
     ));
     assert_entry_output(&fixture, "alpha beta gamma\n");
@@ -426,33 +425,32 @@ console.log(B.ref, D.ref);
 export { A, B, D, wrap };
 "#,
             vec![
-                json!({
-                    "id": "logical__mod_a",
-                    "operation": "define_logical_module",
-                    "selector": { "chunkId": "static/app" },
-                    "target": { "path": "mod_a" },
-                    "members": [
-                        { "id": "m_a", "name": "A", "selector": { "binding": { "name": "A" } } },
-                        { "id": "m_d", "name": "D", "selector": { "binding": { "name": "D" } } },
-                        {
-                            "id": "m_wrap",
-                            "name": "wrap",
-                            "selector": { "binding": { "name": "wrap" } },
-                            // Author asserts purity — `S` edges
-                            // through `wrap(...)` calls go away.
-                            "purity": "pure",
-                        },
-                    ],
-                }),
-                json!({
-                    "id": "logical__mod_b",
-                    "operation": "define_logical_module",
-                    "selector": { "chunkId": "static/app" },
-                    "target": { "path": "mod_b" },
-                    "members": [
-                        { "id": "m_b", "name": "B", "selector": { "binding": { "name": "B" } } },
-                    ],
-                }),
+                (
+                    "mod_a".to_string(),
+                    json!({
+                        "id": "logical__mod_a",
+                        "members": [
+                            { "name": "A", "selector": { "binding": { "name": "A" } } },
+                            { "name": "D", "selector": { "binding": { "name": "D" } } },
+                            {
+                                "name": "wrap",
+                                "selector": { "binding": { "name": "wrap" } },
+                                // Author asserts purity — `S` edges
+                                // through `wrap(...)` calls go away.
+                                "purity": "pure",
+                            },
+                        ],
+                    }),
+                ),
+                (
+                    "mod_b".to_string(),
+                    json!({
+                        "id": "logical__mod_b",
+                        "members": [
+                            { "name": "B", "selector": { "binding": { "name": "B" } } },
+                        ],
+                    }),
+                ),
             ],
         ),
         // R-edge mod_a → mod_b (D's init reads B); R-edge
@@ -488,38 +486,36 @@ console.log(A.val, B.val, C.val);
 export { A, B, C, pureWrap, impureWrap };
 "#,
         vec![
-            json!({
-                "id": "logical__mod_a",
-                "operation": "define_logical_module",
-                "selector": { "chunkId": "static/app" },
-                "target": { "path": "mod_a" },
-                "members": [
-                    { "id": "m_a", "name": "A", "selector": { "binding": { "name": "A" } } },
-                    { "id": "m_c", "name": "C", "selector": { "binding": { "name": "C" } } },
-                    {
-                        "id": "m_pure_wrap",
-                        "name": "pureWrap",
-                        "selector": { "binding": { "name": "pureWrap" } },
-                        "purity": "pure",
-                    },
-                    {
-                        "id": "m_impure_wrap",
-                        "name": "impureWrap",
-                        "selector": { "binding": { "name": "impureWrap" } },
-                        // No `purity` annotation — default
-                        // (impure) classification applies.
-                    },
-                ],
-            }),
-            json!({
-                "id": "logical__mod_b",
-                "operation": "define_logical_module",
-                "selector": { "chunkId": "static/app" },
-                "target": { "path": "mod_b" },
-                "members": [
-                    { "id": "m_b", "name": "B", "selector": { "binding": { "name": "B" } } },
-                ],
-            }),
+            (
+                "mod_a".to_string(),
+                json!({
+                    "id": "logical__mod_a",
+                    "members": [
+                        { "name": "A", "selector": { "binding": { "name": "A" } } },
+                        { "name": "C", "selector": { "binding": { "name": "C" } } },
+                        {
+                            "name": "pureWrap",
+                            "selector": { "binding": { "name": "pureWrap" } },
+                            "purity": "pure",
+                        },
+                        {
+                            "name": "impureWrap",
+                            "selector": { "binding": { "name": "impureWrap" } },
+                            // No `purity` annotation — default
+                            // (impure) classification applies.
+                        },
+                    ],
+                }),
+            ),
+            (
+                "mod_b".to_string(),
+                json!({
+                    "id": "logical__mod_b",
+                    "members": [
+                        { "name": "B", "selector": { "binding": { "name": "B" } } },
+                    ],
+                }),
+            ),
         ],
     ));
     assert_entry_output(&fixture, "a b c\n");
@@ -547,37 +543,35 @@ console.log(A.val, B.val, C.val, globalThis.lastWrap);
 export { A, B, C, pureWrap, impureWrap };
 "#,
             vec![
-                json!({
-                    "id": "logical__mod_a",
-                    "operation": "define_logical_module",
-                    "selector": { "chunkId": "static/app" },
-                    "target": { "path": "mod_a" },
-                    "members": [
-                        { "id": "m_a", "name": "A", "selector": { "binding": { "name": "A" } } },
-                        { "id": "m_c", "name": "C", "selector": { "binding": { "name": "C" } } },
-                        {
-                            "id": "m_pure_wrap",
-                            "name": "pureWrap",
-                            "selector": { "binding": { "name": "pureWrap" } },
-                            "purity": "pure",
-                        },
-                        {
-                            "id": "m_impure_wrap",
-                            "name": "impureWrap",
-                            "selector": { "binding": { "name": "impureWrap" } },
-                            // Deliberately unannotated.
-                        },
-                    ],
-                }),
-                json!({
-                    "id": "logical__mod_b",
-                    "operation": "define_logical_module",
-                    "selector": { "chunkId": "static/app" },
-                    "target": { "path": "mod_b" },
-                    "members": [
-                        { "id": "m_b", "name": "B", "selector": { "binding": { "name": "B" } } },
-                    ],
-                }),
+                (
+                    "mod_a".to_string(),
+                    json!({
+                        "id": "logical__mod_a",
+                        "members": [
+                            { "name": "A", "selector": { "binding": { "name": "A" } } },
+                            { "name": "C", "selector": { "binding": { "name": "C" } } },
+                            {
+                                "name": "pureWrap",
+                                "selector": { "binding": { "name": "pureWrap" } },
+                                "purity": "pure",
+                            },
+                            {
+                                "name": "impureWrap",
+                                "selector": { "binding": { "name": "impureWrap" } },
+                                // Deliberately unannotated.
+                            },
+                        ],
+                    }),
+                ),
+                (
+                    "mod_b".to_string(),
+                    json!({
+                        "id": "logical__mod_b",
+                        "members": [
+                            { "name": "B", "selector": { "binding": { "name": "B" } } },
+                        ],
+                    }),
+                ),
             ],
         ),
         &["cycle", "mod_a", "mod_b", "side-effect"],

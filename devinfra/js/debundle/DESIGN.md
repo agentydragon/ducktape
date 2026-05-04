@@ -1253,9 +1253,9 @@ The pipeline is a sequence of stages over a shared `JsPipelineArtifact`:
 | Stage                            | Module                                         | Role                                                                                                                  |
 | -------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `compute_chunk_metadata`         | <program_analysis.rs>                          | Parse chunks; record top-level decls, imports, side effects, observable module effects. Pure, no spec.                |
-| `apply_vendor_annotations`       | <vendor.rs>                                    | Mark vendor packages per `mark_vendor` ops.                                                                           |
-| `rename_vendor_exports`          | <vendor.rs>                                    | Rewrite vendor symbol exports per `rename_vendor_symbols`.                                                            |
-| `swap_vendor_chunks`             | <vendor.rs>                                    | Substitute vendor chunks with package resolves.                                                                       |
+| `apply_vendor_annotations`       | <vendor.rs>                                    | Mark vendor packages from the spec's top-level `vendor` map (keyed by chunk path).                                    |
+| `rename_vendor_exports`          | <vendor.rs>                                    | Rewrite vendor symbol exports for `vendor` entries with `level: boundary-rename` or `level: swap`.                    |
+| `swap_vendor_chunks`             | <vendor.rs>                                    | Substitute vendor chunks with package resolves for `vendor` entries with `level: swap`.                               |
 | `materialize_logical_modules`    | <logical_modules.rs> + <schedule_validator.rs> | **Main split.** Computes per-statement facts, applies spec, builds `I ∪ S`, validates, emits modules in source order. |
 | `rewrite_chunk_entry_specifiers` | <rewrite_specifiers.rs>                        | Rewrite cross-chunk import paths to be relative to chunk entries.                                                     |
 | `write_js_tree`                  | <write_tree.rs>                                | Persist the artifact to disk.                                                                                         |
@@ -1287,9 +1287,9 @@ A spec entry that ends up with zero owned bindings (after
 closure) and no re-exports comes out as an effectively-empty
 file. Either:
 
-- The spec author wrote a `define_logical_module` whose explicit
-  members all turned out to be names that don't exist in the
-  chunk (typo, stale spec). The validator surfaces a
+- The spec author wrote a `logicalModules[chunkId][targetPath]`
+  entry whose explicit members all turned out to be names that
+  don't exist in the chunk (typo, stale spec). The validator surfaces a
   `MissingMember` warning per name; emit proceeds with whatever
   _did_ resolve.
 - All listed members are `Imported` bindings with no `Owned`
