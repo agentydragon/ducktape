@@ -287,12 +287,26 @@ pub fn materialize_logical_modules(
         if let Some(residual) = residual_request {
             let residual_index = module_plans.len();
             let residual_module_id = ModuleId::Logical(LogicalModuleIndex(residual_index));
+            // Bindings staying in residual can still carry a public name. The
+            // gaffer-side `.yaml.deferred` workflow routes its rename ops
+            // through the residual op so that bindings deferred from peeled
+            // modules don't revert to scrambled names while waiting to be
+            // re-peeled. Source-name members map back to themselves.
+            let residual_renames: BTreeMap<&str, &str> = residual
+                .members
+                .iter()
+                .map(|m| (m.binding.as_str(), m.export_name.as_str()))
+                .collect();
             let mut residual_bindings = BTreeMap::new();
             for decl in &declarations {
                 for name in &decl.names {
                     if !binding_assignment.contains_key(name) {
                         binding_assignment.insert(name.clone(), residual_index);
-                        residual_bindings.insert(name.clone(), name.clone());
+                        let export_name = residual_renames
+                            .get(name.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| name.clone());
+                        residual_bindings.insert(name.clone(), export_name);
                         bindings_catalogue.insert(
                             name.clone(),
                             BindingKind::Owned {
