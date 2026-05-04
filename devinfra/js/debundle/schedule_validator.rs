@@ -347,13 +347,352 @@ impl Visit for TopLevelAwaitFinder {
     }
 }
 
-pub fn analyze_chunk_facts(module: &Module) -> Vec<StatementFacts> {
+pub fn analyze_chunk_facts(
+    module: &Module,
+    declared_pure: &BTreeSet<String>,
+) -> Vec<StatementFacts> {
     let body = split_comma_list_var_decls(&module.body);
     let shadowed = compute_shadowed_globals(&body);
+    let graph = ChunkCodeGraph::build(&body, &shadowed, declared_pure);
     body.iter()
         .enumerate()
-        .map(|(ordinal, item)| analyze_item(StatementOrdinal(ordinal), item, &shadowed))
+        .map(|(ordinal, item)| {
+            analyze_item(
+                StatementOrdinal(ordinal),
+                item,
+                &shadowed,
+                declared_pure,
+                &graph,
+            )
+        })
         .collect()
+}
+
+/// Chunk-wide code graph: indexes top-level bindings and answers
+/// queries the classifier needs that go beyond per-expression
+/// inspection. Currently exposes function-body purity for
+/// chunk-local Ident callees (used by `classify_call_purity` to
+/// short-circuit `Pure` callees). Designed to grow into a fuller
+/// binding-shape model — import provenance, var-init purity,
+/// class shape, etc. — as further analyses land. New binding
+/// kinds add new `ChunkBinding` variants and matching query
+/// methods; the iteration in `ChunkCodeGraph::build` extends to
+/// them naturally.
+#[derive(Debug, Default, Clone)]
+pub struct ChunkCodeGraph {
+    bindings: BTreeMap<String, ChunkBinding>,
+}
+
+#[derive(Debug, Clone)]
+enum ChunkBinding {
+    /// Chunk-top function declaration or `const f = function/arrow`.
+    /// `purity` is the worst purity reachable from the body, computed
+    /// by fixed-point iteration over all chunk-top functions.
+    Function { purity: Purity },
+}
+
+impl ChunkCodeGraph {
+    /// Build the graph for `body`. Two phases:
+    ///
+    /// 1. **Call-graph construction.** For each chunk-top function,
+    ///    walk its body and collect the set of other chunk-top
+    ///    functions it calls (Ident-callee form only). Edges:
+    ///    caller → callee.
+    /// 2. **SCC-bottom-up classification.** Decompose the call
+    ///    graph into strongly-connected components via
+    ///    `petgraph::algo::tarjan_scc` (returns SCCs in reverse
+    ///    topological order — sinks first). Process each SCC in
+    ///    order, so by the time we classify a caller, every
+    ///    callee outside the caller's own SCC is already
+    ///    finalized. Within an SCC (the only place mutual
+    ///    recursion shows up), iterate via a worklist: re-classify
+    ///    a function only when one of its same-SCC callees has
+    ///    changed. Each function in an SCC is reclassified at
+    ///    most twice (`Pure → Unknown` or `Pure → Impure`, both
+    ///    terminal), so per-SCC work is `O(scc_size · body_size)`,
+    ///    and total work is `O(N · body_size)` for the whole
+    ///    chunk regardless of recursion depth.
+    fn build(
+        body: &[ModuleItem],
+        shadowed: &BTreeSet<&'static str>,
+        declared_pure: &BTreeSet<String>,
+    ) -> Self {
+        let functions = collect_chunk_functions(body);
+        let name_to_idx: BTreeMap<&str, usize> = functions
+            .iter()
+            .enumerate()
+            .map(|(i, f)| (f.name.as_str(), i))
+            .collect();
+
+        // Phase 1: call edges.
+        let mut call_graph: DiGraphMap<usize, ()> = DiGraphMap::new();
+        let mut callees_of: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); functions.len()];
+        for (i, function) in functions.iter().enumerate() {
+            call_graph.add_node(i);
+            let mut collector = CallCollector {
+                callees: BTreeSet::new(),
+                name_to_idx: &name_to_idx,
+            };
+            function.visit_body_with(&mut collector);
+            for &callee in &collector.callees {
+                call_graph.add_edge(i, callee, ());
+            }
+            callees_of[i] = collector.callees;
+        }
+
+        // Phase 2: optimistic init + SCC-bottom-up classification.
+        let mut graph = ChunkCodeGraph {
+            bindings: functions
+                .iter()
+                .map(|f| {
+                    (
+                        f.name.clone(),
+                        ChunkBinding::Function {
+                            purity: Purity::Pure,
+                        },
+                    )
+                })
+                .collect(),
+        };
+        // tarjan_scc emits SCCs in reverse topological order: leaves
+        // (sinks — functions that don't call any chunk-top
+        // function) come first, callers come later.
+        for scc in tarjan_scc(&call_graph) {
+            graph.classify_scc(&scc, &functions, &callees_of, shadowed, declared_pure);
+        }
+        graph
+    }
+
+    /// Re-classify every function in `scc` until no purity changes.
+    /// Worklist-driven: only re-process a function when one of its
+    /// same-SCC callees has changed (cross-SCC callees are already
+    /// finalized by bottom-up SCC ordering).
+    fn classify_scc(
+        &mut self,
+        scc: &[usize],
+        functions: &[ChunkFunction<'_>],
+        callees_of: &[BTreeSet<usize>],
+        shadowed: &BTreeSet<&'static str>,
+        declared_pure: &BTreeSet<String>,
+    ) {
+        let scc_set: BTreeSet<usize> = scc.iter().copied().collect();
+        // Reverse adjacency restricted to this SCC: callee → callers.
+        let mut callers_in_scc: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        for &i in scc {
+            for &callee in &callees_of[i] {
+                if scc_set.contains(&callee) {
+                    callers_in_scc.entry(callee).or_default().push(i);
+                }
+            }
+        }
+        let mut pending: BTreeSet<usize> = scc_set;
+        while let Some(&i) = pending.iter().next() {
+            pending.remove(&i);
+            let new_purity = classify_function_body(&functions[i], shadowed, declared_pure, self);
+            let name = &functions[i].name;
+            let old = self.function_purity(name).expect("seeded by build");
+            let combined = old.worst(new_purity);
+            if combined != old {
+                self.bindings
+                    .insert(name.clone(), ChunkBinding::Function { purity: combined });
+                if let Some(callers) = callers_in_scc.get(&i) {
+                    pending.extend(callers.iter().copied());
+                }
+            }
+        }
+    }
+
+    /// Purity of the chunk-local function bound to `name`, if any.
+    /// Returns `None` for non-function bindings (imports, vars,
+    /// classes) and for names not bound at chunk top.
+    fn function_purity(&self, name: &str) -> Option<Purity> {
+        match self.bindings.get(name)? {
+            ChunkBinding::Function { purity } => Some(*purity),
+        }
+    }
+}
+
+/// Visitor that collects the indices of other chunk-top functions
+/// called by a function body (Ident-callee form only). Skips
+/// nested function/arrow/method bodies (those are separate lazy
+/// scopes — their callees go to their own graph entries).
+struct CallCollector<'a> {
+    callees: BTreeSet<usize>,
+    name_to_idx: &'a BTreeMap<&'a str, usize>,
+}
+
+impl Visit for CallCollector<'_> {
+    fn visit_function(&mut self, _: &Function) {}
+    fn visit_arrow_expr(&mut self, _: &ArrowExpr) {}
+    fn visit_method_prop(&mut self, _: &MethodProp) {}
+    fn visit_getter_prop(&mut self, _: &GetterProp) {}
+    fn visit_setter_prop(&mut self, _: &SetterProp) {}
+
+    fn visit_call_expr(&mut self, call: &CallExpr) {
+        if let Callee::Expr(callee) = &call.callee
+            && let Expr::Ident(id) = callee.as_ref()
+            && let Some(&idx) = self.name_to_idx.get(id.sym.as_ref())
+        {
+            self.callees.insert(idx);
+        }
+        // Recurse to find nested calls in args / receiver.
+        call.visit_children_with(self);
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ChunkFunction<'a> {
+    name: String,
+    /// Block-bodied function/arrow.
+    block_body: Option<&'a BlockStmt>,
+    /// Concise-arrow expression body (`(x) => expr`).
+    expr_body: Option<&'a Expr>,
+}
+
+impl ChunkFunction<'_> {
+    /// Drive a `Visit` visitor over this function's body. Block
+    /// bodies recurse via `visit_with`; concise-arrow expression
+    /// bodies fire `visit_expr` directly so the visitor's
+    /// `visit_call_expr` / `visit_expr` overrides catch the body.
+    fn visit_body_with<V: Visit + ?Sized>(&self, visitor: &mut V) {
+        if let Some(block) = self.block_body {
+            block.visit_with(visitor);
+        }
+        if let Some(expr) = self.expr_body {
+            expr.visit_with(visitor);
+        }
+    }
+}
+
+fn collect_chunk_functions(body: &[ModuleItem]) -> Vec<ChunkFunction<'_>> {
+    let mut out = Vec::new();
+    for item in body {
+        match item {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Fn(fn_decl))) => push_fn_decl(fn_decl, &mut out),
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => push_var_functions(var, &mut out),
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => match &export.decl {
+                Decl::Fn(fn_decl) => push_fn_decl(fn_decl, &mut out),
+                Decl::Var(var) => push_var_functions(var, &mut out),
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+    out
+}
+
+fn push_fn_decl<'a>(fn_decl: &'a FnDecl, out: &mut Vec<ChunkFunction<'a>>) {
+    out.push(ChunkFunction {
+        name: fn_decl.ident.sym.to_string(),
+        block_body: fn_decl.function.body.as_ref(),
+        expr_body: None,
+    });
+}
+
+fn push_var_functions<'a>(var: &'a VarDecl, out: &mut Vec<ChunkFunction<'a>>) {
+    // `let` / `var` bindings are reassignable: caching their
+    // body's purity and short-circuiting `f(...)` to that purity
+    // is unsound if a later `f = …` reassigns them to something
+    // impure. Only `const`-bound function/arrow initializers are
+    // tracked; reassignment of a `const` is a syntax error.
+    if var.kind != VarDeclKind::Const {
+        return;
+    }
+    for decl in &var.decls {
+        let Pat::Ident(binding) = &decl.name else {
+            continue;
+        };
+        let Some(init) = decl.init.as_deref() else {
+            continue;
+        };
+        let name = binding.id.sym.to_string();
+        match init {
+            Expr::Fn(fn_expr) => {
+                out.push(ChunkFunction {
+                    name,
+                    block_body: fn_expr.function.body.as_ref(),
+                    expr_body: None,
+                });
+            }
+            Expr::Arrow(arrow) => match arrow.body.as_ref() {
+                BlockStmtOrExpr::BlockStmt(block) => {
+                    out.push(ChunkFunction {
+                        name,
+                        block_body: Some(block),
+                        expr_body: None,
+                    });
+                }
+                BlockStmtOrExpr::Expr(expr) => {
+                    out.push(ChunkFunction {
+                        name,
+                        block_body: None,
+                        expr_body: Some(expr.as_ref()),
+                    });
+                }
+            },
+            _ => {}
+        }
+    }
+}
+
+fn classify_function_body(
+    function: &ChunkFunction<'_>,
+    shadowed: &BTreeSet<&'static str>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> Purity {
+    let mut collector = BodyPurityCollector {
+        purity: Purity::Pure,
+        shadowed,
+        declared_pure,
+        graph,
+    };
+    function.visit_body_with(&mut collector);
+    collector.purity
+}
+
+/// Visitor that walks a function body and accumulates the worst
+/// purity of every top-level expression encountered. Skips nested
+/// function/arrow/method/getter/setter bodies (those are separate
+/// lazy scopes — their purity, if needed, comes from their own
+/// graph entry or from the caller's `Unknown` fallback).
+struct BodyPurityCollector<'a> {
+    purity: Purity,
+    shadowed: &'a BTreeSet<&'static str>,
+    declared_pure: &'a BTreeSet<String>,
+    graph: &'a ChunkCodeGraph,
+}
+
+impl Visit for BodyPurityCollector<'_> {
+    fn visit_function(&mut self, _: &Function) {}
+    fn visit_arrow_expr(&mut self, _: &ArrowExpr) {}
+    fn visit_method_prop(&mut self, _: &MethodProp) {}
+    fn visit_getter_prop(&mut self, _: &GetterProp) {}
+    fn visit_setter_prop(&mut self, _: &SetterProp) {}
+
+    fn visit_expr(&mut self, expr: &Expr) {
+        // Classify the entire expression in one shot —
+        // `classify_expr_purity` already recurses through
+        // nested subexpressions and returns the worst.
+        let p = classify_expr_purity(expr, self.shadowed, self.declared_pure, self.graph);
+        self.purity = self.purity.worst(p);
+    }
+
+    // Statement-level effects that don't surface as an Impure /
+    // Unknown sub-expression. `throw e` alters control flow
+    // observably even when `e` is a Pure literal; `debugger`
+    // pauses execution observably to a host attached to the
+    // process. Both make the enclosing function not Pure.
+    fn visit_throw_stmt(&mut self, node: &ThrowStmt) {
+        self.purity = self.purity.worst(Purity::Impure);
+        // Still recurse so the thrown expression contributes its
+        // own purity (e.g. `throw io()` should also see the call).
+        node.arg.visit_with(self);
+    }
+
+    fn visit_debugger_stmt(&mut self, _node: &DebuggerStmt) {
+        self.purity = self.purity.worst(Purity::Impure);
+    }
 }
 
 /// Replace every multi-declarator top-level `var/let/const`
@@ -439,6 +778,8 @@ fn analyze_item(
     ordinal: StatementOrdinal,
     item: &ModuleItem,
     shadowed: &BTreeSet<&'static str>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
 ) -> StatementFacts {
     let kind = classify_item(item);
     let declared = collect_declared_names(item);
@@ -446,7 +787,7 @@ fn analyze_item(
     item.visit_with(&mut at_init);
     let mut lazy = LazyReadCollector::default();
     item.visit_with(&mut lazy);
-    let has_side_effect = item_has_side_effect(item, kind, shadowed);
+    let has_side_effect = item_has_side_effect(item, kind, shadowed, declared_pure, graph);
     StatementFacts {
         ordinal,
         declared,
@@ -548,12 +889,41 @@ const PURE_GLOBAL_CALLS: &[&str] = &[
     "Boolean",
 ];
 
+/// Static-property READS on these globals are Pure: the property
+/// is an own data property of the receiver per ECMA-262 (no getter
+/// fires) and accessing it has no observable side effect.
+///
+/// **Function-valued.** The resolved value is a callable. CALLING
+/// it is NOT pure unless the same `(receiver, name)` pair also
+/// appears in `PURE_STATIC_CALLS`. Every entry here MUST have both
+/// a positive `static_function_ref_*_alias_is_pure` test AND a
+/// negative `static_function_ref_*_call_remains_unknown` test
+/// pinning that distinction. See AGENTS.md "Pure-call whitelist
+/// soundness".
+const PURE_STATIC_FUNCTION_REFS: &[(&str, &str)] = &[
+    // All entries below are own data properties of the `Object`
+    // built-in per ECMA-262 §20.1.2 — reads fire no getter. The
+    // CALL of each is unsafe in distinct ways and intentionally
+    // NOT in `PURE_STATIC_CALLS`:
+    //   - `Object.defineProperty(t, k, d)` mutates `t`.
+    //   - `Object.freeze(o)` mutates `o`'s descriptor table.
+    //   - `Object.values(o)` / `Object.keys(o)` invoke
+    //     `[[OwnPropertyKeys]]` and (for values) `[[Get]]` per
+    //     key — fires user getters and Proxy traps.
+    // The bare alias form `const define = Object.defineProperty;`
+    // appears in real specs as a renamed shortcut.
+    ("Object", "defineProperty"),
+    ("Object", "freeze"),
+    ("Object", "values"),
+    ("Object", "keys"),
+];
+
 /// Receiver / global-callable names whose whitelist firing depends
 /// on the chunk not having shadowed them at top level.
 /// `analyze_chunk_facts` populates the shadowed-globals set, and
 /// the classifier suppresses whitelist hits for any name in it —
 /// e.g. `const Math = …` makes `Math.PI` fall back to `Unknown`.
-const WHITELIST_RECEIVERS: &[&str] = &["Math", "Array", "Symbol", "Number", "Boolean"];
+const WHITELIST_RECEIVERS: &[&str] = &["Math", "Array", "Symbol", "Number", "Boolean", "Object"];
 
 // TODO: extend the call whitelist with operations that are *Pure
 // when their arguments are statically known to be primitives*
@@ -596,7 +966,12 @@ const WHITELIST_RECEIVERS: &[&str] = &["Math", "Array", "Symbol", "Number", "Boo
 // on any argument shape (see AGENTS.md "Pure-call whitelist
 // soundness").
 
-fn classify_expr_purity(expr: &Expr, shadowed: &BTreeSet<&'static str>) -> Purity {
+fn classify_expr_purity(
+    expr: &Expr,
+    shadowed: &BTreeSet<&'static str>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> Purity {
     match expr {
         Expr::Lit(_) => Purity::Pure,
         Expr::Ident(_) => Purity::Pure,
@@ -604,34 +979,39 @@ fn classify_expr_purity(expr: &Expr, shadowed: &BTreeSet<&'static str>) -> Purit
         Expr::Tpl(tpl) => tpl
             .exprs
             .iter()
-            .map(|e| classify_expr_purity(e, shadowed))
+            .map(|e| classify_expr_purity(e, shadowed, declared_pure, graph))
             .fold(Purity::Pure, Purity::worst),
         Expr::Fn(_) | Expr::Arrow(_) => Purity::Pure,
         Expr::Class(class_expr) => {
-            if class_has_static_observable(&class_expr.class, shadowed) {
+            if class_has_static_observable(&class_expr.class, shadowed, declared_pure, graph) {
                 Purity::Impure
             } else {
                 Purity::Pure
             }
         }
-        Expr::Paren(p) => classify_expr_purity(&p.expr, shadowed),
+        Expr::Paren(p) => classify_expr_purity(&p.expr, shadowed, declared_pure, graph),
         Expr::Unary(u) => match u.op {
             UnaryOp::Delete => Purity::Impure,
             // typeof / void / +/-/!/~ on a pure operand are pure
             // (they may coerce, but coercion of an Ident or Lit
             // doesn't run user code).
-            _ => classify_expr_purity(&u.arg, shadowed),
+            _ => classify_expr_purity(&u.arg, shadowed, declared_pure, graph),
         },
-        Expr::Bin(b) => {
-            classify_expr_purity(&b.left, shadowed).worst(classify_expr_purity(&b.right, shadowed))
-        }
-        Expr::Cond(c) => classify_expr_purity(&c.test, shadowed)
-            .worst(classify_expr_purity(&c.cons, shadowed))
-            .worst(classify_expr_purity(&c.alt, shadowed)),
+        Expr::Bin(b) => classify_expr_purity(&b.left, shadowed, declared_pure, graph).worst(
+            classify_expr_purity(&b.right, shadowed, declared_pure, graph),
+        ),
+        Expr::Cond(c) => classify_expr_purity(&c.test, shadowed, declared_pure, graph)
+            .worst(classify_expr_purity(
+                &c.cons,
+                shadowed,
+                declared_pure,
+                graph,
+            ))
+            .worst(classify_expr_purity(&c.alt, shadowed, declared_pure, graph)),
         Expr::Seq(s) => s
             .exprs
             .iter()
-            .map(|e| classify_expr_purity(e, shadowed))
+            .map(|e| classify_expr_purity(e, shadowed, declared_pure, graph))
             .fold(Purity::Pure, Purity::worst),
         Expr::Array(arr) => {
             let mut acc = Purity::Pure;
@@ -641,21 +1021,27 @@ fn classify_expr_purity(expr: &Expr, shadowed: &BTreeSet<&'static str>) -> Purit
                     // be impure even on a literal.
                     acc = acc.worst(Purity::Unknown);
                 }
-                acc = acc.worst(classify_expr_purity(&elem.expr, shadowed));
+                acc = acc.worst(classify_expr_purity(
+                    &elem.expr,
+                    shadowed,
+                    declared_pure,
+                    graph,
+                ));
             }
             acc
         }
         Expr::Object(obj) => {
             let mut acc = Purity::Pure;
             for prop in &obj.props {
-                acc = acc.worst(classify_prop_purity(prop, shadowed));
+                acc = acc.worst(classify_prop_purity(prop, shadowed, declared_pure, graph));
             }
             acc
         }
         Expr::Member(member) => {
             if let Some((recv, prop)) = static_member_pair(member)
                 && !shadowed.contains(recv)
-                && PURE_STATIC_PROPS.contains(&(recv, prop))
+                && (PURE_STATIC_PROPS.contains(&(recv, prop))
+                    || PURE_STATIC_FUNCTION_REFS.contains(&(recv, prop)))
             {
                 return Purity::Pure;
             }
@@ -664,7 +1050,7 @@ fn classify_expr_purity(expr: &Expr, shadowed: &BTreeSet<&'static str>) -> Purit
             Purity::Unknown
         }
         Expr::SuperProp(_) | Expr::OptChain(_) => Purity::Unknown,
-        Expr::Call(call) => classify_call_purity(call, shadowed),
+        Expr::Call(call) => classify_call_purity(call, shadowed, declared_pure, graph),
         Expr::New(_) | Expr::TaggedTpl(_) => Purity::Unknown,
         Expr::Assign(_) | Expr::Update(_) => Purity::Impure,
         Expr::Await(_) | Expr::Yield(_) => Purity::Impure,
@@ -696,26 +1082,49 @@ fn static_member_pair(member: &MemberExpr) -> Option<(&'static str, &'static str
     // `contains` checks.
     let prop = PURE_STATIC_PROPS
         .iter()
-        .find_map(|(r, p)| (*r == recv && *p == prop_sym).then_some(*p))
-        .or_else(|| {
-            PURE_STATIC_CALLS
-                .iter()
-                .find_map(|(r, p)| (*r == recv && *p == prop_sym).then_some(*p))
-        })?;
+        .chain(PURE_STATIC_FUNCTION_REFS.iter())
+        .chain(PURE_STATIC_CALLS.iter())
+        .find_map(|(r, p)| (*r == recv && *p == prop_sym).then_some(*p))?;
     Some((recv, prop))
 }
 
-fn classify_call_purity(call: &CallExpr, shadowed: &BTreeSet<&'static str>) -> Purity {
+fn classify_call_purity(
+    call: &CallExpr,
+    shadowed: &BTreeSet<&'static str>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> Purity {
     let Callee::Expr(callee_expr) = &call.callee else {
         return Purity::Unknown;
     };
+    // Author-declared pure binding: a chunk-local function whose
+    // spec member carries `purity: "pure"`. The annotation is an
+    // explicit override and wins over both the whitelist and the
+    // shadowing check (the spec author asserts that THIS bound
+    // value is pure regardless of what its body does or whether
+    // an import shadows the name). See AGENTS.md "Declared
+    // purity".
+    if let Expr::Ident(ident) = callee_expr.as_ref()
+        && declared_pure.contains(ident.sym.as_ref())
+    {
+        return all_args_pure(&call.args, shadowed, declared_pure, graph);
+    }
+    // Chunk-local function declaration: consult the per-chunk
+    // function-body purity cache. `Pure` callee + Pure args → Pure;
+    // `Impure` callee → Impure (no matter the args); `Unknown`
+    // callee inherits.
+    if let Expr::Ident(ident) = callee_expr.as_ref()
+        && let Some(callee_purity) = graph.function_purity(ident.sym.as_ref())
+    {
+        return callee_purity.worst(all_args_pure(&call.args, shadowed, declared_pure, graph));
+    }
     // `Recv.method(args)` against PURE_STATIC_CALLS.
     if let Expr::Member(member) = callee_expr.as_ref()
         && let Some((recv, prop)) = static_member_pair(member)
         && !shadowed.contains(recv)
         && PURE_STATIC_CALLS.contains(&(recv, prop))
     {
-        return all_args_pure(&call.args, shadowed);
+        return all_args_pure(&call.args, shadowed, declared_pure, graph);
     }
     // `globalCallable(args)` against PURE_GLOBAL_CALLS.
     if let Expr::Ident(ident) = callee_expr.as_ref()
@@ -725,36 +1134,55 @@ fn classify_call_purity(call: &CallExpr, shadowed: &BTreeSet<&'static str>) -> P
             .find(|n| *n == ident.sym.as_ref())
         && !shadowed.contains(name)
     {
-        return all_args_pure(&call.args, shadowed);
+        return all_args_pure(&call.args, shadowed, declared_pure, graph);
     }
     Purity::Unknown
 }
 
-fn all_args_pure(args: &[ExprOrSpread], shadowed: &BTreeSet<&'static str>) -> Purity {
+fn all_args_pure(
+    args: &[ExprOrSpread],
+    shadowed: &BTreeSet<&'static str>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> Purity {
     let mut acc = Purity::Pure;
     for arg in args {
         if arg.spread.is_some() {
             // Spread arg's iterator could fire side effects.
             acc = acc.worst(Purity::Unknown);
         }
-        acc = acc.worst(classify_expr_purity(&arg.expr, shadowed));
+        acc = acc.worst(classify_expr_purity(
+            &arg.expr,
+            shadowed,
+            declared_pure,
+            graph,
+        ));
     }
     acc
 }
 
-fn classify_prop_purity(prop: &PropOrSpread, shadowed: &BTreeSet<&'static str>) -> Purity {
+fn classify_prop_purity(
+    prop: &PropOrSpread,
+    shadowed: &BTreeSet<&'static str>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> Purity {
     match prop {
         PropOrSpread::Spread(spread) => {
             // Spreading an arbitrary expression invokes its
             // iterator (array spread) or property iteration
             // (object spread). Either can fire a getter or a
             // user-defined `[Symbol.iterator]`.
-            classify_expr_purity(&spread.expr, shadowed).worst(Purity::Unknown)
+            classify_expr_purity(&spread.expr, shadowed, declared_pure, graph)
+                .worst(Purity::Unknown)
         }
         PropOrSpread::Prop(prop) => match prop.as_ref() {
             Prop::Shorthand(_) => Purity::Pure,
-            Prop::KeyValue(kv) => classify_propname_purity(&kv.key, shadowed)
-                .worst(classify_expr_purity(&kv.value, shadowed)),
+            Prop::KeyValue(kv) => {
+                classify_propname_purity(&kv.key, shadowed, declared_pure, graph).worst(
+                    classify_expr_purity(&kv.value, shadowed, declared_pure, graph),
+                )
+            }
             Prop::Assign(_) => Purity::Impure,
             // `{ get x() {}, set x(v) {}, m() {} }` — defining a
             // method or accessor is pure; invoking it is not, and
@@ -764,12 +1192,17 @@ fn classify_prop_purity(prop: &PropOrSpread, shadowed: &BTreeSet<&'static str>) 
     }
 }
 
-fn classify_propname_purity(name: &PropName, shadowed: &BTreeSet<&'static str>) -> Purity {
+fn classify_propname_purity(
+    name: &PropName,
+    shadowed: &BTreeSet<&'static str>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> Purity {
     match name {
         PropName::Ident(_) | PropName::Str(_) | PropName::Num(_) | PropName::BigInt(_) => {
             Purity::Pure
         }
-        PropName::Computed(c) => classify_expr_purity(&c.expr, shadowed),
+        PropName::Computed(c) => classify_expr_purity(&c.expr, shadowed, declared_pure, graph),
     }
 }
 
@@ -779,18 +1212,23 @@ fn classify_propname_purity(name: &PropName, shadowed: &BTreeSet<&'static str>) 
 /// runs, but `extends` references are tracked as `R`-edges
 /// elsewhere — here we only report whether the class itself
 /// _additionally_ has observable side-effecting init code.
-fn class_has_static_observable(class: &Class, shadowed: &BTreeSet<&'static str>) -> bool {
+fn class_has_static_observable(
+    class: &Class,
+    shadowed: &BTreeSet<&'static str>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> bool {
     class.body.iter().any(|member| match member {
         ClassMember::StaticBlock(_) => true,
         ClassMember::ClassProp(prop) if prop.is_static => prop
             .value
             .as_deref()
-            .map(|v| classify_expr_purity(v, shadowed) != Purity::Pure)
+            .map(|v| classify_expr_purity(v, shadowed, declared_pure, graph) != Purity::Pure)
             .unwrap_or(false),
         ClassMember::PrivateProp(prop) if prop.is_static => prop
             .value
             .as_deref()
-            .map(|v| classify_expr_purity(v, shadowed) != Purity::Pure)
+            .map(|v| classify_expr_purity(v, shadowed, declared_pure, graph) != Purity::Pure)
             .unwrap_or(false),
         _ => false,
     })
@@ -800,6 +1238,8 @@ fn item_has_side_effect(
     item: &ModuleItem,
     kind: StatementKind,
     shadowed: &BTreeSet<&'static str>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
 ) -> bool {
     match kind {
         StatementKind::Import | StatementKind::Export | StatementKind::FnDecl => false,
@@ -807,15 +1247,17 @@ fn item_has_side_effect(
             .iter()
             .flat_map(|var| var.decls.iter())
             .any(|d| match d.init.as_deref() {
-                Some(init) => classify_expr_purity(init, shadowed) != Purity::Pure,
+                Some(init) => {
+                    classify_expr_purity(init, shadowed, declared_pure, graph) != Purity::Pure
+                }
                 None => false,
             }),
         StatementKind::ClassDecl => class_of_item(item)
-            .map(|c| class_has_static_observable(c, shadowed))
+            .map(|c| class_has_static_observable(c, shadowed, declared_pure, graph))
             .unwrap_or(false),
         StatementKind::SideEffect => match item {
             ModuleItem::Stmt(Stmt::Expr(expr)) => {
-                classify_expr_purity(&expr.expr, shadowed) != Purity::Pure
+                classify_expr_purity(&expr.expr, shadowed, declared_pure, graph) != Purity::Pure
             }
             // Bare blocks, control flow, loops, etc. — soundness-first.
             _ => true,
@@ -1911,7 +2353,7 @@ mod tests {
     #[test]
     fn function_body_reads_are_lazy() {
         let module = parse("function f() { return X; } const Y = 1;");
-        let facts = analyze_chunk_facts(&module);
+        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
         assert_eq!(facts.len(), 2);
         // f() declares "f"; its body reference to X is lazy.
         assert_eq!(
@@ -1931,7 +2373,7 @@ mod tests {
     #[test]
     fn class_extends_clause_reads_at_init() {
         let module = parse("class B extends A { run() { return X; } }");
-        let facts = analyze_chunk_facts(&module);
+        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
         assert_eq!(facts.len(), 1);
         // extends A is eager; method body reference to X is lazy.
         assert!(facts[0].reads_at_init.contains("A"));
@@ -1941,7 +2383,7 @@ mod tests {
     #[test]
     fn computed_key_reads_at_init() {
         let module = parse("const M = { [k.foo]: 1 };");
-        let facts = analyze_chunk_facts(&module);
+        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
         // The key expression `k.foo` reads `k` at-init.
         assert!(facts[0].reads_at_init.contains("k"));
     }
@@ -1949,14 +2391,14 @@ mod tests {
     #[test]
     fn class_static_init_reads_at_init() {
         let module = parse("class C { static x = Y; }");
-        let facts = analyze_chunk_facts(&module);
+        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
         assert!(facts[0].reads_at_init.contains("Y"));
     }
 
     #[test]
     fn class_instance_init_is_lazy() {
         let module = parse("class C { x = Y; }");
-        let facts = analyze_chunk_facts(&module);
+        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
         // Instance field initializer evaluates per-instance, not at
         // class-decl time.
         assert!(!facts[0].reads_at_init.contains("Y"));
@@ -1978,7 +2420,7 @@ mod tests {
         // mod_a owns A; A's init reads B (owned by mod_b).
         // mod_b owns B; B's init reads A (owned by mod_a).
         let module = parse("const A = B + 1; const B = A + 1;");
-        let facts = analyze_chunk_facts(&module);
+        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
         let mut binding_assignment = BTreeMap::new();
         binding_assignment.insert("A".to_string(), logical(0));
         binding_assignment.insert("B".to_string(), logical(1));
@@ -1991,7 +2433,7 @@ mod tests {
     #[test]
     fn dag_has_no_cycles() {
         let module = parse("const A = 1; const B = A + 1; const C = B + A;");
-        let facts = analyze_chunk_facts(&module);
+        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
         let mut binding_assignment = BTreeMap::new();
         binding_assignment.insert("A".to_string(), logical(0));
         binding_assignment.insert("B".to_string(), logical(1));
@@ -2017,7 +2459,7 @@ mod tests {
         // R-edge: mod_1 → mod_0 (kind = at-init, binding = A).
         // L-edge: mod_0 → mod_1 (kind = lazy, binding = B).
         let module = parse("const A = 1; function readB() { return B; } const B = A + 1;");
-        let facts = analyze_chunk_facts(&module);
+        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
         let mut binding_assignment = BTreeMap::new();
         binding_assignment.insert("A".to_string(), logical(0));
         binding_assignment.insert("readB".to_string(), logical(0));
@@ -2065,7 +2507,7 @@ mod tests {
         let module = parse(
             r#"const a1 = (globalThis.tag = "a1", 1); const b1 = (globalThis.tag = "b1", 2); const a2 = (globalThis.tag = "a2", 3);"#,
         );
-        let facts = analyze_chunk_facts(&module);
+        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
         let mut binding_assignment = BTreeMap::new();
         binding_assignment.insert("a1".to_string(), logical(0));
         binding_assignment.insert("a2".to_string(), logical(0));
@@ -2096,7 +2538,7 @@ mod tests {
         let module = parse(
             "function helperA() { return B; } function helperB() { return A; } const A = 1; const B = 2;",
         );
-        let facts = analyze_chunk_facts(&module);
+        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
         let mut binding_assignment = BTreeMap::new();
         binding_assignment.insert("helperA".to_string(), logical(0));
         binding_assignment.insert("A".to_string(), logical(0));
@@ -2113,7 +2555,7 @@ mod tests {
 
     fn schedule_for(source: &str, ownership: &[(&str, ModuleId)]) -> Schedule {
         let module = parse(source);
-        let facts = analyze_chunk_facts(&module);
+        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
         let mut bindings = BTreeMap::new();
         let mut max_idx = 0usize;
         for (name, id) in ownership {
@@ -2233,7 +2675,12 @@ mod tests {
             other => panic!("expected `const _ = ...;`, got {other:?}"),
         };
         let init = var.decls[0].init.as_deref().expect("init expected");
-        classify_expr_purity(init, &BTreeSet::new())
+        classify_expr_purity(
+            init,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &ChunkCodeGraph::default(),
+        )
     }
 
     /// Run the classifier against `src` after computing the
@@ -2247,7 +2694,26 @@ mod tests {
             other => panic!("expected last stmt to be `const _ = …;`, got {other:?}"),
         };
         let init = var.decls[0].init.as_deref().expect("init expected");
-        classify_expr_purity(init, &shadowed)
+        classify_expr_purity(
+            init,
+            &shadowed,
+            &BTreeSet::new(),
+            &ChunkCodeGraph::default(),
+        )
+    }
+
+    /// Run the classifier against `src` with both shadowing and an
+    /// explicit declared-pure binding set.
+    fn classify_with_declared_pure(prefix: &str, expr_src: &str, declared: &[&str]) -> Purity {
+        let module = parse(&format!("{prefix}\nconst _ = {expr_src};"));
+        let shadowed = compute_shadowed_globals(&module.body);
+        let declared_pure: BTreeSet<String> = declared.iter().map(|s| (*s).to_string()).collect();
+        let var = match module.body.last().expect("non-empty body") {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
+            other => panic!("expected last stmt to be `const _ = …;`, got {other:?}"),
+        };
+        let init = var.decls[0].init.as_deref().expect("init expected");
+        classify_expr_purity(init, &shadowed, &declared_pure, &ChunkCodeGraph::default())
     }
 
     #[test]
@@ -2395,6 +2861,56 @@ mod tests {
         assert_eq!(classify("Number.isNaN(o.x)"), Purity::Unknown);
     }
 
+    // --- PURE_STATIC_FUNCTION_REFS: read-vs-call distinction ---------------
+
+    #[test]
+    fn static_function_ref_object_aliases_are_pure() {
+        // Bare member READS access own data properties of the
+        // built-in `Object` per ECMA-262 §20.1.2 — no getter
+        // fires, no observable side effect. Aliasing the function
+        // value into a binding stays pure (the value isn't called).
+        assert_eq!(classify("Object.defineProperty"), Purity::Pure);
+        assert_eq!(classify("Object.freeze"), Purity::Pure);
+        assert_eq!(classify("Object.values"), Purity::Pure);
+        assert_eq!(classify("Object.keys"), Purity::Pure);
+    }
+
+    #[test]
+    fn static_function_ref_object_calls_remain_unknown() {
+        // The CALL form of each function-ref entry is unsafe (see
+        // `PURE_STATIC_FUNCTION_REFS` doc-comment for why each is
+        // excluded from `PURE_STATIC_CALLS`). The function-ref
+        // entry only opens the read path; the call must stay
+        // Unknown so the soundness contract holds.
+        assert_eq!(
+            classify("Object.defineProperty(t, 'k', { value: 1 })"),
+            Purity::Unknown
+        );
+        assert_eq!(classify("Object.freeze({ x: 1 })"), Purity::Unknown);
+        assert_eq!(classify("Object.values(o)"), Purity::Unknown);
+        assert_eq!(classify("Object.keys(o)"), Purity::Unknown);
+    }
+
+    #[test]
+    fn static_function_ref_object_shadowed_falls_back_to_unknown() {
+        // `Object` joins WHITELIST_RECEIVERS in this PR; if the
+        // chunk shadows it (via a top-level decl OR an import
+        // specifier per A8), the function-ref read must fall back
+        // to Unknown — `Object.X` then resolves through the
+        // user-bound value.
+        assert_eq!(
+            classify_with_module("const Object = userland;", "Object.defineProperty"),
+            Purity::Unknown
+        );
+        assert_eq!(
+            classify_with_module(
+                r#"import { Object } from "./userland.js";"#,
+                "Object.freeze"
+            ),
+            Purity::Unknown
+        );
+    }
+
     #[test]
     fn whitelist_global_callables_are_pure() {
         // Boolean(x) is `ToBoolean(x)`; per spec, no path fires
@@ -2529,11 +3045,314 @@ mod tests {
         );
     }
 
+    // --- Declared purity (spec annotation) ---------------------------------
+
+    #[test]
+    fn declared_pure_ident_call_classifies_pure() {
+        // A spec member with `purity: "pure"` populates the
+        // declared-pure set. A call whose callee is the bound
+        // Ident classifies Pure regardless of the body content
+        // (the validator does not re-verify; author trust). Args
+        // are still evaluated normally — pure args here, so the
+        // whole call is Pure.
+        assert_eq!(
+            classify_with_declared_pure("function f(x) { return x; }", "f(42)", &["f"]),
+            Purity::Pure
+        );
+        assert_eq!(
+            classify_with_declared_pure("function f(x) { return x; }", "f({ k: 'v' })", &["f"]),
+            Purity::Pure
+        );
+    }
+
+    #[test]
+    fn declared_pure_call_with_impure_arg_inherits_arg_purity() {
+        // The declared-purity contract covers the function value;
+        // arg evaluation is independent. An impure arg makes the
+        // whole call Unknown.
+        assert_eq!(
+            classify_with_declared_pure(
+                "function f(x) { return x; } function io() { return 1; }",
+                "f(io())",
+                &["f"]
+            ),
+            Purity::Unknown
+        );
+    }
+
+    #[test]
+    fn declared_pure_overrides_global_shadowing() {
+        // Author trust contract: a declared-pure annotation wins
+        // over both the whitelist's shadowing fallback and the
+        // body's actual contents. The validator does not
+        // second-guess.
+        assert_eq!(
+            classify_with_declared_pure(
+                r#"import { Boolean } from "./userland.js";"#,
+                "Boolean(x)",
+                &["Boolean"]
+            ),
+            Purity::Pure
+        );
+    }
+
+    #[test]
+    fn declared_pure_does_not_bleed_to_unannotated_callees() {
+        // Only the listed binding is treated pure. A call to a
+        // sibling that wasn't annotated stays subject to the
+        // normal classifier path (Unknown for opaque idents).
+        assert_eq!(
+            classify_with_declared_pure(
+                "function pure(x) { return x; } function impure(x) { return x; }",
+                "impure(x)",
+                &["pure"]
+            ),
+            Purity::Unknown
+        );
+    }
+
+    // --- ChunkCodeGraph: function-body purity inference --------------------
+
+    /// Build a `ChunkCodeGraph` for `src` and return the purity it
+    /// computed for the named function. Tests the full pipeline:
+    /// chunk parsing → function collection → fixed-point.
+    fn fn_purity(src: &str, name: &str) -> Option<Purity> {
+        let module = parse(src);
+        let body = split_comma_list_var_decls(&module.body);
+        let shadowed = compute_shadowed_globals(&body);
+        let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
+        graph.function_purity(name)
+    }
+
+    #[test]
+    fn fn_purity_pure_hof_wrapper() {
+        // Body returns a fresh object literal whose values are a
+        // bound parameter — no observable side effect.
+        assert_eq!(
+            fn_purity(
+                r#"function wrap(f) { return { kind: "wrapped", impl: f }; }"#,
+                "wrap"
+            ),
+            Some(Purity::Pure)
+        );
+    }
+
+    #[test]
+    fn fn_purity_impure_globalthis_write() {
+        // Assignment to a member of `globalThis` is unambiguously
+        // impure regardless of what's on the RHS.
+        assert_eq!(
+            fn_purity("function tag(x) { globalThis.tag = x; }", "tag"),
+            Some(Purity::Impure)
+        );
+    }
+
+    #[test]
+    fn fn_purity_unknown_when_calling_console_log() {
+        // `console.log(...)` is a member-call on a non-whitelisted
+        // receiver — Unknown. Caller inherits.
+        assert_eq!(
+            fn_purity(
+                r#"function logged(x) { console.log("init", x); return x; }"#,
+                "logged"
+            ),
+            Some(Purity::Unknown)
+        );
+    }
+
+    #[test]
+    fn fn_purity_propagates_transitive_impurity() {
+        // `caller` only calls `tainted`. `tainted` writes
+        // `globalThis.touched`, so it's Impure. Fixed-point
+        // propagates: `caller` becomes Impure on iteration 2.
+        let src = r#"
+            function tainted() { globalThis.touched = true; return 1; }
+            function caller() { return tainted(); }
+        "#;
+        assert_eq!(fn_purity(src, "tainted"), Some(Purity::Impure));
+        assert_eq!(fn_purity(src, "caller"), Some(Purity::Impure));
+    }
+
+    #[test]
+    fn fn_purity_mutual_recursion_converges_pure() {
+        // `even` and `odd` only reference each other inside their
+        // bodies. Optimistic init (Pure) holds through the
+        // fixed-point — neither body has an impure operation.
+        let src = r#"
+            function even(n) { return n === 0 ? true : odd(n - 1); }
+            function odd(n) { return n === 0 ? false : even(n - 1); }
+        "#;
+        assert_eq!(fn_purity(src, "even"), Some(Purity::Pure));
+        assert_eq!(fn_purity(src, "odd"), Some(Purity::Pure));
+    }
+
+    #[test]
+    fn fn_purity_arrow_const_init() {
+        // `const f = (x) => …` — chunk-top function in a VarDecl
+        // initializer. Concise-arrow body classifies the single
+        // return expression.
+        assert_eq!(
+            fn_purity("const wrap = (x) => ({ val: x });", "wrap"),
+            Some(Purity::Pure)
+        );
+    }
+
+    #[test]
+    fn fn_purity_call_inherits_chunk_local_function_purity() {
+        // `f()` where `f` is a chunk-top function in the cache
+        // resolves through `ChunkCodeGraph::function_purity`. With
+        // `f` body Pure, the call is Pure.
+        let module = parse("function f() { return 42; } const x = f();");
+        let body = split_comma_list_var_decls(&module.body);
+        let shadowed = compute_shadowed_globals(&body);
+        let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
+        let var = match &body[1] {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
+            other => panic!("expected VarDecl, got {other:?}"),
+        };
+        let init = var.decls[0].init.as_deref().expect("init");
+        assert_eq!(
+            classify_expr_purity(init, &shadowed, &BTreeSet::new(), &graph),
+            Purity::Pure
+        );
+    }
+
+    #[test]
+    fn fn_purity_let_var_bound_arrows_are_not_cached() {
+        // `let` and `var` bindings are reassignable. Caching their
+        // body's purity would be unsound: a later `f = …` could
+        // replace the value with something impure between graph
+        // construction and the call site. Restrict graph entries
+        // to `const`-bound function/arrow initializers.
+        assert_eq!(
+            fn_purity("let f = () => 1;", "f"),
+            None,
+            "`let`-bound arrow must not be in the function-purity graph"
+        );
+        assert_eq!(
+            fn_purity("var f = function () { return 1; };", "f"),
+            None,
+            "`var`-bound function expr must not be in the function-purity graph"
+        );
+        // Sanity: `const` still works.
+        assert_eq!(fn_purity("const f = () => 1;", "f"), Some(Purity::Pure));
+    }
+
+    #[test]
+    fn fn_purity_throw_makes_function_impure_even_with_pure_arg() {
+        // `throw e` alters control flow observably regardless of
+        // whether `e` itself is pure. A function that always
+        // throws must not classify as Pure.
+        assert_eq!(
+            fn_purity(r#"function f() { throw "boom"; }"#, "f"),
+            Some(Purity::Impure)
+        );
+        // Conditional throw is still Impure (we don't reason
+        // about reachability — soundness-first).
+        assert_eq!(
+            fn_purity(r#"function f(x) { if (x) throw "boom"; return x; }"#, "f"),
+            Some(Purity::Impure)
+        );
+    }
+
+    #[test]
+    fn fn_purity_debugger_makes_function_impure() {
+        // `debugger` pauses execution observably to a host
+        // attached to the process — not Pure.
+        assert_eq!(
+            fn_purity("function f() { debugger; return 1; }", "f"),
+            Some(Purity::Impure)
+        );
+    }
+
+    // --- Call-graph topology: deep chains, isolated nodes ------------------
+
+    #[test]
+    fn fn_purity_deep_pure_chain_propagates_in_one_pass() {
+        // `a → b → c → d → e`: a long chain of chunk-local calls,
+        // each function pure on its own. SCC bottom-up classifies
+        // `e` first (no callees), then `d`, ..., then `a` — each
+        // function classified once. With the previous global
+        // fixed-point this would still terminate but rewalk every
+        // body each pass; with SCC-bottom-up each is touched once.
+        let src = r#"
+            function e() { return 0; }
+            function d() { return e(); }
+            function c() { return d(); }
+            function b() { return c(); }
+            function a() { return b(); }
+        "#;
+        for name in ["a", "b", "c", "d", "e"] {
+            assert_eq!(
+                fn_purity(src, name),
+                Some(Purity::Pure),
+                "expected {name} to classify Pure"
+            );
+        }
+    }
+
+    #[test]
+    fn fn_purity_deep_chain_propagates_impurity_to_root() {
+        // Same shape but `e` writes `globalThis`. SCC processes
+        // `e` first → Impure; the worklist propagates Impure up
+        // the chain (`d` calls `e` → Impure; `c` calls `d` →
+        // Impure; ...; `a` → Impure). Each function still only
+        // re-classified after a callee changes — bounded total
+        // work even on long chains.
+        let src = r#"
+            function e() { globalThis.touched = true; return 0; }
+            function d() { return e(); }
+            function c() { return d(); }
+            function b() { return c(); }
+            function a() { return b(); }
+        "#;
+        for name in ["a", "b", "c", "d", "e"] {
+            assert_eq!(
+                fn_purity(src, name),
+                Some(Purity::Impure),
+                "expected {name} to inherit Impure from `e`"
+            );
+        }
+    }
+
+    #[test]
+    fn fn_purity_independent_functions_isolated_in_call_graph() {
+        // No edges between `a` / `b` / `c`. Each is its own SCC;
+        // classification of each is independent. `a` Impure must
+        // not affect `b` or `c`.
+        let src = r#"
+            function a() { globalThis.touched = true; }
+            function b() { return 1; }
+            function c() { return 2; }
+        "#;
+        assert_eq!(fn_purity(src, "a"), Some(Purity::Impure));
+        assert_eq!(fn_purity(src, "b"), Some(Purity::Pure));
+        assert_eq!(fn_purity(src, "c"), Some(Purity::Pure));
+    }
+
+    #[test]
+    fn fn_purity_mutual_recursion_with_external_impure_callee() {
+        // Mutual recursion `a <-> b` (one SCC) + `a` also calls
+        // `c` (separate SCC, Impure). `c` is processed first
+        // (sink); `c` Impure. SCC {a, b}: optimistic Pure init,
+        // worklist sees `a` calls `c` (Impure) → `a` becomes
+        // Impure → `b` (which calls `a`) gets pushed to worklist
+        // → `b` becomes Impure.
+        let src = r#"
+            function c() { globalThis.touched = true; return 0; }
+            function a(n) { return n === 0 ? c() : b(n - 1); }
+            function b(n) { return n === 0 ? 0 : a(n - 1); }
+        "#;
+        assert_eq!(fn_purity(src, "c"), Some(Purity::Impure));
+        assert_eq!(fn_purity(src, "a"), Some(Purity::Impure));
+        assert_eq!(fn_purity(src, "b"), Some(Purity::Impure));
+    }
+
     // --- has_side_effect refinement ------------------------------------------
 
     fn has_side_effect_for(src: &str) -> Vec<bool> {
         let module = parse(src);
-        analyze_chunk_facts(&module)
+        analyze_chunk_facts(&module, &BTreeSet::new())
             .into_iter()
             .map(|f| f.has_side_effect)
             .collect()
@@ -2608,7 +3427,7 @@ mod tests {
 
     fn statement_kinds(source: &str) -> Vec<StatementKind> {
         let module = parse(source);
-        analyze_chunk_facts(&module)
+        analyze_chunk_facts(&module, &BTreeSet::new())
             .into_iter()
             .map(|f| f.kind)
             .collect()
@@ -2616,7 +3435,7 @@ mod tests {
 
     fn declared_per_statement(source: &str) -> Vec<Vec<String>> {
         let module = parse(source);
-        analyze_chunk_facts(&module)
+        analyze_chunk_facts(&module, &BTreeSet::new())
             .into_iter()
             .map(|f| f.declared.into_iter().collect::<Vec<_>>())
             .collect()

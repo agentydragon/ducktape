@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
@@ -119,6 +119,21 @@ struct MemberRequest {
     /// the import statement by `binding` in the chunk body and rewrites
     /// it to a re-import in the destination module.
     is_import_specifier: bool,
+    /// Spec-level purity annotation. `Pure` asserts that calls to the
+    /// bound function have no observable side effects — the validator
+    /// trusts the annotation and drops S edges for `<binding>(...)`
+    /// call sites. `Default` means "not annotated, fall back to
+    /// inferred classification". An author-trust contract; see
+    /// AGENTS.md "Declared purity" and DESIGN.md A9.
+    purity: MemberPurity,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum MemberPurity {
+    #[default]
+    Default,
+    Pure,
 }
 
 #[derive(Debug, Clone)]
@@ -319,7 +334,18 @@ pub fn materialize_logical_modules(
         // emitted as `<chunk_id>.schedule.json`; cycles abort the
         // pipeline.
         let schedule = {
-            let facts = analyze_chunk_facts(&runtime_ast.module);
+            // Spec-declared pure bindings: every member with
+            // `purity: "pure"`. The classifier short-circuits
+            // `<binding>(...)` call sites to `Pure` regardless of
+            // body content. Author-trust contract; see DESIGN.md
+            // A9 + AGENTS.md "Declared purity".
+            let declared_pure: BTreeSet<String> = explicit_requests
+                .iter()
+                .flat_map(|req| req.members.iter())
+                .filter(|m| m.purity == MemberPurity::Pure)
+                .map(|m| m.binding.clone())
+                .collect();
+            let facts = analyze_chunk_facts(&runtime_ast.module, &declared_pure);
             let logical_modules: Vec<ScheduleLogicalModule> = module_plans
                 .iter()
                 .map(|plan| ScheduleLogicalModule {
@@ -807,63 +833,121 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
     })
 }
 
+/// Wire-format types for the operations array consumed by
+/// `logical_requests_for_chunk`. These are deserialized from the
+/// caller's JSON; the conversion into `LogicalRequest` /
+/// `MemberRequest` happens in one pass below.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "operation", rename_all = "snake_case")]
+enum LogicalOperationSpec {
+    DefineLogicalModule(LogicalModuleSpec),
+    DefineResidualModule(LogicalModuleSpec),
+}
+
+#[derive(Debug, Deserialize)]
+struct LogicalModuleSpec {
+    #[serde(default)]
+    id: Option<String>,
+    selector: ModuleSelectorSpec,
+    #[serde(default)]
+    target: Option<ModuleTargetSpec>,
+    #[serde(default)]
+    members: Vec<MemberSpec>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModuleSelectorSpec {
+    #[serde(rename = "chunkId")]
+    chunk_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModuleTargetSpec {
+    path: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct MemberSpec {
+    /// Public export name. Defaults to the bound `selector.binding.name`.
+    #[serde(default)]
+    name: Option<String>,
+    selector: MemberSelectorSpec,
+    #[serde(default)]
+    purity: MemberPurity,
+}
+
+#[derive(Debug, Deserialize)]
+struct MemberSelectorSpec {
+    binding: BindingSelectorSpec,
+}
+
+#[derive(Debug, Deserialize)]
+struct BindingSelectorSpec {
+    name: String,
+    #[serde(default)]
+    kind: Option<BindingSourceKind>,
+}
+
+#[derive(Debug, Deserialize, Eq, PartialEq)]
+enum BindingSourceKind {
+    /// The bound name comes from an `import` specifier in the
+    /// source chunk, not a top-level decl. Materializer rewrites
+    /// the import statement to a re-import in the destination.
+    ImportSpecifier,
+}
+
 fn logical_requests_for_chunk(
     operations: &[Value],
     chunk_id: &str,
     target_dir: &str,
 ) -> Result<Vec<LogicalRequest>> {
     let mut requests = Vec::new();
-    for op in operations {
-        let operation = op.get("operation").and_then(Value::as_str);
+    for (idx, op) in operations.iter().enumerate() {
+        // Peek the operation tag before deserializing — only
+        // `define_logical_module` and `define_residual_module`
+        // are this stage's concern; other operations pass
+        // through other dispatch tables.
+        let op_kind = op.get("operation").and_then(Value::as_str);
         if !matches!(
-            operation,
+            op_kind,
             Some("define_logical_module" | "define_residual_module")
         ) {
             continue;
         }
-        let selector_chunk = op
-            .get("selector")
-            .and_then(|selector| selector.get("chunkId"))
-            .and_then(Value::as_str);
-        if selector_chunk != Some(chunk_id) {
+        let parsed: LogicalOperationSpec = serde_json::from_value(op.clone())
+            .with_context(|| format!("operation #{idx} ({})", op_kind.unwrap_or("?")))?;
+        let (residual, spec) = match parsed {
+            LogicalOperationSpec::DefineLogicalModule(spec) => (false, spec),
+            LogicalOperationSpec::DefineResidualModule(spec) => (true, spec),
+        };
+        if spec.selector.chunk_id != chunk_id {
             continue;
         }
-        let id = op
-            .get("id")
-            .and_then(Value::as_str)
-            .unwrap_or(operation.unwrap_or("logical_module"))
-            .to_string();
-        let target_path = op
-            .get("target")
-            .and_then(|target| target.get("path"))
-            .and_then(Value::as_str)
-            .unwrap_or("residual/unhandled")
-            .to_string();
-        let residual = operation == Some("define_residual_module");
-        let members: Vec<MemberRequest> = op
-            .get("members")
-            .and_then(Value::as_array)
+        let id = spec
+            .id
+            .unwrap_or_else(|| op_kind.unwrap_or("logical_module").to_string());
+        let target_path = spec
+            .target
+            .map(|t| t.path)
+            .unwrap_or_else(|| "residual/unhandled".to_string());
+        let members: Vec<MemberRequest> = spec
+            .members
             .into_iter()
-            .flatten()
-            .filter_map(|member| {
-                let selector = member.get("selector")?;
-                let binding_node = selector.get("binding")?;
-                let binding = binding_node.get("name").and_then(Value::as_str)?;
-                let export_name = member
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .unwrap_or(binding)
-                    .to_string();
-                let is_import_specifier =
-                    binding_node.get("kind").and_then(Value::as_str) == Some("ImportSpecifier");
-                Some(MemberRequest {
-                    binding: binding.to_string(),
+            .map(|m| {
+                let binding = m.selector.binding.name;
+                let export_name = m.name.unwrap_or_else(|| binding.clone());
+                MemberRequest {
+                    is_import_specifier: matches!(
+                        m.selector.binding.kind,
+                        Some(BindingSourceKind::ImportSpecifier)
+                    ),
+                    binding,
                     export_name,
-                    is_import_specifier,
-                })
+                    purity: m.purity,
+                }
             })
             .collect();
-        reject_duplicate_export_names(operation.unwrap_or("logical_module"), &id, &members)?;
+        reject_duplicate_export_names(op_kind.unwrap_or("logical_module"), &id, &members)?;
         requests.push(LogicalRequest {
             id,
             target_path,

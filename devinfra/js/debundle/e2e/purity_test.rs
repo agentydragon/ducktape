@@ -1,14 +1,14 @@
-//! **Desiderata.** Pure-function recognition + spec-level
-//! purity declarations for the realizability gate's `S`
-//! (side-effect ordering) sub-graph.
+//! Pure-function recognition + spec-level purity declarations
+//! for the realizability gate's `S` (side-effect ordering)
+//! sub-graph.
 //!
-//! Every test in this file is `#[ignore]`d: the features they
-//! exercise aren't implemented yet. The file exists to define
-//! the contract — when these features land, the `#[ignore]`
-//! attributes get removed and the tests start running in CI.
-//! Until then, they document what the validator should be able
-//! to do, with concrete fixtures that double as acceptance
-//! criteria.
+//! Most tests run in CI. A few remain `#[ignore]`d as desiderata
+//! for future work — each ignore-reason names the specific
+//! analysis still missing (fresh-literal-arg gate for
+//! `Object.freeze`, `Expr::New` whitelist for `Set`/`Map`/`RegExp`,
+//! escape analysis for IIFE patterns, lazy-back-edge I-cycle
+//! relaxation for cross-module mutual recursion). Their bodies
+//! become regression fixtures the moment those analyses land.
 //!
 //! # Background
 //!
@@ -84,7 +84,6 @@ use serde_json::json;
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "purity inference unimplemented"]
 fn inferred_pure_hof_wrapper_across_modules_emits_no_s_cycle() {
     // The HOF `wrap` takes a function and returns a struct
     // containing it. Body has no observable side effects: no
@@ -115,7 +114,8 @@ export { A, B, C };
 }
 
 #[test]
-#[ignore = "purity inference unimplemented"]
+#[ignore = "blocked on Object.freeze whitelist with fresh-literal-arg gate \
+            (Step D in the purity-desiderata follow-up plan)"]
 fn inferred_pure_schema_builder_across_modules_emits_no_s_cycle() {
     // `Object.freeze` is a statically-known pure built-in;
     // `schema(spec)` returns the frozen spec object. All `schema(...)`
@@ -140,7 +140,8 @@ export { userSchema, productSchema, orderSchema };
 }
 
 #[test]
-#[ignore = "purity inference unimplemented"]
+#[ignore = "blocked on Expr::New whitelist with per-constructor arg-shape gate \
+            (Step E in the purity-desiderata follow-up plan)"]
 fn inferred_pure_collection_constructors_with_literal_args_emit_no_s_cycle() {
     // `new Set([...])`, `new Map([...])`, `new RegExp("...")` with
     // literal-only args are pure by built-in catalogue. The
@@ -178,7 +179,6 @@ export { tagsA, tagsB, cfgA, cfgB, reA, reB };
 }
 
 #[test]
-#[ignore = "purity inference unimplemented"]
 fn inferred_pure_static_object_method_aliasing_emits_no_s_cycle() {
     // The expression being classified here is bare member
     // access — `const define = Object.defineProperty;` reads
@@ -211,7 +211,9 @@ export { define, freeze, values, keys };
 }
 
 #[test]
-#[ignore = "purity inference unimplemented"]
+#[ignore = "blocked on local-mutation / escape analysis (track that an assignment \
+            mutates only a fresh parameter that doesn't escape — Step F in the \
+            purity-desiderata follow-up plan; deferred until a real chunk needs it)"]
 fn inferred_pure_iife_enum_builder_emits_no_s_cycle() {
     // The minified enum-builder pattern: an IIFE whose body
     // mutates its own parameter (a fresh object) and returns
@@ -233,7 +235,11 @@ export { Status, Color, Tag };
 }
 
 #[test]
-#[ignore = "purity inference unimplemented"]
+#[ignore = "blocked on lazy-back-edge I-cycle relaxation \
+            (orthogonal to purity inference; the spec's mod_a / mod_b split puts \
+             mutually-recursive `even` and `odd` in different modules, generating an \
+             I cycle from the lazy body refs even though R is acyclic — DESIGN.md's \
+             current realizability gate rejects all I cycles)"]
 fn inferred_pure_recursive_function_classified_pure() {
     // Mutually recursive pure functions: `even(n)` calls
     // `odd(n - 1)`; `odd(n)` calls `even(n - 1)`. Recursive
@@ -260,7 +266,6 @@ export { even, odd, fourEven, fiveOdd };
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "purity inference unimplemented"]
 fn inferred_impure_globalthis_write_still_rejected() {
     // Even with a smarter classifier, `globalThis.X = ...` is
     // unambiguously observably impure: the assignment is
@@ -287,7 +292,6 @@ export { a1, a2, b1 };
 }
 
 #[test]
-#[ignore = "purity inference unimplemented"]
 fn inferred_impure_console_log_still_rejected() {
     // `console.log` writes to the host's stdout — observable
     // I/O. A function that calls `console.log` must be
@@ -313,7 +317,6 @@ export { a1, a2, b1 };
 }
 
 #[test]
-#[ignore = "purity inference unimplemented"]
 fn inferred_impure_via_transitively_impure_callee_still_rejected() {
     // `caller(...)` does nothing observable on its own, but
     // calls `tainted()` which mutates `globalThis`. Recursive
@@ -345,7 +348,6 @@ export { a1, a2, b1 };
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "spec-level purity declarations unimplemented"]
 fn declared_pure_member_suppresses_s_edges_for_opaque_call() {
     // `dispatcher` does dynamic property access into a
     // registry — recursive purity analysis can't statically
@@ -407,7 +409,6 @@ export { A, B, C, dispatcher };
 }
 
 #[test]
-#[ignore = "spec-level purity declarations unimplemented"]
 fn declared_pure_member_does_not_bypass_at_init_read_cycle() {
     // Declared purity affects only `S` (side-effect ordering)
     // edges. It does *not* suppress `R` (at-init read) edges.
@@ -464,7 +465,6 @@ export { A, B, D, wrap };
 }
 
 #[test]
-#[ignore = "spec-level purity declarations unimplemented"]
 fn declared_pure_annotation_applies_only_to_annotated_member_positive() {
     // Two HOFs in the chunk: `pureWrap` (has no observable
     // side effects) and `impureWrap` (legitimately writes to
@@ -526,7 +526,6 @@ export { A, B, C, pureWrap, impureWrap };
 }
 
 #[test]
-#[ignore = "spec-level purity declarations unimplemented"]
 fn declared_pure_annotation_applies_only_to_annotated_member_negative() {
     // Same chunk shape as the `..._positive` companion (two
     // HOFs, `pureWrap` annotated pure, `impureWrap` not), but

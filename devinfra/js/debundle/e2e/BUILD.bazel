@@ -53,9 +53,6 @@ rust_library(
         "source_order_emit_test",
         "realizability_test",
         "cross_module_emission_test",
-        # Desiderata: every #[test] inside is `#[ignore]`d. Build
-        # exercises compilation; the runtime contract activates
-        # when the underlying features land.
-        "desiderata_purity_test",
+        "purity_test",
     ]
 ]

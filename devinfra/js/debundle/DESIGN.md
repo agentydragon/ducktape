@@ -436,6 +436,19 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   governs adding new entries; soundness is preserved iff the
   contract is preserved.
 
+- **A9. Spec-declared purity annotations are author-trusted.** The
+  spec format admits an optional per-member `purity: "pure"` field
+  that asserts: calls to the bound function value have no
+  observable side effects. The validator does not re-verify the
+  function body — the annotation is an explicit author override
+  that wins over both the inferred classification and A8's
+  shadowing fallback. Used when the function body is too dynamic
+  for static analysis (dynamic dispatch, dynamic property access)
+  but the author knows by construction that the binding is pure.
+  An incorrect annotation can produce a buggy debundle the same
+  way an incorrect spec selector can — soundness shifts to the
+  spec author. See AGENTS.md "Declared purity".
+
 A1–A5 are statically checkable on each chunk: grep for top-level
 `await`, dynamic `import()` of internal paths, `eval`, and `with`.
 A2 in particular is enforced by `find_top_level_await` —
@@ -446,7 +459,10 @@ A7 (multi-chunk DAG) is satisfied by typical bundlers' vendor-leaf
 chunking. A8 (whitelist receivers not shadowed) is dropped to
 `Unknown` per-name by `compute_shadowed_globals` whenever the
 chunk-top declared-name set claims one of the whitelist receivers,
-so chunks that violate A8 still validate soundly.
+so chunks that violate A8 still validate soundly. A9 (declared
+purity is author-trusted) is satisfied by spec review — every
+`purity: "pure"` annotation is an explicit, reviewable trust
+claim.
 
 ### Lemmas
 

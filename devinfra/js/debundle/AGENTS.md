@@ -233,6 +233,61 @@ The schedule validator carries an inline TODO listing patterns
 that would become admissible once a primitive-arg gate exists —
 treat that as the queue for safe whitelist growth.
 
+### Declared purity
+
+The spec format admits an optional per-member `purity: "pure"`
+annotation. When present, the validator treats calls to the bound
+Ident as `Pure` regardless of the function body's contents. This
+is an **author trust contract**: the validator does not re-verify
+the body. An incorrect annotation can produce a buggy debundle the
+same way an incorrect spec selector can — soundness shifts to the
+spec author.
+
+Use the annotation when:
+
+- The body is too dynamic for static inference (dynamic dispatch
+  through a registry, dynamic property access).
+- The body calls into vendor code outside the chunk's analyzable
+  scope.
+- The function is opaque by construction (a host-provided callback,
+  an FFI shim) but is known by the author to have no observable
+  side effects.
+
+The annotation overrides A8's shadowing fallback: a chunk that
+imports `Boolean` from userland AND declares the local `Boolean`
+binding pure in the spec uses the declared-pure path (the author
+asserts THIS bound value is pure, regardless of where it came
+from). Args to the call are still evaluated normally — declared
+purity covers the function value, not its arguments.
+
+The annotation is **per-member**: a sibling member without the
+annotation stays subject to inferred classification. There is no
+"declare a whole module pure" shorthand.
+
+### Function-ref reads vs calls
+
+The `PURE_STATIC_FUNCTION_REFS` table whitelists static-property
+reads of function-valued built-ins (e.g.
+`const define = Object.defineProperty;`). Reading such a property
+fires no getter per ECMA-262, so the read itself is pure. The
+**call** of the resolved value is still subject to the
+`PURE_STATIC_CALLS` admission contract above — call shapes that
+mutate, fire iterators, fire user getters, or invoke proxy traps
+must NOT be added to `PURE_STATIC_CALLS` regardless of whether
+the read appears in `PURE_STATIC_FUNCTION_REFS`.
+
+Every entry added to `PURE_STATIC_FUNCTION_REFS` MUST land with
+both:
+
+- a positive `static_function_ref_*_alias_is_pure` test
+  (`Receiver.method` classifies as `Pure`), and
+- a negative `static_function_ref_*_calls_remain_unknown` test
+  (`Receiver.method(args)` classifies as `Unknown`).
+
+The two-direction pinning prevents a future maintainer from
+misreading the read-pure entry as call-pure and incorrectly
+promoting the entry into `PURE_STATIC_CALLS`.
+
 ## Testing Philosophy
 
 **Default to end-to-end tests that drive the real pipeline.** A debundler
