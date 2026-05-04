@@ -39,6 +39,23 @@ pub struct TransformSpec {
     pub logical_modules: BTreeMap<String, BTreeMap<String, LogicalModule>>,
     #[serde(default)]
     pub residual_modules: BTreeMap<String, ResidualModule>,
+    /// Per-chunk in-place renames for bindings staying in entry's
+    /// body (i.e. *not* assigned to a logical module and not pulled
+    /// into the explicit residual). The materializer collects these
+    /// into a `binding_name -> export_name` map; the lowerer rewrites
+    /// identifiers in entry's source AST during chunk lowering. No
+    /// `Logical(R)` module is created for these bindings, no separate
+    /// residual file is emitted, and the orphan-statement node
+    /// (`ModuleId::ResidualEntry`) keeps owning the bindings — which
+    /// avoids the 2-module SCC the residual-member-rename path would
+    /// otherwise create when orphan stmts and residual decls
+    /// interleave with side-effecting initializers.
+    ///
+    /// Bindings claimed by a logical module take their rename from
+    /// the module plan; the `chunk_renames` entry (if any) is dropped
+    /// for those.
+    #[serde(default)]
+    pub chunk_renames: BTreeMap<String, ChunkRenames>,
 
     // --- per-stage configuration (presence gates the stage) ---
     /// When `true`, run `rewrite_chunk_entry_specifiers` after the
@@ -118,6 +135,17 @@ pub struct EmitBrowserHarnessConfig {
     pub snapshot_root: PathBuf,
     #[serde(default)]
     pub force: bool,
+}
+
+/// Container for per-chunk in-place renames; see
+/// [`TransformSpec::chunk_renames`].
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ChunkRenames {
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub members: Vec<Member>,
 }
 
 fn default_true() -> bool {

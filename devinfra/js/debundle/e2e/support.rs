@@ -83,6 +83,12 @@ pub struct FixtureOpts<'a> {
     /// `include_residual` is ignored. Use the [`residual_module`] helper
     /// to build typical bodies.
     pub residual: Option<Value>,
+    /// Optional `chunk_renames` entry for this chunk. When set, the
+    /// spec's top-level `chunkRenames` map carries the rename
+    /// members; the materializer applies them in-place to bindings
+    /// staying in entry's body without creating a `Logical(R)` for
+    /// them.
+    pub chunk_renames: Option<Value>,
     pub chunk_id: &'a str,
     /// When `residual` is `None` and this is `true`, the harness emits an
     /// empty residual module (`target: "residual/unhandled"`) for this
@@ -97,6 +103,7 @@ impl<'a> FixtureOpts<'a> {
             source,
             logical_modules,
             residual: None,
+            chunk_renames: None,
             chunk_id: "static/app",
             include_residual: true,
             extra_files: &[],
@@ -418,11 +425,16 @@ fn build_spec(opts: &FixtureOpts<'_>, setup: &FixtureSetup) -> Value {
         }),
         (None, false) => json!({}),
     };
+    let chunk_renames = match &opts.chunk_renames {
+        Some(renames) => json!({ chunk_id: renames }),
+        None => json!({}),
+    };
     json!({
         "kind": "js.ast_transform_spec",
         "inputs": { "inputRoot": setup.snapshot_root, "jsListPath": setup.js_list_path },
         "logicalModules": logical_modules,
         "residualModules": residual_modules,
+        "chunkRenames": chunk_renames,
         "materializeLogicalModules": {
             "chunkIds": [chunk_id],
             "pruneOtherChunks": false,

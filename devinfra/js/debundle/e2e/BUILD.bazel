@@ -49,6 +49,7 @@ rust_library(
         "vendor_swap_test",
         "scrambled_id_frequencies_test",
         "sibling_declarator_steal_test",
+        "chunk_renames_test",
         "missing_binding_member_test",
         "residual_member_rename_test",
         "source_order_emit_test",

@@ -25,6 +25,7 @@ export { a, b };
             "residual/unhandled",
             &[Member::renamed("FirstFn", "a")],
         )),
+        chunk_renames: None,
         chunk_id: "static/app",
         include_residual: false,
         extra_files: &[],

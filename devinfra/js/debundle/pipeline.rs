@@ -230,6 +230,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
                 &mut state.artifact,
                 &spec.logical_modules,
                 &spec.residual_modules,
+                &spec.chunk_renames,
                 MaterializeLogicalModulesOptions {
                     chunk_ids,
                     file,

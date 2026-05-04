@@ -21,7 +21,7 @@ use schedule_validator::{
     BindingKind, BindingName, LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId,
     Schedule, analyze_chunk_facts, find_top_level_await, render_cycle_summary,
 };
-use spec::{BindingSourceKind, LogicalModule, MemberPurity, ResidualModule};
+use spec::{BindingSourceKind, ChunkRenames, LogicalModule, MemberPurity, ResidualModule};
 
 const LOWERING_FILE_PRAGMA: &str =
     "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";
@@ -156,6 +156,7 @@ pub fn materialize_logical_modules(
     artifact: &mut JsPipelineArtifact,
     logical_modules: &BTreeMap<String, BTreeMap<String, LogicalModule>>,
     residual_modules: &BTreeMap<String, ResidualModule>,
+    chunk_renames: &BTreeMap<String, ChunkRenames>,
     options: MaterializeLogicalModulesOptions,
 ) -> Result<LogicalModuleManifest> {
     if options.chunk_ids.is_empty() {
@@ -217,6 +218,7 @@ pub fn materialize_logical_modules(
         let requests = logical_requests_for_chunk(
             logical_modules.get(&chunk_id),
             residual_modules.get(&chunk_id),
+            chunk_renames.contains_key(&chunk_id),
             &chunk_id,
             &target_dir,
         )?;
@@ -395,6 +397,11 @@ pub fn materialize_logical_modules(
             );
         }
 
+        let chunk_renames_map = chunk_renames
+            .get(&chunk_id)
+            .map(|cr| collect_chunk_renames(cr))
+            .transpose()?
+            .unwrap_or_default();
         let lowered = lower_chunk(LowerChunkInputs {
             artifact,
             runtime_ast,
@@ -406,6 +413,7 @@ pub fn materialize_logical_modules(
             module_plans: &module_plans,
             binding_assignment: &binding_assignment,
             schedule: &schedule,
+            chunk_renames: &chunk_renames_map,
         })?;
 
         let mut files = BTreeMap::new();
@@ -565,6 +573,12 @@ struct LowerChunkInputs<'a> {
     module_plans: &'a [ModulePlan],
     binding_assignment: &'a BTreeMap<String, usize>,
     schedule: &'a Schedule,
+    /// In-place renames from `TransformSpec::chunk_renames`. Applied
+    /// to bindings staying in entry's body — i.e. those *not* in
+    /// `binding_assignment`. Bindings claimed by a logical module
+    /// take their rename from the module plan; entries here for
+    /// those bindings are silently dropped.
+    chunk_renames: &'a BTreeMap<String, String>,
 }
 
 fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
@@ -579,6 +593,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         module_plans,
         binding_assignment,
         schedule,
+        chunk_renames,
     } = inputs;
     let mut selected_ordinals = BTreeSet::new();
     for decl in declarations {
@@ -641,6 +656,18 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
     let mut entry_imports: Vec<(usize, ModuleItem)> = Vec::new();
     let mut occupied = collect_occupied_local_names(&entry_body);
     let mut body_renames = BTreeMap::<String, String>::new();
+    // Seed body_renames with `chunk_renames` entries for bindings
+    // staying in entry's body (not claimed by any logical module).
+    // Bindings owned by a logical module take their rename from the
+    // module plan via the disambiguate-imports pass below;
+    // chunk_renames entries for those bindings are silently
+    // dropped here (the logical-module rename wins).
+    for (binding, export_name) in chunk_renames {
+        if binding_assignment.contains_key(binding) {
+            continue;
+        }
+        body_renames.insert(binding.clone(), export_name.clone());
+    }
     for (module_index, plan) in module_plans.iter().enumerate() {
         if plan.bindings.is_empty() {
             continue;
@@ -860,6 +887,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
 fn logical_requests_for_chunk(
     chunk_logical_modules: Option<&BTreeMap<String, LogicalModule>>,
     chunk_residual: Option<&ResidualModule>,
+    chunk_renames_present: bool,
     chunk_id: &str,
     target_dir: &str,
 ) -> Result<Vec<LogicalRequest>> {
@@ -900,7 +928,15 @@ fn logical_requests_for_chunk(
             members,
         });
     }
-    if requests.is_empty() {
+    // Fallback: when the spec is silent about this chunk (no
+    // `logical_modules` or `residual_modules` entry), inject a
+    // memberless residual so the materializer has at least one
+    // module to point unowned decls at. Skipped when the spec has
+    // any `chunk_renames` for the chunk — that signals the spec
+    // wants bindings to stay in `ResidualEntry`-land (no
+    // `Logical(R)` module, no separate residual file emitted), with
+    // renames applied in-place by the lowerer.
+    if requests.is_empty() && !chunk_renames_present {
         requests.push(LogicalRequest {
             id: "logical_module_0".to_string(),
             target_path: posix_join(&[target_dir, "unhandled"]),
@@ -909,6 +945,30 @@ fn logical_requests_for_chunk(
         });
     }
     Ok(requests)
+}
+
+/// Collect a `ChunkRenames` block into a `binding_name -> export_name`
+/// map. Bindings that appear more than once across `members` fail
+/// fast — silently last-write-wins on a binding rename is the same
+/// hazard as duplicate logical-module member bindings.
+fn collect_chunk_renames(chunk_renames: &ChunkRenames) -> Result<BTreeMap<String, String>> {
+    let mut renames = BTreeMap::<String, String>::new();
+    let id = chunk_renames.id.as_deref().unwrap_or("chunk_renames");
+    for member in &chunk_renames.members {
+        let binding = member.selector.binding.name.clone();
+        let export_name = member.name.clone().unwrap_or_else(|| binding.clone());
+        if let Some(existing) = renames.get(&binding) {
+            if existing != &export_name {
+                bail!(
+                    "chunk_renames {id}: binding {binding} already renamed to \
+                     {existing}; refusing to overwrite with {export_name}"
+                );
+            }
+        } else {
+            renames.insert(binding, export_name);
+        }
+    }
+    Ok(renames)
 }
 
 fn build_members(members: &[spec::Member]) -> Vec<MemberRequest> {
