@@ -662,9 +662,51 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
     // module plan via the disambiguate-imports pass below;
     // chunk_renames entries for those bindings are silently
     // dropped here (the logical-module rename wins).
+    //
+    // Each accepted target name is reserved in `occupied` before the
+    // import-disambiguation pass runs, so a later cross-module
+    // import doesn't mint a fresh local that collides with one of
+    // the chunk_renames' targets. Conflicting targets (target name
+    // already taken by a body local that isn't being renamed away,
+    // or by another chunk_renames entry, or invalid as an
+    // identifier) bail rather than producing invalid JS silently.
+    let mut renamed_away = BTreeSet::<String>::new();
+    for (binding, _) in chunk_renames {
+        if binding_assignment.contains_key(binding) {
+            continue;
+        }
+        renamed_away.insert(binding.clone());
+    }
     for (binding, export_name) in chunk_renames {
         if binding_assignment.contains_key(binding) {
             continue;
+        }
+        if !is_valid_js_identifier(export_name) {
+            bail!(
+                "chunk_renames target {export_name} for binding {binding} is not a valid JS identifier",
+            );
+        }
+        if export_name != binding {
+            // A body local that's also being renamed away vacates
+            // its slot in `occupied` — it's safe to reuse. Anything
+            // else still in `occupied` would collide.
+            let target_already_taken =
+                occupied.contains(export_name) && !renamed_away.contains(export_name);
+            if target_already_taken {
+                bail!(
+                    "chunk_renames target {export_name} for binding {binding} collides with an existing top-level local",
+                );
+            }
+        }
+        if !occupied.insert(export_name.clone()) && export_name != binding {
+            // `occupied.insert` returns false if already present;
+            // for the rename-to-self case (export_name == binding)
+            // that's expected. For any other case the target was
+            // already chosen by a previous chunk_renames entry —
+            // duplicate target.
+            bail!(
+                "chunk_renames target {export_name} for binding {binding} duplicates an earlier rename target",
+            );
         }
         body_renames.insert(binding.clone(), export_name.clone());
     }
@@ -951,6 +993,24 @@ fn logical_requests_for_chunk(
 /// map. Bindings that appear more than once across `members` fail
 /// fast — silently last-write-wins on a binding rename is the same
 /// hazard as duplicate logical-module member bindings.
+/// True iff `s` is a valid JavaScript identifier — start char is
+/// `[A-Za-z_$]` and rest is `[A-Za-z0-9_$]`. Reserved words are not
+/// rejected (a target named e.g. `class` or `let` would still trip
+/// at parse time downstream, but that's a louder failure than this
+/// shallow check would catch). The intent is to filter typos
+/// (`with-dash`, `0digit`, empty string) from spec authors.
+fn is_valid_js_identifier(s: &str) -> bool {
+    let mut chars = s.chars();
+    let first = match chars.next() {
+        Some(c) => c,
+        None => return false,
+    };
+    if !(first.is_ascii_alphabetic() || first == '_' || first == '$') {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+}
+
 fn collect_chunk_renames(chunk_renames: &ChunkRenames) -> Result<BTreeMap<String, String>> {
     let mut renames = BTreeMap::<String, String>::new();
     let id = chunk_renames.id.as_deref().unwrap_or("chunk_renames");
