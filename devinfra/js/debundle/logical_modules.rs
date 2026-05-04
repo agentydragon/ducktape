@@ -972,7 +972,9 @@ fn logical_requests_for_chunk(
                 }
             })
             .collect();
-        reject_duplicate_export_names(op_kind.unwrap_or("logical_module"), &id, &members)?;
+        let op_kind_label = op_kind.unwrap_or("logical_module");
+        reject_duplicate_export_names(op_kind_label, &id, &members)?;
+        reject_duplicate_member_bindings(op_kind_label, &id, &members)?;
         requests.push(LogicalRequest {
             id,
             target_path,
@@ -1139,6 +1141,27 @@ fn reject_duplicate_export_names(
     if !duplicates.is_empty() {
         bail!(
             "{operation} {id} has duplicate exported logical names: {}",
+            duplicates.into_iter().collect::<Vec<_>>().join(", ")
+        );
+    }
+    Ok(())
+}
+
+fn reject_duplicate_member_bindings(
+    operation: &str,
+    id: &str,
+    members: &[MemberRequest],
+) -> Result<()> {
+    let mut seen = BTreeSet::new();
+    let mut duplicates = BTreeSet::new();
+    for member in members {
+        if !seen.insert(member.binding.clone()) {
+            duplicates.insert(member.binding.clone());
+        }
+    }
+    if !duplicates.is_empty() {
+        bail!(
+            "{operation} {id} has duplicate source bindings: {}",
             duplicates.into_iter().collect::<Vec<_>>().join(", ")
         );
     }
