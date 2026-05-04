@@ -21,11 +21,11 @@ commits.
 - ducktape main: `enforcement = "active"`. No-op today because main is not the
   default branch (`devel` still is) and nothing pushes to main. Will start
   gating direct pushes once the default branch flips to main.
-- gaffer-private main: `enforcement = "disabled"`. **Blocker resolved** in
-  commit 745532e6b: Flux's `gaffer-images` ImageUpdateAutomation now pushes
-  via the `ducktape-automation` GitHub App, which matches the `Integration`
-  bypass actor. Flipping enforcement to `"active"` is now safe — see
-  "Outstanding work" below.
+- gaffer-private main: `enforcement = "active"`. Gates `Test & Build` and
+  `Pre-commit checks` (the latter from the workflow added in
+  `agentydragon/gaffer-private#16`). Flux's `gaffer-images`
+  ImageUpdateAutomation pushes via the `ducktape-automation` GitHub App,
+  matching the `Integration` bypass actor.
 - Bypass actors on both rulesets:
   - `RepositoryRole=admin` (id 5) — covers in-cluster automations pushing as
     the owner via PAT (`claude-token-rotation`, `attic-jwt-rotation` CronJobs).
@@ -67,17 +67,7 @@ GitRepositories switched from `ssh://git@github.com/…` to
 
 ## Outstanding work
 
-1. **Cutover verification.** After commit 745532e6b lands on `origin/devel`,
-   `flux reconcile source git flux-system && flux reconcile source git gaffer-private`,
-   then `flux reconcile image update gaffer-images`. Confirm both
-   GitRepositories reach `Ready=True` with a fresh artifact revision and that
-   a setter-driven commit on `gaffer-private/main` is attributed to the App.
-   Watch source-controller logs for `transport: authentication required`
-   events on either GitRepository.
-2. **Activate the gaffer ruleset.** Flip
-   `github_repository_ruleset.gaffer_main.enforcement` from `"disabled"` to
-   `"active"` in `tf/gitops/github-branch-protection/main.tf`. Apply.
-3. **Retire the legacy SSH deploy keys.** CLEANUP markers in place:
+1. **Retire the legacy SSH deploy keys.** CLEANUP markers in place:
    - `cluster/k8s/gaffer-private-source/deploy-key-tf.yaml` header +
      `cluster/k8s/gaffer-private-source/kustomization.yaml` inline — drop
      `deploy-key-tf.yaml` and `github-pat-gaffer-private-flux.sops.yaml`

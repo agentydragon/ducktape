@@ -10,10 +10,10 @@
 # container-images:pin-digests) can keep working after migration to
 # actions/create-github-app-token. See secrets/ducktape_automation.README.md.
 #
-# On gaffer-private, main is already the default branch, but the ruleset
-# is created with enforcement = "disabled" pending the Flux App-auth
-# migration (see the NOTE on github_repository_ruleset.gaffer_main below
-# and plans/branch_protection.md).
+# On gaffer-private, main is the default branch and the ruleset enforces
+# on apply. Flux's gaffer-images ImageUpdateAutomation now pushes via the
+# ducktape-automation App (see the Integration bypass actor below), so its
+# image-pin commits land cleanly.
 #
 # Auth uses the per-repo PATs already present in flux-system:
 #   - github-secrets-sync-pat (Administration:R/W on ducktape; deployed
@@ -122,23 +122,12 @@ resource "github_repository_ruleset" "ducktape_main" {
 }
 
 # --- gaffer-private main ---
-#
-# NOTE: enforcement is "disabled" pending Flux migration to App auth.
-# main is gaffer's default branch and Flux's gaffer-images
-# ImageUpdateAutomation (cluster/k8s/gaffer-private-source/) pushes commits
-# back to main using gaffer-private-deploy-key — an SSH deploy key. Deploy
-# keys aren't a user/App identity, so neither RepositoryRole=admin nor
-# Integration=ducktape-automation matches them, and the push would be
-# rejected by an active ruleset. Flip to "active" once Flux's gaffer-private
-# GitRepository secretRef has been swapped to ducktape-automation App auth
-# (githubAppID / githubAppInstallationID / githubAppPrivateKey) — see
-# plans/branch_protection.md for the migration runbook.
 resource "github_repository_ruleset" "gaffer_main" {
   provider    = github.gaffer
   name        = "main-protection"
   repository  = "gaffer-private"
   target      = "branch"
-  enforcement = "disabled"
+  enforcement = "active"
 
   conditions {
     ref_name {
@@ -169,15 +158,14 @@ resource "github_repository_ruleset" "gaffer_main" {
     }
 
     required_status_checks {
-      # gaffer's bazel-ci.yml is a top-level workflow (not invoked via
-      # workflow_call), so the check name is `<workflow_name> /
-      # <job_name>` = `Bazel CI / Test & Build`. If the first apply
-      # surfaces a different string, adjust here.
-      #
-      # TODO: add `Pre-commit checks / Pre-commit checks` once gaffer's
-      # pre-commit workflow is created (separate PR).
+      # gaffer's bazel-ci and pre-commit are both top-level workflows
+      # (not invoked via workflow_call), so check_runs.name is just the
+      # job name in each case. Empirically verified on PRs #16/#17.
       required_check {
-        context = "Bazel CI / Test & Build"
+        context = "Test & Build"
+      }
+      required_check {
+        context = "Pre-commit checks"
       }
       strict_required_status_checks_policy = false
     }
