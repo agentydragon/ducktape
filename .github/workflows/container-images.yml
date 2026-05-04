@@ -226,14 +226,11 @@ jobs:
             exit 1
           fi
 
-          # Replace actions/checkout's basic-auth Authorization header with the
-          # App installation token so the push is App-attributed. See the
-          # corresponding comment in .github/workflows/sync-pins.yml — the
-          # includeif-pulled credentials file means a plain `git config
-          # --unset-all` doesn't reach the existing value, so we drop the
-          # includeif entries first and only then set our own extraheader.
+          # Push as the ducktape-automation App via URL-embedded HTTP Basic
+          # auth — see the corresponding comment in sync-pins.yml for why the
+          # extraheader-replacement approach didn't work.
+          set +x
           for key in $(git config --local --name-only --get-regexp '^includeif\.gitdir:.*\.path$' || true); do
             git config --local --unset-all "$key"
           done
-          git config 'http.https://github.com/.extraheader' "Authorization: Bearer ${APP_TOKEN}"
-          git push origin "HEAD:${BRANCH}"
+          git push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${BRANCH}"

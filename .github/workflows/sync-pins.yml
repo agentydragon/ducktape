@@ -53,22 +53,23 @@ jobs:
           fi
           git commit -m "chore: sync artifact pins (${{ steps.sync.outputs.updated }})"
           git pull --rebase origin devel
-          # Replace actions/checkout's basic-auth Authorization header with the
-          # App installation token so the push is App-attributed.
+          # Push as the ducktape-automation App. actions/checkout sets a
+          # basic-auth Authorization header on github.com via an extraheader
+          # in an `includeif.gitdir:*.path` temp file. Replacing it via
+          # `git config --unset-all http.https://github.com/.extraheader`
+          # (PR #1505) was a no-op — `--unset-all` only edits the local
+          # config, not the includeif'd file. Dropping the includeif and
+          # re-setting the extraheader (PR #1508) made git stop sending
+          # any Authorization header at all (the local extraheader didn't
+          # take effect for some reason; pushes failed with "could not
+          # read Username for 'https://github.com'").
           #
-          # actions/checkout writes its `http.https://github.com/.extraheader`
-          # value into a temp file under $RUNNER_TEMP and pulls it in via
-          # `includeif.gitdir:<repo>.path = <temp file>` entries in the local
-          # config. `git config --unset-all` only edits the local config, so
-          # it cannot remove a value that lives in an includeif'd file —
-          # adding our own value alongside results in TWO Authorization
-          # headers on the wire and GitHub returns "Duplicate header:
-          # Authorization" 400.
-          #
-          # Drop the includeif entries first to disconnect the credentials
-          # file, then set our own extraheader in the local config.
+          # Working approach: push to an explicit URL with the App token as
+          # HTTP Basic auth (`x-access-token:<token>`). This bypasses the
+          # extraheader machinery entirely. `set +x` keeps the token out
+          # of the runner trace.
+          set +x
           for key in $(git config --local --name-only --get-regexp '^includeif\.gitdir:.*\.path$' || true); do
             git config --local --unset-all "$key"
           done
-          git config 'http.https://github.com/.extraheader' "Authorization: Bearer ${APP_TOKEN}"
-          git push origin "HEAD:devel"
+          git push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:devel"
