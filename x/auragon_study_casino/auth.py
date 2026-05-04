@@ -68,7 +68,7 @@ def decode_session_token(token: str, secret: bytes) -> str | None:
     if data.get("exp", 0) < time.time():
         return None
     sub = data.get("sub", "")
-    return sub if sub else None
+    return sub or None
 
 
 def create_oidc_router(

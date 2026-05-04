@@ -1,19 +1,19 @@
-# Branch-protection rulesets for agentydragon/ducktape and
-# agentydragon/gaffer-private. Both target refs/heads/main.
+# Branch protection for agentydragon/ducktape and agentydragon/gaffer-private
+# default branches. Two different mechanisms:
 #
-# On ducktape, main is not currently the default branch; the ruleset
-# enforces nothing today and will start gating direct pushes when the
-# default flips from devel. This is the "Option C — partial protection"
-# path described in plans/branch_protection.md, with the ducktape-automation
-# GitHub App added as a bypass actor so the three GHA workflows that
-# direct-push to the default branch (sync-pins, nix-flake-update,
-# container-images:pin-digests) can keep working after migration to
-# actions/create-github-app-token. See secrets/ducktape_automation.README.md.
+# - ducktape (public repo) → `github_repository_ruleset` on `refs/heads/main`.
+#   Rulesets are GitHub's modern API, support Integration-actor bypass, and
+#   are available on public repos for free. The ducktape-automation App is
+#   wired in as a bypass actor so direct-push workflows that mint
+#   installation tokens (sync-pins, nix-flake-update, pin-digests) can keep
+#   working after ducktape's default branch flips from devel to main. Today
+#   main is not yet default and the ruleset is a no-op.
 #
-# On gaffer-private, main is the default branch and the ruleset enforces
-# on apply. Flux's gaffer-images ImageUpdateAutomation now pushes via the
-# ducktape-automation App (see the Integration bypass actor below), so its
-# image-pin commits land cleanly.
+# - gaffer-private (private repo, Free plan) → classic
+#   `github_branch_protection` on `main`. Rulesets are not available on
+#   Free private repos (POST returns 403 "Upgrade to GitHub Pro"). Classic
+#   protection works but has weaker semantics on Free — see the comment on
+#   the gaffer_main resource and plans/branch_protection.md.
 #
 # Auth uses the per-repo PATs already present in flux-system:
 #   - github-secrets-sync-pat (Administration:R/W on ducktape; deployed
@@ -122,52 +122,64 @@ resource "github_repository_ruleset" "ducktape_main" {
 }
 
 # --- gaffer-private main ---
-resource "github_repository_ruleset" "gaffer_main" {
-  provider    = github.gaffer
-  name        = "main-protection"
-  repository  = "gaffer-private"
-  target      = "branch"
-  enforcement = "active"
+#
+# Classic branch protection (not a ruleset) because rulesets are not
+# available on Free private repos. See plans/branch_protection.md for the
+# full trade-off; the short version:
+#
+# What this gives us:
+#   - Block deletion + force-push + non-linear merges
+#   - PR merges via the merge button gated on `Test & Build` and
+#     `Pre-commit checks` passing
+#
+# What this does NOT give us (gap vs ducktape's ruleset):
+#   - Direct `git push` from any actor with `Contents:write` is NOT gated
+#     on the CI checks. Classic protection's required_status_checks only
+#     enforces on PR merge buttons; pushes to the branch ref bypass it.
+#     This means a contributor (or an in-cluster automation) could shove
+#     a red commit straight to main without going through a PR.
+#
+# TODO: close that gap once one of these becomes feasible:
+#   1. Upgrade `agentydragon` to GitHub Pro (~$4/mo) → switch this resource
+#      back to a ruleset with bypass_actors{Integration=ducktape-automation}
+#      mirroring the ducktape side.
+#   2. Migrate Flux's gaffer-images ImageUpdateAutomation off direct
+#      pushes onto a PR-based flow (push to a feature branch + auto-open +
+#      auto-merge a PR). With direct pushes gone, classic protection's
+#      `required_pull_request_reviews` becomes safe to enable, which would
+#      block all non-PR pushes.
+#
+# TODO: enable GitHub secret-scanning push protection on gaffer-private.
+# Independent of branch protection — push protection blocks pushes that
+# contain secrets at the moment of `git push`. Free for public repos; on
+# private repos it requires GitHub Advanced Security, but worth checking
+# whether the personal-account "Secret Protection" SKU covers this.
+resource "github_branch_protection" "gaffer_main" {
+  #checkov:skip=CKV_GIT_5:Solo repo. There is no second reviewer to require.
+  #checkov:skip=CKV_GIT_6:Signed-commit enforcement is a separate decision; not adopting it across the board today.
+  provider      = github.gaffer
+  repository_id = "gaffer-private"
+  pattern       = "main"
 
-  conditions {
-    ref_name {
-      include = ["refs/heads/main"]
-      exclude = []
-    }
+  enforce_admins          = false
+  required_linear_history = true
+  allows_deletions        = false
+  allows_force_pushes     = false
+
+  required_status_checks {
+    strict = false
+    # gaffer's bazel-ci and pre-commit are both top-level workflows (not
+    # invoked via workflow_call), so check_runs.name is just the job name
+    # in each case. Empirically verified on PRs #16/#17.
+    contexts = [
+      "Test & Build",
+      "Pre-commit checks",
+    ]
   }
 
-  bypass_actors {
-    actor_id    = local.admin_repo_role_id
-    actor_type  = "RepositoryRole"
-    bypass_mode = "always"
-  }
-
-  bypass_actors {
-    actor_id    = local.automation_app_id
-    actor_type  = "Integration"
-    bypass_mode = "always"
-  }
-
-  rules {
-    deletion                = local.ruleset_rules_common.deletion
-    non_fast_forward        = local.ruleset_rules_common.non_fast_forward
-    required_linear_history = local.ruleset_rules_common.required_linear_history
-
-    pull_request {
-      required_approving_review_count = 0
-    }
-
-    required_status_checks {
-      # gaffer's bazel-ci and pre-commit are both top-level workflows
-      # (not invoked via workflow_call), so check_runs.name is just the
-      # job name in each case. Empirically verified on PRs #16/#17.
-      required_check {
-        context = "Test & Build"
-      }
-      required_check {
-        context = "Pre-commit checks"
-      }
-      strict_required_status_checks_policy = false
-    }
-  }
+  # Intentionally NO required_pull_request_reviews — that block makes PRs
+  # mandatory for ALL writes, including Flux's gaffer-images
+  # ImageUpdateAutomation, which pushes commits directly to main. We'd
+  # need the Pro-only `restrict_pushes` to whitelist the App, or migrate
+  # Flux off direct pushes; see TODOs above.
 }

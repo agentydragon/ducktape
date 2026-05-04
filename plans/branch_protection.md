@@ -6,37 +6,77 @@ Enforce that commits landing on the default branch of either repo have passed
 CI checks. Concretely, gate on:
 
 - ducktape: `bazel-ci / Test & Build` and `Pre-commit checks`
-- gaffer-private: `Bazel CI / Test & Build` (and `Pre-commit checks` once
-  gaffer's pre-commit workflow is created — separate PR)
+- gaffer-private: `Test & Build` and `Pre-commit checks` (PR-merge gate only —
+  see "gaffer-private trade-off" below)
 
 Plus the cheap extras: block branch deletion, force-push, non-linear merge
 commits.
 
 ## Current state
 
-- `tf/gitops/github-branch-protection/` — module landed. Two
-  `github_repository_ruleset` resources, both targeting `refs/heads/main`,
-  authenticated via the existing per-repo PATs (`github-secrets-sync-pat` for
-  ducktape, `github-pat-gaffer-private-flux` for gaffer).
-- ducktape main: `enforcement = "active"`. No-op today because main is not the
-  default branch (`devel` still is) and nothing pushes to main. Will start
-  gating direct pushes once the default branch flips to main.
-- gaffer-private main: `enforcement = "active"`. Gates `Test & Build` and
-  `Pre-commit checks` (the latter from the workflow added in
-  `agentydragon/gaffer-private#16`). Flux's `gaffer-images`
-  ImageUpdateAutomation pushes via the `ducktape-automation` GitHub App,
-  matching the `Integration` bypass actor.
-- Bypass actors on both rulesets:
+- `tf/gitops/github-branch-protection/` — module landed. Two protection
+  resources, one per repo, authenticated via the existing per-repo PATs
+  (`github-secrets-sync-pat` for ducktape, `github-pat-gaffer-private-flux`
+  for gaffer).
+- ducktape main: `github_repository_ruleset` with `enforcement = "active"`.
+  No-op today because main is not the default branch (`devel` still is) and
+  nothing pushes to main. Will start gating direct pushes once the default
+  branch flips to main. Bypass actors:
   - `RepositoryRole=admin` (id 5) — covers in-cluster automations pushing as
     the owner via PAT (`claude-token-rotation`, `attic-jwt-rotation` CronJobs).
-  - `Integration=ducktape-automation` (App ID 3590331) — covers any GHA
-    workflow that mints an installation token via
-    `actions/create-github-app-token`, **and as of commit 745532e6b also
-    covers Flux's source-controller and image-automation-controller pushes**
-    on both the `flux-system` and `gaffer-private` GitRepositories. The three
+  - `Integration=ducktape-automation` (App ID 3590331) — covers GHA workflows
+    that mint an installation token via `actions/create-github-app-token`,
+    **and** Flux's source-controller / image-automation-controller pushes on
+    the `flux-system` GitRepository (after commit 745532e6b). The three
     direct-push workflows on ducktape (`sync-pins.yml`, `nix-flake-update.yml`,
     `container-images.yml`'s `pin-digests` job) still carry TODO markers
     about migrating when ducktape's default flips.
+- gaffer-private main: classic `github_branch_protection`. Rulesets are not
+  available on Free private repos (POST returns 403 "Upgrade to GitHub Pro
+  or make this repository public"). PR merges via the merge button are gated
+  on `Test & Build` and `Pre-commit checks` passing; deletion / force-push /
+  non-linear merges are blocked. Direct pushes from `Contents:write` actors
+  (you, the App, PAT-using CronJobs) bypass the CI gate — this is the
+  trade-off; see below.
+
+## gaffer-private trade-off
+
+Classic branch protection on Free private repos has a hard gap that
+rulesets don't have: **`required_status_checks` only enforces on PR merges,
+not on direct `git push`.** The two GitHub features that _would_ close the
+gap are both unavailable on the current plan:
+
+- **Rulesets** (modern API, supports `bypass_actors{Integration=...}` to
+  exempt the App while still gating everything else): blocked by GitHub
+  Pro requirement on private repos.
+- **`restrict_pushes` on classic protection** (whitelist of users/apps
+  allowed to push at all): blocked by Pro requirement.
+
+The remaining lever — `required_pull_request_reviews` — would force ALL
+writes through PRs, which would block Flux's `gaffer-images`
+ImageUpdateAutomation since it pushes commits directly without opening
+PRs. Net: no way on Free to gate direct pushes on CI without breaking
+Flux.
+
+We accept the gap because the set of actors with `Contents:write` on
+gaffer-private is small and trusted (you, ducktape-automation App,
+github-secrets-sync-pat for in-cluster automations). The threat
+"unauthorized actor pushes red commit" is gated by access control; the
+threat "trusted actor accidentally pushes red commit directly" is the
+residual risk.
+
+To close the gap pick one when you're ready:
+
+1. **GitHub Pro upgrade** (~$4/mo). Switch gaffer to a ruleset mirroring
+   ducktape's. Cleanest.
+2. **Migrate `gaffer-images` ImageUpdateAutomation to PR mode.** Push to a
+   feature branch + auto-open + auto-merge a PR. With direct-push
+   automation gone, classic protection's `required_pull_request_reviews`
+   becomes safe to enable, fully closing the gap on Free.
+
+Push protection (secret scanning) is independent of branch protection and
+is a separate enable-on-the-repo step worth picking up — see "Outstanding
+work" below.
 
 The `ducktape-automation` GitHub App is registered on the
 `agentydragon` personal account; public identifiers and permissions are
@@ -67,7 +107,19 @@ GitRepositories switched from `ssh://git@github.com/…` to
 
 ## Outstanding work
 
-1. **Retire the legacy SSH deploy keys.** CLEANUP markers in place:
+1. **Close the gaffer direct-push gate gap** via Pro upgrade or PR-mode
+   migration of Flux image automation; see "gaffer-private trade-off" above.
+
+2. **Enable secret-scanning push protection on gaffer-private.** GitHub's
+   push protection blocks pushes that contain secrets at the moment of
+   `git push`, irrespective of branch protection. Free for public repos
+   (already on for ducktape by default since 2024). On private repos it
+   historically required GitHub Advanced Security; the personal-account
+   "Secret Protection" SKU may now cover it — verify before assuming. Set
+   on the repo via the API or web UI; can be terraform-managed via
+   `github_repository.security_and_analysis.secret_scanning_push_protection`.
+
+3. **Retire the legacy SSH deploy keys.** CLEANUP markers in place:
    - `cluster/k8s/gaffer-private-source/deploy-key-tf.yaml` header +
      `cluster/k8s/gaffer-private-source/kustomization.yaml` inline — drop
      `deploy-key-tf.yaml` and `github-pat-gaffer-private-flux.sops.yaml`
