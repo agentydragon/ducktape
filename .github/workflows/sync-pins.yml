@@ -3,14 +3,10 @@ name: Sync artifact pins
 # Replaces per-commit dispatch from bb_release.py — one commit per cycle
 # regardless of how many releases landed since the last sync.
 #
-# TODO(branch-protection): switch hardcoded `devel` (ref + push target)
-# to `main` when the default branch flips, and replace
-# secrets.GITHUB_TOKEN with an installation token minted from the
-# ducktape-automation GitHub App (actions/create-github-app-token) —
-# see secrets/ducktape_automation.README.md. Required because
-# github-actions can't be a ruleset bypass actor on personal-account
-# repos, so once main is gated this workflow's direct push will fail
-# until it pushes as the App.
+# Pushes via the ducktape-automation GitHub App so the commit is bypass-actor
+# eligible for the main-protection ruleset (github-actions can't bypass on
+# personal-account repos). The hardcoded `devel` ref + push target will need
+# to flip to `main` when ducktape's default branch flips.
 "on":
   schedule:
     # GitHub throttles scheduled workflows to ~30 min intervals regardless of cron.
@@ -30,18 +26,26 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: devel
-          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: ./.github/actions/mint-automation-token
+        id: app
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
       - name: Sync pins with latest releases
         id: sync
         run: pip install uv && uv run devinfra/ci/sync_pins.py
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
 
       - name: Commit and push if changed
+        env:
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app_slug }}
+          APP_USER_ID: ${{ steps.app.outputs.user_id }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${APP_USER_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
           git add npins/sources.json
           if git diff --cached --quiet; then
             echo "No pin changes"
@@ -49,4 +53,7 @@ jobs:
           fi
           git commit -m "chore: sync artifact pins (${{ steps.sync.outputs.updated }})"
           git pull --rebase origin devel
-          git push origin "HEAD:devel"
+          # Override actions/checkout's url-specific extraheader with the
+          # App installation token so the push is App-attributed.
+          git -c "http.https://github.com/.extraheader=Authorization: Bearer ${APP_TOKEN}" \
+            push origin "HEAD:devel"

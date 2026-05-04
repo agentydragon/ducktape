@@ -2,14 +2,9 @@
 # CI-released inputs (ducktape-wheel, claude-hooks-wheel, etc.) are updated
 # automatically by the release.yml update-downstream job.
 #
-# TODO(branch-protection): when the default branch flips to main and the
-# main ruleset starts gating direct pushes, replace GITHUB_TOKEN with an
-# installation token from the ducktape-automation GitHub App
-# (actions/create-github-app-token) — see
-# secrets/ducktape_automation.README.md. The App is registered as a
-# ruleset bypass actor; github-actions can't be on personal-account
-# repos. Workflow already takes ${{ github.ref_name }} so no devel→main
-# string change is needed here.
+# Pushes via the ducktape-automation GitHub App so the commit bypasses the
+# main-protection ruleset (github-actions can't bypass on personal-account
+# repos).
 name: Update Nix flake inputs
 
 on:
@@ -29,15 +24,24 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
 
+      - uses: ./.github/actions/mint-automation-token
+        id: app
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
       - name: Install Nix
         uses: cachix/install-nix-action@v31
 
       - name: Update inputs and push
+        env:
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app_slug }}
+          APP_USER_ID: ${{ steps.app.outputs.user_id }}
         run: |
           set -x
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${APP_USER_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
 
           BRANCH="${{ github.ref_name }}"
 
@@ -58,4 +62,11 @@ jobs:
             exit 1
           fi
 
-          git push origin "HEAD:${BRANCH}"
+          # Disable xtrace before the push so the token doesn't get
+          # printed verbatim in the trace. (GHA masks tokens registered via
+          # ::add-mask::, but disabling xtrace here is belt-and-braces.)
+          set +x
+          # Override actions/checkout's url-specific extraheader with the
+          # App installation token so the push is App-attributed.
+          git -c "http.https://github.com/.extraheader=Authorization: Bearer ${APP_TOKEN}" \
+            push origin "HEAD:${BRANCH}"
