@@ -531,7 +531,7 @@ use_repo(buildbuddy, "buildbuddy_toolchain")
 register_toolchains("@buildbuddy_toolchain//:ubuntu_cc_toolchain")
 
 # Rust rules
-bazel_dep(name = "rules_rust", version = "0.69.0")
+bazel_dep(name = "rules_rust", version = "0.70.0")
 
 # — rust toolchains —
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
@@ -544,7 +544,39 @@ use_repo(rust, "rust_toolchains")
 register_toolchains("@rust_toolchains//:all")
 
 # ─ Rust crates (crate_universe) ─────────────────────────────────────────────
-crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
+# `dev_dependency = True` ⇒ this extension only runs when ducktape is the root
+# module. When a downstream repo (e.g. gaffer-private) consumes ducktape via
+# `bazel_dep` + `archive_override`, ducktape's `crate.from_cargo` calls are
+# skipped, and the downstream's own (isolated) `crate.from_cargo` provides
+# whatever Rust crates it needs.
+#
+# Why we need this: rules_rust's `crate_universe` digest stored in
+# `Cargo.Bazel.lock`'s top-level `checksum` is computed from the lockfile +
+# the Bazel-generated `--config` and `--splicing-manifest` (see
+# `rules_rust/crate_universe/src/lockfile.rs::Digest::compute`). The
+# auto-generated config and splicing manifest reference workspace-relative
+# paths, so the digest a developer commits from
+# `<root_module_workspace>/Cargo.Bazel.lock` does not match what the BB runner
+# computes when ducktape is loaded as a dependency at
+# `<output_base>/external/ducktape+/Cargo.Bazel.lock`. The mismatch fires
+# every build, e.g. on gaffer-private's bazel-ci:
+#
+#   Error: Digests do not match: Current Digest("115bb40e…") !=
+#     Expected Digest("f45f8af2…")
+#
+# Where `Current` is exactly ducktape's stored `checksum` and `Expected` is
+# the recomputed one in gaffer's path context.
+#
+# Marking the extension `dev_dependency = True` keeps the digest check active
+# for ducktape's own builds (root-module case) and skips it for downstream
+# consumers — which is the only place it was ever wrong, since downstream
+# consumers have their own crate universes anyway. Upstream tracking:
+# bazelbuild/rules_rust (path-dependence in `cargo-bazel query`).
+crate = use_extension(
+    "@rules_rust//crate_universe:extensions.bzl",
+    "crate",
+    dev_dependency = True,
+)
 
 # If your workspace has Cargo.toml at the root:
 crate.from_cargo(
