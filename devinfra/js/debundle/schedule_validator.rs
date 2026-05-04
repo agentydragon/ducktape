@@ -1283,9 +1283,7 @@ impl ModuleDepGraph {
 
     /// Iterate edges as `(from, to, &EdgeMetadata)`.
     pub fn iter_edges(&self) -> impl Iterator<Item = (ModuleId, ModuleId, &EdgeMetadata)> + '_ {
-        self.graph
-            .all_edges()
-            .map(|(from, to, weight)| (from, to, weight))
+        self.graph.all_edges()
     }
 
     /// Edge metadata, if the edge exists.
