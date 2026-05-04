@@ -919,6 +919,13 @@ enum BindingSourceKind {
     /// source chunk, not a top-level decl. Materializer rewrites
     /// the import statement to a re-import in the destination.
     ImportSpecifier,
+    /// Top-level `var` / `let` / `const` declaration in the source
+    /// chunk. Carried for documentation; no special materializer path.
+    VariableDeclarator,
+    /// Top-level `function` declaration in the source chunk.
+    FunctionDeclaration,
+    /// Top-level `class` declaration in the source chunk.
+    ClassDeclaration,
 }
 
 fn logical_requests_for_chunk(
