@@ -399,7 +399,7 @@ pub fn materialize_logical_modules(
 
         let chunk_renames_map = chunk_renames
             .get(&chunk_id)
-            .map(|cr| collect_chunk_renames(cr))
+            .map(collect_chunk_renames)
             .transpose()?
             .unwrap_or_default();
         let lowered = lower_chunk(LowerChunkInputs {
@@ -671,7 +671,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
     // or by another chunk_renames entry, or invalid as an
     // identifier) bail rather than producing invalid JS silently.
     let mut renamed_away = BTreeSet::<String>::new();
-    for (binding, _) in chunk_renames {
+    for binding in chunk_renames.keys() {
         if binding_assignment.contains_key(binding) {
             continue;
         }

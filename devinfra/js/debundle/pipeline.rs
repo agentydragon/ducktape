@@ -218,6 +218,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
         .logical_modules
         .keys()
         .chain(spec.residual_modules.keys())
+        .chain(spec.chunk_renames.keys())
         .cloned()
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
