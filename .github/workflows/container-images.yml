@@ -226,7 +226,11 @@ jobs:
             exit 1
           fi
 
-          # Override actions/checkout's url-specific extraheader with the
-          # App installation token so the push is App-attributed.
-          git -c "http.https://github.com/.extraheader=Authorization: Bearer ${APP_TOKEN}" \
-            push origin "HEAD:${BRANCH}"
+          # Replace actions/checkout's url-specific extraheader with the App
+          # installation token so the push is App-attributed. `git -c` appends
+          # to extraheader (multi-valued) rather than replacing — both headers
+          # would go on the wire and GitHub returns "Duplicate header:
+          # Authorization" 400. Unset, then set fresh.
+          git config --unset-all 'http.https://github.com/.extraheader' || true
+          git config 'http.https://github.com/.extraheader' "Authorization: Bearer ${APP_TOKEN}"
+          git push origin "HEAD:${BRANCH}"
