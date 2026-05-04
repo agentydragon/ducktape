@@ -51,5 +51,15 @@ devinfra/js/debundle/harness/testdata/**
 **/package-lock.json
 **/uv.lock
 
-# SOPS-encrypted file - prettier reformats the long encrypted blob
+# SOPS-encrypted files - prettier reformats the long encrypted blob, and the
+# attic-jwt-rotation CronJob writes these directly from inside the cluster
+# without running prettier (the rotator container is debian-distroless + sops,
+# no Node.js). When the rotator pushes a re-encrypted file with sops's default
+# 4-space indentation, pre-commit on the next CI run flags it.
+# TODO: have the rotator format with prettier (or stop using prettier on yaml
+# entirely, which would also unblock cluster/k8s/flux-system, kustomization,
+# etc.) and drop these excludes.
 secrets/claude-web-k8s-jwt.yaml
+**/*.sops.yaml
+secrets/claude-web-attic.yaml
+secrets/hosts/*-attic.yaml
