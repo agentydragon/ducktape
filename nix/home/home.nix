@@ -12,6 +12,7 @@
   solarizedDark,
   terminalFont,
   ducktape-artifacts,
+  solarized-nvim,
   ...
 }:
 let
@@ -41,13 +42,8 @@ let
 
   solarizedNvim = pkgs.vimUtils.buildVimPlugin {
     pname = "solarized.nvim";
-    version = "2026-04-17";
-    src = pkgs.fetchFromGitHub {
-      owner = "maxmx03";
-      repo = "solarized.nvim";
-      rev = "a8085e29883ddcfb39bd46197eb32ef00df05368";
-      sha256 = "0psgwfnd5fi0p60pknzz9li70ryxqqjz7gxxvqr0q3q1kzpdhr7q";
-    };
+    version = solarized-nvim.shortRev or "unstable";
+    src = solarized-nvim;
   };
 
   # Shell initialization scripts (loaded from external files to avoid escaping hell)

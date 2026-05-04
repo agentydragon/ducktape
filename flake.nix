@@ -40,6 +40,13 @@
       flake = false;
     };
 
+    # solarized.nvim colorscheme plugin
+    # Update: nix flake update solarized-nvim
+    solarized-nvim = {
+      url = "github:maxmx03/solarized.nvim";
+      flake = false;
+    };
+
     sops-nix = {
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -56,6 +63,7 @@
       nixGL,
       claude-plugins-official,
       siderolabs-docs,
+      solarized-nvim,
       ...
     }@inputs:
     let
@@ -108,6 +116,7 @@
           pkgsUnstable
           claude-plugins-official
           siderolabs-docs
+          solarized-nvim
           gafferPkgs
           ;
         solarizedLight = nix-colors.colorSchemes.solarized-light;

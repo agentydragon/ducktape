@@ -168,6 +168,7 @@
         "nixpkgs": "nixpkgs",
         "nixpkgs-unstable": "nixpkgs-unstable",
         "siderolabs-docs": "siderolabs-docs",
+        "solarized-nvim": "solarized-nvim",
         "sops-nix": "sops-nix"
       }
     },
@@ -184,6 +185,22 @@
       "original": {
         "owner": "siderolabs",
         "repo": "docs",
+        "type": "github"
+      }
+    },
+    "solarized-nvim": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1776462072,
+        "narHash": "sha256-+GTY7p8BDwwy3r2/8yXG3WdwIk3/23mBuSC60qzjT18=",
+        "owner": "maxmx03",
+        "repo": "solarized.nvim",
+        "rev": "a8085e29883ddcfb39bd46197eb32ef00df05368",
+        "type": "github"
+      },
+      "original": {
+        "owner": "maxmx03",
+        "repo": "solarized.nvim",
         "type": "github"
       }
     },
