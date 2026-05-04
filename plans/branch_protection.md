@@ -2,26 +2,24 @@
 
 ## Goal
 
-Enforce that commits landing on the default branch of either repo have passed
+Enforce that commits landing on the default branch of each repo have passed
 CI checks. Concretely, gate on:
 
 - ducktape: `bazel-ci / Test & Build` and `Pre-commit checks`
-- gaffer-private: `Test & Build` and `Pre-commit checks` (PR-merge gate only —
-  see "gaffer-private trade-off" below)
+- gaffer-private: not currently enforced — see below.
 
 Plus the cheap extras: block branch deletion, force-push, non-linear merge
 commits.
 
 ## Current state
 
-- `tf/gitops/github-branch-protection/` — module landed. Two protection
-  resources, one per repo, authenticated via the existing per-repo PATs
-  (`github-secrets-sync-pat` for ducktape, `github-pat-gaffer-private-flux`
-  for gaffer).
-- ducktape main: `github_repository_ruleset` with `enforcement = "active"`.
-  No-op today because main is not the default branch (`devel` still is) and
-  nothing pushes to main. Will start gating direct pushes once the default
-  branch flips to main. Bypass actors:
+- `tf/gitops/github-branch-protection/` — manages a single
+  `github_repository_ruleset.ducktape_main` on `refs/heads/main`,
+  authenticated via `github-secrets-sync-pat` from `flux-system`.
+- ducktape main: `enforcement = "active"`. No-op today because main is not
+  the default branch (`devel` still is) and nothing pushes to main. Will
+  start gating direct pushes once the default branch flips to main.
+  Bypass actors:
   - `RepositoryRole=admin` (id 5) — covers in-cluster automations pushing as
     the owner via PAT (`claude-token-rotation`, `attic-jwt-rotation` CronJobs).
   - `Integration=ducktape-automation` (App ID 3590331) — covers GHA workflows
@@ -31,57 +29,49 @@ commits.
     direct-push workflows on ducktape (`sync-pins.yml`, `nix-flake-update.yml`,
     `container-images.yml`'s `pin-digests` job) still carry TODO markers
     about migrating when ducktape's default flips.
-- gaffer-private main: classic `github_branch_protection`. Rulesets are not
-  available on Free private repos (POST returns 403 "Upgrade to GitHub Pro
-  or make this repository public"). PR merges via the merge button are gated
-  on `Test & Build` and `Pre-commit checks` passing; deletion / force-push /
-  non-linear merges are blocked. Direct pushes from `Contents:write` actors
-  (you, the App, PAT-using CronJobs) bypass the CI gate — this is the
-  trade-off; see below.
-
-## gaffer-private trade-off
-
-Classic branch protection on Free private repos has a hard gap that
-rulesets don't have: **`required_status_checks` only enforces on PR merges,
-not on direct `git push`.** The two GitHub features that _would_ close the
-gap are both unavailable on the current plan:
-
-- **Rulesets** (modern API, supports `bypass_actors{Integration=...}` to
-  exempt the App while still gating everything else): blocked by GitHub
-  Pro requirement on private repos.
-- **`restrict_pushes` on classic protection** (whitelist of users/apps
-  allowed to push at all): blocked by Pro requirement.
-
-The remaining lever — `required_pull_request_reviews` — would force ALL
-writes through PRs, which would block Flux's `gaffer-images`
-ImageUpdateAutomation since it pushes commits directly without opening
-PRs. Net: no way on Free to gate direct pushes on CI without breaking
-Flux.
-
-We accept the gap because the set of actors with `Contents:write` on
-gaffer-private is small and trusted (you, ducktape-automation App,
-github-secrets-sync-pat for in-cluster automations). The threat
-"unauthorized actor pushes red commit" is gated by access control; the
-threat "trusted actor accidentally pushes red commit directly" is the
-residual risk.
-
-To close the gap pick one when you're ready:
-
-1. **GitHub Pro upgrade** (~$4/mo). Switch gaffer to a ruleset mirroring
-   ducktape's. Cleanest.
-2. **Migrate `gaffer-images` ImageUpdateAutomation to PR mode.** Push to a
-   feature branch + auto-open + auto-merge a PR. With direct-push
-   automation gone, classic protection's `required_pull_request_reviews`
-   becomes safe to enable, fully closing the gap on Free.
-
-Push protection (secret scanning) is independent of branch protection and
-is a separate enable-on-the-repo step worth picking up — see "Outstanding
-work" below.
+- gaffer-private main: **no protection**. See the next section.
 
 The `ducktape-automation` GitHub App is registered on the
 `agentydragon` personal account; public identifiers and permissions are
 documented at <secrets/ducktape_automation.README.md>. The private key is
 SOPS-encrypted at <secrets/ducktape-automation.2026-05-03.private-key.sops.pem>.
+
+## gaffer-private: blocked on GitHub plan
+
+Branch protection of any kind — `github_repository_ruleset` _or_ classic
+`github_branch_protection` — is **not available on Free for private
+repositories**. GitHub's pricing page lists the relevant features
+(Repository rules, code owners, multiple reviewers, etc.) under "Public
+repositories" only on Free; the Pro/Team tiers extend them to private
+repos. GitHub's plans doc confirms: "GitHub Pro includes 'Protected
+branches' as an advanced tool for private repositories, while GitHub Free
+does not list this feature."
+
+Empirically verified across two iterations:
+
+- Ruleset POST → `403 Upgrade to GitHub Pro or make this repository public
+to enable this feature.`
+- Classic `github_branch_protection` apply → identical 403 with the same
+  text.
+
+Earlier drafts of this doc claimed classic protection works on Free
+private with feature gaps; that was wrong. Both APIs are uniformly gated.
+
+To enforce protection on `gaffer-private/main`, pick one:
+
+1. **GitHub Pro upgrade** (~$4/mo for the `agentydragon` personal account).
+   Restore a `github_repository_ruleset.gaffer_main` mirroring ducktape's
+   shape, with `bypass_actors{Integration=ducktape-automation}` so Flux's
+   image automation keeps pushing cleanly. Cleanest path.
+2. **Make gaffer-private public.** Sidesteps the plan limit but conflicts
+   with the reason the repo is private (proprietary Google binaries,
+   reverse-engineered artifacts). Not a real option.
+3. **Live without it.** Trust model relies entirely on access control —
+   only the owner, the `ducktape-automation` App, and PAT-using cluster
+   automations have `Contents: write`. Currently the chosen state.
+
+Until one of those changes, `gaffer-private/main` has no enforced rules
+and the terraform module manages only ducktape.
 
 ## Flux App migration — done in commit 745532e6b
 
@@ -107,16 +97,16 @@ GitRepositories switched from `ssh://git@github.com/…` to
 
 ## Outstanding work
 
-1. **Close the gaffer direct-push gate gap** via Pro upgrade or PR-mode
-   migration of Flux image automation; see "gaffer-private trade-off" above.
+1. **Decide on gaffer protection** — Pro upgrade vs accept no enforcement.
+   See "gaffer-private: blocked on GitHub plan" above.
 
-2. **Enable secret-scanning push protection on gaffer-private.** GitHub's
-   push protection blocks pushes that contain secrets at the moment of
-   `git push`, irrespective of branch protection. Free for public repos
-   (already on for ducktape by default since 2024). On private repos it
-   historically required GitHub Advanced Security; the personal-account
-   "Secret Protection" SKU may now cover it — verify before assuming. Set
-   on the repo via the API or web UI; can be terraform-managed via
+2. **Enable secret-scanning push protection on both repos.** Independent
+   of branch protection — push protection blocks pushes that contain
+   secrets at the moment of `git push`. Free for public repos (already on
+   for ducktape by default since 2024). On private repos it historically
+   required GitHub Advanced Security; the personal-account "Secret
+   Protection" SKU may now cover gaffer-private — verify before assuming.
+   Set on the repo via the API or web UI; can be terraform-managed via
    `github_repository.security_and_analysis.secret_scanning_push_protection`.
 
 3. **Retire the legacy SSH deploy keys.** CLEANUP markers in place:
@@ -125,13 +115,14 @@ GitRepositories switched from `ssh://git@github.com/…` to
      `deploy-key-tf.yaml` and `github-pat-gaffer-private-flux.sops.yaml`
      from the kustomize resources list.
    - `tf/gitops/gaffer-private-flux/main.tf` header — strip
-     `prevent_destroy` lifecycle blocks, `tofu destroy` the module (revokes
-     the GitHub deploy key, deletes the in-cluster Secret), then delete the
-     module directory + BUILD.bazel target.
+     `prevent_destroy` lifecycle blocks, `tofu destroy` the module
+     (revokes the GitHub deploy key, deletes the in-cluster Secret), then
+     delete the module directory + BUILD.bazel target.
    - Ducktape-side `flux-system` SSH Secret + corresponding GitHub deploy
-     key on `agentydragon/ducktape`: revoke the deploy key in repo settings;
-     the in-cluster Secret is provisioned by the `flux_bootstrap_git` tofu
-     resource and needs the bootstrap config updated to stop creating it.
+     key on `agentydragon/ducktape`: revoke the deploy key in repo
+     settings; the in-cluster Secret is provisioned by the
+     `flux_bootstrap_git` tofu resource and needs the bootstrap config
+     updated to stop creating it.
 
 ## Workflow migration (also pending, ducktape-side, lower urgency)
 
@@ -171,12 +162,18 @@ additionally has a hardcoded `devel` ref + push target that has to flip to
 
 PR #1312 (commit `c23edda`, reverted) was the first attempt. It targeted
 both `devel` and `main` in one ruleset and tried to use the built-in
-`github-actions` (Integration id=15368) as a bypass actor. The latter failed
-with a 422 because GitHub doesn't expose `github-actions` as a bypass actor
-on personal-account repos — only third-party Apps (e.g. BuildBuddy) appear
-in the picker. The fix is registering our own App (`ducktape-automation`)
-and using it as the Integration bypass actor; that's the path this work
-has taken.
+`github-actions` (Integration id=15368) as a bypass actor. The latter
+failed with a 422 because GitHub doesn't expose `github-actions` as a
+bypass actor on personal-account repos — only third-party Apps (e.g.
+BuildBuddy) appear in the picker. The fix is registering our own App
+(`ducktape-automation`) and using it as the Integration bypass actor;
+that's the path this work has taken.
+
+PR #1490 then activated a `gaffer_main` ruleset; PR #1491 swapped it to
+classic `github_branch_protection` after the ruleset apply failed with
+the Pro requirement. Both gaffer-side resources have since been removed
+because the underlying constraint is the same — branch protection on
+private repos requires Pro regardless of mechanism.
 
 ## Tracking
 
