@@ -29,10 +29,12 @@
 //! module reads. The report is written next to the existing
 //! manifests as `<chunk_id>.schedule.json`.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use petgraph::algo::{tarjan_scc, toposort};
+use petgraph::algo::{greedy_feedback_arc_set, tarjan_scc, toposort};
+use petgraph::graph::DiGraph;
 use petgraph::graphmap::DiGraphMap;
+use petgraph::visit::EdgeRef;
 use serde::Serialize;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
@@ -1438,6 +1440,29 @@ pub struct ScheduleReport {
 pub struct CycleReport {
     pub modules: Vec<String>,
     pub evidence: Vec<CycleEdge>,
+    /// Spec-author-actionable cut: a near-minimum set of
+    /// realizability-constraining (`at-init` or `side-effect`)
+    /// reasons whose removal would lift the cycle's realizability
+    /// violation. Computed by [`compute_realizability_cut`].
+    ///
+    /// The cut never includes `lazy` reasons — lazy edges don't
+    /// constrain ESM evaluation order, so removing one cannot help
+    /// fix a cycle. Each entry corresponds to (and shares its
+    /// shape with) a row in `evidence`.
+    ///
+    /// The algorithm is iterative: while the working subgraph
+    /// still has an SCC carrying a cross-module
+    /// realizability-constraining edge, run petgraph's
+    /// `greedy_feedback_arc_set` (Eades-Lin-Smyth, 1993,
+    /// `O(V + E)`) on the offending sub-SCC, pick the first FAS
+    /// edge with an `R` or `S` reason, append its constraining
+    /// reasons to the cut, remove it from the working graph, and
+    /// repeat. Sound (every iteration removes one constraining
+    /// edge from a problematic SCC) and heuristic-minimum
+    /// (petgraph's FAS approximates within a constant factor on
+    /// dense instances).
+    #[serde(rename = "cut")]
+    pub cut: Vec<CycleEdge>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1539,9 +1564,11 @@ pub fn validate_schedule(
                 });
             }
         }
+        let cut = compute_realizability_cut(graph, &scc, module_name);
         cycles.push(CycleReport {
             modules: scc.iter().copied().map(module_name).collect(),
             evidence,
+            cut,
         });
     }
     ScheduleReport {
@@ -1550,6 +1577,159 @@ pub fn validate_schedule(
         recommendations: Vec::new(),
         linker_order: Vec::new(),
     }
+}
+
+/// Compute a near-minimum cut of realizability-constraining edges
+/// inside `scc` whose removal makes the SCC realizable.
+///
+/// Each iteration:
+/// 1. Tarjan-SCC the working graph (initially the induced subgraph
+///    on `scc` from `graph`).
+/// 2. If no SCC of size ≥ 2 carries a cross-module
+///    realizability-constraining edge, return the accumulated cut.
+/// 3. Otherwise, pick the first such SCC, run
+///    `petgraph::algo::greedy_feedback_arc_set` (Eades-Lin-Smyth)
+///    on its induced subgraph, and pick the first FAS edge whose
+///    metadata has an `AtInitRead` or `SideEffect` reason.
+/// 4. Fall back to scanning the SCC's edges if the FAS only
+///    yielded lazy edges (rare; happens when tie-breaking biases
+///    the order toward picking lazy edges as back-edges).
+/// 5. Append the picked edge's R/S reasons to the cut and remove
+///    it from the working graph.
+///
+/// Termination: each iteration removes at least one R/S edge from
+/// the working graph, and the count of R/S edges is finite.
+/// Soundness: when the loop exits, every remaining SCC has only
+/// lazy cross-module edges between members — realizable per the
+/// DESIGN.md realizability theorem. Cuts are sorted
+/// deterministically `(from, to, statement_ordinal, binding, kind)`
+/// so test snapshots compare cleanly.
+fn compute_realizability_cut(
+    graph: &ModuleDepGraph,
+    scc: &[ModuleId],
+    module_name: &dyn Fn(ModuleId) -> String,
+) -> Vec<CycleEdge> {
+    if scc.len() < 2 {
+        return Vec::new();
+    }
+    // Working copy: induced subgraph on `scc`. Edge weight is the
+    // full `EdgeMetadata` so we can read reasons when adding to
+    // the cut. Cloning is cheap — petgraph's `DiGraphMap` clone
+    // is per-edge, and an SCC is at most a few thousand edges in
+    // practice.
+    let in_scc: HashSet<ModuleId> = scc.iter().copied().collect();
+    let mut working = DiGraphMap::<ModuleId, EdgeMetadata>::new();
+    for &m in scc {
+        working.add_node(m);
+    }
+    for (from, to, weight) in graph.iter_edges() {
+        if !in_scc.contains(&from) || !in_scc.contains(&to) || from == to {
+            continue;
+        }
+        working.add_edge(from, to, weight.clone());
+    }
+
+    let mut cut: Vec<CycleEdge> = Vec::new();
+    loop {
+        let sub_sccs = tarjan_scc(&working);
+        let problematic = sub_sccs.into_iter().find(|s| {
+            if s.len() < 2 {
+                return false;
+            }
+            let in_s: HashSet<ModuleId> = s.iter().copied().collect();
+            s.iter().any(|&from| {
+                working.edges(from).any(|(_, to, w)| {
+                    from != to && in_s.contains(&to) && w.constrains_realizability()
+                })
+            })
+        });
+        let Some(s) = problematic else { break };
+        let in_s: HashSet<ModuleId> = s.iter().copied().collect();
+
+        // Induce a sub-SCC subgraph as an index-based `DiGraph`.
+        // petgraph's `greedy_feedback_arc_set` requires
+        // `NodeId: GraphIndex`, which `DiGraphMap`'s arbitrary key
+        // type doesn't satisfy — `DiGraph` indexes nodes by
+        // contiguous `NodeIndex`. Carry `ModuleId` as the node
+        // weight so we can map FAS endpoints back.
+        let mut induced: DiGraph<ModuleId, ()> = DiGraph::new();
+        let mut idx_of: HashMap<ModuleId, _> = HashMap::new();
+        for &m in &s {
+            let ix = induced.add_node(m);
+            idx_of.insert(m, ix);
+        }
+        for &from in &s {
+            for (_, to, _) in working.edges(from) {
+                if from != to && in_s.contains(&to) {
+                    induced.add_edge(idx_of[&from], idx_of[&to], ());
+                }
+            }
+        }
+        let fas: Vec<(ModuleId, ModuleId)> = greedy_feedback_arc_set(&induced)
+            .map(|e| (induced[e.source()], induced[e.target()]))
+            .collect();
+
+        // Prefer R/S FAS edges; fall back to scanning the sub-SCC
+        // for any R/S edge if FAS only flagged lazy edges (rare).
+        let pick_in_fas = fas.iter().copied().find(|&(u, v)| {
+            working
+                .edge_weight(u, v)
+                .is_some_and(EdgeMetadata::constrains_realizability)
+        });
+        let pick = pick_in_fas.or_else(|| {
+            for &from in &s {
+                for (_, to, w) in working.edges(from) {
+                    if from != to && in_s.contains(&to) && w.constrains_realizability() {
+                        return Some((from, to));
+                    }
+                }
+            }
+            None
+        });
+        let Some((u, v)) = pick else {
+            // Should be unreachable — `problematic` confirmed at
+            // least one constraining cross-module edge in `s`.
+            break;
+        };
+
+        let weight = working
+            .remove_edge(u, v)
+            .expect("edge picked from working graph just above");
+        for reason in &weight.reasons {
+            if matches!(reason.kind, EdgeKind::LazyRead) {
+                continue;
+            }
+            cut.push(CycleEdge {
+                from: module_name(u),
+                to: module_name(v),
+                statement_ordinal: reason.statement_ordinal,
+                binding: reason.binding.clone(),
+                kind: match reason.kind {
+                    EdgeKind::AtInitRead => "at-init",
+                    EdgeKind::SideEffect => "side-effect",
+                    EdgeKind::LazyRead => unreachable!(),
+                },
+            });
+        }
+    }
+
+    cut.sort_by(|a, b| {
+        (
+            a.from.as_str(),
+            a.to.as_str(),
+            a.statement_ordinal,
+            &a.binding,
+            a.kind,
+        )
+            .cmp(&(
+                b.from.as_str(),
+                b.to.as_str(),
+                b.statement_ordinal,
+                &b.binding,
+                b.kind,
+            ))
+    });
+    cut
 }
 
 /// Build the recommender side-output: for each binding declared in
@@ -1822,6 +2002,112 @@ mod tests {
             report.cycles.is_empty(),
             "expected no cycles, got {:?}",
             report.cycles
+        );
+    }
+
+    /// Pin the cut behavior for the canonical mixed cycle: 2-module
+    /// SCC with one lazy forward-edge and one at-init back-edge.
+    /// The cut should contain exactly the at-init back-edge — lazy
+    /// edges aren't realizability-constraining and removing one
+    /// can't fix the cycle.
+    #[test]
+    fn cut_excludes_lazy_edges_in_mixed_cycle() {
+        // mod_0 owns A and readB; readB body returns B (lazy read).
+        // mod_1 owns B; B = A + 1 (at-init read of A).
+        // R-edge: mod_1 → mod_0 (kind = at-init, binding = A).
+        // L-edge: mod_0 → mod_1 (kind = lazy, binding = B).
+        let module = parse("const A = 1; function readB() { return B; } const B = A + 1;");
+        let facts = analyze_chunk_facts(&module);
+        let mut binding_assignment = BTreeMap::new();
+        binding_assignment.insert("A".to_string(), logical(0));
+        binding_assignment.insert("readB".to_string(), logical(0));
+        binding_assignment.insert("B".to_string(), logical(1));
+        let graph = build_module_dep_graph(&facts, &binding_assignment);
+        let report = validate_schedule(&graph, &render);
+        assert_eq!(
+            report.cycles.len(),
+            1,
+            "expected one cycle, got {:?}",
+            report.cycles,
+        );
+        let cycle = &report.cycles[0];
+        assert!(
+            cycle.evidence.iter().any(|e| e.kind == "lazy"),
+            "evidence should include the lazy edge, got {:?}",
+            cycle.evidence,
+        );
+        assert!(
+            !cycle.cut.iter().any(|e| e.kind == "lazy"),
+            "cut must not include lazy reasons, got {:?}",
+            cycle.cut,
+        );
+        assert_eq!(
+            cycle.cut.len(),
+            1,
+            "min cut for a single mixed cycle is one edge, got {:?}",
+            cycle.cut,
+        );
+        let entry = &cycle.cut[0];
+        assert_eq!(entry.from, "mod_1");
+        assert_eq!(entry.to, "mod_0");
+        assert_eq!(entry.binding, "A");
+        assert_eq!(entry.kind, "at-init");
+    }
+
+    /// Pure-S cycle: cut consists of side-effect reasons; no
+    /// lazy or at-init reasons should appear.
+    #[test]
+    fn cut_emits_side_effect_edges_for_s_only_cycle() {
+        // Three side-effecting `globalThis.tag = ...` writes
+        // interleaved across mod_0 (ord 0, 2) and mod_1 (ord 1).
+        // S-edges: mod_0 → mod_1 (ord 0 < ord 1) and
+        // mod_1 → mod_0 (ord 1 < ord 2). Cycle.
+        let module = parse(
+            r#"const a1 = (globalThis.tag = "a1", 1); const b1 = (globalThis.tag = "b1", 2); const a2 = (globalThis.tag = "a2", 3);"#,
+        );
+        let facts = analyze_chunk_facts(&module);
+        let mut binding_assignment = BTreeMap::new();
+        binding_assignment.insert("a1".to_string(), logical(0));
+        binding_assignment.insert("a2".to_string(), logical(0));
+        binding_assignment.insert("b1".to_string(), logical(1));
+        let graph = build_module_dep_graph(&facts, &binding_assignment);
+        let report = validate_schedule(&graph, &render);
+        assert_eq!(report.cycles.len(), 1);
+        let cycle = &report.cycles[0];
+        assert!(
+            !cycle.cut.is_empty(),
+            "cut should be non-empty for an unrealizable cycle, got {:?}",
+            cycle.cut,
+        );
+        assert!(
+            cycle.cut.iter().all(|e| e.kind == "side-effect"),
+            "S-only cycle cut should be all side-effect reasons, got {:?}",
+            cycle.cut,
+        );
+    }
+
+    /// Lazy-only cycle: realizability gate accepts it, so no
+    /// CycleReport is emitted and there's no cut to compute.
+    #[test]
+    fn cut_is_absent_for_lazy_only_cycle() {
+        // mod_0 owns helperA, A; mod_1 owns helperB, B. Both
+        // helpers reference the other module's binding lazily;
+        // no cross-module at-init or side-effect edges.
+        let module = parse(
+            "function helperA() { return B; } function helperB() { return A; } const A = 1; const B = 2;",
+        );
+        let facts = analyze_chunk_facts(&module);
+        let mut binding_assignment = BTreeMap::new();
+        binding_assignment.insert("helperA".to_string(), logical(0));
+        binding_assignment.insert("A".to_string(), logical(0));
+        binding_assignment.insert("helperB".to_string(), logical(1));
+        binding_assignment.insert("B".to_string(), logical(1));
+        let graph = build_module_dep_graph(&facts, &binding_assignment);
+        let report = validate_schedule(&graph, &render);
+        assert!(
+            report.cycles.is_empty(),
+            "lazy-only cycle is realizable; the gate must accept and emit no cycle (got {:?})",
+            report.cycles,
         );
     }
 
