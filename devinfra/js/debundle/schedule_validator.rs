@@ -1956,6 +1956,70 @@ pub enum RecommendationReadKind {
     LazyOnly,
 }
 
+/// Render a compact human-readable summary of cycle reports for the
+/// bail message. The full per-cycle evidence + cut goes to a side-
+/// output file (`<chunk_id>.cycles.json`); the summary stays under
+/// the typical CI log-tail threshold so the bail-message version
+/// fits in stderr without truncation.
+///
+/// Per cycle, the summary lists:
+/// - SCC size (modules) and total evidence-edge count.
+/// - Top-5 modules by in-degree within the SCC — these are the
+///   hubs whose incoming edges drive most of the cycle weight.
+/// - Top-5 cut edges by reason count — the highest-leverage
+///   `(from, to)` pairs to break.
+/// - Cut total size (number of constraining reasons selected by
+///   the FAS heuristic).
+pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
+    use std::collections::HashMap;
+    let mut out = String::new();
+    for (i, cycle) in cycles.iter().enumerate() {
+        let mut in_degree: HashMap<&str, usize> = HashMap::new();
+        for edge in &cycle.evidence {
+            *in_degree.entry(edge.to.as_str()).or_insert(0) += 1;
+        }
+        let mut top_in: Vec<(&str, usize)> = in_degree.into_iter().collect();
+        top_in.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+        top_in.truncate(5);
+
+        let mut cut_pairs: HashMap<(&str, &str), usize> = HashMap::new();
+        for edge in &cycle.cut {
+            *cut_pairs
+                .entry((edge.from.as_str(), edge.to.as_str()))
+                .or_insert(0) += 1;
+        }
+        let mut top_cut: Vec<((&str, &str), usize)> = cut_pairs.into_iter().collect();
+        top_cut.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        top_cut.truncate(5);
+
+        out.push_str(&format!(
+            "Cycle #{i}: {} modules, {} evidence edges, cut {} reasons across {} (from, to) pairs.\n",
+            cycle.modules.len(),
+            cycle.evidence.len(),
+            cycle.cut.len(),
+            cut_pairs_count(&cycle.cut),
+        ));
+        out.push_str("  Top in-degree hubs (incoming evidence edges):\n");
+        for (m, n) in &top_in {
+            out.push_str(&format!("    {n:>6}  {m}\n"));
+        }
+        out.push_str("  Top cut edges (R/S reasons to break):\n");
+        for ((f, t), n) in &top_cut {
+            out.push_str(&format!("    {n:>6}  {f}  ->  {t}\n"));
+        }
+    }
+    out
+}
+
+fn cut_pairs_count(cut: &[CycleEdge]) -> usize {
+    use std::collections::HashSet;
+    let mut seen: HashSet<(&str, &str)> = HashSet::new();
+    for edge in cut {
+        seen.insert((edge.from.as_str(), edge.to.as_str()));
+    }
+    seen.len()
+}
+
 /// Find SCCs in the dep graph and produce a report listing every
 /// non-trivial cycle (size > 1 OR a self-loop). Trivial single-node
 /// non-self-loop SCCs are dropped.

@@ -19,7 +19,7 @@ use artifact::{
 use js_ast::{ParsedJsModule, set_str_value, str_value};
 use schedule_validator::{
     BindingKind, BindingName, LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId,
-    Schedule, analyze_chunk_facts, find_top_level_await,
+    Schedule, analyze_chunk_facts, find_top_level_await, render_cycle_summary,
 };
 
 const LOWERING_FILE_PRAGMA: &str =
@@ -359,14 +359,25 @@ pub fn materialize_logical_modules(
         let schedule_report = schedule.validate();
 
         // Hard gate: a cyclic spec is unrealizable; refuse to emit
-        // instead of producing a runtime-broken bundle. Cycles are
-        // reported with the responsible (statement, binding) pairs
-        // so the spec author can locate and break each cycle.
+        // instead of producing a runtime-broken bundle. The full
+        // cycle evidence is written as `<chunk_id>.cycles.json` for
+        // downstream tooling; stderr gets a compact summary so the
+        // bail message stays under the typical CI log-tail
+        // threshold (Bazel truncates at ~1 MiB by default).
         if !schedule_report.cycles.is_empty() {
-            let serialized = serde_json::to_string_pretty(&schedule_report.cycles)
-                .unwrap_or_else(|_| "<failed to serialize cycles>".to_string());
+            if let Some(report_out_dir) = &report_out_dir {
+                let cycles_path = report_out_dir.join(format!("{chunk_id}.cycles.json"));
+                if let Some(parent) = cycles_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                fs::write(
+                    &cycles_path,
+                    serde_json::to_string_pretty(&schedule_report.cycles)? + "\n",
+                )?;
+            }
+            let summary = render_cycle_summary(&schedule_report.cycles);
             bail!(
-                "materialize_logical_modules: chunk {chunk_id} has {} cycle(s) in the at-init module dep graph; spec is unrealizable. Resolve by colocating cyclically-coupled bindings or making the offending reads lazy. Cycle evidence:\n{serialized}",
+                "materialize_logical_modules: chunk {chunk_id} has {} cycle(s) in the imports + side-effect module dep graph; spec is unrealizable. Resolve by colocating cyclically-coupled bindings or making the offending reads lazy. Full cycle evidence written to <reports>/{chunk_id}.cycles.json. Summary:\n{summary}",
                 schedule_report.cycles.len(),
             );
         }
