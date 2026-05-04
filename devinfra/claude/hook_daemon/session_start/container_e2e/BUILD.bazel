@@ -44,10 +44,8 @@ oci_image(
     name = "e2e_container_image",
     testonly = True,
     base = "@python_3_13_slim_linux_amd64",
-    # JDK update-alternatives postinst doesn't run in rules_distroless, so
-    # /usr/bin/keytool won't exist. Extend PATH to include JDK bin directly.
     env = {
-        "PATH": "/tools:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin:/usr/lib/jvm/java-21-openjdk-amd64/bin",
+        "PATH": "/tools:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin",
     },
     tars = [
         "@trixie_e2e//:flat",
