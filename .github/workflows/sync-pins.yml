@@ -53,11 +53,22 @@ jobs:
           fi
           git commit -m "chore: sync artifact pins (${{ steps.sync.outputs.updated }})"
           git pull --rebase origin devel
-          # Replace actions/checkout's url-specific extraheader with the App
-          # installation token so the push is App-attributed. `git -c` appends
-          # to extraheader (multi-valued) rather than replacing — both headers
-          # would go on the wire and GitHub returns "Duplicate header:
-          # Authorization" 400. Unset, then set fresh.
-          git config --unset-all 'http.https://github.com/.extraheader' || true
+          # Replace actions/checkout's basic-auth Authorization header with the
+          # App installation token so the push is App-attributed.
+          #
+          # actions/checkout writes its `http.https://github.com/.extraheader`
+          # value into a temp file under $RUNNER_TEMP and pulls it in via
+          # `includeif.gitdir:<repo>.path = <temp file>` entries in the local
+          # config. `git config --unset-all` only edits the local config, so
+          # it cannot remove a value that lives in an includeif'd file —
+          # adding our own value alongside results in TWO Authorization
+          # headers on the wire and GitHub returns "Duplicate header:
+          # Authorization" 400.
+          #
+          # Drop the includeif entries first to disconnect the credentials
+          # file, then set our own extraheader in the local config.
+          for key in $(git config --local --name-only --get-regexp '^includeif\.gitdir:.*\.path$' || true); do
+            git config --local --unset-all "$key"
+          done
           git config 'http.https://github.com/.extraheader' "Authorization: Bearer ${APP_TOKEN}"
           git push origin "HEAD:devel"
