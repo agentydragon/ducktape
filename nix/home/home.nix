@@ -41,12 +41,12 @@ let
 
   solarizedNvim = pkgs.vimUtils.buildVimPlugin {
     pname = "solarized.nvim";
-    version = "2024-11-26";
+    version = "2026-04-17";
     src = pkgs.fetchFromGitHub {
       owner = "maxmx03";
       repo = "solarized.nvim";
-      rev = "main";
-      sha256 = "1fz1wc569w26aanmj3hhsc17xrx29g6bfsjsbgssa7jq76aavp3w";
+      rev = "a8085e29883ddcfb39bd46197eb32ef00df05368";
+      sha256 = "0psgwfnd5fi0p60pknzz9li70ryxqqjz7gxxvqr0q3q1kzpdhr7q";
     };
   };
 
