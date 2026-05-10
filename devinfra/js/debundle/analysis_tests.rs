@@ -1,5 +1,5 @@
 mod tests {
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::{BTreeMap, BTreeSet, HashMap};
 
     use crate::facts::{compute_shadowed_globals, top_level_item_views};
     use crate::purity::{ChunkCodeGraph, Purity, classify_expr_purity};
@@ -292,7 +292,7 @@ mod tests {
     fn schedule_for(source: &str, ownership: &[(&str, ModuleId)]) -> Schedule {
         let module = parse(source);
         let facts = analyze_chunk_facts(&module, &BTreeSet::new());
-        let mut bindings = BTreeMap::new();
+        let mut bindings = HashMap::new();
         let mut max_idx = 0usize;
         for (name, id) in ownership {
             bindings.insert(name.to_string(), BindingKind::Owned { owner: *id });
@@ -305,7 +305,7 @@ mod tests {
                 id: format!("mod_{i}"),
                 target_file: format!("mod_{i}.js"),
                 residual: false,
-                rename_map: BTreeMap::new(),
+                rename_map: HashMap::new(),
                 anonymous_statement_ordinals: Vec::new(),
             })
             .collect();
@@ -314,7 +314,7 @@ mod tests {
             facts,
             bindings,
             logical_modules,
-            BTreeMap::new(),
+            HashMap::new(),
         )
     }
 
@@ -327,7 +327,7 @@ mod tests {
         let facts = analyze_chunk_facts(&module, &BTreeSet::new());
         let residual = logical(0);
         let logical = logical(1);
-        let mut bindings = BTreeMap::new();
+        let mut bindings = HashMap::new();
         for name in residual_bindings {
             bindings.insert(name.to_string(), BindingKind::Owned { owner: residual });
         }
@@ -339,14 +339,14 @@ mod tests {
                 id: "residual".to_string(),
                 target_file: "residual/unhandled.js".to_string(),
                 residual: true,
-                rename_map: BTreeMap::new(),
+                rename_map: HashMap::new(),
                 anonymous_statement_ordinals: Vec::new(),
             },
             LogicalModule {
                 id: "mod_1".to_string(),
                 target_file: "mod_1.js".to_string(),
                 residual: false,
-                rename_map: BTreeMap::new(),
+                rename_map: HashMap::new(),
                 anonymous_statement_ordinals: Vec::new(),
             },
         ];
@@ -355,7 +355,7 @@ mod tests {
             facts,
             bindings,
             logical_modules,
-            BTreeMap::new(),
+            HashMap::new(),
         )
     }
 

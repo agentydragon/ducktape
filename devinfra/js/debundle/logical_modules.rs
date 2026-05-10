@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -181,8 +181,10 @@ struct ModulePlan {
     /// plan claims (i.e. members whose `selector.binding.kind` is
     /// _not_ `ImportSpecifier`). ImportSpecifier-bound members live
     /// in `Schedule.bindings` as `BindingKind::Imported` and their
-    /// emit is driven from there.
-    bindings: BTreeMap<String, String>,
+    /// emit is driven from there. Iteration order is undefined;
+    /// emit / report sites sort by local name before consuming so
+    /// the emitted source and JSON shapes stay deterministic.
+    bindings: HashMap<String, String>,
     /// Source-chunk statement ordinals of anonymous-statement members
     /// claimed by this module. These owners have empty
     /// `declared_bindings`, so they can't be addressed by name —
@@ -412,12 +414,12 @@ fn materialize_logical_chunk(
     let mut binding_assignment = BTreeMap::<String, usize>::new();
     let mut anonymous_ordinal_assignment = BTreeMap::<usize, usize>::new();
     let mut module_plans = Vec::new();
-    let mut bindings_catalogue = BTreeMap::<BindingName, BindingKind>::new();
+    let mut bindings_catalogue = HashMap::<BindingName, BindingKind>::new();
     let mut imported_binding_resolver =
         ArtifactSourceImportResolutionCache::new(artifact, artifact_indexes);
     let mut imported_from_by_src = BTreeMap::<String, String>::new();
     for (index, request) in explicit_requests.iter_mut().enumerate() {
-        let mut bindings = BTreeMap::new();
+        let mut bindings = HashMap::<String, String>::new();
         let anonymous_statement_ordinals =
             resolve_anonymous_statement_ordinals(request, &runtime_ast.module)?;
         for ordinal in &anonymous_statement_ordinals {
@@ -455,7 +457,7 @@ fn materialize_logical_chunk(
                     .or_insert_with(|| BindingKind::Imported {
                         imported_name: imported_name.clone(),
                         imported_from: imported_from.clone(),
-                        re_exported_by: BTreeMap::new(),
+                        re_exported_by: HashMap::new(),
                     });
                 if let BindingKind::Imported { re_exported_by, .. } = entry {
                     re_exported_by.insert(module_id, member.export_name.clone());
@@ -489,7 +491,7 @@ fn materialize_logical_chunk(
             .iter()
             .map(|m| (m.binding.as_str(), m.export_name.as_str()))
             .collect();
-        let mut residual_bindings = BTreeMap::new();
+        let mut residual_bindings = HashMap::<String, String>::new();
         for decl in &declarations {
             for name in &decl.names {
                 if !binding_assignment.contains_key(name) {
@@ -698,15 +700,22 @@ fn materialize_logical_chunk(
     let final_modules = time_phase!(timings, "build_final_module_report", {
         module_plans
             .iter()
-            .map(|plan| FinalModuleContent {
-                binding_names: plan.bindings.keys().cloned().collect(),
-                file: plan.target_file.clone(),
-                id: plan.id.clone(),
-                member_names: plan.bindings.values().cloned().collect(),
-                path: plan.target_path.clone(),
-                owner_ids: schedule
-                    .owner_report_ids_for_bindings(plan.bindings.keys().map(String::as_str)),
-                residual: !plan.explicit,
+            .map(|plan| {
+                let mut sorted: Vec<(&String, &String)> = plan.bindings.iter().collect();
+                sorted.sort_by(|a, b| a.0.cmp(b.0));
+                let binding_names: Vec<String> = sorted.iter().map(|(k, _)| (*k).clone()).collect();
+                let member_names: Vec<String> = sorted.iter().map(|(_, v)| (*v).clone()).collect();
+                let owner_ids = schedule
+                    .owner_report_ids_for_bindings(binding_names.iter().map(String::as_str));
+                FinalModuleContent {
+                    binding_names,
+                    file: plan.target_file.clone(),
+                    id: plan.id.clone(),
+                    member_names,
+                    path: plan.target_path.clone(),
+                    owner_ids,
+                    residual: !plan.explicit,
+                }
             })
             .collect::<Vec<_>>()
     });
@@ -885,8 +894,10 @@ struct LowerChunkInputs<'a> {
     /// to bindings staying in entry's body — i.e. those *not* in
     /// `binding_assignment`. Bindings claimed by a logical module
     /// take their rename from the module plan; entries here for
-    /// those bindings are silently dropped.
-    chunk_renames: &'a BTreeMap<String, String>,
+    /// those bindings are silently dropped. Iteration order is
+    /// undefined; the validation pass sorts by binding name before
+    /// iterating so any spec errors are deterministic.
+    chunk_renames: &'a HashMap<String, String>,
 }
 
 #[derive(Debug, Default)]
@@ -1091,14 +1102,26 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
         }
         renamed_away.insert(binding.clone());
     }
-    for (binding, export_name) in chunk_renames {
+    // Iterate `chunk_renames` (a `HashMap`) in sorted order so the
+    // collected error list and the `body_renames` insertion order
+    // are stable. Collect every violation rather than `bail!`ing on
+    // the first one so a spec author sees the full set in one
+    // round-trip; the "duplicate target" branch in particular only
+    // surfaces after `occupied.insert` returned false, so the
+    // earlier-rename whose target was duplicated is implied by the
+    // sort order.
+    let mut sorted_renames: Vec<(&String, &String)> = chunk_renames.iter().collect();
+    sorted_renames.sort_by(|a, b| a.0.cmp(b.0));
+    let mut errors = Vec::<String>::new();
+    for (binding, export_name) in sorted_renames {
         if binding_assignment.contains_key(binding) {
             continue;
         }
         if !is_valid_js_identifier(export_name) {
-            bail!(
+            errors.push(format!(
                 "chunk_renames target {export_name} for binding {binding} is not a valid JS identifier",
-            );
+            ));
+            continue;
         }
         if export_name != binding {
             // A body local that's also being renamed away vacates
@@ -1107,9 +1130,10 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             let target_already_taken =
                 occupied.contains(export_name) && !renamed_away.contains(export_name);
             if target_already_taken {
-                bail!(
+                errors.push(format!(
                     "chunk_renames target {export_name} for binding {binding} collides with an existing top-level local",
-                );
+                ));
+                continue;
             }
         }
         if !occupied.insert(export_name.clone()) && export_name != binding {
@@ -1118,11 +1142,15 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             // that's expected. For any other case the target was
             // already chosen by a previous chunk_renames entry —
             // duplicate target.
-            bail!(
+            errors.push(format!(
                 "chunk_renames target {export_name} for binding {binding} duplicates an earlier rename target",
-            );
+            ));
+            continue;
         }
         body_renames.insert(binding.clone(), export_name.clone());
+    }
+    if !errors.is_empty() {
+        bail!("invalid chunk_renames spec:\n  - {}", errors.join("\n  - "));
     }
     occupied.extend(collect_local_binding_names(&entry_body));
     for (module_index, plan) in module_plans.iter().enumerate() {
@@ -1401,9 +1429,22 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             }
         });
         time_phase!(timings, "module.build_output_records", {
-            let binding_names = plan.bindings.keys().cloned().collect::<Vec<_>>();
+            // Materialize `plan.bindings` (a HashMap) in sorted order so
+            // `binding_names`, `exported_names`, the header comment, and
+            // the resolved `owner_ids` all share the same canonical
+            // sequence regardless of hash seed.
+            let mut sorted_plan_bindings: Vec<(&String, &String)> = plan.bindings.iter().collect();
+            sorted_plan_bindings.sort_by(|a, b| a.0.cmp(b.0));
+            let binding_names: Vec<String> = sorted_plan_bindings
+                .iter()
+                .map(|(k, _)| (*k).clone())
+                .collect();
+            let exported_names: Vec<String> = sorted_plan_bindings
+                .iter()
+                .map(|(_, v)| (*v).clone())
+                .collect();
             let owner_ids =
-                schedule.owner_report_ids_for_bindings(plan.bindings.keys().map(String::as_str));
+                schedule.owner_report_ids_for_bindings(binding_names.iter().map(String::as_str));
             let header = vec![
                 LOWERING_FILE_PRAGMA.to_string(),
                 LOWERING_GENERATOR_HEADER.to_string(),
@@ -1440,7 +1481,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             applied.push(SelectedModuleLowering {
                 binding_names,
                 chunk_id: chunk_id.to_string(),
-                exported_names: plan.bindings.values().cloned().collect(),
+                exported_names,
                 file: entry_file.to_string(),
                 id: plan.id.clone(),
                 owner_ids,
@@ -1546,8 +1587,8 @@ fn is_valid_js_identifier(s: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
 }
 
-fn collect_chunk_renames(chunk_renames: &ChunkRenames) -> Result<BTreeMap<String, String>> {
-    let mut renames = BTreeMap::<String, String>::new();
+fn collect_chunk_renames(chunk_renames: &ChunkRenames) -> Result<HashMap<String, String>> {
+    let mut renames = HashMap::<String, String>::new();
     let id = chunk_renames.id.as_deref().unwrap_or("chunk_renames");
     for member in &chunk_renames.members {
         let binding = member.selector.binding.name.clone();
@@ -1892,7 +1933,7 @@ impl RefCollector {
 /// to begin with.
 fn trim_dead_named_specifiers(
     body: &mut [ModuleItem],
-    bindings: &BTreeMap<BindingName, BindingKind>,
+    bindings: &HashMap<BindingName, BindingKind>,
 ) {
     let mut collector = RefCollector::default();
     for item in body.iter() {
@@ -2051,7 +2092,14 @@ fn collect_imported_reexports_by_module(
     module_count: usize,
 ) -> Vec<Vec<ImportedReexport>> {
     let mut by_module: Vec<Vec<ImportedReexport>> = (0..module_count).map(|_| Vec::new()).collect();
-    for (local, kind) in &schedule.bindings {
+    // Stable iteration order on both `schedule.bindings` (HashMap)
+    // and the inner `re_exported_by` (HashMap) — the recorded
+    // sequence determines the emit order of `import { ... }`
+    // statements per module body and we want that source-level
+    // shape pinned.
+    let mut sorted_bindings: Vec<(&BindingName, &BindingKind)> = schedule.bindings.iter().collect();
+    sorted_bindings.sort_by(|a, b| a.0.cmp(b.0));
+    for (local, kind) in sorted_bindings {
         let BindingKind::Imported {
             imported_name,
             imported_from,
@@ -2060,7 +2108,9 @@ fn collect_imported_reexports_by_module(
         else {
             continue;
         };
-        for (module_id, public_name) in re_exported_by {
+        let mut sorted_reexports: Vec<(&ModuleId, &BindingName)> = re_exported_by.iter().collect();
+        sorted_reexports.sort_by_key(|(id, _)| **id);
+        for (module_id, public_name) in sorted_reexports {
             let ModuleId::Logical(LogicalModuleIndex(index)) = module_id else {
                 continue;
             };
@@ -2269,7 +2319,13 @@ fn final_module_exports(
 
 fn naturalize_module_body(body: &mut [ModuleItem], plan: &ModulePlan) -> BTreeMap<String, String> {
     let mut renames = BTreeMap::<String, String>::new();
-    for (local, exported) in &plan.bindings {
+    // Stable iteration over `plan.bindings` (a HashMap) so the order
+    // renames land in `renames` — and thus the rename-precedence the
+    // visitor applies when two locals compete for the same target —
+    // doesn't vary by hash seed.
+    let mut sorted_bindings: Vec<(&String, &String)> = plan.bindings.iter().collect();
+    sorted_bindings.sort_by(|a, b| a.0.cmp(b.0));
+    for (local, exported) in sorted_bindings {
         if local != exported && is_identifier_like(exported) {
             renames.insert(local.clone(), exported.clone());
         }

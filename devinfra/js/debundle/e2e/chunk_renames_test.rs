@@ -219,3 +219,47 @@ export { run };
 
     expect_rejection_containing_all(opts, &["mod_run", "helper", "not exported by entry"]);
 }
+
+/// Multiple chunk_renames violations should all surface in a single
+/// rejection rather than the validator bailing on the first one. Spec
+/// authors fix the spec in one round-trip instead of iterating per
+/// error.
+#[test]
+fn surfaces_every_chunk_rename_violation_at_once() {
+    let opts = FixtureOpts {
+        source: r#"let alpha = "alpha-value";
+let bravo = "bravo-value";
+let charlie = "charlie-value";
+let delta = "delta-value";
+console.log(alpha, bravo, charlie, delta);
+export { alpha, bravo, charlie, delta };
+"#,
+        logical_modules: vec![],
+        residual: None,
+        chunk_renames: Some(json!({
+            "id": "chunk_renames__static_app",
+            "members": [
+                // Invalid JS identifier — should report a "not a valid JS identifier" error.
+                { "name": "1-bad-ident", "selector": { "binding": { "name": "alpha" } } },
+                // Collides with the existing body local `delta`.
+                { "name": "delta",        "selector": { "binding": { "name": "bravo" } } },
+                // Duplicate target — both `charlie` and `delta` would rename to the same name.
+                { "name": "shared_target", "selector": { "binding": { "name": "charlie" } } },
+                { "name": "shared_target", "selector": { "binding": { "name": "delta" } } },
+            ],
+        })),
+        chunk_id: "static/app",
+        include_residual: false,
+        extra_files: &[],
+    };
+
+    expect_rejection_containing_all(
+        opts,
+        &[
+            "invalid chunk_renames spec",
+            "not a valid JS identifier",
+            "collides with an existing top-level local",
+            "duplicates an earlier rename target",
+        ],
+    );
+}

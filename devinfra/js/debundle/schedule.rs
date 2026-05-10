@@ -21,9 +21,18 @@ use crate::{
 pub struct Schedule {
     pub chunk_id: String,
     pub facts: Vec<StatementFacts>,
-    pub bindings: BTreeMap<BindingName, BindingKind>,
+    /// All top-level bindings of the chunk indexed by local name.
+    /// Iteration order is undefined; consumers that need a
+    /// deterministic order (emit sites, error messages) must sort
+    /// the keys themselves.
+    pub bindings: HashMap<BindingName, BindingKind>,
     pub logical_modules: Vec<LogicalModule>,
-    pub chunk_renames: BTreeMap<BindingName, BindingName>,
+    /// In-place readability renames for bindings that stay in
+    /// entry. Iteration order is undefined; the
+    /// `materialize_logical_modules` validation pass sorts the
+    /// keys before iterating so any spec errors it emits stay
+    /// deterministic.
+    pub chunk_renames: HashMap<BindingName, BindingName>,
     pub owner_graph: OwnerGraph,
     pub(crate) owner_edges: Vec<OwnerEdgeEntry>,
     pub dep_graph: ModuleDepGraph,
@@ -71,9 +80,9 @@ impl Schedule {
     pub fn build(
         chunk_id: String,
         facts: Vec<StatementFacts>,
-        bindings: BTreeMap<BindingName, BindingKind>,
+        bindings: HashMap<BindingName, BindingKind>,
         logical_modules: Vec<LogicalModule>,
-        chunk_renames: BTreeMap<BindingName, BindingName>,
+        chunk_renames: HashMap<BindingName, BindingName>,
     ) -> Self {
         let ownership = owned_view(&bindings);
         let mut owner_graph = build_owner_graph(&facts, &ownership);
@@ -278,8 +287,8 @@ impl Schedule {
 /// - Everything else → `chunk_renames[name]` if present, else the
 ///   binding's own name.
 fn build_export_name_by_binding(
-    bindings: &BTreeMap<BindingName, BindingKind>,
-    chunk_renames: &BTreeMap<BindingName, BindingName>,
+    bindings: &HashMap<BindingName, BindingKind>,
+    chunk_renames: &HashMap<BindingName, BindingName>,
     logical_modules: &[LogicalModule],
 ) -> HashMap<BindingName, BindingName> {
     let mut out = HashMap::with_capacity(bindings.len() + chunk_renames.len());
@@ -313,7 +322,13 @@ fn build_export_name_by_binding(
     out
 }
 
-fn owned_view(bindings: &BTreeMap<BindingName, BindingKind>) -> BTreeMap<BindingName, ModuleId> {
+fn owned_view(bindings: &HashMap<BindingName, BindingKind>) -> BTreeMap<BindingName, ModuleId> {
+    // Returns `BTreeMap` because `build_owner_graph` consumes the
+    // ownership view sorted by binding name; the iteration there
+    // only does a typed slot lookup so the sort is a contract, not
+    // a hot-path cost. Converting the schedule's `HashMap` storage
+    // to a `BTreeMap` for this one-time call keeps
+    // `build_owner_graph`'s public signature unchanged.
     bindings
         .iter()
         .filter_map(|(name, kind)| match kind {

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -140,7 +140,10 @@ pub enum BindingKind {
         /// re-exports this binding. Empty when no logical module
         /// re-exports it (read-only references stay implicit and are
         /// resolved by `source_chunk_imports_for_moved_body`).
-        re_exported_by: BTreeMap<ModuleId, BindingName>,
+        /// Iteration order is undefined; emit sites sort the entries
+        /// before consuming them so the emitted import/export shape
+        /// stays deterministic.
+        re_exported_by: HashMap<ModuleId, BindingName>,
     },
 }
 
@@ -159,8 +162,9 @@ pub struct LogicalModule {
     pub residual: bool,
     /// Local-name → exported-name map for the bindings this module
     /// owns. Empty when the module re-exports only imported
-    /// bindings.
-    pub rename_map: BTreeMap<BindingName, BindingName>,
+    /// bindings. Iteration order is undefined; report and emit
+    /// sites sort by local name before consuming.
+    pub rename_map: HashMap<BindingName, BindingName>,
     /// Source-chunk top-level statement ordinals this module claims
     /// as anonymous-statement members (owners with empty
     /// `declared_bindings` that the spec resolves by AST shape via

@@ -136,17 +136,28 @@ Still to do:
 
 From `perf record` against the Tana debundle pipeline (Gaffer
 `tana/re/web/spec/profile_reports/2026-05-10-tana-debundle.md`):
-`materialize_logical_modules` is now 89% of the total transform
+`materialize_logical_modules` was 89% of the total transform
 time, dominated by `build_owner_graph_report` (22.54 s) and
 `write_owner_graph_report` (6.55 s).
 
-The two single-line wins on `build_owner_graph_report`
-(`Schedule::entry_exported_binding_names` cache passed by reference
-into `peel_emit_blocked_residual_bindings`, and the precomputed
-`Schedule::export_name_by_binding` map driving `binding_reports`)
-have landed, together with the first wave of `BTreeMap → HashMap`
-switches on the per-candidate peelability hot path. Reprofile
-against Tana before picking the next item.
+Landed:
+
+- `Schedule::entry_exported_binding_names` cache passed by
+  reference into `peel_emit_blocked_residual_bindings`.
+- Precomputed `Schedule::export_name_by_binding` map driving
+  `binding_reports`.
+- Per-candidate peelability maps switched from `BTreeMap`/`BTreeSet`
+  to `HashMap`/`HashSet`.
+- `OwnerEdgeEntry::id` `String` field dropped in favor of a typed
+  `OwnerEdgeId(usize)` derived from the entry's slice index.
+- `Schedule::bindings`, `Schedule::chunk_renames`,
+  `LogicalModule::rename_map`, `BindingKind::Imported::re_exported_by`,
+  and `ModulePlan::bindings` switched to `HashMap`. Emit / report
+  sites that depend on iteration order sort at the boundary, and
+  `chunk_renames` validation now collects every violation before
+  bailing (single error → full punch list).
+
+Reprofile against Tana before picking the next item.
 
 Remaining priorities, ordered by leverage:
 
@@ -164,25 +175,6 @@ Remaining priorities, ordered by leverage:
    `swc_ecma_ast::expr::Expr::visit_children_with` shows up
    repeatedly at 0.55%–1.16% self entries (totalling ~3-4%).
    Backlog item once item 1 lands.
-
-3. **Further string-keyed map removal on the chunk-local hot path.**
-   The first wave switched the per-candidate peelability maps
-   (`PeelabilityContext::module_index`, `module_pair_totals`,
-   `CandidateGraphAdjustment::*`, the per-candidate `accum` /
-   `seen_side_effect_candidate_pairs`, `Schedule::linker_position_by_module`)
-   from `BTreeMap`/`BTreeSet` to `HashMap`/`HashSet` and dropped
-   the `OwnerEdgeEntry::id` `String` field in favor of a typed
-   `OwnerEdgeId(usize)` derived from the entry's slice index. The
-   remaining string-keyed BTreeMaps (`Schedule::bindings`,
-   `Schedule::chunk_renames`, `LogicalModule::rename_map`,
-   `BindingKind::Imported::re_exported_by`) are still iterated to
-   produce deterministic emit-order output and would need either
-   explicit post-iteration sort or migration to a `BindingId`-keyed
-   `Vec` before the switch is safe. The `export_name_for_binding`
-   hot lookup is already eliminated by the
-   `Schedule::export_name_by_binding` cache, so the residual cost
-   is mostly emit-ordering iteration rather than per-candidate
-   lookup.
 
 ## Graph pass performance and module boundaries
 
