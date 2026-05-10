@@ -451,12 +451,39 @@ const PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS: &[&str] = &["Symbol"];
 /// step 1 short-circuits when iterable/length is undefined,
 /// returning a fresh empty container without invoking any user
 /// code (no iterator protocol, no getters fired). Same admission
-/// contract as `PURE_GLOBAL_CALLS`. The arg-bearing forms
-/// (`new Map([[k,v]])`, `new Array(n)`) are NOT covered — they
-/// open up iterator protocol / coercion paths and stay
-/// `Unknown` until a follow-up adds the relevant arg shape
-/// rules.
+/// contract as `PURE_GLOBAL_CALLS`. `Set` / `Map` also accept
+/// an Array-literal iterable; see `PURE_BUILTIN_NEW_ARRAY_ITERABLE`.
 const PURE_BUILTIN_NEW_NO_ARGS: &[&str] = &["Map", "Set", "WeakMap", "WeakSet", "Array"];
+
+/// Built-in container constructors whose 1-arg form is pure when
+/// the argument is an Array literal with all-Pure elements (no
+/// spreads, no holes):
+///
+/// * `Set`: `new Set([elt, ...])` — ECMA-262 §24.2.1.1 iterates
+///   the iterable via the built-in Array iterator (no user code
+///   on a fresh array literal) and calls `Set.prototype.add` per
+///   element. SameValueZero on primitive keys fires no user
+///   code; on object keys it's reference equality. Fresh array
+///   of Pure elements ⇒ pure.
+/// * `Map`: `new Map([[k, v], ...])` — ECMA-262 §24.1.1.1 same
+///   iterator path on the outer Array, then `Get(entry, "0")` /
+///   `Get(entry, "1")` (own data properties on a fresh entry
+///   array, no getter), then `Map.prototype.set`. Pure when
+///   every entry is itself a 2-element Array literal with Pure
+///   key + value.
+/// * `WeakSet` / `WeakMap`: NOT covered — they additionally
+///   require object keys; primitives throw. Allowing them would
+///   require verifying every element/key has object value class,
+///   which the classifier doesn't track.
+///
+/// Stricter than just "Pure arg" because:
+///   - `new Set(somePureFn())` could produce a non-iterable at
+///     runtime (TypeError at `[Symbol.iterator]()`), which is
+///     observable from the caller's standpoint.
+///   - `new Set(spreadable)` invokes the iterable's
+///     `[Symbol.iterator]()`, which can fire user code on
+///     anything other than a literal array.
+const PURE_BUILTIN_NEW_ARRAY_ITERABLE: &[&str] = &["Map", "Set"];
 
 /// Static-property READS on these globals are Pure: the property
 /// is an own data property of the receiver per ECMA-262 (no getter
@@ -646,7 +673,7 @@ pub(crate) fn classify_expr_purity(
             ),
         },
         Expr::Call(call) => classify_call_purity(call, shadowed, declared_pure, graph),
-        Expr::New(new_expr) => classify_new_expr_purity(new_expr, shadowed),
+        Expr::New(new_expr) => classify_new_expr_purity(new_expr, shadowed, declared_pure, graph),
         Expr::TaggedTpl(_) => Purity::Unknown,
         Expr::Assign(_) | Expr::Update(_) => Purity::Impure,
         Expr::Await(_) | Expr::Yield(_) => Purity::Impure,
@@ -684,26 +711,104 @@ fn static_member_pair(member: &MemberExpr) -> Option<(&'static str, &'static str
     Some((recv, prop))
 }
 
-/// Purity of a `new X(args…)` expression. Matches the
-/// no-arg form of a built-in container constructor in
-/// `PURE_BUILTIN_NEW_NO_ARGS` against an unshadowed Ident
-/// callee. All other shapes (arg-bearing constructors,
-/// non-Ident callees, shadowed names, tagged templates) fall
-/// through to `Unknown`.
-fn classify_new_expr_purity(new_expr: &NewExpr, shadowed: &BTreeSet<&'static str>) -> Purity {
+/// Purity of a `new X(args…)` expression. Matches:
+///   * No-arg form against `PURE_BUILTIN_NEW_NO_ARGS`.
+///   * 1-arg Array-literal-iterable form against
+///     `PURE_BUILTIN_NEW_ARRAY_ITERABLE` (`Set` / `Map`).
+/// Everything else (non-Ident callees, shadowed names, tagged
+/// templates, other arg shapes) falls through to `Unknown`.
+fn classify_new_expr_purity(
+    new_expr: &NewExpr,
+    shadowed: &BTreeSet<&'static str>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> Purity {
     let Expr::Ident(callee) = new_expr.callee.as_ref() else {
         return Purity::Unknown;
     };
+    let arg_count = new_expr.args.as_ref().map_or(0, Vec::len);
     if let Some(name) = PURE_BUILTIN_NEW_NO_ARGS
         .iter()
         .copied()
         .find(|n| *n == callee.sym.as_ref())
         && !shadowed.contains(name)
-        && new_expr.args.as_ref().map_or(0, Vec::len) == 0
+        && arg_count == 0
+    {
+        return Purity::Pure;
+    }
+    if let Some(name) = PURE_BUILTIN_NEW_ARRAY_ITERABLE
+        .iter()
+        .copied()
+        .find(|n| *n == callee.sym.as_ref())
+        && !shadowed.contains(name)
+        && let Some(args) = new_expr.args.as_ref()
+        && args.len() == 1
+        && args[0].spread.is_none()
+        && is_pure_array_literal_for_iterable(&args[0].expr, name, shadowed, declared_pure, graph)
     {
         return Purity::Pure;
     }
     Purity::Unknown
+}
+
+/// True when `expr` is an Array literal whose every element is a
+/// Pure expression (no spreads, no holes). For `Map`
+/// (`callee == "Map"`), each element must additionally be a
+/// 2-element Array literal — Map's iterator path Get's [0]/[1]
+/// on each entry, and we need fresh literal entries so those
+/// reads are own-data-property hits, not user-getter hits on a
+/// 2-tuple-shaped object.
+fn is_pure_array_literal_for_iterable(
+    expr: &Expr,
+    callee: &str,
+    shadowed: &BTreeSet<&'static str>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> bool {
+    let Expr::Array(arr) = expr else {
+        return false;
+    };
+    for elem in arr.elems.iter() {
+        let Some(elem) = elem else {
+            // Hole: `[1, , 3]`. Set treats hole as undefined
+            // (still a value); Map's `Get(undefined, "0")`
+            // throws. Reject for both.
+            return false;
+        };
+        if elem.spread.is_some() {
+            return false;
+        }
+        match callee {
+            "Set" => {
+                if classify_expr_purity(&elem.expr, shadowed, declared_pure, graph) != Purity::Pure
+                {
+                    return false;
+                }
+            }
+            "Map" => {
+                let Expr::Array(entry) = elem.expr.as_ref() else {
+                    return false;
+                };
+                if entry.elems.len() != 2 {
+                    return false;
+                }
+                for entry_elem in entry.elems.iter() {
+                    let Some(e) = entry_elem else {
+                        return false;
+                    };
+                    if e.spread.is_some() {
+                        return false;
+                    }
+                    if classify_expr_purity(&e.expr, shadowed, declared_pure, graph) != Purity::Pure
+                    {
+                        return false;
+                    }
+                }
+            }
+            _ => return false,
+        }
+    }
+    true
 }
 
 /// Purity of `member` taken as an r-value member access
