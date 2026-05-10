@@ -38,25 +38,21 @@ pub struct Schedule {
     /// evaluation order; see DESIGN.md "Lemma 2".
     pub linker_order: Vec<ModuleId>,
     linker_position_by_module: HashMap<ModuleId, usize>,
-    /// Names of bindings that the source chunk's entry already
-    /// exports (via `export { … }` or `export const X = …`).
-    /// `None` when the schedule was built without AST analysis (the
-    /// default); peelability's emit-resolvability projection then
-    /// silently skips the check, so test fixtures that construct
-    /// schedules directly don't have to invent an export set. Real
-    /// pipeline callers populate via
-    /// [`Schedule::with_pre_existing_entry_exports`].
+    /// Entry's full post-Owned-resolution export set: the
+    /// pre-existing source exports passed into
+    /// [`Schedule::with_pre_existing_entry_exports`] union the
+    /// bindings of every owner already assigned to a logical
+    /// module. Computed once when the setter runs and reused
+    /// across the ≥1500 peelability candidate evaluations per
+    /// chunk that would otherwise rebuild it from scratch.
+    /// `None` when the schedule was built without AST analysis
+    /// (the test-helper case); peelability's emit-resolvability
+    /// projection then silently skips the check.
     ///
-    /// Used by the emit-resolvability projection in `peelability.rs`
-    /// and the matching predicate in `materialize_logical_modules`
-    /// (SSOT — see [`crate::graph::peel_emit_blocked_residual_bindings`]).
-    pre_existing_entry_exports: Option<BTreeSet<BindingName>>,
-    /// Entry's full post-Owned-resolution export set. Computed
-    /// once when `with_pre_existing_entry_exports` runs (the only
-    /// time it can be derived) and reused across the ≥1500
-    /// peelability candidate evaluations per chunk that would
-    /// otherwise rebuild it from scratch. `None` when no
-    /// pre-existing exports were provided.
+    /// Consumed by the emit-resolvability projection in
+    /// `peelability.rs` and the matching predicate in
+    /// `materialize_logical_modules` (SSOT — see
+    /// [`crate::graph::peel_emit_blocked_residual_bindings`]).
     entry_exported_binding_names_cache: Option<HashSet<BindingName>>,
     /// Pre-computed `binding → exported name` map. Built once per
     /// chunk in `Schedule::build` so peelability's per-candidate
@@ -126,18 +122,18 @@ impl Schedule {
             owner_report_ids_by_binding,
             linker_order,
             linker_position_by_module,
-            pre_existing_entry_exports: None,
             entry_exported_binding_names_cache: None,
             export_name_by_binding,
         }
     }
 
     /// Attach the set of binding names that the source chunk's entry
-    /// already exports. Consumed by the emit-resolvability projection
-    /// in [`crate::graph::peel_emit_blocked_residual_bindings`] (used
-    /// by both `peelability.rs` and `materialize_logical_modules`).
+    /// already exports. Folds them together with the names of every
+    /// owner already assigned to a logical module into the cached
+    /// post-Owned export set queried by the emit-resolvability
+    /// projection in [`crate::graph::peel_emit_blocked_residual_bindings`].
     pub fn with_pre_existing_entry_exports(mut self, exports: BTreeSet<BindingName>) -> Self {
-        let mut cache: HashSet<BindingName> = exports.iter().cloned().collect();
+        let mut cache: HashSet<BindingName> = exports.into_iter().collect();
         for (name, kind) in &self.bindings {
             if let BindingKind::Owned {
                 owner: ModuleId::Logical(_),
@@ -147,16 +143,7 @@ impl Schedule {
             }
         }
         self.entry_exported_binding_names_cache = Some(cache);
-        self.pre_existing_entry_exports = Some(exports);
         self
-    }
-
-    /// Names of bindings that the source chunk's entry already
-    /// exports, or `None` when the schedule was built without AST
-    /// analysis (peelability skips the emit-resolvability projection
-    /// in that case).
-    pub fn pre_existing_entry_exports(&self) -> Option<&BTreeSet<BindingName>> {
-        self.pre_existing_entry_exports.as_ref()
     }
 
     /// Set of binding names that entry exports under the schedule's
