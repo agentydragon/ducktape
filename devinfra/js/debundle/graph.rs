@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use petgraph::graphmap::DiGraphMap;
 use serde::{Deserialize, Serialize};
@@ -440,9 +440,26 @@ where
     graph
 }
 
+/// Stable per-chunk identity of an owner-graph edge in
+/// `Vec<OwnerEdgeEntry>` order. The previous representation stored
+/// the report-shape spelling (`format!("owner_edge:{idx}")`) on
+/// every entry; that spelling is `O(n_edges)` strings allocated
+/// per chunk and `O(n_blockers × n_candidates)` clones inside the
+/// peelability hot loop. Carry the typed index instead and let the
+/// report layer do the formatting at its single serialization
+/// boundary via [`OwnerEdgeId::report_key`].
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub(crate) struct OwnerEdgeId(pub(crate) usize);
+
+impl OwnerEdgeId {
+    pub(crate) fn report_key(self) -> String {
+        format!("owner_edge:{}", self.0)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct OwnerEdgeEntry {
-    pub(crate) id: String,
+    pub(crate) id: OwnerEdgeId,
     pub(crate) from: OwnerId,
     pub(crate) to: OwnerId,
     pub(crate) reason: EdgeReason,
@@ -468,7 +485,7 @@ pub(crate) fn collect_owner_edge_entries(owner_graph: &OwnerGraph) -> Vec<OwnerE
         .into_iter()
         .enumerate()
         .map(|(idx, (from, to, reason))| OwnerEdgeEntry {
-            id: format!("owner_edge:{idx}"),
+            id: OwnerEdgeId(idx),
             from,
             to,
             reason,
@@ -495,15 +512,20 @@ pub(crate) fn collect_owner_edge_entries(owner_graph: &OwnerGraph) -> Vec<OwnerE
 ///   targets.
 /// - `moved_owners`: the candidate's moved owner set (a peel of these
 ///   is the hypothetical change being evaluated).
-/// - `entry_exported_names`: post-peel entry export set, i.e.
-///   pre-existing source exports ∪ bindings of all owners that end up
-///   in a logical module (the candidate's bindings are auto-exported
-///   by `entry_exports_for_moved_bindings`).
+/// - `base_entry_exports`: the schedule's cached pre-peel entry
+///   export set — pre-existing source exports plus bindings of any
+///   owner already living in a logical module. Stable across all
+///   candidates evaluated for the same chunk; passed by reference to
+///   avoid the per-candidate clone the previous BTreeSet API forced.
+/// - `candidate_members`: bindings the candidate would auto-export
+///   from entry on emit (via `entry_exports_for_moved_bindings`),
+///   i.e. the per-candidate addition on top of `base_entry_exports`.
 pub(crate) fn peel_emit_blocked_residual_bindings(
     owner_graph: &OwnerGraph,
     owner_edges: &[OwnerEdgeEntry],
     moved_owners: &BTreeSet<OwnerId>,
-    entry_exported_names: &BTreeSet<BindingName>,
+    base_entry_exports: &HashSet<BindingName>,
+    candidate_members: &[BindingName],
 ) -> BTreeSet<BindingName> {
     let mut blocked = BTreeSet::new();
     for edge in owner_edges {
@@ -525,7 +547,7 @@ pub(crate) fn peel_emit_blocked_residual_bindings(
         let Some(name) = owner_graph.binding_table.name(binding_id) else {
             continue;
         };
-        if entry_exported_names.contains(name) {
+        if base_entry_exports.contains(name) || candidate_members.iter().any(|m| m == name) {
             continue;
         }
         blocked.insert(name.clone());

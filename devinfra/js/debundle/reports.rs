@@ -5,10 +5,9 @@ use petgraph::algo::tarjan_scc;
 use crate::graph::OwnerEdgeEntry;
 use crate::peelability::build_peelability_report;
 use crate::{
-    BindingId, BindingKind, BindingName, BindingReport, EdgeKind, LogicalModuleIndex, ModuleId,
-    ModuleReportRef, OwnerGraph, OwnerGraphEdgeReport, OwnerGraphNodeReport,
-    OwnerGraphQuotientReport, OwnerGraphReport, OwnerId, OwnerNode, QuotientEdgeReport,
-    QuotientSccReport, Schedule,
+    BindingId, BindingName, BindingReport, EdgeKind, LogicalModuleIndex, ModuleId, ModuleReportRef,
+    OwnerGraph, OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport,
+    OwnerGraphReport, OwnerId, OwnerNode, QuotientEdgeReport, QuotientSccReport, Schedule,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -39,7 +38,7 @@ pub(crate) fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport 
     let edges = owner_edges
         .iter()
         .map(|edge| OwnerGraphEdgeReport {
-            id: edge.id.clone(),
+            id: edge.id.report_key(),
             source: owner_key(edge.from),
             target: owner_key(edge.to),
             edge_kind: edge.reason.kind,
@@ -84,32 +83,9 @@ where
         .into_iter()
         .map(|binding| BindingReport {
             binding: binding.clone(),
-            export_name: export_name_for_binding(schedule, binding),
+            export_name: schedule.export_name_for(binding),
         })
         .collect()
-}
-
-fn export_name_for_binding(schedule: &Schedule, binding: &BindingName) -> BindingName {
-    let Some(BindingKind::Owned { owner }) = schedule.bindings.get(binding) else {
-        return schedule
-            .chunk_renames
-            .get(binding)
-            .cloned()
-            .unwrap_or_else(|| binding.clone());
-    };
-    match owner {
-        ModuleId::Logical(LogicalModuleIndex(idx)) => schedule
-            .logical_modules
-            .get(*idx)
-            .and_then(|module| module.rename_map.get(binding))
-            .cloned()
-            .unwrap_or_else(|| binding.clone()),
-        ModuleId::ResidualEntry => schedule
-            .chunk_renames
-            .get(binding)
-            .cloned()
-            .unwrap_or_else(|| binding.clone()),
-    }
 }
 
 fn build_quotient_node_reports(schedule: &Schedule) -> Vec<ModuleReportRef> {

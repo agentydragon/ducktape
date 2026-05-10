@@ -138,28 +138,19 @@ From `perf record` against the Tana debundle pipeline (Gaffer
 `tana/re/web/spec/profile_reports/2026-05-10-tana-debundle.md`):
 `materialize_logical_modules` is now 89% of the total transform
 time, dominated by `build_owner_graph_report` (22.54 s) and
-`write_owner_graph_report` (6.55 s). Hot-loop priorities, ordered
-by leverage:
+`write_owner_graph_report` (6.55 s).
 
-1. **Cache `Schedule::entry_exported_binding_names` across peel
-   candidates.** Top single-line win. Currently rebuilt from
-   scratch in every `peelability::evaluate_residual_peel_candidate`
-   call (≥1500 candidates per chunk on Tana). Cache once per
-   chunk into a `Schedule` field; have the per-candidate evaluator
-   borrow the cached set. Profile shows 13.37% children in this
-   function alone, plus much of the 22.92% self-time `malloc`
-   overhead. Conservatively a 5–10× speedup on
-   `build_owner_graph_report`.
+The two single-line wins on `build_owner_graph_report`
+(`Schedule::entry_exported_binding_names` cache passed by reference
+into `peel_emit_blocked_residual_bindings`, and the precomputed
+`Schedule::export_name_by_binding` map driving `binding_reports`)
+have landed, together with the first wave of `BTreeMap → HashMap`
+switches on the per-candidate peelability hot path. Reprofile
+against Tana before picking the next item.
 
-2. **Cache `reports::export_name_for_binding` lookups.** Allocates
-   a fresh `String` clone per binding per candidate. The lookup
-   walks `schedule.bindings`, then `chunk_renames` /
-   `logical_modules.rename_map` per binding. Pre-compute a
-   `HashMap<BindingName, BindingName>` per chunk once; the
-   per-candidate path becomes a single lookup. Profile shows
-   11.60% children. Comes after item 1.
+Remaining priorities, ordered by leverage:
 
-3. **Compact / stream `owner_graph.json` writes.**
+1. **Compact / stream `owner_graph.json` writes.**
    `write_owner_graph_report` is 6.55 s. The JSON tree gets fully
    allocated before serialization;
    `serde_json::ser::format_escaped_str` is at 5.58% self from
@@ -168,18 +159,30 @@ by leverage:
    The per-owner `purity.reasons[]` arrays added in `a7b3e490`
    add per-non-pure-owner JSON weight that may be opt-in-able.
 
-4. **Reduce `BTreeMap` usage on chunk-local hot paths.**
-   `__memcmp_evex_movbe` at 9.81% self and `BTreeMap::insert` at
-   9.93% children indicate the per-candidate maps are key-compared
-   on string keys. Switching to a `HashMap` (or a typed
-   `BindingId` index over a chunk-scoped intern table — already
-   in place for some structures) wins ~1.5–2× on those operations.
-
-5. **AST visit churn in `prepare_js_chunks`.** The stage is now
+2. **AST visit churn in `prepare_js_chunks`.** The stage is now
    small (679 ms / ~4.5% of total) but
    `swc_ecma_ast::expr::Expr::visit_children_with` shows up
    repeatedly at 0.55%–1.16% self entries (totalling ~3-4%).
-   Backlog item once items 1-3 land.
+   Backlog item once item 1 lands.
+
+3. **Further string-keyed map removal on the chunk-local hot path.**
+   The first wave switched the per-candidate peelability maps
+   (`PeelabilityContext::module_index`, `module_pair_totals`,
+   `CandidateGraphAdjustment::*`, the per-candidate `accum` /
+   `seen_side_effect_candidate_pairs`, `Schedule::linker_position_by_module`)
+   from `BTreeMap`/`BTreeSet` to `HashMap`/`HashSet` and dropped
+   the `OwnerEdgeEntry::id` `String` field in favor of a typed
+   `OwnerEdgeId(usize)` derived from the entry's slice index. The
+   remaining string-keyed BTreeMaps (`Schedule::bindings`,
+   `Schedule::chunk_renames`, `LogicalModule::rename_map`,
+   `BindingKind::Imported::re_exported_by`) are still iterated to
+   produce deterministic emit-order output and would need either
+   explicit post-iteration sort or migration to a `BindingId`-keyed
+   `Vec` before the switch is safe. The `export_name_for_binding`
+   hot lookup is already eliminated by the
+   `Schedule::export_name_by_binding` cache, so the residual cost
+   is mostly emit-ordering iteration rather than per-candidate
+   lookup.
 
 ## Graph pass performance and module boundaries
 

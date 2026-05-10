@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use petgraph::algo::toposort;
 use petgraph::graphmap::DiGraphMap;
@@ -37,7 +37,7 @@ pub struct Schedule {
     /// ECMA-262's linker DFS toward an `I ∪ S`-respecting
     /// evaluation order; see DESIGN.md "Lemma 2".
     pub linker_order: Vec<ModuleId>,
-    linker_position_by_module: BTreeMap<ModuleId, usize>,
+    linker_position_by_module: HashMap<ModuleId, usize>,
     /// Names of bindings that the source chunk's entry already
     /// exports (via `export { … }` or `export const X = …`).
     /// `None` when the schedule was built without AST analysis (the
@@ -51,6 +51,20 @@ pub struct Schedule {
     /// and the matching predicate in `materialize_logical_modules`
     /// (SSOT — see [`crate::graph::peel_emit_blocked_residual_bindings`]).
     pre_existing_entry_exports: Option<BTreeSet<BindingName>>,
+    /// Entry's full post-Owned-resolution export set. Computed
+    /// once when `with_pre_existing_entry_exports` runs (the only
+    /// time it can be derived) and reused across the ≥1500
+    /// peelability candidate evaluations per chunk that would
+    /// otherwise rebuild it from scratch. `None` when no
+    /// pre-existing exports were provided.
+    entry_exported_binding_names_cache: Option<HashSet<BindingName>>,
+    /// Pre-computed `binding → exported name` map. Built once per
+    /// chunk in `Schedule::build` so peelability's per-candidate
+    /// `binding_reports` calls do a single hash lookup instead of
+    /// re-walking `bindings` / `chunk_renames` /
+    /// `logical_modules[idx].rename_map` per binding per candidate.
+    /// Bindings absent from this map export under their own name.
+    export_name_by_binding: HashMap<BindingName, BindingName>,
 }
 
 impl Schedule {
@@ -98,6 +112,8 @@ impl Schedule {
             .enumerate()
             .map(|(idx, id)| (id, idx))
             .collect();
+        let export_name_by_binding =
+            build_export_name_by_binding(&bindings, &chunk_renames, &logical_modules);
         Self {
             chunk_id,
             facts,
@@ -111,6 +127,8 @@ impl Schedule {
             linker_order,
             linker_position_by_module,
             pre_existing_entry_exports: None,
+            entry_exported_binding_names_cache: None,
+            export_name_by_binding,
         }
     }
 
@@ -119,6 +137,16 @@ impl Schedule {
     /// in [`crate::graph::peel_emit_blocked_residual_bindings`] (used
     /// by both `peelability.rs` and `materialize_logical_modules`).
     pub fn with_pre_existing_entry_exports(mut self, exports: BTreeSet<BindingName>) -> Self {
+        let mut cache: HashSet<BindingName> = exports.iter().cloned().collect();
+        for (name, kind) in &self.bindings {
+            if let BindingKind::Owned {
+                owner: ModuleId::Logical(_),
+            } = kind
+            {
+                cache.insert(name.clone());
+            }
+        }
+        self.entry_exported_binding_names_cache = Some(cache);
         self.pre_existing_entry_exports = Some(exports);
         self
     }
@@ -141,17 +169,22 @@ impl Schedule {
     /// pre-existing set; peelability treats that as "skip the
     /// emit-resolvability projection" so non-pipeline test fixtures
     /// don't have to fake an export list.
-    pub fn entry_exported_binding_names(&self) -> Option<BTreeSet<BindingName>> {
-        let mut exports = self.pre_existing_entry_exports.as_ref()?.clone();
-        for (name, kind) in &self.bindings {
-            if let BindingKind::Owned {
-                owner: ModuleId::Logical(_),
-            } = kind
-            {
-                exports.insert(name.clone());
-            }
-        }
-        Some(exports)
+    ///
+    /// Cached on schedule construction; the underlying set is
+    /// stable for the schedule's lifetime, so callers borrow it.
+    pub fn entry_exported_binding_names(&self) -> Option<&HashSet<BindingName>> {
+        self.entry_exported_binding_names_cache.as_ref()
+    }
+
+    /// Pre-computed export name for a chunk binding, falling back
+    /// to the binding's own name. Hot-path replacement for the
+    /// previous `bindings` / `chunk_renames` / `rename_map` walk in
+    /// peelability report generation.
+    pub(crate) fn export_name_for(&self, binding: &str) -> BindingName {
+        self.export_name_by_binding
+            .get(binding)
+            .cloned()
+            .unwrap_or_else(|| binding.to_string())
     }
 
     /// Position of `id` in `linker_order`, if present. Used by the
@@ -246,6 +279,51 @@ impl Schedule {
     pub fn owner_graph_report(&self) -> OwnerGraphReport {
         build_owner_graph_report(self)
     }
+}
+
+/// Pre-compute every chunk binding's exported-name resolution so
+/// peelability reporting (`reports::binding_reports`) becomes a
+/// single hash lookup per binding instead of walking three maps.
+/// Mirrors the resolution rule in the previous
+/// `reports::export_name_for_binding`:
+/// - `Owned { Logical(idx) }` → `logical_modules[idx].rename_map[name]`
+///   if present, else the binding's own name.
+/// - Everything else → `chunk_renames[name]` if present, else the
+///   binding's own name.
+fn build_export_name_by_binding(
+    bindings: &BTreeMap<BindingName, BindingKind>,
+    chunk_renames: &BTreeMap<BindingName, BindingName>,
+    logical_modules: &[LogicalModule],
+) -> HashMap<BindingName, BindingName> {
+    let mut out = HashMap::with_capacity(bindings.len() + chunk_renames.len());
+    for (name, kind) in bindings {
+        let export = match kind {
+            BindingKind::Owned {
+                owner: ModuleId::Logical(LogicalModuleIndex(idx)),
+            } => logical_modules
+                .get(*idx)
+                .and_then(|module| module.rename_map.get(name))
+                .cloned()
+                .unwrap_or_else(|| name.clone()),
+            _ => chunk_renames
+                .get(name)
+                .cloned()
+                .unwrap_or_else(|| name.clone()),
+        };
+        if export != *name {
+            out.insert(name.clone(), export);
+        }
+    }
+    // Cover bindings that only show up in `chunk_renames` (no
+    // `BindingKind` entry — e.g. names referenced by reports that
+    // aren't first-class `Owned` / `Imported` bindings on the
+    // schedule).
+    for (name, export) in chunk_renames {
+        if !bindings.contains_key(name) && export != name {
+            out.insert(name.clone(), export.clone());
+        }
+    }
+    out
 }
 
 fn owned_view(bindings: &BTreeMap<BindingName, BindingKind>) -> BTreeMap<BindingName, ModuleId> {

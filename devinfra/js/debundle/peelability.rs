@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use petgraph::algo::tarjan_scc;
 use petgraph::graph::DiGraph;
@@ -20,7 +20,7 @@ struct CandidateEdgeAccumulator {
     constrains_realizability: bool,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum CandidateEdgeDirection {
     FromCandidate,
     ToCandidate,
@@ -57,18 +57,18 @@ struct PeelabilityContext<'a> {
     owner_edges: &'a [OwnerEdgeEntry],
     owner_out_edges: Vec<Vec<usize>>,
     owner_in_edges: Vec<Vec<usize>>,
-    module_index: BTreeMap<ModuleId, usize>,
+    module_index: HashMap<ModuleId, usize>,
     modules: Vec<ModuleId>,
     forward_edges: Vec<Vec<ModuleAdjEdge>>,
     reverse_edges: Vec<Vec<ReverseModuleAdjEdge>>,
-    module_pair_totals: BTreeMap<(ModuleId, ModuleId), ModulePairTotals>,
+    module_pair_totals: HashMap<(ModuleId, ModuleId), ModulePairTotals>,
 }
 
 #[derive(Debug, Clone, Default)]
 struct CandidateGraphAdjustment {
-    removed_reason_count: BTreeMap<(ModuleId, ModuleId), usize>,
-    removed_constraining_reason_count: BTreeMap<(ModuleId, ModuleId), usize>,
-    removed_owner_edge_indices: BTreeSet<usize>,
+    removed_reason_count: HashMap<(ModuleId, ModuleId), usize>,
+    removed_constraining_reason_count: HashMap<(ModuleId, ModuleId), usize>,
+    removed_owner_edge_indices: HashSet<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -182,7 +182,7 @@ pub(crate) fn build_peelability_report(
             cycle_blockers: candidate
                 .constraining_owner_edge_indices
                 .iter()
-                .filter_map(|idx| owner_edges.get(*idx).map(|edge| edge.id.clone()))
+                .filter_map(|idx| owner_edges.get(*idx).map(|edge| edge.id.report_key()))
                 .collect(),
             residual_dependency_blockers: candidate
                 .residual_dependency_blocker_owner_ids
@@ -365,7 +365,7 @@ impl<'a> PeelabilityContext<'a> {
             }
         }
         let modules: Vec<ModuleId> = modules.into_iter().collect();
-        let module_index: BTreeMap<ModuleId, usize> = modules
+        let module_index: HashMap<ModuleId, usize> = modules
             .iter()
             .copied()
             .enumerate()
@@ -375,7 +375,7 @@ impl<'a> PeelabilityContext<'a> {
         let owner_count = schedule.owner_graph.nodes.len();
         let mut owner_out_edges = vec![Vec::new(); owner_count];
         let mut owner_in_edges = vec![Vec::new(); owner_count];
-        let mut module_pair_totals = BTreeMap::<(ModuleId, ModuleId), ModulePairTotals>::new();
+        let mut module_pair_totals = HashMap::<(ModuleId, ModuleId), ModulePairTotals>::new();
         for (idx, edge) in owner_edges.iter().enumerate() {
             if let Some(indices) = owner_out_edges.get_mut(edge.from.0) {
                 indices.push(idx);
@@ -722,12 +722,13 @@ fn evaluate_residual_peel_candidate(
             // surface emit-resolvability blockers.
             Vec::new()
         } else {
-            match post_peel_entry_exports_for_candidate(schedule, &declared) {
-                Some(post_peel_entry_exports) => peel_emit_blocked_residual_bindings(
+            match schedule.entry_exported_binding_names() {
+                Some(base_exports) => peel_emit_blocked_residual_bindings(
                     &schedule.owner_graph,
                     context.owner_edges,
                     &moved_owners,
-                    &post_peel_entry_exports,
+                    base_exports,
+                    &declared,
                 )
                 .into_iter()
                 .collect(),
@@ -754,26 +755,6 @@ fn evaluate_residual_peel_candidate(
         residual_dependency_blocker_owner_ids,
         emit_blocked_residual_bindings,
     }
-}
-
-/// Post-peel entry export set for a candidate: the schedule's pre-peel
-/// entry exports (pre-existing source exports plus bindings of owners
-/// already in a logical module) plus the candidate's bindings, which
-/// `entry_exports_for_moved_bindings` would auto-export from entry on
-/// emit.
-///
-/// Returns `None` when the schedule has no AST-derived
-/// pre-existing-export set; callers treat that as "skip the
-/// emit-resolvability projection".
-fn post_peel_entry_exports_for_candidate(
-    schedule: &Schedule,
-    candidate_members: &[BindingName],
-) -> Option<BTreeSet<BindingName>> {
-    let mut exports = schedule.entry_exported_binding_names()?;
-    for member in candidate_members {
-        exports.insert(member.clone());
-    }
-    Some(exports)
 }
 
 fn candidate_cross_destination_write_edge_indices(
@@ -834,9 +815,8 @@ fn candidate_incident_edges(
     }
 
     let mut adjustment = CandidateGraphAdjustment::default();
-    let mut accum = BTreeMap::<(CandidateEdgeDirection, ModuleId), CandidateEdgeAccumulator>::new();
-    let mut seen_side_effect_candidate_pairs =
-        BTreeSet::<(CandidateEdgeDirection, ModuleId)>::new();
+    let mut accum = HashMap::<(CandidateEdgeDirection, ModuleId), CandidateEdgeAccumulator>::new();
+    let mut seen_side_effect_candidate_pairs = HashSet::<(CandidateEdgeDirection, ModuleId)>::new();
 
     for edge_idx in edge_indices {
         let edge = &context.owner_edges[edge_idx];
