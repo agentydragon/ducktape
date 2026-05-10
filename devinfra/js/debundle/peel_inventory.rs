@@ -473,7 +473,7 @@ mod tests {
     use super::*;
     use analysis::{
         BindingReport, ModuleReportRef, OwnerGraphPeelSetReport, OwnerGraphPeelabilityReport,
-        OwnerGraphQuotientReport, ResidualOwnerPeelHorizonReport, ResidualOwnerPeelStatus,
+        OwnerGraphQuotientReport, Purity, ResidualOwnerPeelHorizonReport, ResidualOwnerPeelStatus,
         SourceLocation, StatementKind, StatementOrdinal,
     };
 
@@ -517,7 +517,7 @@ mod tests {
                 end_line,
             }),
             statement_kind: StatementKind::VarDecl,
-            purity: crate::purity::Purity::Pure,
+            purity: Purity::Pure,
             current_destination: module_ref("residual", true),
             members,
             status: ResidualOwnerPeelStatus::Direct,

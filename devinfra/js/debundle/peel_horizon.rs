@@ -581,8 +581,8 @@ mod tests {
     use super::*;
     use analysis::{
         ModuleReportRef, OwnerGraphNodeReport, OwnerGraphPeelSetReport,
-        OwnerGraphPeelabilityReport, OwnerGraphQuotientReport, OwnerGraphReport, StatementKind,
-        StatementOrdinal,
+        OwnerGraphPeelabilityReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity,
+        StatementKind, StatementOrdinal,
     };
 
     fn options(root: &Path, graph: &Path) -> PeelHorizonOptions {
@@ -638,7 +638,7 @@ mod tests {
                         export_name: binding.to_string(),
                     }],
                     statement_kind: StatementKind::VarDecl,
-                    purity: crate::purity::Purity::Pure,
+                    purity: Purity::Pure,
                     destination: ModuleReportRef {
                         id: "residual_entry".to_string(),
                         label: "residual entry".to_string(),
