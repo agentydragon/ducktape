@@ -228,12 +228,12 @@ impl EdgeMetadata {
 /// edge's reason list. Cycle detection runs through petgraph's
 /// `tarjan_scc`.
 #[derive(Debug, Clone, Default)]
-pub struct ModuleDepGraph {
+pub struct ModuleQuotient {
     pub binding_table: BindingTable,
     pub graph: DiGraphMap<ModuleId, EdgeMetadata>,
 }
 
-impl ModuleDepGraph {
+impl ModuleQuotient {
     fn record_reason(&mut self, from: ModuleId, to: ModuleId, reason: EdgeReason) {
         if from == to {
             return;
@@ -279,7 +279,7 @@ impl ModuleDepGraph {
 
 /// Build the fine owner graph from per-statement facts. Pure IR
 /// construction: no module assignment, no quotient. Module-level
-/// dependencies are derived later by [`build_module_dep_graph`]
+/// dependencies are derived later by [`build_module_quotient`]
 /// given a [`Partition`] mapping owners to destination modules.
 pub fn build_owner_graph(facts: &[StatementFacts]) -> OwnerGraph {
     let mut binding_table = BindingTable::default();
@@ -436,8 +436,8 @@ pub fn build_owner_graph(facts: &[StatementFacts]) -> OwnerGraph {
 /// dependency graph consumed by validation and emit. The single
 /// public construction path; peelability and reports both go through
 /// this for any non-hypothetical quotient.
-pub fn build_module_dep_graph(owner_graph: &OwnerGraph, partition: &Partition) -> ModuleDepGraph {
-    let mut graph = ModuleDepGraph {
+pub fn build_module_quotient(owner_graph: &OwnerGraph, partition: &Partition) -> ModuleQuotient {
+    let mut graph = ModuleQuotient {
         binding_table: owner_graph.binding_table.clone(),
         graph: DiGraphMap::new(),
     };

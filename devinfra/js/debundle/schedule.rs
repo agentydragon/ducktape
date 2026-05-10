@@ -3,13 +3,13 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use petgraph::algo::toposort;
 use petgraph::graphmap::DiGraphMap;
 
-use crate::graph::{build_module_dep_graph, build_owner_graph};
+use crate::graph::{build_module_quotient, build_owner_graph};
 use crate::partition::Partition;
 use crate::reports::{build_owner_graph_report, owner_key};
 use crate::validation::{validate_cross_destination_assignments, validate_schedule};
 use crate::{
-    BindingId, BindingKind, BindingName, LogicalModule, LogicalModuleIndex, ModuleDepGraph,
-    ModuleId, OwnerGraph, OwnerGraphReport, ScheduleReport, StatementFacts,
+    BindingId, BindingKind, BindingName, LogicalModule, LogicalModuleIndex, ModuleId,
+    ModuleQuotient, OwnerGraph, OwnerGraphReport, ScheduleReport, StatementFacts,
 };
 
 /// Single per-chunk schedule. Carries everything downstream code
@@ -36,7 +36,7 @@ pub struct Schedule {
     /// owner graph. Stored separately from the IR so the IR stays
     /// immutable across hypothetical refinements during peelability.
     pub partition: Partition,
-    pub dep_graph: ModuleDepGraph,
+    pub dep_graph: ModuleQuotient,
     owner_report_ids_by_binding: Vec<Vec<String>>,
     /// Topological linearization of `I ∪ S`, dependency-first
     /// (the module at index 0 must evaluate before any other; the
@@ -88,7 +88,7 @@ impl Schedule {
         let owner_graph = build_owner_graph(&facts);
         let partition = build_partition(&owner_graph, &bindings, &logical_modules);
         let owner_report_ids_by_binding = Self::build_owner_report_ids_by_binding(&owner_graph);
-        let dep_graph = build_module_dep_graph(&owner_graph, &partition);
+        let dep_graph = build_module_quotient(&owner_graph, &partition);
         let linker_order = compute_linker_order(&dep_graph, &logical_modules);
         let linker_position_by_module = linker_order
             .iter()
@@ -351,7 +351,7 @@ fn build_partition(
 /// dependency comes first — matching the order ECMA-262's link
 /// traversal needs to evaluate (deepest leaf first).
 fn compute_linker_order(
-    dep_graph: &ModuleDepGraph,
+    dep_graph: &ModuleQuotient,
     logical_modules: &[LogicalModule],
 ) -> Vec<ModuleId> {
     let mut graph = DiGraphMap::<ModuleId, ()>::new();

@@ -9,7 +9,7 @@ use serde::Serialize;
 use crate::partition::Partition;
 use crate::reports::owner_key;
 use crate::{
-    BindingName, EdgeKind, EdgeMetadata, ModuleDepGraph, ModuleId, OwnerGraph, SourceLocation,
+    BindingName, EdgeKind, EdgeMetadata, ModuleId, ModuleQuotient, OwnerGraph, SourceLocation,
     StatementOrdinal,
 };
 
@@ -184,7 +184,7 @@ fn cut_pairs_count(cut: &[CycleEdge]) -> usize {
 /// non-trivial cycle (size > 1 OR a self-loop). Trivial single-node
 /// non-self-loop SCCs are dropped.
 pub fn validate_schedule(
-    graph: &ModuleDepGraph,
+    graph: &ModuleQuotient,
     module_name: &dyn Fn(ModuleId) -> String,
 ) -> ScheduleReport {
     let sccs = tarjan_scc(&graph.graph);
@@ -323,7 +323,7 @@ pub(crate) fn validate_cross_destination_assignments(
 /// deterministically `(from, to, statement_ordinal, binding, kind)`
 /// so test snapshots compare cleanly.
 fn compute_realizability_cut(
-    graph: &ModuleDepGraph,
+    graph: &ModuleQuotient,
     scc: &[ModuleId],
     module_name: &dyn Fn(ModuleId) -> String,
 ) -> Vec<CycleEdge> {

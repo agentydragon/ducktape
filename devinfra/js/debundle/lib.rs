@@ -30,8 +30,8 @@ pub use facts::{
     find_top_level_await,
 };
 pub use graph::{
-    EdgeKind, EdgeMetadata, EdgeReason, ModuleDepGraph, OwnerGraph, OwnerId, OwnerNode,
-    build_module_dep_graph, build_owner_graph,
+    EdgeKind, EdgeMetadata, EdgeReason, ModuleQuotient, OwnerGraph, OwnerId, OwnerNode,
+    build_module_quotient, build_owner_graph,
 };
 pub use ids::{
     BindingId, BindingKind, BindingName, BindingTable, ChunkId, ChunkTable, LogicalModule,

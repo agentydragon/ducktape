@@ -120,7 +120,7 @@ mod tests {
         binding_assignment.insert("B".to_string(), logical(1));
         let owner_graph = build_owner_graph(&facts);
         let partition = Partition::from_binding_assignment(&owner_graph, &binding_assignment);
-        let graph = build_module_dep_graph(&owner_graph, &partition);
+        let graph = build_module_quotient(&owner_graph, &partition);
         let report = validate_schedule(&graph, &render);
         assert_eq!(report.cycles.len(), 1);
         assert_eq!(report.cycles[0].modules.len(), 2);
@@ -136,7 +136,7 @@ mod tests {
         binding_assignment.insert("C".to_string(), logical(2));
         let owner_graph = build_owner_graph(&facts);
         let partition = Partition::from_binding_assignment(&owner_graph, &binding_assignment);
-        let graph = build_module_dep_graph(&owner_graph, &partition);
+        let graph = build_module_quotient(&owner_graph, &partition);
         let report = validate_schedule(&graph, &render);
         assert!(
             report.cycles.is_empty(),
@@ -164,7 +164,7 @@ mod tests {
         binding_assignment.insert("B".to_string(), logical(1));
         let owner_graph = build_owner_graph(&facts);
         let partition = Partition::from_binding_assignment(&owner_graph, &binding_assignment);
-        let graph = build_module_dep_graph(&owner_graph, &partition);
+        let graph = build_module_quotient(&owner_graph, &partition);
         let report = validate_schedule(&graph, &render);
         assert_eq!(
             report.cycles.len(),
@@ -214,7 +214,7 @@ mod tests {
         binding_assignment.insert("b1".to_string(), logical(1));
         let owner_graph = build_owner_graph(&facts);
         let partition = Partition::from_binding_assignment(&owner_graph, &binding_assignment);
-        let graph = build_module_dep_graph(&owner_graph, &partition);
+        let graph = build_module_quotient(&owner_graph, &partition);
         let report = validate_schedule(&graph, &render);
         assert_eq!(report.cycles.len(), 1);
         let cycle = &report.cycles[0];
@@ -251,7 +251,7 @@ mod tests {
         binding_assignment.insert("B".to_string(), logical(1));
         let owner_graph = build_owner_graph(&facts);
         let partition = Partition::from_binding_assignment(&owner_graph, &binding_assignment);
-        let graph = build_module_dep_graph(&owner_graph, &partition);
+        let graph = build_module_quotient(&owner_graph, &partition);
         let report = validate_schedule(&graph, &render);
         assert!(
             report.cycles.is_empty(),
