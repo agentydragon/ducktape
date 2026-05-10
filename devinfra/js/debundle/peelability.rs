@@ -99,14 +99,15 @@ pub(crate) fn build_peelability_report(
         .owner_graph
         .iter_nodes()
         .filter_map(|node| {
-            is_residual_destination(schedule, node.destination).then_some(node.destination)
+            let module = schedule.partition.of(node.id);
+            is_residual_destination(schedule, module).then_some(module)
         })
         .collect();
 
     let context = PeelabilityContext::new(schedule, owner_edges, quotient_edges);
     let mut declared_by_owner = BTreeMap::<OwnerId, Vec<BindingName>>::new();
     for node in schedule.owner_graph.iter_nodes() {
-        if !is_residual_destination(schedule, node.destination) {
+        if !is_residual_destination(schedule, schedule.partition.of(node.id)) {
             continue;
         }
         let declared = residual_declared_for_owner(schedule, node);
@@ -311,7 +312,7 @@ fn build_residual_owner_horizon(
             source_location: node.source_location.clone(),
             statement_kind: node.kind,
             purity: node.purity.clone(),
-            current_destination: module_report_ref(schedule, node.destination),
+            current_destination: module_report_ref(schedule, schedule.partition.of(node.id)),
             members: binding_reports(schedule, bindings.iter()),
             status,
             peel_set_ids,
@@ -353,8 +354,8 @@ impl<'a> PeelabilityContext<'a> {
         for idx in 0..schedule.logical_modules.len() {
             modules.insert(ModuleId::Logical(LogicalModuleIndex(idx)));
         }
-        for node in schedule.owner_graph.iter_nodes() {
-            modules.insert(node.destination);
+        for (_, module) in schedule.partition.iter() {
+            modules.insert(module);
         }
         for edge in quotient_edges {
             if let Some(source) = module_id_from_key(&edge.source) {
@@ -384,14 +385,13 @@ impl<'a> PeelabilityContext<'a> {
                 indices.push(idx);
             }
 
-            let Some(from_node) = schedule.owner_graph.node(edge.from) else {
+            if schedule.owner_graph.node(edge.from).is_none()
+                || schedule.owner_graph.node(edge.to).is_none()
+            {
                 continue;
-            };
-            let Some(to_node) = schedule.owner_graph.node(edge.to) else {
-                continue;
-            };
-            let from = from_node.destination;
-            let to = to_node.destination;
+            }
+            let from = schedule.partition.of(edge.from);
+            let to = schedule.partition.of(edge.to);
             if from == to {
                 continue;
             }
@@ -582,7 +582,7 @@ impl ResidualDependencyClosureIndex {
         let mut graph = DiGraph::<OwnerId, ()>::new();
         let mut node_by_owner = vec![None; schedule.owner_graph.nodes.len()];
         for node in schedule.owner_graph.iter_nodes() {
-            if !is_residual_destination(schedule, node.destination) {
+            if !is_residual_destination(schedule, schedule.partition.of(node.id)) {
                 continue;
             }
             if let Some(slot) = node_by_owner.get_mut(node.id.0) {
@@ -662,14 +662,12 @@ impl ResidualDependencyClosureIndex {
 }
 
 fn owners_share_residual_destination(schedule: &Schedule, left: OwnerId, right: OwnerId) -> bool {
-    let Some(left_node) = schedule.owner_graph.node(left) else {
+    if schedule.owner_graph.node(left).is_none() || schedule.owner_graph.node(right).is_none() {
         return false;
-    };
-    let Some(right_node) = schedule.owner_graph.node(right) else {
-        return false;
-    };
-    left_node.destination == right_node.destination
-        && is_residual_destination(schedule, left_node.destination)
+    }
+    let left_module = schedule.partition.of(left);
+    let right_module = schedule.partition.of(right);
+    left_module == right_module && is_residual_destination(schedule, left_module)
 }
 
 fn sorted_owner_pair(left: OwnerId, right: OwnerId) -> (OwnerId, OwnerId) {
@@ -726,6 +724,7 @@ fn evaluate_residual_peel_candidate(
                 Some(base_exports) => peel_emit_blocked_residual_bindings(
                     &schedule.owner_graph,
                     context.owner_edges,
+                    &schedule.partition,
                     &moved_owners,
                     base_exports,
                     &declared,
@@ -791,10 +790,10 @@ fn candidate_residual_dependency_blocker_owner_ids(
             if moved_owners.contains(&edge.to) {
                 continue;
             }
-            let Some(to_node) = schedule.owner_graph.node(edge.to) else {
+            if schedule.owner_graph.node(edge.to).is_none() {
                 continue;
-            };
-            if to_node.destination != ModuleId::ResidualEntry {
+            }
+            if schedule.partition.of(edge.to) != ModuleId::ResidualEntry {
                 continue;
             }
             blockers.insert(edge.to);
@@ -822,14 +821,13 @@ fn candidate_incident_edges(
         let edge = &context.owner_edges[edge_idx];
         adjustment.removed_owner_edge_indices.insert(edge_idx);
 
-        let Some(from_node) = schedule.owner_graph.node(edge.from) else {
+        if schedule.owner_graph.node(edge.from).is_none()
+            || schedule.owner_graph.node(edge.to).is_none()
+        {
             continue;
-        };
-        let Some(to_node) = schedule.owner_graph.node(edge.to) else {
-            continue;
-        };
-        let old_from = from_node.destination;
-        let old_to = to_node.destination;
+        }
+        let old_from = schedule.partition.of(edge.from);
+        let old_to = schedule.partition.of(edge.to);
         if old_from != old_to {
             *adjustment
                 .removed_reason_count

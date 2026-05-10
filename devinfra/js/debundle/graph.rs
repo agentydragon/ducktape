@@ -1,8 +1,9 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashSet};
 
 use petgraph::graphmap::DiGraphMap;
 use serde::{Deserialize, Serialize};
 
+use crate::partition::Partition;
 use crate::purity::Purity;
 use crate::{
     BindingId, BindingName, BindingTable, ModuleId, SourceLocation, StatementFacts, StatementKind,
@@ -122,7 +123,6 @@ pub struct OwnerNode {
     pub declared: BTreeSet<BindingId>,
     pub kind: StatementKind,
     pub purity: Purity,
-    pub destination: ModuleId,
 }
 
 fn record_graph_reason<N: Copy + Ord + std::hash::Hash>(
@@ -261,13 +261,11 @@ impl ModuleDepGraph {
     }
 }
 
-/// Build the fine owner graph. Module-level dependencies are not
-/// created here; they are derived later by quotienting owners by
-/// destination.
-pub fn build_owner_graph(
-    facts: &[StatementFacts],
-    binding_assignment: &BTreeMap<BindingName, ModuleId>,
-) -> OwnerGraph {
+/// Build the fine owner graph from per-statement facts. Pure IR
+/// construction: no module assignment, no quotient. Module-level
+/// dependencies are derived later by [`build_module_dep_graph`]
+/// given a [`Partition`] mapping owners to destination modules.
+pub fn build_owner_graph(facts: &[StatementFacts]) -> OwnerGraph {
     let mut graph = OwnerGraph::default();
     let mut binding_table = BindingTable::default();
     let mut binding_owner = Vec::<Option<OwnerId>>::new();
@@ -285,26 +283,8 @@ pub fn build_owner_graph(
         declared_by_stmt.push(declared);
     }
 
-    let mut binding_assignment_by_id = vec![None; binding_table.len()];
-    for (binding, destination) in binding_assignment {
-        let Some(binding_id) = binding_table.get(binding) else {
-            continue;
-        };
-        binding_assignment_by_id[binding_id.0] = Some(*destination);
-    }
-
     for (stmt, declared) in facts.iter().zip(declared_by_stmt.iter()) {
         let id = OwnerId(stmt.ordinal.0);
-        let destination = declared
-            .iter()
-            .filter_map(|binding_id| {
-                binding_assignment_by_id
-                    .get(binding_id.0)
-                    .copied()
-                    .flatten()
-            })
-            .next()
-            .unwrap_or(ModuleId::ResidualEntry);
         graph.nodes.push(OwnerNode {
             id,
             statement_ordinal: stmt.ordinal,
@@ -312,7 +292,6 @@ pub fn build_owner_graph(
             declared: declared.clone(),
             kind: stmt.kind,
             purity: stmt.purity.clone(),
-            destination,
         });
         graph.graph.add_node(id);
     }
@@ -399,36 +378,28 @@ pub fn build_owner_graph(
     graph
 }
 
-/// Quotient the owner graph by each owner node's destination module.
-/// This is the only path that constructs the module dependency graph
-/// used by validation and emit.
-pub fn quotient_owner_graph(owner_graph: &OwnerGraph) -> ModuleDepGraph {
+/// Quotient the owner graph by `partition` to build the module
+/// dependency graph consumed by validation and emit. The single
+/// public construction path; peelability and reports both go through
+/// this for any non-hypothetical quotient.
+pub fn build_module_dep_graph(owner_graph: &OwnerGraph, partition: &Partition) -> ModuleDepGraph {
     let owner_edges = collect_owner_edge_entries(owner_graph);
-    quotient_owner_graph_with_destinations(owner_graph, &owner_edges, |_, node| node.destination)
+    build_module_dep_graph_from_edges(owner_graph, &owner_edges, partition)
 }
 
-pub(crate) fn quotient_owner_graph_with_destinations<F>(
+pub(crate) fn build_module_dep_graph_from_edges(
     owner_graph: &OwnerGraph,
     owner_edges: &[OwnerEdgeEntry],
-    mut destination_for: F,
-) -> ModuleDepGraph
-where
-    F: FnMut(OwnerId, &OwnerNode) -> ModuleId,
-{
+    partition: &Partition,
+) -> ModuleDepGraph {
     let mut graph = ModuleDepGraph {
         binding_table: owner_graph.binding_table.clone(),
         graph: DiGraphMap::new(),
     };
     let mut seen_side_effect_module_pairs = BTreeSet::<(ModuleId, ModuleId)>::new();
     for edge in owner_edges {
-        let Some(from_node) = owner_graph.node(edge.from) else {
-            continue;
-        };
-        let Some(to_node) = owner_graph.node(edge.to) else {
-            continue;
-        };
-        let from = destination_for(edge.from, from_node);
-        let to = destination_for(edge.to, to_node);
+        let from = partition.of(edge.from);
+        let to = partition.of(edge.to);
         if from == to {
             continue;
         }
@@ -523,6 +494,7 @@ pub(crate) fn collect_owner_edge_entries(owner_graph: &OwnerGraph) -> Vec<OwnerE
 pub(crate) fn peel_emit_blocked_residual_bindings(
     owner_graph: &OwnerGraph,
     owner_edges: &[OwnerEdgeEntry],
+    partition: &Partition,
     moved_owners: &BTreeSet<OwnerId>,
     base_entry_exports: &HashSet<BindingName>,
     candidate_members: &[BindingName],
@@ -535,10 +507,10 @@ pub(crate) fn peel_emit_blocked_residual_bindings(
         if moved_owners.contains(&edge.to) {
             continue;
         }
-        let Some(to_node) = owner_graph.node(edge.to) else {
+        if owner_graph.node(edge.to).is_none() {
             continue;
-        };
-        if !matches!(to_node.destination, ModuleId::ResidualEntry) {
+        }
+        if !matches!(partition.of(edge.to), ModuleId::ResidualEntry) {
             continue;
         }
         let Some(binding_id) = edge.reason.binding else {

@@ -6,6 +6,7 @@ use petgraph::graphmap::DiGraphMap;
 use petgraph::visit::EdgeRef;
 use serde::Serialize;
 
+use crate::partition::Partition;
 use crate::reports::owner_key;
 use crate::{
     BindingName, EdgeKind, EdgeMetadata, ModuleDepGraph, ModuleId, OwnerGraph, SourceLocation,
@@ -243,6 +244,7 @@ pub fn validate_schedule(
 
 pub(crate) fn validate_cross_destination_assignments(
     owner_graph: &OwnerGraph,
+    partition: &Partition,
     module_name: &dyn Fn(ModuleId) -> String,
 ) -> Vec<CrossDestinationAssignmentReport> {
     let mut violations = Vec::new();
@@ -253,7 +255,9 @@ pub(crate) fn validate_cross_destination_assignments(
         let Some(to_node) = owner_graph.node(to) else {
             continue;
         };
-        if from_node.destination == to_node.destination {
+        let from_module = partition.of(from);
+        let to_module = partition.of(to);
+        if from_module == to_module {
             continue;
         }
         for reason in &weight.reasons {
@@ -270,8 +274,8 @@ pub(crate) fn validate_cross_destination_assignments(
                 binding_owner: owner_key(to),
                 assigner_statement_ordinal: from_node.statement_ordinal,
                 binding_statement_ordinal: to_node.statement_ordinal,
-                assigner_module: module_name(from_node.destination),
-                binding_module: module_name(to_node.destination),
+                assigner_module: module_name(from_module),
+                binding_module: module_name(to_module),
                 kind: reason.kind,
                 assigner_source_location: from_node.source_location.clone(),
                 binding_source_location: to_node.source_location.clone(),

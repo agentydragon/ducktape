@@ -6,8 +6,8 @@ use crate::graph::OwnerEdgeEntry;
 use crate::peelability::build_peelability_report;
 use crate::{
     BindingId, BindingName, BindingReport, EdgeKind, LogicalModuleIndex, ModuleId, ModuleReportRef,
-    OwnerGraph, OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport,
-    OwnerGraphReport, OwnerId, OwnerNode, QuotientEdgeReport, QuotientSccReport, Schedule,
+    OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport,
+    OwnerId, QuotientEdgeReport, QuotientSccReport, Schedule,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -32,7 +32,7 @@ pub(crate) fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport 
             declared_bindings: binding_reports_for_ids(schedule, node.declared.iter().copied()),
             statement_kind: node.kind,
             purity: node.purity.clone(),
-            destination: module_report_ref(schedule, node.destination),
+            destination: module_report_ref(schedule, schedule.partition.of(node.id)),
         })
         .collect();
     let edges = owner_edges
@@ -94,8 +94,8 @@ fn build_quotient_node_reports(schedule: &Schedule) -> Vec<ModuleReportRef> {
     for idx in 0..schedule.logical_modules.len() {
         modules.insert(ModuleId::Logical(LogicalModuleIndex(idx)));
     }
-    for node in schedule.owner_graph.iter_nodes() {
-        modules.insert(node.destination);
+    for (_, module) in schedule.partition.iter() {
+        modules.insert(module);
     }
     for (from, to, _) in schedule.dep_graph.iter_edges() {
         modules.insert(from);
@@ -111,30 +111,12 @@ fn build_quotient_edge_reports(
     schedule: &Schedule,
     owner_edges: &[OwnerEdgeEntry],
 ) -> Vec<QuotientEdgeReport> {
-    build_quotient_edge_reports_with_destinations(&schedule.owner_graph, owner_edges, |_, node| {
-        node.destination
-    })
-}
-
-fn build_quotient_edge_reports_with_destinations<F>(
-    owner_graph: &OwnerGraph,
-    owner_edges: &[OwnerEdgeEntry],
-    mut destination_for: F,
-) -> Vec<QuotientEdgeReport>
-where
-    F: FnMut(OwnerId, &OwnerNode) -> ModuleId,
-{
+    let partition = &schedule.partition;
     let mut accum = BTreeMap::<(ModuleId, ModuleId), QuotientEdgeAccumulator>::new();
     let mut seen_side_effect_module_pairs = BTreeSet::<(ModuleId, ModuleId)>::new();
     for edge in owner_edges {
-        let Some(from_node) = owner_graph.node(edge.from) else {
-            continue;
-        };
-        let Some(to_node) = owner_graph.node(edge.to) else {
-            continue;
-        };
-        let from = destination_for(edge.from, from_node);
-        let to = destination_for(edge.to, to_node);
+        let from = partition.of(edge.from);
+        let to = partition.of(edge.to);
         if from == to {
             continue;
         }

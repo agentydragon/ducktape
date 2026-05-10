@@ -160,6 +160,7 @@ rust_library(
         "graph.rs",
         "ids.rs",
         "lib.rs",
+        "partition.rs",
         "peelability.rs",
         "purity.rs",
         "report_schema.rs",

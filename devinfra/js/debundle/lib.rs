@@ -16,6 +16,7 @@
 mod facts;
 mod graph;
 mod ids;
+mod partition;
 mod peelability;
 mod purity;
 mod report_schema;
@@ -30,12 +31,13 @@ pub use facts::{
 };
 pub use graph::{
     EdgeKind, EdgeMetadata, EdgeReason, ModuleDepGraph, OwnerGraph, OwnerId, OwnerNode,
-    build_owner_graph, quotient_owner_graph,
+    build_module_dep_graph, build_owner_graph,
 };
 pub use ids::{
     BindingId, BindingKind, BindingName, BindingTable, ChunkId, ChunkTable, LogicalModule,
     LogicalModuleIndex, ModuleId, StatementOrdinal,
 };
+pub use partition::Partition;
 pub use purity::{Purity, PurityReason, PurityRule};
 pub use report_schema::{
     BindingReport, EvaluatedPeelCandidateReport, ModuleReportRef, OwnerGraphEdgeReport,

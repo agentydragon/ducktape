@@ -1,12 +1,13 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use petgraph::algo::toposort;
 use petgraph::graphmap::DiGraphMap;
 
 use crate::graph::{
-    OwnerEdgeEntry, build_owner_graph, collect_owner_edge_entries,
-    quotient_owner_graph_with_destinations,
+    OwnerEdgeEntry, build_module_dep_graph_from_edges, build_owner_graph,
+    collect_owner_edge_entries,
 };
+use crate::partition::Partition;
 use crate::reports::{build_owner_graph_report, owner_key};
 use crate::validation::{validate_cross_destination_assignments, validate_schedule};
 use crate::{
@@ -35,6 +36,10 @@ pub struct Schedule {
     pub chunk_renames: HashMap<BindingName, BindingName>,
     pub owner_graph: OwnerGraph,
     pub(crate) owner_edges: Vec<OwnerEdgeEntry>,
+    /// Module assignment per owner — the spec's partition of the
+    /// owner graph. Stored separately from the IR so the IR stays
+    /// immutable across hypothetical refinements during peelability.
+    pub partition: Partition,
     pub dep_graph: ModuleDepGraph,
     owner_report_ids_by_binding: Vec<Vec<String>>,
     /// Topological linearization of `I ∪ S`, dependency-first
@@ -84,32 +89,11 @@ impl Schedule {
         logical_modules: Vec<LogicalModule>,
         chunk_renames: HashMap<BindingName, BindingName>,
     ) -> Self {
-        let ownership = owned_view(&bindings);
-        let mut owner_graph = build_owner_graph(&facts, &ownership);
-        // Owners of anonymous-statement members would otherwise
-        // default to `ResidualEntry` (no declared binding to look up
-        // in `bindings`). Override their destination to the claiming
-        // logical module so the dep-graph quotient and the
-        // realizability/cycle checks see the closure as the
-        // materializer will emit it.
-        for (idx, module) in logical_modules.iter().enumerate() {
-            let module_id = ModuleId::Logical(LogicalModuleIndex(idx));
-            for ordinal in &module.anonymous_statement_ordinals {
-                if let Some(node) = owner_graph
-                    .nodes
-                    .iter_mut()
-                    .find(|node| node.statement_ordinal.0 == *ordinal)
-                {
-                    node.destination = module_id;
-                }
-            }
-        }
+        let owner_graph = build_owner_graph(&facts);
+        let partition = build_partition(&owner_graph, &bindings, &logical_modules);
         let owner_edges = collect_owner_edge_entries(&owner_graph);
         let owner_report_ids_by_binding = Self::build_owner_report_ids_by_binding(&owner_graph);
-        let dep_graph =
-            quotient_owner_graph_with_destinations(&owner_graph, &owner_edges, |_, node| {
-                node.destination
-            });
+        let dep_graph = build_module_dep_graph_from_edges(&owner_graph, &owner_edges, &partition);
         let linker_order = compute_linker_order(&dep_graph, &logical_modules);
         let linker_position_by_module = linker_order
             .iter()
@@ -127,6 +111,7 @@ impl Schedule {
             chunk_renames,
             owner_graph,
             owner_edges,
+            partition,
             dep_graph,
             owner_report_ids_by_binding,
             linker_order,
@@ -260,7 +245,9 @@ impl Schedule {
     pub fn validate(&self) -> ScheduleReport {
         let mut report = validate_schedule(&self.dep_graph, &|id| self.module_name(id));
         report.cross_destination_assignments =
-            validate_cross_destination_assignments(&self.owner_graph, &|id| self.module_name(id));
+            validate_cross_destination_assignments(&self.owner_graph, &self.partition, &|id| {
+                self.module_name(id)
+            });
         report.linker_order = self
             .linker_order
             .iter()
@@ -322,20 +309,41 @@ fn build_export_name_by_binding(
     out
 }
 
-fn owned_view(bindings: &HashMap<BindingName, BindingKind>) -> BTreeMap<BindingName, ModuleId> {
-    // Returns `BTreeMap` because `build_owner_graph` consumes the
-    // ownership view sorted by binding name; the iteration there
-    // only does a typed slot lookup so the sort is a contract, not
-    // a hot-path cost. Converting the schedule's `HashMap` storage
-    // to a `BTreeMap` for this one-time call keeps
-    // `build_owner_graph`'s public signature unchanged.
-    bindings
+/// Build the partition consumed by quotient + validation:
+///
+/// 1. Seed every owner that declares an `Owned` binding with that
+///    binding's module assignment.
+/// 2. Apply the anonymous-statement override from each logical
+///    module — owners with empty `declared` (e.g. side-effect
+///    expression statements) get routed into the claiming module
+///    by source ordinal so the realizability checks see the closure
+///    the materializer will emit.
+fn build_partition(
+    owner_graph: &OwnerGraph,
+    bindings: &HashMap<BindingName, BindingKind>,
+    logical_modules: &[LogicalModule],
+) -> Partition {
+    let owned: HashMap<BindingName, ModuleId> = bindings
         .iter()
         .filter_map(|(name, kind)| match kind {
             BindingKind::Owned { owner } => Some((name.clone(), *owner)),
             BindingKind::Imported { .. } => None,
         })
-        .collect()
+        .collect();
+    let mut partition = Partition::from_binding_assignment(owner_graph, &owned);
+    for (idx, module) in logical_modules.iter().enumerate() {
+        let module_id = ModuleId::Logical(LogicalModuleIndex(idx));
+        for ordinal in &module.anonymous_statement_ordinals {
+            if let Some(node) = owner_graph
+                .nodes
+                .iter()
+                .find(|node| node.statement_ordinal.0 == *ordinal)
+            {
+                partition.set(node.id, module_id);
+            }
+        }
+    }
+    partition
 }
 
 /// Topological linearization of the dep graph, dependency-first.

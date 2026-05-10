@@ -1,5 +1,5 @@
 mod tests {
-    use std::collections::{BTreeMap, BTreeSet, HashMap};
+    use std::collections::{BTreeSet, HashMap};
 
     use crate::facts::{compute_shadowed_globals, top_level_item_views};
     use crate::purity::{ChunkCodeGraph, Purity, classify_expr_purity};
@@ -115,11 +115,12 @@ mod tests {
         // mod_b owns B; B's init reads A (owned by mod_a).
         let module = parse("const A = B + 1; const B = A + 1;");
         let facts = analyze_chunk_facts(&module, &BTreeSet::new());
-        let mut binding_assignment = BTreeMap::new();
+        let mut binding_assignment = HashMap::new();
         binding_assignment.insert("A".to_string(), logical(0));
         binding_assignment.insert("B".to_string(), logical(1));
-        let owner_graph = build_owner_graph(&facts, &binding_assignment);
-        let graph = quotient_owner_graph(&owner_graph);
+        let owner_graph = build_owner_graph(&facts);
+        let partition = Partition::from_binding_assignment(&owner_graph, &binding_assignment);
+        let graph = build_module_dep_graph(&owner_graph, &partition);
         let report = validate_schedule(&graph, &render);
         assert_eq!(report.cycles.len(), 1);
         assert_eq!(report.cycles[0].modules.len(), 2);
@@ -129,12 +130,13 @@ mod tests {
     fn dag_has_no_cycles() {
         let module = parse("const A = 1; const B = A + 1; const C = B + A;");
         let facts = analyze_chunk_facts(&module, &BTreeSet::new());
-        let mut binding_assignment = BTreeMap::new();
+        let mut binding_assignment = HashMap::new();
         binding_assignment.insert("A".to_string(), logical(0));
         binding_assignment.insert("B".to_string(), logical(1));
         binding_assignment.insert("C".to_string(), logical(2));
-        let owner_graph = build_owner_graph(&facts, &binding_assignment);
-        let graph = quotient_owner_graph(&owner_graph);
+        let owner_graph = build_owner_graph(&facts);
+        let partition = Partition::from_binding_assignment(&owner_graph, &binding_assignment);
+        let graph = build_module_dep_graph(&owner_graph, &partition);
         let report = validate_schedule(&graph, &render);
         assert!(
             report.cycles.is_empty(),
@@ -156,12 +158,13 @@ mod tests {
         // L-edge: mod_0 → mod_1 (kind = lazy, binding = B).
         let module = parse("const A = 1; function readB() { return B; } const B = A + 1;");
         let facts = analyze_chunk_facts(&module, &BTreeSet::new());
-        let mut binding_assignment = BTreeMap::new();
+        let mut binding_assignment = HashMap::new();
         binding_assignment.insert("A".to_string(), logical(0));
         binding_assignment.insert("readB".to_string(), logical(0));
         binding_assignment.insert("B".to_string(), logical(1));
-        let owner_graph = build_owner_graph(&facts, &binding_assignment);
-        let graph = quotient_owner_graph(&owner_graph);
+        let owner_graph = build_owner_graph(&facts);
+        let partition = Partition::from_binding_assignment(&owner_graph, &binding_assignment);
+        let graph = build_module_dep_graph(&owner_graph, &partition);
         let report = validate_schedule(&graph, &render);
         assert_eq!(
             report.cycles.len(),
@@ -205,12 +208,13 @@ mod tests {
             r#"const a1 = (globalThis.tag = "a1", 1); const b1 = (globalThis.tag = "b1", 2); const a2 = (globalThis.tag = "a2", 3);"#,
         );
         let facts = analyze_chunk_facts(&module, &BTreeSet::new());
-        let mut binding_assignment = BTreeMap::new();
+        let mut binding_assignment = HashMap::new();
         binding_assignment.insert("a1".to_string(), logical(0));
         binding_assignment.insert("a2".to_string(), logical(0));
         binding_assignment.insert("b1".to_string(), logical(1));
-        let owner_graph = build_owner_graph(&facts, &binding_assignment);
-        let graph = quotient_owner_graph(&owner_graph);
+        let owner_graph = build_owner_graph(&facts);
+        let partition = Partition::from_binding_assignment(&owner_graph, &binding_assignment);
+        let graph = build_module_dep_graph(&owner_graph, &partition);
         let report = validate_schedule(&graph, &render);
         assert_eq!(report.cycles.len(), 1);
         let cycle = &report.cycles[0];
@@ -240,13 +244,14 @@ mod tests {
             "function helperA() { return B; } function helperB() { return A; } const A = 1; const B = 2;",
         );
         let facts = analyze_chunk_facts(&module, &BTreeSet::new());
-        let mut binding_assignment = BTreeMap::new();
+        let mut binding_assignment = HashMap::new();
         binding_assignment.insert("helperA".to_string(), logical(0));
         binding_assignment.insert("A".to_string(), logical(0));
         binding_assignment.insert("helperB".to_string(), logical(1));
         binding_assignment.insert("B".to_string(), logical(1));
-        let owner_graph = build_owner_graph(&facts, &binding_assignment);
-        let graph = quotient_owner_graph(&owner_graph);
+        let owner_graph = build_owner_graph(&facts);
+        let partition = Partition::from_binding_assignment(&owner_graph, &binding_assignment);
+        let graph = build_module_dep_graph(&owner_graph, &partition);
         let report = validate_schedule(&graph, &render);
         assert!(
             report.cycles.is_empty(),
