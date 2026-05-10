@@ -368,18 +368,15 @@ mod tests {
     fn owner_graph_retains_reads_to_unassigned_declared_bindings() {
         let schedule = schedule_for("const A = X + 1; const X = 42;", &[("A", logical(0))]);
 
-        let owner_edge = schedule
-            .owner_graph
-            .graph
-            .edge_weight(OwnerId(0), OwnerId(1))
-            .expect("A's owner should point at X's owner before quotienting");
         assert!(
-            owner_edge.reasons.iter().any(|reason| {
-                reason.kind == EdgeKind::AtInitRead
-                    && reason.statement_ordinal == StatementOrdinal(0)
-                    && schedule.binding_name(reason.binding.unwrap()) == "X"
+            schedule.owner_graph.edges.iter().any(|edge| {
+                edge.from == OwnerId(0)
+                    && edge.to == OwnerId(1)
+                    && edge.reason.kind == EdgeKind::AtInitRead
+                    && edge.reason.statement_ordinal == StatementOrdinal(0)
+                    && schedule.binding_name(edge.reason.binding.unwrap()) == "X"
             }),
-            "owner graph should retain the unassigned declared provider edge: {owner_edge:?}",
+            "owner graph should retain the unassigned declared provider edge",
         );
         assert!(
             schedule

@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use petgraph::algo::tarjan_scc;
 use petgraph::graph::DiGraph;
 
-use crate::graph::{OwnerEdgeEntry, peel_emit_blocked_residual_bindings};
+use crate::graph::{OwnerEdge, peel_emit_blocked_residual_bindings};
 use crate::reports::{
     binding_reports, is_residual_destination, module_id_from_key, module_report_ref, owner_key,
 };
@@ -54,7 +54,7 @@ struct ReverseModuleAdjEdge {
 }
 
 struct PeelabilityContext<'a> {
-    owner_edges: &'a [OwnerEdgeEntry],
+    owner_edges: &'a [OwnerEdge],
     owner_out_edges: Vec<Vec<usize>>,
     owner_in_edges: Vec<Vec<usize>>,
     module_index: HashMap<ModuleId, usize>,
@@ -92,7 +92,7 @@ struct PeelCandidateEvaluation {
 
 pub(crate) fn build_peelability_report(
     schedule: &Schedule,
-    owner_edges: &[OwnerEdgeEntry],
+    owner_edges: &[OwnerEdge],
     quotient_edges: &[QuotientEdgeReport],
 ) -> OwnerGraphPeelabilityReport {
     let residual_destinations: BTreeSet<ModuleId> = schedule
@@ -346,7 +346,7 @@ fn residual_declared_for_owner(schedule: &Schedule, node: &OwnerNode) -> Vec<Bin
 impl<'a> PeelabilityContext<'a> {
     fn new(
         schedule: &Schedule,
-        owner_edges: &'a [OwnerEdgeEntry],
+        owner_edges: &'a [OwnerEdge],
         quotient_edges: &[QuotientEdgeReport],
     ) -> Self {
         let mut modules = BTreeSet::<ModuleId>::new();
@@ -488,7 +488,7 @@ impl<'a> PeelabilityContext<'a> {
 fn residual_pair_candidates_from_singleton_blockers(
     schedule: &Schedule,
     singleton_candidates: &[(OwnerId, PeelCandidateEvaluation)],
-    owner_edges: &[OwnerEdgeEntry],
+    owner_edges: &[OwnerEdge],
     declared_by_owner: &BTreeMap<OwnerId, Vec<BindingName>>,
 ) -> BTreeSet<(OwnerId, OwnerId)> {
     let mut pair_owner_sets = BTreeSet::new();
@@ -723,7 +723,6 @@ fn evaluate_residual_peel_candidate(
             match schedule.entry_exported_binding_names() {
                 Some(base_exports) => peel_emit_blocked_residual_bindings(
                     &schedule.owner_graph,
-                    context.owner_edges,
                     &schedule.partition,
                     &moved_owners,
                     base_exports,

@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use petgraph::algo::tarjan_scc;
 
-use crate::graph::OwnerEdgeEntry;
+use crate::graph::OwnerEdge;
 use crate::peelability::build_peelability_report;
 use crate::{
     BindingId, BindingName, BindingReport, EdgeKind, LogicalModuleIndex, ModuleId, ModuleReportRef,
@@ -17,7 +17,7 @@ struct QuotientEdgeAccumulator {
 }
 
 pub(crate) fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport {
-    let owner_edges = &schedule.owner_edges;
+    let owner_edges = &schedule.owner_graph.edges;
     let quotient_edges = build_quotient_edge_reports(schedule, owner_edges);
     let quotient_nodes = build_quotient_node_reports(schedule);
     let quotient_sccs = build_quotient_scc_reports(schedule, &quotient_edges);
@@ -109,7 +109,7 @@ fn build_quotient_node_reports(schedule: &Schedule) -> Vec<ModuleReportRef> {
 
 fn build_quotient_edge_reports(
     schedule: &Schedule,
-    owner_edges: &[OwnerEdgeEntry],
+    owner_edges: &[OwnerEdge],
 ) -> Vec<QuotientEdgeReport> {
     let partition = &schedule.partition;
     let mut accum = BTreeMap::<(ModuleId, ModuleId), QuotientEdgeAccumulator>::new();

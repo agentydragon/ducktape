@@ -3,10 +3,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use petgraph::algo::toposort;
 use petgraph::graphmap::DiGraphMap;
 
-use crate::graph::{
-    OwnerEdgeEntry, build_module_dep_graph_from_edges, build_owner_graph,
-    collect_owner_edge_entries,
-};
+use crate::graph::{build_module_dep_graph, build_owner_graph};
 use crate::partition::Partition;
 use crate::reports::{build_owner_graph_report, owner_key};
 use crate::validation::{validate_cross_destination_assignments, validate_schedule};
@@ -35,7 +32,6 @@ pub struct Schedule {
     /// deterministic.
     pub chunk_renames: HashMap<BindingName, BindingName>,
     pub owner_graph: OwnerGraph,
-    pub(crate) owner_edges: Vec<OwnerEdgeEntry>,
     /// Module assignment per owner — the spec's partition of the
     /// owner graph. Stored separately from the IR so the IR stays
     /// immutable across hypothetical refinements during peelability.
@@ -91,9 +87,8 @@ impl Schedule {
     ) -> Self {
         let owner_graph = build_owner_graph(&facts);
         let partition = build_partition(&owner_graph, &bindings, &logical_modules);
-        let owner_edges = collect_owner_edge_entries(&owner_graph);
         let owner_report_ids_by_binding = Self::build_owner_report_ids_by_binding(&owner_graph);
-        let dep_graph = build_module_dep_graph_from_edges(&owner_graph, &owner_edges, &partition);
+        let dep_graph = build_module_dep_graph(&owner_graph, &partition);
         let linker_order = compute_linker_order(&dep_graph, &logical_modules);
         let linker_position_by_module = linker_order
             .iter()
@@ -110,7 +105,6 @@ impl Schedule {
             logical_modules,
             chunk_renames,
             owner_graph,
-            owner_edges,
             partition,
             dep_graph,
             owner_report_ids_by_binding,

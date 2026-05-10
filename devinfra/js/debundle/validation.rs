@@ -248,39 +248,37 @@ pub(crate) fn validate_cross_destination_assignments(
     module_name: &dyn Fn(ModuleId) -> String,
 ) -> Vec<CrossDestinationAssignmentReport> {
     let mut violations = Vec::new();
-    for (from, to, weight) in owner_graph.iter_edges() {
-        let Some(from_node) = owner_graph.node(from) else {
+    for edge in owner_graph.iter_edges() {
+        let Some(from_node) = owner_graph.node(edge.from) else {
             continue;
         };
-        let Some(to_node) = owner_graph.node(to) else {
+        let Some(to_node) = owner_graph.node(edge.to) else {
             continue;
         };
-        let from_module = partition.of(from);
-        let to_module = partition.of(to);
+        let from_module = partition.of(edge.from);
+        let to_module = partition.of(edge.to);
         if from_module == to_module {
             continue;
         }
-        for reason in &weight.reasons {
-            if !reason.is_binding_write() {
-                continue;
-            }
-            let Some(binding_id) = reason.binding else {
-                continue;
-            };
-            let binding = owner_graph.binding_table.required_name(binding_id).clone();
-            violations.push(CrossDestinationAssignmentReport {
-                binding,
-                assigner_owner: owner_key(from),
-                binding_owner: owner_key(to),
-                assigner_statement_ordinal: from_node.statement_ordinal,
-                binding_statement_ordinal: to_node.statement_ordinal,
-                assigner_module: module_name(from_module),
-                binding_module: module_name(to_module),
-                kind: reason.kind,
-                assigner_source_location: from_node.source_location.clone(),
-                binding_source_location: to_node.source_location.clone(),
-            });
+        if !edge.reason.is_binding_write() {
+            continue;
         }
+        let Some(binding_id) = edge.reason.binding else {
+            continue;
+        };
+        let binding = owner_graph.binding_table.required_name(binding_id).clone();
+        violations.push(CrossDestinationAssignmentReport {
+            binding,
+            assigner_owner: owner_key(edge.from),
+            binding_owner: owner_key(edge.to),
+            assigner_statement_ordinal: from_node.statement_ordinal,
+            binding_statement_ordinal: to_node.statement_ordinal,
+            assigner_module: module_name(from_module),
+            binding_module: module_name(to_module),
+            kind: edge.reason.kind,
+            assigner_source_location: from_node.source_location.clone(),
+            binding_source_location: to_node.source_location.clone(),
+        });
     }
     violations.sort_by(|a, b| {
         (
