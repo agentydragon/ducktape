@@ -517,7 +517,7 @@ mod tests {
                 end_line,
             }),
             statement_kind: StatementKind::VarDecl,
-            has_side_effect: false,
+            purity: crate::purity::Purity::Pure,
             current_destination: module_ref("residual", true),
             members,
             status: ResidualOwnerPeelStatus::Direct,

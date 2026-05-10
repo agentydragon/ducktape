@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use petgraph::graphmap::DiGraphMap;
 use serde::{Deserialize, Serialize};
 
+use crate::purity::Purity;
 use crate::{
     BindingId, BindingName, BindingTable, ModuleId, SourceLocation, StatementFacts, StatementKind,
     StatementOrdinal,
@@ -49,7 +50,7 @@ pub enum EdgeReason {
 }
 
 impl EdgeReason {
-    pub(crate) fn side_effect_order(statement_ordinal: StatementOrdinal) -> Self {
+    pub(crate) fn purity_order(statement_ordinal: StatementOrdinal) -> Self {
         Self::SideEffectOrder { statement_ordinal }
     }
 
@@ -152,7 +153,7 @@ pub struct OwnerNode {
     pub source_location: Option<SourceLocation>,
     pub declared: BTreeSet<BindingId>,
     pub kind: StatementKind,
-    pub has_side_effect: bool,
+    pub purity: Purity,
     pub destination: ModuleId,
 }
 
@@ -207,7 +208,7 @@ impl EdgeMetadata {
     /// constraint is "predecessor must evaluate before
     /// successor", and a cycle has no topological emit order
     /// satisfying every such edge.
-    pub fn has_side_effect_ordering(&self) -> bool {
+    pub fn has_purity_ordering(&self) -> bool {
         self.reasons.iter().any(EdgeReason::is_side_effect_order)
     }
 
@@ -344,7 +345,7 @@ pub fn build_owner_graph(
             source_location: stmt.source_location.clone(),
             declared: declared.clone(),
             kind: stmt.kind,
-            has_side_effect: stmt.has_side_effect,
+            purity: stmt.purity.clone(),
             destination,
         });
         graph.graph.add_node(id);
@@ -423,7 +424,7 @@ pub fn build_owner_graph(
     // preserves reachability and SCCs while avoiding an O(n^2)
     // owner-edge explosion in Tana-scale chunks.
     //
-    // `has_side_effect` is computed by `classify_expr_purity` so
+    // `has_purity` is computed by `classify_expr_purity` so
     // pure literal initializers (`const X = 42`,
     // `const X = { a: 1 }`, function/class declarations without
     // observable static init) don't contribute to S. Without
@@ -432,10 +433,10 @@ pub fn build_owner_graph(
     // sequences.
     //
     let mut previous_side_effect_owner: Option<OwnerId> = None;
-    for stmt in facts.iter().filter(|s| s.has_side_effect) {
+    for stmt in facts.iter().filter(|s| !s.purity.is_pure()) {
         let from = OwnerId(stmt.ordinal.0);
         if let Some(to) = previous_side_effect_owner {
-            graph.record_reason(from, to, EdgeReason::side_effect_order(stmt.ordinal));
+            graph.record_reason(from, to, EdgeReason::purity_order(stmt.ordinal));
         }
         previous_side_effect_owner = Some(from);
     }

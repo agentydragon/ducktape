@@ -2,9 +2,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
+use serde::{Deserialize, Serialize};
+use swc_common::{Span, Spanned};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
+use crate::SourceLocation;
 use crate::facts::TopLevelItemView;
 
 /// Chunk-wide code graph: indexes top-level bindings and answers
@@ -129,11 +132,19 @@ impl ChunkCodeGraph {
             pending.remove(&i);
             let new_purity = classify_function_body(&functions[i], shadowed, declared_pure, self);
             let name = &functions[i].name;
-            let old = self.function_purity(name).expect("seeded by build");
-            let combined = old.worst(new_purity);
-            if combined != old {
+            let was_pure = self
+                .function_purity(name)
+                .expect("seeded by build")
+                .is_pure();
+            // Monotone fixed-point: Pure → NotPure is the only
+            // useful transition. Once a function is classified
+            // NotPure, re-classifying with concatenated reasons
+            // would diverge (the reason list grows every
+            // iteration), so we settle on the first NotPure
+            // verdict and stop.
+            if was_pure && !new_purity.is_pure() {
                 self.bindings
-                    .insert(name.clone(), ChunkBinding::Function { purity: combined });
+                    .insert(name.clone(), ChunkBinding::Function { purity: new_purity });
                 if let Some(callers) = callers_in_scc.get(&i) {
                     pending.extend(callers.iter().copied());
                 }
@@ -146,7 +157,7 @@ impl ChunkCodeGraph {
     /// classes) and for names not bound at chunk top.
     pub(crate) fn function_purity(&self, name: &str) -> Option<Purity> {
         match self.bindings.get(name)? {
-            ChunkBinding::Function { purity } => Some(*purity),
+            ChunkBinding::Function { purity } => Some(purity.clone()),
         }
     }
 }
@@ -316,7 +327,7 @@ impl Visit for BodyPurityCollector<'_> {
         // `classify_expr_purity` already recurses through
         // nested subexpressions and returns the worst.
         let p = classify_expr_purity(expr, self.shadowed, self.declared_pure, self.graph);
-        self.purity = self.purity.worst(p);
+        self.purity = std::mem::replace(&mut self.purity, Purity::Pure).worst(p);
     }
 
     // Statement-level effects that don't surface as an Impure /
@@ -325,39 +336,115 @@ impl Visit for BodyPurityCollector<'_> {
     // pauses execution observably to a host attached to the
     // process. Both make the enclosing function not Pure.
     fn visit_throw_stmt(&mut self, node: &ThrowStmt) {
-        self.purity = self.purity.worst(Purity::Impure);
+        let throw_reason = Purity::from_reason(PurityRule::ThrowStmt, node.span);
+        self.purity = std::mem::replace(&mut self.purity, Purity::Pure).worst(throw_reason);
         // Still recurse so the thrown expression contributes its
         // own purity (e.g. `throw io()` should also see the call).
         node.arg.visit_with(self);
     }
 
-    fn visit_debugger_stmt(&mut self, _node: &DebuggerStmt) {
-        self.purity = self.purity.worst(Purity::Impure);
+    fn visit_debugger_stmt(&mut self, node: &DebuggerStmt) {
+        let dbg_reason = Purity::from_reason(PurityRule::DebuggerStmt, node.span);
+        self.purity = std::mem::replace(&mut self.purity, Purity::Pure).worst(dbg_reason);
     }
 }
 
-/// Three-state expression-level purity (DESIGN.md "Module dep
-/// graphs"). `Pure` is statically provably free of observable
-/// side effects; `Impure` is provably side-effecting (assignment,
-/// update, await, yield); `Unknown` covers the long tail (calls,
-/// `new`, member access — could be a getter — etc.) and is
-/// treated as `Impure` by `has_side_effect` for soundness.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub(crate) enum Purity {
+/// Two-state expression-level purity with structured reasons.
+///
+/// `Pure` means the expression is statically provably free of
+/// observable side effects; `NotPure { reasons }` carries the
+/// list of every classifier rule that fired against the expression
+/// or one of its sub-expressions (in source order). The classifier
+/// previously distinguished `Impure` from `Unknown` for an internal
+/// soundness argument, but downstream consumers (owner-graph
+/// `has_side_effect`) collapsed both to "not pure"; this type
+/// matches that contract and replaces the bool with the full
+/// rationale.
+///
+/// Reasons collected by `Purity::worst` are concatenated, so a
+/// composite like `f() + g()` records both `UnknownCall` reasons
+/// (with their respective spans), rather than only the first.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Purity {
     Pure,
-    Impure,
-    Unknown,
+    NotPure { reasons: Vec<PurityReason> },
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PurityReason {
+    pub rule: PurityRule,
+    /// Resolved by `resolve_reason_locations` once the per-chunk
+    /// `line_range_for_span` is in scope (inside
+    /// `analyze_item_facts`). The classifier itself only fills
+    /// `span` — the wire-emitted reason has `source_location`
+    /// populated and `span` skipped.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    #[serde(skip)]
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PurityRule {
+    AssignOrUpdate,
+    AwaitOrYield,
+    DeleteOperator,
+    ThrowStmt,
+    DebuggerStmt,
+    UnknownCall,
+    UnknownNew,
+    UnknownMember,
+    SuperProp,
+    TaggedTpl,
+    ArraySpread,
+    ObjectSpread,
+    ObjectAssignProp,
+    ClassStaticObservable,
+    BareControlFlow,
+    Other,
 }
 
 impl Purity {
-    /// Combine two purity assessments — the worst (most
-    /// side-effecting) wins. `Impure` dominates `Unknown`
-    /// dominates `Pure`.
-    fn worst(self, other: Self) -> Self {
+    pub fn is_pure(&self) -> bool {
+        matches!(self, Purity::Pure)
+    }
+
+    /// Combine two purity verdicts. `Pure` is the identity;
+    /// concatenating `NotPure` reasons preserves every offending
+    /// sub-expression in source order.
+    pub fn worst(self, other: Self) -> Self {
         match (self, other) {
-            (Purity::Impure, _) | (_, Purity::Impure) => Purity::Impure,
-            (Purity::Unknown, _) | (_, Purity::Unknown) => Purity::Unknown,
-            _ => Purity::Pure,
+            (Purity::Pure, x) | (x, Purity::Pure) => x,
+            (Purity::NotPure { reasons: mut a }, Purity::NotPure { reasons: b }) => {
+                a.extend(b);
+                Purity::NotPure { reasons: a }
+            }
+        }
+    }
+
+    fn from_reason(rule: PurityRule, span: Span) -> Self {
+        Purity::NotPure {
+            reasons: vec![PurityReason {
+                rule,
+                span,
+                source_location: None,
+                detail: None,
+            }],
+        }
+    }
+
+    fn from_reason_with_detail(rule: PurityRule, span: Span, detail: String) -> Self {
+        Purity::NotPure {
+            reasons: vec![PurityReason {
+                rule,
+                span,
+                source_location: None,
+                detail: Some(detail),
+            }],
         }
     }
 }
@@ -599,14 +686,14 @@ pub(crate) fn classify_expr_purity(
         Expr::Fn(_) | Expr::Arrow(_) => Purity::Pure,
         Expr::Class(class_expr) => {
             if class_has_static_observable(&class_expr.class, shadowed, declared_pure, graph) {
-                Purity::Impure
+                Purity::from_reason(PurityRule::ClassStaticObservable, class_expr.class.span)
             } else {
                 Purity::Pure
             }
         }
         Expr::Paren(p) => classify_expr_purity(&p.expr, shadowed, declared_pure, graph),
         Expr::Unary(u) => match u.op {
-            UnaryOp::Delete => Purity::Impure,
+            UnaryOp::Delete => Purity::from_reason(PurityRule::DeleteOperator, u.span),
             // typeof / void / +/-/!/~ on a pure operand are pure
             // (they may coerce, but coercion of an Ident or Lit
             // doesn't run user code).
@@ -628,32 +715,25 @@ pub(crate) fn classify_expr_purity(
             .iter()
             .map(|e| classify_expr_purity(e, shadowed, declared_pure, graph))
             .fold(Purity::Pure, Purity::worst),
-        Expr::Array(arr) => {
-            let mut acc = Purity::Pure;
-            for elem in arr.elems.iter().flatten() {
-                if elem.spread.is_some() {
-                    // Spread invokes the iterator protocol; could
-                    // be impure even on a literal.
-                    acc = acc.worst(Purity::Unknown);
-                }
-                acc = acc.worst(classify_expr_purity(
-                    &elem.expr,
-                    shadowed,
-                    declared_pure,
-                    graph,
-                ));
-            }
-            acc
-        }
-        Expr::Object(obj) => {
-            let mut acc = Purity::Pure;
-            for prop in &obj.props {
-                acc = acc.worst(classify_prop_purity(prop, shadowed, declared_pure, graph));
-            }
-            acc
-        }
+        Expr::Array(arr) => arr
+            .elems
+            .iter()
+            .flatten()
+            .map(|elem| {
+                let spread = elem
+                    .spread
+                    .map(|sp| Purity::from_reason(PurityRule::ArraySpread, sp));
+                let body = classify_expr_purity(&elem.expr, shadowed, declared_pure, graph);
+                spread.unwrap_or(Purity::Pure).worst(body)
+            })
+            .fold(Purity::Pure, Purity::worst),
+        Expr::Object(obj) => obj
+            .props
+            .iter()
+            .map(|prop| classify_prop_purity(prop, shadowed, declared_pure, graph))
+            .fold(Purity::Pure, Purity::worst),
         Expr::Member(member) => classify_member_purity(member, shadowed),
-        Expr::SuperProp(_) => Purity::Unknown,
+        Expr::SuperProp(s) => Purity::from_reason(PurityRule::SuperProp, s.span),
         // Optional chaining (`recv?.prop`, `recv?.()`) only adds a
         // null/undefined short-circuit on top of plain member /
         // call evaluation; it doesn't introduce side effects of
@@ -667,6 +747,7 @@ pub(crate) fn classify_expr_purity(
             OptChainBase::Call(opt_call) => classify_callee_call(
                 &opt_call.callee,
                 &opt_call.args,
+                opt.span,
                 shadowed,
                 declared_pure,
                 graph,
@@ -674,12 +755,14 @@ pub(crate) fn classify_expr_purity(
         },
         Expr::Call(call) => classify_call_purity(call, shadowed, declared_pure, graph),
         Expr::New(new_expr) => classify_new_expr_purity(new_expr, shadowed, declared_pure, graph),
-        Expr::TaggedTpl(_) => Purity::Unknown,
-        Expr::Assign(_) | Expr::Update(_) => Purity::Impure,
-        Expr::Await(_) | Expr::Yield(_) => Purity::Impure,
+        Expr::TaggedTpl(t) => Purity::from_reason(PurityRule::TaggedTpl, t.span),
+        Expr::Assign(a) => Purity::from_reason(PurityRule::AssignOrUpdate, a.span),
+        Expr::Update(u) => Purity::from_reason(PurityRule::AssignOrUpdate, u.span),
+        Expr::Await(a) => Purity::from_reason(PurityRule::AwaitOrYield, a.span),
+        Expr::Yield(y) => Purity::from_reason(PurityRule::AwaitOrYield, y.span),
         // Anything we didn't enumerate falls into the Unknown
         // bucket — soundness-first.
-        _ => Purity::Unknown,
+        other => Purity::from_reason(PurityRule::Other, other.span()),
     }
 }
 
@@ -725,7 +808,11 @@ fn classify_new_expr_purity(
     graph: &ChunkCodeGraph,
 ) -> Purity {
     let Expr::Ident(callee) = new_expr.callee.as_ref() else {
-        return Purity::Unknown;
+        return Purity::from_reason_with_detail(
+            PurityRule::UnknownNew,
+            new_expr.span,
+            "non-ident callee".to_string(),
+        );
     };
     let arg_count = new_expr.args.as_ref().map_or(0, Vec::len);
     if let Some(name) = PURE_BUILTIN_NEW_NO_ARGS
@@ -745,71 +832,143 @@ fn classify_new_expr_purity(
         && let Some(args) = new_expr.args.as_ref()
         && args.len() == 1
         && args[0].spread.is_none()
-        && is_pure_array_literal_for_iterable(&args[0].expr, name, shadowed, declared_pure, graph)
     {
-        return Purity::Pure;
+        // Recurse through the array literal; if every element
+        // classifies as Pure, the `new <Container>([...])` is
+        // Pure. If not, return the failing elements' reasons
+        // alongside an UnknownNew umbrella reason so the
+        // diagnostic reports both the rule that gated the
+        // constructor *and* which sub-expression(s) failed.
+        let inner = classify_array_literal_for_iterable(
+            &args[0].expr,
+            name,
+            shadowed,
+            declared_pure,
+            graph,
+        );
+        if inner.is_pure() {
+            return Purity::Pure;
+        }
+        return Purity::from_reason_with_detail(
+            PurityRule::UnknownNew,
+            new_expr.span,
+            format!("new {name}([...]) iterable arg has impure element(s)"),
+        )
+        .worst(inner);
     }
-    Purity::Unknown
+    Purity::from_reason_with_detail(
+        PurityRule::UnknownNew,
+        new_expr.span,
+        callee.sym.to_string(),
+    )
 }
 
-/// True when `expr` is an Array literal whose every element is a
-/// Pure expression (no spreads, no holes). For `Map`
-/// (`callee == "Map"`), each element must additionally be a
-/// 2-element Array literal — Map's iterator path Get's [0]/[1]
-/// on each entry, and we need fresh literal entries so those
-/// reads are own-data-property hits, not user-getter hits on a
-/// 2-tuple-shaped object.
-fn is_pure_array_literal_for_iterable(
+/// Classify the iterable arg of `new Set([...])` / `new Map([[k,v],...])`.
+/// Returns `Purity::Pure` only when the arg is an Array literal with
+/// every element a Pure expression (no spreads, no holes; for `Map`,
+/// every element a 2-element Array literal of Pure entries). Map's
+/// iterator path Get's [0]/[1] on each entry — fresh literal entries
+/// guarantee those reads are own-data-property hits, not user-getter
+/// hits on a 2-tuple-shaped object.
+///
+/// On failure returns a `NotPure` carrying the offending sub-expression's
+/// reason(s) so the caller can attach them to the surrounding
+/// `UnknownNew` verdict.
+fn classify_array_literal_for_iterable(
     expr: &Expr,
     callee: &str,
     shadowed: &BTreeSet<&'static str>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
-) -> bool {
+) -> Purity {
     let Expr::Array(arr) = expr else {
-        return false;
+        return Purity::from_reason_with_detail(
+            PurityRule::Other,
+            expr.span(),
+            format!("new {callee} arg is not an Array literal"),
+        );
     };
-    for elem in arr.elems.iter() {
-        let Some(elem) = elem else {
-            // Hole: `[1, , 3]`. Set treats hole as undefined
-            // (still a value); Map's `Get(undefined, "0")`
-            // throws. Reject for both.
-            return false;
-        };
-        if elem.spread.is_some() {
-            return false;
-        }
-        match callee {
-            "Set" => {
-                if classify_expr_purity(&elem.expr, shadowed, declared_pure, graph) != Purity::Pure
-                {
-                    return false;
-                }
-            }
-            "Map" => {
-                let Expr::Array(entry) = elem.expr.as_ref() else {
-                    return false;
-                };
-                if entry.elems.len() != 2 {
-                    return false;
-                }
-                for entry_elem in entry.elems.iter() {
-                    let Some(e) = entry_elem else {
-                        return false;
-                    };
-                    if e.spread.is_some() {
-                        return false;
-                    }
-                    if classify_expr_purity(&e.expr, shadowed, declared_pure, graph) != Purity::Pure
-                    {
-                        return false;
-                    }
-                }
-            }
-            _ => return false,
-        }
+    arr.elems
+        .iter()
+        .map(|elem| {
+            classify_iterable_element(
+                elem.as_ref(),
+                arr.span,
+                callee,
+                shadowed,
+                declared_pure,
+                graph,
+            )
+        })
+        .fold(Purity::Pure, Purity::worst)
+}
+
+fn classify_iterable_element(
+    elem: Option<&ExprOrSpread>,
+    arr_span: Span,
+    callee: &str,
+    shadowed: &BTreeSet<&'static str>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> Purity {
+    let Some(elem) = elem else {
+        // Hole: `[1, , 3]`. Set treats hole as undefined (still a
+        // value); Map's `Get(undefined, "0")` throws. Reject for both.
+        return Purity::from_reason_with_detail(
+            PurityRule::Other,
+            arr_span,
+            format!("new {callee} array-literal arg has hole"),
+        );
+    };
+    if let Some(sp) = elem.spread {
+        return Purity::from_reason(PurityRule::ArraySpread, sp);
     }
-    true
+    match callee {
+        "Set" => classify_expr_purity(&elem.expr, shadowed, declared_pure, graph),
+        "Map" => classify_map_entry(&elem.expr, shadowed, declared_pure, graph),
+        _ => Purity::from_reason_with_detail(
+            PurityRule::Other,
+            elem.expr.span(),
+            format!("unsupported callee {callee} for array-iterable rule"),
+        ),
+    }
+}
+
+fn classify_map_entry(
+    entry_expr: &Expr,
+    shadowed: &BTreeSet<&'static str>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> Purity {
+    let Expr::Array(entry) = entry_expr else {
+        return Purity::from_reason_with_detail(
+            PurityRule::Other,
+            entry_expr.span(),
+            "new Map entry is not an Array literal".to_string(),
+        );
+    };
+    if entry.elems.len() != 2 {
+        return Purity::from_reason_with_detail(
+            PurityRule::Other,
+            entry.span,
+            "new Map entry is not a 2-element Array".to_string(),
+        );
+    }
+    entry
+        .elems
+        .iter()
+        .map(|e| match e {
+            None => Purity::from_reason_with_detail(
+                PurityRule::Other,
+                entry.span,
+                "new Map entry has hole".to_string(),
+            ),
+            Some(e) if e.spread.is_some() => {
+                Purity::from_reason(PurityRule::ArraySpread, e.spread.unwrap())
+            }
+            Some(e) => classify_expr_purity(&e.expr, shadowed, declared_pure, graph),
+        })
+        .fold(Purity::Pure, Purity::worst)
 }
 
 /// Purity of `member` taken as an r-value member access
@@ -826,7 +985,18 @@ fn classify_member_purity(member: &MemberExpr, shadowed: &BTreeSet<&'static str>
     {
         return Purity::Pure;
     }
-    Purity::Unknown
+    let detail = match (member.obj.as_ref(), &member.prop) {
+        (Expr::Ident(o), MemberProp::Ident(p)) => Some(format!("{}.{}", o.sym, p.sym)),
+        _ => None,
+    };
+    Purity::NotPure {
+        reasons: vec![PurityReason {
+            rule: PurityRule::UnknownMember,
+            span: member.span,
+            source_location: None,
+            detail,
+        }],
+    }
 }
 
 fn classify_call_purity(
@@ -836,9 +1006,20 @@ fn classify_call_purity(
     graph: &ChunkCodeGraph,
 ) -> Purity {
     let Callee::Expr(callee_expr) = &call.callee else {
-        return Purity::Unknown;
+        return Purity::from_reason_with_detail(
+            PurityRule::UnknownCall,
+            call.span,
+            "non-Expr callee (Super/Import)".to_string(),
+        );
     };
-    classify_callee_call(callee_expr, &call.args, shadowed, declared_pure, graph)
+    classify_callee_call(
+        callee_expr,
+        &call.args,
+        call.span,
+        shadowed,
+        declared_pure,
+        graph,
+    )
 }
 
 /// Common backbone for `Expr::Call` and `OptChainBase::Call` —
@@ -851,6 +1032,7 @@ fn classify_call_purity(
 fn classify_callee_call(
     callee_expr: &Expr,
     args: &[ExprOrSpread],
+    call_span: Span,
     shadowed: &BTreeSet<&'static str>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
@@ -869,8 +1051,8 @@ fn classify_callee_call(
     }
     // Chunk-local function declaration: consult the per-chunk
     // function-body purity cache. `Pure` callee + Pure args → Pure;
-    // `Impure` callee → Impure (no matter the args); `Unknown`
-    // callee inherits.
+    // non-Pure callee inherits its reasons (so the chain points
+    // back through to the unhandled construct in the function body).
     if let Expr::Ident(ident) = callee_expr
         && let Some(callee_purity) = graph.function_purity(ident.sym.as_ref())
     {
@@ -913,7 +1095,26 @@ fn classify_callee_call(
     {
         return Purity::Pure;
     }
-    Purity::Unknown
+    let detail = callee_summary(callee_expr);
+    Purity::NotPure {
+        reasons: vec![PurityReason {
+            rule: PurityRule::UnknownCall,
+            span: call_span,
+            source_location: None,
+            detail,
+        }],
+    }
+}
+
+fn callee_summary(callee_expr: &Expr) -> Option<String> {
+    match callee_expr {
+        Expr::Ident(ident) => Some(ident.sym.to_string()),
+        Expr::Member(m) => match (m.obj.as_ref(), &m.prop) {
+            (Expr::Ident(o), MemberProp::Ident(p)) => Some(format!("{}.{}", o.sym, p.sym)),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 /// True for AST nodes whose evaluation produces a primitive
@@ -942,20 +1143,16 @@ fn all_args_pure(
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> Purity {
-    let mut acc = Purity::Pure;
-    for arg in args {
-        if arg.spread.is_some() {
+    args.iter()
+        .map(|arg| {
             // Spread arg's iterator could fire side effects.
-            acc = acc.worst(Purity::Unknown);
-        }
-        acc = acc.worst(classify_expr_purity(
-            &arg.expr,
-            shadowed,
-            declared_pure,
-            graph,
-        ));
-    }
-    acc
+            let spread = arg
+                .spread
+                .map(|sp| Purity::from_reason(PurityRule::ArraySpread, sp));
+            let body = classify_expr_purity(&arg.expr, shadowed, declared_pure, graph);
+            spread.unwrap_or(Purity::Pure).worst(body)
+        })
+        .fold(Purity::Pure, Purity::worst)
 }
 
 fn classify_prop_purity(
@@ -970,8 +1167,9 @@ fn classify_prop_purity(
             // iterator (array spread) or property iteration
             // (object spread). Either can fire a getter or a
             // user-defined `[Symbol.iterator]`.
-            classify_expr_purity(&spread.expr, shadowed, declared_pure, graph)
-                .worst(Purity::Unknown)
+            classify_expr_purity(&spread.expr, shadowed, declared_pure, graph).worst(
+                Purity::from_reason(PurityRule::ObjectSpread, spread.expr.span()),
+            )
         }
         PropOrSpread::Prop(prop) => match prop.as_ref() {
             Prop::Shorthand(_) => Purity::Pure,
@@ -980,7 +1178,7 @@ fn classify_prop_purity(
                     classify_expr_purity(&kv.value, shadowed, declared_pure, graph),
                 )
             }
-            Prop::Assign(_) => Purity::Impure,
+            Prop::Assign(a) => Purity::from_reason(PurityRule::ObjectAssignProp, a.key.span),
             // `{ get x() {}, set x(v) {}, m() {} }` — defining a
             // method or accessor is pure; invoking it is not, and
             // we don't invoke it during init.

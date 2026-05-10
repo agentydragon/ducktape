@@ -76,5 +76,6 @@ rust_library(
         "peelability_emit_resolvability_test",
         "peelability_three_vertex_scc_test",
         "peelability_empty_declared_closure_test",
+        "owner_graph_purity_reason_test",
     ]
 ]

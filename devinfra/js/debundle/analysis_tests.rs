@@ -583,100 +583,100 @@ mod tests {
 
     #[test]
     fn classify_literal_kinds_are_pure() {
-        assert_eq!(classify("42"), Purity::Pure);
-        assert_eq!(classify("\"hi\""), Purity::Pure);
-        assert_eq!(classify("true"), Purity::Pure);
-        assert_eq!(classify("null"), Purity::Pure);
-        assert_eq!(classify("/foo/g"), Purity::Pure);
-        assert_eq!(classify("`literal`"), Purity::Pure);
+        assert!((classify("42")).is_pure());
+        assert!((classify("\"hi\"")).is_pure());
+        assert!((classify("true")).is_pure());
+        assert!((classify("null")).is_pure());
+        assert!((classify("/foo/g")).is_pure());
+        assert!((classify("`literal`")).is_pure());
     }
 
     #[test]
     fn classify_ident_read_is_pure() {
-        assert_eq!(classify("FOO"), Purity::Pure);
+        assert!((classify("FOO")).is_pure());
     }
 
     #[test]
     fn classify_pure_unary_and_binary() {
-        assert_eq!(classify("-1"), Purity::Pure);
-        assert_eq!(classify("!FOO"), Purity::Pure);
-        assert_eq!(classify("typeof FOO"), Purity::Pure);
-        assert_eq!(classify("A + 1"), Purity::Pure);
-        assert_eq!(classify("A && B"), Purity::Pure);
-        assert_eq!(classify("A ? B : C"), Purity::Pure);
+        assert!((classify("-1")).is_pure());
+        assert!((classify("!FOO")).is_pure());
+        assert!((classify("typeof FOO")).is_pure());
+        assert!((classify("A + 1")).is_pure());
+        assert!((classify("A && B")).is_pure());
+        assert!((classify("A ? B : C")).is_pure());
     }
 
     #[test]
     fn classify_delete_is_impure() {
-        assert_eq!(classify("delete o.x"), Purity::Impure);
+        assert!(!(classify("delete o.x")).is_pure());
     }
 
     #[test]
     fn classify_assignment_and_update_are_impure() {
-        assert_eq!(classify("(x = 1)"), Purity::Impure);
-        assert_eq!(classify("x++"), Purity::Impure);
+        assert!(!(classify("(x = 1)")).is_pure());
+        assert!(!(classify("x++")).is_pure());
     }
 
     #[test]
     fn classify_call_new_tagged_template_are_unknown() {
-        assert_eq!(classify("foo()"), Purity::Unknown);
-        assert_eq!(classify("new Foo()"), Purity::Unknown);
-        assert_eq!(classify("tag`hi ${x}`"), Purity::Unknown);
+        assert!(!(classify("foo()")).is_pure());
+        assert!(!(classify("new Foo()")).is_pure());
+        assert!(!(classify("tag`hi ${x}`")).is_pure());
     }
 
     #[test]
     fn classify_member_access_is_unknown() {
-        assert_eq!(classify("o.x"), Purity::Unknown);
-        assert_eq!(classify("o[k]"), Purity::Unknown);
-        assert_eq!(classify("o?.x"), Purity::Unknown);
+        assert!(!(classify("o.x")).is_pure());
+        assert!(!(classify("o[k]")).is_pure());
+        assert!(!(classify("o?.x")).is_pure());
     }
 
     #[test]
     fn classify_object_literal_pure_when_props_pure() {
-        assert_eq!(classify("({ a: 1, b: 'x' })"), Purity::Pure);
-        assert_eq!(classify("({ [k]: 1 })"), Purity::Pure);
+        assert!((classify("({ a: 1, b: 'x' })")).is_pure());
+        assert!((classify("({ [k]: 1 })")).is_pure());
         // Computed key with member access — getter could fire.
-        assert_eq!(classify("({ [k.x]: 1 })"), Purity::Unknown);
+        assert!(!(classify("({ [k.x]: 1 })")).is_pure());
         // Spread of an arbitrary expr — iterator could fire.
-        assert_eq!(classify("({ ...other })"), Purity::Unknown);
+        assert!(!(classify("({ ...other })")).is_pure());
         // Method definitions are pure (defining, not calling).
-        assert_eq!(classify("({ m() { return io(); } })"), Purity::Pure);
+        assert!((classify("({ m() { return io(); } })")).is_pure());
     }
 
     #[test]
     fn classify_array_literal_pure_when_elements_pure() {
-        assert_eq!(classify("[1, 2, 'x']"), Purity::Pure);
-        assert_eq!(classify("[A, B]"), Purity::Pure);
-        assert_eq!(classify("[1, foo()]"), Purity::Unknown);
+        assert!((classify("[1, 2, 'x']")).is_pure());
+        assert!((classify("[A, B]")).is_pure());
+        assert!(!(classify("[1, foo()]")).is_pure());
         // Spread is `Unknown` even on an array literal.
-        assert_eq!(classify("[...other]"), Purity::Unknown);
+        assert!(!(classify("[...other]")).is_pure());
     }
 
     #[test]
     fn classify_function_and_arrow_are_pure() {
-        assert_eq!(classify("function () { return io(); }"), Purity::Pure);
-        assert_eq!(classify("() => io()"), Purity::Pure);
+        assert!((classify("function () { return io(); }")).is_pure());
+        assert!((classify("() => io()")).is_pure());
     }
 
     #[test]
     fn classify_class_expr_pure_without_static_init() {
-        assert_eq!(classify("class { m() { return io(); } }"), Purity::Pure);
-        assert_eq!(classify("class { static x = 1 }"), Purity::Pure);
-        assert_eq!(classify("class { static x = io() }"), Purity::Impure);
-        assert_eq!(classify("class { static {} }"), Purity::Impure);
+        assert!((classify("class { m() { return io(); } }")).is_pure());
+        assert!((classify("class { static x = 1 }")).is_pure());
+        assert!(!(classify("class { static x = io() }")).is_pure());
+        assert!(!(classify("class { static {} }")).is_pure());
     }
 
     #[test]
     fn classify_template_with_pure_exprs_is_pure() {
-        assert_eq!(classify("`a${A}b${1+2}c`"), Purity::Pure);
-        assert_eq!(classify("`a${foo()}`"), Purity::Unknown);
+        assert!((classify("`a${A}b${1+2}c`")).is_pure());
+        assert!(!(classify("`a${foo()}`")).is_pure());
     }
 
     #[test]
     fn classify_sequence_takes_worst() {
-        assert_eq!(classify("(A, B, C)"), Purity::Pure);
-        assert_eq!(classify("(A, foo(), C)"), Purity::Unknown);
-        assert_eq!(classify("(A, x = 1, C)"), Purity::Impure);
+        assert!((classify("(A, B, C)")).is_pure());
+        assert!(!(classify("(A, foo(), C)")).is_pure());
+        assert!(!(classify("(A, x = 1, C)")).is_pure());
     }
 
     // --- Whitelist: pure static property reads -------------------------------
@@ -685,22 +685,22 @@ mod tests {
     fn whitelist_static_props_are_pure() {
         // Math / Number / Symbol constants: pure internal-slot
         // reads, no coercion.
-        assert_eq!(classify("Math.PI"), Purity::Pure);
-        assert_eq!(classify("Math.E"), Purity::Pure);
-        assert_eq!(classify("Math.SQRT2"), Purity::Pure);
-        assert_eq!(classify("Number.EPSILON"), Purity::Pure);
-        assert_eq!(classify("Number.MAX_SAFE_INTEGER"), Purity::Pure);
-        assert_eq!(classify("Symbol.iterator"), Purity::Pure);
-        assert_eq!(classify("Symbol.toStringTag"), Purity::Pure);
+        assert!((classify("Math.PI")).is_pure());
+        assert!((classify("Math.E")).is_pure());
+        assert!((classify("Math.SQRT2")).is_pure());
+        assert!((classify("Number.EPSILON")).is_pure());
+        assert!((classify("Number.MAX_SAFE_INTEGER")).is_pure());
+        assert!((classify("Symbol.iterator")).is_pure());
+        assert!((classify("Symbol.toStringTag")).is_pure());
     }
 
     #[test]
     fn whitelist_misses_fall_back_to_unknown() {
         // Same receivers, properties that aren't on the whitelist:
         // could be a getter / a coercing call. Stays Unknown.
-        assert_eq!(classify("Math.unknownProp"), Purity::Unknown);
-        assert_eq!(classify("Number.unknownProp"), Purity::Unknown);
-        assert_eq!(classify("Symbol.unknownProp"), Purity::Unknown);
+        assert!(!(classify("Math.unknownProp")).is_pure());
+        assert!(!(classify("Number.unknownProp")).is_pure());
+        assert!(!(classify("Symbol.unknownProp")).is_pure());
     }
 
     // --- Whitelist: pure calls -----------------------------------------------
@@ -709,12 +709,12 @@ mod tests {
     fn whitelist_static_calls_are_pure_regardless_of_arg() {
         // Type predicates do not coerce or read user props on the
         // argument, so any Pure-classified arg keeps the call Pure.
-        assert_eq!(classify("Array.isArray(x)"), Purity::Pure);
-        assert_eq!(classify("Array.isArray([1, 2, 3])"), Purity::Pure);
-        assert_eq!(classify("Number.isNaN(x)"), Purity::Pure);
-        assert_eq!(classify("Number.isFinite(x)"), Purity::Pure);
-        assert_eq!(classify("Number.isInteger(x)"), Purity::Pure);
-        assert_eq!(classify("Number.isSafeInteger(x)"), Purity::Pure);
+        assert!((classify("Array.isArray(x)")).is_pure());
+        assert!((classify("Array.isArray([1, 2, 3])")).is_pure());
+        assert!((classify("Number.isNaN(x)")).is_pure());
+        assert!((classify("Number.isFinite(x)")).is_pure());
+        assert!((classify("Number.isInteger(x)")).is_pure());
+        assert!((classify("Number.isSafeInteger(x)")).is_pure());
     }
 
     #[test]
@@ -722,8 +722,8 @@ mod tests {
         // An argument whose evaluation may itself fire user code
         // poisons the whole call: even though `Array.isArray` is
         // a pure operation, evaluating `io()` first is not.
-        assert_eq!(classify("Array.isArray(io())"), Purity::Unknown);
-        assert_eq!(classify("Number.isNaN(o.x)"), Purity::Unknown);
+        assert!(!(classify("Array.isArray(io())")).is_pure());
+        assert!(!(classify("Number.isNaN(o.x)")).is_pure());
     }
 
     // --- PURE_STATIC_FUNCTION_REFS: read-vs-call distinction ---------------
@@ -734,10 +734,10 @@ mod tests {
         // built-in `Object` per ECMA-262 §20.1.2 — no getter
         // fires, no observable side effect. Aliasing the function
         // value into a binding stays pure (the value isn't called).
-        assert_eq!(classify("Object.defineProperty"), Purity::Pure);
-        assert_eq!(classify("Object.freeze"), Purity::Pure);
-        assert_eq!(classify("Object.values"), Purity::Pure);
-        assert_eq!(classify("Object.keys"), Purity::Pure);
+        assert!((classify("Object.defineProperty")).is_pure());
+        assert!((classify("Object.freeze")).is_pure());
+        assert!((classify("Object.values")).is_pure());
+        assert!((classify("Object.keys")).is_pure());
     }
 
     #[test]
@@ -747,13 +747,10 @@ mod tests {
         // excluded from `PURE_STATIC_CALLS`). The function-ref
         // entry only opens the read path; the call must stay
         // Unknown so the soundness contract holds.
-        assert_eq!(
-            classify("Object.defineProperty(t, 'k', { value: 1 })"),
-            Purity::Unknown
-        );
-        assert_eq!(classify("Object.freeze({ x: 1 })"), Purity::Unknown);
-        assert_eq!(classify("Object.values(o)"), Purity::Unknown);
-        assert_eq!(classify("Object.keys(o)"), Purity::Unknown);
+        assert!(!(classify("Object.defineProperty(t, 'k', { value: 1 })")).is_pure());
+        assert!(!(classify("Object.freeze({ x: 1 })")).is_pure());
+        assert!(!(classify("Object.values(o)")).is_pure());
+        assert!(!(classify("Object.keys(o)")).is_pure());
     }
 
     #[test]
@@ -763,16 +760,15 @@ mod tests {
         // specifier per A8), the function-ref read must fall back
         // to Unknown — `Object.X` then resolves through the
         // user-bound value.
-        assert_eq!(
-            classify_with_module("const Object = userland;", "Object.defineProperty"),
-            Purity::Unknown
+        assert!(
+            !(classify_with_module("const Object = userland;", "Object.defineProperty")).is_pure()
         );
-        assert_eq!(
-            classify_with_module(
+        assert!(
+            !(classify_with_module(
                 r#"import { Object } from "./userland.js";"#,
                 "Object.freeze"
-            ),
-            Purity::Unknown
+            ))
+            .is_pure()
         );
     }
 
@@ -781,9 +777,9 @@ mod tests {
         // Boolean(x) is `ToBoolean(x)`; per spec, no path fires
         // user code (objects → true unconditionally; primitives
         // are case-analysed structurally).
-        assert_eq!(classify("Boolean(x)"), Purity::Pure);
-        assert_eq!(classify("Boolean(0)"), Purity::Pure);
-        assert_eq!(classify("Boolean({})"), Purity::Pure);
+        assert!((classify("Boolean(x)")).is_pure());
+        assert!((classify("Boolean(0)")).is_pure());
+        assert!((classify("Boolean({})")).is_pure());
     }
 
     #[test]
@@ -792,13 +788,13 @@ mod tests {
         // `valueOf` / `toString` / `[Symbol.toPrimitive]` on
         // object args; we don't track types, so these remain
         // Unknown to keep the whitelist sound.
-        assert_eq!(classify("Number(x)"), Purity::Unknown);
-        assert_eq!(classify("String(x)"), Purity::Unknown);
-        assert_eq!(classify("Symbol(x)"), Purity::Unknown);
-        assert_eq!(classify("parseInt(x, 10)"), Purity::Unknown);
-        assert_eq!(classify("parseFloat(x)"), Purity::Unknown);
-        assert_eq!(classify("isNaN(x)"), Purity::Unknown);
-        assert_eq!(classify("isFinite(x)"), Purity::Unknown);
+        assert!(!(classify("Number(x)")).is_pure());
+        assert!(!(classify("String(x)")).is_pure());
+        assert!(!(classify("Symbol(x)")).is_pure());
+        assert!(!(classify("parseInt(x, 10)")).is_pure());
+        assert!(!(classify("parseFloat(x)")).is_pure());
+        assert!(!(classify("isNaN(x)")).is_pure());
+        assert!(!(classify("isFinite(x)")).is_pure());
     }
 
     #[test]
@@ -831,9 +827,8 @@ mod tests {
             "Symbol.for('k')",
             "Symbol.keyFor(s)",
         ] {
-            assert_eq!(
-                classify(src),
-                Purity::Unknown,
+            assert!(
+                !(classify(src)).is_pure(),
                 "expected {src} to stay Unknown (would fire user code)"
             );
         }
@@ -846,36 +841,18 @@ mod tests {
         // A chunk-top-level binding for `Math` makes `Math.PI` no
         // longer reach the global; the whitelist must fall back
         // to Unknown.
-        assert_eq!(
-            classify_with_module("const Math = userland;", "Math.PI"),
-            Purity::Unknown
-        );
-        assert_eq!(
-            classify_with_module("function Math() {}", "Math.E"),
-            Purity::Unknown
-        );
-        assert_eq!(
-            classify_with_module("const Array = X;", "Array.isArray(x)"),
-            Purity::Unknown
-        );
-        assert_eq!(
-            classify_with_module("let Number = X;", "Number.isNaN(x)"),
-            Purity::Unknown
-        );
-        assert_eq!(
-            classify_with_module("const Boolean = X;", "Boolean(x)"),
-            Purity::Unknown
-        );
+        assert!(!(classify_with_module("const Math = userland;", "Math.PI")).is_pure());
+        assert!(!(classify_with_module("function Math() {}", "Math.E")).is_pure());
+        assert!(!(classify_with_module("const Array = X;", "Array.isArray(x)")).is_pure());
+        assert!(!(classify_with_module("let Number = X;", "Number.isNaN(x)")).is_pure());
+        assert!(!(classify_with_module("const Boolean = X;", "Boolean(x)")).is_pure());
     }
 
     #[test]
     fn unshadowed_receiver_keeps_whitelist() {
         // A chunk that declares an unrelated binding leaves the
         // whitelist active — only same-named shadowing disables.
-        assert_eq!(
-            classify_with_module("const other = userland;", "Math.PI"),
-            Purity::Pure
-        );
+        assert!((classify_with_module("const other = userland;", "Math.PI")).is_pure());
     }
 
     #[test]
@@ -886,27 +863,27 @@ mod tests {
         // matters: the imported value can be anything, so
         // `<imported>.<prop>` is a property read that may fire a
         // user-defined getter.)
-        assert_eq!(
-            classify_with_module(r#"import { Math } from "./userland.js";"#, "Math.PI"),
-            Purity::Unknown
+        assert!(
+            !(classify_with_module(r#"import { Math } from "./userland.js";"#, "Math.PI"))
+                .is_pure()
         );
-        assert_eq!(
-            classify_with_module(r#"import Boolean from "./userland.js";"#, "Boolean(x)"),
-            Purity::Unknown
+        assert!(
+            !(classify_with_module(r#"import Boolean from "./userland.js";"#, "Boolean(x)"))
+                .is_pure()
         );
-        assert_eq!(
-            classify_with_module(
+        assert!(
+            !(classify_with_module(
                 r#"import * as Number from "./userland.js";"#,
                 "Number.isNaN(x)"
-            ),
-            Purity::Unknown
+            ))
+            .is_pure()
         );
-        assert_eq!(
-            classify_with_module(
+        assert!(
+            !(classify_with_module(
                 r#"import { something as Array } from "./userland.js";"#,
                 "Array.isArray(x)"
-            ),
-            Purity::Unknown
+            ))
+            .is_pure()
         );
     }
 
@@ -920,13 +897,12 @@ mod tests {
         // (the validator does not re-verify; author trust). Args
         // are still evaluated normally — pure args here, so the
         // whole call is Pure.
-        assert_eq!(
-            classify_with_declared_pure("function f(x) { return x; }", "f(42)", &["f"]),
-            Purity::Pure
+        assert!(
+            (classify_with_declared_pure("function f(x) { return x; }", "f(42)", &["f"])).is_pure()
         );
-        assert_eq!(
-            classify_with_declared_pure("function f(x) { return x; }", "f({ k: 'v' })", &["f"]),
-            Purity::Pure
+        assert!(
+            (classify_with_declared_pure("function f(x) { return x; }", "f({ k: 'v' })", &["f"]))
+                .is_pure()
         );
     }
 
@@ -935,13 +911,13 @@ mod tests {
         // The declared-purity contract covers the function value;
         // arg evaluation is independent. An impure arg makes the
         // whole call Unknown.
-        assert_eq!(
-            classify_with_declared_pure(
+        assert!(
+            !(classify_with_declared_pure(
                 "function f(x) { return x; } function io() { return 1; }",
                 "f(io())",
                 &["f"]
-            ),
-            Purity::Unknown
+            ))
+            .is_pure()
         );
     }
 
@@ -951,13 +927,13 @@ mod tests {
         // over both the whitelist's shadowing fallback and the
         // body's actual contents. The validator does not
         // second-guess.
-        assert_eq!(
-            classify_with_declared_pure(
+        assert!(
+            (classify_with_declared_pure(
                 r#"import { Boolean } from "./userland.js";"#,
                 "Boolean(x)",
                 &["Boolean"]
-            ),
-            Purity::Pure
+            ))
+            .is_pure()
         );
     }
 
@@ -966,27 +942,30 @@ mod tests {
         // Only the listed binding is treated pure. A call to a
         // sibling that wasn't annotated stays subject to the
         // normal classifier path (Unknown for opaque idents).
-        assert_eq!(
-            classify_with_declared_pure(
+        assert!(
+            !(classify_with_declared_pure(
                 "function pure(x) { return x; } function impure(x) { return x; }",
                 "impure(x)",
                 &["pure"]
-            ),
-            Purity::Unknown
+            ))
+            .is_pure()
         );
     }
 
     // --- ChunkCodeGraph: function-body purity inference --------------------
 
-    /// Build a `ChunkCodeGraph` for `src` and return the purity it
-    /// computed for the named function. Tests the full pipeline:
-    /// chunk parsing → function collection → fixed-point.
-    fn fn_purity(src: &str, name: &str) -> Option<Purity> {
+    /// Build a `ChunkCodeGraph` for `src` and return whether the
+    /// named function is classified as Pure. `None` means the
+    /// function isn't tracked in the chunk's purity graph (only
+    /// `const`-bound function/arrow initializers are cached).
+    /// Tests the full pipeline: chunk parsing → function
+    /// collection → fixed-point.
+    fn fn_purity(src: &str, name: &str) -> Option<bool> {
         let module = parse(src);
         let body = top_level_item_views(&module.body);
         let shadowed = compute_shadowed_globals(&body);
         let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
-        graph.function_purity(name)
+        graph.function_purity(name).map(|p| p.is_pure())
     }
 
     #[test]
@@ -998,7 +977,7 @@ mod tests {
                 r#"function wrap(f) { return { kind: "wrapped", impl: f }; }"#,
                 "wrap"
             ),
-            Some(Purity::Pure)
+            Some(true)
         );
     }
 
@@ -1008,7 +987,7 @@ mod tests {
         // impure regardless of what's on the RHS.
         assert_eq!(
             fn_purity("function tag(x) { globalThis.tag = x; }", "tag"),
-            Some(Purity::Impure)
+            Some(false)
         );
     }
 
@@ -1021,7 +1000,7 @@ mod tests {
                 r#"function logged(x) { console.log("init", x); return x; }"#,
                 "logged"
             ),
-            Some(Purity::Unknown)
+            Some(false)
         );
     }
 
@@ -1034,8 +1013,8 @@ mod tests {
             function tainted() { globalThis.touched = true; return 1; }
             function caller() { return tainted(); }
         "#;
-        assert_eq!(fn_purity(src, "tainted"), Some(Purity::Impure));
-        assert_eq!(fn_purity(src, "caller"), Some(Purity::Impure));
+        assert_eq!(fn_purity(src, "tainted"), Some(false));
+        assert_eq!(fn_purity(src, "caller"), Some(false));
     }
 
     #[test]
@@ -1047,8 +1026,8 @@ mod tests {
             function even(n) { return n === 0 ? true : odd(n - 1); }
             function odd(n) { return n === 0 ? false : even(n - 1); }
         "#;
-        assert_eq!(fn_purity(src, "even"), Some(Purity::Pure));
-        assert_eq!(fn_purity(src, "odd"), Some(Purity::Pure));
+        assert_eq!(fn_purity(src, "even"), Some(true));
+        assert_eq!(fn_purity(src, "odd"), Some(true));
     }
 
     #[test]
@@ -1058,7 +1037,7 @@ mod tests {
         // return expression.
         assert_eq!(
             fn_purity("const wrap = (x) => ({ val: x });", "wrap"),
-            Some(Purity::Pure)
+            Some(true)
         );
     }
 
@@ -1076,10 +1055,7 @@ mod tests {
             other => panic!("expected VarDecl, got {other:?}"),
         };
         let init = var.decls[0].init.as_deref().expect("init");
-        assert_eq!(
-            classify_expr_purity(init, &shadowed, &BTreeSet::new(), &graph),
-            Purity::Pure
-        );
+        assert!((classify_expr_purity(init, &shadowed, &BTreeSet::new(), &graph)).is_pure());
     }
 
     #[test]
@@ -1100,7 +1076,7 @@ mod tests {
             "`var`-bound function expr must not be in the function-purity graph"
         );
         // Sanity: `const` still works.
-        assert_eq!(fn_purity("const f = () => 1;", "f"), Some(Purity::Pure));
+        assert_eq!(fn_purity("const f = () => 1;", "f"), Some(true));
     }
 
     #[test]
@@ -1110,13 +1086,13 @@ mod tests {
         // throws must not classify as Pure.
         assert_eq!(
             fn_purity(r#"function f() { throw "boom"; }"#, "f"),
-            Some(Purity::Impure)
+            Some(false)
         );
         // Conditional throw is still Impure (we don't reason
         // about reachability — soundness-first).
         assert_eq!(
             fn_purity(r#"function f(x) { if (x) throw "boom"; return x; }"#, "f"),
-            Some(Purity::Impure)
+            Some(false)
         );
     }
 
@@ -1126,7 +1102,7 @@ mod tests {
         // attached to the process — not Pure.
         assert_eq!(
             fn_purity("function f() { debugger; return 1; }", "f"),
-            Some(Purity::Impure)
+            Some(false)
         );
     }
 
@@ -1150,7 +1126,7 @@ mod tests {
         for name in ["a", "b", "c", "d", "e"] {
             assert_eq!(
                 fn_purity(src, name),
-                Some(Purity::Pure),
+                Some(true),
                 "expected {name} to classify Pure"
             );
         }
@@ -1174,7 +1150,7 @@ mod tests {
         for name in ["a", "b", "c", "d", "e"] {
             assert_eq!(
                 fn_purity(src, name),
-                Some(Purity::Impure),
+                Some(false),
                 "expected {name} to inherit Impure from `e`"
             );
         }
@@ -1190,9 +1166,9 @@ mod tests {
             function b() { return 1; }
             function c() { return 2; }
         "#;
-        assert_eq!(fn_purity(src, "a"), Some(Purity::Impure));
-        assert_eq!(fn_purity(src, "b"), Some(Purity::Pure));
-        assert_eq!(fn_purity(src, "c"), Some(Purity::Pure));
+        assert_eq!(fn_purity(src, "a"), Some(false));
+        assert_eq!(fn_purity(src, "b"), Some(true));
+        assert_eq!(fn_purity(src, "c"), Some(true));
     }
 
     #[test]
@@ -1208,9 +1184,9 @@ mod tests {
             function a(n) { return n === 0 ? c() : b(n - 1); }
             function b(n) { return n === 0 ? 0 : a(n - 1); }
         "#;
-        assert_eq!(fn_purity(src, "c"), Some(Purity::Impure));
-        assert_eq!(fn_purity(src, "a"), Some(Purity::Impure));
-        assert_eq!(fn_purity(src, "b"), Some(Purity::Impure));
+        assert_eq!(fn_purity(src, "c"), Some(false));
+        assert_eq!(fn_purity(src, "a"), Some(false));
+        assert_eq!(fn_purity(src, "b"), Some(false));
     }
 
     // --- has_side_effect refinement ------------------------------------------
@@ -1219,7 +1195,7 @@ mod tests {
         let module = parse(src);
         analyze_chunk_facts(&module, &BTreeSet::new())
             .into_iter()
-            .map(|f| f.has_side_effect)
+            .map(|f| !f.purity.is_pure())
             .collect()
     }
 

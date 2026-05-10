@@ -32,7 +32,7 @@ pub(crate) fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport 
             source_location: node.source_location.clone(),
             declared_bindings: binding_reports_for_ids(schedule, node.declared.iter().copied()),
             statement_kind: node.kind,
-            has_side_effect: node.has_side_effect,
+            purity: node.purity.clone(),
             destination: module_report_ref(schedule, node.destination),
         })
         .collect();

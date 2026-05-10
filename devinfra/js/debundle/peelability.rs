@@ -310,7 +310,7 @@ fn build_residual_owner_horizon(
             statement_ordinal: node.statement_ordinal,
             source_location: node.source_location.clone(),
             statement_kind: node.kind,
-            has_side_effect: node.has_side_effect,
+            purity: node.purity.clone(),
             current_destination: module_report_ref(schedule, node.destination),
             members: binding_reports(schedule, bindings.iter()),
             status,

@@ -36,6 +36,7 @@ pub use ids::{
     BindingId, BindingKind, BindingName, BindingTable, ChunkId, ChunkTable, LogicalModule,
     LogicalModuleIndex, ModuleId, StatementOrdinal,
 };
+pub use purity::{Purity, PurityReason, PurityRule};
 pub use report_schema::{
     BindingReport, EvaluatedPeelCandidateReport, ModuleReportRef, OwnerGraphEdgeReport,
     OwnerGraphNodeReport, OwnerGraphPeelSetReport, OwnerGraphPeelabilityReport,

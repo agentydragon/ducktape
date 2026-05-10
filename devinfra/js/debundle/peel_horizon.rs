@@ -638,7 +638,7 @@ mod tests {
                         export_name: binding.to_string(),
                     }],
                     statement_kind: StatementKind::VarDecl,
-                    has_side_effect: false,
+                    purity: crate::purity::Purity::Pure,
                     destination: ModuleReportRef {
                         id: "residual_entry".to_string(),
                         label: "residual entry".to_string(),

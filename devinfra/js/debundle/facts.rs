@@ -10,7 +10,8 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
 use crate::purity::{
-    ChunkCodeGraph, Purity, WHITELIST_RECEIVERS, class_has_static_observable, classify_expr_purity,
+    ChunkCodeGraph, Purity, PurityReason, PurityRule, WHITELIST_RECEIVERS,
+    class_has_static_observable, classify_expr_purity,
 };
 use crate::{BindingName, SourceLocation, StatementOrdinal};
 
@@ -32,7 +33,7 @@ pub struct StatementFacts {
     /// excluded: mutating an imported object is legal, but rebinding
     /// the imported binding cell is not.
     pub writes_lazy: BTreeSet<BindingName>,
-    pub has_side_effect: bool,
+    pub purity: Purity,
     pub kind: StatementKind,
 }
 
@@ -178,6 +179,24 @@ where
                     end_line,
                 })
             });
+            // Resolve any reason spans on `fact.purity` to
+            // SourceLocations using the same per-chunk line index.
+            // Done after fact construction because the classifier
+            // doesn't have access to the line resolver.
+            if let Some(source_path) = source_path
+                && let Purity::NotPure { reasons } = &mut fact.purity
+            {
+                for reason in reasons.iter_mut() {
+                    reason.source_location =
+                        line_range_for_span(reason.span).map(|(start_line, end_line)| {
+                            SourceLocation {
+                                source_path: source_path.to_string(),
+                                start_line,
+                                end_line,
+                            }
+                        });
+                }
+            }
             fact
         })
         .collect();
@@ -301,7 +320,7 @@ fn analyze_item(
     item.visit_with(&mut lazy);
     let mut writes = BindingWriteCollector::default();
     item.visit_with(&mut writes);
-    let has_side_effect = item_has_side_effect(item, kind, shadowed, declared_pure, graph);
+    let purity = item_purity(item, kind, shadowed, declared_pure, graph);
     StatementFacts {
         ordinal,
         source_location: None,
@@ -310,38 +329,52 @@ fn analyze_item(
         writes_at_init: writes.at_init,
         reads_lazy: lazy.names,
         writes_lazy: writes.lazy,
-        has_side_effect,
+        purity,
         kind,
     }
 }
 
-fn item_has_side_effect(
+fn item_purity(
     item: &ModuleItem,
     kind: StatementKind,
     shadowed: &BTreeSet<&'static str>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
-) -> bool {
+) -> Purity {
     match kind {
-        StatementKind::Import | StatementKind::Export | StatementKind::FnDecl => false,
+        StatementKind::Import | StatementKind::Export | StatementKind::FnDecl => Purity::Pure,
         StatementKind::VarDecl => var_decl_of_item(item)
-            .iter()
+            .into_iter()
             .flat_map(|var| var.decls.iter())
-            .any(|d| match d.init.as_deref() {
-                Some(init) => {
-                    classify_expr_purity(init, shadowed, declared_pure, graph) != Purity::Pure
+            .filter_map(|decl| decl.init.as_deref())
+            .map(|init| classify_expr_purity(init, shadowed, declared_pure, graph))
+            .fold(Purity::Pure, Purity::worst),
+        StatementKind::ClassDecl => match class_of_item(item) {
+            Some(c) if class_has_static_observable(c, shadowed, declared_pure, graph) => {
+                Purity::NotPure {
+                    reasons: vec![PurityReason {
+                        rule: PurityRule::ClassStaticObservable,
+                        span: c.span,
+                        source_location: None,
+                        detail: None,
+                    }],
                 }
-                None => false,
-            }),
-        StatementKind::ClassDecl => class_of_item(item)
-            .map(|c| class_has_static_observable(c, shadowed, declared_pure, graph))
-            .unwrap_or(false),
+            }
+            _ => Purity::Pure,
+        },
         StatementKind::SideEffect => match item {
             ModuleItem::Stmt(Stmt::Expr(expr)) => {
-                classify_expr_purity(&expr.expr, shadowed, declared_pure, graph) != Purity::Pure
+                classify_expr_purity(&expr.expr, shadowed, declared_pure, graph)
             }
             // Bare blocks, control flow, loops, etc. — soundness-first.
-            _ => true,
+            _ => Purity::NotPure {
+                reasons: vec![PurityReason {
+                    rule: PurityRule::BareControlFlow,
+                    span: item.span(),
+                    source_location: None,
+                    detail: None,
+                }],
+            },
         },
     }
 }

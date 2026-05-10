@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 
+use crate::purity::Purity;
 use crate::{BindingName, EdgeKind, StatementKind, StatementOrdinal};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SourceLocation {
     pub source_path: String,
     pub start_line: usize,
@@ -33,7 +34,11 @@ pub struct OwnerGraphNodeReport {
     pub source_location: Option<SourceLocation>,
     pub declared_bindings: Vec<BindingReport>,
     pub statement_kind: StatementKind,
-    pub has_side_effect: bool,
+    /// At-init purity classification, with structured reasons on
+    /// any non-`Pure` verdict. Replaces the legacy
+    /// `has_purity: bool` — consumers that want the boolean
+    /// can use `purity.kind == "pure"`.
+    pub purity: Purity,
     pub destination: ModuleReportRef,
 }
 
@@ -124,7 +129,7 @@ pub struct ResidualOwnerPeelHorizonReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
     pub statement_kind: StatementKind,
-    pub has_side_effect: bool,
+    pub purity: Purity,
     pub current_destination: ModuleReportRef,
     pub members: Vec<BindingReport>,
     pub status: ResidualOwnerPeelStatus,
