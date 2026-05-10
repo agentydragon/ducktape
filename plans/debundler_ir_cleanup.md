@@ -5,6 +5,18 @@ toward standard compiler-IR shape. Behaviour-preserving — the realizability
 theorem, validator gate, and emit shape don't change. Only how the IR is
 represented and named changes.
 
+## Status
+
+| Step | Status                        | Notes                                                                                                                                                                                                                                                                                               |
+| ---- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A    | DONE                          | `OwnerGraph` now stores flat `edges: Vec<OwnerEdge>` + CSR `out_edges`/`in_edges`; `Schedule.owner_edges` field gone; `collect_owner_edge_entries` deleted; `OwnerEdgeEntry` renamed to `OwnerEdge`.                                                                                                |
+| B    | DONE (without `Quotient<'a>`) | `ModuleDepGraph` is now `ModuleQuotient` built from `(owner_graph, partition)` via `build_module_quotient`. Kept as a materialized type because `tarjan_scc` / `toposort` / `greedy_feedback_arc_set` over the small quotient genuinely want a `petgraph` graph; the lazy view didn't pay its keep. |
+| C    | DONE                          | `Partition { of: Vec<ModuleId> }` (`devinfra/js/debundle/partition.rs`); `OwnerNode::destination` field removed; `build_owner_graph(facts)` builds pure IR; `Schedule.partition` holds the spec's assignment; the anonymous-statement override applies to the partition, not the IR.                |
+| D    | DEFERRED                      | After A, `Schedule` no longer carries `owner_edges`. The remaining fields are coherent ("everything about chunk K under partition P"); splitting them into `ChunkIR` + `Schedule` is mostly mechanical churn. Revisit once a downstream consumer actually wants one half without the other.         |
+| E    | TODO                          | Unify `StatementFacts.{reads_at_init, reads_lazy, writes_at_init, writes_lazy}` into one tagged `Vec<Reference>`. Small / internal.                                                                                                                                                                 |
+| F    | PARTIAL                       | Internal-only renames landed (`ModuleDepGraph` → `ModuleQuotient`, `OwnerEdgeEntry` → `OwnerEdge`). The wire-affecting renames (`EdgeKind::AtInitRead` → `EagerUse`, etc.) are blocked on G because `EdgeKind` is serialized into `OwnerGraphEdgeReport.edge_kind`.                                 |
+| G    | TODO                          | Sever `report_schema` types from the IR via a dedicated mapping layer, then F's wire-affecting renames unblock.                                                                                                                                                                                     |
+
 ## Problem
 
 Re-reading <devinfra/js/debundle/DESIGN.md> against the current
