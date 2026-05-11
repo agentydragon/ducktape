@@ -493,10 +493,12 @@ pub struct OwnerEdge {
 /// `constrains_init_order` SSOT introduced in `f86e84b7e`.
 ///
 /// Inputs:
-/// - `owner_graph`: nodes carry each owner's destination module.
-/// - `owner_edges`: per-reason owner-graph edges; the `binding` on
-///   each edge tells us which top-level chunk binding the read
-///   targets.
+/// - `owner_graph`: source of the per-reason edge list (`.edges`)
+///   walked here, the binding-name table, and `node()` lookups for
+///   each edge's target.
+/// - `partition`: per-owner module assignment. The destination module
+///   of each edge's target is read via `partition.of(edge.to)`; only
+///   targets that land in `ResidualEntry` are considered.
 /// - `moved_owners`: the candidate's moved owner set (a peel of these
 ///   is the hypothetical change being evaluated).
 /// - `base_entry_exports`: the schedule's cached pre-peel entry
@@ -514,6 +516,10 @@ pub(crate) fn peel_emit_blocked_residual_bindings(
     base_entry_exports: &HashSet<BindingName>,
     candidate_members: &[BindingName],
 ) -> BTreeSet<BindingName> {
+    // Hoist the candidate-members membership test out of the per-edge
+    // loop; this function is called once per peelability candidate
+    // (≥1500/chunk on Tana), so the inner test wants O(1).
+    let candidate_members_set: HashSet<&BindingName> = candidate_members.iter().collect();
     let mut blocked = BTreeSet::new();
     for edge in &owner_graph.edges {
         if !moved_owners.contains(&edge.from) {
@@ -534,7 +540,7 @@ pub(crate) fn peel_emit_blocked_residual_bindings(
         let Some(name) = owner_graph.binding_table.name(binding_id) else {
             continue;
         };
-        if base_entry_exports.contains(name) || candidate_members.iter().any(|m| m == name) {
+        if base_entry_exports.contains(name) || candidate_members_set.contains(name) {
             continue;
         }
         blocked.insert(name.clone());

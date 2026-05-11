@@ -308,7 +308,7 @@ pub(crate) fn validate_cross_destination_assignments(
 /// 3. Otherwise, pick the first such SCC, run
 ///    `petgraph::algo::greedy_feedback_arc_set` (Eades-Lin-Smyth)
 ///    on its induced subgraph, and pick the first FAS edge whose
-///    metadata has an `EagerUse` or `SideEffect` reason.
+///    metadata has an `EagerUse` or `Sequenced` reason.
 /// 4. Fall back to scanning the SCC's edges if the FAS only
 ///    yielded lazy edges (rare; happens when tie-breaking biases
 ///    the order toward picking lazy edges as back-edges).
