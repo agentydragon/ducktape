@@ -95,8 +95,7 @@ def test_initial_state_fetch_completes(page: Page, casino_server: str) -> None:
 
     state_responses: list[dict] = []
     page.on(
-        "response",
-        lambda r: state_responses.append({"url": r.url, "status": r.status}) if "/state" in r.url else None,
+        "response", lambda r: state_responses.append({"url": r.url, "status": r.status}) if "/state" in r.url else None
     )
 
     page.goto(casino_server)

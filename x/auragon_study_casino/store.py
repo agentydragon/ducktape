@@ -35,12 +35,7 @@ from sqlalchemy import create_engine, delete, event, inspect, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from x.auragon_study_casino.events import (
-    GameEventRead,
-    LedgerEventRead,
-    game_event_from_row,
-    ledger_event_from_row,
-)
+from x.auragon_study_casino.events import GameEventRead, LedgerEventRead, game_event_from_row, ledger_event_from_row
 from x.auragon_study_casino.games import RULES_VERSION
 from x.auragon_study_casino.models import (
     BalanceRow,
@@ -121,9 +116,7 @@ class SqlStore:
     def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._engine: Engine = create_engine(
-            f"sqlite:///{db_path}", connect_args={"check_same_thread": False}
-        )
+        self._engine: Engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
         with self._engine.connect() as conn:
             conn.exec_driver_sql("PRAGMA journal_mode=WAL")
             conn.commit()
@@ -169,15 +162,11 @@ class SqlStore:
         SQLite transaction; either all land or none do.
         """
         with self._Session() as s, s.begin():
-            existing = s.scalar(
-                select(LedgerEventRow).where(LedgerEventRow.client_action_id == client_action_id)
-            )
+            existing = s.scalar(select(LedgerEventRow).where(LedgerEventRow.client_action_id == client_action_id))
             if existing is not None:
                 game_event: GameEventRead | None = None
                 if existing.action_type.startswith("casino.") or existing.action_type.startswith("blackjack."):
-                    game_row = s.scalar(
-                        select(GameEventRow).where(GameEventRow.client_event_id == client_action_id)
-                    )
+                    game_row = s.scalar(select(GameEventRow).where(GameEventRow.client_event_id == client_action_id))
                     if game_row is not None:
                         game_event = game_event_from_row(game_row)
                 return ServerActionResult(
@@ -246,9 +235,7 @@ class SqlStore:
                 game_event_out = None
 
         return ServerActionResult(
-            event=ledger_event_from_row(event_row),
-            result=json.loads(result_json),
-            game_event=game_event_out,
+            event=ledger_event_from_row(event_row), result=json.loads(result_json), game_event=game_event_out
         )
 
     # ── Helpers used by import/reset mutators ───────────────────────────────
@@ -280,11 +267,7 @@ class SqlStore:
         for prize in prizes_data:
             prize_id = str(prize.get("id") or f"p-{uuid.uuid4()}")
             s.add(
-                PrizeRow(
-                    id=prize_id,
-                    name=str(prize.get("name") or "Imported prize"),
-                    cost=int(prize.get("cost", 1)),
-                )
+                PrizeRow(id=prize_id, name=str(prize.get("name") or "Imported prize"), cost=int(prize.get("cost", 1)))
             )
 
         for entry in data.get("prizeLog") or data.get("prize_log") or []:
@@ -330,17 +313,12 @@ class SqlStore:
                 for row in sessions
             ],
             "prizes": [{"id": row.id, "name": row.name, "cost": row.cost} for row in prizes],
-            "prize_log": [
-                {"id": row.id, "name": row.name, "cost": row.cost, "at_ms": row.at_ms} for row in prize_log
-            ],
+            "prize_log": [{"id": row.id, "name": row.name, "cost": row.cost, "at_ms": row.at_ms} for row in prize_log],
         }
 
     def _snapshot_row(self, s: Session, reason: str, now_ms: int, note: str | None) -> StateSnapshotRow:
         return StateSnapshotRow(
-            server_at_ms=now_ms,
-            reason=reason,
-            decoded_json=self._json(self._state_dump(s)),
-            note=note,
+            server_at_ms=now_ms, reason=reason, decoded_json=self._json(self._state_dump(s)), note=note
         )
 
     def _game_event_row(

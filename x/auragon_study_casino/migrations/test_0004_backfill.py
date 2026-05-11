@@ -25,12 +25,7 @@ def _alembic_config(engine) -> AlembicConfig:
 
 
 def _populate_doc_blob(
-    *,
-    credits: int,
-    tokens: int,
-    sessions: list[dict],
-    prizes: list[dict],
-    prize_log: list[dict],
+    *, credits: int, tokens: int, sessions: list[dict], prizes: list[dict], prize_log: list[dict]
 ) -> bytes:
     """Build a Y.Doc with the given contents, return its binary update."""
     doc: Doc = Doc()
@@ -85,13 +80,8 @@ def test_backfill_populates_new_tables_from_existing_blob(tmp_path: Path) -> Non
             {"id": "s1", "subject": "Biochem", "seconds": 1500, "ended_at_ms": 1_700_000_000_000},
             {"id": "s2", "subject": "Anatomy", "seconds": 600, "ended_at_ms": 1_700_000_001_000},
         ],
-        prizes=[
-            {"id": "p1", "name": "Coffee", "cost": 30},
-            {"id": "p2", "name": "Game", "cost": 600},
-        ],
-        prize_log=[
-            {"id": "r-1", "name": "Coffee", "cost": 30, "at_ms": 1_700_000_002_000},
-        ],
+        prizes=[{"id": "p1", "name": "Coffee", "cost": 30}, {"id": "p2", "name": "Game", "cost": 600}],
+        prize_log=[{"id": "r-1", "name": "Coffee", "cost": 30, "at_ms": 1_700_000_002_000}],
     )
     with engine.begin() as conn:
         conn.execute(text("INSERT INTO doc (id, update_blob) VALUES (1, :blob)"), {"blob": blob})
@@ -102,26 +92,20 @@ def test_backfill_populates_new_tables_from_existing_blob(tmp_path: Path) -> Non
         bal = conn.execute(text("SELECT credits, tokens FROM balance WHERE id = 1")).fetchone()
         assert bal == (42, 137)
 
-        rows = conn.execute(
-            text("SELECT id, subject, seconds, ended_at_ms FROM sessions ORDER BY id")
-        ).fetchall()
-        assert rows == [
-            ("s1", "Biochem", 1500, 1_700_000_000_000),
-            ("s2", "Anatomy", 600, 1_700_000_001_000),
-        ]
+        rows = conn.execute(text("SELECT id, subject, seconds, ended_at_ms FROM sessions ORDER BY id")).fetchall()
+        assert rows == [("s1", "Biochem", 1500, 1_700_000_000_000), ("s2", "Anatomy", 600, 1_700_000_001_000)]
 
         rows = conn.execute(text("SELECT id, name, cost FROM prizes ORDER BY id")).fetchall()
         assert rows == [("p1", "Coffee", 30), ("p2", "Game", 600)]
 
-        rows = conn.execute(
-            text("SELECT id, name, cost, at_ms FROM prize_log ORDER BY id")
-        ).fetchall()
+        rows = conn.execute(text("SELECT id, name, cost, at_ms FROM prize_log ORDER BY id")).fetchall()
         assert rows == [("r-1", "Coffee", 30, 1_700_000_002_000)]
 
         # `doc` table is gone; `state_snapshots.doc_update_blob` is gone.
-        assert conn.execute(text(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'doc'"
-        )).fetchone() is None
+        assert (
+            conn.execute(text("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'doc'")).fetchone()
+            is None
+        )
         cols = {row[1] for row in conn.execute(text("PRAGMA table_info(state_snapshots)")).fetchall()}
         assert "doc_update_blob" not in cols
         assert "decoded_json" in cols

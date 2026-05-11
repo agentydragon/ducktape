@@ -83,18 +83,8 @@ from x.auragon_study_casino.games import (
     spin_roulette,
     spin_slots,
 )
-from x.auragon_study_casino.models import (
-    BalanceRow,
-    BlackjackHandRow,
-    PrizeLogRow,
-    PrizeRow,
-    SessionRow,
-)
-from x.auragon_study_casino.store import (
-    ActionMutation,
-    ActionRejectedError,
-    SqlStore,
-)
+from x.auragon_study_casino.models import BalanceRow, BlackjackHandRow, PrizeLogRow, PrizeRow, SessionRow
+from x.auragon_study_casino.store import ActionMutation, ActionRejectedError, SqlStore
 
 logger = logging.getLogger(__name__)
 
@@ -329,14 +319,7 @@ def create_app(settings: Settings) -> FastAPI:
             if seconds <= 0:
                 return ActionMutation(result={"session_id": session_id, "seconds": 0, "credits_earned": 0})
             minutes = seconds // 60
-            s.add(
-                SessionRow(
-                    id=session_id,
-                    subject=body.subject,
-                    seconds=seconds,
-                    ended_at_ms=body.ended_at_ms,
-                )
-            )
+            s.add(SessionRow(id=session_id, subject=body.subject, seconds=seconds, ended_at_ms=body.ended_at_ms))
             if minutes:
                 _balance(s).credits += minutes
             return ActionMutation(
@@ -354,14 +337,7 @@ def create_app(settings: Settings) -> FastAPI:
             session_id = body.session_id or f"manual-{uuid.uuid4()}"
             if s.get(SessionRow, session_id) is not None:
                 raise ActionRejectedError("session_id", "session id already exists")
-            s.add(
-                SessionRow(
-                    id=session_id,
-                    subject=body.subject,
-                    seconds=body.seconds,
-                    ended_at_ms=body.ended_at_ms,
-                )
-            )
+            s.add(SessionRow(id=session_id, subject=body.subject, seconds=body.seconds, ended_at_ms=body.ended_at_ms))
             credits_earned = body.seconds // 60
             if credits_earned:
                 _balance(s).credits += credits_earned
@@ -469,9 +445,7 @@ def create_app(settings: Settings) -> FastAPI:
             balance.tokens -= cost
 
             redemption_id = f"r-{uuid.uuid4()}"
-            s.add(
-                PrizeLogRow(id=redemption_id, name=prize.name, cost=cost, at_ms=now_ms)
-            )
+            s.add(PrizeLogRow(id=redemption_id, name=prize.name, cost=cost, at_ms=now_ms))
             return ActionMutation(
                 result={"redemption_id": redemption_id, "prize_id": body.prize_id, "cost": cost},
                 details={"name": prize.name},

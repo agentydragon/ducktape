@@ -60,35 +60,32 @@ def _decode_blob(blob: bytes) -> dict[str, Any]:
         # leftover server-side in-progress entry is discarded.
         if ended_at_ms is None:
             continue
-        decoded_sessions.append({
-            "id": str(session_id),
-            "subject": str(session.get("subject") or ""),
-            "seconds": int(session.get("seconds") or 0),
-            "ended_at_ms": int(ended_at_ms),
-        })
+        decoded_sessions.append(
+            {
+                "id": str(session_id),
+                "subject": str(session.get("subject") or ""),
+                "seconds": int(session.get("seconds") or 0),
+                "ended_at_ms": int(ended_at_ms),
+            }
+        )
 
-    decoded_prizes = []
-    for prize_id, prize in prizes.items():
-        decoded_prizes.append({
-            "id": str(prize_id),
-            "name": str(prize.get("name") or ""),
-            "cost": int(prize.get("cost") or 0),
-        })
+    decoded_prizes = [
+        {"id": str(prize_id), "name": str(prize.get("name") or ""), "cost": int(prize.get("cost") or 0)}
+        for prize_id, prize in prizes.items()
+    ]
 
-    decoded_prize_log = []
-    for entry in prize_log:
-        decoded_prize_log.append({
+    decoded_prize_log = [
+        {
             "id": str(entry.get("id") or ""),
             "name": str(entry.get("name") or ""),
             "cost": int(entry.get("cost") or 0),
             "at_ms": int(entry.get("at_ms") or 0),
-        })
+        }
+        for entry in prize_log
+    ]
 
     return {
-        "balance": {
-            "credits": int(balance.get("credits") or 0),
-            "tokens": int(balance.get("tokens") or 0),
-        },
+        "balance": {"credits": int(balance.get("credits") or 0), "tokens": int(balance.get("tokens") or 0)},
         "sessions": decoded_sessions,
         "prizes": decoded_prizes,
         "prize_log": decoded_prize_log,
@@ -161,17 +158,10 @@ def upgrade() -> None:
                 session,
             )
         for prize in decoded["prizes"]:
-            bind.execute(
-                sa.text("INSERT INTO prizes (id, name, cost) VALUES (:id, :name, :cost)"),
-                prize,
-            )
+            bind.execute(sa.text("INSERT INTO prizes (id, name, cost) VALUES (:id, :name, :cost)"), prize)
         for entry in decoded["prize_log"]:
             bind.execute(
-                sa.text(
-                    "INSERT INTO prize_log (id, name, cost, at_ms) "
-                    "VALUES (:id, :name, :cost, :at_ms)"
-                ),
-                entry,
+                sa.text("INSERT INTO prize_log (id, name, cost, at_ms) VALUES (:id, :name, :cost, :at_ms)"), entry
             )
 
     # 3) Drop server_default on balance now that the canonical row exists; future

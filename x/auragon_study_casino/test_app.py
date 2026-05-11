@@ -23,22 +23,14 @@ def _grant_credits(client: TestClient, n: int, action_id: str = "seed-credits") 
     """Earn `n` credits via /actions/session/add-past (seconds = n * 60)."""
     r = client.post(
         "/actions/session/add-past",
-        json={
-            "client_action_id": action_id,
-            "subject": "Seed",
-            "seconds": n * 60,
-            "ended_at_ms": 1_700_000_000_000,
-        },
+        json={"client_action_id": action_id, "subject": "Seed", "seconds": n * 60, "ended_at_ms": 1_700_000_000_000},
     )
     assert r.status_code == 200, r.text
 
 
 def _grant_tokens(client: TestClient, n: int, action_prefix: str = "seed-tokens") -> None:
     _grant_credits(client, n, action_id=f"{action_prefix}-credits")
-    r = client.post(
-        "/actions/convert",
-        json={"client_action_id": f"{action_prefix}-convert", "amount": n},
-    )
+    r = client.post("/actions/convert", json={"client_action_id": f"{action_prefix}-convert", "amount": n})
     assert r.status_code == 200, r.text
 
 
@@ -140,17 +132,13 @@ def test_session_edit_and_delete_adjust_credits(client: TestClient) -> None:
     sid = state["sessions"][0]["id"]
 
     edit = client.post(
-        "/actions/session/edit",
-        json={"client_action_id": "edit-1", "session_id": sid, "seconds": 10 * 60},
+        "/actions/session/edit", json={"client_action_id": "edit-1", "session_id": sid, "seconds": 10 * 60}
     )
     assert edit.status_code == 200, edit.text
     assert edit.json()["result"]["credits_delta"] == -20
     assert client.get("/state").json()["balance"]["credits"] == 10
 
-    delete = client.post(
-        "/actions/session/delete",
-        json={"client_action_id": "del-1", "session_id": sid},
-    )
+    delete = client.post("/actions/session/delete", json={"client_action_id": "del-1", "session_id": sid})
     assert delete.status_code == 200, delete.text
     assert client.get("/state").json()["sessions"] == []
     assert client.get("/state").json()["balance"]["credits"] == 0
@@ -171,28 +159,21 @@ def test_convert_insufficient_credits_returns_409(client: TestClient) -> None:
 
 
 def test_prize_create_and_delete(client: TestClient) -> None:
-    create = client.post(
-        "/actions/prize/create",
-        json={"client_action_id": "prize-c-1", "name": "Mocha", "cost": 45},
-    )
+    create = client.post("/actions/prize/create", json={"client_action_id": "prize-c-1", "name": "Mocha", "cost": 45})
     assert create.status_code == 200, create.text
     prize_id = create.json()["result"]["prize_id"]
 
     state = client.get("/state").json()
     assert any(p["id"] == prize_id and p["name"] == "Mocha" for p in state["prizes"])
 
-    delete = client.post(
-        "/actions/prize/delete", json={"client_action_id": "prize-d-1", "prize_id": prize_id}
-    )
+    delete = client.post("/actions/prize/delete", json={"client_action_id": "prize-d-1", "prize_id": prize_id})
     assert delete.status_code == 200, delete.text
     state = client.get("/state").json()
     assert not any(p["id"] == prize_id for p in state["prizes"])
 
 
 def test_prize_delete_unknown_returns_409(client: TestClient) -> None:
-    r = client.post(
-        "/actions/prize/delete", json={"client_action_id": "del-missing", "prize_id": "nope"}
-    )
+    r = client.post("/actions/prize/delete", json={"client_action_id": "del-missing", "prize_id": "nope"})
     assert r.status_code == 409
     assert r.json()["detail"]["rule"] == "prize"
 
@@ -200,9 +181,7 @@ def test_prize_delete_unknown_returns_409(client: TestClient) -> None:
 def test_prize_redeem_writes_log_and_subtracts_tokens(client: TestClient) -> None:
     _grant_tokens(client, 100)
 
-    r = client.post(
-        "/actions/prize/redeem", json={"client_action_id": "redeem-1", "prize_id": "p1"}
-    )
+    r = client.post("/actions/prize/redeem", json={"client_action_id": "redeem-1", "prize_id": "p1"})
     assert r.status_code == 200, r.text
 
     state = client.get("/state").json()
@@ -212,19 +191,14 @@ def test_prize_redeem_writes_log_and_subtracts_tokens(client: TestClient) -> Non
 
 
 def test_redeem_insufficient_tokens_returns_409(client: TestClient) -> None:
-    r = client.post(
-        "/actions/prize/redeem", json={"client_action_id": "redeem-broke", "prize_id": "p1"}
-    )
+    r = client.post("/actions/prize/redeem", json={"client_action_id": "redeem-broke", "prize_id": "p1"})
     assert r.status_code == 409
     assert r.json()["detail"]["rule"] == "insufficient_tokens"
 
 
 def test_slots_spin_writes_game_event(client: TestClient) -> None:
     _grant_credits(client, 5)
-    r = client.post(
-        "/casino/slots/spin",
-        json={"client_action_id": "slots-1", "wager_credits": 1},
-    )
+    r = client.post("/casino/slots/spin", json={"client_action_id": "slots-1", "wager_credits": 1})
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["event"]["action_type"] == "casino.slots.spin"
@@ -237,10 +211,7 @@ def test_slots_spin_writes_game_event(client: TestClient) -> None:
 
 def test_blackjack_deal_creates_hand(client: TestClient) -> None:
     _grant_credits(client, 5)
-    r = client.post(
-        "/casino/blackjack/deal",
-        json={"client_action_id": "bj-deal-1", "wager_credits": 1},
-    )
+    r = client.post("/casino/blackjack/deal", json={"client_action_id": "bj-deal-1", "wager_credits": 1})
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["result"]["hand_id"].startswith("bj-")
@@ -257,9 +228,7 @@ def test_import_replaces_state_and_writes_snapshot(client: TestClient) -> None:
             "data": {
                 "credits": 0,
                 "tokens": 5,
-                "sessions": [
-                    {"id": "imp-1", "subject": "Imported", "seconds": 60, "ended_at_ms": 1700000000000}
-                ],
+                "sessions": [{"id": "imp-1", "subject": "Imported", "seconds": 60, "ended_at_ms": 1700000000000}],
                 "prizes": [{"id": "p-imp", "name": "Imported prize", "cost": 9}],
                 "prize_log": [],
             },
@@ -301,9 +270,7 @@ def test_pre_alembic_user_db_is_baselined_and_upgraded(tmp_path: Path) -> None:
     with sqlite3.connect(db_path) as conn:
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == ("0004",)
         # After 0004, the legacy doc table is gone.
-        assert conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'doc'"
-        ).fetchone() is None
+        assert conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'doc'").fetchone() is None
 
 
 def test_users_have_isolated_state(tmp_path: Path) -> None:

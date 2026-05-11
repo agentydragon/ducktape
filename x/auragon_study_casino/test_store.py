@@ -7,14 +7,10 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from x.auragon_study_casino.models import BalanceRow, StateSnapshotRow
-from x.auragon_study_casino.store import (
-    ActionMutation,
-    ActionRejectedError,
-    ServerActionResult,
-    SqlStore,
-)
+from x.auragon_study_casino.store import ActionMutation, ActionRejectedError, ServerActionResult, SqlStore
 
 
 @pytest.fixture
@@ -36,9 +32,7 @@ def test_run_server_action_persists_balance_and_writes_ledger(store: SqlStore) -
         balance.credits += 7
         return ActionMutation(result={"granted": 7}, details={"reason": "test"})
 
-    result = store.run_server_action(
-        client_action_id="act-1", action_type="test.grant", mutator=grant_credits
-    )
+    result = store.run_server_action(client_action_id="act-1", action_type="test.grant", mutator=grant_credits)
     assert isinstance(result, ServerActionResult)
     assert result.event.action_type == "test.grant"
     assert result.event.credits_before == 0
@@ -59,12 +53,8 @@ def test_run_server_action_is_idempotent_on_retry(store: SqlStore) -> None:
         balance.credits += 5
         return ActionMutation(result={"granted": 5})
 
-    first = store.run_server_action(
-        client_action_id="act-dup", action_type="test.grant", mutator=grant_credits
-    )
-    second = store.run_server_action(
-        client_action_id="act-dup", action_type="test.grant", mutator=grant_credits
-    )
+    first = store.run_server_action(client_action_id="act-dup", action_type="test.grant", mutator=grant_credits)
+    second = store.run_server_action(client_action_id="act-dup", action_type="test.grant", mutator=grant_credits)
     assert second.event.id == first.event.id
     assert second.result == first.result
     # Mutator was NOT replayed — credits stayed at 5, not 10.
@@ -78,9 +68,7 @@ def test_action_rejected_rolls_back_mutator_changes(store: SqlStore) -> None:
         raise ActionRejectedError("nope", "no good")
 
     with pytest.raises(ActionRejectedError):
-        store.run_server_action(
-            client_action_id="act-reject", action_type="test.reject", mutator=half_then_reject
-        )
+        store.run_server_action(client_action_id="act-reject", action_type="test.reject", mutator=half_then_reject)
 
     # Transaction was rolled back: balance unchanged, no ledger row.
     assert store.state_dump()["balance"]["credits"] == 0
@@ -136,10 +124,7 @@ def test_replace_state_for_reset_keeps_prizes(store: SqlStore) -> None:
         return ActionMutation(result={"reset": True})
 
     store.run_server_action(
-        client_action_id="act-reset",
-        action_type="data.reset",
-        mutator=reset,
-        snapshot_reason="before_reset",
+        client_action_id="act-reset", action_type="data.reset", mutator=reset, snapshot_reason="before_reset"
     )
 
     state = store.state_dump()
@@ -152,17 +137,14 @@ def test_replace_state_for_reset_keeps_prizes(store: SqlStore) -> None:
 def test_db_check_constraint_rejects_negative_credits(store: SqlStore) -> None:
     """The CHECK constraint is the last line of defence if a buggy mutator
     misses a pre-flight check."""
+
     def goes_negative(s, _now_ms):
         balance = s.scalar(select(BalanceRow).where(BalanceRow.id == 1).with_for_update())
         balance.credits = -1
         return ActionMutation(result={"oops": True})
 
-    from sqlalchemy.exc import IntegrityError
-
     with pytest.raises(IntegrityError):
-        store.run_server_action(
-            client_action_id="act-bug", action_type="test.bug", mutator=goes_negative
-        )
+        store.run_server_action(client_action_id="act-bug", action_type="test.bug", mutator=goes_negative)
 
 
 def test_state_persists_across_reopen(tmp_path: Path) -> None:

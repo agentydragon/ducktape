@@ -35,9 +35,7 @@ casinoSync.state.set({
     { id: "p5", name: "Buy a new game", cost: 600 },
     { id: "p6", name: "Weekend getaway", cost: 1800 },
   ],
-  prize_log: [
-    { id: "log1", name: "Anime episode break", cost: 30, at_ms: FROZEN_NOW_MS - 24 * 3600 * 1000 },
-  ],
+  prize_log: [{ id: "log1", name: "Anime episode break", cost: 30, at_ms: FROZEN_NOW_MS - 24 * 3600 * 1000 }],
 });
 casinoSync.status.set({ kind: "ok", lastSyncedAt: FROZEN_NOW_MS });
 

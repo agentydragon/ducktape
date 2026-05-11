@@ -178,5 +178,3 @@ class BlackjackHandRow(Base):
     player_json: Mapped[str] = mapped_column(Text, nullable=False)
     dealer_json: Mapped[str] = mapped_column(Text, nullable=False)
     result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-
