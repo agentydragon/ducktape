@@ -3,13 +3,6 @@
 Forward-looking gaps in the Rust debundler. Items are written to be removed
 once closed; this file is not a changelog.
 
-The big architectural item — replacing the legacy init-wrapper
-lowering with a static analysis engine + source-order emit —
-landed in phases 1 → 4 (see <DESIGN.md> "Status" table),
-including the `BindingKind::Imported` collapse that closes out
-the parallel `import_members` channel. The items in this file
-are smaller, mostly-orthogonal cleanups.
-
 ## Excalidraw live-browser smoke
 
 Build an open-source live-browser smoke test for the debundler against
@@ -107,19 +100,6 @@ smaller minimised e2e under `devinfra/js/debundle/e2e/`) rather than
 only fixing it behind the private repo. The latter loses the
 public-CI signal and the public-bug-report leverage.
 
-## RE coverage side-output
-
-Implemented in <identifier_rename_queue.rs> as a side output of every
-manifest-emitting pipeline run (`emit_browser_harness`, `write_js_tree`).
-The JSON lands at `<out_dir>/identifier-rename-queue.json` and
-the path is recorded on the stage's manifest under
-`identifier_rename_queue`.
-
-Queue membership is origin-based, not spelling-based: a final output
-top-level binding is queued when it still has a name recorded from the
-input bundle for that chunk. Once the spec gives the binding a readable
-output name, it leaves the queue.
-
 ## Logical materialization breadth
 
 The current `materialize_logical_modules` covers top-level
@@ -134,72 +114,45 @@ Still to do:
 
 ## Materialize-stage hot-loop optimizations
 
-From `perf record` against the Tana debundle pipeline (Gaffer
-`tana/re/web/spec/profile_reports/2026-05-10-tana-debundle.md`):
-`materialize_logical_modules` was 89% of the total transform
-time, dominated by `build_owner_graph_report` (22.54 s) and
-`write_owner_graph_report` (6.55 s).
-
-Landed:
-
-- `Schedule::entry_exported_binding_names` cache passed by
-  reference into `peel_emit_blocked_residual_bindings`.
-- Precomputed `Schedule::export_name_by_binding` map driving
-  `binding_reports`.
-- Per-candidate peelability maps switched from `BTreeMap`/`BTreeSet`
-  to `HashMap`/`HashSet`.
-- `OwnerEdgeEntry::id` `String` field dropped in favor of a typed
-  `OwnerEdgeId(usize)` derived from the entry's slice index.
-- `Schedule::bindings`, `Schedule::chunk_renames`,
-  `LogicalModule::rename_map`, `BindingKind::Imported::re_exported_by`,
-  and `ModulePlan::bindings` switched to `HashMap`. Emit / report
-  sites that depend on iteration order sort at the boundary, and
-  `chunk_renames` validation now collects every violation before
-  bailing (single error → full punch list).
-
-Reprofile against Tana before picking the next item.
-
-Remaining priorities, ordered by leverage:
+The 2026-05-10 Tana profile (Gaffer
+`tana/re/web/spec/profile_reports/2026-05-10-tana-debundle.md`) showed
+`materialize_logical_modules` at 89% of total transform time. The
+per-candidate hot-loop wins (binding caches, `BTreeMap → HashMap`,
+typed edge IDs, IR cleanup) have landed; reprofile against Tana before
+picking the next item. Remaining priorities, ordered by leverage:
 
 1. **Compact / stream `owner_graph.json` writes.**
-   `write_owner_graph_report` is 6.55 s. The JSON tree gets fully
+   `write_owner_graph_report` was 6.55 s. The JSON tree gets fully
    allocated before serialization;
-   `serde_json::ser::format_escaped_str` is at 5.58% self from
+   `serde_json::ser::format_escaped_str` was at 5.58% self from
    string-field escaping. Either stream the JSON directly to disk
    (skip the intermediate report tree), or shrink the wire shape.
    The per-owner `purity.reasons[]` arrays added in `a7b3e490`
    add per-non-pure-owner JSON weight that may be opt-in-able.
 
-2. **AST visit churn in `prepare_js_chunks`.** The stage is now
-   small (679 ms / ~4.5% of total) but
-   `swc_ecma_ast::expr::Expr::visit_children_with` shows up
-   repeatedly at 0.55%–1.16% self entries (totalling ~3-4%).
-   Backlog item once item 1 lands.
+2. **AST visit churn in `prepare_js_chunks`.** The stage is small
+   (~4.5% of total) but `swc_ecma_ast::expr::Expr::visit_children_with`
+   shows up repeatedly (~3–4% across entries). Backlog item once
+   item 1 lands.
 
 ## Graph pass performance and module boundaries
 
-The current owner-graph framing is in place and lives in flat, concept-named
-analysis files. Some passes should still be tightened before the next large
-Tana peel loop:
+Tighten before the next large Tana peel loop:
 
-- Keep telemetry complete as the pipeline keeps moving toward functional
-  per-chunk products: index build/rebuild, fused AST analysis, purity, owner
-  graph construction, quotient graph construction, validation,
-  peelability/report generation, lowering, and output writing should all have
-  useful durations in the emitted reports.
-- Move repeated timing helpers into one shared Rust module once a second pass
-  needs them outside the current local macro sites.
-- Continue moving hot-path code toward typed ids and array lookups where the
-  data is chunk-local; keep strings at spec, diagnostic, and serialization
-  boundaries.
-- Add focused regression coverage for `ArtifactIndexes` rebuild boundaries as
-  more structural artifact mutations are optimized.
-- Profile the Tana debundle action around `materialize_logical_modules` and
-  `rename_vendor_exports`; avoid whole-graph clone/rescan patterns where a
-  graph pass or indexed lookup can answer the same question.
+- Keep stage telemetry complete (index build/rebuild, fused AST analysis,
+  purity, owner-graph construction, quotient construction, validation,
+  peelability/report generation, lowering, output writing) — useful
+  durations should land in the emitted reports.
+- Move repeated timing helpers into one shared Rust module once a second
+  pass needs them outside the current local macro sites.
+- Add focused regression coverage for `ArtifactIndexes` rebuild boundaries
+  as more structural artifact mutations are optimized.
+- Profile the Tana debundle action around `materialize_logical_modules`
+  and `rename_vendor_exports`; avoid whole-graph clone/rescan patterns
+  where a graph pass or indexed lookup can answer the same question.
 - Consider changing per-chunk `file_records` from an ordered vector of
-  `(file, role)` pairs into a typed map if the output consumers do not depend
-  on order. Keep the manifest easy to diff and easy to read.
+  `(file, role)` pairs into a typed map if the output consumers do not
+  depend on order. Keep the manifest easy to diff and easy to read.
 
 ## Parser / analysis ownership audit followups
 
