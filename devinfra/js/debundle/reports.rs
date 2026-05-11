@@ -5,15 +5,15 @@ use petgraph::algo::tarjan_scc;
 use crate::graph::OwnerEdge;
 use crate::peelability::build_peelability_report;
 use crate::{
-    BindingId, BindingName, BindingReport, EdgeKind, LogicalModuleIndex, ModuleId, ModuleReportRef,
+    BindingId, BindingName, BindingReport, DepKind, LogicalModuleIndex, ModuleId, ModuleReportRef,
     OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport,
     OwnerId, QuotientEdgeReport, QuotientSccReport, Schedule,
 };
 
 #[derive(Debug, Clone, Default)]
 struct QuotientEdgeAccumulator {
-    kinds: BTreeSet<EdgeKind>,
-    constrains_realizability: bool,
+    kinds: BTreeSet<DepKind>,
+    constrains_init_order: bool,
 }
 
 pub(crate) fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport {
@@ -47,7 +47,7 @@ pub(crate) fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport 
                 .binding
                 .map(|binding| schedule.binding_name(binding).to_string()),
             statement_ordinal: edge.reason.statement_ordinal,
-            constrains_realizability: edge.reason.constrains_realizability(),
+            constrains_init_order: edge.reason.constrains_init_order(),
         })
         .collect();
     OwnerGraphReport {
@@ -120,12 +120,12 @@ fn build_quotient_edge_reports(
         if from == to {
             continue;
         }
-        if edge.reason.is_side_effect_order() && !seen_side_effect_module_pairs.insert((from, to)) {
+        if edge.reason.is_sequenced() && !seen_side_effect_module_pairs.insert((from, to)) {
             continue;
         }
         let entry = accum.entry((from, to)).or_default();
         entry.kinds.insert(edge.reason.kind);
-        entry.constrains_realizability |= edge.reason.constrains_realizability();
+        entry.constrains_init_order |= edge.reason.constrains_init_order();
     }
     accum
         .into_iter()
@@ -135,7 +135,7 @@ fn build_quotient_edge_reports(
             source: module_key(from),
             target: module_key(to),
             edge_kinds: entry.kinds.into_iter().collect(),
-            constrains_realizability: entry.constrains_realizability,
+            constrains_init_order: entry.constrains_init_order,
         })
         .collect()
 }
@@ -165,7 +165,7 @@ fn build_quotient_scc_reports(
                 }
                 let edge = &quotient_edges[edge_idx];
                 module_edge_ids.push(edge.id.clone());
-                if edge.constrains_realizability {
+                if edge.constrains_init_order {
                     constraining_module_edge_ids.push(edge.id.clone());
                 }
             }

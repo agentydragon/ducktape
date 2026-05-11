@@ -21,8 +21,8 @@ fn read_json<T: DeserializeOwned>(path: &Path) -> T {
 // Today, that rule marks a peel candidate
 // `BlockedResidualDependency` when ANY outgoing owner edge
 // targets an owner whose destination is residual — including
-// `LazyRead` edges, which DO NOT constrain realizability per
-// <graph.rs> (`EdgeReason::constrains_realizability`). Lazy
+// `LazyUse` edges, which DO NOT constrain realizability per
+// <graph.rs> (`EdgeReason::constrains_init_order`). Lazy
 // reads against a residual neighbor are runtime-safe: the
 // function body only fires after both the peeled module and
 // the residual entry have finished evaluating, so there is no
@@ -115,7 +115,7 @@ export { Leaf, Dep, Existing };
 // `TA` / `envConfig`) revealed:
 //
 // - Singleton {TA} is `BlockedResidualDependency` because TA has
-//   a `side_effect_order` edge to owner:7 in residual.
+//   a `sequenced` edge to owner:7 in residual.
 // - Forward closure of TA's component is 3 owners: TA itself,
 //   plus 2 side-effect-only statements with empty
 //   `declared_bindings`.

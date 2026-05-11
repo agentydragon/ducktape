@@ -33,39 +33,39 @@ mod tests {
             facts[0].declared,
             ["f"].iter().map(|s| s.to_string()).collect()
         );
-        assert!(!facts[0].reads_at_init.contains("X"));
+        assert!(!facts[0].eager_reads.contains("X"));
         assert_eq!(facts[0].kind, StatementKind::FnDecl);
         // Y declares "Y"; init is `1` (no reads).
         assert_eq!(
             facts[1].declared,
             ["Y"].iter().map(|s| s.to_string()).collect()
         );
-        assert!(facts[1].reads_at_init.is_empty());
+        assert!(facts[1].eager_reads.is_empty());
     }
 
     #[test]
-    fn class_extends_clause_reads_at_init() {
+    fn class_extends_clause_eager_read() {
         let module = parse("class B extends A { run() { return X; } }");
         let facts = analyze_chunk_facts(&module, &BTreeSet::new());
         assert_eq!(facts.len(), 1);
         // extends A is eager; method body reference to X is lazy.
-        assert!(facts[0].reads_at_init.contains("A"));
-        assert!(!facts[0].reads_at_init.contains("X"));
+        assert!(facts[0].eager_reads.contains("A"));
+        assert!(!facts[0].eager_reads.contains("X"));
     }
 
     #[test]
-    fn computed_key_reads_at_init() {
+    fn computed_key_eager_read() {
         let module = parse("const M = { [k.foo]: 1 };");
         let facts = analyze_chunk_facts(&module, &BTreeSet::new());
         // The key expression `k.foo` reads `k` at-init.
-        assert!(facts[0].reads_at_init.contains("k"));
+        assert!(facts[0].eager_reads.contains("k"));
     }
 
     #[test]
-    fn class_static_init_reads_at_init() {
+    fn class_static_init_eager_read() {
         let module = parse("class C { static x = Y; }");
         let facts = analyze_chunk_facts(&module, &BTreeSet::new());
-        assert!(facts[0].reads_at_init.contains("Y"));
+        assert!(facts[0].eager_reads.contains("Y"));
     }
 
     #[test]
@@ -74,7 +74,7 @@ mod tests {
         let facts = analyze_chunk_facts(&module, &BTreeSet::new());
         // Instance field initializer evaluates per-instance, not at
         // class-decl time.
-        assert!(!facts[0].reads_at_init.contains("Y"));
+        assert!(!facts[0].eager_reads.contains("Y"));
     }
 
     fn logical(idx: usize) -> ModuleId {
@@ -174,12 +174,12 @@ mod tests {
         );
         let cycle = &report.cycles[0];
         assert!(
-            cycle.evidence.iter().any(|e| e.kind == EdgeKind::LazyRead),
+            cycle.evidence.iter().any(|e| e.kind == DepKind::LazyUse),
             "evidence should include the lazy edge, got {:?}",
             cycle.evidence,
         );
         assert!(
-            !cycle.cut.iter().any(|e| e.kind == EdgeKind::LazyRead),
+            !cycle.cut.iter().any(|e| e.kind == DepKind::LazyUse),
             "cut must not include lazy reasons, got {:?}",
             cycle.cut,
         );
@@ -193,7 +193,7 @@ mod tests {
         assert_eq!(entry.from, "mod_1");
         assert_eq!(entry.to, "mod_0");
         assert_eq!(entry.binding.as_deref(), Some("A"));
-        assert_eq!(entry.kind, EdgeKind::AtInitRead);
+        assert_eq!(entry.kind, DepKind::EagerUse);
     }
 
     /// Pure-S cycle: cut consists of side-effect reasons; no
@@ -224,10 +224,7 @@ mod tests {
             cycle.cut,
         );
         assert!(
-            cycle
-                .cut
-                .iter()
-                .all(|e| e.kind == EdgeKind::SideEffectOrder),
+            cycle.cut.iter().all(|e| e.kind == DepKind::Sequenced),
             "S-only cycle cut should be all side-effect reasons, got {:?}",
             cycle.cut,
         );
@@ -277,7 +274,7 @@ mod tests {
         assert_eq!(assignment.binding, "A");
         assert_eq!(assignment.assigner_module, "<residual_entry>");
         assert_eq!(assignment.binding_module, "mod_0");
-        assert_eq!(assignment.kind, EdgeKind::LazyWrite);
+        assert_eq!(assignment.kind, DepKind::LazyRebind);
     }
 
     #[test]
@@ -372,7 +369,7 @@ mod tests {
             schedule.owner_graph.edges.iter().any(|edge| {
                 edge.from == OwnerId(0)
                     && edge.to == OwnerId(1)
-                    && edge.reason.kind == EdgeKind::AtInitRead
+                    && edge.reason.kind == DepKind::EagerUse
                     && edge.reason.statement_ordinal == StatementOrdinal(0)
                     && schedule.binding_name(edge.reason.binding.unwrap()) == "X"
             }),

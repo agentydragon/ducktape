@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::purity::Purity;
-use crate::{BindingName, EdgeKind, StatementKind, StatementOrdinal};
+use crate::{BindingName, DepKind, StatementKind, StatementOrdinal};
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SourceLocation {
@@ -47,11 +47,11 @@ pub struct OwnerGraphEdgeReport {
     pub id: String,
     pub source: String,
     pub target: String,
-    pub edge_kind: EdgeKind,
+    pub edge_kind: DepKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub binding: Option<BindingName>,
     pub statement_ordinal: StatementOrdinal,
-    pub constrains_realizability: bool,
+    pub constrains_init_order: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,8 +66,8 @@ pub struct QuotientEdgeReport {
     pub id: String,
     pub source: String,
     pub target: String,
-    pub edge_kinds: Vec<EdgeKind>,
-    pub constrains_realizability: bool,
+    pub edge_kinds: Vec<DepKind>,
+    pub constrains_init_order: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

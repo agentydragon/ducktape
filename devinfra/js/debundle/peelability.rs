@@ -17,7 +17,7 @@ use crate::{
 #[derive(Debug, Clone, Default)]
 struct CandidateEdgeAccumulator {
     constraining_owner_edge_indices: Vec<usize>,
-    constrains_realizability: bool,
+    constrains_init_order: bool,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -31,7 +31,7 @@ struct CandidateIncidentEdge {
     direction: CandidateEdgeDirection,
     module_idx: usize,
     constraining_owner_edge_indices: Vec<usize>,
-    constrains_realizability: bool,
+    constrains_init_order: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -397,7 +397,7 @@ impl<'a> PeelabilityContext<'a> {
             }
             let totals = module_pair_totals.entry((from, to)).or_default();
             totals.reason_count += 1;
-            if edge.reason.constrains_realizability() {
+            if edge.reason.constrains_init_order() {
                 totals.constraining_reason_count += 1;
                 totals.constraining_owner_edge_indices.push(idx);
             }
@@ -544,7 +544,7 @@ fn residual_dependency_closure_candidates(
         // Aggregate declared bindings across the closure. Empty-declared
         // owners (top-level side-effect statements) are kept in the
         // owner set — moving them is necessary to satisfy
-        // side_effect_order edges to/from named bindings — but they
+        // sequenced edges to/from named bindings — but they
         // contribute no bindings to the report's `members` list.
         let mut declared = Vec::new();
         for owner in &closure {
@@ -707,7 +707,7 @@ fn evaluate_residual_peel_candidate(
     // reject it when a moved body references a residual entry binding
     // that isn't on entry's export list. Compute that here using the
     // shared predicate so peelability and the materializer can't
-    // drift (cf. `constrains_realizability` SSOT in f86e84b7e).
+    // drift (cf. `constrains_init_order` SSOT in f86e84b7e).
     //
     // Skipped when the schedule was built without AST analysis (no
     // `pre_existing_entry_exports` set) — that's the test-helper case
@@ -768,7 +768,7 @@ fn candidate_cross_destination_write_edge_indices(
         .into_iter()
         .filter(|edge_idx| {
             let edge = &context.owner_edges[*edge_idx];
-            edge.reason.is_binding_write()
+            edge.reason.is_rebind()
                 && moved_owners.contains(&edge.from) != moved_owners.contains(&edge.to)
         })
         .collect()
@@ -783,7 +783,7 @@ fn candidate_residual_dependency_blocker_owner_ids(
     for owner_id in moved_owners {
         for &edge_idx in context.owner_out_edge_indices(*owner_id) {
             let edge = &context.owner_edges[edge_idx];
-            if !edge.reason.constrains_realizability() {
+            if !edge.reason.constrains_init_order() {
                 continue;
             }
             if moved_owners.contains(&edge.to) {
@@ -832,7 +832,7 @@ fn candidate_incident_edges(
                 .removed_reason_count
                 .entry((old_from, old_to))
                 .or_insert(0) += 1;
-            if edge.reason.constrains_realizability() {
+            if edge.reason.constrains_init_order() {
                 *adjustment
                     .removed_constraining_reason_count
                     .entry((old_from, old_to))
@@ -850,16 +850,16 @@ fn candidate_incident_edges(
         } else {
             (CandidateEdgeDirection::ToCandidate, old_from)
         };
-        if edge.reason.is_side_effect_order()
+        if edge.reason.is_sequenced()
             && !seen_side_effect_candidate_pairs.insert((direction, module))
         {
             continue;
         }
         let entry = accum.entry((direction, module)).or_default();
-        if edge.reason.constrains_realizability() {
+        if edge.reason.constrains_init_order() {
             entry.constraining_owner_edge_indices.push(edge_idx);
         }
-        entry.constrains_realizability |= edge.reason.constrains_realizability();
+        entry.constrains_init_order |= edge.reason.constrains_init_order();
     }
 
     let mut candidate_edges = Vec::new();
@@ -871,7 +871,7 @@ fn candidate_incident_edges(
             direction,
             module_idx,
             constraining_owner_edge_indices: entry.constraining_owner_edge_indices,
-            constrains_realizability: entry.constrains_realizability,
+            constrains_init_order: entry.constrains_init_order,
         });
     }
 
@@ -945,7 +945,7 @@ fn candidate_blocking_scc_owner_edge_indices(
         if !in_scc[edge.module_idx] {
             continue;
         }
-        if edge.constrains_realizability {
+        if edge.constrains_init_order {
             constraining_owner_edge_ids
                 .extend(edge.constraining_owner_edge_indices.iter().copied());
         }

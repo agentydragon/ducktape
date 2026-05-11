@@ -14,88 +14,88 @@ use crate::{
 /// statement ordinal that produced it. This is the single source of
 /// truth for edge semantics:
 ///
-/// - `AtInitRead` constrains ESM evaluation order under TDZ
+/// - `EagerUse` constrains ESM evaluation order under TDZ
 ///   semantics (`R ⊆ I`).
-/// - `LazyRead` contributes to the imports graph `I`, but does not
+/// - `LazyUse` contributes to the imports graph `I`, but does not
 ///   constrain realizability inside an SCC because the read fires
 ///   after module evaluation.
-/// - `AtInitWrite` / `LazyWrite` describe rebinding writes. A
+/// - `EagerRebind` / `LazyRebind` describe rebinding writes. A
 ///   cross-destination write is rejected outright because ESM imports
 ///   are read-only in the importing module; same-destination writes
 ///   are represented only at owner level and don't become module
 ///   imports.
-/// - `SideEffectOrder` contributes to `S` and constrains
+/// - `Sequenced` contributes to `S` and constrains
 ///   realizability because source-order side effects require a
 ///   topological order.
 #[derive(Debug, Clone)]
 pub struct EdgeReason {
-    pub(crate) kind: EdgeKind,
+    pub(crate) kind: DepKind,
     pub(crate) statement_ordinal: StatementOrdinal,
     pub(crate) binding: Option<BindingId>,
 }
 
 impl EdgeReason {
-    pub(crate) fn at_init_read(so: StatementOrdinal, b: BindingId) -> Self {
+    pub(crate) fn eager_use(so: StatementOrdinal, b: BindingId) -> Self {
         Self {
-            kind: EdgeKind::AtInitRead,
+            kind: DepKind::EagerUse,
             statement_ordinal: so,
             binding: Some(b),
         }
     }
-    pub(crate) fn lazy_read(so: StatementOrdinal, b: BindingId) -> Self {
+    pub(crate) fn lazy_use(so: StatementOrdinal, b: BindingId) -> Self {
         Self {
-            kind: EdgeKind::LazyRead,
+            kind: DepKind::LazyUse,
             statement_ordinal: so,
             binding: Some(b),
         }
     }
-    pub(crate) fn at_init_write(so: StatementOrdinal, b: BindingId) -> Self {
+    pub(crate) fn eager_rebind(so: StatementOrdinal, b: BindingId) -> Self {
         Self {
-            kind: EdgeKind::AtInitWrite,
+            kind: DepKind::EagerRebind,
             statement_ordinal: so,
             binding: Some(b),
         }
     }
-    pub(crate) fn lazy_write(so: StatementOrdinal, b: BindingId) -> Self {
+    pub(crate) fn lazy_rebind(so: StatementOrdinal, b: BindingId) -> Self {
         Self {
-            kind: EdgeKind::LazyWrite,
+            kind: DepKind::LazyRebind,
             statement_ordinal: so,
             binding: Some(b),
         }
     }
-    pub(crate) fn side_effect_order(so: StatementOrdinal) -> Self {
+    pub(crate) fn sequenced(so: StatementOrdinal) -> Self {
         Self {
-            kind: EdgeKind::SideEffectOrder,
+            kind: DepKind::Sequenced,
             statement_ordinal: so,
             binding: None,
         }
     }
 
-    pub(crate) fn is_at_init_read(&self) -> bool {
-        self.kind == EdgeKind::AtInitRead
+    pub(crate) fn is_eager_use(&self) -> bool {
+        self.kind == DepKind::EagerUse
     }
-    pub(crate) fn is_binding_write(&self) -> bool {
-        matches!(self.kind, EdgeKind::AtInitWrite | EdgeKind::LazyWrite)
+    pub(crate) fn is_rebind(&self) -> bool {
+        matches!(self.kind, DepKind::EagerRebind | DepKind::LazyRebind)
     }
-    pub(crate) fn is_side_effect_order(&self) -> bool {
-        self.kind == EdgeKind::SideEffectOrder
+    pub(crate) fn is_sequenced(&self) -> bool {
+        self.kind == DepKind::Sequenced
     }
-    /// Every kind except `LazyRead` constrains realizability.
-    /// Stated as exclusion so adding a new `EdgeKind` variant
+    /// Every kind except `LazyUse` constrains realizability.
+    /// Stated as exclusion so adding a new `DepKind` variant
     /// forces an explicit decision here.
-    pub(crate) fn constrains_realizability(&self) -> bool {
-        self.kind != EdgeKind::LazyRead
+    pub(crate) fn constrains_init_order(&self) -> bool {
+        self.kind != DepKind::LazyUse
     }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum EdgeKind {
-    AtInitRead,
-    LazyRead,
-    AtInitWrite,
-    LazyWrite,
-    SideEffectOrder,
+pub enum DepKind {
+    EagerUse,
+    LazyUse,
+    EagerRebind,
+    LazyRebind,
+    Sequenced,
 }
 
 /// Stable-in-run identity of an owner graph vertex. V1 owner
@@ -182,8 +182,8 @@ impl EdgeMetadata {
     /// `true` if at least one reason is an at-init read. The
     /// realizability gate uses this to decide whether an
     /// `I ∪ S` SCC contains an `R` cross-module edge.
-    pub fn has_at_init_read(&self) -> bool {
-        self.reasons.iter().any(EdgeReason::is_at_init_read)
+    pub fn has_eager_use(&self) -> bool {
+        self.reasons.iter().any(EdgeReason::is_eager_use)
     }
 
     /// `true` if at least one reason is a side-effect ordering
@@ -191,15 +191,15 @@ impl EdgeMetadata {
     /// constraint is "predecessor must evaluate before
     /// successor", and a cycle has no topological emit order
     /// satisfying every such edge.
-    pub fn has_side_effect_ordering(&self) -> bool {
-        self.reasons.iter().any(EdgeReason::is_side_effect_order)
+    pub fn has_sequenced(&self) -> bool {
+        self.reasons.iter().any(EdgeReason::is_sequenced)
     }
 
     /// `true` if at least one reason is a rebinding write. These
     /// edges are rejected outright when they cross destination
     /// modules because imported ESM bindings are read-only.
-    pub fn has_binding_write(&self) -> bool {
-        self.reasons.iter().any(EdgeReason::is_binding_write)
+    pub fn has_rebind(&self) -> bool {
+        self.reasons.iter().any(EdgeReason::is_rebind)
     }
 
     /// `true` if this edge constrains realizability — at least one
@@ -209,12 +209,10 @@ impl EdgeMetadata {
     /// represent fire after every module in the cycle has finished
     /// evaluating.
     ///
-    /// Delegates to `EdgeReason::constrains_realizability` to keep
+    /// Delegates to `EdgeReason::constrains_init_order` to keep
     /// the per-edge and per-reason definitions in lockstep.
-    pub fn constrains_realizability(&self) -> bool {
-        self.reasons
-            .iter()
-            .any(EdgeReason::constrains_realizability)
+    pub fn constrains_init_order(&self) -> bool {
+        self.reasons.iter().any(EdgeReason::constrains_init_order)
     }
 }
 
@@ -260,20 +258,20 @@ impl ModuleQuotient {
 
     /// `true` if the directed edge `(from, to)` is present and at
     /// least one of its reasons is an at-init read.
-    pub fn has_at_init_edge(&self, from: ModuleId, to: ModuleId) -> bool {
+    pub fn has_eager_use_edge(&self, from: ModuleId, to: ModuleId) -> bool {
         self.graph
             .edge_weight(from, to)
-            .is_some_and(EdgeMetadata::has_at_init_read)
+            .is_some_and(EdgeMetadata::has_eager_use)
     }
 
     /// `true` if the edge `(from, to)` exists and constrains
     /// realizable evaluation order (at-init read or side-effect
     /// ordering). Used by the realizability gate to decide
     /// whether an `I ∪ S` SCC is unrealizable.
-    pub fn has_realizability_constraining_edge(&self, from: ModuleId, to: ModuleId) -> bool {
+    pub fn has_init_order_constraining_edge(&self, from: ModuleId, to: ModuleId) -> bool {
         self.graph
             .edge_weight(from, to)
-            .is_some_and(EdgeMetadata::constrains_realizability)
+            .is_some_and(EdgeMetadata::constrains_init_order)
     }
 }
 
@@ -327,39 +325,39 @@ pub fn build_owner_graph(facts: &[StatementFacts]) -> OwnerGraph {
     };
     for stmt in facts {
         let from = OwnerId(stmt.ordinal.0);
-        for binding in &stmt.reads_at_init {
+        for binding in &stmt.eager_reads {
             push_binding_edge(
                 &mut raw_edges,
                 from,
                 binding,
-                EdgeReason::at_init_read,
+                EdgeReason::eager_use,
                 stmt.ordinal,
             );
         }
-        for binding in &stmt.reads_lazy {
+        for binding in &stmt.lazy_reads {
             push_binding_edge(
                 &mut raw_edges,
                 from,
                 binding,
-                EdgeReason::lazy_read,
+                EdgeReason::lazy_use,
                 stmt.ordinal,
             );
         }
-        for binding in &stmt.writes_at_init {
+        for binding in &stmt.eager_rebinds {
             push_binding_edge(
                 &mut raw_edges,
                 from,
                 binding,
-                EdgeReason::at_init_write,
+                EdgeReason::eager_rebind,
                 stmt.ordinal,
             );
         }
-        for binding in &stmt.writes_lazy {
+        for binding in &stmt.lazy_rebinds {
             push_binding_edge(
                 &mut raw_edges,
                 from,
                 binding,
-                EdgeReason::lazy_write,
+                EdgeReason::lazy_rebind,
                 stmt.ordinal,
             );
         }
@@ -386,7 +384,7 @@ pub fn build_owner_graph(facts: &[StatementFacts]) -> OwnerGraph {
         if let Some(to) = previous_side_effect_owner
             && from != to
         {
-            raw_edges.push((from, to, EdgeReason::side_effect_order(stmt.ordinal)));
+            raw_edges.push((from, to, EdgeReason::sequenced(stmt.ordinal)));
         }
         previous_side_effect_owner = Some(from);
     }
@@ -448,7 +446,7 @@ pub fn build_module_quotient(owner_graph: &OwnerGraph, partition: &Partition) ->
         if from == to {
             continue;
         }
-        if edge.reason.is_side_effect_order() && !seen_side_effect_module_pairs.insert((from, to)) {
+        if edge.reason.is_sequenced() && !seen_side_effect_module_pairs.insert((from, to)) {
             continue;
         }
         graph.record_reason(from, to, edge.reason.clone());
@@ -492,7 +490,7 @@ pub struct OwnerEdge {
 /// binding(s) … not exported by entry" rejection: when this returns a
 /// non-empty set, the materializer would reject and peelability marks
 /// the candidate `BlockedEmitResolvability`. Mirrors the
-/// `constrains_realizability` SSOT introduced in `f86e84b7e`.
+/// `constrains_init_order` SSOT introduced in `f86e84b7e`.
 ///
 /// Inputs:
 /// - `owner_graph`: nodes carry each owner's destination module.

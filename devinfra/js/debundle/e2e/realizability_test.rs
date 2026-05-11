@@ -7,7 +7,7 @@
 //! match, or rejection with cycle evidence naming the implicated
 //! modules.
 
-use analysis::{BindingReport, EdgeKind, OwnerGraphReport, ResidualOwnerPeelStatus};
+use analysis::{BindingReport, DepKind, OwnerGraphReport, ResidualOwnerPeelStatus};
 use debundle_e2e_support::*;
 use serde::de::DeserializeOwned;
 use serde_json::json;
@@ -204,9 +204,9 @@ export { A, B, readA, readB };
     );
     assert!(
         graph.edges.iter().any(|edge| {
-            edge.edge_kind == EdgeKind::LazyRead
+            edge.edge_kind == DepKind::LazyUse
                 && edge.binding.as_deref() == Some("B")
-                && !edge.constrains_realizability
+                && !edge.constrains_init_order
         }),
         "owner graph should expose lazy owner read edges: {graph:#?}",
     );
@@ -215,7 +215,7 @@ export { A, B, readA, readB };
             .quotient
             .edges
             .iter()
-            .any(|edge| { edge.edge_kinds.contains(&EdgeKind::LazyRead) }),
+            .any(|edge| { edge.edge_kinds.contains(&DepKind::LazyUse) }),
         "quotient edges should retain aggregated edge kinds: {graph:#?}",
     );
     assert!(
@@ -632,7 +632,7 @@ export { a1, a2, b1 };
         graph
             .edges
             .iter()
-            .any(|edge| edge.edge_kind == EdgeKind::SideEffectOrder && edge.binding.is_none()),
+            .any(|edge| edge.edge_kind == DepKind::Sequenced && edge.binding.is_none()),
         "side-effect owner edges should omit binding rather than using a sentinel: {graph:#?}",
     );
 }

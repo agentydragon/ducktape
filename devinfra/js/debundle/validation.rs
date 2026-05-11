@@ -9,7 +9,7 @@ use serde::Serialize;
 use crate::partition::Partition;
 use crate::reports::owner_key;
 use crate::{
-    BindingName, EdgeKind, EdgeMetadata, ModuleId, ModuleQuotient, OwnerGraph, SourceLocation,
+    BindingName, DepKind, EdgeMetadata, ModuleId, ModuleQuotient, OwnerGraph, SourceLocation,
     StatementOrdinal,
 };
 
@@ -39,7 +39,7 @@ pub struct CrossDestinationAssignmentReport {
     pub binding_statement_ordinal: StatementOrdinal,
     pub assigner_module: String,
     pub binding_module: String,
-    pub kind: EdgeKind,
+    pub kind: DepKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub assigner_source_location: Option<SourceLocation>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -85,9 +85,9 @@ pub struct CycleEdge {
     /// downstream consumers (cycle-evidence visualizers, spec
     /// authors triaging which edges to break) tell at a glance
     /// which reasons are actually realizability-constraining
-    /// (`at_init_read` and `side_effect_order`) vs.
-    /// inert-but-graph-present (`lazy_read`).
-    pub kind: EdgeKind,
+    /// (`eager_use` and `sequenced`) vs.
+    /// inert-but-graph-present (`lazy_use`).
+    pub kind: DepKind,
 }
 
 /// Render a compact human-readable summary of cycle reports for the
@@ -206,7 +206,7 @@ pub fn validate_schedule(
         // afterwards (no TDZ, no missed side-effect ordering).
         let scc_constrains_evaluation_order = scc.iter().any(|&from| {
             scc.iter()
-                .any(|&to| from != to && graph.has_realizability_constraining_edge(from, to))
+                .any(|&to| from != to && graph.has_init_order_constraining_edge(from, to))
         });
         if !scc_constrains_evaluation_order {
             continue;
@@ -260,7 +260,7 @@ pub(crate) fn validate_cross_destination_assignments(
         if from_module == to_module {
             continue;
         }
-        if !edge.reason.is_binding_write() {
+        if !edge.reason.is_rebind() {
             continue;
         }
         let Some(binding_id) = edge.reason.binding else {
@@ -308,7 +308,7 @@ pub(crate) fn validate_cross_destination_assignments(
 /// 3. Otherwise, pick the first such SCC, run
 ///    `petgraph::algo::greedy_feedback_arc_set` (Eades-Lin-Smyth)
 ///    on its induced subgraph, and pick the first FAS edge whose
-///    metadata has an `AtInitRead` or `SideEffect` reason.
+///    metadata has an `EagerUse` or `SideEffect` reason.
 /// 4. Fall back to scanning the SCC's edges if the FAS only
 ///    yielded lazy edges (rare; happens when tie-breaking biases
 ///    the order toward picking lazy edges as back-edges).
@@ -356,9 +356,9 @@ fn compute_realizability_cut(
             }
             let in_s: HashSet<ModuleId> = s.iter().copied().collect();
             s.iter().any(|&from| {
-                working.edges(from).any(|(_, to, w)| {
-                    from != to && in_s.contains(&to) && w.constrains_realizability()
-                })
+                working
+                    .edges(from)
+                    .any(|(_, to, w)| from != to && in_s.contains(&to) && w.constrains_init_order())
             })
         });
         let Some(s) = problematic else { break };
@@ -392,12 +392,12 @@ fn compute_realizability_cut(
         let pick_in_fas = fas.iter().copied().find(|&(u, v)| {
             working
                 .edge_weight(u, v)
-                .is_some_and(EdgeMetadata::constrains_realizability)
+                .is_some_and(EdgeMetadata::constrains_init_order)
         });
         let pick = pick_in_fas.or_else(|| {
             for &from in &s {
                 for (_, to, w) in working.edges(from) {
-                    if from != to && in_s.contains(&to) && w.constrains_realizability() {
+                    if from != to && in_s.contains(&to) && w.constrains_init_order() {
                         return Some((from, to));
                     }
                 }
@@ -414,7 +414,7 @@ fn compute_realizability_cut(
             .remove_edge(u, v)
             .expect("edge picked from working graph just above");
         for reason in &weight.reasons {
-            if !reason.constrains_realizability() {
+            if !reason.constrains_init_order() {
                 continue;
             }
             cut.push(CycleEdge {

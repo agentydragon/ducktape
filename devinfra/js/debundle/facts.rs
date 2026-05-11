@@ -20,19 +20,19 @@ pub struct StatementFacts {
     pub ordinal: StatementOrdinal,
     pub source_location: Option<SourceLocation>,
     pub declared: BTreeSet<BindingName>,
-    pub reads_at_init: BTreeSet<BindingName>,
-    pub writes_at_init: BTreeSet<BindingName>,
+    pub eager_reads: BTreeSet<BindingName>,
+    pub eager_rebinds: BTreeSet<BindingName>,
     /// Reads happening only inside lazy syntactic positions (function
     /// bodies, instance class-field initializers, getters/setters,
-    /// constructor bodies). May overlap with `reads_at_init` if the
+    /// constructor bodies). May overlap with `eager_reads` if the
     /// same name appears in both eager and lazy positions of the
     /// statement.
-    pub reads_lazy: BTreeSet<BindingName>,
+    pub lazy_reads: BTreeSet<BindingName>,
     /// Rebinding writes happening only inside lazy syntactic
     /// positions. Member writes (`obj.x = ...`) are intentionally
     /// excluded: mutating an imported object is legal, but rebinding
     /// the imported binding cell is not.
-    pub writes_lazy: BTreeSet<BindingName>,
+    pub lazy_rebinds: BTreeSet<BindingName>,
     pub purity: Purity,
     pub kind: StatementKind,
 }
@@ -325,10 +325,10 @@ fn analyze_item(
         ordinal,
         source_location: None,
         declared,
-        reads_at_init: at_init.names,
-        writes_at_init: writes.at_init,
-        reads_lazy: lazy.names,
-        writes_lazy: writes.lazy,
+        eager_reads: at_init.names,
+        eager_rebinds: writes.at_init,
+        lazy_reads: lazy.names,
+        lazy_rebinds: writes.lazy,
         purity,
         kind,
     }

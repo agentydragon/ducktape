@@ -30,7 +30,7 @@ pub use facts::{
     find_top_level_await,
 };
 pub use graph::{
-    EdgeKind, EdgeMetadata, EdgeReason, ModuleQuotient, OwnerGraph, OwnerId, OwnerNode,
+    DepKind, EdgeMetadata, EdgeReason, ModuleQuotient, OwnerGraph, OwnerId, OwnerNode,
     build_module_quotient, build_owner_graph,
 };
 pub use ids::{
