@@ -1244,6 +1244,168 @@ mod tests {
         assert_eq!(fn_purity(src, "isEmulatorEnv"), Some(true));
     }
 
+    // --- TS-enum IIFE PlainData admission ---------------------------------
+
+    #[test]
+    fn plain_data_ts_enum_iife_arrow_comma_body_is_tracked() {
+        // The minimal arrow-comma-body shape with shadow-named param.
+        // The scanner's new param-scope tracking is what makes this
+        // work — `p.A = "a"` looks like a member write on `p`, but
+        // `p` here is the inner IIFE parameter shadowing the outer
+        // `X`, so the scanner doesn't disqualify the outer X.
+        let src = r#"var X = ((p) => (p.A = "a", p.B = "b", p))({});"#;
+        assert!(is_plain_data(src, "X"));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_canonical_self_assign_short_circuit_is_tracked() {
+        // The canonical TypeScript emit form: the IIFE arg uses the
+        // self-assigning short-circuit `X || (X = {})` to ensure the
+        // arg is a plain object even on first reach. Param is named
+        // the same as the binding (shadow case).
+        let src = r#"var X = ((X) => (X["A"] = "a", X["B"] = "b", X))(X || (X = {}));"#;
+        assert!(is_plain_data(src, "X"));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_or_plain_arg_is_tracked() {
+        // The shorter `X || {}` arg form (esbuild's TS lowering for
+        // const-enums and simple string enums).
+        let src = r#"var ColorName = ((p) => (p["Red"] = "red", p["Green"] = "green", p))(ColorName || {});"#;
+        assert!(is_plain_data(src, "ColorName"));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_member_reads_classify_pure() {
+        // End-to-end: a downstream accessor reading the enum's
+        // members classifies pure because the binding admits as
+        // PlainData and the read targets a static property.
+        let src = r#"
+            var Color = ((p) => (p.RED = "red", p.GREEN = "green", p))(Color || {});
+            const isRed = (c) => c === Color.RED;
+        "#;
+        assert!(is_plain_data(src, "Color"));
+        assert_eq!(fn_purity(src, "isRed"), Some(true));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_degenerate_return_param_is_tracked() {
+        // Edge case: arrow body is just the param (no mutations).
+        // Equivalent to `var X = X || {}` after evaluation.
+        let src = r#"var X = ((p) => p)({});"#;
+        assert!(is_plain_data(src, "X"));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_non_iife_call_is_not_tracked() {
+        // Not an inline arrow callable — calling a chunk-local
+        // function whose body is unknown to the IIFE check.
+        let src = r#"
+            function makeIt(p) { return p; }
+            var X = makeIt({ a: 1 });
+        "#;
+        assert!(!is_plain_data(src, "X"));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_non_literal_arg_is_not_tracked() {
+        // IIFE arg isn't a plain object or `X || plain` — could be
+        // anything at runtime. Reject.
+        let src = r#"var X = ((p) => (p.A = "a", p))(someFn());"#;
+        assert!(!is_plain_data(src, "X"));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_non_primitive_rhs_is_not_tracked() {
+        // Property write RHS is a call, not a primitive literal. The
+        // resulting object would still be plain (writes are data
+        // descriptors regardless of RHS shape), but the conservative
+        // rule rejects to keep the soundness story uniform with
+        // `is_plain_data_prop`.
+        let src = r#"var X = ((p) => (p.A = io(), p))({});"#;
+        assert!(!is_plain_data(src, "X"));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_body_does_not_return_param_is_not_tracked() {
+        // Body returns something other than the param — could be a
+        // different object (an external reference, the result of a
+        // call, etc.). Without verifying the returned value is
+        // plain, reject.
+        let src = r#"var X = ((p) => (p.A = "a", other))({});"#;
+        assert!(!is_plain_data(src, "X"));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_define_property_inside_body_is_not_admitted_directly() {
+        // The body has a write that ISN'T `p.K = primLit` — calls
+        // `Object.defineProperty` instead. The IIFE-body check
+        // rejects this shape (only the comma-expression of
+        // property writes is admitted).
+        let src =
+            r#"var X = ((p) => (Object.defineProperty(p, "A", { get: () => io() }), p))({});"#;
+        assert!(!is_plain_data(src, "X"));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_with_outer_member_write_disqualifies() {
+        // Even when admitted as a TS-enum-IIFE candidate, a
+        // chunk-wide member write `X.K = …` outside the IIFE
+        // disqualifies — the scanner's standard write check
+        // applies. The param-scope tracking is narrow: it only
+        // exempts writes INSIDE function/arrow bodies whose
+        // params shadow the candidate name.
+        let src = r#"
+            var X = ((p) => (p.A = "a", p))({});
+            function mut() { X.B = "b"; }
+        "#;
+        assert!(!is_plain_data(src, "X"));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_distinct_param_name_is_tracked() {
+        // Param name differs from binding — no shadowing concern,
+        // just exercises the admission rule cleanly.
+        let src = r#"var Color = ((n) => (n.RED = "red", n))(Color || {});"#;
+        assert!(is_plain_data(src, "Color"));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_computed_numeric_key_is_tracked() {
+        // Numeric literal as computed key is admitted as a member
+        // access on a fresh data property.
+        let src = r#"var X = ((p) => (p[0] = "zero", p[1] = "one", p))({});"#;
+        assert!(is_plain_data(src, "X"));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_no_param_function_is_not_tracked() {
+        // No parameter — body has no `p` to mutate; reject.
+        let src = r#"var X = (() => ({ a: 1 }))();"#;
+        // Note: this could be admitted as "returns plain object
+        // literal" in a future extension, but the current rule
+        // requires the single-param shape and rejects this.
+        assert!(!is_plain_data(src, "X"));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_inner_param_write_doesnt_disqualify_outer_candidate() {
+        // The scanner's param-scope tracking is the key feature
+        // making the shadow case work. This test pins the
+        // behavior directly: a chunk where the outer X is admitted
+        // (via a regular plain-literal init) but a separate IIFE
+        // shadows X as a param and writes to that param — the
+        // outer X must NOT be disqualified by those inner writes.
+        let src = r#"
+            var X = { existing: 1 };
+            (function (X) { X.A = "a"; })({});
+        "#;
+        // Outer X has its own plain init AND is admitted; the
+        // inner anonymous IIFE's writes target the param-bound
+        // inner X, not the outer.
+        assert!(is_plain_data(src, "X"));
+    }
+
     #[test]
     fn plain_data_let_with_plain_literal_replacement_is_tracked() {
         // The `applySystemConfigOverrides` shape from gaffer-private:

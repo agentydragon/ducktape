@@ -37,8 +37,12 @@ enum ChunkBinding {
     /// plain literal (whole-object replacement; no in-place
     /// mutation). For `var`, multiple chunk-top `var X = init_n`
     /// declarations are also admitted as long as every init is
-    /// plain-literal. Property reads `X.k` / `X[k]` (k pure) on
-    /// such a binding are pure regardless of when they fire:
+    /// plain-literal. Inits can additionally take the TS-enum-IIFE
+    /// shape `((p) => (p.A = "a", p.B = "b", p))(X || {})` where
+    /// the IIFE produces a plain object by parameter mutation; see
+    /// `is_ts_enum_iife_init` for the syntactic shape and soundness
+    /// argument. Property reads `X.k` / `X[k]` (k pure) on such a
+    /// binding are pure regardless of when they fire:
     ///
     /// * **No accessor channels at any program point.** The initial
     ///   init is a syntactic plain literal — no
@@ -502,6 +506,7 @@ fn collect_plain_data_bindings(body: &[TopLevelItemView<'_>]) -> Vec<String> {
     let mut scanner = PlainDataWriteScanner {
         candidates: &candidates,
         disqualified: BTreeSet::new(),
+        shadowing_scopes: Vec::new(),
     };
     for item in body {
         item.as_module_item().visit_with(&mut scanner);
@@ -591,8 +596,206 @@ fn is_plain_data_init(expr: &Expr) -> bool {
         Expr::Paren(p) => is_plain_data_init(&p.expr),
         Expr::Object(obj) => obj.props.iter().all(is_plain_data_prop),
         Expr::Array(_) => true,
+        // TS-enum-style IIFE: `((p) => (p.A = "a", p.B = "b", p))(X || {})`
+        // produces a plain object at runtime by mutating the parameter
+        // through data-property writes only and returning it. See
+        // `is_ts_enum_iife_init` for the syntactic shape and soundness
+        // argument.
+        Expr::Call(_) => is_ts_enum_iife_init(expr),
         _ => false,
     }
+}
+
+/// Recognize the TypeScript-emit "enum" IIFE shape that initializes a
+/// `var`-bound binding to a plain object built by parameter-mutation:
+///
+///     var X = ((p) => (p.A = "a", p.B = "b", p))(X || {});
+///     var X = ((p) => (p["A"] = "a", p["B"] = "b", p))(X || (X = {}));
+///     var X = ((p) => p)({});
+///
+/// Returns `true` iff every constraint below holds; the caller treats a
+/// `true` result the same as any other `is_plain_data_init` admission
+/// (the binding admits as `PlainData` if no chunk-wide member writes /
+/// hostile builtin calls etc. follow). The scanner's scope-tracking
+/// for function/arrow params handles the inner `p.K = …` writes when
+/// `p` shadows the binding name (the canonical TS shape uses the same
+/// name for the param).
+///
+/// **Soundness contract:**
+///
+/// At runtime, the binding holds the object returned by the IIFE.
+/// We require that object to have only data properties:
+///
+/// 1. **Arrow IIFE callable, inline.** The callee is a syntactic
+///    `Expr::Arrow` (function expressions could work the same way but
+///    are out of scope for this rule). Excludes any case where the
+///    callable could be replaced at runtime with a different function.
+/// 2. **Single Ident parameter.** Pattern parameters (destructuring,
+///    rest, default) are out of scope — the parameter is the alias for
+///    the mutating writes, and treating non-Ident patterns would
+///    require deeper escape analysis.
+/// 3. **Single non-spread positional argument.** Either a plain
+///    object literal (no spreads, no accessors, no `__proto__`), or a
+///    `X || (plain-shape)` short-circuit, or `X || X = (plain-shape)`
+///    self-assigning short-circuit (the canonical TS shape).
+/// 4. **Concise-arrow comma-expression body.** Body is either:
+///    * `Expr::Ident(p)` alone — degenerate "return param unchanged"
+///      shape; the IIFE returns the arg as-is, which is plain by (3).
+///    * `Expr::Seq` whose last element is `Expr::Ident(p)` and every
+///      preceding element is `p.K = primLit` or `p[strLit] = primLit`
+///      or `p[numLit] = primLit` — a parameter-mutation followed by
+///      return.
+///
+/// **Why the result is plain:**
+///
+/// The argument starts as a plain object (by 3). The body's writes are
+/// all `param.K = primitiveLiteral` data-property assignments — these
+/// invoke `[[Set]]` on the param, which on a target with no existing
+/// accessor for `K` runs `CreateDataProperty` and produces a data
+/// descriptor. None of the writes can install an accessor, change the
+/// prototype, or call user-defined code. The returned object is the
+/// same object passed in, now carrying additional data properties.
+/// Reads `X.K` on the binding after the IIFE fires no user code.
+///
+/// **What is NOT admitted (and why):**
+///
+/// * **Numeric-enum reverse-mapping** `param[param["A"] = 0] = "A"` —
+///   the inner assignment evaluates to a number used as the outer
+///   key; the property write itself is still data-only, but the
+///   nested form complicates the check. Modern TS string enums
+///   (the dominant emit since TS 5+) use the simpler form admitted
+///   here.
+/// * **Block-bodied function** `function (p) { p.A = …; return p; }` —
+///   same logical structure; can be added as a separate match arm.
+///   This rule starts with the arrow-comma-body shape (esbuild /
+///   Vite default emit).
+/// * **Multi-statement bodies** that do anything other than parameter
+///   mutation — `console.log(p)`, `Object.defineProperty(p, …)`,
+///   nested IIFEs, etc.
+fn is_ts_enum_iife_init(expr: &Expr) -> bool {
+    let mut cur = expr;
+    while let Expr::Paren(p) = cur {
+        cur = &p.expr;
+    }
+    let Expr::Call(call) = cur else {
+        return false;
+    };
+    let Callee::Expr(callee_expr) = &call.callee else {
+        return false;
+    };
+    let mut callee = callee_expr.as_ref();
+    while let Expr::Paren(p) = callee {
+        callee = &p.expr;
+    }
+    let Expr::Arrow(arrow) = callee else {
+        return false;
+    };
+    if arrow.params.len() != 1 {
+        return false;
+    }
+    let Pat::Ident(param_ident) = &arrow.params[0] else {
+        return false;
+    };
+    let param_name = param_ident.id.sym.as_ref();
+    if call.args.len() != 1 || call.args[0].spread.is_some() {
+        return false;
+    }
+    if !is_ts_enum_iife_arg(&call.args[0].expr) {
+        return false;
+    }
+    let BlockStmtOrExpr::Expr(body_expr) = arrow.body.as_ref() else {
+        return false;
+    };
+    let mut body = body_expr.as_ref();
+    while let Expr::Paren(p) = body {
+        body = &p.expr;
+    }
+    is_ts_enum_iife_body(body, param_name)
+}
+
+/// IIFE argument must be a plain object literal, a self-assigning
+/// short-circuit (`X || (X = {})`), or a plain short-circuit
+/// (`X || {}`). Walks through `Paren` wrappers and accepts the
+/// short-circuit form recursively on the right side.
+fn is_ts_enum_iife_arg(expr: &Expr) -> bool {
+    match expr {
+        Expr::Paren(p) => is_ts_enum_iife_arg(&p.expr),
+        Expr::Object(obj) => obj.props.iter().all(is_plain_data_prop),
+        Expr::Bin(b) if b.op == BinaryOp::LogicalOr => is_ts_enum_iife_arg(&b.right),
+        Expr::Assign(a) if a.op == AssignOp::Assign => is_ts_enum_iife_arg(&a.right),
+        _ => false,
+    }
+}
+
+/// Arrow body must be either `p` (return param unchanged) or a
+/// sequence expression `(p.K1 = lit, p.K2 = lit, …, p)` with the
+/// trailing `p` as the return value.
+fn is_ts_enum_iife_body(expr: &Expr, param: &str) -> bool {
+    if matches!(expr, Expr::Ident(id) if id.sym.as_ref() == param) {
+        return true;
+    }
+    let Expr::Seq(seq) = expr else {
+        return false;
+    };
+    if seq.exprs.is_empty() {
+        return false;
+    }
+    let (last, rest) = seq.exprs.split_last().expect("non-empty checked above");
+    let last_inner = strip_parens(last.as_ref());
+    if !matches!(last_inner, Expr::Ident(id) if id.sym.as_ref() == param) {
+        return false;
+    }
+    rest.iter()
+        .all(|e| is_ts_enum_iife_property_write(strip_parens(e.as_ref()), param))
+}
+
+fn strip_parens(expr: &Expr) -> &Expr {
+    let mut cur = expr;
+    while let Expr::Paren(p) = cur {
+        cur = &p.expr;
+    }
+    cur
+}
+
+/// One step of the IIFE body: `param.K = primLit` or
+/// `param[strLit] = primLit` / `param[numLit] = primLit`. Only
+/// primitive-literal RHS is accepted; non-literal RHS could
+/// theoretically return an accessor-bearing object — but the
+/// property write would still install it as a data descriptor on the
+/// param. The stricter primitive-literal RHS keeps the soundness
+/// story uniform with `is_plain_data_prop`.
+fn is_ts_enum_iife_property_write(expr: &Expr, param: &str) -> bool {
+    let Expr::Assign(assign) = expr else {
+        return false;
+    };
+    if assign.op != AssignOp::Assign {
+        return false;
+    }
+    let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assign.left else {
+        return false;
+    };
+    if !matches!(member.obj.as_ref(), Expr::Ident(id) if id.sym.as_ref() == param) {
+        return false;
+    }
+    let key_ok = match &member.prop {
+        MemberProp::Ident(_) => true,
+        MemberProp::Computed(c) => matches!(
+            c.expr.as_ref(),
+            Expr::Lit(Lit::Str(_)) | Expr::Lit(Lit::Num(_))
+        ),
+        MemberProp::PrivateName(_) => false,
+    };
+    if !key_ok {
+        return false;
+    }
+    matches!(
+        assign.right.as_ref(),
+        Expr::Lit(Lit::Str(_))
+            | Expr::Lit(Lit::Num(_))
+            | Expr::Lit(Lit::Bool(_))
+            | Expr::Lit(Lit::Null(_))
+            | Expr::Lit(Lit::BigInt(_))
+    )
 }
 
 fn is_plain_data_prop(prop: &PropOrSpread) -> bool {
@@ -628,9 +831,65 @@ fn is_plain_data_prop(prop: &PropOrSpread) -> bool {
 /// Skips the right side of `X.k = ...` only in the sense that
 /// recursing through `expr` still picks up nested cases — every
 /// expression node visits its children.
+///
+/// **Function/arrow parameter scope tracking.** When entering a
+/// function or arrow body whose parameters include names that
+/// collide with candidates, those names refer to the inner parameter
+/// (NOT the outer chunk-top binding) for the duration of the body.
+/// Writes on the inner alias would otherwise spuriously disqualify
+/// the outer candidate — the canonical TS-enum IIFE shape uses
+/// `(function (X) { X["A"] = "a"; })(X || (X = {}))` with the param
+/// named the same as the binding. The scanner pushes a "shadowing"
+/// set on each function/arrow scope and checks it before
+/// disqualifying.
+///
+/// Block-scoped `let X` / `const X` / inner `var X` declarations also
+/// shadow the outer X within their scope, but tracking those
+/// requires walking block scopes (a larger change). For now only
+/// function/arrow parameters are tracked — the cases this misses
+/// are conservative false negatives (we reject an outer X that
+/// would have been admissible), never false positives.
 struct PlainDataWriteScanner<'a> {
     candidates: &'a BTreeSet<String>,
     disqualified: BTreeSet<String>,
+    /// Stack of per-scope candidate-shadowing sets. Each scope entry
+    /// is the subset of `candidates` shadowed by the function/arrow
+    /// parameters at that level. A name is "shadowed at this point
+    /// in the traversal" iff it appears in any active stack entry.
+    shadowing_scopes: Vec<BTreeSet<String>>,
+}
+
+impl PlainDataWriteScanner<'_> {
+    fn is_shadowed(&self, name: &str) -> bool {
+        self.shadowing_scopes
+            .iter()
+            .any(|scope| scope.contains(name))
+    }
+
+    fn with_scope<F: FnOnce(&mut Self)>(&mut self, scope: BTreeSet<String>, f: F) {
+        self.shadowing_scopes.push(scope);
+        f(self);
+        self.shadowing_scopes.pop();
+    }
+
+    /// Collect the subset of `candidates` shadowed by `params`. Only
+    /// `Pat::Ident` parameters are recognized; destructuring /
+    /// rest / default parameters are out of scope.
+    fn shadowed_by_params<'a, I>(&self, params: I) -> BTreeSet<String>
+    where
+        I: IntoIterator<Item = &'a Pat>,
+    {
+        params
+            .into_iter()
+            .filter_map(|p| match p {
+                Pat::Ident(ident) => {
+                    let name = ident.id.sym.as_ref();
+                    self.candidates.contains(name).then(|| name.to_string())
+                }
+                _ => None,
+            })
+            .collect()
+    }
 }
 
 /// Defensive visitor that collects candidate-named idents in a
@@ -653,6 +912,13 @@ impl Visit for IdentVisitor<'_> {
 
 impl PlainDataWriteScanner<'_> {
     fn disqualify_if_candidate(&mut self, name: &str) {
+        if self.is_shadowed(name) {
+            // The reference targets a shadowing inner binding (e.g. a
+            // function parameter), not the outer chunk-top candidate.
+            // Writes on the inner binding don't affect the outer
+            // object so they don't disqualify it.
+            return;
+        }
         if self.candidates.contains(name) {
             self.disqualified.insert(name.to_string());
         }
@@ -804,6 +1070,16 @@ impl Visit for PlainDataWriteScanner<'_> {
             self.disqualify_if_candidate(target.sym.as_ref());
         }
         node.visit_children_with(self);
+    }
+
+    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
+        let scope = self.shadowed_by_params(node.params.iter());
+        self.with_scope(scope, |s| node.visit_children_with(s));
+    }
+
+    fn visit_function(&mut self, node: &Function) {
+        let scope = self.shadowed_by_params(node.params.iter().map(|p| &p.pat));
+        self.with_scope(scope, |s| node.visit_children_with(s));
     }
 }
 
