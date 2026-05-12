@@ -392,6 +392,7 @@ fn materialize_logical_chunk(
         runtime_import_facts,
         declarations,
         declaration_by_name,
+        destructure_siblings,
         pre_existing_entry_exports,
     } = chunk_ast_analysis;
     let requests = time_phase!(timings, "build_requests", {
@@ -482,6 +483,53 @@ fn materialize_logical_chunk(
         });
     }
     drop(imported_binding_resolver);
+
+    // Destructure-atomicity: a destructuring declarator like
+    // `const { x, y } = obj` binds multiple names from a single
+    // pattern that the lowerer's `split_var_decl` moves as one
+    // unit. If the spec claims any one binding from such a
+    // pattern, every sibling binding must travel to the same
+    // module — otherwise the residual's export list would list a
+    // name whose declarator has already moved away, and `node`
+    // would reject the resulting module with
+    // `SyntaxError: Export 'y' is not defined in module`.
+    //
+    // Implicitly-pulled siblings join the claimed module with
+    // their own binding name as the export name. They aren't
+    // separately spec'd, but the destructure pattern must keep
+    // its full name set together regardless. Conflicting claims
+    // (two siblings claimed by different modules) are rejected.
+    for (claimed_name, sibling_set) in &destructure_siblings {
+        let Some(&owner_index) = binding_assignment.get(claimed_name) else {
+            continue;
+        };
+        let owner_id = ModuleId::Logical(LogicalModuleIndex(owner_index));
+        for sibling in sibling_set {
+            if sibling == claimed_name {
+                continue;
+            }
+            match binding_assignment.get(sibling).copied() {
+                None => {
+                    binding_assignment.insert(sibling.clone(), owner_index);
+                    bindings_catalogue
+                        .insert(sibling.clone(), BindingKind::Owned { owner: owner_id });
+                    let plan = &mut module_plans[owner_index];
+                    plan.bindings.insert(sibling.clone(), sibling.clone());
+                }
+                Some(other_index) if other_index != owner_index => {
+                    let owner_plan_id = module_plans[owner_index].id.clone();
+                    let other_plan_id = module_plans[other_index].id.clone();
+                    bail!(
+                        "destructure declarator binds {claimed_name} (claimed by module \
+                         {owner_plan_id}) and {sibling} (claimed by module {other_plan_id}); \
+                         destructuring declarators must move atomically — claim both \
+                         bindings from the same module or claim neither.",
+                    );
+                }
+                Some(_) => {}
+            }
+        }
+    }
 
     if let Some(residual) = &residual_request {
         let residual_index = module_plans.len();
@@ -1747,6 +1795,16 @@ struct ChunkAstAnalysis {
     runtime_import_facts: RuntimeImportFacts,
     declarations: Vec<TopLevelDecl>,
     declaration_by_name: BTreeMap<String, usize>,
+    /// Per-binding-name set of names bound by the *same* declarator
+    /// pattern. For a plain `const a = 1` declarator the set is
+    /// `{a}` (size 1). For a destructuring declarator like
+    /// `const { x, y } = obj` both `x` and `y` map to the set
+    /// `{x, y}`. Used by `build_module_plans` to enforce
+    /// destructure-atomicity: claiming any one binding from a
+    /// destructure pulls the rest into the same module, because
+    /// the materializer's `split_var_decl` moves a destructuring
+    /// declarator as one atomic unit.
+    destructure_siblings: BTreeMap<String, BTreeSet<String>>,
     /// Names that the source chunk's entry already exports (via
     /// `export { foo, bar }` re-exports of local bindings, or
     /// `export const foo = …` style declarations). Passed to
@@ -1762,6 +1820,7 @@ fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
     let mut imports = BTreeMap::<String, RuntimeImportInfo>::new();
     let mut declarations = Vec::new();
     let mut pre_existing_entry_exports = BTreeSet::<String>::new();
+    let mut destructure_siblings = BTreeMap::<String, BTreeSet<String>>::new();
     for (ordinal, item) in module.body.iter().enumerate() {
         let (names, exported) = top_level_declaration_names(item);
         if !names.is_empty() {
@@ -1774,6 +1833,7 @@ fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
                 exported,
             });
         }
+        record_destructure_sibling_groups(item, &mut destructure_siblings);
         record_runtime_imports(item, &mut imports);
         record_pre_existing_named_exports(item, &mut pre_existing_entry_exports);
     }
@@ -1785,7 +1845,39 @@ fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
         runtime_import_facts: RuntimeImportFacts { imports },
         declarations,
         declaration_by_name,
+        destructure_siblings,
         pre_existing_entry_exports,
+    }
+}
+
+/// For each top-level `var/let/const` declarator whose pattern binds
+/// more than one name (i.e. a destructure like `const { x, y } = obj`
+/// or `const [a, b] = arr`), record a sibling set mapping every name
+/// in the pattern to the set of all names from that pattern.
+/// Single-name declarators add nothing.
+fn record_destructure_sibling_groups(
+    item: &ModuleItem,
+    out: &mut BTreeMap<String, BTreeSet<String>>,
+) {
+    let decl = match item {
+        ModuleItem::Stmt(Stmt::Decl(decl)) => decl,
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => &export_decl.decl,
+        _ => return,
+    };
+    let Decl::Var(var) = decl else {
+        return;
+    };
+    for declarator in &var.decls {
+        let names = binding_names(&declarator.name);
+        if names.len() < 2 {
+            continue;
+        }
+        let group: BTreeSet<String> = names.iter().cloned().collect();
+        for name in &names {
+            out.entry(name.clone())
+                .or_default()
+                .extend(group.iter().cloned());
+        }
     }
 }
 
