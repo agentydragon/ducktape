@@ -659,12 +659,6 @@ fn is_plain_data_init(expr: &Expr) -> bool {
 ///
 /// **What is NOT admitted (and why):**
 ///
-/// * **Numeric-enum reverse-mapping** `param[param["A"] = 0] = "A"` —
-///   the inner assignment evaluates to a number used as the outer
-///   key; the property write itself is still data-only, but the
-///   nested form complicates the check. Modern TS string enums
-///   (the dominant emit since TS 5+) use the simpler form admitted
-///   here.
 /// * **Block-bodied function** `function (p) { p.A = …; return p; }` —
 ///   same logical structure; can be added as a separate match arm.
 ///   This rule starts with the arrow-comma-body shape (esbuild /
@@ -672,6 +666,13 @@ fn is_plain_data_init(expr: &Expr) -> bool {
 /// * **Multi-statement bodies** that do anything other than parameter
 ///   mutation — `console.log(p)`, `Object.defineProperty(p, …)`,
 ///   nested IIFEs, etc.
+///
+/// **Numeric-enum reverse-mapping** `param[(param.X = 0)] = "X"` IS
+/// admitted via the nested-assignment-as-computed-key branch in
+/// `is_ts_enum_iife_property_write` — the inner assignment is itself
+/// a `param.X = primLit` data-property write, the outer is a
+/// data-property write keyed by the primitive that inner evaluates
+/// to. Both writes are sound.
 fn is_ts_enum_iife_init(expr: &Expr) -> bool {
     let mut cur = expr;
     while let Expr::Paren(p) = cur {
@@ -757,13 +758,25 @@ fn strip_parens(expr: &Expr) -> &Expr {
     cur
 }
 
-/// One step of the IIFE body: `param.K = primLit` or
-/// `param[strLit] = primLit` / `param[numLit] = primLit`. Only
-/// primitive-literal RHS is accepted; non-literal RHS could
-/// theoretically return an accessor-bearing object — but the
-/// property write would still install it as a data descriptor on the
-/// param. The stricter primitive-literal RHS keeps the soundness
-/// story uniform with `is_plain_data_prop`.
+/// One step of the IIFE body:
+///
+/// * `param.K = primLit` — forward map (static key).
+/// * `param[strLit] = primLit` / `param[numLit] = primLit` —
+///   forward map (literal computed key).
+/// * `param[(param.K = primLit)] = primLit` /
+///   `param[(param["K"] = primLit)] = primLit` — TypeScript's
+///   numeric-enum reverse-mapping shape. The inner assignment is
+///   itself a `param.X = primLit` data-property write that
+///   evaluates to the assigned primitive, which then becomes the
+///   outer Member's computed key. Both writes are data-property
+///   writes on the param; reads on the post-IIFE binding see only
+///   data properties.
+///
+/// Only primitive-literal RHS is accepted at both nesting levels;
+/// non-literal RHS could theoretically return an accessor-bearing
+/// object — the property write would still install it as a data
+/// descriptor on the param, but the stricter primitive-literal RHS
+/// keeps the soundness story uniform with `is_plain_data_prop`.
 fn is_ts_enum_iife_property_write(expr: &Expr, param: &str) -> bool {
     let Expr::Assign(assign) = expr else {
         return false;
@@ -779,10 +792,17 @@ fn is_ts_enum_iife_property_write(expr: &Expr, param: &str) -> bool {
     }
     let key_ok = match &member.prop {
         MemberProp::Ident(_) => true,
-        MemberProp::Computed(c) => matches!(
-            c.expr.as_ref(),
-            Expr::Lit(Lit::Str(_)) | Expr::Lit(Lit::Num(_))
-        ),
+        MemberProp::Computed(c) => {
+            let key = strip_parens(c.expr.as_ref());
+            matches!(key, Expr::Lit(Lit::Str(_)) | Expr::Lit(Lit::Num(_)))
+                // TS numeric-enum reverse-mapping: the computed key
+                // is itself a `param.X = primLit` data-property write
+                // that evaluates to a primitive used as the outer
+                // key. Both the inner and outer writes are sound
+                // data-property writes; recurse to verify the inner
+                // matches the same shape this function admits.
+                || is_ts_enum_iife_property_write(key, param)
+        }
         MemberProp::PrivateName(_) => false,
     };
     if !key_ok {

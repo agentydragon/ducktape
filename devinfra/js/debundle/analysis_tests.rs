@@ -1389,6 +1389,67 @@ mod tests {
     }
 
     #[test]
+    fn plain_data_ts_enum_iife_numeric_reverse_mapping_is_tracked() {
+        // TypeScript's numeric-enum emit produces both a forward
+        // map and a reverse map via the nested-assignment shape:
+        //
+        //     n[(n.A = 0)] = "A"
+        //
+        // The inner `n.A = 0` writes 0 as a data property under
+        // key "A", then evaluates to 0, which the outer assignment
+        // uses as the computed key for the reverse map:
+        // `n[0] = "A"`. Both writes are data-property only — sound.
+        let src = r#"var E = ((n) => (n[(n.A = 0)] = "A", n))(E || {});"#;
+        assert!(is_plain_data(src, "E"));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_numeric_reverse_mapping_string_key_form_is_tracked() {
+        // The bracket-key inner form `n[(n["A"] = 0)] = "A"`. Same
+        // soundness story, different syntactic shape for the inner
+        // forward write.
+        let src = r#"var E = ((n) => (n[(n["A"] = 0)] = "A", n))(E || {});"#;
+        assert!(is_plain_data(src, "E"));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_multiple_numeric_keys_is_tracked() {
+        // Multi-key numeric-reverse-mapping IIFE — the canonical
+        // Vite/TS emit for `enum E { A, B, C }`. Pins that the
+        // recursive admission scales beyond a single key.
+        let src = r#"var E = ((n) => ((n[(n.A = 0)] = "A"), (n[(n.B = 1)] = "B"), (n[(n.C = 2)] = "C"), n))(E || {});"#;
+        assert!(is_plain_data(src, "E"));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_mixed_string_and_numeric_keys_is_tracked() {
+        // The same IIFE can mix forward-only writes (string enum
+        // form) and reverse-mapped writes (numeric enum form) as
+        // long as every step matches one of the admitted shapes.
+        let src = r#"var E = ((n) => (n.a = "a", n[(n.B = 1)] = "B", n))(E || {});"#;
+        assert!(is_plain_data(src, "E"));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_nested_key_non_param_object_is_not_tracked() {
+        // The inner assignment must target the SAME param. A nested
+        // write on a different object would put data on a different
+        // object and use the result as the outer key — sound for
+        // X's purity in isolation but not what the rule is meant
+        // to admit, and the recursive check naturally rejects it.
+        let src = r#"var X = ((n) => (n[(other.X = 0)] = "X", n))({});"#;
+        assert!(!is_plain_data(src, "X"));
+    }
+
+    #[test]
+    fn plain_data_ts_enum_iife_nested_key_non_primitive_rhs_is_not_tracked() {
+        // The inner assignment's RHS must be primitive — same
+        // stricter rule as the outer case.
+        let src = r#"var X = ((n) => (n[(n.A = io())] = "A", n))({});"#;
+        assert!(!is_plain_data(src, "X"));
+    }
+
+    #[test]
     fn plain_data_ts_enum_iife_inner_param_write_doesnt_disqualify_outer_candidate() {
         // The scanner's param-scope tracking is the key feature
         // making the shadow case work. This test pins the
