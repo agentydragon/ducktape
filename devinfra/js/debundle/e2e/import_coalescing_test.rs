@@ -27,11 +27,16 @@ use std::fs;
 use swc_ecma_ast::{ImportSpecifier, ModuleDecl, ModuleExportName, ModuleItem};
 
 /// Count separate top-level `import ... from "<src>";` ModuleItems in
-/// `source` whose specifier source equals `expected_src`. Side-effect
-/// imports (no specifiers) count separately and are also returned.
-fn count_imports_from(source: &str, expected_src: &str) -> (usize, usize) {
+/// `source` whose specifier source equals `expected_src`. Three buckets
+/// returned: `(with_named_or_default, namespace_only, side_effect_only)`.
+/// Namespace imports get their own bucket because — per ESM grammar —
+/// they cannot share an ImportClause with NamedImports; the emitter
+/// emits them as their own statements and tests assert on them
+/// separately.
+fn count_imports_from(source: &str, expected_src: &str) -> (usize, usize, usize) {
     let module = parse_module(source);
-    let mut named_or_default = 0usize;
+    let mut with_named_or_default = 0usize;
+    let mut namespace_only = 0usize;
     let mut side_effect_only = 0usize;
     for item in &module.body {
         let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
@@ -42,16 +47,23 @@ fn count_imports_from(source: &str, expected_src: &str) -> (usize, usize) {
         }
         if import.specifiers.is_empty() {
             side_effect_only += 1;
+        } else if import
+            .specifiers
+            .iter()
+            .all(|s| matches!(s, ImportSpecifier::Namespace(_)))
+        {
+            namespace_only += 1;
         } else {
-            named_or_default += 1;
+            with_named_or_default += 1;
         }
     }
-    (named_or_default, side_effect_only)
+    (with_named_or_default, namespace_only, side_effect_only)
 }
 
-/// Set of (local, imported_or_default) tuples extracted from every
-/// `import ... from "<expected_src>";` in `source`. Used to assert the
-/// consolidated output preserves every binding from the split inputs.
+/// Vec of (local, imported_or_default) tuples extracted from every
+/// `import ... from "<expected_src>";` in `source`, in **first-seen
+/// traversal order** (no sort). Callers asserting first-seen specifier
+/// order compare directly against an ordered expected vec.
 fn collect_import_bindings(source: &str, expected_src: &str) -> Vec<(String, String)> {
     let module = parse_module(source);
     let mut bindings = Vec::new();
@@ -82,7 +94,6 @@ fn collect_import_bindings(source: &str, expected_src: &str) -> Vec<(String, Str
             }
         }
     }
-    bindings.sort();
     bindings
 }
 
@@ -121,7 +132,7 @@ export { bridge };
     let mod_bridge = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_bridge.js"))
         .expect("read mod_bridge.js");
 
-    let (named, _side_effect) = count_imports_from(&mod_bridge, ".././vendor.js");
+    let (named, _namespace, _side_effect) = count_imports_from(&mod_bridge, ".././vendor.js");
     assert_eq!(
         named, 1,
         "expected one consolidated `import {{ ... }} from \".././vendor.js\";` statement, got {named}; mod_bridge was:\n{mod_bridge}",
@@ -176,7 +187,7 @@ export { bridge };
     let mod_bridge = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_bridge.js"))
         .expect("read mod_bridge.js");
 
-    let (named, _) = count_imports_from(&mod_bridge, ".././vendor.js");
+    let (named, _namespace, _side_effect) = count_imports_from(&mod_bridge, ".././vendor.js");
     assert_eq!(
         named, 1,
         "expected default + named imports to consolidate into one statement; got {named} in:\n{mod_bridge}",
@@ -228,10 +239,11 @@ export { bridge };
     let mod_bridge = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_bridge.js"))
         .expect("read mod_bridge.js");
 
-    let (named, _) = count_imports_from(&mod_bridge, ".././vendor.js");
+    let (named, namespace, _side_effect) = count_imports_from(&mod_bridge, ".././vendor.js");
     assert_eq!(
-        named, 2,
-        "expected one namespace-only ImportDecl plus one consolidated named ImportDecl; got {named} in:\n{mod_bridge}",
+        (named, namespace),
+        (1, 1),
+        "expected one consolidated named-import ImportDecl plus one namespace-only ImportDecl; got named={named} namespace={namespace} in:\n{mod_bridge}",
     );
 
     let bindings = collect_import_bindings(&mod_bridge, ".././vendor.js");
@@ -285,7 +297,7 @@ export { a, b };
     let mod_re = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_re.js"))
         .expect("read mod_re.js");
 
-    let (named, _) = count_imports_from(&mod_re, "../../vendor.js");
+    let (named, _namespace, _side_effect) = count_imports_from(&mod_re, "../../vendor.js");
     assert_eq!(
         named, 1,
         "expected one consolidated reexport ImportDecl for both bindings; got {named} in:\n{mod_re}",
