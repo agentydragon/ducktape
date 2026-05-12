@@ -45,6 +45,32 @@ rust_test(
 )
 
 rust_library(
+    name = "coalesce_imports",
+    srcs = ["coalesce_imports.rs"],
+    crate_root = "coalesce_imports.rs",
+    edition = "2024",
+    deps = [
+        ":artifact",
+        ":js_ast",
+        "@crates//:anyhow",
+        "@crates//:rayon",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
+rust_test(
+    name = "coalesce_imports_test",
+    crate = ":coalesce_imports",
+    edition = "2024",
+    deps = [
+        "@crates//:rayon",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_parser",
+    ],
+)
+
+rust_library(
     name = "write_tree",
     srcs = ["write_tree.rs"],
     crate_root = "write_tree.rs",
@@ -362,6 +388,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":artifact",
+        ":coalesce_imports",
         ":emit_harness",
         ":identifier_rename_queue",
         ":logical_modules",

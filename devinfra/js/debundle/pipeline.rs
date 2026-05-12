@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use artifact::ArtifactIndexes;
 use artifact::load_js_chunks;
+use coalesce_imports::coalesce_imports;
 use emit_harness::{EmitBrowserHarnessOptions, emit_browser_harness};
 use logical_modules::{MaterializeLogicalModulesOptions, materialize_logical_modules};
 use prepare_chunks::prepare_js_chunks;
@@ -183,6 +184,7 @@ pub enum PipelineStage {
     RenameVendorExports,
     SwapVendorChunks,
     MaterializeLogicalModules,
+    CoalesceImports,
     WriteJsTree,
     EmitBrowserHarness,
 }
@@ -365,6 +367,16 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
             })?;
         artifact = materialize_result.artifact;
     }
+
+    // Final emit-side consolidation: bundlers emit one ImportDecl per
+    // binding, and earlier pipeline stages (notably vendor-import
+    // rewriting) preserve that shape. Walk every AST-bearing file once
+    // before write_js_tree and merge same-source imports into single
+    // statements. Always on — there's no spec gate; the pass is a
+    // no-op for files whose import block is already coalesced.
+    artifact = run_step_with_result(&mut steps, PipelineStage::CoalesceImports, || {
+        coalesce_imports(artifact)
+    })?;
 
     if let Some(cfg) = &spec.write_js_tree {
         let out_dir = cfg.out_dir.clone();
@@ -627,13 +639,14 @@ mod tests {
             force: false,
         })?;
 
-        assert_eq!(summary.steps.len(), 2);
+        assert_eq!(summary.steps.len(), 3);
         assert_eq!(summary.preparation_steps.len(), 5);
         let rendered_summary = render_transform_summary(&summary);
         assert!(rendered_summary.contains("- load_transform_spec"));
         assert!(rendered_summary.contains("- prepare_js_chunks"));
         assert!(rendered_summary.contains("- build_artifact_indexes"));
         assert!(rendered_summary.contains("- rewrite_chunk_entry_specifiers"));
+        assert!(rendered_summary.contains("- coalesce_imports"));
         assert!(rendered_summary.contains("- emit_browser_harness"));
         assert!(out.join("bootstrap.js").exists());
         assert!(out.join("manifest.json").exists());

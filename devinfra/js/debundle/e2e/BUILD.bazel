@@ -65,5 +65,6 @@ rust_library(
         "purity_test",
         "peelability_test",
         "owner_graph_purity_reason_test",
+        "import_coalescing_test",
     ]
 ]
