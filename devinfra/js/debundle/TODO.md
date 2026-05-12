@@ -182,23 +182,15 @@ Known cleanup targets:
 
 ## Vendor swap edge cases
 
-- `named_from_default`: documented acceptance contract is "upstream
-  default export is an object literal whose keys are `Prop::KeyValue`
-  with `Ident` or `Str` names". `e2e/vendor_swap_test.rs` pins the
-  accepted shape and explicitly rejects two adjacent shapes:
-  - **Shorthand props** (`export default { ping, pong }` where `ping`
-    and `pong` are local refs) are silently skipped by
-    `collect_default_export_object_keys` and the wrapper fails the
-    missing-keys check. Real-world vendor `index.mjs` files commonly
-    use shorthand, so accepting them is a useful relaxation. Fix:
-    extend the prop-walk to read shorthand keys from the prop's own
-    name. Should be a few-line change with one new accepted-shape
-    test.
+- `named_from_default`: accepted shape is "upstream default export is
+  an object literal whose props are either `Prop::KeyValue` with
+  `Ident`/`Str` keys or `Prop::Shorthand`". One adjacent shape is
+  still rejected:
   - **Class / function default declarations** (`export default class
-{}`) don't surface as `ExportDefaultExpr` and bail with "no
-    export default declaration". Open whether to accept (less common
-    for `named_from_default` wrapper shape) or document as
-    intentionally out-of-scope.
+{}`) don't surface as `ExportDefaultExpr` and bail with "no export
+    default declaration". Open whether to accept (less common for
+    `named_from_default` wrapper shape) or document as intentionally
+    out-of-scope.
 
 - `named_from_module_default`: handle anonymous default function/class
   declarations (currently rejected).

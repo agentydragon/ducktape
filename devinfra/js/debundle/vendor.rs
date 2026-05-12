@@ -1006,10 +1006,21 @@ fn collect_default_export_object_keys(
             let PropOrSpread::Prop(prop) = prop else {
                 continue;
             };
-            let Prop::KeyValue(key_value) = &**prop else {
-                continue;
+            // Two accepted prop shapes — both produce the same wrapper
+            // (`export const K = _d.K;`):
+            // * `KeyValue` with `Ident` or `Str` key (`{ ping: fn, "pong": fn }`).
+            // * `Shorthand` (`{ ping, pong }`) where the local binding name
+            //   is the property name; `_d.ping` re-exports the same value
+            //   because object-literal shorthand assigns the binding's
+            //   value as a data property under the binding's name.
+            // Real-world vendor `index.mjs` files use shorthand commonly;
+            // both shapes are emit-equivalent for the wrapper's purposes.
+            let key = match &**prop {
+                Prop::KeyValue(key_value) => prop_name(&key_value.key),
+                Prop::Shorthand(ident) => Some(ident.sym.to_string()),
+                _ => None,
             };
-            if let Some(key) = prop_name(&key_value.key) {
+            if let Some(key) = key {
                 keys.insert(key);
             }
         }

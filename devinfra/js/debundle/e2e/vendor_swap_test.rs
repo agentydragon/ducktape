@@ -276,16 +276,15 @@ fn named_from_default_handles_object_literal_with_keyvalue_props() {
 }
 
 #[test]
-fn named_from_default_rejects_shorthand_props_silently_today() {
-    // Documented gap: `collect_default_export_object_keys` only walks
-    // `Prop::KeyValue` props, so `Prop::Shorthand` (`{ ping, pong }`)
-    // is silently skipped — the wrapper fails the missing-keys check
-    // because the upstream "object" yields zero detectable keys.
-    //
-    // This test pins the current behavior so a future relaxation
-    // (accepting Shorthand) flips it from failing-with-missing-keys to
-    // succeeding. Until then, vendor authors must use explicit
-    // `KeyValue` props in the upstream `export default`.
+fn named_from_default_accepts_shorthand_props() {
+    // Shorthand object-literal props (`{ ping, pong }` — local
+    // binding names used directly as both key and value) produce
+    // the same wrapper shape as `KeyValue` props: each shorthand
+    // key reflects a data property on the default export whose
+    // value is the local binding, so `export const K = _d.K;`
+    // re-exports the right value. Real-world vendor `index.mjs`
+    // files use shorthand commonly; accepting it removes an
+    // otherwise-unmotivated authoring requirement.
     let upstream_source = r#"const ping = () => "pong";
 const pong = () => "ping";
 export default { ping, pong };
@@ -297,19 +296,52 @@ export default { ping, pong };
     });
 
     assert!(
-        !fixture.result.status.success(),
-        "debundler should fail on shorthand-only object today:\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
         fixture.result.stdout,
         fixture.result.stderr,
     );
+
+    let wrapper_source = fs::read_to_string(&fixture.wrapper_path).expect("wrapper exists");
     assert!(
-        fixture
-            .result
-            .stderr
-            .contains("named-from-default wrapper shape mismatch"),
-        "expected wrapper-shape-mismatch error; got stderr:\n{}",
+        wrapper_source.contains("export const ping = _d.ping"),
+        "wrapper should emit a named-export pull for `ping`:\n{wrapper_source}",
+    );
+    assert!(
+        wrapper_source.contains("export const pong = _d.pong"),
+        "wrapper should emit a named-export pull for `pong`:\n{wrapper_source}",
+    );
+    assert!(
+        wrapper_source.contains("export default _d"),
+        "wrapper should preserve the default export:\n{wrapper_source}",
+    );
+}
+
+#[test]
+fn named_from_default_accepts_mixed_keyvalue_and_shorthand_props() {
+    // Mixed shape — KeyValue + Shorthand in the same default
+    // export. Both shapes contribute their keys to the wrapper's
+    // named-export set.
+    let upstream_source = r#"const ping = () => "pong";
+export default { ping, "pong": () => "ping" };
+"#;
+
+    let fixture = run_named_from_default_fixture(NamedFromDefaultFixtureArgs {
+        upstream_source,
+        chunk_source: "export { ping, pong } from \"lib\";\n",
+    });
+
+    assert!(
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
+        fixture.result.stdout,
         fixture.result.stderr,
     );
+    let wrapper_source = fs::read_to_string(&fixture.wrapper_path).expect("wrapper exists");
+    assert!(wrapper_source.contains("export const ping = _d.ping"));
+    assert!(wrapper_source.contains("export const pong = _d.pong"));
 }
 
 #[test]
