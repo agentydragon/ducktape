@@ -1619,6 +1619,42 @@ gets its own `reads_at_init` and `has_side_effect`. The dep
 graph captures any cross-declarator reads (e.g. `C = A.x`'s read
 of `A`) automatically.
 
+### Spec surface
+
+The spec selects a single declarator from a comma-list by naming
+the bound identifier as a member. Example, given source
+`const a = 1, b = 2, c = 3;`:
+
+```yaml
+logical_modules:
+  static/app:
+    mod_a:
+      members: [{ selector: { binding: { name: a } } }]
+    mod_b:
+      members: [{ selector: { binding: { name: b } } }]
+    mod_c:
+      members: [{ selector: { binding: { name: c } } }]
+```
+
+emits three modules — each declaring exactly its claimed
+declarator with the original kind (`const`/`let`/`var`) and any
+`export` directive preserved. Unclaimed siblings stay in the
+residual module as a (possibly single-declarator) comma-list.
+Source-order side effects across declarators are preserved by the
+ESM linker, which evaluates the destination modules in source
+order. See <e2e/comma_list_owner_split_test.rs> for the full
+shape matrix.
+
+**Destructuring declarators are atomic.** `const { x, y } = obj`
+is one declarator binding two names; the lowerer's
+`split_var_decl` moves it as one unit. Claiming any one of its
+bindings (e.g. `x`) pulls every sibling (`y`) into the same
+module — sibling bindings join their claimed module with their
+local name as the export name. Claiming siblings into different
+modules is rejected with an explicit error from
+`build_module_plans`; the only legal options are claim-all or
+claim-none.
+
 ## Cycle resolution
 
 When the validator rejects a cycle, the spec author must remove the
