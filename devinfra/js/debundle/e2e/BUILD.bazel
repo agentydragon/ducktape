@@ -49,6 +49,7 @@ rust_library(
     )
     for name in [
         "anonymous_statement_test",
+        "comma_list_owner_split_test",
         "lowering_test",
         "naturalization_test",
         "url_rebase_test",
