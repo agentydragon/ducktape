@@ -348,9 +348,19 @@ export default { ping, "pong": () => "ping" };
 fn named_from_default_rejects_non_object_literal_default() {
     // `export default class { ... }` is an `ExportDefaultDecl`, not
     // an `ExportDefaultExpr`, so the search bails with "no export
-    // default declaration" before the object-literal check. Future
-    // relaxation could fold class- or function-shaped defaults into
-    // the same wrapper path.
+    // default declaration" before the object-literal check.
+    //
+    // This is intentionally out-of-scope: the `named_from_default`
+    // wrapper re-exports via `_d.K`, which on a class default would
+    // resolve to STATIC properties only (instance methods sit on
+    // `_d.prototype`). Function defaults are similar — `_d.K` reads
+    // a property on the function object, which is the wrong access
+    // path for anything semantically useful in the common case.
+    // Vendor authors with `export default class` / `export default
+    // function` shapes should use the `named_from_module_default`
+    // wrapper instead (which handles anonymous default fn/class via
+    // `DefaultDecl::{Fn,Class}` — see
+    // `named_from_module_default_handles_anonymous_default_class`).
     let upstream_source = r#"export default class {
   ping() { return "pong"; }
 }

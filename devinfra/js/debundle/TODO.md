@@ -182,18 +182,15 @@ Known cleanup targets:
 
 ## Vendor swap edge cases
 
-- `named_from_default`: accepted shape is "upstream default export is
-  an object literal whose props are either `Prop::KeyValue` with
-  `Ident`/`Str` keys or `Prop::Shorthand`". One adjacent shape is
-  still rejected:
-  - **Class / function default declarations** (`export default class
-{}`) don't surface as `ExportDefaultExpr` and bail with "no export
-    default declaration". Open whether to accept (less common for
-    `named_from_default` wrapper shape) or document as intentionally
-    out-of-scope.
-
-- `named_from_module_default`: handle anonymous default function/class
-  declarations (currently rejected).
+(No open vendor-swap-shape items as of 2026-05-12. The wrapper
+shapes covered by `swap_vendor_chunks` are:
+`named_from_default` (object-literal defaults with `KeyValue` /
+`Shorthand` props) and `named_from_module_default` (re-exported
+locals + anonymous default function/class). Class / function
+default declarations through `named_from_default` are
+intentionally out-of-scope — instance methods aren't reachable
+via `_d.K`; vendor authors needing that shape should use
+`named_from_module_default` instead.)
 
 ## Analysis semantics breadth
 
