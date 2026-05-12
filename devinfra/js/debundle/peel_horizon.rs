@@ -4,10 +4,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use analysis::{BindingReport, OwnerGraphReport};
-use spec::{BindingSourceKind, Member};
+use spec::BindingSourceKind;
+use spec_tree::ModuleFile;
 
 #[derive(Debug, Clone)]
 pub struct PeelHorizonOptions {
@@ -89,13 +90,6 @@ struct DeferredModule {
     file: PathBuf,
     bindings: BTreeSet<String>,
     owners: BTreeSet<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ModuleFile {
-    #[serde(default)]
-    members: Vec<Member>,
 }
 
 pub fn analyze_peel_horizon(options: &PeelHorizonOptions) -> Result<PeelHorizonReport> {
@@ -748,6 +742,39 @@ mod tests {
                 .map(|row| row.path.as_str())
                 .collect::<Vec<_>>(),
             vec!["near"]
+        );
+    }
+
+    #[test]
+    fn ignores_anonymous_statements_top_level_field() {
+        // Spec authoring sometimes co-locates top-level side-effect
+        // statements with declared members (e.g. mobx decorator
+        // applications, the size-100 app/bootstrap/types_and_models
+        // closure peel). peel_horizon does not consume them, but it
+        // shares ModuleFile with spec_tree so any field the canonical
+        // parser accepts must also parse here without breaking the
+        // helper.
+        let temp = tempfile::tempdir().unwrap();
+        let modules = temp.path().join("modules");
+        let graph = temp.path().join("owner_graph.json");
+        graph_fixture(&graph);
+        write_file(
+            &modules.join("with_side_effects.yaml.deferred"),
+            &format!(
+                "{}\nanonymous_statements:\n  - match: 'window.foo;'\n    note: smoke test\n",
+                module_yaml(&[("a", "variable_declarator")]),
+            ),
+        );
+
+        let report = analyze_peel_horizon(&options(&modules, &graph)).unwrap();
+
+        assert_eq!(
+            report
+                .full
+                .iter()
+                .map(|row| row.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["with_side_effects"]
         );
     }
 

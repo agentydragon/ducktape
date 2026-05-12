@@ -75,13 +75,20 @@ enum VendorLevelSource {
     Swap,
 }
 
+/// Authoring shape of a single per-module YAML under
+/// `modules/**/<path>.yaml{,.deferred}`. Re-exported so
+/// `peel_horizon` (and any other consumer that ranks deferred YAMLs)
+/// parses them through exactly the same schema the canonical
+/// `compile_spec_tree` path uses — every additive field landed here
+/// is automatically accepted by those consumers and stays in lockstep
+/// with the on-disk YAML the debundler itself reads.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ModuleFile {
+pub struct ModuleFile {
     #[serde(default)]
-    members: Vec<Member>,
+    pub members: Vec<Member>,
     #[serde(default)]
-    anonymous_statements: Vec<AnonymousStatement>,
+    pub anonymous_statements: Vec<AnonymousStatement>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
