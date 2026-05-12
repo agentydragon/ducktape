@@ -1398,16 +1398,32 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
                 // the destination to the same coordinate system before
                 // computing the relative path.
                 let dest_abs = join_module_path(&[chunk_id, &plan.target_file]);
-                let mut reexport_imports = Vec::with_capacity(reexports.len());
+                // Group reexports by rewritten source so multiple bindings
+                // re-exported from the same import-from end up in a single
+                // `import { ... } from "<src>"` statement, not one
+                // statement per binding. First-occurrence order is
+                // preserved for both source groups and bindings within
+                // each group. All specifiers emitted here are Named, so
+                // ESM's Namespace/Named mutual-exclusion rule doesn't
+                // apply.
+                let mut groups: Vec<(String, Vec<ImportSpecifier>)> =
+                    Vec::with_capacity(reexports.len());
+                let mut index_by_source: BTreeMap<String, usize> = BTreeMap::new();
                 for reexport in reexports {
                     let src = relative_source(&dest_abs, &reexport.imported_from);
-                    reexport_imports.push(imported_binding_import_decl(
-                        &reexport.local,
-                        &reexport.imported_name,
-                        &src,
-                    ));
+                    let specifier =
+                        imported_binding_named_specifier(&reexport.local, &reexport.imported_name);
+                    let group_index = *index_by_source.entry(src.clone()).or_insert_with(|| {
+                        groups.push((src.clone(), Vec::new()));
+                        groups.len() - 1
+                    });
+                    groups[group_index].1.push(specifier);
                     import_member_exports
                         .insert(reexport.local.clone(), reexport.public_name.clone());
+                }
+                let mut reexport_imports = Vec::with_capacity(groups.len());
+                for (src, specifiers) in groups {
+                    reexport_imports.push(import_decl_module_item(specifiers, &src));
                 }
                 let tail = body.split_off(import_count);
                 body.extend(reexport_imports);
@@ -3153,6 +3169,16 @@ fn resolve_imported_binding(
 /// uses a destination-relative path resolved through the artifact's
 /// source-chunk index, so it stays correct after the rewriter (which
 /// skips materialized files).
+///
+/// Bindings sharing the same rewritten source are consolidated into a
+/// single `ImportDecl` (one statement with all specifiers) so the
+/// emitter matches what an author would write — not one statement per
+/// binding. Namespace specifiers (`import * as ns from "src"`) are
+/// emitted as their own `ImportDecl` even when a same-source group
+/// also has named/default specifiers, because ESM grammar forbids
+/// mixing `NameSpaceImport` with `NamedImports` in a single
+/// `ImportClause`. First-occurrence order is preserved both for the
+/// source groups and for specifiers within each group.
 fn source_chunk_imports_for_moved_body(
     source_import_cache: &mut ArtifactSourceImportResolutionCache<'_>,
     source_chunk_id: &str,
@@ -3160,8 +3186,9 @@ fn source_chunk_imports_for_moved_body(
     dest_target_file: &str,
     needed: BTreeMap<String, &RuntimeImportInfo>,
 ) -> Result<Vec<ModuleItem>> {
-    let mut result = Vec::new();
     let dest_dir = join_module_path(&[source_chunk_id, &module_path_dirname(dest_target_file)]);
+    let mut groups: Vec<(String, Vec<ImportSpecifier>, Vec<ImportSpecifier>)> = Vec::new();
+    let mut index_by_source: BTreeMap<String, usize> = BTreeMap::new();
     for (local, info) in needed {
         let rewritten_source = if let Some((target_chunk_id, target_entry_file, _path)) =
             source_import_cache.resolve(&info.src, source_chunk_id, source_runtime_file)?
@@ -3179,9 +3206,55 @@ fn source_chunk_imports_for_moved_body(
                 .unwrap_or(0);
             format!("{}{}", "../".repeat(depth), info.src)
         };
-        result.push(build_runtime_reimport(&local, info, &rewritten_source));
+        let specifier = runtime_reimport_specifier(&local, info);
+        let group_index = *index_by_source
+            .entry(rewritten_source.clone())
+            .or_insert_with(|| {
+                groups.push((rewritten_source.clone(), Vec::new(), Vec::new()));
+                groups.len() - 1
+            });
+        let (_, named_or_default, namespace) = &mut groups[group_index];
+        match specifier {
+            ImportSpecifier::Namespace(_) => namespace.push(specifier),
+            _ => named_or_default.push(specifier),
+        }
+    }
+    let mut result = Vec::with_capacity(groups.len());
+    for (src, mut named_or_default, mut namespace) in groups {
+        // Emit namespace specifiers as their own ImportDecl each: ESM
+        // forbids mixing them with NamedImports in one ImportClause,
+        // and even multiple `import * as ns from "src"` for the same
+        // source cannot share a statement (one ImportClause has at
+        // most one NameSpaceImport).
+        for ns_specifier in namespace.drain(..) {
+            result.push(import_decl_module_item(vec![ns_specifier], &src));
+        }
+        if !named_or_default.is_empty() {
+            // Sort default specifiers before named to satisfy ESM
+            // grammar (`import D, { x } from "src"`, not the reverse).
+            named_or_default.sort_by_key(|specifier| match specifier {
+                ImportSpecifier::Default(_) => 0,
+                _ => 1,
+            });
+            result.push(import_decl_module_item(named_or_default, &src));
+        }
     }
     Ok(result)
+}
+
+fn import_decl_module_item(specifiers: Vec<ImportSpecifier>, src: &str) -> ModuleItem {
+    ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
+        span: DUMMY_SP,
+        specifiers,
+        src: Box::new(Str {
+            span: DUMMY_SP,
+            value: src.into(),
+            raw: None,
+        }),
+        type_only: false,
+        with: None,
+        phase: ImportPhase::Evaluation,
+    }))
 }
 
 #[derive(Debug)]
@@ -3197,8 +3270,8 @@ enum RuntimeImportKind {
     Namespace,
 }
 
-fn build_runtime_reimport(local: &str, info: &RuntimeImportInfo, src: &str) -> ModuleItem {
-    let specifier = match &info.kind {
+fn runtime_reimport_specifier(local: &str, info: &RuntimeImportInfo) -> ImportSpecifier {
+    match &info.kind {
         RuntimeImportKind::Named { imported } => ImportSpecifier::Named(ImportNamedSpecifier {
             span: DUMMY_SP,
             local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
@@ -3220,48 +3293,27 @@ fn build_runtime_reimport(local: &str, info: &RuntimeImportInfo, src: &str) -> M
             span: DUMMY_SP,
             local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
         }),
-    };
-    ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
-        span: DUMMY_SP,
-        specifiers: vec![specifier],
-        src: Box::new(Str {
-            span: DUMMY_SP,
-            value: src.into(),
-            raw: None,
-        }),
-        type_only: false,
-        with: None,
-        phase: ImportPhase::Evaluation,
-    }))
+    }
 }
 
-/// Emit `import { <imported> as <local> } from "<src>"` (or just
-/// `import { <local> } from "<src>"` when local == imported).
-fn imported_binding_import_decl(local: &str, imported: &str, src: &str) -> ModuleItem {
-    ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
+/// Build a single Named specifier (`{ <imported> as <local> }`, or just
+/// `{ <local> }` when local == imported) for an ImportSpecifier-bound
+/// reexport. Callers group same-source specifiers and wrap the list in
+/// one `ImportDecl` via [`import_decl_module_item`].
+fn imported_binding_named_specifier(local: &str, imported: &str) -> ImportSpecifier {
+    ImportSpecifier::Named(ImportNamedSpecifier {
         span: DUMMY_SP,
-        specifiers: vec![ImportSpecifier::Named(ImportNamedSpecifier {
-            span: DUMMY_SP,
-            local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
-            imported: if local == imported {
-                None
-            } else {
-                Some(ModuleExportName::Ident(Ident::new_no_ctxt(
-                    imported.into(),
-                    DUMMY_SP,
-                )))
-            },
-            is_type_only: false,
-        })],
-        src: Box::new(Str {
-            span: DUMMY_SP,
-            value: src.into(),
-            raw: None,
-        }),
-        type_only: false,
-        with: None,
-        phase: ImportPhase::Evaluation,
-    }))
+        local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+        imported: if local == imported {
+            None
+        } else {
+            Some(ModuleExportName::Ident(Ident::new_no_ctxt(
+                imported.into(),
+                DUMMY_SP,
+            )))
+        },
+        is_type_only: false,
+    })
 }
 
 fn import_decl_for_plan(
