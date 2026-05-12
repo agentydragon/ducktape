@@ -212,6 +212,40 @@ behavior for:
 - Replayable side-effect attachment.
 - Top-level side-effect classification across uncommon initializer shapes.
 
+## Cross-module / imported-binding purity (recursive purity Part 3)
+
+`ChunkCodeGraph` tracks chunk-local function/PlainData purity within
+a single source chunk. Imported callees from a different source chunk
+(vendor chunks, vite chunk splits) fall through to `unknown_call`
+because the importer has no per-function purity for the exporter's
+bindings. The downstream cost is each cross-chunk pure-helper needing
+a `purity: pure` spec hint in gaffer-private even though its body
+would classify pure if it were chunk-local.
+
+Sketch (deferred until residual hint set is dominated by cross-chunk
+shapes):
+
+- Per-chunk analysis emits a side-output manifest with each chunk-top
+  `Function` and `PlainData` binding's classification.
+- When analyzing chunk B that imports `helper` from chunk A's output,
+  read A's manifest and seed B's `ChunkCodeGraph` bindings with A's
+  per-name verdict.
+- Soundness gate: only admit cross-chunk facts when the importer's
+  import-specifier names match A's exported chunk-top binding shape
+  (e.g. `import { helper }` matches `export const helper = () => …`
+  but not a re-export from elsewhere).
+
+Today only one residual cluster in gaffer-private's `78d928dca7`
+spec sits cross-chunk (mobx wrappers in `infra/mobx/*.yaml.deferred`)
+and that cluster is the legitimate user of the spec-side
+`purity: pure` override — genuinely-impure-but-init-safe vendor
+shape, not a pure-by-derivation chain. So Part 3 isn't load-bearing
+yet. Land if a future snapshot grows a cross-chunk pure-helper
+chain.
+
+Context: <gaffer-private/tana/x/research/ducktape_purity_recursive.md>
+"Part 3 — cross-module purity" section.
+
 ## Corpus breadth
 
 Current passing surface is centered on small synthetic fixtures and the
