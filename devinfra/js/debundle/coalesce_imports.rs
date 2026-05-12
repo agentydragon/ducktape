@@ -55,7 +55,10 @@ pub fn coalesce_imports(mut artifact: JsPipelineArtifact) -> Result<JsPipelineAr
             if !file.is_ast() {
                 continue;
             }
-            let file = chunk_artifact.js.remove_file(&file_path).expect("file present");
+            let file = chunk_artifact
+                .js
+                .remove_file(&file_path)
+                .expect("file present");
             let Some((parts, ast)) = file.into_ast_parts() else {
                 continue;
             };
@@ -275,12 +278,10 @@ mod tests {
 
     #[test]
     fn coalesces_three_named_imports_into_one() {
-        let mut parsed = ast(
-            "import { a as x } from \"vendor.js\";\n\
+        let mut parsed = ast("import { a as x } from \"vendor.js\";\n\
              import { b as y } from \"vendor.js\";\n\
              import { c as z } from \"vendor.js\";\n\
-             use(x, y, z);\n",
-        );
+             use(x, y, z);\n");
         coalesce_imports_in_module(&mut parsed);
         let decls = import_decls(&parsed);
         assert_eq!(decls.len(), 1, "expected one ImportDecl");
@@ -290,11 +291,9 @@ mod tests {
 
     #[test]
     fn preserves_side_effect_only_import_as_own_statement() {
-        let mut parsed = ast(
-            "import \"vendor.js\";\n\
+        let mut parsed = ast("import \"vendor.js\";\n\
              import { a } from \"vendor.js\";\n\
-             import { b } from \"vendor.js\";\n",
-        );
+             import { b } from \"vendor.js\";\n");
         coalesce_imports_in_module(&mut parsed);
         let decls = import_decls(&parsed);
         assert_eq!(decls.len(), 2);
@@ -306,10 +305,8 @@ mod tests {
 
     #[test]
     fn merges_default_and_named_from_same_source() {
-        let mut parsed = ast(
-            "import D from \"vendor.js\";\n\
-             import { a } from \"vendor.js\";\n",
-        );
+        let mut parsed = ast("import D from \"vendor.js\";\n\
+             import { a } from \"vendor.js\";\n");
         coalesce_imports_in_module(&mut parsed);
         let decls = import_decls(&parsed);
         assert_eq!(decls.len(), 1);
@@ -328,11 +325,9 @@ mod tests {
 
     #[test]
     fn keeps_namespace_import_separate() {
-        let mut parsed = ast(
-            "import * as ns from \"vendor.js\";\n\
+        let mut parsed = ast("import * as ns from \"vendor.js\";\n\
              import { a } from \"vendor.js\";\n\
-             import { b } from \"vendor.js\";\n",
-        );
+             import { b } from \"vendor.js\";\n");
         coalesce_imports_in_module(&mut parsed);
         let decls = import_decls(&parsed);
         assert_eq!(decls.len(), 2);
@@ -353,12 +348,10 @@ mod tests {
 
     #[test]
     fn preserves_first_occurrence_order() {
-        let mut parsed = ast(
-            "import { a } from \"first.js\";\n\
+        let mut parsed = ast("import { a } from \"first.js\";\n\
              import { b } from \"second.js\";\n\
              import { c } from \"first.js\";\n\
-             import { d } from \"second.js\";\n",
-        );
+             import { d } from \"second.js\";\n");
         coalesce_imports_in_module(&mut parsed);
         let decls = import_decls(&parsed);
         assert_eq!(decls.len(), 2);
@@ -371,10 +364,8 @@ mod tests {
 
     #[test]
     fn deduplicates_redundant_specifiers_with_same_local() {
-        let mut parsed = ast(
-            "import { a as x } from \"vendor.js\";\n\
-             import { a as x } from \"vendor.js\";\n",
-        );
+        let mut parsed = ast("import { a as x } from \"vendor.js\";\n\
+             import { a as x } from \"vendor.js\";\n");
         coalesce_imports_in_module(&mut parsed);
         let decls = import_decls(&parsed);
         assert_eq!(decls.len(), 1);
@@ -383,11 +374,9 @@ mod tests {
 
     #[test]
     fn does_not_coalesce_across_non_import_statement() {
-        let mut parsed = ast(
-            "import { a } from \"vendor.js\";\n\
+        let mut parsed = ast("import { a } from \"vendor.js\";\n\
              const noise = 1;\n\
-             import { b } from \"vendor.js\";\n",
-        );
+             import { b } from \"vendor.js\";\n");
         coalesce_imports_in_module(&mut parsed);
         let decls = import_decls(&parsed);
         // Late import after a statement is rare but legal; conservative
