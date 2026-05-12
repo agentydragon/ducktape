@@ -180,18 +180,6 @@ Known cleanup targets:
   resolution/index query API so mutation stages ask the same typed question and
   differ only in how they rewrite the matched AST node.
 
-## Vendor swap edge cases
-
-(No open vendor-swap-shape items as of 2026-05-12. The wrapper
-shapes covered by `swap_vendor_chunks` are:
-`named_from_default` (object-literal defaults with `KeyValue` /
-`Shorthand` props) and `named_from_module_default` (re-exported
-locals + anonymous default function/class). Class / function
-default declarations through `named_from_default` are
-intentionally out-of-scope — instance methods aren't reachable
-via `_d.K`; vendor authors needing that shape should use
-`named_from_module_default` instead.)
-
 ## Analysis semantics breadth
 
 The focused fixtures exercise the core access model. Validate or extend
