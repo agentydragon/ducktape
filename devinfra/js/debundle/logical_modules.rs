@@ -1795,15 +1795,17 @@ struct ChunkAstAnalysis {
     runtime_import_facts: RuntimeImportFacts,
     declarations: Vec<TopLevelDecl>,
     declaration_by_name: BTreeMap<String, usize>,
-    /// Per-binding-name set of names bound by the *same* declarator
-    /// pattern. For a plain `const a = 1` declarator the set is
-    /// `{a}` (size 1). For a destructuring declarator like
-    /// `const { x, y } = obj` both `x` and `y` map to the set
-    /// `{x, y}`. Used by `build_module_plans` to enforce
-    /// destructure-atomicity: claiming any one binding from a
-    /// destructure pulls the rest into the same module, because
-    /// the materializer's `split_var_decl` moves a destructuring
-    /// declarator as one atomic unit.
+    /// Sibling sets for top-level destructuring declarators only.
+    /// For a destructuring declarator like `const { x, y } = obj`
+    /// both `x` and `y` map to the set `{x, y}`. Plain
+    /// single-name declarators (`const a = 1`) are not recorded —
+    /// they don't need atomicity enforcement, and absence here is
+    /// the signal that there are no siblings to consider. Used by
+    /// `build_module_plans` to enforce destructure-atomicity:
+    /// claiming any one binding from a destructure pulls the rest
+    /// into the same module, because the materializer's
+    /// `split_var_decl` moves a destructuring declarator as one
+    /// atomic unit.
     destructure_siblings: BTreeMap<String, BTreeSet<String>>,
     /// Names that the source chunk's entry already exports (via
     /// `export { foo, bar }` re-exports of local bindings, or

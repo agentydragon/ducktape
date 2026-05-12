@@ -400,10 +400,10 @@ export { x, y };
     ));
 
     let mod_xy = read(&fixture.out_root, "static/app/modules/mod_xy.js");
-    // The destructuring declarator either moves atomically (both
-    // `x` and `y` end up in mod_xy) or only `x` does and `y` lands
-    // somewhere reachable; whichever shape the materializer
-    // picks, the program must still print "10 20".
+    // Claiming `x` alone pulls the whole destructure into mod_xy
+    // (destructure-atomicity). The declarator must land here
+    // intact with both `x` and `y` bound, even though the spec
+    // only named `x`.
     assert!(
         mod_xy.contains("{ x, y }") || mod_xy.contains("{x, y}") || mod_xy.contains("{x,y}"),
         "mod_xy.js must keep the destructuring declarator intact; got:\n{mod_xy}",
