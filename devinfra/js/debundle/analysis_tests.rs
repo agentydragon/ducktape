@@ -1133,14 +1133,141 @@ mod tests {
     }
 
     #[test]
-    fn plain_data_let_object_literal_is_not_tracked() {
-        // `let` allows reassignment between graph construction and a
-        // member-read callsite; the cached `PlainData` would lie if
-        // a subsequent `TA = newObj` swapped in an object with
-        // getters. Constness is load-bearing — `let` and `var` are
-        // intentionally excluded.
-        assert!(!is_plain_data("let TA = { a: 1 };", "TA"));
+    fn plain_data_let_object_literal_with_no_writes_is_tracked() {
+        // `let TA = {…}` is admissible even though re-assignment
+        // is syntactically allowed: the chunk-wide write scan
+        // confirms no `TA = rhs` assigns exist anywhere, so the
+        // post-init value is invariant just like a `const`.
+        assert!(is_plain_data("let TA = { a: 1 };", "TA"));
+        assert!(is_plain_data("let TA = [1, 2, 3];", "TA"));
+    }
+
+    #[test]
+    fn plain_data_var_object_literal_is_not_tracked() {
+        // `var`'s hoisting + redeclaration semantics aren't worth
+        // the analysis complexity for the shape this admission
+        // targets (bundler-emitted config tables). Keep `var` out
+        // of the candidate set.
         assert!(!is_plain_data("var TA = { a: 1 };", "TA"));
+    }
+
+    #[test]
+    fn plain_data_let_with_plain_literal_replacement_is_tracked() {
+        // The `applySystemConfigOverrides` shape from gaffer-private:
+        // `let envConfig = {…}` with every reassignment being
+        // `envConfig = { ...envConfig, ...n }`. Object spread in the
+        // RHS is admitted — `CopyDataProperties` writes data
+        // descriptors regardless of source shape, so the post-write
+        // value still has no accessor channels.
+        let src = r#"
+            let envConfig = { REACT_APP_ENV: "production", FOO: 1 };
+            const applyOverrides = (n) => {
+                envConfig = { ...envConfig, ...n };
+            };
+            const getEnv = (k) => envConfig[k];
+        "#;
+        assert!(is_plain_data(src, "envConfig"));
+        assert_eq!(fn_purity(src, "getEnv"), Some(true));
+    }
+
+    #[test]
+    fn plain_data_let_with_non_literal_rhs_assign_disqualifies() {
+        // A re-bind whose RHS is not a syntactic plain literal could
+        // produce an accessor-bearing value at runtime — `someFn()`
+        // might return `Object.defineProperty(...)`-installed
+        // getters, `other` might be such a value already, `X || {}`
+        // shortcircuits to either operand. Each of these must
+        // disqualify.
+        assert!(!is_plain_data(
+            "let X = { a: 1 }; function reassign() { X = someFn(); }",
+            "X"
+        ));
+        assert!(!is_plain_data(
+            "let X = { a: 1 }; function reassign(other) { X = other; }",
+            "X"
+        ));
+        assert!(!is_plain_data(
+            "let X = { a: 1 }; function reassign() { X = X || {}; }",
+            "X"
+        ));
+    }
+
+    #[test]
+    fn plain_data_let_with_accessor_rhs_assign_disqualifies() {
+        // Even though the binding is `let` and the RHS is a literal,
+        // the literal carries a getter — assigning it gives X
+        // accessor channels. Disqualify.
+        assert!(!is_plain_data(
+            "let X = { a: 1 }; function bad() { X = { get a() { return io(); } }; }",
+            "X"
+        ));
+    }
+
+    #[test]
+    fn plain_data_let_with_member_write_disqualifies() {
+        // `let X = {…}; X.k = v` is a member write — installs a
+        // property in place. The conservative rule rejects it (the
+        // resulting object is still plain-data, but the chunk-wide
+        // invariant is simpler if we forbid all member writes
+        // uniformly across `const` and `let`).
+        assert!(!is_plain_data(
+            "let X = { a: 1 }; function mut() { X.b = 2; }",
+            "X"
+        ));
+    }
+
+    #[test]
+    fn plain_data_let_with_update_disqualifies() {
+        // `X++` rewrites X to a number — definitely not a
+        // plain-literal data shape. Reject.
+        assert!(!is_plain_data(
+            "let X = { a: 1 }; function bad() { X++; }",
+            "X"
+        ));
+    }
+
+    #[test]
+    fn plain_data_let_chain_collapses_env_config_walkthrough_shape() {
+        // The full gaffer-private chain-of-hints shape, end to end:
+        //
+        //   let envConfig = { REACT_APP_ENV: …, FUNCTIONS_EMULATOR: false, … };
+        //   const applySystemConfigOverrides = (n) => { envConfig = { ...envConfig, ...n }; };
+        //   const getEnv = (n) => envConfig[n];
+        //   const isEmulatorEnv = () =>
+        //       (mr.FUNCTIONS_EMULATOR ? true : getEnv("REACT_APP_ENV") === "emulator");
+        //   const getSystemConfig = () => envConfig;
+        //
+        // Today (pre-this-extension) the spec author needed
+        // `purity: pure` hints on `getEnv` / `isEmulatorEnv` /
+        // `getSystemConfig` in
+        // `runtime/environment/{env_config,config}.yaml` because
+        // `envConfig` was `let` and member access on it flagged
+        // `unknown_member`. With the let+mutator extension every
+        // helper in the chain classifies pure with zero hints.
+        let src = r#"
+            const mr = { FUNCTIONS_EMULATOR: false };
+            let envConfig = {
+                REACT_APP_ENV: "production",
+                REACT_APP_FIREBASE_API_KEY: "x",
+            };
+            const applySystemConfigOverrides = (n) => {
+                envConfig = { ...envConfig, ...n };
+            };
+            const getEnv = (n) => envConfig[n];
+            const isEmulatorEnv = () =>
+                (mr.FUNCTIONS_EMULATOR ? true : getEnv("REACT_APP_ENV") === "emulator");
+            const getSystemConfig = () => envConfig;
+        "#;
+        assert!(is_plain_data(src, "envConfig"));
+        assert!(is_plain_data(src, "mr"));
+        assert_eq!(fn_purity(src, "getEnv"), Some(true));
+        assert_eq!(fn_purity(src, "isEmulatorEnv"), Some(true));
+        assert_eq!(fn_purity(src, "getSystemConfig"), Some(true));
+        // `applySystemConfigOverrides` itself is impure (it writes
+        // to envConfig); call sites still need to anchor it via
+        // S-edges. Confirm the impurity is detected, so the
+        // debundler doesn't accidentally classify the mutator pure.
+        assert_eq!(fn_purity(src, "applySystemConfigOverrides"), Some(false));
     }
 
     #[test]
@@ -1157,17 +1284,20 @@ mod tests {
     }
 
     #[test]
-    fn plain_data_const_with_spread_is_not_tracked() {
-        // Object spread inherits enumerable own properties from
-        // another object — including accessor descriptors copied
-        // via `Object.defineProperty`-style construction on the
-        // source. Reject to keep the "no accessors in this shape"
-        // invariant tight.
-        assert!(!is_plain_data("const X = { ...other, a: 1 };", "X"));
-        // Array spread iterates the source's `[Symbol.iterator]` at
-        // init, which already counts as impure; the literal also
-        // can't be guaranteed plain.
-        assert!(!is_plain_data("const X = [1, ...other];", "X"));
+    fn plain_data_const_with_spread_is_tracked() {
+        // Object/array spread inside the literal init is admitted:
+        // `CopyDataProperties` and array spread both write the
+        // source's *values* via `CreateDataPropertyOrThrow`, which
+        // produces data descriptors regardless of the source's
+        // descriptor shape. The resulting receiver has only data
+        // properties, so member reads on it fire no user code.
+        // The spread itself fires source getters AT INIT — that
+        // impurity belongs to the surrounding statement (classified
+        // independently via `ObjectSpread`/`ArraySpread` rules) and
+        // is orthogonal to whether subsequent reads on the binding
+        // are pure.
+        assert!(is_plain_data("const X = { ...other, a: 1 };", "X"));
+        assert!(is_plain_data("const X = [1, ...other];", "X"));
     }
 
     #[test]

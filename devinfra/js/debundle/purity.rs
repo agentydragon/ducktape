@@ -31,24 +31,49 @@ enum ChunkBinding {
     /// `purity` is the worst purity reachable from the body, computed
     /// by fixed-point iteration over all chunk-top functions.
     Function { purity: Purity },
-    /// `const X = <plain object/array literal>` whose binding cell
-    /// is never written through anywhere in the chunk. Property reads
-    /// `X.k` / `X[k]` (k pure) on such a binding are pure:
-    /// * `const` blocks reassignment of the binding cell.
-    /// * The plain-literal init shape has no accessor properties
-    ///   (no getters/setters, no methods, no spreads, no computed
-    ///   keys, no `__proto__`).
-    /// * The chunk-wide "never written through" check rules out
-    ///   `Object.defineProperty(X, ...)` / `Object.setPrototypeOf(X, ...)`
-    ///   etc. that could install an accessor or change the prototype
-    ///   to one with accessors.
+    /// Chunk-top `const X = <plain literal>` (immutable cell) OR
+    /// `let X = <plain literal>` whose only assignments anywhere in
+    /// the chunk re-bind X to another plain literal (whole-object
+    /// replacement; no in-place mutation). Property reads `X.k` /
+    /// `X[k]` (k pure) on such a binding are pure regardless of when
+    /// they fire:
+    ///
+    /// * **No accessor channels at any program point.** The initial
+    ///   init is a syntactic plain literal — no
+    ///   getters/setters/methods/computed keys/`__proto__`, so the
+    ///   value carries only data properties. Every re-bind (`let`
+    ///   case) writes another plain-literal value, so the post-write
+    ///   value still has only data properties. Object/array spread
+    ///   inside the literal (`{...src}`, `[...src]`) is permitted:
+    ///   `CopyDataProperties` copies values via
+    ///   `CreateDataPropertyOrThrow` regardless of the source's
+    ///   descriptor shape — the result is plain.
+    /// * **No post-init accessor installation.** The chunk-wide
+    ///   write scan rejects any member write (`X.k = …`,
+    ///   `X[k] = …`), member update, member delete, or call to
+    ///   `Object.{defineProperty,defineProperties,setPrototypeOf,assign}`
+    ///   / `Reflect.{defineProperty,set,setPrototypeOf,deleteProperty}`
+    ///   with `X` as first arg. Plain-ident writes whose RHS is not
+    ///   a plain-literal also disqualify.
+    /// * **Re-bind soundness for `let`.** Reads on `X` after a
+    ///   re-bind see the new plain-literal value; reads before still
+    ///   saw the old plain-literal value. At no program point does
+    ///   `X` hold an accessor-carrying value, so member reads fire
+    ///   no user code regardless of write/read interleaving. The
+    ///   re-bind statement itself is independently classified impure
+    ///   (the existing `AssignOrUpdate` rule on `Expr::Assign`), so
+    ///   it keeps its `S`-edge and the debundler cannot move it past
+    ///   sequenced points.
     ///
     /// Sound enabler for the recursive-purity claim "`x` reads on
     /// `x.k` / `x[pure]` are pure iff `x` is bound to a plain-data
     /// shape that has no accessor channels". Eliminates the
     /// chain-of-hints needed when a chunk-local helper's body is
-    /// just a property read on a chunk-local config object
-    /// (`const Me = (n) => TA[n]`).
+    /// just a property read on a chunk-local config object —
+    /// including the `let envConfig = {...}` /
+    /// `envConfig = {...envConfig, ...n}` pattern that the
+    /// `runtime/environment/env_config.yaml` spec hints in
+    /// gaffer-private were a workaround for.
     PlainData,
 }
 
@@ -373,11 +398,24 @@ fn collect_plain_data_bindings(body: &[TopLevelItemView<'_>]) -> Vec<String> {
         .collect()
 }
 
-/// Yield `(name, init)` pairs for each chunk-top `const`-bound
-/// single-declarator binding with an explicit initializer that's NOT
-/// a function/arrow expression (those go through `Function`). Comma-
-/// list declarations are pre-split by `top_level_item_views`, so each
-/// `VarDecl` we see here has exactly one `decl`.
+/// Yield `(name, init)` pairs for each chunk-top single-declarator
+/// `const X = <init>` or `let X = <init>` whose initializer is NOT a
+/// function/arrow expression (those go through `Function`). `var` is
+/// excluded — the hoisting + redeclaration semantics complicate the
+/// chunk-wide write scan, and bundlers practically don't emit
+/// chunk-top `var X = …` for the config-object shape this analysis
+/// targets. Comma-list declarations are pre-split by
+/// `top_level_item_views`, so each `VarDecl` we see here has exactly
+/// one `decl`.
+///
+/// Both `const` and `let` candidates flow through the same scanner;
+/// the scanner's check is uniform ("no member writes or hostile
+/// builtin calls, all ident writes have plain-literal RHS"), so the
+/// distinction is only at the candidate-collection stage:
+/// `const` is admitted automatically (its binding cell is immutable
+/// at the language level; only the chunk-wide checks for accessor
+/// installation post-init matter); `let` additionally relies on
+/// every `X = rhs` ident assign having a plain-literal RHS.
 fn plain_data_const_candidates(item: &ModuleItem) -> Vec<(String, &Expr)> {
     let var = match item {
         ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
@@ -387,7 +425,7 @@ fn plain_data_const_candidates(item: &ModuleItem) -> Vec<(String, &Expr)> {
         },
         _ => return Vec::new(),
     };
-    if var.kind != VarDeclKind::Const {
+    if !matches!(var.kind, VarDeclKind::Const | VarDeclKind::Let) {
         return Vec::new();
     }
     let mut out = Vec::new();
@@ -407,25 +445,44 @@ fn plain_data_const_candidates(item: &ModuleItem) -> Vec<(String, &Expr)> {
 }
 
 /// Pure syntactic check for "plain-literal data shape": an object
-/// literal whose properties are exclusively `KeyValue`/`Shorthand`
-/// with non-computed, non-`__proto__` keys, or an array literal with
-/// no spreads (holes are fine — they read as `undefined`, no getter).
+/// literal whose own properties are exclusively `KeyValue` /
+/// `Shorthand` / object spread (`{...src}`) with non-computed,
+/// non-`__proto__` keys, or an array literal whose own elements are
+/// values or array spreads (holes are fine — they read as
+/// `undefined`, no getter).
+///
+/// **Spreads are permitted.** `{...src}` evaluates `src`'s own
+/// enumerable properties via `CopyDataProperties` and writes the
+/// resulting values to the target via `CreateDataPropertyOrThrow` —
+/// which always produces a data descriptor, regardless of the
+/// source's descriptor shape. So even `{...sourceWithGetters}`
+/// yields a plain-data target. The spread itself fires source
+/// getters AT INIT (impure event, classified independently by the
+/// existing `ObjectSpread`/`ArraySpread` rules), but the resulting
+/// receiver has no accessor channels, which is what this check
+/// gates.
+///
 /// Value sub-expressions are intentionally NOT validated here: the
-/// init's at-init purity is the surrounding statement's concern, and
-/// the safety of post-init member reads depends only on the receiver's
-/// shape (no accessors at init + no post-init accessor installation,
-/// the latter enforced by `PlainDataWriteScanner`).
+/// surrounding statement's at-init purity is the existing
+/// classifier's concern, and the safety of post-init member reads
+/// depends only on the receiver's shape (no accessors at init + no
+/// post-init accessor installation, the latter enforced by
+/// `PlainDataWriteScanner`).
 fn is_plain_data_init(expr: &Expr) -> bool {
     match expr {
+        Expr::Paren(p) => is_plain_data_init(&p.expr),
         Expr::Object(obj) => obj.props.iter().all(is_plain_data_prop),
-        Expr::Array(arr) => arr.elems.iter().flatten().all(|e| e.spread.is_none()),
+        Expr::Array(_) => true,
         _ => false,
     }
 }
 
 fn is_plain_data_prop(prop: &PropOrSpread) -> bool {
     let PropOrSpread::Prop(prop) = prop else {
-        return false; // Object spread: rejected.
+        // `PropOrSpread::Spread` is the `{...src}` form — permitted
+        // (see `is_plain_data_init` doc-comment for the
+        // CopyDataProperties soundness argument).
+        return true;
     };
     match prop.as_ref() {
         Prop::Shorthand(_) => true,
@@ -433,6 +490,9 @@ fn is_plain_data_prop(prop: &PropOrSpread) -> bool {
             // `{__proto__: X}` in an object literal SETS the prototype
             // (ES262 §13.2.5.5); if X carries accessor properties, reads
             // on the parent literal fire them. Reject explicitly.
+            // The computed form `{["__proto__"]: X}` does NOT set the
+            // prototype (per spec), but it's a computed key — rejected
+            // below.
             PropName::Ident(ident) => ident.sym.as_ref() != "__proto__",
             PropName::Str(s) => s.value.to_string_lossy() != "__proto__",
             PropName::Num(_) | PropName::BigInt(_) => true,
@@ -453,6 +513,24 @@ fn is_plain_data_prop(prop: &PropOrSpread) -> bool {
 struct PlainDataWriteScanner<'a> {
     candidates: &'a BTreeSet<String>,
     disqualified: BTreeSet<String>,
+}
+
+/// Defensive visitor that collects candidate-named idents in a
+/// compound assignment target (e.g. inside `[a, ...rest] = …` or
+/// `({x} = …)`) so the scanner can disqualify them. The scanner
+/// uses this only on shapes outside the explicit Member / Simple-Ident
+/// arms — destructuring etc.
+struct IdentVisitor<'a> {
+    candidates: &'a BTreeSet<String>,
+    hit: BTreeSet<String>,
+}
+
+impl Visit for IdentVisitor<'_> {
+    fn visit_ident(&mut self, node: &Ident) {
+        if self.candidates.contains(node.sym.as_ref()) {
+            self.hit.insert(node.sym.to_string());
+        }
+    }
 }
 
 impl PlainDataWriteScanner<'_> {
@@ -511,15 +589,78 @@ const PLAIN_DATA_HOSTILE_BUILTINS: &[(&str, &str)] = &[
 
 impl Visit for PlainDataWriteScanner<'_> {
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
-        if let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &node.left
-            && let Expr::Ident(recv) = member.obj.as_ref()
-        {
-            self.disqualify_if_candidate(recv.sym.as_ref());
+        match &node.left {
+            // `X.k = …` / `X[k] = …` — member write. Disqualify
+            // regardless of RHS shape: even when the RHS is a
+            // plain literal, the write installs a property on the
+            // existing `X` object (whose other reads we were
+            // promising to keep pure post-init). Plain data writes
+            // are sound for read-purity but the conservative rule
+            // is "X must never be written through" so the chunk-
+            // wide invariant reads simply.
+            AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
+                if let Expr::Ident(recv) = member.obj.as_ref() {
+                    self.disqualify_if_candidate(recv.sym.as_ref());
+                }
+            }
+            // `X = rhs` — plain identifier reassignment. Only
+            // candidates registered as `let` can encounter this
+            // legitimately (`const` re-assign is a syntax error).
+            // Admit only when `rhs` is itself a plain-literal data
+            // shape — anything else (a call, an Ident referencing
+            // an unknown source, a binary op, etc.) could produce
+            // an accessor-bearing value at runtime, which would
+            // break the read-purity invariant for subsequent
+            // member reads on `X`.
+            //
+            // For non-`let` candidates this branch can still fire
+            // (e.g. an inner-scope shadow assignment in a function
+            // body) but disqualifying conservatively is safe —
+            // false negatives never violate soundness, and tracking
+            // scopes here would be a larger lift than the case
+            // requires.
+            AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
+                if self.candidates.contains(binding.sym.as_ref())
+                    && !is_plain_data_init(&node.right)
+                {
+                    self.disqualify_if_candidate(binding.sym.as_ref());
+                }
+            }
+            // Compound assignment targets (paren wrappers, opt-chains)
+            // and destructuring targets (`AssignTarget::Pat`) don't
+            // come up in chunk-top binding mutator patterns we
+            // intend to admit; disqualify defensively if they
+            // mention a candidate name.
+            _ => {
+                let mut idents = IdentVisitor {
+                    candidates: self.candidates,
+                    hit: BTreeSet::new(),
+                };
+                node.left.visit_with(&mut idents);
+                for name in idents.hit {
+                    self.disqualified.insert(name);
+                }
+            }
         }
-        node.visit_children_with(self);
+        // For `=` the RHS still needs to descend (e.g. an inner
+        // nested write to a candidate inside the RHS expression).
+        // For compound `+=` etc., even on an admitted plain-RHS
+        // shape, the read-modify-write semantics make it unsafe;
+        // SWC's `AssignExpr` carries `op`, but we already
+        // disqualified all simple-Ident assigns whose RHS isn't a
+        // plain literal — and any compound op produces a non-literal
+        // value at runtime (`X += {a:1}` is `X = X + {a:1}` which
+        // is a string/number). So no further check needed.
+        node.right.visit_with(self);
     }
 
     fn visit_update_expr(&mut self, node: &UpdateExpr) {
+        // `X++` / `--X` on the binding cell itself produces a
+        // number; not a plain-literal shape. Disqualify Ident
+        // targets in addition to the existing Member-target rule.
+        if let Expr::Ident(ident) = node.arg.as_ref() {
+            self.disqualify_if_candidate(ident.sym.as_ref());
+        }
         self.disqualify_member_receiver(&node.arg);
         node.visit_children_with(self);
     }
