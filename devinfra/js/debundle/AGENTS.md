@@ -253,6 +253,23 @@ SWC-parsed input. Do not use raw text rewrites, string scanning, regex
 rewriting, ad hoc source patching, or other text-based mutation as a
 substitute for AST transformations.
 
+Syntax-derived facts likewise come from the SWC-backed parse/analysis
+path and flow through artifact manifests / indexes — not from
+phase-local rescans. The pipeline parses each chunk once in
+`prepare_js_chunks` and records imports, exports, dynamic-import
+shape, etc. on `ChunkManifest`; downstream stages (vendor renaming,
+specifier rewriting, owner-graph construction) consume those manifest
+facts through the centralized `ArtifactIndexes` query API
+(`resolve_runtime_import_reference`, `manifest_imports_targeting_chunk`,
+etc.) rather than re-walking the AST to answer "which chunk does this
+import resolve to" or "which chunks import this binding". Mutation
+passes still need an AST visitor to apply the rewrite — that's
+unavoidable — but the resolution decision is fed in from the
+manifest, not rebuilt per stage. If a new pipeline question can't
+be answered by the existing manifest schema, extend the shallow
+analysis once instead of discovering the same fact again in another
+stage.
+
 ## Working Rule
 
 If a proposed change improves a test result without improving real
