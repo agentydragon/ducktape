@@ -1143,12 +1143,105 @@ mod tests {
     }
 
     #[test]
-    fn plain_data_var_object_literal_is_not_tracked() {
-        // `var`'s hoisting + redeclaration semantics aren't worth
-        // the analysis complexity for the shape this admission
-        // targets (bundler-emitted config tables). Keep `var` out
-        // of the candidate set.
-        assert!(!is_plain_data("var TA = { a: 1 };", "TA"));
+    fn plain_data_var_object_literal_is_tracked() {
+        // `var X = { … }` at chunk top admits as PlainData on the
+        // same terms as `let`: every init must be plain-literal,
+        // and no chunk-wide member writes / hostile builtin calls /
+        // non-plain ident reassigns. Hoisting: pre-init reads see
+        // `undefined` and `undefined.k` throws a spec-mandated
+        // TypeError — engine-emitted, not user-defined, so the
+        // read-purity claim still holds.
+        assert!(is_plain_data("var TA = { a: 1 };", "TA"));
+        assert!(is_plain_data("var TA = [1, 2, 3];", "TA"));
+    }
+
+    #[test]
+    fn plain_data_var_multi_decl_all_plain_is_tracked() {
+        // Multiple chunk-top `var X = init` redeclarations are
+        // legal; every init must independently pass the plain-
+        // literal shape rule. Both inits are plain-objects → X
+        // admits as PlainData.
+        let src = r#"
+            var X = { a: 1 };
+            var X = { b: 2 };
+        "#;
+        assert!(is_plain_data(src, "X"));
+    }
+
+    #[test]
+    fn plain_data_var_multi_decl_with_one_non_plain_init_is_not_tracked() {
+        // First decl init is plain, second is `io()` → the second
+        // init's runtime value could carry accessor properties, so
+        // reads on X after the second decl could fire user code.
+        // Disqualify even though the first decl is fine.
+        let src = r#"
+            var X = { a: 1 };
+            var X = io();
+        "#;
+        assert!(!is_plain_data(src, "X"));
+    }
+
+    #[test]
+    fn plain_data_var_member_write_disqualifies() {
+        // Same write-scan rule as let/const — `X.k = v` in any
+        // chunk body disqualifies.
+        assert!(!is_plain_data(
+            "var X = { a: 1 }; function mut() { X.b = 2; }",
+            "X"
+        ));
+    }
+
+    #[test]
+    fn plain_data_var_non_plain_ident_assign_disqualifies() {
+        // `X = nonPlain` ident assign on a candidate disqualifies
+        // (existing PlainDataWriteScanner rule applies to var
+        // candidates unchanged).
+        assert!(!is_plain_data(
+            "var X = { a: 1 }; function bad() { X = someFn(); }",
+            "X"
+        ));
+    }
+
+    #[test]
+    fn plain_data_var_uninitialized_decl_alone_is_not_tracked() {
+        // `var X;` with no initializer contributes nothing to the
+        // candidate set. Without a chunk-top plain init, X has no
+        // admission evidence, so reading X.k could see whatever
+        // an external assignment installed.
+        assert!(!is_plain_data("var X;", "X"));
+    }
+
+    #[test]
+    fn plain_data_var_uninitialized_then_initialized_is_tracked() {
+        // `var X;` followed by `var X = { … }` (or `X = { … }`)
+        // contributes the plain init for the binding. The first
+        // no-init decl is hoisting noise; the second declares the
+        // shape. Admits as PlainData.
+        let src = r#"
+            var X;
+            var X = { a: 1 };
+        "#;
+        assert!(is_plain_data(src, "X"));
+    }
+
+    #[test]
+    fn plain_data_var_unblocks_embedded_build_env_config_shape() {
+        // The gaffer `embeddedBuildEnvConfig` (`var mr = { … }`)
+        // shape: bundler-emitted `var` plain-object literal with no
+        // writes elsewhere in the chunk. Pre-this-extension, `mr`
+        // was excluded from PlainData (const/let only), making
+        // `mr.FUNCTIONS_EMULATOR` flag `unknown_member` and
+        // forcing a load-bearing `purity: pure` hint on the
+        // downstream `isEmulatorEnv` accessor. With `var`
+        // admission, `mr` is PlainData → `mr.FUNCTIONS_EMULATOR`
+        // pure → `isEmulatorEnv` body classifies pure with zero
+        // hints.
+        let src = r#"
+            var mr = { FUNCTIONS_EMULATOR: false, OTHER: "x" };
+            const isEmulatorEnv = () => mr.FUNCTIONS_EMULATOR;
+        "#;
+        assert!(is_plain_data(src, "mr"));
+        assert_eq!(fn_purity(src, "isEmulatorEnv"), Some(true));
     }
 
     #[test]

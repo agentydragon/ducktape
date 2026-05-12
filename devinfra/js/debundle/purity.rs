@@ -32,11 +32,13 @@ enum ChunkBinding {
     /// by fixed-point iteration over all chunk-top functions.
     Function { purity: Purity },
     /// Chunk-top `const X = <plain literal>` (immutable cell) OR
-    /// `let X = <plain literal>` whose only assignments anywhere in
-    /// the chunk re-bind X to another plain literal (whole-object
-    /// replacement; no in-place mutation). Property reads `X.k` /
-    /// `X[k]` (k pure) on such a binding are pure regardless of when
-    /// they fire:
+    /// `let X = <plain literal>` / `var X = <plain literal>` whose
+    /// only assignments anywhere in the chunk re-bind X to another
+    /// plain literal (whole-object replacement; no in-place
+    /// mutation). For `var`, multiple chunk-top `var X = init_n`
+    /// declarations are also admitted as long as every init is
+    /// plain-literal. Property reads `X.k` / `X[k]` (k pure) on
+    /// such a binding are pure regardless of when they fire:
     ///
     /// * **No accessor channels at any program point.** The initial
     ///   init is a syntactic plain literal — no
@@ -435,24 +437,54 @@ fn push_var_functions<'a>(var: &'a VarDecl, out: &mut Vec<ChunkFunction<'a>>) {
     }
 }
 
-/// Collect chunk-top `const`-bound bindings whose initializer is a
-/// plain-literal data shape (plain object literal with no accessors /
-/// methods / spreads / computed keys / `__proto__`, or plain array
-/// literal with no spreads) AND whose binding cell is never written
+/// Collect chunk-top `const` / `let` / `var`-bound bindings whose
+/// initializer(s) are plain-literal data shapes (plain object literal
+/// with no accessors/methods/spreads/computed keys/`__proto__`, or
+/// plain array literal) AND whose binding cell is never written
 /// through anywhere in the chunk's AST. See `ChunkBinding::PlainData`
 /// for the soundness argument.
+///
+/// `var` admission notes:
+///
+/// * `var X = init` at chunk top is hoisted but the initializer
+///   evaluates at the source line. Pre-init reads on `X` see
+///   `undefined`; member access `undefined.k` throws a TypeError —
+///   a spec-mandated throw that fires no user-defined code, so
+///   classifying member reads on `X` as pure remains sound (the
+///   "pure" claim is "fires no user code", not "always succeeds").
+/// * Multiple `var X = init_n` statements at chunk top are legal:
+///   each is a no-op redeclaration of the binding cell plus an
+///   assignment at the init line. Every init must independently be
+///   a plain-literal shape; if any decl's init is non-plain, the
+///   name is disqualified. The same name appearing both via a
+///   `var X = plain` and later via `X = nonPlain` (ident assign)
+///   is caught by the regular `PlainDataWriteScanner` ident-assign
+///   check.
+/// * `var X;` with no initializer contributes nothing to the
+///   candidate; if accompanied by a later `var X = plain` /
+///   `X = plain` write the binding still admits (init from the
+///   plain decl/assign). If alone, X stays undefined forever and
+///   isn't admitted (member-reads on `undefined` throw —
+///   technically still pure, but uninteresting).
 ///
 /// Returns the list of qualified names; the caller registers them as
 /// `ChunkBinding::PlainData` in the graph.
 fn collect_plain_data_bindings(body: &[TopLevelItemView<'_>]) -> Vec<String> {
-    let mut candidates: BTreeSet<String> = BTreeSet::new();
+    // Aggregate every chunk-top init expression per binding name.
+    // The same name can have multiple inits for `var`-bound bindings
+    // (`var X = a; var X = b;`); every init must independently pass
+    // the plain-literal shape check or the name disqualifies.
+    let mut inits_by_name: BTreeMap<String, Vec<&Expr>> = BTreeMap::new();
     for item in body {
-        for (name, init) in plain_data_const_candidates(item.as_module_item()) {
-            if is_plain_data_init(init) {
-                candidates.insert(name);
-            }
+        for (name, init) in plain_data_var_candidates(item.as_module_item()) {
+            inits_by_name.entry(name).or_default().push(init);
         }
     }
+    let candidates: BTreeSet<String> = inits_by_name
+        .into_iter()
+        .filter(|(_, inits)| inits.iter().all(|init| is_plain_data_init(init)))
+        .map(|(name, _)| name)
+        .collect();
     if candidates.is_empty() {
         return Vec::new();
     }
@@ -481,25 +513,31 @@ fn collect_plain_data_bindings(body: &[TopLevelItemView<'_>]) -> Vec<String> {
         .collect()
 }
 
-/// Yield `(name, init)` pairs for each chunk-top single-declarator
-/// `const X = <init>` or `let X = <init>` whose initializer is NOT a
-/// function/arrow expression (those go through `Function`). `var` is
-/// excluded — the hoisting + redeclaration semantics complicate the
-/// chunk-wide write scan, and bundlers practically don't emit
-/// chunk-top `var X = …` for the config-object shape this analysis
-/// targets. Comma-list declarations are pre-split by
+/// Yield `(name, init)` pairs for every chunk-top single-declarator
+/// `const X = <init>` / `let X = <init>` / `var X = <init>` whose
+/// initializer is NOT a function/arrow expression (those go through
+/// `Function`). Comma-list declarations are pre-split by
 /// `top_level_item_views`, so each `VarDecl` we see here has exactly
 /// one `decl`.
 ///
-/// Both `const` and `let` candidates flow through the same scanner;
-/// the scanner's check is uniform ("no member writes or hostile
-/// builtin calls, all ident writes have plain-literal RHS"), so the
+/// All three keyword forms flow through the same scanner; the
+/// scanner's check is uniform ("no member writes or hostile builtin
+/// calls, all ident writes have plain-literal RHS"), so the
 /// distinction is only at the candidate-collection stage:
-/// `const` is admitted automatically (its binding cell is immutable
-/// at the language level; only the chunk-wide checks for accessor
-/// installation post-init matter); `let` additionally relies on
-/// every `X = rhs` ident assign having a plain-literal RHS.
-fn plain_data_const_candidates(item: &ModuleItem) -> Vec<(String, &Expr)> {
+///
+/// * `const` — binding cell is immutable at the language level; only
+///   the chunk-wide checks for accessor installation post-init
+///   matter.
+/// * `let` — every `X = rhs` ident assign anywhere in the chunk must
+///   have a plain-literal RHS (enforced by `PlainDataWriteScanner`).
+/// * `var` — same as `let`, PLUS multiple chunk-top `var X = init`
+///   redeclarations are valid; the caller checks every init for a
+///   given name against the plain-literal shape rule. Pre-init reads
+///   on a hoisted `var X` see `undefined` and `undefined.k` throws a
+///   spec-mandated TypeError — sound for the read-purity claim ("no
+///   user code fires") because the throw is engine-emitted, not a
+///   user getter.
+fn plain_data_var_candidates(item: &ModuleItem) -> Vec<(String, &Expr)> {
     let var = match item {
         ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => match &export.decl {
@@ -508,9 +546,6 @@ fn plain_data_const_candidates(item: &ModuleItem) -> Vec<(String, &Expr)> {
         },
         _ => return Vec::new(),
     };
-    if !matches!(var.kind, VarDeclKind::Const | VarDeclKind::Let) {
-        return Vec::new();
-    }
     let mut out = Vec::new();
     for decl in &var.decls {
         let Pat::Ident(binding) = &decl.name else {
