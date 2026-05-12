@@ -1103,6 +1103,272 @@ mod tests {
         );
     }
 
+    // --- Recursive purity via PlainData chunk-local bindings ---------------
+
+    /// Build a `ChunkCodeGraph` for `src` and ask whether `name` is
+    /// tracked as a plain-data binding. `false` covers both "not
+    /// tracked" and "tracked as Function" — only `PlainData` returns
+    /// `true`. Used to pin which chunk-top consts the analyzer
+    /// admits as accessor-free data shapes.
+    fn is_plain_data(src: &str, name: &str) -> bool {
+        let module = parse(src);
+        let body = top_level_item_views(&module.body);
+        let shadowed = compute_shadowed_globals(&body);
+        let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
+        graph.is_plain_data(name)
+    }
+
+    #[test]
+    fn plain_data_const_object_literal_is_tracked() {
+        // A vanilla data shape: KeyValue with non-computed keys,
+        // plain values, no spreads/accessors/methods. Reads on it
+        // can fire no user code; the analyzer can short-circuit
+        // member access purity on this receiver.
+        assert!(is_plain_data(r#"const TA = { FOO: "bar", BAZ: 1 };"#, "TA"));
+    }
+
+    #[test]
+    fn plain_data_const_array_literal_is_tracked() {
+        assert!(is_plain_data("const TA = [1, 2, 3];", "TA"));
+    }
+
+    #[test]
+    fn plain_data_let_object_literal_is_not_tracked() {
+        // `let` allows reassignment between graph construction and a
+        // member-read callsite; the cached `PlainData` would lie if
+        // a subsequent `TA = newObj` swapped in an object with
+        // getters. Constness is load-bearing — `let` and `var` are
+        // intentionally excluded.
+        assert!(!is_plain_data("let TA = { a: 1 };", "TA"));
+        assert!(!is_plain_data("var TA = { a: 1 };", "TA"));
+    }
+
+    #[test]
+    fn plain_data_const_with_accessor_property_is_not_tracked() {
+        // A getter installed in the literal makes `X.a` fire user
+        // code. Reject these initializers — even though the binding
+        // itself is `const`, reads on it are not pure.
+        assert!(!is_plain_data(
+            "const X = { get a() { return io(); } };",
+            "X"
+        ));
+        assert!(!is_plain_data("const X = { set a(v) {}, };", "X"));
+        assert!(!is_plain_data("const X = { m() { return io(); } };", "X"));
+    }
+
+    #[test]
+    fn plain_data_const_with_spread_is_not_tracked() {
+        // Object spread inherits enumerable own properties from
+        // another object — including accessor descriptors copied
+        // via `Object.defineProperty`-style construction on the
+        // source. Reject to keep the "no accessors in this shape"
+        // invariant tight.
+        assert!(!is_plain_data("const X = { ...other, a: 1 };", "X"));
+        // Array spread iterates the source's `[Symbol.iterator]` at
+        // init, which already counts as impure; the literal also
+        // can't be guaranteed plain.
+        assert!(!is_plain_data("const X = [1, ...other];", "X"));
+    }
+
+    #[test]
+    fn plain_data_const_with_computed_key_is_not_tracked() {
+        // Computed keys evaluate at-init; the resulting property
+        // name can technically be a Symbol that maps to an
+        // accessor on the prototype chain. Conservatively reject.
+        assert!(!is_plain_data("const X = { [k]: 1 };", "X"));
+    }
+
+    #[test]
+    fn plain_data_const_with_proto_key_is_not_tracked() {
+        // `{__proto__: P}` in an object literal SETS the prototype
+        // (ES262 §13.2.5.5). If P has accessor properties, reads on
+        // X fire them. Reject the syntactic form. The bracketed
+        // `{["__proto__"]: P}` does NOT set the prototype, but it's
+        // a computed key (already rejected).
+        assert!(!is_plain_data("const X = { __proto__: other, a: 1 };", "X"));
+        assert!(!is_plain_data(
+            r#"const X = { "__proto__": other, a: 1 };"#,
+            "X"
+        ));
+    }
+
+    #[test]
+    fn plain_data_const_function_init_is_not_tracked_as_plain_data() {
+        // `const f = () => …` is tracked as `Function`, not
+        // `PlainData`. We care about the call-purity of f, not
+        // about reading `f.length` etc.
+        assert!(!is_plain_data("const f = (x) => x;", "f"));
+        assert!(!is_plain_data("const f = function() { return 1; };", "f"));
+    }
+
+    #[test]
+    fn plain_data_disqualified_by_member_write() {
+        // Any code in the chunk that writes `X.k = ...` could in
+        // theory go through `Object.defineProperty`-style channels
+        // later. The conservative rule disqualifies the binding
+        // outright — even direct data-property assignment is
+        // rejected.
+        assert!(!is_plain_data("const X = { a: 1 }; X.b = 2;", "X"));
+        // Even when the write lives inside a function body, the
+        // function might be called from anywhere — including before
+        // the read site we're trying to classify. Reject.
+        assert!(!is_plain_data(
+            "const X = { a: 1 }; function mut() { X.a = 9; }",
+            "X"
+        ));
+    }
+
+    #[test]
+    fn plain_data_disqualified_by_define_property_call() {
+        // `Object.defineProperty(X, ...)` is the canonical channel
+        // for installing an accessor on a `const`-bound plain
+        // object after init. Any call shape with X as the first arg
+        // disqualifies.
+        assert!(!is_plain_data(
+            r#"const X = { a: 1 }; Object.defineProperty(X, "a", { get: () => io() });"#,
+            "X"
+        ));
+        assert!(!is_plain_data(
+            "const X = { a: 1 }; Object.defineProperties(X, descriptors);",
+            "X"
+        ));
+        assert!(!is_plain_data(
+            "const X = { a: 1 }; Object.setPrototypeOf(X, P);",
+            "X"
+        ));
+        assert!(!is_plain_data(
+            r#"const X = { a: 1 }; Reflect.defineProperty(X, "a", { get: () => io() });"#,
+            "X"
+        ));
+        // Object.assign(target, ...) writes data props to target.
+        // Conservatively rejected so the chunk-wide rule reads
+        // "the binding cell is never written through, period."
+        assert!(!is_plain_data(
+            "const X = { a: 1 }; Object.assign(X, src);",
+            "X"
+        ));
+    }
+
+    #[test]
+    fn plain_data_read_through_chunk_local_helper_collapses_chain() {
+        // The flagship case from the recursive-purity proposal: a
+        // chunk-local `const TA = { ... }` data shape and a helper
+        // `const Me = (n) => TA[n]` that reads a key on it. Today
+        // (pre-PlainData), `TA[n]` flags `unknown_member` and `Me`
+        // classifies impure — so any call `Me("FOO")` cascades to
+        // impure and any owner statement containing it picks up a
+        // spurious `S`-edge. With PlainData tracking, `TA[n]` is
+        // pure (key `n` is a pure Ident; receiver is PlainData) →
+        // `Me` is pure → `Me("FOO")` is pure → the call site's
+        // surrounding statement classifies pure with zero
+        // `purity: pure` hints.
+        let src = r#"
+            const TA = { FOO: "bar", BAZ: "qux" };
+            const Me = (n) => TA[n];
+        "#;
+        assert!(is_plain_data(src, "TA"));
+        assert_eq!(fn_purity(src, "Me"), Some(true));
+    }
+
+    #[test]
+    fn plain_data_read_with_static_property_is_pure() {
+        // `mr.FUNCTIONS_EMULATOR` is the second leg of the
+        // recursive-purity walkthrough: a chunk-local config
+        // object accessed via a non-computed property name. With
+        // `mr` as PlainData, the read is unconditionally pure (no
+        // key sub-expression to validate).
+        let src = r#"
+            const mr = { FUNCTIONS_EMULATOR: false, FOO: 1 };
+            const check = () => mr.FUNCTIONS_EMULATOR;
+        "#;
+        assert_eq!(fn_purity(src, "check"), Some(true));
+    }
+
+    #[test]
+    fn plain_data_chain_collapses_size_33_walkthrough_shape() {
+        // The full chain-of-hints case from
+        // `tana/x/research/ducktape_purity_recursive.md`: a config
+        // table `TA`, an accessor `Me`, an env-derived predicate
+        // `$i`, and a top-level binding `gF` whose init is an
+        // object literal whose values are calls to `Me`. Today the
+        // peel author has to add four `purity: pure` hints (Me,
+        // $i, vR, Oge) to flip the cycle. With recursive purity
+        // via PlainData, every helper in the chain classifies
+        // pure with no hints — `gF`'s owner statement reclassifies
+        // pure on its own.
+        let src = r#"
+            const TA = { ENV: "emulator", KEY: "x" };
+            const mr = { FUNCTIONS_EMULATOR: false };
+            const Me = (n) => TA[n];
+            const $i = () => mr.FUNCTIONS_EMULATOR ? true : Me("ENV") === "emulator";
+            const vR = (x) => Me(x);
+            const Oge = () => vR("KEY");
+        "#;
+        assert_eq!(fn_purity(src, "Me"), Some(true));
+        assert_eq!(fn_purity(src, "$i"), Some(true));
+        assert_eq!(fn_purity(src, "vR"), Some(true));
+        assert_eq!(fn_purity(src, "Oge"), Some(true));
+        // And the top-level `const gF = { apiKey: Me("KEY"), ... }`
+        // owner statement reclassifies pure: every value is a call
+        // to a now-pure chunk-local helper.
+        let full = format!(
+            r#"
+            {src}
+            const gF = {{ apiKey: Me("KEY"), authDomain: Me("ENV"), feat: $i() }};
+        "#
+        );
+        let module = parse(&full);
+        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
+        let gf_fact = facts
+            .iter()
+            .find(|f| f.declared.contains("gF"))
+            .expect("gF fact missing from chunk analysis");
+        assert!(
+            gf_fact.purity.is_pure(),
+            "gF should classify pure with recursive purity, got {:?}",
+            gf_fact.purity,
+        );
+    }
+
+    #[test]
+    fn plain_data_computed_key_impurity_propagates() {
+        // `TA[io()]` evaluates the key expression at-init. Even
+        // though `TA` is PlainData, the key sub-expression must
+        // itself be pure for the member access to classify pure.
+        // Confirms the analyzer recurses through the computed key.
+        let src = r#"
+            const TA = { a: 1 };
+            const v = TA[io()];
+        "#;
+        let module = parse(src);
+        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
+        let v_fact = facts
+            .iter()
+            .find(|f| f.declared.contains("v"))
+            .expect("v fact missing");
+        assert!(
+            !v_fact.purity.is_pure(),
+            "TA[io()] computed-key impurity should bubble up, got {:?}",
+            v_fact.purity,
+        );
+    }
+
+    #[test]
+    fn plain_data_disqualified_binding_leaves_member_access_unknown() {
+        // If a chunk-local `const TA` is disqualified (e.g. by a
+        // member write somewhere in the chunk), member reads on it
+        // fall back to `unknown_member` — preserving the
+        // soundness-first behavior that previously required the
+        // chain-of-hints workaround.
+        let src = r#"
+            const TA = { a: 1 };
+            TA.b = 2;
+            const Me = (n) => TA[n];
+        "#;
+        assert!(!is_plain_data(src, "TA"));
+        assert_eq!(fn_purity(src, "Me"), Some(false));
+    }
+
     // --- Call-graph topology: deep chains, isolated nodes ------------------
 
     #[test]

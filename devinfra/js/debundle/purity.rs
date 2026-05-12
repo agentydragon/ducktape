@@ -31,6 +31,25 @@ enum ChunkBinding {
     /// `purity` is the worst purity reachable from the body, computed
     /// by fixed-point iteration over all chunk-top functions.
     Function { purity: Purity },
+    /// `const X = <plain object/array literal>` whose binding cell
+    /// is never written through anywhere in the chunk. Property reads
+    /// `X.k` / `X[k]` (k pure) on such a binding are pure:
+    /// * `const` blocks reassignment of the binding cell.
+    /// * The plain-literal init shape has no accessor properties
+    ///   (no getters/setters, no methods, no spreads, no computed
+    ///   keys, no `__proto__`).
+    /// * The chunk-wide "never written through" check rules out
+    ///   `Object.defineProperty(X, ...)` / `Object.setPrototypeOf(X, ...)`
+    ///   etc. that could install an accessor or change the prototype
+    ///   to one with accessors.
+    ///
+    /// Sound enabler for the recursive-purity claim "`x` reads on
+    /// `x.k` / `x[pure]` are pure iff `x` is bound to a plain-data
+    /// shape that has no accessor channels". Eliminates the
+    /// chain-of-hints needed when a chunk-local helper's body is
+    /// just a property read on a chunk-local config object
+    /// (`const Me = (n) => TA[n]`).
+    PlainData,
 }
 
 impl ChunkCodeGraph {
@@ -83,19 +102,30 @@ impl ChunkCodeGraph {
         }
 
         // Phase 2: optimistic init + SCC-bottom-up classification.
-        let mut graph = ChunkCodeGraph {
-            bindings: functions
-                .iter()
-                .map(|f| {
-                    (
-                        f.name.clone(),
-                        ChunkBinding::Function {
-                            purity: Purity::Pure,
-                        },
-                    )
-                })
-                .collect(),
-        };
+        let mut bindings: BTreeMap<String, ChunkBinding> = functions
+            .iter()
+            .map(|f| {
+                (
+                    f.name.clone(),
+                    ChunkBinding::Function {
+                        purity: Purity::Pure,
+                    },
+                )
+            })
+            .collect();
+        // Plain-data candidates: chunk-top `const X = <plain object|array
+        // literal>` whose binding cell is never written through anywhere
+        // in the chunk. Function-bound `const` initializers are already
+        // tracked as `Function`; this pass only adds non-function
+        // plain-data shapes.
+        for name in collect_plain_data_bindings(body) {
+            // Functions take precedence: a chunk-top `const f = () => ...`
+            // is registered as Function and must not be re-registered as
+            // PlainData (calling it is the interesting question, not
+            // reading its `.length` etc.).
+            bindings.entry(name).or_insert(ChunkBinding::PlainData);
+        }
+        let mut graph = ChunkCodeGraph { bindings };
         // tarjan_scc emits SCCs in reverse topological order: leaves
         // (sinks — functions that don't call any chunk-top
         // function) come first, callers come later.
@@ -158,7 +188,17 @@ impl ChunkCodeGraph {
     pub(crate) fn function_purity(&self, name: &str) -> Option<Purity> {
         match self.bindings.get(name)? {
             ChunkBinding::Function { purity } => Some(purity.clone()),
+            ChunkBinding::PlainData => None,
         }
+    }
+
+    /// Whether `name` is bound at chunk top to a confirmed plain-data
+    /// shape — a `const`-bound plain object/array literal that no
+    /// statement in this chunk writes through. Member reads `name.k`
+    /// / `name[pure]` on such a binding are pure (see
+    /// `ChunkBinding::PlainData`).
+    pub(crate) fn is_plain_data(&self, name: &str) -> bool {
+        matches!(self.bindings.get(name), Some(ChunkBinding::PlainData))
     }
 }
 
@@ -284,6 +324,227 @@ fn push_var_functions<'a>(var: &'a VarDecl, out: &mut Vec<ChunkFunction<'a>>) {
             },
             _ => {}
         }
+    }
+}
+
+/// Collect chunk-top `const`-bound bindings whose initializer is a
+/// plain-literal data shape (plain object literal with no accessors /
+/// methods / spreads / computed keys / `__proto__`, or plain array
+/// literal with no spreads) AND whose binding cell is never written
+/// through anywhere in the chunk's AST. See `ChunkBinding::PlainData`
+/// for the soundness argument.
+///
+/// Returns the list of qualified names; the caller registers them as
+/// `ChunkBinding::PlainData` in the graph.
+fn collect_plain_data_bindings(body: &[TopLevelItemView<'_>]) -> Vec<String> {
+    let mut candidates: BTreeSet<String> = BTreeSet::new();
+    for item in body {
+        for (name, init) in plain_data_const_candidates(item.as_module_item()) {
+            if is_plain_data_init(init) {
+                candidates.insert(name);
+            }
+        }
+    }
+    if candidates.is_empty() {
+        return Vec::new();
+    }
+    // Scan the entire chunk body (including function/class bodies) for
+    // anything that could install an accessor or change the prototype
+    // of any candidate: member writes / updates / deletes on `X.k` /
+    // `X[k]`, and `Object.defineProperty(X, ...)` /
+    // `Object.defineProperties(X, ...)` / `Object.setPrototypeOf(X, ...)`
+    // / `Reflect.{defineProperty,defineProperties,setPrototypeOf,set}(X, ...)`.
+    // Plain data-property writes (`X.foo = bar`) don't install
+    // accessors and don't change the prototype chain, but the
+    // conservative check rejects them anyway — the cost is dropping
+    // a few PlainData candidates that would still be sound, and the
+    // benefit is one short rule that's easy to audit.
+    let mut scanner = PlainDataWriteScanner {
+        candidates: &candidates,
+        disqualified: BTreeSet::new(),
+    };
+    for item in body {
+        item.as_module_item().visit_with(&mut scanner);
+    }
+    let disqualified = scanner.disqualified;
+    candidates
+        .into_iter()
+        .filter(|n| !disqualified.contains(n))
+        .collect()
+}
+
+/// Yield `(name, init)` pairs for each chunk-top `const`-bound
+/// single-declarator binding with an explicit initializer that's NOT
+/// a function/arrow expression (those go through `Function`). Comma-
+/// list declarations are pre-split by `top_level_item_views`, so each
+/// `VarDecl` we see here has exactly one `decl`.
+fn plain_data_const_candidates(item: &ModuleItem) -> Vec<(String, &Expr)> {
+    let var = match item {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => match &export.decl {
+            Decl::Var(var) => var,
+            _ => return Vec::new(),
+        },
+        _ => return Vec::new(),
+    };
+    if var.kind != VarDeclKind::Const {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for decl in &var.decls {
+        let Pat::Ident(binding) = &decl.name else {
+            continue;
+        };
+        let Some(init) = decl.init.as_deref() else {
+            continue;
+        };
+        if matches!(init, Expr::Fn(_) | Expr::Arrow(_)) {
+            continue;
+        }
+        out.push((binding.id.sym.to_string(), init));
+    }
+    out
+}
+
+/// Pure syntactic check for "plain-literal data shape": an object
+/// literal whose properties are exclusively `KeyValue`/`Shorthand`
+/// with non-computed, non-`__proto__` keys, or an array literal with
+/// no spreads (holes are fine — they read as `undefined`, no getter).
+/// Value sub-expressions are intentionally NOT validated here: the
+/// init's at-init purity is the surrounding statement's concern, and
+/// the safety of post-init member reads depends only on the receiver's
+/// shape (no accessors at init + no post-init accessor installation,
+/// the latter enforced by `PlainDataWriteScanner`).
+fn is_plain_data_init(expr: &Expr) -> bool {
+    match expr {
+        Expr::Object(obj) => obj.props.iter().all(is_plain_data_prop),
+        Expr::Array(arr) => arr.elems.iter().flatten().all(|e| e.spread.is_none()),
+        _ => false,
+    }
+}
+
+fn is_plain_data_prop(prop: &PropOrSpread) -> bool {
+    let PropOrSpread::Prop(prop) = prop else {
+        return false; // Object spread: rejected.
+    };
+    match prop.as_ref() {
+        Prop::Shorthand(_) => true,
+        Prop::KeyValue(kv) => match &kv.key {
+            // `{__proto__: X}` in an object literal SETS the prototype
+            // (ES262 §13.2.5.5); if X carries accessor properties, reads
+            // on the parent literal fire them. Reject explicitly.
+            PropName::Ident(ident) => ident.sym.as_ref() != "__proto__",
+            PropName::Str(s) => s.value.to_string_lossy() != "__proto__",
+            PropName::Num(_) | PropName::BigInt(_) => true,
+            PropName::Computed(_) => false,
+        },
+        // Methods, getters, setters, and `{key=value}` shorthand assign
+        // are all rejected — only data properties qualify.
+        Prop::Getter(_) | Prop::Setter(_) | Prop::Method(_) | Prop::Assign(_) => false,
+    }
+}
+
+/// Visitor that disqualifies plain-data candidates seen as the target
+/// of a member write/update/delete, or as the first argument to one
+/// of a small set of accessor- / prototype-installing built-ins.
+/// Skips the right side of `X.k = ...` only in the sense that
+/// recursing through `expr` still picks up nested cases — every
+/// expression node visits its children.
+struct PlainDataWriteScanner<'a> {
+    candidates: &'a BTreeSet<String>,
+    disqualified: BTreeSet<String>,
+}
+
+impl PlainDataWriteScanner<'_> {
+    fn disqualify_if_candidate(&mut self, name: &str) {
+        if self.candidates.contains(name) {
+            self.disqualified.insert(name.to_string());
+        }
+    }
+
+    /// If `expr` is a member access whose receiver is a candidate Ident,
+    /// disqualify that candidate. Handles plain Member and OptChain Member
+    /// receivers, walking through `Paren` wrappers.
+    fn disqualify_member_receiver(&mut self, expr: &Expr) {
+        let mut cur = expr;
+        loop {
+            match cur {
+                Expr::Paren(p) => cur = &p.expr,
+                Expr::Member(member) => {
+                    if let Expr::Ident(recv) = member.obj.as_ref() {
+                        self.disqualify_if_candidate(recv.sym.as_ref());
+                    }
+                    return;
+                }
+                Expr::OptChain(opt) => match &*opt.base {
+                    OptChainBase::Member(member) => {
+                        if let Expr::Ident(recv) = member.obj.as_ref() {
+                            self.disqualify_if_candidate(recv.sym.as_ref());
+                        }
+                        return;
+                    }
+                    OptChainBase::Call(_) => return,
+                },
+                _ => return,
+            }
+        }
+    }
+}
+
+/// Builtins that can install an accessor or rewire the prototype chain
+/// of their first argument. Any candidate appearing as the first
+/// positional arg of one of these calls is disqualified from
+/// PlainData status. `Object.assign(X, ...)` writes data properties
+/// to X but doesn't install accessors; conservatively included so the
+/// rule is "X must not be written through, period" without per-builtin
+/// reasoning about which kinds of properties end up on X.
+const PLAIN_DATA_HOSTILE_BUILTINS: &[(&str, &str)] = &[
+    ("Object", "defineProperty"),
+    ("Object", "defineProperties"),
+    ("Object", "setPrototypeOf"),
+    ("Object", "assign"),
+    ("Reflect", "defineProperty"),
+    ("Reflect", "set"),
+    ("Reflect", "setPrototypeOf"),
+    ("Reflect", "deleteProperty"),
+];
+
+impl Visit for PlainDataWriteScanner<'_> {
+    fn visit_assign_expr(&mut self, node: &AssignExpr) {
+        if let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &node.left
+            && let Expr::Ident(recv) = member.obj.as_ref()
+        {
+            self.disqualify_if_candidate(recv.sym.as_ref());
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_update_expr(&mut self, node: &UpdateExpr) {
+        self.disqualify_member_receiver(&node.arg);
+        node.visit_children_with(self);
+    }
+
+    fn visit_unary_expr(&mut self, node: &UnaryExpr) {
+        if node.op == UnaryOp::Delete {
+            self.disqualify_member_receiver(&node.arg);
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_call_expr(&mut self, node: &CallExpr) {
+        if let Callee::Expr(callee) = &node.callee
+            && let Expr::Member(member) = callee.as_ref()
+            && let (Expr::Ident(obj), MemberProp::Ident(prop)) = (member.obj.as_ref(), &member.prop)
+            && PLAIN_DATA_HOSTILE_BUILTINS
+                .iter()
+                .any(|(r, p)| *r == obj.sym.as_ref() && *p == prop.sym.as_ref())
+            && let Some(arg) = node.args.first()
+            && arg.spread.is_none()
+            && let Expr::Ident(target) = arg.expr.as_ref()
+        {
+            self.disqualify_if_candidate(target.sym.as_ref());
+        }
+        node.visit_children_with(self);
     }
 }
 
@@ -732,7 +993,7 @@ pub(crate) fn classify_expr_purity(
             .iter()
             .map(|prop| classify_prop_purity(prop, shadowed, declared_pure, graph))
             .fold(Purity::Pure, Purity::worst),
-        Expr::Member(member) => classify_member_purity(member, shadowed),
+        Expr::Member(member) => classify_member_purity(member, shadowed, declared_pure, graph),
         Expr::SuperProp(s) => Purity::from_reason(PurityRule::SuperProp, s.span),
         // Optional chaining (`recv?.prop`, `recv?.()`) only adds a
         // null/undefined short-circuit on top of plain member /
@@ -743,7 +1004,9 @@ pub(crate) fn classify_expr_purity(
         // `Unknown` answer the non-optional shape would. R1 in
         // DESIGN.md "Open design questions / OptChain purity".
         Expr::OptChain(opt) => match &*opt.base {
-            OptChainBase::Member(member) => classify_member_purity(member, shadowed),
+            OptChainBase::Member(member) => {
+                classify_member_purity(member, shadowed, declared_pure, graph)
+            }
             OptChainBase::Call(opt_call) => classify_callee_call(
                 &opt_call.callee,
                 &opt_call.args,
@@ -972,18 +1235,40 @@ fn classify_map_entry(
 }
 
 /// Purity of `member` taken as an r-value member access
-/// (`recv.prop` or `recv?.prop`). Pure iff the receiver+property
-/// pair is whitelisted and the receiver name isn't shadowed by a
-/// chunk-top declaration. Otherwise `Unknown` — `obj.prop` on an
-/// arbitrary object can fire a getter, which we can't rule out
-/// statically.
-fn classify_member_purity(member: &MemberExpr, shadowed: &BTreeSet<&'static str>) -> Purity {
+/// (`recv.prop` or `recv?.prop`). Pure iff one of:
+///
+/// * The receiver+property pair is whitelisted on a non-shadowed
+///   global (e.g. `Math.PI`, `Object.freeze`).
+/// * The receiver is a chunk-local `Ident` bound to a confirmed
+///   `ChunkBinding::PlainData` shape (see `ChunkCodeGraph::build` for
+///   the soundness argument). For computed access, the key
+///   sub-expression must itself be pure; non-computed (`X.k`) and
+///   private-name (`X.#k`) reads are unconditionally pure.
+///
+/// Otherwise `Unknown` — `obj.prop` on an arbitrary object can fire
+/// a getter, which we can't rule out statically.
+fn classify_member_purity(
+    member: &MemberExpr,
+    shadowed: &BTreeSet<&'static str>,
+    declared_pure: &BTreeSet<String>,
+    graph: &ChunkCodeGraph,
+) -> Purity {
     if let Some((recv, prop)) = static_member_pair(member)
         && !shadowed.contains(recv)
         && (PURE_STATIC_PROPS.contains(&(recv, prop))
             || PURE_STATIC_FUNCTION_REFS.contains(&(recv, prop)))
     {
         return Purity::Pure;
+    }
+    if let Expr::Ident(recv) = member.obj.as_ref()
+        && graph.is_plain_data(recv.sym.as_ref())
+    {
+        return match &member.prop {
+            MemberProp::Ident(_) | MemberProp::PrivateName(_) => Purity::Pure,
+            MemberProp::Computed(computed) => {
+                classify_expr_purity(&computed.expr, shadowed, declared_pure, graph)
+            }
+        };
     }
     let detail = match (member.obj.as_ref(), &member.prop) {
         (Expr::Ident(o), MemberProp::Ident(p)) => Some(format!("{}.{}", o.sym, p.sym)),
