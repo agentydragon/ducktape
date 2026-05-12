@@ -2,7 +2,7 @@ mod tests {
     use std::collections::{BTreeSet, HashMap};
 
     use crate::facts::{compute_shadowed_globals, top_level_item_views};
-    use crate::purity::{ChunkCodeGraph, Purity, classify_expr_purity};
+    use crate::purity::{ChunkCodeGraph, Purity, RedundantPurityReason, classify_expr_purity};
     use crate::*;
     use swc_common::{FileName, sync::Lrc};
     use swc_ecma_ast::*;
@@ -1497,6 +1497,185 @@ mod tests {
         "#;
         assert!(!is_plain_data(src, "TA"));
         assert_eq!(fn_purity(src, "Me"), Some(false));
+    }
+
+    // --- Redundant `purity: pure` hint detection ---------------------------
+
+    /// Run `analyze_chunk_facts` with the given hints applied, then
+    /// return the list of `(binding_name, reason)` pairs the analyzer
+    /// reports as redundant. Used by the test cases below to pin the
+    /// "the analyzer would have figured this out on its own" verdict
+    /// without depending on the wrapping warning-print format.
+    fn redundant_hints(src: &str, hints: &[&str]) -> Vec<(String, RedundantPurityReason)> {
+        let module = parse(src);
+        let declared_pure: BTreeSet<String> = hints.iter().map(|s| (*s).to_string()).collect();
+        analyze_chunk_facts_with_redundant_hints(&module, &declared_pure)
+    }
+
+    /// Wrapper that constructs a `ChunkFactAnalysis` and returns its
+    /// `redundant_purity_hints` list as `(name, reason)` pairs.
+    fn analyze_chunk_facts_with_redundant_hints(
+        module: &Module,
+        declared_pure: &BTreeSet<String>,
+    ) -> Vec<(String, RedundantPurityReason)> {
+        analyze_chunk_with_source_locations(module, declared_pure, None, |_| None)
+            .redundant_purity_hints
+            .into_iter()
+            .map(|h| (h.binding_name, h.reason))
+            .collect()
+    }
+
+    #[test]
+    fn redundant_hint_on_pure_function_is_reported() {
+        // `f` is a chunk-local arrow whose body classifies pure on
+        // its own (returns a primitive literal). The hint is a no-op
+        // — the analyzer reaches the same verdict without it.
+        let got = redundant_hints("const f = (x) => x + 1;", &["f"]);
+        assert_eq!(
+            got,
+            vec![("f".to_string(), RedundantPurityReason::InferredPureFunction)]
+        );
+    }
+
+    #[test]
+    fn load_bearing_hint_on_impure_function_is_not_reported() {
+        // `f` body writes to `globalThis`, which the analyzer flags
+        // as impure regardless of any hint. The hint here is a real
+        // author-trust assertion ("trust me, despite this body, the
+        // callsite is safe") and must NOT be reported as redundant.
+        let got = redundant_hints(
+            "function f() { globalThis.touched = true; return 1; }",
+            &["f"],
+        );
+        assert!(
+            got.is_empty(),
+            "load-bearing hint on truly-impure body must not be flagged redundant; got {got:?}",
+        );
+    }
+
+    #[test]
+    fn redundant_hint_on_plain_data_binding_is_reported() {
+        // `purity: pure` callsite hints are intended for callable
+        // bindings; when the hint sits on a chunk-local `const`
+        // plain-object literal it's a no-op (the binding admits as
+        // `PlainData`, member reads classify pure on their own, and
+        // the binding isn't called). Report it so the spec author
+        // can drop the misplaced hint.
+        let got = redundant_hints(r#"const TA = { FOO: "bar" };"#, &["TA"]);
+        assert_eq!(
+            got,
+            vec![(
+                "TA".to_string(),
+                RedundantPurityReason::InferredPlainDataBinding
+            )]
+        );
+    }
+
+    #[test]
+    fn hint_on_unknown_binding_is_not_reported() {
+        // Hint name doesn't bind anywhere in the chunk (typo,
+        // import-only, vendor binding). The analyzer can't infer
+        // anything about it, so reporting it as "redundant" would
+        // be wrong — the hint is in effect for the bound name from
+        // wherever it actually comes from, and silently flagging
+        // it would lead the author to delete a load-bearing hint.
+        let got = redundant_hints("const X = 1;", &["unknownName"]);
+        assert!(
+            got.is_empty(),
+            "hint on a name not bound at chunk top must not be flagged; got {got:?}",
+        );
+    }
+
+    #[test]
+    fn hint_chain_keeps_only_genuinely_redundant_entries() {
+        // `a` calls `b`; `b`'s body is itself pure (returns
+        // `x + 1`). Per-hint independent removal:
+        // - Drop `a`'s hint → analyzer probes `a` with declared_pure
+        //   = {b}. Inside `a`'s body, `b(x)` is hint-pure → `a`'s
+        //   body classifies pure → `a` reported redundant.
+        // - Drop `b`'s hint → analyzer probes `b` with declared_pure
+        //   = {a}. `b`'s body `x + 1` is pure on its own (no calls
+        //   at all) → `b` reported redundant.
+        // Both hints are redundant.
+        let src = r#"
+            const b = (x) => x + 1;
+            const a = (x) => b(x);
+        "#;
+        let got = redundant_hints(src, &["a", "b"]);
+        let names: BTreeSet<String> = got.iter().map(|(n, _)| n.clone()).collect();
+        assert_eq!(
+            names,
+            BTreeSet::from(["a".to_string(), "b".to_string()]),
+            "both hints in the pure chain should be flagged redundant; got {got:?}",
+        );
+    }
+
+    #[test]
+    fn hint_load_bearing_on_impure_body_reports_only_transitively_redundant_hints() {
+        // `a` calls `b`; `b`'s body writes globalThis → genuinely
+        // impure. With BOTH hints in place, removing only `a`'s
+        // hint leaves `b`'s hint shielding the `b()` call inside
+        // `a`'s body — so `a`'s body still classifies pure
+        // transitively. The analyzer correctly reports `a`'s hint
+        // as redundant **given the current hint set**.
+        //
+        // `b`'s hint is genuinely load-bearing: removing it lets
+        // `b`'s globalThis write classify the body as impure, and
+        // `b` is no longer reported as pure-by-inference. Not
+        // flagged as redundant.
+        //
+        // This is the right verdict: "given the current spec, this
+        // specific hint can come out". If the author drops both
+        // hints in sequence following two consecutive `/followups`
+        // runs, the second run will surface `a` as no-longer-pure
+        // and the author can re-add the hint or rework the body.
+        let src = r#"
+            function b() { globalThis.touched = true; return 1; }
+            function a() { return b(); }
+        "#;
+        let got = redundant_hints(src, &["a", "b"]);
+        assert_eq!(
+            got,
+            vec![("a".to_string(), RedundantPurityReason::InferredPureFunction)],
+            "with b's hint in place, a's hint is redundant; b's hint stays load-bearing",
+        );
+    }
+
+    #[test]
+    fn no_hints_produces_no_warnings() {
+        // Sanity: when no hints are declared, the warning list is
+        // empty even for chunks with plenty of pure chunk-local
+        // functions. The analyzer doesn't invent warnings about
+        // "you could have added a hint here" — it only reports
+        // existing hints that are redundant.
+        let got = redundant_hints("const f = (x) => x + 1;", &[]);
+        assert!(
+            got.is_empty(),
+            "empty declared_pure must produce no warnings; got {got:?}"
+        );
+    }
+
+    #[test]
+    fn redundant_hint_on_let_with_whole_object_replacement_is_reported() {
+        // The gaffer env_config shape: `let X = {…}` with whole-
+        // object replacement writes; `purity: pure` on the
+        // accessor function `getX` is redundant once X admits as
+        // PlainData (Part 2). This is the test that pins the
+        // motivating downstream removal — if it fails after some
+        // future refactor, the gaffer hint-removal regresses.
+        let src = r#"
+            let envConfig = { REACT_APP_ENV: "production" };
+            const applyOverrides = (n) => { envConfig = { ...envConfig, ...n }; };
+            const getEnv = (n) => envConfig[n];
+        "#;
+        let got = redundant_hints(src, &["getEnv"]);
+        assert_eq!(
+            got,
+            vec![(
+                "getEnv".to_string(),
+                RedundantPurityReason::InferredPureFunction
+            )]
+        );
     }
 
     // --- Call-graph topology: deep chains, isolated nodes ------------------

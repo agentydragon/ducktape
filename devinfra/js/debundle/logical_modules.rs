@@ -13,8 +13,8 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use analysis::{
     BindingKind, BindingName, LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId,
-    Schedule, analyze_chunk_with_source_locations, render_cross_destination_assignment_summary,
-    render_cycle_summary,
+    RedundantPurityHint, RedundantPurityReason, Schedule, analyze_chunk_with_source_locations,
+    render_cross_destination_assignment_summary, render_cycle_summary,
 };
 use artifact::{
     ArtifactIndexes, ArtifactSourceImportResolver, ChunkArtifact, ChunkFileRecord, ChunkId,
@@ -90,6 +90,11 @@ pub struct LogicalChunkReport {
     pub counts: LogicalChunkCounts,
     pub final_module_contents: Vec<FinalModuleContent>,
     pub requested_logical_modules: Vec<RequestedLogicalModule>,
+    /// `purity: pure` hints the analyzer inferred automatically.
+    /// Same content as the stderr warnings the build prints; carried
+    /// on the report so JSON consumers can pin behavior across runs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub redundant_purity_hints: Vec<RedundantPurityHint>,
     pub timings: BTreeMap<String, Duration>,
 }
 
@@ -579,7 +584,7 @@ fn materialize_logical_chunk(
     })?
     .unwrap_or_default();
 
-    let schedule = {
+    let (schedule, redundant_purity_hints) = {
         // `purity: pure` hints carried on any spec entry form
         // (logical-module member, residual-module member,
         // chunk_renames member) propagate the same way: add the
@@ -624,6 +629,27 @@ fn materialize_logical_chunk(
                 |span| line_index.line_range_for_span(span),
             )
         });
+        // Per-hint warnings on stderr: each `purity: pure` spec hint
+        // the analyzer infers automatically (binding's body classifies
+        // Pure without the override, or admits as PlainData). Surfaced
+        // every build so spec authors are nudged to prune load-free
+        // hints — every such hint is an extra trust assertion the
+        // validator can't re-verify, and the shrinking trust surface
+        // is the point of recursive purity inference.
+        for hint in &analysis.redundant_purity_hints {
+            eprintln!(
+                "warning: chunk {chunk_id}: `purity: pure` hint on binding `{binding}` is redundant — \
+                 the analyzer infers {reason} for this binding without the hint and the override is a no-op. \
+                 Remove the hint from the spec.",
+                binding = hint.binding_name,
+                reason = match hint.reason {
+                    RedundantPurityReason::InferredPureFunction =>
+                        "pure (the function body classifies Pure by recursive analysis)",
+                    RedundantPurityReason::InferredPlainDataBinding =>
+                        "PlainData (chunk-local const/let plain literal with no chunk-wide writes through the binding)",
+                },
+            );
+        }
         if let Some(ord) = analysis.top_level_await {
             anyhow::bail!(
                 "materialize_logical_modules: chunk {chunk_id} has top-level `await` \
@@ -661,7 +687,8 @@ fn materialize_logical_chunk(
                     })
                     .collect()
             });
-        time_phase!(timings, "build_schedule", {
+        let redundant_purity_hints = analysis.redundant_purity_hints;
+        let schedule = time_phase!(timings, "build_schedule", {
             Schedule::build(
                 chunk_id.to_string(),
                 analysis.facts,
@@ -670,7 +697,8 @@ fn materialize_logical_chunk(
                 chunk_renames_map.clone(),
             )
             .with_pre_existing_entry_exports(pre_existing_entry_exports.clone())
-        })
+        });
+        (schedule, redundant_purity_hints)
     };
     let schedule_report = time_phase!(timings, "validate_schedule", { schedule.validate() });
     if let Some(report_out_dir) = report_out_dir {
@@ -786,6 +814,7 @@ fn materialize_logical_chunk(
                 residual: request.residual,
             })
             .collect(),
+        redundant_purity_hints,
         timings,
     };
     Ok(MaterializedLogicalChunk {

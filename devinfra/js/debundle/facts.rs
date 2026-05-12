@@ -10,8 +10,8 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
 use crate::purity::{
-    ChunkCodeGraph, Purity, PurityReason, PurityRule, WHITELIST_RECEIVERS,
-    class_has_static_observable, classify_expr_purity,
+    ChunkCodeGraph, Purity, PurityReason, PurityRule, RedundantPurityHint, WHITELIST_RECEIVERS,
+    class_has_static_observable, classify_expr_purity, detect_redundant_purity_hints,
 };
 use crate::{BindingName, SourceLocation, StatementOrdinal};
 
@@ -41,6 +41,13 @@ pub struct StatementFacts {
 pub struct ChunkFactAnalysis {
     pub facts: Vec<StatementFacts>,
     pub top_level_await: Option<StatementOrdinal>,
+    /// Author-declared `purity: pure` spec hints the analyzer
+    /// determines would be inferred automatically by recursive
+    /// purity — e.g. the callee's body classifies `Pure` even
+    /// without the override, or the binding admits as `PlainData`
+    /// such that the callsite hint is a no-op. Surfaced so the spec
+    /// author can prune the hint and shrink the trust surface.
+    pub redundant_purity_hints: Vec<RedundantPurityHint>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
@@ -152,6 +159,7 @@ where
     let body = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&body);
     let graph = ChunkCodeGraph::build(&body, &shadowed, declared_pure);
+    let redundant_purity_hints = detect_redundant_purity_hints(&body, &shadowed, declared_pure);
     let mut top_level_await = None;
     let facts = body
         .iter()
@@ -203,6 +211,7 @@ where
     ChunkFactAnalysis {
         facts,
         top_level_await,
+        redundant_purity_hints,
     }
 }
 
