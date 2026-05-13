@@ -14,7 +14,7 @@
 //! debundler and the analysis tools always agree on the spec's
 //! on-disk layout.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -174,6 +174,7 @@ pub fn load_deferred_groups(modules_root: &Path) -> Result<BTreeMap<String, Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
     use tempfile::TempDir;
 
     fn write(root: &Path, rel: &str, body: &str) {
