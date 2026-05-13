@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -1829,8 +1829,8 @@ fn synthesize_mini_factor_plans(
 ) -> Result<()> {
     let owner_graph = build_owner_graph(facts);
     let atomic_units = compute_atomic_units(&owner_graph);
-    let mut owner_declared_names: BTreeMap<OwnerId, Vec<BindingName>> = BTreeMap::new();
-    let mut owner_statement_ordinal: BTreeMap<OwnerId, usize> = BTreeMap::new();
+    let mut owner_declared_names: HashMap<OwnerId, Vec<BindingName>> = HashMap::new();
+    let mut owner_statement_ordinal: HashMap<OwnerId, usize> = HashMap::new();
     for node in owner_graph.iter_nodes() {
         let names: Vec<BindingName> = node
             .declared
@@ -3830,12 +3830,14 @@ fn prepare_output_dir(out_dir: &Path, force: bool) -> Result<()> {
 /// spec author can search for (`cycle`, `side-effect`, `mutable`,
 /// `assignment`, `cross-destination`).
 fn render_atomic_unit_cause_guidance(conflicts: &[AtomicUnitConflictReport]) -> String {
-    let mut causes: std::collections::BTreeSet<DepKind> = std::collections::BTreeSet::new();
+    let mut causes: HashSet<DepKind> = HashSet::new();
     for conflict in conflicts {
         for cause in &conflict.causes {
             causes.insert(*cause);
         }
     }
+    let mut causes: Vec<DepKind> = causes.into_iter().collect();
+    causes.sort();
     let mut out = String::new();
     for cause in &causes {
         match cause {

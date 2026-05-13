@@ -63,7 +63,7 @@
 //!
 //! See `FACTORIZE.md` for the broader architecture.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
@@ -102,8 +102,8 @@ pub fn build_factorize_report(schedule: &Schedule, options: &FactorizeOptions) -
             }
         })
         .collect();
-    let owners_by_supernode: BTreeMap<ModuleId, Vec<OwnerId>> = {
-        let mut acc = BTreeMap::<ModuleId, Vec<OwnerId>>::new();
+    let owners_by_supernode: HashMap<ModuleId, Vec<OwnerId>> = {
+        let mut acc = HashMap::<ModuleId, Vec<OwnerId>>::new();
         for (idx, node) in node_by_owner.iter().enumerate() {
             if let FactorizeNode::Supernode(module) = node {
                 acc.entry(*module).or_default().push(OwnerId(idx));
@@ -187,7 +187,7 @@ pub fn build_factorize_report(schedule: &Schedule, options: &FactorizeOptions) -
         // consumers can see the full post-extension owner set in
         // `owner_ids`; the `extension_owner_ids` field separately
         // pinpoints what would be NEW.
-        let mut cell_owners: BTreeSet<OwnerId> = loose.iter().copied().collect();
+        let mut cell_owners: HashSet<OwnerId> = loose.iter().copied().collect();
         if let Some(module) = extension_target {
             if let Some(existing) = owners_by_supernode.get(&module) {
                 cell_owners.extend(existing.iter().copied());
@@ -202,10 +202,10 @@ pub fn build_factorize_report(schedule: &Schedule, options: &FactorizeOptions) -
         // existing module to extend, so the field stays empty —
         // every owner in the cell is part of the proposal itself
         // (already in `owner_ids`).
-        let extension_owners: BTreeSet<OwnerId> = if extension_target.is_some() {
+        let extension_owners: HashSet<OwnerId> = if extension_target.is_some() {
             loose.iter().copied().collect()
         } else {
-            BTreeSet::new()
+            HashSet::new()
         };
         emitted.push(make_cell(
             proposal_id,
@@ -295,8 +295,8 @@ fn build_closure_graph(
 #[allow(clippy::too_many_arguments)]
 fn make_cell(
     proposed_module_id: String,
-    owners: BTreeSet<OwnerId>,
-    extension_owners: BTreeSet<OwnerId>,
+    owners: HashSet<OwnerId>,
+    extension_owners: HashSet<OwnerId>,
     extension_target: Option<ModuleId>,
     node_by_owner: &[FactorizeNode],
     verdict: &PeelCandidateEvaluation,
@@ -312,7 +312,7 @@ fn make_cell(
     let extends_module_id: Option<String> = extension_target.map(module_key);
 
     let mut anonymous_statement_owner_ids: Vec<String> = Vec::new();
-    let mut binding_ids_set: BTreeSet<BindingName> = BTreeSet::new();
+    let mut binding_ids_set: HashSet<BindingName> = HashSet::new();
     let mut start_line = usize::MAX;
     let mut end_line: usize = 0;
     let mut have_loc = false;
@@ -343,7 +343,7 @@ fn make_cell(
     }
     anonymous_statement_owner_ids.sort();
 
-    let cycle_blocker_owner_ids: Vec<String> = verdict
+    let mut cycle_blocker_owner_ids: Vec<String> = verdict
         .constraining_owner_edge_indices
         .iter()
         .flat_map(|&idx| {
@@ -352,9 +352,10 @@ fn make_cell(
         })
         .filter(|o| !owners.contains(o))
         .map(owner_key)
-        .collect::<BTreeSet<_>>()
+        .collect::<HashSet<_>>()
         .into_iter()
         .collect();
+    cycle_blocker_owner_ids.sort();
 
     // `active_modules_referenced` walks outgoing constraining edges
     // from this cell in the collapsed graph: any neighbor supernode
@@ -362,7 +363,7 @@ fn make_cell(
     // land on a different loose node end up on a different cell; we
     // don't surface them here (the proposal layer handles cell-to-
     // cell relationships in `peel_factorize.rs`).
-    let mut active_modules_referenced: BTreeSet<String> = BTreeSet::new();
+    let mut active_modules_referenced: HashSet<String> = HashSet::new();
     for &owner_id in &owners {
         for edge in schedule.owner_graph.edges.iter() {
             if edge.from != owner_id {
@@ -388,10 +389,15 @@ fn make_cell(
     }
 
     let landable_today = matches!(verdict.status, PeelCandidateStatus::PeelableNow);
+    let mut binding_ids: Vec<BindingName> = binding_ids_set.into_iter().collect();
+    binding_ids.sort();
+    let mut active_modules_referenced: Vec<String> =
+        active_modules_referenced.into_iter().collect();
+    active_modules_referenced.sort();
     FactorizeCell {
         proposed_module_id,
         owner_ids,
-        binding_ids: binding_ids_set.into_iter().collect(),
+        binding_ids,
         anonymous_statement_owner_ids,
         size_lines_estimate: size_lines,
         size_members: owners.len(),
@@ -406,7 +412,7 @@ fn make_cell(
         oversize: size_lines > size_cap_lines,
         emit_blocked_residual_bindings: verdict.emit_blocked_residual_bindings.clone(),
         cycle_blocker_owner_ids,
-        active_modules_referenced: active_modules_referenced.into_iter().collect(),
+        active_modules_referenced,
         extends_module_id,
         extension_owner_ids,
     }
