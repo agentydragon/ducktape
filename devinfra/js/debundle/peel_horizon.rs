@@ -8,7 +8,9 @@ use serde::Serialize;
 
 use analysis::{BindingReport, OwnerGraphReport};
 use spec::BindingSourceKind;
-use spec_tree::ModuleFile;
+use spec_modules::{
+    collect_module_files, is_deferred_yaml, module_path_from_file, read_module_file,
+};
 
 #[derive(Debug, Clone)]
 pub struct PeelHorizonOptions {
@@ -234,10 +236,8 @@ fn load_modules_and_symbols(
 ) -> Result<(DeferredModules, SymbolHomesByBinding)> {
     let mut deferred_modules = Vec::new();
     let mut symbols: BTreeMap<String, Vec<SymbolHome>> = BTreeMap::new();
-    let mut files = Vec::new();
-    collect_module_files(root, &mut files)?;
 
-    for path in files {
+    for path in collect_module_files(root)? {
         let (module, module_symbols) = parse_module_file(&path, root, owner_by_binding)?;
         if is_deferred_yaml(&path) {
             deferred_modules.push(module);
@@ -250,31 +250,13 @@ fn load_modules_and_symbols(
     Ok((deferred_modules, symbols))
 }
 
-fn collect_module_files(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in fs::read_dir(root).with_context(|| format!("reading {}", root.display()))? {
-        let path = entry
-            .with_context(|| format!("walking {}", root.display()))?
-            .path();
-        if path.is_dir() {
-            collect_module_files(&path, out)?;
-        } else if is_module_yaml(&path) {
-            out.push(path);
-        }
-    }
-    out.sort();
-    Ok(())
-}
-
 fn parse_module_file(
     path: &Path,
     root: &Path,
     owner_by_binding: &BTreeMap<String, String>,
 ) -> Result<(DeferredModule, BTreeMap<String, SymbolHome>)> {
     let is_deferred = is_deferred_yaml(path);
-    let data: ModuleFile = serde_yaml::from_str(
-        &fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?,
-    )
-    .with_context(|| format!("parsing {}", path.display()))?;
+    let data = read_module_file(path)?;
     let module_path = module_path_from_file(path, root, is_deferred);
 
     let mut bindings = BTreeSet::new();
@@ -539,35 +521,6 @@ fn push_companion_table(out: &mut String, title: &str, rows: &[ModuleCoverage], 
             companions
         ));
     }
-}
-
-fn is_module_yaml(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.ends_with(".yaml") || name.ends_with(".yaml.deferred"))
-}
-
-fn is_deferred_yaml(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.ends_with(".yaml.deferred"))
-}
-
-fn module_path_from_file(path: &Path, root: &Path, is_deferred: bool) -> String {
-    let relative = path
-        .strip_prefix(root)
-        .unwrap_or(path)
-        .to_string_lossy()
-        .replace('\\', "/");
-    let suffix = if is_deferred {
-        ".yaml.deferred"
-    } else {
-        ".yaml"
-    };
-    relative
-        .strip_suffix(suffix)
-        .unwrap_or(&relative)
-        .to_string()
 }
 
 #[cfg(test)]

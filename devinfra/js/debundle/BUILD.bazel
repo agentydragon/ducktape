@@ -199,6 +199,7 @@ rust_library(
     deps = [
         ":analysis",
         ":spec",
+        ":spec_modules",
         ":spec_tree",
         "@crates//:anyhow",
         "@crates//:serde",
@@ -225,6 +226,26 @@ rust_binary(
         "@crates//:clap",
         "@crates//:serde_json",
     ],
+)
+
+rust_library(
+    name = "spec_modules",
+    srcs = ["spec_modules.rs"],
+    crate_root = "spec_modules.rs",
+    edition = "2024",
+    deps = [
+        ":spec",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:serde_yaml",
+    ],
+)
+
+rust_test(
+    name = "spec_modules_test",
+    crate = ":spec_modules",
+    edition = "2024",
+    deps = ["@crates//:tempfile"],
 )
 
 rust_library(
@@ -266,6 +287,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":spec",
+        ":spec_modules",
         "@crates//:anyhow",
         "@crates//:serde",
         "@crates//:serde_yaml",

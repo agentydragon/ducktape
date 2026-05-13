@@ -10,6 +10,9 @@ use spec::{
     MaterializeLogicalModulesConfig, Member, SwapMark, SwapVendorChunksConfig, TransformSpec,
     VendorLevel, VendorMark, VendorRole, WrapperShape,
 };
+use spec_modules::{
+    collect_module_files, is_deferred_yaml, module_path_from_file, read_module_file,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompileSpecTreeOptions {
@@ -73,22 +76,6 @@ enum VendorLevelSource {
     Suppress,
     BoundaryRename,
     Swap,
-}
-
-/// Authoring shape of a single per-module YAML under
-/// `modules/**/<path>.yaml{,.deferred}`. Re-exported so
-/// `peel_horizon` (and any other consumer that ranks deferred YAMLs)
-/// parses them through exactly the same schema the canonical
-/// `compile_spec_tree` path uses — every additive field landed here
-/// is automatically accepted by those consumers and stays in lockstep
-/// with the on-disk YAML the debundler itself reads.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ModuleFile {
-    #[serde(default)]
-    pub members: Vec<Member>,
-    #[serde(default)]
-    pub anonymous_statements: Vec<AnonymousStatement>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -186,25 +173,15 @@ fn load_main_chunk_modules(
 ) -> Result<(Vec<ModuleSource>, Vec<Member>)> {
     let mut active = Vec::new();
     let mut deferred_members = Vec::new();
-    let mut files = Vec::new();
-    collect_module_files(modules_root, &mut files)?;
-    for path in files {
+    for path in collect_module_files(modules_root)? {
         let is_deferred = is_deferred_yaml(&path);
-        let module_path = module_path_from_file(
-            &path,
-            modules_root,
-            if is_deferred {
-                ".yaml.deferred"
-            } else {
-                ".yaml"
-            },
-        );
-        let data: ModuleFile = read_yaml(&path)?;
+        let module_path = module_path_from_file(&path, modules_root, is_deferred);
+        let data = read_module_file(&path)?;
         if is_deferred {
-            deferred_members.extend(data.members);
             // Deferred files don't get materialized; their
             // anonymous_statements (if any) are dropped on the
             // floor — there's no logical module to attach them to.
+            deferred_members.extend(data.members);
         } else {
             active.push(ModuleSource {
                 chunk_id: main_chunk_id.to_string(),
@@ -216,21 +193,6 @@ fn load_main_chunk_modules(
     }
     active.sort_by(|left, right| left.path.cmp(&right.path));
     Ok((active, deferred_members))
-}
-
-fn collect_module_files(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in fs::read_dir(root).with_context(|| format!("reading {}", root.display()))? {
-        let path = entry
-            .with_context(|| format!("walking {}", root.display()))?
-            .path();
-        if path.is_dir() {
-            collect_module_files(&path, out)?;
-        } else if is_module_yaml(&path) {
-            out.push(path);
-        }
-    }
-    out.sort();
-    Ok(())
 }
 
 fn vendor_map(sources: Vec<VendorMarkSource>) -> Result<BTreeMap<String, VendorMark>> {
@@ -333,30 +295,6 @@ fn chunk_renames_map(
             members: deferred_members,
         },
     )])
-}
-
-fn is_module_yaml(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.ends_with(".yaml") || name.ends_with(".yaml.deferred"))
-}
-
-fn is_deferred_yaml(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.ends_with(".yaml.deferred"))
-}
-
-fn module_path_from_file(path: &Path, root: &Path, suffix: &str) -> String {
-    let relative = path
-        .strip_prefix(root)
-        .unwrap_or(path)
-        .to_string_lossy()
-        .replace('\\', "/");
-    relative
-        .strip_suffix(suffix)
-        .unwrap_or(&relative)
-        .to_string()
 }
 
 #[cfg(test)]
