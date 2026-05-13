@@ -2267,6 +2267,112 @@ mod tests {
     }
 
     #[test]
+    fn split_comma_list_assigns_per_declarator_source_ranges() {
+        // Multi-declarator var statement spread across three source
+        // lines. After Bucket-F splits the comma list, each resulting
+        // single-declarator owner must report just its declarator's
+        // line range — not the full parent statement's range. The
+        // factorizer's `size_lines_estimate` and the lane workers'
+        // `body_extraction` per-owner snippets both rely on this.
+        let cm: Lrc<swc_common::SourceMap> = Default::default();
+        let source = "const A = 1,\n      B = 2,\n      C = 3;\n";
+        let fm = cm.new_source_file(
+            FileName::Custom("test.js".into()).into(),
+            source.to_string(),
+        );
+        let lexer = Lexer::new(
+            Syntax::Es(Default::default()),
+            Default::default(),
+            StringInput::from(&*fm),
+            None,
+        );
+        let module = Parser::new_from(lexer).parse_module().unwrap();
+        let cm_clone = cm.clone();
+        let line_range_for_span = move |span: swc_common::Span| -> Option<(usize, usize)> {
+            if span == swc_common::DUMMY_SP {
+                return None;
+            }
+            let lo = cm_clone.lookup_char_pos(span.lo()).line;
+            let hi = cm_clone.lookup_char_pos(span.hi()).line;
+            Some((lo, hi))
+        };
+        let analysis = analyze_chunk_with_source_locations(
+            &module,
+            &BTreeSet::new(),
+            Some("test.js"),
+            line_range_for_span,
+        );
+        assert_eq!(analysis.facts.len(), 3);
+        let lines: Vec<(usize, usize)> = analysis
+            .facts
+            .iter()
+            .map(|f| {
+                let loc = f
+                    .source_location
+                    .as_ref()
+                    .expect("source_location should be populated");
+                (loc.start_line, loc.end_line)
+            })
+            .collect();
+        assert_eq!(
+            lines,
+            vec![(1, 1), (2, 2), (3, 3)],
+            "each declarator should report only its own line, got {lines:?}",
+        );
+    }
+
+    #[test]
+    fn split_export_comma_list_assigns_per_declarator_source_ranges() {
+        // Same fix applies to `export const A = 1, B = 2;`: the
+        // outer `ExportDecl` wrapper's span gets replaced by the
+        // declarator's span on each post-split item.
+        let cm: Lrc<swc_common::SourceMap> = Default::default();
+        let source = "export const A = 1,\n             B = 2,\n             C = 3;\n";
+        let fm = cm.new_source_file(
+            FileName::Custom("test.js".into()).into(),
+            source.to_string(),
+        );
+        let lexer = Lexer::new(
+            Syntax::Es(Default::default()),
+            Default::default(),
+            StringInput::from(&*fm),
+            None,
+        );
+        let module = Parser::new_from(lexer).parse_module().unwrap();
+        let cm_clone = cm.clone();
+        let line_range_for_span = move |span: swc_common::Span| -> Option<(usize, usize)> {
+            if span == swc_common::DUMMY_SP {
+                return None;
+            }
+            let lo = cm_clone.lookup_char_pos(span.lo()).line;
+            let hi = cm_clone.lookup_char_pos(span.hi()).line;
+            Some((lo, hi))
+        };
+        let analysis = analyze_chunk_with_source_locations(
+            &module,
+            &BTreeSet::new(),
+            Some("test.js"),
+            line_range_for_span,
+        );
+        let lines: Vec<(usize, usize)> = analysis
+            .facts
+            .iter()
+            .map(|f| {
+                let loc = f
+                    .source_location
+                    .as_ref()
+                    .expect("source_location should be populated");
+                (loc.start_line, loc.end_line)
+            })
+            .collect();
+        assert_eq!(
+            lines,
+            vec![(1, 1), (2, 2), (3, 3)],
+            "each exported declarator should report only its own line, got {lines:?}",
+        );
+    }
+
+    #[test]
     fn split_comma_list_surfaces_real_cross_declarator_cycle() {
         // `const A = X, B = 1;` — A → mod_a, B → mod_b, X → mod_b.
         // mod_a's `A` reads X from mod_b → R-edge mod_a → mod_b.

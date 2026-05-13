@@ -241,7 +241,7 @@ pub(crate) fn top_level_item_views(body: &[ModuleItem]) -> Vec<TopLevelItemView<
             ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) if var.decls.len() > 1 => {
                 for decl in &var.decls {
                     let single = VarDecl {
-                        span: var.span,
+                        span: decl.span,
                         ctxt: var.ctxt,
                         kind: var.kind,
                         declare: var.declare,
@@ -257,7 +257,7 @@ pub(crate) fn top_level_item_views(body: &[ModuleItem]) -> Vec<TopLevelItemView<
                     Decl::Var(var) if var.decls.len() > 1 => {
                         for decl in &var.decls {
                             let single = VarDecl {
-                                span: var.span,
+                                span: decl.span,
                                 ctxt: var.ctxt,
                                 kind: var.kind,
                                 declare: var.declare,
@@ -265,7 +265,7 @@ pub(crate) fn top_level_item_views(body: &[ModuleItem]) -> Vec<TopLevelItemView<
                             };
                             out.push(TopLevelItemView::Owned(ModuleItem::ModuleDecl(
                                 ModuleDecl::ExportDecl(ExportDecl {
-                                    span: export_decl.span,
+                                    span: decl.span,
                                     decl: Decl::Var(Box::new(single)),
                                 }),
                             )));
