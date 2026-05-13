@@ -223,12 +223,7 @@ rust_binary(
     srcs = ["peel_horizon_cli.rs"],
     crate_root = "peel_horizon_cli.rs",
     edition = "2024",
-    deps = [
-        ":peel_horizon",
-        "@crates//:anyhow",
-        "@crates//:clap",
-        "@crates//:serde_json",
-    ],
+    deps = [":peel_cli_lib"],
 )
 
 rust_library(
@@ -277,12 +272,7 @@ rust_binary(
     srcs = ["peel_factorize_cli.rs"],
     crate_root = "peel_factorize_cli.rs",
     edition = "2024",
-    deps = [
-        ":peel_factorize",
-        "@crates//:anyhow",
-        "@crates//:clap",
-        "@crates//:serde_json",
-    ],
+    deps = [":peel_cli_lib"],
 )
 
 rust_library(
@@ -311,11 +301,31 @@ rust_binary(
     srcs = ["peel_inventory_cli.rs"],
     crate_root = "peel_inventory_cli.rs",
     edition = "2024",
+    deps = [":peel_cli_lib"],
+)
+
+rust_library(
+    name = "peel_cli_lib",
+    srcs = ["peel_cli.rs"],
+    crate_name = "peel_cli",
+    crate_root = "peel_cli.rs",
+    edition = "2024",
     deps = [
+        ":peel_factorize",
+        ":peel_horizon",
         ":peel_inventory",
         "@crates//:anyhow",
         "@crates//:clap",
+        "@crates//:serde_json",
     ],
+)
+
+rust_binary(
+    name = "peel_cli",
+    srcs = ["peel_cli_main.rs"],
+    crate_root = "peel_cli_main.rs",
+    edition = "2024",
+    deps = [":peel_cli_lib"],
 )
 
 rust_library(
