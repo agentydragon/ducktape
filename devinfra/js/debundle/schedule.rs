@@ -8,9 +8,7 @@ use crate::factor_assembly::{AtomicUnitConflict, assemble_partition};
 use crate::graph::{build_module_quotient, build_owner_graph};
 use crate::partition::Partition;
 use crate::reports::{build_owner_graph_report, owner_key};
-use crate::validation::{
-    render_assembly_conflict_summary, validate_cross_destination_assignments, validate_schedule,
-};
+use crate::validation::{render_assembly_conflict_summary, validate_schedule};
 use crate::{
     BindingId, BindingKind, BindingName, LogicalModule, LogicalModuleIndex, ModuleId,
     ModuleQuotient, OwnerGraph, OwnerGraphReport, RESIDUAL_ENTRY_LABEL, ScheduleReport,
@@ -276,14 +274,9 @@ impl Schedule {
     }
 
     /// Run SCC analysis over the dep graph. Spec authors consume the
-    /// resulting report to fix any cycles or cross-destination
-    /// rebinding writes.
+    /// resulting report to fix any cycles or atomic-unit conflicts.
     pub fn validate(&self) -> ScheduleReport {
         let mut report = validate_schedule(&self.dep_graph, &|id| self.module_name(id));
-        report.cross_destination_assignments =
-            validate_cross_destination_assignments(&self.owner_graph, &self.partition, &|id| {
-                self.module_name(id)
-            });
         report.atomic_unit_conflicts =
             render_assembly_conflict_summary(&self.assembly_conflicts, &self.owner_graph, &|id| {
                 self.module_name(id)

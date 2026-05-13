@@ -57,9 +57,8 @@ pub use report_schema::{
 };
 pub use schedule::Schedule;
 pub use validation::{
-    AtomicUnitClaimReport, AtomicUnitConflictReport, CrossDestinationAssignmentReport, CycleEdge,
-    CycleReport, ScheduleReport, render_atomic_unit_conflict_summary,
-    render_cross_destination_assignment_summary, render_cycle_summary, validate_schedule,
+    AtomicUnitClaimReport, AtomicUnitConflictReport, CycleEdge, CycleReport, ScheduleReport,
+    render_atomic_unit_conflict_summary, render_cycle_summary, validate_schedule,
 };
 
 #[cfg(test)]

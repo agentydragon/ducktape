@@ -7,27 +7,19 @@ use petgraph::visit::EdgeRef;
 use serde::Serialize;
 
 use crate::factor_assembly::AtomicUnitConflict;
-use crate::partition::Partition;
 use crate::reports::owner_key;
 use crate::{
-    BindingName, DepKind, EdgeMetadata, ModuleId, ModuleQuotient, OwnerGraph, SourceLocation,
-    StatementOrdinal,
+    BindingName, DepKind, EdgeMetadata, ModuleId, ModuleQuotient, OwnerGraph, StatementOrdinal,
 };
 
 /// Result of validating a module dep graph.
 #[derive(Debug, Clone, Serialize)]
 pub struct ScheduleReport {
     pub cycles: Vec<CycleReport>,
-    /// Rebinding writes whose assigning owner and binding owner are
-    /// destined for different output modules. These specs are always
-    /// invalid because emitted ESM imports are read-only in the
-    /// importing module.
-    pub cross_destination_assignments: Vec<CrossDestinationAssignmentReport>,
     /// Atomic factor units the spec splits across destination
     /// modules — unrealizable by construction. Populated from
     /// `Schedule::assembly_conflicts`; the materializer rejects any
     /// spec with a non-empty list before emitting code.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub atomic_unit_conflicts: Vec<AtomicUnitConflictReport>,
     /// Topological linearization of `I ∪ S` rooted at the entry,
     /// dependency-first. Empty when the dep graph has cycles
@@ -55,25 +47,8 @@ pub struct AtomicUnitConflictReport {
 #[derive(Debug, Clone, Serialize)]
 pub struct AtomicUnitClaimReport {
     pub owner_id: String,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub binding_names: Vec<BindingName>,
     pub module: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct CrossDestinationAssignmentReport {
-    pub binding: BindingName,
-    pub assigner_owner: String,
-    pub binding_owner: String,
-    pub assigner_statement_ordinal: StatementOrdinal,
-    pub binding_statement_ordinal: StatementOrdinal,
-    pub assigner_module: String,
-    pub binding_module: String,
-    pub kind: DepKind,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub assigner_source_location: Option<SourceLocation>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub binding_source_location: Option<SourceLocation>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -174,34 +149,6 @@ pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
     out
 }
 
-/// Render a compact human-readable summary of cross-destination
-/// rebinding writes for the materializer bail message.
-pub fn render_cross_destination_assignment_summary(
-    assignments: &[CrossDestinationAssignmentReport],
-) -> String {
-    let mut out = String::new();
-    for assignment in assignments.iter().take(10) {
-        out.push_str(&format!(
-            "  assigner {} in {} writes mutable binding `{}` owned by {} in {} ({:?}, assigner statement #{}, binding statement #{}).\n",
-            assignment.assigner_owner,
-            assignment.assigner_module,
-            assignment.binding,
-            assignment.binding_owner,
-            assignment.binding_module,
-            assignment.kind,
-            assignment.assigner_statement_ordinal.0,
-            assignment.binding_statement_ordinal.0,
-        ));
-    }
-    if assignments.len() > 10 {
-        out.push_str(&format!(
-            "  ... and {} more cross-destination assignment(s).\n",
-            assignments.len() - 10
-        ));
-    }
-    out
-}
-
 fn cut_pairs_count(cut: &[CycleEdge]) -> usize {
     let mut seen: HashSet<(&str, &str)> = HashSet::new();
     for edge in cut {
@@ -267,7 +214,6 @@ pub fn validate_schedule(
     }
     ScheduleReport {
         cycles,
-        cross_destination_assignments: Vec::new(),
         atomic_unit_conflicts: Vec::new(),
         linker_order: Vec::new(),
     }
@@ -342,61 +288,6 @@ pub fn render_atomic_unit_conflict_summary(conflicts: &[AtomicUnitConflictReport
         }
     }
     out
-}
-
-pub(crate) fn validate_cross_destination_assignments(
-    owner_graph: &OwnerGraph,
-    partition: &Partition,
-    module_name: &dyn Fn(ModuleId) -> String,
-) -> Vec<CrossDestinationAssignmentReport> {
-    let mut violations = Vec::new();
-    for edge in owner_graph.iter_edges() {
-        let Some(from_node) = owner_graph.node(edge.from) else {
-            continue;
-        };
-        let Some(to_node) = owner_graph.node(edge.to) else {
-            continue;
-        };
-        let from_module = partition.of(edge.from);
-        let to_module = partition.of(edge.to);
-        if from_module == to_module {
-            continue;
-        }
-        if !edge.reason.is_rebind() {
-            continue;
-        }
-        let Some(binding_id) = edge.reason.binding else {
-            continue;
-        };
-        let binding = owner_graph.binding_table.required_name(binding_id).clone();
-        violations.push(CrossDestinationAssignmentReport {
-            binding,
-            assigner_owner: owner_key(edge.from),
-            binding_owner: owner_key(edge.to),
-            assigner_statement_ordinal: from_node.statement_ordinal,
-            binding_statement_ordinal: to_node.statement_ordinal,
-            assigner_module: module_name(from_module),
-            binding_module: module_name(to_module),
-            kind: edge.reason.kind,
-            assigner_source_location: from_node.source_location.clone(),
-            binding_source_location: to_node.source_location.clone(),
-        });
-    }
-    violations.sort_by(|a, b| {
-        (
-            a.assigner_statement_ordinal,
-            a.binding_statement_ordinal,
-            a.binding.as_str(),
-            a.kind,
-        )
-            .cmp(&(
-                b.assigner_statement_ordinal,
-                b.binding_statement_ordinal,
-                b.binding.as_str(),
-                b.kind,
-            ))
-    });
-    violations
 }
 
 /// Compute a near-minimum cut of realizability-constraining edges

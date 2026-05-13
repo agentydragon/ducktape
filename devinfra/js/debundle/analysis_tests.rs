@@ -259,12 +259,8 @@ mod tests {
 
     /// LazyRebind atomic-unit split: declarer and assigner of a
     /// mutable binding must materialize together. `factor_assembly`
-    /// now records this as an `atomic_unit_conflicts` entry on the
-    /// schedule (the materializer bails on any non-empty list);
-    /// pre-atomic-unit, the validator's
-    /// `cross_destination_assignments` check caught it after the
-    /// fact. Both signals still fire for backward compatibility, but
-    /// the atomic-unit conflict is the authoritative diagnostic.
+    /// records this as an `atomic_unit_conflicts` entry on the
+    /// schedule; the materializer bails on any non-empty list.
     #[test]
     fn cross_destination_lazy_write_is_rejected() {
         let schedule = schedule_for(
@@ -293,7 +289,7 @@ mod tests {
 
         let report = schedule.validate();
         assert!(
-            report.cross_destination_assignments.is_empty(),
+            report.atomic_unit_conflicts.is_empty(),
             "same-destination rebinding writes should stay local to the emitted module: {report:?}",
         );
     }

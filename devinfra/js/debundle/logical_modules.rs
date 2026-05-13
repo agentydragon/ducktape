@@ -16,8 +16,7 @@ use analysis::{
     LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId, OwnerId,
     RedundantPurityHint, RedundantPurityReason, Schedule, StatementFacts,
     analyze_chunk_with_source_locations, build_owner_graph, compute_atomic_units,
-    render_atomic_unit_conflict_summary, render_cross_destination_assignment_summary,
-    render_cycle_summary,
+    render_atomic_unit_conflict_summary, render_cycle_summary,
 };
 use artifact::{
     ArtifactIndexes, ArtifactSourceImportResolver, ChunkArtifact, ChunkFileRecord, ChunkId,
@@ -781,16 +780,6 @@ fn materialize_logical_chunk(
         bail!(
             "materialize_logical_modules: chunk {chunk_id} has {n} atomic-factor-unit conflict(s) — the spec assigns members of one atomic factor unit to different destination modules, forming a cycle in the module dep graph that the constraining-edge SCC analysis says is unrealizable. Atomic factor units come from FACTORIZE.md's `G_atomic` SCC over the owner graph; every member must co-locate. {causes}Resolve by reconciling each unit's claims into a single destination. Full evidence written to <reports>/{chunk_id}/schedule.json; owner graph written to <reports>/{chunk_id}/owner_graph.json. Summary:\n{summary}",
             n = schedule_report.atomic_unit_conflicts.len(),
-        );
-    }
-
-    if !schedule_report.cross_destination_assignments.is_empty() {
-        let summary = render_cross_destination_assignment_summary(
-            &schedule_report.cross_destination_assignments,
-        );
-        bail!(
-            "materialize_logical_modules: chunk {chunk_id} has {} cross-destination assignment(s) to mutable binding(s); spec is unrealizable because an assigner would have to rebind an imported ESM binding, which is read-only in the importing module. Move each assigner owner into the binding's destination, keep the mutable binding with its assigner, or add a sound live-mutation bridge before peeling. Full evidence written to <reports>/{chunk_id}/schedule.json; owner graph written to <reports>/{chunk_id}/owner_graph.json. Summary:\n{summary}",
-            schedule_report.cross_destination_assignments.len(),
         );
     }
 
