@@ -944,6 +944,12 @@ enough for large chunks.
 
 ### Residual peel candidates
 
+> Detailed factorize algorithm — including how existing modules
+> participate as supernodes in the proposal graph — is documented in
+> the dedicated <FACTORIZE.md>. The summary below covers the
+> single-owner / two-owner peel candidate primitive that the
+> peelability projection emits.
+
 The first implemented candidate family answers the immediate
 operational question: "which symbols can currently peel out of the
 residual catch-all?"
