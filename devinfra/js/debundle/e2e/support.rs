@@ -107,6 +107,8 @@ struct TransformSpecFixture<'a> {
     logical_modules: BTreeMap<String, BTreeMap<String, Value>>,
     residual_modules: BTreeMap<String, Value>,
     chunk_renames: BTreeMap<String, Value>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    unassigned_mode: BTreeMap<String, &'static str>,
     materialize_logical_modules: MaterializeLogicalModulesFixture<'a>,
     write_js_tree: WriteJsTreeFixture<'a>,
 }
@@ -204,6 +206,11 @@ pub struct FixtureOpts<'a> {
     /// empty residual module (`target: "residual/unhandled"`) for this
     /// chunk so unclaimed bindings still flow somewhere.
     pub include_residual: bool,
+    /// Optional `unassigned_mode` setting for this chunk. `None` keeps
+    /// the default `catchall` behavior; `Some("mini_factors")` activates
+    /// the Stage 5 mini-factor synthesizer. The value is the
+    /// snake_case discriminant of `spec::UnassignedMode`.
+    pub unassigned_mode: Option<&'static str>,
     pub extra_files: &'a [(&'a str, &'a str)],
 }
 
@@ -216,6 +223,7 @@ impl<'a> FixtureOpts<'a> {
             chunk_renames: None,
             chunk_id: "static/app",
             include_residual: true,
+            unassigned_mode: None,
             extra_files: &[],
         }
     }
@@ -553,6 +561,11 @@ fn build_spec<'a>(opts: &FixtureOpts<'_>, setup: &'a FixtureSetup) -> TransformS
         chunk_renames.insert(chunk_id.to_string(), renames.clone());
     }
 
+    let mut unassigned_mode = BTreeMap::new();
+    if let Some(mode) = opts.unassigned_mode {
+        unassigned_mode.insert(chunk_id.to_string(), mode);
+    }
+
     TransformSpecFixture {
         inputs: TransformInputsFixture {
             input_root: &setup.snapshot_root,
@@ -561,6 +574,7 @@ fn build_spec<'a>(opts: &FixtureOpts<'_>, setup: &'a FixtureSetup) -> TransformS
         logical_modules,
         residual_modules,
         chunk_renames,
+        unassigned_mode,
         materialize_logical_modules: MaterializeLogicalModulesFixture {
             prune_other_chunks: false,
             report_out_dir: &setup.report_root,

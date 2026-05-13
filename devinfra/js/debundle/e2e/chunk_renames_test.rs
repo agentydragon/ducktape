@@ -63,6 +63,7 @@ export { x };
         })),
         chunk_id: "static/app",
         include_residual: false,
+        unassigned_mode: None,
         extra_files: &[],
     };
     let fixture = run_fixture(opts);
@@ -107,6 +108,7 @@ export { x };
         })),
         chunk_id: "static/app",
         include_residual: false,
+        unassigned_mode: None,
         extra_files: &[(
             "static/vendor/entry.js",
             r#"export const x = "dep-x";
@@ -159,6 +161,7 @@ export { helper, run };
         })),
         chunk_id: "static/app",
         include_residual: false,
+        unassigned_mode: None,
         extra_files: &[],
     };
     let fixture = run_fixture(opts);
@@ -214,6 +217,7 @@ export { run };
         })),
         chunk_id: "static/app",
         include_residual: false,
+        unassigned_mode: None,
         extra_files: &[],
     };
 
@@ -250,6 +254,7 @@ export { alpha, bravo, charlie, delta };
         })),
         chunk_id: "static/app",
         include_residual: false,
+        unassigned_mode: None,
         extra_files: &[],
     };
 

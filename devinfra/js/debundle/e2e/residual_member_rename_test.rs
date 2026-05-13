@@ -28,6 +28,7 @@ export { a, b };
         chunk_renames: None,
         chunk_id: "static/app",
         include_residual: false,
+        unassigned_mode: None,
         extra_files: &[],
     };
     let fixture = run_fixture(opts);

@@ -51,6 +51,7 @@ rust_library(
         "anonymous_statement_test",
         "comma_list_owner_split_test",
         "lowering_test",
+        "mini_factors_test",
         "naturalization_test",
         "url_rebase_test",
         "vendor_swap_test",

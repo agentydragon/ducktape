@@ -55,6 +55,7 @@ export { a, b, c };
         })),
         chunk_id: "static/app",
         include_residual: true,
+        unassigned_mode: None,
         extra_files: &[(
             "static/app/vendor.js",
             "export function f() { return 1; }\n",
