@@ -1,288 +1,326 @@
 # Factorize — Design
 
-> Summary: the factorize stage takes the owner graph plus the current
-> partition (each owner's destination module under the current spec)
-> and proposes a refinement of that partition — a new partition that
-> reassigns residual owners into named modules (existing or new) while
-> satisfying the materializer's gates. Each currently-named module is
-> a **supernode** in the input graph; residual owners are individual
-> nodes; the **residual_entry catch-all is not a supernode** because it
-> isn't a coherent factor, it's a leftover bucket. The factorize is a
-> one-pass graph operation over this supernode graph: build the
-> must-co-locate digraph H, take Tarjan SCCs, emit each SCC as a
-> proposal. Cells containing an existing supernode propose extending
-> that module by the additional residual owners in the cell; cells
-> with no supernode propose a new module. There is no separate "grow
-> existing" vs "create new" mode — both fall out of the same
-> primitive operation.
+> Summary: the factorize stage takes the owner graph + the author's
+> YAMLs + a chunk-level `unassigned_mode` setting, and produces (1)
+> **the complete partition** of owners into output factors and (2)
+> a list of **advisory proposals** for the author to consider when
+> writing more YAMLs. The materializer consumes the partition and
+> emits one `.js` per factor. There is no special "residual" code
+> path: the residual catchall is just a factor like any other, whose
+> destination happens to be `residual_entry`. Mode (a) (`catchall`)
+> collects all unassigned owners into one residual factor; mode (b)
+> (`mini_factors`) emits each unassigned atomic unit as its own
+> synthetic factor. Both modes share the same Stage-1 structural
+> work (Tarjan-SCC of the constraining-edge graph → atomic factor
+> units); the mode picks how to assemble Stage-2 factors out of
+> those units.
 
 ## Mission
 
-The debundler's job is to recover a multi-module ESM bundle from a
-single bundler-emitted chunk, guided by a spec the author writes
-incrementally. After the validator accepts a spec, the residual_entry
-still holds every owner not yet assigned to a named module. The
-factorize asks: **what should the author write next?**
+The debundler recovers a multi-module ESM bundle from a single
+bundler-emitted chunk, guided by a spec the author writes
+incrementally. The pipeline currently has two coupled jobs:
 
-A useful factorize output is a list of proposals, each saying either
-"create a new module containing these N bindings" or "extend module M
-by these N bindings". Every proposal must be **mechanically valid** —
-applying it as a spec edit must result in a spec the materializer
-accepts. The author's role is to label and curate the proposals; the
-factorize's role is to do the bookkeeping that makes "would this
-spec edit pass the materializer?" cheap to answer.
+- **Compute a partition** of every top-level owner into a destination
+  module. Some destinations are author-named (logical modules from
+  YAMLs); the rest is a leftover bucket.
+- **Materialize** the partition into `.js` files with explicit
+  imports/exports.
 
-## Domain model
+Today those jobs are tangled: the materializer has explicit logic
+for the leftover bucket (`residual_entry`), the validator treats
+residual differently from logical modules, peelability has its own
+"is this destination residual?" branches. The factorize stage —
+which decides what _could_ go where — runs alongside but in a
+parallel universe, only operating on the residual subset.
 
-The factorize is a function:
+The reason to clean this up: every pipeline stage that says
+`if module is residual: …` is a place where the model could be
+simpler. Once a partition is fixed, every output module is the same
+shape from the materializer's point of view. The leftover-ness of
+`residual_entry` is an attribute of how it was _populated_, not how
+it gets _emitted_.
 
-```
-factorize(owner_graph, current_partition) -> [Proposal]
-```
-
-Inputs:
-
-- `owner_graph` — the same flat-edge owner graph the materializer
-  validates against. Nodes are top-level owners; edges are `EagerUse`,
-  `LazyUse`, `Sequenced`, `EagerRebind`, `LazyRebind` reasons carrying
-  a binding name (except `Sequenced`, which has none).
-- `current_partition` — for each owner, its destination module under
-  the spec. Each destination is either a named `Logical(M)` module or
-  the implicit `ResidualEntry` catch-all.
-
-Outputs: a list of proposals. Each proposal is a set of currently-
-residual owners that, together with at most one named module's
-existing members, forms a valid module under the materializer's
-gates.
-
-### Nodes
-
-Two kinds of node feed the factorize graph:
-
-- **Supernode** = one currently-named logical module. Members: every
-  owner currently assigned to that module. The factorize cannot split
-  supernodes — the author already committed to grouping these owners.
-  The factorize _can_ extend a supernode by absorbing additional
-  residual owners (that's what "extend module M" means).
-- **Loose node** = one currently-residual owner. The factorize is
-  free to assign each loose node to any supernode, to a new module,
-  or to leave it in residual.
-
-The residual_entry destination is **not** a supernode. It's a
-leftover bucket. Treating it as a supernode would force every loose
-node to either join one giant residual_entry supernode (defeating
-the point of factorize) or leave it, which is the dichotomy we already
-have. The clean model: loose nodes start unassigned (in residual);
-the factorize proposes assignments.
-
-### Edges
-
-Edges in the factorize graph come from the owner graph, projected
-through "which node does this owner belong to in the factorize graph":
-
-- Owner → owner edge u → v in the owner graph.
-- If u and v are both in the same supernode: edge drops (internal).
-- Otherwise: factorize-graph edge from node(u) to node(v), carrying
-  the same `(kind, binding)` reason.
-
-Multiple owner-level edges between the same factorize-node pair are
-kept distinct (we care about each reason's binding individually, not
-just the presence of an edge).
-
-## The must-co-locate digraph H
-
-A directed graph on factorize-graph nodes. An edge `a → b` in H means
-"if a's module gets b's owners merged in, b must be in that module
-too". Closure rules — applied per owner-graph edge, projected to
-node-level via the rule above:
-
-- `Sequenced` edge u → v (source-order constraint):
-  Adds `node(v) → node(u)` to H. (If v ends up in module M but u
-  stays in residual_entry, M materializes before residual_entry,
-  so v runs before u — inverting the original source order. To
-  keep the order, u must be in M too.)
-
-- `EagerUse` / `LazyUse` edge u → v on binding b:
-  - If b is **entry-exported** (in `entry_exported_binding_names` —
-    pre-existing entry exports plus any binding already owned by a
-    `Logical(_)` module): no H edge. The cross-module read resolves
-    through entry, no co-location required.
-  - Otherwise (b is declared in residual and not entry-exported):
-    `node(u) → node(v)` in H. (If u ends up in module M, M's body
-    references b. b is declared by v. If v stays in residual_entry,
-    M would need to import b from residual_entry — but b is not in
-    entry's exports, so the materializer rejects with emit-block.
-    The only fix is to absorb v into M.)
-
-- `EagerRebind` / `LazyRebind` edge u — v:
-  Bidirectional `node(u) ↔ node(v)` in H. (LazyRebind gate: declarer
-  and assigner of a mutable binding must co-locate.)
-
-Supernode-internal owner-graph edges (both endpoints in one
-supernode) don't contribute to H. Supernode-to-loose and
-supernode-to-supernode edges follow the same rules as
-owner-to-owner — the same reasons, projected to nodes.
-
-## The algorithm
+## Architecture
 
 ```
-1. Build the factorize-graph nodes:
-   - For each Logical(M) module: one supernode, members = its owners.
-   - For each residual owner: one loose node.
-2. Project owner-graph edges to factorize-graph node pairs (skip
-   internal-to-supernode edges).
-3. Build H per the closure rules.
-4. Tarjan-SCC on H. Each SCC = one cell.
-5. Each cell becomes one proposal in the output.
+owner_graph + spec (YAMLs) + chunk-config
+            ↓
+        FACTORIZE
+            ↓
+   ┌────────┴─────────┐
+   ↓                  ↓
+partition         proposals
+   ↓                  ↓
+MATERIALIZE      (advisory: author reads, edits YAMLs)
+   ↓
+.js files
 ```
 
-That's the whole algorithm. Total work: O(|V| + |E|) where V is
-factorize-graph nodes and E is owner-graph edges (each consulted
-once, projected once).
+Factorize emits two products. The partition is **authoritative** —
+the materializer trusts it to be complete and valid. The proposals
+are **advisory** — they're greedy recommendations for what the author
+could put in the next YAML; nothing in the pipeline reads them as
+input.
 
-## Proposal interpretation
+## Stage 1 — Atomic factor units
 
-Each emitted cell C has:
+**Mode-independent.** Computed once per chunk regardless of how the
+factorize will assemble factors downstream.
 
-- A set of supernodes it contains. By construction, a cell can
-  contain zero or one supernodes — if it contained two, the materializer
-  would already be in a state where those two modules are co-located,
-  i.e. the spec is invalid (or one supernode would absorb the other,
-  which the partition wouldn't allow). The algorithm's correctness on
-  a valid input spec implies at most one supernode per cell. If two
-  supernodes do end up in the same SCC, that means the _current_ spec
-  is invalid — surface it as a `spec_conflict` proposal so the author
-  can investigate.
+The chunk's owner graph has edges with kinds: `EagerUse`, `LazyUse`,
+`EagerRebind`, `LazyRebind`, `Sequenced`. Construct a directed graph
+`G_atomic` on all owners with edges:
 
-- A set of loose nodes (currently-residual owners) it contains.
+- `EagerUse` u → v: add `u → v` in `G_atomic`. (u depends on v at
+  init time. If they form a cycle, they're not separable.)
+- `LazyUse`: skipped. Lazy reads happen at call time, not init time,
+  so they don't constrain co-location.
+- `EagerRebind` / `LazyRebind` u — v: add **both** `u → v` and
+  `v → u`. (LazyRebind gate: declarer and assigner of a mutable
+  binding must materialize in one destination.)
+- `Sequenced` u → v: add `u → v` **and** `v → u`. (Source-order
+  side-effect constraint runs both ways: if v moves and u doesn't,
+  source order inverts; if u moves and v doesn't, same. Both
+  directions force co-location.)
 
-From those, we derive the proposal shape:
+Tarjan-SCC `G_atomic`. Each SCC is an **atomic unit**. Inter-unit
+edges form a DAG by Tarjan's construction. **Any valid factorization
+of this chunk must keep each atomic unit's members together** — this
+is purely structural and depends only on the chunk's init order, not
+on the spec.
 
-- **Cell contains supernode S_M plus K loose nodes (K ≥ 1)**:
-  _Extend module M_ by absorbing K loose nodes. The lane worker
-  edits `M.yaml` to add the K loose nodes' bindings (or the
-  corresponding anonymous-statement selectors for owners with no
-  declared binding).
-- **Cell contains supernode S_M, no loose nodes**:
-  No proposal needed — module M as it stands is already valid. The
-  cell exists in the report only to document "here's a supernode the
-  algorithm considered; it doesn't need anything added".
-- **Cell contains no supernode, just loose nodes**:
-  _New module_ containing those loose nodes. The lane worker
-  authors a fresh YAML.
-- **Cell contains two or more supernodes**:
-  _Spec conflict_ — the current spec is invalid in the materializer's
-  eyes, but the validator may not have noticed (or the factorize is
-  exploring a hypothetical). Surface for human review.
+The atomic units are the primitive nodes of every later stage. From
+here on, "node" means "atomic unit" unless explicitly stated
+otherwise.
 
-## Validity by construction
+## Stage 2 — Assigning units to factors
 
-Each emitted cell is a valid hypothetical module (per the
-materializer's gates) **assuming the cell becomes a module**, with
-the following caveats:
+Stage 2 turns the DAG of atomic units into the final partition. It
+has three inputs:
 
-- **Emit-resolvability**: by H's closure rules, any non-entry-exported
-  use edge between cell members and non-members forces both into the
-  same SCC — so an emitted cell has no out-edges to non-cell loose
-  nodes on non-entry-exported bindings. Out-edges _to_ other cells via
-  entry-exported bindings are fine (materializer routes via entry).
+- The atomic-unit DAG (from Stage 1).
+- The author's YAMLs, which assign some owners (transitively, some
+  atomic units) to named logical modules.
+- The chunk's `unassigned_mode` setting.
 
-- **LazyRebind**: rebind edges are bidirectional in H, so any rebind
-  edge with both endpoints in residual ends up internal to one cell.
+### Pre-assigned units (from YAMLs)
 
-- **Sequenced order**: same reasoning as LazyRebind, via the reverse
-  edge in H.
+Each YAML module `M` has `members: [bindings/anonymous-statement
+selectors]`. The resolver maps each member to its declaring owner,
+then to its atomic unit. After resolution, each YAML maps to a set
+of atomic units it claims.
 
-- **Cycle gate**: a cell is **landable on its own** iff its module-
-  quotient module would have only-outgoing or only-incoming edges
-  with residual*entry (so no cycle through residual_entry forms).
-  This is verified per cell via the SSOT
-  `evaluate_residual_peel_candidate` predicate as a sanity check —
-  the closure rules should make this hold by construction, but we
-  run the predicate to catch bugs and to populate the cycle blocker
-  list when a cell genuinely \_isn't* landable yet (e.g. its closure
-  spans into residual that's still tangled).
+Two YAML modules may not claim overlapping atomic units. If they do,
+the spec is inconsistent — the factorize emits a `SpecConflict`
+proposal and the validator separately rejects the spec.
 
-A cell that's not landable today is still a valid proposal _if_ the
-author lands its prerequisites first. The report flags each cell's
-`landable_today` accordingly.
+After applying all YAMLs, the atomic units split into:
 
-## Output shape
+- **Claimed units**: every unit referenced by some YAML.
+- **Unclaimed units**: everything else.
 
-Each proposal is a record:
+### Mode-specific assembly of unclaimed units
 
-- `target` — discriminated union:
-  - `ExtendModule { module_path: String }` (cell contained supernode)
-  - `NewModule` (cell of only loose nodes)
-  - `SpecConflict { module_paths: [String] }` (cell contained ≥2 supernodes)
-- `additional_owners: [OwnerId]` — for `ExtendModule` and `NewModule`,
-  the loose nodes the cell adds. Empty for `SpecConflict`.
-- `additional_bindings: [BindingName]` — the declared bindings of
-  `additional_owners`, deduplicated.
-- `landable_today: bool` — verifier verdict.
-- `status`, `emit_blocked_residual_bindings`, `cycle_blocker_owner_ids`
-  — predicate diagnostics when not landable.
-- `size_lines_estimate`, `source_line_range` — size metadata for
-  downstream tooling (size-cap heuristics, sorting).
+`unassigned_mode` is a per-chunk setting:
 
-The factorize itself does **not** apply a size cap or merge cells for
-aesthetic reasons; those are post-processing concerns the CLI
-(`peel_factorize`) handles. The analyzer emits the minimum-forced
-cells; the CLI can choose to combine adjacent landable cells under a
-size budget, prioritize by source line or shared edges, or honor
-spec-author hints. Mixing those heuristics into the analyzer would
-mix correctness with policy.
+- `unassigned_mode: catchall` (default) — one factor named
+  `residual_entry` absorbs every unclaimed atomic unit.
+- `unassigned_mode: mini_factors` — every unclaimed atomic unit
+  becomes its own factor, with a synthetic destination name (see
+  _Naming_).
 
-## What this replaces
+Both modes produce a complete partition: every atomic unit
+(and therefore every owner) ends up in exactly one factor.
 
-The current `analysis::factorize` implements only the residual-only
-case: it filters out supernode-claimed owners before building H, so
-the algorithm can only emit `NewModule` proposals. To propose
-extending an existing module, the current code would need a separate
-"detection" pass with side-channel signals — exactly the kind of
-ad-hoc special-casing this design eliminates.
+#### catchall
 
-The closure rules are unchanged; what changes is the node set the
-algorithm operates on (all factorize-graph nodes, not just loose
-nodes) and the output interpretation (proposal target derived from
-the cell's contents).
+```
+factor R = { destination: "residual_entry", members: <every unclaimed atomic unit> }
+factors = [factor per YAML] ∪ {R}
+```
 
-## Implementation notes
+The residual factor `R` may be enormous and may itself fail the
+materializer's gates if applied as a single module — but historically
+the materializer treats `residual_entry` specially (it's allowed to
+absorb anything because the resulting `R` carries the bundle's
+init-time tangle internally). Under the new architecture this is no
+longer "special"; the materializer just emits `R` like any other
+factor. The cycle-gate property comes for free because `R` contains
+all atomic units that don't have homes — any cycle they participate
+in is internal to `R`.
 
-- The factorize-graph nodes are constructed once at the start of
-  `build_factorize_report`. Supernodes are identified by their
-  `ModuleId::Logical(_)` membership in the schedule's partition.
-- Edge projection: for each owner-graph edge, look up the
-  factorize-graph node id of each endpoint via an
-  `owner_id → node_id` map computed once. Skip edges where both
-  endpoints map to the same node id.
-- H is a `DiGraphMap<NodeId, ()>` from `petgraph`; SCC via
-  `petgraph::algo::tarjan_scc`.
-- The verifier predicate
-  (`peelability::evaluate_residual_peel_candidate`) takes a candidate
-  set of owners. For a cell, the candidate set is the cell's owners
-  ∪ (any supernode members it contains) — the materializer sees the
-  hypothetical post-application module that way.
-- Loose-node SCCs that touch a supernode SCC don't get "absorbed
-  into" the supernode in the SCC computation — they live in their
-  own SCC node, and the cell-emit step pairs them. (Equivalently, we
-  could pre-collapse supernode members into one synthetic node before
-  Tarjan; same result, slightly simpler to reason about. The
-  implementation should do this pre-collapse.)
+#### mini_factors
 
-## Post-processing (CLI `peel_factorize`)
+```
+factor F_u = { destination: <synthetic-name(u)>, members: {u} } for each unclaimed atomic unit u
+factors = [factor per YAML] ∪ {F_u for each unclaimed u}
+```
 
-The CLI consumes the analyzer's proposals from `OwnerGraphReport`
-and:
+Stage 1 already guarantees the inter-unit graph is a DAG, so the
+inter-factor module quotient is a DAG too. Validity is automatic.
 
-- Annotates each proposal with spec-tree context (`seeded_from_deferred`,
-  `active_modules_referenced` from active-claim attribution).
-- Optionally agglomerates adjacent landable `NewModule` proposals
-  under a `size_cap_lines` budget (current behavior; documented in
-  this layer so the analyzer stays heuristic-free).
-- May reorder or filter proposals by author-supplied hints.
+The result is many small `.js` files instead of one big residual file
+— a more granular representation of the part of the chunk the author
+hasn't claimed yet.
 
-Heuristics live in the CLI because they're policy, not correctness:
-two authors might disagree on whether to combine two unrelated
-landable singletons into one module, but they'll agree on what's
-mechanically valid.
+### Naming synthetic factors (mode b)
+
+Synthetic factors need stable, meaningful file paths. Default rule:
+
+- If the atomic unit has a declared binding, use the lexicographically
+  smallest binding name: `synthetic/<binding>.js`.
+- If the atomic unit is anonymous side-effect only, use the source-
+  line number of its first owner: `synthetic/line_<N>.js`.
+
+Authors can override by adding a YAML that claims the atomic unit
+under a meaningful name — at which point it stops being synthetic
+and becomes a regular logical module.
+
+## Advisory proposals
+
+In addition to the partition, factorize emits a list of advisory
+proposals: greedy recommendations for what the author could write
+next. These are computed from the atomic-unit DAG + the current
+claim state; the partition itself doesn't depend on them, and
+nothing auto-applies them.
+
+The closure-graph algorithm for proposals operates over a graph
+where:
+
+- Each currently-claimed YAML module is a supernode (members =
+  the atomic units it claims).
+- Each currently-unclaimed atomic unit is a loose node.
+
+Closure rules build a "must-co-locate-to-be-a-valid-proposal"
+digraph `H` on this factorize graph:
+
+- `EagerUse` or `LazyUse` u → v on binding b:
+  - If b is entry-exported under the current claim state (auto-
+    exported by some YAML, or in `pre_existing_entry_exports`): no
+    `H` edge. The materializer can resolve the import through
+    entry; co-location isn't required.
+  - Otherwise (b is currently in the residual catchall and not entry-
+    exported): `H` edge `u → v`. This is the **mode-(a)-specific
+    emit-block force**: in mode (b) every binding is in some real
+    module that exports it, so emit-block can't occur. In mode (a),
+    proposing to peel u out without v would create an unresolvable
+    import.
+- `EagerRebind` / `LazyRebind`: bidirectional in `H`. (LazyRebind
+  gate.)
+- `Sequenced`: bidirectional in `H`. (Source-order constraint.)
+
+Tarjan-SCC on `H` gives **proposal cells**. Each cell's contents
+decode to a proposal:
+
+- Cell contains supernode `S_M` plus `N ≥ 1` loose nodes:
+  `ExtendModule { module: M, additional: <N owners> }`. The author
+  could edit `M.yaml` to claim those additional owners.
+- Cell contains no supernode, just `N ≥ 1` loose nodes:
+  `NewModule { suggested_members: <N owners> }`. The author could
+  write a new YAML.
+- Cell contains supernode `S_M`, no loose nodes: no proposal
+  emitted (the module is stable; nothing to add).
+- Cell contains ≥ 2 supernodes: `SpecConflict { modules: [...] }`.
+  The current spec is inconsistent (already true regardless of
+  proposals; surfaced here for visibility).
+
+Each proposal carries `landable_today` (whether applying just this
+proposal would yield a valid spec on its own) and the gate
+diagnostics from `evaluate_residual_peel_candidate` for cases when
+it isn't landable. Mode (b) proposals are almost always landable
+because every loose node already lives in its own factor.
+
+The proposals are **a function of the current claim state**, so
+they update naturally as the author edits YAMLs: claim some
+unclaimed owners → those owners become part of a supernode → the
+next factorize emits different proposals.
+
+## What the materializer no longer needs to know
+
+Once Stage 2 emits factors uniformly, the materializer's
+`materialize_logical_modules` stops branching on whether a module is
+residual:
+
+- The `ModuleReportRef.residual: bool` field becomes a display hint
+  (so consumers can label the catchall in UI) rather than a control-
+  flow signal.
+- `validate_schedule` checks every factor under the same rules; no
+  separate path for `ResidualEntry`.
+- `peel_emit_blocked_residual_bindings` becomes
+  `peel_emit_blocked_bindings` over any candidate cell — it doesn't
+  need to know which destination is "residual".
+- The `include_residual: bool` option on the fixture / pipeline
+  config goes away; mode (a) vs mode (b) replaces it.
+
+The `ModuleId::ResidualEntry` enum variant is the only thing that
+stays distinguishable, because it identifies a specific path
+(`residual_entry`) that downstream tooling references by name.
+Internally, it's now treated identically to any other `Logical(_)`
+module.
+
+## Implementation outline
+
+The rewrite has three parts; each is small in isolation:
+
+1. **Build atomic units (Stage 1).** New module
+   `analysis::atomic_units`. Takes the owner graph, returns a
+   `Vec<AtomicUnit>` where each unit carries its member owners and
+   inter-unit edges (in the projected DAG). Run once per chunk.
+
+2. **Assemble factors (Stage 2).** New module
+   `analysis::factor_assembly`. Takes atomic units + spec claims +
+   `unassigned_mode`. Returns the complete partition. This is the
+   primary output that the materializer consumes; replaces the
+   current `Partition` construction.
+
+3. **Compute proposals.** Refactor of `analysis::factorize` (which
+   currently computes both the partition-of-residual _and_ the
+   advisory cells in one tangle). The advisory output stays in
+   `OwnerGraphReport.factorize`, but operates on the factorize graph
+   defined in _Advisory proposals_ above — the residual_entry node
+   isn't special.
+
+The materializer changes are mostly deletions: remove the
+residual-specific branches, replace the partition input source from
+"the schedule's pre-built partition + residual fallback" to "the
+factor_assembly output directly". `peelability` re-projection
+similarly drops the residual branches.
+
+## Migration notes
+
+This is a substantial rework; staging:
+
+1. Land Stage 1 + Stage 2 + materializer simplifications first, with
+   the proposal output disabled (or unchanged from the current
+   closure factorize). Verify the materializer's outputs are
+   identical on the existing corpus.
+2. Update the proposal computation to the supernode-based graph.
+   Verify proposals on gaffer 78d928dca7 are at least as useful as
+   the current output.
+3. Introduce `unassigned_mode` setting; default to `catchall` so
+   nothing changes by default. Add `mini_factors` mode + tests +
+   docs.
+
+Each step is a separate PR with its own e2e validation.
+
+## Why this is the right shape
+
+- **One pass produces the partition.** No "compute residual, then
+  fix up" or "compute logical modules, then catch leftovers". The
+  factorize is the partition authority.
+- **One pass produces proposals.** The advisory output is the
+  result of running the same closure-SCC machinery on the
+  factorize graph, not a separate algorithm with its own gate
+  reimplementations.
+- **Modes are local.** `unassigned_mode` only affects how unclaimed
+  atomic units roll up in Stage 2. Stage 1 doesn't change; the
+  proposal computation doesn't change (except for the emit-block
+  closure rule which is mode-(a)-only).
+- **Residual loses specialness.** Every factor goes through the
+  same materialization code path. The only thing distinguishing
+  `residual_entry` from `helpers/chain` is the name.
+- **Atomic units are stable.** They depend only on the chunk's
+  source. The same atomic units survive across spec edits, which
+  means peelability projections, factorize proposals, and validator
+  diagnostics all reference a stable underlying unit of grouping.
