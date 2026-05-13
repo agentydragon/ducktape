@@ -106,13 +106,14 @@ export { a, b, c };
 }
 
 #[test]
-fn factorizer_marks_emit_blocked_cell_not_landable() {
+fn factorizer_auto_grows_cell_to_absorb_emit_blocked_residual_binding() {
     // `dep` is residual and NOT in entry's `export { ... }` list.
     // `consumer` lazily reads `dep` (inside its body). Promoting
-    // `consumer` to an active module would emit
-    // `import { dep } from "entry"` — but entry doesn't export
-    // `dep`. The factorizer's emit-resolvability check should flag
-    // `dep` in `emit_blocked_residual_bindings`.
+    // `consumer` alone to an active module would require entry to
+    // emit `import { dep } from "entry"` — but entry doesn't
+    // export `dep`. The analyzer's auto-grow loop absorbs `dep`
+    // into `consumer`'s cell, turning it into a single landable
+    // proposal {consumer, dep} that moves both bindings together.
     //
     // `anchor` exists so the chunk has at least one active
     // logical module (the spec rejects all-residual chunks);
@@ -140,30 +141,20 @@ export { anchor, consumer };
         .find(|p| p.binding_ids.contains(&"consumer".to_string()))
         .expect("factorizer should propose a cell containing `consumer`");
     assert!(
-        !cell.landable_today,
-        "cell whose body references the non-exported residual binding \
-         `dep` must NOT be marked landable_today; got cell={cell:?}",
+        cell.binding_ids.contains(&"dep".to_string()),
+        "auto-grow should absorb `dep` (consumer's only free reference) \
+         into consumer's cell; got cell={cell:?}",
     );
     assert!(
-        cell.emit_blocked_residual_bindings
-            .iter()
-            .any(|b| b == "dep"),
-        "emit_blocked_residual_bindings should list `dep` (the free \
-         reference target). Got {:?}",
+        cell.landable_today,
+        "the absorbed {{consumer, dep}} cell has no remaining \
+         non-exported free references; must be marked landable_today; \
+         got cell={cell:?}",
+    );
+    assert!(
+        cell.emit_blocked_residual_bindings.is_empty(),
+        "after auto-grow `dep` is internal to the cell so \
+         emit_blocked_residual_bindings must be empty; got {:?}",
         cell.emit_blocked_residual_bindings,
     );
-
-    // Note: we don't assert the materializer rejects — the
-    // factorizer's contract is one-way ("landable_today: true ⇒
-    // materializer accepts"). A `false` verdict is permitted to be
-    // over-conservative (false negative); a `true` verdict that
-    // the materializer rejects is the failure we pin against. The
-    // emit-resolvability projection mirrors the analyzer's
-    // predicate which IS conservative in this direction (some
-    // free references the analyzer flags get auto-promoted by the
-    // materializer's residual-binding-export step), but never the
-    // other way: any binding the analyzer reports as
-    // `emit_blocked` IS actually a non-trivial reference for the
-    // lane worker to handle (move into the cell or add an
-    // explicit entry export).
 }

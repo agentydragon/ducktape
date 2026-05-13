@@ -1,61 +1,37 @@
-//! Algorithmic peel proposer.
+//! CLI-facing peel proposer that **annotates** the analyzer's
+//! SSOT factorize cells with spec-tree context (active claims,
+//! deferred-module attribution) and cell-graph metrics.
 //!
-//! Reads a debundle's `owner_graph.json` + the spec's
-//! `modules/` tree, identifies the residual owners (those whose
-//! members haven't been claimed by any *active* spec YAML), and
-//! proposes coarse-grained module partitions over them using a
-//! single principled objective: **agglomerate maximally subject
-//! to a per-cell line-count ceiling**.
+//! The cell algorithm itself (SCC condensation, rebind union,
+//! agglomeration, auto-grow, SSOT predicate verdicts) lives in
+//! `analysis::factorize` and runs at owner-graph build time. The
+//! resulting `FactorizeReport` rides inside `OwnerGraphReport.factorize`.
+//! This crate reads those precomputed cells and adds:
 //!
-//! # Scoping: what counts as residual?
+//! - `seeded_from_deferred`: which `*.yaml.deferred` module paths
+//!   contributed members to each cell. Empty means a brand-new
+//!   cell purely from un-claimed residual bindings; one path means
+//!   "grow this existing deferred module"; multiple means "merge
+//!   these deferred modules together".
+//! - `edges_to_active_modules` / `active_modules_referenced`:
+//!   outgoing constraining edges from each cell to active-claimed
+//!   binding modules (safe references — active modules materialize
+//!   before residual_entry).
+//! - `internal_edges`, `edges_to_other_residual_cells`,
+//!   `other_residual_cells_referenced`: cell-graph relationship
+//!   counts derived from the partition the analyzer chose.
+//! - `cross_destination_rebind_bindings`: mutable bindings whose
+//!   rebind edges (`EagerRebind` / `LazyRebind`) cross this cell's
+//!   boundary. Surfacing redundancy with the analyzer's auto-
+//!   union (which already merges rebind-linked cells), so this
+//!   field is always empty for analyzer-side cells today; kept
+//!   for downstream-consumer schema stability.
 //!
-//! * **Active claims** (`*.yaml` outside `residual/`) are locked.
-//!   Their bindings don't appear in any proposal.
-//! * **Deferred modules** (`*.yaml.deferred` outside `residual/`)
-//!   are **seed cells**: their bindings get pre-grouped into a
-//!   single cell each. Proposals can *grow* a seed cell by
-//!   absorbing residual bindings, or *merge* two seed cells when
-//!   constraining edges link them — but the algorithm never
-//!   splits a seed cell apart. This matches the spec author's
-//!   intent that deferred groupings are "things that should
-//!   travel together someday."
-//! * **True residuals** (bindings in no YAML at all, plus
-//!   anything under `residual/`) start as singleton cells.
-//!
-//! # Algorithm
-//!
-//! 1. **Residual scoping** (above).
-//! 2. **Constraining-edge subgraph.** Edges where
-//!    `constrains_init_order == true` between two residual
-//!    vertices form the SCC condensation input. Edges from a
-//!    residual vertex to an *active-claimed* vertex don't affect
-//!    the partition but ARE counted per-cell for
-//!    `edges_to_active_modules` (they're safe — active modules
-//!    materialize before residual_entry, so reads to them don't
-//!    cycle).
-//! 3. **SCC condensation.** Tarjan on the residual-only
-//!    constraining subgraph. Each non-singleton SCC becomes one
-//!    mandatory cell (splitting a cycle would violate
-//!    realizability). SCCs already over the line cap start
-//!    `oversize: true`.
-//! 4. **Greedy agglomeration.** While some pair of cells
-//!    `(A, B)` share a constraining edge AND
-//!    `lines(A) + lines(B) ≤ cap`, merge the pair with the most
-//!    shared edges; tie-break by smaller minimum statement
-//!    ordinal.
-//! 5. **Emit.** Each cell becomes a proposal. Cells exceeding
-//!    the cap are flagged `oversize: true` and emitted whole;
-//!    the algorithm never manufactures structural splits.
-//! 6. **Topological sort.** Cells with no outgoing
-//!    inter-residual edges (= `landable_today`) come first;
-//!    cells depending on them follow in DAG order. Within an
-//!    equivalence class, sort by first source line.
-//!
-//! Output minimizes cell count subject to the constraining edges
-//! and the line ceiling. One tuning knob (`size_cap_lines`); no
-//! weighted score terms.
+//! The `landable_today`, `emit_blocked_residual_bindings`, and
+//! `oversize` verdicts come straight from the analyzer's SSOT cell
+//! (matching the materializer's gate predicates exactly); we don't
+//! recompute them.
 
-use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::PathBuf;
@@ -63,7 +39,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use analysis::{DepKind, OwnerGraphReport, RESIDUAL_ENTRY_MODULE_ID};
+use analysis::{DepKind, FactorizeCell, OwnerGraphReport, RESIDUAL_ENTRY_MODULE_ID};
 use spec_modules::{load_active_claims, load_deferred_groups};
 
 #[derive(Debug, Clone)]
@@ -208,23 +184,10 @@ pub fn factorize(
         .map(|(i, node)| (node.id.as_str(), i))
         .collect();
 
-    // Residual = owners whose post-spec destination is the
-    // implicit `<residual_entry>` (ModuleId::ResidualEntry). This
-    // includes:
-    // - Owners with declared bindings not (yet) claimed by an
-    //   active YAML (the obvious case).
-    // - Owners with no declared bindings (anonymous side-effect
-    //   statements). These ARE graph vertices with their own
-    //   constraining edges; the cycle gate counts them, so the
-    //   factorizer must too.
-    //
-    // We gate on `destination.id == RESIDUAL_ENTRY_MODULE_ID`
-    // rather than the more permissive `destination.residual`
-    // boolean: the latter is also true for explicit `Logical(R)`
-    // residual catch-all modules (spec-author-configured), whose
-    // bindings are claimed and NOT factorizable. Matches the
-    // analyzer's `peel_emit_blocked_residual_bindings` (SSOT)
-    // which uses `ModuleId::ResidualEntry` exclusively.
+    // Residual scope mirrors the analyzer's SSOT residual definition:
+    // owners whose post-spec destination is the implicit
+    // `<residual_entry>` (ModuleId::ResidualEntry), including anonymous
+    // side-effect statements.
     let residual: BTreeSet<usize> = graph
         .nodes
         .iter()
@@ -249,45 +212,32 @@ pub fn factorize(
         })
         .collect();
 
-    // SCC-building input: constraining edges that both endpoints are
-    // in residual. Edges leaving the residual to active claims get
-    // tracked separately below for `edges_to_active_modules`.
-    //
-    // Rebind edges (`EagerRebind` / `LazyRebind`) get a SEPARATE
-    // bucket — `residual_rebind_edges` — used to force cells with
-    // cross-cell rebind into the same partition. ESM-imported
-    // bindings are read-only in the importer, so any spec where
-    // a mutable binding's declarer and its assigner end up in
-    // different destinations gets rejected by
-    // `materialize_logical_modules`. The factorizer pre-unions
-    // those endpoints so the resulting cells truly land.
+    // Cell partition is the analyzer's SSOT verdict: each
+    // `FactorizeCell` carries its owner_ids (graph node ids) along
+    // with the materializer's gate verdict (landable, oversize,
+    // emit-blocked bindings). Translate to internal `Cell` form
+    // (owner indices into `graph.nodes`) so the rest of the file
+    // can stay shared with the historical synthetic-cell shape.
+    let cells = cells_from_factorize_report(graph, &owner_index);
+
+    // Per-cell edge accounting. We walk every constraining edge
+    // once, classifying the source-cell / target-cell pair into:
+    // - internal (same cell, residual)            → cell.internal_edges
+    // - inter-residual (different residual cells) → cell.edges_to_other_residual_cells
+    // - cell → active claim                       → cell.edges_to_active_modules
     let mut residual_constraining_edges: Vec<(usize, usize)> = Vec::new();
-    let mut residual_rebind_edges: Vec<(usize, usize)> = Vec::new();
     let mut edges_to_active: Vec<(usize, String)> = Vec::new();
     for edge in &graph.edges {
+        if !edge.constrains_init_order {
+            continue;
+        }
         let (Some(&source), Some(&target)) = (
             owner_index.get(edge.source.as_str()),
             owner_index.get(edge.target.as_str()),
         ) else {
             continue;
         };
-        let is_rebind = matches!(edge.edge_kind, DepKind::EagerRebind | DepKind::LazyRebind);
-        if !edge.constrains_init_order && !is_rebind {
-            continue;
-        }
-        if !residual.contains(&source) && !residual.contains(&target) {
-            continue;
-        }
-        if source == target {
-            continue;
-        }
-        if is_rebind && residual.contains(&source) && residual.contains(&target) {
-            residual_rebind_edges.push((source, target));
-        }
-        if !edge.constrains_init_order {
-            continue;
-        }
-        if !residual.contains(&source) {
+        if !residual.contains(&source) || source == target {
             continue;
         }
         if residual.contains(&target) {
@@ -296,38 +246,6 @@ pub fn factorize(
             edges_to_active.push((source, module_path.clone()));
         }
     }
-
-    let sccs = strongly_connected_components(&residual, &residual_constraining_edges);
-
-    // Per-owner deferred-module attribution. Each residual owner
-    // that has a binding in some deferred YAML is tagged with
-    // that module path; the cell-formation step uses this to
-    // force same-deferred owners into the same cell ("don't break
-    // existing factors apart").
-    let owner_to_deferred_module: HashMap<usize, String> = graph
-        .nodes
-        .iter()
-        .enumerate()
-        .filter_map(|(i, node)| {
-            if !residual.contains(&i) {
-                return None;
-            }
-            node.declared_bindings
-                .iter()
-                .find_map(|b| deferred_groups.get(b.binding.as_str()))
-                .map(|path| (i, path.clone()))
-        })
-        .collect();
-
-    let cells = form_cells_with_deferred_seeds(
-        &sccs,
-        &owner_to_deferred_module,
-        &residual_rebind_edges,
-        graph,
-    );
-
-    let mut cells = cells;
-    agglomerate(&mut cells, &residual_constraining_edges, size_cap_lines);
 
     let proposals = emit_proposals(
         &cells,
@@ -346,111 +264,46 @@ pub fn factorize(
     }
 }
 
-/// Build the initial cell set. Starts from SCC condensation of the
-/// residual constraining-edge subgraph; then merges any SCCs that
-/// share owners with the same deferred-module attribution. Result:
-/// every deferred module's members end up in one cell, with any
-/// constraining-edge-tied residual owners pulled in alongside.
-///
-/// Cycle safety: merging SCCs that share a deferred grouping can't
-/// introduce a cycle in the inter-cell DAG. If SCC X and SCC Y are
-/// distinct (i.e. there's no constraining-edge cycle between them),
-/// merging them into one cell is equivalent to adding an undirected
-/// equivalence (deferred grouping), not a directed edge — the
-/// constraining-edge DAG between cells is unaffected.
-fn form_cells_with_deferred_seeds(
-    sccs: &[Vec<usize>],
-    owner_to_deferred_module: &HashMap<usize, String>,
-    residual_rebind_edges: &[(usize, usize)],
+/// Translate the analyzer-side `FactorizeCell` shape (string owner
+/// ids + SSOT verdict) into the CLI's internal `Cell` shape (owner
+/// indices into `graph.nodes` + cached line count / ordinal).
+/// `FactorizeCell` entries whose `owner_ids` don't resolve via
+/// `owner_index` get silently dropped — that shouldn't happen for
+/// any well-formed report but stays defensive against report-shape
+/// drift.
+fn cells_from_factorize_report(
     graph: &OwnerGraphReport,
+    owner_index: &HashMap<&str, usize>,
 ) -> Vec<Cell> {
-    let mut parent: Vec<usize> = (0..sccs.len()).collect();
-    fn find(parent: &mut [usize], i: usize) -> usize {
-        if parent[i] != i {
-            let root = find(parent, parent[i]);
-            parent[i] = root;
-        }
-        parent[i]
-    }
-    fn union(parent: &mut [usize], a: usize, b: usize) {
-        let ra = find(parent, a);
-        let rb = find(parent, b);
-        if ra != rb {
-            parent[rb] = ra;
-        }
-    }
-    let mut owner_to_scc: HashMap<usize, usize> = HashMap::new();
-    for (idx, scc) in sccs.iter().enumerate() {
-        for &owner in scc {
-            owner_to_scc.insert(owner, idx);
-        }
-    }
-
-    // Deferred-seed grouping: SCCs whose owners share a deferred
-    // module belong together ("don't break existing factors apart").
-    let mut sccs_by_module: BTreeMap<&String, Vec<usize>> = BTreeMap::new();
-    for (&owner, module) in owner_to_deferred_module {
-        if let Some(&scc_idx) = owner_to_scc.get(&owner) {
-            sccs_by_module.entry(module).or_default().push(scc_idx);
-        }
-    }
-    for (_, scc_indices) in sccs_by_module {
-        let mut iter = scc_indices.into_iter();
-        let Some(first) = iter.next() else { continue };
-        for other in iter {
-            union(&mut parent, first, other);
-        }
-    }
-
-    // Rebind-edge grouping: any pair of residual SCCs connected by
-    // a rebind edge (`EagerRebind` / `LazyRebind`) must end up in
-    // the same cell. `materialize_logical_modules` rejects any
-    // spec where a mutable binding's declarer and its assigner
-    // live in different destinations (ESM imports are read-only
-    // in the importer); pre-unioning here means the resulting
-    // cells truly land instead of being marked unlandable later.
-    for &(s, t) in residual_rebind_edges {
-        let (Some(&ss), Some(&st)) = (owner_to_scc.get(&s), owner_to_scc.get(&t)) else {
-            continue;
-        };
-        union(&mut parent, ss, st);
-    }
-
-    let mut grouped: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-    for (scc_idx, scc) in sccs.iter().enumerate() {
-        let root = find(&mut parent, scc_idx);
-        grouped.entry(root).or_default().extend(scc);
-    }
-    grouped
-        .into_values()
-        .map(|owners| Cell::from_owners(owners, graph))
+    graph
+        .factorize
+        .cells
+        .iter()
+        .map(|cell| cell_from_factorize_cell(cell, graph, owner_index))
         .collect()
+}
+
+fn cell_from_factorize_cell(
+    cell: &FactorizeCell,
+    graph: &OwnerGraphReport,
+    owner_index: &HashMap<&str, usize>,
+) -> Cell {
+    let owners: BTreeSet<usize> = cell
+        .owner_ids
+        .iter()
+        .filter_map(|id| owner_index.get(id.as_str()).copied())
+        .collect();
+    let lines = owners
+        .iter()
+        .map(|&i| owner_line_count(&graph.nodes[i]))
+        .sum();
+    Cell { owners, lines }
 }
 
 #[derive(Debug, Clone)]
 struct Cell {
     owners: BTreeSet<usize>,
     lines: usize,
-    min_ordinal: usize,
-}
-
-impl Cell {
-    fn from_owners(members: Vec<usize>, graph: &OwnerGraphReport) -> Self {
-        let mut owners = BTreeSet::new();
-        let mut lines = 0;
-        let mut min_ordinal = usize::MAX;
-        for owner_idx in members {
-            owners.insert(owner_idx);
-            let node = &graph.nodes[owner_idx];
-            lines += owner_line_count(node);
-            min_ordinal = min_ordinal.min(node.statement_ordinal.0);
-        }
-        Self {
-            owners,
-            lines,
-            min_ordinal,
-        }
-    }
 }
 
 fn owner_line_count(node: &analysis::OwnerGraphNodeReport) -> usize {
@@ -462,146 +315,6 @@ fn owner_line_count(node: &analysis::OwnerGraphNodeReport) -> usize {
                 .saturating_add(1)
         })
         .unwrap_or(0)
-}
-
-/// Tarjan's strongly connected components. Returns each SCC as a
-/// vector of owner indices, sorted descending by SCC size so the
-/// caller emits proposals in roughly large-first order. Owners
-/// that don't appear in any edge each become their own singleton
-/// SCC (so every residual owner shows up in exactly one cell).
-fn strongly_connected_components(
-    vertices: &BTreeSet<usize>,
-    edges: &[(usize, usize)],
-) -> Vec<Vec<usize>> {
-    let mut adj: HashMap<usize, Vec<usize>> = HashMap::new();
-    for &v in vertices {
-        adj.entry(v).or_default();
-    }
-    for &(s, t) in edges {
-        adj.entry(s).or_default().push(t);
-    }
-
-    let mut tarjan = Tarjan {
-        adj,
-        index: HashMap::new(),
-        lowlink: HashMap::new(),
-        on_stack: HashMap::new(),
-        stack: Vec::new(),
-        next_index: 0,
-        sccs: Vec::new(),
-    };
-    for &v in vertices {
-        if !tarjan.index.contains_key(&v) {
-            tarjan.visit(v);
-        }
-    }
-    let mut sccs = tarjan.sccs;
-    sccs.sort_by_key(|scc| Reverse(scc.len()));
-    sccs
-}
-
-struct Tarjan {
-    adj: HashMap<usize, Vec<usize>>,
-    index: HashMap<usize, usize>,
-    lowlink: HashMap<usize, usize>,
-    on_stack: HashMap<usize, bool>,
-    stack: Vec<usize>,
-    next_index: usize,
-    sccs: Vec<Vec<usize>>,
-}
-
-impl Tarjan {
-    fn visit(&mut self, v: usize) {
-        self.index.insert(v, self.next_index);
-        self.lowlink.insert(v, self.next_index);
-        self.next_index += 1;
-        self.stack.push(v);
-        self.on_stack.insert(v, true);
-
-        let neighbors: Vec<usize> = self.adj.get(&v).cloned().unwrap_or_default();
-        for w in neighbors {
-            if !self.index.contains_key(&w) {
-                self.visit(w);
-                let wl = *self.lowlink.get(&w).expect("dfs-visited");
-                let vl = *self.lowlink.get(&v).expect("self");
-                self.lowlink.insert(v, vl.min(wl));
-            } else if *self.on_stack.get(&w).unwrap_or(&false) {
-                let wi = *self.index.get(&w).expect("on-stack-visited");
-                let vl = *self.lowlink.get(&v).expect("self");
-                self.lowlink.insert(v, vl.min(wi));
-            }
-        }
-
-        if self.lowlink.get(&v) == self.index.get(&v) {
-            let mut scc = Vec::new();
-            while let Some(w) = self.stack.pop() {
-                self.on_stack.insert(w, false);
-                scc.push(w);
-                if w == v {
-                    break;
-                }
-            }
-            self.sccs.push(scc);
-        }
-    }
-}
-
-fn agglomerate(cells: &mut Vec<Cell>, edges: &[(usize, usize)], size_cap_lines: usize) {
-    // Build owner -> cell index reverse map.
-    let mut owner_to_cell: HashMap<usize, usize> = HashMap::new();
-    for (cell_idx, cell) in cells.iter().enumerate() {
-        for &owner in &cell.owners {
-            owner_to_cell.insert(owner, cell_idx);
-        }
-    }
-
-    loop {
-        let mut shared: HashMap<(usize, usize), usize> = HashMap::new();
-        for &(s, t) in edges {
-            let (Some(&cs), Some(&ct)) = (owner_to_cell.get(&s), owner_to_cell.get(&t)) else {
-                continue;
-            };
-            if cs == ct {
-                continue;
-            }
-            let key = if cs < ct { (cs, ct) } else { (ct, cs) };
-            *shared.entry(key).or_default() += 1;
-        }
-
-        let mut best: Option<((usize, usize), usize, usize)> = None;
-        for (&(a, b), &count) in &shared {
-            if cells[a].lines + cells[b].lines > size_cap_lines {
-                continue;
-            }
-            let tie = cells[a].min_ordinal.min(cells[b].min_ordinal);
-            let candidate = ((a, b), count, tie);
-            best = match best {
-                None => Some(candidate),
-                Some((_, c, t)) if count > c || (count == c && tie < t) => Some(candidate),
-                Some(_) => best,
-            };
-        }
-        let Some(((a, b), _, _)) = best else {
-            break;
-        };
-
-        let (keep, drop) = (a.min(b), a.max(b));
-        let donor = cells.remove(drop);
-        let target = &mut cells[keep];
-        for owner in &donor.owners {
-            owner_to_cell.insert(*owner, keep);
-        }
-        target.owners.extend(donor.owners);
-        target.lines += donor.lines;
-        target.min_ordinal = target.min_ordinal.min(donor.min_ordinal);
-        // All owner_to_cell entries for cells > drop now point one
-        // index too high; fix them.
-        for (_, cell_idx) in owner_to_cell.iter_mut() {
-            if *cell_idx > drop {
-                *cell_idx -= 1;
-            }
-        }
-    }
 }
 
 struct ProposalContext<'a> {
@@ -987,8 +700,9 @@ fn build_proposal(cell_idx: usize, cell: &Cell, ctx: &ProposalContext) -> Factor
 mod tests {
     use super::*;
     use analysis::{
-        BindingReport, DepKind, ModuleReportRef, OwnerGraphEdgeReport, OwnerGraphNodeReport,
-        OwnerGraphPeelabilityReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity,
+        BindingReport, DepKind, FactorizeCell, FactorizeReport, ModuleReportRef,
+        OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphPeelabilityReport,
+        OwnerGraphQuotientReport, OwnerGraphReport, PeelCandidateStatus, Purity,
         RESIDUAL_ENTRY_LABEL, SourceLocation, StatementKind, StatementOrdinal,
     };
     use spec::DEFAULT_RESIDUAL_MODULE_PATH;
@@ -1095,9 +809,10 @@ mod tests {
         }
     }
 
-    fn empty_graph(
+    fn graph_with_cells(
         nodes: Vec<OwnerGraphNodeReport>,
         edges: Vec<OwnerGraphEdgeReport>,
+        cells: Vec<FactorizeCell>,
     ) -> OwnerGraphReport {
         OwnerGraphReport {
             chunk_id: "x".to_string(),
@@ -1115,7 +830,82 @@ mod tests {
                 evaluated_owner_sets: vec![],
             },
             pre_existing_entry_exports: vec![],
-            factorize: analysis::FactorizeReport::default(),
+            factorize: FactorizeReport {
+                size_cap_lines: 2000,
+                residual_owner_count: nodes_residual_count(&[]),
+                cells,
+            },
+        }
+    }
+
+    fn nodes_residual_count(_nodes: &[OwnerGraphNodeReport]) -> usize {
+        // Stub: the field is informational on the analyzer side;
+        // tests don't assert on it.
+        0
+    }
+
+    /// Build a `FactorizeCell` mirroring the shape the analyzer
+    /// would emit for a given owner set. `proposed_module_id`,
+    /// `binding_ids`, `anonymous_statement_owner_ids`, and
+    /// `source_line_range` are derived from the matching nodes
+    /// so callers only need to spell out the owner partition and
+    /// the status verdict.
+    fn cell(
+        id: &str,
+        owner_ids: &[&str],
+        nodes: &[OwnerGraphNodeReport],
+        status: PeelCandidateStatus,
+        emit_blocked: &[&str],
+    ) -> FactorizeCell {
+        let owners: Vec<String> = owner_ids.iter().map(|s| s.to_string()).collect();
+        let mut bindings: Vec<String> = Vec::new();
+        let mut anonymous: Vec<String> = Vec::new();
+        let mut size_lines = 0usize;
+        let mut start = usize::MAX;
+        let mut end = 0usize;
+        let mut have_loc = false;
+        let mut min_ord = usize::MAX;
+        let mut max_ord = 0usize;
+        for owner_id in &owners {
+            let node = nodes
+                .iter()
+                .find(|n| &n.id == owner_id)
+                .unwrap_or_else(|| panic!("cell owner {owner_id} not in nodes"));
+            if node.declared_bindings.is_empty() {
+                anonymous.push(node.id.clone());
+            }
+            for b in &node.declared_bindings {
+                bindings.push(b.binding.clone());
+            }
+            if let Some(loc) = &node.source_location {
+                have_loc = true;
+                start = start.min(loc.start_line);
+                end = end.max(loc.end_line);
+                size_lines += loc.end_line + 1 - loc.start_line;
+            }
+            min_ord = min_ord.min(node.statement_ordinal.0);
+            max_ord = max_ord.max(node.statement_ordinal.0);
+        }
+        bindings.sort();
+        bindings.dedup();
+        anonymous.sort();
+        let landable = matches!(status, PeelCandidateStatus::PeelableNow);
+        FactorizeCell {
+            proposed_module_id: id.to_string(),
+            owner_ids: owners,
+            binding_ids: bindings,
+            anonymous_statement_owner_ids: anonymous,
+            size_lines_estimate: size_lines,
+            size_members: owner_ids.len(),
+            source_line_range: have_loc.then_some([start, end]),
+            ordinal_span: max_ord.saturating_sub(min_ord),
+            status,
+            landable_today: landable,
+            oversize: false,
+            emit_blocked_residual_bindings: emit_blocked.iter().map(|s| s.to_string()).collect(),
+            cycle_blocker_owner_ids: Vec::new(),
+            active_modules_referenced: Vec::new(),
+            auto_grow_iterations: 0,
         }
     }
 
@@ -1124,448 +914,228 @@ mod tests {
     }
 
     #[test]
-    fn factorize_emits_each_residual_owner_as_singleton_when_no_edges() {
-        let graph = empty_graph(
+    fn empty_factorize_cells_produce_no_proposals() {
+        let graph = graph_with_cells(
             vec![owner("a", 1, &["a"], 10), owner("b", 2, &["b"], 10)],
+            vec![],
             vec![],
         );
         let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
         assert_eq!(report.residual_owner_count, 2);
+        assert!(report.proposals.is_empty());
+    }
+
+    #[test]
+    fn singleton_cells_pass_through_with_landable_verdict() {
+        let nodes = vec![owner("a", 1, &["a"], 10), owner("b", 2, &["b"], 10)];
+        let cells = vec![
+            cell(
+                "auto_partition_0000",
+                &["a"],
+                &nodes,
+                PeelCandidateStatus::PeelableNow,
+                &[],
+            ),
+            cell(
+                "auto_partition_0001",
+                &["b"],
+                &nodes,
+                PeelCandidateStatus::PeelableNow,
+                &[],
+            ),
+        ];
+        let graph = graph_with_cells(nodes, vec![], cells);
+        let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
         assert_eq!(report.proposals.len(), 2);
         assert!(report.proposals.iter().all(|p| p.size_members == 1));
         assert!(report.proposals.iter().all(|p| p.landable_today));
     }
 
     #[test]
-    fn factorize_skips_active_claimed_owners() {
-        // Owner "a" has destination set to the active module
-        // `ui/x` (matches `active_claims` membership); the
-        // factorizer must NOT include it in residual.
-        let graph = empty_graph(
-            vec![
-                owner_in_active_module("a", 1, &["a"], 10, "ui/x"),
-                owner("b", 2, &["b"], 10),
-            ],
-            vec![],
-        );
-        let claims = BTreeMap::from([("a".to_string(), "ui/x".to_string())]);
-        let report = factorize(&graph, &claims, &no_claims(), 2000);
-        assert_eq!(report.residual_owner_count, 1);
-        assert_eq!(report.proposals.len(), 1);
-        assert_eq!(report.proposals[0].binding_ids, vec!["b".to_string()]);
-    }
-
-    #[test]
-    fn factorize_merges_residual_owners_connected_by_constraining_edges() {
-        let graph = empty_graph(
-            vec![
-                owner("a", 1, &["a"], 10),
-                owner("b", 2, &["b"], 10),
-                owner("c", 3, &["c"], 10),
-            ],
-            vec![
-                edge("e1", "a", "b", DepKind::EagerUse, true),
-                edge("e2", "b", "c", DepKind::EagerUse, true),
-            ],
-        );
-        let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
-        assert_eq!(report.proposals.len(), 1);
-        assert_eq!(report.proposals[0].size_members, 3);
-        assert_eq!(report.proposals[0].internal_edges, 2);
-        assert_eq!(report.proposals[0].edges_to_other_residual_cells, 0);
-        assert!(report.proposals[0].landable_today);
-    }
-
-    #[test]
-    fn factorize_ignores_non_constraining_edges_for_merging() {
-        let graph = empty_graph(
-            vec![owner("a", 1, &["a"], 10), owner("b", 2, &["b"], 10)],
-            vec![edge("e1", "a", "b", DepKind::LazyUse, false)],
-        );
-        let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
-        // Without a constraining edge to bind them, the two owners
-        // stay separate cells.
-        assert_eq!(report.proposals.len(), 2);
-    }
-
-    #[test]
-    fn factorize_keeps_scc_as_one_mandatory_cell_even_if_over_cap() {
-        // SCC: a → b → a forces both into one cell. With cap=5
-        // and each owner taking 10 lines, the cell is oversize.
-        let graph = empty_graph(
-            vec![owner("a", 1, &["a"], 10), owner("b", 2, &["b"], 10)],
-            vec![
-                edge("e1", "a", "b", DepKind::EagerUse, true),
-                edge("e2", "b", "a", DepKind::EagerUse, true),
-            ],
-        );
-        let report = factorize(&graph, &no_claims(), &no_claims(), 5);
-        assert_eq!(report.proposals.len(), 1);
-        assert!(report.proposals[0].oversize);
-        assert_eq!(report.proposals[0].size_members, 2);
-    }
-
-    #[test]
-    fn factorize_respects_size_cap_when_merging_singletons() {
-        // 3 owners each 10 lines, chain a→b→c, cap=15.
-        // Merging a+b yields 20 > 15, so no merge fits. All stay
-        // separate.
-        let graph = empty_graph(
-            vec![
-                owner("a", 1, &["a"], 10),
-                owner("b", 2, &["b"], 10),
-                owner("c", 3, &["c"], 10),
-            ],
-            vec![
-                edge("e1", "a", "b", DepKind::EagerUse, true),
-                edge("e2", "b", "c", DepKind::EagerUse, true),
-            ],
-        );
-        let report = factorize(&graph, &no_claims(), &no_claims(), 15);
-        assert_eq!(report.proposals.len(), 3);
-    }
-
-    #[test]
-    fn factorize_records_residual_edges_when_cells_dont_merge() {
-        // Same chain but cap=20 — a+b can merge (lines 20), but
-        // adding c would push to 30 > 20, so cell {a,b} keeps the
-        // edge to c as an inter-residual edge.
-        let graph = empty_graph(
-            vec![
-                owner("a", 1, &["a"], 10),
-                owner("b", 2, &["b"], 10),
-                owner("c", 3, &["c"], 10),
-            ],
-            vec![
-                edge("e1", "a", "b", DepKind::EagerUse, true),
-                edge("e2", "b", "c", DepKind::EagerUse, true),
-            ],
-        );
-        let report = factorize(&graph, &no_claims(), &no_claims(), 20);
-        assert_eq!(report.proposals.len(), 2);
-        let bigger = report
-            .proposals
-            .iter()
-            .find(|p| p.size_members == 2)
-            .expect("merged cell");
-        assert_eq!(bigger.edges_to_other_residual_cells, 1);
-        assert_eq!(bigger.other_residual_cells_referenced.len(), 1);
-        assert!(!bigger.landable_today);
-    }
-
-    #[test]
-    fn factorize_counts_edges_to_active_modules_separately_from_residual_edges() {
-        // 2 residual owners (a, b) + 1 active-claimed binding (c).
-        // a → b is a constraining edge that the agglomerator merges.
-        // b → c is a constraining edge to an active module — safe;
-        // counted under `edges_to_active_modules`, not blocking
-        // promotion.
-        let graph = empty_graph(
-            vec![
-                owner("a", 1, &["a"], 10),
-                owner("b", 2, &["b"], 10),
-                owner_in_active_module("c", 3, &["c"], 10, "ui/x"),
-            ],
-            vec![
-                edge("e1", "a", "b", DepKind::EagerUse, true),
-                edge_for_binding("e2", "b", "c", DepKind::EagerUse, true, Some("c")),
-            ],
-        );
-        let claims = BTreeMap::from([("c".to_string(), "ui/x".to_string())]);
-        let report = factorize(&graph, &claims, &no_claims(), 2000);
-        assert_eq!(report.proposals.len(), 1);
-        let cell = &report.proposals[0];
-        assert_eq!(cell.size_members, 2);
-        assert_eq!(cell.edges_to_other_residual_cells, 0);
-        assert_eq!(cell.edges_to_active_modules, 1);
-        assert_eq!(cell.active_modules_referenced, vec!["ui/x".to_string()]);
-        // Active edges are safe — promoting this cell today wouldn't
-        // create a cycle, and `c` is on entry's auto-export set
-        // because its current destination is an active module.
-        assert!(cell.landable_today);
-    }
-
-    #[test]
-    fn factorize_flags_anonymous_side_effect_owners_in_their_cells() {
-        // Cell formed from one anonymous side-effect owner (no
-        // declared_bindings) + one bindings-bearing owner via a
-        // constraining sequenced edge between them. The factorizer
-        // should:
-        // - Include the anonymous owner as a residual cell member
-        //   (post-PR scoping uses destination.residual, not the
-        //   declared_bindings emptiness).
-        // - Surface its id under `anonymous_statement_owner_ids`.
-        // `anon` has no declared bindings — that's what makes the
-        // factorizer treat it as an anonymous statement.
-        let graph = empty_graph(
-            vec![owner("anon", 1, &[], 5), owner("a", 2, &["a"], 10)],
-            vec![edge("e1", "anon", "a", DepKind::Sequenced, true)],
-        );
-        let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
-        assert_eq!(report.proposals.len(), 1);
-        let cell = &report.proposals[0];
-        assert_eq!(cell.size_members, 2);
-        assert_eq!(cell.anonymous_statement_owner_ids, vec!["anon".to_string()]);
-        assert_eq!(cell.binding_ids, vec!["a".to_string()]);
-    }
-
-    #[test]
-    fn factorize_flags_emit_blocked_residual_binding_and_marks_cell_not_landable() {
-        // Owner `consumer` (residual) has a non-constraining
-        // outgoing edge to residual binding `dep` (also residual,
-        // in its own cell). `dep` is NOT in the graph's
-        // `pre_existing_entry_exports`. Expected: `consumer`'s
-        // cell is `landable_today: false` with `dep` surfaced
-        // under `emit_blocked_residual_bindings`.
-        let graph = OwnerGraphReport {
-            chunk_id: "x".to_string(),
-            nodes: vec![
-                owner("consumer", 1, &["consumer"], 10),
-                owner("dep", 2, &["dep"], 5),
-            ],
-            edges: vec![edge_for_binding(
-                "e1",
-                "consumer",
-                "dep",
-                DepKind::LazyUse,
-                false,
-                Some("dep"),
-            )],
-            quotient: OwnerGraphQuotientReport {
-                nodes: vec![],
-                edges: vec![],
-                sccs: vec![],
-            },
-            peelability: OwnerGraphPeelabilityReport {
-                residual_destinations: vec![],
-                minimal_peel_sets: vec![],
-                residual_owner_horizon: vec![],
-                evaluated_owner_sets: vec![],
-            },
-            pre_existing_entry_exports: vec![],
-            factorize: analysis::FactorizeReport::default(),
-        };
-        let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
-        let consumer_cell = report
-            .proposals
-            .iter()
-            .find(|p| p.binding_ids.contains(&"consumer".to_string()))
-            .expect("consumer cell");
-        assert!(
-            !consumer_cell.landable_today,
-            "consumer reads `dep` (non-exported residual) — must NOT be landable; \
-             got cell={consumer_cell:?}",
-        );
-        assert_eq!(
-            consumer_cell.emit_blocked_residual_bindings,
-            vec!["dep".to_string()],
-        );
-    }
-
-    #[test]
-    fn factorize_treats_dep_in_pre_existing_entry_exports_as_safe() {
-        // Same shape as the emit-blocked test, but `dep` is in the
-        // graph's `pre_existing_entry_exports` (upstream source
-        // exports it). Expected: consumer's cell is landable —
-        // the materializer would resolve the reference via entry's
-        // existing export.
-        let graph = OwnerGraphReport {
-            chunk_id: "x".to_string(),
-            nodes: vec![
-                owner("consumer", 1, &["consumer"], 10),
-                owner("dep", 2, &["dep"], 5),
-            ],
-            edges: vec![edge_for_binding(
-                "e1",
-                "consumer",
-                "dep",
-                DepKind::LazyUse,
-                false,
-                Some("dep"),
-            )],
-            quotient: OwnerGraphQuotientReport {
-                nodes: vec![],
-                edges: vec![],
-                sccs: vec![],
-            },
-            peelability: OwnerGraphPeelabilityReport {
-                residual_destinations: vec![],
-                minimal_peel_sets: vec![],
-                residual_owner_horizon: vec![],
-                evaluated_owner_sets: vec![],
-            },
-            pre_existing_entry_exports: vec!["dep".to_string()],
-            factorize: analysis::FactorizeReport::default(),
-        };
-        let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
-        let consumer_cell = report
-            .proposals
-            .iter()
-            .find(|p| p.binding_ids.contains(&"consumer".to_string()))
-            .expect("consumer cell");
-        assert!(
-            consumer_cell.landable_today,
-            "with `dep` in pre_existing_entry_exports the reference is safe; \
-             got cell={consumer_cell:?}",
-        );
-        assert!(consumer_cell.emit_blocked_residual_bindings.is_empty());
-    }
-
-    #[test]
-    fn factorize_auto_unions_residual_cells_connected_by_rebind_edges() {
-        // Mutable binding `m` declared by owner_m. Owner_w writes
-        // `m` (a rebind edge w → m). Both residual. No
-        // constraining init-order edges. Without rebind-aware
-        // union, the factorizer would emit two singleton cells
-        // and the rebind would be flagged as cross-destination.
-        // With the union, they end up in one cell that lands.
-        let graph = empty_graph(
-            vec![
-                owner("owner_m", 1, &["m"], 5),
-                owner("owner_w", 2, &["w"], 5),
-            ],
-            vec![edge_for_binding(
-                "e1",
-                "owner_w",
-                "owner_m",
-                DepKind::LazyRebind,
-                false,
-                Some("m"),
-            )],
-        );
-        let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
-        assert_eq!(
-            report.proposals.len(),
-            1,
-            "rebind edge must auto-union the cells",
-        );
-        let cell = &report.proposals[0];
-        assert_eq!(cell.size_members, 2);
-        assert!(
-            cell.cross_destination_rebind_bindings.is_empty(),
-            "after auto-union the rebind is internal, not cross-cell; \
-             got {:?}",
-            cell.cross_destination_rebind_bindings,
-        );
-        assert!(cell.landable_today);
-    }
-
-    #[test]
-    fn factorize_treats_deferred_module_as_one_seed_cell() {
-        // Owners a and c are in the same deferred module; owner b
-        // sits between them with no constraining edges either way.
-        // Without the deferred-seed rule, a and c would emerge as
-        // separate singleton cells. The seed rule forces them into
-        // one cell because they share `mod/x.yaml.deferred`.
-        let graph = empty_graph(
-            vec![
-                owner("a", 1, &["a"], 10),
-                owner("b", 2, &["b"], 10),
-                owner("c", 3, &["c"], 10),
-            ],
-            vec![],
-        );
-        let deferred = BTreeMap::from([
-            ("a".to_string(), "mod/x".to_string()),
-            ("c".to_string(), "mod/x".to_string()),
-        ]);
-        let report = factorize(&graph, &no_claims(), &deferred, 2000);
-        assert_eq!(report.proposals.len(), 2);
-        let seeded = report
-            .proposals
-            .iter()
-            .find(|p| !p.seeded_from_deferred.is_empty())
-            .expect("one cell should be seeded");
-        assert_eq!(seeded.binding_ids, vec!["a".to_string(), "c".to_string()],);
-        assert_eq!(seeded.seeded_from_deferred, vec!["mod/x".to_string()]);
-        let lone = report
-            .proposals
-            .iter()
-            .find(|p| p.seeded_from_deferred.is_empty())
-            .expect("one cell should not be seeded");
-        assert_eq!(lone.binding_ids, vec!["b".to_string()]);
-    }
-
-    #[test]
-    fn factorize_grows_seed_cell_with_residual_bindings_via_constraining_edges() {
-        // Deferred module `mod/x` holds binding `a`. Owner `b` is a
-        // pure residual binding that has a constraining edge to `a`.
-        // Expected: one cell containing both, tagged as seeded
-        // from `mod/x` — i.e., "grow mod/x by absorbing b".
-        let graph = empty_graph(
-            vec![owner("a", 1, &["a"], 10), owner("b", 2, &["b"], 10)],
-            vec![edge("e1", "b", "a", DepKind::EagerUse, true)],
-        );
+    fn deferred_group_attribution_is_annotated_per_cell() {
+        // Two cells. Cell 0 contains binding `a` which is in
+        // `mod/x.yaml.deferred`. Cell 1 contains binding `b` which
+        // isn't in any deferred group. Expected: cell 0 reports
+        // `seeded_from_deferred = ["mod/x"]`; cell 1 reports empty.
+        let nodes = vec![owner("a", 1, &["a"], 10), owner("b", 2, &["b"], 10)];
+        let cells = vec![
+            cell(
+                "auto_partition_0000",
+                &["a"],
+                &nodes,
+                PeelCandidateStatus::PeelableNow,
+                &[],
+            ),
+            cell(
+                "auto_partition_0001",
+                &["b"],
+                &nodes,
+                PeelCandidateStatus::PeelableNow,
+                &[],
+            ),
+        ];
+        let graph = graph_with_cells(nodes, vec![], cells);
         let deferred = BTreeMap::from([("a".to_string(), "mod/x".to_string())]);
         let report = factorize(&graph, &no_claims(), &deferred, 2000);
-        assert_eq!(report.proposals.len(), 1);
-        let cell = &report.proposals[0];
-        assert_eq!(cell.size_members, 2);
-        assert_eq!(cell.binding_ids, vec!["a".to_string(), "b".to_string()]);
-        assert_eq!(cell.seeded_from_deferred, vec!["mod/x".to_string()]);
+        let cell_a = report
+            .proposals
+            .iter()
+            .find(|p| p.binding_ids.contains(&"a".to_string()))
+            .expect("cell containing a");
+        assert_eq!(cell_a.seeded_from_deferred, vec!["mod/x".to_string()]);
+        let cell_b = report
+            .proposals
+            .iter()
+            .find(|p| p.binding_ids.contains(&"b".to_string()))
+            .expect("cell containing b");
+        assert!(cell_b.seeded_from_deferred.is_empty());
     }
 
     #[test]
-    fn factorize_merges_two_seed_cells_when_constraining_edges_link_them() {
-        // Two deferred modules X and Y, each with one binding. A
-        // constraining edge between their owners. Expected: one
-        // merged cell, seeded from both X and Y — i.e., "merge X
-        // and Y".
-        let graph = empty_graph(
-            vec![owner("a", 1, &["a"], 10), owner("b", 2, &["b"], 10)],
-            vec![edge("e1", "a", "b", DepKind::EagerUse, true)],
-        );
+    fn multi_deferred_module_merge_is_annotated_with_all_paths() {
+        // Single cell containing bindings `a` (deferred `mod/x`)
+        // and `b` (deferred `mod/y`). The cell is the result of the
+        // analyzer merging the two deferred members via a
+        // constraining edge. The CLI surfaces both deferred paths
+        // — signal to the spec author that promoting this cell
+        // means "merge mod/x and mod/y together".
+        let nodes = vec![owner("a", 1, &["a"], 10), owner("b", 2, &["b"], 10)];
+        let cells = vec![cell(
+            "auto_partition_0000",
+            &["a", "b"],
+            &nodes,
+            PeelCandidateStatus::PeelableNow,
+            &[],
+        )];
+        let graph = graph_with_cells(nodes, vec![], cells);
         let deferred = BTreeMap::from([
             ("a".to_string(), "mod/x".to_string()),
             ("b".to_string(), "mod/y".to_string()),
         ]);
         let report = factorize(&graph, &no_claims(), &deferred, 2000);
         assert_eq!(report.proposals.len(), 1);
-        let cell = &report.proposals[0];
-        assert_eq!(cell.size_members, 2);
         assert_eq!(
-            cell.seeded_from_deferred,
+            report.proposals[0].seeded_from_deferred,
             vec!["mod/x".to_string(), "mod/y".to_string()],
         );
     }
 
     #[test]
-    fn factorize_topo_orders_landable_cells_before_dependents() {
-        // Three cells in a chain: a → b → c. With cap=15 they
-        // can't merge. After SCC + topo order:
-        //   * cell{c} has depth 0 (no outgoing residual edges).
-        //   * cell{b} has depth 1 (points at c).
-        //   * cell{a} has depth 2 (points at b).
-        // Emitted order: c, b, a (assigned auto_partition_0000..0002).
-        let graph = empty_graph(
-            vec![
-                owner("a", 10, &["a"], 10),
-                owner("b", 20, &["b"], 10),
-                owner("c", 30, &["c"], 10),
-            ],
-            vec![
-                edge("e1", "a", "b", DepKind::EagerUse, true),
-                edge("e2", "b", "c", DepKind::EagerUse, true),
-            ],
-        );
-        let report = factorize(&graph, &no_claims(), &no_claims(), 15);
-        assert_eq!(report.proposals.len(), 3);
-        // First (depth 0): c — landable today.
-        assert_eq!(report.proposals[0].binding_ids, vec!["c".to_string()]);
-        assert!(report.proposals[0].landable_today);
-        // Middle (depth 1): b — references the now-renamed cell c.
-        assert_eq!(report.proposals[1].binding_ids, vec!["b".to_string()]);
-        assert!(!report.proposals[1].landable_today);
+    fn inter_cell_constraining_edges_are_counted_per_proposal() {
+        // Two cells (a, b) with a single constraining edge a → b.
+        // Cell 0 (a) reports edges_to_other_residual_cells=1
+        // pointing at cell 1 (b). Cell 1 reports 0.
+        let nodes = vec![owner("a", 1, &["a"], 10), owner("b", 2, &["b"], 10)];
+        let edges = vec![edge("e1", "a", "b", DepKind::EagerUse, true)];
+        let cells = vec![
+            cell(
+                "auto_partition_0000",
+                &["a"],
+                &nodes,
+                PeelCandidateStatus::BlockedResidualDependency,
+                &[],
+            ),
+            cell(
+                "auto_partition_0001",
+                &["b"],
+                &nodes,
+                PeelCandidateStatus::PeelableNow,
+                &[],
+            ),
+        ];
+        let graph = graph_with_cells(nodes, edges, cells);
+        let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
+        let by_binding = |b: &str| -> &FactorizeProposal {
+            report
+                .proposals
+                .iter()
+                .find(|p| p.binding_ids.contains(&b.to_string()))
+                .expect("cell")
+        };
+        assert_eq!(by_binding("a").edges_to_other_residual_cells, 1);
         assert_eq!(
-            report.proposals[1].other_residual_cells_referenced,
-            vec!["auto_partition_0000".to_string()],
+            by_binding("a").other_residual_cells_referenced,
+            vec![by_binding("b").proposed_module_id.clone()],
         );
-        // Last (depth 2): a.
-        assert_eq!(report.proposals[2].binding_ids, vec!["a".to_string()]);
-        assert!(!report.proposals[2].landable_today);
+        assert_eq!(by_binding("b").edges_to_other_residual_cells, 0);
+    }
+
+    #[test]
+    fn edges_to_active_modules_count_outgoing_to_active_claims() {
+        // Residual cell {b} has a constraining edge to `a`, an
+        // owner whose destination is the active module `ui/x`.
+        // Expected: edges_to_active_modules=1,
+        // active_modules_referenced=["ui/x"].
+        let nodes = vec![
+            owner_in_active_module("a", 1, &["a"], 10, "ui/x"),
+            owner("b", 2, &["b"], 10),
+        ];
+        let edges = vec![edge("e1", "b", "a", DepKind::EagerUse, true)];
+        let cells = vec![cell(
+            "auto_partition_0000",
+            &["b"],
+            &nodes,
+            PeelCandidateStatus::PeelableNow,
+            &[],
+        )];
+        let graph = graph_with_cells(nodes, edges, cells);
+        let claims = BTreeMap::from([("a".to_string(), "ui/x".to_string())]);
+        let report = factorize(&graph, &claims, &no_claims(), 2000);
+        assert_eq!(report.proposals.len(), 1);
+        assert_eq!(report.proposals[0].edges_to_active_modules, 1);
         assert_eq!(
-            report.proposals[2].other_residual_cells_referenced,
-            vec!["auto_partition_0001".to_string()],
+            report.proposals[0].active_modules_referenced,
+            vec!["ui/x".to_string()],
         );
+    }
+
+    #[test]
+    fn analyzer_emit_blocked_verdict_passes_through_to_proposal() {
+        // Analyzer-side cell carries emit_blocked_residual_bindings.
+        // The CLI proposal should surface the same list and report
+        // landable_today=false. The CLI computes its own emit-block
+        // check (post-promotion exports), but for a cell with no
+        // active claims and only residual owners, both checks land
+        // on the same set.
+        let nodes = vec![
+            owner("consumer", 1, &["consumer"], 10),
+            owner("dep", 2, &["dep"], 5),
+        ];
+        let edges = vec![edge_for_binding(
+            "e1",
+            "consumer",
+            "dep",
+            DepKind::LazyUse,
+            false,
+            Some("dep"),
+        )];
+        let cells = vec![
+            cell(
+                "auto_partition_0000",
+                &["consumer"],
+                &nodes,
+                PeelCandidateStatus::BlockedEmitResolvability,
+                &["dep"],
+            ),
+            cell(
+                "auto_partition_0001",
+                &["dep"],
+                &nodes,
+                PeelCandidateStatus::PeelableNow,
+                &[],
+            ),
+        ];
+        let graph = graph_with_cells(nodes, edges, cells);
+        let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
+        let consumer = report
+            .proposals
+            .iter()
+            .find(|p| p.binding_ids.contains(&"consumer".to_string()))
+            .expect("consumer cell");
+        assert_eq!(
+            consumer.emit_blocked_residual_bindings,
+            vec!["dep".to_string()],
+        );
+        assert!(!consumer.landable_today);
     }
 }
