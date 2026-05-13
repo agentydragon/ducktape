@@ -54,8 +54,11 @@ pub struct TransformSpec {
     pub chunk_renames: BTreeMap<String, ChunkRenames>,
     /// Per-chunk control over what happens to top-level statements
     /// the spec doesn't explicitly claim for any logical module.
-    /// See [`UnassignedMode`]; absent entries default to
-    /// [`UnassignedMode::InlineInEntry`].
+    /// See [`UnassignedMode`]. Every chunk that appears in
+    /// `logical_modules` must also appear here — there is no implicit
+    /// default; spec authors must state the policy explicitly. The
+    /// outer map itself may be omitted (`#[serde(default)]`) only when
+    /// the spec processes no chunks at all (e.g. vendor-only specs).
     #[serde(default)]
     pub unassigned_mode: BTreeMap<String, UnassignedMode>,
 
@@ -229,15 +232,14 @@ pub enum VendorLevel {
 /// `residual_modules` map: today's `CatchallFile` variant covers
 /// the case the standalone map used to express ("emit unclaimed
 /// code to a separate file at `target`").
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum UnassignedMode {
-    /// Default. Unclaimed bindings stay inline in the chunk's entry
-    /// file (owned by `ModuleId::ResidualEntry`); no separate
-    /// residual module is emitted. Renames against unclaimed
-    /// bindings come from [`TransformSpec::chunk_renames`] and are
-    /// applied in-place by the lowerer.
-    #[default]
+    /// Unclaimed bindings stay inline in the chunk's entry file
+    /// (owned by `ModuleId::ResidualEntry`); no separate residual
+    /// module is emitted. Renames against unclaimed bindings come
+    /// from [`TransformSpec::chunk_renames`] and are applied in-place
+    /// by the lowerer.
     InlineInEntry,
     /// Unclaimed bindings emit to a separate logical module at
     /// `target` (defaults to [`DEFAULT_RESIDUAL_MODULE_PATH`]). The

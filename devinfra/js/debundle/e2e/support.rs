@@ -186,27 +186,40 @@ pub struct FixtureOpts<'a> {
     /// them.
     pub chunk_renames: Option<Value>,
     pub chunk_id: &'a str,
-    /// Optional `unassigned_mode` setting for this chunk. `None` is
-    /// equivalent to the default `inline_in_entry` variant —
-    /// unclaimed bindings stay inline in entry. `Some(mode)`
-    /// renders as a YAML object with `kind: <discriminant>` plus
-    /// any variant-specific fields. Use [`unassigned_mode_catchall_file`]
-    /// or [`unassigned_mode_mini_factors`] to build typical bodies.
-    pub unassigned_mode: Option<Value>,
+    /// `unassigned_mode` setting for this chunk. Required — every
+    /// chunk listed in `logical_modules` or `chunk_renames` must
+    /// declare an explicit mode (the spec validator enforces this).
+    /// Renders as a YAML object with `kind: <discriminant>` plus
+    /// any variant-specific fields. Use [`unassigned_mode_inline`],
+    /// [`unassigned_mode_catchall_file`], or
+    /// [`unassigned_mode_mini_factors`] to build typical bodies.
+    pub unassigned_mode: Value,
     pub extra_files: &'a [(&'a str, &'a str)],
 }
 
 impl<'a> FixtureOpts<'a> {
     pub fn new(source: &'a str, logical_modules: Vec<LogicalModuleEntry>) -> Self {
+        // Default mode is `catchall_file` — most fixtures exercise the
+        // residual-module emission path and rely on
+        // `static/app/modules/residual/unhandled.js` being written.
+        // Tests that exercise `InlineInEntry` semantics override with
+        // [`unassigned_mode_inline`]; tests that exercise mini factors
+        // override with [`unassigned_mode_mini_factors`].
         Self {
             source,
             logical_modules,
             chunk_renames: None,
             chunk_id: "static/app",
-            unassigned_mode: Some(unassigned_mode_catchall_file(None)),
+            unassigned_mode: unassigned_mode_catchall_file(None),
             extra_files: &[],
         }
     }
+}
+
+/// Build the JSON body for an `unassigned_mode: inline_in_entry`
+/// entry — unclaimed bindings stay inline in the chunk's entry file.
+pub fn unassigned_mode_inline() -> Value {
+    serde_json::json!({ "kind": "inline_in_entry" })
 }
 
 /// Build the JSON body for an `unassigned_mode: catchall_file` entry.
@@ -530,9 +543,7 @@ fn build_spec<'a>(opts: &FixtureOpts<'_>, setup: &'a FixtureSetup) -> TransformS
     }
 
     let mut unassigned_mode = BTreeMap::new();
-    if let Some(mode) = &opts.unassigned_mode {
-        unassigned_mode.insert(chunk_id.to_string(), mode.clone());
-    }
+    unassigned_mode.insert(chunk_id.to_string(), opts.unassigned_mode.clone());
 
     TransformSpecFixture {
         inputs: TransformInputsFixture {

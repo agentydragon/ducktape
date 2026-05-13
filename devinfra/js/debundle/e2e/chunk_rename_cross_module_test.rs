@@ -53,7 +53,7 @@ export { a, b, c };
             ],
         })),
         chunk_id: "static/app",
-        unassigned_mode: Some(unassigned_mode_catchall_file(None)),
+        unassigned_mode: unassigned_mode_catchall_file(None),
         extra_files: &[(
             "static/app/vendor.js",
             "export function f() { return 1; }\n",

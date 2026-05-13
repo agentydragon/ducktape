@@ -359,7 +359,13 @@ fn materialize_logical_chunk(
         report_out_dir,
         chunk_id,
     } = inputs;
-    let chunk_unassigned_mode = unassigned_mode.get(chunk_id).cloned().unwrap_or_default();
+    // The spec validator (`validate_transform_spec`) enforces that
+    // every materialised chunk has an `unassigned_mode` entry, so
+    // this lookup must not miss. Missing here is a bug in the
+    // validator, not a recoverable spec error.
+    let chunk_unassigned_mode = unassigned_mode.get(chunk_id).cloned().with_context(|| {
+        format!("materialize_logical_modules missing unassigned_mode for chunk: {chunk_id}")
+    })?;
     let chunk_id_interned = artifact
         .chunk_table
         .get(chunk_id)

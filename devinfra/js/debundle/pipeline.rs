@@ -451,6 +451,30 @@ fn validate_transform_spec(spec: &TransformSpec) -> Result<()> {
     if spec.inputs.js_list_path.as_os_str().is_empty() {
         bail!("Transform spec inputs.js_list_path must not be empty");
     }
+    // Every chunk listed in `logical_modules` (and `chunk_renames`)
+    // must have an explicit `unassigned_mode` entry. There is no
+    // implicit default — the spec author must state how unclaimed
+    // top-level statements get handled per chunk. Chunks that appear
+    // only in `unassigned_mode` (e.g. catch-all-only chunks) are
+    // valid; the asymmetry is intentional.
+    let missing: BTreeSet<&String> = spec
+        .logical_modules
+        .keys()
+        .chain(spec.chunk_renames.keys())
+        .filter(|chunk_id| !spec.unassigned_mode.contains_key(*chunk_id))
+        .collect();
+    if !missing.is_empty() {
+        let names = missing
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        bail!(
+            "Transform spec is missing `unassigned_mode` entries for chunk(s): {names}. \
+             Every chunk listed in `logical_modules` or `chunk_renames` must declare its \
+             unassigned_mode explicitly (no implicit default)."
+        );
+    }
     Ok(())
 }
 

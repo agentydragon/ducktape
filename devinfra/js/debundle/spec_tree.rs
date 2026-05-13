@@ -8,7 +8,7 @@ use serde::Deserialize;
 use spec::{
     AnonymousStatement, ChunkRenames, EmitBrowserHarnessConfig, LoadJsChunksArgs, LogicalModule,
     MaterializeLogicalModulesConfig, Member, SwapMark, SwapVendorChunksConfig, TransformSpec,
-    VendorLevel, VendorMark, VendorRole, WrapperShape,
+    UnassignedMode, VendorLevel, VendorMark, VendorRole, WrapperShape,
 };
 use spec_modules::{
     collect_module_files, is_deferred_yaml, module_path_from_file, read_module_file,
@@ -30,6 +30,12 @@ struct AuthoringConfig {
     main_chunk_id: String,
     inputs: AuthoringInputs,
     browser_harness: BrowserHarnessPolicy,
+    /// Per-chunk `unassigned_mode` policy. Required: every chunk this
+    /// authoring tree materialises must appear here. The downstream
+    /// pipeline validator enforces the same invariant on the compiled
+    /// `TransformSpec`; declaring it in the authoring config keeps
+    /// the policy next to the modules tree it governs.
+    unassigned_mode: BTreeMap<String, UnassignedMode>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -107,7 +113,7 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
         vendor: vendor_map(read_yaml::<VendorMarksFile>(&options.vendor_marks_path)?.vendor_marks)?,
         logical_modules: logical_modules_map(module_sources)?,
         chunk_renames: chunk_renames_map(&config.main_chunk_id, deferred_members),
-        unassigned_mode: BTreeMap::new(),
+        unassigned_mode: config.unassigned_mode,
         swap_vendor_chunks: SwapVendorChunksConfig {
             output_manifest_path: Some(layout.vendor_manifest_path.clone()),
             output_wrapper_dir: Some(layout.vendor_wrapper_root.clone()),
@@ -321,6 +327,9 @@ inputs:
   js_list_path: extracted/js-files.txt
 browser_harness:
   asset_summary_path: extracted/asset-summary.json
+unassigned_mode:
+  static/main:
+    kind: inline_in_entry
 "#,
         );
         write_file(

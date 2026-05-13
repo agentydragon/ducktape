@@ -31,7 +31,7 @@ export { a, b };
         )],
         chunk_renames: None,
         chunk_id: "static/app",
-        unassigned_mode: Some(unassigned_mode_catchall_file(None)),
+        unassigned_mode: unassigned_mode_catchall_file(None),
         extra_files: &[],
     };
     let fixture = run_fixture(opts);

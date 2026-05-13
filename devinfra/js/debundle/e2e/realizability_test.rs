@@ -409,7 +409,7 @@ export { Leaf, Dep, Existing };
             { "name": "ReadableDep", "selector": { "binding": { "name": "Dep" } } }
         ],
     }));
-    opts.unassigned_mode = None;
+    opts.unassigned_mode = unassigned_mode_inline();
     let fixture = run_fixture(opts);
     assert_entry_output(&fixture, "existing\n");
 
