@@ -69,3 +69,25 @@ rust_library(
         "import_coalescing_test",
     ]
 ]
+
+# The factorizer-landability e2e test takes one extra dep
+# (`:peel_factorize`) to call into the factorizer library directly
+# alongside the standard fixture pipeline.
+rust_test(
+    name = "peel_factorize_landability_test",
+    srcs = ["peel_factorize_landability_test.rs"],
+    crate_root = "peel_factorize_landability_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:peel_factorize",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@rules_rust//tools/runfiles",
+    ],
+)

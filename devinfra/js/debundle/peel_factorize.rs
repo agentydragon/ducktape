@@ -63,7 +63,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use analysis::OwnerGraphReport;
+use analysis::{DepKind, OwnerGraphReport};
 use spec_modules::{load_active_claims, load_deferred_groups};
 
 #[derive(Debug, Clone)]
@@ -137,6 +137,18 @@ pub struct FactorizeProposal {
     /// `materialize_logical_modules`'s emit-resolvability gate.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub emit_blocked_residual_bindings: Vec<String>,
+    /// Mutable bindings whose rebind edges (`DepKind::EagerRebind`
+    /// or `LazyRebind`) cross this cell's boundary — i.e., the
+    /// binding is exported by the cell but written by a foreign
+    /// module, or written by the cell but exported by a foreign
+    /// module. ESM-imported bindings are read-only in the
+    /// importer, so `materialize_logical_modules` rejects any
+    /// such spec with "cross-destination assignment(s) to mutable
+    /// binding(s)". Lane workers resolve by co-moving the assigner
+    /// (or the binding) so the entire rebind chain lives in one
+    /// destination.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cross_destination_rebind_bindings: Vec<String>,
     /// `true` iff both gates would pass:
     /// * `edges_to_other_residual_cells == 0` (cycle gate).
     /// * `emit_blocked_residual_bindings.is_empty()`
@@ -235,22 +247,42 @@ pub fn factorize(
     // SCC-building input: constraining edges that both endpoints are
     // in residual. Edges leaving the residual to active claims get
     // tracked separately below for `edges_to_active_modules`.
+    //
+    // Rebind edges (`EagerRebind` / `LazyRebind`) get a SEPARATE
+    // bucket — `residual_rebind_edges` — used to force cells with
+    // cross-cell rebind into the same partition. ESM-imported
+    // bindings are read-only in the importer, so any spec where
+    // a mutable binding's declarer and its assigner end up in
+    // different destinations gets rejected by
+    // `materialize_logical_modules`. The factorizer pre-unions
+    // those endpoints so the resulting cells truly land.
     let mut residual_constraining_edges: Vec<(usize, usize)> = Vec::new();
+    let mut residual_rebind_edges: Vec<(usize, usize)> = Vec::new();
     let mut edges_to_active: Vec<(usize, String)> = Vec::new();
     for edge in &graph.edges {
-        if !edge.constrains_init_order {
-            continue;
-        }
         let (Some(&source), Some(&target)) = (
             owner_index.get(edge.source.as_str()),
             owner_index.get(edge.target.as_str()),
         ) else {
             continue;
         };
-        if !residual.contains(&source) {
+        let is_rebind = matches!(edge.edge_kind, DepKind::EagerRebind | DepKind::LazyRebind);
+        if !edge.constrains_init_order && !is_rebind {
+            continue;
+        }
+        if !residual.contains(&source) && !residual.contains(&target) {
             continue;
         }
         if source == target {
+            continue;
+        }
+        if is_rebind && residual.contains(&source) && residual.contains(&target) {
+            residual_rebind_edges.push((source, target));
+        }
+        if !edge.constrains_init_order {
+            continue;
+        }
+        if !residual.contains(&source) {
             continue;
         }
         if residual.contains(&target) {
@@ -282,7 +314,12 @@ pub fn factorize(
         })
         .collect();
 
-    let cells = form_cells_with_deferred_seeds(&sccs, &owner_to_deferred_module, graph);
+    let cells = form_cells_with_deferred_seeds(
+        &sccs,
+        &owner_to_deferred_module,
+        &residual_rebind_edges,
+        graph,
+    );
 
     let mut cells = cells;
     agglomerate(&mut cells, &residual_constraining_edges, size_cap_lines);
@@ -319,6 +356,7 @@ pub fn factorize(
 fn form_cells_with_deferred_seeds(
     sccs: &[Vec<usize>],
     owner_to_deferred_module: &HashMap<usize, String>,
+    residual_rebind_edges: &[(usize, usize)],
     graph: &OwnerGraphReport,
 ) -> Vec<Cell> {
     let mut parent: Vec<usize> = (0..sccs.len()).collect();
@@ -329,12 +367,22 @@ fn form_cells_with_deferred_seeds(
         }
         parent[i]
     }
+    fn union(parent: &mut [usize], a: usize, b: usize) {
+        let ra = find(parent, a);
+        let rb = find(parent, b);
+        if ra != rb {
+            parent[rb] = ra;
+        }
+    }
     let mut owner_to_scc: HashMap<usize, usize> = HashMap::new();
     for (idx, scc) in sccs.iter().enumerate() {
         for &owner in scc {
             owner_to_scc.insert(owner, idx);
         }
     }
+
+    // Deferred-seed grouping: SCCs whose owners share a deferred
+    // module belong together ("don't break existing factors apart").
     let mut sccs_by_module: BTreeMap<&String, Vec<usize>> = BTreeMap::new();
     for (&owner, module) in owner_to_deferred_module {
         if let Some(&scc_idx) = owner_to_scc.get(&owner) {
@@ -344,14 +392,25 @@ fn form_cells_with_deferred_seeds(
     for (_, scc_indices) in sccs_by_module {
         let mut iter = scc_indices.into_iter();
         let Some(first) = iter.next() else { continue };
-        let root = find(&mut parent, first);
         for other in iter {
-            let other_root = find(&mut parent, other);
-            if other_root != root {
-                parent[other_root] = root;
-            }
+            union(&mut parent, first, other);
         }
     }
+
+    // Rebind-edge grouping: any pair of residual SCCs connected by
+    // a rebind edge (`EagerRebind` / `LazyRebind`) must end up in
+    // the same cell. `materialize_logical_modules` rejects any
+    // spec where a mutable binding's declarer and its assigner
+    // live in different destinations (ESM imports are read-only
+    // in the importer); pre-unioning here means the resulting
+    // cells truly land instead of being marked unlandable later.
+    for &(s, t) in residual_rebind_edges {
+        let (Some(&ss), Some(&st)) = (owner_to_scc.get(&s), owner_to_scc.get(&t)) else {
+            continue;
+        };
+        union(&mut parent, ss, st);
+    }
+
     let mut grouped: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
     for (scc_idx, scc) in sccs.iter().enumerate() {
         let root = find(&mut parent, scc_idx);
@@ -569,6 +628,12 @@ struct ProposalContext<'a> {
     /// adds the cell's own bindings on top per-cell to predict the
     /// post-promotion export set.
     entry_exports_today: BTreeSet<String>,
+    /// Rebind edges (`DepKind::EagerRebind` / `LazyRebind`) as
+    /// `(source_owner_idx, target_owner_idx, binding_name)`.
+    /// Pre-indexed in `emit_proposals` so each cell's
+    /// `cross_destination_rebind_bindings` check is O(rebind_edges)
+    /// instead of O(all_edges) per cell.
+    rebind_edges: Vec<(usize, usize, Option<String>)>,
     size_cap_lines: usize,
 }
 
@@ -631,6 +696,20 @@ fn emit_proposals(
         }
     }
 
+    let mut rebind_edges: Vec<(usize, usize, Option<String>)> = Vec::new();
+    for edge in &graph.edges {
+        if !matches!(edge.edge_kind, DepKind::EagerRebind | DepKind::LazyRebind) {
+            continue;
+        }
+        let (Some(&source), Some(&target)) = (
+            owner_index.get(edge.source.as_str()),
+            owner_index.get(edge.target.as_str()),
+        ) else {
+            continue;
+        };
+        rebind_edges.push((source, target, edge.binding.clone()));
+    }
+
     let ctx = ProposalContext {
         graph,
         residual_edges,
@@ -641,6 +720,7 @@ fn emit_proposals(
         outgoing_edges_by_owner,
         outgoing_edge_indices_by_owner,
         entry_exports_today,
+        rebind_edges,
         size_cap_lines,
     };
 
@@ -844,8 +924,27 @@ fn build_proposal(cell_idx: usize, cell: &Cell, ctx: &ProposalContext) -> Factor
     }
     let emit_blocked_residual_bindings: Vec<String> = emit_blocked_set.into_iter().collect();
 
+    // Cross-destination rebind detection. `materialize_logical_modules`
+    // rejects any spec where a mutable binding is exported by one
+    // destination and written by another — ESM imports are read-only
+    // in the importer. The factorizer detects this by looking at
+    // rebind edges (`EagerRebind` / `LazyRebind`) with exactly one
+    // endpoint in the cell.
+    let mut cross_rebind: BTreeSet<String> = BTreeSet::new();
+    for (s, t, binding) in &ctx.rebind_edges {
+        let source_in_cell = ctx.owner_to_cell.get(s) == Some(&cell_idx);
+        let target_in_cell = ctx.owner_to_cell.get(t) == Some(&cell_idx);
+        if source_in_cell != target_in_cell {
+            if let Some(name) = binding {
+                cross_rebind.insert(name.clone());
+            }
+        }
+    }
+    let cross_destination_rebind_bindings: Vec<String> = cross_rebind.into_iter().collect();
+
     let cycle_gate_passes = to_residual == 0;
     let emit_gate_passes = emit_blocked_residual_bindings.is_empty();
+    let rebind_gate_passes = cross_destination_rebind_bindings.is_empty();
     FactorizeProposal {
         proposed_module_id: format!("auto_partition_{cell_idx:04}"),
         owner_ids,
@@ -865,7 +964,8 @@ fn build_proposal(cell_idx: usize, cell: &Cell, ctx: &ProposalContext) -> Factor
         edges_to_active_modules: to_active,
         active_modules_referenced,
         emit_blocked_residual_bindings,
-        landable_today: cycle_gate_passes && emit_gate_passes,
+        cross_destination_rebind_bindings,
+        landable_today: cycle_gate_passes && emit_gate_passes && rebind_gate_passes,
         oversize: cell.lines > ctx.size_cap_lines,
         seeded_from_deferred: seeded.into_iter().collect(),
     }
