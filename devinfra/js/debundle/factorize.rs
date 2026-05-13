@@ -1,28 +1,59 @@
-//! Algorithmic peel proposer that uses the materializer's
-//! gate predicate (single source of truth) inline.
+//! Closure-based factorize: one Tarjan SCC over the must-co-locate
+//! digraph, instead of a per-cell predicate-driven absorption loop.
 //!
-//! Reads the in-memory `Schedule` directly so per-cell verdicts
-//! come from the same `evaluate_residual_peel_candidate` predicate
-//! the analyzer's peelability pass uses (cycle, lazy-rebind,
-//! emit-resolvability). Cells that the predicate flags as blocked
-//! get auto-grown by absorbing the specific owners the predicate
-//! pointed at — adjacent anonymous side-effect statements, owners
-//! of emit-blocked free-reference bindings, etc. The output cells
-//! are therefore proposals the materializer will accept, including
-//! cells whose members mix top-level bindings with the side-effect
-//! statements they need to travel with.
+//! Reads the in-memory [`Schedule`] and emits cells that — by
+//! construction — satisfy emit-resolvability, LazyRebind, and
+//! source-order (Sequenced) gates. The cycle gate is reported per
+//! cell via the SSOT [`evaluate_residual_peel_candidate`] predicate
+//! used as a verifier, run exactly once per cell.
 //!
-//! Compared to the JSON-only factorizer (`@ducktape//peel_factorize`),
-//! this module:
-//! - Calls into the analyzer's SSOT predicate instead of replicating
-//!   the gate logic against the serialized owner-graph shape.
-//! - Auto-grows cells via the same predicate when blockers point at
-//!   addressable absorption targets.
-//! - Emits its report as a side-channel of `OwnerGraphReport` so
-//!   downstream consumers (the CLI) read pre-computed proposals
-//!   instead of rebuilding them.
+//! # Why one pass instead of grow-to-fixed-point
+//!
+//! An earlier version ran the predicate inside a per-cell absorption
+//! loop. On the gaffer chunk that ballooned to thousands of cells
+//! each running ~N rounds of the full predicate, with overall cost
+//! around O(N³). The information the loop was trying to extract is
+//! the same information the closure rules below capture statically:
+//! "u in S forces v in S because emit-blocked / rebind / source-
+//! order". Encoding those rules once as forced edges in a digraph
+//! and reading off SCCs gives the same answer in O(V + E).
+//!
+//! # Closure rules
+//!
+//! Each residual constraining or use edge `e: u → v` (both endpoints
+//! residual) contributes forced edges to a digraph H over residual
+//! owners. An edge `a → b` in H means "if a ∈ cell, b must be in cell".
+//!
+//! * `Sequenced` (anonymous source-order edge, no binding):
+//!   Emits `v → u`. (Promoting v alone forces residual_entry → cell(v)
+//!   in linker order, which inverts the original `u then v` source
+//!   order — must absorb u.)
+//! * `EagerUse` / `LazyUse` with binding `b`:
+//!   If `b ∈ entry_exported_binding_names` (entry already re-exports
+//!   b), no H edge — the cross-cell read resolves through entry.
+//!   Otherwise emits `u → v` (consumer absorbs declarer to satisfy
+//!   emit-resolvability).
+//! * `EagerRebind` / `LazyRebind`:
+//!   Emits both `u → v` and `v → u`. LazyRebind gate is unconditional:
+//!   declarer and assigner of a mutable binding must materialize in
+//!   the same destination.
+//!
+//! Tarjan SCC on H gives each cell. Cycles in the must-co-move
+//! relation collapse into single SCCs; otherwise the inter-SCC DAG
+//! captures dependencies between cells (forward use edges on
+//! pre-existing entry exports remain as cell-to-cell references).
+//!
+//! # Per-cell verdict
+//!
+//! After SCC, we run [`evaluate_residual_peel_candidate`] once per
+//! cell as a sanity check. The construction guarantees emit-
+//! resolvability and LazyRebind pass; the cycle gate may still flag
+//! cells whose modules would form `cell ↔ residual_entry` cycles
+//! through the cell-level DAG. Those cells report
+//! `BlockedResidualDependency` honestly — they're valid proposals
+//! that aren't `landable_today` on their own.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
@@ -41,8 +72,6 @@ pub fn build_factorize_report(schedule: &Schedule, options: &FactorizeOptions) -
     let quotient_edges = build_quotient_edge_reports(schedule, owner_edges);
     let context = PeelabilityContext::new(schedule, owner_edges, &quotient_edges);
 
-    // Residual owners = those whose partition is `ModuleId::ResidualEntry`.
-    // Matches the analyzer's SSOT residual definition.
     let residual: BTreeSet<OwnerId> = schedule
         .owner_graph
         .iter_nodes()
@@ -51,8 +80,6 @@ pub fn build_factorize_report(schedule: &Schedule, options: &FactorizeOptions) -
         .collect();
     let residual_owner_count = residual.len();
 
-    // Owner → declared bindings, used to seed the predicate's `declared`
-    // input and to compute the cell's binding membership list.
     let bindings_by_owner: HashMap<OwnerId, Vec<BindingName>> = schedule
         .owner_graph
         .iter_nodes()
@@ -66,53 +93,34 @@ pub fn build_factorize_report(schedule: &Schedule, options: &FactorizeOptions) -
         })
         .collect();
 
-    let owner_for_binding: HashMap<BindingName, OwnerId> = bindings_by_owner
-        .iter()
-        .flat_map(|(&owner_id, names)| names.iter().cloned().map(move |name| (name, owner_id)))
-        .collect();
+    let empty_exports = HashSet::<BindingName>::new();
+    let entry_exports = schedule
+        .entry_exported_binding_names()
+        .unwrap_or(&empty_exports);
 
-    // Initial cell formation: SCC condensation on the constraining
-    // edge subgraph between residual owners, then a rebind-edge
-    // union to fold cross-cell rebind targets together.
-    let sccs = strongly_connected_components(&residual, owner_edges);
-    let mut cells: Vec<BTreeSet<OwnerId>> = sccs.into_iter().collect();
-    apply_rebind_union(&mut cells, &residual, owner_edges);
+    let closure_graph = build_closure_graph(schedule, &residual, entry_exports);
+    let sccs: Vec<Vec<OwnerId>> = tarjan_scc(&closure_graph);
 
-    // Greedy agglomerative merge: pair cells with the strongest
-    // constraining-edge connection, merge if combined lines fit
-    // under the cap. Loop until no admissible merge remains.
-    agglomerate(
-        &mut cells,
-        &residual,
-        owner_edges,
-        schedule,
-        options.size_cap_lines,
-    );
-
-    // Per-cell evaluation + auto-grow.
-    let mut emitted: Vec<FactorizeCell> = Vec::with_capacity(cells.len());
-    for (idx, cell_owners) in cells.iter().enumerate() {
-        let (final_owners, verdict, iterations) = evaluate_and_grow(
-            schedule,
-            &context,
-            cell_owners.clone(),
-            &bindings_by_owner,
-            &owner_for_binding,
-            &residual,
-        );
-        let proposed_module_id = format!("auto_partition_{idx:04}");
+    let mut emitted: Vec<FactorizeCell> = Vec::with_capacity(sccs.len());
+    for (idx, scc) in sccs.into_iter().enumerate() {
+        let owners: BTreeSet<OwnerId> = scc.into_iter().collect();
+        let owners_vec: Vec<OwnerId> = owners.iter().copied().collect();
+        let declared: Vec<BindingName> = owners_vec
+            .iter()
+            .flat_map(|o| bindings_by_owner.get(o).cloned().unwrap_or_default())
+            .collect();
+        let verdict = evaluate_residual_peel_candidate(schedule, &context, &owners_vec, declared);
+        let id = format!("auto_partition_{idx:04}");
         emitted.push(make_cell(
-            proposed_module_id,
-            final_owners,
+            id,
+            owners,
             &verdict,
             &bindings_by_owner,
             schedule,
-            iterations,
             options.size_cap_lines,
         ));
     }
 
-    // Stable sort: landable cells first, then by source line.
     emitted.sort_by(|a, b| {
         b.landable_today.cmp(&a.landable_today).then_with(|| {
             let al = a.source_line_range.map(|r| r[0]).unwrap_or(usize::MAX);
@@ -120,7 +128,6 @@ pub fn build_factorize_report(schedule: &Schedule, options: &FactorizeOptions) -
             al.cmp(&bl)
         })
     });
-    // Renumber after sort.
     for (idx, cell) in emitted.iter_mut().enumerate() {
         cell.proposed_module_id = format!("auto_partition_{idx:04}");
     }
@@ -132,80 +139,43 @@ pub fn build_factorize_report(schedule: &Schedule, options: &FactorizeOptions) -
     }
 }
 
-/// Per-cell evaluate-and-grow loop. Calls the SSOT predicate; if
-/// blocked by an addressable category (emit-resolvability, cycle
-/// through another residual cell), absorbs the owners the verdict
-/// pointed at and re-evaluates. Runs to fixed point: terminates
-/// when the predicate returns `PeelableNow`, or when an iteration
-/// fails to add any new owner (no growth → no progress).
-///
-/// The cell's final owner set is the true minimum closure the
-/// materializer would accept for this seed; reporting that closure
-/// — even when it spans most of the residual surface — is the
-/// signal callers want. Capping iterations would hide that signal
-/// behind a `blocked_residual_dependency` verdict that's actually
-/// the iteration budget talking, not the graph structure.
-fn evaluate_and_grow(
+/// Build the must-co-locate digraph H. An edge `a → b` means "if a
+/// is in a residual cell, then b must be in that same cell."
+fn build_closure_graph(
     schedule: &Schedule,
-    context: &PeelabilityContext<'_>,
-    mut cell: BTreeSet<OwnerId>,
-    bindings_by_owner: &HashMap<OwnerId, Vec<BindingName>>,
-    owner_for_binding: &HashMap<BindingName, OwnerId>,
     residual: &BTreeSet<OwnerId>,
-) -> (BTreeSet<OwnerId>, PeelCandidateEvaluation, usize) {
-    let mut iterations = 0;
-    loop {
-        let owners: Vec<OwnerId> = cell.iter().copied().collect();
-        let declared: Vec<BindingName> = owners
-            .iter()
-            .flat_map(|o| bindings_by_owner.get(o).cloned().unwrap_or_default())
-            .collect();
-        let verdict = evaluate_residual_peel_candidate(schedule, context, &owners, declared);
-        match verdict.status {
-            PeelCandidateStatus::PeelableNow => return (cell, verdict, iterations),
-            PeelCandidateStatus::BlockedEmitResolvability => {
-                // Absorb the owners declaring each emit-blocked binding.
-                let mut grew = false;
-                for binding in &verdict.emit_blocked_residual_bindings {
-                    if let Some(&owner) = owner_for_binding.get(binding)
-                        && residual.contains(&owner)
-                        && !cell.contains(&owner)
-                    {
-                        cell.insert(owner);
-                        grew = true;
+    entry_exports: &HashSet<BindingName>,
+) -> DiGraphMap<OwnerId, ()> {
+    let mut h = DiGraphMap::<OwnerId, ()>::new();
+    for &owner in residual {
+        h.add_node(owner);
+    }
+    for edge in &schedule.owner_graph.edges {
+        if !residual.contains(&edge.from) || !residual.contains(&edge.to) {
+            continue;
+        }
+        if edge.from == edge.to {
+            continue;
+        }
+        match edge.reason.kind {
+            DepKind::Sequenced => {
+                h.add_edge(edge.to, edge.from, ());
+            }
+            DepKind::EagerUse | DepKind::LazyUse => {
+                if let Some(bid) = edge.reason.binding {
+                    let bname = schedule.binding_name(bid);
+                    if !entry_exports.contains(bname) {
+                        h.add_edge(edge.from, edge.to, ());
                     }
-                }
-                if !grew {
-                    return (cell, verdict, iterations);
                 }
             }
-            PeelCandidateStatus::BlockedCycle | PeelCandidateStatus::BlockedResidualDependency => {
-                // Absorb residual neighbors flagged as blockers.
-                let mut grew = false;
-                for owner in &verdict.residual_dependency_blocker_owner_ids {
-                    if residual.contains(owner) && !cell.contains(owner) {
-                        cell.insert(*owner);
-                        grew = true;
-                    }
-                }
-                // Cycle blockers — absorb the constraining-edge endpoints
-                // not in this cell.
-                for &edge_idx in &verdict.constraining_owner_edge_indices {
-                    let edge = &schedule.owner_graph.edges[edge_idx];
-                    for endpoint in [edge.from, edge.to] {
-                        if residual.contains(&endpoint) && !cell.contains(&endpoint) {
-                            cell.insert(endpoint);
-                            grew = true;
-                        }
-                    }
-                }
-                if !grew {
-                    return (cell, verdict, iterations);
-                }
+            DepKind::EagerRebind | DepKind::LazyRebind => {
+                h.add_edge(edge.from, edge.to, ());
+                h.add_edge(edge.to, edge.from, ());
             }
         }
-        iterations += 1;
     }
+    h
 }
 
 fn make_cell(
@@ -214,7 +184,6 @@ fn make_cell(
     verdict: &PeelCandidateEvaluation,
     bindings_by_owner: &HashMap<OwnerId, Vec<BindingName>>,
     schedule: &Schedule,
-    auto_grow_iterations: usize,
     size_cap_lines: usize,
 ) -> FactorizeCell {
     let mut owner_ids: Vec<String> = owners.iter().copied().map(owner_key).collect();
@@ -265,9 +234,6 @@ fn make_cell(
         .into_iter()
         .collect();
 
-    // Outgoing constraining edges to non-cell owners that landed in
-    // non-residual destinations — these are the "active modules
-    // referenced" the cell would import from after promotion.
     let mut active_modules_referenced: BTreeSet<String> = BTreeSet::new();
     for &owner_id in &owners {
         for edge in schedule.owner_graph.edges.iter() {
@@ -308,140 +274,5 @@ fn make_cell(
         emit_blocked_residual_bindings: verdict.emit_blocked_residual_bindings.clone(),
         cycle_blocker_owner_ids,
         active_modules_referenced: active_modules_referenced.into_iter().collect(),
-        auto_grow_iterations,
-    }
-}
-
-fn strongly_connected_components(
-    residual: &BTreeSet<OwnerId>,
-    edges: &[crate::graph::OwnerEdge],
-) -> Vec<BTreeSet<OwnerId>> {
-    let mut graph = DiGraphMap::<OwnerId, ()>::new();
-    for &owner in residual {
-        graph.add_node(owner);
-    }
-    for edge in edges {
-        if !residual.contains(&edge.from) || !residual.contains(&edge.to) {
-            continue;
-        }
-        if !edge.reason.constrains_init_order() {
-            continue;
-        }
-        if edge.from == edge.to {
-            continue;
-        }
-        graph.add_edge(edge.from, edge.to, ());
-    }
-    tarjan_scc(&graph)
-        .into_iter()
-        .map(|scc| scc.into_iter().collect())
-        .collect()
-}
-
-fn apply_rebind_union(
-    cells: &mut Vec<BTreeSet<OwnerId>>,
-    residual: &BTreeSet<OwnerId>,
-    edges: &[crate::graph::OwnerEdge],
-) {
-    // Build owner → cell index map.
-    let mut cell_of: HashMap<OwnerId, usize> = HashMap::new();
-    for (idx, cell) in cells.iter().enumerate() {
-        for &o in cell {
-            cell_of.insert(o, idx);
-        }
-    }
-    let mut parent: Vec<usize> = (0..cells.len()).collect();
-    fn find(parent: &mut [usize], i: usize) -> usize {
-        if parent[i] != i {
-            let r = find(parent, parent[i]);
-            parent[i] = r;
-        }
-        parent[i]
-    }
-    for edge in edges {
-        if !matches!(edge.reason.kind, DepKind::EagerRebind | DepKind::LazyRebind) {
-            continue;
-        }
-        if !residual.contains(&edge.from) || !residual.contains(&edge.to) {
-            continue;
-        }
-        let (Some(&ci), Some(&cj)) = (cell_of.get(&edge.from), cell_of.get(&edge.to)) else {
-            continue;
-        };
-        let ri = find(&mut parent, ci);
-        let rj = find(&mut parent, cj);
-        if ri != rj {
-            parent[rj] = ri;
-        }
-    }
-    // Coalesce by root.
-    let mut grouped: BTreeMap<usize, BTreeSet<OwnerId>> = BTreeMap::new();
-    for (idx, cell) in cells.drain(..).enumerate() {
-        let root = find(&mut parent, idx);
-        grouped.entry(root).or_default().extend(cell);
-    }
-    cells.extend(grouped.into_values());
-}
-
-fn agglomerate(
-    cells: &mut Vec<BTreeSet<OwnerId>>,
-    residual: &BTreeSet<OwnerId>,
-    edges: &[crate::graph::OwnerEdge],
-    schedule: &Schedule,
-    size_cap_lines: usize,
-) {
-    let line_count = |cell: &BTreeSet<OwnerId>| -> usize {
-        cell.iter()
-            .filter_map(|o| schedule.owner_graph.node(*o))
-            .filter_map(|n| n.source_location.as_ref())
-            .map(|l| l.end_line + 1 - l.start_line)
-            .sum()
-    };
-    loop {
-        let mut cell_of: HashMap<OwnerId, usize> = HashMap::new();
-        for (idx, cell) in cells.iter().enumerate() {
-            for &o in cell {
-                cell_of.insert(o, idx);
-            }
-        }
-        // Count inter-cell constraining edges per pair.
-        let mut pair_edges: BTreeMap<(usize, usize), usize> = BTreeMap::new();
-        for edge in edges {
-            if !edge.reason.constrains_init_order() {
-                continue;
-            }
-            if !residual.contains(&edge.from) || !residual.contains(&edge.to) {
-                continue;
-            }
-            let (Some(&ci), Some(&cj)) = (cell_of.get(&edge.from), cell_of.get(&edge.to)) else {
-                continue;
-            };
-            if ci == cj {
-                continue;
-            }
-            let key = if ci < cj { (ci, cj) } else { (cj, ci) };
-            *pair_edges.entry(key).or_insert(0) += 1;
-        }
-        // Find the pair with the most shared edges whose merged size
-        // still fits the cap.
-        let mut best: Option<((usize, usize), usize)> = None;
-        for (&pair, &count) in &pair_edges {
-            let merged_lines = line_count(&cells[pair.0]) + line_count(&cells[pair.1]);
-            if merged_lines > size_cap_lines {
-                continue;
-            }
-            match best {
-                Some((_, best_count)) if best_count >= count => {}
-                _ => best = Some((pair, count)),
-            }
-        }
-        let Some(((i, j), _)) = best else {
-            return;
-        };
-        // Remove the higher-index cell first so the lower index stays
-        // valid; merge its members into the lower-index cell.
-        let (lo, hi) = if i < j { (i, j) } else { (j, i) };
-        let other = cells.swap_remove(hi);
-        cells[lo].extend(other);
     }
 }

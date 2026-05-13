@@ -39,7 +39,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use analysis::{DepKind, FactorizeCell, OwnerGraphReport, RESIDUAL_ENTRY_MODULE_ID};
+use analysis::{FactorizeCell, OwnerGraphReport, RESIDUAL_ENTRY_MODULE_ID};
 use spec_modules::{load_active_claims, load_deferred_groups};
 
 #[derive(Debug, Clone)]
@@ -216,9 +216,15 @@ pub fn factorize(
     // `FactorizeCell` carries its owner_ids (graph node ids) along
     // with the materializer's gate verdict (landable, oversize,
     // emit-blocked bindings). Translate to internal `Cell` form
-    // (owner indices into `graph.nodes`) so the rest of the file
-    // can stay shared with the historical synthetic-cell shape.
-    let cells = cells_from_factorize_report(graph, &owner_index);
+    // (owner indices into `graph.nodes`) but keep the source
+    // `FactorizeCell` alongside so the per-proposal builder can
+    // read the analyzer's verdict directly instead of recomputing.
+    let cells: Vec<(Cell, &FactorizeCell)> = graph
+        .factorize
+        .cells
+        .iter()
+        .map(|cell| (cell_from_factorize_cell(cell, graph, &owner_index), cell))
+        .collect();
 
     // Per-cell edge accounting. We walk every constraining edge
     // once, classifying the source-cell / target-cell pair into:
@@ -252,7 +258,6 @@ pub fn factorize(
         &residual_constraining_edges,
         &edges_to_active,
         graph,
-        active_claims,
         deferred_groups,
         size_cap_lines,
     );
@@ -266,23 +271,10 @@ pub fn factorize(
 
 /// Translate the analyzer-side `FactorizeCell` shape (string owner
 /// ids + SSOT verdict) into the CLI's internal `Cell` shape (owner
-/// indices into `graph.nodes` + cached line count / ordinal).
-/// `FactorizeCell` entries whose `owner_ids` don't resolve via
-/// `owner_index` get silently dropped — that shouldn't happen for
-/// any well-formed report but stays defensive against report-shape
-/// drift.
-fn cells_from_factorize_report(
-    graph: &OwnerGraphReport,
-    owner_index: &HashMap<&str, usize>,
-) -> Vec<Cell> {
-    graph
-        .factorize
-        .cells
-        .iter()
-        .map(|cell| cell_from_factorize_cell(cell, graph, owner_index))
-        .collect()
-}
-
+/// indices into `graph.nodes` + cached line count). `FactorizeCell`
+/// entries whose `owner_ids` don't resolve via `owner_index` get
+/// silently dropped — that shouldn't happen for any well-formed
+/// report but stays defensive against report-shape drift.
 fn cell_from_factorize_cell(
     cell: &FactorizeCell,
     graph: &OwnerGraphReport,
@@ -321,134 +313,39 @@ struct ProposalContext<'a> {
     graph: &'a OwnerGraphReport,
     residual_edges: &'a [(usize, usize)],
     active_edges: &'a [(usize, String)],
-    #[allow(dead_code)]
-    active_claims: &'a BTreeMap<String, String>,
     deferred_groups: &'a BTreeMap<String, String>,
     owner_to_cell: HashMap<usize, usize>,
-    /// Owner index → owner index list. Outgoing edges from each
-    /// owner across the whole graph (any edge kind, no filter).
-    /// Used by `build_proposal`'s emit-resolvability check, which
-    /// must consider every reference the cell's bodies make to a
-    /// non-cell residual binding — not just init-constraining ones.
-    outgoing_edges_by_owner: HashMap<usize, Vec<usize>>,
-    /// Index into `graph.edges` per outgoing-by-owner index. Each
-    /// vector in `outgoing_edges_by_owner` and the matching entry
-    /// here share the same length and order.
-    #[allow(dead_code)]
-    outgoing_edge_indices_by_owner: HashMap<usize, Vec<usize>>,
-    /// Bindings that materialize-time entry exports before this
-    /// cell's hypothetical promotion: the upstream-source-level
-    /// exports (`OwnerGraphReport::pre_existing_entry_exports`)
-    /// unioned with bindings of every owner whose current
-    /// destination is non-residual (those auto-exports kick in
-    /// because `materialize_logical_modules` adds an
-    /// `export { name }` per moved-owner binding). The factorizer
-    /// adds the cell's own bindings on top per-cell to predict the
-    /// post-promotion export set.
-    entry_exports_today: BTreeSet<String>,
-    /// Rebind edges (`DepKind::EagerRebind` / `LazyRebind`) as
-    /// `(source_owner_idx, target_owner_idx, binding_name)`.
-    /// Pre-indexed in `emit_proposals` so each cell's
-    /// `cross_destination_rebind_bindings` check is O(rebind_edges)
-    /// instead of O(all_edges) per cell.
-    rebind_edges: Vec<(usize, usize, Option<String>)>,
     size_cap_lines: usize,
 }
 
 fn emit_proposals(
-    cells: &[Cell],
+    cells: &[(Cell, &FactorizeCell)],
     residual_edges: &[(usize, usize)],
     active_edges: &[(usize, String)],
     graph: &OwnerGraphReport,
-    active_claims: &BTreeMap<String, String>,
     deferred_groups: &BTreeMap<String, String>,
     size_cap_lines: usize,
 ) -> Vec<FactorizeProposal> {
     let mut owner_to_cell: HashMap<usize, usize> = HashMap::new();
-    for (cell_idx, cell) in cells.iter().enumerate() {
+    for (cell_idx, (cell, _)) in cells.iter().enumerate() {
         for &owner in &cell.owners {
             owner_to_cell.insert(owner, cell_idx);
         }
-    }
-
-    let owner_index: HashMap<&str, usize> = graph
-        .nodes
-        .iter()
-        .enumerate()
-        .map(|(i, node)| (node.id.as_str(), i))
-        .collect();
-
-    // Pre-index outgoing edges per owner. The emit-resolvability
-    // check walks every outgoing edge (not just constraining ones).
-    let mut outgoing_edges_by_owner: HashMap<usize, Vec<usize>> = HashMap::new();
-    let mut outgoing_edge_indices_by_owner: HashMap<usize, Vec<usize>> = HashMap::new();
-    for (edge_idx, edge) in graph.edges.iter().enumerate() {
-        let (Some(&source), Some(&target)) = (
-            owner_index.get(edge.source.as_str()),
-            owner_index.get(edge.target.as_str()),
-        ) else {
-            continue;
-        };
-        outgoing_edges_by_owner
-            .entry(source)
-            .or_default()
-            .push(target);
-        outgoing_edge_indices_by_owner
-            .entry(source)
-            .or_default()
-            .push(edge_idx);
-    }
-
-    // Entry exports as the materializer would see them today (pre-
-    // any-promotion-from-this-factorizer-run). Pre-existing source
-    // exports plus auto-added bindings of currently-moved owners
-    // (any owner whose destination is NOT `<residual_entry>`,
-    // i.e. either a logical module or an explicit residual catch-
-    // all — both get auto-added `export {name}` from entry).
-    // Mirrors `Schedule::entry_exported_binding_names()`'s
-    // post-Owned cache.
-    let mut entry_exports_today: BTreeSet<String> =
-        graph.pre_existing_entry_exports.iter().cloned().collect();
-    for node in &graph.nodes {
-        if node.destination.id != RESIDUAL_ENTRY_MODULE_ID {
-            for binding in &node.declared_bindings {
-                entry_exports_today.insert(binding.binding.clone());
-            }
-        }
-    }
-
-    let mut rebind_edges: Vec<(usize, usize, Option<String>)> = Vec::new();
-    for edge in &graph.edges {
-        if !matches!(edge.edge_kind, DepKind::EagerRebind | DepKind::LazyRebind) {
-            continue;
-        }
-        let (Some(&source), Some(&target)) = (
-            owner_index.get(edge.source.as_str()),
-            owner_index.get(edge.target.as_str()),
-        ) else {
-            continue;
-        };
-        rebind_edges.push((source, target, edge.binding.clone()));
     }
 
     let ctx = ProposalContext {
         graph,
         residual_edges,
         active_edges,
-        active_claims,
         deferred_groups,
         owner_to_cell,
-        outgoing_edges_by_owner,
-        outgoing_edge_indices_by_owner,
-        entry_exports_today,
-        rebind_edges,
         size_cap_lines,
     };
 
     let mut proposals: Vec<FactorizeProposal> = cells
         .iter()
         .enumerate()
-        .map(|(cell_idx, cell)| build_proposal(cell_idx, cell, &ctx))
+        .map(|(cell_idx, (cell, source))| build_proposal(cell_idx, cell, source, &ctx))
         .collect();
 
     // Topological-by-residual-dependency sort with source-line
@@ -459,7 +356,7 @@ fn emit_proposals(
     // at this stage — the SCC condensation pass collapsed every
     // residual-edge cycle into a single cell — so the recursion
     // bottoms out.
-    let depths = compute_topo_depths(cells, residual_edges, &ctx.owner_to_cell);
+    let depths = compute_topo_depths(cells.len(), residual_edges, &ctx.owner_to_cell);
     let mut indexed: Vec<(usize, FactorizeProposal)> = proposals.drain(..).enumerate().collect();
     indexed.sort_by(|(li, left), (ri, right)| {
         depths[*li].cmp(&depths[*ri]).then_with(|| {
@@ -502,11 +399,11 @@ fn emit_proposals(
 }
 
 fn compute_topo_depths(
-    cells: &[Cell],
+    cell_count: usize,
     residual_edges: &[(usize, usize)],
     owner_to_cell: &HashMap<usize, usize>,
 ) -> Vec<usize> {
-    let mut adj: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); cells.len()];
+    let mut adj: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); cell_count];
     for &(s, t) in residual_edges {
         let (Some(&cs), Some(&ct)) = (owner_to_cell.get(&s), owner_to_cell.get(&t)) else {
             continue;
@@ -515,7 +412,7 @@ fn compute_topo_depths(
             adj[cs].insert(ct);
         }
     }
-    let mut depths = vec![None; cells.len()];
+    let mut depths = vec![None; cell_count];
     fn dfs(node: usize, adj: &[BTreeSet<usize>], depths: &mut [Option<usize>]) -> usize {
         if let Some(d) = depths[node] {
             return d;
@@ -533,13 +430,18 @@ fn compute_topo_depths(
         depths[node] = Some(max_child);
         max_child
     }
-    for i in 0..cells.len() {
+    for i in 0..cell_count {
         dfs(i, &adj, &mut depths);
     }
     depths.into_iter().map(|d| d.unwrap_or(0)).collect()
 }
 
-fn build_proposal(cell_idx: usize, cell: &Cell, ctx: &ProposalContext) -> FactorizeProposal {
+fn build_proposal(
+    cell_idx: usize,
+    cell: &Cell,
+    source: &FactorizeCell,
+    ctx: &ProposalContext,
+) -> FactorizeProposal {
     let mut owner_ids: Vec<String> = Vec::with_capacity(cell.owners.len());
     let mut anonymous_owner_ids: Vec<String> = Vec::new();
     let mut binding_ids: BTreeSet<String> = BTreeSet::new();
@@ -601,75 +503,19 @@ fn build_proposal(cell_idx: usize, cell: &Cell, ctx: &ProposalContext) -> Factor
     }
     let active_modules_referenced: Vec<String> = active_targets.into_iter().collect();
 
-    // Emit-resolvability projection. Mirrors the analyzer's
-    // `peel_emit_blocked_residual_bindings` predicate (which the
-    // materializer uses verbatim) but walks the JSON owner-graph
-    // shape: any outgoing edge from a cell member to a non-cell
-    // residual target whose binding isn't on entry's post-promotion
-    // export set is a free reference the materializer will reject.
-    //
-    // Post-promotion exports = `entry_exports_today` ∪ this cell's
-    // own bindings (which auto-export once the cell becomes active).
-    let mut emit_blocked_set: BTreeSet<String> = BTreeSet::new();
-    for &owner_idx in &cell.owners {
-        let Some(targets) = ctx.outgoing_edges_by_owner.get(&owner_idx) else {
-            continue;
-        };
-        let Some(edge_indices) = ctx.outgoing_edge_indices_by_owner.get(&owner_idx) else {
-            continue;
-        };
-        for (target_idx, &edge_idx) in targets.iter().zip(edge_indices.iter()) {
-            // Skip edges that don't leave the cell.
-            if ctx.owner_to_cell.get(target_idx) == Some(&cell_idx) {
-                continue;
-            }
-            let target_node = &ctx.graph.nodes[*target_idx];
-            // Only edges into the implicit `<residual_entry>` can
-            // be emit-blocked: edges to active logical modules
-            // (including explicit `Logical(R)` residual catch-alls)
-            // resolve through normal cross-module imports, NOT
-            // through entry's auto-export set. Mirrors the
-            // analyzer's `peel_emit_blocked_residual_bindings`
-            // predicate (SSOT in graph.rs) which uses
-            // `ModuleId::ResidualEntry` exclusively.
-            if target_node.destination.id != RESIDUAL_ENTRY_MODULE_ID {
-                continue;
-            }
-            let Some(binding) = ctx.graph.edges[edge_idx].binding.as_deref() else {
-                continue;
-            };
-            if ctx.entry_exports_today.contains(binding) {
-                continue;
-            }
-            if binding_ids.contains(binding) {
-                continue;
-            }
-            emit_blocked_set.insert(binding.to_string());
-        }
-    }
-    let emit_blocked_residual_bindings: Vec<String> = emit_blocked_set.into_iter().collect();
-
-    // Cross-destination rebind detection. `materialize_logical_modules`
-    // rejects any spec where a mutable binding is exported by one
-    // destination and written by another — ESM imports are read-only
-    // in the importer. The factorizer detects this by looking at
-    // rebind edges (`EagerRebind` / `LazyRebind`) with exactly one
-    // endpoint in the cell.
-    let mut cross_rebind: BTreeSet<String> = BTreeSet::new();
-    for (s, t, binding) in &ctx.rebind_edges {
-        let source_in_cell = ctx.owner_to_cell.get(s) == Some(&cell_idx);
-        let target_in_cell = ctx.owner_to_cell.get(t) == Some(&cell_idx);
-        if source_in_cell != target_in_cell {
-            if let Some(name) = binding {
-                cross_rebind.insert(name.clone());
-            }
-        }
-    }
-    let cross_destination_rebind_bindings: Vec<String> = cross_rebind.into_iter().collect();
-
-    let cycle_gate_passes = to_residual == 0;
-    let emit_gate_passes = emit_blocked_residual_bindings.is_empty();
-    let rebind_gate_passes = cross_destination_rebind_bindings.is_empty();
+    // `landable_today`, `emit_blocked_residual_bindings`, and
+    // `oversize` come straight from the analyzer's SSOT verdict on
+    // this cell (computed once via
+    // `peelability::evaluate_residual_peel_candidate` at owner-graph
+    // build time). The CLI used to recompute them from the JSON
+    // shape, which drifted from the predicate on edges through
+    // pre-existing entry exports (the recompute treated those as
+    // residual_entry cycles even though entry mediates them).
+    // `cross_destination_rebind_bindings` stays empty because the
+    // closure-based factorizer auto-unions rebind-linked owners
+    // into one cell — no cross-cell rebind survives.
+    let emit_blocked_residual_bindings: Vec<String> = source.emit_blocked_residual_bindings.clone();
+    let cross_destination_rebind_bindings: Vec<String> = Vec::new();
     FactorizeProposal {
         proposed_module_id: format!("auto_partition_{cell_idx:04}"),
         owner_ids,
@@ -690,7 +536,7 @@ fn build_proposal(cell_idx: usize, cell: &Cell, ctx: &ProposalContext) -> Factor
         active_modules_referenced,
         emit_blocked_residual_bindings,
         cross_destination_rebind_bindings,
-        landable_today: cycle_gate_passes && emit_gate_passes && rebind_gate_passes,
+        landable_today: source.landable_today,
         oversize: cell.lines > ctx.size_cap_lines,
         seeded_from_deferred: seeded.into_iter().collect(),
     }
@@ -905,7 +751,6 @@ mod tests {
             emit_blocked_residual_bindings: emit_blocked.iter().map(|s| s.to_string()).collect(),
             cycle_blocker_owner_ids: Vec::new(),
             active_modules_referenced: Vec::new(),
-            auto_grow_iterations: 0,
         }
     }
 

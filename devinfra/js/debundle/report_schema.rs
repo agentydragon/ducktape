@@ -275,11 +275,6 @@ pub struct FactorizeCell {
     /// auto-exports those bindings. Informational.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub active_modules_referenced: Vec<String>,
-    /// Number of auto-grow iterations the factorizer ran on this
-    /// cell before reaching a fixed point. The loop terminates when
-    /// the SSOT predicate returns `PeelableNow`, or when an
-    /// iteration adds no new owners.
-    pub auto_grow_iterations: usize,
 }
 
 /// Stable value of [`ModuleReportRef::id`] for the implicit

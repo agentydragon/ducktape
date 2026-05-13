@@ -1,24 +1,26 @@
-//! End-to-end pinning of `peel_factorize`'s `landable_today` contract
-//! against the materializer's actual gates.
+//! End-to-end pinning of the factorize report's correctness against
+//! the materializer's actual gates.
 //!
-//! The factorizer's `landable_today: true` verdict is supposed to mean
-//! "mechanically promoting this cell to an active YAML would pass the
-//! materializer's cycle + emit-resolvability gates without spec-level
-//! surgery." Earlier rounds of the factorizer marked cells landable
-//! that the materializer then rejected — that drift is exactly what
-//! this test pins against.
+//! The closure-based factorizer (`analysis::factorize`) emits a cell
+//! per SCC of the residual must-co-locate graph. Each cell carries a
+//! verdict from the SSOT `evaluate_residual_peel_candidate` predicate;
+//! cells are valid by construction in the emit-resolvability and
+//! LazyRebind senses, with cycle/dep blockers reported per cell.
 //!
 //! Two paired fixtures:
 //!
 //! 1. **Clean cell** — bindings whose body references only entry-
-//!    exported targets. Factorizer says landable; the corresponding
-//!    spec edit DOES land green.
+//!    exported targets. Each binding gets its own landable cell
+//!    (no agglomeration step combines them); each is individually
+//!    promotable.
 //! 2. **Emit-blocked cell** — a residual binding's body references
 //!    another residual binding that isn't on entry's export list.
-//!    Factorizer says NOT landable with a specific
-//!    `emit_blocked_residual_bindings` entry; the corresponding
-//!    spec edit DOES get rejected by the materializer with the
-//!    matching error message.
+//!    The factorizer reports the consumer's cell as not landable,
+//!    with the unresolved binding listed in
+//!    `emit_blocked_residual_bindings`. Promoting the consumer
+//!    standalone would be rejected by the materializer; the lane
+//!    worker resolves by promoting the declarer's cell first or
+//!    combining both into one module.
 
 use analysis::OwnerGraphReport;
 use debundle_e2e_support::*;
@@ -37,20 +39,21 @@ fn read_json<T: DeserializeOwned>(path: &Path) -> T {
 }
 
 #[test]
-fn factorizer_marks_clean_cell_landable_and_materializer_accepts_the_promotion() {
+fn factorizer_orders_chain_cells_by_dependency_and_materializer_accepts_promotion() {
     // Source: three `const` initializers chained by at-init reads
     // (b reads a, c reads b). Only `a` is logical-module-claimed;
-    // {b, c} sits residual and the factorizer should agglomerate
-    // them into one cell whose only outgoing constraining edge
-    // targets the active module `anchors/a`. Both gates pass:
+    // {b, c} sit residual.
     //
-    // * No outgoing edge to another residual cell → cycle gate.
-    // * `b → a` references `a`, which is auto-exported by entry
-    //   because its owner currently lives in an active module →
-    //   emit-resolvability gate.
-    //
-    // The mechanically-applied promotion spec then materializes
-    // green.
+    // The closure-based factorizer treats `c → b` as a dependency
+    // (c needs b first). The materializer's SSOT predicate flags
+    // cell {c} as `BlockedResidualDependency` because c has an
+    // outgoing constraining edge into residual_entry — even though
+    // b's binding is in entry's pre-existing exports, the predicate
+    // is conservative about S → residual_entry module edges. The
+    // factorize report surfaces this honestly: cell {b} is
+    // landable_today (no outgoing residual deps), cell {c} is not
+    // (depends on b). A lane worker resolves by promoting both
+    // into one combined module; the materializer accepts.
     let chunk_source = r#"const a = 1;
 const b = a + 1;
 const c = b + 2;
@@ -61,40 +64,38 @@ export { a, b, c };
         chunk_source,
         vec![logical_module("anchors/a", &[Member::new("a")])],
     );
-    // The factorizer's residual scope is `ModuleId::ResidualEntry`
-    // exclusively (matches the analyzer's SSOT predicate). The
-    // fixture's default `include_residual: true` would emit a
-    // `Logical(R)` residual catch-all instead, putting `b` and `c`
-    // in a logical module rather than the residual entry.
     opts.include_residual = false;
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
     let report = factorize(&graph, &BTreeMap::new(), &BTreeMap::new(), 2000);
 
-    let cell = report
+    let cell_b = report
         .proposals
         .iter()
-        .find(|p| {
-            p.binding_ids.contains(&"b".to_string()) && p.binding_ids.contains(&"c".to_string())
-        })
-        .expect("factorizer should agglomerate b and c into one cell");
+        .find(|p| p.binding_ids.contains(&"b".to_string()))
+        .expect("factorizer should propose a cell for `b`");
     assert!(
-        cell.landable_today,
-        "clean cell whose only outgoing edges target active modules \
-         must be marked landable_today; got cell={cell:?}",
+        cell_b.landable_today,
+        "b's cell only reads from the active module `anchors/a` and \
+         must be marked landable_today; got cell={cell_b:?}",
     );
-    assert!(
-        cell.emit_blocked_residual_bindings.is_empty(),
-        "clean cell must have empty emit_blocked_residual_bindings; \
-         got {:?}",
-        cell.emit_blocked_residual_bindings,
-    );
-    // `a` is in an active module → not counted as a residual edge.
-    assert_eq!(cell.edges_to_other_residual_cells, 0);
 
-    // Now mechanically apply the cell as an active module and verify
-    // the materializer accepts it.
+    let cell_c = report
+        .proposals
+        .iter()
+        .find(|p| p.binding_ids.contains(&"c".to_string()))
+        .expect("factorizer should propose a cell for `c`");
+    assert!(
+        !cell_c.landable_today,
+        "c's cell has an outgoing constraining edge into residual_entry \
+         (c reads b, b stays residual), so the predicate flags it as \
+         BlockedResidualDependency. Cell should NOT be landable_today \
+         on its own; got cell={cell_c:?}",
+    );
+
+    // The materializer accepts the lane-worker decision to promote
+    // both into one combined module.
     let promoted_opts = FixtureOpts::new(
         chunk_source,
         vec![
@@ -106,18 +107,22 @@ export { a, b, c };
 }
 
 #[test]
-fn factorizer_auto_grows_cell_to_absorb_emit_blocked_residual_binding() {
+fn factorizer_flags_emit_blocked_cell_not_landable_with_blocker_binding() {
     // `dep` is residual and NOT in entry's `export { ... }` list.
-    // `consumer` lazily reads `dep` (inside its body). Promoting
-    // `consumer` alone to an active module would require entry to
-    // emit `import { dep } from "entry"` — but entry doesn't
-    // export `dep`. The analyzer's auto-grow loop absorbs `dep`
-    // into `consumer`'s cell, turning it into a single landable
-    // proposal {consumer, dep} that moves both bindings together.
+    // `consumer` lazily reads `dep` (inside its body). The closure
+    // graph adds `consumer → dep` (consumer reads non-exported
+    // residual binding), but there's no back-edge from dep to
+    // consumer — so Tarjan keeps them as separate SCCs. consumer's
+    // cell has one outgoing inter-cell forcing edge in the
+    // condensation DAG, and the verifier flags the cell as
+    // `BlockedEmitResolvability` with `dep` listed as the blocker.
+    // Promoting consumer's cell alone would be rejected; a lane
+    // worker resolves by promoting dep's cell first (or co-promoting
+    // both into one module).
     //
-    // `anchor` exists so the chunk has at least one active
-    // logical module (the spec rejects all-residual chunks);
-    // `dep` and `consumer` stay in the residual entry via
+    // `anchor` exists so the chunk has at least one active logical
+    // module (the spec rejects all-residual chunks); `dep` and
+    // `consumer` stay in the residual entry via
     // `include_residual: false`.
     let chunk_source = r#"const anchor = "anchor";
 const dep = "secret";
@@ -135,26 +140,34 @@ export { anchor, consumer };
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
     let report = factorize(&graph, &BTreeMap::new(), &BTreeMap::new(), 2000);
 
-    let cell = report
+    let consumer_cell = report
         .proposals
         .iter()
         .find(|p| p.binding_ids.contains(&"consumer".to_string()))
-        .expect("factorizer should propose a cell containing `consumer`");
+        .expect("factorizer should propose a cell for `consumer`");
     assert!(
-        cell.binding_ids.contains(&"dep".to_string()),
-        "auto-grow should absorb `dep` (consumer's only free reference) \
-         into consumer's cell; got cell={cell:?}",
+        !consumer_cell.landable_today,
+        "cell whose body references the non-exported residual binding \
+         `dep` must NOT be marked landable_today; got cell={consumer_cell:?}",
     );
     assert!(
-        cell.landable_today,
-        "the absorbed {{consumer, dep}} cell has no remaining \
-         non-exported free references; must be marked landable_today; \
-         got cell={cell:?}",
+        consumer_cell
+            .emit_blocked_residual_bindings
+            .iter()
+            .any(|b| b == "dep"),
+        "emit_blocked_residual_bindings should list `dep` (the free \
+         reference target). Got {:?}",
+        consumer_cell.emit_blocked_residual_bindings,
     );
+
+    let dep_cell = report
+        .proposals
+        .iter()
+        .find(|p| p.binding_ids.contains(&"dep".to_string()))
+        .expect("factorizer should propose a separate cell for `dep`");
     assert!(
-        cell.emit_blocked_residual_bindings.is_empty(),
-        "after auto-grow `dep` is internal to the cell so \
-         emit_blocked_residual_bindings must be empty; got {:?}",
-        cell.emit_blocked_residual_bindings,
+        dep_cell.landable_today,
+        "dep's cell has no outgoing forcing edges and must be \
+         landable_today on its own; got cell={dep_cell:?}",
     );
 }
