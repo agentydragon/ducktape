@@ -211,17 +211,12 @@ pub struct FactorizeOptions {
     /// with `oversize: true`; the algorithm never manufactures
     /// structural splits.
     pub size_cap_lines: usize,
-    /// Maximum number of auto-grow iterations per cell before the
-    /// factorizer gives up and reports the cell with its current
-    /// blockers. Each iteration absorbs at most a few owners.
-    pub max_grow_iterations: usize,
 }
 
 impl Default for FactorizeOptions {
     fn default() -> Self {
         Self {
             size_cap_lines: 2000,
-            max_grow_iterations: 16,
         }
     }
 }
@@ -281,8 +276,9 @@ pub struct FactorizeCell {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub active_modules_referenced: Vec<String>,
     /// Number of auto-grow iterations the factorizer ran on this
-    /// cell before either converging (`landable_today: true`) or
-    /// hitting `max_grow_iterations`.
+    /// cell before reaching a fixed point. The loop terminates when
+    /// the SSOT predicate returns `PeelableNow`, or when an
+    /// iteration adds no new owners.
     pub auto_grow_iterations: usize,
 }
 

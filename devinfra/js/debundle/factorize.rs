@@ -99,7 +99,6 @@ pub fn build_factorize_report(schedule: &Schedule, options: &FactorizeOptions) -
             &bindings_by_owner,
             &owner_for_binding,
             &residual,
-            options,
         );
         let proposed_module_id = format!("auto_partition_{idx:04}");
         emitted.push(make_cell(
@@ -135,9 +134,17 @@ pub fn build_factorize_report(schedule: &Schedule, options: &FactorizeOptions) -
 
 /// Per-cell evaluate-and-grow loop. Calls the SSOT predicate; if
 /// blocked by an addressable category (emit-resolvability, cycle
-/// through another residual cell), tries absorbing the owners the
-/// blocker pointed at and re-evaluates. Bounded by
-/// `options.max_grow_iterations`.
+/// through another residual cell), absorbs the owners the verdict
+/// pointed at and re-evaluates. Runs to fixed point: terminates
+/// when the predicate returns `PeelableNow`, or when an iteration
+/// fails to add any new owner (no growth → no progress).
+///
+/// The cell's final owner set is the true minimum closure the
+/// materializer would accept for this seed; reporting that closure
+/// — even when it spans most of the residual surface — is the
+/// signal callers want. Capping iterations would hide that signal
+/// behind a `blocked_residual_dependency` verdict that's actually
+/// the iteration budget talking, not the graph structure.
 fn evaluate_and_grow(
     schedule: &Schedule,
     context: &PeelabilityContext<'_>,
@@ -145,7 +152,6 @@ fn evaluate_and_grow(
     bindings_by_owner: &HashMap<OwnerId, Vec<BindingName>>,
     owner_for_binding: &HashMap<BindingName, OwnerId>,
     residual: &BTreeSet<OwnerId>,
-    options: &FactorizeOptions,
 ) -> (BTreeSet<OwnerId>, PeelCandidateEvaluation, usize) {
     let mut iterations = 0;
     loop {
@@ -155,9 +161,6 @@ fn evaluate_and_grow(
             .flat_map(|o| bindings_by_owner.get(o).cloned().unwrap_or_default())
             .collect();
         let verdict = evaluate_residual_peel_candidate(schedule, context, &owners, declared);
-        if iterations >= options.max_grow_iterations {
-            return (cell, verdict, iterations);
-        }
         match verdict.status {
             PeelCandidateStatus::PeelableNow => return (cell, verdict, iterations),
             PeelCandidateStatus::BlockedEmitResolvability => {
