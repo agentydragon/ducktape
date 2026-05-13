@@ -42,7 +42,7 @@ pub struct OwnerGraphReport {
     /// `Schedule::owner_graph_report`; empty `cells` when there
     /// are no residual owners. Each cell carries a verdict from
     /// the SSOT predicate in
-    /// `peelability::evaluate_residual_peel_candidate`, so
+    /// `peelability::evaluate_peel_candidate`, so
     /// `cells[].landable_today == true` matches what
     /// `materialize_logical_modules` would actually accept.
     #[serde(default)]
@@ -225,7 +225,7 @@ impl Default for FactorizeOptions {
 /// embedded in [`OwnerGraphReport::factorize`]. Carries proposed
 /// module partitions over the residual owner surface, each
 /// evaluated by the same predicate `materialize_logical_modules`
-/// uses (SSOT via `peelability::evaluate_residual_peel_candidate`).
+/// uses (SSOT via `peelability::evaluate_peel_candidate`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FactorizeReport {
     pub size_cap_lines: usize,
@@ -250,7 +250,7 @@ pub struct FactorizeCell {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_line_range: Option<[usize; 2]>,
     pub ordinal_span: usize,
-    /// Verdict from `peelability::evaluate_residual_peel_candidate`
+    /// Verdict from `peelability::evaluate_peel_candidate`
     /// applied to the cell's final owner set (after auto-grow).
     pub status: PeelCandidateStatus,
     /// `true` iff `status == PeelableNow`. Mirrors the materializer's

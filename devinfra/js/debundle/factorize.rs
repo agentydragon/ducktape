@@ -4,7 +4,7 @@
 //! Reads the in-memory [`Schedule`] and emits cells that — by
 //! construction — satisfy emit-resolvability, LazyRebind, and
 //! source-order (Sequenced) gates. The cycle gate is reported per
-//! cell via the SSOT [`evaluate_residual_peel_candidate`] predicate
+//! cell via the SSOT [`evaluate_peel_candidate`] predicate
 //! used as a verifier, run exactly once per cell.
 //!
 //! # Why one pass instead of grow-to-fixed-point
@@ -45,7 +45,7 @@
 //!
 //! # Per-cell verdict
 //!
-//! After SCC, we run [`evaluate_residual_peel_candidate`] once per
+//! After SCC, we run [`evaluate_peel_candidate`] once per
 //! cell as a sanity check. The construction guarantees emit-
 //! resolvability and LazyRebind pass; the cycle gate may still flag
 //! cells whose modules would form `cell ↔ residual_entry` cycles
@@ -58,9 +58,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 
-use crate::peelability::{
-    PeelCandidateEvaluation, PeelabilityContext, evaluate_residual_peel_candidate,
-};
+use crate::peelability::{PeelCandidateEvaluation, PeelabilityContext, evaluate_peel_candidate};
 use crate::reports::{build_quotient_edge_reports, module_key, owner_key};
 use crate::{
     BindingName, DepKind, FactorizeCell, FactorizeOptions, FactorizeReport, ModuleId, OwnerId,
@@ -109,7 +107,7 @@ pub fn build_factorize_report(schedule: &Schedule, options: &FactorizeOptions) -
             .iter()
             .flat_map(|o| bindings_by_owner.get(o).cloned().unwrap_or_default())
             .collect();
-        let verdict = evaluate_residual_peel_candidate(schedule, &context, &owners_vec, declared);
+        let verdict = evaluate_peel_candidate(schedule, &context, &owners_vec, declared);
         let id = format!("auto_partition_{idx:04}");
         emitted.push(make_cell(
             id,

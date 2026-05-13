@@ -670,7 +670,7 @@ fn build_proposal(
     // `landable_today`, `emit_blocked_residual_bindings`, and
     // `oversize` come straight from the analyzer's SSOT verdict on
     // this cell (computed once via
-    // `peelability::evaluate_residual_peel_candidate` at owner-graph
+    // `peelability::evaluate_peel_candidate` at owner-graph
     // build time). The CLI used to recompute them from the JSON
     // shape, which drifted from the predicate on edges through
     // pre-existing entry exports (the recompute treated those as

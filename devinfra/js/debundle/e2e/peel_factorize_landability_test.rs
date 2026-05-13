@@ -3,7 +3,7 @@
 //!
 //! The closure-based factorizer (`analysis::factorize`) emits a cell
 //! per SCC of the residual must-co-locate graph. Each cell carries a
-//! verdict from the SSOT `evaluate_residual_peel_candidate` predicate;
+//! verdict from the SSOT `evaluate_peel_candidate` predicate;
 //! cells are valid by construction in the emit-resolvability and
 //! LazyRebind senses, with cycle/dep blockers reported per cell.
 //!

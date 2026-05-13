@@ -121,7 +121,7 @@ pub(crate) fn build_peelability_report(
     for (&owner_id, declared) in &declared_by_owner {
         singleton_candidates.push((
             owner_id,
-            evaluate_residual_peel_candidate(schedule, &context, &[owner_id], declared.clone()),
+            evaluate_peel_candidate(schedule, &context, &[owner_id], declared.clone()),
         ));
     }
 
@@ -139,8 +139,7 @@ pub(crate) fn build_peelability_report(
         declared.sort();
         declared.dedup();
 
-        let candidate =
-            evaluate_residual_peel_candidate(schedule, &context, &[left, right], declared);
+        let candidate = evaluate_peel_candidate(schedule, &context, &[left, right], declared);
         if candidate.status == PeelCandidateStatus::PeelableNow {
             pair_candidates.push(candidate);
         }
@@ -562,7 +561,7 @@ fn residual_dependency_closure_candidates(
             continue;
         }
 
-        let candidate = evaluate_residual_peel_candidate(schedule, context, &closure, declared);
+        let candidate = evaluate_peel_candidate(schedule, context, &closure, declared);
         if candidate.status == PeelCandidateStatus::PeelableNow {
             candidates.push(candidate);
         }
@@ -678,7 +677,7 @@ fn sorted_owner_pair(left: OwnerId, right: OwnerId) -> (OwnerId, OwnerId) {
     }
 }
 
-pub(crate) fn evaluate_residual_peel_candidate(
+pub(crate) fn evaluate_peel_candidate(
     schedule: &Schedule,
     context: &PeelabilityContext<'_>,
     owner_ids: &[OwnerId],
