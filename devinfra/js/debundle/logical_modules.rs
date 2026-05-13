@@ -3852,40 +3852,37 @@ fn prepare_output_dir(out_dir: &Path, force: bool) -> Result<()> {
     Ok(())
 }
 
-/// Build a per-cause guidance line for the atomic-unit-conflict
-/// diagnostic. Walks every conflict's `causes` and renders the
-/// matching explanation so the bail message includes vocabulary the
-/// spec author can search for (`cycle`, `side-effect`, `mutable`,
-/// `assignment`, `cross-destination`).
+/// Per-cause guidance for the atomic-unit-conflict bail message —
+/// gives the spec author vocabulary to search for (`cycle`,
+/// `side-effect`, `mutable`, `assignment`, `cross-destination`).
 fn render_atomic_unit_cause_guidance(conflicts: &[AtomicUnitConflictReport]) -> String {
-    let mut causes: HashSet<DepKind> = HashSet::new();
-    for conflict in conflicts {
-        for cause in &conflict.causes {
-            causes.insert(*cause);
-        }
-    }
-    let mut causes: Vec<DepKind> = causes.into_iter().collect();
+    let mut causes: Vec<DepKind> = conflicts
+        .iter()
+        .flat_map(|c| c.causes.iter().copied())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
     causes.sort();
     let mut out = String::new();
     for cause in &causes {
-        match cause {
-            DepKind::EagerUse => out.push_str(
+        out.push_str(match cause {
+            DepKind::EagerUse => {
                 "EagerUse cycle: a top-level statement reads a binding at-init; \
-                 splitting reader and declarer across modules forms an evaluation-order cycle. ",
-            ),
-            DepKind::EagerRebind | DepKind::LazyRebind => out.push_str(
+                 splitting reader and declarer across modules forms an evaluation-order cycle. "
+            }
+            DepKind::EagerRebind | DepKind::LazyRebind => {
                 "Rebind: a function or top-level statement performs an assignment \
                  to a mutable binding owned by a different module — the resulting ESM \
                  import would be read-only, so this cross-destination assignment is invalid. \
-                 The assigner and the binding declarer must materialize together. ",
-            ),
-            DepKind::Sequenced => out.push_str(
+                 The assigner and the binding declarer must materialize together. "
+            }
+            DepKind::Sequenced => {
                 "Sequenced side-effect chain: two top-level side-effect statements are \
                  forced into a fixed source order; splitting them across modules \
-                 inverts the run order. ",
-            ),
-            DepKind::LazyUse => {}
-        }
+                 inverts the run order. "
+            }
+            DepKind::LazyUse => continue,
+        });
     }
     out
 }

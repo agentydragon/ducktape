@@ -1,39 +1,23 @@
-//! Structural atomic factor units.
+//! Structural atomic factor units: SCCs of the constraining-edge
+//! subgraph `G_atomic` over an owner graph. Each SCC is one set of
+//! owners any valid factorization must keep co-located, because the
+//! bundle's original init order is otherwise unrealizable as ESM.
+//! [`crate::factor_assembly::assemble_partition`] consumes the units
+//! plus YAML claims and `unassigned_mode` to produce the final
+//! partition. See `FACTORIZE.md` for the architecture.
 //!
-//! Computes the strongly-connected components of the constraining-edge
-//! subgraph over all owners. Each SCC is one **atomic unit** — a set
-//! of owners that any valid factorization of the chunk must keep
-//! co-located, because the bundle's original init order is otherwise
-//! unrealizable as ESM.
+//! Closure rules for `G_atomic` — for each edge `e: u → v` with
+//! `e.from != e.to`:
 //!
-//! Atomic units are mode-independent. They depend only on the chunk's
-//! owner graph, not on the spec or any chunk-level config.
-//! [`crate::factor_assembly::assemble_partition`] consumes atomic
-//! units + YAML claims + the `unassigned_mode` setting to produce the
-//! final partition. See `FACTORIZE.md` for the architecture.
-//!
-//! # Closure rules for the constraining-edge subgraph `G_atomic`
-//!
-//! For each owner-graph edge `e: u → v` with `e.from != e.to`:
-//!
-//! * `EagerUse`: add `u → v` to `G_atomic`. (u depends on v at init
-//!   time.)
-//! * `LazyUse`: skip. Lazy reads happen at call time and don't
-//!   constrain co-location.
-//! * `EagerRebind` / `LazyRebind`: add both `u → v` and `v → u`
-//!   (LazyRebind gate — declarer and assigner must co-locate).
-//! * `Sequenced`: add `u → v` (directed source-order dependency —
-//!   the owner-graph encodes the edge as `later_stmt → earlier_stmt`
-//!   meaning "the later side-effect depends on the earlier side-
-//!   effect having run"; linker order resolves a directed Sequenced
-//!   alone). Co-location is only forced when Sequenced combines with
-//!   another constraining edge in the reverse direction — Tarjan's
-//!   SCC handles that automatically.
-//!
-//! Tarjan-SCC on `G_atomic` produces the atomic units. Inter-unit
-//! edges form a DAG by Tarjan's construction.
+//! * `EagerUse`: add `u → v` (u depends on v at init time).
+//! * `LazyUse`: skip (call-time read).
+//! * `EagerRebind` / `LazyRebind`: add both directions (declarer
+//!   and assigner of a mutable binding must co-locate).
+//! * `Sequenced`: add `u → v`. Co-location is only forced when
+//!   another constraining edge runs the reverse direction —
+//!   Tarjan's SCC handles that automatically.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
@@ -41,16 +25,20 @@ use petgraph::graphmap::DiGraphMap;
 use crate::graph::{DepKind, OwnerGraph, OwnerId};
 
 /// One atomic factor unit: a set of owners that any valid
-/// factorization must keep co-located.
+/// factorization must keep co-located, plus the `DepKind`s of the
+/// constraining edges *inside* the unit (everything except
+/// `LazyUse`) — used by [`crate::factor_assembly`] to explain *why*
+/// a unit is forced together when its claims conflict.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AtomicUnit {
     pub members: BTreeSet<OwnerId>,
+    pub causes: HashSet<DepKind>,
 }
 
 /// Compute atomic factor units for an owner graph. Returns one unit
-/// per SCC of the constraining-edge subgraph. Singleton owners with
-/// no constraining edges still get their own unit, so the result
-/// covers every owner in the graph exactly once.
+/// per SCC of the constraining-edge subgraph; singleton owners with
+/// no constraining edges get their own (empty-cause) unit so every
+/// owner is covered exactly once.
 pub fn compute_atomic_units(owner_graph: &OwnerGraph) -> Vec<AtomicUnit> {
     let mut g_atomic = DiGraphMap::<OwnerId, ()>::new();
     for node in owner_graph.iter_nodes() {
@@ -61,26 +49,42 @@ pub fn compute_atomic_units(owner_graph: &OwnerGraph) -> Vec<AtomicUnit> {
             continue;
         }
         match edge.reason.kind {
-            DepKind::EagerUse => {
+            DepKind::EagerUse | DepKind::Sequenced => {
                 g_atomic.add_edge(edge.from, edge.to, ());
             }
-            DepKind::LazyUse => {
-                // Lazy reads happen at call time; they don't force
-                // co-location for init-order purposes.
-            }
+            DepKind::LazyUse => {}
             DepKind::EagerRebind | DepKind::LazyRebind => {
                 g_atomic.add_edge(edge.from, edge.to, ());
                 g_atomic.add_edge(edge.to, edge.from, ());
             }
-            DepKind::Sequenced => {
-                g_atomic.add_edge(edge.from, edge.to, ());
-            }
         }
     }
-    tarjan_scc(&g_atomic)
+    let sccs = tarjan_scc(&g_atomic);
+    let mut unit_of = vec![None::<usize>; owner_graph.nodes.len()];
+    let mut units: Vec<AtomicUnit> = sccs
         .into_iter()
-        .map(|scc| AtomicUnit {
-            members: scc.into_iter().collect(),
+        .enumerate()
+        .map(|(idx, scc)| {
+            let members: BTreeSet<OwnerId> = scc.into_iter().collect();
+            for owner in &members {
+                unit_of[owner.0] = Some(idx);
+            }
+            AtomicUnit {
+                members,
+                causes: HashSet::new(),
+            }
         })
-        .collect()
+        .collect();
+    for edge in owner_graph.iter_edges() {
+        if edge.from == edge.to || edge.reason.kind == DepKind::LazyUse {
+            continue;
+        }
+        let (Some(from_unit), Some(to_unit)) = (unit_of[edge.from.0], unit_of[edge.to.0]) else {
+            continue;
+        };
+        if from_unit == to_unit {
+            units[from_unit].causes.insert(edge.reason.kind);
+        }
+    }
+    units
 }
