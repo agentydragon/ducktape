@@ -26,6 +26,12 @@ spec:
     spec:
       serviceAccountName: litellm
       terminationGracePeriodSeconds: 90
+      # litellm proxies to local Ollama for fallback paths and lives close
+      # to ollama on the Proxmox GPU host. Pin to the proxmox region so it
+      # only schedules where it belongs (and stays Pending when those
+      # nodes are offline, rather than landing on a hil worker).
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
       containers:
         - name: litellm
           image: litellm/litellm:1.82.1
