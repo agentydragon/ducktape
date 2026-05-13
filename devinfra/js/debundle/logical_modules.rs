@@ -737,6 +737,55 @@ fn materialize_logical_chunk(
                     target_dir,
                 )
             })?;
+        } else if catchall_target_for_overflow.is_some()
+            && let Some(residual_idx) = residual_plan_index
+        {
+            // Mirror of the named-binding residual sweep at the top of
+            // `build_module_plans` for anonymous side-effect statements.
+            //
+            // The named-binding sweep routes every top-level declaration
+            // whose binding wasn't claimed by a `logical_modules` entry
+            // into the catchall plan. Anonymous statements (top-level
+            // bare expression / call / IIFE statements with empty
+            // `declared`) don't go through that sweep — they have no
+            // binding name to assign — so without this fixup they
+            // default to `ModuleId::ResidualEntry` (inline-in-entry).
+            //
+            // When the chunk's `unassigned_mode = catchall_file`, an
+            // atomic factor unit that bridges a named binding and an
+            // anonymous sibling would then split: named member → catchall
+            // plan, anonymous member → ResidualEntry. The schedule's
+            // atomic-unit check rejects with `AtomicUnitConflict` and
+            // the materializer bails. Routing the anonymous member to
+            // the same catchall destination keeps the unit's members
+            // co-located. (`InlineInEntry` mode wants anonymous
+            // statements at ResidualEntry, so it must not run this;
+            // `MiniFactors` handles its own routing above.)
+            time_phase!(timings, "sweep_anon_to_catchall", {
+                for facts in &analysis.facts {
+                    if !facts.declared.is_empty() {
+                        continue;
+                    }
+                    let Some(body_idx) =
+                        body_index_for_statement_ordinal(&runtime_ast.module.body, facts.ordinal.0)
+                    else {
+                        continue;
+                    };
+                    if anonymous_ordinal_assignment.contains_key(&body_idx) {
+                        continue;
+                    }
+                    anonymous_ordinal_assignment.insert(body_idx, residual_idx);
+                    module_plans[residual_idx]
+                        .anonymous_statement_ordinals
+                        .push(body_idx);
+                }
+                module_plans[residual_idx]
+                    .anonymous_statement_ordinals
+                    .sort_unstable();
+                module_plans[residual_idx]
+                    .anonymous_statement_ordinals
+                    .dedup();
+            });
         }
         let logical_modules: Vec<ScheduleLogicalModule> =
             time_phase!(timings, "project_schedule_modules", {
