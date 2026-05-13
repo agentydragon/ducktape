@@ -275,6 +275,20 @@ pub struct FactorizeCell {
     /// auto-exports those bindings. Informational.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub active_modules_referenced: Vec<String>,
+    /// Set when this cell is an **extension proposal**: an existing
+    /// YAML-claimed module's id (as in [`ModuleReportRef::id`]) that
+    /// the closure graph showed must absorb the loose owners in
+    /// `extension_owner_ids` for the partition to stay valid.
+    /// `None` for fresh-module proposals (where the cell contains
+    /// only loose / residual owners).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extends_module_id: Option<String>,
+    /// Loose owner ids (residual today) that this proposal would
+    /// move into the existing module identified by
+    /// `extends_module_id`. Empty for fresh-module proposals (where
+    /// every owner in `owner_ids` is part of the proposal itself).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extension_owner_ids: Vec<String>,
 }
 
 /// Stable value of [`ModuleReportRef::id`] for the implicit
