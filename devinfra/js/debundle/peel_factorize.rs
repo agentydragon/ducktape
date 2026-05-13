@@ -20,12 +20,6 @@
 //! - `internal_edges`, `edges_to_other_residual_cells`,
 //!   `other_residual_cells_referenced`: cell-graph relationship
 //!   counts derived from the partition the analyzer chose.
-//! - `cross_destination_rebind_bindings`: mutable bindings whose
-//!   rebind edges (`EagerRebind` / `LazyRebind`) cross this cell's
-//!   boundary. Surfacing redundancy with the analyzer's auto-
-//!   union (which already merges rebind-linked cells), so this
-//!   field is always empty for analyzer-side cells today; kept
-//!   for downstream-consumer schema stability.
 //!
 //! The `landable_today`, `emit_blocked_residual_bindings`, and
 //! `oversize` verdicts come straight from the analyzer's SSOT cell
@@ -113,18 +107,6 @@ pub struct FactorizeProposal {
     /// `materialize_logical_modules`'s emit-resolvability gate.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub emit_blocked_residual_bindings: Vec<String>,
-    /// Mutable bindings whose rebind edges (`DepKind::EagerRebind`
-    /// or `LazyRebind`) cross this cell's boundary — i.e., the
-    /// binding is exported by the cell but written by a foreign
-    /// module, or written by the cell but exported by a foreign
-    /// module. ESM-imported bindings are read-only in the
-    /// importer, so `materialize_logical_modules` rejects any
-    /// such spec with "cross-destination assignment(s) to mutable
-    /// binding(s)". Lane workers resolve by co-moving the assigner
-    /// (or the binding) so the entire rebind chain lives in one
-    /// destination.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub cross_destination_rebind_bindings: Vec<String>,
     /// `true` iff both gates would pass:
     /// * `edges_to_other_residual_cells == 0` (cycle gate).
     /// * `emit_blocked_residual_bindings.is_empty()`
@@ -725,12 +707,8 @@ fn build_proposal(
     // shape, which drifted from the predicate on edges through
     // pre-existing entry exports (the recompute treated those as
     // residual_entry cycles even though entry mediates them).
-    // `cross_destination_rebind_bindings` stays empty because the
-    // closure-based factorizer auto-unions rebind-linked owners
-    // into one cell — no cross-cell rebind survives.
     let emit_blocked_residual_bindings: Vec<String> =
         verdict.emit_blocked_residual_bindings.clone();
-    let cross_destination_rebind_bindings: Vec<String> = Vec::new();
     let extension_owner_ids: Vec<String> = {
         let mut ids: Vec<String> = cell
             .extension_owner_idxs
@@ -763,7 +741,6 @@ fn build_proposal(
         edges_to_active_modules: to_active,
         active_modules_referenced,
         emit_blocked_residual_bindings,
-        cross_destination_rebind_bindings,
         landable_today: verdict.landable_today,
         oversize: cell.lines > ctx.size_cap_lines,
         seeded_from_deferred: seeded.into_iter().collect(),
