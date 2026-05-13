@@ -256,26 +256,18 @@ pub(crate) fn module_id_from_key(key: &str) -> Option<ModuleId> {
 }
 
 pub(crate) fn module_report_ref(schedule: &Schedule, id: ModuleId) -> ModuleReportRef {
-    match id {
-        ModuleId::ResidualEntry => ModuleReportRef {
-            id: module_key(id),
-            label: schedule.module_name(id),
-            residual: true,
-            index: None,
-            target_file: None,
-        },
-        ModuleId::Logical(LogicalModuleIndex(idx)) => ModuleReportRef {
-            id: module_key(id),
-            label: schedule.module_name(id),
-            residual: schedule
-                .logical_modules
-                .get(idx)
-                .is_some_and(|module| module.residual),
-            index: Some(idx),
-            target_file: schedule
-                .logical_modules
-                .get(idx)
-                .map(|module| module.target_file.clone()),
-        },
+    let logical = match id {
+        ModuleId::Logical(LogicalModuleIndex(idx)) => schedule
+            .logical_modules
+            .get(idx)
+            .map(|module| (idx, module)),
+        ModuleId::ResidualEntry => None,
+    };
+    ModuleReportRef {
+        id: module_key(id),
+        label: schedule.module_name(id),
+        residual: is_residual_destination(schedule, id),
+        index: logical.map(|(idx, _)| idx),
+        target_file: logical.map(|(_, module)| module.target_file.clone()),
     }
 }
