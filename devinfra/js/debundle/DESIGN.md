@@ -18,8 +18,8 @@
 > init-wrapper machinery, no closure pass, no implicit binding
 > pulls — every owned binding is named explicitly in the spec,
 > and `Imported` bindings flow through `Schedule.bindings` /
-> `BindingKind::Imported`, with multi-module re-exports
-> accumulating into one entry's `re_exported_by` map.
+> `BindingKind::Imported`, carrying the single re-exporter
+> `ModuleId` and public name that claimed it.
 > Anonymous (empty-`declared`) top-level statements have no name
 > to address as a member; a parallel `anonymous_statements`
 > selector list addresses each by its AST shape (verbatim source,
@@ -155,12 +155,14 @@ pub enum BindingKind {
     Imported {
         imported_from: ChunkId,
         imported_name: String,
-        /// Each module that re-exports this binding, mapped to
-        /// the public name it gives the export. Different modules
-        /// may pick different names for the same imported binding
-        /// (e.g. one module surfaces `vendor.j` as `jsxRuntime`,
-        /// another as `__jsx`).
-        re_exported_by: BTreeMap<ModuleId, BindingName>,
+        /// The single logical module that claims this imported
+        /// binding via a `kind: import_specifier` member, and the
+        /// public name it gives the export. The spec's
+        /// duplicate-claim check rejects two modules claiming the
+        /// same import — a consumer that wants the symbol under a
+        /// different local name aliases at its own import site.
+        re_exporter: ModuleId,
+        public_name: BindingName,
     },
 }
 ```
@@ -169,9 +171,9 @@ Distinguishing the two kinds in the data model is what gives
 the validator and emitter a single source of truth for binding
 ownership: an `Owned` entry says "this logical module
 contributes this binding to the chunk's namespace"; an
-`Imported` entry says "this binding originates elsewhere; these
-modules just re-export it." Without the distinction the spec
-needs a parallel side-channel to express re-export semantics.
+`Imported` entry says "this binding originates elsewhere; this
+module re-exports it." Without the distinction the spec needs a
+parallel side-channel to express re-export semantics.
 
 ### Statements
 
@@ -1938,8 +1940,8 @@ Everything downstream needs is here:
   `owner_graph.nodes.filter(dest(owner) == M)`.
 - "What does M export" = bindings whose `Owned.owner == M`
   (under their original or rename-pass-rewritten name) plus
-  bindings whose `Imported.re_exported_by` has key `M` (under
-  the public name that map's value gives).
+  bindings whose `Imported.re_exporter == M` (under
+  `Imported.public_name`).
 - "What imports does M need" =
   - For each owner-level read edge from an owner with `dest == M`:
     - If `b` is `Owned { owner: other }`: `import b from <other>`.
@@ -1954,23 +1956,20 @@ Everything downstream needs is here:
   external chunks our schedule talks to; that's the
   `ExternalChunk(_)` nodes in `dep_graph`.
 
-The two reasons to make `BindingKind` explicit (rather than
+The reason to make `BindingKind` explicit (rather than
 collapsing imports into the same `Owned` map):
 
-1. **Re-export semantics aren't ownership.** A logical module
-   that re-exports `import { Y as X } from "<vendor>"` does
-   not own `X` — modifying our spec to "claim" `X` should not
-   rename `Y` in the vendor chunk; it should emit a re-export
-   in our logical module. A flat `BindingName → ModuleId` map
-   conflates these two cases; tagging via `Owned` vs `Imported`
-   keeps them distinct.
-2. **Multiple modules can re-export the same imported binding,
-   under different names.** Two logical modules in the same
-   chunk could both want to surface `vendor.j` (the JSX runtime),
-   one as `jsxRuntime` and another as `__jsx`. With
-   `Owned { owner }` the data model forbids this entirely; with
-   `Imported { re_exported_by: BTreeMap<ModuleId, BindingName> }`
-   each module picks its own export name independently.
+**Re-export semantics aren't ownership.** A logical module that
+re-exports `import { Y as X } from "<vendor>"` does not own
+`X` — modifying our spec to "claim" `X` should not rename `Y`
+in the vendor chunk; it should emit a re-export in our logical
+module. A flat `BindingName → ModuleId` map conflates these
+two cases; tagging via `Owned` vs `Imported` keeps them
+distinct. The validator additionally rejects duplicate claims
+of either kind, so each imported binding has exactly one
+re-exporter (a consumer that wants a different local name
+aliases at its own import site instead of authoring a separate
+re-export module).
 
 ### Identifiers are typed, not stringly-typed
 

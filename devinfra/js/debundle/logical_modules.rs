@@ -458,15 +458,14 @@ fn materialize_logical_chunk(
                         .map(|plan| plan.id.clone())
                         .unwrap_or_else(|| format!("<plan#{owner_index}>")),
                     BindingKind::Owned { owner } => format!("{owner:?}"),
-                    BindingKind::Imported { re_exported_by, .. } => re_exported_by
-                        .keys()
-                        .find_map(|m| match m {
-                            ModuleId::Logical(LogicalModuleIndex(i)) => {
-                                module_plans.get(*i).map(|p| p.id.clone())
-                            }
-                            _ => None,
-                        })
-                        .unwrap_or_else(|| "<imported>".to_string()),
+                    BindingKind::Imported {
+                        re_exporter: ModuleId::Logical(LogicalModuleIndex(re_index)),
+                        ..
+                    } => module_plans
+                        .get(*re_index)
+                        .map(|plan| plan.id.clone())
+                        .unwrap_or_else(|| format!("<plan#{re_index}>")),
+                    BindingKind::Imported { re_exporter, .. } => format!("{re_exporter:?}"),
                 };
                 bail!(
                     "Duplicate binding claim for {:?} in chunk {chunk_id:?}: already \
@@ -490,14 +489,13 @@ fn materialize_logical_chunk(
                     &member.binding,
                     &mut imported_from_by_src,
                 )?;
-                let mut re_exported_by = HashMap::new();
-                re_exported_by.insert(module_id, member.export_name.clone());
                 bindings_catalogue.insert(
                     member.binding.clone(),
                     BindingKind::Imported {
                         imported_name,
                         imported_from,
-                        re_exported_by,
+                        re_exporter: module_id,
+                        public_name: member.export_name.clone(),
                     },
                 );
             } else {
@@ -2263,38 +2261,34 @@ fn collect_imported_reexports_by_module(
     module_count: usize,
 ) -> Vec<Vec<ImportedReexport>> {
     let mut by_module: Vec<Vec<ImportedReexport>> = (0..module_count).map(|_| Vec::new()).collect();
-    // Stable iteration order on both `schedule.bindings` (HashMap)
-    // and the inner `re_exported_by` (HashMap) — the recorded
-    // sequence determines the emit order of `import { ... }`
-    // statements per module body and we want that source-level
-    // shape pinned.
+    // Stable iteration order on `schedule.bindings` (HashMap): the
+    // recorded sequence determines the emit order of
+    // `import { ... }` statements per module body and we want that
+    // source-level shape pinned.
     let mut sorted_bindings: Vec<(&BindingName, &BindingKind)> = schedule.bindings.iter().collect();
     sorted_bindings.sort_by(|a, b| a.0.cmp(b.0));
     for (local, kind) in sorted_bindings {
         let BindingKind::Imported {
             imported_name,
             imported_from,
-            re_exported_by,
+            re_exporter,
+            public_name,
         } = kind
         else {
             continue;
         };
-        let mut sorted_reexports: Vec<(&ModuleId, &BindingName)> = re_exported_by.iter().collect();
-        sorted_reexports.sort_by_key(|(id, _)| **id);
-        for (module_id, public_name) in sorted_reexports {
-            let ModuleId::Logical(LogicalModuleIndex(index)) = module_id else {
-                continue;
-            };
-            let Some(reexports) = by_module.get_mut(*index) else {
-                continue;
-            };
-            reexports.push(ImportedReexport {
-                local: local.clone(),
-                imported_name: imported_name.clone(),
-                imported_from: imported_from.clone(),
-                public_name: public_name.clone(),
-            });
-        }
+        let ModuleId::Logical(LogicalModuleIndex(index)) = re_exporter else {
+            continue;
+        };
+        let Some(reexports) = by_module.get_mut(*index) else {
+            continue;
+        };
+        reexports.push(ImportedReexport {
+            local: local.clone(),
+            imported_name: imported_name.clone(),
+            imported_from: imported_from.clone(),
+            public_name: public_name.clone(),
+        });
     }
     by_module
 }

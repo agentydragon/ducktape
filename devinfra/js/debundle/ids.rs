@@ -123,9 +123,9 @@ pub enum BindingKind {
     Owned { owner: ModuleId },
     /// Introduced by an `import { imported_name as <local> } from
     /// "<source>"` in the chunk's top-level body. The value lives in
-    /// another chunk; logical modules can re-export it under their
-    /// own public name. Multiple modules may re-export the same
-    /// imported binding (under different public names).
+    /// another chunk; exactly one logical module re-exports it under
+    /// its chosen public name (the spec's duplicate-claim check
+    /// rejects two modules claiming the same import).
     Imported {
         /// The original imported name from the source chunk (e.g. "j"
         /// for `import { j as a } from "..."`).
@@ -136,14 +136,11 @@ pub enum BindingKind {
         /// emit-time path resolution is just `relative(dest_dir,
         /// imported_from)`.
         imported_from: String,
-        /// `module → public export name` for each logical module that
-        /// re-exports this binding. Empty when no logical module
-        /// re-exports it (read-only references stay implicit and are
-        /// resolved by `source_chunk_imports_for_moved_body`).
-        /// Iteration order is undefined; emit sites sort the entries
-        /// before consuming them so the emitted import/export shape
-        /// stays deterministic.
-        re_exported_by: HashMap<ModuleId, BindingName>,
+        /// Logical module that claimed this imported binding via a
+        /// `kind: import_specifier` member.
+        re_exporter: ModuleId,
+        /// Public export name that re-exporter assigned to it.
+        public_name: BindingName,
     },
 }
 
