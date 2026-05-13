@@ -156,6 +156,7 @@ rust_library(
     name = "analysis",
     srcs = [
         "analysis_tests.rs",
+        "factorize.rs",
         "facts.rs",
         "graph.rs",
         "ids.rs",

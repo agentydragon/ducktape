@@ -1115,6 +1115,7 @@ mod tests {
                 evaluated_owner_sets: vec![],
             },
             pre_existing_entry_exports: vec![],
+            factorize: analysis::FactorizeReport::default(),
         }
     }
 
@@ -1342,6 +1343,7 @@ mod tests {
                 evaluated_owner_sets: vec![],
             },
             pre_existing_entry_exports: vec![],
+            factorize: analysis::FactorizeReport::default(),
         };
         let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
         let consumer_cell = report
@@ -1393,6 +1395,7 @@ mod tests {
                 evaluated_owner_sets: vec![],
             },
             pre_existing_entry_exports: vec!["dep".to_string()],
+            factorize: analysis::FactorizeReport::default(),
         };
         let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
         let consumer_cell = report

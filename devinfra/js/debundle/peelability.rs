@@ -53,7 +53,7 @@ struct ReverseModuleAdjEdge {
     source_idx: usize,
 }
 
-struct PeelabilityContext<'a> {
+pub(crate) struct PeelabilityContext<'a> {
     owner_edges: &'a [OwnerEdge],
     owner_out_edges: Vec<Vec<usize>>,
     owner_in_edges: Vec<Vec<usize>>,
@@ -72,22 +72,22 @@ struct CandidateGraphAdjustment {
 }
 
 #[derive(Debug, Clone)]
-struct PeelCandidateEvaluation {
-    id: String,
-    status: PeelCandidateStatus,
-    owner_ids: Vec<OwnerId>,
-    members: Vec<BindingName>,
-    constraining_owner_edge_indices: BTreeSet<usize>,
+pub(crate) struct PeelCandidateEvaluation {
+    pub(crate) id: String,
+    pub(crate) status: PeelCandidateStatus,
+    pub(crate) owner_ids: Vec<OwnerId>,
+    pub(crate) members: Vec<BindingName>,
+    pub(crate) constraining_owner_edge_indices: BTreeSet<usize>,
     /// Owner ids whose residual dependency forced the candidate into
     /// `BlockedResidualDependency`. Empty for other statuses. Surfaces
     /// in `evaluated_owner_sets[].residual_dependency_blockers` so
     /// callers can pinpoint which residual neighbor blocked the peel.
-    residual_dependency_blocker_owner_ids: Vec<OwnerId>,
+    pub(crate) residual_dependency_blocker_owner_ids: Vec<OwnerId>,
     /// Residual binding names that the candidate's moved bodies
     /// reference but entry doesn't export — populated only when
     /// `status == BlockedEmitResolvability`. SSOT'd via
     /// [`peel_emit_blocked_residual_bindings`] in `graph.rs`.
-    emit_blocked_residual_bindings: Vec<BindingName>,
+    pub(crate) emit_blocked_residual_bindings: Vec<BindingName>,
 }
 
 pub(crate) fn build_peelability_report(
@@ -344,7 +344,7 @@ fn residual_declared_for_owner(schedule: &Schedule, node: &OwnerNode) -> Vec<Bin
 }
 
 impl<'a> PeelabilityContext<'a> {
-    fn new(
+    pub(crate) fn new(
         schedule: &Schedule,
         owner_edges: &'a [OwnerEdge],
         quotient_edges: &[QuotientEdgeReport],
@@ -678,7 +678,7 @@ fn sorted_owner_pair(left: OwnerId, right: OwnerId) -> (OwnerId, OwnerId) {
     }
 }
 
-fn evaluate_residual_peel_candidate(
+pub(crate) fn evaluate_residual_peel_candidate(
     schedule: &Schedule,
     context: &PeelabilityContext<'_>,
     owner_ids: &[OwnerId],

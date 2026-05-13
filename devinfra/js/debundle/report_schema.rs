@@ -38,6 +38,15 @@ pub struct OwnerGraphReport {
     /// real pipeline runs always populate it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pre_existing_entry_exports: Vec<BindingName>,
+    /// Algorithmic peel proposer output. Always populated by
+    /// `Schedule::owner_graph_report`; empty `cells` when there
+    /// are no residual owners. Each cell carries a verdict from
+    /// the SSOT predicate in
+    /// `peelability::evaluate_residual_peel_candidate`, so
+    /// `cells[].landable_today == true` matches what
+    /// `materialize_logical_modules` would actually accept.
+    #[serde(default)]
+    pub factorize: FactorizeReport,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -193,6 +202,88 @@ pub enum PeelCandidateStatus {
     /// exported by entry" rejection — agents read this to skip
     /// candidates the materializer would reject.
     BlockedEmitResolvability,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct FactorizeOptions {
+    /// Hard ceiling (in summed source-line counts) per emitted
+    /// factorizer cell. Cells exceeding the cap are emitted whole
+    /// with `oversize: true`; the algorithm never manufactures
+    /// structural splits.
+    pub size_cap_lines: usize,
+    /// Maximum number of auto-grow iterations per cell before the
+    /// factorizer gives up and reports the cell with its current
+    /// blockers. Each iteration absorbs at most a few owners.
+    pub max_grow_iterations: usize,
+}
+
+impl Default for FactorizeOptions {
+    fn default() -> Self {
+        Self {
+            size_cap_lines: 2000,
+            max_grow_iterations: 16,
+        }
+    }
+}
+
+/// Side-channel output of `crate::factorize::build_factorize_report`,
+/// embedded in [`OwnerGraphReport::factorize`]. Carries proposed
+/// module partitions over the residual owner surface, each
+/// evaluated by the same predicate `materialize_logical_modules`
+/// uses (SSOT via `peelability::evaluate_residual_peel_candidate`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FactorizeReport {
+    pub size_cap_lines: usize,
+    pub residual_owner_count: usize,
+    #[serde(default)]
+    pub cells: Vec<FactorizeCell>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FactorizeCell {
+    pub proposed_module_id: String,
+    pub owner_ids: Vec<String>,
+    pub binding_ids: Vec<BindingName>,
+    /// Owner ids in this cell whose `declared_bindings` is empty
+    /// (anonymous side-effect statements). Lane workers materialize
+    /// these via `anonymous_statements:` entries quoting the
+    /// statement source verbatim.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub anonymous_statement_owner_ids: Vec<String>,
+    pub size_lines_estimate: usize,
+    pub size_members: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_line_range: Option<[usize; 2]>,
+    pub ordinal_span: usize,
+    /// Verdict from `peelability::evaluate_residual_peel_candidate`
+    /// applied to the cell's final owner set (after auto-grow).
+    pub status: PeelCandidateStatus,
+    /// `true` iff `status == PeelableNow`. Mirrors the materializer's
+    /// accept-this-spec predicate; a `true` cell can be promoted to
+    /// an active `.yaml` right now.
+    pub landable_today: bool,
+    /// `true` when the cell's total source-line count exceeds
+    /// `size_cap_lines` (structurally indivisible at this snapshot).
+    pub oversize: bool,
+    /// Bindings referenced by the cell's bodies that aren't on
+    /// entry's export set and the auto-grow loop couldn't absorb.
+    /// Populated only when `status == BlockedEmitResolvability`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub emit_blocked_residual_bindings: Vec<BindingName>,
+    /// Other residual owners (by owner-graph id) the cycle gate
+    /// pointed at as blockers. Populated only when
+    /// `status == BlockedCycle` or `BlockedResidualDependency`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cycle_blocker_owner_ids: Vec<String>,
+    /// Active-module ids (as in [`ModuleReportRef::id`]) the cell's
+    /// outgoing constraining edges target. Safe references — entry
+    /// auto-exports those bindings. Informational.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub active_modules_referenced: Vec<String>,
+    /// Number of auto-grow iterations the factorizer ran on this
+    /// cell before either converging (`landable_today: true`) or
+    /// hitting `max_grow_iterations`.
+    pub auto_grow_iterations: usize,
 }
 
 /// Stable value of [`ModuleReportRef::id`] for the implicit

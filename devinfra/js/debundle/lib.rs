@@ -13,6 +13,7 @@
 //! 5. Validate realizability, derive peelability, and emit reports from that
 //!    same graph model.
 
+mod factorize;
 mod facts;
 mod graph;
 mod ids;
@@ -24,6 +25,7 @@ mod reports;
 mod schedule;
 mod validation;
 
+pub use factorize::build_factorize_report;
 pub use facts::{
     ChunkFactAnalysis, StatementFacts, StatementKind, analyze_chunk_facts,
     analyze_chunk_facts_with_source_locations, analyze_chunk_with_source_locations,
@@ -40,10 +42,10 @@ pub use ids::{
 pub use partition::Partition;
 pub use purity::{Purity, PurityReason, PurityRule, RedundantPurityHint, RedundantPurityReason};
 pub use report_schema::{
-    BindingReport, EvaluatedPeelCandidateReport, ModuleReportRef, OwnerGraphEdgeReport,
-    OwnerGraphNodeReport, OwnerGraphPeelSetReport, OwnerGraphPeelabilityReport,
-    OwnerGraphQuotientReport, OwnerGraphReport, PeelCandidateStatus, QuotientEdgeReport,
-    QuotientSccReport, RESIDUAL_ENTRY_LABEL, RESIDUAL_ENTRY_MODULE_ID,
+    BindingReport, EvaluatedPeelCandidateReport, FactorizeCell, FactorizeOptions, FactorizeReport,
+    ModuleReportRef, OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphPeelSetReport,
+    OwnerGraphPeelabilityReport, OwnerGraphQuotientReport, OwnerGraphReport, PeelCandidateStatus,
+    QuotientEdgeReport, QuotientSccReport, RESIDUAL_ENTRY_LABEL, RESIDUAL_ENTRY_MODULE_ID,
     ResidualOwnerCompanionOptionReport, ResidualOwnerPeelHorizonReport, ResidualOwnerPeelStatus,
     SourceLocation,
 };

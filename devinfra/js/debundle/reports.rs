@@ -66,6 +66,13 @@ pub(crate) fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport 
         },
         peelability,
         pre_existing_entry_exports,
+        // Filled in by
+        // `Schedule::owner_graph_report_with_factorize_options`
+        // after this function returns. The default value is the
+        // empty report (no cells); the schedule unconditionally
+        // overwrites it with the real factorize verdict so JSON
+        // consumers always see a populated `factorize` block.
+        factorize: crate::FactorizeReport::default(),
     }
 }
 
@@ -113,7 +120,7 @@ fn build_quotient_node_reports(schedule: &Schedule) -> Vec<ModuleReportRef> {
         .collect()
 }
 
-fn build_quotient_edge_reports(
+pub(crate) fn build_quotient_edge_reports(
     schedule: &Schedule,
     owner_edges: &[OwnerEdge],
 ) -> Vec<QuotientEdgeReport> {
