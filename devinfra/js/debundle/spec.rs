@@ -52,6 +52,17 @@ pub struct TransformSpec {
     /// for those.
     #[serde(default)]
     pub chunk_renames: BTreeMap<String, ChunkRenames>,
+    /// Per-chunk control over what happens to top-level statements
+    /// the spec doesn't explicitly claim for any logical module.
+    /// `catchall` (default) keeps today's behavior — everything
+    /// unclaimed materializes through `ModuleId::ResidualEntry` and
+    /// the chunk's entry file holds the residual body.
+    /// `mini_factors` instead synthesizes one logical module per
+    /// unclaimed atomic factor unit, so the residual catch-all
+    /// collapses to whatever truly cannot be peeled. See
+    /// FACTORIZE.md Stage 2.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub unassigned_mode: BTreeMap<String, UnassignedMode>,
 
     // --- per-stage configuration ---
     /// Output configuration for `swap_vendor_chunks`. The stage runs
@@ -208,6 +219,27 @@ pub enum VendorLevel {
     Suppress,
     BoundaryRename,
     Swap(SwapMark),
+}
+
+/// What [`TransformSpec::unassigned_mode`] means for a chunk's
+/// top-level statements that the YAML doesn't explicitly claim for
+/// any logical module. The atomic-factor-unit primitive in
+/// `analysis::atomic_units` partitions the chunk's owners into
+/// minimal co-location groups; this enum decides what destination
+/// each *unclaimed* unit lands in.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum UnassignedMode {
+    /// Everything unclaimed funnels into the chunk's residual entry
+    /// (`ModuleId::ResidualEntry`); a single catch-all module holds
+    /// the leftover body. Default. Today's behavior.
+    #[default]
+    Catchall,
+    /// Each unclaimed atomic factor unit becomes its own synthetic
+    /// logical module. The residual catch-all collapses to whatever
+    /// truly cannot be peeled (typically empty for clean chunks).
+    /// See FACTORIZE.md Stage 2.
+    MiniFactors,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

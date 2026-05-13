@@ -819,6 +819,7 @@ mod tests {
             logical_modules: BTreeMap::new(),
             residual_modules: BTreeMap::new(),
             chunk_renames: BTreeMap::new(),
+            unassigned_mode: BTreeMap::new(),
             swap_vendor_chunks: SwapVendorChunksConfig::default(),
             materialize_logical_modules: MaterializeLogicalModulesConfig::default(),
             write_js_tree: None,

@@ -108,6 +108,7 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
         logical_modules: logical_modules_map(module_sources)?,
         residual_modules: BTreeMap::new(),
         chunk_renames: chunk_renames_map(&config.main_chunk_id, deferred_members),
+        unassigned_mode: BTreeMap::new(),
         swap_vendor_chunks: SwapVendorChunksConfig {
             output_manifest_path: Some(layout.vendor_manifest_path.clone()),
             output_wrapper_dir: Some(layout.vendor_wrapper_root.clone()),
