@@ -2444,6 +2444,95 @@ mod tests {
         );
     }
 
+    fn atomic_units_for(source: &str) -> Vec<AtomicUnit> {
+        let module = parse(source);
+        let facts = analyze_chunk_facts(&module, &BTreeSet::new());
+        let owner_graph = build_owner_graph(&facts);
+        compute_atomic_units(&owner_graph)
+    }
+
+    fn unit_sizes(units: &[AtomicUnit]) -> Vec<usize> {
+        let mut sizes: Vec<usize> = units.iter().map(|u| u.members.len()).collect();
+        sizes.sort_unstable();
+        sizes
+    }
+
+    fn assert_partitions_all_owners(units: &[AtomicUnit], total_owners: usize) {
+        let summed: usize = units.iter().map(|u| u.members.len()).sum();
+        assert_eq!(
+            summed, total_owners,
+            "atomic units must cover every owner exactly once; got units {units:?}",
+        );
+        let mut seen = BTreeSet::new();
+        for unit in units {
+            for owner in &unit.members {
+                assert!(
+                    seen.insert(*owner),
+                    "owner {owner:?} appears in more than one atomic unit",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn atomic_units_singletons_for_independent_owners() {
+        // No edges → each owner is its own atomic unit.
+        let units = atomic_units_for("const A = 1; const B = 2; const C = 3;");
+        assert_partitions_all_owners(&units, 3);
+        assert_eq!(unit_sizes(&units), vec![1, 1, 1]);
+    }
+
+    #[test]
+    fn atomic_units_eager_use_chain_stays_split() {
+        // A → B → C via EagerUse: directed-only edges, no cycle, so
+        // each owner remains its own unit.
+        let units = atomic_units_for("const C = 3; const B = C + 1; const A = B + 1;");
+        assert_partitions_all_owners(&units, 3);
+        assert_eq!(unit_sizes(&units), vec![1, 1, 1]);
+    }
+
+    #[test]
+    fn atomic_units_eager_use_cycle_merges() {
+        // A and B form an EagerUse cycle → must co-locate.
+        let units = atomic_units_for("const A = B + 1; const B = A + 1;");
+        assert_partitions_all_owners(&units, 2);
+        assert_eq!(unit_sizes(&units), vec![2]);
+    }
+
+    #[test]
+    fn atomic_units_lazy_use_cycle_stays_split() {
+        // Two functions that reference each other lazily plus their
+        // bindings — no constraining edges, so all four owners are
+        // independent units.
+        let units = atomic_units_for(
+            "function helperA() { return B; } function helperB() { return A; } const A = 1; const B = 2;",
+        );
+        assert_partitions_all_owners(&units, 4);
+        assert_eq!(unit_sizes(&units), vec![1, 1, 1, 1]);
+    }
+
+    #[test]
+    fn atomic_units_sequenced_edges_merge_bidirectionally() {
+        // Three side-effecting top-level statements form a Sequenced
+        // chain. Sequenced edges are bidirectional in `G_atomic`, so
+        // all three owners collapse into a single unit.
+        let units = atomic_units_for(
+            r#"const a1 = (globalThis.tag = "a1", 1); const b1 = (globalThis.tag = "b1", 2); const a2 = (globalThis.tag = "a2", 3);"#,
+        );
+        assert_partitions_all_owners(&units, 3);
+        assert_eq!(unit_sizes(&units), vec![3]);
+    }
+
+    #[test]
+    fn atomic_units_lazy_rebind_merges() {
+        // `let A = 0; function B() { A = 1; }` produces a LazyRebind
+        // edge from B → A. LazyRebind is bidirectional in `G_atomic`,
+        // so A and B collapse into one unit.
+        let units = atomic_units_for("let A = 0; function B() { A = 1; }");
+        assert_partitions_all_owners(&units, 2);
+        assert_eq!(unit_sizes(&units), vec![2]);
+    }
+
     #[test]
     fn schedule_report_serializes_linker_order_as_snake_case() {
         let schedule = schedule_for(

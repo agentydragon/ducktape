@@ -13,6 +13,7 @@
 //! 5. Validate realizability, derive peelability, and emit reports from that
 //!    same graph model.
 
+mod atomic_units;
 mod factorize;
 mod facts;
 mod graph;
@@ -25,6 +26,7 @@ mod reports;
 mod schedule;
 mod validation;
 
+pub use atomic_units::{AtomicUnit, compute_atomic_units};
 pub use factorize::build_factorize_report;
 pub use facts::{
     ChunkFactAnalysis, StatementFacts, StatementKind, analyze_chunk_facts,
