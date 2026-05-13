@@ -402,8 +402,11 @@ fn needs_ast_for_chunk(
         return true;
     }
 
-    // Chunk with residual modules needs AST
-    if spec.residual_modules.contains_key(chunk_id) {
+    // Chunk with a non-default unassigned-mode policy needs AST
+    // (CatchallFile emits a residual logical module; MiniFactors
+    // synthesizes mini-factor modules — both require the chunk
+    // body parsed for materialisation).
+    if spec.unassigned_mode.contains_key(chunk_id) {
         return true;
     }
 

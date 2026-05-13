@@ -106,7 +106,6 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
         },
         vendor: vendor_map(read_yaml::<VendorMarksFile>(&options.vendor_marks_path)?.vendor_marks)?,
         logical_modules: logical_modules_map(module_sources)?,
-        residual_modules: BTreeMap::new(),
         chunk_renames: chunk_renames_map(&config.main_chunk_id, deferred_members),
         unassigned_mode: BTreeMap::new(),
         swap_vendor_chunks: SwapVendorChunksConfig {

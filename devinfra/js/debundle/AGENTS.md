@@ -513,8 +513,12 @@ structs in <spec.rs>.
 - `logical_modules` — keyed by chunk id, then target path (`"static/app"` →
   `"foo/bar/baz.js"` → `LogicalModule`). Two-level nesting makes
   `(chunk_id, target_path)` uniqueness a parser property.
-- `residual_modules` — keyed by chunk id (`"static/app"` → `ResidualModule`).
-  The map shape encodes the "at most one residual per chunk" invariant.
+- `unassigned_mode` — keyed by chunk id (`"static/app"` → `UnassignedMode`).
+  Per-chunk policy for top-level statements no `logical_modules` entry
+  explicitly claims: `inline_in_entry` (default — keep in entry),
+  `catchall_file { target }` (emit to a separate logical module at `target`,
+  defaulting to `residual/unhandled`), or `mini_factors` (one synthetic
+  logical module per atomic factor unit).
 - `chunk_renames` — keyed by chunk id, then binding name. These are in-place
   readability renames for bindings that remain in the chunk entry.
 
