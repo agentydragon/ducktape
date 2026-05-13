@@ -251,7 +251,11 @@ pub(crate) fn render_assembly_conflict_summary(
                 member_owner_ids,
                 conflicting_modules,
                 claims,
-                causes: conflict.causes.iter().copied().collect(),
+                causes: {
+                    let mut causes: Vec<DepKind> = conflict.causes.iter().copied().collect();
+                    causes.sort();
+                    causes
+                },
             }
         })
         .collect()

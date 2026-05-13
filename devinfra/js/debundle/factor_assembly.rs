@@ -29,7 +29,7 @@
 //!
 //! See `FACTORIZE.md` for the broader architecture.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{HashMap, HashSet};
 
 use crate::atomic_units::AtomicUnit;
 use crate::graph::{DepKind, OwnerGraph, OwnerId};
@@ -65,7 +65,7 @@ pub struct AtomicUnitConflict {
     /// diagnostic uses this to tell the spec author whether to look
     /// at an EagerUse / EagerRebind cycle, a LazyRebind, or a
     /// Sequenced side-effect chain.
-    pub causes: BTreeSet<DepKind>,
+    pub causes: HashSet<DepKind>,
 }
 
 /// Result of one chunk's factor assembly: the authoritative partition
@@ -164,8 +164,19 @@ fn detect_unit_conflict(
             (*owner, dest)
         })
         .collect();
-    let distinct: BTreeSet<ModuleId> = resolved.iter().map(|(_, m)| *m).collect();
-    if distinct.len() < 2 {
+    let mut first: Option<ModuleId> = None;
+    let mut has_distinct = false;
+    for &(_, m) in &resolved {
+        match first {
+            None => first = Some(m),
+            Some(existing) if existing != m => {
+                has_distinct = true;
+                break;
+            }
+            _ => {}
+        }
+    }
+    if !has_distinct {
         return None;
     }
 
@@ -202,8 +213,8 @@ fn detect_unit_conflict(
 /// where both endpoints belong to `unit`. The set indicates what
 /// forced the unit's members together — see the closure rules at the
 /// top of `atomic_units.rs`.
-fn constraining_causes_within(unit: &AtomicUnit, owner_graph: &OwnerGraph) -> BTreeSet<DepKind> {
-    let mut causes = BTreeSet::new();
+fn constraining_causes_within(unit: &AtomicUnit, owner_graph: &OwnerGraph) -> HashSet<DepKind> {
+    let mut causes = HashSet::new();
     for edge in owner_graph.iter_edges() {
         if edge.from == edge.to {
             continue;
