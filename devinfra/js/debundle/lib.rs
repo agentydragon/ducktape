@@ -27,7 +27,9 @@ mod reports;
 mod schedule;
 mod validation;
 
-pub use atomic_units::{AtomicUnit, compute_atomic_units};
+pub use atomic_units::{
+    AtomicUnit, OwnerGraphAndUnits, compute_atomic_units, compute_owner_graph_and_units,
+};
 pub use factor_assembly::{
     AssemblyOutcome, AtomicUnitConflict, ConflictingClaim, assemble_partition,
 };

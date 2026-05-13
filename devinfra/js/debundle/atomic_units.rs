@@ -22,7 +22,8 @@ use std::collections::{BTreeSet, HashSet};
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 
-use crate::graph::{DepKind, OwnerGraph, OwnerId};
+use crate::facts::StatementFacts;
+use crate::graph::{DepKind, OwnerGraph, OwnerId, build_owner_graph};
 
 /// One atomic factor unit: a set of owners that any valid
 /// factorization must keep co-located, plus the `DepKind`s of the
@@ -33,6 +34,28 @@ use crate::graph::{DepKind, OwnerGraph, OwnerId};
 pub struct AtomicUnit {
     pub members: BTreeSet<OwnerId>,
     pub causes: HashSet<DepKind>,
+}
+
+/// Owner graph plus its precomputed atomic units. Bundled so a single
+/// chunk-level computation pays the Tarjan/SCC cost once and threads
+/// the result through `synthesize_mini_factor_plans` →
+/// [`crate::Schedule::build_with`] (peelability also re-uses the
+/// units cached on `Schedule.owner_graph` separately).
+#[derive(Debug, Clone)]
+pub struct OwnerGraphAndUnits {
+    pub owner_graph: OwnerGraph,
+    pub atomic_units: Vec<AtomicUnit>,
+}
+
+/// Build an owner graph from chunk facts and immediately compute its
+/// atomic units. Convenience for call sites that need both.
+pub fn compute_owner_graph_and_units(facts: &[StatementFacts]) -> OwnerGraphAndUnits {
+    let owner_graph = build_owner_graph(facts);
+    let atomic_units = compute_atomic_units(&owner_graph);
+    OwnerGraphAndUnits {
+        owner_graph,
+        atomic_units,
+    }
 }
 
 /// Compute atomic factor units for an owner graph. Returns one unit

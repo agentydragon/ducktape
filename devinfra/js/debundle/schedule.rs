@@ -3,9 +3,9 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use petgraph::algo::toposort;
 use petgraph::graphmap::DiGraphMap;
 
-use crate::atomic_units::compute_atomic_units;
+use crate::atomic_units::{OwnerGraphAndUnits, compute_owner_graph_and_units};
 use crate::factor_assembly::{AtomicUnitConflict, assemble_partition};
-use crate::graph::{build_module_quotient, build_owner_graph};
+use crate::graph::build_module_quotient;
 use crate::partition::Partition;
 use crate::reports::{build_owner_graph_report, owner_key};
 use crate::validation::{render_assembly_conflict_summary, validate_schedule};
@@ -97,6 +97,11 @@ impl Schedule {
     /// spec-derived logical modules. `bindings` should already have
     /// every `Owned` binding the spec assigned and every `Imported`
     /// binding the spec re-exports.
+    ///
+    /// Convenience constructor: computes the owner graph and atomic
+    /// units internally. Call sites that already have those precomputed
+    /// (e.g. the materializer reuses them for mini-factor synthesis)
+    /// should call [`Self::build_with`] instead.
     pub fn build(
         chunk_id: String,
         facts: Vec<StatementFacts>,
@@ -104,8 +109,33 @@ impl Schedule {
         logical_modules: Vec<LogicalModule>,
         chunk_renames: HashMap<BindingName, BindingName>,
     ) -> Self {
-        let owner_graph = build_owner_graph(&facts);
-        let atomic_units = compute_atomic_units(&owner_graph);
+        let precomputed = compute_owner_graph_and_units(&facts);
+        Self::build_with(
+            chunk_id,
+            facts,
+            precomputed,
+            bindings,
+            logical_modules,
+            chunk_renames,
+        )
+    }
+
+    /// Build a schedule reusing a caller-computed owner graph + atomic
+    /// units. The materializer computes these once per chunk for
+    /// mini-factor synthesis and passes them in here so `Schedule`
+    /// doesn't redo the work.
+    pub fn build_with(
+        chunk_id: String,
+        facts: Vec<StatementFacts>,
+        precomputed: OwnerGraphAndUnits,
+        bindings: HashMap<BindingName, BindingKind>,
+        logical_modules: Vec<LogicalModule>,
+        chunk_renames: HashMap<BindingName, BindingName>,
+    ) -> Self {
+        let OwnerGraphAndUnits {
+            owner_graph,
+            atomic_units,
+        } = precomputed;
         let outcome = assemble_partition(&owner_graph, &atomic_units, &bindings, &logical_modules);
         let partition = outcome.partition;
         let assembly_conflicts = outcome.conflicts;

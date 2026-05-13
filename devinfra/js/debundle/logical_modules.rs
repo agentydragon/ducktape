@@ -13,9 +13,9 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use analysis::{
     AtomicUnitConflictReport, BindingKind, BindingName, DepKind,
-    LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId, OwnerId,
-    RedundantPurityHint, RedundantPurityReason, Schedule, StatementFacts,
-    analyze_chunk_with_source_locations, build_owner_graph, compute_atomic_units,
+    LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits,
+    OwnerId, RedundantPurityHint, RedundantPurityReason, Schedule,
+    analyze_chunk_with_source_locations, compute_owner_graph_and_units,
     render_atomic_unit_conflict_summary, render_cycle_summary,
 };
 use artifact::{
@@ -716,10 +716,13 @@ fn materialize_logical_chunk(
                 ordinal = ord.0,
             );
         }
+        let precomputed = time_phase!(timings, "compute_owner_graph_and_units", {
+            compute_owner_graph_and_units(&analysis.facts)
+        });
         if matches!(chunk_unassigned_mode, UnassignedMode::MiniFactors) {
             time_phase!(timings, "synthesize_mini_factor_plans", {
                 synthesize_mini_factor_plans(
-                    &analysis.facts,
+                    &precomputed,
                     &runtime_ast.module.body,
                     residual_plan_index,
                     &mut module_plans,
@@ -760,9 +763,10 @@ fn materialize_logical_chunk(
             });
         let redundant_purity_hints = analysis.redundant_purity_hints;
         let schedule = time_phase!(timings, "build_schedule", {
-            Schedule::build(
+            Schedule::build_with(
                 chunk_id.to_string(),
                 analysis.facts,
+                precomputed,
                 bindings_catalogue,
                 logical_modules,
                 chunk_renames_map.clone(),
@@ -1846,7 +1850,7 @@ fn body_index_for_statement_ordinal(body: &[ModuleItem], stmt_ordinal: usize) ->
 /// member `OwnerId` so the names are stable run-to-run.
 #[allow(clippy::too_many_arguments)]
 fn synthesize_mini_factor_plans(
-    facts: &[StatementFacts],
+    precomputed: &OwnerGraphAndUnits,
     body: &[ModuleItem],
     residual_plan_index: Option<usize>,
     module_plans: &mut Vec<ModulePlan>,
@@ -1855,8 +1859,8 @@ fn synthesize_mini_factor_plans(
     anonymous_ordinal_assignment: &mut BTreeMap<usize, usize>,
     target_dir: &str,
 ) -> Result<()> {
-    let owner_graph = build_owner_graph(facts);
-    let atomic_units = compute_atomic_units(&owner_graph);
+    let owner_graph = &precomputed.owner_graph;
+    let atomic_units = &precomputed.atomic_units;
     let mut owner_declared_names: HashMap<OwnerId, Vec<BindingName>> = HashMap::new();
     let mut owner_statement_ordinal: HashMap<OwnerId, usize> = HashMap::new();
     for node in owner_graph.iter_nodes() {
