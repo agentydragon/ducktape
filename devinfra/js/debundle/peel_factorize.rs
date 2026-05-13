@@ -63,7 +63,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use analysis::{DepKind, OwnerGraphReport};
+use analysis::{DepKind, OwnerGraphReport, RESIDUAL_ENTRY_MODULE_ID};
 use spec_modules::{load_active_claims, load_deferred_groups};
 
 #[derive(Debug, Clone)]
@@ -208,8 +208,9 @@ pub fn factorize(
         .map(|(i, node)| (node.id.as_str(), i))
         .collect();
 
-    // Residual = owners whose post-spec destination is
-    // `<residual_entry>`. This includes:
+    // Residual = owners whose post-spec destination is the
+    // implicit `<residual_entry>` (ModuleId::ResidualEntry). This
+    // includes:
     // - Owners with declared bindings not (yet) claimed by an
     //   active YAML (the obvious case).
     // - Owners with no declared bindings (anonymous side-effect
@@ -217,14 +218,18 @@ pub fn factorize(
     //   constraining edges; the cycle gate counts them, so the
     //   factorizer must too.
     //
-    // The materializer's own `destination.residual` flag is the
-    // authoritative answer for both cases — sourced from the
-    // partition the spec compiler produced for this owner_graph.
+    // We gate on `destination.id == RESIDUAL_ENTRY_MODULE_ID`
+    // rather than the more permissive `destination.residual`
+    // boolean: the latter is also true for explicit `Logical(R)`
+    // residual catch-all modules (spec-author-configured), whose
+    // bindings are claimed and NOT factorizable. Matches the
+    // analyzer's `peel_emit_blocked_residual_bindings` (SSOT)
+    // which uses `ModuleId::ResidualEntry` exclusively.
     let residual: BTreeSet<usize> = graph
         .nodes
         .iter()
         .enumerate()
-        .filter(|(_, node)| node.destination.residual)
+        .filter(|(_, node)| node.destination.id == RESIDUAL_ENTRY_MODULE_ID)
         .map(|(i, _)| i)
         .collect();
 
@@ -683,13 +688,16 @@ fn emit_proposals(
 
     // Entry exports as the materializer would see them today (pre-
     // any-promotion-from-this-factorizer-run). Pre-existing source
-    // exports plus auto-added bindings of currently-non-residual
-    // owners. Mirrors
-    // `Schedule::entry_exported_binding_names()`'s post-Owned cache.
+    // exports plus auto-added bindings of currently-moved owners
+    // (any owner whose destination is NOT `<residual_entry>`,
+    // i.e. either a logical module or an explicit residual catch-
+    // all — both get auto-added `export {name}` from entry).
+    // Mirrors `Schedule::entry_exported_binding_names()`'s
+    // post-Owned cache.
     let mut entry_exports_today: BTreeSet<String> =
         graph.pre_existing_entry_exports.iter().cloned().collect();
     for node in &graph.nodes {
-        if !node.destination.residual {
+        if node.destination.id != RESIDUAL_ENTRY_MODULE_ID {
             for binding in &node.declared_bindings {
                 entry_exports_today.insert(binding.binding.clone());
             }
@@ -903,11 +911,15 @@ fn build_proposal(cell_idx: usize, cell: &Cell, ctx: &ProposalContext) -> Factor
                 continue;
             }
             let target_node = &ctx.graph.nodes[*target_idx];
-            // Edges to non-residual destinations (currently active
-            // modules) are safe — those modules materialize before
-            // residual_entry, and their bindings are already on
-            // entry's auto-export set.
-            if !target_node.destination.residual {
+            // Only edges into the implicit `<residual_entry>` can
+            // be emit-blocked: edges to active logical modules
+            // (including explicit `Logical(R)` residual catch-alls)
+            // resolve through normal cross-module imports, NOT
+            // through entry's auto-export set. Mirrors the
+            // analyzer's `peel_emit_blocked_residual_bindings`
+            // predicate (SSOT in graph.rs) which uses
+            // `ModuleId::ResidualEntry` exclusively.
+            if target_node.destination.id != RESIDUAL_ENTRY_MODULE_ID {
                 continue;
             }
             let Some(binding) = ctx.graph.edges[edge_idx].binding.as_deref() else {
@@ -977,8 +989,9 @@ mod tests {
     use analysis::{
         BindingReport, DepKind, ModuleReportRef, OwnerGraphEdgeReport, OwnerGraphNodeReport,
         OwnerGraphPeelabilityReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity,
-        SourceLocation, StatementKind, StatementOrdinal,
+        RESIDUAL_ENTRY_LABEL, SourceLocation, StatementKind, StatementOrdinal,
     };
+    use spec::DEFAULT_RESIDUAL_MODULE_PATH;
 
     fn binding(name: &str) -> BindingReport {
         BindingReport {
@@ -988,10 +1001,19 @@ mod tests {
     }
 
     fn module_ref(label: &str) -> ModuleReportRef {
+        // Match the production `module_key` shape: the implicit
+        // residual entry's id is `RESIDUAL_ENTRY_MODULE_ID`, not
+        // the path-style `DEFAULT_RESIDUAL_MODULE_PATH` label some
+        // test fixtures use as a catch-all sentinel.
+        let is_residual = label == DEFAULT_RESIDUAL_MODULE_PATH || label == RESIDUAL_ENTRY_LABEL;
         ModuleReportRef {
-            id: label.to_string(),
+            id: if is_residual {
+                RESIDUAL_ENTRY_MODULE_ID.to_string()
+            } else {
+                label.to_string()
+            },
             label: label.to_string(),
-            residual: label == "residual/unhandled",
+            residual: is_residual,
             index: None,
             target_file: None,
         }
@@ -1003,7 +1025,13 @@ mod tests {
         bindings: &[&str],
         lines: usize,
     ) -> OwnerGraphNodeReport {
-        owner_at(id, ordinal_value, bindings, lines, "residual/unhandled")
+        owner_at(
+            id,
+            ordinal_value,
+            bindings,
+            lines,
+            DEFAULT_RESIDUAL_MODULE_PATH,
+        )
     }
 
     fn owner_in_active_module(
@@ -1253,6 +1281,169 @@ mod tests {
         // Active edges are safe — promoting this cell today wouldn't
         // create a cycle, and `c` is on entry's auto-export set
         // because its current destination is an active module.
+        assert!(cell.landable_today);
+    }
+
+    #[test]
+    fn factorize_flags_anonymous_side_effect_owners_in_their_cells() {
+        // Cell formed from one anonymous side-effect owner (no
+        // declared_bindings) + one bindings-bearing owner via a
+        // constraining sequenced edge between them. The factorizer
+        // should:
+        // - Include the anonymous owner as a residual cell member
+        //   (post-PR scoping uses destination.residual, not the
+        //   declared_bindings emptiness).
+        // - Surface its id under `anonymous_statement_owner_ids`.
+        // `anon` has no declared bindings — that's what makes the
+        // factorizer treat it as an anonymous statement.
+        let graph = empty_graph(
+            vec![owner("anon", 1, &[], 5), owner("a", 2, &["a"], 10)],
+            vec![edge("e1", "anon", "a", DepKind::Sequenced, true)],
+        );
+        let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
+        assert_eq!(report.proposals.len(), 1);
+        let cell = &report.proposals[0];
+        assert_eq!(cell.size_members, 2);
+        assert_eq!(cell.anonymous_statement_owner_ids, vec!["anon".to_string()]);
+        assert_eq!(cell.binding_ids, vec!["a".to_string()]);
+    }
+
+    #[test]
+    fn factorize_flags_emit_blocked_residual_binding_and_marks_cell_not_landable() {
+        // Owner `consumer` (residual) has a non-constraining
+        // outgoing edge to residual binding `dep` (also residual,
+        // in its own cell). `dep` is NOT in the graph's
+        // `pre_existing_entry_exports`. Expected: `consumer`'s
+        // cell is `landable_today: false` with `dep` surfaced
+        // under `emit_blocked_residual_bindings`.
+        let graph = OwnerGraphReport {
+            chunk_id: "x".to_string(),
+            nodes: vec![
+                owner("consumer", 1, &["consumer"], 10),
+                owner("dep", 2, &["dep"], 5),
+            ],
+            edges: vec![edge_for_binding(
+                "e1",
+                "consumer",
+                "dep",
+                DepKind::LazyUse,
+                false,
+                Some("dep"),
+            )],
+            quotient: OwnerGraphQuotientReport {
+                nodes: vec![],
+                edges: vec![],
+                sccs: vec![],
+            },
+            peelability: OwnerGraphPeelabilityReport {
+                residual_destinations: vec![],
+                minimal_peel_sets: vec![],
+                residual_owner_horizon: vec![],
+                evaluated_owner_sets: vec![],
+            },
+            pre_existing_entry_exports: vec![],
+        };
+        let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
+        let consumer_cell = report
+            .proposals
+            .iter()
+            .find(|p| p.binding_ids.contains(&"consumer".to_string()))
+            .expect("consumer cell");
+        assert!(
+            !consumer_cell.landable_today,
+            "consumer reads `dep` (non-exported residual) — must NOT be landable; \
+             got cell={consumer_cell:?}",
+        );
+        assert_eq!(
+            consumer_cell.emit_blocked_residual_bindings,
+            vec!["dep".to_string()],
+        );
+    }
+
+    #[test]
+    fn factorize_treats_dep_in_pre_existing_entry_exports_as_safe() {
+        // Same shape as the emit-blocked test, but `dep` is in the
+        // graph's `pre_existing_entry_exports` (upstream source
+        // exports it). Expected: consumer's cell is landable —
+        // the materializer would resolve the reference via entry's
+        // existing export.
+        let graph = OwnerGraphReport {
+            chunk_id: "x".to_string(),
+            nodes: vec![
+                owner("consumer", 1, &["consumer"], 10),
+                owner("dep", 2, &["dep"], 5),
+            ],
+            edges: vec![edge_for_binding(
+                "e1",
+                "consumer",
+                "dep",
+                DepKind::LazyUse,
+                false,
+                Some("dep"),
+            )],
+            quotient: OwnerGraphQuotientReport {
+                nodes: vec![],
+                edges: vec![],
+                sccs: vec![],
+            },
+            peelability: OwnerGraphPeelabilityReport {
+                residual_destinations: vec![],
+                minimal_peel_sets: vec![],
+                residual_owner_horizon: vec![],
+                evaluated_owner_sets: vec![],
+            },
+            pre_existing_entry_exports: vec!["dep".to_string()],
+        };
+        let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
+        let consumer_cell = report
+            .proposals
+            .iter()
+            .find(|p| p.binding_ids.contains(&"consumer".to_string()))
+            .expect("consumer cell");
+        assert!(
+            consumer_cell.landable_today,
+            "with `dep` in pre_existing_entry_exports the reference is safe; \
+             got cell={consumer_cell:?}",
+        );
+        assert!(consumer_cell.emit_blocked_residual_bindings.is_empty());
+    }
+
+    #[test]
+    fn factorize_auto_unions_residual_cells_connected_by_rebind_edges() {
+        // Mutable binding `m` declared by owner_m. Owner_w writes
+        // `m` (a rebind edge w → m). Both residual. No
+        // constraining init-order edges. Without rebind-aware
+        // union, the factorizer would emit two singleton cells
+        // and the rebind would be flagged as cross-destination.
+        // With the union, they end up in one cell that lands.
+        let graph = empty_graph(
+            vec![
+                owner("owner_m", 1, &["m"], 5),
+                owner("owner_w", 2, &["w"], 5),
+            ],
+            vec![edge_for_binding(
+                "e1",
+                "owner_w",
+                "owner_m",
+                DepKind::LazyRebind,
+                false,
+                Some("m"),
+            )],
+        );
+        let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
+        assert_eq!(
+            report.proposals.len(),
+            1,
+            "rebind edge must auto-union the cells",
+        );
+        let cell = &report.proposals[0];
+        assert_eq!(cell.size_members, 2);
+        assert!(
+            cell.cross_destination_rebind_bindings.is_empty(),
+            "after auto-union the rebind is internal, not cross-cell; \
+             got {:?}",
+            cell.cross_destination_rebind_bindings,
+        );
         assert!(cell.landable_today);
     }
 

@@ -273,11 +273,18 @@ pub struct AnonymousStatement {
     pub note: Option<String>,
 }
 
+/// Default value the [`ResidualModule::target`] path falls back
+/// to when the spec author omits it. SSOT consumed by the
+/// materializer (`logical_modules::build_residual_module`) and
+/// by analysis tools that want to match the canonical residual
+/// catch-all path.
+pub const DEFAULT_RESIDUAL_MODULE_PATH: &str = "residual/unhandled";
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResidualModule {
     /// Logical-module path the residual catch-all writes to. Defaults to
-    /// `"residual/unhandled"` when absent.
+    /// [`DEFAULT_RESIDUAL_MODULE_PATH`] when absent.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub target: Option<String>,

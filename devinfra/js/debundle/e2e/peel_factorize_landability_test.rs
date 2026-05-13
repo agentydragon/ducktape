@@ -57,10 +57,16 @@ const c = b + 2;
 export { a, b, c };
 "#;
 
-    let opts = FixtureOpts::new(
+    let mut opts = FixtureOpts::new(
         chunk_source,
         vec![logical_module("anchors/a", &[Member::new("a")])],
     );
+    // The factorizer's residual scope is `ModuleId::ResidualEntry`
+    // exclusively (matches the analyzer's SSOT predicate). The
+    // fixture's default `include_residual: true` would emit a
+    // `Logical(R)` residual catch-all instead, putting `b` and `c`
+    // in a logical module rather than the residual entry.
+    opts.include_residual = false;
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
@@ -106,15 +112,23 @@ fn factorizer_marks_emit_blocked_cell_not_landable() {
     // `consumer` to an active module would emit
     // `import { dep } from "entry"` — but entry doesn't export
     // `dep`. The factorizer's emit-resolvability check should flag
-    // `dep` in `emit_blocked_residual_bindings`; the materializer
-    // rejects the corresponding promotion spec with the matching
-    // error message.
-    let chunk_source = r#"const dep = "secret";
+    // `dep` in `emit_blocked_residual_bindings`.
+    //
+    // `anchor` exists so the chunk has at least one active
+    // logical module (the spec rejects all-residual chunks);
+    // `dep` and `consumer` stay in the residual entry via
+    // `include_residual: false`.
+    let chunk_source = r#"const anchor = "anchor";
+const dep = "secret";
 function consumer() { return dep; }
-export { consumer };
+export { anchor, consumer };
 "#;
 
-    let opts = FixtureOpts::new(chunk_source, vec![]);
+    let mut opts = FixtureOpts::new(
+        chunk_source,
+        vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
+    );
+    opts.include_residual = false;
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));

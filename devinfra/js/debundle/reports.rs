@@ -7,7 +7,7 @@ use crate::peelability::build_peelability_report;
 use crate::{
     BindingId, BindingName, BindingReport, DepKind, LogicalModuleIndex, ModuleId, ModuleReportRef,
     OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport,
-    OwnerId, QuotientEdgeReport, QuotientSccReport, Schedule,
+    OwnerId, QuotientEdgeReport, QuotientSccReport, RESIDUAL_ENTRY_MODULE_ID, Schedule,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -234,13 +234,13 @@ pub(crate) fn owner_key(id: OwnerId) -> String {
 
 pub(crate) fn module_key(id: ModuleId) -> String {
     match id {
-        ModuleId::ResidualEntry => "residual".to_string(),
+        ModuleId::ResidualEntry => RESIDUAL_ENTRY_MODULE_ID.to_string(),
         ModuleId::Logical(LogicalModuleIndex(idx)) => format!("logical:{idx}"),
     }
 }
 
 pub(crate) fn module_id_from_key(key: &str) -> Option<ModuleId> {
-    if key == "residual" {
+    if key == RESIDUAL_ENTRY_MODULE_ID {
         return Some(ModuleId::ResidualEntry);
     }
     key.strip_prefix("logical:")

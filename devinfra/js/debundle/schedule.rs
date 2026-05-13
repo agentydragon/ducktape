@@ -9,7 +9,8 @@ use crate::reports::{build_owner_graph_report, owner_key};
 use crate::validation::{validate_cross_destination_assignments, validate_schedule};
 use crate::{
     BindingId, BindingKind, BindingName, LogicalModule, LogicalModuleIndex, ModuleId,
-    ModuleQuotient, OwnerGraph, OwnerGraphReport, ScheduleReport, StatementFacts,
+    ModuleQuotient, OwnerGraph, OwnerGraphReport, RESIDUAL_ENTRY_LABEL, ScheduleReport,
+    StatementFacts,
 };
 
 /// Single per-chunk schedule. Carries everything downstream code
@@ -64,6 +65,15 @@ pub struct Schedule {
     /// `materialize_logical_modules` (SSOT — see
     /// [`crate::graph::peel_emit_blocked_residual_bindings`]).
     entry_exported_binding_names_cache: Option<HashSet<BindingName>>,
+    /// The pre-existing entry exports as passed in to
+    /// [`Self::with_pre_existing_entry_exports`], stored verbatim
+    /// (no folding in of moved-owner bindings). Used by
+    /// [`Self::pre_existing_entry_exports`] so callers reconstructing
+    /// "what does the upstream chunk source export" don't lose a
+    /// binding that's both in the upstream export list *and* owned
+    /// by a logical module (subtracting Owned bindings from
+    /// `entry_exported_binding_names_cache` would drop those).
+    pre_existing_entry_exports_input: BTreeSet<BindingName>,
     /// Pre-computed `binding → exported name` map. Built once per
     /// chunk in `Schedule::build` so peelability's per-candidate
     /// `binding_reports` calls do a single hash lookup instead of
@@ -111,6 +121,7 @@ impl Schedule {
             linker_order,
             linker_position_by_module,
             entry_exported_binding_names_cache: None,
+            pre_existing_entry_exports_input: BTreeSet::new(),
             export_name_by_binding,
         }
     }
@@ -121,7 +132,7 @@ impl Schedule {
     /// post-Owned export set queried by the emit-resolvability
     /// projection in [`crate::graph::peel_emit_blocked_residual_bindings`].
     pub fn with_pre_existing_entry_exports(mut self, exports: BTreeSet<BindingName>) -> Self {
-        let mut cache: HashSet<BindingName> = exports.into_iter().collect();
+        let mut cache: HashSet<BindingName> = exports.iter().cloned().collect();
         for (name, kind) in &self.bindings {
             if let BindingKind::Owned {
                 owner: ModuleId::Logical(_),
@@ -130,6 +141,7 @@ impl Schedule {
                 cache.insert(name.clone());
             }
         }
+        self.pre_existing_entry_exports_input = exports;
         self.entry_exported_binding_names_cache = Some(cache);
         self
     }
@@ -152,32 +164,18 @@ impl Schedule {
     }
 
     /// Binding names entry exports via upstream source statements
-    /// (the input to [`Self::with_pre_existing_entry_exports`]),
-    /// excluding the auto-added bindings of currently-moved
-    /// logical-module owners. Returns the upstream source export
-    /// set verbatim — downstream planners (factorizer, etc.) that
-    /// need to *predict* the post-promotion export set add their
-    /// own hypothesized moved bindings on top.
+    /// (verbatim what was passed to
+    /// [`Self::with_pre_existing_entry_exports`]). Does NOT include
+    /// the auto-added bindings of currently-moved logical-module
+    /// owners — downstream planners (factorizer, etc.) that need to
+    /// predict the post-promotion export set add their own
+    /// hypothesized moved bindings on top.
     ///
-    /// Empty when AST analysis didn't populate the cache (the
-    /// test-helper case); same convention as
+    /// Empty `BTreeSet` when AST analysis didn't populate the input
+    /// set (the test-helper case); same convention as
     /// [`Self::entry_exported_binding_names`].
-    pub fn pre_existing_entry_exports(&self) -> BTreeSet<BindingName> {
-        let Some(cache) = &self.entry_exported_binding_names_cache else {
-            return BTreeSet::new();
-        };
-        cache
-            .iter()
-            .filter(|name| {
-                !matches!(
-                    self.bindings.get(*name),
-                    Some(BindingKind::Owned {
-                        owner: ModuleId::Logical(_)
-                    })
-                )
-            })
-            .cloned()
-            .collect()
+    pub fn pre_existing_entry_exports(&self) -> &BTreeSet<BindingName> {
+        &self.pre_existing_entry_exports_input
     }
 
     /// Pre-computed export name for a chunk binding, falling back
@@ -202,7 +200,7 @@ impl Schedule {
     /// Render `id` to a human-readable label (used in cycle reports).
     pub fn module_name(&self, id: ModuleId) -> String {
         match id {
-            ModuleId::ResidualEntry => "<residual_entry>".to_string(),
+            ModuleId::ResidualEntry => RESIDUAL_ENTRY_LABEL.to_string(),
             ModuleId::Logical(LogicalModuleIndex(idx)) => self
                 .logical_modules
                 .get(idx)

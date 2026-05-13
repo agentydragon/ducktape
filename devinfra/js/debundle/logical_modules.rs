@@ -25,7 +25,10 @@ use artifact::{
     relative_module_path,
 };
 use js_ast::{ParsedJsModule, set_str_value, str_value};
-use spec::{BindingSourceKind, ChunkRenames, LogicalModule, MemberPurity, ResidualModule};
+use spec::{
+    BindingSourceKind, ChunkRenames, DEFAULT_RESIDUAL_MODULE_PATH, LogicalModule, MemberPurity,
+    ResidualModule,
+};
 
 const LOWERING_FILE_PRAGMA: &str =
     "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";
@@ -1656,7 +1659,7 @@ fn logical_requests_for_chunk(
         let target_path = residual
             .target
             .clone()
-            .unwrap_or_else(|| "residual/unhandled".to_string());
+            .unwrap_or_else(|| DEFAULT_RESIDUAL_MODULE_PATH.to_string());
         let members = build_members(&residual.members);
         reject_duplicate_export_names("residual_module", &id, &members)?;
         reject_duplicate_member_bindings("residual_module", &id, &members)?;

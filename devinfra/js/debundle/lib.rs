@@ -43,8 +43,9 @@ pub use report_schema::{
     BindingReport, EvaluatedPeelCandidateReport, ModuleReportRef, OwnerGraphEdgeReport,
     OwnerGraphNodeReport, OwnerGraphPeelSetReport, OwnerGraphPeelabilityReport,
     OwnerGraphQuotientReport, OwnerGraphReport, PeelCandidateStatus, QuotientEdgeReport,
-    QuotientSccReport, ResidualOwnerCompanionOptionReport, ResidualOwnerPeelHorizonReport,
-    ResidualOwnerPeelStatus, SourceLocation,
+    QuotientSccReport, RESIDUAL_ENTRY_LABEL, RESIDUAL_ENTRY_MODULE_ID,
+    ResidualOwnerCompanionOptionReport, ResidualOwnerPeelHorizonReport, ResidualOwnerPeelStatus,
+    SourceLocation,
 };
 pub use schedule::Schedule;
 pub use validation::{

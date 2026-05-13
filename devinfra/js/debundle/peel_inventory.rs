@@ -35,6 +35,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use analysis::OwnerGraphReport;
+use spec::DEFAULT_RESIDUAL_MODULE_PATH;
 
 #[derive(Debug, Clone)]
 pub struct PeelInventoryOptions {
@@ -333,7 +334,7 @@ fn name_value(line: &str) -> Option<String> {
 fn derive_proposed_dir(export: &str, current_yaml: &str) -> String {
     if !current_yaml.is_empty()
         && current_yaml != "<residual_only>"
-        && current_yaml != "residual/unhandled"
+        && current_yaml != DEFAULT_RESIDUAL_MODULE_PATH
     {
         // Mirror Python's `os.path.dirname(current_yaml) or current_yaml`:
         // strip the last `/`-segment; if there is none (or the parent is

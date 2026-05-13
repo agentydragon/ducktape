@@ -90,12 +90,12 @@ pub fn read_module_file(path: &Path) -> Result<ModuleFile> {
 }
 
 /// Module path components that hold the spec's residual catch-all
-/// (default emit target `residual/unhandled` per
-/// `spec::ResidualModule`). Files under any directory whose
+/// (default emit target [`spec::DEFAULT_RESIDUAL_MODULE_PATH`]
+/// per `spec::ResidualModule`). Files under any directory whose
 /// top-level segment is `residual/` are treated as "the still-to-be-
 /// factorized pile". Detection is by module-path prefix only
-/// (matches both the `residual/unhandled.yaml.deferred` default and
-/// any spec author's custom `residual/<other>.yaml{,.deferred}`).
+/// (matches both the default and any spec author's custom
+/// `residual/<other>.yaml{,.deferred}`).
 pub fn is_residual_module_path(module_path: &str) -> bool {
     module_path == "residual" || module_path.starts_with("residual/")
 }

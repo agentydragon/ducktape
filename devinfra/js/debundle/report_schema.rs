@@ -195,6 +195,22 @@ pub enum PeelCandidateStatus {
     BlockedEmitResolvability,
 }
 
+/// Stable value of [`ModuleReportRef::id`] for the implicit
+/// `<residual_entry>` module — the catch-all that holds bindings
+/// the spec hasn't assigned to a logical module. Consumed by
+/// downstream analyzers (factorizer, peel inventory) to gate
+/// residual-entry-only predicates without string-matching the
+/// label (which carries the user-facing `<residual_entry>` form).
+/// SSOT for the `module_key(ModuleId::ResidualEntry)` constant in
+/// `reports::module_key`.
+pub const RESIDUAL_ENTRY_MODULE_ID: &str = "residual";
+
+/// Human-facing display label for the implicit residual entry
+/// (i.e. [`ModuleReportRef::label`] when the module id is
+/// [`RESIDUAL_ENTRY_MODULE_ID`]). SSOT for the constant in
+/// `schedule::module_name`'s `ModuleId::ResidualEntry` arm.
+pub const RESIDUAL_ENTRY_LABEL: &str = "<residual_entry>";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModuleReportRef {
     pub id: String,
