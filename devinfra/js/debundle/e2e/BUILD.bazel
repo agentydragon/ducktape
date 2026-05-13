@@ -68,6 +68,7 @@ rust_library(
         "peelability_test",
         "owner_graph_purity_reason_test",
         "import_coalescing_test",
+        "unassigned_mode_runtime_test",
     ]
 ]
 
