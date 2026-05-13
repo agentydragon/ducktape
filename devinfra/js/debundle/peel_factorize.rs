@@ -153,6 +153,20 @@ pub struct FactorizeProposal {
     /// * Two or more paths → "merge these deferred modules
     ///   together (and optionally add residual bindings)".
     pub seeded_from_deferred: Vec<String>,
+    /// When this proposal is **extending an existing active
+    /// module** (i.e. the analyzer's supernode-aware factorize
+    /// emitted an `extends_module_id` on the underlying cell),
+    /// this carries the active module's id — passed through from
+    /// `FactorizeCell::extends_module_id`. `None` for fresh-module
+    /// proposals.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extends_module_id: Option<String>,
+    /// Loose owner ids (residual today) the analyzer's supernode-
+    /// aware factorize identified as the extension's additions to
+    /// the existing module. Empty for fresh-module proposals. Pass-
+    /// through from `FactorizeCell::extension_owner_ids`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extension_owner_ids: Vec<String>,
 }
 
 pub fn analyze_peel_factorize(options: &PeelFactorizeOptions) -> Result<PeelFactorizeReport> {
@@ -307,13 +321,31 @@ fn cell_from_factorize_cell(
         .iter()
         .map(|&i| owner_line_count(&graph.nodes[i]))
         .sum();
-    Cell { owners, lines }
+    let extension_owner_idxs: BTreeSet<usize> = cell
+        .extension_owner_ids
+        .iter()
+        .filter_map(|id| owner_index.get(id.as_str()).copied())
+        .collect();
+    Cell {
+        owners,
+        lines,
+        extends_module_id: cell.extends_module_id.clone(),
+        extension_owner_idxs,
+    }
 }
 
 #[derive(Debug, Clone)]
 struct Cell {
     owners: BTreeSet<usize>,
     lines: usize,
+    /// Pass-through from `FactorizeCell::extends_module_id` — the
+    /// analyzer-side cell's supernode target, if any. Preserved
+    /// across agglomeration only when every merged cell points at
+    /// the same module.
+    extends_module_id: Option<String>,
+    /// Pass-through from `FactorizeCell::extension_owner_ids`,
+    /// translated to owner indices.
+    extension_owner_idxs: BTreeSet<usize>,
 }
 
 /// Per-cell gate result. For original closure cells, this mirrors
@@ -439,6 +471,20 @@ fn agglomerate_landable_cells(
             let drop_lines = cells[drop].0.lines;
             cells[keep].0.lines += drop_lines;
             cells[drop].0.lines = 0;
+            // Extension info survives only if both sides point at
+            // the same supernode; otherwise the merged cell is no
+            // longer a clean "extend module X" proposal.
+            let drop_extends = cells[drop].0.extends_module_id.take();
+            let drop_extension_owners = std::mem::take(&mut cells[drop].0.extension_owner_idxs);
+            if cells[keep].0.extends_module_id == drop_extends {
+                cells[keep]
+                    .0
+                    .extension_owner_idxs
+                    .extend(drop_extension_owners);
+            } else {
+                cells[keep].0.extends_module_id = None;
+                cells[keep].0.extension_owner_idxs.clear();
+            }
             // Drop's emit-blocked is empty (landable) so no merge needed there.
             out_neighbors[keep] = merged_out;
             in_neighbors[keep] = merged_in;
@@ -546,8 +592,12 @@ fn emit_proposals(
         .map(|(new_idx, (orig_idx, _))| (*orig_idx, new_idx))
         .collect();
     let mut out: Vec<FactorizeProposal> = indexed.into_iter().map(|(_, p)| p).collect();
-    for (new_idx, proposal) in out.iter_mut().enumerate() {
-        proposal.proposed_module_id = format!("auto_partition_{new_idx:04}");
+    let mut fresh_counter = 0usize;
+    for proposal in out.iter_mut() {
+        if proposal.extends_module_id.is_none() {
+            proposal.proposed_module_id = format!("auto_partition_{fresh_counter:04}");
+            fresh_counter += 1;
+        }
         proposal.other_residual_cells_referenced = proposal
             .other_residual_cells_referenced
             .iter()
@@ -681,8 +731,21 @@ fn build_proposal(
     let emit_blocked_residual_bindings: Vec<String> =
         verdict.emit_blocked_residual_bindings.clone();
     let cross_destination_rebind_bindings: Vec<String> = Vec::new();
+    let extension_owner_ids: Vec<String> = {
+        let mut ids: Vec<String> = cell
+            .extension_owner_idxs
+            .iter()
+            .map(|&idx| ctx.graph.nodes[idx].id.clone())
+            .collect();
+        ids.sort();
+        ids
+    };
+    let proposed_module_id = match &cell.extends_module_id {
+        Some(target) => format!("extend:{target}"),
+        None => format!("auto_partition_{cell_idx:04}"),
+    };
     FactorizeProposal {
-        proposed_module_id: format!("auto_partition_{cell_idx:04}"),
+        proposed_module_id,
         owner_ids,
         binding_ids: binding_ids.into_iter().collect(),
         anonymous_statement_owner_ids: anonymous_owner_ids,
@@ -704,6 +767,8 @@ fn build_proposal(
         landable_today: verdict.landable_today,
         oversize: cell.lines > ctx.size_cap_lines,
         seeded_from_deferred: seeded.into_iter().collect(),
+        extends_module_id: cell.extends_module_id.clone(),
+        extension_owner_ids,
     }
 }
 
@@ -916,6 +981,8 @@ mod tests {
             emit_blocked_residual_bindings: emit_blocked.iter().map(|s| s.to_string()).collect(),
             cycle_blocker_owner_ids: Vec::new(),
             active_modules_referenced: Vec::new(),
+            extends_module_id: None,
+            extension_owner_ids: Vec::new(),
         }
     }
 
