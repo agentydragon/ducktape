@@ -13,8 +13,9 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use analysis::{
     AtomicUnitConflictReport, BindingKind, BindingName, DepKind,
-    LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId, RedundantPurityHint,
-    RedundantPurityReason, Schedule, analyze_chunk_with_source_locations,
+    LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId, OwnerId,
+    RedundantPurityHint, RedundantPurityReason, Schedule, StatementFacts,
+    analyze_chunk_with_source_locations, build_owner_graph, compute_atomic_units,
     render_atomic_unit_conflict_summary, render_cross_destination_assignment_summary,
     render_cycle_summary,
 };
@@ -29,7 +30,7 @@ use artifact::{
 use js_ast::{ParsedJsModule, set_str_value, str_value};
 use spec::{
     BindingSourceKind, ChunkRenames, DEFAULT_RESIDUAL_MODULE_PATH, LogicalModule, MemberPurity,
-    ResidualModule,
+    ResidualModule, UnassignedMode,
 };
 
 const LOWERING_FILE_PRAGMA: &str =
@@ -210,6 +211,7 @@ pub fn materialize_logical_modules(
     logical_modules: &BTreeMap<String, BTreeMap<String, LogicalModule>>,
     residual_modules: &BTreeMap<String, ResidualModule>,
     chunk_renames: &BTreeMap<String, ChunkRenames>,
+    unassigned_mode: &BTreeMap<String, UnassignedMode>,
     options: MaterializeLogicalModulesOptions,
 ) -> Result<MaterializeLogicalModulesResult> {
     if options.chunk_ids.is_empty() {
@@ -249,6 +251,7 @@ pub fn materialize_logical_modules(
                 logical_modules,
                 residual_modules,
                 chunk_renames,
+                unassigned_mode,
                 file: options.file.as_deref(),
                 target_dir: &target_dir,
                 report_out_dir: report_out_dir.as_deref(),
@@ -333,6 +336,7 @@ struct MaterializeLogicalChunkInputs<'a> {
     logical_modules: &'a BTreeMap<String, BTreeMap<String, LogicalModule>>,
     residual_modules: &'a BTreeMap<String, ResidualModule>,
     chunk_renames: &'a BTreeMap<String, ChunkRenames>,
+    unassigned_mode: &'a BTreeMap<String, UnassignedMode>,
     file: Option<&'a str>,
     target_dir: &'a str,
     report_out_dir: Option<&'a Path>,
@@ -358,11 +362,13 @@ fn materialize_logical_chunk(
         logical_modules,
         residual_modules,
         chunk_renames,
+        unassigned_mode,
         file,
         target_dir,
         report_out_dir,
         chunk_id,
     } = inputs;
+    let chunk_unassigned_mode = unassigned_mode.get(chunk_id).copied().unwrap_or_default();
     let chunk_id_interned = artifact
         .chunk_table
         .get(chunk_id)
@@ -571,6 +577,7 @@ fn materialize_logical_chunk(
         }
     }
 
+    let mut residual_plan_index: Option<usize> = None;
     if let Some(residual) = &residual_request {
         let residual_index = module_plans.len();
         let residual_module_id = ModuleId::Logical(LogicalModuleIndex(residual_index));
@@ -607,6 +614,7 @@ fn materialize_logical_chunk(
                 bindings: residual_bindings,
                 anonymous_statement_ordinals: Vec::new(),
             });
+            residual_plan_index = Some(residual_index);
         }
     }
     timings.add("build_module_plans", build_module_plans_started.elapsed());
@@ -693,6 +701,20 @@ fn materialize_logical_chunk(
                  in an async function or rewrite as a synchronous initialization.",
                 ordinal = ord.0,
             );
+        }
+        if chunk_unassigned_mode == UnassignedMode::MiniFactors {
+            time_phase!(timings, "synthesize_mini_factor_plans", {
+                synthesize_mini_factor_plans(
+                    &analysis.facts,
+                    &runtime_ast.module.body,
+                    residual_plan_index,
+                    &mut module_plans,
+                    &mut binding_assignment,
+                    &mut bindings_catalogue,
+                    &mut anonymous_ordinal_assignment,
+                    target_dir,
+                )
+            })?;
         }
         let logical_modules: Vec<ScheduleLogicalModule> =
             time_phase!(timings, "project_schedule_modules", {
@@ -1774,6 +1796,162 @@ fn statement_ordinal_for_body_index(body: &[ModuleItem], body_idx: usize) -> usi
         .iter()
         .map(post_split_top_level_count)
         .sum()
+}
+
+/// Inverse of [`statement_ordinal_for_body_index`]: given a post-split
+/// statement ordinal, return the pre-split body index of the body item
+/// that produced it. Returns `None` if the ordinal is past the body.
+fn body_index_for_statement_ordinal(body: &[ModuleItem], stmt_ordinal: usize) -> Option<usize> {
+    let mut running = 0usize;
+    for (idx, item) in body.iter().enumerate() {
+        let count = post_split_top_level_count(item);
+        if stmt_ordinal < running + count {
+            return Some(idx);
+        }
+        running += count;
+    }
+    None
+}
+
+/// Stage 5 `unassigned_mode == MiniFactors`: for each atomic factor
+/// unit whose members are entirely unclaimed by the YAML spec (i.e.
+/// either currently sitting in the residual catch-all or never
+/// assigned to any plan), synthesize a stand-alone [`ModulePlan`]
+/// containing exactly those members. Bindings and anonymous
+/// statements that were temporarily routed through the residual
+/// plan are moved into the synthesized plan; the residual plan then
+/// only holds whatever truly couldn't be peeled (typically nothing
+/// for clean chunks).
+///
+/// The synthesized plan's `target_path` is deterministic
+/// (`__auto/mini/{idx:04}`) and indexed by the unit's position in
+/// the iteration order of unclaimed units, sorted by the smallest
+/// member `OwnerId` so the names are stable run-to-run.
+#[allow(clippy::too_many_arguments)]
+fn synthesize_mini_factor_plans(
+    facts: &[StatementFacts],
+    body: &[ModuleItem],
+    residual_plan_index: Option<usize>,
+    module_plans: &mut Vec<ModulePlan>,
+    binding_assignment: &mut BTreeMap<String, usize>,
+    bindings_catalogue: &mut HashMap<BindingName, BindingKind>,
+    anonymous_ordinal_assignment: &mut BTreeMap<usize, usize>,
+    target_dir: &str,
+) -> Result<()> {
+    let owner_graph = build_owner_graph(facts);
+    let atomic_units = compute_atomic_units(&owner_graph);
+    let mut owner_declared_names: BTreeMap<OwnerId, Vec<BindingName>> = BTreeMap::new();
+    let mut owner_statement_ordinal: BTreeMap<OwnerId, usize> = BTreeMap::new();
+    for node in owner_graph.iter_nodes() {
+        let names: Vec<BindingName> = node
+            .declared
+            .iter()
+            .filter_map(|bid| owner_graph.binding_table.name(*bid).cloned())
+            .collect();
+        owner_declared_names.insert(node.id, names);
+        owner_statement_ordinal.insert(node.id, node.statement_ordinal.0);
+    }
+
+    // A unit member counts as unclaimed iff every declared binding is
+    // either absent from `binding_assignment` or assigned to the
+    // residual plan (if any); anonymous owners must similarly be
+    // unassigned or routed via residual. If any member is claimed by
+    // an explicit (non-residual) plan, the spec author already named
+    // the unit's destination — leave the existing claim intact (and
+    // let downstream validation flag an atomic-unit conflict if the
+    // claims disagree).
+    let is_owner_unclaimed = |owner: OwnerId| -> bool {
+        let names = owner_declared_names
+            .get(&owner)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        for name in names {
+            match binding_assignment.get(name).copied() {
+                None => continue,
+                Some(idx) if Some(idx) == residual_plan_index => continue,
+                Some(_) => return false,
+            }
+        }
+        if names.is_empty() {
+            let Some(stmt_ord) = owner_statement_ordinal.get(&owner).copied() else {
+                return true;
+            };
+            let Some(body_idx) = body_index_for_statement_ordinal(body, stmt_ord) else {
+                return true;
+            };
+            match anonymous_ordinal_assignment.get(&body_idx).copied() {
+                None => return true,
+                Some(idx) if Some(idx) == residual_plan_index => return true,
+                Some(_) => return false,
+            }
+        }
+        true
+    };
+
+    let mut unclaimed_units: Vec<&BTreeSet<OwnerId>> = atomic_units
+        .iter()
+        .filter(|unit| unit.members.iter().copied().all(is_owner_unclaimed))
+        .map(|unit| &unit.members)
+        .collect();
+    // Stable iteration order: smallest OwnerId first.
+    unclaimed_units.sort_by_key(|members| members.iter().next().copied());
+
+    for (idx, members) in unclaimed_units.into_iter().enumerate() {
+        let synthetic_idx = module_plans.len();
+        let synthetic_module_id = ModuleId::Logical(LogicalModuleIndex(synthetic_idx));
+        let target_path = format!("__auto/mini/{idx:04}");
+        let target_file = target_file_for_request(target_dir, &target_path)?;
+        let mut bindings = HashMap::<String, String>::new();
+        let mut anonymous_statement_ordinals = Vec::<usize>::new();
+        for owner in members {
+            let names = owner_declared_names
+                .get(owner)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            if names.is_empty() {
+                let Some(stmt_ord) = owner_statement_ordinal.get(owner).copied() else {
+                    continue;
+                };
+                let Some(body_idx) = body_index_for_statement_ordinal(body, stmt_ord) else {
+                    continue;
+                };
+                anonymous_ordinal_assignment.insert(body_idx, synthetic_idx);
+                anonymous_statement_ordinals.push(body_idx);
+                continue;
+            }
+            for name in names {
+                bindings.insert(name.clone(), name.clone());
+                // Move the binding out of the residual plan (if it was
+                // staged there by the sweep above) into the synthesized
+                // plan. The residual plan's bindings/anonymous-ordinal
+                // maps are pruned so it doesn't double-claim members.
+                if let Some(prev) = binding_assignment.get(name).copied() {
+                    if Some(prev) == residual_plan_index {
+                        if let Some(residual_idx) = residual_plan_index {
+                            module_plans[residual_idx].bindings.remove(name);
+                        }
+                    }
+                }
+                binding_assignment.insert(name.clone(), synthetic_idx);
+                bindings_catalogue.insert(
+                    name.clone(),
+                    BindingKind::Owned {
+                        owner: synthetic_module_id,
+                    },
+                );
+            }
+        }
+        anonymous_statement_ordinals.sort_unstable();
+        module_plans.push(ModulePlan {
+            id: target_path.clone(),
+            target_file,
+            target_path,
+            explicit: false,
+            bindings,
+            anonymous_statement_ordinals,
+        });
+    }
+    Ok(())
 }
 
 /// Resolve every `anonymous_match_sources` entry on `request` to a

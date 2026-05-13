@@ -352,6 +352,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
                     &spec.logical_modules,
                     &spec.residual_modules,
                     &spec.chunk_renames,
+                    &spec.unassigned_mode,
                     MaterializeLogicalModulesOptions {
                         chunk_ids: materialise_chunk_ids,
                         file,
