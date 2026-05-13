@@ -14,13 +14,14 @@
 //! debundler and the analysis tools always agree on the spec's
 //! on-disk layout.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
-use spec::{AnonymousStatement, Member};
+use spec::{AnonymousStatement, BindingSourceKind, Member};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -88,6 +89,54 @@ pub fn read_module_file(path: &Path) -> Result<ModuleFile> {
     .with_context(|| format!("parsing {}", path.display()))
 }
 
+/// Module path components that hold the spec's residual catch-all
+/// (default emit target `residual/unhandled` per
+/// `spec::ResidualModule`). Files under any directory whose
+/// top-level segment is `residual/` are treated as "the still-to-be-
+/// factorized pile" — their bindings are NOT considered claimed.
+///
+/// Detection is by module-path prefix only (matches both the
+/// `residual/unhandled.yaml.deferred` default and any spec author's
+/// custom `residual/<other>.yaml{,.deferred}`). The factorizer reads
+/// this to scope its residual graph; `spec_tree`'s materializer
+/// reads the active `ResidualModule` config independently and is
+/// unaffected.
+pub fn is_residual_module_path(module_path: &str) -> bool {
+    module_path == "residual" || module_path.starts_with("residual/")
+}
+
+/// Every chunk-top binding name claimed by an `*.yaml` or
+/// `*.yaml.deferred` member's `selector.binding.name`. Excludes:
+///
+/// * Members whose binding kind is `ImportSpecifier` (those refer
+///   to upstream symbols, not chunk-local bindings).
+/// * Files under any `residual/` directory — those bindings are
+///   the catch-all "not yet factored" pile and downstream tools
+///   (the factorizer) need to see them as in-scope, not claimed.
+///
+/// A binding being "claimed" means: the spec has assigned it to
+/// some non-residual module file, either active or deferred. The
+/// factorizer treats every claimed binding as out-of-scope — even
+/// deferred claims — because deferred modules are "owned, hands
+/// off" until promoted or peeled.
+pub fn load_claimed_bindings(modules_root: &Path) -> Result<BTreeSet<String>> {
+    let mut claimed = BTreeSet::new();
+    for path in collect_module_files(modules_root)? {
+        let module_path = module_path_from_file(&path, modules_root, is_deferred_yaml(&path));
+        if is_residual_module_path(&module_path) {
+            continue;
+        }
+        for member in read_module_file(&path)?.members {
+            let binding = member.selector.binding;
+            if matches!(binding.kind, Some(BindingSourceKind::ImportSpecifier)) {
+                continue;
+            }
+            claimed.insert(binding.name);
+        }
+    }
+    Ok(claimed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,5 +189,45 @@ mod tests {
         let module = read_module_file(&path).unwrap();
         assert_eq!(module.members.len(), 1);
         assert_eq!(module.members[0].selector.binding.name, "a");
+    }
+
+    #[test]
+    fn is_residual_module_path_matches_residual_subtree_only() {
+        assert!(is_residual_module_path("residual"));
+        assert!(is_residual_module_path("residual/unhandled"));
+        assert!(is_residual_module_path("residual/custom/sub"));
+        assert!(!is_residual_module_path("ui/sidebar"));
+        // The substring "residual" inside a path segment shouldn't
+        // match — only the top-level segment counts.
+        assert!(!is_residual_module_path("ui/residual"));
+        assert!(!is_residual_module_path("residualish/foo"));
+    }
+
+    #[test]
+    fn load_claimed_bindings_collects_active_and_deferred_skips_imports_and_residual() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write(
+            root,
+            "ui/active.yaml",
+            "members:\n  - selector: { binding: { name: a } }\n",
+        );
+        write(
+            root,
+            "ui/deferred.yaml.deferred",
+            "members:\n  - selector: { binding: { name: b } }\n",
+        );
+        write(
+            root,
+            "ui/import.yaml",
+            "members:\n  - selector: { binding: { name: c, kind: import_specifier } }\n",
+        );
+        write(
+            root,
+            "residual/unhandled.yaml.deferred",
+            "members:\n  - selector: { binding: { name: d } }\n",
+        );
+        let claimed = load_claimed_bindings(root).unwrap();
+        assert_eq!(claimed, BTreeSet::from(["a".to_string(), "b".to_string()]));
     }
 }
