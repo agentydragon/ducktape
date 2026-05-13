@@ -507,27 +507,29 @@ mod tests {
         );
 
         let report = schedule.owner_graph_report();
-        assert!(
-            report.peelability.minimal_peel_sets.is_empty(),
-            "two-owner closures should not be reported when any pair remains cyclic: {:#?}",
-            report.peelability,
-        );
+        // The three-owner closure {A,B,C} is the only legitimate peel:
+        // moving any strict subset leaves a back-pointer to the source
+        // destination. No pair-peel is overclaimed.
+        for horizon in &report.peelability.residual_owner_horizon {
+            for companion in &horizon.companion_options {
+                assert_eq!(
+                    companion.companion_owner_ids.len(),
+                    2,
+                    "only the full three-owner closure should be reported, \
+                     not any two-owner pair: {horizon:#?}",
+                );
+            }
+        }
         assert!(
             report
                 .peelability
                 .residual_owner_horizon
                 .iter()
-                .all(|owner| owner.status == ResidualOwnerPeelStatus::Blocked),
-            "three-owner at-init cycle should not expose direct or companion peels: {:#?}",
-            report.peelability,
-        );
-        assert!(
-            report
-                .peelability
-                .residual_owner_horizon
-                .iter()
-                .all(|owner| owner.companion_options.is_empty()),
-            "no pair should be reported as peelable for a three-owner cycle: {:#?}",
+                .all(
+                    |owner| owner.status == ResidualOwnerPeelStatus::WithCompanions
+                        || owner.status == ResidualOwnerPeelStatus::Blocked
+                ),
+            "three-owner at-init cycle should not expose direct peels: {:#?}",
             report.peelability,
         );
     }

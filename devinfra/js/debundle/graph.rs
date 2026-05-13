@@ -484,13 +484,14 @@ pub struct OwnerEdge {
 /// `peelability.rs`: given a candidate set of moved owners and the
 /// post-peel entry export set, report binding names that moved bodies
 /// would reference free — bindings declared by an owner that stays in
-/// residual but aren't on entry's export list.
+/// the source destination but aren't on entry's export list.
 ///
-/// SSOT for the materializer's "moved module references residual entry
-/// binding(s) … not exported by entry" rejection: when this returns a
-/// non-empty set, the materializer would reject and peelability marks
-/// the candidate `BlockedEmitResolvability`. Mirrors the
-/// `constrains_init_order` SSOT introduced in `f86e84b7e`.
+/// SSOT for the materializer's "moved module references source
+/// destination binding(s) … not exported by entry" rejection: when
+/// this returns a non-empty set, the materializer would reject and
+/// peelability marks the candidate `BlockedEmitResolvability`.
+/// Mirrors the `constrains_init_order` SSOT introduced in
+/// `f86e84b7e`.
 ///
 /// Inputs:
 /// - `owner_graph`: source of the per-reason edge list (`.edges`)
@@ -498,7 +499,10 @@ pub struct OwnerEdge {
 ///   each edge's target.
 /// - `partition`: per-owner module assignment. The destination module
 ///   of each edge's target is read via `partition.of(edge.to)`; only
-///   targets that land in `ResidualEntry` are considered.
+///   targets sharing the moved set's source destination are
+///   considered. The source destination is derived from
+///   `moved_owners` (all moved owners share one destination by
+///   precondition).
 /// - `moved_owners`: the candidate's moved owner set (a peel of these
 ///   is the hypothetical change being evaluated).
 /// - `base_entry_exports`: the schedule's cached pre-peel entry
@@ -509,13 +513,17 @@ pub struct OwnerEdge {
 /// - `candidate_members`: bindings the candidate would auto-export
 ///   from entry on emit (via `entry_exports_for_moved_bindings`),
 ///   i.e. the per-candidate addition on top of `base_entry_exports`.
-pub(crate) fn peel_emit_blocked_residual_bindings(
+pub(crate) fn peel_emit_blocked_source_destination_bindings(
     owner_graph: &OwnerGraph,
     partition: &Partition,
     moved_owners: &BTreeSet<OwnerId>,
     base_entry_exports: &HashSet<BindingName>,
     candidate_members: &[BindingName],
 ) -> BTreeSet<BindingName> {
+    let Some(&first) = moved_owners.iter().next() else {
+        return BTreeSet::new();
+    };
+    let source_destination = partition.of(first);
     // Hoist the candidate-members membership test out of the per-edge
     // loop; this function is called once per peelability candidate
     // (≥1500/chunk on Tana), so the inner test wants O(1).
@@ -531,7 +539,7 @@ pub(crate) fn peel_emit_blocked_residual_bindings(
         if owner_graph.node(edge.to).is_none() {
             continue;
         }
-        if !matches!(partition.of(edge.to), ModuleId::ResidualEntry) {
+        if partition.of(edge.to) != source_destination {
             continue;
         }
         let Some(binding_id) = edge.reason.binding else {

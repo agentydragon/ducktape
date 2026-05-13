@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use petgraph::algo::tarjan_scc;
 use petgraph::graph::DiGraph;
 
-use crate::graph::{OwnerEdge, peel_emit_blocked_residual_bindings};
+use crate::graph::{OwnerEdge, peel_emit_blocked_source_destination_bindings};
 use crate::reports::{
     binding_reports, is_residual_destination, module_id_from_key, module_report_ref, owner_key,
 };
@@ -86,7 +86,7 @@ pub(crate) struct PeelCandidateEvaluation {
     /// Residual binding names that the candidate's moved bodies
     /// reference but entry doesn't export — populated only when
     /// `status == BlockedEmitResolvability`. SSOT'd via
-    /// [`peel_emit_blocked_residual_bindings`] in `graph.rs`.
+    /// [`peel_emit_blocked_source_destination_bindings`] in `graph.rs`.
     pub(crate) emit_blocked_residual_bindings: Vec<BindingName>,
 }
 
@@ -688,7 +688,7 @@ pub(crate) fn evaluate_residual_peel_candidate(
     let owner_id_keys: Vec<String> = owner_ids.iter().copied().map(owner_key).collect();
     let candidate_id = format!("peel_candidate:{}", owner_id_keys.join("+"));
     let residual_dependency_blocker_owner_ids =
-        candidate_residual_dependency_blocker_owner_ids(schedule, context, &moved_owners);
+        candidate_source_destination_blocker_owner_ids(schedule, context, &moved_owners);
     let has_residual_dependency = !residual_dependency_blocker_owner_ids.is_empty();
     let cross_destination_write_edge_indices =
         candidate_cross_destination_write_edge_indices(context, &moved_owners);
@@ -721,7 +721,7 @@ pub(crate) fn evaluate_residual_peel_candidate(
             Vec::new()
         } else {
             match schedule.entry_exported_binding_names() {
-                Some(base_exports) => peel_emit_blocked_residual_bindings(
+                Some(base_exports) => peel_emit_blocked_source_destination_bindings(
                     &schedule.owner_graph,
                     &schedule.partition,
                     &moved_owners,
@@ -774,11 +774,23 @@ fn candidate_cross_destination_write_edge_indices(
         .collect()
 }
 
-fn candidate_residual_dependency_blocker_owner_ids(
+/// Blockers are owners *outside* the moved set that the moved set
+/// depends on through a `constrains_init_order` edge AND that
+/// currently live in the same source destination the moved owners
+/// are being peeled from. After the hypothetical peel, those
+/// neighbors would be left behind — creating a back-pointer from
+/// the new destination to the source. `source_destination` is
+/// derived from `moved_owners` (all moved owners share one
+/// destination by precondition).
+fn candidate_source_destination_blocker_owner_ids(
     schedule: &Schedule,
     context: &PeelabilityContext<'_>,
     moved_owners: &BTreeSet<OwnerId>,
 ) -> Vec<OwnerId> {
+    let Some(&first) = moved_owners.iter().next() else {
+        return Vec::new();
+    };
+    let source_destination = schedule.partition.of(first);
     let mut blockers = BTreeSet::new();
     for owner_id in moved_owners {
         for &edge_idx in context.owner_out_edge_indices(*owner_id) {
@@ -792,7 +804,7 @@ fn candidate_residual_dependency_blocker_owner_ids(
             if schedule.owner_graph.node(edge.to).is_none() {
                 continue;
             }
-            if schedule.partition.of(edge.to) != ModuleId::ResidualEntry {
+            if schedule.partition.of(edge.to) != source_destination {
                 continue;
             }
             blockers.insert(edge.to);

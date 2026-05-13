@@ -74,7 +74,7 @@ pub struct Schedule {
     /// Consumed by the emit-resolvability projection in
     /// `peelability.rs` and the matching predicate in
     /// `materialize_logical_modules` (SSOT — see
-    /// [`crate::graph::peel_emit_blocked_residual_bindings`]).
+    /// [`crate::graph::peel_emit_blocked_source_destination_bindings`]).
     entry_exported_binding_names_cache: Option<HashSet<BindingName>>,
     /// The pre-existing entry exports as passed in to
     /// [`Self::with_pre_existing_entry_exports`], stored verbatim
@@ -145,7 +145,7 @@ impl Schedule {
     /// already exports. Folds them together with the names of every
     /// owner already assigned to a logical module into the cached
     /// post-Owned export set queried by the emit-resolvability
-    /// projection in [`crate::graph::peel_emit_blocked_residual_bindings`].
+    /// projection in [`crate::graph::peel_emit_blocked_source_destination_bindings`].
     pub fn with_pre_existing_entry_exports(mut self, exports: BTreeSet<BindingName>) -> Self {
         let mut cache: HashSet<BindingName> = exports.iter().cloned().collect();
         for (name, kind) in &self.bindings {
