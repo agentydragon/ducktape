@@ -607,6 +607,7 @@ mod tests {
                 residual_owner_horizon: Vec::new(),
                 evaluated_owner_sets: Vec::new(),
             },
+            pre_existing_entry_exports: Vec::new(),
         }
     }
 

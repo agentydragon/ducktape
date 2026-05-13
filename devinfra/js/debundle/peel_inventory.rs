@@ -568,6 +568,7 @@ mod tests {
                 ],
                 evaluated_owner_sets: Vec::new(),
             },
+            pre_existing_entry_exports: Vec::new(),
         }
     }
 

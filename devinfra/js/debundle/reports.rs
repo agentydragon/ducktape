@@ -50,6 +50,11 @@ pub(crate) fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport 
             constrains_init_order: edge.reason.constrains_init_order(),
         })
         .collect();
+    let pre_existing_entry_exports: Vec<BindingName> = schedule
+        .pre_existing_entry_exports()
+        .iter()
+        .cloned()
+        .collect();
     OwnerGraphReport {
         chunk_id: schedule.chunk_id.clone(),
         nodes,
@@ -60,6 +65,7 @@ pub(crate) fn build_owner_graph_report(schedule: &Schedule) -> OwnerGraphReport 
             sccs: quotient_sccs,
         },
         peelability,
+        pre_existing_entry_exports,
     }
 }
 

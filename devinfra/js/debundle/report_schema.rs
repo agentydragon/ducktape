@@ -24,6 +24,20 @@ pub struct OwnerGraphReport {
     pub edges: Vec<OwnerGraphEdgeReport>,
     pub quotient: OwnerGraphQuotientReport,
     pub peelability: OwnerGraphPeelabilityReport,
+    /// Binding names the upstream chunk source exports via
+    /// top-level `export {...}` / `export default ...` /
+    /// `export <decl>` statements. Used by the materializer's
+    /// emit-resolvability gate (a moved module may free-reference a
+    /// residual binding iff it's already in entry's export list)
+    /// and by downstream peelability planners (factorizer, etc.)
+    /// that need to predict the same gate's verdict.
+    ///
+    /// Captured pre-materialization from the chunk source AST;
+    /// remains stable across the analysis run. May be absent in
+    /// fixture-only contexts where no chunk source was provided —
+    /// real pipeline runs always populate it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pre_existing_entry_exports: Vec<BindingName>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

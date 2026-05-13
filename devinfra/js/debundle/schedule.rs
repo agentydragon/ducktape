@@ -151,6 +151,35 @@ impl Schedule {
         self.entry_exported_binding_names_cache.as_ref()
     }
 
+    /// Binding names entry exports via upstream source statements
+    /// (the input to [`Self::with_pre_existing_entry_exports`]),
+    /// excluding the auto-added bindings of currently-moved
+    /// logical-module owners. Returns the upstream source export
+    /// set verbatim — downstream planners (factorizer, etc.) that
+    /// need to *predict* the post-promotion export set add their
+    /// own hypothesized moved bindings on top.
+    ///
+    /// Empty when AST analysis didn't populate the cache (the
+    /// test-helper case); same convention as
+    /// [`Self::entry_exported_binding_names`].
+    pub fn pre_existing_entry_exports(&self) -> BTreeSet<BindingName> {
+        let Some(cache) = &self.entry_exported_binding_names_cache else {
+            return BTreeSet::new();
+        };
+        cache
+            .iter()
+            .filter(|name| {
+                !matches!(
+                    self.bindings.get(*name),
+                    Some(BindingKind::Owned {
+                        owner: ModuleId::Logical(_)
+                    })
+                )
+            })
+            .cloned()
+            .collect()
+    }
+
     /// Pre-computed export name for a chunk binding, falling back
     /// to the binding's own name. Hot-path replacement for the
     /// previous `bindings` / `chunk_renames` / `rename_map` walk in

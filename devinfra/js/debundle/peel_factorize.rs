@@ -90,7 +90,18 @@ pub struct PeelFactorizeReport {
 pub struct FactorizeProposal {
     pub proposed_module_id: String,
     pub owner_ids: Vec<String>,
+    /// Bindings declared by the cell's owners. Excludes
+    /// anonymous side-effect statements, which appear under
+    /// `anonymous_statement_owner_ids` instead.
     pub binding_ids: Vec<String>,
+    /// Anonymous side-effect statements (owners with empty
+    /// `declared_bindings`) in this cell. Lane workers materialize
+    /// these via `anonymous_statements:` entries quoting the
+    /// statement's source verbatim — the materializer's cycle
+    /// gate counts these statements when determining whether the
+    /// cell's promotion would cycle through `residual_entry`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub anonymous_statement_owner_ids: Vec<String>,
     pub size_lines_estimate: usize,
     pub size_members: usize,
     /// `[start_line, end_line]` of the lowest-line and highest-line
@@ -100,48 +111,57 @@ pub struct FactorizeProposal {
     pub source_line_range: Option<[usize; 2]>,
     pub ordinal_span: usize,
     pub internal_edges: usize,
-    /// Edges from this cell to OTHER residual cells. These are
-    /// cycle-risk edges: promoting this cell to active while the
-    /// pointed-at residual cells stay residual would create
-    /// `<this>` → `residual_entry` reads, which the cycle gate
-    /// will reject. Drives `landable_today`.
+    /// Edges from this cell to OTHER residual cells. Cycle-risk
+    /// edges: promoting this cell to active while the pointed-at
+    /// residual cells stay residual would create `<this>` →
+    /// `residual_entry` reads, which the cycle gate will reject.
     pub edges_to_other_residual_cells: usize,
     /// Other residual cells (by proposed_module_id) this cell's
-    /// outgoing constraining edges target. Empty iff
-    /// `edges_to_other_residual_cells == 0`.
+    /// outgoing constraining edges target.
     pub other_residual_cells_referenced: Vec<String>,
     /// Edges from this cell to active-claimed bindings. Safe:
     /// active modules materialize before residual_entry, so reads
-    /// to them don't cycle. Informational — useful for the
-    /// reviewer to understand what subsystems the cell depends on.
+    /// to them don't cycle. Informational.
     pub edges_to_active_modules: usize,
     /// Active module paths this cell's outgoing constraining edges
-    /// target (deduplicated). Empty iff `edges_to_active_modules
-    /// == 0`.
+    /// target (deduplicated).
     pub active_modules_referenced: Vec<String>,
-    /// `true` iff `edges_to_other_residual_cells == 0`. The cell
-    /// can be promoted to an active `.yaml` right now without
-    /// creating a cycle through `residual_entry`. `false` cells
-    /// need their referenced residual cells promoted first (or
-    /// the spec author makes them deferred for now).
+    /// Residual binding names this cell's bodies reference that
+    /// **aren't** on entry's export list — neither in
+    /// `pre_existing_entry_exports` from the upstream source nor
+    /// auto-added because some currently-active module owns them.
+    /// Promoting the cell to active without first arranging for
+    /// these bindings to be exported by entry (e.g. by moving
+    /// each binding's owner into this cell, or by separately
+    /// promoting its current home) will be rejected by
+    /// `materialize_logical_modules`'s emit-resolvability gate.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub emit_blocked_residual_bindings: Vec<String>,
+    /// `true` iff both gates would pass:
+    /// * `edges_to_other_residual_cells == 0` (cycle gate).
+    /// * `emit_blocked_residual_bindings.is_empty()`
+    ///   (emit-resolvability gate).
+    ///
+    /// Mirrors the predicates `materialize_logical_modules`
+    /// applies; a `true` cell can be promoted to an active YAML
+    /// right now without spec-level surgery. `false` cells need
+    /// either their referenced residual cells / bindings landed
+    /// first, or remain `.yaml.deferred` until the prerequisites
+    /// move.
     pub landable_today: bool,
     /// `true` when the cell's `size_lines_estimate` exceeds
     /// `size_cap_lines`. Caused by either a single owner whose
     /// body is itself >cap lines, or a constraining SCC whose
-    /// collective body is >cap lines. The reviewer treats these
-    /// as "structurally indivisible at this snapshot" rather than
-    /// as actionable proposals.
+    /// collective body is >cap lines. Treated as "structurally
+    /// indivisible at this snapshot."
     pub oversize: bool,
     /// Deferred module paths whose bindings ended up in this
-    /// cell. Interpretation:
-    ///
+    /// cell:
     /// * Empty → a brand-new cell composed purely of residual
     ///   singleton bindings.
     /// * One path → "grow this existing deferred module by
     ///   absorbing the residual bindings listed in
     ///   `binding_ids \ <deferred module's current members>`".
-    ///   Or, if `binding_ids` matches the deferred module's
-    ///   members exactly: just a candidate for promotion.
     /// * Two or more paths → "merge these deferred modules
     ///   together (and optionally add residual bindings)".
     pub seeded_from_deferred: Vec<String>,
@@ -176,15 +196,23 @@ pub fn factorize(
         .map(|(i, node)| (node.id.as_str(), i))
         .collect();
 
+    // Residual = owners whose post-spec destination is
+    // `<residual_entry>`. This includes:
+    // - Owners with declared bindings not (yet) claimed by an
+    //   active YAML (the obvious case).
+    // - Owners with no declared bindings (anonymous side-effect
+    //   statements). These ARE graph vertices with their own
+    //   constraining edges; the cycle gate counts them, so the
+    //   factorizer must too.
+    //
+    // The materializer's own `destination.residual` flag is the
+    // authoritative answer for both cases — sourced from the
+    // partition the spec compiler produced for this owner_graph.
     let residual: BTreeSet<usize> = graph
         .nodes
         .iter()
         .enumerate()
-        .filter(|(_, node)| {
-            node.declared_bindings
-                .iter()
-                .any(|b| !active_claims.contains_key(b.binding.as_str()))
-        })
+        .filter(|(_, node)| node.destination.residual)
         .map(|(i, _)| i)
         .collect();
 
@@ -516,9 +544,31 @@ struct ProposalContext<'a> {
     graph: &'a OwnerGraphReport,
     residual_edges: &'a [(usize, usize)],
     active_edges: &'a [(usize, String)],
+    #[allow(dead_code)]
     active_claims: &'a BTreeMap<String, String>,
     deferred_groups: &'a BTreeMap<String, String>,
     owner_to_cell: HashMap<usize, usize>,
+    /// Owner index → owner index list. Outgoing edges from each
+    /// owner across the whole graph (any edge kind, no filter).
+    /// Used by `build_proposal`'s emit-resolvability check, which
+    /// must consider every reference the cell's bodies make to a
+    /// non-cell residual binding — not just init-constraining ones.
+    outgoing_edges_by_owner: HashMap<usize, Vec<usize>>,
+    /// Index into `graph.edges` per outgoing-by-owner index. Each
+    /// vector in `outgoing_edges_by_owner` and the matching entry
+    /// here share the same length and order.
+    #[allow(dead_code)]
+    outgoing_edge_indices_by_owner: HashMap<usize, Vec<usize>>,
+    /// Bindings that materialize-time entry exports before this
+    /// cell's hypothetical promotion: the upstream-source-level
+    /// exports (`OwnerGraphReport::pre_existing_entry_exports`)
+    /// unioned with bindings of every owner whose current
+    /// destination is non-residual (those auto-exports kick in
+    /// because `materialize_logical_modules` adds an
+    /// `export { name }` per moved-owner binding). The factorizer
+    /// adds the cell's own bindings on top per-cell to predict the
+    /// post-promotion export set.
+    entry_exports_today: BTreeSet<String>,
     size_cap_lines: usize,
 }
 
@@ -537,6 +587,50 @@ fn emit_proposals(
             owner_to_cell.insert(owner, cell_idx);
         }
     }
+
+    let owner_index: HashMap<&str, usize> = graph
+        .nodes
+        .iter()
+        .enumerate()
+        .map(|(i, node)| (node.id.as_str(), i))
+        .collect();
+
+    // Pre-index outgoing edges per owner. The emit-resolvability
+    // check walks every outgoing edge (not just constraining ones).
+    let mut outgoing_edges_by_owner: HashMap<usize, Vec<usize>> = HashMap::new();
+    let mut outgoing_edge_indices_by_owner: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (edge_idx, edge) in graph.edges.iter().enumerate() {
+        let (Some(&source), Some(&target)) = (
+            owner_index.get(edge.source.as_str()),
+            owner_index.get(edge.target.as_str()),
+        ) else {
+            continue;
+        };
+        outgoing_edges_by_owner
+            .entry(source)
+            .or_default()
+            .push(target);
+        outgoing_edge_indices_by_owner
+            .entry(source)
+            .or_default()
+            .push(edge_idx);
+    }
+
+    // Entry exports as the materializer would see them today (pre-
+    // any-promotion-from-this-factorizer-run). Pre-existing source
+    // exports plus auto-added bindings of currently-non-residual
+    // owners. Mirrors
+    // `Schedule::entry_exported_binding_names()`'s post-Owned cache.
+    let mut entry_exports_today: BTreeSet<String> =
+        graph.pre_existing_entry_exports.iter().cloned().collect();
+    for node in &graph.nodes {
+        if !node.destination.residual {
+            for binding in &node.declared_bindings {
+                entry_exports_today.insert(binding.binding.clone());
+            }
+        }
+    }
+
     let ctx = ProposalContext {
         graph,
         residual_edges,
@@ -544,6 +638,9 @@ fn emit_proposals(
         active_claims,
         deferred_groups,
         owner_to_cell,
+        outgoing_edges_by_owner,
+        outgoing_edge_indices_by_owner,
+        entry_exports_today,
         size_cap_lines,
     };
 
@@ -643,6 +740,7 @@ fn compute_topo_depths(
 
 fn build_proposal(cell_idx: usize, cell: &Cell, ctx: &ProposalContext) -> FactorizeProposal {
     let mut owner_ids: Vec<String> = Vec::with_capacity(cell.owners.len());
+    let mut anonymous_owner_ids: Vec<String> = Vec::new();
     let mut binding_ids: BTreeSet<String> = BTreeSet::new();
     let mut seeded: BTreeSet<String> = BTreeSet::new();
     let mut start_line = usize::MAX;
@@ -653,10 +751,11 @@ fn build_proposal(cell_idx: usize, cell: &Cell, ctx: &ProposalContext) -> Factor
     for &owner_idx in &cell.owners {
         let node = &ctx.graph.nodes[owner_idx];
         owner_ids.push(node.id.clone());
+        if node.declared_bindings.is_empty() {
+            anonymous_owner_ids.push(node.id.clone());
+        }
         for binding in &node.declared_bindings {
-            if !ctx.active_claims.contains_key(binding.binding.as_str()) {
-                binding_ids.insert(binding.binding.clone());
-            }
+            binding_ids.insert(binding.binding.clone());
             if let Some(module_path) = ctx.deferred_groups.get(binding.binding.as_str()) {
                 seeded.insert(module_path.clone());
             }
@@ -670,6 +769,7 @@ fn build_proposal(cell_idx: usize, cell: &Cell, ctx: &ProposalContext) -> Factor
         max_ordinal = max_ordinal.max(node.statement_ordinal.0);
     }
     owner_ids.sort();
+    anonymous_owner_ids.sort();
 
     let mut internal = 0usize;
     let mut to_residual = 0usize;
@@ -700,10 +800,57 @@ fn build_proposal(cell_idx: usize, cell: &Cell, ctx: &ProposalContext) -> Factor
     }
     let active_modules_referenced: Vec<String> = active_targets.into_iter().collect();
 
+    // Emit-resolvability projection. Mirrors the analyzer's
+    // `peel_emit_blocked_residual_bindings` predicate (which the
+    // materializer uses verbatim) but walks the JSON owner-graph
+    // shape: any outgoing edge from a cell member to a non-cell
+    // residual target whose binding isn't on entry's post-promotion
+    // export set is a free reference the materializer will reject.
+    //
+    // Post-promotion exports = `entry_exports_today` ∪ this cell's
+    // own bindings (which auto-export once the cell becomes active).
+    let mut emit_blocked_set: BTreeSet<String> = BTreeSet::new();
+    for &owner_idx in &cell.owners {
+        let Some(targets) = ctx.outgoing_edges_by_owner.get(&owner_idx) else {
+            continue;
+        };
+        let Some(edge_indices) = ctx.outgoing_edge_indices_by_owner.get(&owner_idx) else {
+            continue;
+        };
+        for (target_idx, &edge_idx) in targets.iter().zip(edge_indices.iter()) {
+            // Skip edges that don't leave the cell.
+            if ctx.owner_to_cell.get(target_idx) == Some(&cell_idx) {
+                continue;
+            }
+            let target_node = &ctx.graph.nodes[*target_idx];
+            // Edges to non-residual destinations (currently active
+            // modules) are safe — those modules materialize before
+            // residual_entry, and their bindings are already on
+            // entry's auto-export set.
+            if !target_node.destination.residual {
+                continue;
+            }
+            let Some(binding) = ctx.graph.edges[edge_idx].binding.as_deref() else {
+                continue;
+            };
+            if ctx.entry_exports_today.contains(binding) {
+                continue;
+            }
+            if binding_ids.contains(binding) {
+                continue;
+            }
+            emit_blocked_set.insert(binding.to_string());
+        }
+    }
+    let emit_blocked_residual_bindings: Vec<String> = emit_blocked_set.into_iter().collect();
+
+    let cycle_gate_passes = to_residual == 0;
+    let emit_gate_passes = emit_blocked_residual_bindings.is_empty();
     FactorizeProposal {
         proposed_module_id: format!("auto_partition_{cell_idx:04}"),
         owner_ids,
         binding_ids: binding_ids.into_iter().collect(),
+        anonymous_statement_owner_ids: anonymous_owner_ids,
         size_lines_estimate: cell.lines,
         size_members: cell.owners.len(),
         source_line_range: if have_loc {
@@ -717,7 +864,8 @@ fn build_proposal(cell_idx: usize, cell: &Cell, ctx: &ProposalContext) -> Factor
         other_residual_cells_referenced,
         edges_to_active_modules: to_active,
         active_modules_referenced,
-        landable_today: to_residual == 0,
+        emit_blocked_residual_bindings,
+        landable_today: cycle_gate_passes && emit_gate_passes,
         oversize: cell.lines > ctx.size_cap_lines,
         seeded_from_deferred: seeded.into_iter().collect(),
     }
@@ -755,6 +903,26 @@ mod tests {
         bindings: &[&str],
         lines: usize,
     ) -> OwnerGraphNodeReport {
+        owner_at(id, ordinal_value, bindings, lines, "residual/unhandled")
+    }
+
+    fn owner_in_active_module(
+        id: &str,
+        ordinal_value: usize,
+        bindings: &[&str],
+        lines: usize,
+        module_path: &str,
+    ) -> OwnerGraphNodeReport {
+        owner_at(id, ordinal_value, bindings, lines, module_path)
+    }
+
+    fn owner_at(
+        id: &str,
+        ordinal_value: usize,
+        bindings: &[&str],
+        lines: usize,
+        destination_label: &str,
+    ) -> OwnerGraphNodeReport {
         OwnerGraphNodeReport {
             id: id.to_string(),
             statement_ordinal: StatementOrdinal(ordinal_value),
@@ -766,7 +934,7 @@ mod tests {
             declared_bindings: bindings.iter().map(|b| binding(b)).collect(),
             statement_kind: StatementKind::VarDecl,
             purity: Purity::Pure,
-            destination: module_ref("residual/unhandled"),
+            destination: module_ref(destination_label),
         }
     }
 
@@ -777,12 +945,23 @@ mod tests {
         kind: DepKind,
         constrains: bool,
     ) -> OwnerGraphEdgeReport {
+        edge_for_binding(id, source, target, kind, constrains, None)
+    }
+
+    fn edge_for_binding(
+        id: &str,
+        source: &str,
+        target: &str,
+        kind: DepKind,
+        constrains: bool,
+        binding: Option<&str>,
+    ) -> OwnerGraphEdgeReport {
         OwnerGraphEdgeReport {
             id: id.to_string(),
             source: source.to_string(),
             target: target.to_string(),
             edge_kind: kind,
-            binding: None,
+            binding: binding.map(str::to_string),
             statement_ordinal: StatementOrdinal(0),
             constrains_init_order: constrains,
         }
@@ -807,6 +986,7 @@ mod tests {
                 residual_owner_horizon: vec![],
                 evaluated_owner_sets: vec![],
             },
+            pre_existing_entry_exports: vec![],
         }
     }
 
@@ -829,8 +1009,14 @@ mod tests {
 
     #[test]
     fn factorize_skips_active_claimed_owners() {
+        // Owner "a" has destination set to the active module
+        // `ui/x` (matches `active_claims` membership); the
+        // factorizer must NOT include it in residual.
         let graph = empty_graph(
-            vec![owner("a", 1, &["a"], 10), owner("b", 2, &["b"], 10)],
+            vec![
+                owner_in_active_module("a", 1, &["a"], 10, "ui/x"),
+                owner("b", 2, &["b"], 10),
+            ],
             vec![],
         );
         let claims = BTreeMap::from([("a".to_string(), "ui/x".to_string())]);
@@ -949,11 +1135,11 @@ mod tests {
             vec![
                 owner("a", 1, &["a"], 10),
                 owner("b", 2, &["b"], 10),
-                owner("c", 3, &["c"], 10),
+                owner_in_active_module("c", 3, &["c"], 10, "ui/x"),
             ],
             vec![
                 edge("e1", "a", "b", DepKind::EagerUse, true),
-                edge("e2", "b", "c", DepKind::EagerUse, true),
+                edge_for_binding("e2", "b", "c", DepKind::EagerUse, true, Some("c")),
             ],
         );
         let claims = BTreeMap::from([("c".to_string(), "ui/x".to_string())]);
@@ -965,7 +1151,8 @@ mod tests {
         assert_eq!(cell.edges_to_active_modules, 1);
         assert_eq!(cell.active_modules_referenced, vec!["ui/x".to_string()]);
         // Active edges are safe — promoting this cell today wouldn't
-        // create a cycle.
+        // create a cycle, and `c` is on entry's auto-export set
+        // because its current destination is an active module.
         assert!(cell.landable_today);
     }
 
