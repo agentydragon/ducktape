@@ -197,10 +197,20 @@ pub fn build_factorize_report(schedule: &Schedule, options: &FactorizeOptions) -
             Some(module) => format!("extend:{}", module_key(module)),
             None => format!("auto_partition_{idx:04}"),
         };
+        // Only extension proposals carry the loose subset as
+        // `extension_owner_ids`. Fresh-module proposals have no
+        // existing module to extend, so the field stays empty —
+        // every owner in the cell is part of the proposal itself
+        // (already in `owner_ids`).
+        let extension_owners: BTreeSet<OwnerId> = if extension_target.is_some() {
+            loose.iter().copied().collect()
+        } else {
+            BTreeSet::new()
+        };
         emitted.push(make_cell(
             proposal_id,
             cell_owners,
-            loose.iter().copied().collect(),
+            extension_owners,
             extension_target,
             &node_by_owner,
             &verdict,

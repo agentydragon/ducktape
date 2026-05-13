@@ -2711,6 +2711,107 @@ mod tests {
         );
     }
 
+    /// Stage 4 supernode-aware factorize: a YAML-claimed module `mod_0`
+    /// (with owners `A`, `B`) plus one unclaimed `C` that sits in the
+    /// same EagerUse cycle as `A` should produce a single proposal
+    /// cell — an extension of `mod_0` that absorbs `C`. The closure
+    /// graph collapses owners(A), owners(B) into `Supernode(mod_0)`
+    /// (internal edges between them disappear); `Loose(C)` joins the
+    /// supernode's SCC via the bidirectional EagerUse cycle
+    /// `A↔C`. The cell's `extends_module_id` resolves to mod_0's
+    /// `module_key`, and `extension_owner_ids` carries C's owner.
+    #[test]
+    fn factorize_proposes_extension_for_module_with_unclaimed_cycle_member() {
+        let schedule = schedule_for(
+            "const B = 1; const A = C + 1; const C = A + 1;",
+            &[("A", logical(0)), ("B", logical(0))],
+        );
+        let report = schedule.owner_graph_report().factorize;
+        let extensions: Vec<&FactorizeCell> = report
+            .cells
+            .iter()
+            .filter(|cell| cell.extends_module_id.is_some())
+            .collect();
+        assert_eq!(
+            extensions.len(),
+            1,
+            "expected exactly one extension proposal, got {:#?}",
+            report.cells,
+        );
+        let cell = extensions[0];
+        assert_eq!(
+            cell.extends_module_id.as_deref(),
+            Some("logical:0"),
+            "extension should target mod_0's stable module key",
+        );
+        // C's owner is statement_ordinal 2 ⇒ OwnerId(2) ⇒ "owner:2".
+        assert_eq!(
+            cell.extension_owner_ids,
+            vec!["owner:2".to_string()],
+            "only C should be the loose extension owner",
+        );
+        // Cell binding ids include the new C plus the supernode's
+        // existing A. (B's owner is in the supernode but doesn't
+        // sit in the same SCC; it survives as a stable supernode-
+        // only cell and gets skipped.)
+        let bindings: BTreeSet<String> = cell.binding_ids.iter().cloned().collect();
+        assert!(
+            bindings.contains("A") && bindings.contains("C"),
+            "extension cell should expose A (from supernode) and C (the addition): {bindings:?}",
+        );
+    }
+
+    /// Stage 4 supernode-aware factorize: two unclaimed owners that
+    /// form a Sequenced + reverse-EagerUse SCC should land in one
+    /// fresh-module proposal cell. The closure graph's Sequenced
+    /// rule emits `earlier → later` (inversion of the owner-graph's
+    /// `later → earlier` Sequenced edge); the reverse EagerUse from
+    /// the later statement reading the earlier statement's binding
+    /// emits `later → earlier`. The two directions form an SCC.
+    #[test]
+    fn factorize_emits_fresh_module_proposal_for_sequenced_plus_eager_scc() {
+        // stmt 0: `const X = init();` — impure (call), declares X.
+        // stmt 1: `const Y = step(X);` — impure (call), declares Y,
+        //                                reads X eagerly.
+        // Owner graph edges:
+        //   * EagerUse owner(Y) → owner(X) on binding X
+        //   * Sequenced owner(Y) → owner(X) (later stmt depends on
+        //     earlier side-effect having run)
+        // Closure projection (both owners are loose, no supernode):
+        //   * EagerUse `from→to`           → Loose(Y) → Loose(X)
+        //   * Sequenced `to→from` (inverted) → Loose(X) → Loose(Y)
+        // ⇒ single SCC, fresh-module proposal.
+        let schedule = schedule_for("const X = init(); const Y = step(X);", &[]);
+        let report = schedule.owner_graph_report().factorize;
+        let fresh: Vec<&FactorizeCell> = report
+            .cells
+            .iter()
+            .filter(|cell| cell.extends_module_id.is_none())
+            .collect();
+        assert_eq!(
+            fresh.len(),
+            1,
+            "expected one fresh-module cell for the {{X, Y}} SCC, got {:#?}",
+            report.cells,
+        );
+        let cell = fresh[0];
+        assert!(
+            cell.extension_owner_ids.is_empty(),
+            "fresh-module proposals carry no extension owners: {cell:#?}",
+        );
+        assert!(
+            cell.proposed_module_id.starts_with("auto_partition_"),
+            "fresh-module cells keep the auto_partition_NNNN id shape: {}",
+            cell.proposed_module_id,
+        );
+        let bindings: BTreeSet<String> = cell.binding_ids.iter().cloned().collect();
+        let expected: BTreeSet<String> = ["X".to_string(), "Y".to_string()].into_iter().collect();
+        assert_eq!(
+            bindings, expected,
+            "fresh-module cell members should be exactly {{X, Y}}: {bindings:?}",
+        );
+    }
+
     #[test]
     fn schedule_report_serializes_linker_order_as_snake_case() {
         let schedule = schedule_for(
