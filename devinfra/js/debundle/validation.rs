@@ -224,10 +224,8 @@ pub fn validate_schedule(
 /// the materializer's bail-message consume.
 pub(crate) fn render_assembly_conflict_summary(
     conflicts: &[AtomicUnitConflict],
-    owner_graph: &OwnerGraph,
     module_name: &dyn Fn(ModuleId) -> String,
 ) -> Vec<AtomicUnitConflictReport> {
-    let _ = owner_graph;
     conflicts
         .iter()
         .map(|conflict| {

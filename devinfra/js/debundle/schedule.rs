@@ -278,9 +278,7 @@ impl Schedule {
     pub fn validate(&self) -> ScheduleReport {
         let mut report = validate_schedule(&self.dep_graph, &|id| self.module_name(id));
         report.atomic_unit_conflicts =
-            render_assembly_conflict_summary(&self.assembly_conflicts, &self.owner_graph, &|id| {
-                self.module_name(id)
-            });
+            render_assembly_conflict_summary(&self.assembly_conflicts, &|id| self.module_name(id));
         report.linker_order = self
             .linker_order
             .iter()
