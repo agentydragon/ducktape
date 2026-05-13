@@ -12,9 +12,11 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use analysis::{
-    BindingKind, BindingName, LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId,
-    RedundantPurityHint, RedundantPurityReason, Schedule, analyze_chunk_with_source_locations,
-    render_cross_destination_assignment_summary, render_cycle_summary,
+    AtomicUnitConflictReport, BindingKind, BindingName, DepKind,
+    LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId, RedundantPurityHint,
+    RedundantPurityReason, Schedule, analyze_chunk_with_source_locations,
+    render_atomic_unit_conflict_summary, render_cross_destination_assignment_summary,
+    render_cycle_summary,
 };
 use artifact::{
     ArtifactIndexes, ArtifactSourceImportResolver, ChunkArtifact, ChunkFileRecord, ChunkId,
@@ -749,6 +751,15 @@ fn materialize_logical_chunk(
                 &owner_graph_report,
             )
         })?;
+    }
+
+    if !schedule_report.atomic_unit_conflicts.is_empty() {
+        let summary = render_atomic_unit_conflict_summary(&schedule_report.atomic_unit_conflicts);
+        let causes = render_atomic_unit_cause_guidance(&schedule_report.atomic_unit_conflicts);
+        bail!(
+            "materialize_logical_modules: chunk {chunk_id} has {n} atomic-factor-unit conflict(s) — the spec assigns members of one atomic factor unit to different destination modules, forming a cycle in the module dep graph that the constraining-edge SCC analysis says is unrealizable. Atomic factor units come from FACTORIZE.md's `G_atomic` SCC over the owner graph; every member must co-locate. {causes}Resolve by reconciling each unit's claims into a single destination. Full evidence written to <reports>/{chunk_id}/schedule.json; owner graph written to <reports>/{chunk_id}/owner_graph.json. Summary:\n{summary}",
+            n = schedule_report.atomic_unit_conflicts.len(),
+        );
     }
 
     if !schedule_report.cross_destination_assignments.is_empty() {
@@ -3644,4 +3655,40 @@ fn prepare_output_dir(out_dir: &Path, force: bool) -> Result<()> {
     }
     fs::create_dir_all(out_dir)?;
     Ok(())
+}
+
+/// Build a per-cause guidance line for the atomic-unit-conflict
+/// diagnostic. Walks every conflict's `causes` and renders the
+/// matching explanation so the bail message includes vocabulary the
+/// spec author can search for (`cycle`, `side-effect`, `mutable`,
+/// `assignment`, `cross-destination`).
+fn render_atomic_unit_cause_guidance(conflicts: &[AtomicUnitConflictReport]) -> String {
+    let mut causes: std::collections::BTreeSet<DepKind> = std::collections::BTreeSet::new();
+    for conflict in conflicts {
+        for cause in &conflict.causes {
+            causes.insert(*cause);
+        }
+    }
+    let mut out = String::new();
+    for cause in &causes {
+        match cause {
+            DepKind::EagerUse => out.push_str(
+                "EagerUse cycle: a top-level statement reads a binding at-init; \
+                 splitting reader and declarer across modules forms an evaluation-order cycle. ",
+            ),
+            DepKind::EagerRebind | DepKind::LazyRebind => out.push_str(
+                "Rebind: a function or top-level statement performs an assignment \
+                 to a mutable binding owned by a different module — the resulting ESM \
+                 import would be read-only, so this cross-destination assignment is invalid. \
+                 The assigner and the binding declarer must materialize together. ",
+            ),
+            DepKind::Sequenced => out.push_str(
+                "Sequenced side-effect chain: two top-level side-effect statements are \
+                 forced into a fixed source order; splitting them across modules \
+                 inverts the run order. ",
+            ),
+            DepKind::LazyUse => {}
+        }
+    }
+    out
 }

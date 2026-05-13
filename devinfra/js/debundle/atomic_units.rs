@@ -22,9 +22,13 @@
 //!   constrain co-location.
 //! * `EagerRebind` / `LazyRebind`: add both `u → v` and `v → u`
 //!   (LazyRebind gate — declarer and assigner must co-locate).
-//! * `Sequenced`: add both `u → v` and `v → u` (source-order
-//!   constraint — splitting source-order-adjacent side effects
-//!   across modules inverts the run order).
+//! * `Sequenced`: add `u → v` (directed source-order dependency —
+//!   the owner-graph encodes the edge as `later_stmt → earlier_stmt`
+//!   meaning "the later side-effect depends on the earlier side-
+//!   effect having run"; linker order resolves a directed Sequenced
+//!   alone). Co-location is only forced when Sequenced combines with
+//!   another constraining edge in the reverse direction — Tarjan's
+//!   SCC handles that automatically.
 //!
 //! Tarjan-SCC on `G_atomic` produces the atomic units. Inter-unit
 //! edges form a DAG by Tarjan's construction.
@@ -64,9 +68,12 @@ pub fn compute_atomic_units(owner_graph: &OwnerGraph) -> Vec<AtomicUnit> {
                 // Lazy reads happen at call time; they don't force
                 // co-location for init-order purposes.
             }
-            DepKind::EagerRebind | DepKind::LazyRebind | DepKind::Sequenced => {
+            DepKind::EagerRebind | DepKind::LazyRebind => {
                 g_atomic.add_edge(edge.from, edge.to, ());
                 g_atomic.add_edge(edge.to, edge.from, ());
+            }
+            DepKind::Sequenced => {
+                g_atomic.add_edge(edge.from, edge.to, ());
             }
         }
     }

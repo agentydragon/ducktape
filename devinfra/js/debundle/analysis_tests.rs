@@ -257,24 +257,31 @@ mod tests {
         );
     }
 
+    /// LazyRebind atomic-unit split: declarer and assigner of a
+    /// mutable binding must materialize together. `factor_assembly`
+    /// now records this as an `atomic_unit_conflicts` entry on the
+    /// schedule (the materializer bails on any non-empty list);
+    /// pre-atomic-unit, the validator's
+    /// `cross_destination_assignments` check caught it after the
+    /// fact. Both signals still fire for backward compatibility, but
+    /// the atomic-unit conflict is the authoritative diagnostic.
     #[test]
     fn cross_destination_lazy_write_is_rejected() {
         let schedule = schedule_for(
             "let A = 0; function B() { A = 1; }",
             &[("A", logical(0)), ("B", ModuleId::ResidualEntry)],
         );
-
         let report = schedule.validate();
         assert_eq!(
-            report.cross_destination_assignments.len(),
+            report.atomic_unit_conflicts.len(),
             1,
-            "expected residual B's assignment to A to be rejected: {report:?}",
+            "expected one atomic-unit conflict (A and B share a LazyRebind atomic unit but the spec splits them): {report:?}",
         );
-        let assignment = &report.cross_destination_assignments[0];
-        assert_eq!(assignment.binding, "A");
-        assert_eq!(assignment.assigner_module, "<residual_entry>");
-        assert_eq!(assignment.binding_module, "mod_0");
-        assert_eq!(assignment.kind, DepKind::LazyRebind);
+        let conflict = &report.atomic_unit_conflicts[0];
+        assert_eq!(
+            conflict.conflicting_modules,
+            vec!["<residual_entry>".to_string(), "mod_0".to_string()],
+        );
     }
 
     #[test]
@@ -2430,10 +2437,15 @@ mod tests {
 
     #[test]
     fn validate_returns_empty_linker_order_for_cyclic_spec() {
-        // mod_0 reads B (mod_1); mod_1 reads A (mod_0). Cycle.
+        // Cross-unit module cycle: mod_0 owns `A` and `readB`,
+        // mod_1 owns `B`. `readB` lazily reads B (mod_0 → mod_1),
+        // and B eagerly reads A (mod_1 → mod_0). Atomic units stay
+        // singletons because LazyUse is dropped from `G_atomic`, so
+        // `factor_assembly` accepts the partition; the cycle shows up
+        // at the module quotient where the validator catches it.
         let schedule = schedule_for(
-            "const A = B + 1; const B = A + 1;",
-            &[("A", logical(0)), ("B", logical(1))],
+            "const A = 1; function readB() { return B; } const B = A + 1;",
+            &[("A", logical(0)), ("readB", logical(0)), ("B", logical(1))],
         );
         let report = schedule.validate();
         assert!(!report.cycles.is_empty(), "expected a cycle in {report:?}",);
@@ -2512,12 +2524,38 @@ mod tests {
     }
 
     #[test]
-    fn atomic_units_sequenced_edges_merge_bidirectionally() {
-        // Three side-effecting top-level statements form a Sequenced
-        // chain. Sequenced edges are bidirectional in `G_atomic`, so
-        // all three owners collapse into a single unit.
+    fn atomic_units_sequenced_chain_stays_split() {
+        // Three side-effecting top-level statements form a directed
+        // Sequenced chain. A directed source-order edge alone is
+        // satisfiable by linker order — no co-location forced — so
+        // every owner stays in its own atomic unit. Co-location
+        // would only kick in if some non-Sequenced edge ran in the
+        // reverse direction.
         let units = atomic_units_for(
             r#"const a1 = (globalThis.tag = "a1", 1); const b1 = (globalThis.tag = "b1", 2); const a2 = (globalThis.tag = "a2", 3);"#,
+        );
+        assert_partitions_all_owners(&units, 3);
+        assert_eq!(unit_sizes(&units), vec![1, 1, 1]);
+    }
+
+    #[test]
+    fn atomic_units_sequenced_plus_reverse_eager_merges() {
+        // A Sequenced source-order edge in one direction plus an
+        // EagerUse read in the reverse direction forms an SCC in
+        // `G_atomic` and forces co-location.
+        // `const A = 1;` is pure (no side effect, no Sequenced edge);
+        // `const x = (globalThis.tag = "x", A);` is side-effecting AND
+        // eagerly reads `A`. The eager read draws `x → A`; the
+        // Sequenced edge from the next side-effect (`const y = ...`)
+        // gives `y → x`. Eager `y → A` adds `y → A` too. So {x, y}
+        // ends up merged only if some edge reverses through A. Use a
+        // shape that produces a real cycle:
+        // `let A = 1; A = (globalThis.tag = "x", 2); A = (globalThis.tag = "y", 3);`
+        // — top-level Sequenced + EagerRebind force {A, stmt_1, stmt_2}
+        // into one unit (Rebind bidirectional + Sequenced directed
+        // form a cycle).
+        let units = atomic_units_for(
+            r#"let A = 1; A = (globalThis.tag = "x", 2); A = (globalThis.tag = "y", 3);"#,
         );
         assert_partitions_all_owners(&units, 3);
         assert_eq!(unit_sizes(&units), vec![3]);
@@ -2531,6 +2569,144 @@ mod tests {
         let units = atomic_units_for("let A = 0; function B() { A = 1; }");
         assert_partitions_all_owners(&units, 2);
         assert_eq!(unit_sizes(&units), vec![2]);
+    }
+
+    fn partition_summary(schedule: &Schedule) -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> = schedule
+            .owner_graph
+            .iter_nodes()
+            .map(|node| {
+                let declared: Vec<String> = node
+                    .declared
+                    .iter()
+                    .filter_map(|b| schedule.owner_graph.binding_table.name(*b).cloned())
+                    .collect();
+                let key = if declared.is_empty() {
+                    format!("stmt_{}", node.statement_ordinal.0)
+                } else {
+                    declared.join(",")
+                };
+                (key, render(schedule.partition.of(node.id)))
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn factor_assembly_unclaimed_owners_default_to_residual() {
+        let schedule = schedule_for("const A = 1; const B = 2;", &[]);
+        let summary = partition_summary(&schedule);
+        assert_eq!(
+            summary,
+            vec![
+                ("A".to_string(), "<residual>".to_string()),
+                ("B".to_string(), "<residual>".to_string()),
+            ],
+        );
+    }
+
+    #[test]
+    fn factor_assembly_single_claim_with_unclaimed_unit_members_is_a_conflict() {
+        // `const A = B + 1; const B = A + 1;` is one EagerUse cycle —
+        // a single atomic unit. Claiming A for mod_0 leaves B
+        // defaulting to residual entry, which splits the unit
+        // across {mod_0, <residual_entry>} — unrealizable. The spec
+        // author needs to either also assign B (or leave both
+        // unassigned), or remove the constraining edge that fused
+        // them in the first place. The factorize proposals layer
+        // (Stage 4) may suggest "extend mod_0 to include B" as an
+        // advisory edit, but this stage refuses to silently move B
+        // for the user.
+        let schedule = schedule_for("const A = B + 1; const B = A + 1;", &[("A", logical(0))]);
+        let report = schedule.validate();
+        assert_eq!(
+            report.atomic_unit_conflicts.len(),
+            1,
+            "expected the half-claimed EagerUse cycle to surface as an atomic-unit conflict: {report:?}",
+        );
+        assert_eq!(
+            report.atomic_unit_conflicts[0].conflicting_modules,
+            vec!["<residual_entry>".to_string(), "mod_0".to_string()],
+        );
+    }
+
+    #[test]
+    fn factor_assembly_concordant_claims_within_unit_are_fine() {
+        // Both members of the same atomic unit claimed for the same
+        // module — that's the spec author being explicit, not a
+        // conflict.
+        let schedule = schedule_for(
+            "const A = B + 1; const B = A + 1;",
+            &[("A", logical(0)), ("B", logical(0))],
+        );
+        let summary = partition_summary(&schedule);
+        assert_eq!(
+            summary,
+            vec![
+                ("A".to_string(), "mod_0".to_string()),
+                ("B".to_string(), "mod_0".to_string()),
+            ],
+        );
+    }
+
+    #[test]
+    fn factor_assembly_records_conflict_on_split_eager_use_cycle() {
+        let schedule = schedule_for(
+            "const A = B + 1; const B = A + 1;",
+            &[("A", logical(0)), ("B", logical(1))],
+        );
+        let report = schedule.validate();
+        assert_eq!(
+            report.atomic_unit_conflicts.len(),
+            1,
+            "expected the A↔B EagerUse cycle to surface as an atomic-unit conflict: {report:?}",
+        );
+        let conflict = &report.atomic_unit_conflicts[0];
+        assert_eq!(
+            conflict.conflicting_modules,
+            vec!["mod_0".to_string(), "mod_1".to_string()],
+        );
+    }
+
+    #[test]
+    fn factor_assembly_records_no_conflict_for_sequenced_only_chain() {
+        // Three side-effect statements, source-ordered. Directed
+        // Sequenced edges alone form a chain in `G_atomic`, not an
+        // SCC, so every owner is its own atomic unit and the spec
+        // can split them across modules without violating
+        // co-location. The validator may still flag a module-level
+        // cycle when the spec creates one through reverse claims,
+        // but factor_assembly itself does not panic / record a
+        // conflict here.
+        let schedule = schedule_for(
+            r#"const a1 = (globalThis.tag = "a1", 1); const b1 = (globalThis.tag = "b1", 2); const a2 = (globalThis.tag = "a2", 3);"#,
+            &[("a1", logical(0)), ("b1", logical(1)), ("a2", logical(0))],
+        );
+        let report = schedule.validate();
+        assert!(
+            report.atomic_unit_conflicts.is_empty(),
+            "Sequenced-only chains never force co-location: {report:?}",
+        );
+    }
+
+    #[test]
+    fn factor_assembly_independent_owners_keep_independent_claims() {
+        // Three eager-use chain: A → B → C, no cycle, three atomic
+        // units. Each owner's claim takes effect independently.
+        let schedule = schedule_for(
+            "const C = 3; const B = C + 1; const A = B + 1;",
+            &[("A", logical(0)), ("B", logical(1)), ("C", logical(0))],
+        );
+        let summary = partition_summary(&schedule);
+        assert_eq!(
+            summary,
+            vec![
+                ("A".to_string(), "mod_0".to_string()),
+                ("B".to_string(), "mod_1".to_string()),
+                ("C".to_string(), "mod_0".to_string()),
+            ],
+        );
     }
 
     #[test]

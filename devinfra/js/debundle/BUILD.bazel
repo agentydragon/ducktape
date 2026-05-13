@@ -157,6 +157,7 @@ rust_library(
     srcs = [
         "analysis_tests.rs",
         "atomic_units.rs",
+        "factor_assembly.rs",
         "factorize.rs",
         "facts.rs",
         "graph.rs",

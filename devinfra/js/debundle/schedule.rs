@@ -3,10 +3,14 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use petgraph::algo::toposort;
 use petgraph::graphmap::DiGraphMap;
 
+use crate::atomic_units::compute_atomic_units;
+use crate::factor_assembly::{AtomicUnitConflict, assemble_partition};
 use crate::graph::{build_module_quotient, build_owner_graph};
 use crate::partition::Partition;
 use crate::reports::{build_owner_graph_report, owner_key};
-use crate::validation::{validate_cross_destination_assignments, validate_schedule};
+use crate::validation::{
+    render_assembly_conflict_summary, validate_cross_destination_assignments, validate_schedule,
+};
 use crate::{
     BindingId, BindingKind, BindingName, LogicalModule, LogicalModuleIndex, ModuleId,
     ModuleQuotient, OwnerGraph, OwnerGraphReport, RESIDUAL_ENTRY_LABEL, ScheduleReport,
@@ -37,6 +41,13 @@ pub struct Schedule {
     /// owner graph. Stored separately from the IR so the IR stays
     /// immutable across hypothetical refinements during peelability.
     pub partition: Partition,
+    /// Atomic-factor-unit splits the spec demands but the
+    /// constraining-edge SCC analysis forbids — populated by
+    /// `factor_assembly` when YAML claims split an atomic unit across
+    /// destination modules. Non-empty means the spec is unrealizable
+    /// by construction; the materializer bails on these before
+    /// emitting code.
+    pub assembly_conflicts: Vec<AtomicUnitConflict>,
     pub dep_graph: ModuleQuotient,
     owner_report_ids_by_binding: Vec<Vec<String>>,
     /// Topological linearization of `I ∪ S`, dependency-first
@@ -96,7 +107,10 @@ impl Schedule {
         chunk_renames: HashMap<BindingName, BindingName>,
     ) -> Self {
         let owner_graph = build_owner_graph(&facts);
-        let partition = build_partition(&owner_graph, &bindings, &logical_modules);
+        let atomic_units = compute_atomic_units(&owner_graph);
+        let outcome = assemble_partition(&owner_graph, &atomic_units, &bindings, &logical_modules);
+        let partition = outcome.partition;
+        let assembly_conflicts = outcome.conflicts;
         let owner_report_ids_by_binding = Self::build_owner_report_ids_by_binding(&owner_graph);
         let dep_graph = build_module_quotient(&owner_graph, &partition);
         let linker_order = compute_linker_order(&dep_graph, &logical_modules);
@@ -116,6 +130,7 @@ impl Schedule {
             chunk_renames,
             owner_graph,
             partition,
+            assembly_conflicts,
             dep_graph,
             owner_report_ids_by_binding,
             linker_order,
@@ -269,6 +284,10 @@ impl Schedule {
             validate_cross_destination_assignments(&self.owner_graph, &self.partition, &|id| {
                 self.module_name(id)
             });
+        report.atomic_unit_conflicts =
+            render_assembly_conflict_summary(&self.assembly_conflicts, &self.owner_graph, &|id| {
+                self.module_name(id)
+            });
         report.linker_order = self
             .linker_order
             .iter()
@@ -344,43 +363,6 @@ fn build_export_name_by_binding(
         }
     }
     out
-}
-
-/// Build the partition consumed by quotient + validation:
-///
-/// 1. Seed every owner that declares an `Owned` binding with that
-///    binding's module assignment.
-/// 2. Apply the anonymous-statement override from each logical
-///    module — owners with empty `declared` (e.g. side-effect
-///    expression statements) get routed into the claiming module
-///    by source ordinal so the realizability checks see the closure
-///    the materializer will emit.
-fn build_partition(
-    owner_graph: &OwnerGraph,
-    bindings: &HashMap<BindingName, BindingKind>,
-    logical_modules: &[LogicalModule],
-) -> Partition {
-    let owned: HashMap<BindingName, ModuleId> = bindings
-        .iter()
-        .filter_map(|(name, kind)| match kind {
-            BindingKind::Owned { owner } => Some((name.clone(), *owner)),
-            BindingKind::Imported { .. } => None,
-        })
-        .collect();
-    let mut partition = Partition::from_binding_assignment(owner_graph, &owned);
-    for (idx, module) in logical_modules.iter().enumerate() {
-        let module_id = ModuleId::Logical(LogicalModuleIndex(idx));
-        for ordinal in &module.anonymous_statement_ordinals {
-            if let Some(node) = owner_graph
-                .nodes
-                .iter()
-                .find(|node| node.statement_ordinal.0 == *ordinal)
-            {
-                partition.set(node.id, module_id);
-            }
-        }
-    }
-    partition
 }
 
 /// Topological linearization of the dep graph, dependency-first.
