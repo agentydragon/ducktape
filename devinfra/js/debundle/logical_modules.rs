@@ -12,11 +12,10 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use analysis::{
-    AtomicUnitConflictReport, BindingKind, BindingName, DepKind,
-    LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits,
-    OwnerId, RedundantPurityHint, RedundantPurityReason, Schedule,
-    analyze_chunk_with_source_locations, compute_owner_graph_and_units,
-    render_atomic_unit_conflict_summary, render_cycle_summary,
+    AtomicUnitConflict, BindingKind, BindingName, DepKind, LogicalModule as ScheduleLogicalModule,
+    LogicalModuleIndex, ModuleId, OwnerGraphAndUnits, OwnerId, RedundantPurityHint,
+    RedundantPurityReason, Schedule, analyze_chunk_with_source_locations,
+    compute_owner_graph_and_units, render_atomic_unit_conflict_summary, render_cycle_summary,
 };
 use artifact::{
     ArtifactIndexes, ArtifactSourceImportResolver, ChunkArtifact, ChunkFileRecord, ChunkId,
@@ -794,7 +793,10 @@ fn materialize_logical_chunk(
     }
 
     if !schedule_report.atomic_unit_conflicts.is_empty() {
-        let summary = render_atomic_unit_conflict_summary(&schedule_report.atomic_unit_conflicts);
+        let summary =
+            render_atomic_unit_conflict_summary(&schedule_report.atomic_unit_conflicts, &|id| {
+                schedule.module_name(id)
+            });
         let causes = render_atomic_unit_cause_guidance(&schedule_report.atomic_unit_conflicts);
         bail!(
             "materialize_logical_modules: chunk {chunk_id} has {n} atomic-factor-unit conflict(s) — the spec assigns members of one atomic factor unit to different destination modules, forming a cycle in the module dep graph that the constraining-edge SCC analysis says is unrealizable. Atomic factor units come from FACTORIZE.md's `G_atomic` SCC over the owner graph; every member must co-locate. {causes}Resolve by reconciling each unit's claims into a single destination. Full evidence written to <reports>/{chunk_id}/schedule.json; owner graph written to <reports>/{chunk_id}/owner_graph.json. Summary:\n{summary}",
@@ -3859,7 +3861,7 @@ fn prepare_output_dir(out_dir: &Path, force: bool) -> Result<()> {
 /// Per-cause guidance for the atomic-unit-conflict bail message —
 /// gives the spec author vocabulary to search for (`cycle`,
 /// `side-effect`, `mutable`, `assignment`, `cross-destination`).
-fn render_atomic_unit_cause_guidance(conflicts: &[AtomicUnitConflictReport]) -> String {
+fn render_atomic_unit_cause_guidance(conflicts: &[AtomicUnitConflict]) -> String {
     let mut causes: Vec<DepKind> = conflicts
         .iter()
         .flat_map(|c| c.causes.iter().copied())

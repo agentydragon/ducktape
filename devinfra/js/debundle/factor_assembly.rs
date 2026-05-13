@@ -11,6 +11,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use serde::Serialize;
+
 use crate::atomic_units::AtomicUnit;
 use crate::graph::{DepKind, OwnerGraph, OwnerId};
 use crate::ids::{BindingKind, BindingName, LogicalModule, LogicalModuleIndex, ModuleId};
@@ -18,7 +20,7 @@ use crate::partition::Partition;
 
 /// One owner's claimed destination inside a conflicting atomic
 /// unit. Listed inside an [`AtomicUnitConflict`].
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct ConflictingClaim {
     pub owner: OwnerId,
     pub binding_names: Vec<BindingName>,
@@ -27,7 +29,7 @@ pub struct ConflictingClaim {
 
 /// An atomic factor unit whose members the spec routes to two or
 /// more distinct destinations — unrealizable by construction.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct AtomicUnitConflict {
     /// Members sorted by `OwnerId`.
     pub members: Vec<OwnerId>,

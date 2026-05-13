@@ -21,6 +21,7 @@ use std::collections::{BTreeSet, HashSet};
 
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
+use serde::Serialize;
 
 use crate::facts::StatementFacts;
 use crate::graph::{DepKind, OwnerGraph, OwnerId, build_owner_graph};
@@ -30,7 +31,7 @@ use crate::graph::{DepKind, OwnerGraph, OwnerId, build_owner_graph};
 /// constraining edges *inside* the unit (everything except
 /// `LazyUse`) — used by [`crate::factor_assembly`] to explain *why*
 /// a unit is forced together when its claims conflict.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AtomicUnit {
     pub members: BTreeSet<OwnerId>,
     pub causes: HashSet<DepKind>,

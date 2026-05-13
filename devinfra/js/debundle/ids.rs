@@ -4,14 +4,16 @@ use serde::{Deserialize, Serialize};
 
 /// Index into the materializer's `module_plans` list, identifying a
 /// logical module produced by the spec.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
+#[serde(transparent)]
 pub struct LogicalModuleIndex(pub usize);
 
 /// Identity of a module the graph/schedule analysis reasons about. The
 /// residual entry is a first-class variant rather than a sentinel
 /// index, so callers can't accidentally treat it as a normal logical
 /// module.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ModuleId {
     Logical(LogicalModuleIndex),
     ResidualEntry,

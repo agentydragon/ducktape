@@ -275,9 +275,27 @@ mod tests {
         );
         let conflict = &report.atomic_unit_conflicts[0];
         assert_eq!(
-            conflict.conflicting_modules,
-            vec!["<residual_entry>".to_string(), "mod_0".to_string()],
+            distinct_claim_modules(conflict),
+            vec![
+                ModuleId::Logical(LogicalModuleIndex(0)),
+                ModuleId::ResidualEntry
+            ],
         );
+    }
+
+    /// Sorted distinct destination modules across a conflict's claims —
+    /// the typed equivalent of the prior string-rendered
+    /// `conflicting_modules` field on `AtomicUnitConflictReport`.
+    fn distinct_claim_modules(conflict: &AtomicUnitConflict) -> Vec<ModuleId> {
+        let mut modules: Vec<ModuleId> = conflict
+            .claims
+            .iter()
+            .map(|c| c.module)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        modules.sort();
+        modules
     }
 
     #[test]
@@ -2624,8 +2642,11 @@ mod tests {
             "expected the half-claimed EagerUse cycle to surface as an atomic-unit conflict: {report:?}",
         );
         assert_eq!(
-            report.atomic_unit_conflicts[0].conflicting_modules,
-            vec!["<residual_entry>".to_string(), "mod_0".to_string()],
+            distinct_claim_modules(&report.atomic_unit_conflicts[0]),
+            vec![
+                ModuleId::Logical(LogicalModuleIndex(0)),
+                ModuleId::ResidualEntry
+            ],
         );
     }
 
@@ -2662,8 +2683,11 @@ mod tests {
         );
         let conflict = &report.atomic_unit_conflicts[0];
         assert_eq!(
-            conflict.conflicting_modules,
-            vec!["mod_0".to_string(), "mod_1".to_string()],
+            distinct_claim_modules(conflict),
+            vec![
+                ModuleId::Logical(LogicalModuleIndex(0)),
+                ModuleId::Logical(LogicalModuleIndex(1)),
+            ],
         );
     }
 

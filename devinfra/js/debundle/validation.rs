@@ -7,7 +7,6 @@ use petgraph::visit::EdgeRef;
 use serde::Serialize;
 
 use crate::factor_assembly::AtomicUnitConflict;
-use crate::reports::owner_key;
 use crate::{BindingName, DepKind, EdgeMetadata, ModuleId, ModuleQuotient, StatementOrdinal};
 
 /// Result of validating a module dep graph.
@@ -18,35 +17,13 @@ pub struct ScheduleReport {
     /// modules — unrealizable by construction. Populated from
     /// `Schedule::assembly_conflicts`; the materializer rejects any
     /// spec with a non-empty list before emitting code.
-    pub atomic_unit_conflicts: Vec<AtomicUnitConflictReport>,
+    pub atomic_unit_conflicts: Vec<AtomicUnitConflict>,
     /// Topological linearization of `I ∪ S` rooted at the entry,
     /// dependency-first. Empty when the dep graph has cycles
     /// (validation rejects). Captured here so debug tooling can
     /// see the linker's evaluation order without re-running
     /// materialization. See DESIGN.md "Lemma 2".
     pub linker_order: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct AtomicUnitConflictReport {
-    /// Every owner in the unit, sorted by owner-report id.
-    pub member_owner_ids: Vec<String>,
-    /// Distinct module names the spec claimed for this unit, sorted.
-    pub conflicting_modules: Vec<String>,
-    /// One entry per owner in the unit that carries a claim.
-    pub claims: Vec<AtomicUnitClaimReport>,
-    /// `DepKind`s of constraining edges within the unit. Names what
-    /// forces co-location (e.g. `["LazyRebind"]` for a mutable
-    /// cross-destination assignment; `["Sequenced"]` for a
-    /// source-order side-effect chain).
-    pub causes: Vec<DepKind>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct AtomicUnitClaimReport {
-    pub owner_id: String,
-    pub binding_names: Vec<BindingName>,
-    pub module: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -217,63 +194,39 @@ pub fn validate_schedule(
     }
 }
 
-/// Render typed assembly conflicts into the serializable
-/// [`AtomicUnitConflictReport`] surface that [`ScheduleReport`] and
-/// the materializer's bail-message consume.
-pub(crate) fn render_assembly_conflict_summary(
-    conflicts: &[AtomicUnitConflict],
-    module_name: &dyn Fn(ModuleId) -> String,
-) -> Vec<AtomicUnitConflictReport> {
-    conflicts
-        .iter()
-        .map(|conflict| {
-            let mut member_owner_ids: Vec<String> =
-                conflict.members.iter().copied().map(owner_key).collect();
-            member_owner_ids.sort();
-            let mut conflicting_modules: Vec<String> = conflict
-                .claims
-                .iter()
-                .map(|c| module_name(c.module))
-                .collect::<HashSet<_>>()
-                .into_iter()
-                .collect();
-            conflicting_modules.sort();
-            let claims = conflict
-                .claims
-                .iter()
-                .map(|c| AtomicUnitClaimReport {
-                    owner_id: owner_key(c.owner),
-                    binding_names: c.binding_names.clone(),
-                    module: module_name(c.module),
-                })
-                .collect();
-            AtomicUnitConflictReport {
-                member_owner_ids,
-                conflicting_modules,
-                claims,
-                causes: {
-                    let mut causes: Vec<DepKind> = conflict.causes.iter().copied().collect();
-                    causes.sort();
-                    causes
-                },
-            }
-        })
-        .collect()
-}
-
 /// Render a human-readable summary of atomic-unit conflicts for
 /// inclusion in the materializer's bail message. One block per
-/// conflict listing the unit's members and each member's claim.
-pub fn render_atomic_unit_conflict_summary(conflicts: &[AtomicUnitConflictReport]) -> String {
+/// conflict listing the unit's members and each member's claim. The
+/// `module_name` callback renders [`ModuleId`]s as the strings the
+/// spec author recognizes (e.g. `mod_0`, `<residual_entry>`).
+pub fn render_atomic_unit_conflict_summary(
+    conflicts: &[AtomicUnitConflict],
+    module_name: &dyn Fn(ModuleId) -> String,
+) -> String {
     let mut out = String::new();
     for (idx, c) in conflicts.iter().enumerate() {
         if idx > 0 {
             out.push('\n');
         }
+        let mut member_ids: Vec<String> = c
+            .members
+            .iter()
+            .copied()
+            .map(crate::reports::owner_key)
+            .collect();
+        member_ids.sort();
+        let mut conflicting_modules: Vec<String> = c
+            .claims
+            .iter()
+            .map(|claim| module_name(claim.module))
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+        conflicting_modules.sort();
         out.push_str(&format!(
             "  atomic unit {{{}}} — claims across {{{}}}:\n",
-            c.member_owner_ids.join(", "),
-            c.conflicting_modules.join(", "),
+            member_ids.join(", "),
+            conflicting_modules.join(", "),
         ));
         for claim in &c.claims {
             let names = if claim.binding_names.is_empty() {
@@ -283,7 +236,9 @@ pub fn render_atomic_unit_conflict_summary(conflicts: &[AtomicUnitConflictReport
             };
             out.push_str(&format!(
                 "    - {}{} → {}\n",
-                claim.owner_id, names, claim.module,
+                crate::reports::owner_key(claim.owner),
+                names,
+                module_name(claim.module),
             ));
         }
     }
