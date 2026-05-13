@@ -69,5 +69,38 @@ def test_no_direnv_without_extra_env(env_file: Path, wrapper_dir: Path, bazelrc:
     assert "direnv export" not in content
 
 
+def test_system_java_home_exports_java_home_and_path(
+    env_file: Path, wrapper_dir: Path, bazelrc: Path, tmp_path: Path
+) -> None:
+    """When system_java_home is set, env file exports JAVA_HOME and prefixes bin/ to PATH.
+
+    Consumers that bypass the session bazelrc (notably `bb`, which does not
+    source <session_dir>/bazelrc) rely on JAVA_HOME to pick up the system
+    OpenJDK and its OS-managed cacerts truststore.
+    """
+    java_home = tmp_path / "jdk"
+    (java_home / "bin").mkdir(parents=True)
+    vars = EnvVars(shims_dir=wrapper_dir, session_bazelrc=bazelrc, system_java_home=java_home)
+
+    write_env_file(env_file, vars)
+
+    content = env_file.read_text()
+    assert f"JAVA_HOME={java_home}" in content
+    assert f'PATH="{java_home}/bin:$PATH"' in content
+
+
+def test_no_java_home_when_system_java_home_missing(env_file: Path, wrapper_dir: Path, bazelrc: Path) -> None:
+    """Without system_java_home, env file does not export JAVA_HOME.
+
+    On NixOS / CLI hosts without an /usr/lib/jvm JDK, the bundled Bazel JDK
+    is fine and we should leave JAVA_HOME alone so the user's own JDK choice
+    (or absence of one) is preserved.
+    """
+    write_env_file(env_file, _cli_env_vars(wrapper_dir, bazelrc))
+
+    content = env_file.read_text()
+    assert "JAVA_HOME=" not in content
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

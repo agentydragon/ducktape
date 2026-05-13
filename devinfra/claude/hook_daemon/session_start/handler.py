@@ -395,22 +395,33 @@ async def handle(
     )
     write_config(bbr_bazelrc, bbr_bazelrc_content, "bbr bazelrc")
 
-    # Pick a JVM truststore for Bazel's bundled JDK. Debian's
-    # /etc/ssl/certs/java/cacerts is kept in sync with /etc/ssl/certs/ca-certificates.crt
-    # by ca-certificates-java, so on web containers it already contains
-    # Anthropic's TLS inspection CA. None means no override (CLI/NixOS, bundled
-    # JDK cacerts works since there's no MITM).
-    system_java_cacerts = Path("/etc/ssl/certs/java/cacerts")
-    truststore_path: Path | None
-    truststore_password: str | None
-    if system_java_cacerts.exists():
-        truststore_path = system_java_cacerts
-        # ca-certificates-java uses the JDK default storepass; documented in
-        # /etc/default/cacerts (storepass='' means default = 'changeit').
-        truststore_password = "changeit"
+    # Route Bazel's server JVM through the system OpenJDK when available so it
+    # inherits the OS's CA truststore. Bazel's bundled JDK ships its own
+    # cacerts that does NOT include locally added CAs (e.g. Anthropic's TLS
+    # inspection CA on Claude Code web), so direct HTTPS fetches (BCR,
+    # gazelle fetch_repo, etc.) fail with `PKIX path building failed`.
+    #
+    # Two complementary mechanisms (belt + suspenders):
+    #   1. --server_javabase=<system_jdk>: makes the Bazel server *be* the
+    #      system JVM. On Debian/Ubuntu, the system OpenJDK's
+    #      $JAVA_HOME/lib/security/cacerts is a symlink to
+    #      /etc/ssl/certs/java/cacerts, which ca-certificates-java keeps in
+    #      sync with /etc/ssl/certs/ca-certificates.crt. No HTTP-client config
+    #      needed — TLS just works.
+    #   2. -Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts: kept as a
+    #      fallback for the case where (1) didn't apply (no system JDK at the
+    #      expected path), or where the bundled-JDK server is still in use
+    #      because of an in-flight --host_jvm_args mismatch and a stale server.
+    #
+    # When neither is available (e.g. NixOS), both are None and we fall
+    # through to Bazel's bundled JDK + its bundled cacerts. That's fine where
+    # there is no MITM CA to worry about.
+    system_java_home = _detect_system_java_home()
+    if system_java_home is None:
+        logger.info("No system OpenJDK found; Bazel will use its bundled JDK + truststore fallback")
     else:
-        truststore_path = None
-        truststore_password = None
+        logger.info("Routing Bazel through system OpenJDK at %s", system_java_home)
+    truststore_path, truststore_password = _detect_jvm_truststore()
 
     # Render session bazelrc
     with tracer.start_as_current_span("render_bazelrc", context=root_ctx):
@@ -418,6 +429,7 @@ async def handle(
             CONFIG_FILES.joinpath("bazelrc.mako").read_text(), imports=["from shlex import quote as sh"]
         )
         bazelrc_content: str = bazelrc_template.render(
+            system_java_home=system_java_home,
             truststore_path=truststore_path,
             truststore_password=truststore_password,
             bazel_bes_proxy_sock=session.paths.bazel_bes_proxy_sock if session.bes_interceptor else None,
@@ -458,6 +470,7 @@ async def handle(
             bbr_bazelrc=bbr_bazelrc,
             env_overlay=startup.env_overlay,
             extra_env_script=extra_env,
+            system_java_home=system_java_home,
         )
         env_file.write_env_file(ctx.env_file_path, env_vars)
     logger.info("Wrote environment to %s", ctx.env_file_path)
@@ -502,6 +515,65 @@ def _build_extra_env_script(profile: ProfileConfig) -> str | None:
     """Build extra inline env content from profile's env_exports."""
     if profile.env_exports:
         return profile.env_exports.rstrip()
+    return None
+
+
+# Well-known paths for a system OpenJDK on Debian/Ubuntu (and a generic
+# `default-java` alternative). Ordered from most to least specific; the first
+# entry with a working `bin/java` wins.
+#
+# We prefer 21 over older LTS releases because the Claude Code web image
+# currently ships `openjdk-21-jre-headless`; older versions are kept as
+# fallbacks for older base images. NixOS has no `/usr/lib/jvm/...` at all so
+# detection returns None there and we fall through to Bazel's bundled JDK.
+_SYSTEM_JAVA_HOME_CANDIDATES: tuple[Path, ...] = (
+    Path("/usr/lib/jvm/java-21-openjdk-amd64"),
+    Path("/usr/lib/jvm/java-21-openjdk-arm64"),
+    Path("/usr/lib/jvm/java-17-openjdk-amd64"),
+    Path("/usr/lib/jvm/java-17-openjdk-arm64"),
+    Path("/usr/lib/jvm/java-11-openjdk-amd64"),
+    Path("/usr/lib/jvm/java-11-openjdk-arm64"),
+    Path("/usr/lib/jvm/default-java"),
+)
+
+
+def _detect_jvm_truststore() -> tuple[Path | None, str | None]:
+    """Return ``(truststore_path, password)`` for the Debian-managed Java truststore.
+
+    On Debian/Ubuntu, ``ca-certificates-java`` keeps
+    ``/etc/ssl/certs/java/cacerts`` in sync with
+    ``/etc/ssl/certs/ca-certificates.crt`` — including any
+    locally-installed inspection CA (e.g. Anthropic's on Claude Code web).
+    Used as a fallback for the bundled-JDK code path; on hosts without
+    that file (NixOS, plain CLI) we return ``(None, None)`` and the bazelrc
+    template emits no `-Djavax.net.ssl.trustStore` override.
+    """
+    system_java_cacerts = Path("/etc/ssl/certs/java/cacerts")
+    if system_java_cacerts.exists():
+        # ca-certificates-java uses the JDK default storepass; documented in
+        # /etc/default/cacerts (storepass='' means default = 'changeit').
+        return system_java_cacerts, "changeit"
+    return None, None
+
+
+def _detect_system_java_home() -> Path | None:
+    """Return the path to a usable system OpenJDK, or None if none found.
+
+    A path is "usable" when ``<path>/bin/java`` exists and is executable —
+    that's enough for both ``JAVA_HOME=<path>`` and Bazel's
+    ``--server_javabase=<path>`` to work. We deliberately do NOT spawn the JVM
+    to verify (slow, and `java -version` writes to stderr making it hard to
+    capture cleanly).
+
+    On Debian/Ubuntu the system OpenJDK package symlinks
+    ``$JAVA_HOME/lib/security/cacerts`` to ``/etc/ssl/certs/java/cacerts``,
+    so a server JVM running out of this path automatically picks up the OS
+    CA bundle — including any locally-installed inspection CA.
+    """
+    for candidate in _SYSTEM_JAVA_HOME_CANDIDATES:
+        java_bin = candidate / "bin" / "java"
+        if java_bin.is_file() and os.access(java_bin, os.X_OK):
+            return candidate
     return None
 
 

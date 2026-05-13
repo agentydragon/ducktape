@@ -14,13 +14,30 @@ startup --host_jvm_args=-Xmx8g
 % elif platform.is_gvisor:
 startup --host_jvm_args=-Xmx4g
 % endif
+% if system_java_home:
+# Route the Bazel server through the system OpenJDK so it inherits the OS's
+# CA truststore. Debian's openjdk-*-jre-headless package symlinks
+# $JAVA_HOME/lib/security/cacerts -> /etc/ssl/certs/java/cacerts, which
+# ca-certificates-java keeps in sync with /etc/ssl/certs/ca-certificates.crt.
+# That bundle contains Anthropic's TLS-inspection CA on Claude Code web, so
+# direct HTTPS fetches (BCR, gazelle fetch_repo, etc.) just work — no
+# javax.net.ssl.trustStore override needed.
+# This is a startup flag: changing it after the server is running forces a
+# server restart on the next command. The session_start hook also exports
+# JAVA_HOME so non-bazelrc paths (`bb`, direct `java` invocations) see the
+# same JDK.
+startup --server_javabase=${system_java_home | sh}
+% endif
 % if truststore_path:
-# JVM truststore for Bazel's bundled JDK. Bazel's own cacerts lacks custom
-# CAs (e.g. Anthropic's TLS inspection CA on Claude Code web), so direct
-# HTTPS fetches (BCR, gazelle fetch_repo, etc.) fail with PKIX path building
-# failed. /etc/ssl/certs/java/cacerts is kept in sync with
-# /etc/ssl/certs/ca-certificates.crt by Debian's ca-certificates-java on web
-# containers; None means no override (CLI/NixOS, bundled JDK cacerts works).
+# Fallback: even when --server_javabase points at a system JDK above, keep
+# explicit truststore args on the bundled JDK code path. They cover the
+# window where a stale Bazel server is still running with the bundled JDK
+# (option mismatch triggers a restart, but inflight fetches may already
+# have failed) and the case where no system JDK is installed.
+# /etc/ssl/certs/java/cacerts is the Debian-managed Java truststore;
+# ca-certificates-java keeps it in sync with /etc/ssl/certs/ca-certificates.crt.
+# None means no override (CLI/NixOS without a system JDK — bundled cacerts
+# works since there's no MITM CA to worry about).
 startup --host_jvm_args=-Djavax.net.ssl.trustStore=${truststore_path | sh}
 startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=${truststore_password | sh}
 % endif

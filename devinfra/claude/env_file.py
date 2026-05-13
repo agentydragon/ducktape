@@ -91,6 +91,15 @@ class EnvVars:
     # Extra shell script content from config.yaml (appended verbatim)
     extra_env_script: str | None = None
 
+    # System OpenJDK home, when one was found on the host. Exported as
+    # JAVA_HOME so that `bb` (which doesn't read the session bazelrc) and any
+    # other Java-launcher consumer pick up the same system JDK as Bazel's
+    # server. On a system JDK, $JAVA_HOME/lib/security/cacerts is the OS-
+    # managed truststore (Debian: symlink to /etc/ssl/certs/java/cacerts), so
+    # HTTPS clients running under that JVM trust whatever CAs are in
+    # /etc/ssl/certs/ca-certificates.crt — including a TLS-inspection CA.
+    system_java_home: Path | None = None
+
 
 def write_env_file(env_file: Path, vars: EnvVars) -> None:
     """Write environment variables to file.
@@ -141,6 +150,16 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     if vars.bbr_bazelrc:
         exports.extend(["", "# bbr session bazelrc (BuildBuddy invocation metadata)"])
         exports.extend(exports_from_dict({"BBR_BAZELRC": vars.bbr_bazelrc}))
+
+    if vars.system_java_home is not None:
+        # Export JAVA_HOME (and PATH-prefix its bin) so that consumers that
+        # bypass the session bazelrc (notably `bb`, which does not source
+        # <session_dir>/bazelrc) still pick up the system OpenJDK and its
+        # OS-synced cacerts truststore. The session bazelrc separately wires
+        # `startup --server_javabase=<system_java_home>` for the Bazel server.
+        exports.extend(["", "# System OpenJDK with OS-managed cacerts (for bb and direct java callers)"])
+        exports.extend(exports_from_dict({"JAVA_HOME": vars.system_java_home}))
+        exports.append(f'export PATH="{vars.system_java_home}/bin:$PATH"')
 
     if vars.env_overlay:
         exports.extend(["", "# Secrets from startup_env_script"])
