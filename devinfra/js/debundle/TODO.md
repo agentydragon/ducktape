@@ -205,3 +205,30 @@ mock browser bundle. Extend to:
 - Large vendor-heavy graphs.
 - Unusual dynamic import forms.
 - HTML/runtime asset layouts outside the current corpus.
+
+## Rename `Schedule` → `ChunkFactorization`
+
+`schedule.rs::Schedule` is, after the factorize rewrite, just a
+per-chunk factorization: the authoritative `Partition` plus its
+derived realizability views (`dep_graph`, `linker_order`,
+`assembly_conflicts`) plus a pile of caches that hot-path callers
+read repeatedly (peelability evaluates ~1500 candidates/chunk; the
+`linker_position_by_module`, `export_name_by_binding`, and
+`entry_exported_binding_names_cache` exist to keep that loop
+cheap). The "Schedule" name dates to when the central object was
+the ECMA-262 link-time evaluation order — now the partition is the
+SSOT and everything else is derivable.
+
+Rename to `ChunkFactorization` (or similar) and update docstrings.
+Mechanical sweep: ~80 references across the crate. Should land in
+its own commit so the rename is reviewable in isolation; no
+behavioral change. Wait until any in-flight Schedule-touching work
+(the precompute-atomic-units constructor) is settled before
+starting.
+
+If a deeper restructure feels worthwhile when picking this up,
+consider splitting the type into `FactorizationInputs` (facts,
+bindings, logical_modules, chunk_renames) + `Factorization`
+(partition + dep_graph + linker_order + conflicts) +
+`FactorizationCaches`. Probably not worth the boilerplate, but
+evaluate before doing the rename.
