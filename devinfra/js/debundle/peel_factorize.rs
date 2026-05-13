@@ -216,14 +216,23 @@ pub fn factorize(
     // `FactorizeCell` carries its owner_ids (graph node ids) along
     // with the materializer's gate verdict (landable, oversize,
     // emit-blocked bindings). Translate to internal `Cell` form
-    // (owner indices into `graph.nodes`) but keep the source
-    // `FactorizeCell` alongside so the per-proposal builder can
-    // read the analyzer's verdict directly instead of recomputing.
-    let cells: Vec<(Cell, &FactorizeCell)> = graph
+    // (owner indices into `graph.nodes`) and pair each with a small
+    // `Verdict` capturing the analyzer's gate result. After
+    // agglomeration this verdict gets replaced with a synthesized
+    // one on merged cells.
+    let mut cells: Vec<(Cell, Verdict)> = graph
         .factorize
         .cells
         .iter()
-        .map(|cell| (cell_from_factorize_cell(cell, graph, &owner_index), cell))
+        .map(|cell| {
+            (
+                cell_from_factorize_cell(cell, graph, &owner_index),
+                Verdict {
+                    landable_today: cell.landable_today,
+                    emit_blocked_residual_bindings: cell.emit_blocked_residual_bindings.clone(),
+                },
+            )
+        })
         .collect();
 
     // Per-cell edge accounting. We walk every constraining edge
@@ -252,6 +261,15 @@ pub fn factorize(
             edges_to_active.push((source, module_path.clone()));
         }
     }
+
+    // Agglomeration pass: greedy merging of landable cells along
+    // inter-cell constraining edges, up to `size_cap_lines`. The
+    // analyzer's closure cells are minimal (one SCC per cell);
+    // landable singletons that share constraining edges get
+    // combined into useful module-sized factors here. Validity is
+    // preserved by only merging cells whose union remains landable
+    // (no cycle gate trigger) — see `agglomerate_landable_cells`.
+    agglomerate_landable_cells(&mut cells, &residual_constraining_edges, size_cap_lines);
 
     let proposals = emit_proposals(
         &cells,
@@ -298,6 +316,152 @@ struct Cell {
     lines: usize,
 }
 
+/// Per-cell gate result. For original closure cells, this mirrors
+/// the analyzer's `FactorizeCell`. For agglomerated cells produced
+/// by `agglomerate_landable_cells`, this is synthesized: only
+/// landable cells get merged, and merging two landable cells whose
+/// union is still landable produces another landable cell with
+/// empty `emit_blocked_residual_bindings`.
+#[derive(Debug, Clone)]
+struct Verdict {
+    landable_today: bool,
+    emit_blocked_residual_bindings: Vec<String>,
+}
+
+/// Greedy agglomeration of landable closure cells along inter-cell
+/// constraining edges. Modifies `cells` in place: merged cells are
+/// rolled into earlier indices, dropped cells are removed.
+///
+/// A merge of two landable cells A, B is safe iff `A ∪ B` is itself
+/// landable. Since A and B are individually landable (cycle gate
+/// passes), each has external residual edges flowing in one
+/// direction only. The merge stays landable iff the combined cell
+/// still has external edges in only one direction. Equivalently:
+/// `(out[A] ∪ out[B]) \ {A, B}` is empty OR
+/// `(in[A] ∪ in[B]) \ {A, B}` is empty.
+///
+/// Bounded by `size_cap_lines`: the merged cell's line count must
+/// not exceed the cap. Non-landable cells are never merged.
+fn agglomerate_landable_cells(
+    cells: &mut Vec<(Cell, Verdict)>,
+    residual_constraining_edges: &[(usize, usize)],
+    size_cap_lines: usize,
+) {
+    if cells.is_empty() {
+        return;
+    }
+    let n = cells.len();
+
+    // Owner-idx → closure cell idx.
+    let mut owner_to_cell: HashMap<usize, usize> = HashMap::new();
+    for (idx, (cell, _)) in cells.iter().enumerate() {
+        for &o in &cell.owners {
+            owner_to_cell.insert(o, idx);
+        }
+    }
+
+    // Cell-level edges (closure cell idx). Maintained per root via
+    // the union-find below.
+    let mut out_neighbors: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); n];
+    let mut in_neighbors: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); n];
+    for &(s, t) in residual_constraining_edges {
+        let (Some(&cs), Some(&ct)) = (owner_to_cell.get(&s), owner_to_cell.get(&t)) else {
+            continue;
+        };
+        if cs != ct {
+            out_neighbors[cs].insert(ct);
+            in_neighbors[ct].insert(cs);
+        }
+    }
+
+    let mut parent: Vec<usize> = (0..n).collect();
+
+    fn find(parent: &mut [usize], i: usize) -> usize {
+        let mut r = i;
+        while parent[r] != r {
+            r = parent[r];
+        }
+        let mut x = i;
+        while parent[x] != r {
+            let next = parent[x];
+            parent[x] = r;
+            x = next;
+        }
+        r
+    }
+
+    // Greedy merge. Iterate edges; for each pair of cells joined by
+    // an edge, attempt a merge. Repeat until a pass yields no
+    // merges. Each merge reduces the cell count by 1, so the loop
+    // is bounded by `n - 1` iterations across all passes.
+    loop {
+        let mut merged_any = false;
+        for &(s, t) in residual_constraining_edges {
+            let (Some(&cs), Some(&ct)) = (owner_to_cell.get(&s), owner_to_cell.get(&t)) else {
+                continue;
+            };
+            let ra = find(&mut parent, cs);
+            let rb = find(&mut parent, ct);
+            if ra == rb {
+                continue;
+            }
+            if !cells[ra].1.landable_today || !cells[rb].1.landable_today {
+                continue;
+            }
+            if cells[ra].0.lines + cells[rb].0.lines > size_cap_lines {
+                continue;
+            }
+            // Check that the merged cell stays landable. Resolve
+            // each neighbor through find() so stale roots from
+            // earlier merges don't show up as phantom externals.
+            let mut merged_out: BTreeSet<usize> = BTreeSet::new();
+            for &n in out_neighbors[ra].iter().chain(out_neighbors[rb].iter()) {
+                let rn = find(&mut parent, n);
+                if rn != ra && rn != rb {
+                    merged_out.insert(rn);
+                }
+            }
+            let mut merged_in: BTreeSet<usize> = BTreeSet::new();
+            for &n in in_neighbors[ra].iter().chain(in_neighbors[rb].iter()) {
+                let rn = find(&mut parent, n);
+                if rn != ra && rn != rb {
+                    merged_in.insert(rn);
+                }
+            }
+            if !merged_out.is_empty() && !merged_in.is_empty() {
+                continue;
+            }
+            // Merge: smaller index becomes the root.
+            let (keep, drop) = if ra < rb { (ra, rb) } else { (rb, ra) };
+            parent[drop] = keep;
+            let drop_owners = std::mem::take(&mut cells[drop].0.owners);
+            cells[keep].0.owners.extend(drop_owners);
+            let drop_lines = cells[drop].0.lines;
+            cells[keep].0.lines += drop_lines;
+            cells[drop].0.lines = 0;
+            // Drop's emit-blocked is empty (landable) so no merge needed there.
+            out_neighbors[keep] = merged_out;
+            in_neighbors[keep] = merged_in;
+            out_neighbors[drop].clear();
+            in_neighbors[drop].clear();
+            merged_any = true;
+        }
+        if !merged_any {
+            break;
+        }
+    }
+
+    // Collapse: keep only root cells.
+    let roots: Vec<usize> = (0..n).map(|i| find(&mut parent, i)).collect();
+    let mut kept = Vec::with_capacity(n);
+    for (i, entry) in cells.drain(..).enumerate() {
+        if roots[i] == i {
+            kept.push(entry);
+        }
+    }
+    *cells = kept;
+}
+
 fn owner_line_count(node: &analysis::OwnerGraphNodeReport) -> usize {
     node.source_location
         .as_ref()
@@ -319,7 +483,7 @@ struct ProposalContext<'a> {
 }
 
 fn emit_proposals(
-    cells: &[(Cell, &FactorizeCell)],
+    cells: &[(Cell, Verdict)],
     residual_edges: &[(usize, usize)],
     active_edges: &[(usize, String)],
     graph: &OwnerGraphReport,
@@ -345,7 +509,7 @@ fn emit_proposals(
     let mut proposals: Vec<FactorizeProposal> = cells
         .iter()
         .enumerate()
-        .map(|(cell_idx, (cell, source))| build_proposal(cell_idx, cell, source, &ctx))
+        .map(|(cell_idx, (cell, verdict))| build_proposal(cell_idx, cell, verdict, &ctx))
         .collect();
 
     // Topological-by-residual-dependency sort with source-line
@@ -439,7 +603,7 @@ fn compute_topo_depths(
 fn build_proposal(
     cell_idx: usize,
     cell: &Cell,
-    source: &FactorizeCell,
+    verdict: &Verdict,
     ctx: &ProposalContext,
 ) -> FactorizeProposal {
     let mut owner_ids: Vec<String> = Vec::with_capacity(cell.owners.len());
@@ -514,7 +678,8 @@ fn build_proposal(
     // `cross_destination_rebind_bindings` stays empty because the
     // closure-based factorizer auto-unions rebind-linked owners
     // into one cell — no cross-cell rebind survives.
-    let emit_blocked_residual_bindings: Vec<String> = source.emit_blocked_residual_bindings.clone();
+    let emit_blocked_residual_bindings: Vec<String> =
+        verdict.emit_blocked_residual_bindings.clone();
     let cross_destination_rebind_bindings: Vec<String> = Vec::new();
     FactorizeProposal {
         proposed_module_id: format!("auto_partition_{cell_idx:04}"),
@@ -536,7 +701,7 @@ fn build_proposal(
         active_modules_referenced,
         emit_blocked_residual_bindings,
         cross_destination_rebind_bindings,
-        landable_today: source.landable_today,
+        landable_today: verdict.landable_today,
         oversize: cell.lines > ctx.size_cap_lines,
         seeded_from_deferred: seeded.into_iter().collect(),
     }
