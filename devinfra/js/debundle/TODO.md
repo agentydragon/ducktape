@@ -206,6 +206,49 @@ mock browser bundle. Extend to:
 - Unusual dynamic import forms.
 - HTML/runtime asset layouts outside the current corpus.
 
+## Collapse `peel_{factorize,horizon,inventory}_cli` into one CLI
+
+Three independent peel CLIs were built incrementally, each adding a
+different view over `owner_graph.json`:
+
+- `peel_factorize_cli` — primary planner. Annotates the SSOT
+  factorize cells (now supernode-aware: extension proposals against
+  existing modules + fresh-module proposals against unclaimed atomic
+  units) with spec-tree context and cell-graph metrics.
+- `peel_horizon_cli` — ranks existing `*.yaml.deferred` files by how
+  many of their declared members are present in the chunk, with
+  `near-missing` companions to close coverage gaps.
+- `peel_inventory_cli` — per-binding view of individually peelable
+  bindings, with `proposed_dir` heuristics and `forbidden` blockers.
+
+After the supernode-aware factorize rewrite, the structural overlap
+is real:
+
+- `peel_horizon`'s "YAML module is K members short" view IS the
+  factorize extension-proposal output (the supernode is the YAML's
+  current members; the proposal's `extension_owner_ids` is the
+  near-miss companion set).
+- `peel_inventory`'s per-binding rows are factorize cells of size 1
+  (atomic units that are themselves singletons), with the
+  `proposed_dir` derivation as presentation logic.
+
+What's unique to each and would need to land somewhere on the
+collapsed CLI:
+
+- `peel_horizon`'s YAML-coverage check (parse YAML file, look up each
+  member binding in the owner graph). ~50 LoC of presentation code.
+- `peel_inventory`'s `proposed_dir` heuristic (derive a destination
+  hint from readable export names + primary deferred YAML).
+  ~30 LoC of presentation code.
+
+Plan: single `peel` CLI with `--view {plan,horizon,inventory}` (names
+to be revised) modes. One analysis pipeline (factorize cells +
+spec-tree annotation); three formatters. Coordinated update with
+gaffer's tana-peel skill steps that today invoke the binaries by name.
+Wait until PR #1547 lands and gaffer is repinned past it, so the
+supernode-aware factorize output is what the collapsed CLI is
+formatting.
+
 ## Rename `Schedule` → `ChunkFactorization`
 
 `schedule.rs::Schedule` is, after the factorize rewrite, just a
