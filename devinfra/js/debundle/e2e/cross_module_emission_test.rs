@@ -57,7 +57,7 @@ export { a };
 "#,
         vec![logical_module("state", &[Member::new("a")])],
     );
-    opts.include_residual = false;
+    opts.unassigned_mode = None;
     expect_rejection_containing_all(
         opts,
         &["assignment", "assigner", "mutable", "cross-destination"],
@@ -75,7 +75,7 @@ export { Text };
 "#,
         vec![logical_module("shared/ui/text", &[Member::new("Text")])],
     );
-    opts.include_residual = false;
+    opts.unassigned_mode = None;
     let fixture = run_fixture(opts);
     assert_module_source(
         &fixture.out_root,
@@ -108,7 +108,7 @@ export { Text };
 "#,
         vec![logical_module("shared/ui/text", &[Member::new("Text")])],
     );
-    opts.include_residual = false;
+    opts.unassigned_mode = None;
     let fixture = run_fixture(opts);
     assert_module_source(
         &fixture.out_root,

@@ -748,17 +748,16 @@ export { a, C, c };
 // into `declared_pure`.
 //
 // `Member.purity` is collected only from logical-module
-// members today. `chunk_renames.members[].purity` and
-// `residual_modules.members[].purity` are silently dropped.
-// That forces the spec author to either peel the binding into
-// a 1-member logical module just to get the purity hint
-// propagated, or leave the call classified `Unknown`.
+// members today. `chunk_renames.members[].purity` is silently
+// dropped. That forces the spec author to either peel the
+// binding into a 1-member logical module just to get the purity
+// hint propagated, or leave the call classified `Unknown`.
 //
-// Refinement: chunk_renames + residual_modules members with
-// `purity: pure` contribute to `declared_pure` alongside
-// logical-module members. One spec entry per imported function
-// carries both the rename (via the existing chunk_renames
-// pipeline) and the purity hint.
+// Refinement: chunk_renames members with `purity: pure`
+// contribute to `declared_pure` alongside logical-module
+// members. One spec entry per imported function carries both
+// the rename (via the existing chunk_renames pipeline) and the
+// purity hint.
 //
 // In-residual rename behavior is already pinned by
 // `chunk_renames_test`; this test focuses on the purity-side
@@ -792,7 +791,6 @@ console.log(c);
 export { a, b, c };
 "#,
         logical_modules: vec![logical_module("b_module", &[Member::new("b")])],
-        residual: None,
         chunk_renames: Some(json!({
             "id": "chunk_renames__static_app",
             "members": [
@@ -809,8 +807,7 @@ export { a, b, c };
             ],
         })),
         chunk_id: "static/app",
-        include_residual: true,
-        unassigned_mode: None,
+        unassigned_mode: Some(unassigned_mode_catchall_file(None)),
         extra_files: &[(
             "static/app/vendor.js",
             "export function f() { return 1; }\n",

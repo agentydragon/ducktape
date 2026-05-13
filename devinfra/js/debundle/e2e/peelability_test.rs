@@ -71,7 +71,7 @@ export { Leaf, Dep, Existing };
 "#,
         vec![logical_module("existing", &[Member::new("Existing")])],
     );
-    opts.include_residual = false;
+    opts.unassigned_mode = None;
     let fixture = run_fixture(opts);
     assert_entry_output(&fixture, "existing\n");
 
@@ -166,7 +166,7 @@ export { X, Existing };
 "#,
         vec![logical_module("existing", &[Member::new("Existing")])],
     );
-    opts.include_residual = false;
+    opts.unassigned_mode = None;
     let fixture = run_fixture(opts);
 
     let graph: OwnerGraphReport =
@@ -228,8 +228,9 @@ fn three_vertex_constraining_scc_should_be_peelable_as_one_owner_closure() {
     // candidate in `minimal_peel_sets`.
     //
     // `Existing` is an already-extracted module so the residual
-    // peel pipeline has work to do. `include_residual = false`
-    // keeps the pipeline strict about what the chunk emits.
+    // peel pipeline has work to do. `unassigned_mode = None`
+    // (default `InlineInEntry`) keeps unclaimed bindings inline
+    // in entry rather than emitting a separate residual file.
     let mut opts = FixtureOpts::new(
         r#"var A = B;
 var B = C;
@@ -240,7 +241,7 @@ export { A, B, C, Existing };
 "#,
         vec![logical_module("existing", &[Member::new("Existing")])],
     );
-    opts.include_residual = false;
+    opts.unassigned_mode = None;
     let fixture = run_fixture(opts);
 
     let graph: OwnerGraphReport =
@@ -319,7 +320,7 @@ export { Existing };
 "#,
         vec![logical_module("existing", &[Member::new("Existing")])],
     );
-    opts.include_residual = false;
+    opts.unassigned_mode = None;
     let fixture = run_fixture(opts);
     assert_entry_output(&fixture, "existing\n");
 

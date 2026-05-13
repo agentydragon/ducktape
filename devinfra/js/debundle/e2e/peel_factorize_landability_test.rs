@@ -64,7 +64,7 @@ export { a, b, c };
         chunk_source,
         vec![logical_module("anchors/a", &[Member::new("a")])],
     );
-    opts.include_residual = false;
+    opts.unassigned_mode = None;
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
@@ -123,7 +123,7 @@ fn factorizer_flags_emit_blocked_cell_not_landable_with_blocker_binding() {
     // `anchor` exists so the chunk has at least one active logical
     // module (the spec rejects all-residual chunks); `dep` and
     // `consumer` stay in the residual entry via
-    // `include_residual: false`.
+    // `unassigned_mode = None` (the default `InlineInEntry`).
     let chunk_source = r#"const anchor = "anchor";
 const dep = "secret";
 function consumer() { return dep; }
@@ -134,7 +134,7 @@ export { anchor, consumer };
         chunk_source,
         vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
     );
-    opts.include_residual = false;
+    opts.unassigned_mode = None;
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));

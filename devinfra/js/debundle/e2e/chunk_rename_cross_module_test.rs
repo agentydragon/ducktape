@@ -37,7 +37,6 @@ console.log(c);
 export { a, b, c };
 "#,
         logical_modules: vec![logical_module("b_module", &[Member::new("b")])],
-        residual: None,
         chunk_renames: Some(json!({
             "id": "chunk_renames__static_app",
             "members": [
@@ -54,8 +53,7 @@ export { a, b, c };
             ],
         })),
         chunk_id: "static/app",
-        include_residual: true,
-        unassigned_mode: None,
+        unassigned_mode: Some(unassigned_mode_catchall_file(None)),
         extra_files: &[(
             "static/app/vendor.js",
             "export function f() { return 1; }\n",

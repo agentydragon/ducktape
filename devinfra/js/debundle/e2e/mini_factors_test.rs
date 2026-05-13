@@ -20,11 +20,9 @@ fn catchall_keeps_unclaimed_bindings_in_residual() {
     let opts = FixtureOpts {
         source: FIXTURE_SOURCE,
         logical_modules: vec![],
-        residual: None,
         chunk_renames: None,
         chunk_id: "static/app",
-        include_residual: true,
-        unassigned_mode: None,
+        unassigned_mode: Some(unassigned_mode_catchall_file(None)),
         extra_files: &[],
     };
     let fixture = run_fixture(opts);
@@ -47,11 +45,9 @@ fn mini_factors_synthesizes_one_module_per_unclaimed_unit() {
     let opts = FixtureOpts {
         source: FIXTURE_SOURCE,
         logical_modules: vec![],
-        residual: None,
         chunk_renames: None,
         chunk_id: "static/app",
-        include_residual: true,
-        unassigned_mode: Some("mini_factors"),
+        unassigned_mode: Some(unassigned_mode_mini_factors()),
         extra_files: &[],
     };
     let fixture = run_fixture(opts);

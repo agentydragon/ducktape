@@ -5,7 +5,7 @@
 //! ## Background — the bug this op was added to fix
 //!
 //! Previously, the gaffer-side `.yaml.deferred` workflow stuffed its
-//! rename ops into `residual_modules[chunk_id].members` so the
+//! rename ops into a residual module's `members` list so the
 //! residual-member-rename path applied them. That works mechanically
 //! but the residual-member-rename path needs a `Logical(R)` module,
 //! which the validator treats as a distinct node from
@@ -41,7 +41,7 @@ fn chunk_renames_renames_residual_bindings_in_entry() {
         // S2 (decl with S):    let x = (..., "x-value")  -- stays in entry
         // S3 (orphan-R+S):     console.log(x)            -- reads x at-init
         //
-        // No `residual_modules` entry; `x` stays in `ResidualEntry`-land.
+        // Default `unassigned_mode`: `x` stays in `ResidualEntry`-land.
         // `chunk_renames` renames `x` -> `payload`. The lowerer rewrites
         // the in-entry references; the export statement carries the
         // new name.
@@ -51,7 +51,6 @@ console.log(x);
 export { x };
 "#,
         logical_modules: vec![],
-        residual: None,
         chunk_renames: Some(json!({
             "id": "chunk_renames__static_app",
             "members": [
@@ -62,7 +61,6 @@ export { x };
             ],
         })),
         chunk_id: "static/app",
-        include_residual: false,
         unassigned_mode: None,
         extra_files: &[],
     };
@@ -96,7 +94,6 @@ console.log(x, importedThing, y);
 export { x };
 "#,
         logical_modules: vec![],
-        residual: None,
         chunk_renames: Some(json!({
             "id": "chunk_renames__static_app",
             "members": [
@@ -107,7 +104,6 @@ export { x };
             ],
         })),
         chunk_id: "static/app",
-        include_residual: false,
         unassigned_mode: None,
         extra_files: &[(
             "static/vendor/entry.js",
@@ -149,7 +145,6 @@ console.log("entry");
 export { helper, run };
 "#,
         logical_modules: vec![logical_module("mod_run", &[Member::new("run")])],
-        residual: None,
         chunk_renames: Some(json!({
             "id": "chunk_renames__static_app",
             "members": [
@@ -160,7 +155,6 @@ export { helper, run };
             ],
         })),
         chunk_id: "static/app",
-        include_residual: false,
         unassigned_mode: None,
         extra_files: &[],
     };
@@ -205,7 +199,6 @@ function run() {
 export { run };
 "#,
         logical_modules: vec![logical_module("mod_run", &[Member::new("run")])],
-        residual: None,
         chunk_renames: Some(json!({
             "id": "chunk_renames__static_app",
             "members": [
@@ -216,7 +209,6 @@ export { run };
             ],
         })),
         chunk_id: "static/app",
-        include_residual: false,
         unassigned_mode: None,
         extra_files: &[],
     };
@@ -239,7 +231,6 @@ console.log(alpha, bravo, charlie, delta);
 export { alpha, bravo, charlie, delta };
 "#,
         logical_modules: vec![],
-        residual: None,
         chunk_renames: Some(json!({
             "id": "chunk_renames__static_app",
             "members": [
@@ -253,7 +244,6 @@ export { alpha, bravo, charlie, delta };
             ],
         })),
         chunk_id: "static/app",
-        include_residual: false,
         unassigned_mode: None,
         extra_files: &[],
     };

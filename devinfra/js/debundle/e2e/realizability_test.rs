@@ -409,7 +409,7 @@ export { Leaf, Dep, Existing };
             { "name": "ReadableDep", "selector": { "binding": { "name": "Dep" } } }
         ],
     }));
-    opts.include_residual = false;
+    opts.unassigned_mode = None;
     let fixture = run_fixture(opts);
     assert_entry_output(&fixture, "existing\n");
 
