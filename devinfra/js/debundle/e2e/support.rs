@@ -208,8 +208,8 @@ pub struct FixtureOpts<'a> {
     pub include_residual: bool,
     /// Optional `unassigned_mode` setting for this chunk. `None` keeps
     /// the default `catchall` behavior; `Some("mini_factors")` activates
-    /// the Stage 5 mini-factor synthesizer. The value is the
-    /// snake_case discriminant of `spec::UnassignedMode`.
+    /// the mini-factor synthesizer. The value is the snake_case
+    /// discriminant of `spec::UnassignedMode`.
     pub unassigned_mode: Option<&'static str>,
     pub extra_files: &'a [(&'a str, &'a str)],
 }

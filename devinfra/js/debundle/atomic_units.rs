@@ -1,4 +1,4 @@
-//! Stage 1 of factorize: structural atomic factor units.
+//! Structural atomic factor units.
 //!
 //! Computes the strongly-connected components of the constraining-edge
 //! subgraph over all owners. Each SCC is one **atomic unit** — a set
@@ -7,10 +7,10 @@
 //! unrealizable as ESM.
 //!
 //! Atomic units are mode-independent. They depend only on the chunk's
-//! owner graph, not on the spec or any chunk-level config. Stage 2
-//! (factor assembly, in a later module) consumes atomic units +
-//! YAML claims + the `unassigned_mode` setting to produce the final
-//! partition. See `FACTORIZE.md` for the architecture.
+//! owner graph, not on the spec or any chunk-level config.
+//! [`crate::factor_assembly::assemble_partition`] consumes atomic
+//! units + YAML claims + the `unassigned_mode` setting to produce the
+//! final partition. See `FACTORIZE.md` for the architecture.
 //!
 //! # Closure rules for the constraining-edge subgraph `G_atomic`
 //!

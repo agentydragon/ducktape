@@ -1802,7 +1802,7 @@ fn body_index_for_statement_ordinal(body: &[ModuleItem], stmt_ordinal: usize) ->
     None
 }
 
-/// Stage 5 `unassigned_mode == MiniFactors`: for each atomic factor
+/// `unassigned_mode == MiniFactors`: for each atomic factor
 /// unit whose members are entirely unclaimed by the YAML spec (i.e.
 /// either currently sitting in the residual catch-all or never
 /// assigned to any plan), synthesize a stand-alone [`ModulePlan`]

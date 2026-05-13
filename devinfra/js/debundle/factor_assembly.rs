@@ -1,22 +1,13 @@
-//! Stage 2 of factorize: factor assembly.
+//! Factor assembly: atomic-unit-aware partition.
 //!
-//! Consumes Stage 1's atomic factor units plus the spec's YAML claims
-//! and produces the per-owner [`Partition`] that downstream code
-//! (quotient construction, realizability gate, materializer) reads as
-//! the authoritative module assignment.
-//!
-//! # Why this lives one level above `build_partition`
-//!
-//! The previous `schedule::build_partition` assigned each owner
-//! independently from its declared binding and applied anonymous-
-//! statement overrides on top. Atomic units never entered the picture
-//! — so a spec that claimed two owners of the same atomic unit for
-//! different modules would silently produce an unrealizable partition
-//! and rely on the cycle validator downstream to flag it.
+//! Consumes [`crate::atomic_units`]' atomic factor units plus the
+//! spec's YAML claims and produces the per-owner [`Partition`] that
+//! downstream code (quotient construction, realizability gate,
+//! materializer) reads as the authoritative module assignment.
 //!
 //! Atomic units encode *structural* co-location constraints: by
 //! construction, every owner in a unit must share a destination for
-//! the bundle's init order to be realizable as ESM. So this stage:
+//! the bundle's init order to be realizable as ESM. So this module:
 //!
 //! 1. Computes a per-owner *claim* from `bindings` and each logical
 //!    module's `anonymous_statement_ordinals`.
@@ -29,14 +20,12 @@
 //!    `ScheduleReport`) and `materialize_logical_modules` (which
 //!    bails on the rendered report).
 //! 3. Each owner gets its individual claim (or
-//!    [`ModuleId::ResidualEntry`] when unclaimed). Stage 2
+//!    [`ModuleId::ResidualEntry`] when unclaimed). This pass
 //!    intentionally does *not* extend a single-member claim to cover
 //!    the rest of the atomic unit — that promotion belongs to the
-//!    factorize proposals layer (Stage 4 in `FACTORIZE.md`), which
+//!    factorize proposals layer (see [`crate::factorize`]), which
 //!    surfaces extensions as advisory suggestions to the spec
-//!    author. The partition here is the same shape the previous
-//!    `schedule::build_partition` produced; the only new behavior is
-//!    the per-conflict diagnostic.
+//!    author.
 //!
 //! See `FACTORIZE.md` for the broader architecture.
 

@@ -59,8 +59,7 @@ pub struct TransformSpec {
     /// the chunk's entry file holds the residual body.
     /// `mini_factors` instead synthesizes one logical module per
     /// unclaimed atomic factor unit, so the residual catch-all
-    /// collapses to whatever truly cannot be peeled. See
-    /// FACTORIZE.md Stage 2.
+    /// collapses to whatever truly cannot be peeled. See FACTORIZE.md.
     #[serde(default)]
     pub unassigned_mode: BTreeMap<String, UnassignedMode>,
 
@@ -238,7 +237,7 @@ pub enum UnassignedMode {
     /// Each unclaimed atomic factor unit becomes its own synthetic
     /// logical module. The residual catch-all collapses to whatever
     /// truly cannot be peeled (typically empty for clean chunks).
-    /// See FACTORIZE.md Stage 2.
+    /// See FACTORIZE.md.
     MiniFactors,
 }
 

@@ -1,5 +1,5 @@
-//! Stage 4 of the factorize architecture: supernode-aware proposal
-//! emitter. Reads the in-memory [`Schedule`] (whose partition reflects
+//! Supernode-aware factorize proposal emitter. Reads the in-memory
+//! [`Schedule`] (whose partition reflects
 //! every YAML claim) and emits cells that represent advisory
 //! proposals to the spec author.
 //!

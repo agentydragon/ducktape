@@ -2613,9 +2613,9 @@ mod tests {
         // author needs to either also assign B (or leave both
         // unassigned), or remove the constraining edge that fused
         // them in the first place. The factorize proposals layer
-        // (Stage 4) may suggest "extend mod_0 to include B" as an
-        // advisory edit, but this stage refuses to silently move B
-        // for the user.
+        // (`crate::factorize`) may suggest "extend mod_0 to include
+        // B" as an advisory edit, but factor_assembly refuses to
+        // silently move B for the user.
         let schedule = schedule_for("const A = B + 1; const B = A + 1;", &[("A", logical(0))]);
         let report = schedule.validate();
         assert_eq!(
@@ -2707,7 +2707,7 @@ mod tests {
         );
     }
 
-    /// Stage 4 supernode-aware factorize: a YAML-claimed module `mod_0`
+    /// Supernode-aware factorize: a YAML-claimed module `mod_0`
     /// (with owners `A`, `B`) plus one unclaimed `C` that sits in the
     /// same EagerUse cycle as `A` should produce a single proposal
     /// cell — an extension of `mod_0` that absorbs `C`. The closure
@@ -2757,7 +2757,7 @@ mod tests {
         );
     }
 
-    /// Stage 4 supernode-aware factorize: two unclaimed owners that
+    /// Supernode-aware factorize: two unclaimed owners that
     /// form a Sequenced + reverse-EagerUse SCC should land in one
     /// fresh-module proposal cell. The closure graph's Sequenced
     /// rule emits `earlier → later` (inversion of the owner-graph's
