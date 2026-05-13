@@ -449,6 +449,38 @@ fn materialize_logical_chunk(
         let dest_target_file = target_file_for_request(target_dir, &request.target_path)?;
         let module_id = ModuleId::Logical(LogicalModuleIndex(index));
         for member in &request.members {
+            if let Some(existing_kind) = bindings_catalogue.get(&member.binding) {
+                let existing_id = match existing_kind {
+                    BindingKind::Owned {
+                        owner: ModuleId::Logical(LogicalModuleIndex(owner_index)),
+                    } => module_plans
+                        .get(*owner_index)
+                        .map(|plan| plan.id.clone())
+                        .unwrap_or_else(|| format!("<plan#{owner_index}>")),
+                    BindingKind::Owned { owner } => format!("{owner:?}"),
+                    BindingKind::Imported { re_exported_by, .. } => re_exported_by
+                        .keys()
+                        .find_map(|m| match m {
+                            ModuleId::Logical(LogicalModuleIndex(i)) => {
+                                module_plans.get(*i).map(|p| p.id.clone())
+                            }
+                            _ => None,
+                        })
+                        .unwrap_or_else(|| "<imported>".to_string()),
+                };
+                bail!(
+                    "Duplicate binding claim for {:?} in chunk {chunk_id:?}: already \
+                     claimed by module {existing_id} and now also claimed by module \
+                     {}. Each binding may belong to exactly one logical module. \
+                     Different selector forms (`{{name: foo}}` vs \
+                     `{{name: foo, kind: class_declaration}}`) that resolve to the \
+                     same source declaration still count as duplicates. To expose a \
+                     binding under multiple readable names, list all the renames in \
+                     one module.",
+                    member.binding,
+                    request.id,
+                );
+            }
             if member.is_import_specifier {
                 let (imported_name, imported_from) = resolve_imported_binding(
                     &mut imported_binding_resolver,
@@ -458,16 +490,16 @@ fn materialize_logical_chunk(
                     &member.binding,
                     &mut imported_from_by_src,
                 )?;
-                let entry = bindings_catalogue
-                    .entry(member.binding.clone())
-                    .or_insert_with(|| BindingKind::Imported {
-                        imported_name: imported_name.clone(),
-                        imported_from: imported_from.clone(),
-                        re_exported_by: HashMap::new(),
-                    });
-                if let BindingKind::Imported { re_exported_by, .. } = entry {
-                    re_exported_by.insert(module_id, member.export_name.clone());
-                }
+                let mut re_exported_by = HashMap::new();
+                re_exported_by.insert(module_id, member.export_name.clone());
+                bindings_catalogue.insert(
+                    member.binding.clone(),
+                    BindingKind::Imported {
+                        imported_name,
+                        imported_from,
+                        re_exported_by,
+                    },
+                );
             } else {
                 bindings.insert(member.binding.clone(), member.export_name.clone());
             }

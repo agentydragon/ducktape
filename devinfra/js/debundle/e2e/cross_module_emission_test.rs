@@ -199,61 +199,60 @@ console.log(w({ a: null, b: "d" }));
 // --- Consumer-side import-local disambiguation ---------------------------
 
 #[test]
-fn duplicate_claims_use_readable_imports() {
-    // Two plans claim the same input-bundle `binding`. Without
-    // disambiguation the second emit's import shadows the first
-    // and the file fails to parse. The materializer mints a
-    // `$N` suffix on the second.
+fn duplicate_top_level_decl_claims_are_rejected() {
+    // Regression for the gaffer Tana case: two YAMLs both claim the
+    // same input-bundle top-level binding (e.g. both `runtime.yaml`
+    // and `ai_conversation_node_accessor.yaml` export
+    // `AIConversationNodeAccessor` from binding `ho`). Previously the
+    // emitter put the body in one module and emitted
+    // `export { AIConversationNodeAccessor };` with no backing decl
+    // in the other — invalid JS that fails `import()` with
+    // "SyntaxError: Export 'X' is not defined in module".
+    //
+    // The spec author's options are: put both renames in one module,
+    // or pick one module to own the declaration. Two modules
+    // re-exporting the same source binding under different readable
+    // names is not a supported pattern for top-level decls.
+    // (Multi-re-export of an `import_specifier` binding via
+    // `re_exported_by` remains supported — see
+    // `imported_binding_re_exported_under_two_different_names`.)
+    //
+    // Different selector forms targeting the same declaration
+    // (`{name: ho}` vs `{name: ho, kind: class_declaration}`) all
+    // collapse to one `binding_assignment` entry, so the rejection
+    // catches any way to spell the duplicate.
     let opts = FixtureOpts::new(
-        r#"const aH = 42;
-console.log(aH);
-export { aH };
+        r#"class ho {
+  static isAIConversation() { return false; }
+}
+console.log(ho);
+export { ho };
 "#,
         vec![
             (
                 "mod_a".to_string(),
                 json!({
-                    "members": [{ "name": "readableA", "selector": { "binding": { "name": "aH" } } }],
+                    "members": [{
+                        "name": "AIConversationNodeAccessor",
+                        "selector": { "binding": { "name": "ho", "kind": "class_declaration" } },
+                    }],
                 }),
             ),
             (
                 "mod_b".to_string(),
                 json!({
-                    "members": [{ "name": "plainAh", "selector": { "binding": { "name": "aH" } } }],
+                    "members": [{
+                        "name": "AIConversationNodeAccessor",
+                        "selector": { "binding": { "name": "ho" } },
+                    }],
                 }),
             ),
         ],
     );
-    let fixture = run_fixture(opts);
-    let entry = fs::read_to_string(&fixture.entry_path).expect("read entry.js");
-
-    assert!(
-        entry.contains(r#"import { readableA } from "./modules/mod_a.js""#),
-        "expected readable-local mod_a import; entry was:\n{entry}",
+    expect_rejection_containing_all(
+        opts,
+        &["Duplicate binding claim", "\"ho\"", "mod_a", "mod_b"],
     );
-    assert!(
-        entry.contains(r#"import { plainAh } from "./modules/mod_b.js""#),
-        "expected readable-local mod_b import; entry was:\n{entry}",
-    );
-    let import_lines = entry
-        .lines()
-        .filter(|line| line.starts_with("import "))
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(
-        !import_lines.contains("readableA as aH") && !import_lines.contains("plainAh as aH"),
-        "input-bundle name should not survive as an import alias; entry was:\n{entry}",
-    );
-    // Body refs to the second-claimed binding follow the readable rename.
-    assert!(
-        entry.contains("console.log(plainAh)"),
-        "expected console.log to be rewritten to plainAh; entry was:\n{entry}",
-    );
-    // Public re-export name survives: `export { plainAh as aH }`,
-    // not `export { plainAh }`. AST walk so a corrupt
-    // `plainAh as plainAh` doesn't slip past a substring match.
-    assert_export_named_specifier(&entry, "plainAh", Some("aH"));
-    assert_unique_import_locals(&entry);
 }
 
 #[test]
@@ -408,14 +407,16 @@ export { a };
     );
 }
 
-// --- Multi-module re-export of a shared imported binding ----------------
+// --- Duplicate import-specifier claims are rejected ---------------------
 
 #[test]
-fn imported_binding_re_exported_under_two_different_names() {
-    // Two logical modules each re-export the same imported
-    // binding under different public names. They share one
-    // `BindingKind::Imported` whose `re_exported_by` map carries
-    // each module's chosen public name.
+fn duplicate_import_specifier_claims_are_rejected() {
+    // Same rule as `duplicate_top_level_decl_claims_are_rejected`,
+    // but for `kind: import_specifier`. Every binding — imported or
+    // top-level — must have exactly one home in the spec. If a
+    // consumer wants to refer to a vendor symbol under a different
+    // local name, it can do so at its own import site; the spec
+    // doesn't need a separate re-export module.
     let mut opts = FixtureOpts::new(
         r#"import { j as a } from "./vendor.js";
 console.log(a());
@@ -443,19 +444,14 @@ export { a };
         ],
     );
     opts.extra_files = &[("static/vendor.js", "export const j = () => 42;\n")];
-    let fixture = run_fixture(opts);
-
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/mod_jsx_runtime.js",
-        &["jsxRuntime"],
-        &["__jsx"],
-    );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/mod_dunder_jsx.js",
-        &["__jsx"],
-        &["jsxRuntime"],
+    expect_rejection_containing_all(
+        opts,
+        &[
+            "Duplicate binding claim",
+            "\"a\"",
+            "mod_jsx_runtime",
+            "mod_dunder_jsx",
+        ],
     );
 }
 
