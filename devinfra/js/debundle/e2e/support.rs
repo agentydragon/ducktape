@@ -85,17 +85,6 @@ struct FixtureAnonymousStatement {
 }
 
 #[derive(Serialize)]
-struct ResidualModuleBody<'a> {
-    target: &'a str,
-    members: Vec<FixtureMember>,
-}
-
-#[derive(Serialize)]
-struct DefaultResidualModule {
-    target: &'static str,
-}
-
-#[derive(Serialize)]
 struct PackageManifest {
     #[serde(rename = "type")]
     module_type: &'static str,
@@ -105,10 +94,9 @@ struct PackageManifest {
 struct TransformSpecFixture<'a> {
     inputs: TransformInputsFixture<'a>,
     logical_modules: BTreeMap<String, BTreeMap<String, Value>>,
-    residual_modules: BTreeMap<String, Value>,
     chunk_renames: BTreeMap<String, Value>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    unassigned_mode: BTreeMap<String, &'static str>,
+    unassigned_mode: BTreeMap<String, Value>,
     materialize_logical_modules: MaterializeLogicalModulesFixture<'a>,
     write_js_tree: WriteJsTreeFixture<'a>,
 }
@@ -191,10 +179,6 @@ pub fn logical_module_with_anon(
 pub struct FixtureOpts<'a> {
     pub source: &'a str,
     pub logical_modules: Vec<LogicalModuleEntry>,
-    /// Replaces the default residual entry for this chunk. When set,
-    /// `include_residual` is ignored. Use the [`residual_module`] helper
-    /// to build typical bodies.
-    pub residual: Option<Value>,
     /// Optional `chunk_renames` entry for this chunk. When set, the
     /// spec's top-level `chunk_renames` map carries the rename
     /// members; the materializer applies them in-place to bindings
@@ -202,15 +186,13 @@ pub struct FixtureOpts<'a> {
     /// them.
     pub chunk_renames: Option<Value>,
     pub chunk_id: &'a str,
-    /// When `residual` is `None` and this is `true`, the harness emits an
-    /// empty residual module (`target: "residual/unhandled"`) for this
-    /// chunk so unclaimed bindings still flow somewhere.
-    pub include_residual: bool,
-    /// Optional `unassigned_mode` setting for this chunk. `None` keeps
-    /// the default `catchall` behavior; `Some("mini_factors")` activates
-    /// the mini-factor synthesizer. The value is the snake_case
-    /// discriminant of `spec::UnassignedMode`.
-    pub unassigned_mode: Option<&'static str>,
+    /// Optional `unassigned_mode` setting for this chunk. `None` is
+    /// equivalent to the default `inline_in_entry` variant —
+    /// unclaimed bindings stay inline in entry. `Some(mode)`
+    /// renders as a YAML object with `kind: <discriminant>` plus
+    /// any variant-specific fields. Use [`unassigned_mode_catchall_file`]
+    /// or [`unassigned_mode_mini_factors`] to build typical bodies.
+    pub unassigned_mode: Option<Value>,
     pub extra_files: &'a [(&'a str, &'a str)],
 }
 
@@ -219,24 +201,27 @@ impl<'a> FixtureOpts<'a> {
         Self {
             source,
             logical_modules,
-            residual: None,
             chunk_renames: None,
             chunk_id: "static/app",
-            include_residual: true,
-            unassigned_mode: None,
+            unassigned_mode: Some(unassigned_mode_catchall_file(None)),
             extra_files: &[],
         }
     }
 }
 
-/// Build a `residual_modules[chunk_id]` body. `members` may contain rename
-/// directives that apply to bindings staying in the residual catch-all.
-pub fn residual_module(target: &str, members: &[Member]) -> Value {
-    serde_json::to_value(ResidualModuleBody {
-        target,
-        members: fixture_members(members),
-    })
-    .expect("residual module fixture must serialize")
+/// Build the JSON body for an `unassigned_mode: catchall_file` entry.
+/// `target` of `None` means "default residual target", which the
+/// materializer resolves to `residual/unhandled`.
+pub fn unassigned_mode_catchall_file(target: Option<&str>) -> Value {
+    match target {
+        Some(target) => serde_json::json!({ "kind": "catchall_file", "target": target }),
+        None => serde_json::json!({ "kind": "catchall_file" }),
+    }
+}
+
+/// Build the JSON body for an `unassigned_mode: mini_factors` entry.
+pub fn unassigned_mode_mini_factors() -> Value {
+    serde_json::json!({ "kind": "mini_factors" })
 }
 
 pub struct Fixture {
@@ -539,31 +524,14 @@ fn build_spec<'a>(opts: &FixtureOpts<'_>, setup: &'a FixtureSetup) -> TransformS
         logical_modules.insert(chunk_id.to_string(), logical_modules_for_chunk);
     }
 
-    let mut residual_modules = BTreeMap::new();
-    match (&opts.residual, opts.include_residual) {
-        (Some(residual), _) => {
-            residual_modules.insert(chunk_id.to_string(), residual.clone());
-        }
-        (None, true) => {
-            residual_modules.insert(
-                chunk_id.to_string(),
-                serde_json::to_value(DefaultResidualModule {
-                    target: "residual/unhandled",
-                })
-                .expect("default residual module fixture must serialize"),
-            );
-        }
-        (None, false) => {}
-    };
-
     let mut chunk_renames = BTreeMap::new();
     if let Some(renames) = &opts.chunk_renames {
         chunk_renames.insert(chunk_id.to_string(), renames.clone());
     }
 
     let mut unassigned_mode = BTreeMap::new();
-    if let Some(mode) = opts.unassigned_mode {
-        unassigned_mode.insert(chunk_id.to_string(), mode);
+    if let Some(mode) = &opts.unassigned_mode {
+        unassigned_mode.insert(chunk_id.to_string(), mode.clone());
     }
 
     TransformSpecFixture {
@@ -572,7 +540,6 @@ fn build_spec<'a>(opts: &FixtureOpts<'_>, setup: &'a FixtureSetup) -> TransformS
             js_list_path: &setup.js_list_path,
         },
         logical_modules,
-        residual_modules,
         chunk_renames,
         unassigned_mode,
         materialize_logical_modules: MaterializeLogicalModulesFixture {
