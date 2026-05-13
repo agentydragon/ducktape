@@ -8,9 +8,7 @@ use serde::Serialize;
 
 use crate::factor_assembly::AtomicUnitConflict;
 use crate::reports::owner_key;
-use crate::{
-    BindingName, DepKind, EdgeMetadata, ModuleId, ModuleQuotient, OwnerGraph, StatementOrdinal,
-};
+use crate::{BindingName, DepKind, EdgeMetadata, ModuleId, ModuleQuotient, StatementOrdinal};
 
 /// Result of validating a module dep graph.
 #[derive(Debug, Clone, Serialize)]
