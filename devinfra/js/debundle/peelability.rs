@@ -8,10 +8,10 @@ use crate::reports::{
     binding_reports, is_residual_destination, module_id_from_key, module_report_ref, owner_key,
 };
 use crate::{
-    BindingKind, BindingName, EvaluatedPeelCandidateReport, LogicalModuleIndex, ModuleId,
-    OwnerGraphPeelSetReport, OwnerGraphPeelabilityReport, OwnerId, OwnerNode, PeelCandidateStatus,
-    QuotientEdgeReport, ResidualOwnerCompanionOptionReport, ResidualOwnerPeelHorizonReport,
-    ResidualOwnerPeelStatus, Schedule,
+    AtomicUnit, BindingKind, BindingName, DepKind, EvaluatedPeelCandidateReport,
+    LogicalModuleIndex, ModuleId, OwnerGraphPeelSetReport, OwnerGraphPeelabilityReport, OwnerId,
+    OwnerNode, PeelCandidateStatus, QuotientEdgeReport, ResidualOwnerCompanionOptionReport,
+    ResidualOwnerPeelHorizonReport, ResidualOwnerPeelStatus, Schedule, compute_atomic_units,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -62,6 +62,11 @@ pub(crate) struct PeelabilityContext<'a> {
     forward_edges: Vec<Vec<ModuleAdjEdge>>,
     reverse_edges: Vec<Vec<ReverseModuleAdjEdge>>,
     module_pair_totals: HashMap<(ModuleId, ModuleId), ModulePairTotals>,
+    /// Atomic units of the schedule's owner graph (SCCs of the
+    /// constraining-edge subgraph `G_atomic`). Used by
+    /// `candidate_atomic_unit_split_edge_indices` to detect candidates
+    /// whose moved set would split an atomic unit across modules.
+    atomic_units: Vec<AtomicUnit>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -421,6 +426,8 @@ impl<'a> PeelabilityContext<'a> {
             });
         }
 
+        let atomic_units = compute_atomic_units(&schedule.owner_graph);
+
         Self {
             owner_edges,
             owner_out_edges,
@@ -430,6 +437,7 @@ impl<'a> PeelabilityContext<'a> {
             forward_edges,
             reverse_edges,
             module_pair_totals,
+            atomic_units,
         }
     }
 
@@ -689,12 +697,12 @@ pub(crate) fn evaluate_peel_candidate(
     let residual_dependency_blocker_owner_ids =
         candidate_source_destination_blocker_owner_ids(schedule, context, &moved_owners);
     let has_residual_dependency = !residual_dependency_blocker_owner_ids.is_empty();
-    let cross_destination_write_edge_indices =
-        candidate_cross_destination_write_edge_indices(context, &moved_owners);
+    let atomic_unit_split_edge_indices =
+        candidate_atomic_unit_split_edge_indices(context, &moved_owners);
     let constraining_owner_edge_indices = if has_residual_dependency {
         BTreeSet::new()
-    } else if !cross_destination_write_edge_indices.is_empty() {
-        cross_destination_write_edge_indices
+    } else if !atomic_unit_split_edge_indices.is_empty() {
+        atomic_unit_split_edge_indices
     } else {
         let (candidate_edges, adjustment) =
             candidate_incident_edges(schedule, context, &moved_owners);
@@ -754,23 +762,48 @@ pub(crate) fn evaluate_peel_candidate(
     }
 }
 
-fn candidate_cross_destination_write_edge_indices(
+/// Per-candidate atomic-unit check: returns the constraining owner-edge
+/// indices for every atomic unit the candidate would split across
+/// modules (at least one member moved, at least one not). Within a
+/// split unit, "constraining" means every edge with both endpoints in
+/// the unit whose `DepKind` isn't `LazyUse`. This subsumes the prior
+/// rebind-only cross-destination check: rebind edges already make
+/// `G_atomic` bidirectional between their endpoints, so any
+/// cross-boundary rebind pair was a unit split — but the unified check
+/// also catches EagerUse cycles that span the candidate boundary.
+/// `candidate_blocking_scc_owner_edge_indices` covers those too, so
+/// the verdict (Peelable / Blocked) is unchanged.
+fn candidate_atomic_unit_split_edge_indices(
     context: &PeelabilityContext<'_>,
     moved_owners: &BTreeSet<OwnerId>,
 ) -> BTreeSet<usize> {
-    let mut edge_indices = BTreeSet::new();
-    for owner_id in moved_owners {
-        edge_indices.extend(context.owner_out_edge_indices(*owner_id).iter().copied());
-        edge_indices.extend(context.owner_in_edge_indices(*owner_id).iter().copied());
+    let mut blocking_edges = BTreeSet::new();
+    for unit in &context.atomic_units {
+        let mut has_moved = false;
+        let mut has_not_moved = false;
+        for member in &unit.members {
+            if moved_owners.contains(member) {
+                has_moved = true;
+            } else {
+                has_not_moved = true;
+            }
+            if has_moved && has_not_moved {
+                break;
+            }
+        }
+        if !(has_moved && has_not_moved) {
+            continue;
+        }
+        for (idx, edge) in context.owner_edges.iter().enumerate() {
+            if edge.reason.kind == DepKind::LazyUse {
+                continue;
+            }
+            if unit.members.contains(&edge.from) && unit.members.contains(&edge.to) {
+                blocking_edges.insert(idx);
+            }
+        }
     }
-    edge_indices
-        .into_iter()
-        .filter(|edge_idx| {
-            let edge = &context.owner_edges[*edge_idx];
-            edge.reason.is_rebind()
-                && moved_owners.contains(&edge.from) != moved_owners.contains(&edge.to)
-        })
-        .collect()
+    blocking_edges
 }
 
 /// Blockers are owners *outside* the moved set that the moved set
