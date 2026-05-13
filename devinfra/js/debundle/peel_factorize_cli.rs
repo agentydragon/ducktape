@@ -1,12 +1,12 @@
 use std::process::ExitCode;
 
 use clap::Parser;
-use peel_factorize::{PeelFactorizeOptions, analyze_peel_factorize, render_factorize_report};
+use peel_factorize::{PeelFactorizeOptions, analyze_peel_factorize};
 
 #[derive(Debug, Parser)]
 #[command(
     name = "peel_factorize",
-    about = "Propose module partitions from a debundle owner_graph.json + spec modules tree."
+    about = "Propose module partitions from a debundle owner_graph.json + spec modules tree. Emits JSON proposals on stdout."
 )]
 struct Args {
     #[arg(long = "graph")]
@@ -18,8 +18,6 @@ struct Args {
     /// never manufactures structural splits to fit.
     #[arg(long = "size-cap-lines", default_value_t = 2000)]
     size_cap_lines: usize,
-    #[arg(long)]
-    json: bool,
 }
 
 fn main() -> ExitCode {
@@ -39,10 +37,6 @@ fn real_main() -> anyhow::Result<()> {
         modules_root: args.modules_root,
         size_cap_lines: args.size_cap_lines,
     })?;
-    if args.json {
-        println!("{}", serde_json::to_string_pretty(&report)?);
-    } else {
-        print!("{}", render_factorize_report(&report));
-    }
+    println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
 }

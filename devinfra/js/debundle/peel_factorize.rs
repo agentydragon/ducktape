@@ -2,45 +2,61 @@
 //!
 //! Reads a debundle's `owner_graph.json` + the spec's
 //! `modules/` tree, identifies the residual owners (those whose
-//! members haven't been claimed by any active or deferred spec
-//! YAML, excluding `residual/*` catch-all files), and proposes
-//! coarse-grained module partitions over them using a single
-//! principled objective: **agglomerate maximally subject to a
-//! per-cell line-count ceiling**.
+//! members haven't been claimed by any *active* spec YAML), and
+//! proposes coarse-grained module partitions over them using a
+//! single principled objective: **agglomerate maximally subject
+//! to a per-cell line-count ceiling**.
+//!
+//! # Scoping: what counts as residual?
+//!
+//! * **Active claims** (`*.yaml` outside `residual/`) are locked.
+//!   Their bindings don't appear in any proposal.
+//! * **Deferred modules** (`*.yaml.deferred` outside `residual/`)
+//!   are **seed cells**: their bindings get pre-grouped into a
+//!   single cell each. Proposals can *grow* a seed cell by
+//!   absorbing residual bindings, or *merge* two seed cells when
+//!   constraining edges link them — but the algorithm never
+//!   splits a seed cell apart. This matches the spec author's
+//!   intent that deferred groupings are "things that should
+//!   travel together someday."
+//! * **True residuals** (bindings in no YAML at all, plus
+//!   anything under `residual/`) start as singleton cells.
 //!
 //! # Algorithm
 //!
-//! 1. **Residual scoping.** Each owner whose `declared_bindings`
-//!    contains at least one binding not in
-//!    `spec_modules::load_claimed_bindings(...)` is a residual
-//!    vertex. Claimed bindings (active or non-residual deferred)
-//!    are out of scope.
+//! 1. **Residual scoping** (above).
 //! 2. **Constraining-edge subgraph.** Edges where
 //!    `constrains_init_order == true` between two residual
-//!    vertices are the only edges considered. Non-constraining
-//!    edges (lazy reads, etc.) don't affect realizability so they
-//!    don't influence the partition.
-//! 3. **SCC condensation.** Tarjan on the constraining subgraph.
-//!    Each non-singleton SCC becomes one mandatory cell — splitting
-//!    a cycle would violate realizability so the algorithm can't
-//!    propose breaking it apart. (SCCs that already exceed the
-//!    line cap start `oversize: true`.)
+//!    vertices form the SCC condensation input. Edges from a
+//!    residual vertex to an *active-claimed* vertex don't affect
+//!    the partition but ARE counted per-cell for
+//!    `edges_to_active_modules` (they're safe — active modules
+//!    materialize before residual_entry, so reads to them don't
+//!    cycle).
+//! 3. **SCC condensation.** Tarjan on the residual-only
+//!    constraining subgraph. Each non-singleton SCC becomes one
+//!    mandatory cell (splitting a cycle would violate
+//!    realizability). SCCs already over the line cap start
+//!    `oversize: true`.
 //! 4. **Greedy agglomeration.** While some pair of cells
-//!    `(A, B)` share at least one constraining edge AND
+//!    `(A, B)` share a constraining edge AND
 //!    `lines(A) + lines(B) ≤ cap`, merge the pair with the most
 //!    shared edges; tie-break by smaller minimum statement
-//!    ordinal. Loop terminates when no merge fits under the cap.
-//! 5. **Emit.** Every cell becomes a proposal regardless of size.
-//!    Cells exceeding the cap are flagged `oversize: true` and
-//!    still emitted (the algorithm doesn't manufacture splits the
-//!    structural graph doesn't suggest).
+//!    ordinal.
+//! 5. **Emit.** Each cell becomes a proposal. Cells exceeding
+//!    the cap are flagged `oversize: true` and emitted whole;
+//!    the algorithm never manufactures structural splits.
+//! 6. **Topological sort.** Cells with no outgoing
+//!    inter-residual edges (= `landable_today`) come first;
+//!    cells depending on them follow in DAG order. Within an
+//!    equivalence class, sort by first source line.
 //!
-//! The output minimizes cell count subject to the constraining
-//! edges and the line ceiling. There's exactly one tuning knob
-//! (`size_cap_lines`); no weighted score terms.
+//! Output minimizes cell count subject to the constraining edges
+//! and the line ceiling. One tuning knob (`size_cap_lines`); no
+//! weighted score terms.
 
 use std::cmp::Reverse;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::PathBuf;
 
@@ -48,7 +64,7 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 
 use analysis::OwnerGraphReport;
-use spec_modules::load_claimed_bindings;
+use spec_modules::{load_active_claims, load_deferred_groups};
 
 #[derive(Debug, Clone)]
 pub struct PeelFactorizeOptions {
@@ -67,7 +83,7 @@ pub struct PeelFactorizeReport {
     pub proposals: Vec<FactorizeProposal>,
     pub size_cap_lines: usize,
     pub residual_owner_count: usize,
-    pub claimed_binding_count: usize,
+    pub active_claimed_binding_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -84,11 +100,31 @@ pub struct FactorizeProposal {
     pub source_line_range: Option<[usize; 2]>,
     pub ordinal_span: usize,
     pub internal_edges: usize,
-    pub external_edges: usize,
-    /// Other cell IDs (proposed or already-claimed) that the
-    /// cell's outgoing constraining edges point at. Useful for
-    /// the reviewer to spot grab-bag cells (`external > internal`).
-    pub external_edge_targets: Vec<String>,
+    /// Edges from this cell to OTHER residual cells. These are
+    /// cycle-risk edges: promoting this cell to active while the
+    /// pointed-at residual cells stay residual would create
+    /// `<this>` → `residual_entry` reads, which the cycle gate
+    /// will reject. Drives `landable_today`.
+    pub edges_to_other_residual_cells: usize,
+    /// Other residual cells (by proposed_module_id) this cell's
+    /// outgoing constraining edges target. Empty iff
+    /// `edges_to_other_residual_cells == 0`.
+    pub other_residual_cells_referenced: Vec<String>,
+    /// Edges from this cell to active-claimed bindings. Safe:
+    /// active modules materialize before residual_entry, so reads
+    /// to them don't cycle. Informational — useful for the
+    /// reviewer to understand what subsystems the cell depends on.
+    pub edges_to_active_modules: usize,
+    /// Active module paths this cell's outgoing constraining edges
+    /// target (deduplicated). Empty iff `edges_to_active_modules
+    /// == 0`.
+    pub active_modules_referenced: Vec<String>,
+    /// `true` iff `edges_to_other_residual_cells == 0`. The cell
+    /// can be promoted to an active `.yaml` right now without
+    /// creating a cycle through `residual_entry`. `false` cells
+    /// need their referenced residual cells promoted first (or
+    /// the spec author makes them deferred for now).
+    pub landable_today: bool,
     /// `true` when the cell's `size_lines_estimate` exceeds
     /// `size_cap_lines`. Caused by either a single owner whose
     /// body is itself >cap lines, or a constraining SCC whose
@@ -96,6 +132,19 @@ pub struct FactorizeProposal {
     /// as "structurally indivisible at this snapshot" rather than
     /// as actionable proposals.
     pub oversize: bool,
+    /// Deferred module paths whose bindings ended up in this
+    /// cell. Interpretation:
+    ///
+    /// * Empty → a brand-new cell composed purely of residual
+    ///   singleton bindings.
+    /// * One path → "grow this existing deferred module by
+    ///   absorbing the residual bindings listed in
+    ///   `binding_ids \ <deferred module's current members>`".
+    ///   Or, if `binding_ids` matches the deferred module's
+    ///   members exactly: just a candidate for promotion.
+    /// * Two or more paths → "merge these deferred modules
+    ///   together (and optionally add residual bindings)".
+    pub seeded_from_deferred: Vec<String>,
 }
 
 pub fn analyze_peel_factorize(options: &PeelFactorizeOptions) -> Result<PeelFactorizeReport> {
@@ -104,13 +153,20 @@ pub fn analyze_peel_factorize(options: &PeelFactorizeOptions) -> Result<PeelFact
             .with_context(|| format!("reading {}", options.owner_graph_path.display()))?,
     )
     .with_context(|| format!("parsing {}", options.owner_graph_path.display()))?;
-    let claimed = load_claimed_bindings(&options.modules_root)?;
-    Ok(factorize(&graph, &claimed, options.size_cap_lines))
+    let claims = load_active_claims(&options.modules_root)?;
+    let deferred = load_deferred_groups(&options.modules_root)?;
+    Ok(factorize(
+        &graph,
+        &claims,
+        &deferred,
+        options.size_cap_lines,
+    ))
 }
 
 pub fn factorize(
     graph: &OwnerGraphReport,
-    claimed: &BTreeSet<String>,
+    active_claims: &BTreeMap<String, String>,
+    deferred_groups: &BTreeMap<String, String>,
     size_cap_lines: usize,
 ) -> PeelFactorizeReport {
     let owner_index: HashMap<&str, usize> = graph
@@ -127,12 +183,32 @@ pub fn factorize(
         .filter(|(_, node)| {
             node.declared_bindings
                 .iter()
-                .any(|b| !claimed.contains(b.binding.as_str()))
+                .any(|b| !active_claims.contains_key(b.binding.as_str()))
         })
         .map(|(i, _)| i)
         .collect();
 
-    let mut constraining_edges: Vec<(usize, usize)> = Vec::new();
+    // Owner -> active module path (for any owner whose binding lives
+    // in an active YAML). Multi-binding owners take the first match's
+    // module — in practice owners after Bucket-F split have one
+    // binding each, so the choice is unambiguous.
+    let owner_to_active_module: HashMap<usize, String> = graph
+        .nodes
+        .iter()
+        .enumerate()
+        .filter_map(|(i, node)| {
+            node.declared_bindings
+                .iter()
+                .find_map(|b| active_claims.get(b.binding.as_str()))
+                .map(|path| (i, path.clone()))
+        })
+        .collect();
+
+    // SCC-building input: constraining edges that both endpoints are
+    // in residual. Edges leaving the residual to active claims get
+    // tracked separately below for `edges_to_active_modules`.
+    let mut residual_constraining_edges: Vec<(usize, usize)> = Vec::new();
+    let mut edges_to_active: Vec<(usize, String)> = Vec::new();
     for edge in &graph.edges {
         if !edge.constrains_init_order {
             continue;
@@ -143,30 +219,120 @@ pub fn factorize(
         ) else {
             continue;
         };
-        if !residual.contains(&source) || !residual.contains(&target) {
+        if !residual.contains(&source) {
             continue;
         }
         if source == target {
             continue;
         }
-        constraining_edges.push((source, target));
+        if residual.contains(&target) {
+            residual_constraining_edges.push((source, target));
+        } else if let Some(module_path) = owner_to_active_module.get(&target) {
+            edges_to_active.push((source, module_path.clone()));
+        }
     }
 
-    let sccs = strongly_connected_components(&residual, &constraining_edges);
-    let mut cells: Vec<Cell> = sccs
-        .into_iter()
-        .map(|members| Cell::from_owners(members, graph))
+    let sccs = strongly_connected_components(&residual, &residual_constraining_edges);
+
+    // Per-owner deferred-module attribution. Each residual owner
+    // that has a binding in some deferred YAML is tagged with
+    // that module path; the cell-formation step uses this to
+    // force same-deferred owners into the same cell ("don't break
+    // existing factors apart").
+    let owner_to_deferred_module: HashMap<usize, String> = graph
+        .nodes
+        .iter()
+        .enumerate()
+        .filter_map(|(i, node)| {
+            if !residual.contains(&i) {
+                return None;
+            }
+            node.declared_bindings
+                .iter()
+                .find_map(|b| deferred_groups.get(b.binding.as_str()))
+                .map(|path| (i, path.clone()))
+        })
         .collect();
 
-    agglomerate(&mut cells, &constraining_edges, size_cap_lines);
+    let cells = form_cells_with_deferred_seeds(&sccs, &owner_to_deferred_module, graph);
 
-    let proposals = emit_proposals(&cells, &constraining_edges, graph, claimed, size_cap_lines);
+    let mut cells = cells;
+    agglomerate(&mut cells, &residual_constraining_edges, size_cap_lines);
+
+    let proposals = emit_proposals(
+        &cells,
+        &residual_constraining_edges,
+        &edges_to_active,
+        graph,
+        active_claims,
+        deferred_groups,
+        size_cap_lines,
+    );
     PeelFactorizeReport {
         proposals,
         size_cap_lines,
         residual_owner_count: residual.len(),
-        claimed_binding_count: claimed.len(),
+        active_claimed_binding_count: active_claims.len(),
     }
+}
+
+/// Build the initial cell set. Starts from SCC condensation of the
+/// residual constraining-edge subgraph; then merges any SCCs that
+/// share owners with the same deferred-module attribution. Result:
+/// every deferred module's members end up in one cell, with any
+/// constraining-edge-tied residual owners pulled in alongside.
+///
+/// Cycle safety: merging SCCs that share a deferred grouping can't
+/// introduce a cycle in the inter-cell DAG. If SCC X and SCC Y are
+/// distinct (i.e. there's no constraining-edge cycle between them),
+/// merging them into one cell is equivalent to adding an undirected
+/// equivalence (deferred grouping), not a directed edge — the
+/// constraining-edge DAG between cells is unaffected.
+fn form_cells_with_deferred_seeds(
+    sccs: &[Vec<usize>],
+    owner_to_deferred_module: &HashMap<usize, String>,
+    graph: &OwnerGraphReport,
+) -> Vec<Cell> {
+    let mut parent: Vec<usize> = (0..sccs.len()).collect();
+    fn find(parent: &mut [usize], i: usize) -> usize {
+        if parent[i] != i {
+            let root = find(parent, parent[i]);
+            parent[i] = root;
+        }
+        parent[i]
+    }
+    let mut owner_to_scc: HashMap<usize, usize> = HashMap::new();
+    for (idx, scc) in sccs.iter().enumerate() {
+        for &owner in scc {
+            owner_to_scc.insert(owner, idx);
+        }
+    }
+    let mut sccs_by_module: BTreeMap<&String, Vec<usize>> = BTreeMap::new();
+    for (&owner, module) in owner_to_deferred_module {
+        if let Some(&scc_idx) = owner_to_scc.get(&owner) {
+            sccs_by_module.entry(module).or_default().push(scc_idx);
+        }
+    }
+    for (_, scc_indices) in sccs_by_module {
+        let mut iter = scc_indices.into_iter();
+        let Some(first) = iter.next() else { continue };
+        let root = find(&mut parent, first);
+        for other in iter {
+            let other_root = find(&mut parent, other);
+            if other_root != root {
+                parent[other_root] = root;
+            }
+        }
+    }
+    let mut grouped: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for (scc_idx, scc) in sccs.iter().enumerate() {
+        let root = find(&mut parent, scc_idx);
+        grouped.entry(root).or_default().extend(scc);
+    }
+    grouped
+        .into_values()
+        .map(|owners| Cell::from_owners(owners, graph))
+        .collect()
 }
 
 #[derive(Debug, Clone)]
@@ -346,11 +512,23 @@ fn agglomerate(cells: &mut Vec<Cell>, edges: &[(usize, usize)], size_cap_lines: 
     }
 }
 
+struct ProposalContext<'a> {
+    graph: &'a OwnerGraphReport,
+    residual_edges: &'a [(usize, usize)],
+    active_edges: &'a [(usize, String)],
+    active_claims: &'a BTreeMap<String, String>,
+    deferred_groups: &'a BTreeMap<String, String>,
+    owner_to_cell: HashMap<usize, usize>,
+    size_cap_lines: usize,
+}
+
 fn emit_proposals(
     cells: &[Cell],
-    edges: &[(usize, usize)],
+    residual_edges: &[(usize, usize)],
+    active_edges: &[(usize, String)],
     graph: &OwnerGraphReport,
-    claimed: &BTreeSet<String>,
+    active_claims: &BTreeMap<String, String>,
+    deferred_groups: &BTreeMap<String, String>,
     size_cap_lines: usize,
 ) -> Vec<FactorizeProposal> {
     let mut owner_to_cell: HashMap<usize, usize> = HashMap::new();
@@ -359,64 +537,128 @@ fn emit_proposals(
             owner_to_cell.insert(owner, cell_idx);
         }
     }
+    let ctx = ProposalContext {
+        graph,
+        residual_edges,
+        active_edges,
+        active_claims,
+        deferred_groups,
+        owner_to_cell,
+        size_cap_lines,
+    };
 
     let mut proposals: Vec<FactorizeProposal> = cells
         .iter()
         .enumerate()
-        .map(|(cell_idx, cell)| {
-            build_proposal(
-                cell_idx,
-                cell,
-                edges,
-                graph,
-                claimed,
-                &owner_to_cell,
-                size_cap_lines,
-            )
-        })
+        .map(|(cell_idx, cell)| build_proposal(cell_idx, cell, &ctx))
         .collect();
 
-    // Stable sort by the cell's first source line, then by min ordinal,
-    // so deterministic output across runs.
-    proposals.sort_by(|left, right| {
-        let lk = left
-            .source_line_range
-            .map(|range| range[0])
-            .unwrap_or(usize::MAX);
-        let rk = right
-            .source_line_range
-            .map(|range| range[0])
-            .unwrap_or(usize::MAX);
-        lk.cmp(&rk)
+    // Topological-by-residual-dependency sort with source-line
+    // tie-break. Each cell's depth = 1 + max(depth(c) for c in cells
+    // it references via inter-residual edges). Cells with
+    // `landable_today` (no inter-residual outgoing edges) get
+    // depth 0 and emit first. Cycles between cells are impossible
+    // at this stage — the SCC condensation pass collapsed every
+    // residual-edge cycle into a single cell — so the recursion
+    // bottoms out.
+    let depths = compute_topo_depths(cells, residual_edges, &ctx.owner_to_cell);
+    let mut indexed: Vec<(usize, FactorizeProposal)> = proposals.drain(..).enumerate().collect();
+    indexed.sort_by(|(li, left), (ri, right)| {
+        depths[*li].cmp(&depths[*ri]).then_with(|| {
+            let lk = left
+                .source_line_range
+                .map(|range| range[0])
+                .unwrap_or(usize::MAX);
+            let rk = right
+                .source_line_range
+                .map(|range| range[0])
+                .unwrap_or(usize::MAX);
+            lk.cmp(&rk)
+        })
     });
-    for (idx, proposal) in proposals.iter_mut().enumerate() {
-        proposal.proposed_module_id = format!("auto_partition_{idx:04}");
+
+    // After topo-sort the cells are renumbered; rebuild the original
+    // cell_idx → new_idx map so cross-references inside the
+    // `other_residual_cells_referenced` lists point at the right
+    // post-sort module IDs.
+    let new_id_for: HashMap<usize, usize> = indexed
+        .iter()
+        .enumerate()
+        .map(|(new_idx, (orig_idx, _))| (*orig_idx, new_idx))
+        .collect();
+    let mut out: Vec<FactorizeProposal> = indexed.into_iter().map(|(_, p)| p).collect();
+    for (new_idx, proposal) in out.iter_mut().enumerate() {
+        proposal.proposed_module_id = format!("auto_partition_{new_idx:04}");
+        proposal.other_residual_cells_referenced = proposal
+            .other_residual_cells_referenced
+            .iter()
+            .filter_map(|old_id| {
+                let old_idx: usize = old_id.strip_prefix("auto_partition_")?.parse().ok()?;
+                new_id_for
+                    .get(&old_idx)
+                    .map(|i| format!("auto_partition_{i:04}"))
+            })
+            .collect();
     }
-    proposals
+    out
 }
 
-fn build_proposal(
-    cell_idx: usize,
-    cell: &Cell,
-    edges: &[(usize, usize)],
-    graph: &OwnerGraphReport,
-    claimed: &BTreeSet<String>,
+fn compute_topo_depths(
+    cells: &[Cell],
+    residual_edges: &[(usize, usize)],
     owner_to_cell: &HashMap<usize, usize>,
-    size_cap_lines: usize,
-) -> FactorizeProposal {
+) -> Vec<usize> {
+    let mut adj: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); cells.len()];
+    for &(s, t) in residual_edges {
+        let (Some(&cs), Some(&ct)) = (owner_to_cell.get(&s), owner_to_cell.get(&t)) else {
+            continue;
+        };
+        if cs != ct {
+            adj[cs].insert(ct);
+        }
+    }
+    let mut depths = vec![None; cells.len()];
+    fn dfs(node: usize, adj: &[BTreeSet<usize>], depths: &mut [Option<usize>]) -> usize {
+        if let Some(d) = depths[node] {
+            return d;
+        }
+        // Mark as in-progress with depth 0; SCC condensation guarantees
+        // the inter-cell graph is acyclic, so we never re-enter the
+        // same node mid-DFS in a meaningful cycle.
+        depths[node] = Some(0);
+        let max_child = adj[node]
+            .iter()
+            .map(|&child| dfs(child, adj, depths))
+            .max()
+            .map(|d| d + 1)
+            .unwrap_or(0);
+        depths[node] = Some(max_child);
+        max_child
+    }
+    for i in 0..cells.len() {
+        dfs(i, &adj, &mut depths);
+    }
+    depths.into_iter().map(|d| d.unwrap_or(0)).collect()
+}
+
+fn build_proposal(cell_idx: usize, cell: &Cell, ctx: &ProposalContext) -> FactorizeProposal {
     let mut owner_ids: Vec<String> = Vec::with_capacity(cell.owners.len());
     let mut binding_ids: BTreeSet<String> = BTreeSet::new();
+    let mut seeded: BTreeSet<String> = BTreeSet::new();
     let mut start_line = usize::MAX;
     let mut end_line = 0usize;
     let mut have_loc = false;
     let mut max_ordinal = 0usize;
     let mut min_ordinal = usize::MAX;
     for &owner_idx in &cell.owners {
-        let node = &graph.nodes[owner_idx];
+        let node = &ctx.graph.nodes[owner_idx];
         owner_ids.push(node.id.clone());
         for binding in &node.declared_bindings {
-            if !claimed.contains(binding.binding.as_str()) {
+            if !ctx.active_claims.contains_key(binding.binding.as_str()) {
                 binding_ids.insert(binding.binding.clone());
+            }
+            if let Some(module_path) = ctx.deferred_groups.get(binding.binding.as_str()) {
+                seeded.insert(module_path.clone());
             }
         }
         if let Some(loc) = &node.source_location {
@@ -430,23 +672,33 @@ fn build_proposal(
     owner_ids.sort();
 
     let mut internal = 0usize;
-    let mut external = 0usize;
-    let mut external_targets: BTreeSet<usize> = BTreeSet::new();
-    for &(s, t) in edges {
-        let (Some(&cs), Some(&ct)) = (owner_to_cell.get(&s), owner_to_cell.get(&t)) else {
+    let mut to_residual = 0usize;
+    let mut residual_targets: BTreeSet<usize> = BTreeSet::new();
+    for &(s, t) in ctx.residual_edges {
+        let (Some(&cs), Some(&ct)) = (ctx.owner_to_cell.get(&s), ctx.owner_to_cell.get(&t)) else {
             continue;
         };
         if cs == cell_idx && ct == cell_idx {
             internal += 1;
         } else if cs == cell_idx {
-            external += 1;
-            external_targets.insert(ct);
+            to_residual += 1;
+            residual_targets.insert(ct);
         }
     }
-    let external_edge_targets: Vec<String> = external_targets
+    let other_residual_cells_referenced: Vec<String> = residual_targets
         .into_iter()
         .map(|idx| format!("auto_partition_{idx:04}"))
         .collect();
+
+    let mut to_active = 0usize;
+    let mut active_targets: BTreeSet<String> = BTreeSet::new();
+    for (source_owner, module_path) in ctx.active_edges {
+        if ctx.owner_to_cell.get(source_owner) == Some(&cell_idx) {
+            to_active += 1;
+            active_targets.insert(module_path.clone());
+        }
+    }
+    let active_modules_referenced: Vec<String> = active_targets.into_iter().collect();
 
     FactorizeProposal {
         proposed_module_id: format!("auto_partition_{cell_idx:04}"),
@@ -461,45 +713,14 @@ fn build_proposal(
         },
         ordinal_span: max_ordinal.saturating_sub(min_ordinal),
         internal_edges: internal,
-        external_edges: external,
-        external_edge_targets,
-        oversize: cell.lines > size_cap_lines,
+        edges_to_other_residual_cells: to_residual,
+        other_residual_cells_referenced,
+        edges_to_active_modules: to_active,
+        active_modules_referenced,
+        landable_today: to_residual == 0,
+        oversize: cell.lines > ctx.size_cap_lines,
+        seeded_from_deferred: seeded.into_iter().collect(),
     }
-}
-
-pub fn render_factorize_report(report: &PeelFactorizeReport) -> String {
-    let mut out = String::new();
-    out.push_str(&format!(
-        "Residual owners: {}    Claimed bindings: {}    Size cap: {} lines\n",
-        report.residual_owner_count, report.claimed_binding_count, report.size_cap_lines,
-    ));
-    out.push_str(&format!(
-        "Emitted {} cell{}; {} oversize.\n\n",
-        report.proposals.len(),
-        if report.proposals.len() == 1 { "" } else { "s" },
-        report.proposals.iter().filter(|p| p.oversize).count(),
-    ));
-    out.push_str(&format!(
-        "{:<22}  {:>7}  {:>7}  {:>5}  {:>5}  {}\n",
-        "module_id", "members", "lines", "in", "out", "source_line_range",
-    ));
-    for proposal in &report.proposals {
-        let range = match proposal.source_line_range {
-            Some([start, end]) => format!("{start}-{end}"),
-            None => "-".to_string(),
-        };
-        let flag = if proposal.oversize { " [oversize]" } else { "" };
-        out.push_str(&format!(
-            "{:<22}  {:>7}  {:>7}  {:>5}  {:>5}  {}{flag}\n",
-            proposal.proposed_module_id,
-            proposal.size_members,
-            proposal.size_lines_estimate,
-            proposal.internal_edges,
-            proposal.external_edges,
-            range,
-        ));
-    }
-    out
 }
 
 #[cfg(test)]
@@ -589,25 +810,31 @@ mod tests {
         }
     }
 
+    fn no_claims() -> BTreeMap<String, String> {
+        BTreeMap::new()
+    }
+
     #[test]
     fn factorize_emits_each_residual_owner_as_singleton_when_no_edges() {
         let graph = empty_graph(
             vec![owner("a", 1, &["a"], 10), owner("b", 2, &["b"], 10)],
             vec![],
         );
-        let report = factorize(&graph, &BTreeSet::new(), 2000);
+        let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
         assert_eq!(report.residual_owner_count, 2);
         assert_eq!(report.proposals.len(), 2);
         assert!(report.proposals.iter().all(|p| p.size_members == 1));
+        assert!(report.proposals.iter().all(|p| p.landable_today));
     }
 
     #[test]
-    fn factorize_skips_claimed_owners() {
+    fn factorize_skips_active_claimed_owners() {
         let graph = empty_graph(
             vec![owner("a", 1, &["a"], 10), owner("b", 2, &["b"], 10)],
             vec![],
         );
-        let report = factorize(&graph, &BTreeSet::from(["a".to_string()]), 2000);
+        let claims = BTreeMap::from([("a".to_string(), "ui/x".to_string())]);
+        let report = factorize(&graph, &claims, &no_claims(), 2000);
         assert_eq!(report.residual_owner_count, 1);
         assert_eq!(report.proposals.len(), 1);
         assert_eq!(report.proposals[0].binding_ids, vec!["b".to_string()]);
@@ -626,11 +853,12 @@ mod tests {
                 edge("e2", "b", "c", DepKind::EagerUse, true),
             ],
         );
-        let report = factorize(&graph, &BTreeSet::new(), 2000);
+        let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
         assert_eq!(report.proposals.len(), 1);
         assert_eq!(report.proposals[0].size_members, 3);
         assert_eq!(report.proposals[0].internal_edges, 2);
-        assert_eq!(report.proposals[0].external_edges, 0);
+        assert_eq!(report.proposals[0].edges_to_other_residual_cells, 0);
+        assert!(report.proposals[0].landable_today);
     }
 
     #[test]
@@ -639,7 +867,7 @@ mod tests {
             vec![owner("a", 1, &["a"], 10), owner("b", 2, &["b"], 10)],
             vec![edge("e1", "a", "b", DepKind::LazyUse, false)],
         );
-        let report = factorize(&graph, &BTreeSet::new(), 2000);
+        let report = factorize(&graph, &no_claims(), &no_claims(), 2000);
         // Without a constraining edge to bind them, the two owners
         // stay separate cells.
         assert_eq!(report.proposals.len(), 2);
@@ -656,7 +884,7 @@ mod tests {
                 edge("e2", "b", "a", DepKind::EagerUse, true),
             ],
         );
-        let report = factorize(&graph, &BTreeSet::new(), 5);
+        let report = factorize(&graph, &no_claims(), &no_claims(), 5);
         assert_eq!(report.proposals.len(), 1);
         assert!(report.proposals[0].oversize);
         assert_eq!(report.proposals[0].size_members, 2);
@@ -678,15 +906,15 @@ mod tests {
                 edge("e2", "b", "c", DepKind::EagerUse, true),
             ],
         );
-        let report = factorize(&graph, &BTreeSet::new(), 15);
+        let report = factorize(&graph, &no_claims(), &no_claims(), 15);
         assert_eq!(report.proposals.len(), 3);
     }
 
     #[test]
-    fn factorize_records_external_edges_when_cells_dont_merge() {
+    fn factorize_records_residual_edges_when_cells_dont_merge() {
         // Same chain but cap=20 — a+b can merge (lines 20), but
         // adding c would push to 30 > 20, so cell {a,b} keeps the
-        // edge to c as external.
+        // edge to c as an inter-residual edge.
         let graph = empty_graph(
             vec![
                 owner("a", 1, &["a"], 10),
@@ -698,14 +926,165 @@ mod tests {
                 edge("e2", "b", "c", DepKind::EagerUse, true),
             ],
         );
-        let report = factorize(&graph, &BTreeSet::new(), 20);
+        let report = factorize(&graph, &no_claims(), &no_claims(), 20);
         assert_eq!(report.proposals.len(), 2);
         let bigger = report
             .proposals
             .iter()
             .find(|p| p.size_members == 2)
             .expect("merged cell");
-        assert_eq!(bigger.external_edges, 1);
-        assert_eq!(bigger.external_edge_targets.len(), 1);
+        assert_eq!(bigger.edges_to_other_residual_cells, 1);
+        assert_eq!(bigger.other_residual_cells_referenced.len(), 1);
+        assert!(!bigger.landable_today);
+    }
+
+    #[test]
+    fn factorize_counts_edges_to_active_modules_separately_from_residual_edges() {
+        // 2 residual owners (a, b) + 1 active-claimed binding (c).
+        // a → b is a constraining edge that the agglomerator merges.
+        // b → c is a constraining edge to an active module — safe;
+        // counted under `edges_to_active_modules`, not blocking
+        // promotion.
+        let graph = empty_graph(
+            vec![
+                owner("a", 1, &["a"], 10),
+                owner("b", 2, &["b"], 10),
+                owner("c", 3, &["c"], 10),
+            ],
+            vec![
+                edge("e1", "a", "b", DepKind::EagerUse, true),
+                edge("e2", "b", "c", DepKind::EagerUse, true),
+            ],
+        );
+        let claims = BTreeMap::from([("c".to_string(), "ui/x".to_string())]);
+        let report = factorize(&graph, &claims, &no_claims(), 2000);
+        assert_eq!(report.proposals.len(), 1);
+        let cell = &report.proposals[0];
+        assert_eq!(cell.size_members, 2);
+        assert_eq!(cell.edges_to_other_residual_cells, 0);
+        assert_eq!(cell.edges_to_active_modules, 1);
+        assert_eq!(cell.active_modules_referenced, vec!["ui/x".to_string()]);
+        // Active edges are safe — promoting this cell today wouldn't
+        // create a cycle.
+        assert!(cell.landable_today);
+    }
+
+    #[test]
+    fn factorize_treats_deferred_module_as_one_seed_cell() {
+        // Owners a and c are in the same deferred module; owner b
+        // sits between them with no constraining edges either way.
+        // Without the deferred-seed rule, a and c would emerge as
+        // separate singleton cells. The seed rule forces them into
+        // one cell because they share `mod/x.yaml.deferred`.
+        let graph = empty_graph(
+            vec![
+                owner("a", 1, &["a"], 10),
+                owner("b", 2, &["b"], 10),
+                owner("c", 3, &["c"], 10),
+            ],
+            vec![],
+        );
+        let deferred = BTreeMap::from([
+            ("a".to_string(), "mod/x".to_string()),
+            ("c".to_string(), "mod/x".to_string()),
+        ]);
+        let report = factorize(&graph, &no_claims(), &deferred, 2000);
+        assert_eq!(report.proposals.len(), 2);
+        let seeded = report
+            .proposals
+            .iter()
+            .find(|p| !p.seeded_from_deferred.is_empty())
+            .expect("one cell should be seeded");
+        assert_eq!(seeded.binding_ids, vec!["a".to_string(), "c".to_string()],);
+        assert_eq!(seeded.seeded_from_deferred, vec!["mod/x".to_string()]);
+        let lone = report
+            .proposals
+            .iter()
+            .find(|p| p.seeded_from_deferred.is_empty())
+            .expect("one cell should not be seeded");
+        assert_eq!(lone.binding_ids, vec!["b".to_string()]);
+    }
+
+    #[test]
+    fn factorize_grows_seed_cell_with_residual_bindings_via_constraining_edges() {
+        // Deferred module `mod/x` holds binding `a`. Owner `b` is a
+        // pure residual binding that has a constraining edge to `a`.
+        // Expected: one cell containing both, tagged as seeded
+        // from `mod/x` — i.e., "grow mod/x by absorbing b".
+        let graph = empty_graph(
+            vec![owner("a", 1, &["a"], 10), owner("b", 2, &["b"], 10)],
+            vec![edge("e1", "b", "a", DepKind::EagerUse, true)],
+        );
+        let deferred = BTreeMap::from([("a".to_string(), "mod/x".to_string())]);
+        let report = factorize(&graph, &no_claims(), &deferred, 2000);
+        assert_eq!(report.proposals.len(), 1);
+        let cell = &report.proposals[0];
+        assert_eq!(cell.size_members, 2);
+        assert_eq!(cell.binding_ids, vec!["a".to_string(), "b".to_string()]);
+        assert_eq!(cell.seeded_from_deferred, vec!["mod/x".to_string()]);
+    }
+
+    #[test]
+    fn factorize_merges_two_seed_cells_when_constraining_edges_link_them() {
+        // Two deferred modules X and Y, each with one binding. A
+        // constraining edge between their owners. Expected: one
+        // merged cell, seeded from both X and Y — i.e., "merge X
+        // and Y".
+        let graph = empty_graph(
+            vec![owner("a", 1, &["a"], 10), owner("b", 2, &["b"], 10)],
+            vec![edge("e1", "a", "b", DepKind::EagerUse, true)],
+        );
+        let deferred = BTreeMap::from([
+            ("a".to_string(), "mod/x".to_string()),
+            ("b".to_string(), "mod/y".to_string()),
+        ]);
+        let report = factorize(&graph, &no_claims(), &deferred, 2000);
+        assert_eq!(report.proposals.len(), 1);
+        let cell = &report.proposals[0];
+        assert_eq!(cell.size_members, 2);
+        assert_eq!(
+            cell.seeded_from_deferred,
+            vec!["mod/x".to_string(), "mod/y".to_string()],
+        );
+    }
+
+    #[test]
+    fn factorize_topo_orders_landable_cells_before_dependents() {
+        // Three cells in a chain: a → b → c. With cap=15 they
+        // can't merge. After SCC + topo order:
+        //   * cell{c} has depth 0 (no outgoing residual edges).
+        //   * cell{b} has depth 1 (points at c).
+        //   * cell{a} has depth 2 (points at b).
+        // Emitted order: c, b, a (assigned auto_partition_0000..0002).
+        let graph = empty_graph(
+            vec![
+                owner("a", 10, &["a"], 10),
+                owner("b", 20, &["b"], 10),
+                owner("c", 30, &["c"], 10),
+            ],
+            vec![
+                edge("e1", "a", "b", DepKind::EagerUse, true),
+                edge("e2", "b", "c", DepKind::EagerUse, true),
+            ],
+        );
+        let report = factorize(&graph, &no_claims(), &no_claims(), 15);
+        assert_eq!(report.proposals.len(), 3);
+        // First (depth 0): c — landable today.
+        assert_eq!(report.proposals[0].binding_ids, vec!["c".to_string()]);
+        assert!(report.proposals[0].landable_today);
+        // Middle (depth 1): b — references the now-renamed cell c.
+        assert_eq!(report.proposals[1].binding_ids, vec!["b".to_string()]);
+        assert!(!report.proposals[1].landable_today);
+        assert_eq!(
+            report.proposals[1].other_residual_cells_referenced,
+            vec!["auto_partition_0000".to_string()],
+        );
+        // Last (depth 2): a.
+        assert_eq!(report.proposals[2].binding_ids, vec!["a".to_string()]);
+        assert!(!report.proposals[2].landable_today);
+        assert_eq!(
+            report.proposals[2].other_residual_cells_referenced,
+            vec!["auto_partition_0001".to_string()],
+        );
     }
 }
