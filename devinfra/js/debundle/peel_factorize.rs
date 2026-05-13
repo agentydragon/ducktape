@@ -147,7 +147,6 @@ pub struct FactorizeProposal {
     /// aware factorize identified as the extension's additions to
     /// the existing module. Empty for fresh-module proposals. Pass-
     /// through from `FactorizeCell::extension_owner_ids`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub extension_owner_ids: Vec<String>,
 }
 

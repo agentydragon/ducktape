@@ -61,7 +61,7 @@ pub struct TransformSpec {
     /// unclaimed atomic factor unit, so the residual catch-all
     /// collapses to whatever truly cannot be peeled. See
     /// FACTORIZE.md Stage 2.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(default)]
     pub unassigned_mode: BTreeMap<String, UnassignedMode>,
 
     // --- per-stage configuration ---

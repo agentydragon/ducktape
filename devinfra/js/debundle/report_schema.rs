@@ -287,7 +287,6 @@ pub struct FactorizeCell {
     /// move into the existing module identified by
     /// `extends_module_id`. Empty for fresh-module proposals (where
     /// every owner in `owner_ids` is part of the proposal itself).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub extension_owner_ids: Vec<String>,
 }
 
