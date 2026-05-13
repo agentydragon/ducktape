@@ -218,14 +218,6 @@ rust_test(
     deps = ["@crates//:tempfile"],
 )
 
-rust_binary(
-    name = "peel_horizon_cli",
-    srcs = ["peel_horizon_cli.rs"],
-    crate_root = "peel_horizon_cli.rs",
-    edition = "2024",
-    deps = [":peel_cli_lib"],
-)
-
 rust_library(
     name = "spec_modules",
     srcs = ["spec_modules.rs"],
@@ -267,14 +259,6 @@ rust_test(
     edition = "2024",
 )
 
-rust_binary(
-    name = "peel_factorize_cli",
-    srcs = ["peel_factorize_cli.rs"],
-    crate_root = "peel_factorize_cli.rs",
-    edition = "2024",
-    deps = [":peel_cli_lib"],
-)
-
 rust_library(
     name = "peel_inventory",
     srcs = ["peel_inventory.rs"],
@@ -294,14 +278,6 @@ rust_test(
     crate = ":peel_inventory",
     edition = "2024",
     deps = ["@crates//:tempfile"],
-)
-
-rust_binary(
-    name = "peel_inventory_cli",
-    srcs = ["peel_inventory_cli.rs"],
-    crate_root = "peel_inventory_cli.rs",
-    edition = "2024",
-    deps = [":peel_cli_lib"],
 )
 
 rust_library(

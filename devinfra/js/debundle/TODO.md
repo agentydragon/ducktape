@@ -206,22 +206,6 @@ mock browser bundle. Extend to:
 - Unusual dynamic import forms.
 - HTML/runtime asset layouts outside the current corpus.
 
-## Delete `peel_{factorize,horizon,inventory}_cli` back-compat shims
-
-The three legacy peel binaries (`peel_factorize_cli`, `peel_horizon_cli`,
-`peel_inventory_cli`) are now thin shims that forward into the unified
-`peel_cli` binary. They keep working unchanged so external callers (e.g.
-gaffer's tana-peel skill, which bazel-runs the binaries by name) don't
-need an atomic update.
-
-Once gaffer's tana-peel skill has been migrated to invoke `peel_cli
---view {factorize,horizon,inventory}` directly, delete the three shim
-binaries (`peel_factorize_cli.rs`, `peel_horizon_cli.rs`,
-`peel_inventory_cli.rs`) and their `rust_binary` targets in
-`BUILD.bazel`. The per-view `factorize_main` / `horizon_main` /
-`inventory_main` entry points on `peel_cli_lib` and the per-view clap
-struct definitions in `peel_cli.rs` can also be deleted at that point.
-
 ## Rename `Schedule` → `ChunkFactorization`
 
 `schedule.rs::Schedule` is, after the factorize rewrite, just a
