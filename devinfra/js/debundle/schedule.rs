@@ -11,8 +11,7 @@ use crate::reports::{build_owner_graph_report, owner_key};
 use crate::validation::validate_schedule;
 use crate::{
     BindingId, BindingKind, BindingName, LogicalModule, LogicalModuleIndex, ModuleId,
-    ModuleQuotient, OwnerGraph, OwnerGraphReport, RESIDUAL_ENTRY_LABEL, ScheduleReport,
-    StatementFacts,
+    ModuleQuotient, OwnerGraph, OwnerGraphReport, ScheduleReport, StatementFacts,
 };
 
 /// Single per-chunk schedule. Carries everything downstream code
@@ -108,6 +107,7 @@ impl Schedule {
         bindings: HashMap<BindingName, BindingKind>,
         logical_modules: Vec<LogicalModule>,
         chunk_renames: HashMap<BindingName, BindingName>,
+        default_destination: ModuleId,
     ) -> Self {
         let precomputed = compute_owner_graph_and_units(&facts);
         Self::build_with(
@@ -117,6 +117,7 @@ impl Schedule {
             bindings,
             logical_modules,
             chunk_renames,
+            default_destination,
         )
     }
 
@@ -131,12 +132,19 @@ impl Schedule {
         bindings: HashMap<BindingName, BindingKind>,
         logical_modules: Vec<LogicalModule>,
         chunk_renames: HashMap<BindingName, BindingName>,
+        default_destination: ModuleId,
     ) -> Self {
         let OwnerGraphAndUnits {
             owner_graph,
             atomic_units,
         } = precomputed;
-        let outcome = assemble_partition(&owner_graph, &atomic_units, &bindings, &logical_modules);
+        let outcome = assemble_partition(
+            &owner_graph,
+            &atomic_units,
+            &bindings,
+            &logical_modules,
+            default_destination,
+        );
         let partition = outcome.partition;
         let assembly_conflicts = outcome.conflicts;
         let owner_report_ids_by_binding = Self::build_owner_report_ids_by_binding(&owner_graph);
@@ -177,10 +185,11 @@ impl Schedule {
     pub fn with_pre_existing_entry_exports(mut self, exports: BTreeSet<BindingName>) -> Self {
         let mut cache: HashSet<BindingName> = exports.iter().cloned().collect();
         for (name, kind) in &self.bindings {
-            if let BindingKind::Owned {
-                owner: ModuleId::Logical(_),
-            } = kind
-            {
+            // Every owner is a logical module now (the residual is
+            // just a logical module flagged `residual: true`); include
+            // all owned bindings so peelability's emit-resolvability
+            // projection sees the full moved-binding export surface.
+            if let BindingKind::Owned { .. } = kind {
                 cache.insert(name.clone());
             }
         }
@@ -242,14 +251,11 @@ impl Schedule {
 
     /// Render `id` to a human-readable label (used in cycle reports).
     pub fn module_name(&self, id: ModuleId) -> String {
-        match id {
-            ModuleId::ResidualEntry => RESIDUAL_ENTRY_LABEL.to_string(),
-            ModuleId::Logical(LogicalModuleIndex(idx)) => self
-                .logical_modules
-                .get(idx)
-                .map(|m| m.id.clone())
-                .unwrap_or_else(|| format!("<module#{idx}>")),
-        }
+        let LogicalModuleIndex(idx) = id.0;
+        self.logical_modules
+            .get(idx)
+            .map(|m| m.id.clone())
+            .unwrap_or_else(|| format!("<module#{idx}>"))
     }
 
     /// Which logical module owns a binding (by local name), if any.
@@ -358,7 +364,7 @@ fn build_export_name_by_binding(
     for (name, kind) in bindings {
         let export = match kind {
             BindingKind::Owned {
-                owner: ModuleId::Logical(LogicalModuleIndex(idx)),
+                owner: ModuleId(LogicalModuleIndex(idx)),
             } => logical_modules
                 .get(*idx)
                 .and_then(|module| module.rename_map.get(name))
@@ -403,9 +409,8 @@ fn compute_linker_order(
     // Add every module the schedule knows about so the order
     // covers them even if they have no dep-graph edges (singleton
     // leaves still need a deterministic position for emit ordering).
-    graph.add_node(ModuleId::ResidualEntry);
     for idx in 0..logical_modules.len() {
-        graph.add_node(ModuleId::Logical(LogicalModuleIndex(idx)));
+        graph.add_node(ModuleId(LogicalModuleIndex(idx)));
     }
     for (from, to, _) in dep_graph.iter_edges() {
         graph.add_node(from);

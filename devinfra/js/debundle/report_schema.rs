@@ -320,20 +320,21 @@ pub struct FactorizeDiagnostic {
     pub extends_module_id: Option<String>,
 }
 
-/// Stable value of [`ModuleReportRef::id`] for the implicit
-/// `<residual_entry>` module — the catch-all that holds bindings
-/// the spec hasn't assigned to a logical module. Consumed by
-/// downstream analyzers (factorizer, peel inventory) to gate
-/// residual-entry-only predicates without string-matching the
-/// label (which carries the user-facing `<residual_entry>` form).
-/// SSOT for the `module_key(ModuleId::ResidualEntry)` constant in
-/// `reports::module_key`.
+/// Conventional JSON-key value for the residual catch-all module
+/// across the report schema and downstream consumers (factorizer,
+/// peel inventory). Kept as an SSOT constant so consumers that key
+/// off "the residual module" by id can still pattern-match — but the
+/// debundler itself stopped using it as a discriminator: residual is
+/// just a `ModuleReportRef` whose `residual: bool` flag is `true`,
+/// and the synthesized module's id is `module_key(ModuleId)` (e.g.
+/// `logical:7`).
 pub const RESIDUAL_ENTRY_MODULE_ID: &str = "residual";
 
-/// Human-facing display label for the implicit residual entry
-/// (i.e. [`ModuleReportRef::label`] when the module id is
-/// [`RESIDUAL_ENTRY_MODULE_ID`]). SSOT for the constant in
-/// `schedule::module_name`'s `ModuleId::ResidualEntry` arm.
+/// Conventional human-facing label some downstream tooling still
+/// renders for the residual catch-all module. Production reports now
+/// emit the synthesized residual logical module's own id (e.g.
+/// `<chunk>::residual`); this constant remains for fixture
+/// helpers that need a fallback label.
 pub const RESIDUAL_ENTRY_LABEL: &str = "<residual_entry>";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

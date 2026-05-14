@@ -7,7 +7,7 @@ use crate::peelability::build_peelability_report;
 use crate::{
     BindingId, BindingName, BindingReport, DepKind, LogicalModuleIndex, ModuleId, ModuleReportRef,
     OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport,
-    OwnerId, QuotientEdgeReport, QuotientSccReport, RESIDUAL_ENTRY_MODULE_ID, Schedule,
+    OwnerId, QuotientEdgeReport, QuotientSccReport, Schedule,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -103,9 +103,8 @@ where
 
 fn build_quotient_node_reports(schedule: &Schedule) -> Vec<ModuleReportRef> {
     let mut modules = BTreeSet::<ModuleId>::new();
-    modules.insert(ModuleId::ResidualEntry);
     for idx in 0..schedule.logical_modules.len() {
-        modules.insert(ModuleId::Logical(LogicalModuleIndex(idx)));
+        modules.insert(ModuleId(LogicalModuleIndex(idx)));
     }
     for (_, module) in schedule.partition.iter() {
         modules.insert(module);
@@ -225,14 +224,17 @@ fn quotient_edge_indices_by_source(
     by_source
 }
 
+/// True iff `id` refers to a logical module whose `residual` flag is
+/// set — the chunk's catch-all destination synthesized before
+/// `Schedule::build`. Used by peelability and the destination
+/// projection in reports to gate residual-only predicates without
+/// string-matching module ids or labels.
 pub(crate) fn is_residual_destination(schedule: &Schedule, id: ModuleId) -> bool {
-    match id {
-        ModuleId::ResidualEntry => true,
-        ModuleId::Logical(LogicalModuleIndex(idx)) => schedule
-            .logical_modules
-            .get(idx)
-            .is_some_and(|module| module.residual),
-    }
+    let LogicalModuleIndex(idx) = id.0;
+    schedule
+        .logical_modules
+        .get(idx)
+        .is_some_and(|module| module.residual)
 }
 
 pub(crate) fn owner_key(id: OwnerId) -> String {
@@ -240,34 +242,24 @@ pub(crate) fn owner_key(id: OwnerId) -> String {
 }
 
 pub(crate) fn module_key(id: ModuleId) -> String {
-    match id {
-        ModuleId::ResidualEntry => RESIDUAL_ENTRY_MODULE_ID.to_string(),
-        ModuleId::Logical(LogicalModuleIndex(idx)) => format!("logical:{idx}"),
-    }
+    let LogicalModuleIndex(idx) = id.0;
+    format!("logical:{idx}")
 }
 
 pub(crate) fn module_id_from_key(key: &str) -> Option<ModuleId> {
-    if key == RESIDUAL_ENTRY_MODULE_ID {
-        return Some(ModuleId::ResidualEntry);
-    }
     key.strip_prefix("logical:")
         .and_then(|idx| idx.parse::<usize>().ok())
-        .map(|idx| ModuleId::Logical(LogicalModuleIndex(idx)))
+        .map(|idx| ModuleId(LogicalModuleIndex(idx)))
 }
 
 pub(crate) fn module_report_ref(schedule: &Schedule, id: ModuleId) -> ModuleReportRef {
-    let logical = match id {
-        ModuleId::Logical(LogicalModuleIndex(idx)) => schedule
-            .logical_modules
-            .get(idx)
-            .map(|module| (idx, module)),
-        ModuleId::ResidualEntry => None,
-    };
+    let LogicalModuleIndex(idx) = id.0;
+    let logical = schedule.logical_modules.get(idx);
     ModuleReportRef {
         id: module_key(id),
         label: schedule.module_name(id),
         residual: is_residual_destination(schedule, id),
-        index: logical.map(|(idx, _)| idx),
-        target_file: logical.map(|(_, module)| module.target_file.clone()),
+        index: logical.map(|_| idx),
+        target_file: logical.map(|module| module.target_file.clone()),
     }
 }

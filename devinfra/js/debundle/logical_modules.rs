@@ -464,25 +464,23 @@ fn materialize_logical_chunk(
             anonymous_ordinal_assignment.insert(*ordinal, index);
         }
         let dest_target_file = target_file_for_request(target_dir, &request.target_path)?;
-        let module_id = ModuleId::Logical(LogicalModuleIndex(index));
+        let module_id = ModuleId(LogicalModuleIndex(index));
         for member in &request.members {
             if let Some(existing_kind) = bindings_catalogue.get(&member.binding) {
                 let existing_id = match existing_kind {
                     BindingKind::Owned {
-                        owner: ModuleId::Logical(LogicalModuleIndex(owner_index)),
+                        owner: ModuleId(LogicalModuleIndex(owner_index)),
                     } => module_plans
                         .get(*owner_index)
                         .map(|plan| plan.id.clone())
                         .unwrap_or_else(|| format!("<plan#{owner_index}>")),
-                    BindingKind::Owned { owner } => format!("{owner:?}"),
                     BindingKind::Imported {
-                        re_exporter: ModuleId::Logical(LogicalModuleIndex(re_index)),
+                        re_exporter: ModuleId(LogicalModuleIndex(re_index)),
                         ..
                     } => module_plans
                         .get(*re_index)
                         .map(|plan| plan.id.clone())
                         .unwrap_or_else(|| format!("<plan#{re_index}>")),
-                    BindingKind::Imported { re_exporter, .. } => format!("{re_exporter:?}"),
                 };
                 bail!(
                     "Duplicate binding claim for {:?} in chunk {chunk_id:?}: already \
@@ -555,7 +553,7 @@ fn materialize_logical_chunk(
         let Some(&owner_index) = binding_assignment.get(claimed_name) else {
             continue;
         };
-        let owner_id = ModuleId::Logical(LogicalModuleIndex(owner_index));
+        let owner_id = ModuleId(LogicalModuleIndex(owner_index));
         for sibling in sibling_set {
             if sibling == claimed_name {
                 continue;
@@ -594,7 +592,7 @@ fn materialize_logical_chunk(
     let catchall_target_for_overflow = chunk_unassigned_mode.catchall_file_target();
     if let Some(residual) = &residual_request {
         let residual_index = module_plans.len();
-        let residual_module_id = ModuleId::Logical(LogicalModuleIndex(residual_index));
+        let residual_module_id = ModuleId(LogicalModuleIndex(residual_index));
         let mut residual_bindings = HashMap::<String, String>::new();
         for decl in &declarations {
             for name in &decl.names {
@@ -634,7 +632,7 @@ fn materialize_logical_chunk(
             .iter()
             .position(|plan| plan.target_path == catchall_target);
         if let Some(owner_index) = owner_index {
-            let owner_id = ModuleId::Logical(LogicalModuleIndex(owner_index));
+            let owner_id = ModuleId(LogicalModuleIndex(owner_index));
             let owner_plan = &mut module_plans[owner_index];
             owner_plan.explicit = false;
             for decl in &declarations {
@@ -762,7 +760,7 @@ fn materialize_logical_chunk(
                 )
             })?;
         }
-        let logical_modules: Vec<ScheduleLogicalModule> =
+        let mut logical_modules: Vec<ScheduleLogicalModule> =
             time_phase!(timings, "project_schedule_modules", {
                 module_plans
                     .iter()
@@ -790,6 +788,32 @@ fn materialize_logical_chunk(
                     })
                     .collect()
             });
+        // Commit 1 transitional behavior: the partition's "default
+        // destination" — the module owners with no claim fall back to —
+        // is a schedule-only sentinel logical module appended past
+        // `module_plans.len()`. The emit loop iterates `module_plans`,
+        // so the sentinel never gets emitted as a file. Anonymous
+        // statements without an explicit logical-module
+        // `anonymous_statements` match thus stay in the sentinel,
+        // preserving the pre-refactor split where anon-fallback was a
+        // distinct destination from the residual logical module (which
+        // only held named-unclaimed bindings). Commit 2 collapses this
+        // sentinel back into the residual module via explicit
+        // `anonymous_statement_ordinals` routing.
+        let sentinel_residual_target = chunk_unassigned_mode
+            .catchall_file_target()
+            .map(|t| target_file_for_request(target_dir, t))
+            .transpose()?
+            .unwrap_or_else(|| target_file.clone());
+        let sentinel_idx = logical_modules.len();
+        logical_modules.push(ScheduleLogicalModule {
+            id: format!("{chunk_id}::anon_residual_sentinel"),
+            target_file: sentinel_residual_target,
+            residual: true,
+            rename_map: HashMap::new(),
+            anonymous_statement_ordinals: Vec::new(),
+        });
+        let default_destination = ModuleId(LogicalModuleIndex(sentinel_idx));
         let redundant_purity_hints = analysis.redundant_purity_hints;
         let schedule = time_phase!(timings, "build_schedule", {
             Schedule::build_with(
@@ -799,6 +823,7 @@ fn materialize_logical_chunk(
                 bindings_catalogue,
                 logical_modules,
                 chunk_renames_map.clone(),
+                default_destination,
             )
             .with_pre_existing_entry_exports(pre_existing_entry_exports.clone())
         });
@@ -1393,7 +1418,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
     // ties (e.g. when two providers have no dep-graph relation).
     entry_imports.sort_by_key(|(idx, _)| {
         schedule
-            .linker_position(ModuleId::Logical(LogicalModuleIndex(*idx)))
+            .linker_position(ModuleId(LogicalModuleIndex(*idx)))
             .unwrap_or(usize::MAX)
     });
     let entry_imports: Vec<ModuleItem> = entry_imports.into_iter().map(|(_, it)| it).collect();
@@ -1966,7 +1991,7 @@ fn synthesize_mini_factor_plans(
 
     for (idx, members) in unclaimed_units.into_iter().enumerate() {
         let synthetic_idx = module_plans.len();
-        let synthetic_module_id = ModuleId::Logical(LogicalModuleIndex(synthetic_idx));
+        let synthetic_module_id = ModuleId(LogicalModuleIndex(synthetic_idx));
         let target_path = format!("__auto/mini/{idx:04}");
         let target_file = target_file_for_request(target_dir, &target_path)?;
         let mut bindings = HashMap::<String, String>::new();
@@ -2545,9 +2570,7 @@ fn collect_imported_reexports_by_module(
         else {
             continue;
         };
-        let ModuleId::Logical(LogicalModuleIndex(index)) = re_exporter else {
-            continue;
-        };
+        let ModuleId(LogicalModuleIndex(index)) = re_exporter;
         let Some(reexports) = by_module.get_mut(*index) else {
             continue;
         };
@@ -2572,8 +2595,7 @@ fn plan_module_reference_needs<'a>(
 ) -> ModuleReferenceNeeds<'a> {
     let mut needs = ModuleReferenceNeeds::default();
     for name in &body_facts.referenced_idents {
-        if let Some(ModuleId::Logical(LogicalModuleIndex(provider_index))) = schedule.owner_of(name)
-        {
+        if let Some(ModuleId(LogicalModuleIndex(provider_index))) = schedule.owner_of(name) {
             if provider_index != module_index
                 && let Some(provider) = schedule.logical_module(LogicalModuleIndex(provider_index))
                 && let Some(exported_name) = provider.rename_map.get(name)
@@ -2629,7 +2651,7 @@ fn cross_module_imports_for_plan(
     let mut providers: Vec<usize> = imports_by_provider.keys().copied().collect();
     providers.sort_by_key(|&idx| {
         schedule
-            .linker_position(ModuleId::Logical(LogicalModuleIndex(idx)))
+            .linker_position(ModuleId(LogicalModuleIndex(idx)))
             .unwrap_or(usize::MAX)
     });
     providers

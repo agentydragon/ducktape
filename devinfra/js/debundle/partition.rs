@@ -6,7 +6,9 @@ use crate::{BindingName, ModuleId, OwnerGraph, OwnerId};
 ///
 /// Conceptually the **partition** of the chunk's program-dependence
 /// graph into output modules. Indexing is dense by [`OwnerId`]; every
-/// owner has an assignment (defaulting to [`ModuleId::ResidualEntry`]).
+/// owner has an assignment (defaulting to the caller-supplied
+/// `default_destination` — typically the chunk's synthesized residual
+/// module).
 ///
 /// The partition is the spec's primary input to the realizability gate,
 /// the quotient construction, and the peelability search. It's stored
@@ -20,10 +22,14 @@ pub struct Partition {
 
 impl Partition {
     /// Build a partition keyed by `owner_graph.nodes.len()` slots,
-    /// each defaulting to `ModuleId::ResidualEntry`.
-    pub fn new(owner_graph: &OwnerGraph) -> Self {
+    /// each defaulting to `default_destination`. Callers pass the
+    /// chunk's residual logical-module id (synthesized by the
+    /// materializer); MiniFactors callers can pass any placeholder
+    /// because every owner gets a concrete claim from the mini-factor
+    /// synthesizer before the partition is consulted.
+    pub fn new(owner_graph: &OwnerGraph, default_destination: ModuleId) -> Self {
         Self {
-            of: vec![ModuleId::ResidualEntry; owner_graph.nodes.len()],
+            of: vec![default_destination; owner_graph.nodes.len()],
         }
     }
 
@@ -31,7 +37,7 @@ impl Partition {
     /// `Owned` binding it declares, looked up by name in
     /// `binding_assignment`. Owners with no declared bindings — or
     /// whose declared bindings are absent from the assignment — stay
-    /// at [`ModuleId::ResidualEntry`].
+    /// at `default_destination`.
     ///
     /// Bindings get the first declaring owner's destination if more
     /// than one owner declares the same name (which the chunk
@@ -40,8 +46,9 @@ impl Partition {
     pub fn from_binding_assignment(
         owner_graph: &OwnerGraph,
         binding_assignment: &HashMap<BindingName, ModuleId>,
+        default_destination: ModuleId,
     ) -> Self {
-        let mut p = Self::new(owner_graph);
+        let mut p = Self::new(owner_graph, default_destination);
         for node in &owner_graph.nodes {
             for binding_id in &node.declared {
                 let Some(name) = owner_graph.binding_table.name(*binding_id) else {

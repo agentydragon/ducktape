@@ -354,9 +354,8 @@ impl<'a> PeelabilityContext<'a> {
         quotient_edges: &[QuotientEdgeReport],
     ) -> Self {
         let mut modules = BTreeSet::<ModuleId>::new();
-        modules.insert(ModuleId::ResidualEntry);
         for idx in 0..schedule.logical_modules.len() {
-            modules.insert(ModuleId::Logical(LogicalModuleIndex(idx)));
+            modules.insert(ModuleId(LogicalModuleIndex(idx)));
         }
         for (_, module) in schedule.partition.iter() {
             modules.insert(module);

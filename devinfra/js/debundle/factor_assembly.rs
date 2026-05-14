@@ -51,14 +51,19 @@ pub struct AssemblyOutcome {
 /// best-effort when conflicts exist (first-seen claim wins per unit)
 /// so downstream owner-graph/report code keeps working — the
 /// conflict list is what surfaces the rejection to the user.
+///
+/// `default_destination` is the residual logical module id that
+/// unclaimed owners fall back to (and the conflict detector reports as
+/// the effective destination of unclaimed unit members).
 pub fn assemble_partition(
     owner_graph: &OwnerGraph,
     atomic_units: &[AtomicUnit],
     bindings: &HashMap<BindingName, BindingKind>,
     logical_modules: &[LogicalModule],
+    default_destination: ModuleId,
 ) -> AssemblyOutcome {
     let claims = compute_owner_claims(owner_graph, bindings, logical_modules);
-    let mut partition = Partition::new(owner_graph);
+    let mut partition = Partition::new(owner_graph, default_destination);
     for (idx, claim) in claims.iter().enumerate() {
         if let Some(dest) = claim {
             partition.set(OwnerId(idx), *dest);
@@ -66,7 +71,9 @@ pub fn assemble_partition(
     }
     let mut conflicts = Vec::<AtomicUnitConflict>::new();
     for unit in atomic_units {
-        if let Some(conflict) = detect_unit_conflict(unit, &claims, owner_graph) {
+        if let Some(conflict) =
+            detect_unit_conflict(unit, &claims, owner_graph, default_destination)
+        {
             conflicts.push(conflict);
         }
     }
@@ -95,7 +102,7 @@ fn compute_owner_claims(
         }
     }
     for (idx, module) in logical_modules.iter().enumerate() {
-        let dest = ModuleId::Logical(LogicalModuleIndex(idx));
+        let dest = ModuleId(LogicalModuleIndex(idx));
         for ordinal in &module.anonymous_statement_ordinals {
             if let Some(node) = owner_graph
                 .nodes
@@ -113,6 +120,7 @@ fn detect_unit_conflict(
     unit: &AtomicUnit,
     claims: &[Option<ModuleId>],
     owner_graph: &OwnerGraph,
+    default_destination: ModuleId,
 ) -> Option<AtomicUnitConflict> {
     // Each member's effective destination: explicit claim or
     // residual fallback. Two or more distinct destinations is
@@ -120,7 +128,7 @@ fn detect_unit_conflict(
     let resolved: Vec<(OwnerId, ModuleId)> = unit
         .members
         .iter()
-        .map(|owner| (*owner, claims[owner.0].unwrap_or(ModuleId::ResidualEntry)))
+        .map(|owner| (*owner, claims[owner.0].unwrap_or(default_destination)))
         .collect();
     let mut first: Option<ModuleId> = None;
     let mut has_distinct = false;

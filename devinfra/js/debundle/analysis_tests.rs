@@ -193,13 +193,23 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
     }
 
     fn logical(idx: usize) -> ModuleId {
-        ModuleId::Logical(LogicalModuleIndex(idx))
+        ModuleId(LogicalModuleIndex(idx))
+    }
+
+    /// Test-helper residual destination: the synthesized residual
+    /// logical module always sits at the highest index appended by
+    /// `schedule_for` / `schedule_with_residual_module`. Tests use this
+    /// instead of the historical `ModuleId::ResidualEntry` literal.
+    fn residual() -> ModuleId {
+        ModuleId::logical(usize::MAX)
     }
 
     fn render(id: ModuleId) -> String {
-        match id {
-            ModuleId::Logical(LogicalModuleIndex(idx)) => format!("mod_{idx}"),
-            ModuleId::ResidualEntry => "<residual>".to_string(),
+        let LogicalModuleIndex(idx) = id.0;
+        if idx == usize::MAX {
+            "<residual>".to_string()
+        } else {
+            format!("mod_{idx}")
         }
     }
 
@@ -234,7 +244,8 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         binding_assignment.insert("A".to_string(), logical(0));
         binding_assignment.insert("B".to_string(), logical(1));
         let owner_graph = build_owner_graph(&facts);
-        let partition = Partition::from_binding_assignment(&owner_graph, &binding_assignment);
+        let partition =
+            Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
         let graph = build_module_quotient(&owner_graph, &partition);
         let report = validate_schedule(&graph, &render);
         assert_eq!(report.cycles.len(), 1);
@@ -250,7 +261,8 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         binding_assignment.insert("B".to_string(), logical(1));
         binding_assignment.insert("C".to_string(), logical(2));
         let owner_graph = build_owner_graph(&facts);
-        let partition = Partition::from_binding_assignment(&owner_graph, &binding_assignment);
+        let partition =
+            Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
         let graph = build_module_quotient(&owner_graph, &partition);
         let report = validate_schedule(&graph, &render);
         assert!(
@@ -278,7 +290,8 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         binding_assignment.insert("readB".to_string(), logical(0));
         binding_assignment.insert("B".to_string(), logical(1));
         let owner_graph = build_owner_graph(&facts);
-        let partition = Partition::from_binding_assignment(&owner_graph, &binding_assignment);
+        let partition =
+            Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
         let graph = build_module_quotient(&owner_graph, &partition);
         let report = validate_schedule(&graph, &render);
         assert_eq!(
@@ -328,7 +341,8 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         binding_assignment.insert("a2".to_string(), logical(0));
         binding_assignment.insert("b1".to_string(), logical(1));
         let owner_graph = build_owner_graph(&facts);
-        let partition = Partition::from_binding_assignment(&owner_graph, &binding_assignment);
+        let partition =
+            Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
         let graph = build_module_quotient(&owner_graph, &partition);
         let report = validate_schedule(&graph, &render);
         assert_eq!(report.cycles.len(), 1);
@@ -362,7 +376,8 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         binding_assignment.insert("helperB".to_string(), logical(1));
         binding_assignment.insert("B".to_string(), logical(1));
         let owner_graph = build_owner_graph(&facts);
-        let partition = Partition::from_binding_assignment(&owner_graph, &binding_assignment);
+        let partition =
+            Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
         let graph = build_module_quotient(&owner_graph, &partition);
         let report = validate_schedule(&graph, &render);
         assert!(
@@ -380,7 +395,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
     fn cross_destination_lazy_write_is_rejected() {
         let schedule = schedule_for(
             "let A = 0; function B() { A = 1; }",
-            &[("A", logical(0)), ("B", ModuleId::ResidualEntry)],
+            &[("A", logical(0)), ("B", residual())],
         );
         let report = schedule.validate();
         assert_eq!(
@@ -389,12 +404,11 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
             "expected one atomic-unit conflict (A and B share a LazyRebind atomic unit but the spec splits them): {report:?}",
         );
         let conflict = &report.atomic_unit_conflicts[0];
+        // Residual is now the synthesized logical module at index 1
+        // (the explicit `mod_0` is at index 0).
         assert_eq!(
             distinct_claim_modules(conflict),
-            vec![
-                ModuleId::Logical(LogicalModuleIndex(0)),
-                ModuleId::ResidualEntry
-            ],
+            vec![ModuleId::logical(0), ModuleId::logical(1)],
         );
     }
 
@@ -427,18 +441,39 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         );
     }
 
+    /// Resolve a sentinel `residual()` ModuleId to the real residual
+    /// logical-module index. Helper for `schedule_for`: in the new
+    /// no-variant world the residual is just a logical module, so
+    /// tests that used to write `ModuleId::ResidualEntry` now write
+    /// `residual()` (a `usize::MAX`-indexed sentinel) and let the
+    /// builder remap it.
+    fn resolve_test_module_id(id: ModuleId, residual_idx: usize) -> ModuleId {
+        if id.0.0 == usize::MAX {
+            ModuleId::logical(residual_idx)
+        } else {
+            id
+        }
+    }
+
     fn schedule_for(source: &str, ownership: &[(&str, ModuleId)]) -> Schedule {
         let module = parse(source);
         let facts = analyze_facts(&module);
-        let mut bindings = HashMap::new();
-        let mut max_idx = 0usize;
-        for (name, id) in ownership {
-            bindings.insert(name.to_string(), BindingKind::Owned { owner: *id });
-            if let ModuleId::Logical(LogicalModuleIndex(i)) = id {
-                max_idx = max_idx.max(*i);
+        let mut max_idx: Option<usize> = None;
+        for (_, id) in ownership {
+            let LogicalModuleIndex(i) = id.0;
+            if i == usize::MAX {
+                continue;
             }
+            max_idx = Some(max_idx.map_or(i, |m| m.max(i)));
         }
-        let logical_modules: Vec<LogicalModule> = (0..=max_idx)
+        let explicit_count = max_idx.map_or(0, |i| i + 1);
+        let residual_idx = explicit_count;
+        let mut bindings = HashMap::new();
+        for (name, id) in ownership {
+            let resolved = resolve_test_module_id(*id, residual_idx);
+            bindings.insert(name.to_string(), BindingKind::Owned { owner: resolved });
+        }
+        let mut logical_modules: Vec<LogicalModule> = (0..explicit_count)
             .map(|i| LogicalModule {
                 id: format!("mod_{i}"),
                 target_file: format!("mod_{i}.js"),
@@ -447,12 +482,20 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
                 anonymous_statement_ordinals: Vec::new(),
             })
             .collect();
+        logical_modules.push(LogicalModule {
+            id: "residual".to_string(),
+            target_file: "residual/unhandled.js".to_string(),
+            residual: true,
+            rename_map: HashMap::new(),
+            anonymous_statement_ordinals: Vec::new(),
+        });
         Schedule::build(
             "test_chunk".to_string(),
             facts,
             bindings,
             logical_modules,
             HashMap::new(),
+            ModuleId::logical(residual_idx),
         )
     }
 
@@ -494,6 +537,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
             bindings,
             logical_modules,
             HashMap::new(),
+            residual,
         )
     }
 
@@ -511,11 +555,13 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
             }),
             "owner graph should retain the unassigned declared provider edge",
         );
+        // The residual is the synthesized logical module at index 1
+        // (after the explicit `mod_0` at index 0).
         assert!(
             schedule
                 .dep_graph
                 .graph
-                .contains_edge(logical(0), ModuleId::ResidualEntry),
+                .contains_edge(logical(0), ModuleId::logical(1)),
             "the quotient should expose the logical-module -> residual read",
         );
 
@@ -525,7 +571,11 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
             .iter()
             .find(|node| node.id == "owner:1")
             .expect("X owner should be reported");
-        assert_eq!(residual_owner.destination.id, "residual");
+        assert!(
+            residual_owner.destination.residual,
+            "residual owner should land on the synthesized residual module: {:?}",
+            residual_owner.destination,
+        );
     }
 
     #[test]
@@ -2766,8 +2816,8 @@ mutable = mutable + 1;"#,
         );
         // No cross-module read edges should exist: A's init is
         // pure, B reads X (same module).
-        let mod_0 = ModuleId::Logical(LogicalModuleIndex(0));
-        let mod_1 = ModuleId::Logical(LogicalModuleIndex(1));
+        let mod_0 = ModuleId(LogicalModuleIndex(0));
+        let mod_1 = ModuleId(LogicalModuleIndex(1));
         assert!(
             !schedule.dep_graph.graph.contains_edge(mod_0, mod_1),
             "no edge mod_0 → mod_1 expected, got: {:?}",
@@ -3093,7 +3143,16 @@ mutable = mutable + 1;"#,
                 } else {
                     declared.join(",")
                 };
-                (key, render(schedule.partition.of(node.id)))
+                let dest = schedule.partition.of(node.id);
+                // Residual modules render as `<residual>` so this
+                // summary stays stable across residual-index changes;
+                // explicit modules use their `mod_<idx>` label.
+                let LogicalModuleIndex(idx) = dest.0;
+                let label = match schedule.logical_module(LogicalModuleIndex(idx)) {
+                    Some(m) if m.residual => "<residual>".to_string(),
+                    _ => render(dest),
+                };
+                (key, label)
             })
             .collect();
         out.sort();
@@ -3132,12 +3191,11 @@ mutable = mutable + 1;"#,
             1,
             "expected the half-claimed EagerUse cycle to surface as an atomic-unit conflict: {report:?}",
         );
+        // Residual is the synthesized logical module appended after
+        // the explicit `mod_0`.
         assert_eq!(
             distinct_claim_modules(&report.atomic_unit_conflicts[0]),
-            vec![
-                ModuleId::Logical(LogicalModuleIndex(0)),
-                ModuleId::ResidualEntry
-            ],
+            vec![ModuleId::logical(0), ModuleId::logical(1)],
         );
     }
 
@@ -3175,10 +3233,7 @@ mutable = mutable + 1;"#,
         let conflict = &report.atomic_unit_conflicts[0];
         assert_eq!(
             distinct_claim_modules(conflict),
-            vec![
-                ModuleId::Logical(LogicalModuleIndex(0)),
-                ModuleId::Logical(LogicalModuleIndex(1)),
-            ],
+            vec![ModuleId::logical(0), ModuleId::logical(1)],
         );
     }
 

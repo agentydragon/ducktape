@@ -8,15 +8,25 @@ use serde::{Deserialize, Serialize};
 #[serde(transparent)]
 pub struct LogicalModuleIndex(pub usize);
 
-/// Identity of a module the graph/schedule analysis reasons about. The
-/// residual entry is a first-class variant rather than a sentinel
-/// index, so callers can't accidentally treat it as a normal logical
-/// module.
+/// Identity of a module the graph/schedule analysis reasons about.
+/// Wraps a [`LogicalModuleIndex`] pointing into the schedule's
+/// `logical_modules` list. The residual catch-all is just a logical
+/// module flagged `residual: true` — synthesized by the materializer
+/// before `Schedule::build` for chunks that need a default
+/// destination (every `InlineInEntry` and `CatchallFile` chunk; the
+/// `MiniFactors` synthesizer handles assignments itself).
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ModuleId {
-    Logical(LogicalModuleIndex),
-    ResidualEntry,
+#[serde(transparent)]
+pub struct ModuleId(pub LogicalModuleIndex);
+
+impl ModuleId {
+    pub fn logical(idx: usize) -> Self {
+        Self(LogicalModuleIndex(idx))
+    }
+
+    pub fn index(self) -> LogicalModuleIndex {
+        self.0
+    }
 }
 
 /// Position of a top-level statement in a chunk's source body.
