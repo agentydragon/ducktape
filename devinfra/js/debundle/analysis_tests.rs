@@ -1273,25 +1273,124 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         );
     }
 
+    // --- P-2 `singleton_instance_with_listener_blocking_pure_alias` ----------
+    //
+    // The `declared_pure_new` annotation admits
+    // `new <SimpleIdent>(<primitive-literal-args>)` as Pure. The
+    // contract is intentionally narrow: only primitive literals
+    // (string / number / boolean / null / bigint) are allowed as
+    // arguments, because identifier reads, fresh object/array
+    // literals, and member/call expressions can all hide
+    // getters, Proxies, or other user code that would fire when
+    // the constructor coerces them.
+    //
+    // See `oversize_closure_patterns.md` P-2 for the
+    // residual-shrinking motivation and `classify_new_expr_purity`
+    // in `purity.rs` for the implementation.
+
     #[test]
-    fn declared_pure_new_ident_new_classifies_pure_with_pure_args() {
+    fn declared_pure_new_no_args_is_pure() {
+        // `const X = new C();` — the singleton form. Constructor
+        // is annotated `pure_new` so the spec author asserts the
+        // body has no observable side effects.
+        assert!(
+            (classify_with_declared_pure_new("class C { constructor() {} }", "new C()", &["C"]))
+                .is_pure()
+        );
+    }
+
+    #[test]
+    fn declared_pure_new_primitive_literal_args_is_pure() {
+        // Primitive-literal args are the strictly-conservative
+        // admission shape: a string + a number can't fire user
+        // code on coercion.
         assert!(
             (classify_with_declared_pure_new(
-                "class PureBox { constructor(value) { globalThis.notAnalyzed = value; } }",
-                "new PureBox({ value: 1, later() { globalThis.later = true; } })",
-                &["PureBox"]
+                "class C { constructor(a, b) {} }",
+                "new C(1, \"x\")",
+                &["C"]
             ))
             .is_pure()
         );
     }
 
     #[test]
-    fn declared_pure_new_requires_pure_args() {
+    fn declared_pure_new_identifier_arg_is_not_pure() {
+        // `new C(otherIdentifier)` — the identifier read could
+        // resolve to a getter, a Proxy-trapped binding, or
+        // anything else with observable side effects when the
+        // constructor accesses it. P-2 rejects this even when
+        // `C` is declared pure-new.
         assert!(
             !(classify_with_declared_pure_new(
-                "class PureBox { constructor(value) { this.value = value; } }",
-                "new PureBox(makeValue())",
-                &["PureBox"]
+                "class C { constructor(value) {} }",
+                "new C(otherIdentifier)",
+                &["C"]
+            ))
+            .is_pure()
+        );
+    }
+
+    #[test]
+    fn declared_pure_new_object_literal_arg_is_not_pure() {
+        // Even a fresh object literal is rejected: an object
+        // property value could be a getter, a method that runs
+        // on enumeration, or a shorthand that names a binding
+        // we have no purity claim over. Strict literal-args
+        // keeps the contract narrow and easy to audit.
+        assert!(
+            !(classify_with_declared_pure_new(
+                "class C { constructor(opts) {} }",
+                "new C({ value: 1 })",
+                &["C"]
+            ))
+            .is_pure()
+        );
+    }
+
+    #[test]
+    fn declared_pure_new_call_arg_is_not_pure() {
+        // A nested call argument is always non-literal; the
+        // call itself can have side effects regardless of `C`'s
+        // purity annotation.
+        assert!(
+            !(classify_with_declared_pure_new(
+                "class C { constructor(value) {} }",
+                "new C(makeValue())",
+                &["C"]
+            ))
+            .is_pure()
+        );
+    }
+
+    #[test]
+    fn undeclared_new_is_not_pure() {
+        // No `declared_pure_new` annotation → fall through to
+        // the default `UnknownNew` verdict. Distinguishes the
+        // P-2 admission from "any zero-arg `new` is pure",
+        // which would be unsound.
+        assert!(
+            !(classify_with_declared_pure_new(
+                "class C { constructor() { globalThis.tag = true; } }",
+                "new C()",
+                &[] // C not in declared_pure_new
+            ))
+            .is_pure()
+        );
+    }
+
+    #[test]
+    fn declared_pure_new_method_chain_is_not_pure() {
+        // `new C().foo()` — even when `new C()` itself is Pure
+        // under P-2, the `.foo()` invocation goes through the
+        // call classifier on a non-whitelisted method shape
+        // (receiver isn't an Ident in `static_member_pair`),
+        // so the overall expression is NotPure.
+        assert!(
+            !(classify_with_declared_pure_new(
+                "class C { constructor() {} foo() { globalThis.tag = true; } }",
+                "new C().foo()",
+                &["C"]
             ))
             .is_pure()
         );
@@ -1299,6 +1398,11 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
 
     #[test]
     fn declared_pure_new_does_not_apply_to_plain_call() {
+        // The pure-new annotation gates `new C(...)` only.
+        // A plain `C(...)` call does not get admitted because
+        // there's no `[[Construct]]`-vs-`[[Call]]` distinction
+        // in the spec annotation; spec authors who want a
+        // function-call admission use `purity: pure` instead.
         assert!(
             !(classify_with_declared_pure_new(
                 "function PureBox(value) { globalThis.value = value; return { value }; }",
