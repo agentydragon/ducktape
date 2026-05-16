@@ -8,9 +8,3 @@ js_binary(
     entry_point = "strip_ts_types.mjs",
     visibility = ["//visibility:public"],
 )
-
-js_binary(
-    name = "openapi_const_to_enum",
-    entry_point = "openapi_const_to_enum.mjs",
-    visibility = ["//visibility:public"],
-)
