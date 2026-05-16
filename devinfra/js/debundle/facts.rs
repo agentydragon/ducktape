@@ -68,7 +68,21 @@ pub enum KnownEffect {
 #[derive(Debug, Clone, Default)]
 pub struct AnalysisHints {
     pub declared_pure: BTreeSet<String>,
+    /// Strict P-2: `new C(<primitive-literal-args>)` admits as Pure.
+    /// Identifier reads, fresh literals, calls, etc. are rejected
+    /// because they can hide getters / Proxies / coercion side
+    /// effects that the constructor's argument evaluation would
+    /// fire. See `classify_new_expr_purity`.
     pub declared_pure_new: BTreeSet<String>,
+    /// Relaxed P-2: `new C(<args>)` admits as Pure when every arg
+    /// classifies `Purity::Pure` (not just primitive literals). The
+    /// spec author opts in per constructor — only safe for
+    /// constructors whose bodies do not read arguments through
+    /// getters / Proxy traps / coercion. Disjoint from
+    /// `declared_pure_new` in semantics (this set strictly relaxes
+    /// the argument-shape predicate); spec authors should pick the
+    /// narrowest set that admits their callsites.
+    pub declared_pure_new_with_pure_args: BTreeSet<String>,
     pub known_effects: BTreeMap<String, KnownEffect>,
 }
 
@@ -77,6 +91,7 @@ impl AnalysisHints {
         Self {
             declared_pure: declared_pure.clone(),
             declared_pure_new: BTreeSet::new(),
+            declared_pure_new_with_pure_args: BTreeSet::new(),
             known_effects: BTreeMap::new(),
         }
     }
@@ -183,11 +198,12 @@ where
 {
     let body = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&body);
-    let graph = ChunkCodeGraph::build_with_declared_pure_new(
+    let graph = ChunkCodeGraph::build_with_pure_new_sets(
         &body,
         &shadowed,
         &hints.declared_pure,
         &hints.declared_pure_new,
+        &hints.declared_pure_new_with_pure_args,
     );
     let redundant_purity_hints =
         detect_redundant_purity_hints(&body, &shadowed, &hints.declared_pure);

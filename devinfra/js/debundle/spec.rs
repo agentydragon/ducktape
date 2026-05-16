@@ -493,6 +493,15 @@ pub enum MemberPurity {
     /// still requires every argument expression to classify pure; this
     /// annotation does not affect ordinary `<binding>(...)` calls.
     PureNew,
+    /// Relaxed variant of `PureNew`: author additionally asserts that
+    /// the constructor body does not read its arguments through
+    /// getters / Proxy traps / coercion that could fire user code,
+    /// so the analyzer admits `new <binding>(<args>)` as Pure whenever
+    /// every argument *classifies* `Pure` — not just primitive
+    /// literals. Use only when the constructor is known to store args
+    /// via plain assignment (no `String(opts)` / `+opts` / spread copy
+    /// off `opts`); otherwise prefer the stricter `PureNew`.
+    PureNewWithPureArgs,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq)]
