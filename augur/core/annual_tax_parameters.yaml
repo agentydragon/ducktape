@@ -80,6 +80,15 @@ federal:
       zero_rate_ceiling_usd: 66200.0
       fifteen_rate_ceiling_usd: 579600.0
   unrecaptured_1250_gain_max_rate: 0.25
+  salt_cap_usd: 10000.0
+  qualified_residence_interest_principal_cap_usd: 750000.0
+  net_investment_income_tax:
+    rate: 0.038
+    magi_threshold_usd_by_filing_status:
+      single: 200000.0
+      married_filing_jointly: 250000.0
+      married_filing_separately: 125000.0
+      head_of_household: 200000.0
 california:
   tax_year: 2025
   standard_deduction_usd_by_filing_status:

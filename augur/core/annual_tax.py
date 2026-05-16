@@ -57,6 +57,20 @@ class _BehavioralHealthServicesTaxParameters(_TaxParameterModel):
         return self
 
 
+class _NetInvestmentIncomeTaxParameters(_TaxParameterModel):
+    rate: float
+    magi_threshold_usd_by_filing_status: dict[TaxFilingStatus, float]
+
+    @model_validator(mode="after")
+    def _validate_niit(self) -> _NetInvestmentIncomeTaxParameters:
+        _validate_rate("rate", self.rate)
+        _validate_status_map("magi_threshold_usd_by_filing_status", self.magi_threshold_usd_by_filing_status)
+        for status in _TAX_FILING_STATUSES:
+            if self.magi_threshold_usd_by_filing_status[status] < 0.0:
+                raise ValueError(f"magi_threshold_usd_by_filing_status.{status.value} must be non-negative")
+        return self
+
+
 class _BaseJurisdictionTaxParameters(_TaxParameterModel):
     tax_year: int
     standard_deduction_usd_by_filing_status: dict[TaxFilingStatus, float]
@@ -80,6 +94,9 @@ class _BaseJurisdictionTaxParameters(_TaxParameterModel):
 class _FederalTaxParameters(_BaseJurisdictionTaxParameters):
     long_term_capital_gain_thresholds_usd_by_filing_status: dict[TaxFilingStatus, _FederalLongTermCapitalGainThresholds]
     unrecaptured_1250_gain_max_rate: float
+    salt_cap_usd: float
+    qualified_residence_interest_principal_cap_usd: float
+    net_investment_income_tax: _NetInvestmentIncomeTaxParameters
 
     @model_validator(mode="after")
     def _validate_federal(self) -> _FederalTaxParameters:
@@ -88,6 +105,10 @@ class _FederalTaxParameters(_BaseJurisdictionTaxParameters):
             self.long_term_capital_gain_thresholds_usd_by_filing_status,
         )
         _validate_rate("unrecaptured_1250_gain_max_rate", self.unrecaptured_1250_gain_max_rate)
+        if self.salt_cap_usd < 0.0:
+            raise ValueError("salt_cap_usd must be non-negative")
+        if self.qualified_residence_interest_principal_cap_usd <= 0.0:
+            raise ValueError("qualified_residence_interest_principal_cap_usd must be positive")
         return self
 
 
@@ -176,6 +197,15 @@ CALIFORNIA_BEHAVIORAL_HEALTH_SERVICES_TAX_THRESHOLD_USD = (
 )
 CALIFORNIA_BEHAVIORAL_HEALTH_SERVICES_TAX_RATE = _ANNUAL_TAX_PARAMETERS.california.behavioral_health_services_tax.rate
 FEDERAL_UNRECAPTURED_1250_GAIN_MAX_RATE = _ANNUAL_TAX_PARAMETERS.federal.unrecaptured_1250_gain_max_rate
+FEDERAL_SALT_CAP_USD = _ANNUAL_TAX_PARAMETERS.federal.salt_cap_usd
+FEDERAL_QUALIFIED_RESIDENCE_INTEREST_PRINCIPAL_CAP_USD = (
+    _ANNUAL_TAX_PARAMETERS.federal.qualified_residence_interest_principal_cap_usd
+)
+FEDERAL_NIIT_RATE = _ANNUAL_TAX_PARAMETERS.federal.net_investment_income_tax.rate
+FEDERAL_NIIT_MAGI_THRESHOLDS_USD = {
+    status: _ANNUAL_TAX_PARAMETERS.federal.net_investment_income_tax.magi_threshold_usd_by_filing_status[status]
+    for status in _TAX_FILING_STATUSES
+}
 
 
 @dataclass(frozen=True)
@@ -186,6 +216,7 @@ class AnnualSaleTaxAllocation:
     property_sale_tax_usd: np.ndarray
     generic_sp500_sale_tax_usd: np.ndarray
     private_equity_sale_tax_usd: np.ndarray
+    rental_income_tax_usd: np.ndarray
 
 
 def annual_sale_tax_allocation(
@@ -196,12 +227,21 @@ def annual_sale_tax_allocation(
     taxable_property_capital_gain_usd: np.ndarray,
     generic_sp500_sale_gain_usd: np.ndarray,
     private_equity_sale_taxable_gain_usd: np.ndarray,
+    property_tax_usd: np.ndarray,
+    mortgage_interest_usd: np.ndarray,
+    mortgage_principal_balance_usd: np.ndarray,
+    net_rental_taxable_income_usd: np.ndarray,
 ) -> AnnualSaleTaxAllocation:
-    """Allocate annual federal and California tax created by simulated sale gains.
+    """Allocate annual federal and California tax created by simulated income and sale gains.
 
-    This computes the incremental yearly tax over the scenario's baseline
-    ordinary income, then allocates that tax back to the sale months and sources
-    that generated the taxable income.
+    Computes the incremental yearly tax over the scenario's baseline ordinary
+    income (which is taxed independently via user payroll withholding) and
+    allocates that tax back to the months and sources that generated the
+    taxable income: sale gains, rental income, and the deduction effects from
+    property tax (SALT, federal only, capped) and qualified-residence mortgage
+    interest (federal + California, capped at interest on $750k principal).
+    Federal tax includes the 3.8% net investment income tax above MAGI
+    thresholds.
     """
     source_shape = property_depreciation_recapture_usd.shape
     federal_income_tax = np.zeros(source_shape, dtype="float64")
@@ -209,13 +249,16 @@ def annual_sale_tax_allocation(
     property_sale_tax = np.zeros(source_shape, dtype="float64")
     generic_sp500_sale_tax = np.zeros(source_shape, dtype="float64")
     private_equity_sale_tax = np.zeros(source_shape, dtype="float64")
+    rental_income_tax = np.zeros(source_shape, dtype="float64")
 
     property_recapture = np.maximum(0.0, property_depreciation_recapture_usd)
     property_capital_gain = np.maximum(0.0, taxable_property_capital_gain_usd)
     sp500_capital_gain = np.maximum(0.0, generic_sp500_sale_gain_usd)
     private_equity_capital_gain = np.maximum(0.0, private_equity_sale_taxable_gain_usd)
+    rental_taxable_income = np.maximum(0.0, net_rental_taxable_income_usd)
     property_taxable_income = property_recapture + property_capital_gain
-    total_taxable_income = property_taxable_income + sp500_capital_gain + private_equity_capital_gain
+    sale_taxable_income = property_taxable_income + sp500_capital_gain + private_equity_capital_gain
+    source_taxable_income = sale_taxable_income + rental_taxable_income
 
     rollout_count = source_shape[0]
     ordinary_income = np.full(rollout_count, float(tax_profile.annual_ordinary_income_usd), dtype="float64")
@@ -238,13 +281,30 @@ def annual_sale_tax_allocation(
         year_long_term_capital_gain = (
             year_property_capital_gain + year_sp500_capital_gain + year_private_equity_capital_gain
         )
-        year_taxable_income = np.sum(total_taxable_income[:, year_mask], axis=1)
+        year_rental_income = np.sum(rental_taxable_income[:, year_mask], axis=1)
+        year_source_taxable_income = np.sum(source_taxable_income[:, year_mask], axis=1)
+
+        year_property_tax_paid = np.sum(property_tax_usd[:, year_mask], axis=1)
+        year_salt_deduction = np.minimum(year_property_tax_paid, FEDERAL_SALT_CAP_USD)
+
+        year_mortgage_interest_paid = np.sum(mortgage_interest_usd[:, year_mask], axis=1)
+        year_qualified_interest_deduction = _qualified_residence_interest_deduction_usd(
+            interest_paid_usd=year_mortgage_interest_paid,
+            principal_balance_per_month_usd=mortgage_principal_balance_usd[:, year_mask],
+        )
+
+        year_federal_ordinary = np.maximum(
+            0.0, ordinary_income + year_rental_income - year_salt_deduction - year_qualified_interest_deduction
+        )
+        year_california_ordinary = np.maximum(
+            0.0, ordinary_income + year_rental_income - year_qualified_interest_deduction
+        )
 
         year_federal_tax = np.maximum(
             0.0,
             federal_income_tax_due_usd(
                 tax_profile,
-                ordinary_income_usd=ordinary_income,
+                ordinary_income_usd=year_federal_ordinary,
                 unrecaptured_1250_gain_usd=year_property_recapture,
                 long_term_capital_gain_usd=year_long_term_capital_gain,
             )
@@ -254,7 +314,7 @@ def annual_sale_tax_allocation(
             0.0,
             california_income_tax_due_usd(
                 tax_profile,
-                ordinary_income_usd=ordinary_income,
+                ordinary_income_usd=year_california_ordinary,
                 capital_income_usd=year_property_recapture + year_long_term_capital_gain,
             )
             - baseline_california,
@@ -262,19 +322,22 @@ def annual_sale_tax_allocation(
         year_total_tax = year_federal_tax + year_california_tax
 
         federal_income_tax[:, year_mask] = _allocate_tax_to_months(
-            year_federal_tax, total_taxable_income[:, year_mask], year_taxable_income
+            year_federal_tax, source_taxable_income[:, year_mask], year_source_taxable_income
         )
         california_income_tax[:, year_mask] = _allocate_tax_to_months(
-            year_california_tax, total_taxable_income[:, year_mask], year_taxable_income
+            year_california_tax, source_taxable_income[:, year_mask], year_source_taxable_income
         )
         property_sale_tax[:, year_mask] = _allocate_tax_to_months(
-            year_total_tax, property_taxable_income[:, year_mask], year_taxable_income
+            year_total_tax, property_taxable_income[:, year_mask], year_source_taxable_income
         )
         generic_sp500_sale_tax[:, year_mask] = _allocate_tax_to_months(
-            year_total_tax, sp500_capital_gain[:, year_mask], year_taxable_income
+            year_total_tax, sp500_capital_gain[:, year_mask], year_source_taxable_income
         )
         private_equity_sale_tax[:, year_mask] = _allocate_tax_to_months(
-            year_total_tax, private_equity_capital_gain[:, year_mask], year_taxable_income
+            year_total_tax, private_equity_capital_gain[:, year_mask], year_source_taxable_income
+        )
+        rental_income_tax[:, year_mask] = _allocate_tax_to_months(
+            year_total_tax, rental_taxable_income[:, year_mask], year_source_taxable_income
         )
 
     return AnnualSaleTaxAllocation(
@@ -284,7 +347,35 @@ def annual_sale_tax_allocation(
         property_sale_tax_usd=property_sale_tax,
         generic_sp500_sale_tax_usd=generic_sp500_sale_tax,
         private_equity_sale_tax_usd=private_equity_sale_tax,
+        rental_income_tax_usd=rental_income_tax,
     )
+
+
+def _qualified_residence_interest_deduction_usd(
+    *, interest_paid_usd: np.ndarray, principal_balance_per_month_usd: np.ndarray
+) -> np.ndarray:
+    """Cap qualified residence interest at the amount paid on the first $750k of principal.
+
+    Rather than recomputing the post-1987 acquisition-debt rules, scale the
+    actual interest paid by min(1, $750k / average annual principal balance);
+    when the principal balance averages \$1.5M, half the interest is
+    deductible. Average is restricted to months with a non-zero balance so an
+    annual sale (final months at zero) does not artificially deflate the
+    denominator.
+    """
+    active = principal_balance_per_month_usd > 0
+    months_active = np.sum(active, axis=1)
+    sum_principal = np.sum(principal_balance_per_month_usd, axis=1)
+    average_principal = np.divide(
+        sum_principal, months_active, out=np.zeros_like(sum_principal), where=months_active > 0
+    )
+    deductible_fraction = np.divide(
+        FEDERAL_QUALIFIED_RESIDENCE_INTEREST_PRINCIPAL_CAP_USD,
+        np.maximum(average_principal, FEDERAL_QUALIFIED_RESIDENCE_INTEREST_PRINCIPAL_CAP_USD),
+        out=np.ones_like(average_principal),
+        where=average_principal > 0,
+    )
+    return np.asarray(interest_paid_usd * deductible_fraction, dtype="float64")
 
 
 def federal_income_tax_due_usd(
@@ -319,9 +410,20 @@ def federal_income_tax_due_usd(
     long_term_capital_gain_tax = _federal_long_term_capital_gain_tax(
         filing_status, ordinary_taxable_income + recapture_taxable_income, long_term_capital_gain_taxable
     )
+    # NIIT (3.8%) on the smaller of (net investment income, MAGI - threshold).
+    # NII includes capital gains and depreciation recapture; future phases add
+    # qualified dividends and interest. MAGI is approximated as ordinary
+    # income plus investment income — close enough for households without
+    # foreign-earned-income exclusions or excluded muni interest.
+    net_investment_income = recapture_gain + long_term_capital_gain
+    magi = ordinary_income + net_investment_income
+    niit_threshold = FEDERAL_NIIT_MAGI_THRESHOLDS_USD[filing_status]
+    niit_base = np.minimum(net_investment_income, np.maximum(0.0, magi - niit_threshold))
+    niit = niit_base * FEDERAL_NIIT_RATE
     total_tax = ordinary_tax.copy()
     total_tax += recapture_tax
     total_tax += long_term_capital_gain_tax
+    total_tax += niit
     return total_tax
 
 

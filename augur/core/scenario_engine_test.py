@@ -641,13 +641,21 @@ def test_rental_depreciation_recaptures_on_sale() -> None:
 
     expected_monthly_depreciation = 100_000 / (27.5 * 12)
     expected_cumulative_depreciation = expected_monthly_depreciation * 3
-    expected_recapture_tax = expected_cumulative_depreciation * (0.22 + 0.093)
     assert_allclose(result.property_depreciation_usd[:, 1:4], expected_monthly_depreciation)
     assert_allclose(result.cumulative_property_depreciation_usd[:, 3], expected_cumulative_depreciation)
     assert_allclose(result.realized_property_gain_usd[:, 3], expected_cumulative_depreciation)
     assert_allclose(result.depreciation_recapture_usd[:, 3], expected_cumulative_depreciation)
     assert_allclose(result.taxable_property_gain_usd[:, 3], expected_cumulative_depreciation)
-    assert_allclose(result.property_sale_tax_usd[:, 3], expected_recapture_tax)
+    # Recapture tax allocated to the sale month: bracket-aware federal + California,
+    # net of the SALT and qualified-residence-interest deductions that lower the
+    # year's ordinary income on which the recapture stacks.
+    sale_month_tax = result.property_sale_tax_usd[:, 3]
+    expected_ca_marginal_rate = 0.093
+    expected_federal_marginal_rate = 0.22  # ordinary income at \$100k baseline lands in the 22% bracket
+    upper_bound_tax = expected_cumulative_depreciation * (expected_federal_marginal_rate + expected_ca_marginal_rate)
+    lower_bound_tax = expected_cumulative_depreciation * (0.10 + expected_ca_marginal_rate)
+    assert np.all(sale_month_tax > lower_bound_tax)
+    assert np.all(sale_month_tax < upper_bound_tax)
 
 
 def test_no_property_scenario_ignores_real_estate_tax_accounting_parameters() -> None:

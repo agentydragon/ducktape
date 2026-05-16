@@ -108,6 +108,7 @@ class ReportMetric(StrEnum):
     PRIVATE_EQUITY_SALE_USD = "private_equity_sale_usd"
     PRIVATE_EQUITY_SALE_BASIS_USD = "private_equity_sale_basis_usd"
     PRIVATE_EQUITY_SALE_TAX_USD = "private_equity_sale_tax_usd"
+    RENTAL_INCOME_TAX_USD = "rental_income_tax_usd"
     FEDERAL_INCOME_TAX_USD = "federal_income_tax_usd"
     CALIFORNIA_INCOME_TAX_USD = "california_income_tax_usd"
     TOTAL_INCOME_TAX_USD = "total_income_tax_usd"
@@ -599,10 +600,12 @@ class TaxPaymentAllocationDetail(_SimulationAccountingDetailBase):
     property_sale_tax_usd: float
     generic_sp500_sale_tax_usd: float
     private_equity_sale_tax_usd: float
+    rental_income_tax_usd: float
     property_depreciation_recapture_usd: float
     taxable_property_capital_gain_usd: float
     generic_sp500_taxable_gain_usd: float
     private_equity_taxable_gain_usd: float
+    net_rental_taxable_income_usd: float
     total_taxable_income_usd: float
 
 

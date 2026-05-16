@@ -142,6 +142,7 @@ class ScenarioRunArrays:
     private_equity_sale_usd: np.ndarray
     private_equity_sale_basis_usd: np.ndarray
     private_equity_sale_tax_usd: np.ndarray
+    rental_income_tax_usd: np.ndarray
     federal_income_tax_usd: np.ndarray
     california_income_tax_usd: np.ndarray
     total_income_tax_usd: np.ndarray
@@ -424,6 +425,11 @@ _MONTHLY_COLUMN_SPECS = (
         ReportMetric.PRIVATE_EQUITY_SALE_TAX_USD, MonthlyColumnSource.LEDGER_ENTRY, "tax/private_equity_sale_tax"
     ),
     MonthlyColumnSpec(
+        ReportMetric.RENTAL_INCOME_TAX_USD,
+        MonthlyColumnSource.ACCOUNTING_DETAIL,
+        "tax_payment_allocation.rental_income_tax_usd",
+    ),
+    MonthlyColumnSpec(
         ReportMetric.FEDERAL_INCOME_TAX_USD,
         MonthlyColumnSource.ACCOUNTING_DETAIL,
         "tax_payment_allocation.federal_income_tax_usd",
@@ -635,6 +641,7 @@ def _report_metric_arrays(arrays: ScenarioRunArrays) -> dict[ReportMetric, np.nd
         ReportMetric.PRIVATE_EQUITY_SALE_USD: arrays.private_equity_sale_usd,
         ReportMetric.PRIVATE_EQUITY_SALE_BASIS_USD: arrays.private_equity_sale_basis_usd,
         ReportMetric.PRIVATE_EQUITY_SALE_TAX_USD: arrays.private_equity_sale_tax_usd,
+        ReportMetric.RENTAL_INCOME_TAX_USD: arrays.rental_income_tax_usd,
         ReportMetric.FEDERAL_INCOME_TAX_USD: arrays.federal_income_tax_usd,
         ReportMetric.CALIFORNIA_INCOME_TAX_USD: arrays.california_income_tax_usd,
         ReportMetric.TOTAL_INCOME_TAX_USD: arrays.total_income_tax_usd,
@@ -1493,6 +1500,18 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         )
         private_equity_value[:, month] = private_equity_value_before_sale - private_equity_sale_month
 
+    property_tax_for_tax_allocation = property_cash_flow.property_tax_usd * property_live_mask
+    net_rental_taxable_income = (
+        property_cash_flow.rental_income_usd
+        - property_cash_flow.rental_management_fee_usd
+        - property_cash_flow.rental_leasing_fee_usd
+        - property_cash_flow.property_tax_usd
+        - property_cash_flow.hoa_usd
+        - property_cash_flow.insurance_usd
+        - property_cash_flow.maintenance_usd
+        - mortgage_interest
+        - disposition.property_depreciation_usd
+    ) * property_live_mask
     annual_tax = annual_sale_tax_allocation(
         scenario.tax_profile,
         month_index=month_index,
@@ -1500,10 +1519,15 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         taxable_property_capital_gain_usd=disposition.taxable_property_capital_gain_usd,
         generic_sp500_sale_gain_usd=generic_sp500_sale_gain,
         private_equity_sale_taxable_gain_usd=private_equity_sale_taxable_gain,
+        property_tax_usd=property_tax_for_tax_allocation,
+        mortgage_interest_usd=mortgage_interest,
+        mortgage_principal_balance_usd=mortgage_balance * property_live_mask,
+        net_rental_taxable_income_usd=net_rental_taxable_income,
     )
     generic_sp500_sale_tax = annual_tax.generic_sp500_sale_tax_usd
     adjusted_private_equity_sale_tax = annual_tax.private_equity_sale_tax_usd
     property_sale_tax = annual_tax.property_sale_tax_usd
+    rental_income_tax = annual_tax.rental_income_tax_usd
     property_sale_net_proceeds = (
         disposition.property_sale_gross_usd
         - disposition.sale_closing_cost_usd
@@ -1518,7 +1542,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             0.0,
             (disposition.property_sale_tax_usd - property_sale_tax)
             + (private_equity_sale_tax - adjusted_private_equity_sale_tax)
-            - generic_sp500_sale_tax,
+            - generic_sp500_sale_tax
+            - rental_income_tax,
         ),
         axis=1,
     )
@@ -1529,6 +1554,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             (disposition.property_sale_tax_usd - property_sale_tax)
             + (private_equity_sale_tax - adjusted_private_equity_sale_tax)
             - generic_sp500_sale_tax
+            - rental_income_tax
         ),
     )
     _settle_required_cash_obligations(
@@ -1589,6 +1615,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         taxable_property_capital_gain_usd=disposition.taxable_property_capital_gain_usd,
         generic_sp500_sale_gain_usd=generic_sp500_sale_gain,
         private_equity_sale_taxable_gain_usd=private_equity_sale_taxable_gain,
+        net_rental_taxable_income_usd=net_rental_taxable_income,
     )
     for sp500_sale_action_record in sp500_sale_action_records:
         source_tax = _tax_share_for_sale_action(
@@ -1934,6 +1961,13 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         detail_type=AccountingDetailType.TAX_PAYMENT_ALLOCATION,
         amount_field="total_income_tax_usd",
     )
+    rental_income_tax_from_accounting = _accounting_detail_amount_matrix(
+        accounting_details,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        detail_type=AccountingDetailType.TAX_PAYMENT_ALLOCATION,
+        amount_field="rental_income_tax_usd",
+    )
     property_sale_adjusted_basis_from_accounting = _accounting_detail_amount_matrix(
         accounting_details,
         rollout_count=rollout_count,
@@ -2001,6 +2035,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         private_equity_sale_usd=private_equity_sale_from_accounting,
         private_equity_sale_basis_usd=private_equity_sale_basis_from_accounting,
         private_equity_sale_tax_usd=private_equity_sale_tax_from_accounting,
+        rental_income_tax_usd=rental_income_tax_from_accounting,
         federal_income_tax_usd=federal_income_tax_from_accounting,
         california_income_tax_usd=california_income_tax_from_accounting,
         total_income_tax_usd=total_income_tax_from_accounting,
@@ -2572,12 +2607,16 @@ def _record_tax_payment_allocation_details(
     taxable_property_capital_gain_usd: np.ndarray,
     generic_sp500_sale_gain_usd: np.ndarray,
     private_equity_sale_taxable_gain_usd: np.ndarray,
+    net_rental_taxable_income_usd: np.ndarray,
 ) -> None:
     property_recapture = np.maximum(0.0, property_depreciation_recapture_usd)
     property_capital_gain = np.maximum(0.0, taxable_property_capital_gain_usd)
     sp500_capital_gain = np.maximum(0.0, generic_sp500_sale_gain_usd)
     private_equity_capital_gain = np.maximum(0.0, private_equity_sale_taxable_gain_usd)
-    total_taxable_income = property_recapture + property_capital_gain + sp500_capital_gain + private_equity_capital_gain
+    rental_taxable = np.maximum(0.0, net_rental_taxable_income_usd)
+    total_taxable_income = (
+        property_recapture + property_capital_gain + sp500_capital_gain + private_equity_capital_gain + rental_taxable
+    )
     active_rollouts, active_month_positions = np.nonzero(
         (annual_tax.total_income_tax_usd != 0) | (total_taxable_income != 0)
     )
@@ -2598,10 +2637,12 @@ def _record_tax_payment_allocation_details(
                 private_equity_sale_tax_usd=float(
                     annual_tax.private_equity_sale_tax_usd[rollout_index, month_position]
                 ),
+                rental_income_tax_usd=float(annual_tax.rental_income_tax_usd[rollout_index, month_position]),
                 property_depreciation_recapture_usd=float(property_recapture[rollout_index, month_position]),
                 taxable_property_capital_gain_usd=float(property_capital_gain[rollout_index, month_position]),
                 generic_sp500_taxable_gain_usd=float(sp500_capital_gain[rollout_index, month_position]),
                 private_equity_taxable_gain_usd=float(private_equity_capital_gain[rollout_index, month_position]),
+                net_rental_taxable_income_usd=float(rental_taxable[rollout_index, month_position]),
                 total_taxable_income_usd=float(total_taxable_income[rollout_index, month_position]),
             )
         )

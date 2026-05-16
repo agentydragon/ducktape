@@ -1015,7 +1015,12 @@ def test_whole_property_rental_posts_income_fees_and_cash_flow() -> None:
     assert_allclose(rollout.series("property_carrying_cost_usd")[1], expected_management_fee + expected_property_tax)
     assert_allclose(rollout.series("net_property_cash_flow_usd")[1], expected_net_property_cash_flow)
     assert_allclose(rollout.series("cash_usd")[0], 130_000)
-    assert_allclose(rollout.series("cash_usd")[1], 130_000 + expected_net_property_cash_flow)
+    # Positive net rental income produces a CA ordinary-income tax obligation, which
+    # the annual-tax pipeline settles in the same source month. Cash at month 1
+    # therefore reflects the net rental cash flow minus the rental tax share.
+    rental_tax_month_1 = rollout.series("rental_income_tax_usd")[1]
+    assert rental_tax_month_1 > 0
+    assert_allclose(rollout.series("cash_usd")[1], 130_000 + expected_net_property_cash_flow - rental_tax_month_1)
     assert_allclose(
         _posting_matrix(result, role=ChartAccountRole.RENTAL_INCOME, side=PostingSide.CREDIT),
         result.matrix("rental_income_usd"),
