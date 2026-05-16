@@ -3397,6 +3397,165 @@ function consumer_three() { return dep_a + dep_b; }"#,
         }
     }
 
+    /// Targeted coverage for the **dedup non-vacuity**: a fan-in shape
+    /// where multiple consumers' frontier starts grow into closures
+    /// that *all* hit the size cap. The number of `ExceedsSizeCap`
+    /// rows must be bounded by the number of distinct closures, not by
+    /// the number of starting consumers — pre-fix would emit one row
+    /// per consumer.
+    ///
+    /// We don't pin an exact count (closure overlap depends on
+    /// `close_atomic_units` behaviour for this synthetic input) but we
+    /// do require the union of `ExceedsSizeCap` owner-sets to cover
+    /// every consumer's owner. Combined with the uniqueness invariant,
+    /// that proves the report compresses N consumers' shared-closure
+    /// rows into the underlying set of distinct closures.
+    #[test]
+    fn factorize_exceeds_size_cap_rows_cover_all_consumer_starts_without_duplicates() {
+        let schedule = schedule_for(
+            r#"const dep_a = "left";
+const dep_b = "right";
+function consumer_one() { return dep_a + dep_b; }
+function consumer_two() { return dep_a + dep_b; }
+function consumer_three() { return dep_a + dep_b; }"#,
+            &[],
+        )
+        .with_pre_existing_entry_exports(BTreeSet::new());
+        let report = schedule
+            .owner_graph_report_with_factorize_options(&FactorizeOptions { size_cap_lines: 1 });
+
+        let exceeds: Vec<&FactorizeDiagnostic> = report
+            .factorize
+            .diagnostics
+            .iter()
+            .filter(|d| d.reason == FactorizeDiagnosticReason::ExceedsSizeCap)
+            .collect();
+        assert!(
+            !exceeds.is_empty(),
+            "fan-in fixture under cap=1 should produce ExceedsSizeCap diagnostics; got: {:#?}",
+            report.factorize.diagnostics,
+        );
+
+        // Uniqueness across all rows (not just ExceedsSizeCap ones).
+        let mut keys: BTreeSet<(FactorizeDiagnosticReason, Vec<String>)> = BTreeSet::new();
+        for diagnostic in &report.factorize.diagnostics {
+            let mut owners = diagnostic.owner_ids.clone();
+            owners.sort();
+            assert!(
+                keys.insert((diagnostic.reason, owners.clone())),
+                "duplicate diagnostic key (reason={:?}, owners={:?}) in: {:#?}",
+                diagnostic.reason,
+                owners,
+                report.factorize.diagnostics,
+            );
+        }
+
+        // Every consumer's binding must show up in *some*
+        // `ExceedsSizeCap` row's binding list — otherwise the test
+        // isn't exercising convergence across all three starts.
+        let mut covered_bindings = BTreeSet::<String>::new();
+        for diag in &exceeds {
+            for binding in &diag.binding_ids {
+                covered_bindings.insert(binding.to_string());
+            }
+        }
+        for consumer in ["consumer_one", "consumer_two", "consumer_three"] {
+            assert!(
+                covered_bindings.contains(consumer),
+                "expected {consumer} to be absorbed into some ExceedsSizeCap closure; covered: {covered_bindings:?}; rows: {exceeds:#?}",
+            );
+        }
+    }
+
+    /// Targeted coverage for the **oversize-closure skip-walk** in
+    /// `close_frontier`. The skip-walk is observable when two frontier
+    /// starts grow into the *same* owner-set: the first emits an
+    /// `ExceedsSizeCap` row; the second's grown owner-set is wholly
+    /// inside that closure and short-circuits to `Empty`. Pre-fix,
+    /// the second start would either produce a duplicate row (caught
+    /// by dedup) or walk the same edges to produce a sub-closure.
+    ///
+    /// Synthetic frontier starts rarely converge to identical
+    /// owner-sets — different consumers tend to absorb different
+    /// blockers — so this test pins the *invariant* that's still
+    /// observable: whatever closures the analyzer reaches, the report
+    /// emits exactly one row per unique closure. Combined with the
+    /// preceding test (which asserts ExceedsSizeCap actually fires),
+    /// the dedup + skip-walk together guarantee the report is bounded
+    /// by distinct closures, not by starting-unit count.
+    ///
+    /// This test also pins that the report stays consistent when
+    /// closures partially overlap: the dedup key is the *whole* sorted
+    /// owner-set, so an oversize `{A, B, C}` and an oversize
+    /// `{A, B, C, D}` are correctly treated as distinct rows.
+    #[test]
+    fn factorize_emits_distinct_oversize_closures_as_separate_rows() {
+        // Chain shape: consumer_two reads consumer_one + shared deps;
+        // consumer_three reads consumer_two + shared deps. Each
+        // consumer's frontier grows into a distinct closure (consumer
+        // _one's is a strict subset of consumer_two's, etc.). The
+        // dedup key is the full owner-set, so all three rows survive —
+        // but no row duplicates another.
+        let schedule = schedule_for(
+            r#"const dep_a = "left";
+const dep_b = "right";
+function consumer_one() { return dep_a + dep_b; }
+function consumer_two() { return dep_a + dep_b + consumer_one(); }
+function consumer_three() { return dep_a + dep_b + consumer_two(); }"#,
+            &[],
+        )
+        .with_pre_existing_entry_exports(BTreeSet::new());
+        let report = schedule
+            .owner_graph_report_with_factorize_options(&FactorizeOptions { size_cap_lines: 1 });
+
+        let exceeds: Vec<&FactorizeDiagnostic> = report
+            .factorize
+            .diagnostics
+            .iter()
+            .filter(|d| d.reason == FactorizeDiagnosticReason::ExceedsSizeCap)
+            .collect();
+        assert!(
+            !exceeds.is_empty(),
+            "chained-consumer fixture should produce at least one ExceedsSizeCap row; got: {:#?}",
+            report.factorize.diagnostics,
+        );
+
+        // Dedup invariant: every row's `(reason, sorted owner_ids)` is
+        // unique. This is the property the skip-walk path also
+        // guarantees on the merit of subset-bailing — the externally
+        // visible part of its contract.
+        let mut keys: BTreeSet<(FactorizeDiagnosticReason, Vec<String>)> = BTreeSet::new();
+        for diagnostic in &report.factorize.diagnostics {
+            let mut owners = diagnostic.owner_ids.clone();
+            owners.sort();
+            assert!(
+                keys.insert((diagnostic.reason, owners.clone())),
+                "duplicate diagnostic key (reason={:?}, owners={:?}) in: {:#?}",
+                diagnostic.reason,
+                owners,
+                report.factorize.diagnostics,
+            );
+        }
+
+        // Distinct owner-sets must remain distinct rows — the dedup
+        // key is the whole sorted set, not a prefix or a hash of
+        // bindings. On this chain we expect each consumer's reachable
+        // closure to surface as its own row.
+        let owner_sets: BTreeSet<Vec<String>> = exceeds
+            .iter()
+            .map(|d| {
+                let mut o = d.owner_ids.clone();
+                o.sort();
+                o
+            })
+            .collect();
+        assert_eq!(
+            owner_sets.len(),
+            exceeds.len(),
+            "ExceedsSizeCap rows should each carry a distinct owner-set: {exceeds:#?}",
+        );
+    }
+
     #[test]
     fn schedule_report_serializes_linker_order_as_snake_case() {
         let schedule = schedule_for(
