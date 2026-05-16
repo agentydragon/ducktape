@@ -13,16 +13,17 @@
 | Diagnostics with cycle_blocker_count ≤ 3                | 889 (32 %)                                         |
 | Residual owners                                         | 3 598                                              |
 | Active (claimed) input bindings                         | 6 079                                              |
-| Top diagnostic span                                     | lines 30 775 → 203 963 (15 186 lines, 777 members) |
+| Top diagnostic span                                     | 777 owners, `size_lines_estimate` = 15 186 (file extent: start_line 30 775 → end_line 203 963; the 173 k file gap is largely outside the closure, hence `size_lines` ≪ end−start) |
 | Distinct cycle-blocker owners across diagnostics        | ~120                                               |
 | Number of "celebrity" blockers (≥ 400 diagnostics each) | ~30                                                |
 
 Almost every top diagnostic is a _sliding window_ of the same enormous SCC
 (start_line = 30 775, growing right edge). Once a small number of "celebrity"
 blockers are reclassified or claimed, the giant component dissolves and the
-diagnostic count collapses. Below: each of the seven distinct patterns that
-actually causes those celebrity blockers, with fingerprints, code slices,
-root-cause analysis, and a concrete ducktape improvement proposal per pattern.
+diagnostic count collapses. Below: seven distinct named patterns (P-1 through
+P-7) that actually cause those celebrity blockers, plus one tentative pattern
+(P-8) included for completeness; each entry has fingerprints, code slices,
+root-cause analysis, and a concrete ducktape improvement proposal.
 
 The two highest-leverage interventions are (a) the **comma-chain `var_decl`
 splitter** (P-1) — which on its own would shrink the residual horizon by an
