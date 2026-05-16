@@ -1260,7 +1260,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let body = top_level_item_views(&module.body);
         let shadowed = compute_shadowed_globals(&body);
         let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
-        let var = match body[1].as_module_item() {
+        let var = match body[1].0.as_module_item() {
             ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
             other => panic!("expected VarDecl, got {other:?}"),
         };
@@ -3076,6 +3076,181 @@ mutable = mutable + 1;"#,
         let units = atomic_units_for("let A = 0; function B() { A = 1; }");
         assert_partitions_all_owners(&units, 2);
         assert_eq!(unit_sizes(&units), vec![2]);
+    }
+
+    // --- P-1 comma-chain sibling-Sequenced suppression ------------------------
+    //
+    // Each test below grounds the splitter behavior described in
+    // `oversize_closure_patterns.md` §P-1: side-effecting siblings of
+    // the same `VariableDeclaration` comma-list must not get the
+    // direct `Sequenced` edge that would otherwise chain them, so
+    // every sibling can peel into its own logical module. Reads
+    // across siblings still produce `EagerUse` edges and so still
+    // force co-location when actually warranted.
+
+    #[test]
+    fn comma_chain_sibling_group_propagated_to_facts() {
+        // The split items carry a shared `comma_sibling_group` key
+        // and items outside the comma-list don't.
+        let module = parse("const X = 1; const a = 1, b = 2, c = 3; const Y = 2;");
+        let facts = analyze_facts(&module);
+        let groups: Vec<Option<usize>> = facts
+            .iter()
+            .map(|f| f.comma_sibling_group.map(|o| o.0))
+            .collect();
+        assert_eq!(
+            groups,
+            vec![None, Some(1), Some(1), Some(1), None],
+            "siblings of a single comma-list share a group key; non-comma items have None",
+        );
+    }
+
+    #[test]
+    fn comma_chain_pure_siblings_split_with_data_dep_keeps_co_location() {
+        // Fixture from the task brief: `const a = 1, b = a + 1, c = 99;`.
+        // The splitter should:
+        //   * give `a`, `b`, `c` independent owners,
+        //   * leave `a` and `c` in their own atomic units (no edges
+        //     between them), and
+        //   * keep `b` co-located with `a` because `b` reads `a`.
+        // EagerUse `b → a` is one-way (no cycle), so they stay
+        // singletons too — `b` only co-locates via the partition
+        // step, not via `G_atomic`. So strictly we expect three
+        // singleton units. Verify the read edge and no-edge facts
+        // explicitly on the owner graph.
+        let module = parse("const a = 1, b = a + 1, c = 99;");
+        let facts = analyze_facts(&module);
+        let graph = build_owner_graph(&facts);
+        let a = owner_for_binding(&graph, "a");
+        let b = owner_for_binding(&graph, "b");
+        let c = owner_for_binding(&graph, "c");
+        // `b` reads `a` → exactly one EagerUse edge `b → a`.
+        let b_to_a_edges: Vec<_> = graph
+            .iter_edges()
+            .filter(|e| e.from == b && e.to == a)
+            .collect();
+        assert_eq!(
+            b_to_a_edges.len(),
+            1,
+            "b should have one EagerUse edge to a, got {b_to_a_edges:?}",
+        );
+        assert_eq!(b_to_a_edges[0].reason.kind, DepKind::EagerUse);
+        // `a` and `c` have no edges between them.
+        assert!(
+            graph.iter_edges().all(|e| !(e.from == a && e.to == c)),
+            "no edge a → c expected",
+        );
+        assert!(
+            graph.iter_edges().all(|e| !(e.from == c && e.to == a)),
+            "no edge c → a expected",
+        );
+        // Atomic units: three singletons.
+        let units = compute_atomic_units(&graph);
+        assert_partitions_all_owners(&units, 3);
+        assert_eq!(unit_sizes(&units), vec![1, 1, 1]);
+    }
+
+    #[test]
+    fn comma_chain_pure_siblings_are_independent_atomic_units() {
+        // `const a = 1, b = 2;` — both pure singletons, no reads
+        // across siblings; the splitter should produce two
+        // independent atomic units.
+        let units = atomic_units_for("const a = 1, b = 2;");
+        assert_partitions_all_owners(&units, 2);
+        assert_eq!(unit_sizes(&units), vec![1, 1]);
+    }
+
+    #[test]
+    fn comma_chain_non_pure_siblings_drop_inter_sibling_sequenced_edge() {
+        // The P-1 owner-graph fingerprint: a comma-list of factory
+        // calls. Without `compute_call`'s body, each sibling
+        // classifies non-pure (`unknown_call`), so under the old
+        // builder each sibling would chain `Sequenced` back to the
+        // previous sibling and the chain would block every
+        // diagnostic reaching into the comma-list. The splitter
+        // suppresses those sibling edges.
+        let module = parse(
+            "const before = compute(); const x = compute(), y = compute(), z = compute(); const after = compute();",
+        );
+        let facts = analyze_facts(&module);
+        let graph = build_owner_graph(&facts);
+        let before = owner_for_binding(&graph, "before");
+        let x = owner_for_binding(&graph, "x");
+        let y = owner_for_binding(&graph, "y");
+        let z = owner_for_binding(&graph, "z");
+        let after = owner_for_binding(&graph, "after");
+        let sequenced_edge = |from, to| -> bool {
+            graph
+                .iter_edges()
+                .any(|e| e.from == from && e.to == to && e.reason.kind == DepKind::Sequenced)
+        };
+        // No inter-sibling Sequenced edges.
+        assert!(
+            !sequenced_edge(y, x),
+            "inter-sibling Sequenced edge y → x must be suppressed (P-1)",
+        );
+        assert!(
+            !sequenced_edge(z, y),
+            "inter-sibling Sequenced edge z → y must be suppressed (P-1)",
+        );
+        // Every sibling still sequences back to the pre-group
+        // predecessor `before`, so non-pure ordering with respect to
+        // statements outside the comma-list is preserved.
+        assert!(
+            sequenced_edge(x, before),
+            "first sibling must sequence to the pre-group predecessor",
+        );
+        assert!(
+            sequenced_edge(y, before),
+            "second sibling must sequence to the pre-group predecessor (not to its sibling)",
+        );
+        assert!(
+            sequenced_edge(z, before),
+            "third sibling must sequence to the pre-group predecessor (not to its sibling)",
+        );
+        // The post-group owner sequences to the most recent
+        // non-pure owner (the last sibling), so the chain to
+        // post-group statements is intact.
+        assert!(
+            sequenced_edge(after, z),
+            "post-group owner must sequence to the last sibling, got edges {:?}",
+            graph
+                .iter_edges()
+                .filter(|e| e.from == after)
+                .map(|e| (e.to, e.reason.kind))
+                .collect::<Vec<_>>(),
+        );
+        // Atomic units: every owner is independent (Sequenced
+        // alone never forces co-location).
+        let units = compute_atomic_units(&graph);
+        assert_partitions_all_owners(&units, 5);
+        assert_eq!(unit_sizes(&units), vec![1, 1, 1, 1, 1]);
+    }
+
+    #[test]
+    fn comma_chain_non_pure_siblings_reading_earlier_sibling_keep_eager_use() {
+        // Mixed case: `b` reads `a` by name. The Sequenced sibling
+        // edge is still suppressed (we don't sequence b → a for
+        // ordering), but the EagerUse edge from b's `eager_reads` is
+        // still emitted because the read is real.
+        let module = parse("const a = compute(), b = a + compute();");
+        let facts = analyze_facts(&module);
+        let graph = build_owner_graph(&facts);
+        let a = owner_for_binding(&graph, "a");
+        let b = owner_for_binding(&graph, "b");
+        let edges_b_to_a: Vec<DepKind> = graph
+            .iter_edges()
+            .filter(|e| e.from == b && e.to == a)
+            .map(|e| e.reason.kind)
+            .collect();
+        assert!(
+            edges_b_to_a.contains(&DepKind::EagerUse),
+            "data-dep read must still produce EagerUse b → a, got {edges_b_to_a:?}",
+        );
+        assert!(
+            !edges_b_to_a.contains(&DepKind::Sequenced),
+            "inter-sibling Sequenced b → a must be suppressed (P-1), got {edges_b_to_a:?}",
+        );
     }
 
     fn partition_summary(schedule: &Schedule) -> Vec<(String, String)> {
