@@ -27,6 +27,7 @@ mod tests {
         AnalysisHints {
             declared_pure: BTreeSet::new(),
             declared_pure_new: BTreeSet::new(),
+            declared_pure_new_with_pure_args: BTreeSet::new(),
             known_effects: BTreeMap::from([(
                 name.to_string(),
                 KnownEffect::TypescriptDecorateHelper,
@@ -786,6 +787,34 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         classify_expr_purity(init, &shadowed, &BTreeSet::new(), &graph)
     }
 
+    /// Like `classify_with_declared_pure_new`, but seeds the
+    /// `declared_pure_new_with_pure_args` set instead — the
+    /// relaxed P-2 variant that admits any `Pure`-classified arg.
+    fn classify_with_pure_new_with_pure_args(
+        prefix: &str,
+        expr_src: &str,
+        relaxed: &[&str],
+    ) -> Purity {
+        let module = parse(&format!("{prefix}\nconst _ = {expr_src};"));
+        let body = top_level_item_views(&module.body);
+        let shadowed = compute_shadowed_globals(&body);
+        let declared_pure_new_with_pure_args: BTreeSet<String> =
+            relaxed.iter().map(|s| (*s).to_string()).collect();
+        let graph = ChunkCodeGraph::build_with_pure_new_sets(
+            &body,
+            &shadowed,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &declared_pure_new_with_pure_args,
+        );
+        let var = match module.body.last().expect("non-empty body") {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
+            other => panic!("expected last stmt to be `const _ = …;`, got {other:?}"),
+        };
+        let init = var.decls[0].init.as_deref().expect("init expected");
+        classify_expr_purity(init, &shadowed, &BTreeSet::new(), &graph)
+    }
+
     #[test]
     fn classify_literal_kinds_are_pure() {
         assert!((classify("42")).is_pure());
@@ -1408,6 +1437,127 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
                 "function PureBox(value) { globalThis.value = value; return { value }; }",
                 "PureBox(1)",
                 &["PureBox"]
+            ))
+            .is_pure()
+        );
+    }
+
+    // --- P-2 relaxed: `declared_pure_new_with_pure_args` --------------------
+    //
+    // Opt-in variant of `declared_pure_new` that admits `new C(<args>)`
+    // as Pure whenever every argument *classifies* `Pure` — not just
+    // primitive literals. Motivated by the Tana web `new Fx(...)`
+    // family of factory calls (`new Fx(n, new IJ(), …)`) where args
+    // are bindings / fresh `new`s that already classify Pure but
+    // strict P-2 rejects on literal-ness. The strict
+    // `declared_pure_new` set remains unchanged.
+
+    #[test]
+    fn pure_new_with_pure_args_no_args_is_pure() {
+        // Zero-args is trivially safe: no arg evaluation can
+        // fire user code.
+        assert!(
+            (classify_with_pure_new_with_pure_args(
+                "class C { constructor() {} }",
+                "new C()",
+                &["C"]
+            ))
+            .is_pure()
+        );
+    }
+
+    #[test]
+    fn pure_new_with_pure_args_pure_binding_is_pure() {
+        // `new C(pureBinding)` — bare identifier reads classify
+        // `Pure` (the analyzer treats them as load-time observable
+        // values), so the relaxed admission accepts. Strict P-2
+        // would reject this same callsite for non-literal arg.
+        assert!(
+            (classify_with_pure_new_with_pure_args(
+                "class C { constructor(v) {} }\nconst pureBinding = 1;",
+                "new C(pureBinding)",
+                &["C"]
+            ))
+            .is_pure()
+        );
+    }
+
+    #[test]
+    fn pure_new_with_pure_args_nested_pure_new_is_pure() {
+        // `new C(new D())` where both are in the relaxed set —
+        // the inner `new D()` itself classifies Pure under the
+        // same admission, so the outer args-are-Pure check passes
+        // recursively. This is the exact shape of the Tana
+        // celebrity case `new Fx(n, new IJ(), …)`.
+        assert!(
+            (classify_with_pure_new_with_pure_args(
+                "class C { constructor(d) {} } class D { constructor() {} }",
+                "new C(new D())",
+                &["C", "D"]
+            ))
+            .is_pure()
+        );
+    }
+
+    #[test]
+    fn pure_new_with_pure_args_impure_arg_is_not_pure() {
+        // `new C(makeValue())` — the nested call classifies
+        // NotPure, so the args-are-Pure predicate fails and the
+        // overall `new` is NotPure regardless of the relaxed
+        // annotation.
+        assert!(
+            !(classify_with_pure_new_with_pure_args(
+                "class C { constructor(v) {} }",
+                "new C(makeValue())",
+                &["C"]
+            ))
+            .is_pure()
+        );
+    }
+
+    #[test]
+    fn pure_new_with_pure_args_strict_set_still_rejects_non_literal() {
+        // Strict `declared_pure_new` (the old set) still rejects
+        // non-literal args — the relaxed extension does not leak
+        // into the strict set. Spec authors who want non-literal
+        // admission must opt their constructor into the new set.
+        assert!(
+            !(classify_with_declared_pure_new(
+                "class C { constructor(v) {} }\nconst pureBinding = 1;",
+                "new C(pureBinding)",
+                &["C"]
+            ))
+            .is_pure()
+        );
+    }
+
+    #[test]
+    fn pure_new_with_pure_args_unannotated_is_not_pure() {
+        // Constructor in neither set falls through to the
+        // default `UnknownNew` verdict, even with a Pure-
+        // classified arg. Mirrors `undeclared_new_is_not_pure`
+        // for the relaxed admission.
+        assert!(
+            !(classify_with_pure_new_with_pure_args(
+                "class C { constructor(v) {} }\nconst pureBinding = 1;",
+                "new C(pureBinding)",
+                &[] // C in neither set
+            ))
+            .is_pure()
+        );
+    }
+
+    #[test]
+    fn pure_new_with_pure_args_spread_arg_is_not_pure() {
+        // Spread args fire `[Symbol.iterator]` — even when the
+        // source classifies Pure, the iterator protocol runs
+        // user code. Relaxed admission rejects spread regardless
+        // of source shape (matches strict P-2's spread rejection).
+        assert!(
+            !(classify_with_pure_new_with_pure_args(
+                "class C { constructor() {} }\nconst args = [];",
+                "new C(...args)",
+                &["C"]
             ))
             .is_pure()
         );
