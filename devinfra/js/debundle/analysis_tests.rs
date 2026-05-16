@@ -922,9 +922,106 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         // entry only opens the read path; the call must stay
         // Unknown so the soundness contract holds.
         assert!(!(classify("Object.defineProperty(t, 'k', { value: 1 })")).is_pure());
-        assert!(!(classify("Object.freeze({ x: 1 })")).is_pure());
+        // `Object.freeze({ x: 1 })` is admitted by the P-7
+        // frozen-table-literal rule and is covered by
+        // `object_freeze_frozen_safe_literal_is_pure`. The
+        // general `Object.freeze(<non-literal>)` form remains
+        // Unknown — see `object_freeze_non_literal_arg_stays_unknown`.
         assert!(!(classify("Object.values(o)")).is_pure());
         assert!(!(classify("Object.keys(o)")).is_pure());
+    }
+
+    // --- P-7 `frozen_object_table_literal` ---------------------------------
+    //
+    // `Object.freeze(<frozen-safe literal>)` is admitted as Pure
+    // even though the general `Object.freeze(arg)` form is
+    // Unknown. The literal-only gate is what makes this sound:
+    // the argument is a freshly-constructed ordinary object
+    // (or array) whose own properties are plain data descriptors
+    // with frozen-safe values, so the freeze fires no user code.
+    // See `is_frozen_safe_literal` in `purity.rs` for the full
+    // soundness contract.
+
+    #[test]
+    fn object_freeze_frozen_safe_literal_is_pure() {
+        // Flat object literals with primitive values: the canonical
+        // P-7 shape — a static lookup table of constants.
+        assert!((classify("Object.freeze({})")).is_pure());
+        assert!((classify("Object.freeze({ a: 1, b: 2, c: \"x\" })")).is_pure());
+        assert!((classify("Object.freeze({ a: true, b: false, c: null })")).is_pure());
+        assert!((classify("Object.freeze({ \"quoted-key\": 1, 42: 2 })")).is_pure());
+    }
+
+    #[test]
+    fn object_freeze_nested_literal_is_pure() {
+        // Recursive literal shapes: nested objects and arrays of
+        // primitives stay frozen-safe. The freeze only walks the
+        // outer object's own properties; nested values aren't
+        // themselves frozen, but the *outer* call still fires no
+        // user code, which is what the purity classifier cares
+        // about for residual closure analysis.
+        assert!((classify("Object.freeze({ a: { b: [1, 2, 3] } })")).is_pure());
+        assert!((classify("Object.freeze({ a: [{ b: 1 }, { b: 2 }] })")).is_pure());
+        assert!((classify("Object.freeze([1, 2, [3, 4, [5]]])")).is_pure());
+        // Holes in array literals don't fire user code.
+        assert!((classify("Object.freeze([1, , 3])")).is_pure());
+    }
+
+    #[test]
+    fn object_freeze_non_literal_arg_stays_unknown() {
+        // The general form (any arg shape that could fire user
+        // code or expose shared identity) keeps the Unknown
+        // verdict the original whitelist exclusion guaranteed.
+        // These cover the task's negative cases plus a few
+        // additional hazards.
+        assert!(!(classify("Object.freeze(otherIdentifier)")).is_pure());
+        assert!(!(classify("Object.freeze({ a: someFunc() })")).is_pure());
+        assert!(!(classify("Object.freeze({ a: new C() })")).is_pure());
+        // Identifier-valued props are excluded: the bound value
+        // could be anything (e.g. a Proxy), and freezing the
+        // table doesn't change that — but admitting it here
+        // would also bleed identifier reads into the "no user
+        // code" guarantee. Stay conservative.
+        assert!(!(classify("Object.freeze({ a: someBinding })")).is_pure());
+        // Shorthand and computed keys both fire user code:
+        // shorthand is an identifier read, computed evaluates
+        // an arbitrary expression at property-assignment time.
+        assert!(!(classify("Object.freeze({ a })")).is_pure());
+        assert!(!(classify("Object.freeze({ [k]: 1 })")).is_pure());
+        // Spread props iterate the source object's own keys and
+        // fire `[[Get]]` per key — can run user code.
+        assert!(!(classify("Object.freeze({ ...src, a: 1 })")).is_pure());
+        // Array spreads invoke the source's iterator.
+        assert!(!(classify("Object.freeze([1, ...rest])")).is_pure());
+        // Getters/setters / methods expose callables and
+        // generally fall outside the pure-data-table contract.
+        assert!(!(classify("Object.freeze({ get a() { return 1; } })")).is_pure());
+        assert!(!(classify("Object.freeze({ m() { return 1; } })")).is_pure());
+        // Multi-arg / no-arg / spread-arg forms don't match the
+        // single-literal-arg shape the P-7 rule admits.
+        assert!(!(classify("Object.freeze()")).is_pure());
+        assert!(!(classify("Object.freeze({ a: 1 }, extra)")).is_pure());
+        assert!(!(classify("Object.freeze(...args)")).is_pure());
+    }
+
+    #[test]
+    fn object_freeze_literal_shadowed_object_stays_unknown() {
+        // If `Object` is shadowed at chunk top level (by a
+        // top-level decl or an import specifier per A8), the
+        // P-7 rule must NOT fire — the receiver no longer
+        // resolves to the built-in. This mirrors the existing
+        // shadowing fallback for `PURE_STATIC_CALLS`.
+        assert!(
+            !(classify_with_module("const Object = userland;", "Object.freeze({ a: 1 })"))
+                .is_pure()
+        );
+        assert!(
+            !(classify_with_module(
+                r#"import { Object } from "./userland.js";"#,
+                "Object.freeze({ a: 1, b: 2 })"
+            ))
+            .is_pure()
+        );
     }
 
     #[test]

@@ -2166,6 +2166,27 @@ fn classify_callee_call(
     {
         return all_args_pure(args, shadowed, declared_pure, graph);
     }
+    // P-7 `frozen_object_table_literal`: `Object.freeze(<frozen-safe
+    // literal>)` is Pure. `Object.freeze` is intentionally absent
+    // from `PURE_STATIC_CALLS` because the general form mutates
+    // its argument (sets `[[Writable]]`/`[[Configurable]]` on
+    // every own property and could fire Proxy traps). The
+    // *literal* form has no such hazard: the argument is a fresh
+    // ordinary object whose own properties are plain data
+    // descriptors with frozen-safe values, so freezing it walks a
+    // statically-known property set with no user-code path. See
+    // `oversize_closure_patterns.md` P-7 for the residual-shrinking
+    // motivation.
+    if let Expr::Member(member) = callee_expr
+        && let Some(("Object", "freeze")) = static_member_pair(member)
+        && !shadowed.contains("Object")
+        && args.len() == 1
+        && let Some(arg) = args.first()
+        && arg.spread.is_none()
+        && is_frozen_safe_literal(&arg.expr)
+    {
+        return Purity::Pure;
+    }
     // `globalCallable(args)` against PURE_GLOBAL_CALLS.
     if let Expr::Ident(ident) = callee_expr
         && let Some(name) = PURE_GLOBAL_CALLS
@@ -2234,6 +2255,96 @@ fn is_primitive_literal(expr: &Expr) -> bool {
             | Expr::Lit(Lit::Null(_))
             | Expr::Lit(Lit::Num(_))
             | Expr::Lit(Lit::BigInt(_)),
+    )
+}
+
+/// True for AST nodes that, when used as the argument to
+/// `Object.freeze(...)`, fire no user-defined code and produce a
+/// fresh frozen value with no shared identity. Pattern P-7 in
+/// `oversize_closure_patterns.md`: large `Object.freeze({...})`
+/// table literals currently produce eager-use edges from every
+/// consumer of the table; admitting them as Pure lets consumers
+/// peel without dragging the table-init closure along.
+///
+/// Soundness contract — every accepted shape must satisfy ALL of:
+///   * Fresh value: the inner expression constructs a new object
+///     (or array) literal — no shared identity with anything else
+///     in the chunk, so subsequent freezing can't be observed via
+///     an alias.
+///   * No user code on construction: every property key is a
+///     non-computed string/number identifier and every property
+///     value is itself frozen-safe (recursively). Computed keys
+///     and getters/setters are rejected because they fire on
+///     property assignment / read; spread properties are rejected
+///     because they iterate the source object (`[[OwnPropertyKeys]]`
+///     + per-key `[[Get]]`) and can fire user code.
+///   * No user code on the freeze itself: `Object.freeze` per
+///     ECMA-262 §20.1.2.6 walks own-property descriptors and sets
+///     `[[Writable]]`/`[[Configurable]]` to false. For a fresh
+///     ordinary object whose own properties are plain data
+///     descriptors (which the recursive shape check above
+///     guarantees), this fires no getter, setter, or proxy trap.
+///   * Conservative on identifiers: we reject `Object.freeze(x)`
+///     (where `x` is some Ident) because the bound value could be
+///     a Proxy, a frozen object with accessor descriptors set up
+///     elsewhere, or otherwise observable. The point of P-7 is to
+///     admit *literal* tables, not arbitrary references.
+///
+/// Excluded by design:
+///   * Identifier expressions (even `undefined` — be safe).
+///   * Template strings, even zero-interpolation: not a `Lit::Str`
+///     AST shape; matches `is_primitive_literal` convention.
+///   * Regex literals: produce fresh `RegExp` objects with
+///     enumerable own props; not strictly unsafe to freeze but
+///     not part of the documented contract — keep conservative.
+///   * Function expressions, classes, member access, calls,
+///     `new`, spreads, getters/setters: any of these could fire
+///     user code during the literal's evaluation.
+fn is_frozen_safe_literal(expr: &Expr) -> bool {
+    match expr {
+        Expr::Lit(Lit::Str(_))
+        | Expr::Lit(Lit::Bool(_))
+        | Expr::Lit(Lit::Null(_))
+        | Expr::Lit(Lit::Num(_))
+        | Expr::Lit(Lit::BigInt(_)) => true,
+        Expr::Object(obj) => obj.props.iter().all(|prop| match prop {
+            // Spread (`{ ...src }`) iterates `src` and fires
+            // `[[Get]]` per own key — can run user code.
+            PropOrSpread::Spread(_) => false,
+            PropOrSpread::Prop(prop) => match prop.as_ref() {
+                Prop::KeyValue(kv) => {
+                    is_frozen_safe_propname(&kv.key) && is_frozen_safe_literal(&kv.value)
+                }
+                // Shorthand / Assign reference a binding by name
+                // — that's an identifier read, which we exclude
+                // per the soundness contract.
+                Prop::Shorthand(_) | Prop::Assign(_) => false,
+                // Getters/setters/methods are functions — pure to
+                // *define*, but a frozen object containing them
+                // exposes callables to consumers; the table-shape
+                // optimisation is about pure-data tables, so
+                // reject to keep the contract narrow.
+                Prop::Getter(_) | Prop::Setter(_) | Prop::Method(_) => false,
+            },
+        }),
+        Expr::Array(arr) => arr.elems.iter().all(|elem| match elem {
+            // Holes (`[1, , 3]`) are fine — they don't fire user
+            // code; the resulting array just has an `empty` slot.
+            None => true,
+            Some(elem) => elem.spread.is_none() && is_frozen_safe_literal(&elem.expr),
+        }),
+        _ => false,
+    }
+}
+
+/// True for property-name shapes that fire no user code when used
+/// as an own-property key on a fresh object literal. Computed
+/// keys are excluded because they evaluate an arbitrary
+/// expression at object-construction time.
+fn is_frozen_safe_propname(name: &PropName) -> bool {
+    matches!(
+        name,
+        PropName::Ident(_) | PropName::Str(_) | PropName::Num(_) | PropName::BigInt(_)
     )
 }
 
