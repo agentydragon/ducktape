@@ -10,32 +10,42 @@ into the source tree.
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//lib:shell.bzl", "shell")
 
-_TREE_SOURCE_PATH_FLAGS = {
-    "--tree-config": True,
-    "--tree-modules": True,
-    "--tree-source-root": True,
-    "--tree-vendor-marks": True,
-}
-
 def _debundle_pipeline_impl(ctx):
     out_dir = ctx.actions.declare_directory(ctx.label.name + ".out")
     bin_dir = ctx.bin_dir.path
 
-    if ctx.file.spec and ctx.attr.spec_tree_args:
-        fail("pass either spec or spec_tree_args, not both")
-    if not ctx.file.spec and not ctx.attr.spec_tree_args:
-        fail("one of spec or spec_tree_args is required")
+    has_flat = bool(ctx.file.spec)
+    tree_attrs = [ctx.attr.tree_config, ctx.attr.tree_modules, ctx.attr.tree_vendor_marks]
+    tree_set = len([s for s in tree_attrs if s])
 
-    debundler_args = []
-    if ctx.file.spec:
-        debundler_args.extend(["--spec", ctx.file.spec.path])
+    if has_flat and tree_set:
+        fail("pass either spec or tree_config/tree_modules/tree_vendor_marks, not both")
+    if not has_flat and tree_set == 0:
+        fail("one of spec or tree_config/tree_modules/tree_vendor_marks is required")
+    if tree_set != 0 and tree_set != 3:
+        fail("tree_config, tree_modules, and tree_vendor_marks must all be set together")
+
+    # Each entry is a fully-rendered shell token (already quoted/escaped).
+    argv = []
+    if has_flat:
+        argv += ["--spec", _shell_source_path(ctx.file.spec.path)]
     else:
-        debundler_args.extend(ctx.attr.spec_tree_args)
-        debundler_args.extend(["--tree-source-root", "."])
-        debundler_args.extend(["--out-root", out_dir.short_path])
+        pkg = ctx.label.package
+        argv += [
+            "--tree-config",
+            _shell_source_path(paths.join(pkg, ctx.attr.tree_config)),
+            "--tree-modules",
+            _shell_source_path(paths.join(pkg, ctx.attr.tree_modules)),
+            "--tree-vendor-marks",
+            _shell_source_path(paths.join(pkg, ctx.attr.tree_vendor_marks)),
+            "--tree-source-root",
+            shell.quote("."),
+            "--out-root",
+            shell.quote(out_dir.short_path),
+        ]
 
     if ctx.attr.force:
-        debundler_args.append("--force")
+        argv.append(shell.quote("--force"))
 
     for pkg_label, pkg_name in ctx.attr.package_roots.items():
         pkg_files = pkg_label[DefaultInfo].files.to_list()
@@ -46,8 +56,10 @@ def _debundle_pipeline_impl(ctx):
         # already points directly at the package directory containing
         # `package.json`. Make it bin-dir-relative for the post-cd cwd.
         pkg_dir = paths.relativize(pkg_files[0].path, bin_dir)
-        debundler_args.append("--package-root")
-        debundler_args.append("{}={}".format(pkg_name, pkg_dir))
+        argv += [
+            shell.quote("--package-root"),
+            shell.quote("{}={}".format(pkg_name, pkg_dir)),
+        ]
 
     inputs = depset(
         direct = [ctx.file.spec] if ctx.file.spec else [],
@@ -62,7 +74,7 @@ def _debundle_pipeline_impl(ctx):
         outputs = [out_dir],
         command = "cd \"${{BAZEL_BINDIR}}\" && exec \"${{OLDPWD}}/{debundler}\" {args}".format(
             debundler = ctx.executable.debundler.path,
-            args = " ".join(_debundler_shell_args(debundler_args)),
+            args = " ".join(argv),
         ),
         env = {"BAZEL_BINDIR": bin_dir},
         # The debundler asserts that each vendor package's resolved subpath
@@ -79,36 +91,35 @@ def _debundle_pipeline_impl(ctx):
 
     return [DefaultInfo(files = depset([out_dir]))]
 
-def _debundler_shell_args(args):
-    out = []
-    execroot_path_next = False
-    for arg in args:
-        if execroot_path_next:
-            out.append(_execroot_path_arg(arg))
-            execroot_path_next = False
-            continue
-        out.append(shell.quote(arg))
-        execroot_path_next = arg in _TREE_SOURCE_PATH_FLAGS
-    return out
+def _shell_source_path(workspace_relative):
+    """Shell expression referencing a workspace-root-relative source path.
 
-def _execroot_path_arg(path):
-    if path.startswith("/"):
-        return shell.quote(path)
-    return "\"${{OLDPWD}}/{}\"".format(path)
+    The action cd's into `${BAZEL_BINDIR}`; source-tree files live under
+    `${OLDPWD}` (= execroot). Absolute paths are passed through unchanged.
+    """
+    if workspace_relative.startswith("/"):
+        return shell.quote(workspace_relative)
+    return "\"${{OLDPWD}}/{}\"".format(workspace_relative)
 
 debundle_pipeline = rule(
     implementation = _debundle_pipeline_impl,
     attrs = {
         "spec": attr.label(
             allow_single_file = True,
-            doc = "Optional flat transform spec YAML. Mutually exclusive with spec_tree_args.",
+            doc = "Optional flat transform spec YAML. Mutually exclusive with the tree_* attrs.",
         ),
-        "spec_tree_args": attr.string_list(
-            doc = "Tree-shaped authoring arguments passed to debundle before --out-root.",
+        "tree_config": attr.string(
+            doc = "Package-relative path to the tree-shaped authoring config YAML.",
+        ),
+        "tree_modules": attr.string(
+            doc = "Package-relative path to the directory containing per-module YAML files.",
+        ),
+        "tree_vendor_marks": attr.string(
+            doc = "Package-relative path to the tree-shaped vendor marks YAML.",
         ),
         "spec_tree_inputs": attr.label_list(
             allow_files = True,
-            doc = "Source-tree inputs the tree-shaped spec compiler reads.",
+            doc = "Source-tree inputs the tree-shaped spec compiler reads (typically a filegroup globbing the spec YAMLs).",
         ),
         "debundler": attr.label(
             executable = True,
