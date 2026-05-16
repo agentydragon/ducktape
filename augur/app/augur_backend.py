@@ -11,10 +11,10 @@ from augur.app.catalog import build_bootstrap_payload
 from augur.app.config import AugurConfig
 from augur.core.api import simulate_set
 from augur.core.bootstrap import Property
-from augur.core.local_regulation import scenario_with_location_tax_defaults
 from augur.core.market_bundle import HorizonBoundMarketBundleProvider, MarketBundleProvider
 from augur.core.scenario_engine import MONTHS_PER_YEAR
 from augur.core.scenario_set import Scenario, ScenarioSet, ScenarioSetRunResponse
+from augur.core.scenario_tax_defaults import scenario_with_location_tax_defaults
 from augur.core.schemas import ScenarioKnobs
 
 

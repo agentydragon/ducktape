@@ -2,18 +2,12 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import yaml
 from pydantic import Field, NonNegativeFloat, model_validator
 
 from augur.core.schemas import ApiModel, Percentage
-
-if TYPE_CHECKING:
-    # scenario_set imports LocalRegulation/TaxRegime from this module, so the
-    # OccupancyMode/RentalMode imports below have to stay TYPE_CHECKING-only at
-    # module load time and lazy at runtime.
-    from augur.core.scenario_set import OccupancyMode, RentalMode, Scenario
 
 _LOCAL_REGULATION_DATA_PATH = Path(__file__).with_name("local_regulation.yaml")
 _BUILTIN_LOCATION_DATA_PATH = Path(__file__).with_name("builtin_locations.yaml")
@@ -158,27 +152,16 @@ def local_regulation_for_location(location_id: LocationId | str) -> LocalRegulat
     return LOCAL_REGULATION_BY_LOCATION[known_id]
 
 
-def tax_regimes_for_scenario(
+def tax_regimes_for_local_regulation(
     local_regulation: LocalRegulation,
     *,
-    occupancy_mode: OccupancyMode,
-    rental_mode: RentalMode,
     existing_tax_regimes: tuple[TaxRegime, ...] = (),
+    owner_occupied: bool,
+    rented: bool,
 ) -> tuple[TaxRegime, ...]:
-    """Combine a location's modeled tax-regime defaults with scenario-level
-    owner-occupancy and rental signals.
-
-    A property the owner lives in *and* rents whole is treated as an
-    investment property for tax-regime purposes; rooms-rented-while-living
-    keeps the owner-occupied treatment."""
-    # scenario_set imports LocalRegulation/TaxRegime from this module, so
-    # OccupancyMode/RentalMode have to be resolved lazily here.
-    from augur.core.scenario_set import OccupancyMode, RentalMode  # noqa: PLC0415
-
-    owner_occupied = (
-        occupancy_mode is OccupancyMode.OWNER_LIVES_IN_PROPERTY and rental_mode is not RentalMode.RENT_WHOLE_PROPERTY
-    )
-    rented = rental_mode is not RentalMode.NOT_RENTED
+    """Combine a location's modeled tax-regime defaults with caller-derived
+    owner-occupancy and rental signals. Pure regulation logic — no scenario
+    types — so this module stays a leaf in the augur/core dependency graph."""
     regimes = [
         *existing_tax_regimes,
         *local_regulation.default_tax_regimes,
@@ -190,22 +173,3 @@ def tax_regimes_for_scenario(
         regimes.append(TaxRegime.RENTAL_DEPRECIATION)
         regimes.append(TaxRegime.DEPRECIATION_RECAPTURE)
     return tuple(dict.fromkeys(regimes))
-
-
-def scenario_with_location_tax_defaults(scenario: Scenario, local_regulation: LocalRegulation) -> Scenario:
-    """Backfill a scenario's `property_selection.tax_regime` and `tax_regimes`
-    from the location's modeled defaults, leaving any caller-supplied values
-    untouched."""
-    selection = scenario.property_selection.model_copy(
-        update={
-            "tax_regime": scenario.property_selection.tax_regime or local_regulation.property_tax_regime,
-            "local_regulation": scenario.property_selection.local_regulation or local_regulation,
-        }
-    )
-    tax_regimes = tax_regimes_for_scenario(
-        local_regulation,
-        occupancy_mode=scenario.occupancy_plan.occupancy_mode,
-        rental_mode=scenario.rental_plan.rental_mode,
-        existing_tax_regimes=scenario.tax_regimes,
-    )
-    return scenario.model_copy(update={"property_selection": selection, "tax_regimes": tax_regimes})

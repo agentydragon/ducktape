@@ -72,6 +72,15 @@ py_library(
 )
 
 py_library(
+    name = "scenario_tax_defaults_py",
+    srcs = ["scenario_tax_defaults.py"],
+    deps = [
+        ":local_regulation_py",
+        ":scenario_set_py",
+    ],
+)
+
+py_library(
     name = "market_bundle_py",
     srcs = ["market_bundle.py"],
     deps = [
@@ -274,10 +283,20 @@ py_test(
         ":local_regulation_py",
         ":market_bundle_test_support_py",
         ":property_tax_py",
-        ":scenario_set_py",
         "@pypi//numpy",
         "@pypi//pydantic",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "scenario_tax_defaults_test",
+    srcs = ["scenario_tax_defaults_test.py"],
+    deps = [
+        ":local_regulation_py",
+        ":scenario_set_py",
+        ":scenario_tax_defaults_py",
         "@pypi//pytest_bazel",
     ],
 )

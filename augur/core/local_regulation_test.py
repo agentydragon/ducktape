@@ -13,21 +13,10 @@ from augur.core.local_regulation import (
     _validate_local_regulation_data,
     known_location_id,
     local_regulation_for_location,
-    scenario_with_location_tax_defaults,
-    tax_regimes_for_scenario,
+    tax_regimes_for_local_regulation,
 )
 from augur.core.market_bundle_test_support import constant_market_bundle
 from augur.core.property_tax import monthly_property_tax_usd
-from augur.core.scenario_set import (
-    Actor,
-    ActorRole,
-    NotRentedRentalPlan,
-    OccupancyMode,
-    OccupancyPlan,
-    PropertySelection,
-    RentalMode,
-    Scenario,
-)
 
 
 def _valid_payload() -> dict[str, dict[str, dict[str, object]]]:
@@ -94,14 +83,10 @@ def test_loaded_builtin_regulation_drives_property_tax() -> None:
     np.testing.assert_allclose(taxes[:, 1], 100_000 * 0.024 / 12)
 
 
-def test_loaded_builtin_regulation_drives_tax_regime_defaults() -> None:
+def test_owner_occupied_with_rooms_rented_keeps_owner_occupied_treatment() -> None:
     regulation = local_regulation_for_location(LocationId.SAN_FRANCISCO_CA)
 
-    regimes = tax_regimes_for_scenario(
-        regulation,
-        occupancy_mode=OccupancyMode.OWNER_LIVES_IN_PROPERTY,
-        rental_mode=RentalMode.RENT_ROOMS_WHILE_OWNER_LIVES_THERE,
-    )
+    regimes = tax_regimes_for_local_regulation(regulation, owner_occupied=True, rented=True)
 
     assert regulation.property_tax_regime is TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX
     assert TaxRegime.SAN_FRANCISCO_TRANSFER_TAX in regimes
@@ -110,12 +95,10 @@ def test_loaded_builtin_regulation_drives_tax_regime_defaults() -> None:
     assert TaxRegime.CALIFORNIA_OWNER_OCCUPIED in regimes
 
 
-def test_whole_property_rental_with_owner_residence_treated_as_investment() -> None:
+def test_investment_property_treatment_when_owner_does_not_occupy() -> None:
     regulation = local_regulation_for_location(LocationId.SAN_FRANCISCO_CA)
 
-    regimes = tax_regimes_for_scenario(
-        regulation, occupancy_mode=OccupancyMode.OWNER_LIVES_IN_PROPERTY, rental_mode=RentalMode.RENT_WHOLE_PROPERTY
-    )
+    regimes = tax_regimes_for_local_regulation(regulation, owner_occupied=False, rented=True)
 
     assert TaxRegime.CALIFORNIA_INVESTMENT_PROPERTY in regimes
     assert TaxRegime.PRIMARY_RESIDENCE_EXCLUSION not in regimes
@@ -125,58 +108,15 @@ def test_whole_property_rental_with_owner_residence_treated_as_investment() -> N
 def test_existing_tax_regimes_are_preserved_and_deduplicated() -> None:
     regulation = local_regulation_for_location(LocationId.SAN_FRANCISCO_CA)
 
-    regimes = tax_regimes_for_scenario(
+    regimes = tax_regimes_for_local_regulation(
         regulation,
-        occupancy_mode=OccupancyMode.OWNER_LIVES_IN_PROPERTY,
-        rental_mode=RentalMode.NOT_RENTED,
+        owner_occupied=True,
+        rented=False,
         existing_tax_regimes=(TaxRegime.CALIFORNIA_PROP13, TaxRegime.MARE_ISLAND_SPECIAL_ASSESSMENTS),
     )
 
     assert TaxRegime.MARE_ISLAND_SPECIAL_ASSESSMENTS in regimes
     assert regimes.count(TaxRegime.CALIFORNIA_PROP13) == 1
-
-
-def _bare_scenario(
-    *,
-    occupancy_mode: OccupancyMode,
-    rental_plan: NotRentedRentalPlan,
-    tax_regime: TaxRegime | None = None,
-    existing_tax_regimes: tuple[TaxRegime, ...] = (),
-) -> Scenario:
-    return Scenario(
-        scenario_id="fixture",
-        label="Fixture",
-        actors=(Actor(actor_id="owner", label="Owner", role=ActorRole.PRIMARY_OWNER),),
-        property_selection=PropertySelection(tax_regime=tax_regime),
-        occupancy_plan=OccupancyPlan(occupancy_mode=occupancy_mode),
-        rental_plan=rental_plan,
-        tax_regimes=existing_tax_regimes,
-    )
-
-
-def test_scenario_with_location_tax_defaults_backfills_property_tax_regime() -> None:
-    regulation = local_regulation_for_location(LocationId.SAN_FRANCISCO_CA)
-    scenario = _bare_scenario(occupancy_mode=OccupancyMode.OWNER_LIVES_IN_PROPERTY, rental_plan=NotRentedRentalPlan())
-
-    enriched = scenario_with_location_tax_defaults(scenario, regulation)
-
-    assert enriched.property_selection.tax_regime is TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX
-    assert enriched.property_selection.local_regulation == regulation
-    assert TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX in enriched.tax_regimes
-    assert TaxRegime.PRIMARY_RESIDENCE_EXCLUSION in enriched.tax_regimes
-
-
-def test_scenario_with_location_tax_defaults_preserves_caller_overrides() -> None:
-    regulation = local_regulation_for_location(LocationId.SAN_FRANCISCO_CA)
-    scenario = _bare_scenario(
-        occupancy_mode=OccupancyMode.OWNER_LIVES_IN_PROPERTY,
-        rental_plan=NotRentedRentalPlan(),
-        tax_regime=TaxRegime.VALLEJO_PROPERTY_TAX,
-    )
-
-    enriched = scenario_with_location_tax_defaults(scenario, regulation)
-
-    assert enriched.property_selection.tax_regime is TaxRegime.VALLEJO_PROPERTY_TAX
 
 
 def test_local_regulation_data_requires_all_builtin_locations() -> None:

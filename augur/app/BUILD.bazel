@@ -66,10 +66,10 @@ py_library(
         ":config_py",
         "//augur/core:api_py",
         "//augur/core:bootstrap_py",
-        "//augur/core:local_regulation_py",
         "//augur/core:market_bundle_py",
         "//augur/core:scenario_engine_py",
         "//augur/core:scenario_set_py",
+        "//augur/core:scenario_tax_defaults_py",
         "//augur/core:schemas_py",
     ],
 )
