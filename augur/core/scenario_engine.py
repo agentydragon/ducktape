@@ -33,7 +33,6 @@ from augur.core.policy_runtime import (
     ActorPolicyStep,
     BalanceSnapshotBatch,
     JournalEntryBatch,
-    MortgagePaymentApplication,
     PostingBatch,
     PrivateEquitySaleApplication,
     PrivateEquitySaleInstructionBatch,
@@ -43,7 +42,6 @@ from augur.core.policy_runtime import (
     actor_policy_steps,
     apply_debit_account_instruction,
     apply_generic_sp500_sale_instruction,
-    apply_mortgage_payment,
     apply_partner_house_cost_contribution,
     apply_partner_ownership_accrual,
     apply_private_equity_sale_instruction,
@@ -1569,7 +1567,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         month_index=month_index,
         policy_steps=policy_steps,
         obligation_amount_usd=obligation_tax_due,
-        obligation_type=ObligationType.ANNUAL_TAX_PAYMENT,
+        obligation_kind=_AnnualTaxObligationKind(),
         creditor_id="tax_authority",
         source_policy_id=ANNUAL_TAX_ACCOUNTING_POLICY_ID,
         cash_usd=cash,
@@ -1679,16 +1677,43 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     _record_partner_agreement_actions(actions, month_index=month_index, partner_equity=partner_equity)
     _record_partner_contribution_decisions(policy_decisions, month_index=month_index, partner_equity=partner_equity)
     _record_partner_agreement_accounting_detail(accounting, month_index=month_index, partner_equity=partner_equity)
-    mortgage_application = apply_mortgage_payment(
-        actor_id=_primary_owner_actor_id(scenario),
-        policy_id=MORTGAGE_SERVICING_POLICY_ID,
-        mortgage_payment_usd=property_cash_flow.mortgage_payment_usd * property_live_mask,
-        mortgage_interest_usd=mortgage_interest,
-        mortgage_principal_usd=mortgage_principal,
-        mortgage_balance_after_usd=mortgage_balance,
-    )
-    _record_mortgage_payment_actions(actions, month_index=month_index, mortgage_application=mortgage_application)
-    _record_journal_entry_batches(accounting, month_index=month_index, entries=mortgage_application.journal_entries)
+    mortgage_payment_due = property_cash_flow.mortgage_payment_usd * property_live_mask
+    if scenario.property_selection.property_id is not None:
+        _settle_required_cash_obligations(
+            scenario=scenario,
+            market_bundle=market_bundle,
+            month_index=month_index,
+            policy_steps=policy_steps,
+            obligation_amount_usd=mortgage_payment_due,
+            obligation_kind=_MortgageObligationKind(
+                interest_usd=mortgage_interest,
+                principal_usd=mortgage_principal,
+                property_id=scenario.property_selection.property_id,
+            ),
+            creditor_id="mortgage_lender",
+            source_policy_id=MORTGAGE_SERVICING_POLICY_ID,
+            cash_usd=cash,
+            generic_sp500_value_usd=generic_sp500_value,
+            remaining_sp500_units_by_month=remaining_sp500_units_by_month,
+            remaining_sp500_basis_by_month=remaining_sp500_basis_by_month,
+            checking_floor_shortfall_usd=checking_floor_shortfall,
+            obligations=obligations,
+            funding_decisions=funding_decisions,
+            settlement_results=settlement_results,
+            failure_events=failure_events,
+            accounting=accounting,
+            sp500_sale_action_records=sp500_sale_action_records,
+        )
+        _record_mortgage_payment_actions_from_settlement(
+            actions,
+            month_index=month_index,
+            actor_id=_primary_owner_actor_id(scenario),
+            policy_id=MORTGAGE_SERVICING_POLICY_ID,
+            mortgage_interest_usd=mortgage_interest,
+            mortgage_principal_usd=mortgage_principal,
+            mortgage_balance_after_usd=mortgage_balance,
+            settlement_results=settlement_results,
+        )
     _record_journal_entry_batches(
         accounting,
         month_index=month_index,
@@ -3090,6 +3115,22 @@ def _tax_share_for_sale_action(
     return tax_share
 
 
+@dataclass(frozen=True)
+class _AnnualTaxObligationKind:
+    obligation_type: ObligationType = ObligationType.ANNUAL_TAX_PAYMENT
+
+
+@dataclass(frozen=True)
+class _MortgageObligationKind:
+    interest_usd: np.ndarray
+    principal_usd: np.ndarray
+    property_id: str
+    obligation_type: ObligationType = ObligationType.MORTGAGE_PAYMENT
+
+
+_ObligationKind = _AnnualTaxObligationKind | _MortgageObligationKind
+
+
 def _settle_required_cash_obligations(
     *,
     scenario: Scenario,
@@ -3097,7 +3138,7 @@ def _settle_required_cash_obligations(
     month_index: np.ndarray,
     policy_steps: tuple[ActorPolicyStep[Policy], ...],
     obligation_amount_usd: np.ndarray,
-    obligation_type: ObligationType,
+    obligation_kind: _ObligationKind,
     creditor_id: str,
     source_policy_id: str,
     cash_usd: np.ndarray,
@@ -3112,6 +3153,7 @@ def _settle_required_cash_obligations(
     accounting: AccountingTraceBuilder,
     sp500_sale_action_records: list[Sp500SaleActionRecord],
 ) -> None:
+    obligation_type = obligation_kind.obligation_type
     actor_id = _primary_owner_actor_id(scenario)
     cash_source_account = _single_checking_account_source(scenario, actor_id=actor_id)
     sp500_source_asset = _single_sp500_asset_source(scenario, actor_id=actor_id)
@@ -3196,56 +3238,15 @@ def _settle_required_cash_obligations(
         amount_paid = np.minimum(due, np.maximum(0.0, cash_usd[:, month_position]))
         unpaid = np.maximum(0.0, due - amount_paid)
         cash_usd[:, month_position:] = cash_usd[:, month_position:] - amount_paid[:, None]
-        accounting.record_entry(
+        _record_obligation_accrual_and_settlement_entries(
+            accounting,
+            obligation_kind=obligation_kind,
+            month_position=month_position,
             month_index=int(due_month_index),
-            entry=JournalEntryBatch(
-                journal_entry_type=JournalEntryType.TAX_ACCRUAL,
-                cause_type=AccountingCauseType.ACCOUNTING_PROCESS,
-                cause_id_prefix=f"policy:{source_policy_id}:{obligation_type.value}:accrual",
-                obligation_id_prefix=obligation_type.value,
-                actor_id=actor_id,
-                policy_id=source_policy_id,
-                description=obligation_type.value,
-                postings=(
-                    PostingBatch(
-                        role=ChartAccountRole.TAX_EXPENSE, side=PostingSide.DEBIT, amount_usd=due, actor_id=actor_id
-                    ),
-                    PostingBatch(
-                        role=ChartAccountRole.TAX_PAYABLE,
-                        side=PostingSide.CREDIT,
-                        amount_usd=due,
-                        actor_id=actor_id,
-                        liability_id=f"tax:{obligation_type.value}",
-                    ),
-                ),
-            ),
-        )
-        accounting.record_entry(
-            month_index=int(due_month_index),
-            entry=JournalEntryBatch(
-                journal_entry_type=JournalEntryType.OBLIGATION_SETTLEMENT,
-                cause_type=AccountingCauseType.OBLIGATION_SETTLEMENT,
-                cause_id_prefix=f"policy:{source_policy_id}:{obligation_type.value}:settlement",
-                obligation_id_prefix=obligation_type.value,
-                actor_id=actor_id,
-                policy_id=source_policy_id,
-                description=obligation_type.value,
-                postings=(
-                    PostingBatch(
-                        role=ChartAccountRole.TAX_PAYABLE,
-                        side=PostingSide.DEBIT,
-                        amount_usd=amount_paid,
-                        actor_id=actor_id,
-                        liability_id=f"tax:{obligation_type.value}",
-                    ),
-                    PostingBatch(
-                        role=ChartAccountRole.CHECKING_CASH,
-                        side=PostingSide.CREDIT,
-                        amount_usd=amount_paid,
-                        actor_id=actor_id,
-                    ),
-                ),
-            ),
+            actor_id=actor_id,
+            source_policy_id=source_policy_id,
+            due_usd=due,
+            amount_paid_usd=amount_paid,
         )
         _record_unfunded_obligation_decisions(
             funding_decisions,
@@ -3268,6 +3269,114 @@ def _settle_required_cash_obligations(
             amount_paid_usd=amount_paid,
             unpaid_amount_usd=unpaid,
         )
+
+
+def _record_obligation_accrual_and_settlement_entries(
+    accounting: AccountingTraceBuilder,
+    *,
+    obligation_kind: _ObligationKind,
+    month_position: int,
+    month_index: int,
+    actor_id: str,
+    source_policy_id: str,
+    due_usd: np.ndarray,
+    amount_paid_usd: np.ndarray,
+) -> None:
+    obligation_type = obligation_kind.obligation_type
+    if isinstance(obligation_kind, _AnnualTaxObligationKind):
+        accounting.record_entry(
+            month_index=month_index,
+            entry=JournalEntryBatch(
+                journal_entry_type=JournalEntryType.TAX_ACCRUAL,
+                cause_type=AccountingCauseType.ACCOUNTING_PROCESS,
+                cause_id_prefix=f"policy:{source_policy_id}:{obligation_type.value}:accrual",
+                obligation_id_prefix=obligation_type.value,
+                actor_id=actor_id,
+                policy_id=source_policy_id,
+                description=obligation_type.value,
+                postings=(
+                    PostingBatch(
+                        role=ChartAccountRole.TAX_EXPENSE, side=PostingSide.DEBIT, amount_usd=due_usd, actor_id=actor_id
+                    ),
+                    PostingBatch(
+                        role=ChartAccountRole.TAX_PAYABLE,
+                        side=PostingSide.CREDIT,
+                        amount_usd=due_usd,
+                        actor_id=actor_id,
+                        liability_id=f"tax:{obligation_type.value}",
+                    ),
+                ),
+            ),
+        )
+        accounting.record_entry(
+            month_index=month_index,
+            entry=JournalEntryBatch(
+                journal_entry_type=JournalEntryType.OBLIGATION_SETTLEMENT,
+                cause_type=AccountingCauseType.OBLIGATION_SETTLEMENT,
+                cause_id_prefix=f"policy:{source_policy_id}:{obligation_type.value}:settlement",
+                obligation_id_prefix=obligation_type.value,
+                actor_id=actor_id,
+                policy_id=source_policy_id,
+                description=obligation_type.value,
+                postings=(
+                    PostingBatch(
+                        role=ChartAccountRole.TAX_PAYABLE,
+                        side=PostingSide.DEBIT,
+                        amount_usd=amount_paid_usd,
+                        actor_id=actor_id,
+                        liability_id=f"tax:{obligation_type.value}",
+                    ),
+                    PostingBatch(
+                        role=ChartAccountRole.CHECKING_CASH,
+                        side=PostingSide.CREDIT,
+                        amount_usd=amount_paid_usd,
+                        actor_id=actor_id,
+                    ),
+                ),
+            ),
+        )
+        return
+    interest_due = obligation_kind.interest_usd[:, month_position]
+    principal_due = obligation_kind.principal_usd[:, month_position]
+    paid_fraction = np.divide(
+        amount_paid_usd, due_usd, out=np.zeros_like(amount_paid_usd, dtype="float64"), where=due_usd > 0
+    )
+    interest_paid = interest_due * paid_fraction
+    principal_paid = principal_due * paid_fraction
+    liability_id = _mortgage_liability_id(obligation_kind.property_id)
+    accounting.record_entry(
+        month_index=month_index,
+        entry=JournalEntryBatch(
+            journal_entry_type=JournalEntryType.MORTGAGE_PAYMENT,
+            cause_type=AccountingCauseType.OBLIGATION_SETTLEMENT,
+            cause_id_prefix=f"policy:{source_policy_id}:{obligation_type.value}:settlement",
+            obligation_id_prefix=obligation_type.value,
+            actor_id=actor_id,
+            policy_id=source_policy_id,
+            description=obligation_type.value,
+            postings=(
+                PostingBatch(
+                    role=ChartAccountRole.MORTGAGE_INTEREST_EXPENSE,
+                    side=PostingSide.DEBIT,
+                    amount_usd=interest_paid,
+                    actor_id=actor_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.MORTGAGE_PAYABLE,
+                    side=PostingSide.DEBIT,
+                    amount_usd=principal_paid,
+                    actor_id=actor_id,
+                    liability_id=liability_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.CHECKING_CASH,
+                    side=PostingSide.CREDIT,
+                    amount_usd=amount_paid_usd,
+                    actor_id=actor_id,
+                ),
+            ),
+        ),
+    )
 
 
 def _apply_obligation_funding_policy_step(
@@ -3553,25 +3662,44 @@ def _record_monthly_spend_actions(
     )
 
 
-def _record_mortgage_payment_actions(
-    actions: list[SimulationAction], *, month_index: np.ndarray, mortgage_application: MortgagePaymentApplication
+def _record_mortgage_payment_actions_from_settlement(
+    actions: list[SimulationAction],
+    *,
+    month_index: np.ndarray,
+    actor_id: str,
+    policy_id: str,
+    mortgage_interest_usd: np.ndarray,
+    mortgage_principal_usd: np.ndarray,
+    mortgage_balance_after_usd: np.ndarray,
+    settlement_results: list[SimulationSettlementResult],
 ) -> None:
-    rollout_indexes, month_positions = np.nonzero(mortgage_application.mortgage_payment_usd > 0)
-    for rollout_index, month_position in zip(rollout_indexes.tolist(), month_positions.tolist(), strict=True):
+    """Record `PayMortgageAction` rows from mortgage settlement results.
+
+    Each settlement row corresponds to one month for one rollout where a mortgage
+    obligation was raised. The action reports the amount actually paid (partial when
+    the rollout could not fully fund the payment); `mortgage_interest_usd` and
+    `mortgage_principal_usd` reflect the scaled portion of interest/principal that
+    was actually settled. Failed/partial settlements still record the action so the
+    trajectory inspection can see the attempted payment.
+    """
+    month_position_by_month_index = {int(month_index[position]): position for position in range(month_index.size)}
+    for settlement in settlement_results:
+        if settlement.obligation_type is not ObligationType.MORTGAGE_PAYMENT:
+            continue
+        month_position = month_position_by_month_index[settlement.month_index]
+        scheduled_interest = float(mortgage_interest_usd[settlement.rollout_index, month_position])
+        scheduled_principal = float(mortgage_principal_usd[settlement.rollout_index, month_position])
+        paid_fraction = settlement.amount_paid_usd / settlement.amount_due_usd if settlement.amount_due_usd > 0 else 0.0
         actions.append(
             PayMortgageAction(
-                rollout_index=rollout_index,
-                month_index=int(month_index[month_position]),
-                actor_id=mortgage_application.actor_id,
-                policy_id=mortgage_application.policy_id,
-                mortgage_payment_usd=float(mortgage_application.mortgage_payment_usd[rollout_index, month_position]),
-                mortgage_interest_usd=float(mortgage_application.mortgage_interest_usd[rollout_index, month_position]),
-                mortgage_principal_usd=float(
-                    mortgage_application.mortgage_principal_usd[rollout_index, month_position]
-                ),
-                mortgage_balance_after_usd=float(
-                    mortgage_application.mortgage_balance_after_usd[rollout_index, month_position]
-                ),
+                rollout_index=settlement.rollout_index,
+                month_index=settlement.month_index,
+                actor_id=actor_id,
+                policy_id=policy_id,
+                mortgage_payment_usd=settlement.amount_paid_usd,
+                mortgage_interest_usd=scheduled_interest * paid_fraction,
+                mortgage_principal_usd=scheduled_principal * paid_fraction,
+                mortgage_balance_after_usd=float(mortgage_balance_after_usd[settlement.rollout_index, month_position]),
             )
         )
 
@@ -3634,6 +3762,10 @@ def _property_cash_flow_arrays(
 ) -> PropertyCashFlowArrays:
     zeros = np.zeros_like(property_value_usd, dtype="float64")
     mortgage_payment = mortgage_interest_usd + mortgage_principal_usd
+    # Mortgage payments are settled through the obligation pipeline in
+    # _settle_required_cash_obligations, not directly through net_property_cash_flow_usd.
+    # The mortgage_payment_usd is retained on this array for reporting parity, but the
+    # operating cash flow stops at carrying cost minus rental income.
     if scenario.property_selection.property_id is None:
         return PropertyCashFlowArrays(
             mortgage_payment_usd=mortgage_payment,
@@ -3645,7 +3777,7 @@ def _property_cash_flow_arrays(
             rental_management_fee_usd=zeros,
             rental_leasing_fee_usd=zeros,
             property_carrying_cost_usd=zeros,
-            net_property_cash_flow_usd=-mortgage_payment,
+            net_property_cash_flow_usd=zeros,
             journal_entries=(),
         )
 
@@ -3675,7 +3807,6 @@ def _property_cash_flow_arrays(
         rental_management_fee_usd=rental_management_fee,
         rental_leasing_fee_usd=rental_leasing_fee,
     )
-    net_property_cash_flow = operating_cash_flow.net_operating_cash_flow_usd - mortgage_payment
     return PropertyCashFlowArrays(
         mortgage_payment_usd=mortgage_payment,
         property_tax_usd=operating_cash_flow.property_tax_usd,
@@ -3686,7 +3817,7 @@ def _property_cash_flow_arrays(
         rental_management_fee_usd=operating_cash_flow.rental_management_fee_usd,
         rental_leasing_fee_usd=operating_cash_flow.rental_leasing_fee_usd,
         property_carrying_cost_usd=operating_cash_flow.property_carrying_cost_usd,
-        net_property_cash_flow_usd=net_property_cash_flow,
+        net_property_cash_flow_usd=operating_cash_flow.net_operating_cash_flow_usd,
         journal_entries=operating_cash_flow.journal_entries,
     )
 

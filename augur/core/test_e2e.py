@@ -32,6 +32,7 @@ from augur.core.scenario_set import (
     Financing,
     FinancingMode,
     FixedAmountPrivateEquitySaleRule,
+    FundingDecisionType,
     GenericSp500StockPosition,
     InitialBalanceSheet,
     MarketPathObservation,
@@ -39,6 +40,8 @@ from augur.core.scenario_set import (
     MonthlySpendAction,
     MonthlySpendDecision,
     MonthlySpendPolicy,
+    ObligationStatus,
+    ObligationType,
     PartnerContributionDecision,
     PartnerEquityAccrualPolicy,
     PayMortgageAction,
@@ -376,8 +379,10 @@ def test_monthly_spend_records_each_rollout_and_month() -> None:
 
 def test_fixed_rate_mortgage_amortizes_and_purchase_cash_outlay_posts_at_month_zero() -> None:
     """Agent buys a $500k property with 20% down and 30-year fixed financing at 6%.
-    Month 0 records the down payment plus buy-side closing costs. Month 1
-    mortgage interest and principal match the standard amortization formula."""
+    With a $200k starting checking balance the down payment, closing costs, and
+    twelve months of scheduled mortgage payments all settle from cash; every
+    mortgage payment flows through the obligation pipeline (`MORTGAGE_PAYMENT`
+    obligation, cash funding decision, paid settlement)."""
     scenario = Scenario(
         scenario_id="mortgage_amortization",
         label="Mortgage Amortization",
@@ -393,7 +398,7 @@ def test_fixed_rate_mortgage_amortizes_and_purchase_cash_outlay_posts_at_month_z
                     account_id="checking",
                     account_type=AccountType.CHECKING,
                     owner_actor_id="alpha",
-                    balance_usd=100_000,
+                    balance_usd=200_000,
                 ),
             )
         ),
@@ -407,18 +412,14 @@ def test_fixed_rate_mortgage_amortizes_and_purchase_cash_outlay_posts_at_month_z
     expected_month_1_interest = 2_000
     expected_month_1_principal = payment - expected_month_1_interest
     rollout = result.rollout(0)
-    assert_allclose(rollout.series("cash_usd")[0], -12_500)
+    # Cash at month 0: $200k - $100k down payment - $12.5k buy closing = $87.5k.
+    # No mortgage subtraction in month 0 because the first mortgage obligation is
+    # raised against month 1's scheduled payment.
+    assert_allclose(rollout.series("cash_usd")[0], 87_500)
     status = rollout.status()
-    assert status.status == RolloutStatusType.CASH_NEGATIVE
-    assert status.first_negative_cash_month_index == 0
+    assert status.status == RolloutStatusType.ACTIVE
     assert status.failed_obligation_count == 0
     assert status.unpaid_obligation_usd == 0
-    assert_allclose(status.min_cash_usd, np.min(rollout.series("cash_usd")))
-    assert rollout.scenario_run.rollout_status_summary().total_rollout_count == 1
-    assert rollout.scenario_run.rollout_status_summary().counts_by_status == {
-        RolloutStatusType.ACTIVE: 0,
-        RolloutStatusType.CASH_NEGATIVE: 1,
-    }
     assert_allclose(rollout.series("property_value_usd")[0], 500_000)
     assert_allclose(rollout.series("mortgage_balance_usd")[0], loan_amount)
     assert_allclose(rollout.series("mortgage_interest_usd")[1], expected_month_1_interest)
@@ -447,6 +448,193 @@ def test_fixed_rate_mortgage_amortizes_and_purchase_cash_outlay_posts_at_month_z
     assert_allclose(mortgage_payments[0].mortgage_interest_usd, expected_month_1_interest)
     assert_allclose(mortgage_payments[0].mortgage_principal_usd, expected_month_1_principal)
     assert_allclose(mortgage_payments[0].mortgage_balance_after_usd, loan_amount - expected_month_1_principal)
+    assert result.arrays is not None
+    mortgage_obligations = tuple(
+        obligation
+        for obligation in result.arrays.obligations
+        if obligation.obligation_type is ObligationType.MORTGAGE_PAYMENT
+    )
+    assert len(mortgage_obligations) == 12
+    assert {obligation.creditor_id for obligation in mortgage_obligations} == {"mortgage_lender"}
+    assert {obligation.status for obligation in mortgage_obligations} == {ObligationStatus.PAID}
+    assert_allclose(sum(obligation.amount_due_usd for obligation in mortgage_obligations), payment * 12)
+    cash_fund_decisions = tuple(
+        decision
+        for decision in result.arrays.funding_decisions
+        if decision.obligation_id.startswith(ObligationType.MORTGAGE_PAYMENT.value)
+        and decision.decision_type is FundingDecisionType.USE_CASH
+    )
+    assert len(cash_fund_decisions) == 12
+    assert all(decision.funded_cash_usd > 0 for decision in cash_fund_decisions)
+
+
+def test_mortgage_shortfall_records_failed_obligation_and_failure_event() -> None:
+    """When cash cannot fund the scheduled mortgage payment and no policy can
+    cover the shortfall, the obligation reports UNPAID, the settlement records
+    UNPAID, and the rollout transitions to FAILED with one failure event per
+    missed payment month."""
+    scenario = Scenario(
+        scenario_id="mortgage_shortfall",
+        label="Mortgage Shortfall",
+        actors=(_simple_actor(),),
+        property_selection=PropertySelection(
+            property_id="test_property", location_id=LocationId.SAN_FRANCISCO_CA, purchase_price_usd=500_000
+        ),
+        financing=Financing(financing_mode=FinancingMode.FIXED_30, down_payment_pct=20, mortgage_rate_pct=6),
+        transaction_costs=TransactionCosts(closing_cost_buy_pct=0, closing_cost_sell_pct=0),
+        property_assumptions=PropertyAssumptions(insurance_annual_usd=0, maintenance_pct=0),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking",
+                    account_type=AccountType.CHECKING,
+                    owner_actor_id="alpha",
+                    balance_usd=100_000,
+                ),
+            )
+        ),
+    )
+    horizon_months = 3
+    result = _run_scenario(scenario, horizon_months=horizon_months)
+    assert result.arrays is not None
+    mortgage_obligations = tuple(
+        obligation
+        for obligation in result.arrays.obligations
+        if obligation.obligation_type is ObligationType.MORTGAGE_PAYMENT
+    )
+    assert len(mortgage_obligations) == horizon_months
+    # Cash starts at $0 ($100k - $100k down payment); no buffer for mortgage.
+    assert {obligation.status for obligation in mortgage_obligations} == {ObligationStatus.UNPAID}
+    assert all(obligation.amount_paid_usd == 0 for obligation in mortgage_obligations)
+    mortgage_failures = tuple(
+        event for event in result.arrays.failure_events if event.obligation_id.startswith("mortgage_payment")
+    )
+    assert len(mortgage_failures) == horizon_months
+    assert all(event.unpaid_amount_usd > 0 for event in mortgage_failures)
+    status = result.rollout(0).status()
+    assert status.status == RolloutStatusType.FAILED
+    assert status.failed_obligation_count == horizon_months
+    assert status.first_failed_obligation_month_index == 1
+    assert status.unpaid_obligation_usd > 0
+    unfunded = tuple(
+        decision
+        for decision in result.arrays.funding_decisions
+        if decision.obligation_id.startswith("mortgage_payment")
+        and decision.decision_type is FundingDecisionType.UNFUNDED
+    )
+    assert len(unfunded) == horizon_months
+    # No public stock and no sale policy: shortfall reflects the full payment due.
+    assert all(decision.shortfall_usd > 0 for decision in unfunded)
+
+
+def test_mortgage_shortfall_can_be_rescued_by_checking_floor_sale_policy() -> None:
+    """A CheckingFloorSellPublicStockPolicy in the actor's program rescues a
+    mortgage shortfall by selling SP500 stock when the projected cash after the
+    mortgage payment would fall below the floor. The proactive (per-month)
+    branch of the policy can't reach the mortgage shortfall because it runs
+    before the settlement; the obligation-funding branch sees the missing
+    cash and emits a SELL_PUBLIC_STOCK funding decision tagged with the
+    mortgage obligation."""
+    scenario = Scenario(
+        scenario_id="mortgage_rescue",
+        label="Mortgage Rescue",
+        actors=(_simple_actor(),),
+        property_selection=PropertySelection(
+            property_id="test_property", location_id=LocationId.SAN_FRANCISCO_CA, purchase_price_usd=500_000
+        ),
+        financing=Financing(financing_mode=FinancingMode.FIXED_30, down_payment_pct=20, mortgage_rate_pct=6),
+        transaction_costs=TransactionCosts(closing_cost_buy_pct=0, closing_cost_sell_pct=0),
+        property_assumptions=PropertyAssumptions(insurance_annual_usd=0, maintenance_pct=0),
+        policies=(
+            CheckingFloorSellPublicStockPolicy(
+                policy_id="mortgage_funding_sale", actor_id="alpha", floor_usd=0, sale_amount_usd=2_500
+            ),
+        ),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking",
+                    account_type=AccountType.CHECKING,
+                    owner_actor_id="alpha",
+                    balance_usd=100_000,
+                ),
+            ),
+            assets=(
+                GenericSp500StockPosition(
+                    asset_id="sp500", owner_actor_id="alpha", value_usd=200_000, cost_basis_usd=200_000
+                ),
+            ),
+        ),
+    )
+    horizon_months = 3
+    result = _run_scenario(scenario, horizon_months=horizon_months)
+    assert result.arrays is not None
+    mortgage_obligations = tuple(
+        obligation
+        for obligation in result.arrays.obligations
+        if obligation.obligation_type is ObligationType.MORTGAGE_PAYMENT
+    )
+    assert len(mortgage_obligations) == horizon_months
+    assert {obligation.status for obligation in mortgage_obligations} == {ObligationStatus.PAID}
+    assert tuple(event for event in result.arrays.failure_events) == ()
+    status = result.rollout(0).status()
+    assert status.status == RolloutStatusType.ACTIVE
+    sale_funding_decisions = tuple(
+        decision
+        for decision in result.arrays.funding_decisions
+        if decision.obligation_id.startswith("mortgage_payment")
+        and decision.decision_type is FundingDecisionType.SELL_PUBLIC_STOCK
+    )
+    assert len(sale_funding_decisions) == horizon_months
+    assert {decision.policy_id for decision in sale_funding_decisions} == {"mortgage_funding_sale"}
+    assert all(decision.funded_cash_usd > 0 for decision in sale_funding_decisions)
+
+
+def test_mortgage_obligation_continues_projection_after_failure() -> None:
+    """A FAILED rollout still keeps its projection arrays (mortgage balance keeps
+    amortizing on schedule even when monthly payments go unpaid). Failure events
+    track every unpaid month; downstream consumers can decide whether to treat
+    the trajectory as terminated for reporting purposes."""
+    scenario = Scenario(
+        scenario_id="mortgage_failure_projection",
+        label="Mortgage Failure Projection",
+        actors=(_simple_actor(),),
+        property_selection=PropertySelection(
+            property_id="test_property", location_id=LocationId.SAN_FRANCISCO_CA, purchase_price_usd=500_000
+        ),
+        financing=Financing(financing_mode=FinancingMode.FIXED_30, down_payment_pct=20, mortgage_rate_pct=6),
+        transaction_costs=TransactionCosts(closing_cost_buy_pct=0, closing_cost_sell_pct=0),
+        property_assumptions=PropertyAssumptions(insurance_annual_usd=0, maintenance_pct=0),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking",
+                    account_type=AccountType.CHECKING,
+                    owner_actor_id="alpha",
+                    balance_usd=100_000,
+                ),
+            )
+        ),
+    )
+    horizon_months = 6
+    result = _run_scenario(scenario, horizon_months=horizon_months)
+    rollout = result.rollout(0)
+    loan_amount = 400_000
+    monthly_rate = 0.06 / 12
+    scheduled_payment = loan_amount * monthly_rate * (1 + monthly_rate) ** 360 / ((1 + monthly_rate) ** 360 - 1)
+    expected_month_1_principal = scheduled_payment - loan_amount * monthly_rate
+    # Mortgage balance still drops by scheduled principal each month, even when
+    # payments fail — the projection is the scenario schedule, not the per-rollout
+    # accounting trace.
+    assert_allclose(rollout.series("mortgage_balance_usd")[1], loan_amount - expected_month_1_principal)
+    assert rollout.series("mortgage_balance_usd")[6] < loan_amount
+    assert result.arrays is not None
+    mortgage_failures = tuple(
+        event for event in result.arrays.failure_events if event.obligation_id.startswith("mortgage_payment")
+    )
+    # One failure per scheduled mortgage month (1..6).
+    assert len(mortgage_failures) == horizon_months
+    assert {event.month_index for event in mortgage_failures} == set(range(1, horizon_months + 1))
 
 
 def test_partner_equity_accrual_records_contributions_and_claims() -> None:

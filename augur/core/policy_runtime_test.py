@@ -10,7 +10,6 @@ from augur.core.policy_runtime import (
     actor_policy_steps,
     apply_debit_account_instruction,
     apply_generic_sp500_sale_instruction,
-    apply_mortgage_payment,
     apply_partner_house_cost_contribution,
     apply_partner_ownership_accrual,
     apply_private_equity_sale_instruction,
@@ -159,36 +158,6 @@ def test_monthly_spend_instruction_applier_debits_cash_and_records_journal() -> 
     )
     np.testing.assert_allclose(
         _posting_amount(spend_journal, ChartAccountRole.CHECKING_CASH, PostingSide.CREDIT), [100.0, 120.0, 150.0]
-    )
-
-
-def test_mortgage_payment_application_records_balanced_journal() -> None:
-    result = apply_mortgage_payment(
-        actor_id="alpha",
-        policy_id="mortgage_servicing",
-        mortgage_payment_usd=np.array([0.0, 2_500.0]),
-        mortgage_interest_usd=np.array([0.0, 2_000.0]),
-        mortgage_principal_usd=np.array([0.0, 500.0]),
-        mortgage_balance_after_usd=np.array([400_000.0, 399_500.0]),
-    )
-
-    assert result.actor_id == "alpha"
-    assert result.policy_id == "mortgage_servicing"
-    np.testing.assert_allclose(result.mortgage_payment_usd, [0.0, 2_500.0])
-    np.testing.assert_allclose(result.mortgage_interest_usd, [0.0, 2_000.0])
-    np.testing.assert_allclose(result.mortgage_principal_usd, [0.0, 500.0])
-    np.testing.assert_allclose(result.mortgage_balance_after_usd, [400_000.0, 399_500.0])
-    assert len(result.journal_entries) == 1
-    journal = result.journal_entries[0]
-    assert journal.journal_entry_type is JournalEntryType.MORTGAGE_PAYMENT
-    np.testing.assert_allclose(
-        _posting_amount(journal, ChartAccountRole.MORTGAGE_INTEREST_EXPENSE, PostingSide.DEBIT), [0.0, 2_000.0]
-    )
-    np.testing.assert_allclose(
-        _posting_amount(journal, ChartAccountRole.MORTGAGE_PAYABLE, PostingSide.DEBIT), [0.0, 500.0]
-    )
-    np.testing.assert_allclose(
-        _posting_amount(journal, ChartAccountRole.CHECKING_CASH, PostingSide.CREDIT), [0.0, 2_500.0]
     )
 
 

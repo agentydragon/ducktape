@@ -144,17 +144,6 @@ class DebitAccountApplication:
 
 
 @dataclass(frozen=True)
-class MortgagePaymentApplication:
-    actor_id: str
-    policy_id: str
-    mortgage_payment_usd: np.ndarray
-    mortgage_interest_usd: np.ndarray
-    mortgage_principal_usd: np.ndarray
-    mortgage_balance_after_usd: np.ndarray
-    journal_entries: tuple[JournalEntryBatch, ...]
-
-
-@dataclass(frozen=True)
 class PropertyOperatingCashFlowApplication:
     actor_id: str
     policy_id: str
@@ -486,56 +475,6 @@ def apply_partner_ownership_accrual(
         owner_home_equity_claim_usd=owner_home_equity_claim_usd,
         journal_entries=journal_entries,
         balance_snapshots=balance_snapshots,
-    )
-
-
-def apply_mortgage_payment(
-    *,
-    actor_id: str,
-    policy_id: str,
-    mortgage_payment_usd: np.ndarray,
-    mortgage_interest_usd: np.ndarray,
-    mortgage_principal_usd: np.ndarray,
-    mortgage_balance_after_usd: np.ndarray,
-) -> MortgagePaymentApplication:
-    journal_entries = (
-        JournalEntryBatch(
-            journal_entry_type=JournalEntryType.MORTGAGE_PAYMENT,
-            cause_type=AccountingCauseType.ACCOUNTING_PROCESS,
-            cause_id_prefix=f"policy:{policy_id}:mortgage_payment",
-            actor_id=actor_id,
-            policy_id=policy_id,
-            description="mortgage payment",
-            postings=(
-                PostingBatch(
-                    role=ChartAccountRole.MORTGAGE_INTEREST_EXPENSE,
-                    side=PostingSide.DEBIT,
-                    amount_usd=mortgage_interest_usd,
-                    actor_id=actor_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.MORTGAGE_PAYABLE,
-                    side=PostingSide.DEBIT,
-                    amount_usd=mortgage_principal_usd,
-                    actor_id=actor_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.CHECKING_CASH,
-                    side=PostingSide.CREDIT,
-                    amount_usd=mortgage_interest_usd + mortgage_principal_usd,
-                    actor_id=actor_id,
-                ),
-            ),
-        ),
-    )
-    return MortgagePaymentApplication(
-        actor_id=actor_id,
-        policy_id=policy_id,
-        mortgage_payment_usd=mortgage_payment_usd,
-        mortgage_interest_usd=mortgage_interest_usd,
-        mortgage_principal_usd=mortgage_principal_usd,
-        mortgage_balance_after_usd=mortgage_balance_after_usd,
-        journal_entries=journal_entries,
     )
 
 

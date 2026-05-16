@@ -168,6 +168,7 @@ class TaxPaymentTiming(StrEnum):
 
 class ObligationType(StrEnum):
     ANNUAL_TAX_PAYMENT = "annual_tax_payment"
+    MORTGAGE_PAYMENT = "mortgage_payment"
 
 
 class ObligationStatus(StrEnum):
