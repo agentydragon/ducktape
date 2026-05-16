@@ -63,10 +63,7 @@ const bootstrap = {
     insuranceAnnualUsd: 2_400,
     closingCostBuyPct: 2.5,
     closingCostSellPct: 6.5,
-    capGainsExclusionUsd: 250_000,
     depreciableBasisPct: 80,
-    marginalTaxRate: 40,
-    capGainsRate: 30,
   },
   actorPolicyOptions: [
     { id: "owner_only", label: "Alpha only" },
@@ -205,7 +202,7 @@ test("normalized scenario input stays in nested domain sections", () => {
   assert.equal(scenario.identity.scenarioId, "scenario_1");
   assert.equal(scenario.propertyAndLocation.propertyId, "location_a_property");
   assert.equal(scenario.financing.financingMode, "fixed_30");
-  assert.equal(scenario.taxAccounting.marginalTaxRate, 40);
+  assert.equal(scenario.taxAccounting.closingCostBuyPct, 2.5);
   assert.equal(scenario.initialBalanceSheet.privateEquityUnits, 500);
   assert.equal(scenario.policies.privateEquitySalePolicy, "none");
   assert.equal(scenario.scenarioId, undefined);
@@ -224,7 +221,7 @@ test("section patch updates one nested domain section", () => {
   assert.equal(changed.financing.financingMode, "custom");
   assert.equal(changed.financing.downPaymentPct, 35);
   assert.equal(changed.identity.label, original.identity.label);
-  assert.equal(changed.taxAccounting.marginalTaxRate, original.taxAccounting.marginalTaxRate);
+  assert.equal(changed.taxAccounting.closingCostBuyPct, original.taxAccounting.closingCostBuyPct);
   assert.throws(() => patchScenarioInputSection(original, "unknown", {}), /Unknown Augur scenario input section/);
 });
 
@@ -255,9 +252,6 @@ test("scenario set request is canonical backend input after decamelizing", () =>
     taxAccounting: {
       closingCostBuyPct: 3.1,
       closingCostSellPct: 5.9,
-      capGainsExclusionUsd: 500_000,
-      marginalTaxRate: 37,
-      capGainsRate: 28,
     },
     initialBalanceSheet: {
       privateEquityUnits: 456,
@@ -311,11 +305,7 @@ test("scenario set request is canonical backend input after decamelizing", () =>
   assert.equal(firstScenario.rental_plan.management_fee_pct, 9.5);
   assert.equal(firstScenario.rental_plan.leasing_fee_pct, 50);
   assert.equal(purchaseEvent.hoa_monthly_usd, 321);
-  assert.deepEqual(firstScenario.tax_profile, {
-    marginal_tax_rate: 37,
-    cap_gains_rate: 28,
-    cap_gains_exclusion_usd: 500_000,
-  });
+  assert.equal(firstScenario.tax_profile, undefined);
   assert.deepEqual(firstScenario.transaction_costs, {
     closing_cost_buy_pct: 3.1,
     closing_cost_sell_pct: 5.9,
@@ -377,7 +367,6 @@ test("backend request mapper output is covered by generated OpenAPI schema", () 
     [schemaProperty(openApi, scenarioSchema, "property_selection"), scenario.property_selection, "property selection"],
     [schemaProperty(openApi, scenarioSchema, "financing"), scenario.financing, "financing"],
     [schemaProperty(openApi, scenarioSchema, "occupancy_plan"), scenario.occupancy_plan, "occupancy plan"],
-    [schemaProperty(openApi, scenarioSchema, "tax_profile"), scenario.tax_profile, "tax profile"],
     [schemaProperty(openApi, scenarioSchema, "transaction_costs"), scenario.transaction_costs, "transaction costs"],
     [
       schemaProperty(openApi, scenarioSchema, "property_assumptions"),
@@ -437,7 +426,7 @@ test("URL state round-trips rich scenario controls in camelCase", () => {
       customMortgageTermYears: 20,
     },
     taxAccounting: {
-      marginalTaxRate: 39,
+      closingCostBuyPct: 3.7,
     },
     occupancyAndRental: {
       vacancyPct: 7,
@@ -458,7 +447,7 @@ test("URL state round-trips rich scenario controls in camelCase", () => {
   assert.equal(decoded.scenarios[0].financing.downPaymentPct, 35);
   assert.equal(decoded.scenarios[0].financing.customMortgageRate, 7.125);
   assert.equal(decoded.scenarios[0].financing.customMortgageTermYears, 20);
-  assert.equal(decoded.scenarios[0].taxAccounting.marginalTaxRate, 39);
+  assert.equal(decoded.scenarios[0].taxAccounting.closingCostBuyPct, 3.7);
   assert.equal(decoded.scenarios[0].occupancyAndRental.vacancyPct, 7);
   assert.equal(decoded.scenarios[0].initialBalanceSheet.privateEquityUnits, 1_234);
   assert.equal(decoded.scenarios[0].policies.privateEquitySalePolicy, "liquid_net_worth_floor");

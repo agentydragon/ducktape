@@ -856,9 +856,6 @@ function ScenarioFinancingTaxPanel({ selection }) {
           ...customMortgageRows,
           ["Buy closing cost", fmtPct(taxAccounting.closingCostBuyPct / 100)],
           ["Sell closing cost", fmtPct(taxAccounting.closingCostSellPct / 100)],
-          ["Capital gains exclusion", fmtUsd(taxAccounting.capGainsExclusionUsd)],
-          ["Marginal tax rate", fmtPct(taxAccounting.marginalTaxRate / 100)],
-          ["Capital gains rate", fmtPct(taxAccounting.capGainsRate / 100)],
           ["Depreciable basis", fmtPct(propertyAssumptions.depreciableBasisPct / 100)],
         ]}
       />
@@ -1515,31 +1512,11 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
             onChange={(closingCostSellPct) => updateScenarioSection("taxAccounting", { closingCostSellPct })}
             suffix="%"
           />
-          <MoneyField
-            label="Capital gains exclusion"
-            step={50_000}
-            value={taxAccounting.capGainsExclusionUsd}
-            onChange={(capGainsExclusionUsd) => updateScenarioSection("taxAccounting", { capGainsExclusionUsd })}
-          />
           <NumberField
             label="Depreciable basis"
             step={1}
             value={propertyAssumptions.depreciableBasisPct}
             onChange={(depreciableBasisPct) => updateScenarioSection("propertyAssumptions", { depreciableBasisPct })}
-            suffix="%"
-          />
-          <NumberField
-            label="Marginal tax rate"
-            step={1}
-            value={taxAccounting.marginalTaxRate}
-            onChange={(marginalTaxRate) => updateScenarioSection("taxAccounting", { marginalTaxRate })}
-            suffix="%"
-          />
-          <NumberField
-            label="Capital gains rate"
-            step={1}
-            value={taxAccounting.capGainsRate}
-            onChange={(capGainsRate) => updateScenarioSection("taxAccounting", { capGainsRate })}
             suffix="%"
           />
         </ControlGrid>

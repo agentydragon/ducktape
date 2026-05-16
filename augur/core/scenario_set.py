@@ -677,9 +677,6 @@ class TaxProfile(ApiModel):
     annual_ordinary_income_usd: NonNegativeFloat = 0
     federal_standard_deduction_usd: NonNegativeFloat | None = None
     california_standard_deduction_usd: NonNegativeFloat | None = None
-    marginal_tax_rate: Percentage = 40
-    cap_gains_rate: Percentage = 30
-    cap_gains_exclusion_usd: NonNegativeFloat = 250_000
 
 
 class TransactionCosts(ApiModel):

@@ -831,8 +831,8 @@ class AccountingTraceBuilder:
                 )
             )
             for posting_index, (posting, amount_matrix) in enumerate(posting_amounts):
-                amount_usd = float(amount_matrix[rollout_index, month_position])
-                if amount_usd <= 0:
+                posting_amount_usd = float(amount_matrix[rollout_index, month_position])
+                if posting_amount_usd <= 0:
                     continue
                 chart_account = self._chart_account(posting)
                 self.postings.append(
@@ -843,7 +843,7 @@ class AccountingTraceBuilder:
                         month_index=month,
                         chart_account_id=chart_account.chart_account_id,
                         side=posting.side,
-                        amount_usd=amount_usd,
+                        amount_usd=posting_amount_usd,
                         liability_id=posting.liability_id,
                     )
                 )
@@ -1416,18 +1416,17 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                     remaining_basis_usd=remaining_private_equity_basis,
                     remaining_units=remaining_private_equity_units,
                     remaining_fraction=remaining_private_equity_fraction,
-                    cap_gains_rate_pct=0.0,
                 )
                 if sale_instruction.proceeds_destination is AssetType.GENERIC_SP500_STOCK:
                     remaining_sp500_units = remaining_sp500_units + np.divide(
-                        sale_application.after_tax_proceeds_usd,
+                        sale_application.sale_usd,
                         sp500_multiplier,
-                        out=np.zeros_like(sale_application.after_tax_proceeds_usd),
+                        out=np.zeros_like(sale_application.sale_usd),
                         where=sp500_multiplier > 0,
                     )
-                    remaining_sp500_basis = remaining_sp500_basis + sale_application.after_tax_proceeds_usd
+                    remaining_sp500_basis = remaining_sp500_basis + sale_application.sale_usd
                 else:
-                    current_cash = current_cash + sale_application.after_tax_proceeds_usd
+                    current_cash = current_cash + sale_application.sale_usd
                 private_equity_sale_action_records.append(
                     PrivateEquitySaleActionRecord(
                         month_position=month,
@@ -1443,7 +1442,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                 private_equity_sale_taxable_gain_month = (
                     private_equity_sale_taxable_gain_month + sale_application.taxable_gain_usd
                 )
-                private_equity_sale_tax_month = private_equity_sale_tax_month + sale_application.estimated_tax_usd
                 continue
             if isinstance(policy, CheckingFloorSellPublicStockPolicy):
                 sp500_sale_instruction = checking_floor_sell_public_stock_instruction(
@@ -2989,9 +2987,9 @@ def _record_private_equity_sale_actions(
     month_index: int,
     instruction: PrivateEquitySaleInstructionBatch,
     sale_application: PrivateEquitySaleApplication,
-    estimated_tax_usd: np.ndarray | None = None,
+    estimated_tax_usd: np.ndarray,
 ) -> None:
-    sale_tax = estimated_tax_usd if estimated_tax_usd is not None else sale_application.estimated_tax_usd
+    sale_tax = estimated_tax_usd
     actions.extend(
         SellPrivateEquityAction(
             rollout_index=rollout_index,

@@ -204,8 +204,6 @@ class PrivateEquitySaleApplication:
     sale_usd: np.ndarray
     basis_usd: np.ndarray
     taxable_gain_usd: np.ndarray
-    estimated_tax_usd: np.ndarray
-    after_tax_proceeds_usd: np.ndarray
     sold_units: np.ndarray
     sold_fraction: np.ndarray
     remaining_units: np.ndarray
@@ -733,7 +731,6 @@ def apply_private_equity_sale_instruction(
     remaining_basis_usd: np.ndarray,
     remaining_units: np.ndarray,
     remaining_fraction: np.ndarray,
-    cap_gains_rate_pct: float,
 ) -> PrivateEquitySaleApplication:
     sale_usd = np.minimum(instruction.requested_amount_usd, opportunity.sale_opportunity_value_usd)
     sold_fraction = np.divide(
@@ -744,8 +741,9 @@ def apply_private_equity_sale_instruction(
     )
     basis_usd = remaining_basis_usd * sold_fraction
     taxable_gain_usd = np.maximum(0.0, sale_usd - basis_usd)
-    estimated_tax_usd = taxable_gain_usd * cap_gains_rate_pct / 100
-    after_tax_proceeds_usd = np.maximum(0.0, sale_usd - estimated_tax_usd)
+    # Sale-tax computation is owned by annual_tax.annual_sale_tax_allocation
+    # (bracket-aware federal + California). The sale handler reports gross
+    # proceeds; the annual-tax obligation path settles the tax cash demand.
     sold_units = remaining_units * sold_fraction
     destination_role = (
         ChartAccountRole.PUBLIC_SECURITY
@@ -762,16 +760,7 @@ def apply_private_equity_sale_instruction(
             description="private equity sale",
             postings=(
                 PostingBatch(
-                    role=destination_role,
-                    side=PostingSide.DEBIT,
-                    amount_usd=after_tax_proceeds_usd,
-                    actor_id=instruction.actor_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.TAX_EXPENSE,
-                    side=PostingSide.DEBIT,
-                    amount_usd=estimated_tax_usd,
-                    actor_id=instruction.actor_id,
+                    role=destination_role, side=PostingSide.DEBIT, amount_usd=sale_usd, actor_id=instruction.actor_id
                 ),
                 PostingBatch(
                     role=ChartAccountRole.PRIVATE_EQUITY,
@@ -786,8 +775,6 @@ def apply_private_equity_sale_instruction(
         sale_usd=sale_usd,
         basis_usd=basis_usd,
         taxable_gain_usd=taxable_gain_usd,
-        estimated_tax_usd=estimated_tax_usd,
-        after_tax_proceeds_usd=after_tax_proceeds_usd,
         sold_units=sold_units,
         sold_fraction=sold_fraction,
         remaining_units=np.maximum(0.0, remaining_units - sold_units),

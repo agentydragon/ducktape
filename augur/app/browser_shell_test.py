@@ -248,15 +248,19 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     page.on("pageerror", lambda error: page_errors.append(error.message))
     page.on(
         "console",
-        lambda message: console_errors.append(message.text)
-        if message.type == "error" and "Failed to load resource" not in message.text
-        else None,
+        lambda message: (
+            console_errors.append(message.text)
+            if message.type == "error" and "Failed to load resource" not in message.text
+            else None
+        ),
     )
     page.on(
         "response",
-        lambda response: bad_responses.append(f"{response.status} {response.url}")
-        if response.url.startswith(augur_server) and response.status >= 400
-        else None,
+        lambda response: (
+            bad_responses.append(f"{response.status} {response.url}")
+            if response.url.startswith(augur_server) and response.status >= 400
+            else None
+        ),
     )
 
     def record_request(request: Request) -> None:
@@ -320,7 +324,6 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     page.get_by_label("Down payment").fill("40")
     page.get_by_label("Custom mortgage rate").fill("7.35")
     page.get_by_label("Vacancy", exact=True).fill("9")
-    page.get_by_label("Marginal tax rate").fill("37")
     page.get_by_label(re.compile("Private .* units")).fill("1000")
     page.get_by_role("radio", name=re.compile("Sell at liquid-worth floor")).click()
     page.get_by_label("Liquid worth floor").fill("250000")
@@ -353,7 +356,6 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     assert rich_scenario["financing"]["down_payment_pct"] == 40
     assert rich_scenario["financing"]["custom_mortgage_rate"] == 7.35
     assert rich_scenario["occupancy_and_rental"]["vacancy_pct"] == 9
-    assert rich_scenario["tax_accounting"]["marginal_tax_rate"] == 37
     assert rich_scenario["initial_balance_sheet"]["private_equity_units"] == 1000
     assert rich_scenario["policies"]["private_equity_sale_policy"] == "liquid_net_worth_floor"
     assert rich_scenario["policies"]["private_equity_liquid_net_worth_floor_usd"] == 250000

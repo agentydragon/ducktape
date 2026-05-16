@@ -57,8 +57,6 @@ class KnobsConfig(ApiModel):
     sp500_rate: float
     maintenance_pct: float
     owner_occupancy_years: float
-    marginal_tax_rate: float
-    cap_gains_rate: float
     inflation: float
     vacancy_pct: float
     mgmt_pct: float
@@ -70,7 +68,6 @@ class KnobsConfig(ApiModel):
     insurance_annual_usd: float
     closing_cost_buy_pct: float
     closing_cost_sell_pct: float
-    cap_gains_exclusion_usd: float
     depreciable_basis_pct: float
     financing_mode: Literal["cash", "fixed_30", "fixed_15", "custom"]
     occupancy_type: Literal["primary_residence", "second_home", "investment"]

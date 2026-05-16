@@ -16,6 +16,7 @@ from augur.core.scenario_set import (
     RentalMode,
     RentalPlan,
     Scenario,
+    TaxFilingStatus,
     TaxProfile,
     TransactionCosts,
     WholePropertyRentalPlan,
@@ -50,7 +51,7 @@ def sale_scenario(
         ),
         rental_plan=rental_plan or NotRentedRentalPlan(),
         property_assumptions=property_assumptions or PropertyAssumptions(),
-        tax_profile=tax_profile or TaxProfile(cap_gains_exclusion_usd=0, cap_gains_rate=20),
+        tax_profile=tax_profile or TaxProfile(filing_status=TaxFilingStatus.MARRIED_FILING_SEPARATELY),
         transaction_costs=transaction_costs or TransactionCosts(closing_cost_buy_pct=0, closing_cost_sell_pct=5),
     )
 
@@ -88,7 +89,7 @@ def test_property_sale_recaptures_rental_depreciation_before_capital_gains() -> 
                 rental_mode=RentalMode.RENT_WHOLE_PROPERTY, start_month=1, end_month=3, monthly_rent_usd=0
             ),
             property_assumptions=PropertyAssumptions(depreciable_basis_pct=100),
-            tax_profile=TaxProfile(marginal_tax_rate=25, cap_gains_rate=15, cap_gains_exclusion_usd=250_000),
+            tax_profile=TaxProfile(filing_status=TaxFilingStatus.SINGLE),
             transaction_costs=TransactionCosts(closing_cost_buy_pct=0, closing_cost_sell_pct=0),
         ),
         bundle,

@@ -46,13 +46,7 @@ const SCENARIO_INPUT_SECTION_FIELDS = Object.freeze({
     "roomVacancyPct",
   ]),
   propertyAssumptions: Object.freeze(["maintenancePct", "insuranceAnnualUsd", "depreciableBasisPct"]),
-  taxAccounting: Object.freeze([
-    "closingCostBuyPct",
-    "closingCostSellPct",
-    "capGainsExclusionUsd",
-    "marginalTaxRate",
-    "capGainsRate",
-  ]),
+  taxAccounting: Object.freeze(["closingCostBuyPct", "closingCostSellPct"]),
   initialBalanceSheet: Object.freeze(["initialCheckingUsd", "startingPortfolioUsd", "privateEquityUnits"]),
   policies: Object.freeze([
     "liquidReservePolicy",
@@ -221,9 +215,6 @@ export function createScenarioInput(bootstrap, overrides = {}) {
     taxAccounting: {
       closingCostBuyPct: finiteNumber(overrides.closingCostBuyPct, defaultKnobs.closingCostBuyPct ?? 0),
       closingCostSellPct: finiteNumber(overrides.closingCostSellPct, defaultKnobs.closingCostSellPct ?? 0),
-      capGainsExclusionUsd: finiteNumber(overrides.capGainsExclusionUsd, defaultKnobs.capGainsExclusionUsd ?? 0),
-      marginalTaxRate: finiteNumber(overrides.marginalTaxRate, defaultKnobs.marginalTaxRate ?? 0),
-      capGainsRate: finiteNumber(overrides.capGainsRate, defaultKnobs.capGainsRate ?? 0),
     },
     initialBalanceSheet: {
       initialCheckingUsd: finiteNumber(overrides.initialCheckingUsd, bootstrap?.defaultInitialCheckingUsd ?? 25_000),
@@ -383,9 +374,6 @@ function normalizeScenarioInput(scenario, bootstrap, index, existingIds) {
     taxAccounting: {
       closingCostBuyPct: finiteNumber(taxAccounting.closingCostBuyPct, defaultTaxAccounting.closingCostBuyPct),
       closingCostSellPct: finiteNumber(taxAccounting.closingCostSellPct, defaultTaxAccounting.closingCostSellPct),
-      capGainsExclusionUsd: finiteNumber(taxAccounting.capGainsExclusionUsd, defaultTaxAccounting.capGainsExclusionUsd),
-      marginalTaxRate: finiteNumber(taxAccounting.marginalTaxRate, defaultTaxAccounting.marginalTaxRate),
-      capGainsRate: finiteNumber(taxAccounting.capGainsRate, defaultTaxAccounting.capGainsRate),
     },
     initialBalanceSheet: {
       initialCheckingUsd: finiteNumber(
@@ -658,11 +646,6 @@ function scenarioToBackendScenario(scenario, bootstrap) {
       managementFeePct: occupancyAndRental.managementFeePct,
       leasingFeePct: occupancyAndRental.leasingFeePct,
     },
-    taxProfile: {
-      marginalTaxRate: taxAccounting.marginalTaxRate,
-      capGainsRate: taxAccounting.capGainsRate,
-      capGainsExclusionUsd: taxAccounting.capGainsExclusionUsd,
-    },
     transactionCosts: {
       closingCostBuyPct: taxAccounting.closingCostBuyPct,
       closingCostSellPct: taxAccounting.closingCostSellPct,
@@ -749,9 +732,6 @@ function serializableScenario(scenario) {
     taxAccounting: {
       closingCostBuyPct: taxAccounting.closingCostBuyPct,
       closingCostSellPct: taxAccounting.closingCostSellPct,
-      capGainsExclusionUsd: taxAccounting.capGainsExclusionUsd,
-      marginalTaxRate: taxAccounting.marginalTaxRate,
-      capGainsRate: taxAccounting.capGainsRate,
     },
     initialBalanceSheet: {
       initialCheckingUsd: initialBalanceSheet.initialCheckingUsd,

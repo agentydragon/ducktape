@@ -336,7 +336,6 @@ def test_private_equity_fixed_rule_uses_opportunity_and_records_ledger() -> None
         remaining_basis_usd=np.array([80_000.0, 80_000.0]),
         remaining_units=np.array([100.0, 100.0]),
         remaining_fraction=np.array([1.0, 1.0]),
-        cap_gains_rate_pct=20,
     )
 
     assert instruction.proceeds_destination is AccountType.CHECKING
@@ -352,8 +351,6 @@ def test_private_equity_fixed_rule_uses_opportunity_and_records_ledger() -> None
     np.testing.assert_allclose(result.sale_usd, [0.0, 50_000.0])
     np.testing.assert_allclose(result.basis_usd, [0.0, 20_000.0])
     np.testing.assert_allclose(result.taxable_gain_usd, [0.0, 30_000.0])
-    np.testing.assert_allclose(result.estimated_tax_usd, [0.0, 6_000.0])
-    np.testing.assert_allclose(result.after_tax_proceeds_usd, [0.0, 44_000.0])
     np.testing.assert_allclose(result.sold_units, [0.0, 25.0])
     np.testing.assert_allclose(result.sold_fraction, [0.0, 0.25])
     np.testing.assert_allclose(result.remaining_units, [100.0, 75.0])
@@ -366,10 +363,7 @@ def test_private_equity_fixed_rule_uses_opportunity_and_records_ledger() -> None
         _posting_amount(journal, ChartAccountRole.PRIVATE_EQUITY, PostingSide.CREDIT), [0.0, 50_000.0]
     )
     np.testing.assert_allclose(
-        _posting_amount(journal, ChartAccountRole.TAX_EXPENSE, PostingSide.DEBIT), [0.0, 6_000.0]
-    )
-    np.testing.assert_allclose(
-        _posting_amount(journal, ChartAccountRole.CHECKING_CASH, PostingSide.DEBIT), [0.0, 44_000.0]
+        _posting_amount(journal, ChartAccountRole.CHECKING_CASH, PostingSide.DEBIT), [0.0, 50_000.0]
     )
 
 

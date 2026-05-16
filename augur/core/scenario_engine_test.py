@@ -586,7 +586,7 @@ def test_capital_gains_exclusion_offsets_property_sale_gain() -> None:
                 },
                 financing={"financing_mode": "cash"},
                 transaction_costs={"closing_cost_buy_pct": 0, "closing_cost_sell_pct": 0},
-                tax_profile={"cap_gains_exclusion_usd": 250_000, "cap_gains_rate": 30},
+                tax_profile={"filing_status": "single"},
                 events=[
                     {"event_id": "sale", "event_type": "property_sale", "month_index": 3, "property_id": "sf_ashton"}
                 ],
@@ -618,12 +618,7 @@ def test_rental_depreciation_recaptures_on_sale() -> None:
                 financing={"financing_mode": "cash"},
                 transaction_costs={"closing_cost_buy_pct": 0, "closing_cost_sell_pct": 0},
                 property_assumptions={"depreciable_basis_pct": 100},
-                tax_profile={
-                    "annual_ordinary_income_usd": 100_000,
-                    "marginal_tax_rate": 25,
-                    "cap_gains_rate": 15,
-                    "cap_gains_exclusion_usd": 250_000,
-                },
+                tax_profile={"annual_ordinary_income_usd": 100_000, "filing_status": "single"},
                 rental_plan={
                     "rental_mode": "rent_whole_property",
                     "start_month": 1,

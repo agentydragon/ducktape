@@ -7,7 +7,14 @@ import numpy as np
 from augur.core.local_regulation import LocalRegulation
 from augur.core.market_bundle import MarketBundle
 from augur.core.property_depreciation import monthly_property_depreciation_usd
-from augur.core.scenario_set import PropertySaleEvent, Scenario
+from augur.core.scenario_set import PropertySaleEvent, Scenario, TaxFilingStatus
+
+PRIMARY_RESIDENCE_CAPITAL_GAIN_EXCLUSION_USD: dict[TaxFilingStatus, float] = {
+    TaxFilingStatus.SINGLE: 250_000.0,
+    TaxFilingStatus.HEAD_OF_HOUSEHOLD: 250_000.0,
+    TaxFilingStatus.MARRIED_FILING_JOINTLY: 500_000.0,
+    TaxFilingStatus.MARRIED_FILING_SEPARATELY: 0.0,
+}
 
 
 @dataclass(frozen=True)
@@ -133,7 +140,8 @@ def property_disposition_arrays(
     realized_gain = np.maximum(0.0, sale_gross - sale_closing_cost - adjusted_basis) * sale_mask
     depreciation_recapture = np.minimum(accumulated_depreciation_at_sale, realized_gain)
     capital_gain = np.maximum(0.0, realized_gain - depreciation_recapture)
-    capital_gain_exclusion = np.minimum(capital_gain, tax_profile.cap_gains_exclusion_usd)
+    exclusion_cap = PRIMARY_RESIDENCE_CAPITAL_GAIN_EXCLUSION_USD[tax_profile.filing_status]
+    capital_gain_exclusion = np.minimum(capital_gain, exclusion_cap)
     taxable_capital_gain = np.maximum(0.0, capital_gain - capital_gain_exclusion)
     taxable_gain = depreciation_recapture + taxable_capital_gain
     # The engine owns sale-tax computation via annual_tax.annual_sale_tax_allocation

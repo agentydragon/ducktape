@@ -193,9 +193,8 @@ def test_scenario_set_rejects_initial_liabilities(liability_type: str) -> None:
 def test_scenario_set_accepts_typed_scenario_economic_assumptions() -> None:
     body = _scenario_set_body("sf_house")
     body["scenarios"][0]["tax_profile"] = {
-        "marginal_tax_rate": 37,
-        "cap_gains_rate": 28,
-        "cap_gains_exclusion_usd": 500_000,
+        "filing_status": "married_filing_jointly",
+        "annual_ordinary_income_usd": 250_000,
     }
     body["scenarios"][0]["transaction_costs"] = {"closing_cost_buy_pct": 2.5, "closing_cost_sell_pct": 6.5}
     body["scenarios"][0]["property_assumptions"] = {
@@ -207,8 +206,8 @@ def test_scenario_set_accepts_typed_scenario_economic_assumptions() -> None:
     scenario_set = ScenarioSet.model_validate(body)
 
     scenario = scenario_set.scenarios[0]
-    assert scenario.tax_profile.marginal_tax_rate == 37
-    assert scenario.tax_profile.cap_gains_exclusion_usd == 500_000
+    assert scenario.tax_profile.filing_status.value == "married_filing_jointly"
+    assert scenario.tax_profile.annual_ordinary_income_usd == 250_000
     assert scenario.transaction_costs.closing_cost_sell_pct == 6.5
     assert scenario.property_assumptions.insurance_annual_usd == 1800
 
