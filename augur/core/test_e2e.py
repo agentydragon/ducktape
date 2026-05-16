@@ -569,16 +569,9 @@ def test_partner_equity_accrual_records_contributions_and_claims() -> None:
             ChartAccountRole.OWNER_PRINCIPAL_CREDIT,
         }
     ]
-    assert {
-        account_by_id[posting.chart_account_id].property_id for posting in partner_postings
-    } == {"test_property"}
+    assert {account_by_id[posting.chart_account_id].property_id for posting in partner_postings} == {"test_property"}
     assert (
-        len(
-            [
-                posting
-                for posting in result.postings(role=ChartAccountRole.PARTNER_PRINCIPAL_CREDIT, side=PostingSide.DEBIT)
-            ]
-        )
+        len(list(result.postings(role=ChartAccountRole.PARTNER_PRINCIPAL_CREDIT, side=PostingSide.DEBIT)))
         == horizon_months
     )
     assert all(
@@ -924,12 +917,7 @@ def test_simulate_set_response_serializes_sale_actions_with_tax_detail() -> None
     assert set(actions) == {"sell_sp500", "sell_private_equity", "settle_property_sale"}
     account_by_id = {account["chart_account_id"]: account for account in result["chart_accounts"]}
     posting_roles = {account_by_id[posting["chart_account_id"]]["role"] for posting in result["postings"]}
-    assert {
-        "public_security",
-        "private_equity",
-        "checking_cash",
-        "tax_expense",
-    } <= posting_roles
+    assert {"public_security", "private_equity", "checking_cash", "tax_expense"} <= posting_roles
     assert {"sell_public_stock", "private_equity_sale"} <= {
         decision["decision_type"] for decision in result["policy_decisions"]
     }
@@ -1014,16 +1002,12 @@ def test_whole_property_rental_posts_income_fees_and_cash_flow() -> None:
 
     result = _run_scenario(scenario, horizon_months=3)
 
-    expected_gross_rent = 3_000
-    expected_vacancy_loss = expected_gross_rent * 0.05
-    expected_rental_income = expected_gross_rent - expected_vacancy_loss
+    expected_rental_income = 3_000 * (1 - 0.05)
     expected_management_fee = expected_rental_income * 0.08
     expected_property_tax = 120_000 * 0.011 / 12
     expected_net_property_cash_flow = expected_rental_income - expected_management_fee - expected_property_tax
     rollout = result.rollout(0)
-    assert_allclose(rollout.series("rental_gross_income_usd")[0], 0)
-    assert_allclose(rollout.series("rental_gross_income_usd")[1], expected_gross_rent)
-    assert_allclose(rollout.series("rental_vacancy_loss_usd")[1], expected_vacancy_loss)
+    assert_allclose(rollout.series("rental_income_usd")[0], 0)
     assert_allclose(rollout.series("rental_income_usd")[1], expected_rental_income)
     assert_allclose(rollout.series("rental_management_fee_usd")[1], expected_management_fee)
     assert_allclose(rollout.series("property_tax_usd")[1], expected_property_tax)
@@ -1032,12 +1016,8 @@ def test_whole_property_rental_posts_income_fees_and_cash_flow() -> None:
     assert_allclose(rollout.series("cash_usd")[0], 130_000)
     assert_allclose(rollout.series("cash_usd")[1], 130_000 + expected_net_property_cash_flow)
     assert_allclose(
-        _posting_matrix(result, role=ChartAccountRole.RENTAL_GROSS_INCOME, side=PostingSide.CREDIT),
-        result.matrix("rental_gross_income_usd"),
-    )
-    assert_allclose(
-        _posting_matrix(result, role=ChartAccountRole.RENTAL_VACANCY_LOSS, side=PostingSide.DEBIT),
-        result.matrix("rental_vacancy_loss_usd"),
+        _posting_matrix(result, role=ChartAccountRole.RENTAL_INCOME, side=PostingSide.CREDIT),
+        result.matrix("rental_income_usd"),
     )
     assert_allclose(
         _posting_matrix(
@@ -1134,15 +1114,11 @@ def test_checking_floor_policy_sells_sp500_to_restore_cash_floor() -> None:
         result.matrix("generic_sp500_sale_usd"),
     )
     assert_allclose(
-        _lot_disposition_matrix(
-            result, asset_class=LotAssetClass.PUBLIC_SECURITY, amount_field="cost_basis_usd"
-        ),
+        _lot_disposition_matrix(result, asset_class=LotAssetClass.PUBLIC_SECURITY, amount_field="cost_basis_usd"),
         result.matrix("generic_sp500_sale_basis_usd"),
     )
     assert_allclose(
-        _lot_disposition_matrix(
-            result, asset_class=LotAssetClass.PUBLIC_SECURITY, amount_field="tax_expense_usd"
-        ),
+        _lot_disposition_matrix(result, asset_class=LotAssetClass.PUBLIC_SECURITY, amount_field="tax_expense_usd"),
         result.matrix("generic_sp500_sale_tax_usd"),
     )
     assert_allclose(

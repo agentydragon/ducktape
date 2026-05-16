@@ -2042,8 +2042,6 @@ function ScenarioMonthlyLedger({ scenario, accountingDetail, onSelectedRolloutIn
       label: "Rental flow",
       summary: ["netPropertyCashFlowUsd", "Property cash flow", fmtUsd],
       details: [
-        ["rentalGrossIncomeUsd", "Rent gross", fmtUsd],
-        ["rentalVacancyLossUsd", "Vacancy", fmtUsd],
         ["rentalIncomeUsd", "Rent income", fmtUsd],
         ["rentalManagementFeeUsd", "Mgmt fee", fmtUsd],
         ["rentalLeasingFeeUsd", "Leasing fee", fmtUsd],

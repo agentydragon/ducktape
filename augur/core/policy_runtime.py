@@ -4,12 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from augur.core.accounting import (
-    AccountingCauseType,
-    ChartAccountRole,
-    JournalEntryType,
-    PostingSide,
-)
+from augur.core.accounting import AccountingCauseType, ChartAccountRole, JournalEntryType, PostingSide
 from augur.core.scenario_set import (
     AccountType,
     AssetType,
@@ -167,8 +162,6 @@ class PropertyOperatingCashFlowApplication:
     hoa_usd: np.ndarray
     insurance_usd: np.ndarray
     maintenance_usd: np.ndarray
-    rental_gross_income_usd: np.ndarray
-    rental_vacancy_loss_usd: np.ndarray
     rental_income_usd: np.ndarray
     rental_management_fee_usd: np.ndarray
     rental_leasing_fee_usd: np.ndarray
@@ -556,8 +549,6 @@ def apply_property_operating_cash_flows(
     hoa_usd: np.ndarray,
     insurance_usd: np.ndarray,
     maintenance_usd: np.ndarray,
-    rental_gross_income_usd: np.ndarray,
-    rental_vacancy_loss_usd: np.ndarray,
     rental_income_usd: np.ndarray,
     rental_management_fee_usd: np.ndarray,
     rental_leasing_fee_usd: np.ndarray,
@@ -587,15 +578,9 @@ def apply_property_operating_cash_flows(
                     actor_id=actor_id,
                 ),
                 PostingBatch(
-                    role=ChartAccountRole.RENTAL_VACANCY_LOSS,
-                    side=PostingSide.DEBIT,
-                    amount_usd=rental_vacancy_loss_usd,
-                    actor_id=actor_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.RENTAL_GROSS_INCOME,
+                    role=ChartAccountRole.RENTAL_INCOME,
                     side=PostingSide.CREDIT,
-                    amount_usd=rental_gross_income_usd,
+                    amount_usd=rental_income_usd,
                     actor_id=actor_id,
                 ),
                 PostingBatch(
@@ -604,7 +589,9 @@ def apply_property_operating_cash_flows(
                     amount_usd=property_tax_usd,
                     actor_id=actor_id,
                 ),
-                PostingBatch(role=ChartAccountRole.HOA_EXPENSE, side=PostingSide.DEBIT, amount_usd=hoa_usd, actor_id=actor_id),
+                PostingBatch(
+                    role=ChartAccountRole.HOA_EXPENSE, side=PostingSide.DEBIT, amount_usd=hoa_usd, actor_id=actor_id
+                ),
                 PostingBatch(
                     role=ChartAccountRole.INSURANCE_EXPENSE,
                     side=PostingSide.DEBIT,
@@ -645,8 +632,6 @@ def apply_property_operating_cash_flows(
         hoa_usd=hoa_usd,
         insurance_usd=insurance_usd,
         maintenance_usd=maintenance_usd,
-        rental_gross_income_usd=rental_gross_income_usd,
-        rental_vacancy_loss_usd=rental_vacancy_loss_usd,
         rental_income_usd=rental_income_usd,
         rental_management_fee_usd=rental_management_fee_usd,
         rental_leasing_fee_usd=rental_leasing_fee_usd,

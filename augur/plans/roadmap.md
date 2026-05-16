@@ -410,15 +410,28 @@ Status:
 
 - First slice landed for annual tax obligations: unsettled required obligations
   produce settlement/failure rows and `RolloutStatusType.FAILED`; sale policy can
-  rescue the obligation. Remaining work is to generalize the shape.
+  rescue the obligation.
+- Property-sale tax now flows through the same bracket-aware obligation path
+  (2026-05-16). `property_disposition_arrays` reports pre-tax proceeds only;
+  the engine drives sale tax exclusively through `annual_sale_tax_allocation`,
+  so stock-sale, PE-sale, and property-sale tax share one settlement pipeline.
 
 Scope:
 
 - Extend the first-class obligation/settlement shape from annual taxes to
-  mortgage and other required cash demands.
-- Preserve `cash_negative` warning semantics for unexplained negative cash while
-  using `failed` rollout status for required obligations that cannot be settled
-  after policy funding attempts.
+  mortgage and other required cash demands. Mortgage is the natural next
+  slice: today `apply_mortgage_payment` debits cash unconditionally;
+  insufficient cash silently goes negative instead of raising an obligation,
+  letting actor policy choose a funding source, and failing the rollout when
+  no policy can cover it.
+- Preserve `cash_negative` warning semantics for unexplained negative cash
+  while using `failed` rollout status for required obligations that cannot
+  be settled after policy funding attempts.
+- Move sale-tax obligation timing off the source month toward realistic
+  filing/estimated-payment dates. Today obligations settle in the same
+  month they accrue, which mimics `allocated_to_source_month` behavior;
+  the replacement should accrue in-period and settle at year-end (or
+  estimated quarterly) with the same funding-policy escape hatch.
 - Add tests for mortgage/payment shortfall, sale-policy rescue, explicit
   failure/default semantics, and continued-vs-terminated projection behavior.
 

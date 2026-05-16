@@ -1087,12 +1087,9 @@ def test_rental_income_and_carrying_costs_feed_cash_flow() -> None:
 
     result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(rent_path=(1.0, 1.0, 1.1, 1.2)))
 
-    expected_month_1_gross = 2_000
-    expected_month_1_income = expected_month_1_gross * 0.9
+    expected_month_1_income = 2_000 * 0.9
     expected_month_1_management = expected_month_1_income * 0.05
-    expected_month_1_leasing = expected_month_1_gross * 0.12 / 12
-    assert_allclose(result.rental_gross_income_usd[:, 1], expected_month_1_gross)
-    assert_allclose(result.rental_vacancy_loss_usd[:, 1], 200)
+    expected_month_1_leasing = expected_month_1_income * 0.12 / 12
     assert_allclose(result.rental_income_usd[:, 1], expected_month_1_income)
     assert_allclose(result.rental_management_fee_usd[:, 1], expected_month_1_management)
     assert_allclose(result.rental_leasing_fee_usd[:, 1], expected_month_1_leasing)

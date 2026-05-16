@@ -72,7 +72,10 @@ def test_property_sale_combines_closing_costs_local_transfer_tax_and_debt_payoff
     np.testing.assert_allclose(sale.property_sale_adjusted_basis_usd[:, 3], 100_000)
     np.testing.assert_allclose(sale.property_sale_capital_gain_usd[:, 3], 12_800)
     np.testing.assert_allclose(sale.taxable_property_capital_gain_usd[:, 3], 12_800)
-    np.testing.assert_allclose(sale.property_sale_net_proceeds_usd[:, 3], 120_000 - 7_200 - 40_000 - 2_560)
+    # Disposition reports pre-tax proceeds. Sale tax accrues through the engine's
+    # annual-tax obligation path.
+    np.testing.assert_allclose(sale.property_sale_net_proceeds_usd[:, 3], 120_000 - 7_200 - 40_000)
+    np.testing.assert_allclose(sale.property_sale_tax_usd[:, 3], 0)
     np.testing.assert_allclose(sale.sale_settlement.net_proceeds_usd, sale.property_sale_net_proceeds_usd)
     np.testing.assert_allclose(sale.net_property_sale_cash_flow_usd, sale.property_sale_net_proceeds_usd)
 
@@ -100,7 +103,9 @@ def test_property_sale_recaptures_rental_depreciation_before_capital_gains() -> 
     np.testing.assert_allclose(sale.property_sale_capital_gain_exclusion_usd[:, 3], 0, atol=1e-9)
     np.testing.assert_allclose(sale.taxable_property_capital_gain_usd[:, 3], 0)
     np.testing.assert_allclose(sale.taxable_property_gain_usd[:, 3], expected_depreciation)
-    np.testing.assert_allclose(sale.property_sale_tax_usd[:, 3], expected_depreciation * 0.25)
+    # Recapture rate is bracket-aware and applied by the engine's annual-tax path,
+    # not by property_disposition_arrays itself.
+    np.testing.assert_allclose(sale.property_sale_tax_usd[:, 3], 0)
 
 
 def test_property_without_sale_event_returns_zero_sale_cash_flow() -> None:

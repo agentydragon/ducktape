@@ -136,10 +136,11 @@ def property_disposition_arrays(
     capital_gain_exclusion = np.minimum(capital_gain, tax_profile.cap_gains_exclusion_usd)
     taxable_capital_gain = np.maximum(0.0, capital_gain - capital_gain_exclusion)
     taxable_gain = depreciation_recapture + taxable_capital_gain
-    recapture_rate = min(tax_profile.marginal_tax_rate, 38.3) / 100
-    capital_gains_rate = tax_profile.cap_gains_rate / 100
-    sale_tax = depreciation_recapture * recapture_rate + taxable_capital_gain * capital_gains_rate
-    net_proceeds = sale_gross - sale_closing_cost - debt_payoff - sale_tax
+    # The engine owns sale-tax computation via annual_tax.annual_sale_tax_allocation
+    # (bracket-aware federal + California). Disposition stops at pre-tax proceeds; the
+    # tax obligation accrues and settles through the annual-tax obligation path.
+    sale_tax = np.zeros_like(sale_gross)
+    net_proceeds = sale_gross - sale_closing_cost - debt_payoff
     return PropertyDispositionArrays(
         purchase_closing_cost_usd=purchase_closing_cost,
         property_depreciation_usd=property_depreciation,

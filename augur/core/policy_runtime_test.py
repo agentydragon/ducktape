@@ -158,8 +158,7 @@ def test_monthly_spend_instruction_applier_debits_cash_and_records_journal() -> 
         [100.0, 120.0, 150.0],
     )
     np.testing.assert_allclose(
-        _posting_amount(spend_journal, ChartAccountRole.CHECKING_CASH, PostingSide.CREDIT),
-        [100.0, 120.0, 150.0],
+        _posting_amount(spend_journal, ChartAccountRole.CHECKING_CASH, PostingSide.CREDIT), [100.0, 120.0, 150.0]
     )
 
 
@@ -229,8 +228,7 @@ def test_partner_contribution_instruction_applies_house_costs_and_principal_cred
         [0.0, 1_000.0, 2_000.0],
     )
     np.testing.assert_allclose(
-        _posting_amount(allocation, ChartAccountRole.PARTNER_UNALLOCATED_CLAIM, PostingSide.DEBIT),
-        [0.0, 0.0, 1_000.0],
+        _posting_amount(allocation, ChartAccountRole.PARTNER_UNALLOCATED_CLAIM, PostingSide.DEBIT), [0.0, 0.0, 1_000.0]
     )
 
 
@@ -271,8 +269,7 @@ def test_partner_ownership_accrual_applies_freeze_and_records_ledgers() -> None:
         [[0.0, 100.0, 100.0, 100.0]],
     )
     snapshot_shape = [
-        (snapshot.actor_id, snapshot.role, snapshot.counterparty_actor_id)
-        for snapshot in result.balance_snapshots
+        (snapshot.actor_id, snapshot.role, snapshot.counterparty_actor_id) for snapshot in result.balance_snapshots
     ]
     assert snapshot_shape == [
         ("beta", ChartAccountRole.PARTNER_EQUITY_LEDGER, "alpha"),
@@ -292,8 +289,6 @@ def test_property_operating_cash_flow_application_records_balanced_journal() -> 
         hoa_usd=np.array([0.0, 25.0]),
         insurance_usd=np.array([0.0, 50.0]),
         maintenance_usd=np.array([0.0, 75.0]),
-        rental_gross_income_usd=np.array([0.0, 2_000.0]),
-        rental_vacancy_loss_usd=np.array([0.0, 100.0]),
         rental_income_usd=np.array([0.0, 1_900.0]),
         rental_management_fee_usd=np.array([0.0, 152.0]),
         rental_leasing_fee_usd=np.array([0.0, 40.0]),
@@ -307,10 +302,7 @@ def test_property_operating_cash_flow_application_records_balanced_journal() -> 
     journal = result.journal_entries[0]
     assert journal.journal_entry_type is JournalEntryType.PROPERTY_OPERATING
     np.testing.assert_allclose(
-        _posting_amount(journal, ChartAccountRole.RENTAL_GROSS_INCOME, PostingSide.CREDIT), [0.0, 2_000.0]
-    )
-    np.testing.assert_allclose(
-        _posting_amount(journal, ChartAccountRole.RENTAL_VACANCY_LOSS, PostingSide.DEBIT), [0.0, 100.0]
+        _posting_amount(journal, ChartAccountRole.RENTAL_INCOME, PostingSide.CREDIT), [0.0, 1_900.0]
     )
     np.testing.assert_allclose(
         _posting_amount(journal, ChartAccountRole.CHECKING_CASH, PostingSide.DEBIT), [0.0, 1_900.0]

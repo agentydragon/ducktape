@@ -1,6 +1,6 @@
 # Augur TODO
 
-Last design scan: 2026-05-16.
+Last design scan: 2026-05-16. Last consolidation: 2026-05-16.
 
 This file tracks public, generic Augur backlog. Downstream repos should keep
 private composition, deployment, and user-/company-specific modeling assumptions
@@ -116,25 +116,39 @@ second ordered roadmap.
 
 ## Tax Follow-Ups
 
-- [ ] Continue the annual federal + California tax model beyond sale taxes: qualified dividends, short-term gains, capital losses, rental income, deductible expenses, passive-loss release, SALT/property-tax treatment, California conformity/non-conformity, and ordinary income schedules beyond one annual `TaxProfile` value.
-- [ ] Convert taxes into a ledger/liability workflow with payment timing instead of only allocating annual incremental tax back to sale months.
+- [ ] Continue the annual federal + California tax model beyond sale taxes:
+      qualified dividends, short-term gains, capital losses, rental income,
+      deductible expenses, passive-loss release, SALT/property-tax treatment,
+      California conformity/non-conformity, and ordinary income schedules
+      beyond one annual `TaxProfile` value.
+- [ ] Shift the existing sale-tax obligation from one-time settlement in the
+      sale month to realistic annual/quarterly estimated-payment liability
+      timing. The first slice (year-end `ObligationType.ANNUAL_TAX_PAYMENT`
+      with funding policy and failure on shortfall) drives stock, PE, and
+      property sale tax through the same path; the remaining work is moving
+      due dates off the source month and onto realistic filing/estimated
+      dates, and replacing `allocated_to_source_month` array provenance.
 - [ ] Prefer yearly income/tax-lot ledgers with explicit tax settlement near
       realistic payment dates over trying to account for every tax effect at
       the moment income or a gain occurs. The settlement workflow should also
       model cash management: pay from cash when possible, otherwise invoke an
       explicit sale/financing policy to raise cash for the tax bill.
-- [ ] Draft taxes and mortgages as first-class obligations/cash demands rather
-      than arbitrary policy hooks. The accounting layer should emit obligations
-      with due dates and causes; actor policy should decide how to fund them;
-      simulator instructions should sell/borrow/use cash and resulting effects
-      should settle or fail the obligation. Rollout failure should hang off this
-      settlement result: obligation/cash demand -> policy funding instruction ->
-      accounting effect/settlement or failed obligation.
-- [ ] Keep stock-sale, PE-sale, and property-sale tax reconciliation in the Step 7 test set.
-- [ ] Replace user-entered flat marginal tax rates with bracket-aware tax
-      accounting. Asking for a single "marginal tax rate" is a symptom that the
-      model probably is not consistently computing which portions of income,
-      gains, deductions, and losses fall into which federal/state brackets.
+- [ ] Promote mortgage payments to the same first-class obligation/funding
+      flow as annual taxes. Today `apply_mortgage_payment` debits cash
+      unconditionally; insufficient cash silently goes negative instead of
+      raising an obligation, invoking a funding policy, and failing the
+      rollout when no policy can cover it. The natural pattern is the one
+      tax now uses (obligation -> funding decision -> settlement or failure).
+- [ ] Keep stock-sale, PE-sale, and property-sale tax reconciliation in the
+      Step 7 test set.
+- [ ] Remove the unused flat tax-rate fields. `TaxProfile.marginal_tax_rate`
+      and `cap_gains_rate` no longer drive any engine computation (the
+      bracket-aware annual-tax allocation owns federal + California for
+      capital gains and depreciation recapture). The fields are still in
+      the schema, browser state, and `apply_private_equity_sale_instruction`'s
+      `cap_gains_rate_pct` parameter (always passed `0.0`). Drop them across
+      schema, app catalog defaults, browser state, and the policy-runtime
+      signature in one atomic change.
 
 ## Reporting / UI Follow-Ups
 
@@ -169,8 +183,9 @@ second ordered roadmap.
       domain model still needs a pass over which mortgage products and override
       fields should exist at all.
 - [ ] Give room-rental vacancy a realistic default in fixtures and deployment
-      config. The visible/default value appears to be `0%`, which is not a
-      credible modeling default.
+      config. Vacancy now correctly models as a multiplier on rent collected
+      (no separate vacancy-loss debit account), so the default value should
+      represent an actually realistic occupancy assumption rather than `0%`.
 - [ ] Reorganize tax controls so capital-gains rates, exclusions, and other tax
       constants live together and apply consistently to stock, private-equity, and
       property-sale gains. Verify the current math before moving controls.

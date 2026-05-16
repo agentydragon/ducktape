@@ -107,7 +107,43 @@ hidden behind fallbacks.
    Proved safe by: a scenario with one of these positions now must either be
    rejected or change results in a tested, documented way.
 
-5. `PolicyContext` and dynamic metric access look like future scaffolding, not
+5. Vacancy was classified and posted as an expense. (Completed 2026-05-16)
+
+   The property-operating journal entry debited `RENTAL_VACANCY_LOSS` (an
+   account that fell through to `ChartAccountType.EXPENSE`) and credited a
+   gross-rent income account, with cash debited for the net. That treated
+   "rooms not rented" as an outflow, when it is just the absence of a rent
+   credit.
+
+   Replaced with: vacancy is now a multiplier on rent collected. The journal
+   credits a single `RENTAL_INCOME` (income) account with the actual rent
+   received and debits cash with the same amount. `RENTAL_GROSS_INCOME` and
+   `RENTAL_VACANCY_LOSS` chart-account roles and the matching `ReportMetric`
+   entries are gone; `vacancy_pct` / `room_vacancy_pct` stay as multiplier
+   knobs on the rental plan. Leasing fees now scale with actual rent
+   collected rather than gross potential, consistent with the multiplier
+   framing.
+
+6. Property-sale tax was duplicated through a flat-rate path. (Completed 2026-05-16)
+
+   `property_sale.py` computed `sale_tax` from `tax_profile.marginal_tax_rate`
+   (capped at 38.3%) and `tax_profile.cap_gains_rate`, fed it into
+   `disposition.net_proceeds`, and then `scenario_engine.py` recomputed the
+   right value via `annual_sale_tax_allocation` (bracket-aware federal + CA),
+   reconciling the difference through `tax_cash_adjustment` and
+   `obligation_tax_due`. The flat-rate value was effectively ignored for the
+   reported `property_sale_net_proceeds_usd` but still leaked into the cash
+   reconciliation.
+
+   Replaced with: `property_disposition_arrays` now reports pre-tax proceeds
+   only (`property_sale_tax_usd` is zero in the disposition; `net_proceeds =
+gross - closing - debt`). The engine drives sale tax exclusively through
+   the bracket-aware annual-tax obligation path that already settles
+   stock-sale and PE-sale tax, so all three sale types now share one
+   pipeline. `TaxProfile.marginal_tax_rate` / `cap_gains_rate` are no longer
+   consumed by the engine; see TODO for their schema-level removal.
+
+7. `PolicyContext` and dynamic metric access look like future scaffolding, not
    current primitives.
 
    Files/functions: `PolicyContext` is defined at

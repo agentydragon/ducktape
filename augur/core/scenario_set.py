@@ -121,8 +121,6 @@ class ReportMetric(StrEnum):
     HOA_USD = "hoa_usd"
     INSURANCE_USD = "insurance_usd"
     MAINTENANCE_USD = "maintenance_usd"
-    RENTAL_GROSS_INCOME_USD = "rental_gross_income_usd"
-    RENTAL_VACANCY_LOSS_USD = "rental_vacancy_loss_usd"
     RENTAL_INCOME_USD = "rental_income_usd"
     RENTAL_MANAGEMENT_FEE_USD = "rental_management_fee_usd"
     RENTAL_LEASING_FEE_USD = "rental_leasing_fee_usd"

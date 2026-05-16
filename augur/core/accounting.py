@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 from enum import StrEnum
-from typing import Literal
 
 from pydantic import Field, NonNegativeFloat, NonNegativeInt, model_validator
 
@@ -39,8 +38,7 @@ class ChartAccountRole(StrEnum):
     HOA_EXPENSE = "hoa_expense"
     INSURANCE_EXPENSE = "insurance_expense"
     MAINTENANCE_EXPENSE = "maintenance_expense"
-    RENTAL_GROSS_INCOME = "rental_gross_income"
-    RENTAL_VACANCY_LOSS = "rental_vacancy_loss"
+    RENTAL_INCOME = "rental_income"
     RENTAL_MANAGEMENT_FEE_EXPENSE = "rental_management_fee_expense"
     RENTAL_LEASING_FEE_EXPENSE = "rental_leasing_fee_expense"
     PROPERTY_SALE_PROCEEDS = "property_sale_proceeds"
@@ -325,7 +323,7 @@ def chart_account_type_for_role(role: ChartAccountRole) -> ChartAccountType:
         case ChartAccountRole.OPENING_EQUITY | ChartAccountRole.PRINCIPAL_CREDIT_ALLOCATION:
             return ChartAccountType.EQUITY
         case (
-            ChartAccountRole.RENTAL_GROSS_INCOME
+            ChartAccountRole.RENTAL_INCOME
             | ChartAccountRole.PROPERTY_SALE_PROCEEDS
             | ChartAccountRole.REALIZED_CAPITAL_GAIN
             | ChartAccountRole.PARTNER_CONTRIBUTION_TRANSFER

@@ -7,7 +7,6 @@ from typing import Any, cast
 
 import numpy as np
 
-from augur.core.annual_tax import AnnualSaleTaxAllocation, annual_sale_tax_allocation
 from augur.core.accounting import (
     AccountingCause,
     AccountingCauseType,
@@ -27,14 +26,15 @@ from augur.core.accounting import (
     chart_account_type_for_role,
     validate_accounting_trace,
 )
+from augur.core.annual_tax import AnnualSaleTaxAllocation, annual_sale_tax_allocation
 from augur.core.local_regulation import LocalRegulation, local_regulation_for_location
 from augur.core.market_bundle import MarketBundle
 from augur.core.policy_runtime import (
     ActorPolicyStep,
     BalanceSnapshotBatch,
     JournalEntryBatch,
-    PostingBatch,
     MortgagePaymentApplication,
+    PostingBatch,
     PrivateEquitySaleApplication,
     PrivateEquitySaleInstructionBatch,
     PrivateEquitySaleOpportunityBatch,
@@ -155,8 +155,6 @@ class ScenarioRunArrays:
     hoa_usd: np.ndarray
     insurance_usd: np.ndarray
     maintenance_usd: np.ndarray
-    rental_gross_income_usd: np.ndarray
-    rental_vacancy_loss_usd: np.ndarray
     rental_income_usd: np.ndarray
     rental_management_fee_usd: np.ndarray
     rental_leasing_fee_usd: np.ndarray
@@ -458,12 +456,6 @@ _MONTHLY_COLUMN_SPECS = (
     MonthlyColumnSpec(ReportMetric.HOA_USD, MonthlyColumnSource.LEDGER_ENTRY, "cash/hoa"),
     MonthlyColumnSpec(ReportMetric.INSURANCE_USD, MonthlyColumnSource.LEDGER_ENTRY, "cash/insurance"),
     MonthlyColumnSpec(ReportMetric.MAINTENANCE_USD, MonthlyColumnSource.LEDGER_ENTRY, "cash/maintenance"),
-    MonthlyColumnSpec(
-        ReportMetric.RENTAL_GROSS_INCOME_USD, MonthlyColumnSource.LEDGER_ENTRY, "rental/rental_gross_income"
-    ),
-    MonthlyColumnSpec(
-        ReportMetric.RENTAL_VACANCY_LOSS_USD, MonthlyColumnSource.LEDGER_ENTRY, "rental/rental_vacancy_loss"
-    ),
     MonthlyColumnSpec(ReportMetric.RENTAL_INCOME_USD, MonthlyColumnSource.LEDGER_ENTRY, "cash/rental_income"),
     MonthlyColumnSpec(
         ReportMetric.RENTAL_MANAGEMENT_FEE_USD, MonthlyColumnSource.LEDGER_ENTRY, "cash/rental_management_fee"
@@ -656,8 +648,6 @@ def _report_metric_arrays(arrays: ScenarioRunArrays) -> dict[ReportMetric, np.nd
         ReportMetric.HOA_USD: arrays.hoa_usd,
         ReportMetric.INSURANCE_USD: arrays.insurance_usd,
         ReportMetric.MAINTENANCE_USD: arrays.maintenance_usd,
-        ReportMetric.RENTAL_GROSS_INCOME_USD: arrays.rental_gross_income_usd,
-        ReportMetric.RENTAL_VACANCY_LOSS_USD: arrays.rental_vacancy_loss_usd,
         ReportMetric.RENTAL_INCOME_USD: arrays.rental_income_usd,
         ReportMetric.RENTAL_MANAGEMENT_FEE_USD: arrays.rental_management_fee_usd,
         ReportMetric.RENTAL_LEASING_FEE_USD: arrays.rental_leasing_fee_usd,
@@ -706,8 +696,6 @@ class PropertyCashFlowArrays:
     hoa_usd: np.ndarray
     insurance_usd: np.ndarray
     maintenance_usd: np.ndarray
-    rental_gross_income_usd: np.ndarray
-    rental_vacancy_loss_usd: np.ndarray
     rental_income_usd: np.ndarray
     rental_management_fee_usd: np.ndarray
     rental_leasing_fee_usd: np.ndarray
@@ -803,11 +791,7 @@ class AccountingTraceBuilder:
         self.balance_snapshots: list[SimulationBalanceSnapshot] = []
 
     def record_entry(
-        self,
-        *,
-        month_index: int | np.ndarray,
-        entry: JournalEntryBatch,
-        amount_multiplier: np.ndarray | None = None,
+        self, *, month_index: int | np.ndarray, entry: JournalEntryBatch, amount_multiplier: np.ndarray | None = None
     ) -> None:
         month_values, posting_amounts = _normalized_posting_amounts(
             month_index=month_index, postings=entry.postings, amount_multiplier=amount_multiplier
@@ -927,10 +911,7 @@ class AccountingTraceBuilder:
 
 
 def _normalized_posting_amounts(
-    *,
-    month_index: int | np.ndarray,
-    postings: tuple[PostingBatch, ...],
-    amount_multiplier: np.ndarray | None = None,
+    *, month_index: int | np.ndarray, postings: tuple[PostingBatch, ...], amount_multiplier: np.ndarray | None = None
 ) -> tuple[np.ndarray, list[tuple[PostingBatch, np.ndarray]]]:
     month_values = np.asarray([month_index], dtype="int64") if isinstance(month_index, int) else month_index
     normalized: list[tuple[PostingBatch, np.ndarray]] = []
@@ -1388,9 +1369,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                 )
                 spend_application = apply_debit_account_instruction(spend_decision.debit, current_cash_usd=current_cash)
                 current_cash = spend_application.current_cash_usd
-                accounting.record_entry(
-                    month_index=int(month_index[month]), entry=spend_application.journal_entries[0]
-                )
+                accounting.record_entry(month_index=int(month_index[month]), entry=spend_application.journal_entries[0])
                 _record_monthly_spend_decisions(
                     policy_decisions,
                     month_index=int(month_index[month]),
@@ -1733,7 +1712,11 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         side=PostingSide.DEBIT,
     )
     hoa_from_accounting = _posting_amount_matrix(
-        accounting, rollout_count=rollout_count, month_index=month_index, role=ChartAccountRole.HOA_EXPENSE, side=PostingSide.DEBIT
+        accounting,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        role=ChartAccountRole.HOA_EXPENSE,
+        side=PostingSide.DEBIT,
     )
     insurance_from_accounting = _posting_amount_matrix(
         accounting,
@@ -1749,21 +1732,13 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         role=ChartAccountRole.MAINTENANCE_EXPENSE,
         side=PostingSide.DEBIT,
     )
-    rental_gross_income_from_accounting = _posting_amount_matrix(
+    rental_income_from_accounting = _posting_amount_matrix(
         accounting,
         rollout_count=rollout_count,
         month_index=month_index,
-        role=ChartAccountRole.RENTAL_GROSS_INCOME,
+        role=ChartAccountRole.RENTAL_INCOME,
         side=PostingSide.CREDIT,
     )
-    rental_vacancy_loss_from_accounting = _posting_amount_matrix(
-        accounting,
-        rollout_count=rollout_count,
-        month_index=month_index,
-        role=ChartAccountRole.RENTAL_VACANCY_LOSS,
-        side=PostingSide.DEBIT,
-    )
-    rental_income_from_accounting = rental_gross_income_from_accounting - rental_vacancy_loss_from_accounting
     rental_management_fee_from_accounting = _posting_amount_matrix(
         accounting,
         rollout_count=rollout_count,
@@ -1920,16 +1895,10 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         side=PostingSide.DEBIT,
     )
     partner_equity_ledger_from_snapshot = _balance_snapshot_amount_matrix(
-        accounting,
-        rollout_count=rollout_count,
-        month_index=month_index,
-        role=ChartAccountRole.PARTNER_EQUITY_LEDGER,
+        accounting, rollout_count=rollout_count, month_index=month_index, role=ChartAccountRole.PARTNER_EQUITY_LEDGER
     )
     owner_equity_ledger_from_snapshot = _balance_snapshot_amount_matrix(
-        accounting,
-        rollout_count=rollout_count,
-        month_index=month_index,
-        role=ChartAccountRole.OWNER_EQUITY_LEDGER,
+        accounting, rollout_count=rollout_count, month_index=month_index, role=ChartAccountRole.OWNER_EQUITY_LEDGER
     )
     partner_home_equity_claim_from_snapshot = _balance_snapshot_amount_matrix(
         accounting,
@@ -1938,10 +1907,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         role=ChartAccountRole.PARTNER_HOME_EQUITY_CLAIM,
     )
     owner_home_equity_claim_from_snapshot = _balance_snapshot_amount_matrix(
-        accounting,
-        rollout_count=rollout_count,
-        month_index=month_index,
-        role=ChartAccountRole.OWNER_HOME_EQUITY_CLAIM,
+        accounting, rollout_count=rollout_count, month_index=month_index, role=ChartAccountRole.OWNER_HOME_EQUITY_CLAIM
     )
     if not partner_equity.agreements:
         owner_principal_credit_from_accounting = partner_equity.owner_principal_usd
@@ -2050,8 +2016,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         hoa_usd=hoa_from_accounting,
         insurance_usd=insurance_from_accounting,
         maintenance_usd=maintenance_from_accounting,
-        rental_gross_income_usd=rental_gross_income_from_accounting,
-        rental_vacancy_loss_usd=rental_vacancy_loss_from_accounting,
         rental_income_usd=rental_income_from_accounting,
         rental_management_fee_usd=rental_management_fee_from_accounting,
         rental_leasing_fee_usd=rental_leasing_fee_from_accounting,
@@ -2106,7 +2070,9 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             _with_trajectory_identity(accounting.balance_snapshots, trace_identity_by_rollout)
         ),
         tax_lots=_sorted_tax_lots(tax_lots),
-        lot_dispositions=_sorted_lot_dispositions(_with_trajectory_identity(lot_dispositions, trace_identity_by_rollout)),
+        lot_dispositions=_sorted_lot_dispositions(
+            _with_trajectory_identity(lot_dispositions, trace_identity_by_rollout)
+        ),
         liabilities=_sorted_liabilities(liabilities),
         accounting_details=_sorted_accounting_details(
             _with_trajectory_identity(accounting_details, trace_identity_by_rollout)
@@ -2367,9 +2333,7 @@ def _posting_amount_matrix(
 ) -> np.ndarray:
     matrix = np.zeros((rollout_count, len(month_index)), dtype="float64")
     month_position_by_index = {int(month): position for position, month in enumerate(month_index.tolist())}
-    journal_type_by_id = {
-        entry.journal_entry_id: entry.journal_entry_type for entry in accounting.journal_entries
-    }
+    journal_type_by_id = {entry.journal_entry_id: entry.journal_entry_type for entry in accounting.journal_entries}
     for posting in accounting.postings:
         account = accounting.chart_accounts_by_id[posting.chart_account_id]
         if account.role is not role:
@@ -2387,11 +2351,7 @@ def _posting_amount_matrix(
 
 
 def _balance_snapshot_amount_matrix(
-    accounting: AccountingTraceBuilder,
-    *,
-    rollout_count: int,
-    month_index: np.ndarray,
-    role: ChartAccountRole,
+    accounting: AccountingTraceBuilder, *, rollout_count: int, month_index: np.ndarray, role: ChartAccountRole
 ) -> np.ndarray:
     matrix = np.zeros((rollout_count, len(month_index)), dtype="float64")
     month_position_by_index = {int(month): position for position, month in enumerate(month_index.tolist())}
@@ -2771,11 +2731,10 @@ def _record_private_equity_sale_journal_entries(
                 tax_expense_usd=float(tax_usd[rollout_index]),
             )
         )
+
+
 def _record_partner_agreement_accounting_detail(
-    accounting: AccountingTraceBuilder,
-    *,
-    month_index: np.ndarray,
-    partner_equity: PartnerEquityArrays,
+    accounting: AccountingTraceBuilder, *, month_index: np.ndarray, partner_equity: PartnerEquityArrays
 ) -> None:
     if not partner_equity.journal_entries and not partner_equity.balance_snapshots:
         return
@@ -2843,16 +2802,7 @@ def _sorted_postings(records: list[SimulationPosting]) -> tuple[SimulationPostin
 
 
 def _sorted_balance_snapshots(records: list[SimulationBalanceSnapshot]) -> tuple[SimulationBalanceSnapshot, ...]:
-    return tuple(
-        sorted(
-            records,
-            key=lambda entry: (
-                entry.month_index,
-                entry.rollout_index,
-                entry.chart_account_id,
-            ),
-        )
-    )
+    return tuple(sorted(records, key=lambda entry: (entry.month_index, entry.rollout_index, entry.chart_account_id)))
 
 
 def _sorted_tax_lots(records: list[TaxLot]) -> tuple[TaxLot, ...]:
@@ -3171,8 +3121,7 @@ def _settle_required_cash_obligations(
                     month_index=int(due_month_index),
                     policy=application.policy_step.policy,
                     cause_id_prefix=(
-                        f"policy:{application.policy_step.policy.policy_id}:"
-                        f"{obligation_type.value}:funding_sale"
+                        f"policy:{application.policy_step.policy.policy_id}:{obligation_type.value}:funding_sale"
                     ),
                     amount_usd=application.sale_usd,
                     basis_usd=basis_sold,
@@ -3195,10 +3144,7 @@ def _settle_required_cash_obligations(
                 description=obligation_type.value,
                 postings=(
                     PostingBatch(
-                        role=ChartAccountRole.TAX_EXPENSE,
-                        side=PostingSide.DEBIT,
-                        amount_usd=due,
-                        actor_id=actor_id,
+                        role=ChartAccountRole.TAX_EXPENSE, side=PostingSide.DEBIT, amount_usd=due, actor_id=actor_id
                     ),
                     PostingBatch(
                         role=ChartAccountRole.TAX_PAYABLE,
@@ -3631,8 +3577,6 @@ def _property_cash_flow_arrays(
             hoa_usd=zeros,
             insurance_usd=zeros,
             maintenance_usd=zeros,
-            rental_gross_income_usd=zeros,
-            rental_vacancy_loss_usd=zeros,
             rental_income_usd=zeros,
             rental_management_fee_usd=zeros,
             rental_leasing_fee_usd=zeros,
@@ -3653,8 +3597,8 @@ def _property_cash_flow_arrays(
     insurance = (property_assumptions.insurance_annual_usd / MONTHS_PER_YEAR) * expense_multiplier
     maintenance = property_value_usd * (property_assumptions.maintenance_pct / 100) / MONTHS_PER_YEAR
     maintenance[:, 0] = 0.0
-    (rental_gross_income, rental_vacancy_loss, rental_income, rental_management_fee, rental_leasing_fee) = (
-        _rental_cash_flow_arrays(scenario, market_bundle, location_id=location_id)
+    (rental_income, rental_management_fee, rental_leasing_fee) = _rental_cash_flow_arrays(
+        scenario, market_bundle, location_id=location_id
     )
     operating_cash_flow = apply_property_operating_cash_flows(
         actor_id=_primary_owner_actor_id(scenario),
@@ -3663,8 +3607,6 @@ def _property_cash_flow_arrays(
         hoa_usd=hoa,
         insurance_usd=insurance,
         maintenance_usd=maintenance,
-        rental_gross_income_usd=rental_gross_income,
-        rental_vacancy_loss_usd=rental_vacancy_loss,
         rental_income_usd=rental_income,
         rental_management_fee_usd=rental_management_fee,
         rental_leasing_fee_usd=rental_leasing_fee,
@@ -3676,8 +3618,6 @@ def _property_cash_flow_arrays(
         hoa_usd=operating_cash_flow.hoa_usd,
         insurance_usd=operating_cash_flow.insurance_usd,
         maintenance_usd=operating_cash_flow.maintenance_usd,
-        rental_gross_income_usd=operating_cash_flow.rental_gross_income_usd,
-        rental_vacancy_loss_usd=operating_cash_flow.rental_vacancy_loss_usd,
         rental_income_usd=operating_cash_flow.rental_income_usd,
         rental_management_fee_usd=operating_cash_flow.rental_management_fee_usd,
         rental_leasing_fee_usd=operating_cash_flow.rental_leasing_fee_usd,
@@ -3689,16 +3629,14 @@ def _property_cash_flow_arrays(
 
 def _rental_cash_flow_arrays(
     scenario: Scenario, market_bundle: MarketBundle, *, location_id: str | None
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     shape = (market_bundle.rollout_count, market_bundle.horizon_months + 1)
-    gross = np.zeros(shape, dtype="float64")
-    vacancy_loss = np.zeros(shape, dtype="float64")
     income = np.zeros(shape, dtype="float64")
     management_fee = np.zeros(shape, dtype="float64")
     leasing_fee = np.zeros(shape, dtype="float64")
     rental = scenario.rental_plan
     if rental.rental_mode is RentalMode.NOT_RENTED:
-        return gross, vacancy_loss, income, management_fee, leasing_fee
+        return income, management_fee, leasing_fee
 
     active = rental_active_mask(scenario, market_bundle)
     rent_multiplier = market_bundle.rent_multipliers(location_id)
@@ -3711,13 +3649,13 @@ def _rental_cash_flow_arrays(
         vacancy_fraction = _pct_fraction(float(rental.vacancy_pct), "vacancy_pct")
         applies_management = True
 
-    gross = base_rent * rent_multiplier * active[None, :]
-    vacancy_loss = gross * vacancy_fraction
-    income = gross - vacancy_loss
+    # vacancy_pct is a multiplier on rent collected: actual rent = base * (1 - vacancy_pct).
+    # Vacancy is the absence of a rent credit, not an expense to record.
+    income = base_rent * (1.0 - vacancy_fraction) * rent_multiplier * active[None, :]
     if applies_management:
         management_fee = income * _pct_fraction(float(rental.management_fee_pct), "management_fee_pct")
-        leasing_fee = gross * _pct_fraction(float(rental.leasing_fee_pct), "leasing_fee_pct") / MONTHS_PER_YEAR
-    return gross, vacancy_loss, income, management_fee, leasing_fee
+        leasing_fee = income * _pct_fraction(float(rental.leasing_fee_pct), "leasing_fee_pct") / MONTHS_PER_YEAR
+    return income, management_fee, leasing_fee
 
 
 def _partner_equity_arrays(
@@ -3955,9 +3893,7 @@ def _journal_entries_for_property(
         replace(
             entry,
             postings=tuple(
-                replace(posting, property_id=property_id)
-                if posting.property_id is None
-                else posting
+                replace(posting, property_id=property_id) if posting.property_id is None else posting
                 for posting in entry.postings
             ),
         )
