@@ -42,7 +42,7 @@ filegroup(
     ],
     visibility = [
         "//airlock/frontend:__pkg__",
-        "//augur/app:__pkg__",
+        "//augur/frontend:__pkg__",
         "//props/frontend:__pkg__",
         "//props/frontend/src:__subpackages__",
     ],
@@ -54,7 +54,7 @@ filegroup(
     srcs = ["fonts/fonts.conf"],
     visibility = [
         "//airlock/frontend:__pkg__",
-        "//augur/app:__pkg__",
+        "//augur/frontend:__pkg__",
         "//props/frontend:__pkg__",
         "//props/frontend/src:__subpackages__",
         "//x/auragon_study_casino/frontend:__pkg__",

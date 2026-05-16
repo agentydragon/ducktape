@@ -375,7 +375,7 @@ Work:
 
 Scope:
 
-- Wire `augur/app/lib/scenario_set_state.js` and tests to consume the generated
+- Wire `augur/frontend/lib/scenario_set_state.js` and tests to consume the generated
   Augur OpenAPI/browser schema target instead of hand-maintaining boundary
   field lists and ad hoc object probes.
 - Keep the generated schema target as the only browser-facing API schema source
@@ -385,8 +385,8 @@ Scope:
 
 Validation:
 
-- `nix develop --command pre-commit run --files augur/app/lib/BUILD.bazel augur/app/lib/scenario_set_state.js augur/app/lib/scenario_set_state_test.mjs augur/plans/roadmap.md augur/TODO.md`
-- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-schema-generation test //augur/app/lib:scenario_set_state_test //augur/app:browser_shell_test --nocache_test_results --test_size_filters=small,medium,large`
+- `nix develop --command pre-commit run --files augur/frontend/lib/BUILD.bazel augur/frontend/lib/scenario_set_state.js augur/frontend/lib/scenario_set_state_test.mjs augur/plans/roadmap.md augur/TODO.md`
+- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-schema-generation test //augur/frontend/lib:scenario_set_state_test //augur/api:browser_shell_test --nocache_test_results --test_size_filters=small,medium,large`
 
 ### Plan B: Make Private-Equity Opportunities And Policy Explicit
 
@@ -402,7 +402,7 @@ Scope:
 
 Validation:
 
-- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-pe-plan test //augur/core:test_e2e //augur/core:scenario_engine_test //augur/app:browser_shell_test --nocache_test_results --test_size_filters=small,medium,large`
+- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-pe-plan test //augur/core:test_e2e //augur/core:scenario_engine_test //augur/api:browser_shell_test --nocache_test_results --test_size_filters=small,medium,large`
 
 ### Plan C: Tax/Obligation Settlement Slice
 
@@ -480,7 +480,7 @@ Scope:
 
 Validation:
 
-- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-server-cleanup test //augur/app:browser_shell_test //augur/app:config_test --nocache_test_results --test_size_filters=small,medium,large`
+- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-server-cleanup test //augur/api:browser_shell_test //augur/api:config_test --nocache_test_results --test_size_filters=small,medium,large`
 
 ### Plan F: Move Location Tax Defaults To Model Config
 
@@ -495,7 +495,7 @@ Scope:
 
 Validation:
 
-- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-location-tax-config test //augur/app:catalog_test //augur/app:config_test //augur/core:local_regulation_test //augur/core:scenario_set_test --nocache_test_results --test_size_filters=small,medium,large`
+- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-location-tax-config test //augur/api:catalog_test //augur/api:config_test //augur/core:local_regulation_test //augur/core:scenario_set_test --nocache_test_results --test_size_filters=small,medium,large`
 
 ### Plan G: Split App Package Boundaries
 
@@ -518,8 +518,8 @@ Validation:
 For each public framework slice:
 
 ```bash
-bbr test //augur/app:browser_shell_test
-bbr test //augur/app/lib:scenario_set_state_test
+bbr test //augur/api:browser_shell_test
+bbr test //augur/frontend/lib:scenario_set_state_test
 bbr test //augur/core:test_e2e
 ```
 

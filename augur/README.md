@@ -41,7 +41,7 @@ A user-side composer (e.g. gaffer-private's `serve.py`) builds an `AugurConfig`
 from its private values, then either passes it directly to `run_server()` or
 materializes it as YAML at `$AUGUR_CONFIG_PATH` for a ConfigMap-mounted
 deployment. The framework's only contract with the deployment is the
-`AugurConfig` Pydantic shape (see <app/config.py>).
+`AugurConfig` Pydantic shape (see <api/config.py>).
 
 Property media stays outside the generic frontend bundle. Deployments publish
 images through their own static host or CDN, then declare stable
@@ -52,8 +52,8 @@ property ID to a deployment-owned asset ID and either an explicit public
 For local public-fixture runs:
 
 ```bash
-bazelisk run //augur/app:server -- \
-  --config augur/app/testdata/config.yaml \
+bazelisk run //augur/api:server -- \
+  --config augur/api/testdata/config.yaml \
   --provider noop
 ```
 

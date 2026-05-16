@@ -7,8 +7,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from augur.app.catalog import build_bootstrap_payload
-from augur.app.config import AugurConfig
+from augur.api.catalog import build_bootstrap_payload
+from augur.api.config import AugurConfig
 from augur.core.api import simulate_set
 from augur.core.bootstrap import Property
 from augur.core.market_bundle import HorizonBoundMarketBundleProvider, MarketBundleProvider

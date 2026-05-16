@@ -2,20 +2,20 @@
 
 Update flow for intentional frontend changes:
 
-    nix develop --command bazelisk test //augur/app:visual_golden_test \
+    nix develop --command bazelisk test //augur/frontend:visual_golden_test \
         --test_env=UPDATE_GOLDEN=1 \
         --remote_upload_local_results=false --nocache_test_results
 
 Then copy the produced PNGs from the test's undeclared outputs into
-`augur/app/__screenshots__/` and rerun this test without `UPDATE_GOLDEN`.
+`augur/frontend/__screenshots__/` and rerun this test without `UPDATE_GOLDEN`.
 With BuildBuddy/RBE, use the invocation id printed by Bazel:
 
     bbapi artifact "$INV" test.outputs/distribution_default.png \
-        > augur/app/__screenshots__/distribution_default.png
+        > augur/frontend/__screenshots__/distribution_default.png
     bbapi artifact "$INV" test.outputs/distribution_fan.png \
-        > augur/app/__screenshots__/distribution_fan.png
+        > augur/frontend/__screenshots__/distribution_fan.png
     bbapi artifact "$INV" test.outputs/trajectory_scenario_2_rollout_3.png \
-        > augur/app/__screenshots__/trajectory_scenario_2_rollout_3.png
+        > augur/frontend/__screenshots__/trajectory_scenario_2_rollout_3.png
 """
 
 from __future__ import annotations
@@ -213,13 +213,13 @@ def augur_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     port = pick_free_port("127.0.0.1")
     server = subprocess.Popen(
         [
-            str(get_required_path("_main/augur/app/server")),
+            str(get_required_path("_main/augur/api/server")),
             "--host",
             "127.0.0.1",
             "--port",
             str(port),
             "--config",
-            str(get_required_path("_main/augur/app/testdata/config.yaml")),
+            str(get_required_path("_main/augur/api/testdata/config.yaml")),
             "--provider",
             "simple",
             "--rollout-samples",
@@ -399,12 +399,12 @@ def test_augur_full_page_visual_golden(page: Page, augur_server: str, tmp_path: 
         return
 
     try:
-        expected_path = get_required_path(f"_main/augur/app/__screenshots__/{out_name}")
+        expected_path = get_required_path(f"_main/augur/frontend/__screenshots__/{out_name}")
     except RuntimeError:
         shutil.copy(first_path, undeclared_dir / out_name)
         raise AssertionError(
             f"No Augur visual golden checked in for {out_name}. Re-run with UPDATE_GOLDEN=1 "
-            f"and copy the produced PNG from undeclared outputs into augur/app/__screenshots__/."
+            f"and copy the produced PNG from undeclared outputs into augur/frontend/__screenshots__/."
         ) from None
 
     assert_png_matches_golden(

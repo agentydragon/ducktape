@@ -11,7 +11,7 @@ from urllib.parse import quote
 
 from pydantic import TypeAdapter
 
-from augur.app.config import AugurConfig, LocationConfig, PropertyAssetConfig
+from augur.api.config import AugurConfig, LocationConfig, PropertyAssetConfig
 from augur.core.bootstrap import (
     ActorPolicyId,
     ActorPolicyOption,

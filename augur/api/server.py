@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from augur.app.config import load_augur_config, resolve_augur_config_path
-from augur.app.http_server import StaticBundle, run_server
+from augur.api.config import load_augur_config, resolve_augur_config_path
+from augur.api.http_server import StaticBundle, run_server
 from util.bazel.runfiles import get_required_path
 
 
@@ -21,7 +21,7 @@ def _split_config_arg(argv: list[str] | None) -> tuple[Path, list[str]]:
 
 def main(argv: list[str] | None = None) -> int:
     config_path, remaining = _split_config_arg(argv)
-    dist_dir = get_required_path("_main/augur/app/dist/index.html").parent
+    dist_dir = get_required_path("_main/augur/frontend/dist/index.html").parent
     market_config_path = get_required_path("_main/augur/model/config/market_config.example.json")
     return run_server(
         augur_config=load_augur_config(config_path),

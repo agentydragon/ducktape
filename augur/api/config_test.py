@@ -9,7 +9,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from augur.app.config import (
+from augur.api.config import (
     AgentDefinition,
     AugurConfig,
     ConcentratedHoldingSnapshot,

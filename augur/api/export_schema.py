@@ -7,7 +7,7 @@ import json
 from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 
-from augur.app.browser_state import BrowserScenarioSetInput, BrowserScenarioSetInputOverrides
+from augur.api.browser_state import BrowserScenarioSetInput, BrowserScenarioSetInputOverrides
 from augur.core.bootstrap import BootstrapResponse
 from augur.core.scenario_set import ScenarioSet, ScenarioSetRunResponse
 

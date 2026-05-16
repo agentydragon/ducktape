@@ -1,0 +1,160 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "config_py",
+    srcs = ["config.py"],
+    deps = [
+        "//augur/core:bootstrap_py",
+        "//augur/core:local_regulation_py",
+        "//augur/core:scenario_set_py",
+        "//augur/core:schemas_py",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "config_test",
+    srcs = ["config_test.py"],
+    deps = [
+        ":config_py",
+        "//augur/core:local_regulation_py",
+        "//augur/core:scenario_set_py",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "catalog_py",
+    srcs = ["catalog.py"],
+    deps = [
+        ":config_py",
+        "//augur/core:bootstrap_py",
+        "//augur/core:local_regulation_py",
+        "//augur/core:scenario_set_py",
+        "//augur/core:schemas_py",
+    ],
+)
+
+py_test(
+    name = "catalog_test",
+    srcs = ["catalog_test.py"],
+    deps = [
+        ":backend_py",
+        ":catalog_py",
+        ":config_py",
+        "//augur/core:local_regulation_py",
+        "//augur/core:market_bundle_py",
+        "//augur/core:scenario_set_py",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "backend_py",
+    srcs = ["backend.py"],
+    deps = [
+        ":catalog_py",
+        ":config_py",
+        "//augur/core:api_py",
+        "//augur/core:bootstrap_py",
+        "//augur/core:market_bundle_py",
+        "//augur/core:scenario_engine_py",
+        "//augur/core:scenario_set_py",
+        "//augur/core:scenario_tax_defaults_py",
+        "//augur/core:schemas_py",
+    ],
+)
+
+py_library(
+    name = "http_server_py",
+    srcs = ["http_server.py"],
+    deps = [
+        ":backend_py",
+        ":config_py",
+        "//augur/core:backend_py",
+        "//augur/core:market_bundle_py",
+        "//augur/model:macro_market_bundle_provider_py",
+        "//augur/model/markets:registry_py",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "browser_state_py",
+    srcs = ["browser_state.py"],
+    deps = [
+        "//augur/core:bootstrap_py",
+        "//augur/core:scenario_set_py",
+        "//augur/core:schemas_py",
+    ],
+)
+
+py_library(
+    name = "export_schema_py",
+    srcs = ["export_schema.py"],
+    deps = [
+        ":browser_state_py",
+        "//augur/core:bootstrap_py",
+        "//augur/core:scenario_set_py",
+        "@pypi//fastapi",
+    ],
+)
+
+py_binary(
+    name = "export_schema_bin",
+    main_module = "augur.api.export_schema",
+    deps = [":export_schema_py"],
+)
+
+py_binary(
+    name = "server",
+    srcs = ["server.py"],
+    data = [
+        "//augur/frontend:bundle_base",
+        "//augur/model/config:market_config_files",
+    ],
+    deps = [
+        ":config_py",
+        ":http_server_py",
+        "//util/bazel:runfiles",
+    ],
+)
+
+filegroup(
+    name = "public_fixture_config",
+    srcs = ["testdata/config.yaml"],
+)
+
+filegroup(
+    name = "public_fixture_properties",
+    srcs = ["testdata/properties.json"],
+)
+
+py_test(
+    name = "browser_shell_test",
+    size = "large",
+    srcs = ["browser_shell_test.py"],
+    data = [
+        ":public_fixture_config",
+        ":public_fixture_properties",
+        ":server",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+    env = {
+        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+    },
+    deps = [
+        "//util:net",
+        "//util:playwright",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

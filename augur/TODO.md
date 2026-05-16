@@ -15,12 +15,7 @@ second ordered roadmap.
 - [ ] Use the generated Augur OpenAPI/browser schema target in browser state
       normalization and request mapping. Python Pydantic remains the source of
       truth; do not grow a second hand-maintained Zod/schema definition in
-      `augur/app`.
-- [ ] Split the current `augur/app` package into clearer ownership boundaries:
-      browser/frontend assets in an `augur/frontend`-style package, and HTTP/API
-      server code in an `augur/api` or `augur/server`-style package. Do this
-      after the current app/server cleanup lanes are integrated, so the move is
-      mostly mechanical rather than mixing package motion with behavior changes.
+      `augur/frontend`.
 - [ ] Continue `plans/e2e_redesign.md` Step 7 by replacing `allocated_to_source_month` tax timing with realistic annual/estimated-payment liability timing.
 - [ ] Make the generic Augur OCI image public-safe: no private Python config, property records, or media in image layers; deployments supply private config and assets through mounted runtime inputs.
 - [ ] Add a durable property-asset storage contract: stable property asset IDs/URLs backed by object storage or a database-like asset table, so deployments do not need to bake private media into frontend images.

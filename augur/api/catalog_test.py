@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from augur.app.augur_backend import AugurBackend, AugurBackendRuntimeConfig
-from augur.app.catalog import build_bootstrap_payload
-from augur.app.config import (
+from augur.api.backend import AugurBackend, AugurBackendRuntimeConfig
+from augur.api.catalog import build_bootstrap_payload
+from augur.api.config import (
     AgentDefinition,
     AugurConfig,
     ConcentratedHoldingSnapshot,

@@ -20,9 +20,10 @@ API.
 - `augur/model/`: evidence ingestion, calibration, fitting, and market-provider
   construction. Manifold/source-data shapes belong here as evidence that feeds
   fitting, not in app state or the simulator contract.
-- `augur/app/`: UX, catalog/default composition, request parsing, and
+- `augur/api/`: catalog/default composition, request parsing, and
   app-specific validation. It adapts user-facing forms into core scenarios and
   calls core.
+- `augur/frontend/`: browser UI bundle (React app, styles, lib).
 
 ## Target Runtime Shape
 
@@ -238,4 +239,4 @@ bbr build //augur/...
 ```
 
 If app-facing request or state conversion changed, also run the relevant
-`augur/app` JavaScript and backend tests.
+`augur/frontend` JavaScript and `augur/api` backend tests.

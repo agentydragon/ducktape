@@ -62,13 +62,13 @@ def augur_server(tmp_path: Path) -> Iterator[str]:
     port = pick_free_port("127.0.0.1")
     server = subprocess.Popen(
         [
-            str(get_required_path("_main/augur/app/server")),
+            str(get_required_path("_main/augur/api/server")),
             "--host",
             "127.0.0.1",
             "--port",
             str(port),
             "--config",
-            str(get_required_path("_main/augur/app/testdata/config.yaml")),
+            str(get_required_path("_main/augur/api/testdata/config.yaml")),
             "--provider",
             "noop",
             "--rollout-samples",

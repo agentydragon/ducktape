@@ -1,0 +1,160 @@
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
+load("//devinfra/python:defs.bzl", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# -- Frontend bundle -----------------------------------------------------------
+#
+# Generic augur React app + its tailwind-driven stylesheet. The bundle excludes
+# property-image assets — deployments (e.g. gaffer) overlay those on top of
+# `:bundle_base` to produce the final image bundle.
+
+REACT_DEPS = ["//:node_modules/react"]
+
+js_library(
+    name = "augur_app",
+    srcs = [
+        "app.jsx",
+        "client.js",
+    ],
+    deps = REACT_DEPS + [
+        "//:node_modules/@mantine/core",
+        "//augur/frontend/lib:backend_client",
+        "//augur/frontend/lib:casing",
+        "//augur/frontend/lib:columnar",
+        "//augur/frontend/lib:scenario_set_state",
+        "//augur/frontend/lib:schema_zod",
+    ],
+)
+
+js_library(
+    name = "main_lib",
+    srcs = ["main.jsx"],
+    deps = REACT_DEPS + [
+        ":augur_app",
+        "//:node_modules/react-dom",
+    ],
+)
+
+esbuild(
+    name = "main_bundle",
+    config = {
+        "jsx": "automatic",
+    },
+    entry_point = "main.jsx",
+    format = "esm",
+    output = "dist/main.js",
+    platform = "browser",
+    sourcemap = "linked",
+    target = ["es2022"],
+    deps = [":main_lib"],
+)
+
+# Tailwind v4 scans `@source`-declared files for class names. We concatenate
+# every .jsx/.js source whose classes we want to keep into a single text file
+# the stylesheet references.
+filegroup(
+    name = "tailwind_content_srcs",
+    srcs = [
+        "app.jsx",
+        "client.js",
+        "index.html",
+        "main.jsx",
+        "//augur/frontend/lib:backend_client",
+        "//augur/frontend/lib:casing",
+        "//augur/frontend/lib:columnar",
+        "//augur/frontend/lib:scenario_set_state",
+    ],
+)
+
+genrule(
+    name = "tailwind_content_index",
+    srcs = [":tailwind_content_srcs"],
+    outs = ["tailwind_content.txt"],
+    cmd = "cat $(SRCS) > $@",
+)
+
+tailwindcss_bin.tailwindcss_binary(
+    name = "tailwind_cli",
+    data = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tailwindcss/cli",
+        # `@import "tailwindcss"` in styles.src.css resolves to this package.
+        "//:node_modules/tailwindcss",
+    ],
+)
+
+js_run_binary(
+    name = "styles_css",
+    srcs = [
+        "styles.src.css",
+        ":tailwind_content_index",
+    ],
+    outs = ["dist/styles.css"],
+    args = [
+        "--input",
+        "styles.src.css",
+        "--output",
+        "dist/styles.css",
+        "--minify",
+    ],
+    chdir = package_name(),
+    tool = ":tailwind_cli",
+)
+
+copy_file(
+    name = "bundle_index_html",
+    src = "index.html",
+    out = "dist/index.html",
+)
+
+filegroup(
+    name = "bundle_base",
+    srcs = [
+        ":bundle_index_html",
+        ":main_bundle",
+        ":styles_css",
+    ],
+)
+
+filegroup(
+    name = "visual_golden_snapshots",
+    testonly = True,
+    srcs = glob(
+        ["__screenshots__/*.png"],
+        allow_empty = True,
+    ),
+)
+
+py_test(
+    name = "visual_golden_test",
+    size = "large",
+    srcs = ["visual_golden_test.py"],
+    data = [
+        ":visual_golden_snapshots",
+        "//augur/api:public_fixture_config",
+        "//augur/api:public_fixture_properties",
+        "//augur/api:server",
+        "//util/testing/frontend_visual:fonts",
+        "//util/testing/frontend_visual:fonts_conf",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+    env = {
+        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+        "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
+        "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
+    },
+    deps = [
+        "//util:net",
+        "//util:playwright",
+        "//util/bazel:runfiles",
+        "//util/testing:png_diff",
+        "//util/testing:undeclared_outputs",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

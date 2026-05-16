@@ -5,7 +5,7 @@ package(default_visibility = ["//visibility:public"])
 
 js_openapi_zod(
     name = "schema_zod",
-    generator = "//augur/app:export_schema_bin",
+    generator = "//augur/api:export_schema_bin",
 )
 
 js_library(

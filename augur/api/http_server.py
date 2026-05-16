@@ -10,8 +10,8 @@ from pathlib import Path
 
 import uvicorn
 
-from augur.app.augur_backend import AugurBackend, AugurBackendRuntimeConfig
-from augur.app.config import AugurConfig
+from augur.api.backend import AugurBackend, AugurBackendRuntimeConfig
+from augur.api.config import AugurConfig
 from augur.core.backend import StaticPathResolver, create_augur_backend_app
 from augur.core.market_bundle import FlatMarketBundleProvider, MarketBundleProvider, SimpleMarketBundleProvider
 from augur.model.macro_market_bundle_provider import MacroMarketBundleProvider
