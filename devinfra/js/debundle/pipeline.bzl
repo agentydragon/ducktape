@@ -39,7 +39,7 @@ def _debundle_pipeline_impl(ctx):
             "--tree-vendor-marks",
             _shell_source_path(paths.join(pkg, ctx.attr.tree_vendor_marks)),
             "--tree-source-root",
-            shell.quote("."),
+            _shell_source_path("."),
             "--out-root",
             shell.quote(out_dir.short_path),
         ]
