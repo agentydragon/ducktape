@@ -38,8 +38,10 @@ def _debundle_pipeline_impl(ctx):
             _shell_source_path(paths.join(pkg, ctx.attr.tree_modules)),
             "--tree-vendor-marks",
             _shell_source_path(paths.join(pkg, ctx.attr.tree_vendor_marks)),
+            # Source-relative paths embedded in the tree config YAML
+            # (e.g. `inputs.js_list_path`) resolve against the execroot.
             "--tree-source-root",
-            shell.quote("."),
+            _shell_source_path("."),
             "--out-root",
             shell.quote(out_dir.short_path),
         ]
