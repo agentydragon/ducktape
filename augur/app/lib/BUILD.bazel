@@ -1,10 +1,15 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
-load("//devinfra/js:openapi.bzl", "js_openapi_schema")
+load("//devinfra/js:openapi.bzl", "js_openapi_schema", "js_openapi_zod")
 
 package(default_visibility = ["//visibility:public"])
 
 js_openapi_schema(
     name = "schema",
+    generator = "//augur/app:export_schema_bin",
+)
+
+js_openapi_zod(
+    name = "schema_zod",
     generator = "//augur/app:export_schema_bin",
 )
 

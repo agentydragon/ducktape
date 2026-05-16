@@ -138,6 +138,7 @@ js_library(
         "//augur/app/lib:casing",
         "//augur/app/lib:columnar",
         "//augur/app/lib:scenario_set_state",
+        "//augur/app/lib:schema_zod",
     ],
 )
 
