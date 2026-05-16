@@ -23,7 +23,14 @@ use crate::facts::TopLevelItemView;
 #[derive(Debug, Default, Clone)]
 pub struct ChunkCodeGraph {
     bindings: BTreeMap<String, ChunkBinding>,
+    /// Strict P-2 set: `new <name>(<primitive-literal-args>)` only.
     pure_new_constructors: BTreeSet<String>,
+    /// Relaxed P-2 set: `new <name>(<pure-args>)` — every arg must
+    /// classify `Purity::Pure`, but identifier reads / fresh
+    /// literals / nested constructors are admitted. Opt-in per
+    /// constructor for the case where the body does not read its
+    /// arguments through getters / Proxies / coercion.
+    pure_new_with_pure_args_constructors: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -110,7 +117,13 @@ impl ChunkCodeGraph {
         shadowed: &BTreeSet<&'static str>,
         declared_pure: &BTreeSet<String>,
     ) -> Self {
-        Self::build_with_declared_pure_new(body, shadowed, declared_pure, &BTreeSet::new())
+        Self::build_with_pure_new_sets(
+            body,
+            shadowed,
+            declared_pure,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+        )
     }
 
     pub(crate) fn build_with_declared_pure_new(
@@ -118,6 +131,22 @@ impl ChunkCodeGraph {
         shadowed: &BTreeSet<&'static str>,
         declared_pure: &BTreeSet<String>,
         declared_pure_new: &BTreeSet<String>,
+    ) -> Self {
+        Self::build_with_pure_new_sets(
+            body,
+            shadowed,
+            declared_pure,
+            declared_pure_new,
+            &BTreeSet::new(),
+        )
+    }
+
+    pub(crate) fn build_with_pure_new_sets(
+        body: &[(TopLevelItemView<'_>, Option<usize>)],
+        shadowed: &BTreeSet<&'static str>,
+        declared_pure: &BTreeSet<String>,
+        declared_pure_new: &BTreeSet<String>,
+        declared_pure_new_with_pure_args: &BTreeSet<String>,
     ) -> Self {
         let functions = collect_chunk_functions(body);
         let name_to_idx: BTreeMap<&str, usize> = functions
@@ -169,6 +198,7 @@ impl ChunkCodeGraph {
         let mut graph = ChunkCodeGraph {
             bindings,
             pure_new_constructors: declared_pure_new.clone(),
+            pure_new_with_pure_args_constructors: declared_pure_new_with_pure_args.clone(),
         };
         // tarjan_scc emits SCCs in reverse topological order: leaves
         // (sinks — functions that don't call any chunk-top
@@ -247,6 +277,10 @@ impl ChunkCodeGraph {
 
     pub(crate) fn is_declared_pure_new(&self, name: &str) -> bool {
         self.pure_new_constructors.contains(name)
+    }
+
+    pub(crate) fn is_declared_pure_new_with_pure_args(&self, name: &str) -> bool {
+        self.pure_new_with_pure_args_constructors.contains(name)
     }
 }
 
@@ -1803,6 +1837,13 @@ fn static_member_pair(member: &MemberExpr) -> Option<(&'static str, &'static str
 ///     argument a primitive literal (no spreads, no identifiers,
 ///     no nested calls, no object/array literals). See P-2 in
 ///     `oversize_closure_patterns.md`.
+///   * Spec-declared `purity: pure_new_with_pure_args` bindings —
+///     a relaxed opt-in variant of `pure_new` that admits any
+///     argument shape whose purity classifies `Pure` (identifier
+///     reads, fresh literals, nested `new`s of other admitted
+///     constructors). Strict `pure_new` remains the safe default
+///     for getter-blocking / Proxy-trapped argument paths; the
+///     relaxed set is opt-in per constructor.
 ///
 /// Everything else (non-Ident callees, shadowed names, tagged
 /// templates, other arg shapes) falls through to `Unknown`.
@@ -1861,6 +1902,46 @@ fn classify_new_expr_purity(
         )
         .worst(inner);
     }
+    if graph.is_declared_pure_new_with_pure_args(callee.sym.as_ref()) {
+        // P-2 (relaxed): admit `new <DeclaredPureNewWithPureArgs>(<args>)`
+        // as Pure when every arg classifies `Purity::Pure`. Unlike
+        // strict `declared_pure_new`, this admits identifier reads,
+        // fresh object/array literals, and nested `new`s whose own
+        // purity is established by the analyzer. The spec author
+        // opts in per constructor — only safe when the constructor
+        // body does not read its arguments through getters / Proxy
+        // traps / coercion side effects. Strict `declared_pure_new`
+        // remains the safe default; this set is a separate opt-in
+        // for constructors whose body is known not to fire user
+        // code on its arguments.
+        let args = new_expr.args.as_deref().unwrap_or(&[]);
+        let mut worst = Purity::Pure;
+        let mut has_spread = false;
+        for arg in args {
+            if arg.spread.is_some() {
+                has_spread = true;
+                break;
+            }
+            worst = worst.worst(classify_expr_purity(
+                &arg.expr,
+                shadowed,
+                declared_pure,
+                graph,
+            ));
+        }
+        if !has_spread && worst.is_pure() {
+            return Purity::Pure;
+        }
+        return Purity::from_reason_with_detail(
+            PurityRule::UnknownNew,
+            new_expr.span,
+            format!(
+                "new {}(...) has impure or spread argument(s); pure-args P-2 admits only Pure-classified args",
+                callee.sym
+            ),
+        )
+        .worst(worst);
+    }
     if graph.is_declared_pure_new(callee.sym.as_ref()) {
         // P-2 `singleton_instance_with_listener_blocking_pure_alias`:
         // admit `new <DeclaredPureNew>(<primitive-literal-args>)`
@@ -1873,6 +1954,8 @@ fn classify_new_expr_purity(
         // guarantees the constructor's argument evaluation
         // fires no user code. This matches the conservative
         // contract documented in P-7 for `Object.freeze(<literal>)`.
+        // Constructors that need to admit non-literal args opt
+        // in to `declared_pure_new_with_pure_args` instead.
         let args = new_expr.args.as_deref().unwrap_or(&[]);
         if args
             .iter()
