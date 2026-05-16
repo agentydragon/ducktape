@@ -1,5 +1,10 @@
 import { camelizeObjectKeys, decamelizeObjectKeys, snakeToCamelKey } from "./casing.js";
-import { zBrowserScenarioInputInput, zFinancingMode, zPrivateEquitySalePolicyId } from "./api/schema.zod.mjs";
+import {
+  zBrowserScenarioInputInput,
+  zBrowserScenarioSetInputOverridesInput,
+  zFinancingMode,
+  zPrivateEquitySalePolicyId,
+} from "./api/schema.zod.mjs";
 
 export const SCENARIO_COLORS = ["#2563eb", "#dc2626", "#059669", "#d97706", "#7c3aed", "#0891b2"];
 
@@ -755,15 +760,7 @@ export function decodeScenarioSetUrlState(value) {
   if (payload?.version !== URL_STATE_VERSION) {
     throw new Error(`Unsupported augur scenario URL state version: ${payload?.version ?? "<missing>"}`);
   }
-  if (!payload.scenario_set_input || typeof payload.scenario_set_input !== "object") {
-    throw new Error("Augur scenario URL state is missing scenario_set_input");
-  }
-  // Intentionally not parsed against zBrowserScenarioSetInput: the URL stores
-  // a sparse-overrides payload (only fields the user changed away from
-  // bootstrap defaults), and the model marks every section's fields as
-  // required. normalizeScenarioSetInput below materializes the full shape
-  // from URL state + bootstrap defaults and that's what consumers see.
-  return camelizeObjectKeys(payload.scenario_set_input);
+  return camelizeObjectKeys(zBrowserScenarioSetInputOverridesInput.parse(payload.scenario_set_input));
 }
 
 export function scenarioSetInputFromUrlSearch(search) {

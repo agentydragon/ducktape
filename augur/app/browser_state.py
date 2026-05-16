@@ -10,6 +10,12 @@ exists so the nested input gets the same treatment instead of being
 hand-maintained in JS via ``SCENARIO_INPUT_SECTION_FIELDS`` /
 ``FINANCING_MODE_IDS`` / ``PRIVATE_EQUITY_SALE_POLICY_IDS`` constants.
 
+Two flavors per section: the strict shape (every field required) describes
+the *normalized* layout the React app operates on after merging URL state
+with bootstrap defaults; the ``…Overrides`` mirror (every field optional)
+describes the sparse-overrides payload the URL actually stores, which lets
+``decodeScenarioSetUrlState`` validate URL state at the Zod boundary.
+
 URL state version (``URL_STATE_VERSION`` in ``scenario_set_state.js``) is the
 contract version for the encoded form. Bumping any field here is a wire-state
 break and demands a version bump.
@@ -19,9 +25,16 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+from pydantic import ConfigDict
+
 from augur.core.bootstrap import ActorPolicyId, LiquidReservePolicyId, OwnerResidenceModeId, RentalUsePolicyId
 from augur.core.scenario_set import FinancingMode, MarketRequest, ReportSpec
 from augur.core.schemas import ApiModel
+
+# ---------------------------------------------------------------------------
+# Browser scenario set input — strict shape. Every field present after
+# normalizeScenarioSetInput materializes from URL state + bootstrap defaults.
+# ---------------------------------------------------------------------------
 
 
 class BrowserScenarioIdentity(ApiModel):
@@ -117,3 +130,102 @@ class BrowserScenarioSetInput(ApiModel):
     market_request: MarketRequest
     report_spec: ReportSpec
     scenarios: tuple[BrowserScenarioInput, ...]
+
+
+# ---------------------------------------------------------------------------
+# Browser scenario set input — sparse-overrides shape. What
+# ``encodeScenarioSetUrlState`` actually writes: only the fields the user
+# changed away from bootstrap defaults persist; everything else stays absent
+# and gets re-derived at decode time. Every field is optional at every depth.
+# Unknown keys are silently ignored so old URLs from before a field was added
+# don't blow up newer code.
+# ---------------------------------------------------------------------------
+
+
+class _Overrides(ApiModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+
+class BrowserScenarioIdentityOverrides(_Overrides):
+    scenario_id: str | None = None
+    label: str | None = None
+    enabled: bool | None = None
+    color: str | None = None
+
+
+class BrowserPropertyAndLocationOverrides(_Overrides):
+    property_id: str | None = None
+
+
+class BrowserActorsAndOwnershipOverrides(_Overrides):
+    actor_policy: ActorPolicyId | None = None
+    partner_payment_monthly_usd: float | None = None
+
+
+class BrowserTimelineOverrides(_Overrides):
+    hold_years: float | None = None
+
+
+class BrowserFinancingOverrides(_Overrides):
+    financing_mode: FinancingMode | None = None
+    down_payment_pct: float | None = None
+    custom_mortgage_rate: float | None = None
+    custom_mortgage_term_years: float | None = None
+    credit_score: float | None = None
+
+
+class BrowserOccupancyAndRentalOverrides(_Overrides):
+    owner_residence_mode: OwnerResidenceModeId | None = None
+    rental_use_policy: RentalUsePolicyId | None = None
+    vacancy_pct: float | None = None
+    management_fee_pct: float | None = None
+    leasing_fee_pct: float | None = None
+    rooms_rented_while_living: float | None = None
+    room_rent_monthly_usd: float | None = None
+    room_vacancy_pct: float | None = None
+
+
+class BrowserPropertyAssumptionsOverrides(_Overrides):
+    maintenance_pct: float | None = None
+    insurance_annual_usd: float | None = None
+    depreciable_basis_pct: float | None = None
+
+
+class BrowserTaxAccountingOverrides(_Overrides):
+    closing_cost_buy_pct: float | None = None
+    closing_cost_sell_pct: float | None = None
+
+
+class BrowserInitialBalanceSheetOverrides(_Overrides):
+    initial_checking_usd: float | None = None
+    starting_portfolio_usd: float | None = None
+    private_equity_units: float | None = None
+
+
+class BrowserPoliciesOverrides(_Overrides):
+    liquid_reserve_policy: LiquidReservePolicyId | None = None
+    checking_floor_usd: float | None = None
+    checking_sale_amount_usd: float | None = None
+    private_equity_sale_policy: PrivateEquitySalePolicyId | None = None
+    private_equity_liquid_net_worth_floor_usd: float | None = None
+    private_equity_tender_sale_amount_usd: float | None = None
+
+
+class BrowserScenarioInputOverrides(_Overrides):
+    identity: BrowserScenarioIdentityOverrides | None = None
+    property_and_location: BrowserPropertyAndLocationOverrides | None = None
+    actors_and_ownership: BrowserActorsAndOwnershipOverrides | None = None
+    timeline: BrowserTimelineOverrides | None = None
+    financing: BrowserFinancingOverrides | None = None
+    occupancy_and_rental: BrowserOccupancyAndRentalOverrides | None = None
+    property_assumptions: BrowserPropertyAssumptionsOverrides | None = None
+    tax_accounting: BrowserTaxAccountingOverrides | None = None
+    initial_balance_sheet: BrowserInitialBalanceSheetOverrides | None = None
+    policies: BrowserPoliciesOverrides | None = None
+
+
+class BrowserScenarioSetInputOverrides(_Overrides):
+    title: str | None = None
+    market_request: MarketRequest | None = None
+    report_spec: ReportSpec | None = None
+    scenarios: tuple[BrowserScenarioInputOverrides, ...] | None = None
