@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 
 from augur.app.config import load_augur_config, resolve_augur_config_path
-from augur.app.http_server import run_server
+from augur.app.http_server import StaticBundle, run_server
 from util.bazel.runfiles import get_required_path
 
 
@@ -25,7 +25,7 @@ def main(argv: list[str] | None = None) -> int:
     market_config_path = get_required_path("_main/augur/model/config/market_config.example.json")
     return run_server(
         augur_config=load_augur_config(config_path),
-        dist_dir=dist_dir,
+        bundle=StaticBundle(dist_dir=dist_dir),
         default_market_config_path=market_config_path,
         argv=remaining,
     )
