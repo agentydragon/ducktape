@@ -1,4 +1,5 @@
-import { camelizeObjectKeys, decamelizeObjectKeys } from "./casing.js";
+import { camelizeObjectKeys, decamelizeObjectKeys, snakeToCamelKey } from "./casing.js";
+import { zBrowserScenarioInputInput, zFinancingMode, zPrivateEquitySalePolicyId } from "./api/schema.zod.mjs";
 
 export const SCENARIO_COLORS = ["#2563eb", "#dc2626", "#059669", "#d97706", "#7c3aed", "#0891b2"];
 
@@ -16,43 +17,9 @@ const DEFAULT_REPORT_SPEC = {
   includeMonthlyColumns: true,
 };
 
-const FINANCING_MODE_IDS = new Set(["cash", "fixed_30", "fixed_15", "custom"]);
-const PRIVATE_EQUITY_SALE_POLICY_IDS = new Set(["none", "liquid_net_worth_floor"]);
-
-const SCENARIO_INPUT_SECTION_FIELDS = Object.freeze({
-  identity: Object.freeze(["scenarioId", "label", "enabled", "color"]),
-  propertyAndLocation: Object.freeze(["propertyId"]),
-  actorsAndOwnership: Object.freeze(["actorPolicy", "partnerPaymentMonthlyUsd"]),
-  timeline: Object.freeze(["holdYears"]),
-  financing: Object.freeze([
-    "financingMode",
-    "downPaymentPct",
-    "customMortgageRate",
-    "customMortgageTermYears",
-    "creditScore",
-  ]),
-  occupancyAndRental: Object.freeze([
-    "ownerResidenceMode",
-    "rentalUsePolicy",
-    "vacancyPct",
-    "managementFeePct",
-    "leasingFeePct",
-    "roomsRentedWhileLiving",
-    "roomRentMonthlyUsd",
-    "roomVacancyPct",
-  ]),
-  propertyAssumptions: Object.freeze(["maintenancePct", "insuranceAnnualUsd", "depreciableBasisPct"]),
-  taxAccounting: Object.freeze(["closingCostBuyPct", "closingCostSellPct"]),
-  initialBalanceSheet: Object.freeze(["initialCheckingUsd", "startingPortfolioUsd", "privateEquityUnits"]),
-  policies: Object.freeze([
-    "liquidReservePolicy",
-    "checkingFloorUsd",
-    "checkingSaleAmountUsd",
-    "privateEquitySalePolicy",
-    "privateEquityLiquidNetWorthFloorUsd",
-    "privateEquityTenderSaleAmountUsd",
-  ]),
-});
+const FINANCING_MODE_IDS = new Set(zFinancingMode.options);
+const PRIVATE_EQUITY_SALE_POLICY_IDS = new Set(zPrivateEquitySalePolicyId.options);
+const SCENARIO_INPUT_SECTIONS = new Set(Object.keys(zBrowserScenarioInputInput.shape).map(snakeToCamelKey));
 
 function finiteNumber(value, defaultValue) {
   const number = Number(value);
@@ -121,7 +88,7 @@ function scenarioIdFromIndex(index) {
 }
 
 export function patchScenarioInputSection(scenario, section, patch) {
-  if (!Object.hasOwn(SCENARIO_INPUT_SECTION_FIELDS, section)) {
+  if (!SCENARIO_INPUT_SECTIONS.has(section)) {
     throw new Error(`Unknown Augur scenario input section: ${section}`);
   }
   return {
@@ -791,6 +758,11 @@ export function decodeScenarioSetUrlState(value) {
   if (!payload.scenario_set_input || typeof payload.scenario_set_input !== "object") {
     throw new Error("Augur scenario URL state is missing scenario_set_input");
   }
+  // Intentionally not parsed against zBrowserScenarioSetInput: the URL stores
+  // a sparse-overrides payload (only fields the user changed away from
+  // bootstrap defaults), and the model marks every section's fields as
+  // required. normalizeScenarioSetInput below materializes the full shape
+  // from URL state + bootstrap defaults and that's what consumers see.
   return camelizeObjectKeys(payload.scenario_set_input);
 }
 

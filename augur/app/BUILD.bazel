@@ -89,9 +89,20 @@ py_library(
 )
 
 py_library(
+    name = "browser_state_py",
+    srcs = ["browser_state.py"],
+    deps = [
+        "//augur/core:bootstrap_py",
+        "//augur/core:scenario_set_py",
+        "//augur/core:schemas_py",
+    ],
+)
+
+py_library(
     name = "export_schema_py",
     srcs = ["export_schema.py"],
     deps = [
+        ":browser_state_py",
         "//augur/core:bootstrap_py",
         "//augur/core:scenario_set_py",
         "@pypi//fastapi",

@@ -26,7 +26,10 @@ js_library(
 js_library(
     name = "scenario_set_state",
     srcs = ["scenario_set_state.js"],
-    deps = [":casing"],
+    deps = [
+        ":casing",
+        ":schema_zod",
+    ],
 )
 
 js_test(

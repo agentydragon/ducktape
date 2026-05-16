@@ -7,6 +7,7 @@ import json
 from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 
+from augur.app.browser_state import BrowserScenarioSetInput
 from augur.core.bootstrap import BootstrapResponse
 from augur.core.scenario_set import ScenarioSet, ScenarioSetRunResponse
 
@@ -20,6 +21,15 @@ def create_schema_app() -> FastAPI:
 
     @app.post("/api/scenario_sets/run", response_model=ScenarioSetRunResponse)
     def run_scenario_set(scenario_set: ScenarioSet) -> ScenarioSetRunResponse:
+        raise RuntimeError("schema-only route")
+
+    # Browser-internal nested state shape. Not a real server endpoint; declared
+    # so FastAPI emits BrowserScenarioSetInput (and its section sub-models)
+    # into components.schemas, where the Zod codegen picks them up. The
+    # frontend's URL state and section validators consume the generated
+    # schemas instead of hand-maintaining parallel field lists.
+    @app.post("/api/_browser_state", response_model=BrowserScenarioSetInput, include_in_schema=True)
+    def _browser_state(payload: BrowserScenarioSetInput) -> BrowserScenarioSetInput:
         raise RuntimeError("schema-only route")
 
     @app.get("/healthz", response_class=PlainTextResponse)
