@@ -40,6 +40,24 @@ pub struct StatementFacts {
     pub local_effects: BTreeSet<BindingName>,
     pub purity: Purity,
     pub kind: StatementKind,
+    /// Sibling-group key for multi-declarator `var/let/const`
+    /// comma-lists post-split. All single-declarator facts produced
+    /// from the same original `VariableDeclaration` AST node share
+    /// this key (the [`StatementOrdinal`] of the first sibling).
+    /// Single-declarator statements get `None`.
+    ///
+    /// Consumed by [`crate::graph::build_owner_graph`] to suppress
+    /// the source-order `Sequenced` edge between siblings of the
+    /// same comma-list: each declarator's RHS is evaluated
+    /// left-to-right by JS semantics, but the side effects of one
+    /// sibling never depend on observation by another (they share
+    /// no live state — the sibling's binding doesn't exist until
+    /// after its own initializer runs). The actual data-dependency
+    /// case — declarator N reads a binding declared by an earlier
+    /// declarator — is still captured by the regular `EagerUse`
+    /// edge from declarator N's `eager_reads`, so suppressing the
+    /// `Sequenced` edge does not lose any read constraint.
+    pub comma_sibling_group: Option<StatementOrdinal>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -121,7 +139,7 @@ pub enum StatementKind {
 /// the module a top-level-await module.
 pub fn find_top_level_await(module: &Module) -> Option<StatementOrdinal> {
     let body = top_level_item_views(&module.body);
-    for (ordinal, item) in body.iter().enumerate() {
+    for (ordinal, (item, _group)) in body.iter().enumerate() {
         let mut finder = TopLevelAwaitFinder::default();
         item.as_module_item().visit_with(&mut finder);
         if finder.found {
@@ -177,7 +195,7 @@ where
     let facts = body
         .iter()
         .enumerate()
-        .map(|(ordinal, item)| {
+        .map(|(ordinal, (item, group))| {
             let item = item.as_module_item();
             if top_level_await.is_none() {
                 let mut finder = TopLevelAwaitFinder::default();
@@ -186,7 +204,15 @@ where
                     top_level_await = Some(StatementOrdinal(ordinal));
                 }
             }
-            let mut fact = analyze_item(StatementOrdinal(ordinal), item, &shadowed, hints, &graph);
+            let comma_sibling_group = group.map(StatementOrdinal);
+            let mut fact = analyze_item(
+                StatementOrdinal(ordinal),
+                item,
+                comma_sibling_group,
+                &shadowed,
+                hints,
+                &graph,
+            );
             fact.source_location = source_path.and_then(|source_path| {
                 line_range_for_span(item.span()).map(|(start_line, end_line)| SourceLocation {
                     source_path: source_path.to_string(),
@@ -241,47 +267,54 @@ impl TopLevelItemView<'_> {
 /// single-declarator statements preserving source order; unchanged
 /// statements stay borrowed so the analyzer does not clone the whole
 /// app chunk just to get per-declarator ownership.
-pub(crate) fn top_level_item_views(body: &[ModuleItem]) -> Vec<TopLevelItemView<'_>> {
+///
+/// The returned `Option<usize>` per item is the sibling-group key:
+/// `Some(g)` for every single-declarator item produced from a
+/// multi-declarator comma-list (the position of the first sibling in
+/// the output `Vec`), `None` for unsplit items. `analyze_chunk` maps
+/// the key into a `StatementOrdinal` on
+/// [`StatementFacts::comma_sibling_group`].
+pub(crate) fn top_level_item_views(
+    body: &[ModuleItem],
+) -> Vec<(TopLevelItemView<'_>, Option<usize>)> {
     let mut out = Vec::with_capacity(body.len());
+    let push_split_var =
+        |var: &VarDecl,
+         wrap: &dyn Fn(VarDecl) -> ModuleItem,
+         out: &mut Vec<(TopLevelItemView<'_>, Option<usize>)>| {
+            let group = out.len();
+            for decl in &var.decls {
+                let single = VarDecl {
+                    span: decl.span,
+                    ctxt: var.ctxt,
+                    kind: var.kind,
+                    declare: var.declare,
+                    decls: vec![decl.clone()],
+                };
+                out.push((TopLevelItemView::Owned(wrap(single)), Some(group)));
+            }
+        };
     for item in body {
         match item {
             ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) if var.decls.len() > 1 => {
-                for decl in &var.decls {
-                    let single = VarDecl {
-                        span: decl.span,
-                        ctxt: var.ctxt,
-                        kind: var.kind,
-                        declare: var.declare,
-                        decls: vec![decl.clone()],
-                    };
-                    out.push(TopLevelItemView::Owned(ModuleItem::Stmt(Stmt::Decl(
-                        Decl::Var(Box::new(single)),
-                    ))));
-                }
+                let wrap = |v: VarDecl| ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(v))));
+                push_split_var(var.as_ref(), &wrap, &mut out);
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
                 match &export_decl.decl {
                     Decl::Var(var) if var.decls.len() > 1 => {
-                        for decl in &var.decls {
-                            let single = VarDecl {
-                                span: decl.span,
-                                ctxt: var.ctxt,
-                                kind: var.kind,
-                                declare: var.declare,
-                                decls: vec![decl.clone()],
-                            };
-                            out.push(TopLevelItemView::Owned(ModuleItem::ModuleDecl(
-                                ModuleDecl::ExportDecl(ExportDecl {
-                                    span: decl.span,
-                                    decl: Decl::Var(Box::new(single)),
-                                }),
-                            )));
-                        }
+                        let wrap = |v: VarDecl| {
+                            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                                span: v.span,
+                                decl: Decl::Var(Box::new(v)),
+                            }))
+                        };
+                        push_split_var(var.as_ref(), &wrap, &mut out);
                     }
-                    _ => out.push(TopLevelItemView::Borrowed(item)),
+                    _ => out.push((TopLevelItemView::Borrowed(item), None)),
                 }
             }
-            _ => out.push(TopLevelItemView::Borrowed(item)),
+            _ => out.push((TopLevelItemView::Borrowed(item), None)),
         }
     }
     out
@@ -295,14 +328,16 @@ pub(crate) fn top_level_item_views(body: &[ModuleItem]) -> Vec<TopLevelItemView<
 /// shadows — `const Math = …` and
 /// `import { Math } from "./userland"` both make `Math.PI` an
 /// Unknown read, not the global constant. See DESIGN.md A8.
-pub(crate) fn compute_shadowed_globals(body: &[TopLevelItemView<'_>]) -> BTreeSet<&'static str> {
+pub(crate) fn compute_shadowed_globals(
+    body: &[(TopLevelItemView<'_>, Option<usize>)],
+) -> BTreeSet<&'static str> {
     let mut shadowed = BTreeSet::new();
     let try_shadow = |name: &str, into: &mut BTreeSet<&'static str>| {
         if let Some(global) = WHITELIST_RECEIVERS.iter().copied().find(|r| *r == name) {
             into.insert(global);
         }
     };
-    for item in body {
+    for (item, _group) in body {
         let item = item.as_module_item();
         for name in collect_declared_names(item) {
             try_shadow(name.as_str(), &mut shadowed);
@@ -324,6 +359,7 @@ pub(crate) fn compute_shadowed_globals(body: &[TopLevelItemView<'_>]) -> BTreeSe
 fn analyze_item(
     ordinal: StatementOrdinal,
     item: &ModuleItem,
+    comma_sibling_group: Option<StatementOrdinal>,
     shadowed: &BTreeSet<&'static str>,
     hints: &AnalysisHints,
     graph: &ChunkCodeGraph,
@@ -356,6 +392,7 @@ fn analyze_item(
         local_effects,
         purity,
         kind,
+        comma_sibling_group,
     }
 }
 
