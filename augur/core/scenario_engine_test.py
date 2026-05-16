@@ -23,6 +23,8 @@ from augur.core.scenario_set import (
     PayMortgageAction,
     PrivateEquitySaleDecision,
     PrivateEquitySaleDecisionReason,
+    PrivateEquitySaleOpportunityObservation,
+    PrivateEquitySaleRuleType,
     ReportMetric,
     RolloutStatusType,
     ScenarioSet,
@@ -1254,6 +1256,12 @@ def test_private_equity_fixed_sale_into_cash_requires_opportunity_and_policy() -
         and decision.decision_reason is PrivateEquitySaleDecisionReason.SALE_REQUESTED
     ]
     assert len(sale_decisions) == 2
+    assert {decision.source_asset_id for decision in sale_decisions} == {"private_equity"}
+    assert {decision.sale_rule_type for decision in sale_decisions} == {
+        PrivateEquitySaleRuleType.FIXED_AMOUNT_ON_OPPORTUNITY
+    }
+    assert {decision.configured_sale_amount_usd for decision in sale_decisions} == {20_000}
+    assert {decision.target_liquid_net_worth_floor_usd for decision in sale_decisions} == {None}
     for decision in sale_decisions:
         expected_opportunity_id = (
             f"{market_bundle.metadata.path_set_id}:path:{decision.rollout_index}:month:1:"
@@ -1337,11 +1345,23 @@ def test_private_equity_liquid_net_worth_floor_policy_sells_to_sp500_on_opportun
     assert {decision.target_liquid_net_worth_floor_usd for decision in sale_decisions} == {125_000}
     assert_allclose([decision.liquid_net_worth_usd for decision in sale_decisions], [120_000, 120_000])
     assert_allclose([decision.sale_opportunity_value_usd for decision in sale_decisions], [50_000, 50_000])
+    assert {decision.source_asset_id for decision in sale_decisions} == {"private_equity"}
+    assert {decision.sale_rule_type for decision in sale_decisions} == {
+        PrivateEquitySaleRuleType.LIQUID_NET_WORTH_FLOOR
+    }
+    assert {decision.configured_sale_amount_usd for decision in sale_decisions} == {20_000}
     for decision in sale_decisions:
         assert decision.opportunity_id == (
             f"{market_bundle.metadata.path_set_id}:path:{decision.rollout_index}:month:1:"
             "private_equity_holding:private_equity:sale_opportunity"
         )
+    opportunity_observations = [
+        obs
+        for obs in result.market_observations
+        if isinstance(obs, PrivateEquitySaleOpportunityObservation) and obs.month_index == 1
+    ]
+    assert len(opportunity_observations) == 2
+    assert {obs.source_asset_id for obs in opportunity_observations} == {"private_equity"}
 
 
 def test_private_equity_liquid_net_worth_floor_records_policy_not_triggered() -> None:
@@ -1382,6 +1402,9 @@ def test_private_equity_liquid_net_worth_floor_records_policy_not_triggered() ->
     assert_allclose(result.liquid_net_worth_usd[:, 1], [120_000, 120_000])
     assert_allclose([decision.sale_opportunity_value_usd for decision in decisions], [50_000, 50_000])
     assert_allclose([decision.liquid_net_worth_usd for decision in decisions], [120_000, 120_000])
+    assert {decision.source_asset_id for decision in decisions} == {"private_equity"}
+    assert {decision.sale_rule_type for decision in decisions} == {PrivateEquitySaleRuleType.LIQUID_NET_WORTH_FLOOR}
+    assert {decision.configured_sale_amount_usd for decision in decisions} == {20_000}
     for decision in decisions:
         expected_opportunity_id = (
             f"{market_bundle.metadata.path_set_id}:path:{decision.rollout_index}:month:1:"

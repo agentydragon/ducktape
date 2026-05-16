@@ -72,6 +72,7 @@ from augur.core.scenario_set import (
     CheckingFloorSellPublicStockPolicy,
     FailureEventType,
     FinancingMode,
+    FixedAmountPrivateEquitySaleRule,
     FundingDecisionType,
     FundingSourceType,
     GenericSp500StockPosition,
@@ -92,6 +93,7 @@ from augur.core.scenario_set import (
     PrivateEquitySaleDecisionReason,
     PrivateEquitySaleOpportunityObservation,
     PrivateEquitySalePolicy,
+    PrivateEquitySaleRule,
     PropertyPurchaseEvent,
     PropertySaleBasisGainDetail,
     RentalMode,
@@ -1354,7 +1356,10 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             source_holding_id=private_equity_source_holding_id,
         )
         _record_private_equity_sale_opportunity_observations(
-            market_observations, month_index=int(month_index[month]), opportunity=market_opportunity
+            market_observations,
+            month_index=int(month_index[month]),
+            source_asset_id=private_equity_source_holding_id,
+            opportunity=market_opportunity,
         )
         market_sale_opportunity_value = market_opportunity.sale_opportunity_value_usd
         private_equity_sale_month = np.zeros(rollout_count, dtype="float64")
@@ -1413,6 +1418,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                     policy_decisions,
                     month_index=int(month_index[month]),
                     policy_step=policy_step,
+                    source_asset_id=private_equity_source_holding_id,
                     instruction=sale_instruction,
                     opportunity=current_opportunity,
                     liquid_net_worth_usd=liquid_net_worth,
@@ -2184,7 +2190,11 @@ def _market_path_observations(
 
 
 def _record_private_equity_sale_opportunity_observations(
-    records: list[SimulationMarketObservation], *, month_index: int, opportunity: PrivateEquitySaleOpportunityBatch
+    records: list[SimulationMarketObservation],
+    *,
+    month_index: int,
+    source_asset_id: str,
+    opportunity: PrivateEquitySaleOpportunityBatch,
 ) -> None:
     active_rollouts = np.nonzero(opportunity.sale_opportunity_mask)[0].tolist()
     records.extend(
@@ -2192,6 +2202,7 @@ def _record_private_equity_sale_opportunity_observations(
             PrivateEquitySaleOpportunityObservation(
                 rollout_index=rollout_index,
                 month_index=month_index,
+                source_asset_id=source_asset_id,
                 opportunity_id=str(opportunity.opportunity_id[rollout_index]),
                 opportunity_cause_id=str(opportunity.opportunity_cause_id[rollout_index]),
                 sale_opportunity_value_usd=float(opportunity.sale_opportunity_value_usd[rollout_index]),
@@ -2266,6 +2277,7 @@ def _record_private_equity_sale_decisions(
     *,
     month_index: int,
     policy_step: ActorPolicyStep[Policy],
+    source_asset_id: str,
     instruction: PrivateEquitySaleInstructionBatch,
     opportunity: PrivateEquitySaleOpportunityBatch,
     liquid_net_worth_usd: np.ndarray,
@@ -2278,6 +2290,8 @@ def _record_private_equity_sale_decisions(
         if isinstance(policy.sale_rule, LiquidNetWorthFloorPrivateEquitySaleRule)
         else None
     )
+    sale_rule_type = policy.sale_rule.sale_rule_type
+    configured_sale_amount_usd = _private_equity_configured_sale_amount_usd(policy.sale_rule)
     records.extend(
         (
             PrivateEquitySaleDecision(
@@ -2290,6 +2304,9 @@ def _record_private_equity_sale_decisions(
                     requested_amount_usd=instruction.requested_amount_usd[rollout_index],
                     sale_opportunity_value_usd=opportunity.sale_opportunity_value_usd[rollout_index],
                 ),
+                source_asset_id=source_asset_id,
+                sale_rule_type=sale_rule_type,
+                configured_sale_amount_usd=configured_sale_amount_usd,
                 opportunity_id=instruction.opportunity_id[rollout_index],
                 opportunity_cause_id=str(instruction.opportunity_cause_id[rollout_index]),
                 requested_amount_usd=float(instruction.requested_amount_usd[rollout_index]),
@@ -2304,6 +2321,14 @@ def _record_private_equity_sale_decisions(
         )
         for rollout_index in range(instruction.requested_amount_usd.shape[0])
     )
+
+
+def _private_equity_configured_sale_amount_usd(sale_rule: PrivateEquitySaleRule) -> float:
+    if isinstance(sale_rule, FixedAmountPrivateEquitySaleRule):
+        return float(sale_rule.amount_usd)
+    if isinstance(sale_rule, LiquidNetWorthFloorPrivateEquitySaleRule):
+        return float(sale_rule.sale_amount_usd)
+    raise TypeError(f"unsupported private equity sale rule: {sale_rule!r}")
 
 
 def _private_equity_sale_decision_reason(

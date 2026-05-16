@@ -515,6 +515,13 @@ class SellPublicStockDecision(_SimulationPolicyDecisionBase):
 class PrivateEquitySaleDecision(_SimulationPolicyDecisionBase):
     decision_type: Literal[PolicyDecisionType.PRIVATE_EQUITY_SALE] = PolicyDecisionType.PRIVATE_EQUITY_SALE
     decision_reason: PrivateEquitySaleDecisionReason
+    source_asset_id: str = Field(description="Private-equity holding the policy targeted.")
+    sale_rule_type: PrivateEquitySaleRuleType = Field(
+        description="Rule variant the policy applied to this opportunity (lets the trajectory view explain the reason)."
+    )
+    configured_sale_amount_usd: float = Field(
+        description="Rule-configured sale amount in USD. Equal to amount_usd for fixed rules and sale_amount_usd for the liquid-net-worth-floor rule."
+    )
     opportunity_id: str | None = None
     opportunity_cause_id: str
     requested_amount_usd: float
@@ -558,6 +565,7 @@ class PrivateEquitySaleOpportunityObservation(_SimulationMarketObservationBase):
     observation_type: Literal[MarketObservationType.PRIVATE_EQUITY_SALE_OPPORTUNITY] = (
         MarketObservationType.PRIVATE_EQUITY_SALE_OPPORTUNITY
     )
+    source_asset_id: str = Field(description="Private-equity holding that produced this tender opportunity.")
     opportunity_id: str
     opportunity_cause_id: str
     sale_opportunity_value_usd: float

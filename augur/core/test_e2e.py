@@ -47,6 +47,7 @@ from augur.core.scenario_set import (
     PrivateEquitySaleDecisionReason,
     PrivateEquitySaleOpportunityObservation,
     PrivateEquitySalePolicy,
+    PrivateEquitySaleRuleType,
     PropertyAssumptions,
     PropertySaleBasisGainDetail,
     PropertySaleEvent,
@@ -1248,6 +1249,11 @@ def test_private_equity_tender_sale_into_cash_increases_only_actual_liquid_asset
     assert {decision.decision_reason for decision in no_opportunity_decisions} == {
         PrivateEquitySaleDecisionReason.NO_SALE_OPPORTUNITY
     }
+    assert {decision.source_asset_id for decision in no_opportunity_decisions} == {"pe"}
+    assert {decision.sale_rule_type for decision in no_opportunity_decisions} == {
+        PrivateEquitySaleRuleType.FIXED_AMOUNT_ON_OPPORTUNITY
+    }
+    assert {decision.configured_sale_amount_usd for decision in no_opportunity_decisions} == {100_000}
     assert no_opportunity_decisions[-1].requested_amount_usd == 0
     assert no_opportunity_decisions[-1].sale_opportunity_value_usd == 0
     assert no_opportunity_decisions[-1].opportunity_id is None
@@ -1280,6 +1286,7 @@ def test_private_equity_tender_sale_into_cash_increases_only_actual_liquid_asset
     opportunity_observations = rollout.market_observations(PrivateEquitySaleOpportunityObservation)
     assert len(opportunity_observations) == 1
     assert opportunity_observations[0].month_index == 12
+    assert opportunity_observations[0].source_asset_id == "pe"
     expected_opportunity_id = (
         f"{opportunity_observations[0].path_set_id}:path:0:month:12:private_equity_holding:pe:sale_opportunity"
     )
@@ -1290,6 +1297,9 @@ def test_private_equity_tender_sale_into_cash_increases_only_actual_liquid_asset
         decision for decision in result.policy_decisions(PrivateEquitySaleDecision) if decision.month_index == 12
     )
     assert pe_decision.decision_reason is PrivateEquitySaleDecisionReason.SALE_REQUESTED
+    assert pe_decision.source_asset_id == "pe"
+    assert pe_decision.sale_rule_type is PrivateEquitySaleRuleType.FIXED_AMOUNT_ON_OPPORTUNITY
+    assert pe_decision.configured_sale_amount_usd == 100_000
     assert pe_decision.opportunity_id == expected_opportunity_id
     assert pe_decision.opportunity_cause_id == expected_opportunity_id
     assert pe_decision.requested_amount_usd == 100_000
