@@ -12,8 +12,8 @@ With BuildBuddy/RBE, use the invocation id printed by Bazel:
 
     bbapi artifact "$INV" test.outputs/distribution_default.png \
         > augur/app/__screenshots__/distribution_default.png
-    bbapi artifact "$INV" test.outputs/distribution_long_fan.png \
-        > augur/app/__screenshots__/distribution_long_fan.png
+    bbapi artifact "$INV" test.outputs/distribution_fan.png \
+        > augur/app/__screenshots__/distribution_fan.png
     bbapi artifact "$INV" test.outputs/trajectory_scenario_2_rollout_3.png \
         > augur/app/__screenshots__/trajectory_scenario_2_rollout_3.png
 """
@@ -70,21 +70,21 @@ def _visual_path(path: str, scenario_set_input: dict[str, object], *, scenario: 
     return f"{path}?{query}"
 
 
-LONG_FAN_STATE: dict[str, object] = {
-    "title": "Augur long-run distribution fan fixture",
-    "market_request": {"market_model_id": "visual_long_fan", "rollout_count": 32, "horizon_months": 360, "seed": 23},
+FAN_STATE: dict[str, object] = {
+    "title": "Augur distribution fan fixture",
+    "market_request": {"market_model_id": "visual_fan", "rollout_count": 32, "horizon_months": 36, "seed": 23},
     "report_spec": {"percentiles": [5, 25, 50, 75, 95], "include_monthly_columns": True},
     "scenarios": [
         {
             "identity": {
-                "scenario_id": "location_a_long_fan",
-                "label": "Location A 30-year fan",
+                "scenario_id": "location_a_fan",
+                "label": "Location A 3-year fan",
                 "enabled": True,
                 "color": "#2563eb",
             },
             "property_and_location": {"property_id": "location_a_property"},
             "actors_and_ownership": {"actor_policy": "owner_only", "partner_payment_monthly_usd": 2000},
-            "timeline": {"hold_years": 30},
+            "timeline": {"hold_years": 3},
             "financing": {"financing_mode": "fixed_30", "down_payment_pct": 25, "credit_score": 776},
             "initial_balance_sheet": {
                 "initial_checking_usd": 75000,
@@ -99,14 +99,14 @@ LONG_FAN_STATE: dict[str, object] = {
         },
         {
             "identity": {
-                "scenario_id": "location_b_long_fan",
-                "label": "Location B shared 30-year fan",
+                "scenario_id": "location_b_fan",
+                "label": "Location B shared 3-year fan",
                 "enabled": True,
                 "color": "#dc2626",
             },
             "property_and_location": {"property_id": "location_b_property"},
             "actors_and_ownership": {"actor_policy": "owner_plus_partner", "partner_payment_monthly_usd": 2750},
-            "timeline": {"hold_years": 30},
+            "timeline": {"hold_years": 3},
             "financing": {"financing_mode": "fixed_30", "down_payment_pct": 20, "credit_score": 776},
             "occupancy_and_rental": {
                 "owner_residence_mode": "selected_property",
@@ -144,8 +144,8 @@ VISUAL_CASES = (
         hidden_text="Selected path monthly ledger",
     ),
     VisualCase(
-        name="distribution_long_fan",
-        path=_visual_path("/distribution", LONG_FAN_STATE, scenario="location_a_long_fan"),
+        name="distribution_fan",
+        path=_visual_path("/distribution", FAN_STATE, scenario="location_a_fan"),
         visible_text="Scenario probability fans",
         hidden_text="Selected path monthly ledger",
         min_fan_band_height=80,
