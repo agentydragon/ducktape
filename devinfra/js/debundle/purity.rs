@@ -1799,7 +1799,10 @@ fn static_member_pair(member: &MemberExpr) -> Option<(&'static str, &'static str
 ///   * No-arg form against `PURE_BUILTIN_NEW_NO_ARGS`.
 ///   * 1-arg Array-literal-iterable form against
 ///     `PURE_BUILTIN_NEW_ARRAY_ITERABLE` (`Set` / `Map`).
-///   * Spec-declared `purity: pure_new` bindings, with all args pure.
+///   * Spec-declared `purity: pure_new` bindings, with every
+///     argument a primitive literal (no spreads, no identifiers,
+///     no nested calls, no object/array literals). See P-2 in
+///     `oversize_closure_patterns.md`.
 ///
 /// Everything else (non-Ident callees, shadowed names, tagged
 /// templates, other arg shapes) falls through to `Unknown`.
@@ -1859,20 +1862,32 @@ fn classify_new_expr_purity(
         .worst(inner);
     }
     if graph.is_declared_pure_new(callee.sym.as_ref()) {
+        // P-2 `singleton_instance_with_listener_blocking_pure_alias`:
+        // admit `new <DeclaredPureNew>(<primitive-literal-args>)`
+        // as Pure. The literal-arg constraint is strictly
+        // narrower than `all_args_pure` — bindings, member
+        // reads, calls, and even fresh object/array literals
+        // can hide getters, Proxies, or side-effecting
+        // expressions on coercion; restricting to primitive
+        // literals (string / number / boolean / null / bigint)
+        // guarantees the constructor's argument evaluation
+        // fires no user code. This matches the conservative
+        // contract documented in P-7 for `Object.freeze(<literal>)`.
         let args = new_expr.args.as_deref().unwrap_or(&[]);
-        let arg_purity = all_args_pure(args, shadowed, declared_pure, graph);
-        if arg_purity.is_pure() {
+        if args
+            .iter()
+            .all(|arg| arg.spread.is_none() && is_primitive_literal(&arg.expr))
+        {
             return Purity::Pure;
         }
         return Purity::from_reason_with_detail(
             PurityRule::UnknownNew,
             new_expr.span,
             format!(
-                "new {}(...) has impure argument(s) despite pure_new annotation",
+                "new {}(...) has non-literal argument(s); P-2 admits only primitive-literal args",
                 callee.sym
             ),
-        )
-        .worst(arg_purity);
+        );
     }
     Purity::from_reason_with_detail(
         PurityRule::UnknownNew,
