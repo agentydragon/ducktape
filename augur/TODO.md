@@ -97,12 +97,6 @@ second ordered roadmap.
       generator, path-set, and validation-report identities; the next step is
       durable evidence/calibration artifacts, real validation reports, and
       reviewed limitations rather than placeholder IDs.
-- [ ] Replace `AugurBackend` constructor shapes that rely on many nullable
-      parameters with explicit dependency/config objects or separate factory
-      paths for production static serving versus dev/test API serving.
-- [ ] Collapse `augur/app/static.py` unless the static-path helper grows a real
-      module boundary. A one-function wrapper should live next to the HTTP
-      server code that uses it.
 - [ ] Stop requiring private-equity input positions to carry both `units` and a
       marked `value_usd` when the value is determined by units plus the private
       equity price model. The browser no longer stores an editable private
