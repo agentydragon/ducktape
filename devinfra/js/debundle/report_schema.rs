@@ -289,7 +289,7 @@ pub struct FactorizeCell {
     pub extension_owner_ids: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum FactorizeDiagnosticReason {
     ExceedsSizeCap,

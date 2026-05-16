@@ -3361,6 +3361,42 @@ function consumer() { return dep_a + dep_b; }"#,
         );
     }
 
+    /// Different residual frontier starts can converge on the same closure
+    /// during blocker-driven growth. The report should contain one row per
+    /// (reason, closure) equivalence class — not one row per starting unit
+    /// — so each diagnostic's `(reason, sorted owner_ids)` must be unique.
+    /// The same invariant covers the `close_frontier` early-bail when a
+    /// seed is wholly inside a previously diagnosed oversize closure: that
+    /// path's only observable effect is "no second row for that closure."
+    #[test]
+    fn factorize_emits_each_diagnostic_closure_once() {
+        // Several consumers each pull in the same shared deps, so multiple
+        // frontier starts grow into closures that overlap heavily. Whether
+        // any pair coincides exactly depends on the residual + active-module
+        // landscape — the assertion is the invariant, not a fixed count.
+        let schedule = schedule_for(
+            r#"const dep_a = "left";
+const dep_b = "right";
+function consumer_one() { return dep_a + dep_b; }
+function consumer_two() { return dep_a + dep_b; }
+function consumer_three() { return dep_a + dep_b; }"#,
+            &[],
+        )
+        .with_pre_existing_entry_exports(BTreeSet::new());
+        let report = schedule
+            .owner_graph_report_with_factorize_options(&FactorizeOptions { size_cap_lines: 1 });
+
+        let mut seen: BTreeSet<(FactorizeDiagnosticReason, Vec<String>)> = BTreeSet::new();
+        for diagnostic in &report.factorize.diagnostics {
+            let mut owners = diagnostic.owner_ids.clone();
+            owners.sort();
+            assert!(
+                seen.insert((diagnostic.reason, owners)),
+                "factorize emitted duplicate diagnostic for closure: {diagnostic:#?}",
+            );
+        }
+    }
+
     #[test]
     fn schedule_report_serializes_linker_order_as_snake_case() {
         let schedule = schedule_for(

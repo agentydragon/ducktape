@@ -73,19 +73,50 @@ pub fn build_factorize_report(schedule: &Schedule, options: &FactorizeOptions) -
     let mut proposals = Vec::<CertifiedProposal>::new();
     let mut diagnostics = Vec::<FactorizeDiagnostic>::new();
     let starts = build_frontier_starts(schedule, &index);
+    // Dedup diagnostics across frontier starts that converge on the same
+    // closure: each atomic unit grows independently, but different starts
+    // can reach the same blocked or oversize set. Emit one row per
+    // (reason, closure) equivalence class.
+    let mut diagnostics_seen: HashSet<(FactorizeDiagnosticReason, Vec<OwnerId>)> = HashSet::new();
+    // Owners that already appeared in an `ExceedsSizeCap` diagnostic. Growth
+    // from a seed wholly inside such a closure is forward-only and stays in
+    // that closure (blockers come from the seed's own dependency edges,
+    // which are a subset of the closure's), so any diagnostic produced
+    // there would be redundant. Skipping inside `close_frontier` avoids the
+    // growth walk too, not just the duplicate report row.
+    let mut oversize_owners = BTreeSet::<OwnerId>::new();
     for start in starts {
-        match close_frontier(schedule, &context, &index, start, options.size_cap_lines) {
+        match close_frontier(
+            schedule,
+            &context,
+            &index,
+            start,
+            options.size_cap_lines,
+            &oversize_owners,
+        ) {
             FrontierOutcome::Certified(proposal) => proposals.push(proposal),
-            FrontierOutcome::Diagnostic(diagnostic) => diagnostics.push(make_diagnostic(
-                diagnostics.len(),
-                diagnostic.owners,
-                diagnostic.extension_target,
-                &node_by_owner,
-                &diagnostic.verdict,
-                diagnostic.reason,
-                &index.bindings_by_owner,
-                schedule,
-            )),
+            FrontierOutcome::Diagnostic(diagnostic) => {
+                let key = (
+                    diagnostic.reason,
+                    diagnostic.owners.iter().copied().collect::<Vec<_>>(),
+                );
+                if !diagnostics_seen.insert(key) {
+                    continue;
+                }
+                if diagnostic.reason == FactorizeDiagnosticReason::ExceedsSizeCap {
+                    oversize_owners.extend(diagnostic.owners.iter().copied());
+                }
+                diagnostics.push(make_diagnostic(
+                    diagnostics.len(),
+                    diagnostic.owners,
+                    diagnostic.extension_target,
+                    &node_by_owner,
+                    &diagnostic.verdict,
+                    diagnostic.reason,
+                    &index.bindings_by_owner,
+                    schedule,
+                ));
+            }
             FrontierOutcome::Empty => {}
         }
     }
@@ -265,6 +296,7 @@ fn close_frontier(
     index: &FactorizeIndex,
     start: FrontierStart,
     size_cap_lines: usize,
+    oversize_owners: &BTreeSet<OwnerId>,
 ) -> FrontierOutcome {
     if start.owners.is_empty() {
         return FrontierOutcome::Empty;
@@ -318,6 +350,16 @@ fn close_frontier(
                 extension_target,
                 verdict: certified_verdict(verdict),
             });
+        }
+
+        // Bail out once the unrepaired set is wholly inside a previously
+        // diagnosed oversize closure: blocker-driven growth from here walks
+        // the same dependency edges as the original closure walked, so the
+        // final closure is a subset and the diagnostic would duplicate. Run
+        // *after* the PeelableNow check so a singleton sub-peel inside a
+        // megaclass still certifies.
+        if owners.iter().all(|owner| oversize_owners.contains(owner)) {
+            return FrontierOutcome::Empty;
         }
 
         let before = owners.clone();
