@@ -106,7 +106,7 @@ impl ChunkCodeGraph {
     ///    and total work is `O(N · body_size)` for the whole
     ///    chunk regardless of recursion depth.
     pub(crate) fn build(
-        body: &[TopLevelItemView<'_>],
+        body: &[(TopLevelItemView<'_>, Option<usize>)],
         shadowed: &BTreeSet<&'static str>,
         declared_pure: &BTreeSet<String>,
     ) -> Self {
@@ -114,7 +114,7 @@ impl ChunkCodeGraph {
     }
 
     pub(crate) fn build_with_declared_pure_new(
-        body: &[TopLevelItemView<'_>],
+        body: &[(TopLevelItemView<'_>, Option<usize>)],
         shadowed: &BTreeSet<&'static str>,
         declared_pure: &BTreeSet<String>,
         declared_pure_new: &BTreeSet<String>,
@@ -307,7 +307,7 @@ pub enum RedundantPurityReason {
 /// hint counts (single digits per chunk) this is negligible
 /// compared to the per-chunk analysis itself.
 pub(crate) fn detect_redundant_purity_hints(
-    body: &[TopLevelItemView<'_>],
+    body: &[(TopLevelItemView<'_>, Option<usize>)],
     shadowed: &BTreeSet<&'static str>,
     declared_pure: &BTreeSet<String>,
 ) -> Vec<RedundantPurityHint> {
@@ -386,10 +386,10 @@ impl ChunkFunction<'_> {
 }
 
 fn collect_chunk_functions<'a, 'item>(
-    body: &'a [TopLevelItemView<'item>],
+    body: &'a [(TopLevelItemView<'item>, Option<usize>)],
 ) -> Vec<ChunkFunction<'a>> {
     let mut out = Vec::new();
-    for item in body {
+    for (item, _group) in body {
         match item.as_module_item() {
             ModuleItem::Stmt(Stmt::Decl(Decl::Fn(fn_decl))) => push_fn_decl(fn_decl, &mut out),
             ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => push_var_functions(var, &mut out),
@@ -490,13 +490,13 @@ fn push_var_functions<'a>(var: &'a VarDecl, out: &mut Vec<ChunkFunction<'a>>) {
 ///
 /// Returns the list of qualified names; the caller registers them as
 /// `ChunkBinding::PlainData` in the graph.
-fn collect_plain_data_bindings(body: &[TopLevelItemView<'_>]) -> Vec<String> {
+fn collect_plain_data_bindings(body: &[(TopLevelItemView<'_>, Option<usize>)]) -> Vec<String> {
     // Aggregate every chunk-top init expression per binding name.
     // The same name can have multiple inits for `var`-bound bindings
     // (`var X = a; var X = b;`); every init must independently pass
     // the plain-literal shape check or the name disqualifies.
     let mut inits_by_name: BTreeMap<String, Vec<(&Expr, VarDeclKind)>> = BTreeMap::new();
-    for item in body {
+    for (item, _group) in body {
         for (name, init, kind) in plain_data_var_candidates(item.as_module_item()) {
             inits_by_name.entry(name).or_default().push((init, kind));
         }
@@ -529,7 +529,7 @@ fn collect_plain_data_bindings(body: &[TopLevelItemView<'_>]) -> Vec<String> {
         disqualified: BTreeSet::new(),
         shadowing_scopes: Vec::new(),
     };
-    for item in body {
+    for (item, _group) in body {
         item.as_module_item().visit_with(&mut scanner);
     }
     let disqualified = scanner.disqualified;
