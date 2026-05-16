@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 import pytest_bazel
 from numpy.testing import assert_allclose
 
@@ -184,11 +183,11 @@ def test_report_metrics_are_explicit_typed_views() -> None:
     run = simulate_set(scenario_set, market_bundle=_bundle())
     result = run.scenario("typed_metrics")
 
-    assert_allclose(result.matrix(ReportMetric.CASH_USD), result.matrix("cash_usd"))
-    assert_allclose(result.rollout(0).series(ReportMetric.NET_WORTH_USD), result.series("net_worth_usd", rollout=0))
+    arrays = result.arrays
+    assert arrays is not None
+    assert_allclose(result.matrix(ReportMetric.CASH_USD), arrays.cash_usd)
+    assert_allclose(result.rollout(0).series(ReportMetric.NET_WORTH_USD), arrays.net_worth_usd[0, :])
     assert result.terminal(ReportMetric.MONTH_INDEX) == 3
-    with pytest.raises(KeyError, match="unknown metric 'actions'"):
-        result.series("actions")
 
 
 def test_monthly_column_specs_name_report_view_sources() -> None:

@@ -144,27 +144,18 @@ gross - closing - debt`). The engine drives sale tax exclusively through
    consumed by the engine; see TODO for their schema-level removal.
 
 7. `PolicyContext` and dynamic metric access look like future scaffolding, not
-   current primitives.
+   current primitives. (Completed 2026-05-16)
 
-   Files/functions: `PolicyContext` is defined at
-   `augur/core/policy_runtime.py:38-41` and has no production use. `ScenarioRun`
-   exposes `_metric_array(metric: str)` at `augur/core/api.py:311-318`, which
-   uses `getattr(self.arrays, metric, None)` and string metric names while the
-   report schema already has a typed `ReportMetric` enum.
-
-   Why suspicious: `PolicyContext` is classic dead scaffolding under
-   `STYLE.md:40`. `_metric_array()` may be acceptable as a notebook/debug helper,
-   but root `STYLE.md:44` says dynamic attribute probing should be justified and
-   documented. Keeping both makes it unclear whether the replacement primitive is
-   typed report metrics, string metric names, or future policy context objects.
-
-   Replace with: delete `PolicyContext` until a handler signature consumes it.
-   If metric selection remains, map `ReportMetric` values to explicit arrays
-   through a table rather than probing attributes by string.
-
-   Prove safe by: `rg "PolicyContext"` should only find the removed definition;
-   metric filtering tests should pass using `ReportMetric`, not raw attribute
-   names.
+   `PolicyContext` was deleted from `augur/core/policy_runtime.py` (no
+   production callers). `ScenarioRun._metric_array()`,
+   `ScenarioRun.{matrix,series,terminal}()`, and
+   `RolloutDetail.{series,terminal}()` were tightened to accept only
+   `ReportMetric` (no longer `ReportMetric | str`). Metric lookup goes through
+   `report_metric_array(arrays, metric)` which consults the explicit
+   `_report_metric_arrays(arrays)` table mapping `ReportMetric` enum values to
+   the corresponding `ScenarioRunArrays` attributes — no `getattr` probing.
+   Tests in `test_e2e.py` and `scenario_engine_test.py` were updated to pass
+   `ReportMetric` enum values.
 
 ## Recent Work Risk Review
 

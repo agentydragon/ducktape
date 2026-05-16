@@ -56,6 +56,7 @@ from augur.core.scenario_set import (
     PropertySaleEvent,
     PropertySelection,
     RentalMode,
+    ReportMetric,
     ReportSpec,
     RolloutStatusType,
     Scenario,
@@ -123,7 +124,7 @@ def _posting_matrix(
     side: PostingSide,
     journal_entry_type: JournalEntryType | None = None,
 ) -> np.ndarray:
-    matrix = np.zeros_like(result.matrix("cash_usd"), dtype="float64")
+    matrix = np.zeros_like(result.matrix(ReportMetric.CASH_USD), dtype="float64")
     journal_type_by_id = {entry.journal_entry_id: entry.journal_entry_type for entry in result.journal_entries()}
     for posting in result.postings(role=role, side=side):
         if journal_entry_type is not None and journal_type_by_id[posting.journal_entry_id] is not journal_entry_type:
@@ -133,21 +134,21 @@ def _posting_matrix(
 
 
 def _balance_snapshot_matrix(result: ScenarioRun, *, role: ChartAccountRole) -> np.ndarray:
-    matrix = np.zeros_like(result.matrix("cash_usd"), dtype="float64")
+    matrix = np.zeros_like(result.matrix(ReportMetric.CASH_USD), dtype="float64")
     for snapshot in result.balance_snapshots(role=role):
         matrix[snapshot.rollout_index, snapshot.month_index] += snapshot.balance_usd
     return matrix
 
 
 def _lot_disposition_matrix(result: ScenarioRun, *, asset_class: LotAssetClass, amount_field: str) -> np.ndarray:
-    matrix = np.zeros_like(result.matrix("cash_usd"), dtype="float64")
+    matrix = np.zeros_like(result.matrix(ReportMetric.CASH_USD), dtype="float64")
     for disposition in result.lot_dispositions(asset_class=asset_class):
         matrix[disposition.rollout_index, disposition.month_index] += getattr(disposition, amount_field)
     return matrix
 
 
 def _accounting_detail_matrix(result: ScenarioRun, detail_type: type[Any], amount_field: str) -> np.ndarray:
-    matrix = np.zeros_like(result.matrix("cash_usd"), dtype="float64")
+    matrix = np.zeros_like(result.matrix(ReportMetric.CASH_USD), dtype="float64")
     for detail in result.accounting_details(detail_type):
         matrix[detail.rollout_index, detail.month_index] += getattr(detail, amount_field)
     return matrix
@@ -180,12 +181,12 @@ def test_cash_only_no_activity_preserves_balance() -> None:
     result = _run_scenario(scenario, horizon_months=12)
 
     # Single rollout, 13 months (0..12)
-    assert result.matrix("cash_usd").shape == (1, 13)
-    assert_allclose(result.series("cash_usd"), 100_000)
-    assert_allclose(result.matrix("generic_sp500_value_usd"), 0)
-    assert_allclose(result.matrix("private_equity_value_usd"), 0)
-    assert_allclose(result.matrix("property_value_usd"), 0)
-    assert_allclose(result.series("net_worth_usd"), 100_000)
+    assert result.matrix(ReportMetric.CASH_USD).shape == (1, 13)
+    assert_allclose(result.series(ReportMetric.CASH_USD), 100_000)
+    assert_allclose(result.matrix(ReportMetric.GENERIC_SP500_VALUE_USD), 0)
+    assert_allclose(result.matrix(ReportMetric.PRIVATE_EQUITY_VALUE_USD), 0)
+    assert_allclose(result.matrix(ReportMetric.PROPERTY_VALUE_USD), 0)
+    assert_allclose(result.series(ReportMetric.NET_WORTH_USD), 100_000)
     assert {entry.journal_entry_type for entry in result.journal_entries()} == {JournalEntryType.OPENING_BALANCE}
     assert len(result.balance_snapshots(role=ChartAccountRole.CHECKING_CASH)) == 13
     market_path = result.rollout(0).market_observations(MarketPathObservation)
@@ -257,12 +258,12 @@ def test_sp500_only_grows_with_market() -> None:
     sp500_path = (1.0, 1.1, 1.2, 1.3)
     result = _run_scenario(scenario, horizon_months=3, market_provider=NoopMarketBundleProvider(sp500_path=sp500_path))
 
-    assert result.matrix("cash_usd").shape == (1, 4)
-    assert_allclose(result.series("cash_usd"), 0)
+    assert result.matrix(ReportMetric.CASH_USD).shape == (1, 4)
+    assert_allclose(result.series(ReportMetric.CASH_USD), 0)
     # SP500 value tracks multiplier: 50k * [1.0, 1.1, 1.2, 1.3]
-    assert_allclose(result.series("generic_sp500_value_usd"), [50_000, 55_000, 60_000, 65_000])
+    assert_allclose(result.series(ReportMetric.GENERIC_SP500_VALUE_USD), [50_000, 55_000, 60_000, 65_000])
     # Net worth = SP500 only
-    assert_allclose(result.series("net_worth_usd"), [50_000, 55_000, 60_000, 65_000])
+    assert_allclose(result.series(ReportMetric.NET_WORTH_USD), [50_000, 55_000, 60_000, 65_000])
 
 
 def test_cash_and_sp500_combined_net_worth() -> None:
@@ -291,9 +292,9 @@ def test_cash_and_sp500_combined_net_worth() -> None:
     )
     result = _run_scenario(scenario, horizon_months=6)
 
-    assert_allclose(result.series("cash_usd"), 30_000)
-    assert_allclose(result.series("generic_sp500_value_usd"), 70_000)
-    assert_allclose(result.series("net_worth_usd"), 100_000)
+    assert_allclose(result.series(ReportMetric.CASH_USD), 30_000)
+    assert_allclose(result.series(ReportMetric.GENERIC_SP500_VALUE_USD), 70_000)
+    assert_allclose(result.series(ReportMetric.NET_WORTH_USD), 100_000)
 
 
 def test_monthly_spend_drains_cash() -> None:
@@ -318,20 +319,20 @@ def test_monthly_spend_drains_cash() -> None:
     result = _run_scenario(scenario, horizon_months=12)
 
     # Month 0: initial $100k (spend applies from month 1 onward)
-    assert_allclose(result.series("cash_usd")[0], 100_000)
+    assert_allclose(result.series(ReportMetric.CASH_USD)[0], 100_000)
     # Month 1: 100k - 5k = 95k
-    assert_allclose(result.series("cash_usd")[1], 95_000)
+    assert_allclose(result.series(ReportMetric.CASH_USD)[1], 95_000)
     # Month 6: 100k - 6*5k = 70k
-    assert_allclose(result.series("cash_usd")[6], 70_000)
+    assert_allclose(result.series(ReportMetric.CASH_USD)[6], 70_000)
     # Month 12: 100k - 12*5k = 40k
-    assert_allclose(result.terminal("cash_usd"), 40_000)
+    assert_allclose(result.terminal(ReportMetric.CASH_USD), 40_000)
     # Verify spend array
-    assert_allclose(result.series("monthly_spend_usd")[0], 0)
-    assert_allclose(result.series("monthly_spend_usd")[1], 5_000)
-    assert_allclose(result.series("monthly_spend_usd")[12], 5_000)
+    assert_allclose(result.series(ReportMetric.MONTHLY_SPEND_USD)[0], 0)
+    assert_allclose(result.series(ReportMetric.MONTHLY_SPEND_USD)[1], 5_000)
+    assert_allclose(result.series(ReportMetric.MONTHLY_SPEND_USD)[12], 5_000)
     assert_allclose(
         _posting_matrix(result, role=ChartAccountRole.MONTHLY_LIVING_EXPENSE, side=PostingSide.DEBIT),
-        result.matrix("monthly_spend_usd"),
+        result.matrix(ReportMetric.MONTHLY_SPEND_USD),
     )
     # Verify actions recorded for each month 1..12
     spend_actions = result.actions(MonthlySpendAction)
@@ -364,13 +365,13 @@ def test_monthly_spend_records_each_rollout_and_month() -> None:
     )
     result = _run_scenario(scenario, rollout_count=2, horizon_months=2)
 
-    assert_allclose(result.matrix("cash_usd")[:, 0], 100_000)
-    assert_allclose(result.matrix("cash_usd")[:, 1], 95_000)
-    assert_allclose(result.matrix("cash_usd")[:, 2], 90_000)
-    assert_allclose(result.matrix("monthly_spend_usd")[:, 1:], 5_000)
+    assert_allclose(result.matrix(ReportMetric.CASH_USD)[:, 0], 100_000)
+    assert_allclose(result.matrix(ReportMetric.CASH_USD)[:, 1], 95_000)
+    assert_allclose(result.matrix(ReportMetric.CASH_USD)[:, 2], 90_000)
+    assert_allclose(result.matrix(ReportMetric.MONTHLY_SPEND_USD)[:, 1:], 5_000)
     assert_allclose(
         _posting_matrix(result, role=ChartAccountRole.MONTHLY_LIVING_EXPENSE, side=PostingSide.DEBIT),
-        result.matrix("monthly_spend_usd"),
+        result.matrix(ReportMetric.MONTHLY_SPEND_USD),
     )
     assert [
         (action.rollout_index, action.month_index, action.amount_usd) for action in result.actions(MonthlySpendAction)
@@ -415,20 +416,20 @@ def test_fixed_rate_mortgage_amortizes_and_purchase_cash_outlay_posts_at_month_z
     # Cash at month 0: $200k - $100k down payment - $12.5k buy closing = $87.5k.
     # No mortgage subtraction in month 0 because the first mortgage obligation is
     # raised against month 1's scheduled payment.
-    assert_allclose(rollout.series("cash_usd")[0], 87_500)
+    assert_allclose(rollout.series(ReportMetric.CASH_USD)[0], 87_500)
     status = rollout.status()
     assert status.status == RolloutStatusType.ACTIVE
     assert status.failed_obligation_count == 0
     assert status.unpaid_obligation_usd == 0
-    assert_allclose(rollout.series("property_value_usd")[0], 500_000)
-    assert_allclose(rollout.series("mortgage_balance_usd")[0], loan_amount)
-    assert_allclose(rollout.series("mortgage_interest_usd")[1], expected_month_1_interest)
-    assert_allclose(rollout.series("mortgage_principal_usd")[1], expected_month_1_principal)
-    assert_allclose(rollout.series("mortgage_payment_usd")[1], payment)
-    assert_allclose(rollout.series("mortgage_balance_usd")[1], loan_amount - expected_month_1_principal)
+    assert_allclose(rollout.series(ReportMetric.PROPERTY_VALUE_USD)[0], 500_000)
+    assert_allclose(rollout.series(ReportMetric.MORTGAGE_BALANCE_USD)[0], loan_amount)
+    assert_allclose(rollout.series(ReportMetric.MORTGAGE_INTEREST_USD)[1], expected_month_1_interest)
+    assert_allclose(rollout.series(ReportMetric.MORTGAGE_PRINCIPAL_USD)[1], expected_month_1_principal)
+    assert_allclose(rollout.series(ReportMetric.MORTGAGE_PAYMENT_USD)[1], payment)
+    assert_allclose(rollout.series(ReportMetric.MORTGAGE_BALANCE_USD)[1], loan_amount - expected_month_1_principal)
     assert_allclose(
         _posting_matrix(result, role=ChartAccountRole.MORTGAGE_INTEREST_EXPENSE, side=PostingSide.DEBIT),
-        result.matrix("mortgage_interest_usd"),
+        result.matrix(ReportMetric.MORTGAGE_INTEREST_USD),
     )
     assert_allclose(
         _posting_matrix(
@@ -437,7 +438,7 @@ def test_fixed_rate_mortgage_amortizes_and_purchase_cash_outlay_posts_at_month_z
             side=PostingSide.DEBIT,
             journal_entry_type=JournalEntryType.MORTGAGE_PAYMENT,
         ),
-        result.matrix("mortgage_principal_usd"),
+        result.matrix(ReportMetric.MORTGAGE_PRINCIPAL_USD),
     )
     mortgage_payments = result.actions(PayMortgageAction)
     assert len(mortgage_payments) == 12
@@ -626,8 +627,8 @@ def test_mortgage_obligation_continues_projection_after_failure() -> None:
     # Mortgage balance still drops by scheduled principal each month, even when
     # payments fail — the projection is the scenario schedule, not the per-rollout
     # accounting trace.
-    assert_allclose(rollout.series("mortgage_balance_usd")[1], loan_amount - expected_month_1_principal)
-    assert rollout.series("mortgage_balance_usd")[6] < loan_amount
+    assert_allclose(rollout.series(ReportMetric.MORTGAGE_BALANCE_USD)[1], loan_amount - expected_month_1_principal)
+    assert rollout.series(ReportMetric.MORTGAGE_BALANCE_USD)[6] < loan_amount
     assert result.arrays is not None
     mortgage_failures = tuple(
         event for event in result.arrays.failure_events if event.obligation_id.startswith("mortgage_payment")
@@ -692,60 +693,61 @@ def test_partner_equity_accrual_records_contributions_and_claims() -> None:
     expected_home_equity = purchase_price - expected_terminal_mortgage_balance
     rollout = result.rollout(0)
 
-    assert_allclose(rollout.series("partner_contribution_usd")[0], 0)
-    assert_allclose(rollout.series("partner_contribution_usd")[1:], 1_000)
-    assert np.all(rollout.series("partner_unallocated_excess_usd")[1:] > 0)
-    assert np.all(rollout.series("partner_house_costs_usd")[1:] > monthly_principal)
-    assert_allclose(rollout.series("partner_principal_credit_usd")[1:], monthly_principal)
-    assert_allclose(rollout.series("owner_principal_credit_usd")[1:], 0)
-    assert_allclose(rollout.series("partner_equity_ledger_usd")[60], expected_partner_ledger)
-    assert_allclose(rollout.series("owner_equity_ledger_usd")[60], expected_owner_ledger)
-    assert_allclose(rollout.series("partner_ownership_pct")[60], expected_ownership_pct)
-    assert_allclose(rollout.series("mortgage_balance_usd")[60], expected_terminal_mortgage_balance)
-    assert_allclose(rollout.series("home_equity_usd")[60], expected_home_equity)
-    assert_allclose(rollout.series("partner_home_equity_claim_usd")[60], expected_partner_ledger)
-    assert_allclose(rollout.series("owner_home_equity_claim_usd")[60], expected_owner_ledger)
+    assert_allclose(rollout.series(ReportMetric.PARTNER_CONTRIBUTION_USD)[0], 0)
+    assert_allclose(rollout.series(ReportMetric.PARTNER_CONTRIBUTION_USD)[1:], 1_000)
+    assert np.all(rollout.series(ReportMetric.PARTNER_UNALLOCATED_EXCESS_USD)[1:] > 0)
+    assert np.all(rollout.series(ReportMetric.PARTNER_HOUSE_COSTS_USD)[1:] > monthly_principal)
+    assert_allclose(rollout.series(ReportMetric.PARTNER_PRINCIPAL_CREDIT_USD)[1:], monthly_principal)
+    assert_allclose(rollout.series(ReportMetric.OWNER_PRINCIPAL_CREDIT_USD)[1:], 0)
+    assert_allclose(rollout.series(ReportMetric.PARTNER_EQUITY_LEDGER_USD)[60], expected_partner_ledger)
+    assert_allclose(rollout.series(ReportMetric.OWNER_EQUITY_LEDGER_USD)[60], expected_owner_ledger)
+    assert_allclose(rollout.series(ReportMetric.PARTNER_OWNERSHIP_PCT)[60], expected_ownership_pct)
+    assert_allclose(rollout.series(ReportMetric.MORTGAGE_BALANCE_USD)[60], expected_terminal_mortgage_balance)
+    assert_allclose(rollout.series(ReportMetric.HOME_EQUITY_USD)[60], expected_home_equity)
+    assert_allclose(rollout.series(ReportMetric.PARTNER_HOME_EQUITY_CLAIM_USD)[60], expected_partner_ledger)
+    assert_allclose(rollout.series(ReportMetric.OWNER_HOME_EQUITY_CLAIM_USD)[60], expected_owner_ledger)
     assert_allclose(
-        rollout.series("partner_home_equity_claim_usd")[60] + rollout.series("owner_home_equity_claim_usd")[60],
+        rollout.series(ReportMetric.PARTNER_HOME_EQUITY_CLAIM_USD)[60]
+        + rollout.series(ReportMetric.OWNER_HOME_EQUITY_CLAIM_USD)[60],
         expected_home_equity,
     )
-    assert_allclose(rollout.series("cash_usd")[0], 20_000)
-    assert_allclose(rollout.series("cash_usd")[60], 20_000)
+    assert_allclose(rollout.series(ReportMetric.CASH_USD)[0], 20_000)
+    assert_allclose(rollout.series(ReportMetric.CASH_USD)[60], 20_000)
     assert_allclose(
         _posting_matrix(result, role=ChartAccountRole.PARTNER_CONTRIBUTION_TRANSFER, side=PostingSide.CREDIT),
-        result.matrix("partner_contribution_usd"),
+        result.matrix(ReportMetric.PARTNER_CONTRIBUTION_USD),
     )
     assert_allclose(
         _posting_matrix(result, role=ChartAccountRole.PARTNER_CONTRIBUTION_USED, side=PostingSide.DEBIT),
-        result.matrix("partner_contribution_used_usd"),
+        result.matrix(ReportMetric.PARTNER_CONTRIBUTION_USED_USD),
     )
     assert_allclose(
         _posting_matrix(result, role=ChartAccountRole.PARTNER_UNALLOCATED_CLAIM, side=PostingSide.DEBIT),
-        result.matrix("partner_unallocated_excess_usd"),
+        result.matrix(ReportMetric.PARTNER_UNALLOCATED_EXCESS_USD),
     )
     assert_allclose(
         _posting_matrix(result, role=ChartAccountRole.PARTNER_PRINCIPAL_CREDIT, side=PostingSide.DEBIT),
-        result.matrix("partner_principal_credit_usd"),
+        result.matrix(ReportMetric.PARTNER_PRINCIPAL_CREDIT_USD),
     )
     assert_allclose(
         _posting_matrix(result, role=ChartAccountRole.OWNER_PRINCIPAL_CREDIT, side=PostingSide.DEBIT),
-        result.matrix("owner_principal_credit_usd"),
+        result.matrix(ReportMetric.OWNER_PRINCIPAL_CREDIT_USD),
     )
     assert_allclose(
         _balance_snapshot_matrix(result, role=ChartAccountRole.PARTNER_EQUITY_LEDGER),
-        result.matrix("partner_equity_ledger_usd"),
+        result.matrix(ReportMetric.PARTNER_EQUITY_LEDGER_USD),
     )
     assert_allclose(
         _balance_snapshot_matrix(result, role=ChartAccountRole.OWNER_EQUITY_LEDGER),
-        result.matrix("owner_equity_ledger_usd"),
+        result.matrix(ReportMetric.OWNER_EQUITY_LEDGER_USD),
     )
     assert_allclose(
         _balance_snapshot_matrix(result, role=ChartAccountRole.PARTNER_HOME_EQUITY_CLAIM),
-        result.matrix("partner_home_equity_claim_usd"),
+        result.matrix(ReportMetric.PARTNER_HOME_EQUITY_CLAIM_USD),
     )
     assert_allclose(
         _balance_snapshot_matrix(result, role=ChartAccountRole.OWNER_HOME_EQUITY_CLAIM),
-        result.matrix("owner_home_equity_claim_usd"),
+        result.matrix(ReportMetric.OWNER_HOME_EQUITY_CLAIM_USD),
     )
     account_by_id = {account.chart_account_id: account for account in result.chart_accounts()}
     partner_postings = [
@@ -791,7 +793,8 @@ def test_partner_equity_accrual_records_contributions_and_claims() -> None:
     assert all(action.recipient_actor_id == "alpha" for action in transfers)
     assert all(action.amount_usd == 1_000 for action in transfers)
     assert_allclose(
-        [action.applied_to_house_costs_usd for action in transfers], rollout.series("partner_contribution_used_usd")[1:]
+        [action.applied_to_house_costs_usd for action in transfers],
+        rollout.series(ReportMetric.PARTNER_CONTRIBUTION_USED_USD)[1:],
     )
     assert all(action.unallocated_amount_usd > 0 for action in transfers)
     contribution_decisions = result.policy_decisions(PartnerContributionDecision)
@@ -858,18 +861,23 @@ def test_property_sale_records_capital_gains_tax_and_net_proceeds() -> None:
     california_sale_tax = 3_201.97 + (california_taxable_gain - 72_724) * 0.093
     sale_tax = federal_sale_tax + california_sale_tax
     rollout = result.rollout(0)
-    assert_allclose(rollout.series("property_sale_gross_usd")[60], sale_value)
-    assert_allclose(rollout.series("sale_closing_cost_usd")[60], sale_closing_cost)
-    assert_allclose(rollout.series("realized_property_gain_usd")[60], realized_gain)
-    assert_allclose(rollout.series("property_sale_capital_gain_usd")[60], realized_gain)
-    assert_allclose(rollout.series("property_sale_capital_gain_exclusion_usd")[60], 250_000)
-    assert_allclose(rollout.series("taxable_property_capital_gain_usd")[60], taxable_gain)
-    assert_allclose(rollout.series("taxable_property_gain_usd")[60], taxable_gain)
-    assert_allclose(rollout.series("property_sale_tax_usd")[60], sale_tax)
-    assert_allclose(rollout.series("federal_income_tax_usd")[60], federal_sale_tax)
-    assert_allclose(rollout.series("california_income_tax_usd")[60], california_sale_tax)
-    assert_allclose(rollout.series("property_sale_net_proceeds_usd")[60], sale_value - sale_closing_cost - sale_tax)
-    assert_allclose(result.matrix("net_property_sale_cash_flow_usd"), result.matrix("property_sale_net_proceeds_usd"))
+    assert_allclose(rollout.series(ReportMetric.PROPERTY_SALE_GROSS_USD)[60], sale_value)
+    assert_allclose(rollout.series(ReportMetric.SALE_CLOSING_COST_USD)[60], sale_closing_cost)
+    assert_allclose(rollout.series(ReportMetric.REALIZED_PROPERTY_GAIN_USD)[60], realized_gain)
+    assert_allclose(rollout.series(ReportMetric.PROPERTY_SALE_CAPITAL_GAIN_USD)[60], realized_gain)
+    assert_allclose(rollout.series(ReportMetric.PROPERTY_SALE_CAPITAL_GAIN_EXCLUSION_USD)[60], 250_000)
+    assert_allclose(rollout.series(ReportMetric.TAXABLE_PROPERTY_CAPITAL_GAIN_USD)[60], taxable_gain)
+    assert_allclose(rollout.series(ReportMetric.TAXABLE_PROPERTY_GAIN_USD)[60], taxable_gain)
+    assert_allclose(rollout.series(ReportMetric.PROPERTY_SALE_TAX_USD)[60], sale_tax)
+    assert_allclose(rollout.series(ReportMetric.FEDERAL_INCOME_TAX_USD)[60], federal_sale_tax)
+    assert_allclose(rollout.series(ReportMetric.CALIFORNIA_INCOME_TAX_USD)[60], california_sale_tax)
+    assert_allclose(
+        rollout.series(ReportMetric.PROPERTY_SALE_NET_PROCEEDS_USD)[60], sale_value - sale_closing_cost - sale_tax
+    )
+    assert_allclose(
+        result.matrix(ReportMetric.NET_PROPERTY_SALE_CASH_FLOW_USD),
+        result.matrix(ReportMetric.PROPERTY_SALE_NET_PROCEEDS_USD),
+    )
     assert_allclose(
         _posting_matrix(
             result,
@@ -877,7 +885,7 @@ def test_property_sale_records_capital_gains_tax_and_net_proceeds() -> None:
             side=PostingSide.CREDIT,
             journal_entry_type=JournalEntryType.PROPERTY_SALE,
         ),
-        result.matrix("property_sale_gross_usd"),
+        result.matrix(ReportMetric.PROPERTY_SALE_GROSS_USD),
     )
     assert_allclose(
         _posting_matrix(
@@ -886,7 +894,7 @@ def test_property_sale_records_capital_gains_tax_and_net_proceeds() -> None:
             side=PostingSide.DEBIT,
             journal_entry_type=JournalEntryType.PROPERTY_SALE,
         ),
-        result.matrix("sale_closing_cost_usd"),
+        result.matrix(ReportMetric.SALE_CLOSING_COST_USD),
     )
     assert_allclose(
         _posting_matrix(
@@ -895,7 +903,7 @@ def test_property_sale_records_capital_gains_tax_and_net_proceeds() -> None:
             side=PostingSide.DEBIT,
             journal_entry_type=JournalEntryType.PROPERTY_SALE,
         ),
-        result.matrix("property_sale_tax_usd"),
+        result.matrix(ReportMetric.PROPERTY_SALE_TAX_USD),
     )
     assert_allclose(
         _posting_matrix(
@@ -910,27 +918,27 @@ def test_property_sale_records_capital_gains_tax_and_net_proceeds() -> None:
             side=PostingSide.CREDIT,
             journal_entry_type=JournalEntryType.PROPERTY_SALE,
         ),
-        result.matrix("property_sale_net_proceeds_usd"),
+        result.matrix(ReportMetric.PROPERTY_SALE_NET_PROCEEDS_USD),
     )
     assert_allclose(
         _accounting_detail_matrix(result, PropertySaleBasisGainDetail, "adjusted_basis_usd"),
-        result.matrix("property_sale_adjusted_basis_usd"),
+        result.matrix(ReportMetric.PROPERTY_SALE_ADJUSTED_BASIS_USD),
     )
     assert_allclose(
         _accounting_detail_matrix(result, PropertySaleBasisGainDetail, "realized_gain_usd"),
-        result.matrix("realized_property_gain_usd"),
+        result.matrix(ReportMetric.REALIZED_PROPERTY_GAIN_USD),
     )
     assert_allclose(
         _accounting_detail_matrix(result, PropertySaleBasisGainDetail, "taxable_gain_usd"),
-        result.matrix("taxable_property_gain_usd"),
+        result.matrix(ReportMetric.TAXABLE_PROPERTY_GAIN_USD),
     )
     assert_allclose(
         _accounting_detail_matrix(result, TaxPaymentAllocationDetail, "federal_income_tax_usd"),
-        result.matrix("federal_income_tax_usd"),
+        result.matrix(ReportMetric.FEDERAL_INCOME_TAX_USD),
     )
     assert_allclose(
         _accounting_detail_matrix(result, TaxPaymentAllocationDetail, "california_income_tax_usd"),
-        result.matrix("california_income_tax_usd"),
+        result.matrix(ReportMetric.CALIFORNIA_INCOME_TAX_USD),
     )
     tax_details = rollout.accounting_details(TaxPaymentAllocationDetail)
     assert len(tax_details) == 1
@@ -998,13 +1006,13 @@ def test_partner_sale_claim_uses_settlement_net_proceeds() -> None:
     rollout = result.rollout(0)
     sale_action = rollout.actions(SettlePropertySaleAction)[0]
     sale_net_proceeds = sale_action.net_proceeds_usd
-    ownership_pct = rollout.series("partner_ownership_pct")[sale_month]
+    ownership_pct = rollout.series(ReportMetric.PARTNER_OWNERSHIP_PCT)[sale_month]
     expected_partner_claim = sale_net_proceeds * ownership_pct
     expected_owner_claim = sale_net_proceeds - expected_partner_claim
-    gross_equity_claim = rollout.series("home_equity_usd")[sale_month] * ownership_pct
+    gross_equity_claim = rollout.series(ReportMetric.HOME_EQUITY_USD)[sale_month] * ownership_pct
 
-    assert_allclose(rollout.series("property_sale_net_proceeds_usd")[sale_month], sale_net_proceeds)
-    assert_allclose(rollout.series("property_sale_debt_payoff_usd")[sale_month], sale_action.debt_payoff_usd)
+    assert_allclose(rollout.series(ReportMetric.PROPERTY_SALE_NET_PROCEEDS_USD)[sale_month], sale_net_proceeds)
+    assert_allclose(rollout.series(ReportMetric.PROPERTY_SALE_DEBT_PAYOFF_USD)[sale_month], sale_action.debt_payoff_usd)
     assert_allclose(
         _posting_matrix(
             result,
@@ -1012,19 +1020,19 @@ def test_partner_sale_claim_uses_settlement_net_proceeds() -> None:
             side=PostingSide.DEBIT,
             journal_entry_type=JournalEntryType.PROPERTY_SALE,
         ),
-        result.matrix("property_sale_debt_payoff_usd"),
+        result.matrix(ReportMetric.PROPERTY_SALE_DEBT_PAYOFF_USD),
     )
-    assert sale_net_proceeds < rollout.series("home_equity_usd")[sale_month]
+    assert sale_net_proceeds < rollout.series(ReportMetric.HOME_EQUITY_USD)[sale_month]
     assert not np.isclose(expected_partner_claim, gross_equity_claim)
-    assert_allclose(rollout.series("partner_home_equity_claim_usd")[sale_month], expected_partner_claim)
-    assert_allclose(rollout.series("owner_home_equity_claim_usd")[sale_month], expected_owner_claim)
+    assert_allclose(rollout.series(ReportMetric.PARTNER_HOME_EQUITY_CLAIM_USD)[sale_month], expected_partner_claim)
+    assert_allclose(rollout.series(ReportMetric.OWNER_HOME_EQUITY_CLAIM_USD)[sale_month], expected_owner_claim)
     assert_allclose(
-        rollout.series("partner_home_equity_claim_usd")[sale_month]
-        + rollout.series("owner_home_equity_claim_usd")[sale_month],
+        rollout.series(ReportMetric.PARTNER_HOME_EQUITY_CLAIM_USD)[sale_month]
+        + rollout.series(ReportMetric.OWNER_HOME_EQUITY_CLAIM_USD)[sale_month],
         sale_net_proceeds,
     )
-    assert_allclose(rollout.series("partner_home_equity_claim_usd")[4], expected_partner_claim)
-    assert_allclose(rollout.series("owner_home_equity_claim_usd")[4], expected_owner_claim)
+    assert_allclose(rollout.series(ReportMetric.PARTNER_HOME_EQUITY_CLAIM_USD)[4], expected_partner_claim)
+    assert_allclose(rollout.series(ReportMetric.OWNER_HOME_EQUITY_CLAIM_USD)[4], expected_owner_claim)
 
     sale_month_accruals = [
         action for action in rollout.actions(AccruePartnerEquityAction) if action.month_index == sale_month
@@ -1197,22 +1205,26 @@ def test_whole_property_rental_posts_income_fees_and_cash_flow() -> None:
     expected_property_tax = 120_000 * 0.011 / 12
     expected_net_property_cash_flow = expected_rental_income - expected_management_fee - expected_property_tax
     rollout = result.rollout(0)
-    assert_allclose(rollout.series("rental_income_usd")[0], 0)
-    assert_allclose(rollout.series("rental_income_usd")[1], expected_rental_income)
-    assert_allclose(rollout.series("rental_management_fee_usd")[1], expected_management_fee)
-    assert_allclose(rollout.series("property_tax_usd")[1], expected_property_tax)
-    assert_allclose(rollout.series("property_carrying_cost_usd")[1], expected_management_fee + expected_property_tax)
-    assert_allclose(rollout.series("net_property_cash_flow_usd")[1], expected_net_property_cash_flow)
-    assert_allclose(rollout.series("cash_usd")[0], 130_000)
+    assert_allclose(rollout.series(ReportMetric.RENTAL_INCOME_USD)[0], 0)
+    assert_allclose(rollout.series(ReportMetric.RENTAL_INCOME_USD)[1], expected_rental_income)
+    assert_allclose(rollout.series(ReportMetric.RENTAL_MANAGEMENT_FEE_USD)[1], expected_management_fee)
+    assert_allclose(rollout.series(ReportMetric.PROPERTY_TAX_USD)[1], expected_property_tax)
+    assert_allclose(
+        rollout.series(ReportMetric.PROPERTY_CARRYING_COST_USD)[1], expected_management_fee + expected_property_tax
+    )
+    assert_allclose(rollout.series(ReportMetric.NET_PROPERTY_CASH_FLOW_USD)[1], expected_net_property_cash_flow)
+    assert_allclose(rollout.series(ReportMetric.CASH_USD)[0], 130_000)
     # Positive net rental income produces a CA ordinary-income tax obligation, which
     # the annual-tax pipeline settles in the same source month. Cash at month 1
     # therefore reflects the net rental cash flow minus the rental tax share.
-    rental_tax_month_1 = rollout.series("rental_income_tax_usd")[1]
+    rental_tax_month_1 = rollout.series(ReportMetric.RENTAL_INCOME_TAX_USD)[1]
     assert rental_tax_month_1 > 0
-    assert_allclose(rollout.series("cash_usd")[1], 130_000 + expected_net_property_cash_flow - rental_tax_month_1)
+    assert_allclose(
+        rollout.series(ReportMetric.CASH_USD)[1], 130_000 + expected_net_property_cash_flow - rental_tax_month_1
+    )
     assert_allclose(
         _posting_matrix(result, role=ChartAccountRole.RENTAL_INCOME, side=PostingSide.CREDIT),
-        result.matrix("rental_income_usd"),
+        result.matrix(ReportMetric.RENTAL_INCOME_USD),
     )
     assert_allclose(
         _posting_matrix(
@@ -1221,15 +1233,15 @@ def test_whole_property_rental_posts_income_fees_and_cash_flow() -> None:
             side=PostingSide.DEBIT,
             journal_entry_type=JournalEntryType.PROPERTY_OPERATING,
         ),
-        result.matrix("rental_income_usd"),
+        result.matrix(ReportMetric.RENTAL_INCOME_USD),
     )
     assert_allclose(
         _posting_matrix(result, role=ChartAccountRole.PROPERTY_TAX_EXPENSE, side=PostingSide.DEBIT),
-        result.matrix("property_tax_usd"),
+        result.matrix(ReportMetric.PROPERTY_TAX_USD),
     )
     assert_allclose(
         _posting_matrix(result, role=ChartAccountRole.RENTAL_MANAGEMENT_FEE_EXPENSE, side=PostingSide.DEBIT),
-        result.matrix("rental_management_fee_usd"),
+        result.matrix(ReportMetric.RENTAL_MANAGEMENT_FEE_USD),
     )
 
 
@@ -1290,15 +1302,17 @@ def test_checking_floor_policy_sells_sp500_to_restore_cash_floor() -> None:
     rollout = result.rollout(0)
     expected_stock_sale_tax = 42.94
     assert_allclose(
-        rollout.series("cash_usd"),
+        rollout.series(ReportMetric.CASH_USD),
         [30_000, 25_000, 20_000, 15_000, 10_000, 25_000 - expected_stock_sale_tax, 20_000 - expected_stock_sale_tax],
     )
-    assert_allclose(rollout.series("generic_sp500_value_usd"), [50_000, 50_000, 50_000, 50_000, 50_000, 30_000, 30_000])
-    assert_allclose(rollout.series("generic_sp500_sale_usd"), [0, 0, 0, 0, 0, 20_000, 0])
-    assert_allclose(rollout.series("generic_sp500_sale_basis_usd")[5], 10_000)
-    assert_allclose(rollout.series("generic_sp500_sale_gain_usd")[5], 10_000)
-    assert_allclose(rollout.series("generic_sp500_sale_tax_usd")[5], expected_stock_sale_tax)
-    assert_allclose(rollout.series("checking_floor_shortfall_usd"), 0)
+    assert_allclose(
+        rollout.series(ReportMetric.GENERIC_SP500_VALUE_USD), [50_000, 50_000, 50_000, 50_000, 50_000, 30_000, 30_000]
+    )
+    assert_allclose(rollout.series(ReportMetric.GENERIC_SP500_SALE_USD), [0, 0, 0, 0, 0, 20_000, 0])
+    assert_allclose(rollout.series(ReportMetric.GENERIC_SP500_SALE_BASIS_USD)[5], 10_000)
+    assert_allclose(rollout.series(ReportMetric.GENERIC_SP500_SALE_GAIN_USD)[5], 10_000)
+    assert_allclose(rollout.series(ReportMetric.GENERIC_SP500_SALE_TAX_USD)[5], expected_stock_sale_tax)
+    assert_allclose(rollout.series(ReportMetric.CHECKING_FLOOR_SHORTFALL_USD), 0)
     assert_allclose(
         _posting_matrix(
             result,
@@ -1306,15 +1320,15 @@ def test_checking_floor_policy_sells_sp500_to_restore_cash_floor() -> None:
             side=PostingSide.CREDIT,
             journal_entry_type=JournalEntryType.ASSET_SALE,
         ),
-        result.matrix("generic_sp500_sale_usd"),
+        result.matrix(ReportMetric.GENERIC_SP500_SALE_USD),
     )
     assert_allclose(
         _lot_disposition_matrix(result, asset_class=LotAssetClass.PUBLIC_SECURITY, amount_field="cost_basis_usd"),
-        result.matrix("generic_sp500_sale_basis_usd"),
+        result.matrix(ReportMetric.GENERIC_SP500_SALE_BASIS_USD),
     )
     assert_allclose(
         _lot_disposition_matrix(result, asset_class=LotAssetClass.PUBLIC_SECURITY, amount_field="tax_expense_usd"),
-        result.matrix("generic_sp500_sale_tax_usd"),
+        result.matrix(ReportMetric.GENERIC_SP500_SALE_TAX_USD),
     )
     assert_allclose(
         _posting_matrix(
@@ -1323,8 +1337,8 @@ def test_checking_floor_policy_sells_sp500_to_restore_cash_floor() -> None:
             side=PostingSide.DEBIT,
             journal_entry_type=JournalEntryType.ASSET_SALE,
         )
-        - result.matrix("generic_sp500_sale_tax_usd"),
-        result.matrix("generic_sp500_sale_usd") - result.matrix("generic_sp500_sale_tax_usd"),
+        - result.matrix(ReportMetric.GENERIC_SP500_SALE_TAX_USD),
+        result.matrix(ReportMetric.GENERIC_SP500_SALE_USD) - result.matrix(ReportMetric.GENERIC_SP500_SALE_TAX_USD),
     )
 
     actions = result.actions(SellSp500Action)
@@ -1381,11 +1395,11 @@ def test_multiple_checking_floor_rules_execute_in_policy_order() -> None:
     result = _run_scenario(scenario, horizon_months=1)
 
     rollout = result.rollout(0)
-    assert_allclose(rollout.series("cash_usd")[0], 25_000)
-    assert_allclose(rollout.series("generic_sp500_value_usd")[0], 25_000)
-    assert_allclose(rollout.series("generic_sp500_sale_usd")[0], 25_000)
-    assert_allclose(rollout.series("generic_sp500_sale_basis_usd")[0], 25_000)
-    assert_allclose(rollout.series("checking_floor_shortfall_usd")[0], 0)
+    assert_allclose(rollout.series(ReportMetric.CASH_USD)[0], 25_000)
+    assert_allclose(rollout.series(ReportMetric.GENERIC_SP500_VALUE_USD)[0], 25_000)
+    assert_allclose(rollout.series(ReportMetric.GENERIC_SP500_SALE_USD)[0], 25_000)
+    assert_allclose(rollout.series(ReportMetric.GENERIC_SP500_SALE_BASIS_USD)[0], 25_000)
+    assert_allclose(rollout.series(ReportMetric.CHECKING_FLOOR_SHORTFALL_USD)[0], 0)
 
     assert [(action.policy_id, action.amount_usd) for action in result.actions(SellSp500Action)] == [
         ("primary_floor", 15_000),
@@ -1428,9 +1442,9 @@ def test_private_equity_tender_sale_into_cash_increases_only_actual_liquid_asset
     )
 
     no_opportunity = _run_scenario(scenario, horizon_months=12)
-    assert_allclose(no_opportunity.rollout(0).series("private_equity_sale_usd"), 0)
-    assert_allclose(no_opportunity.rollout(0).series("cash_usd")[12], 10_000)
-    assert_allclose(no_opportunity.rollout(0).series("liquid_net_worth_usd")[12], 10_000)
+    assert_allclose(no_opportunity.rollout(0).series(ReportMetric.PRIVATE_EQUITY_SALE_USD), 0)
+    assert_allclose(no_opportunity.rollout(0).series(ReportMetric.CASH_USD)[12], 10_000)
+    assert_allclose(no_opportunity.rollout(0).series(ReportMetric.LIQUID_NET_WORTH_USD)[12], 10_000)
     assert no_opportunity.actions(SellPrivateEquityAction) == ()
     no_opportunity_decisions = no_opportunity.policy_decisions(PrivateEquitySaleDecision)
     assert len(no_opportunity_decisions) == 13
@@ -1462,15 +1476,15 @@ def test_private_equity_tender_sale_into_cash_increases_only_actual_liquid_asset
     expected_tax = 1_792.53
     expected_after_tax_proceeds = expected_sale - expected_tax
     rollout = result.rollout(0)
-    assert_allclose(rollout.series("private_equity_value_usd")[11], 200_000)
-    assert_allclose(rollout.series("private_equity_sale_usd")[12], expected_sale)
-    assert_allclose(rollout.series("private_equity_sale_basis_usd")[12], expected_basis)
-    assert_allclose(rollout.series("private_equity_sale_tax_usd")[12], expected_tax)
-    assert_allclose(rollout.series("private_equity_value_usd")[12], 100_000)
-    assert_allclose(rollout.series("private_equity_sale_opportunity_value_usd")[12], 100_000)
-    assert_allclose(rollout.series("cash_usd")[12], 10_000 + expected_after_tax_proceeds)
-    assert_allclose(rollout.series("liquid_net_worth_usd")[12], 10_000 + expected_after_tax_proceeds)
-    assert_allclose(rollout.series("net_worth_usd")[12], 10_000 + expected_after_tax_proceeds + 100_000)
+    assert_allclose(rollout.series(ReportMetric.PRIVATE_EQUITY_VALUE_USD)[11], 200_000)
+    assert_allclose(rollout.series(ReportMetric.PRIVATE_EQUITY_SALE_USD)[12], expected_sale)
+    assert_allclose(rollout.series(ReportMetric.PRIVATE_EQUITY_SALE_BASIS_USD)[12], expected_basis)
+    assert_allclose(rollout.series(ReportMetric.PRIVATE_EQUITY_SALE_TAX_USD)[12], expected_tax)
+    assert_allclose(rollout.series(ReportMetric.PRIVATE_EQUITY_VALUE_USD)[12], 100_000)
+    assert_allclose(rollout.series(ReportMetric.PRIVATE_EQUITY_SALE_OPPORTUNITY_VALUE_USD)[12], 100_000)
+    assert_allclose(rollout.series(ReportMetric.CASH_USD)[12], 10_000 + expected_after_tax_proceeds)
+    assert_allclose(rollout.series(ReportMetric.LIQUID_NET_WORTH_USD)[12], 10_000 + expected_after_tax_proceeds)
+    assert_allclose(rollout.series(ReportMetric.NET_WORTH_USD)[12], 10_000 + expected_after_tax_proceeds + 100_000)
     opportunity_observations = rollout.market_observations(PrivateEquitySaleOpportunityObservation)
     assert len(opportunity_observations) == 1
     assert opportunity_observations[0].month_index == 12
@@ -1499,15 +1513,15 @@ def test_private_equity_tender_sale_into_cash_increases_only_actual_liquid_asset
             side=PostingSide.CREDIT,
             journal_entry_type=JournalEntryType.ASSET_SALE,
         ),
-        result.matrix("private_equity_sale_usd"),
+        result.matrix(ReportMetric.PRIVATE_EQUITY_SALE_USD),
     )
     assert_allclose(
         _lot_disposition_matrix(result, asset_class=LotAssetClass.PRIVATE_EQUITY, amount_field="cost_basis_usd"),
-        result.matrix("private_equity_sale_basis_usd"),
+        result.matrix(ReportMetric.PRIVATE_EQUITY_SALE_BASIS_USD),
     )
     assert_allclose(
         _lot_disposition_matrix(result, asset_class=LotAssetClass.PRIVATE_EQUITY, amount_field="tax_expense_usd"),
-        result.matrix("private_equity_sale_tax_usd"),
+        result.matrix(ReportMetric.PRIVATE_EQUITY_SALE_TAX_USD),
     )
     assert_allclose(
         _posting_matrix(
@@ -1516,8 +1530,8 @@ def test_private_equity_tender_sale_into_cash_increases_only_actual_liquid_asset
             side=PostingSide.DEBIT,
             journal_entry_type=JournalEntryType.ASSET_SALE,
         )
-        - result.matrix("private_equity_sale_tax_usd"),
-        result.matrix("private_equity_sale_usd") - result.matrix("private_equity_sale_tax_usd"),
+        - result.matrix(ReportMetric.PRIVATE_EQUITY_SALE_TAX_USD),
+        result.matrix(ReportMetric.PRIVATE_EQUITY_SALE_USD) - result.matrix(ReportMetric.PRIVATE_EQUITY_SALE_TAX_USD),
     )
 
     actions = result.actions(SellPrivateEquityAction)
@@ -1579,12 +1593,12 @@ def test_fixed_amount_private_equity_sale_rule_sells_on_market_opportunity() -> 
     )
 
     rollout = result.rollout(0)
-    assert_allclose(rollout.series("private_equity_sale_usd")[6], 50_000)
-    assert_allclose(rollout.series("private_equity_sale_basis_usd")[6], 20_000)
+    assert_allclose(rollout.series(ReportMetric.PRIVATE_EQUITY_SALE_USD)[6], 50_000)
+    assert_allclose(rollout.series(ReportMetric.PRIVATE_EQUITY_SALE_BASIS_USD)[6], 20_000)
     expected_tax = 375.09
-    assert_allclose(rollout.series("private_equity_sale_tax_usd")[6], expected_tax)
-    assert_allclose(rollout.series("private_equity_value_usd")[6], 150_000)
-    assert_allclose(rollout.series("cash_usd")[6], 60_000 - expected_tax)
+    assert_allclose(rollout.series(ReportMetric.PRIVATE_EQUITY_SALE_TAX_USD)[6], expected_tax)
+    assert_allclose(rollout.series(ReportMetric.PRIVATE_EQUITY_VALUE_USD)[6], 150_000)
+    assert_allclose(rollout.series(ReportMetric.CASH_USD)[6], 60_000 - expected_tax)
     actions = result.actions(SellPrivateEquityAction)
     assert len(actions) == 1
     assert actions[0].event_id is None
