@@ -11,10 +11,10 @@ from augur.app.catalog import build_bootstrap_payload
 from augur.app.config import AugurConfig
 from augur.core.api import simulate_set
 from augur.core.bootstrap import Property
-from augur.core.local_regulation import LocalRegulation, TaxRegime, tax_regimes_for_local_regulation
+from augur.core.local_regulation import scenario_with_location_tax_defaults
 from augur.core.market_bundle import HorizonBoundMarketBundleProvider, MarketBundleProvider
 from augur.core.scenario_engine import MONTHS_PER_YEAR
-from augur.core.scenario_set import OccupancyMode, RentalMode, Scenario, ScenarioSet, ScenarioSetRunResponse
+from augur.core.scenario_set import Scenario, ScenarioSet, ScenarioSetRunResponse
 from augur.core.schemas import ScenarioKnobs
 
 
@@ -82,36 +82,17 @@ class AugurBackend:
                 continue
             property_ = self._property_by_id[property_id]
             location = self._location_by_id[property_.location_id]
-            selection = scenario.property_selection.model_copy(
+            with_catalog_property = scenario.model_copy(
                 update={
-                    "location_id": scenario.property_selection.location_id or property_.location_id,
-                    "local_regulation": scenario.property_selection.local_regulation or location.local_regulation,
-                    "purchase_price_usd": scenario.property_selection.purchase_price_usd
-                    if scenario.property_selection.purchase_price_usd is not None
-                    else property_.price_usd,
-                    "tax_regime": scenario.property_selection.tax_regime
-                    or location.local_regulation.property_tax_regime,
+                    "property_selection": scenario.property_selection.model_copy(
+                        update={
+                            "location_id": scenario.property_selection.location_id or property_.location_id,
+                            "purchase_price_usd": scenario.property_selection.purchase_price_usd
+                            if scenario.property_selection.purchase_price_usd is not None
+                            else property_.price_usd,
+                        }
+                    )
                 }
             )
-            scenarios.append(
-                scenario.model_copy(
-                    update={
-                        "property_selection": selection,
-                        "tax_regimes": _tax_regimes_with_catalog_defaults(scenario, location.local_regulation),
-                    }
-                )
-            )
+            scenarios.append(scenario_with_location_tax_defaults(with_catalog_property, location.local_regulation))
         return scenario_set.model_copy(update={"scenarios": tuple(scenarios)})
-
-
-def _tax_regimes_with_catalog_defaults(scenario: Scenario, local_regulation: LocalRegulation) -> tuple[TaxRegime, ...]:
-    owner_occupied = (
-        scenario.occupancy_plan.occupancy_mode is OccupancyMode.OWNER_LIVES_IN_PROPERTY
-        and scenario.rental_plan.rental_mode is not RentalMode.RENT_WHOLE_PROPERTY
-    )
-    return tax_regimes_for_local_regulation(
-        local_regulation,
-        existing_tax_regimes=scenario.tax_regimes,
-        owner_occupied=owner_occupied,
-        rented=scenario.rental_plan.rental_mode is not RentalMode.NOT_RENTED,
-    )
