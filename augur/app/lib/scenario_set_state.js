@@ -1,9 +1,5 @@
 import { camelizeObjectKeys, decamelizeObjectKeys } from "./casing.js";
 
-/**
- * @typedef {import("./api/schema").components["schemas"]["ScenarioSet-Input"]} BackendScenarioSet
- */
-
 export const SCENARIO_COLORS = ["#2563eb", "#dc2626", "#059669", "#d97706", "#7c3aed", "#0891b2"];
 
 const URL_STATE_VERSION = 4;
@@ -659,9 +655,6 @@ function scenarioToBackendScenario(scenario, bootstrap) {
   };
 }
 
-/**
- * @returns {BackendScenarioSet}
- */
 export function scenarioSetInputToRequest(input, bootstrap) {
   const normalized = normalizeScenarioSetInput(input, bootstrap);
   return {

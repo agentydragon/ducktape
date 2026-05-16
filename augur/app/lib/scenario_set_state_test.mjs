@@ -1,6 +1,4 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import test from "node:test";
 
 import {
@@ -12,6 +10,7 @@ import {
   scenarioSetInputToRequest,
 } from "./scenario_set_state.js";
 import { decamelizeObjectKeys } from "./casing.js";
+import { zScenarioSetInput } from "./api/schema.zod.mjs";
 
 const bootstrap = {
   defaultPropertyId: "location_a_property",
@@ -126,56 +125,17 @@ function patchScenarioSections(scenario, sectionPatches) {
   );
 }
 
-function runfilePath(relativePath) {
-  const roots = [process.env.RUNFILES_DIR, process.env.TEST_SRCDIR, process.cwd()].filter(Boolean);
-  const candidates = roots.flatMap((root) => [
-    join(root, "_main", relativePath),
-    join(root, relativePath),
-    join(root, "..", relativePath),
-  ]);
-  const match = candidates.find((candidate) => existsSync(candidate));
-  assert.ok(match, `missing runfile ${relativePath}; tried ${candidates.join(", ")}`);
-  return match;
-}
-
-function loadGeneratedOpenApiSchema() {
-  const schemaPath = runfilePath("augur/app/lib/_schema_openapi.json");
-  return JSON.parse(readFileSync(schemaPath, "utf8"));
-}
-
-function schemaRefName(ref) {
-  assert.equal(typeof ref, "string");
-  const prefix = "#/components/schemas/";
-  assert.ok(ref.startsWith(prefix), `expected component schema ref, got ${ref}`);
-  return ref.slice(prefix.length);
-}
-
-function resolveSchema(openApi, schema) {
-  if (schema?.$ref) {
-    return openApi.components.schemas[schemaRefName(schema.$ref)];
+// Recursively collect keys present in `input` that the Zod parse stripped —
+// i.e. fields the wire schema doesn't know about. Required-fields coverage
+// comes from `parse()` itself (it throws on a missing required key).
+function strippedKeys(input, parsed, path = "") {
+  if (Array.isArray(input)) return input.flatMap((it, i) => strippedKeys(it, parsed?.[i], `${path}[${i}]`));
+  if (input && typeof input === "object") {
+    return Object.entries(input).flatMap(([k, v]) =>
+      parsed && k in parsed ? strippedKeys(v, parsed[k], `${path}.${k}`) : [`${path}.${k}`]
+    );
   }
-  return schema;
-}
-
-function schemaProperty(openApi, schema, propertyName) {
-  const resolved = resolveSchema(openApi, schema);
-  const property = resolved?.properties?.[propertyName];
-  assert.ok(property, `generated schema ${resolved?.title ?? "<anonymous>"} is missing ${propertyName}`);
-  return property;
-}
-
-function assertNoUnknownFields(openApi, schema, value, label) {
-  const resolved = resolveSchema(openApi, schema);
-  assert.equal(resolved.additionalProperties, false, `${label} schema should reject unknown fields`);
-  const allowed = new Set(Object.keys(resolved.properties ?? {}));
-  const unknown = Object.keys(value).filter((field) => !allowed.has(field));
-  assert.deepEqual(unknown, [], `${label} mapper output has fields absent from generated schema`);
-}
-
-function assertRequiredFieldsPresent(openApi, schema, value, label) {
-  const resolved = resolveSchema(openApi, schema);
-  const missing = (resolved.required ?? []).filter((field) => !(field in value));
-  assert.deepEqual(missing, [], `${label} mapper output omits generated required fields`);
+  return [];
 }
 
 test("default input creates comparable generic location scenarios", () => {
@@ -336,11 +296,7 @@ test("scenario set request is canonical backend input after decamelizing", () =>
   assert.equal(backendRequest.scenarios[1].policies[0].base_monthly_payment_usd, 2_435);
 });
 
-test("backend request mapper output is covered by generated OpenAPI schema", () => {
-  const openApi = loadGeneratedOpenApiSchema();
-  const runOperation = openApi.paths["/api/scenario_sets/run"].post;
-  const requestSchema = resolveSchema(openApi, runOperation.requestBody.content["application/json"].schema);
-  const responseSchemaRef = runOperation.responses["200"].content["application/json"].schema.$ref;
+test("backend request mapper output is covered by generated schema", () => {
   const input = normalizeScenarioSetInput(createDefaultScenarioSetInput(bootstrap), bootstrap);
   input.scenarios[0] = patchScenarioSections(input.scenarios[0], {
     financing: {
@@ -357,34 +313,7 @@ test("backend request mapper output is covered by generated OpenAPI schema", () 
     },
   });
   const backendRequest = decamelizeObjectKeys(scenarioSetInputToRequest(input, bootstrap));
-  const scenarioSchema = resolveSchema(openApi, schemaProperty(openApi, requestSchema, "scenarios").items);
-  const scenario = backendRequest.scenarios[0];
-  const boundarySchemas = [
-    [requestSchema, backendRequest, "ScenarioSet request"],
-    [schemaProperty(openApi, requestSchema, "market_request"), backendRequest.market_request, "market request"],
-    [schemaProperty(openApi, requestSchema, "report_spec"), backendRequest.report_spec, "report spec"],
-    [scenarioSchema, scenario, "scenario"],
-    [schemaProperty(openApi, scenarioSchema, "property_selection"), scenario.property_selection, "property selection"],
-    [schemaProperty(openApi, scenarioSchema, "financing"), scenario.financing, "financing"],
-    [schemaProperty(openApi, scenarioSchema, "occupancy_plan"), scenario.occupancy_plan, "occupancy plan"],
-    [schemaProperty(openApi, scenarioSchema, "transaction_costs"), scenario.transaction_costs, "transaction costs"],
-    [
-      schemaProperty(openApi, scenarioSchema, "property_assumptions"),
-      scenario.property_assumptions,
-      "property assumptions",
-    ],
-    [
-      schemaProperty(openApi, scenarioSchema, "initial_balance_sheet"),
-      scenario.initial_balance_sheet,
-      "initial balance sheet",
-    ],
-  ];
-
-  assert.equal(schemaRefName(responseSchemaRef), "ScenarioSetRunResponse");
-  for (const [schema, value, label] of boundarySchemas) {
-    assertRequiredFieldsPresent(openApi, schema, value, label);
-    assertNoUnknownFields(openApi, schema, value, label);
-  }
+  assert.deepEqual(strippedKeys(backendRequest, zScenarioSetInput.parse(backendRequest)), []);
 });
 
 test("request normalization only sends current report fields", () => {

@@ -1,12 +1,7 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
-load("//devinfra/js:openapi.bzl", "js_openapi_schema", "js_openapi_zod")
+load("//devinfra/js:openapi.bzl", "js_openapi_zod")
 
 package(default_visibility = ["//visibility:public"])
-
-js_openapi_schema(
-    name = "schema",
-    generator = "//augur/app:export_schema_bin",
-)
 
 js_openapi_zod(
     name = "schema_zod",
@@ -31,17 +26,14 @@ js_library(
 js_library(
     name = "scenario_set_state",
     srcs = ["scenario_set_state.js"],
-    deps = [
-        ":casing",
-        ":schema",
-    ],
+    deps = [":casing"],
 )
 
 js_test(
     name = "scenario_set_state_test",
     data = [
-        ":_schema_openapi_json",
         ":scenario_set_state",
+        ":schema_zod",
     ],
     entry_point = "scenario_set_state_test.mjs",
 )
