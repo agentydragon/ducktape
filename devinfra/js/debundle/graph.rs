@@ -400,10 +400,43 @@ pub fn build_owner_graph(facts: &[StatementFacts]) -> OwnerGraph {
     // that precision the cross-module S graph would be dense
     // enough to reject realistic specs for trivially pure const
     // sequences.
+    //
+    // Sibling exception (P-1 comma-chain splitter): if two adjacent
+    // non-pure owners both originate from the same source
+    // `VariableDeclaration` comma-list (same `comma_sibling_group`),
+    // skip the direct `Sequenced` edge between them and instead
+    // sequence every sibling back to the same predecessor as the
+    // first sibling of the group. JS evaluates the declarators
+    // left-to-right, but each RHS is a self-contained value
+    // computation: a sibling's side effects don't depend on
+    // observing a prior sibling's side effects (the sibling's
+    // binding doesn't even exist until after its own initializer
+    // returns). The data-dependency case where a later declarator
+    // reads a name introduced by an earlier one is still captured
+    // precisely by the `EagerUse` edge produced from
+    // `eager_reads`. Suppressing the sibling chain drops a stale
+    // at-init-order constraint without losing any read constraint
+    // (same soundness argument as the existing pure-owner filter).
+    // Sequencing all siblings to the pre-group predecessor keeps
+    // each non-pure sibling correctly ordered with respect to
+    // non-pure work that happened before the comma-list. See
+    // `oversize_closure_patterns.md` §P-1.
     let mut previous_side_effect_owner: Option<OwnerId> = None;
+    let mut current_group: Option<StatementOrdinal> = None;
+    let mut group_predecessor: Option<OwnerId> = None;
     for stmt in facts.iter().filter(|s| !s.purity.is_pure()) {
         let from = OwnerId(stmt.ordinal.0);
-        if let Some(to) = previous_side_effect_owner
+        let in_existing_group = stmt
+            .comma_sibling_group
+            .is_some_and(|g| current_group == Some(g));
+        let predecessor = if in_existing_group {
+            group_predecessor
+        } else {
+            current_group = stmt.comma_sibling_group;
+            group_predecessor = previous_side_effect_owner;
+            previous_side_effect_owner
+        };
+        if let Some(to) = predecessor
             && from != to
         {
             raw_edges.push((from, to, EdgeReason::sequenced(stmt.ordinal)));
