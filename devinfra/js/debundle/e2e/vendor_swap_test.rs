@@ -735,6 +735,7 @@ fn partial_swap_namespace_kind_replaces_whole_import() {
         caller_source: "import { a as React, keepMe as kept } from \"../megachunk/entry.js\";\nexport function go() { return React.useState() + kept(); }\n",
         upstream_source: "export const useState = () => 1;\nexport const useEffect = () => 2;\n",
         chunk_export: "a",
+        upstream_export: None,
     });
 
     assert!(
@@ -775,6 +776,7 @@ fn partial_swap_default_kind_replaces_whole_import() {
         caller_source: "import { aQ as z, keepMe as kept } from \"../megachunk/entry.js\";\nexport function go() { return z(\"a\", \"b\") + kept(); }\n",
         upstream_source: "export default (...args) => args.join(' ');\n",
         chunk_export: "aQ",
+        upstream_export: None,
     });
 
     assert!(
@@ -799,8 +801,80 @@ fn partial_swap_default_kind_replaces_whole_import() {
     );
 }
 
+#[test]
+fn partial_swap_named_kind_replaces_whole_import() {
+    // Caller has `import { o as mobxObserver } from "../megachunk/entry.js"`
+    // where the chunk export `o` is a single named export of the package
+    // (e.g. `mobx-react-lite#observer`). References call the local
+    // binding directly (`mobxObserver(...)`), which must stay intact.
+    // Only the import statement should change to
+    // `import { observer as mobxObserver } from "mobx-react-lite"`.
+    let fixture = run_partial_swap_kind_fixture(PartialSwapKindFixtureArgs {
+        kind: "named",
+        package_name: "mobx-react-lite",
+        package_version: "4.0.7",
+        subpath: "dist/index.js",
+        chunk_source: "export const o = (Component) => Component;\nexport const keepMe = () => 7;\n",
+        caller_source: "import { o as mobxObserver, keepMe as kept } from \"../megachunk/entry.js\";\nexport function go() { return mobxObserver(\"X\") + kept(); }\n",
+        upstream_source: "export const observer = (Component) => Component;\n",
+        chunk_export: "o",
+        upstream_export: Some("observer"),
+    });
+
+    assert!(
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
+    assert!(
+        caller.contains("import { observer as mobxObserver } from \"mobx-react-lite\""),
+        "caller should emit a named import using the upstream export:\n{caller}",
+    );
+    assert!(
+        caller.contains("mobxObserver(\"X\")"),
+        "caller's call-site references must stay intact:\n{caller}",
+    );
+    assert!(
+        caller.contains("keepMe as kept"),
+        "non-swapped specifiers stay in the residual import:\n{caller}",
+    );
+}
+
+#[test]
+fn partial_swap_named_kind_drops_alias_when_local_matches_upstream() {
+    // When the caller-side local binding already matches the upstream
+    // export name, the emitted import should drop the `as` alias.
+    let fixture = run_partial_swap_kind_fixture(PartialSwapKindFixtureArgs {
+        kind: "named",
+        package_name: "mobx-react-lite",
+        package_version: "4.0.7",
+        subpath: "dist/index.js",
+        chunk_source: "export const o = (Component) => Component;\n",
+        caller_source: "import { o as observer } from \"../megachunk/entry.js\";\nexport function go() { return observer(\"X\"); }\n",
+        upstream_source: "export const observer = (Component) => Component;\n",
+        chunk_export: "o",
+        upstream_export: Some("observer"),
+    });
+
+    assert!(
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
+    assert!(
+        caller.contains("import { observer } from \"mobx-react-lite\""),
+        "no `as` alias when local matches upstream export:\n{caller}",
+    );
+}
+
 struct PartialSwapKindFixtureArgs<'a> {
-    /// "namespace" or "default"
+    /// "namespace", "default", or "named"
     kind: &'a str,
     package_name: &'a str,
     package_version: &'a str,
@@ -809,6 +883,8 @@ struct PartialSwapKindFixtureArgs<'a> {
     caller_source: &'a str,
     upstream_source: &'a str,
     chunk_export: &'a str,
+    /// Required for `kind: named`. None for `namespace` / `default`.
+    upstream_export: Option<&'a str>,
 }
 
 fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> PartialSwapFixture {
@@ -851,6 +927,12 @@ fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> Partia
     );
     write_text_file(&package_root.join(args.subpath), args.upstream_source);
 
+    let mut symbol_obj = serde_json::Map::new();
+    symbol_obj.insert("package".to_string(), Value::from(args.package_name));
+    symbol_obj.insert("kind".to_string(), Value::from(args.kind));
+    if let Some(upstream_export) = args.upstream_export {
+        symbol_obj.insert("upstream_export".to_string(), Value::from(upstream_export));
+    }
     let spec_path = root.path().join("transform_spec.yaml");
     let spec = json!({
         "vendor": {
@@ -864,7 +946,7 @@ fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> Partia
                     },
                 },
                 "symbols": {
-                    args.chunk_export: { "package": args.package_name, "kind": args.kind },
+                    args.chunk_export: Value::Object(symbol_obj),
                 },
             },
         },

@@ -1523,13 +1523,14 @@ pub fn apply_partial_vendor_swaps(
             }
         }
 
-        // Per-symbol shape validation: `kind: member` requires
-        // `upstream_export`; `kind: namespace` / `kind: default`
+        // Per-symbol shape validation: `kind: member` and `kind: named`
+        // require `upstream_export`; `kind: namespace` / `kind: default`
         // forbid it.
         for (chunk_export, symbol) in &partial.symbols {
             match (symbol.kind, symbol.upstream_export.as_deref()) {
-                (PartialSwapKind::Member, None) => bail!(
-                    "apply_partial_vendor_swaps vendor entry {chunk_path}: symbol `{chunk_export}` (kind=member) missing required `upstream_export`",
+                (PartialSwapKind::Member | PartialSwapKind::Named, None) => bail!(
+                    "apply_partial_vendor_swaps vendor entry {chunk_path}: symbol `{chunk_export}` (kind={:?}) missing required `upstream_export`",
+                    symbol.kind
                 ),
                 (PartialSwapKind::Namespace | PartialSwapKind::Default, Some(_)) => bail!(
                     "apply_partial_vendor_swaps vendor entry {chunk_path}: symbol `{chunk_export}` (kind={:?}) must not set `upstream_export`",
@@ -1924,6 +1925,20 @@ fn rewrite_partial_swap_in_file(
                         .entry((chunk_mapping.chunk_id.clone(), imported_name_lookup.clone()))
                         .or_insert(0) += 1;
                 }
+                PartialSwapKind::Named => {
+                    let upstream_export = target
+                        .upstream_export
+                        .as_deref()
+                        .expect("kind=named validated to carry upstream_export");
+                    decl_local_imports.push(DeferredImport::Named {
+                        package: target.package.clone(),
+                        local: local_sym,
+                        upstream_export: upstream_export.to_string(),
+                    });
+                    *references_by_symbol
+                        .entry((chunk_mapping.chunk_id.clone(), imported_name_lookup.clone()))
+                        .or_insert(0) += 1;
+                }
             }
         }
 
@@ -1968,6 +1983,13 @@ enum DeferredImport {
     Namespace { package: String, local: String },
     /// `import <local> from "<package>"`
     Default { package: String, local: String },
+    /// `import { <upstream_export> as <local> } from "<package>"`,
+    /// or `import { <name> } from "<package>"` when local == upstream.
+    Named {
+        package: String,
+        local: String,
+        upstream_export: String,
+    },
 }
 
 impl DeferredImport {
@@ -1975,6 +1997,11 @@ impl DeferredImport {
         match self {
             DeferredImport::Namespace { package, local } => make_namespace_import(&package, &local),
             DeferredImport::Default { package, local } => make_default_import(&package, &local),
+            DeferredImport::Named {
+                package,
+                local,
+                upstream_export,
+            } => make_named_import(&package, &local, &upstream_export),
         }
     }
 }
@@ -2046,6 +2073,34 @@ fn make_default_import(package: &str, local: &str) -> ModuleItem {
         specifiers: vec![ImportSpecifier::Default(ImportDefaultSpecifier {
             span: DUMMY_SP,
             local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+        })],
+        src: Box::new(Str {
+            span: DUMMY_SP,
+            value: package.into(),
+            raw: None,
+        }),
+        type_only: false,
+        with: None,
+        phase: ImportPhase::Evaluation,
+    }))
+}
+
+fn make_named_import(package: &str, local: &str, upstream_export: &str) -> ModuleItem {
+    let imported = if local == upstream_export {
+        None
+    } else {
+        Some(ModuleExportName::Ident(Ident::new_no_ctxt(
+            upstream_export.into(),
+            DUMMY_SP,
+        )))
+    };
+    ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
+        span: DUMMY_SP,
+        specifiers: vec![ImportSpecifier::Named(ImportNamedSpecifier {
+            span: DUMMY_SP,
+            local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+            imported,
+            is_type_only: false,
         })],
         src: Box::new(Str {
             span: DUMMY_SP,
