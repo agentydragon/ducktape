@@ -30,7 +30,7 @@ import {
   searchWithScenarioSetInput,
   uniqueScenarioId,
 } from "./lib/scenario_set_state.js";
-import { fetchAugurBootstrap, runScenarioSet } from "./augur_client.js";
+import { fetchAugurBootstrap, runScenarioSet } from "./client.js";
 
 const FINANCING_OPTIONS = [
   { id: "fixed_30", label: "30-year fixed" },
