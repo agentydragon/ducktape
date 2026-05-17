@@ -212,12 +212,28 @@ fn is_trivial_binding_patch(member: &Member) -> bool {
 }
 
 fn vendor_map(sources: Vec<VendorMarkSource>) -> Result<BTreeMap<String, VendorMark>> {
-    let mut out = BTreeMap::new();
+    // Multiple vendor marks on the same `chunk_path` would silently clobber
+    // each other in the resulting `BTreeMap`. The downstream stages
+    // (`apply_partial_vendor_swaps`, `strip_swapped_vendor_exports`) only
+    // see the survivor, so the dropped entries' packages and symbols never
+    // make it into the importmap or the rewriter — the spec author sees a
+    // green build but only one of the two marks actually takes effect.
+    // Bail with a clear message instead. If a chunk genuinely needs two
+    // partial-swap clusters, merge them into one entry (union of
+    // `packages` + `symbols`).
+    let mut out: BTreeMap<String, VendorMark> = BTreeMap::new();
     for source in sources {
         let chunk_path = source.chunk_path.clone();
         let identity = source.identity.clone();
         let role = source.role;
         let level = source.into_vendor_level()?;
+        if let Some(prior) = out.get(&chunk_path) {
+            bail!(
+                "vendor_marks: duplicate chunk_path `{chunk_path}` (first entry: {}, second entry: {identity}). \
+                 Merge the two entries into one — multiple marks on the same chunk silently clobber each other.",
+                prior.identity,
+            );
+        }
         out.insert(
             chunk_path,
             VendorMark {
@@ -529,6 +545,49 @@ unassigned_mode:
             value["logical_modules"]["static/main"]["ui/active"]["members"][0]
                 .get("purity")
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_vendor_chunk_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let options = fixture(temp.path());
+        write_file(
+            &options.vendor_marks_path,
+            r#"vendor_marks:
+  - level: partial_swap
+    chunk_path: static/vendor.js
+    identity: first cluster
+    packages:
+      pkg-a:
+        version: 1.0.0
+        subpath: index.js
+    symbols:
+      a: { package: pkg-a, kind: namespace }
+  - level: partial_swap
+    chunk_path: static/vendor.js
+    identity: second cluster
+    packages:
+      pkg-b:
+        version: 2.0.0
+        subpath: index.js
+    symbols:
+      b: { package: pkg-b, kind: namespace }
+"#,
+        );
+        let err = compile_spec_tree(&options).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("duplicate chunk_path `static/vendor.js`"),
+            "expected duplicate-chunk_path error, got: {msg}",
+        );
+        assert!(
+            msg.contains("first cluster"),
+            "missing first identity: {msg}"
+        );
+        assert!(
+            msg.contains("second cluster"),
+            "missing second identity: {msg}"
         );
     }
 }
