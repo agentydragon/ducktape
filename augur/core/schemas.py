@@ -201,7 +201,7 @@ class SaleOutcome(InternalModel):
     net_sale_proceeds_usd: float
 
 
-class SimulationTerminal(InternalModel):
+class Terminal(InternalModel):
     final_month: MonthRow
     final_home_value_usd: float
     final_loan_balance_usd: float
@@ -210,7 +210,7 @@ class SimulationTerminal(InternalModel):
     owner_net_proceeds_usd: float
 
 
-class SimulationResult(InternalModel):
+class Result(InternalModel):
     # Property + scenario knobs the simulator was driven with. Carrying the
     # typed models here lets `analysis.py` (project_summary, project_yearly_ledger,
     # …) read fields without re-deriving request state.
@@ -232,7 +232,7 @@ class SimulationResult(InternalModel):
     months: list[MonthRow]
     ledger: list[LedgerRow]
     validations: list[str]
-    terminal: SimulationTerminal
+    terminal: Terminal
 
 
 # ---------------------------------------------------------------------------

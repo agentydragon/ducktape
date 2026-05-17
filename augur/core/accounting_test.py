@@ -10,10 +10,10 @@ from augur.core.accounting import (
     ChartAccount,
     ChartAccountRole,
     ChartAccountType,
+    JournalEntry,
     JournalEntryType,
+    Posting,
     PostingSide,
-    SimulationJournalEntry,
-    SimulationPosting,
     chart_account_id,
     validate_accounting_trace,
 )
@@ -40,7 +40,7 @@ def test_validate_accounting_trace_accepts_balanced_journal() -> None:
             ),
         ),
         journal_entries=(
-            SimulationJournalEntry(
+            JournalEntry(
                 journal_entry_id="monthly_spend:rollout:0:month:1",
                 rollout_index=0,
                 month_index=1,
@@ -54,7 +54,7 @@ def test_validate_accounting_trace_accepts_balanced_journal() -> None:
             ),
         ),
         postings=(
-            SimulationPosting(
+            Posting(
                 posting_id="monthly_spend:rollout:0:month:1:debit",
                 journal_entry_id="monthly_spend:rollout:0:month:1",
                 rollout_index=0,
@@ -63,7 +63,7 @@ def test_validate_accounting_trace_accepts_balanced_journal() -> None:
                 side=PostingSide.DEBIT,
                 amount_usd=100,
             ),
-            SimulationPosting(
+            Posting(
                 posting_id="monthly_spend:rollout:0:month:1:credit",
                 journal_entry_id="monthly_spend:rollout:0:month:1",
                 rollout_index=0,
@@ -97,20 +97,19 @@ def test_validate_accounting_trace_rejects_unbalanced_journal() -> None:
                 ),
             ),
             journal_entries=(
-                SimulationJournalEntry(
+                JournalEntry(
                     journal_entry_id="broken",
                     rollout_index=0,
                     month_index=1,
                     journal_entry_type=JournalEntryType.CASH_EXPENSE,
                     actor_id="owner",
                     cause=AccountingCause(
-                        cause_type=AccountingCauseType.POLICY_DECISION,
-                        cause_id="policy:spend:rollout:0:month:1",
+                        cause_type=AccountingCauseType.POLICY_DECISION, cause_id="policy:spend:rollout:0:month:1"
                     ),
                 ),
             ),
             postings=(
-                SimulationPosting(
+                Posting(
                     posting_id="broken:debit",
                     journal_entry_id="broken",
                     rollout_index=0,
@@ -119,7 +118,7 @@ def test_validate_accounting_trace_rejects_unbalanced_journal() -> None:
                     side=PostingSide.DEBIT,
                     amount_usd=100,
                 ),
-                SimulationPosting(
+                Posting(
                     posting_id="broken:credit",
                     journal_entry_id="broken",
                     rollout_index=0,
@@ -137,20 +136,17 @@ def test_validate_accounting_trace_rejects_unknown_account() -> None:
         validate_accounting_trace(
             chart_accounts=(),
             journal_entries=(
-                SimulationJournalEntry(
+                JournalEntry(
                     journal_entry_id="entry",
                     rollout_index=0,
                     month_index=0,
                     journal_entry_type=JournalEntryType.OPENING_BALANCE,
                     actor_id="owner",
-                    cause=AccountingCause(
-                        cause_type=AccountingCauseType.OPENING_BALANCE,
-                        cause_id="opening:owner",
-                    ),
+                    cause=AccountingCause(cause_type=AccountingCauseType.OPENING_BALANCE, cause_id="opening:owner"),
                 ),
             ),
             postings=(
-                SimulationPosting(
+                Posting(
                     posting_id="entry:posting",
                     journal_entry_id="entry",
                     rollout_index=0,

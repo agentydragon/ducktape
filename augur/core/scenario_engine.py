@@ -10,17 +10,17 @@ import numpy as np
 from augur.core.accounting import (
     AccountingCause,
     AccountingCauseType,
+    BalanceSnapshot,
     ChartAccount,
     ChartAccountRole,
+    JournalEntry,
     JournalEntryType,
     LiabilityState,
     LiabilityType,
     LotAssetClass,
     LotDisposition,
+    Posting,
     PostingSide,
-    SimulationBalanceSnapshot,
-    SimulationJournalEntry,
-    SimulationPosting,
     TaxLot,
     chart_account_id,
     chart_account_type_for_role,
@@ -64,28 +64,35 @@ from augur.core.property_tax import monthly_property_tax_usd
 from augur.core.provenance import policy_program_set_id, projection_trajectory_id, scenario_input_id
 from augur.core.scenario_set import (
     AccountBalance,
+    AccountingDetail,
     AccountingDetailType,
     AccountType,
+    Action,
     ActorRole,
     AssetType,
     CheckingFloorSellPublicStockPolicy,
     CryptoAssetPosition,
+    FailureEvent,
     FailureEventType,
     FinancingMode,
     FixedAmountPrivateEquitySaleRule,
+    FundingDecision,
     FundingDecisionType,
     FundingSourceType,
     GenericSp500StockPosition,
     LiquidNetWorthFloorPrivateEquitySaleRule,
+    MarketObservation,
     MarketPathObservation,
     MonthlySpendDecision,
     MonthlySpendPolicy,
+    Obligation,
     ObligationStatus,
     ObligationType,
     OccupancyMode,
     PartnerContributionDecision,
     PartnerEquityAccrualPolicy,
     Policy,
+    PolicyDecision,
     PrivateEquityPosition,
     PrivateEquitySaleDecision,
     PrivateEquitySaleDecisionReason,
@@ -103,16 +110,9 @@ from augur.core.scenario_set import (
     SellPrivateEquityAction,
     SellPublicStockDecision,
     SellSp500Action,
+    SettlementResult,
     SettlementStatus,
     SettlePropertySaleAction,
-    SimulationAccountingDetail,
-    SimulationAction,
-    SimulationFailureEvent,
-    SimulationFundingDecision,
-    SimulationMarketObservation,
-    SimulationObligation,
-    SimulationPolicyDecision,
-    SimulationSettlementResult,
     SpecialAssessmentEvent,
     TaxPaymentAllocationDetail,
 )
@@ -200,21 +200,21 @@ class ScenarioRunArrays:
     net_worth_usd: np.ndarray
     partner_present: np.ndarray
     monthly_spend_usd: np.ndarray
-    actions: tuple[SimulationAction, ...]
-    policy_decisions: tuple[SimulationPolicyDecision, ...]
-    market_observations: tuple[SimulationMarketObservation, ...]
+    actions: tuple[Action, ...]
+    policy_decisions: tuple[PolicyDecision, ...]
+    market_observations: tuple[MarketObservation, ...]
     chart_accounts: tuple[ChartAccount, ...]
-    journal_entries: tuple[SimulationJournalEntry, ...]
-    postings: tuple[SimulationPosting, ...]
-    balance_snapshots: tuple[SimulationBalanceSnapshot, ...]
+    journal_entries: tuple[JournalEntry, ...]
+    postings: tuple[Posting, ...]
+    balance_snapshots: tuple[BalanceSnapshot, ...]
     tax_lots: tuple[TaxLot, ...]
     lot_dispositions: tuple[LotDisposition, ...]
     liabilities: tuple[LiabilityState, ...]
-    accounting_details: tuple[SimulationAccountingDetail, ...]
-    obligations: tuple[SimulationObligation, ...]
-    funding_decisions: tuple[SimulationFundingDecision, ...]
-    settlement_results: tuple[SimulationSettlementResult, ...]
-    failure_events: tuple[SimulationFailureEvent, ...]
+    accounting_details: tuple[AccountingDetail, ...]
+    obligations: tuple[Obligation, ...]
+    funding_decisions: tuple[FundingDecision, ...]
+    settlement_results: tuple[SettlementResult, ...]
+    failure_events: tuple[FailureEvent, ...]
 
     @property
     def rollout_count(self) -> int:
@@ -842,9 +842,9 @@ class CryptoObligationFundingPolicyApplication:
 class AccountingTraceBuilder:
     def __init__(self) -> None:
         self.chart_accounts_by_id: dict[str, ChartAccount] = {}
-        self.journal_entries: list[SimulationJournalEntry] = []
-        self.postings: list[SimulationPosting] = []
-        self.balance_snapshots: list[SimulationBalanceSnapshot] = []
+        self.journal_entries: list[JournalEntry] = []
+        self.postings: list[Posting] = []
+        self.balance_snapshots: list[BalanceSnapshot] = []
 
     def record_entry(
         self, *, month_index: int | np.ndarray, entry: JournalEntryBatch, amount_multiplier: np.ndarray | None = None
@@ -867,7 +867,7 @@ class AccountingTraceBuilder:
                 else None
             )
             self.journal_entries.append(
-                SimulationJournalEntry(
+                JournalEntry(
                     journal_entry_id=journal_entry_id,
                     rollout_index=rollout_index,
                     month_index=month,
@@ -892,7 +892,7 @@ class AccountingTraceBuilder:
                     continue
                 chart_account = self._chart_account(posting)
                 self.postings.append(
-                    SimulationPosting(
+                    Posting(
                         posting_id=f"{journal_entry_id}:posting:{posting_index}:{posting.side.value}",
                         journal_entry_id=journal_entry_id,
                         rollout_index=rollout_index,
@@ -924,7 +924,7 @@ class AccountingTraceBuilder:
         rollout_indexes, month_positions = np.nonzero(amount_usd != 0)
         for rollout_index, month_position in zip(rollout_indexes.tolist(), month_positions.tolist(), strict=True):
             self.balance_snapshots.append(
-                SimulationBalanceSnapshot(
+                BalanceSnapshot(
                     rollout_index=rollout_index,
                     month_index=int(month_index[month_position]),
                     chart_account_id=chart_account.chart_account_id,
@@ -1424,18 +1424,18 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         np.full(rollout_count, initial_cash - down_payment, dtype="float64")
         - disposition.purchase_closing_cost_usd[:, 0]
     )
-    actions: list[SimulationAction] = []
-    policy_decisions: list[SimulationPolicyDecision] = []
-    market_observations: list[SimulationMarketObservation] = list(_market_path_observations(scenario, market_bundle))
+    actions: list[Action] = []
+    policy_decisions: list[PolicyDecision] = []
+    market_observations: list[MarketObservation] = list(_market_path_observations(scenario, market_bundle))
     accounting = AccountingTraceBuilder()
     tax_lots: list[TaxLot] = []
     lot_dispositions: list[LotDisposition] = []
     liabilities: list[LiabilityState] = []
-    accounting_details: list[SimulationAccountingDetail] = []
-    obligations: list[SimulationObligation] = []
-    funding_decisions: list[SimulationFundingDecision] = []
-    settlement_results: list[SimulationSettlementResult] = []
-    failure_events: list[SimulationFailureEvent] = []
+    accounting_details: list[AccountingDetail] = []
+    obligations: list[Obligation] = []
+    funding_decisions: list[FundingDecision] = []
+    settlement_results: list[SettlementResult] = []
+    failure_events: list[FailureEvent] = []
     sp500_sale_action_records: list[Sp500SaleActionRecord] = []
     crypto_sale_action_records: list[CryptoSaleActionRecord] = []
     private_equity_sale_action_records: list[PrivateEquitySaleActionRecord] = []
@@ -2349,12 +2349,10 @@ def _copy_with_trajectory_identity(record: Any, identity_by_rollout: Mapping[int
     return record.model_copy(update=identity_by_rollout[int(record.rollout_index)])
 
 
-def _market_path_observations(
-    scenario: Scenario, market_bundle: MarketBundle
-) -> tuple[SimulationMarketObservation, ...]:
+def _market_path_observations(scenario: Scenario, market_bundle: MarketBundle) -> tuple[MarketObservation, ...]:
     home_multiplier = market_bundle.home_value_multipliers(scenario.location_id)
     rent_multiplier = market_bundle.rent_multipliers(scenario.location_id)
-    observations: list[SimulationMarketObservation] = []
+    observations: list[MarketObservation] = []
     rollout_indexes, month_positions = np.indices(
         (market_bundle.rollout_count, market_bundle.horizon_months + 1), sparse=False
     )
@@ -2383,7 +2381,7 @@ def _market_path_observations(
 
 
 def _record_private_equity_sale_opportunity_observations(
-    records: list[SimulationMarketObservation],
+    records: list[MarketObservation],
     *,
     month_index: int,
     source_asset_id: str,
@@ -2409,7 +2407,7 @@ def _record_private_equity_sale_opportunity_observations(
 
 
 def _record_monthly_spend_decisions(
-    records: list[SimulationPolicyDecision],
+    records: list[PolicyDecision],
     *,
     month_index: int,
     policy_step: ActorPolicyStep[Policy],
@@ -2437,7 +2435,7 @@ def _record_monthly_spend_decisions(
 
 
 def _record_sell_public_stock_decisions(
-    records: list[SimulationPolicyDecision],
+    records: list[PolicyDecision],
     *,
     month_index: int,
     policy_step: ActorPolicyStep[Policy],
@@ -2466,7 +2464,7 @@ def _record_sell_public_stock_decisions(
 
 
 def _record_private_equity_sale_decisions(
-    records: list[SimulationPolicyDecision],
+    records: list[PolicyDecision],
     *,
     month_index: int,
     policy_step: ActorPolicyStep[Policy],
@@ -2535,7 +2533,7 @@ def _private_equity_sale_decision_reason(
 
 
 def _record_partner_contribution_decisions(
-    records: list[SimulationPolicyDecision], *, month_index: np.ndarray, partner_equity: PartnerEquityArrays
+    records: list[PolicyDecision], *, month_index: np.ndarray, partner_equity: PartnerEquityArrays
 ) -> None:
     for agreement in partner_equity.agreements:
         policy = agreement.policy
@@ -2651,7 +2649,7 @@ def _mortgage_liability_id(property_id: str) -> str:
 
 
 def _accounting_detail_amount_matrix(
-    records: list[SimulationAccountingDetail],
+    records: list[AccountingDetail],
     *,
     rollout_count: int,
     month_index: np.ndarray,
@@ -2776,7 +2774,7 @@ def _record_property_sale_journal_entries(
 
 
 def _record_property_sale_accounting_details(
-    records: list[SimulationAccountingDetail], *, scenario: Scenario, disposition: PropertyDispositionArrays
+    records: list[AccountingDetail], *, scenario: Scenario, disposition: PropertyDispositionArrays
 ) -> None:
     if disposition.sale_event is None or disposition.sale_month is None:
         return
@@ -2818,7 +2816,7 @@ def _record_property_sale_accounting_details(
 
 
 def _record_tax_payment_allocation_details(
-    records: list[SimulationAccountingDetail],
+    records: list[AccountingDetail],
     *,
     scenario: Scenario,
     month_index: np.ndarray,
@@ -3001,7 +2999,7 @@ def _record_partner_agreement_accounting_detail(
     _record_balance_snapshot_batches(accounting, month_index=month_index, entries=partner_equity.balance_snapshots)
 
 
-def _sorted_policy_decisions(records: list[SimulationPolicyDecision]) -> tuple[SimulationPolicyDecision, ...]:
+def _sorted_policy_decisions(records: list[PolicyDecision]) -> tuple[PolicyDecision, ...]:
     return tuple(
         sorted(
             records,
@@ -3017,7 +3015,7 @@ def _sorted_policy_decisions(records: list[SimulationPolicyDecision]) -> tuple[S
     )
 
 
-def _sorted_market_observations(records: list[SimulationMarketObservation]) -> tuple[SimulationMarketObservation, ...]:
+def _sorted_market_observations(records: list[MarketObservation]) -> tuple[MarketObservation, ...]:
     return tuple(
         sorted(
             records,
@@ -3030,7 +3028,7 @@ def _sorted_chart_accounts(records: list[ChartAccount]) -> tuple[ChartAccount, .
     return tuple(sorted(records, key=lambda account: account.chart_account_id))
 
 
-def _sorted_journal_entries(records: list[SimulationJournalEntry]) -> tuple[SimulationJournalEntry, ...]:
+def _sorted_journal_entries(records: list[JournalEntry]) -> tuple[JournalEntry, ...]:
     return tuple(
         sorted(
             records,
@@ -3046,7 +3044,7 @@ def _sorted_journal_entries(records: list[SimulationJournalEntry]) -> tuple[Simu
     )
 
 
-def _sorted_postings(records: list[SimulationPosting]) -> tuple[SimulationPosting, ...]:
+def _sorted_postings(records: list[Posting]) -> tuple[Posting, ...]:
     return tuple(
         sorted(
             records,
@@ -3060,7 +3058,7 @@ def _sorted_postings(records: list[SimulationPosting]) -> tuple[SimulationPostin
     )
 
 
-def _sorted_balance_snapshots(records: list[SimulationBalanceSnapshot]) -> tuple[SimulationBalanceSnapshot, ...]:
+def _sorted_balance_snapshots(records: list[BalanceSnapshot]) -> tuple[BalanceSnapshot, ...]:
     return tuple(sorted(records, key=lambda entry: (entry.month_index, entry.rollout_index, entry.chart_account_id)))
 
 
@@ -3086,7 +3084,7 @@ def _sorted_liabilities(records: list[LiabilityState]) -> tuple[LiabilityState, 
     return tuple(sorted(records, key=lambda liability: liability.liability_id))
 
 
-def _sorted_accounting_details(records: list[SimulationAccountingDetail]) -> tuple[SimulationAccountingDetail, ...]:
+def _sorted_accounting_details(records: list[AccountingDetail]) -> tuple[AccountingDetail, ...]:
     return tuple(
         sorted(
             records,
@@ -3103,7 +3101,7 @@ def _sorted_accounting_details(records: list[SimulationAccountingDetail]) -> tup
     )
 
 
-def _sorted_obligations(records: list[SimulationObligation]) -> tuple[SimulationObligation, ...]:
+def _sorted_obligations(records: list[Obligation]) -> tuple[Obligation, ...]:
     return tuple(
         sorted(
             records,
@@ -3117,7 +3115,7 @@ def _sorted_obligations(records: list[SimulationObligation]) -> tuple[Simulation
     )
 
 
-def _sorted_funding_decisions(records: list[SimulationFundingDecision]) -> tuple[SimulationFundingDecision, ...]:
+def _sorted_funding_decisions(records: list[FundingDecision]) -> tuple[FundingDecision, ...]:
     return tuple(
         sorted(
             records,
@@ -3133,7 +3131,7 @@ def _sorted_funding_decisions(records: list[SimulationFundingDecision]) -> tuple
     )
 
 
-def _sorted_settlement_results(records: list[SimulationSettlementResult]) -> tuple[SimulationSettlementResult, ...]:
+def _sorted_settlement_results(records: list[SettlementResult]) -> tuple[SettlementResult, ...]:
     return tuple(
         sorted(
             records,
@@ -3147,7 +3145,7 @@ def _sorted_settlement_results(records: list[SimulationSettlementResult]) -> tup
     )
 
 
-def _sorted_failure_events(records: list[SimulationFailureEvent]) -> tuple[SimulationFailureEvent, ...]:
+def _sorted_failure_events(records: list[FailureEvent]) -> tuple[FailureEvent, ...]:
     return tuple(
         sorted(
             records,
@@ -3162,7 +3160,7 @@ def _sorted_failure_events(records: list[SimulationFailureEvent]) -> tuple[Simul
 
 
 def _record_property_sale_actions(
-    actions: list[SimulationAction],
+    actions: list[Action],
     *,
     scenario: Scenario,
     disposition: PropertyDispositionArrays,
@@ -3213,7 +3211,7 @@ def _record_property_sale_actions(
 
 
 def _record_sp500_sale_actions(
-    actions: list[SimulationAction],
+    actions: list[Action],
     *,
     month_index: int,
     policy: Policy,
@@ -3310,7 +3308,7 @@ def _record_crypto_sale_journal_entries(
 
 
 def _record_crypto_sale_actions(
-    actions: list[SimulationAction],
+    actions: list[Action],
     *,
     month_index: int,
     policy: Policy,
@@ -3342,7 +3340,7 @@ def _record_crypto_sale_actions(
 
 
 def _record_private_equity_sale_actions(
-    actions: list[SimulationAction],
+    actions: list[Action],
     *,
     month_index: int,
     instruction: PrivateEquitySaleInstructionBatch,
@@ -3477,10 +3475,10 @@ def _settle_required_cash_obligations(
     crypto_sale_usd: np.ndarray,
     crypto_sale_basis_usd: np.ndarray,
     checking_floor_shortfall_usd: np.ndarray,
-    obligations: list[SimulationObligation],
-    funding_decisions: list[SimulationFundingDecision],
-    settlement_results: list[SimulationSettlementResult],
-    failure_events: list[SimulationFailureEvent],
+    obligations: list[Obligation],
+    funding_decisions: list[FundingDecision],
+    settlement_results: list[SettlementResult],
+    failure_events: list[FailureEvent],
     accounting: AccountingTraceBuilder,
     sp500_sale_action_records: list[Sp500SaleActionRecord],
     crypto_sale_action_records: list[CryptoSaleActionRecord],
@@ -3930,7 +3928,7 @@ def _apply_crypto_checking_floor_obligation_funding_policy(
 
 
 def _record_obligation_cash_funding_decisions(
-    records: list[SimulationFundingDecision],
+    records: list[FundingDecision],
     *,
     obligation_type: ObligationType,
     actor_id: str,
@@ -3942,7 +3940,7 @@ def _record_obligation_cash_funding_decisions(
 ) -> None:
     records.extend(
         (
-            SimulationFundingDecision(
+            FundingDecision(
                 rollout_index=rollout_index,
                 month_index=month_index,
                 obligation_id=_obligation_id(obligation_type, rollout_index=rollout_index, month_index=month_index),
@@ -3964,7 +3962,7 @@ def _record_obligation_cash_funding_decisions(
 
 
 def _record_obligation_sale_funding_decisions(
-    records: list[SimulationFundingDecision],
+    records: list[FundingDecision],
     *,
     obligation_type: ObligationType,
     actor_id: str,
@@ -3979,7 +3977,7 @@ def _record_obligation_sale_funding_decisions(
     policy = policy_step.policy
     records.extend(
         (
-            SimulationFundingDecision(
+            FundingDecision(
                 rollout_index=rollout_index,
                 month_index=month_index,
                 obligation_id=_obligation_id(obligation_type, rollout_index=rollout_index, month_index=month_index),
@@ -4002,7 +4000,7 @@ def _record_obligation_sale_funding_decisions(
 
 
 def _record_obligation_crypto_sale_funding_decisions(
-    records: list[SimulationFundingDecision],
+    records: list[FundingDecision],
     *,
     obligation_type: ObligationType,
     actor_id: str,
@@ -4018,7 +4016,7 @@ def _record_obligation_crypto_sale_funding_decisions(
     policy = policy_step.policy
     records.extend(
         (
-            SimulationFundingDecision(
+            FundingDecision(
                 rollout_index=rollout_index,
                 month_index=month_index,
                 obligation_id=_obligation_id(obligation_type, rollout_index=rollout_index, month_index=month_index),
@@ -4043,7 +4041,7 @@ def _record_obligation_crypto_sale_funding_decisions(
 
 
 def _record_unfunded_obligation_decisions(
-    records: list[SimulationFundingDecision],
+    records: list[FundingDecision],
     *,
     obligation_type: ObligationType,
     actor_id: str,
@@ -4053,7 +4051,7 @@ def _record_unfunded_obligation_decisions(
 ) -> None:
     records.extend(
         (
-            SimulationFundingDecision(
+            FundingDecision(
                 rollout_index=rollout_index,
                 month_index=month_index,
                 obligation_id=_obligation_id(obligation_type, rollout_index=rollout_index, month_index=month_index),
@@ -4071,9 +4069,9 @@ def _record_unfunded_obligation_decisions(
 
 
 def _record_obligation_settlement_rows(
-    obligations: list[SimulationObligation],
-    settlement_results: list[SimulationSettlementResult],
-    failure_events: list[SimulationFailureEvent],
+    obligations: list[Obligation],
+    settlement_results: list[SettlementResult],
+    failure_events: list[FailureEvent],
     *,
     obligation_type: ObligationType,
     actor_id: str,
@@ -4093,7 +4091,7 @@ def _record_obligation_settlement_rows(
         obligation_status = _obligation_status(amount_due_usd=due, unpaid_amount_usd=unpaid)
         settlement_status = _settlement_status(amount_due_usd=due, unpaid_amount_usd=unpaid)
         obligations.append(
-            SimulationObligation(
+            Obligation(
                 rollout_index=rollout_index,
                 month_index=month_index,
                 obligation_id=obligation_id,
@@ -4109,7 +4107,7 @@ def _record_obligation_settlement_rows(
             )
         )
         settlement_results.append(
-            SimulationSettlementResult(
+            SettlementResult(
                 rollout_index=rollout_index,
                 month_index=month_index,
                 obligation_id=obligation_id,
@@ -4123,7 +4121,7 @@ def _record_obligation_settlement_rows(
         )
         if unpaid > 0 and required:
             failure_events.append(
-                SimulationFailureEvent(
+                FailureEvent(
                     rollout_index=rollout_index,
                     month_index=month_index,
                     failure_event_id=f"{obligation_id}:failure",
@@ -4155,7 +4153,7 @@ def _settlement_status(*, amount_due_usd: float, unpaid_amount_usd: float) -> Se
     return SettlementStatus.PARTIALLY_PAID
 
 
-def _sorted_actions(actions: list[SimulationAction]) -> tuple[SimulationAction, ...]:
+def _sorted_actions(actions: list[Action]) -> tuple[Action, ...]:
     return tuple(sorted(actions, key=lambda action: (action.month_index, action.rollout_index, action.action_type)))
 
 

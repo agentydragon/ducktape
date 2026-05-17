@@ -6,16 +6,16 @@ from typing import Any, TypeVar, overload
 import numpy as np
 
 from augur.core.accounting import (
+    BalanceSnapshot,
     ChartAccount,
     ChartAccountRole,
+    JournalEntry,
     JournalEntryType,
     LiabilityState,
     LotAssetClass,
     LotDisposition,
+    Posting,
     PostingSide,
-    SimulationBalanceSnapshot,
-    SimulationJournalEntry,
-    SimulationPosting,
     TaxLot,
 )
 from augur.core.market_bundle import (
@@ -33,10 +33,14 @@ from augur.core.provenance import (
 )
 from augur.core.scenario_engine import ScenarioRunArrays, report_metric_array, run_scenario_vectorized
 from augur.core.scenario_set import (
+    AccountingDetail,
+    Action,
     ActorRole,
     EventType,
     ExogenousPathIdentity,
+    MarketObservation,
     PartnerEquityAccrualPolicy,
+    PolicyDecision,
     ProjectionTrajectoryIdentity,
     RentalMode,
     ReportMetric,
@@ -48,10 +52,6 @@ from augur.core.scenario_set import (
     ScenarioResult,
     ScenarioSet,
     ScenarioSetRunResponse,
-    SimulationAccountingDetail,
-    SimulationAction,
-    SimulationMarketObservation,
-    SimulationPolicyDecision,
 )
 
 ActionT = TypeVar("ActionT")
@@ -60,7 +60,7 @@ DecisionT = TypeVar("DecisionT")
 ObservationT = TypeVar("ObservationT")
 
 
-class SimulationValidationError(ValueError):
+class ScenarioValidationError(ValueError):
     """Raised when a typed scenario is internally inconsistent."""
 
 
@@ -79,7 +79,7 @@ class RolloutDetail:
     def actions(self, action_type: type[ActionT]) -> tuple[ActionT, ...]: ...
 
     @overload
-    def actions(self, action_type: None = None) -> tuple[SimulationAction, ...]: ...
+    def actions(self, action_type: None = None) -> tuple[Action, ...]: ...
 
     def actions(self, action_type: type[Any] | None = None) -> tuple[Any, ...]:
         return self.scenario_run.actions(action_type, rollout=self.rollout_index)
@@ -88,7 +88,7 @@ class RolloutDetail:
     def policy_decisions(self, decision_type: type[DecisionT]) -> tuple[DecisionT, ...]: ...
 
     @overload
-    def policy_decisions(self, decision_type: None = None) -> tuple[SimulationPolicyDecision, ...]: ...
+    def policy_decisions(self, decision_type: None = None) -> tuple[PolicyDecision, ...]: ...
 
     def policy_decisions(self, decision_type: type[Any] | None = None) -> tuple[Any, ...]:
         return self.scenario_run.policy_decisions(decision_type, rollout=self.rollout_index)
@@ -97,22 +97,18 @@ class RolloutDetail:
     def market_observations(self, observation_type: type[ObservationT]) -> tuple[ObservationT, ...]: ...
 
     @overload
-    def market_observations(self, observation_type: None = None) -> tuple[SimulationMarketObservation, ...]: ...
+    def market_observations(self, observation_type: None = None) -> tuple[MarketObservation, ...]: ...
 
     def market_observations(self, observation_type: type[Any] | None = None) -> tuple[Any, ...]:
         return self.scenario_run.market_observations(observation_type, rollout=self.rollout_index)
 
-    def journal_entries(
-        self, *, journal_entry_type: JournalEntryType | None = None
-    ) -> tuple[SimulationJournalEntry, ...]:
+    def journal_entries(self, *, journal_entry_type: JournalEntryType | None = None) -> tuple[JournalEntry, ...]:
         return self.scenario_run.journal_entries(journal_entry_type=journal_entry_type, rollout=self.rollout_index)
 
-    def postings(
-        self, *, role: ChartAccountRole | None = None, side: PostingSide | None = None
-    ) -> tuple[SimulationPosting, ...]:
+    def postings(self, *, role: ChartAccountRole | None = None, side: PostingSide | None = None) -> tuple[Posting, ...]:
         return self.scenario_run.postings(role=role, side=side, rollout=self.rollout_index)
 
-    def balance_snapshots(self, *, role: ChartAccountRole | None = None) -> tuple[SimulationBalanceSnapshot, ...]:
+    def balance_snapshots(self, *, role: ChartAccountRole | None = None) -> tuple[BalanceSnapshot, ...]:
         return self.scenario_run.balance_snapshots(role=role, rollout=self.rollout_index)
 
     def lot_dispositions(self, *, asset_class: LotAssetClass | None = None) -> tuple[LotDisposition, ...]:
@@ -122,7 +118,7 @@ class RolloutDetail:
     def accounting_details(self, detail_type: type[AccountingDetailT]) -> tuple[AccountingDetailT, ...]: ...
 
     @overload
-    def accounting_details(self, detail_type: None = None) -> tuple[SimulationAccountingDetail, ...]: ...
+    def accounting_details(self, detail_type: None = None) -> tuple[AccountingDetail, ...]: ...
 
     def accounting_details(self, detail_type: type[Any] | None = None) -> tuple[Any, ...]:
         return self.scenario_run.accounting_details(detail_type, rollout=self.rollout_index)
@@ -171,7 +167,7 @@ class ScenarioRun:
     def actions(self, action_type: type[ActionT], *, rollout: int | None = None) -> tuple[ActionT, ...]: ...
 
     @overload
-    def actions(self, action_type: None = None, *, rollout: int | None = None) -> tuple[SimulationAction, ...]: ...
+    def actions(self, action_type: None = None, *, rollout: int | None = None) -> tuple[Action, ...]: ...
 
     def actions(self, action_type: type[Any] | None = None, *, rollout: int | None = None) -> tuple[Any, ...]:
         if self.arrays is None:
@@ -192,7 +188,7 @@ class ScenarioRun:
     @overload
     def policy_decisions(
         self, decision_type: None = None, *, rollout: int | None = None
-    ) -> tuple[SimulationPolicyDecision, ...]: ...
+    ) -> tuple[PolicyDecision, ...]: ...
 
     def policy_decisions(
         self, decision_type: type[Any] | None = None, *, rollout: int | None = None
@@ -215,7 +211,7 @@ class ScenarioRun:
     @overload
     def market_observations(
         self, observation_type: None = None, *, rollout: int | None = None
-    ) -> tuple[SimulationMarketObservation, ...]: ...
+    ) -> tuple[MarketObservation, ...]: ...
 
     def market_observations(
         self, observation_type: type[Any] | None = None, *, rollout: int | None = None
@@ -242,7 +238,7 @@ class ScenarioRun:
 
     def journal_entries(
         self, *, journal_entry_type: JournalEntryType | None = None, rollout: int | None = None
-    ) -> tuple[SimulationJournalEntry, ...]:
+    ) -> tuple[JournalEntry, ...]:
         if self.arrays is None:
             return ()
         entries = self.arrays.journal_entries
@@ -255,7 +251,7 @@ class ScenarioRun:
 
     def postings(
         self, *, role: ChartAccountRole | None = None, side: PostingSide | None = None, rollout: int | None = None
-    ) -> tuple[SimulationPosting, ...]:
+    ) -> tuple[Posting, ...]:
         if self.arrays is None:
             return ()
         postings = self.arrays.postings
@@ -271,7 +267,7 @@ class ScenarioRun:
 
     def balance_snapshots(
         self, *, role: ChartAccountRole | None = None, rollout: int | None = None
-    ) -> tuple[SimulationBalanceSnapshot, ...]:
+    ) -> tuple[BalanceSnapshot, ...]:
         if self.arrays is None:
             return ()
         snapshots = self.arrays.balance_snapshots
@@ -319,7 +315,7 @@ class ScenarioRun:
     @overload
     def accounting_details(
         self, detail_type: None = None, *, rollout: int | None = None
-    ) -> tuple[SimulationAccountingDetail, ...]: ...
+    ) -> tuple[AccountingDetail, ...]: ...
 
     def accounting_details(
         self, detail_type: type[Any] | None = None, *, rollout: int | None = None
@@ -406,7 +402,7 @@ class ScenarioRun:
 
 
 @dataclass(frozen=True)
-class SimulationRun:
+class ScenarioSetRun:
     scenario_set: ScenarioSet
     market_bundle: MarketBundle
     scenario_runs: tuple[ScenarioRun, ...]
@@ -452,7 +448,7 @@ def simulate_set(
     *,
     market_provider: MarketBundleProvider | None = None,
     market_bundle: MarketBundle | None = None,
-) -> SimulationRun:
+) -> ScenarioSetRun:
     """Simulate a typed scenario set and return a distribution-first result object."""
 
     if market_provider is not None and market_bundle is not None:
@@ -469,7 +465,7 @@ def simulate_set(
             scenario_runs.append(ScenarioRun(scenario=scenario, arrays=None))
             continue
         scenario_runs.append(ScenarioRun(scenario=scenario, arrays=run_scenario_vectorized(scenario, market_bundle)))
-    return SimulationRun(scenario_set=scenario_set, market_bundle=market_bundle, scenario_runs=tuple(scenario_runs))
+    return ScenarioSetRun(scenario_set=scenario_set, market_bundle=market_bundle, scenario_runs=tuple(scenario_runs))
 
 
 def _exogenous_path_identities(metadata: Any) -> tuple[ExogenousPathIdentity, ...]:
@@ -524,7 +520,7 @@ def validate_scenario_set(scenario_set: ScenarioSet) -> None:
     for scenario_index, scenario in enumerate(scenario_set.scenarios):
         errors.extend(_validate_scenario(scenario, f"scenarios[{scenario_index}]"))
     if errors:
-        raise SimulationValidationError("; ".join(errors))
+        raise ScenarioValidationError("; ".join(errors))
 
 
 def _validate_scenario(scenario: Scenario, path: str) -> list[str]:
@@ -651,7 +647,7 @@ def _validate_market_bundle_matches_request(scenario_set: ScenarioSet, market_bu
             f"{market_bundle.horizon_months} does not match market_request.horizon_months {request.horizon_months}"
         )
     if errors:
-        raise SimulationValidationError("; ".join(errors))
+        raise ScenarioValidationError("; ".join(errors))
 
 
 def _accepted_summary(scenario: Scenario) -> ScenarioAcceptedSummary:

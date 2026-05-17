@@ -7,12 +7,12 @@ from typing import Annotated, Any, Literal
 from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, PositiveInt, model_validator
 
 from augur.core.accounting import (
+    BalanceSnapshot,
     ChartAccount,
+    JournalEntry,
     LiabilityState,
     LotDisposition,
-    SimulationBalanceSnapshot,
-    SimulationJournalEntry,
-    SimulationPosting,
+    Posting,
     TaxLot,
 )
 from augur.core.local_regulation import LocalRegulation, TaxRegime
@@ -453,7 +453,7 @@ Policy = Annotated[
 ]
 
 
-class _SimulationTraceBase(ApiModel):
+class _TraceBase(ApiModel):
     rollout_index: NonNegativeInt
     month_index: NonNegativeInt
     path_set_id: str | None = None
@@ -462,12 +462,12 @@ class _SimulationTraceBase(ApiModel):
     projection_trajectory_id: str | None = None
 
 
-class _SimulationActionBase(_SimulationTraceBase):
+class _ActionBase(_TraceBase):
     actor_id: str
     policy_id: str
 
 
-class SellSp500Action(_SimulationActionBase):
+class SellSp500Action(_ActionBase):
     action_type: Literal[ActionType.SELL_SP500] = ActionType.SELL_SP500
     amount_usd: float
     after_tax_proceeds_usd: float
@@ -477,7 +477,7 @@ class SellSp500Action(_SimulationActionBase):
     shortfall_usd: float
 
 
-class SellCryptoAction(_SimulationActionBase):
+class SellCryptoAction(_ActionBase):
     action_type: Literal[ActionType.SELL_CRYPTO] = ActionType.SELL_CRYPTO
     source_asset_id: str
     asset_symbol: str
@@ -488,7 +488,7 @@ class SellCryptoAction(_SimulationActionBase):
     shortfall_usd: float
 
 
-class SellPrivateEquityAction(_SimulationActionBase):
+class SellPrivateEquityAction(_ActionBase):
     action_type: Literal[ActionType.SELL_PRIVATE_EQUITY] = ActionType.SELL_PRIVATE_EQUITY
     event_id: str | None = None
     event_type: EventType | None = None
@@ -504,7 +504,7 @@ class SellPrivateEquityAction(_SimulationActionBase):
     proceeds_destination: AccountType | AssetType
 
 
-class SettlePropertySaleAction(_SimulationActionBase):
+class SettlePropertySaleAction(_ActionBase):
     action_type: Literal[ActionType.SETTLE_PROPERTY_SALE] = ActionType.SETTLE_PROPERTY_SALE
     event_id: str
     event_type: Literal[EventType.PROPERTY_SALE] = EventType.PROPERTY_SALE
@@ -524,25 +524,25 @@ class SettlePropertySaleAction(_SimulationActionBase):
     proceeds_destination: AccountType = AccountType.CHECKING
 
 
-SimulationAction = Annotated[
+Action = Annotated[
     SellSp500Action | SellCryptoAction | SellPrivateEquityAction | SettlePropertySaleAction,
     Field(discriminator="action_type"),
 ]
 
 
-class _SimulationPolicyDecisionBase(_SimulationTraceBase):
+class _PolicyDecisionBase(_TraceBase):
     actor_id: str
     policy_id: str
     policy_sequence_index: NonNegativeInt
 
 
-class MonthlySpendDecision(_SimulationPolicyDecisionBase):
+class MonthlySpendDecision(_PolicyDecisionBase):
     decision_type: Literal[PolicyDecisionType.MONTHLY_SPEND] = PolicyDecisionType.MONTHLY_SPEND
     amount_usd: float
     inflation_multiplier: float = 1.0
 
 
-class SellPublicStockDecision(_SimulationPolicyDecisionBase):
+class SellPublicStockDecision(_PolicyDecisionBase):
     decision_type: Literal[PolicyDecisionType.SELL_PUBLIC_STOCK] = PolicyDecisionType.SELL_PUBLIC_STOCK
     asset_type: Literal[AssetType.GENERIC_SP500_STOCK] = AssetType.GENERIC_SP500_STOCK
     requested_amount_usd: float
@@ -550,7 +550,7 @@ class SellPublicStockDecision(_SimulationPolicyDecisionBase):
     target_cash_floor_usd: float | None = None
 
 
-class SellCryptoDecision(_SimulationPolicyDecisionBase):
+class SellCryptoDecision(_PolicyDecisionBase):
     decision_type: Literal[PolicyDecisionType.SELL_CRYPTO] = PolicyDecisionType.SELL_CRYPTO
     asset_type: Literal[AssetType.CRYPTO] = AssetType.CRYPTO
     source_asset_id: str
@@ -559,7 +559,7 @@ class SellCryptoDecision(_SimulationPolicyDecisionBase):
     target_cash_floor_usd: float | None = None
 
 
-class PrivateEquitySaleDecision(_SimulationPolicyDecisionBase):
+class PrivateEquitySaleDecision(_PolicyDecisionBase):
     decision_type: Literal[PolicyDecisionType.PRIVATE_EQUITY_SALE] = PolicyDecisionType.PRIVATE_EQUITY_SALE
     decision_reason: PrivateEquitySaleDecisionReason
     source_asset_id: str = Field(description="Private-equity holding the policy targeted.")
@@ -579,14 +579,14 @@ class PrivateEquitySaleDecision(_SimulationPolicyDecisionBase):
     proceeds_destination: AccountType | AssetType
 
 
-class PartnerContributionDecision(_SimulationPolicyDecisionBase):
+class PartnerContributionDecision(_PolicyDecisionBase):
     decision_type: Literal[PolicyDecisionType.PARTNER_CONTRIBUTION] = PolicyDecisionType.PARTNER_CONTRIBUTION
     recipient_actor_id: str
     requested_amount_usd: float
     property_id: PropertyId
 
 
-SimulationPolicyDecision = Annotated[
+PolicyDecision = Annotated[
     MonthlySpendDecision
     | SellPublicStockDecision
     | SellCryptoDecision
@@ -596,11 +596,11 @@ SimulationPolicyDecision = Annotated[
 ]
 
 
-class _SimulationMarketObservationBase(_SimulationTraceBase):
+class _MarketObservationBase(_TraceBase):
     pass
 
 
-class MarketPathObservation(_SimulationMarketObservationBase):
+class MarketPathObservation(_MarketObservationBase):
     observation_type: Literal[MarketObservationType.MARKET_PATH] = MarketObservationType.MARKET_PATH
     location_id: str | None = None
     inflation_multiplier: float
@@ -612,7 +612,7 @@ class MarketPathObservation(_SimulationMarketObservationBase):
     private_equity_sale_opportunity_event: bool
 
 
-class PrivateEquitySaleOpportunityObservation(_SimulationMarketObservationBase):
+class PrivateEquitySaleOpportunityObservation(_MarketObservationBase):
     observation_type: Literal[MarketObservationType.PRIVATE_EQUITY_SALE_OPPORTUNITY] = (
         MarketObservationType.PRIVATE_EQUITY_SALE_OPPORTUNITY
     )
@@ -623,19 +623,19 @@ class PrivateEquitySaleOpportunityObservation(_SimulationMarketObservationBase):
     private_equity_value_before_sale_usd: float
 
 
-SimulationMarketObservation = Annotated[
+MarketObservation = Annotated[
     MarketPathObservation | PrivateEquitySaleOpportunityObservation, Field(discriminator="observation_type")
 ]
 
 
-class _SimulationAccountingDetailBase(_SimulationTraceBase):
+class _AccountingDetailBase(_TraceBase):
     actor_id: str
     policy_id: str | None = None
     event_id: str | None = None
     property_id: PropertyId | None = None
 
 
-class PropertySaleBasisGainDetail(_SimulationAccountingDetailBase):
+class PropertySaleBasisGainDetail(_AccountingDetailBase):
     detail_type: Literal[AccountingDetailType.PROPERTY_SALE_BASIS_GAIN] = AccountingDetailType.PROPERTY_SALE_BASIS_GAIN
     gross_sale_usd: float
     selling_cost_usd: float
@@ -649,7 +649,7 @@ class PropertySaleBasisGainDetail(_SimulationAccountingDetailBase):
     taxable_gain_usd: float
 
 
-class TaxPaymentAllocationDetail(_SimulationAccountingDetailBase):
+class TaxPaymentAllocationDetail(_AccountingDetailBase):
     detail_type: Literal[AccountingDetailType.TAX_PAYMENT_ALLOCATION] = AccountingDetailType.TAX_PAYMENT_ALLOCATION
     tax_year_index: NonNegativeInt
     payment_timing: TaxPaymentTiming = TaxPaymentTiming.YEAR_END
@@ -668,12 +668,12 @@ class TaxPaymentAllocationDetail(_SimulationAccountingDetailBase):
     total_taxable_income_usd: float
 
 
-SimulationAccountingDetail = Annotated[
+AccountingDetail = Annotated[
     PropertySaleBasisGainDetail | TaxPaymentAllocationDetail, Field(discriminator="detail_type")
 ]
 
 
-class SimulationObligation(_SimulationTraceBase):
+class Obligation(_TraceBase):
     obligation_id: str
     obligation_type: ObligationType
     actor_id: str
@@ -686,7 +686,7 @@ class SimulationObligation(_SimulationTraceBase):
     source_policy_id: str | None = None
 
 
-class SimulationFundingDecision(_SimulationTraceBase):
+class FundingDecision(_TraceBase):
     obligation_id: str
     decision_type: FundingDecisionType
     actor_id: str
@@ -704,7 +704,7 @@ class SimulationFundingDecision(_SimulationTraceBase):
     shortfall_usd: float = 0.0
 
 
-class SimulationSettlementResult(_SimulationTraceBase):
+class SettlementResult(_TraceBase):
     obligation_id: str
     obligation_type: ObligationType
     actor_id: str
@@ -714,7 +714,7 @@ class SimulationSettlementResult(_SimulationTraceBase):
     unpaid_amount_usd: float
 
 
-class SimulationFailureEvent(_SimulationTraceBase):
+class FailureEvent(_TraceBase):
     failure_event_id: str
     failure_event_type: FailureEventType
     obligation_id: str
@@ -1002,21 +1002,21 @@ class ScenarioResult(ApiModel):
     metric_fan_columns: dict[str, ColumnarTable] = Field(default_factory=dict)
     monthly_columns: ColumnarTable | None = None
     terminal_columns: ColumnarTable | None = None
-    actions: tuple[SimulationAction, ...] = ()
-    policy_decisions: tuple[SimulationPolicyDecision, ...] = ()
-    market_observations: tuple[SimulationMarketObservation, ...] = ()
+    actions: tuple[Action, ...] = ()
+    policy_decisions: tuple[PolicyDecision, ...] = ()
+    market_observations: tuple[MarketObservation, ...] = ()
     chart_accounts: tuple[ChartAccount, ...] = ()
-    journal_entries: tuple[SimulationJournalEntry, ...] = ()
-    postings: tuple[SimulationPosting, ...] = ()
-    balance_snapshots: tuple[SimulationBalanceSnapshot, ...] = ()
+    journal_entries: tuple[JournalEntry, ...] = ()
+    postings: tuple[Posting, ...] = ()
+    balance_snapshots: tuple[BalanceSnapshot, ...] = ()
     tax_lots: tuple[TaxLot, ...] = ()
     lot_dispositions: tuple[LotDisposition, ...] = ()
     liabilities: tuple[LiabilityState, ...] = ()
-    accounting_details: tuple[SimulationAccountingDetail, ...] = ()
-    obligations: tuple[SimulationObligation, ...] = ()
-    funding_decisions: tuple[SimulationFundingDecision, ...] = ()
-    settlement_results: tuple[SimulationSettlementResult, ...] = ()
-    failure_events: tuple[SimulationFailureEvent, ...] = ()
+    accounting_details: tuple[AccountingDetail, ...] = ()
+    obligations: tuple[Obligation, ...] = ()
+    funding_decisions: tuple[FundingDecision, ...] = ()
+    settlement_results: tuple[SettlementResult, ...] = ()
+    failure_events: tuple[FailureEvent, ...] = ()
     warnings: tuple[str, ...] = ()
 
 

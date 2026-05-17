@@ -116,7 +116,7 @@ class AccountingCause(ApiModel):
     market_observation_id: str | None = None
 
 
-class SimulationJournalEntry(ApiModel):
+class JournalEntry(ApiModel):
     journal_entry_id: str
     rollout_index: NonNegativeInt
     month_index: NonNegativeInt
@@ -133,7 +133,7 @@ class SimulationJournalEntry(ApiModel):
     projection_trajectory_id: str | None = None
 
 
-class SimulationPosting(ApiModel):
+class Posting(ApiModel):
     posting_id: str
     journal_entry_id: str
     rollout_index: NonNegativeInt
@@ -150,13 +150,13 @@ class SimulationPosting(ApiModel):
     projection_trajectory_id: str | None = None
 
     @model_validator(mode="after")
-    def _positive_amount(self) -> SimulationPosting:
+    def _positive_amount(self) -> Posting:
         if self.amount_usd <= 0:
             raise ValueError("posting amount_usd must be positive")
         return self
 
 
-class SimulationBalanceSnapshot(ApiModel):
+class BalanceSnapshot(ApiModel):
     rollout_index: NonNegativeInt
     month_index: NonNegativeInt
     chart_account_id: str
@@ -213,15 +213,15 @@ class AccountingValidationError(ValueError):
     pass
 
 
-def debit_amount(posting: SimulationPosting) -> float:
+def debit_amount(posting: Posting) -> float:
     return posting.amount_usd if posting.side is PostingSide.DEBIT else 0.0
 
 
-def credit_amount(posting: SimulationPosting) -> float:
+def credit_amount(posting: Posting) -> float:
     return posting.amount_usd if posting.side is PostingSide.CREDIT else 0.0
 
 
-def signed_balance_delta(posting: SimulationPosting, account: ChartAccount) -> float:
+def signed_balance_delta(posting: Posting, account: ChartAccount) -> float:
     normal_debit = account.account_type in {ChartAccountType.ASSET, ChartAccountType.EXPENSE}
     if posting.side is PostingSide.DEBIT:
         return posting.amount_usd if normal_debit else -posting.amount_usd
@@ -231,8 +231,8 @@ def signed_balance_delta(posting: SimulationPosting, account: ChartAccount) -> f
 def validate_accounting_trace(
     *,
     chart_accounts: tuple[ChartAccount, ...],
-    journal_entries: tuple[SimulationJournalEntry, ...],
-    postings: tuple[SimulationPosting, ...],
+    journal_entries: tuple[JournalEntry, ...],
+    postings: tuple[Posting, ...],
     tolerance_usd: float = 0.005,
 ) -> None:
     account_ids = [account.chart_account_id for account in chart_accounts]
@@ -247,7 +247,7 @@ def validate_accounting_trace(
         raise AccountingValidationError(f"duplicate journal entry ids: {duplicate_journals}")
     journal_by_id = {entry.journal_entry_id: entry for entry in journal_entries}
 
-    postings_by_journal: dict[str, list[SimulationPosting]] = defaultdict(list)
+    postings_by_journal: dict[str, list[Posting]] = defaultdict(list)
     posting_ids: list[str] = []
     for posting in postings:
         posting_ids.append(posting.posting_id)

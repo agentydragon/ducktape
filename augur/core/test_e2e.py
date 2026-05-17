@@ -1681,7 +1681,7 @@ def test_every_monthly_flow_metric_reconciles_to_canonical_detail_surface() -> N
     """Cleanup-audit item 2 invariant: every public monthly flow column is derived
     from the canonical detail surface (ledger postings, balance snapshots,
     accounting details, or market observations) — never from a parallel
-    SimulationAction recorder. This guard rebuilds each monthly metric matrix
+    Action recorder. This guard rebuilds each monthly metric matrix
     from the canonical detail rows the engine emits and asserts it equals the
     monthly array reported in the result.
 
