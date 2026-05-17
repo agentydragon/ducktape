@@ -99,6 +99,27 @@ class GenericSp500SaleApplication:
 
 
 @dataclass(frozen=True)
+class CryptoSaleApplication:
+    """Result of applying a crypto sale instruction.
+
+    Realized gain on crypto is treated as ordinary income (federal + California
+    bracket-aware tax). The current obligation-funding implementation reports
+    `sale_usd` and `basis_usd` so the upstream tax-allocation step can roll the gain
+    into the existing annual_tax pipeline. Short-term/long-term partitioning,
+    wash-sale handling, and per-lot crypto tracking are deferred.
+    """
+
+    current_cash_usd: np.ndarray
+    remaining_quantity: np.ndarray
+    remaining_basis_usd: np.ndarray
+    sale_usd: np.ndarray
+    basis_usd: np.ndarray
+    gain_usd: np.ndarray
+    quantity_sold: np.ndarray
+    shortfall_usd: np.ndarray
+
+
+@dataclass(frozen=True)
 class PostingBatch:
     role: ChartAccountRole
     side: PostingSide
@@ -804,6 +825,39 @@ def apply_private_equity_sale_instruction(
         remaining_basis_usd=np.maximum(0.0, remaining_basis_usd - basis_usd),
         remaining_fraction=np.maximum(0.0, remaining_fraction * (1 - sold_fraction)),
         journal_entries=journal_entries,
+    )
+
+
+def apply_crypto_sale_instruction(
+    instruction: SellAssetInstructionBatch,
+    *,
+    current_cash_usd: np.ndarray,
+    remaining_quantity: np.ndarray,
+    remaining_basis_usd: np.ndarray,
+    crypto_unit_price_usd: np.ndarray,
+) -> CryptoSaleApplication:
+    if instruction.asset_type is not AssetType.CRYPTO:
+        raise ValueError(f"unsupported asset type for crypto sale applier: {instruction.asset_type}")
+    value_usd = remaining_quantity * crypto_unit_price_usd
+    sale_usd = np.minimum(instruction.requested_amount_usd, value_usd)
+    basis_usd = np.divide(remaining_basis_usd * sale_usd, value_usd, out=np.zeros_like(sale_usd), where=value_usd > 0)
+    quantity_sold = np.divide(
+        sale_usd, crypto_unit_price_usd, out=np.zeros_like(sale_usd), where=crypto_unit_price_usd > 0
+    )
+    cash_after_sale = current_cash_usd + sale_usd
+    if instruction.target_cash_floor_usd is None:
+        shortfall_usd = np.zeros_like(sale_usd)
+    else:
+        shortfall_usd = np.maximum(0.0, instruction.target_cash_floor_usd - cash_after_sale)
+    return CryptoSaleApplication(
+        current_cash_usd=cash_after_sale,
+        remaining_quantity=np.maximum(0.0, remaining_quantity - quantity_sold),
+        remaining_basis_usd=np.maximum(0.0, remaining_basis_usd - basis_usd),
+        sale_usd=sale_usd,
+        basis_usd=basis_usd,
+        gain_usd=sale_usd - basis_usd,
+        quantity_sold=quantity_sold,
+        shortfall_usd=shortfall_usd,
     )
 
 

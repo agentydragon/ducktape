@@ -65,6 +65,7 @@ class ActionType(StrEnum):
     """
 
     SELL_SP500 = "sell_sp500"
+    SELL_CRYPTO = "sell_crypto"
     SELL_PRIVATE_EQUITY = "sell_private_equity"
     SETTLE_PROPERTY_SALE = "settle_property_sale"
 
@@ -72,6 +73,7 @@ class ActionType(StrEnum):
 class PolicyDecisionType(StrEnum):
     MONTHLY_SPEND = "monthly_spend"
     SELL_PUBLIC_STOCK = "sell_public_stock"
+    SELL_CRYPTO = "sell_crypto"
     PRIVATE_EQUITY_SALE = "private_equity_sale"
     PARTNER_CONTRIBUTION = "partner_contribution"
 
@@ -106,6 +108,10 @@ class ReportMetric(StrEnum):
     GENERIC_SP500_SALE_BASIS_USD = "generic_sp500_sale_basis_usd"
     GENERIC_SP500_SALE_GAIN_USD = "generic_sp500_sale_gain_usd"
     GENERIC_SP500_SALE_TAX_USD = "generic_sp500_sale_tax_usd"
+    CRYPTO_VALUE_USD = "crypto_value_usd"
+    CRYPTO_SALE_USD = "crypto_sale_usd"
+    CRYPTO_SALE_BASIS_USD = "crypto_sale_basis_usd"
+    CRYPTO_SALE_GAIN_USD = "crypto_sale_gain_usd"
     CHECKING_FLOOR_ACTION_USD = "checking_floor_action_usd"
     CHECKING_FLOOR_SHORTFALL_USD = "checking_floor_shortfall_usd"
     PRIVATE_EQUITY_VALUE_USD = "private_equity_value_usd"
@@ -185,12 +191,14 @@ class ObligationStatus(StrEnum):
 class FundingDecisionType(StrEnum):
     USE_CASH = "use_cash"
     SELL_PUBLIC_STOCK = "sell_public_stock"
+    SELL_CRYPTO = "sell_crypto"
     UNFUNDED = "unfunded"
 
 
 class FundingSourceType(StrEnum):
     CASH_ACCOUNT = "cash_account"
     PUBLIC_MARKET_ASSET = "public_market_asset"
+    CRYPTO_ASSET = "crypto_asset"
     UNFUNDED = "unfunded"
 
 
@@ -215,10 +223,12 @@ class AccountType(StrEnum):
     CHECKING = "checking"
     TAXABLE_BROKERAGE = "taxable_brokerage"
     ESCROW = "escrow"
+    CRYPTO_EXCHANGE = "crypto_exchange"
 
 
 class AssetType(StrEnum):
     GENERIC_SP500_STOCK = "generic_sp500_stock"
+    CRYPTO = "crypto"
     PRIVATE_EQUITY = "private_equity"
 
 
@@ -326,11 +336,35 @@ class _PolicyBase(ApiModel):
 
 
 class CheckingFloorSellPublicStockPolicy(_PolicyBase):
-    """Sell SP500 when checking cash dips below a floor."""
+    """Sell from the agent's liquid asset preferences when checking cash dips below a floor.
+
+    `sale_asset_preference` is an ordered tuple of asset types the policy will try to
+    sell in order, exhausting each before falling through to the next. Default
+    `(GENERIC_SP500_STOCK,)` preserves the policy's original SP500-only behavior.
+    Putting `CRYPTO` in the preference lets the same policy fall through to crypto
+    after SP500 is exhausted; the same obligation-funding step iterates the
+    preference internally so the policy program order is unaffected.
+    """
 
     policy_type: Literal[PolicyType.CHECKING_FLOOR_SELL_PUBLIC_STOCK] = PolicyType.CHECKING_FLOOR_SELL_PUBLIC_STOCK
     floor_usd: NonNegativeFloat = 0.0
     sale_amount_usd: NonNegativeFloat = 0.0
+    sale_asset_preference: tuple[AssetType, ...] = (AssetType.GENERIC_SP500_STOCK,)
+
+    @model_validator(mode="after")
+    def _validate_sale_asset_preference(self) -> CheckingFloorSellPublicStockPolicy:
+        if not self.sale_asset_preference:
+            raise ValueError("sale_asset_preference must contain at least one asset type")
+        seen: set[AssetType] = set()
+        for asset_type in self.sale_asset_preference:
+            if asset_type in seen:
+                raise ValueError(f"sale_asset_preference contains duplicate {asset_type}")
+            if asset_type not in (AssetType.GENERIC_SP500_STOCK, AssetType.CRYPTO):
+                raise ValueError(
+                    f"sale_asset_preference only supports GENERIC_SP500_STOCK and CRYPTO; got {asset_type}"
+                )
+            seen.add(asset_type)
+        return self
 
 
 class FixedAmountPrivateEquitySaleRule(ApiModel):
@@ -415,6 +449,17 @@ class SellSp500Action(_SimulationActionBase):
     shortfall_usd: float
 
 
+class SellCryptoAction(_SimulationActionBase):
+    action_type: Literal[ActionType.SELL_CRYPTO] = ActionType.SELL_CRYPTO
+    source_asset_id: str
+    asset_symbol: str
+    amount_usd: float
+    quantity_sold: float
+    basis_usd: float
+    gain_usd: float
+    shortfall_usd: float
+
+
 class SellPrivateEquityAction(_SimulationActionBase):
     action_type: Literal[ActionType.SELL_PRIVATE_EQUITY] = ActionType.SELL_PRIVATE_EQUITY
     event_id: str | None = None
@@ -452,7 +497,8 @@ class SettlePropertySaleAction(_SimulationActionBase):
 
 
 SimulationAction = Annotated[
-    SellSp500Action | SellPrivateEquityAction | SettlePropertySaleAction, Field(discriminator="action_type")
+    SellSp500Action | SellCryptoAction | SellPrivateEquityAction | SettlePropertySaleAction,
+    Field(discriminator="action_type"),
 ]
 
 
@@ -471,6 +517,15 @@ class MonthlySpendDecision(_SimulationPolicyDecisionBase):
 class SellPublicStockDecision(_SimulationPolicyDecisionBase):
     decision_type: Literal[PolicyDecisionType.SELL_PUBLIC_STOCK] = PolicyDecisionType.SELL_PUBLIC_STOCK
     asset_type: Literal[AssetType.GENERIC_SP500_STOCK] = AssetType.GENERIC_SP500_STOCK
+    requested_amount_usd: float
+    current_cash_usd: float
+    target_cash_floor_usd: float | None = None
+
+
+class SellCryptoDecision(_SimulationPolicyDecisionBase):
+    decision_type: Literal[PolicyDecisionType.SELL_CRYPTO] = PolicyDecisionType.SELL_CRYPTO
+    asset_type: Literal[AssetType.CRYPTO] = AssetType.CRYPTO
+    source_asset_id: str
     requested_amount_usd: float
     current_cash_usd: float
     target_cash_floor_usd: float | None = None
@@ -504,7 +559,11 @@ class PartnerContributionDecision(_SimulationPolicyDecisionBase):
 
 
 SimulationPolicyDecision = Annotated[
-    MonthlySpendDecision | SellPublicStockDecision | PrivateEquitySaleDecision | PartnerContributionDecision,
+    MonthlySpendDecision
+    | SellPublicStockDecision
+    | SellCryptoDecision
+    | PrivateEquitySaleDecision
+    | PartnerContributionDecision,
     Field(discriminator="decision_type"),
 ]
 
@@ -766,13 +825,32 @@ class GenericSp500StockPosition(_AssetPositionBase):
     cost_basis_usd: float | None = None
 
 
+class CryptoAssetPosition(_AssetPositionBase):
+    """A crypto holding modeled as a single fungible quantity (e.g. BTC, ETH).
+
+    Crypto value moves with `MarketBundle.crypto_value_multipliers` (currently a
+    placeholder array of ones — fitted crypto models are deferred). Realized gain on
+    sale is treated as ordinary income (federal + California) until a richer
+    short/long-term cap-gains model lands; the choice is documented near the funding
+    chain rather than in the schema.
+    """
+
+    asset_type: Literal[AssetType.CRYPTO] = AssetType.CRYPTO
+    asset_symbol: str = Field(description="Ticker symbol (BTC, ETH, etc.). Free-form; not validated against a catalog.")
+    quantity: NonNegativeFloat | None = None
+    cost_basis_usd: float | None = None
+    source_account_id: str | None = None
+
+
 class PrivateEquityPosition(_AssetPositionBase):
     asset_type: Literal[AssetType.PRIVATE_EQUITY] = AssetType.PRIVATE_EQUITY
     units: NonNegativeFloat | None = None
     cost_basis_usd: float | None = None
 
 
-AssetPosition = Annotated[GenericSp500StockPosition | PrivateEquityPosition, Field(discriminator="asset_type")]
+AssetPosition = Annotated[
+    GenericSp500StockPosition | CryptoAssetPosition | PrivateEquityPosition, Field(discriminator="asset_type")
+]
 
 
 class InitialBalanceSheet(ApiModel):

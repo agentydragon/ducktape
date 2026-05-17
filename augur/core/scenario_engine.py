@@ -40,6 +40,7 @@ from augur.core.policy_runtime import (
     SellAssetInstructionBatch,
     actor_policy_programs,
     actor_policy_steps,
+    apply_crypto_sale_instruction,
     apply_debit_account_instruction,
     apply_generic_sp500_sale_instruction,
     apply_partner_house_cost_contribution,
@@ -68,6 +69,7 @@ from augur.core.scenario_set import (
     ActorRole,
     AssetType,
     CheckingFloorSellPublicStockPolicy,
+    CryptoAssetPosition,
     FailureEventType,
     FinancingMode,
     FixedAmountPrivateEquitySaleRule,
@@ -97,6 +99,7 @@ from augur.core.scenario_set import (
     RolloutStatus,
     RolloutStatusType,
     Scenario,
+    SellCryptoAction,
     SellPrivateEquityAction,
     SellPublicStockDecision,
     SellSp500Action,
@@ -132,6 +135,10 @@ class ScenarioRunArrays:
     generic_sp500_sale_basis_usd: np.ndarray
     generic_sp500_sale_gain_usd: np.ndarray
     generic_sp500_sale_tax_usd: np.ndarray
+    crypto_value_usd: np.ndarray
+    crypto_sale_usd: np.ndarray
+    crypto_sale_basis_usd: np.ndarray
+    crypto_sale_gain_usd: np.ndarray
     checking_floor_action_usd: np.ndarray
     checking_floor_shortfall_usd: np.ndarray
     private_equity_value_usd: np.ndarray
@@ -398,6 +405,10 @@ _MONTHLY_COLUMN_SPECS = (
     MonthlyColumnSpec(
         ReportMetric.GENERIC_SP500_SALE_TAX_USD, MonthlyColumnSource.LEDGER_ENTRY, "tax/generic_sp500_sale_tax"
     ),
+    MonthlyColumnSpec(ReportMetric.CRYPTO_VALUE_USD, MonthlyColumnSource.TRAJECTORY_STATE, "projected crypto state"),
+    MonthlyColumnSpec(ReportMetric.CRYPTO_SALE_USD, MonthlyColumnSource.LEDGER_ENTRY, "asset/crypto_sale"),
+    MonthlyColumnSpec(ReportMetric.CRYPTO_SALE_BASIS_USD, MonthlyColumnSource.LEDGER_ENTRY, "basis/crypto_sale_basis"),
+    MonthlyColumnSpec(ReportMetric.CRYPTO_SALE_GAIN_USD, MonthlyColumnSource.REPORT_PROJECTION, "sale - basis"),
     MonthlyColumnSpec(
         ReportMetric.CHECKING_FLOOR_ACTION_USD, MonthlyColumnSource.LEDGER_ENTRY, "asset/generic_sp500_sale"
     ),
@@ -597,9 +608,13 @@ _MONTHLY_COLUMN_SPECS = (
         MonthlyColumnSource.REPORT_PROJECTION,
         "partner claim / positive home equity",
     ),
-    MonthlyColumnSpec(ReportMetric.LIQUID_NET_WORTH_USD, MonthlyColumnSource.REPORT_PROJECTION, "cash + public stock"),
     MonthlyColumnSpec(
-        ReportMetric.NET_WORTH_USD, MonthlyColumnSource.REPORT_PROJECTION, "cash + public stock + private equity + home"
+        ReportMetric.LIQUID_NET_WORTH_USD, MonthlyColumnSource.REPORT_PROJECTION, "cash + public stock + crypto"
+    ),
+    MonthlyColumnSpec(
+        ReportMetric.NET_WORTH_USD,
+        MonthlyColumnSource.REPORT_PROJECTION,
+        "cash + public stock + crypto + private equity + home",
     ),
     MonthlyColumnSpec(ReportMetric.PARTNER_PRESENT, MonthlyColumnSource.TRAJECTORY_STATE, "scenario actor state"),
     MonthlyColumnSpec(ReportMetric.MONTHLY_SPEND_USD, MonthlyColumnSource.LEDGER_ENTRY, "cash/monthly_spend"),
@@ -635,6 +650,10 @@ def _report_metric_arrays(arrays: ScenarioRunArrays) -> dict[ReportMetric, np.nd
         ReportMetric.GENERIC_SP500_SALE_BASIS_USD: arrays.generic_sp500_sale_basis_usd,
         ReportMetric.GENERIC_SP500_SALE_GAIN_USD: arrays.generic_sp500_sale_gain_usd,
         ReportMetric.GENERIC_SP500_SALE_TAX_USD: arrays.generic_sp500_sale_tax_usd,
+        ReportMetric.CRYPTO_VALUE_USD: arrays.crypto_value_usd,
+        ReportMetric.CRYPTO_SALE_USD: arrays.crypto_sale_usd,
+        ReportMetric.CRYPTO_SALE_BASIS_USD: arrays.crypto_sale_basis_usd,
+        ReportMetric.CRYPTO_SALE_GAIN_USD: arrays.crypto_sale_gain_usd,
         ReportMetric.CHECKING_FLOOR_ACTION_USD: arrays.checking_floor_action_usd,
         ReportMetric.CHECKING_FLOOR_SHORTFALL_USD: arrays.checking_floor_shortfall_usd,
         ReportMetric.PRIVATE_EQUITY_VALUE_USD: arrays.private_equity_value_usd,
@@ -771,6 +790,20 @@ class Sp500SaleActionRecord:
 
 
 @dataclass(frozen=True)
+class CryptoSaleActionRecord:
+    month_position: int
+    month_index: int
+    policy: Policy
+    cause_id_prefix: str
+    source_asset_id: str
+    asset_symbol: str
+    amount_usd: np.ndarray
+    basis_usd: np.ndarray
+    quantity_sold: np.ndarray
+    shortfall_usd: np.ndarray
+
+
+@dataclass(frozen=True)
 class PrivateEquitySaleActionRecord:
     month_position: int
     month_index: int
@@ -788,6 +821,19 @@ class ObligationFundingPolicyApplication:
     shortfall_usd: np.ndarray
     remaining_due_usd: np.ndarray
     remaining_units: np.ndarray
+    remaining_basis_usd: np.ndarray
+
+
+@dataclass(frozen=True)
+class CryptoObligationFundingPolicyApplication:
+    policy_step: ActorPolicyStep[Policy]
+    instruction: SellAssetInstructionBatch
+    sale_usd: np.ndarray
+    basis_usd: np.ndarray
+    funded_cash_usd: np.ndarray
+    shortfall_usd: np.ndarray
+    remaining_due_usd: np.ndarray
+    remaining_quantity: np.ndarray
     remaining_basis_usd: np.ndarray
 
 
@@ -956,6 +1002,8 @@ def _record_opening_accounting_state(
     initial_cash_usd: float,
     initial_sp500_value_usd: float,
     initial_sp500_basis_usd: float,
+    initial_crypto_value_usd: float,
+    initial_crypto_basis_usd: float,
     initial_private_equity_value_usd: float,
     initial_private_equity_basis_usd: float,
     purchase_price_usd: float,
@@ -1032,6 +1080,46 @@ def _record_opening_accounting_state(
                 owner_actor_id=actor_id,
                 source_asset_id=sp500_source.asset_id if sp500_source is not None else None,
                 cost_basis_usd=max(0.0, float(initial_sp500_basis_usd)),
+                acquisition_month_index=0,
+            )
+        )
+
+    if initial_crypto_value_usd > 0:
+        crypto_amount = np.full(rollout_count, initial_crypto_value_usd, dtype="float64")
+        crypto_source_id = _crypto_source_holding_id(scenario, actor_id=actor_id)
+        crypto_lot_id = _tax_lot_id(LotAssetClass.CRYPTO, crypto_source_id)
+        accounting.record_entry(
+            month_index=month_zero,
+            entry=JournalEntryBatch(
+                journal_entry_type=JournalEntryType.OPENING_BALANCE,
+                cause_type=AccountingCauseType.OPENING_BALANCE,
+                cause_id_prefix="opening:crypto_asset",
+                actor_id=actor_id,
+                description="opening crypto holdings",
+                postings=(
+                    PostingBatch(
+                        role=ChartAccountRole.CRYPTO_ASSET,
+                        side=PostingSide.DEBIT,
+                        amount_usd=crypto_amount,
+                        actor_id=actor_id,
+                        source_asset_id=crypto_source_id,
+                    ),
+                    PostingBatch(
+                        role=ChartAccountRole.OPENING_EQUITY,
+                        side=PostingSide.CREDIT,
+                        amount_usd=crypto_amount,
+                        actor_id=actor_id,
+                    ),
+                ),
+            ),
+        )
+        tax_lots.append(
+            TaxLot(
+                lot_id=crypto_lot_id,
+                asset_class=LotAssetClass.CRYPTO,
+                owner_actor_id=actor_id,
+                source_asset_id=crypto_source_id,
+                cost_basis_usd=max(0.0, float(initial_crypto_basis_usd)),
                 acquisition_month_index=0,
             )
         )
@@ -1157,6 +1245,7 @@ def _record_state_balance_snapshots(
     month_index: np.ndarray,
     cash_usd: np.ndarray,
     generic_sp500_value_usd: np.ndarray,
+    crypto_value_usd: np.ndarray,
     private_equity_value_usd: np.ndarray,
     property_value_usd: np.ndarray,
     mortgage_balance_usd: np.ndarray,
@@ -1165,6 +1254,7 @@ def _record_state_balance_snapshots(
     actor_id = _primary_owner_actor_id(scenario)
     cash_source = _single_checking_account_source(scenario, actor_id=actor_id)
     sp500_source = _single_sp500_asset_source(scenario, actor_id=actor_id)
+    crypto_source_id = _crypto_source_holding_id(scenario, actor_id=actor_id)
     private_equity_source_id = _private_equity_source_holding_id(scenario)
     accounting.record_snapshot(
         month_index=month_index,
@@ -1182,6 +1272,15 @@ def _record_state_balance_snapshots(
             amount_usd=generic_sp500_value_usd,
             actor_id=actor_id,
             source_asset_id=sp500_source.asset_id if sp500_source is not None else None,
+        ),
+    )
+    accounting.record_snapshot(
+        month_index=month_index,
+        snapshot=BalanceSnapshotBatch(
+            role=ChartAccountRole.CRYPTO_ASSET,
+            amount_usd=crypto_value_usd,
+            actor_id=actor_id,
+            source_asset_id=crypto_source_id,
         ),
     )
     accounting.record_snapshot(
@@ -1225,6 +1324,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     initial_cash = _initial_cash_usd(scenario)
     initial_sp500 = _initial_sp500_value_usd(scenario)
     initial_sp500_basis = _initial_sp500_cost_basis_usd(scenario)
+    initial_crypto = _initial_crypto_value_usd(scenario)
+    initial_crypto_basis = _initial_crypto_cost_basis_usd(scenario)
     initial_private_equity = _initial_private_equity_value_usd(scenario)
     initial_private_equity_basis = _initial_private_equity_cost_basis_usd(scenario)
     initial_private_equity_units = _initial_private_equity_units(scenario)
@@ -1282,6 +1383,11 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     generic_sp500_sale_gain = np.zeros((rollout_count, month_count), dtype="float64")
     generic_sp500_sale_tax = np.zeros((rollout_count, month_count), dtype="float64")
     checking_floor_shortfall = np.zeros((rollout_count, month_count), dtype="float64")
+    crypto_value = np.zeros((rollout_count, month_count), dtype="float64")
+    crypto_sale_usd = np.zeros((rollout_count, month_count), dtype="float64")
+    crypto_sale_basis_usd = np.zeros((rollout_count, month_count), dtype="float64")
+    remaining_crypto_quantity_by_month = np.zeros((rollout_count, month_count), dtype="float64")
+    remaining_crypto_basis_by_month = np.zeros((rollout_count, month_count), dtype="float64")
     private_equity_value = np.zeros((rollout_count, month_count), dtype="float64")
     private_equity_sale_opportunity_value = np.zeros((rollout_count, month_count), dtype="float64")
     private_equity_sale_taxable_gain = np.zeros((rollout_count, month_count), dtype="float64")
@@ -1298,6 +1404,18 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         where=market_bundle.generic_sp500_multipliers[:, 0] > 0,
     )
     remaining_sp500_basis = np.full(rollout_count, initial_sp500_basis, dtype="float64")
+    # Crypto state: quantity = value_usd / unit_price; month 0 unit price is 1.0 by
+    # contract, so initial quantity equals initial value. A fitted crypto model will
+    # change this, but the engine code treats month 0 multipliers as 1.0 by
+    # MarketBundle validation, mirroring the SP500 path.
+    crypto_unit_price_month_zero = market_bundle.crypto_value_multipliers[:, 0]
+    remaining_crypto_quantity = np.divide(
+        initial_crypto,
+        crypto_unit_price_month_zero,
+        out=np.zeros(rollout_count, dtype="float64"),
+        where=crypto_unit_price_month_zero > 0,
+    )
+    remaining_crypto_basis = np.full(rollout_count, initial_crypto_basis, dtype="float64")
     remaining_private_equity_basis = np.full(rollout_count, initial_private_equity_basis, dtype="float64")
     remaining_private_equity_units = np.full(rollout_count, initial_private_equity_units, dtype="float64")
     current_cash = (
@@ -1317,6 +1435,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     settlement_results: list[SimulationSettlementResult] = []
     failure_events: list[SimulationFailureEvent] = []
     sp500_sale_action_records: list[Sp500SaleActionRecord] = []
+    crypto_sale_action_records: list[CryptoSaleActionRecord] = []
     private_equity_sale_action_records: list[PrivateEquitySaleActionRecord] = []
     _record_opening_accounting_state(
         accounting,
@@ -1327,6 +1446,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         initial_cash_usd=initial_cash,
         initial_sp500_value_usd=initial_sp500,
         initial_sp500_basis_usd=initial_sp500_basis,
+        initial_crypto_value_usd=initial_crypto,
+        initial_crypto_basis_usd=initial_crypto_basis,
         initial_private_equity_value_usd=initial_private_equity,
         initial_private_equity_basis_usd=initial_private_equity_basis,
         purchase_price_usd=purchase_price,
@@ -1484,6 +1605,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                     )
                 )
         sp500_value_after_sale = remaining_sp500_units * sp500_multiplier
+        crypto_multiplier = market_bundle.crypto_value_multipliers[:, month]
+        crypto_value_after_sale = remaining_crypto_quantity * crypto_multiplier
 
         cash[:, month] = current_cash
         generic_sp500_value[:, month] = sp500_value_after_sale
@@ -1491,6 +1614,9 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         remaining_sp500_basis_by_month[:, month] = remaining_sp500_basis
         generic_sp500_sale_gain[:, month] = sp500_sale - sp500_basis
         checking_floor_shortfall[:, month] = sp500_shortfall
+        crypto_value[:, month] = crypto_value_after_sale
+        remaining_crypto_quantity_by_month[:, month] = remaining_crypto_quantity
+        remaining_crypto_basis_by_month[:, month] = remaining_crypto_basis
         private_equity_sale_taxable_gain[:, month] = private_equity_sale_taxable_gain_month
         private_equity_sale_tax[:, month] = private_equity_sale_tax_month
         private_equity_sale_opportunity_value[:, month] = np.maximum(
@@ -1552,6 +1678,11 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         generic_sp500_value_usd=generic_sp500_value,
         remaining_sp500_units_by_month=remaining_sp500_units_by_month,
         remaining_sp500_basis_by_month=remaining_sp500_basis_by_month,
+        crypto_value_usd=crypto_value,
+        remaining_crypto_quantity_by_month=remaining_crypto_quantity_by_month,
+        remaining_crypto_basis_by_month=remaining_crypto_basis_by_month,
+        crypto_sale_usd=crypto_sale_usd,
+        crypto_sale_basis_usd=crypto_sale_basis_usd,
         checking_floor_shortfall_usd=checking_floor_shortfall,
         obligations=obligations,
         funding_decisions=funding_decisions,
@@ -1559,6 +1690,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         failure_events=failure_events,
         accounting=accounting,
         sp500_sale_action_records=sp500_sale_action_records,
+        crypto_sale_action_records=crypto_sale_action_records,
     )
 
     partner_present = np.full((rollout_count, month_count), _has_partner(scenario), dtype=np.bool_)
@@ -1569,8 +1701,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         unsold_mask = (month_index < disposition.sale_month).astype("float64")
         unsold_mask = np.broadcast_to(unsold_mask[None, :], (rollout_count, month_count))
         owner_home_equity_claim_for_net_worth = owner_home_equity_claim * unsold_mask
-    liquid_net_worth = cash + generic_sp500_value
-    net_worth = cash + generic_sp500_value + private_equity_value + owner_home_equity_claim_for_net_worth
+    liquid_net_worth = cash + generic_sp500_value + crypto_value
+    net_worth = cash + generic_sp500_value + crypto_value + private_equity_value + owner_home_equity_claim_for_net_worth
     _record_property_sale_actions(
         actions,
         scenario=scenario,
@@ -1627,6 +1759,28 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             tax_usd=source_tax,
             shortfall_usd=sp500_sale_action_record.shortfall_usd,
         )
+    for crypto_sale_action_record in crypto_sale_action_records:
+        _record_crypto_sale_journal_entries(
+            accounting,
+            lot_dispositions,
+            month_index=crypto_sale_action_record.month_index,
+            policy=crypto_sale_action_record.policy,
+            cause_id_prefix=crypto_sale_action_record.cause_id_prefix,
+            source_asset_id=crypto_sale_action_record.source_asset_id,
+            amount_usd=crypto_sale_action_record.amount_usd,
+            basis_usd=crypto_sale_action_record.basis_usd,
+        )
+        _record_crypto_sale_actions(
+            actions,
+            month_index=crypto_sale_action_record.month_index,
+            policy=crypto_sale_action_record.policy,
+            source_asset_id=crypto_sale_action_record.source_asset_id,
+            asset_symbol=crypto_sale_action_record.asset_symbol,
+            amount_usd=crypto_sale_action_record.amount_usd,
+            basis_usd=crypto_sale_action_record.basis_usd,
+            quantity_sold=crypto_sale_action_record.quantity_sold,
+            shortfall_usd=crypto_sale_action_record.shortfall_usd,
+        )
     for private_equity_sale_action_record in private_equity_sale_action_records:
         source_tax = _tax_share_for_sale_action(
             source_tax_usd=private_equity_sale_tax[:, private_equity_sale_action_record.month_position],
@@ -1672,6 +1826,11 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             generic_sp500_value_usd=generic_sp500_value,
             remaining_sp500_units_by_month=remaining_sp500_units_by_month,
             remaining_sp500_basis_by_month=remaining_sp500_basis_by_month,
+            crypto_value_usd=crypto_value,
+            remaining_crypto_quantity_by_month=remaining_crypto_quantity_by_month,
+            remaining_crypto_basis_by_month=remaining_crypto_basis_by_month,
+            crypto_sale_usd=crypto_sale_usd,
+            crypto_sale_basis_usd=crypto_sale_basis_usd,
             checking_floor_shortfall_usd=checking_floor_shortfall,
             obligations=obligations,
             funding_decisions=funding_decisions,
@@ -1679,6 +1838,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             failure_events=failure_events,
             accounting=accounting,
             sp500_sale_action_records=sp500_sale_action_records,
+            crypto_sale_action_records=crypto_sale_action_records,
         )
     _record_journal_entry_batches(
         accounting,
@@ -1697,6 +1857,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         month_index=month_index,
         cash_usd=cash,
         generic_sp500_value_usd=generic_sp500_value,
+        crypto_value_usd=crypto_value,
         private_equity_value_usd=private_equity_value,
         property_value_usd=property_value,
         mortgage_balance_usd=mortgage_balance,
@@ -2027,6 +2188,10 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         generic_sp500_sale_basis_usd=generic_sp500_sale_basis_from_accounting,
         generic_sp500_sale_gain_usd=generic_sp500_sale_from_accounting - generic_sp500_sale_basis_from_accounting,
         generic_sp500_sale_tax_usd=generic_sp500_sale_tax_from_accounting,
+        crypto_value_usd=crypto_value,
+        crypto_sale_usd=crypto_sale_usd,
+        crypto_sale_basis_usd=crypto_sale_basis_usd,
+        crypto_sale_gain_usd=crypto_sale_usd - crypto_sale_basis_usd,
         checking_floor_action_usd=generic_sp500_sale_from_accounting,
         checking_floor_shortfall_usd=checking_floor_shortfall,
         private_equity_value_usd=private_equity_value,
@@ -3042,6 +3207,105 @@ def _record_sp500_sale_actions(
         )
 
 
+def _record_crypto_sale_journal_entries(
+    accounting: AccountingTraceBuilder,
+    lot_dispositions: list[LotDisposition],
+    *,
+    month_index: int,
+    policy: Policy,
+    cause_id_prefix: str,
+    source_asset_id: str,
+    amount_usd: np.ndarray,
+    basis_usd: np.ndarray,
+) -> None:
+    """Record crypto sale postings + per-rollout LotDisposition rows.
+
+    The realized gain on the LotDisposition contributes to ordinary income at the
+    annual-tax step; the per-rollout tax_expense_usd is left at 0.0 because the
+    crypto-gain tax does not flow through `annual_sale_tax_allocation` yet — when
+    the tax model grows to allocate crypto gains, this field gets populated the
+    same way the SP500 path does.
+    """
+    accounting.record_entry(
+        month_index=month_index,
+        entry=JournalEntryBatch(
+            journal_entry_type=JournalEntryType.ASSET_SALE,
+            cause_type=AccountingCauseType.POLICY_DECISION,
+            cause_id_prefix=cause_id_prefix,
+            actor_id=policy.actor_id,
+            policy_id=policy.policy_id,
+            description="crypto sale",
+            postings=(
+                PostingBatch(
+                    role=ChartAccountRole.CHECKING_CASH,
+                    side=PostingSide.DEBIT,
+                    amount_usd=amount_usd,
+                    actor_id=policy.actor_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.CRYPTO_ASSET,
+                    side=PostingSide.CREDIT,
+                    amount_usd=amount_usd,
+                    actor_id=policy.actor_id,
+                    source_asset_id=source_asset_id,
+                ),
+            ),
+        ),
+    )
+    lot_id = _tax_lot_id(LotAssetClass.CRYPTO, source_asset_id)
+    for rollout_index in np.nonzero(amount_usd > 0)[0].tolist():
+        amount = float(amount_usd[rollout_index])
+        basis = float(basis_usd[rollout_index])
+        journal_entry_id = _trace_row_id(cause_id_prefix, rollout_index=rollout_index, month_index=month_index)
+        lot_dispositions.append(
+            LotDisposition(
+                lot_disposition_id=f"{journal_entry_id}:lot:{lot_id}",
+                journal_entry_id=journal_entry_id,
+                rollout_index=rollout_index,
+                month_index=month_index,
+                lot_id=lot_id,
+                asset_class=LotAssetClass.CRYPTO,
+                proceeds_usd=amount,
+                cost_basis_usd=max(0.0, basis),
+                realized_gain_usd=amount - basis,
+                taxable_gain_usd=max(0.0, amount - basis),
+                tax_expense_usd=0.0,
+            )
+        )
+
+
+def _record_crypto_sale_actions(
+    actions: list[SimulationAction],
+    *,
+    month_index: int,
+    policy: Policy,
+    source_asset_id: str,
+    asset_symbol: str,
+    amount_usd: np.ndarray,
+    basis_usd: np.ndarray,
+    quantity_sold: np.ndarray,
+    shortfall_usd: np.ndarray,
+) -> None:
+    for rollout_index in np.nonzero((amount_usd > 0) | (shortfall_usd > 0))[0].tolist():
+        amount = float(amount_usd[rollout_index])
+        basis = float(basis_usd[rollout_index])
+        actions.append(
+            SellCryptoAction(
+                rollout_index=rollout_index,
+                month_index=month_index,
+                actor_id=policy.actor_id,
+                policy_id=policy.policy_id,
+                source_asset_id=source_asset_id,
+                asset_symbol=asset_symbol,
+                amount_usd=amount,
+                quantity_sold=float(quantity_sold[rollout_index]),
+                basis_usd=basis,
+                gain_usd=amount - basis,
+                shortfall_usd=float(shortfall_usd[rollout_index]),
+            )
+        )
+
+
 def _record_private_equity_sale_actions(
     actions: list[SimulationAction],
     *,
@@ -3150,6 +3414,11 @@ def _settle_required_cash_obligations(
     generic_sp500_value_usd: np.ndarray,
     remaining_sp500_units_by_month: np.ndarray,
     remaining_sp500_basis_by_month: np.ndarray,
+    crypto_value_usd: np.ndarray,
+    remaining_crypto_quantity_by_month: np.ndarray,
+    remaining_crypto_basis_by_month: np.ndarray,
+    crypto_sale_usd: np.ndarray,
+    crypto_sale_basis_usd: np.ndarray,
     checking_floor_shortfall_usd: np.ndarray,
     obligations: list[SimulationObligation],
     funding_decisions: list[SimulationFundingDecision],
@@ -3157,11 +3426,18 @@ def _settle_required_cash_obligations(
     failure_events: list[SimulationFailureEvent],
     accounting: AccountingTraceBuilder,
     sp500_sale_action_records: list[Sp500SaleActionRecord],
+    crypto_sale_action_records: list[CryptoSaleActionRecord],
 ) -> None:
     obligation_type = obligation_kind.obligation_type
     actor_id = _primary_owner_actor_id(scenario)
     cash_source_account = _single_checking_account_source(scenario, actor_id=actor_id)
     sp500_source_asset = _single_sp500_asset_source(scenario, actor_id=actor_id)
+    crypto_source_id = _crypto_source_holding_id(scenario, actor_id=actor_id)
+    crypto_source_assets = _crypto_asset_sources(scenario, actor_id=actor_id)
+    crypto_source_account_id = crypto_source_assets[0].source_account_id if crypto_source_assets else None
+    crypto_source_symbol = (
+        crypto_source_assets[0].asset_symbol if len(crypto_source_assets) == 1 else "crypto_portfolio"
+    )
     for month_position, due_month_index in enumerate(month_index.tolist()):
         due = obligation_amount_usd[:, month_position]
         if not np.any(due > 0):
@@ -3183,62 +3459,137 @@ def _settle_required_cash_obligations(
         for policy_step in policy_steps:
             if not np.any(remaining_due > 0):
                 break
-            application = _apply_obligation_funding_policy_step(
-                policy_step,
-                due_usd=due,
-                remaining_due_usd=remaining_due,
-                cash_usd=cash_usd[:, month_position],
-                remaining_units=remaining_sp500_units_by_month[:, month_position],
-                remaining_basis_usd=remaining_sp500_basis_by_month[:, month_position],
-                sp500_unit_price_usd=market_bundle.generic_sp500_multipliers[:, month_position],
-                source_asset=sp500_source_asset,
-            )
-            if application is None:
+            policy = policy_step.policy
+            if not isinstance(policy, CheckingFloorSellPublicStockPolicy):
                 continue
-            old_units = remaining_sp500_units_by_month[:, month_position].copy()
-            old_basis = remaining_sp500_basis_by_month[:, month_position].copy()
-            units_sold = np.maximum(0.0, old_units - application.remaining_units)
-            basis_sold = np.maximum(0.0, old_basis - application.remaining_basis_usd)
-            remaining_sp500_units_by_month[:, month_position:] = np.maximum(
-                0.0, remaining_sp500_units_by_month[:, month_position:] - units_sold[:, None]
-            )
-            remaining_sp500_basis_by_month[:, month_position:] = np.maximum(
-                0.0, remaining_sp500_basis_by_month[:, month_position:] - basis_sold[:, None]
-            )
-            generic_sp500_value_usd[:, month_position:] = (
-                remaining_sp500_units_by_month[:, month_position:]
-                * market_bundle.generic_sp500_multipliers[:, month_position:]
-            )
-            cash_usd[:, month_position:] = cash_usd[:, month_position:] + application.sale_usd[:, None]
-            remaining_due = application.remaining_due_usd
-            checking_floor_shortfall_usd[:, month_position] = np.maximum(
-                checking_floor_shortfall_usd[:, month_position], remaining_due
-            )
-            _record_obligation_sale_funding_decisions(
-                funding_decisions,
-                obligation_type=obligation_type,
-                actor_id=actor_id,
-                month_index=int(due_month_index),
-                policy_step=application.policy_step,
-                obligation_amount_usd=due,
-                requested_sale_usd=application.instruction.requested_amount_usd,
-                funded_cash_usd=application.funded_cash_usd,
-                shortfall_usd=application.shortfall_usd,
-                source_asset=sp500_source_asset,
-            )
-            sp500_sale_action_records.append(
-                Sp500SaleActionRecord(
-                    month_position=month_position,
-                    month_index=int(due_month_index),
-                    policy=application.policy_step.policy,
-                    cause_id_prefix=(
-                        f"policy:{application.policy_step.policy.policy_id}:{obligation_type.value}:funding_sale"
-                    ),
-                    amount_usd=application.sale_usd,
-                    basis_usd=basis_sold,
-                    shortfall_usd=remaining_due,
-                )
-            )
+            for asset_type in policy.sale_asset_preference:
+                if not np.any(remaining_due > 0):
+                    break
+                if asset_type is AssetType.GENERIC_SP500_STOCK:
+                    application = _apply_checking_floor_obligation_funding_policy(
+                        policy_step,
+                        due_usd=due,
+                        remaining_due_usd=remaining_due,
+                        cash_usd=cash_usd[:, month_position],
+                        remaining_units=remaining_sp500_units_by_month[:, month_position],
+                        remaining_basis_usd=remaining_sp500_basis_by_month[:, month_position],
+                        sp500_unit_price_usd=market_bundle.generic_sp500_multipliers[:, month_position],
+                        source_asset=sp500_source_asset,
+                    )
+                    if application is None:
+                        continue
+                    old_units = remaining_sp500_units_by_month[:, month_position].copy()
+                    old_basis = remaining_sp500_basis_by_month[:, month_position].copy()
+                    units_sold = np.maximum(0.0, old_units - application.remaining_units)
+                    basis_sold = np.maximum(0.0, old_basis - application.remaining_basis_usd)
+                    remaining_sp500_units_by_month[:, month_position:] = np.maximum(
+                        0.0, remaining_sp500_units_by_month[:, month_position:] - units_sold[:, None]
+                    )
+                    remaining_sp500_basis_by_month[:, month_position:] = np.maximum(
+                        0.0, remaining_sp500_basis_by_month[:, month_position:] - basis_sold[:, None]
+                    )
+                    generic_sp500_value_usd[:, month_position:] = (
+                        remaining_sp500_units_by_month[:, month_position:]
+                        * market_bundle.generic_sp500_multipliers[:, month_position:]
+                    )
+                    cash_usd[:, month_position:] = cash_usd[:, month_position:] + application.sale_usd[:, None]
+                    remaining_due = application.remaining_due_usd
+                    checking_floor_shortfall_usd[:, month_position] = np.maximum(
+                        checking_floor_shortfall_usd[:, month_position], remaining_due
+                    )
+                    _record_obligation_sale_funding_decisions(
+                        funding_decisions,
+                        obligation_type=obligation_type,
+                        actor_id=actor_id,
+                        month_index=int(due_month_index),
+                        policy_step=application.policy_step,
+                        obligation_amount_usd=due,
+                        requested_sale_usd=application.instruction.requested_amount_usd,
+                        funded_cash_usd=application.funded_cash_usd,
+                        shortfall_usd=application.shortfall_usd,
+                        source_asset=sp500_source_asset,
+                    )
+                    sp500_sale_action_records.append(
+                        Sp500SaleActionRecord(
+                            month_position=month_position,
+                            month_index=int(due_month_index),
+                            policy=application.policy_step.policy,
+                            cause_id_prefix=(
+                                f"policy:{application.policy_step.policy.policy_id}:"
+                                f"{obligation_type.value}:funding_sale"
+                            ),
+                            amount_usd=application.sale_usd,
+                            basis_usd=basis_sold,
+                            shortfall_usd=remaining_due,
+                        )
+                    )
+                elif asset_type is AssetType.CRYPTO:
+                    crypto_application = _apply_crypto_checking_floor_obligation_funding_policy(
+                        policy_step,
+                        due_usd=due,
+                        remaining_due_usd=remaining_due,
+                        cash_usd=cash_usd[:, month_position],
+                        remaining_quantity=remaining_crypto_quantity_by_month[:, month_position],
+                        remaining_basis_usd=remaining_crypto_basis_by_month[:, month_position],
+                        crypto_unit_price_usd=market_bundle.crypto_value_multipliers[:, month_position],
+                        source_asset_id=crypto_source_id,
+                    )
+                    if crypto_application is None:
+                        continue
+                    old_quantity = remaining_crypto_quantity_by_month[:, month_position].copy()
+                    old_basis = remaining_crypto_basis_by_month[:, month_position].copy()
+                    quantity_sold = np.maximum(0.0, old_quantity - crypto_application.remaining_quantity)
+                    basis_sold = np.maximum(0.0, old_basis - crypto_application.remaining_basis_usd)
+                    remaining_crypto_quantity_by_month[:, month_position:] = np.maximum(
+                        0.0, remaining_crypto_quantity_by_month[:, month_position:] - quantity_sold[:, None]
+                    )
+                    remaining_crypto_basis_by_month[:, month_position:] = np.maximum(
+                        0.0, remaining_crypto_basis_by_month[:, month_position:] - basis_sold[:, None]
+                    )
+                    crypto_value_usd[:, month_position:] = (
+                        remaining_crypto_quantity_by_month[:, month_position:]
+                        * market_bundle.crypto_value_multipliers[:, month_position:]
+                    )
+                    cash_usd[:, month_position:] = cash_usd[:, month_position:] + crypto_application.sale_usd[:, None]
+                    crypto_sale_usd[:, month_position] = (
+                        crypto_sale_usd[:, month_position] + crypto_application.sale_usd
+                    )
+                    crypto_sale_basis_usd[:, month_position] = crypto_sale_basis_usd[:, month_position] + basis_sold
+                    remaining_due = crypto_application.remaining_due_usd
+                    checking_floor_shortfall_usd[:, month_position] = np.maximum(
+                        checking_floor_shortfall_usd[:, month_position], remaining_due
+                    )
+                    _record_obligation_crypto_sale_funding_decisions(
+                        funding_decisions,
+                        obligation_type=obligation_type,
+                        actor_id=actor_id,
+                        month_index=int(due_month_index),
+                        policy_step=policy_step,
+                        obligation_amount_usd=due,
+                        requested_sale_usd=crypto_application.instruction.requested_amount_usd,
+                        funded_cash_usd=crypto_application.funded_cash_usd,
+                        shortfall_usd=crypto_application.shortfall_usd,
+                        source_asset_id=crypto_source_id,
+                        source_account_id=crypto_source_account_id,
+                    )
+                    crypto_sale_action_records.append(
+                        CryptoSaleActionRecord(
+                            month_position=month_position,
+                            month_index=int(due_month_index),
+                            policy=policy,
+                            cause_id_prefix=(f"policy:{policy.policy_id}:{obligation_type.value}:funding_crypto_sale"),
+                            source_asset_id=crypto_source_id,
+                            asset_symbol=crypto_source_symbol,
+                            amount_usd=crypto_application.sale_usd,
+                            basis_usd=basis_sold,
+                            quantity_sold=quantity_sold,
+                            shortfall_usd=remaining_due.copy(),
+                        )
+                    )
+                else:
+                    raise ValueError(
+                        f"unsupported sale_asset_preference entry {asset_type} for CheckingFloorSellPublicStockPolicy"
+                    )
 
         amount_paid = np.minimum(due, np.maximum(0.0, cash_usd[:, month_position]))
         unpaid = np.maximum(0.0, due - amount_paid)
@@ -3384,32 +3735,6 @@ def _record_obligation_accrual_and_settlement_entries(
     )
 
 
-def _apply_obligation_funding_policy_step(
-    policy_step: ActorPolicyStep[Policy],
-    *,
-    due_usd: np.ndarray,
-    remaining_due_usd: np.ndarray,
-    cash_usd: np.ndarray,
-    remaining_units: np.ndarray,
-    remaining_basis_usd: np.ndarray,
-    sp500_unit_price_usd: np.ndarray,
-    source_asset: GenericSp500StockPosition | None,
-) -> ObligationFundingPolicyApplication | None:
-    policy = policy_step.policy
-    if isinstance(policy, CheckingFloorSellPublicStockPolicy):
-        return _apply_checking_floor_obligation_funding_policy(
-            policy_step,
-            due_usd=due_usd,
-            remaining_due_usd=remaining_due_usd,
-            cash_usd=cash_usd,
-            remaining_units=remaining_units,
-            remaining_basis_usd=remaining_basis_usd,
-            sp500_unit_price_usd=sp500_unit_price_usd,
-            source_asset=source_asset,
-        )
-    return None
-
-
 def _apply_checking_floor_obligation_funding_policy(
     policy_step: ActorPolicyStep[Policy],
     *,
@@ -3458,6 +3783,62 @@ def _apply_checking_floor_obligation_funding_policy(
         shortfall_usd=remaining_due_after_sale,
         remaining_due_usd=remaining_due_after_sale,
         remaining_units=sale_application.remaining_units,
+        remaining_basis_usd=sale_application.remaining_basis_usd,
+    )
+
+
+def _apply_crypto_checking_floor_obligation_funding_policy(
+    policy_step: ActorPolicyStep[Policy],
+    *,
+    due_usd: np.ndarray,
+    remaining_due_usd: np.ndarray,
+    cash_usd: np.ndarray,
+    remaining_quantity: np.ndarray,
+    remaining_basis_usd: np.ndarray,
+    crypto_unit_price_usd: np.ndarray,
+    source_asset_id: str,
+) -> CryptoObligationFundingPolicyApplication | None:
+    policy = policy_step.policy
+    if not isinstance(policy, CheckingFloorSellPublicStockPolicy):
+        raise TypeError(f"checking-floor crypto obligation funding handler received {type(policy).__name__}")
+    projected_cash_after_obligation = cash_usd - due_usd
+    requested_sale = np.where(
+        (remaining_due_usd > 0) & (projected_cash_after_obligation < float(policy.floor_usd)),
+        # Crypto sale amount is the smaller of the policy sale_amount_usd and the
+        # remaining_due (it is wasteful to sell more crypto than needed to clear the
+        # obligation when SP500 has already been exhausted). The instruction applier
+        # then clamps to current crypto value.
+        np.minimum(float(policy.sale_amount_usd), remaining_due_usd),
+        0.0,
+    )
+    instruction = SellAssetInstructionBatch(
+        actor_id=policy.actor_id,
+        policy_id=policy.policy_id,
+        asset_type=AssetType.CRYPTO,
+        requested_amount_usd=requested_sale,
+        target_cash_floor_usd=float(policy.floor_usd),
+        source_asset_id=source_asset_id,
+    )
+    sale_application = apply_crypto_sale_instruction(
+        instruction,
+        current_cash_usd=cash_usd,
+        remaining_quantity=remaining_quantity,
+        remaining_basis_usd=remaining_basis_usd,
+        crypto_unit_price_usd=crypto_unit_price_usd,
+    )
+    if not np.any((requested_sale > 0) | (sale_application.shortfall_usd > 0)):
+        return None
+    funded_cash = np.minimum(remaining_due_usd, sale_application.sale_usd)
+    remaining_due_after_sale = np.maximum(0.0, remaining_due_usd - funded_cash)
+    return CryptoObligationFundingPolicyApplication(
+        policy_step=policy_step,
+        instruction=instruction,
+        sale_usd=sale_application.sale_usd,
+        basis_usd=sale_application.basis_usd,
+        funded_cash_usd=funded_cash,
+        shortfall_usd=remaining_due_after_sale,
+        remaining_due_usd=remaining_due_after_sale,
+        remaining_quantity=sale_application.remaining_quantity,
         remaining_basis_usd=sale_application.remaining_basis_usd,
     )
 
@@ -3523,6 +3904,47 @@ def _record_obligation_sale_funding_decisions(
                 source_type=FundingSourceType.PUBLIC_MARKET_ASSET,
                 source_asset_id=source_asset.asset_id if source_asset is not None else None,
                 source_asset_type=AssetType.GENERIC_SP500_STOCK,
+                available_cash_usd=0.0,
+                requested_cash_usd=float(obligation_amount_usd[rollout_index]),
+                requested_sale_usd=float(requested_sale_usd[rollout_index]),
+                funded_cash_usd=float(funded_cash_usd[rollout_index]),
+                shortfall_usd=float(shortfall_usd[rollout_index]),
+            )
+        )
+        for rollout_index in np.nonzero((requested_sale_usd > 0) | (shortfall_usd > 0))[0].tolist()
+    )
+
+
+def _record_obligation_crypto_sale_funding_decisions(
+    records: list[SimulationFundingDecision],
+    *,
+    obligation_type: ObligationType,
+    actor_id: str,
+    month_index: int,
+    policy_step: ActorPolicyStep[Policy],
+    obligation_amount_usd: np.ndarray,
+    requested_sale_usd: np.ndarray,
+    funded_cash_usd: np.ndarray,
+    shortfall_usd: np.ndarray,
+    source_asset_id: str,
+    source_account_id: str | None,
+) -> None:
+    policy = policy_step.policy
+    records.extend(
+        (
+            SimulationFundingDecision(
+                rollout_index=rollout_index,
+                month_index=month_index,
+                obligation_id=_obligation_id(obligation_type, rollout_index=rollout_index, month_index=month_index),
+                decision_type=FundingDecisionType.SELL_CRYPTO,
+                actor_id=actor_id,
+                policy_id=policy.policy_id,
+                policy_sequence_index=policy_step.sequence_index,
+                source_type=FundingSourceType.CRYPTO_ASSET,
+                source_account_id=source_account_id,
+                source_account_type=AccountType.CRYPTO_EXCHANGE if source_account_id is not None else None,
+                source_asset_id=source_asset_id,
+                source_asset_type=AssetType.CRYPTO,
                 available_cash_usd=0.0,
                 requested_cash_usd=float(obligation_amount_usd[rollout_index]),
                 requested_sale_usd=float(requested_sale_usd[rollout_index]),
@@ -4193,6 +4615,35 @@ def _single_sp500_asset_source(scenario: Scenario, *, actor_id: str) -> GenericS
     if len(positions) == 1:
         return positions[0]
     return None
+
+
+def _initial_crypto_value_usd(scenario: Scenario) -> float:
+    return sum(
+        asset.value_usd for asset in scenario.initial_balance_sheet.assets if isinstance(asset, CryptoAssetPosition)
+    )
+
+
+def _initial_crypto_cost_basis_usd(scenario: Scenario) -> float:
+    return sum(
+        asset.cost_basis_usd if asset.cost_basis_usd is not None else asset.value_usd
+        for asset in scenario.initial_balance_sheet.assets
+        if isinstance(asset, CryptoAssetPosition)
+    )
+
+
+def _crypto_asset_sources(scenario: Scenario, *, actor_id: str) -> tuple[CryptoAssetPosition, ...]:
+    return tuple(
+        asset
+        for asset in scenario.initial_balance_sheet.assets
+        if isinstance(asset, CryptoAssetPosition) and asset.owner_actor_id == actor_id
+    )
+
+
+def _crypto_source_holding_id(scenario: Scenario, *, actor_id: str) -> str:
+    sources = _crypto_asset_sources(scenario, actor_id=actor_id)
+    if len(sources) == 1:
+        return sources[0].asset_id
+    return "crypto_portfolio"
 
 
 def _initial_private_equity_value_usd(scenario: Scenario) -> float:

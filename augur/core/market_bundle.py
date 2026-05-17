@@ -24,7 +24,15 @@ from augur.core.provenance import (
 from augur.core.scenario_set import MarketRequest
 from augur.core.schemas import ApiModel
 
-CORE_MARKET_RISK_FACTOR_IDS = ("inflation", "sp500", "home", "rent", "mortgage_30y_rate_pct", "private_equity_value")
+CORE_MARKET_RISK_FACTOR_IDS = (
+    "inflation",
+    "sp500",
+    "home",
+    "rent",
+    "mortgage_30y_rate_pct",
+    "private_equity_value",
+    "crypto_value",
+)
 
 
 class MarketBundleMetadata(ApiModel):
@@ -194,6 +202,12 @@ class MarketBundle:
     mortgage_30y_rate_pct: np.ndarray
     private_equity_value_multipliers: np.ndarray
     private_equity_sale_opportunity_mask: np.ndarray
+    # Placeholder crypto path: a (rollout, month+1) multiplier shaped like the SP500
+    # array, currently defaulting to all-ones in every provider until a fitted crypto
+    # model is plumbed in. Reporting and sale-funding paths consume this array so
+    # they keep working with a single dummy crypto price; only the level of risk
+    # changes when a real model lands.
+    crypto_value_multipliers: np.ndarray
     metadata: MarketBundleMetadata
 
     def __post_init__(self) -> None:
@@ -213,6 +227,9 @@ class MarketBundle:
             self.private_equity_value_multipliers,
             name="private_equity_value_multipliers",
             expected_shape=expected_shape,
+        )
+        self._validate_multiplier(
+            self.crypto_value_multipliers, name="crypto_value_multipliers", expected_shape=expected_shape
         )
         self._validate_float_matrix(
             self.mortgage_30y_rate_pct, name="mortgage_30y_rate_pct", expected_shape=expected_shape
@@ -347,6 +364,7 @@ class FlatMarketBundleProvider:
             mortgage_30y_rate_pct=mortgage_rate,
             private_equity_value_multipliers=flat,
             private_equity_sale_opportunity_mask=private_equity_events,
+            crypto_value_multipliers=flat,
             metadata=MarketBundleMetadata(
                 market_model_id=market_request.market_model_id,
                 scenario_generator_id="flat_market_bundle_provider",
@@ -442,6 +460,10 @@ class SimpleMarketBundleProvider:
             event_stream_ids=("private_equity_sale_opportunity_event",),
             notes=("simple core stochastic provider; replaceable via MarketBundleProvider",),
         )
+        # Placeholder crypto value path: constant 1.0. Until a fitted crypto model
+        # plugs in, the simulator carries a flat array so reporting and the
+        # crypto sale-funding policy remain valid.
+        crypto_value = np.ones((rollout_count, horizon_months + 1), dtype="float64")
         return MarketBundle(
             month_index=month_index,
             inflation_multipliers=inflation,
@@ -451,6 +473,7 @@ class SimpleMarketBundleProvider:
             mortgage_30y_rate_pct=mortgage_rate,
             private_equity_value_multipliers=private_equity_value,
             private_equity_sale_opportunity_mask=private_equity_events,
+            crypto_value_multipliers=crypto_value,
             metadata=metadata,
         )
 

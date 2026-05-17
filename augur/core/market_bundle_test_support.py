@@ -20,6 +20,7 @@ def constant_market_bundle(
     mortgage_30y_rate_pct_path: tuple[float, ...] = (0.0, 0.0, 0.0, 0.0),
     private_equity_value_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0),
     private_equity_sale_opportunity_months: tuple[int, ...] = (),
+    crypto_value_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0),
     market_model_id: str = "test",
     seed: int = 0,
 ) -> MarketBundle:
@@ -57,6 +58,7 @@ def constant_market_bundle(
         mortgage_30y_rate_pct=path(mortgage_30y_rate_pct_path),
         private_equity_value_multipliers=path(private_equity_value_path),
         private_equity_sale_opportunity_mask=private_equity_sale_opportunity_mask,
+        crypto_value_multipliers=path(crypto_value_path),
         metadata=MarketBundleMetadata(
             market_model_id=market_model_id,
             seed=seed,
@@ -78,6 +80,7 @@ class NoopMarketBundleProvider:
     mortgage_30y_rate_pct_path: tuple[float, ...] = (0.0, 0.0, 0.0, 0.0)
     private_equity_value_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0)
     private_equity_sale_opportunity_months: tuple[int, ...] = ()
+    crypto_value_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0)
 
     def sample_market_bundle(
         self, *, rollout_count: int, horizon_months: int, seed: int, market_request: MarketRequest
@@ -92,6 +95,7 @@ class NoopMarketBundleProvider:
             mortgage_30y_rate_pct_path=self.mortgage_30y_rate_pct_path,
             private_equity_value_path=self.private_equity_value_path,
             private_equity_sale_opportunity_months=self.private_equity_sale_opportunity_months,
+            crypto_value_path=self.crypto_value_path,
             market_model_id=market_request.market_model_id,
             seed=seed,
         )

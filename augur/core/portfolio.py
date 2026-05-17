@@ -13,6 +13,7 @@ from augur.core.scenario_set import (
     AccountBalance,
     AccountType,
     AssetType,
+    CryptoAssetPosition,
     GenericSp500StockPosition,
     InitialBalanceSheet,
     PositionProvenance,
@@ -185,11 +186,18 @@ class PortfolioStatement(ApiModel):
         accounts = tuple(
             _scenario_account(account) for account in self.accounts if _scenario_account_type(account) is not None
         )
+        # CLEANUP(2026-05-17): Tender-window data on private_equity_lots is still dropped
+        # here. Generating PrivateEquitySaleOpportunityObservation rows from those windows
+        # is the next slice (Half B of the funding-policies/crypto/tender slice); see
+        # `augur/TODO.md`. Crypto holdings are now surfaced as first-class CryptoAssetPositions.
         assets = (
             *tuple(
                 _scenario_public_security(position, account_by_id[position.account_id])
                 for position in self.public_securities
                 if position.augur_asset_type == AssetType.GENERIC_SP500_STOCK
+            ),
+            *tuple(
+                _scenario_crypto_holding(holding, account_by_id[holding.account_id]) for holding in self.crypto_holdings
             ),
             *tuple(
                 _scenario_private_equity_lot(lot, account_by_id[lot.account_id]) for lot in self.private_equity_lots
@@ -226,7 +234,9 @@ def _scenario_account_type(account: PortfolioAccount) -> AccountType | None:
             return AccountType.CHECKING
         case PortfolioAccountType.TAXABLE_BROKERAGE:
             return AccountType.TAXABLE_BROKERAGE
-        case PortfolioAccountType.CRYPTO_EXCHANGE | PortfolioAccountType.PRIVATE_EQUITY_PLATFORM:
+        case PortfolioAccountType.CRYPTO_EXCHANGE:
+            return AccountType.CRYPTO_EXCHANGE
+        case PortfolioAccountType.PRIVATE_EQUITY_PLATFORM:
             return None
     raise ValueError(f"unsupported portfolio account type {account.account_type}")
 
@@ -238,6 +248,19 @@ def _scenario_public_security(position: PublicSecurityPosition, account: Portfol
         value_usd=float(position.market_value_usd),
         cost_basis_usd=float(position.cost_basis.amount_usd) if position.cost_basis is not None else None,
         provenance=_position_provenance(position.valuation, position.custody),
+    )
+
+
+def _scenario_crypto_holding(holding: CryptoHolding, account: PortfolioAccount) -> CryptoAssetPosition:
+    return CryptoAssetPosition(
+        asset_id=holding.position_id,
+        owner_actor_id=account.owner_actor_id,
+        value_usd=float(holding.market_value_usd),
+        asset_symbol=holding.asset_symbol,
+        quantity=float(holding.quantity),
+        cost_basis_usd=float(holding.cost_basis.amount_usd) if holding.cost_basis is not None else None,
+        source_account_id=holding.account_id,
+        provenance=_position_provenance(holding.valuation, holding.custody),
     )
 
 

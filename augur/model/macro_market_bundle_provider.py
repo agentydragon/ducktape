@@ -110,6 +110,7 @@ class MacroMarketBundleProvider:
             mortgage_30y_rate_pct=np.full(shape, self._current_mortgage30_rate_pct, dtype="float64"),
             private_equity_value_multipliers=np.ones(shape, dtype="float64"),
             private_equity_sale_opportunity_mask=private_equity_events,
+            crypto_value_multipliers=np.ones(shape, dtype="float64"),
             metadata=MarketBundleMetadata(
                 market_model_id=market_request.market_model_id,
                 model_card_id=_MODEL_CARD_ID,

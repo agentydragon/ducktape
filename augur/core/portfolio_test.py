@@ -7,7 +7,13 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from augur.core.portfolio import load_portfolio_yaml
-from augur.core.scenario_set import AccountType, AssetType, GenericSp500StockPosition, PrivateEquityPosition
+from augur.core.scenario_set import (
+    AccountType,
+    AssetType,
+    CryptoAssetPosition,
+    GenericSp500StockPosition,
+    PrivateEquityPosition,
+)
 
 
 def test_load_public_example_portfolio_yaml_and_convert_to_initial_balance_sheet() -> None:
@@ -28,6 +34,7 @@ def test_load_public_example_portfolio_yaml_and_convert_to_initial_balance_sheet
     assert [(account.account_id, account.account_type, account.balance_usd) for account in balance_sheet.accounts] == [
         ("checking_cash", AccountType.CHECKING, 12_500),
         ("wealthfront_taxable", AccountType.TAXABLE_BROKERAGE, 250),
+        ("coinbase_exchange", AccountType.CRYPTO_EXCHANGE, 0),
     ]
     sp500 = next(asset for asset in balance_sheet.assets if isinstance(asset, GenericSp500StockPosition))
     assert sp500.asset_id == "wealthfront_sp500"
@@ -37,6 +44,18 @@ def test_load_public_example_portfolio_yaml_and_convert_to_initial_balance_sheet
     assert sp500.cost_basis_usd == 30_000
     assert sp500.provenance.source_id == "wealthfront_public_example"
     assert sp500.provenance.snapshot_id == "wealthfront_statement_2026_01"
+
+    crypto_holdings = [asset for asset in balance_sheet.assets if isinstance(asset, CryptoAssetPosition)]
+    assert [(crypto.asset_symbol, crypto.value_usd, crypto.quantity) for crypto in crypto_holdings] == [
+        ("BTC", 12_000, 0.1),
+        ("ETH", 7_000, 2.0),
+    ]
+    btc = crypto_holdings[0]
+    assert btc.asset_id == "coinbase_btc"
+    assert btc.asset_type is AssetType.CRYPTO
+    assert btc.owner_actor_id == "owner"
+    assert btc.cost_basis_usd == 8_000
+    assert btc.source_account_id == "coinbase_exchange"
 
     private_equity = next(asset for asset in balance_sheet.assets if isinstance(asset, PrivateEquityPosition))
     assert private_equity.asset_id == "private_company_seed_lot"
