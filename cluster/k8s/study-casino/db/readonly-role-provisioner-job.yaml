@@ -10,25 +10,40 @@ metadata:
     # Job is immutable after first apply.
     kustomize.toolkit.fluxcd.io/force: enabled
 spec:
-  backoffLimit: 5
-  ttlSecondsAfterFinished: 3600
+  # Single attempt — failures keep the pod around so logs survive long enough
+  # to debug. Re-run by changing the SQL ConfigMap (kustomize bumps its hash,
+  # `force: enabled` deletes+recreates the Job).
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
   template:
     metadata:
       labels:
         app: study-casino-db-readonly-provisioner
     spec:
-      restartPolicy: OnFailure
+      restartPolicy: Never
       nodeSelector:
         topology.kubernetes.io/region: hil
       containers:
         - name: psql
           image: ghcr.io/cloudnative-pg/postgresql:18.0
-          command:
-            - psql
-            - --set=ON_ERROR_STOP=1
-            - --set=ro_pw=$(RO_PASSWORD)
-            - -f
-            - /sql/readonly-role.sql
+          # Wrap psql so the exit code and any stderr are visible in
+          # `kubectl describe pod` via the termination message even after
+          # the pod is removed from controller status. `set -x` traces the
+          # invocation; we redact PGPASSWORD via parameter expansion.
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -x
+              echo "PGUSER=${PGUSER:-<unset>}"
+              echo "PGHOST=${PGHOST:-<unset>}"
+              echo "PGDATABASE=${PGDATABASE:-<unset>}"
+              echo "PGPASSWORD set: ${PGPASSWORD:+yes}"
+              echo "RO_PASSWORD set: ${RO_PASSWORD:+yes}"
+              exec psql \
+                --set=ON_ERROR_STOP=1 \
+                --set=ro_pw="$RO_PASSWORD" \
+                -f /sql/readonly-role.sql
+          terminationMessagePolicy: FallbackToLogsOnError
           env:
             - name: PGUSER
               valueFrom:

@@ -1,6 +1,7 @@
 -- Idempotent provisioning of the read-only role used by sandbox agents.
 -- Re-runs of the provisioner Job ALTER the password to match the current
 -- `study-casino-db-readonly` Secret.
+-- v2: provisioner wraps psql in bash for diagnostics on failure.
 DO $$ BEGIN
   CREATE ROLE study_casino_ro LOGIN PASSWORD :'ro_pw';
 EXCEPTION WHEN duplicate_object THEN
