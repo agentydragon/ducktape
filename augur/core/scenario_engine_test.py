@@ -41,10 +41,17 @@ def _bundle(
     private_equity_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0),
     home_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0),
     rent_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0),
+    crypto_path: tuple[float, ...] | None = None,
     private_equity_sale_opportunity_month: int | None = None,
 ) -> MarketBundle:
     shape = (rollout_count, horizon_months + 1)
     month_index = np.arange(horizon_months + 1, dtype="int64")
+    # Default crypto path mirrors the inflation/sp500/private_equity defaults — all
+    # ones — but extended to horizon_months + 1 so tests that change horizon do not
+    # have to pass an explicit longer crypto_path. The existing per-factor defaults
+    # are tuples of exactly four entries, matching the default horizon_months=3.
+    if crypto_path is None:
+        crypto_path = tuple([1.0] * (horizon_months + 1))
 
     def path(values: tuple[float, ...]) -> np.ndarray:
         return np.broadcast_to(np.asarray(values[: horizon_months + 1], dtype="float64"), shape).copy()
@@ -78,6 +85,7 @@ def _bundle(
         mortgage_30y_rate_pct=np.full(shape, 6.0, dtype="float64"),
         private_equity_value_multipliers=path(private_equity_path),
         private_equity_sale_opportunity_mask=events,
+        crypto_value_multipliers=path(crypto_path),
         metadata=metadata,
     )
 

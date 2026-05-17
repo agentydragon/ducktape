@@ -99,6 +99,7 @@ def test_market_bundle_rejects_bad_shapes() -> None:
             mortgage_30y_rate_pct=np.full((2, 4), 6.5, dtype="float64"),
             private_equity_value_multipliers=valid,
             private_equity_sale_opportunity_mask=np.zeros((2, 4), dtype=np.bool_),
+            crypto_value_multipliers=valid,
             metadata=metadata,
         )
 
