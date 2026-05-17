@@ -326,9 +326,11 @@ pub struct PartialSwapSymbol {
     /// [`PartialSwapKind`].
     #[serde(default, skip_serializing_if = "is_default_partial_swap_kind")]
     pub kind: PartialSwapKind,
-    /// `kind: member` only: upstream package's export name (becomes
-    /// the member accessed off the namespace import). Forbidden for
-    /// `kind: namespace` / `kind: default`.
+    /// `kind: member` and `kind: named` only: upstream package's
+    /// export name. For `member` it becomes the member accessed off
+    /// the namespace import; for `named` it becomes the imported name
+    /// in `import { <upstream_export> as <local_binding> } from "<pkg>"`.
+    /// Forbidden for `kind: namespace` / `kind: default`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub upstream_export: Option<String>,
 }
@@ -355,6 +357,15 @@ pub enum PartialSwapKind {
     /// `import <local_binding> from "<package>"`; leaves every
     /// `<local_binding>(...)` reference alone.
     Default,
+    /// Named import. The chunk's export is a single named export of
+    /// the package (e.g. `import { o as mobxObserver } from
+    /// "../chunk"` where `o` is `mobx-react-lite`'s `observer`).
+    /// Rewrites the import to
+    /// `import { <upstream_export> as <local_binding> } from "<package>"`
+    /// (or `import { <name> } from "<package>"` when the local
+    /// binding name matches the upstream export); leaves every
+    /// `<local_binding>(...)` reference alone.
+    Named,
 }
 
 fn is_default_partial_swap_kind(kind: &PartialSwapKind) -> bool {
