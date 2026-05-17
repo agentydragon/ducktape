@@ -35,7 +35,7 @@ triggers permission prompts.
   openebs, proxmox-proxy, cnpg-system, nvidia-device-plugin, node-feature-discovery,
   local-path-storage, cert-manager, litellm, docker-ci, matrix, grocy-sf, grocy-vallejo,
   study-casino, authentik-mcp-poc, monitoring, kube-system, longhorn-system,
-  flux-system, airlock, authentik.
+  flux-system, airlock, authentik, augur.
 
 **Escape hatch**: `Bash(kubectl ...)` uses the user's personal kubeconfig (CLI) or
 session kubeconfig (web) for operations needing higher privileges or other namespaces.
