@@ -1355,9 +1355,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     initial_crypto_basis = _initial_crypto_cost_basis_usd(scenario)
     pe_unit_price_usd = float(market_bundle.metadata.current_private_equity_price_usd)
     initial_private_equity = _initial_private_equity_value_usd(scenario, current_unit_price_usd=pe_unit_price_usd)
-    initial_private_equity_basis = _initial_private_equity_cost_basis_usd(
-        scenario, current_unit_price_usd=pe_unit_price_usd
-    )
+    initial_private_equity_basis = _initial_private_equity_cost_basis_usd(scenario)
     initial_private_equity_units = _initial_private_equity_units(scenario)
     private_equity_source_holding_id = _private_equity_source_holding_id(scenario)
     purchase_price = _purchase_price_usd(scenario)
@@ -5220,11 +5218,18 @@ def _initial_sp500_value_usd(scenario: Scenario) -> float:
 
 
 def _initial_sp500_cost_basis_usd(scenario: Scenario) -> float:
-    return sum(
-        asset.cost_basis_usd if asset.cost_basis_usd is not None else asset.value_usd
-        for asset in scenario.initial_balance_sheet.assets
-        if isinstance(asset, GenericSp500StockPosition)
-    )
+    total = 0.0
+    for asset in scenario.initial_balance_sheet.assets:
+        if not isinstance(asset, GenericSp500StockPosition):
+            continue
+        if asset.cost_basis_usd is None:
+            raise ValueError(
+                f"GenericSp500StockPosition {asset.asset_id!r} has no cost_basis_usd; the simulator "
+                "needs an explicit basis to seed tax lots. Supply it on the portfolio statement "
+                "(public_securities[*].cost_basis.amount_usd) or on the constructed position."
+            )
+        total += asset.cost_basis_usd
+    return total
 
 
 def _single_sp500_asset_source(scenario: Scenario, *, actor_id: str) -> GenericSp500StockPosition | None:
@@ -5245,11 +5250,18 @@ def _initial_crypto_value_usd(scenario: Scenario) -> float:
 
 
 def _initial_crypto_cost_basis_usd(scenario: Scenario) -> float:
-    return sum(
-        asset.cost_basis_usd if asset.cost_basis_usd is not None else asset.value_usd
-        for asset in scenario.initial_balance_sheet.assets
-        if isinstance(asset, CryptoAssetPosition)
-    )
+    total = 0.0
+    for asset in scenario.initial_balance_sheet.assets:
+        if not isinstance(asset, CryptoAssetPosition):
+            continue
+        if asset.cost_basis_usd is None:
+            raise ValueError(
+                f"CryptoAssetPosition {asset.asset_id!r} has no cost_basis_usd; the simulator "
+                "needs an explicit basis to seed tax lots. Supply it on the portfolio statement "
+                "(crypto_holdings[*].cost_basis.amount_usd) or on the constructed position."
+            )
+        total += asset.cost_basis_usd
+    return total
 
 
 def _crypto_asset_sources(scenario: Scenario, *, actor_id: str) -> tuple[CryptoAssetPosition, ...]:
@@ -5293,14 +5305,19 @@ def _initial_private_equity_value_usd(scenario: Scenario, *, current_unit_price_
     )
 
 
-def _initial_private_equity_cost_basis_usd(scenario: Scenario, *, current_unit_price_usd: float) -> float:
-    return sum(
-        asset.cost_basis_usd
-        if asset.cost_basis_usd is not None
-        else _private_equity_position_value_usd(asset, current_unit_price_usd=current_unit_price_usd)
-        for asset in scenario.initial_balance_sheet.assets
-        if isinstance(asset, PrivateEquityPosition)
-    )
+def _initial_private_equity_cost_basis_usd(scenario: Scenario) -> float:
+    total = 0.0
+    for asset in scenario.initial_balance_sheet.assets:
+        if not isinstance(asset, PrivateEquityPosition):
+            continue
+        if asset.cost_basis_usd is None:
+            raise ValueError(
+                f"PrivateEquityPosition {asset.asset_id!r} has no cost_basis_usd; the simulator "
+                "needs an explicit basis to seed tax lots. Supply it on the portfolio statement "
+                "(private_equity_lots[*].cost_basis.amount_usd) or on the constructed position."
+            )
+        total += asset.cost_basis_usd
+    return total
 
 
 def _initial_private_equity_units(scenario: Scenario) -> float:

@@ -379,10 +379,12 @@ py_test(
 py_test(
     name = "test_e2e",
     srcs = ["test_e2e.py"],
+    data = ["testdata/portfolio.example.yaml"],
     deps = [
         ":api_py",
         ":market_bundle_py",
         ":market_bundle_test_support_py",
+        ":portfolio_py",
         ":scenario_set_py",
         "@pypi//numpy",
         "@pypi//pytest",

@@ -126,14 +126,25 @@ def _scenario_body(
     events: list[dict] | None = None,
     tax_regimes: list[str] | None = None,
 ) -> dict:
+    # The engine now requires an explicit cost basis on every position (no silent
+    # default to value_usd, which used to mask sales as zero-gain). For tests that
+    # don't care, mirror the SP500/crypto helper above and default to the
+    # supplied value — preserving the historical "basis = value, zero gain" shape.
+    # Units-only callers must pass private_equity_basis_usd explicitly because
+    # the helper doesn't know the unit price ahead of the engine.
+    effective_pe_basis = (
+        private_equity_basis_usd
+        if private_equity_basis_usd is not None
+        else (private_equity_usd if private_equity_usd is not None else 0.0)
+    )
     private_equity_asset: dict = {
         "asset_id": "private_equity",
         "asset_type": "private_equity",
         "owner_actor_id": "owner",
         "units": private_equity_units,
-        "cost_basis_usd": private_equity_basis_usd,
+        "cost_basis_usd": effective_pe_basis,
     }
-    # value_usd is optional now: when omitted, the simulator derives the opening mark
+    # value_usd is optional: when omitted, the simulator derives the opening mark
     # from units × MarketBundleMetadata.current_private_equity_price_usd. Keep value_usd
     # off the dict entirely when the caller wants the units-only path.
     if private_equity_usd is not None:

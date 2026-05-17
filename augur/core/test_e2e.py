@@ -9,6 +9,7 @@ produce.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -21,6 +22,7 @@ from augur.core.accounting import ChartAccountRole, JournalEntryType, LotAssetCl
 from augur.core.api import ScenarioRun, simulate_set
 from augur.core.local_regulation import LocationId
 from augur.core.market_bundle_test_support import NoopMarketBundleProvider
+from augur.core.portfolio import load_portfolio_yaml
 from augur.core.scenario_set import (
     AccountBalance,
     AccountType,
@@ -2678,6 +2680,135 @@ def test_every_monthly_flow_metric_reconciles_to_canonical_detail_surface() -> N
         market_observation_event_matrix.astype("float64"),
         result.matrix(ReportMetric.PRIVATE_EQUITY_SALE_OPPORTUNITY_EVENT).astype("float64"),
     )
+
+
+_PORTFOLIO_EXAMPLE_YAML = Path(__file__).parent / "testdata" / "portfolio.example.yaml"
+
+
+def test_portfolio_yaml_cost_basis_flows_into_sp500_sale_realized_gain() -> None:
+    """End-to-end check that an explicit cost basis on the portfolio statement lands on
+    the SP500 tax lot and shapes the realized gain (and the resulting tax accrual) of a
+    sale at simulation time. The example YAML carries `wealthfront_sp500` with
+    `market_value_usd: 50_000` and `cost_basis.amount_usd: 30_000`; selling $20k with
+    proportional basis allocation realizes a $20k × ($30k / $50k) = $12k basis and an
+    $8k gain. If the YAML basis were dropped the simulator would treat the basis as
+    either $0 (gain = $20k) or $50k (gain = $0) — neither matches the bracket math
+    below."""
+    portfolio = load_portfolio_yaml(_PORTFOLIO_EXAMPLE_YAML)
+    initial_balance_sheet = portfolio.to_initial_balance_sheet()
+
+    scenario = Scenario(
+        scenario_id="portfolio_yaml_sp500_sale",
+        label="Portfolio YAML SP500 Sale",
+        actors=(Actor(actor_id="owner", label="Owner", role=ActorRole.PRIMARY_OWNER),),
+        # prior_year_tax_usd=0 opts out of quarterly estimated payments so the asserted
+        # cash trajectory below sees only the sale-month tax accrual.
+        tax_profile=TaxProfile(prior_year_tax_usd=0),
+        initial_balance_sheet=initial_balance_sheet,
+        policies=(
+            # Cash floor sits above the YAML's $12,500 checking balance so the policy fires
+            # once at month 0, raises the $20k tranche, and is satisfied for the rest of
+            # the horizon.
+            CheckingFloorSellPublicStockPolicy(
+                policy_id="raise_cash", actor_id="owner", floor_usd=25_000, sale_amount_usd=20_000
+            ),
+        ),
+    )
+
+    result = _run_scenario(scenario, horizon_months=1)
+    rollout = result.rollout(0)
+
+    # Proportional basis on a $20k slice of a $50k position with $30k basis.
+    expected_basis = 20_000 * 30_000 / 50_000
+    expected_gain = 20_000 - expected_basis
+    # Tax expense from the engine's bracket math on the $8k realized gain; if the YAML
+    # basis ever stops flowing through, this number changes the moment the gain does.
+    expected_tax = 22.94
+
+    assert_allclose(rollout.series(ReportMetric.GENERIC_SP500_SALE_USD)[0], 20_000)
+    assert_allclose(rollout.series(ReportMetric.GENERIC_SP500_SALE_BASIS_USD)[0], expected_basis)
+    assert_allclose(rollout.series(ReportMetric.GENERIC_SP500_SALE_GAIN_USD)[0], expected_gain)
+    assert_allclose(rollout.series(ReportMetric.GENERIC_SP500_SALE_TAX_USD)[0], expected_tax)
+
+    sell_effects = result.effects(SellSp500Effect)
+    assert len(sell_effects) == 1
+    assert sell_effects[0].month_index == 0
+    assert sell_effects[0].basis_usd == expected_basis
+    assert sell_effects[0].gain_usd == expected_gain
+    assert_allclose(sell_effects[0].tax_usd, expected_tax)
+
+
+def test_portfolio_yaml_cost_basis_flows_into_private_equity_sale_realized_gain() -> None:
+    """End-to-end check that an explicit cost basis on a PrivateEquityLot lands on the
+    PE tax lot and shapes the realized gain of a tender sale. The example YAML carries
+    `private_company_seed_lot` with `mark_value_usd: 25_000` and `cost_basis.amount_usd:
+    5_000`; selling $10k with proportional basis allocation realizes a $10k × ($5k /
+    $25k) = $2k basis and an $8k gain."""
+    portfolio = load_portfolio_yaml(_PORTFOLIO_EXAMPLE_YAML)
+    initial_balance_sheet = portfolio.to_initial_balance_sheet()
+
+    scenario = Scenario(
+        scenario_id="portfolio_yaml_pe_sale",
+        label="Portfolio YAML PE Sale",
+        actors=(Actor(actor_id="owner", label="Owner", role=ActorRole.PRIMARY_OWNER),),
+        tax_profile=TaxProfile(prior_year_tax_usd=0),
+        initial_balance_sheet=initial_balance_sheet,
+        policies=(
+            PrivateEquitySalePolicy(
+                policy_id="tender_sale",
+                actor_id="owner",
+                proceeds_destination="cash",
+                sale_rule=FixedAmountPrivateEquitySaleRule(amount_usd=10_000),
+            ),
+        ),
+    )
+
+    result = _run_scenario(
+        scenario,
+        horizon_months=2,
+        market_provider=NoopMarketBundleProvider(private_equity_sale_opportunity_months=(1,)),
+    )
+    rollout = result.rollout(0)
+
+    expected_basis = 10_000 * 5_000 / 25_000
+    expected_gain = 10_000 - expected_basis
+    expected_tax = 22.94
+
+    assert_allclose(rollout.series(ReportMetric.PRIVATE_EQUITY_SALE_USD)[1], 10_000)
+    assert_allclose(rollout.series(ReportMetric.PRIVATE_EQUITY_SALE_BASIS_USD)[1], expected_basis)
+    assert_allclose(rollout.series(ReportMetric.PRIVATE_EQUITY_SALE_TAX_USD)[1], expected_tax)
+
+    sell_effects = result.effects(SellPrivateEquityEffect)
+    assert len(sell_effects) == 1
+    assert sell_effects[0].basis_usd == expected_basis
+    assert sell_effects[0].taxable_gain_usd == expected_gain
+    assert_allclose(sell_effects[0].estimated_tax_usd, expected_tax)
+
+
+def test_simulator_rejects_initial_position_without_explicit_cost_basis() -> None:
+    """The engine seeds tax lots from `*Position.cost_basis_usd`; a `None` basis used to
+    silently fall back to `value_usd` (zero gain on sale) which made every concentrated
+    holding look tax-free. The scenario engine now refuses to start with a missing basis
+    and points at the position so the caller knows what to fix."""
+    scenario = Scenario(
+        scenario_id="missing_basis",
+        label="Missing Basis",
+        actors=(_simple_actor(),),
+        initial_balance_sheet=InitialBalanceSheet(
+            assets=(
+                GenericSp500StockPosition(
+                    asset_id="sp500",
+                    asset_type=AssetType.GENERIC_SP500_STOCK,
+                    owner_actor_id="alpha",
+                    value_usd=50_000,
+                    # cost_basis_usd intentionally omitted.
+                ),
+            )
+        ),
+    )
+
+    with pytest.raises(ValueError, match="GenericSp500StockPosition 'sp500' has no cost_basis_usd"):
+        _run_scenario(scenario, horizon_months=1)
 
 
 def test_pydantic_rejects_private_equity_sale_policy_without_rule() -> None:
