@@ -3,6 +3,15 @@
 # turnkey with HTTP_PROXY, HTTPS_PROXY, SSL trust, and the CA cert mounted,
 # without the pod spec needing to know about the proxy.
 #
+# claude-sandbox is intentionally excluded for now (2026-05-17): the
+# openclaw-mitmproxy Flux Kustomization is suspended, so the source
+# `mitmproxy-ca-cert` ConfigMap doesn't exist → Reflector has nothing to
+# copy → every pod the policy mutated got stuck on a missing volume mount.
+# claude-sandbox is still egress-restricted (no `toEntities: world`) by
+# `sandbox-force-proxy-egress` CCNP, so dropping the injection here doesn't
+# open new external internet access — it just lets pods start. Revisit
+# alongside the mitmproxy / agents-mitmproxy redesign (cluster/k8s/TODO.md).
+#
 # Uses RFC 6902 JSON patches (not patchStrategicMerge) to avoid volume merge
 # conflicts with Kyverno autogen + Flux server-side dry-run on Deployments.
 #
@@ -31,7 +40,7 @@ metadata:
     policies.kyverno.io/severity: medium
     policies.kyverno.io/subject: Pod
     policies.kyverno.io/description: >-
-      Mutates pods in claude-sandbox and openclaw-sandbox to automatically
+      Mutates pods in openclaw-sandbox and openclaw-gateway to automatically
       inject mitmproxy proxy env vars (HTTP_PROXY, HTTPS_PROXY, NO_PROXY,
       SSL_CERT_FILE, CURL_CA_BUNDLE, REQUESTS_CA_BUNDLE, NODE_EXTRA_CA_CERTS)
       and mount the mitmproxy CA cert at /mitmproxy-ca/ca-cert.pem.
@@ -43,7 +52,7 @@ spec:
         any:
           - resources:
               kinds: [Pod]
-              namespaces: [claude-sandbox, openclaw-sandbox, openclaw-gateway]
+              namespaces: [openclaw-sandbox, openclaw-gateway]
               operations: [CREATE]
       mutate:
         patchesJson6902: |-
@@ -59,7 +68,7 @@ spec:
         any:
           - resources:
               kinds: [Pod]
-              namespaces: [claude-sandbox, openclaw-sandbox, openclaw-gateway]
+              namespaces: [openclaw-sandbox, openclaw-gateway]
               operations: [CREATE]
       mutate:
         foreach:
@@ -112,7 +121,7 @@ spec:
         any:
           - resources:
               kinds: [Pod]
-              namespaces: [claude-sandbox, openclaw-sandbox, openclaw-gateway]
+              namespaces: [openclaw-sandbox, openclaw-gateway]
               operations: [CREATE]
       preconditions:
         any:

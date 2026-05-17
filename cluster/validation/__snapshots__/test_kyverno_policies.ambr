@@ -19,7 +19,7 @@
   kind: Pod
   metadata:
     name: test-existing-volumes
-    namespace: claude-sandbox
+    namespace: openclaw-sandbox
   spec:
     containers:
     - env:
@@ -63,7 +63,7 @@
   kind: Pod
   metadata:
     name: test-with-init
-    namespace: claude-sandbox
+    namespace: openclaw-sandbox
   spec:
     containers:
     - env:
@@ -126,7 +126,7 @@
   kind: Pod
   metadata:
     name: test-no-init
-    namespace: claude-sandbox
+    namespace: openclaw-sandbox
   spec:
     containers:
     - env:
