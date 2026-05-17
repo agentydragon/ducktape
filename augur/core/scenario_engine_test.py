@@ -1109,7 +1109,7 @@ def test_partner_equity_arrays_match_rows_from_same_application() -> None:
         matrix = np.zeros_like(result.partner_equity_ledger_usd)
         for snapshot in result.balance_snapshots:
             if account_by_id[snapshot.chart_account_id].role is role:
-                matrix[snapshot.rollout_index, snapshot.month_index] = snapshot.balance_usd
+                matrix[snapshot.rollout_index, snapshot.month_index] += snapshot.balance_usd
         return matrix
 
     def posting_matrix(role: ChartAccountRole, side: PostingSide) -> np.ndarray:

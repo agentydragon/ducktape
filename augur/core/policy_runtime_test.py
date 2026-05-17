@@ -289,8 +289,8 @@ def test_partner_ownership_aggregate_emits_owner_journal_and_snapshots() -> None
         ("alpha", ChartAccountRole.OWNER_HOME_EQUITY_CLAIM, "prop_x"),
     ]
     # The snapshot amounts are exactly the aggregate arrays passed in - no recomputation.
-    assert result.balance_snapshots[0].amount_usd is owner_equity_ledger
-    assert result.balance_snapshots[1].amount_usd is owner_home_equity_claim
+    assert np.shares_memory(result.balance_snapshots[0].amount_usd, owner_equity_ledger)
+    assert np.shares_memory(result.balance_snapshots[1].amount_usd, owner_home_equity_claim)
 
 
 def test_property_operating_cash_flow_application_records_balanced_journal() -> None:
