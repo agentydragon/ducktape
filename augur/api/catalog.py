@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections import Counter
 from urllib.parse import quote
 
+import yaml
 from pydantic import TypeAdapter
 
 from augur.api.config import AugurConfig, LocationConfig, PropertyAssetConfig
@@ -206,7 +207,9 @@ def _rental_use_policy_options(primary: str, partner: str | None) -> list[Rental
 
 def _load_properties(config: AugurConfig, *, location_by_id: dict[str, Location]) -> tuple[Property, ...]:
     path = config.property_source.properties_path
-    properties = PROPERTY_ROWS_ADAPTER.validate_json(path.read_text(encoding="utf-8"))
+    # `yaml.safe_load` reads both YAML and JSON (JSON is a YAML subset), so either
+    # extension is supported; deployments pick whichever is more ergonomic.
+    properties = PROPERTY_ROWS_ADAPTER.validate_python(yaml.safe_load(path.read_text(encoding="utf-8")))
     for property_ in properties:
         _validate_property_location(property_, location_by_id=location_by_id)
     property_id_counts = Counter(property_.id for property_ in properties)

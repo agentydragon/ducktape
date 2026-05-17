@@ -37,6 +37,8 @@ py_library(
         "//augur/core:local_regulation_py",
         "//augur/core:scenario_set_py",
         "//augur/core:schemas_py",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
     ],
 )
 
