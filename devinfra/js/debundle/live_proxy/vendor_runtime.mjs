@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { posix } from "node:path";
 import { assertRealPathWithinRoot, resolvePackageSubpath } from "./package_tree.mjs";
@@ -191,27 +191,40 @@ export function resolvePartialSwapRuntimeRequest(relativePath, partialSwapIndex)
 // (`import "./utils"` rather than `./utils.js`); the browser doesn't
 // rewrite those, so the proxy tries `.js` / `.mjs` / `.cjs` / `/index.*`
 // in order, mirroring Node's CommonJS-influenced resolver. Returns the
-// first existing path; otherwise returns the exact path requested (the
-// caller will then surface a clean 404).
+// first existing file path; otherwise returns the exact path requested
+// (the caller will then surface a clean 404). A directory at the exact
+// path is treated as not-yet-resolved — Node would fall through to its
+// `index.*` lookup, and so do we.
 function resolvePartialSwapAssetPath(mountRoot, suffix) {
   const exact = resolve(mountRoot, suffix);
-  if (existsSync(exact)) {
+  if (isExistingFile(exact)) {
     return exact;
   }
   const extensions = [".js", ".mjs", ".cjs"];
   for (const ext of extensions) {
     const candidate = `${exact}${ext}`;
-    if (existsSync(candidate)) {
+    if (isExistingFile(candidate)) {
       return candidate;
     }
   }
   for (const indexFile of extensions.map((ext) => `index${ext}`)) {
     const candidate = resolve(exact, indexFile);
-    if (existsSync(candidate)) {
+    if (isExistingFile(candidate)) {
       return candidate;
     }
   }
   return exact;
+}
+
+function isExistingFile(path) {
+  if (!existsSync(path)) {
+    return false;
+  }
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
 }
 
 function resolvePackageMountRoot(packageName, { packageRoots, packagesRoot, filePath }) {
