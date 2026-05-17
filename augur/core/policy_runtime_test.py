@@ -12,6 +12,7 @@ from augur.core.policy_runtime import (
     apply_generic_sp500_sale_instruction,
     apply_partner_house_cost_contribution,
     apply_partner_ownership_accrual,
+    apply_partner_ownership_aggregate,
     apply_private_equity_sale_instruction,
     apply_property_operating_cash_flows,
     checking_floor_sell_public_stock_instruction,
@@ -169,6 +170,7 @@ def test_partner_contribution_instruction_applies_house_costs_and_principal_cred
 
     result = apply_partner_house_cost_contribution(
         instruction,
+        property_id="prop_x",
         house_costs_usd=np.array([0.0, 2_000.0, 2_000.0]),
         mortgage_principal_usd=np.array([0.0, 400.0, 500.0]),
     )
@@ -211,6 +213,7 @@ def test_partner_ownership_accrual_applies_freeze_and_records_ledgers() -> None:
 
     result = apply_partner_ownership_accrual(
         transfer,
+        property_id="prop_x",
         owner_initial_equity_usd=20_000,
         home_equity_usd=np.array([[20_000.0, 20_600.0, 21_200.0, 24_000.0]], dtype="float64"),
         owner_principal_usd=np.array([[0.0, 300.0, 300.0, 300.0]], dtype="float64"),
@@ -229,6 +232,7 @@ def test_partner_ownership_accrual_applies_freeze_and_records_ledgers() -> None:
     np.testing.assert_allclose(
         result.owner_home_equity_claim_usd + result.home_equity_claim_usd, [[20_000.0, 20_600.0, 21_200.0, 24_000.0]]
     )
+    assert result.property_id == "prop_x"
     assert len(result.journal_entries) == 1
     journal = result.journal_entries[0]
     assert journal.actor_id == "beta"
@@ -237,17 +241,56 @@ def test_partner_ownership_accrual_applies_freeze_and_records_ledgers() -> None:
         _posting_amount(journal, ChartAccountRole.PARTNER_PRINCIPAL_CREDIT, PostingSide.DEBIT),
         [[0.0, 100.0, 100.0, 100.0]],
     )
+    # apply_partner_ownership_accrual is per-agreement and emits only partner-side snapshots.
+    # Owner-side aggregate rows are owned by apply_partner_ownership_aggregate.
     snapshot_shape = [
-        (snapshot.actor_id, snapshot.role, snapshot.counterparty_actor_id) for snapshot in result.balance_snapshots
+        (snapshot.actor_id, snapshot.role, snapshot.counterparty_actor_id, snapshot.property_id)
+        for snapshot in result.balance_snapshots
     ]
     assert snapshot_shape == [
-        ("beta", ChartAccountRole.PARTNER_EQUITY_LEDGER, "alpha"),
-        ("alpha", ChartAccountRole.OWNER_EQUITY_LEDGER, "beta"),
-        ("beta", ChartAccountRole.PARTNER_HOME_EQUITY_CLAIM, "alpha"),
-        ("alpha", ChartAccountRole.OWNER_HOME_EQUITY_CLAIM, "beta"),
+        ("beta", ChartAccountRole.PARTNER_EQUITY_LEDGER, "alpha", "prop_x"),
+        ("beta", ChartAccountRole.PARTNER_HOME_EQUITY_CLAIM, "alpha", "prop_x"),
     ]
     np.testing.assert_allclose(result.balance_snapshots[0].amount_usd, expected_partner_ledger)
-    np.testing.assert_allclose(result.balance_snapshots[1].amount_usd, expected_owner_ledger)
+    np.testing.assert_allclose(result.balance_snapshots[1].amount_usd, result.home_equity_claim_usd)
+
+
+def test_partner_ownership_aggregate_emits_owner_journal_and_snapshots() -> None:
+    owner_principal = np.array([[0.0, 200.0, 200.0, 200.0]], dtype="float64")
+    owner_equity_ledger = np.array([[20_000.0, 20_200.0, 20_400.0, 20_600.0]], dtype="float64")
+    owner_home_equity_claim = np.array([[20_000.0, 20_300.0, 20_700.0, 23_500.0]], dtype="float64")
+
+    result = apply_partner_ownership_aggregate(
+        property_id="prop_x",
+        owner_actor_id="alpha",
+        owner_principal_usd=owner_principal,
+        owner_equity_ledger_usd=owner_equity_ledger,
+        owner_home_equity_claim_usd=owner_home_equity_claim,
+    )
+
+    assert result.property_id == "prop_x"
+    assert result.owner_actor_id == "alpha"
+    np.testing.assert_allclose(result.owner_principal_usd, owner_principal)
+    assert len(result.journal_entries) == 1
+    owner_journal = result.journal_entries[0]
+    assert owner_journal.actor_id == "alpha"
+    assert owner_journal.policy_id is None
+    assert owner_journal.journal_entry_type is JournalEntryType.OWNERSHIP_CLAIM_ACCRUAL
+    np.testing.assert_allclose(
+        _posting_amount(owner_journal, ChartAccountRole.OWNER_PRINCIPAL_CREDIT, PostingSide.DEBIT), owner_principal
+    )
+    np.testing.assert_allclose(
+        _posting_amount(owner_journal, ChartAccountRole.PRINCIPAL_CREDIT_ALLOCATION, PostingSide.CREDIT),
+        owner_principal,
+    )
+    snapshot_shape = [(snapshot.actor_id, snapshot.role, snapshot.property_id) for snapshot in result.balance_snapshots]
+    assert snapshot_shape == [
+        ("alpha", ChartAccountRole.OWNER_EQUITY_LEDGER, "prop_x"),
+        ("alpha", ChartAccountRole.OWNER_HOME_EQUITY_CLAIM, "prop_x"),
+    ]
+    # The snapshot amounts are exactly the aggregate arrays passed in - no recomputation.
+    assert result.balance_snapshots[0].amount_usd is owner_equity_ledger
+    assert result.balance_snapshots[1].amount_usd is owner_home_equity_claim
 
 
 def test_property_operating_cash_flow_application_records_balanced_journal() -> None:

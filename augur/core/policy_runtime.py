@@ -174,6 +174,7 @@ class PartnerHouseCostContributionApplication:
 @dataclass(frozen=True)
 class PartnerOwnershipAccrualApplication:
     transfer: TransferCashInstructionBatch
+    property_id: str
     owner_initial_equity_usd: float
     owner_principal_usd: np.ndarray
     partner_principal_credit_usd: np.ndarray
@@ -183,6 +184,17 @@ class PartnerOwnershipAccrualApplication:
     live_ownership_pct: np.ndarray
     ownership_pct: np.ndarray
     home_equity_claim_usd: np.ndarray
+    owner_home_equity_claim_usd: np.ndarray
+    journal_entries: tuple[JournalEntryBatch, ...]
+    balance_snapshots: tuple[BalanceSnapshotBatch, ...]
+
+
+@dataclass(frozen=True)
+class PartnerOwnershipAggregateApplication:
+    property_id: str
+    owner_actor_id: str
+    owner_principal_usd: np.ndarray
+    owner_equity_ledger_usd: np.ndarray
     owner_home_equity_claim_usd: np.ndarray
     journal_entries: tuple[JournalEntryBatch, ...]
     balance_snapshots: tuple[BalanceSnapshotBatch, ...]
@@ -304,7 +316,11 @@ def apply_debit_account_instruction(
 
 
 def apply_partner_house_cost_contribution(
-    instruction: TransferCashInstructionBatch, *, house_costs_usd: np.ndarray, mortgage_principal_usd: np.ndarray
+    instruction: TransferCashInstructionBatch,
+    *,
+    property_id: str,
+    house_costs_usd: np.ndarray,
+    mortgage_principal_usd: np.ndarray,
 ) -> PartnerHouseCostContributionApplication:
     contribution_used_usd = np.minimum(instruction.amount_usd, house_costs_usd)
     unallocated_excess_usd = np.maximum(0.0, instruction.amount_usd - contribution_used_usd)
@@ -328,6 +344,7 @@ def apply_partner_house_cost_contribution(
                     amount_usd=instruction.amount_usd,
                     actor_id=instruction.recipient_actor_id,
                     counterparty_actor_id=instruction.actor_id,
+                    property_id=property_id,
                 ),
                 PostingBatch(
                     role=ChartAccountRole.CHECKING_CASH,
@@ -335,6 +352,7 @@ def apply_partner_house_cost_contribution(
                     amount_usd=instruction.amount_usd,
                     actor_id=instruction.actor_id,
                     counterparty_actor_id=instruction.recipient_actor_id,
+                    property_id=property_id,
                 ),
             ),
         ),
@@ -352,6 +370,7 @@ def apply_partner_house_cost_contribution(
                     amount_usd=contribution_used_usd,
                     actor_id=instruction.recipient_actor_id,
                     counterparty_actor_id=instruction.actor_id,
+                    property_id=property_id,
                 ),
                 PostingBatch(
                     role=ChartAccountRole.PARTNER_UNALLOCATED_CLAIM,
@@ -359,6 +378,7 @@ def apply_partner_house_cost_contribution(
                     amount_usd=unallocated_excess_usd,
                     actor_id=instruction.recipient_actor_id,
                     counterparty_actor_id=instruction.actor_id,
+                    property_id=property_id,
                 ),
                 PostingBatch(
                     role=ChartAccountRole.PARTNER_CONTRIBUTION_TRANSFER,
@@ -366,6 +386,7 @@ def apply_partner_house_cost_contribution(
                     amount_usd=instruction.amount_usd,
                     actor_id=instruction.actor_id,
                     counterparty_actor_id=instruction.recipient_actor_id,
+                    property_id=property_id,
                 ),
             ),
         ),
@@ -385,6 +406,7 @@ def apply_partner_house_cost_contribution(
 def apply_partner_ownership_accrual(
     transfer: TransferCashInstructionBatch,
     *,
+    property_id: str,
     owner_initial_equity_usd: float,
     home_equity_usd: np.ndarray,
     owner_principal_usd: np.ndarray,
@@ -409,6 +431,9 @@ def apply_partner_ownership_accrual(
     ownership_pct = _freeze_ownership_pct(live_ownership_pct, month_index, freeze_after_month)
     home_equity_claim_usd = np.maximum(home_equity_usd, 0.0) * ownership_pct
     owner_home_equity_claim_usd = home_equity_usd - home_equity_claim_usd
+    # Per-agreement application emits partner-side journal entries and snapshots only.
+    # Owner-side aggregate rows are produced by apply_partner_ownership_aggregate, since
+    # they reflect state summed across all agreements on the same property.
     journal_entries = (
         JournalEntryBatch(
             journal_entry_type=JournalEntryType.OWNERSHIP_CLAIM_ACCRUAL,
@@ -424,6 +449,7 @@ def apply_partner_ownership_accrual(
                     amount_usd=partner_principal_credit_usd,
                     actor_id=transfer.actor_id,
                     counterparty_actor_id=transfer.recipient_actor_id,
+                    property_id=property_id,
                 ),
                 PostingBatch(
                     role=ChartAccountRole.PRINCIPAL_CREDIT_ALLOCATION,
@@ -431,6 +457,7 @@ def apply_partner_ownership_accrual(
                     amount_usd=partner_principal_credit_usd,
                     actor_id=transfer.recipient_actor_id,
                     counterparty_actor_id=transfer.actor_id,
+                    property_id=property_id,
                 ),
             ),
         ),
@@ -441,28 +468,19 @@ def apply_partner_ownership_accrual(
             role=ChartAccountRole.PARTNER_EQUITY_LEDGER,
             amount_usd=partner_equity_ledger_usd,
             counterparty_actor_id=transfer.recipient_actor_id,
-        ),
-        BalanceSnapshotBatch(
-            actor_id=transfer.recipient_actor_id,
-            role=ChartAccountRole.OWNER_EQUITY_LEDGER,
-            amount_usd=owner_equity_ledger_usd,
-            counterparty_actor_id=transfer.actor_id,
+            property_id=property_id,
         ),
         BalanceSnapshotBatch(
             actor_id=transfer.actor_id,
             role=ChartAccountRole.PARTNER_HOME_EQUITY_CLAIM,
             amount_usd=home_equity_claim_usd,
             counterparty_actor_id=transfer.recipient_actor_id,
-        ),
-        BalanceSnapshotBatch(
-            actor_id=transfer.recipient_actor_id,
-            role=ChartAccountRole.OWNER_HOME_EQUITY_CLAIM,
-            amount_usd=owner_home_equity_claim_usd,
-            counterparty_actor_id=transfer.actor_id,
+            property_id=property_id,
         ),
     )
     return PartnerOwnershipAccrualApplication(
         transfer=transfer,
+        property_id=property_id,
         owner_initial_equity_usd=float(owner_initial_equity_usd),
         owner_principal_usd=owner_principal_usd,
         partner_principal_credit_usd=partner_principal_credit_usd,
@@ -472,6 +490,72 @@ def apply_partner_ownership_accrual(
         live_ownership_pct=live_ownership_pct,
         ownership_pct=ownership_pct,
         home_equity_claim_usd=home_equity_claim_usd,
+        owner_home_equity_claim_usd=owner_home_equity_claim_usd,
+        journal_entries=journal_entries,
+        balance_snapshots=balance_snapshots,
+    )
+
+
+def apply_partner_ownership_aggregate(
+    *,
+    property_id: str,
+    owner_actor_id: str,
+    owner_principal_usd: np.ndarray,
+    owner_equity_ledger_usd: np.ndarray,
+    owner_home_equity_claim_usd: np.ndarray,
+) -> PartnerOwnershipAggregateApplication:
+    """Emit owner-side aggregate journal entries and balance snapshots for a property.
+
+    The per-agreement `apply_partner_ownership_accrual` emits partner-side rows. The
+    owner side aggregates over all agreements on the same property — that aggregation
+    is materialized once here so the engine never reconstructs equivalent ownership
+    ledger rows from raw arrays.
+    """
+    journal_entries = (
+        JournalEntryBatch(
+            journal_entry_type=JournalEntryType.OWNERSHIP_CLAIM_ACCRUAL,
+            cause_type=AccountingCauseType.ACCOUNTING_PROCESS,
+            cause_id_prefix="accounting:owner_principal_credit_allocation",
+            actor_id=owner_actor_id,
+            policy_id=None,
+            description="owner principal credit allocation",
+            postings=(
+                PostingBatch(
+                    role=ChartAccountRole.OWNER_PRINCIPAL_CREDIT,
+                    side=PostingSide.DEBIT,
+                    amount_usd=owner_principal_usd,
+                    actor_id=owner_actor_id,
+                    property_id=property_id,
+                ),
+                PostingBatch(
+                    role=ChartAccountRole.PRINCIPAL_CREDIT_ALLOCATION,
+                    side=PostingSide.CREDIT,
+                    amount_usd=owner_principal_usd,
+                    actor_id=owner_actor_id,
+                    property_id=property_id,
+                ),
+            ),
+        ),
+    )
+    balance_snapshots = (
+        BalanceSnapshotBatch(
+            actor_id=owner_actor_id,
+            role=ChartAccountRole.OWNER_EQUITY_LEDGER,
+            amount_usd=owner_equity_ledger_usd,
+            property_id=property_id,
+        ),
+        BalanceSnapshotBatch(
+            actor_id=owner_actor_id,
+            role=ChartAccountRole.OWNER_HOME_EQUITY_CLAIM,
+            amount_usd=owner_home_equity_claim_usd,
+            property_id=property_id,
+        ),
+    )
+    return PartnerOwnershipAggregateApplication(
+        property_id=property_id,
+        owner_actor_id=owner_actor_id,
+        owner_principal_usd=owner_principal_usd,
+        owner_equity_ledger_usd=owner_equity_ledger_usd,
         owner_home_equity_claim_usd=owner_home_equity_claim_usd,
         journal_entries=journal_entries,
         balance_snapshots=balance_snapshots,

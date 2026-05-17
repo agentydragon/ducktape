@@ -44,6 +44,7 @@ from augur.core.policy_runtime import (
     apply_generic_sp500_sale_instruction,
     apply_partner_house_cost_contribution,
     apply_partner_ownership_accrual,
+    apply_partner_ownership_aggregate,
     apply_private_equity_sale_instruction,
     apply_property_operating_cash_flows,
     checking_floor_sell_public_stock_instruction,
@@ -3918,7 +3919,10 @@ def _partner_equity_arrays(
         )
         principal_available = remaining_principal.copy()
         contribution_application = apply_partner_house_cost_contribution(
-            contribution_instruction, house_costs_usd=remaining_house_uses, mortgage_principal_usd=principal_available
+            contribution_instruction,
+            property_id=property_id,
+            house_costs_usd=remaining_house_uses,
+            mortgage_principal_usd=principal_available,
         )
         freeze_after_month = _partner_freeze_after_month(
             scenario, policy, occupied_months, market_bundle.horizon_months
@@ -3960,6 +3964,7 @@ def _partner_equity_arrays(
     ) in contribution_inputs:
         ownership_application = apply_partner_ownership_accrual(
             contribution_instruction,
+            property_id=property_id,
             owner_initial_equity_usd=owner_initial_equity_usd,
             home_equity_usd=home_equity_usd,
             owner_principal_usd=owner_principal,
@@ -3968,17 +3973,6 @@ def _partner_equity_arrays(
             freeze_after_month=freeze_after_month,
             owner_equity_ledger_usd=owner_equity_ledger,
             total_partner_equity_ledger_usd=total_partner_equity_ledger,
-        )
-        contribution_cash_journal_entries = contribution_application.journal_entries
-        partner_ownership_journal_entries = ownership_application.journal_entries
-        partner_balance_snapshots = tuple(
-            snapshot for snapshot in ownership_application.balance_snapshots if snapshot.actor_id == policy.actor_id
-        )
-        agreement_journal_entries = _journal_entries_for_property(
-            contribution_cash_journal_entries + partner_ownership_journal_entries, property_id=property_id
-        )
-        agreement_balance_snapshots = _balance_snapshots_for_property(
-            partner_balance_snapshots, property_id=property_id
         )
         agreements.append(
             PartnerEquityAgreementArrays(
@@ -4001,8 +3995,8 @@ def _partner_equity_arrays(
                 ownership_pct=ownership_application.ownership_pct,
                 home_equity_claim_usd=ownership_application.home_equity_claim_usd,
                 owner_home_equity_claim_usd=ownership_application.owner_home_equity_claim_usd,
-                journal_entries=agreement_journal_entries,
-                balance_snapshots=agreement_balance_snapshots,
+                journal_entries=contribution_application.journal_entries + ownership_application.journal_entries,
+                balance_snapshots=ownership_application.balance_snapshots,
             )
         )
 
@@ -4010,46 +4004,14 @@ def _partner_equity_arrays(
     contribution_used = sum((agreement.contribution_used_usd for agreement in agreements), start=zeros.copy())
     unallocated_excess = sum((agreement.unallocated_excess_usd for agreement in agreements), start=zeros.copy())
     home_equity_claim = sum((agreement.home_equity_claim_usd for agreement in agreements), start=zeros.copy())
+    owner_home_equity_claim = home_equity_usd - home_equity_claim
     property_id = contribution_inputs[0][2]
-    owner_journal_entries = (
-        JournalEntryBatch(
-            journal_entry_type=JournalEntryType.OWNERSHIP_CLAIM_ACCRUAL,
-            cause_type=AccountingCauseType.ACCOUNTING_PROCESS,
-            cause_id_prefix="accounting:owner_principal_credit_allocation",
-            actor_id=owner_actor_id,
-            policy_id=None,
-            description="owner principal credit allocation",
-            postings=(
-                PostingBatch(
-                    role=ChartAccountRole.OWNER_PRINCIPAL_CREDIT,
-                    side=PostingSide.DEBIT,
-                    amount_usd=owner_principal,
-                    actor_id=owner_actor_id,
-                    property_id=property_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.PRINCIPAL_CREDIT_ALLOCATION,
-                    side=PostingSide.CREDIT,
-                    amount_usd=owner_principal,
-                    actor_id=owner_actor_id,
-                    property_id=property_id,
-                ),
-            ),
-        ),
-    )
-    owner_balance_snapshots = (
-        BalanceSnapshotBatch(
-            actor_id=owner_actor_id,
-            role=ChartAccountRole.OWNER_EQUITY_LEDGER,
-            amount_usd=owner_equity_ledger,
-            property_id=property_id,
-        ),
-        BalanceSnapshotBatch(
-            actor_id=owner_actor_id,
-            role=ChartAccountRole.OWNER_HOME_EQUITY_CLAIM,
-            amount_usd=home_equity_usd - home_equity_claim,
-            property_id=property_id,
-        ),
+    owner_aggregate = apply_partner_ownership_aggregate(
+        property_id=property_id,
+        owner_actor_id=owner_actor_id,
+        owner_principal_usd=owner_principal,
+        owner_equity_ledger_usd=owner_equity_ledger,
+        owner_home_equity_claim_usd=owner_home_equity_claim,
     )
     positive_home_equity = np.maximum(home_equity_usd, 0.0)
     ownership_pct = np.divide(
@@ -4072,34 +4034,13 @@ def _partner_equity_arrays(
         owner_equity_ledger_usd=owner_equity_ledger,
         ownership_pct=ownership_pct,
         home_equity_claim_usd=home_equity_claim,
-        owner_home_equity_claim_usd=home_equity_usd - home_equity_claim,
+        owner_home_equity_claim_usd=owner_home_equity_claim,
         agreements=tuple(agreements),
-        journal_entries=owner_journal_entries
+        journal_entries=owner_aggregate.journal_entries
         + tuple(entry for agreement in agreements for entry in agreement.journal_entries),
-        balance_snapshots=owner_balance_snapshots
+        balance_snapshots=owner_aggregate.balance_snapshots
         + tuple(snapshot for agreement in agreements for snapshot in agreement.balance_snapshots),
     )
-
-
-def _journal_entries_for_property(
-    entries: tuple[JournalEntryBatch, ...], *, property_id: str
-) -> tuple[JournalEntryBatch, ...]:
-    return tuple(
-        replace(
-            entry,
-            postings=tuple(
-                replace(posting, property_id=property_id) if posting.property_id is None else posting
-                for posting in entry.postings
-            ),
-        )
-        for entry in entries
-    )
-
-
-def _balance_snapshots_for_property(
-    entries: tuple[BalanceSnapshotBatch, ...], *, property_id: str
-) -> tuple[BalanceSnapshotBatch, ...]:
-    return tuple(replace(entry, property_id=property_id) for entry in entries)
 
 
 def _settle_partner_equity_on_property_sale(

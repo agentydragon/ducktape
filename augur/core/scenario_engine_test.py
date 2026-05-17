@@ -1052,6 +1052,92 @@ def test_multiple_partner_equity_policies_execute_in_actor_program_order() -> No
     ]
 
 
+def test_partner_equity_arrays_match_rows_from_same_application() -> None:
+    # cleanup_audit item 3 "prove safe by": partner arrays and detail rows must come
+    # from the same PartnerOwnershipAccrualApplication / aggregate, not from a parallel
+    # recorder. Compare engine-reported partner arrays (which the engine takes directly
+    # off the application object) to the journal-entry / balance-snapshot rows
+    # (which the recorder writes through from the same application's outputs).
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(
+            _scenario_body(
+                "occupant",
+                cash_usd=40_000,
+                sp500_usd=0,
+                private_equity_usd=0,
+                actors=[
+                    {"actor_id": "owner", "label": "Owner", "role": "primary_owner"},
+                    {"actor_id": "occupant", "label": "Occupant", "role": "equity_building_occupant"},
+                ],
+                property_selection={
+                    "property_id": "vallejo_calhoun",
+                    "location_id": "vallejo_ca",
+                    "purchase_price_usd": 100_000,
+                },
+                financing={"financing_mode": "fixed_30", "down_payment_pct": 20, "mortgage_rate_pct": 0},
+                property_assumptions={"insurance_annual_usd": 0, "maintenance_pct": 0},
+                occupancy_plan={"occupancy_mode": "owner_lives_in_property", "start_month": 0, "end_month": 2},
+                policies=[
+                    {
+                        "policy_id": "partner_equity",
+                        "policy_type": "partner_equity_accrual",
+                        "actor_id": "occupant",
+                        "base_monthly_payment_usd": 1_000,
+                        "grow_with_inflation": False,
+                    }
+                ],
+            )
+        )
+    )
+
+    result = run_scenario_vectorized(
+        scenario_set.scenarios[0],
+        _bundle(
+            rollout_count=1,
+            horizon_months=3,
+            inflation_path=(1.0, 1.0, 1.0, 1.0),
+            sp500_path=(1.0, 1.0, 1.0, 1.0),
+            private_equity_path=(1.0, 1.0, 1.0, 1.0),
+            home_path=(1.0, 1.0, 1.0, 1.2),
+            rent_path=(1.0, 1.0, 1.0, 1.0),
+        ),
+    )
+
+    account_by_id = {account.chart_account_id: account for account in result.chart_accounts}
+
+    def snapshot_matrix(role: ChartAccountRole) -> np.ndarray:
+        matrix = np.zeros_like(result.partner_equity_ledger_usd)
+        for snapshot in result.balance_snapshots:
+            if account_by_id[snapshot.chart_account_id].role is role:
+                matrix[snapshot.rollout_index, snapshot.month_index] = snapshot.balance_usd
+        return matrix
+
+    def posting_matrix(role: ChartAccountRole, side: PostingSide) -> np.ndarray:
+        matrix = np.zeros_like(result.partner_principal_credit_usd)
+        for posting in result.postings:
+            account = account_by_id[posting.chart_account_id]
+            if account.role is role and posting.side is side:
+                matrix[posting.rollout_index, posting.month_index] += posting.amount_usd
+        return matrix
+
+    # Partner-side: the engine takes these arrays straight off the per-agreement
+    # PartnerOwnershipAccrualApplication, and the same application's balance_snapshots
+    # are what get recorded. Equality here proves there is no parallel array
+    # reconstruction in the engine.
+    assert_allclose(snapshot_matrix(ChartAccountRole.PARTNER_EQUITY_LEDGER), result.partner_equity_ledger_usd)
+    assert_allclose(snapshot_matrix(ChartAccountRole.PARTNER_HOME_EQUITY_CLAIM), result.partner_home_equity_claim_usd)
+    assert_allclose(
+        posting_matrix(ChartAccountRole.PARTNER_PRINCIPAL_CREDIT, PostingSide.DEBIT),
+        result.partner_principal_credit_usd,
+    )
+    # Owner-side: same property, produced once by apply_partner_ownership_aggregate.
+    assert_allclose(snapshot_matrix(ChartAccountRole.OWNER_EQUITY_LEDGER), result.owner_equity_ledger_usd)
+    assert_allclose(snapshot_matrix(ChartAccountRole.OWNER_HOME_EQUITY_CLAIM), result.owner_home_equity_claim_usd)
+    assert_allclose(
+        posting_matrix(ChartAccountRole.OWNER_PRINCIPAL_CREDIT, PostingSide.DEBIT), result.owner_principal_credit_usd
+    )
+
+
 def test_rental_income_and_carrying_costs_feed_cash_flow() -> None:
     scenario_set = ScenarioSet.model_validate(
         _scenario_set_body(
