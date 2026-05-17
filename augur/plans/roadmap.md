@@ -179,87 +179,70 @@ Acceptance criteria:
 - The app state names the same domain layers the backend schema names.
 - Normal app code does not call a catch-all flat scenario view.
 
-## Priority 3: Stochastic Private-Equity Valuation, Tender Timing, And Crypto
+## Priority 3: Sampled Private-Equity, Sampled Tender Timing, And Crypto
 
-Today, the market provider holds private-equity marks **flat over the entire
+Today the market provider holds private-equity marks **flat over the entire
 horizon** (`private_equity_value_multipliers = np.ones(shape)`) and emits
 tender opportunities at **deterministic** months (every 12 months from t=0,
 identical across rollouts and across PE assets). Crypto holdings are dropped
-from `to_initial_balance_sheet()` entirely — the asset class doesn't exist in
-the runtime universe.
+from `to_initial_balance_sheet()` entirely — the asset class doesn't exist
+in the runtime universe.
 
 That's three major sources of variance the simulator silently ignores. A
 distribution over outcomes that has no PE price uncertainty and pre-known
 tender months is not a real distribution over PE outcomes.
 
-### Slices
+### Gaps to close
 
-1. **Sample per-asset private-equity price paths.** Replace the shared
-   `private_equity_value_multipliers` rollout × month array with a per-asset
-   path keyed by holding identity. Existing single-asset scenarios get
-   independent sampled paths; multi-asset scenarios get independently sampled
-   paths per holding. Minimum: a calibrated GBM or jump-diffusion per asset
-   with idiosyncratic volatility and an optional correlation to public-equity
-   factors. Persist the model identity in `MarketBundleMetadata` so the path
-   set is reproducible.
+1. **PE valuation should be sampled.** Per-asset price paths keyed by holding
+   identity in `MarketBundle`, persisted via `MarketBundleMetadata`. The
+   model is **open design work** — the user's available evidence is sparse
+   (5-10 historical OpenAI tenders), so the right fit is likely a joint
+   model with SP500, inflation, and per-location housing (currently jointly
+   modeled by VECM/VAR/Wilkie/etc.) rather than an independent process per
+   PE asset. No specific algorithm is baked in here; the followup picks one
+   after a calibration pass on real evidence.
 
-2. **Stochastic tender timing.** Replace the deterministic
-   `_TENDER_INTERVAL_MONTHS = 12` mask with a sampled opportunity stream per
-   asset. Options:
-   - **Inhomogeneous Poisson** with a rate that can depend on asset state
-     (lockup, age) and exogenous regime — gives Poisson arrivals with realistic
-     clustering.
-   - **Hazard-rate** model with quarterly base rate plus regime shifts
-     (`tender_open` / `tender_closed`).
-   - **Explicit windows** from `PrivateEquityLot.tender_windows` when the
-     portfolio statement provides them (the in-flight crypto/tender-PE
-     subagent wires the explicit path; this slice adds the stochastic path
-     on top so deployments without explicit windows still get realistic
-     timing).
-     The opportunity arrival time, duration, and price-at-event are all sampled
-     per-rollout, so the distribution over PE outcomes reflects timing risk.
+2. **Tender timing should be sampled.** Replace the deterministic 12-month
+   mask with a fitted arrival process. Again **open design**: fit the tender
+   arrival rate (and any regime conditioning) jointly with the price model
+   on the same sparse evidence. The explicit `PrivateEquityLot.tender_windows`
+   path landed earlier covers cases where the deployment knows specific
+   future windows; this followup adds a sampled fallback for the open-ended
+   horizon.
 
-3. **Crypto as a runtime asset class.** Add `AssetType.CRYPTO` (or similar),
-   make `PortfolioStatement.to_initial_balance_sheet()` emit crypto positions
-   instead of dropping them, and sample a per-asset price path (minimum: GBM
-   with high idiosyncratic vol; consider stochastic-vol or fat-tailed
-   alternatives later). Tax treatment: realized gain as ordinary income on
-   federal + CA (placeholder; revisit when capital-gains rules for digital
-   assets get a proper pass). The in-flight crypto-funding subagent is wiring
-   the runtime asset class + funding-policy side; this slice adds the
-   stochastic price path so crypto contributes real variance to the
-   distribution.
+3. **Crypto should be modeled.** Runtime asset class + funding-policy
+   surfacing landed via #1582. The remaining gap is sampling a per-asset
+   price path so crypto contributes real variance instead of riding a flat
+   `np.ones(...)` placeholder. Model choice is open; joint vs independent
+   fit is part of the same design pass as the PE side.
 
-4. **Per-asset PE liquidity regimes** (already in Plan B and SPEC.md, restated
-   here for completeness): `LiquidityEventOnly`, `PublicMarket` (sale at spot
-   subject to optional `lockup_end_month`), `Acquisition` (one-shot conversion
-   at fixed `cash_per_unit_usd` at sampled `event_month`), and `RegimeChange`
-   events (e.g. IPO converts `LiquidityEventOnly → PublicMarket`). Each
-   regime gates which sale opportunities the asset can produce in slice 2.
+### Calibration & evidence boundary
 
-5. **Calibration & evidence boundary.** Per-asset PE / crypto paths and
-   tender-arrival rates are model inputs that should live in `augur/model/`,
-   not `augur/core/`. Fit on whatever calibration target makes sense
-   (historical tender frequencies for a class of assets, implied vol from
-   secondary marketplaces, public crypto returns from FRED/Yahoo). Result
-   metadata declares which calibration artifact the run used.
+Per-asset PE / crypto paths and tender-arrival rates are model inputs that
+should live in `augur/model/`, not `augur/core/`. Result metadata declares
+which calibration artifact the run used. Calibration evidence is private
+(it's specific deployment data), so the fitted models stay downstream while
+the generic framework exposes a typed "sampled PE / crypto / tender" model
+contract.
 
-6. **Result-layer separation** (kept from the previous priority shape):
-   distinguish private-equity mark value, tender-eligible value, actually-sold
-   amount, post-tax proceeds, and actual liquid net worth. `liquid_net_worth`
-   stays cash + public liquid securities — never tender-eligible PE marks.
+### Result-layer separation (unchanged from prior framing)
+
+Distinguish private-equity mark value, tender-eligible value, actually-sold
+amount, post-tax proceeds, and actual liquid net worth. `liquid_net_worth`
+stays cash + public liquid securities — never tender-eligible PE marks.
 
 ### Acceptance
 
 - A scenario with two PE holdings on independently sampled paths produces a
   non-zero correlation deviation between them across rollouts.
-- Two rollouts of the same scenario have **different** tender months for the
-  same PE asset (proving timing is sampled, not fixed).
+- Two rollouts of the same scenario have **different** tender months for
+  the same PE asset (proving timing is sampled, not fixed).
 - A scenario with crypto holdings has crypto price uncertainty in the
-  distribution over net-worth outcomes; selling crypto records realized gain
-  through the same tax flow as stock sales.
-- The reason for a sale or non-sale is still inspectable as a policy decision
-  with explicit cause IDs.
+  distribution over net-worth outcomes; selling crypto records realized
+  gain through the same tax flow as stock sales.
+- The reason for a sale or non-sale is still inspectable as a policy
+  decision with explicit cause IDs.
 
 ### Policy / sale machinery (unchanged from prior framing)
 

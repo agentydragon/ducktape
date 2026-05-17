@@ -23,24 +23,24 @@ second ordered roadmap.
 
 ## Next
 
-- [ ] **Priority 3 in `plans/roadmap.md`: stochastic PE valuation,
-      stochastic tender timing, and sampled crypto price paths.** Today the
-      market provider holds private-equity marks flat at 1.0 for the entire
-      horizon, emits tender opportunities at deterministic month indices
-      (every 12 months from t=0, identical across all rollouts and all PE
-      assets), and drops crypto holdings from the runtime universe. Three
-      major sources of variance the simulator silently ignores. Sub-slices:
-  - Sample per-asset private-equity price paths (calibrated GBM /
-    jump-diffusion with idiosyncratic vol, optional correlation to public
-    equity), keyed by holding identity in `MarketBundle`.
-  - Stochastic tender-arrival process — inhomogeneous Poisson or
-    hazard-rate model, optionally conditioned on explicit
-    `PrivateEquityLot.tender_windows` from the portfolio statement when
-    those exist. Per-rollout, per-asset opportunity arrival + duration +
-    price-at-event.
-  - Sampled crypto price paths once the runtime asset class lands (GBM
-    minimum; consider stochastic-vol / fat-tail later). Consumes the
-    runtime crypto position the in-flight funding-policy slice is adding.
+- [ ] **PE should actually be simulated** (Priority 3 in `plans/roadmap.md`).
+      Today the market provider holds private-equity marks flat at 1.0 for
+      the entire horizon and emits tender opportunities at deterministic
+      month indices (every 12 months from t=0, identical across all
+      rollouts and all PE assets). The fit is **open design work** —
+      available evidence is sparse (e.g. ~5-10 historical OpenAI tenders),
+      so the natural shape is a model fit **jointly** with SP500,
+      inflation, and the per-location housing factors that the macro
+      provider already estimates (VECM/VAR/Wilkie/etc.), rather than an
+      independent process per PE asset. Tender-frequency arrival rate is
+      fitted on the same evidence.
+- [ ] **Crypto price should be sampled.** Runtime asset class + funding-
+      policy wiring landed via #1582; the remaining gap is replacing the
+      `np.ones(...)` placeholder `crypto_value_multipliers` array with a
+      sampled per-asset path so crypto contributes real variance to the
+      distribution. Model design is part of the same pass as PE above
+      (joint vs independent fit is a design question; deployment evidence
+      is private and stays downstream).
 - [ ] Plan C in `plans/roadmap.md`: unified obligation/funding semantics
       for all immediate cash demands (property tax, HOA, insurance,
       maintenance, outside rent, partner contributions, special assessments,
