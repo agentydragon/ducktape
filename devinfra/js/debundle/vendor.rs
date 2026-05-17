@@ -16,8 +16,8 @@ use artifact::{
 };
 use js_ast::{ParsedJsModule, emit_js_module, parse_js_module, str_value};
 use spec::{
-    PartialSwapMark, PartialSwapPackage, SwapMark, VendorLevel, VendorMark, VendorRole,
-    WrapperShape,
+    PartialSwapKind, PartialSwapMark, PartialSwapPackage, SwapMark, VendorLevel, VendorMark,
+    VendorRole, WrapperShape,
 };
 
 // These manifests are returned by the vendor stages but the pipeline
@@ -1420,7 +1420,8 @@ pub struct ChunkPartialSwapResolution {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PartialSwapPackageResolution {
-    pub namespace: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
     pub version: String,
     pub subpath: String,
 }
@@ -1428,7 +1429,9 @@ pub struct PartialSwapPackageResolution {
 #[derive(Debug, Clone, Serialize)]
 pub struct PartialSwapSymbolResolution {
     pub package: String,
-    pub upstream_export: String,
+    pub kind: PartialSwapKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upstream_export: Option<String>,
     pub references_rewritten: usize,
 }
 
@@ -1464,7 +1467,9 @@ struct ChunkPartialSwapMapping {
 #[derive(Debug, Clone)]
 struct PartialSwapSymbolTarget {
     package: String,
-    upstream_export: String,
+    kind: PartialSwapKind,
+    /// Only Some(_) when `kind == Member`.
+    upstream_export: Option<String>,
 }
 
 pub fn apply_partial_vendor_swaps(
@@ -1518,17 +1523,41 @@ pub fn apply_partial_vendor_swaps(
             }
         }
 
+        // Per-symbol shape validation: `kind: member` requires
+        // `upstream_export`; `kind: namespace` / `kind: default`
+        // forbid it.
+        for (chunk_export, symbol) in &partial.symbols {
+            match (symbol.kind, symbol.upstream_export.as_deref()) {
+                (PartialSwapKind::Member, None) => bail!(
+                    "apply_partial_vendor_swaps vendor entry {chunk_path}: symbol `{chunk_export}` (kind=member) missing required `upstream_export`",
+                ),
+                (PartialSwapKind::Namespace | PartialSwapKind::Default, Some(_)) => bail!(
+                    "apply_partial_vendor_swaps vendor entry {chunk_path}: symbol `{chunk_export}` (kind={:?}) must not set `upstream_export`",
+                    symbol.kind
+                ),
+                _ => {}
+            }
+        }
+
         // Per-package validation: installed version + upstream subpath
         // exists + every declared upstream_export is actually a named
         // export of the upstream subpath.
         let mut package_resolutions: BTreeMap<String, PartialSwapPackageResolution> =
             BTreeMap::new();
         for (package_name, package) in &partial.packages {
-            if !is_valid_identifier(&package.namespace) {
-                bail!(
-                    "apply_partial_vendor_swaps vendor entry {chunk_path}: package `{package_name}` namespace `{}` is not a valid JS identifier",
-                    package.namespace
-                );
+            let any_member_for_package = partial
+                .symbols
+                .values()
+                .any(|s| s.package == *package_name && matches!(s.kind, PartialSwapKind::Member));
+            if any_member_for_package {
+                let namespace = package.namespace.as_deref().with_context(|| format!(
+                    "apply_partial_vendor_swaps vendor entry {chunk_path}: package `{package_name}` is referenced by a kind=member symbol but is missing `namespace`",
+                ))?;
+                if !is_valid_identifier(namespace) {
+                    bail!(
+                        "apply_partial_vendor_swaps vendor entry {chunk_path}: package `{package_name}` namespace `{namespace}` is not a valid JS identifier",
+                    );
+                }
             }
             let installed = read_installed_package_metadata(
                 package_name,
@@ -1570,13 +1599,19 @@ pub fn apply_partial_vendor_swaps(
                 if symbol.package != *package_name {
                     continue;
                 }
+                // Only kind=member symbols cite an upstream named
+                // export; kind=namespace/default replace the whole
+                // import with a namespace/default reference, no
+                // member-name lookup needed.
+                let Some(upstream_export) = symbol.upstream_export.as_deref() else {
+                    continue;
+                };
                 if upstream_has_export_star {
                     continue;
                 }
-                if !upstream_exports.contains(&symbol.upstream_export) {
+                if !upstream_exports.contains(upstream_export) {
                     bail!(
-                        "apply_partial_vendor_swaps vendor entry {chunk_path}: symbol `{chunk_export}` targets {package_name}#{} but upstream does not export it (known: [{}])",
-                        symbol.upstream_export,
+                        "apply_partial_vendor_swaps vendor entry {chunk_path}: symbol `{chunk_export}` targets {package_name}#{upstream_export} but upstream does not export it (known: [{}])",
                         upstream_exports
                             .iter()
                             .cloned()
@@ -1602,6 +1637,7 @@ pub fn apply_partial_vendor_swaps(
                 chunk_export.clone(),
                 PartialSwapSymbolResolution {
                     package: symbol.package.clone(),
+                    kind: symbol.kind,
                     upstream_export: symbol.upstream_export.clone(),
                     references_rewritten: 0,
                 },
@@ -1610,6 +1646,7 @@ pub fn apply_partial_vendor_swaps(
                 chunk_export.clone(),
                 PartialSwapSymbolTarget {
                     package: symbol.package.clone(),
+                    kind: symbol.kind,
                     upstream_export: symbol.upstream_export.clone(),
                 },
             );
@@ -1772,13 +1809,16 @@ fn rewrite_partial_swap_in_file(
     let module = &mut job.ast.module;
 
     // Pass A: scan ImportDecls. For each ImportSpecifier::Named on a
-    // partial-swap chunk import, record the local-binding sym and
-    // remove the specifier. Track which packages need a namespace
-    // import in this file and which (chunk, chunk_export) was hit so
-    // the manifest aggregates per-symbol counts.
+    // partial-swap chunk import:
+    //   - kind=member: record the local-binding sym for Pass B's
+    //     member-access rewrite; queue one shared
+    //     `import * as <pkg.namespace> from "<pkg>"` for the file.
+    //   - kind=namespace: queue a per-binding
+    //     `import * as <local> from "<pkg>"`; no identifier rewrite.
+    //   - kind=default: queue a per-binding
+    //     `import <local> from "<pkg>"`; no identifier rewrite.
     let mut bindings: BTreeMap<String, IdentRewriteTarget> = BTreeMap::new();
-    let mut needed_namespace_imports: Vec<(String, String)> = Vec::new();
-    let mut emitted_namespace_for: BTreeSet<String> = BTreeSet::new();
+    let mut emitted_member_namespace_for: BTreeSet<String> = BTreeSet::new();
     let mut references_by_symbol: BTreeMap<(String, String), usize> = BTreeMap::new();
 
     let original_body = std::mem::take(&mut module.body);
@@ -1810,7 +1850,9 @@ fn rewrite_partial_swap_in_file(
         };
 
         let mut retained_specifiers: Vec<ImportSpecifier> = Vec::new();
-        let mut packages_emitted_here: BTreeSet<String> = BTreeSet::new();
+        // Imports introduced by this decl; emitted in front of the
+        // residual decl below to preserve relative source order.
+        let mut decl_local_imports: Vec<DeferredImport> = Vec::new();
         for specifier in std::mem::take(&mut import_decl.specifiers) {
             let imported_name_lookup = match &specifier {
                 ImportSpecifier::Named(named) => named
@@ -1835,37 +1877,60 @@ fn rewrite_partial_swap_in_file(
                 unreachable!("classified named above");
             };
             let local_sym = named.local.sym.to_string();
-            bindings.insert(
-                local_sym,
-                IdentRewriteTarget {
-                    namespace: package_coords.namespace.clone(),
-                    upstream_export: target.upstream_export.clone(),
-                    chunk_name: chunk_mapping.chunk_id.clone(),
-                    chunk_export: imported_name_lookup.clone(),
-                },
-            );
-            if emitted_namespace_for.insert(target.package.clone()) {
-                needed_namespace_imports
-                    .push((target.package.clone(), package_coords.namespace.clone()));
+            match target.kind {
+                PartialSwapKind::Member => {
+                    let upstream_export = target
+                        .upstream_export
+                        .as_deref()
+                        .expect("kind=member validated to carry upstream_export");
+                    let namespace = package_coords
+                        .namespace
+                        .as_deref()
+                        .expect("kind=member validated to have package.namespace");
+                    bindings.insert(
+                        local_sym,
+                        IdentRewriteTarget {
+                            namespace: namespace.to_string(),
+                            upstream_export: upstream_export.to_string(),
+                            chunk_name: chunk_mapping.chunk_id.clone(),
+                            chunk_export: imported_name_lookup.clone(),
+                        },
+                    );
+                    // One member-mode namespace import per (file, package).
+                    if emitted_member_namespace_for.insert(target.package.clone()) {
+                        decl_local_imports.push(DeferredImport::Namespace {
+                            package: target.package.clone(),
+                            local: namespace.to_string(),
+                        });
+                    }
+                }
+                PartialSwapKind::Namespace => {
+                    decl_local_imports.push(DeferredImport::Namespace {
+                        package: target.package.clone(),
+                        local: local_sym,
+                    });
+                    // Count one "reference rewrite" per import so the
+                    // manifest can show progress per chunk_export.
+                    *references_by_symbol
+                        .entry((chunk_mapping.chunk_id.clone(), imported_name_lookup.clone()))
+                        .or_insert(0) += 1;
+                }
+                PartialSwapKind::Default => {
+                    decl_local_imports.push(DeferredImport::Default {
+                        package: target.package.clone(),
+                        local: local_sym,
+                    });
+                    *references_by_symbol
+                        .entry((chunk_mapping.chunk_id.clone(), imported_name_lookup.clone()))
+                        .or_insert(0) += 1;
+                }
             }
-            packages_emitted_here.insert(target.package.clone());
         }
 
-        // Emit namespace imports for any packages this decl introduced
-        // but that haven't already been written out at an earlier
-        // position. Walking in source order preserves grouping.
-        for package_name in &packages_emitted_here {
-            // Only emit at this position if this is the first time we're
-            // touching the package. (The `emitted_namespace_for` set was
-            // updated above; we already added to needed_namespace_imports.)
-            // We pop the matching entry and emit it here.
-            if let Some(position) = needed_namespace_imports
-                .iter()
-                .position(|(pkg, _)| pkg == package_name)
-            {
-                let (pkg, namespace) = needed_namespace_imports.remove(position);
-                new_body.push(make_namespace_import(&pkg, &namespace));
-            }
+        // Emit the deferred imports introduced by this decl in front
+        // of the residual import (if any). Source-order preserved.
+        for deferred in decl_local_imports.drain(..) {
+            new_body.push(deferred.into_module_item());
         }
 
         if !retained_specifiers.is_empty() {
@@ -1874,21 +1939,12 @@ fn rewrite_partial_swap_in_file(
         }
     }
 
-    // Anything still in needed_namespace_imports has no anchor decl
-    // (shouldn't happen given the loop above) — emit at top as a
-    // fallback. In practice this stays empty.
-    let mut prepend: Vec<ModuleItem> = Vec::new();
-    for (pkg, namespace) in needed_namespace_imports.drain(..) {
-        prepend.push(make_namespace_import(&pkg, &namespace));
-    }
-    if !prepend.is_empty() {
-        prepend.append(&mut new_body);
-        new_body = prepend;
-    }
     module.body = new_body;
 
     // Pass B: rewrite every Expr::Ident reference to a tracked local
-    // binding into `<namespace>.<upstream_export>`.
+    // binding into `<namespace>.<upstream_export>`. Only kind=member
+    // populates `bindings`; kind=namespace and kind=default leave the
+    // local-binding references intact.
     if !bindings.is_empty() {
         let mut rewriter = PartialSwapIdentRewriter {
             bindings: &bindings,
@@ -1904,6 +1960,22 @@ fn rewrite_partial_swap_in_file(
         parts: job.parts,
         ast: job.ast,
         references_by_symbol,
+    }
+}
+
+enum DeferredImport {
+    /// `import * as <local> from "<package>"`
+    Namespace { package: String, local: String },
+    /// `import <local> from "<package>"`
+    Default { package: String, local: String },
+}
+
+impl DeferredImport {
+    fn into_module_item(self) -> ModuleItem {
+        match self {
+            DeferredImport::Namespace { package, local } => make_namespace_import(&package, &local),
+            DeferredImport::Default { package, local } => make_default_import(&package, &local),
+        }
     }
 }
 
@@ -1956,6 +2028,24 @@ fn make_namespace_import(package: &str, namespace: &str) -> ModuleItem {
         specifiers: vec![ImportSpecifier::Namespace(ImportStarAsSpecifier {
             span: DUMMY_SP,
             local: Ident::new_no_ctxt(namespace.into(), DUMMY_SP),
+        })],
+        src: Box::new(Str {
+            span: DUMMY_SP,
+            value: package.into(),
+            raw: None,
+        }),
+        type_only: false,
+        with: None,
+        phase: ImportPhase::Evaluation,
+    }))
+}
+
+fn make_default_import(package: &str, local: &str) -> ModuleItem {
+    ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
+        span: DUMMY_SP,
+        specifiers: vec![ImportSpecifier::Default(ImportDefaultSpecifier {
+            span: DUMMY_SP,
+            local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
         })],
         src: Box::new(Str {
             span: DUMMY_SP,

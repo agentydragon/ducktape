@@ -291,16 +291,17 @@ pub struct SwapMark {
 }
 
 /// Per-symbol vendor swap on a mixed chunk. The chunk stays on disk
-/// (residual exports keep working), but each listed export gets its
-/// caller-side references rewritten to a namespace member access
-/// (`zodObject(…)` → `z.object(…)`) and a single
-/// `import * as <namespace> from "<package>"` is added per file that
-/// uses the package. Multiple upstream packages can share one chunk.
+/// (residual exports keep working). Each listed export is rewritten
+/// according to its [`PartialSwapKind`] — see the variants for the
+/// three supported shapes (`member` for per-symbol member-access
+/// rewrites à la zod; `namespace` and `default` for libraries the
+/// chunk re-exports as a whole namespace or as a default value).
+/// Multiple upstream packages can share one chunk.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PartialSwapMark {
-    /// package_name → upstream coordinates and namespace alias.
+    /// package_name → upstream coordinates.
     pub packages: BTreeMap<String, PartialSwapPackage>,
-    /// chunk_export_name → which package + which upstream export.
+    /// chunk_export_name → which package + how to rewrite it.
     pub symbols: BTreeMap<String, PartialSwapSymbol>,
 }
 
@@ -309,20 +310,55 @@ pub struct PartialSwapPackage {
     pub version: String,
     pub subpath: String,
     /// Local identifier used in the emitted
-    /// `import * as <namespace> from "<package>"`. Must be a valid JS
-    /// identifier; uniqueness within a file is the caller's contract
-    /// (when multiple partial-swap chunks share a package in the same
-    /// file, identical namespace strings dedupe into one import).
-    pub namespace: String,
+    /// `import * as <namespace> from "<package>"` for symbols with
+    /// `kind: member`. Ignored for `kind: namespace` and
+    /// `kind: default`, which use the caller-side local binding name
+    /// for the import alias instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PartialSwapSymbol {
     /// Key into the enclosing [`PartialSwapMark::packages`] map.
     pub package: String,
-    /// Upstream package's export name (becomes the member accessed
-    /// off the namespace import).
-    pub upstream_export: String,
+    /// How to rewrite references to the caller's local binding. See
+    /// [`PartialSwapKind`].
+    #[serde(default, skip_serializing_if = "is_default_partial_swap_kind")]
+    pub kind: PartialSwapKind,
+    /// `kind: member` only: upstream package's export name (becomes
+    /// the member accessed off the namespace import). Forbidden for
+    /// `kind: namespace` / `kind: default`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream_export: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum PartialSwapKind {
+    /// Per-symbol member-access rewrite (zod-style). Emits one
+    /// `import * as <namespace> from "<package>"` per file that uses
+    /// the package and rewrites each `<local_binding>(...)` reference
+    /// to `<namespace>.<upstream_export>(...)`.
+    #[default]
+    Member,
+    /// Whole-namespace import. The chunk's export is itself the
+    /// package's namespace object (e.g. `import { a as React } from
+    /// "../chunk"` where `a` is React's default-namespace export and
+    /// callers use `React.useState(...)` etc.). Rewrites the import
+    /// to `import * as <local_binding> from "<package>"`; leaves
+    /// every `<local_binding>.xxx` reference alone.
+    Namespace,
+    /// Default import. The chunk's export is the package's default
+    /// (e.g. `import { aQ as z } from "../chunk"` where `z` is
+    /// clsx's default function). Rewrites the import to
+    /// `import <local_binding> from "<package>"`; leaves every
+    /// `<local_binding>(...)` reference alone.
+    Default,
+}
+
+fn is_default_partial_swap_kind(kind: &PartialSwapKind) -> bool {
+    matches!(kind, PartialSwapKind::Member)
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq)]
