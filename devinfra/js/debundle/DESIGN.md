@@ -360,6 +360,78 @@ R  ⊆  I            (R is the at-init projection of I)
 I  ∪  S            the full constraint graph
 ```
 
+## Realizability primitive
+
+The three-clause validity predicate — importability, no cross-destination
+rebinds, no multi-module SCC in the constraining-edge subgraph — has exactly
+**one** implementation. Every code path that asks "is this destination
+assignment realizable?" reaches it through the same primitive:
+
+> `check_realizability(owner_graph, partition) → Verdict`
+
+The verdict surfaces unrealizable SCCs, cross-destination rebinds, and
+non-importable reads with owner-edge provenance. An empty verdict means the
+partition is realizable per "Valid peels and atomic modules" below.
+
+Three callers consume it:
+
+1. **The validator (the gate).** Given the spec's actual partition, the
+   verdict decides acceptance or rejection. This is the load-bearing call —
+   if it rejects, materialization stops.
+2. **The peelability proposer.** For each candidate peel, the proposer
+   constructs the hypothetical partition that would result from the peel
+   (the candidate's owners reassigned to a fresh destination), asks the
+   primitive, and projects the verdict into the candidate's status. A
+   `peelable_now` candidate is one whose hypothetical partition produces an
+   empty verdict; any other verdict shape decodes to a specific blocker
+   reason.
+3. **The factorize closure loop.** Each frontier-grow step certifies the
+   resulting hypothetical partition via the primitive. If the verdict names
+   an exact owner-level repair (a private read that needs its provider, an
+   atomic-unit split, a cycle that needs a small cut), the loop grows the
+   frontier and re-certifies. Proposals are emitted only on empty verdicts.
+
+### Iterative, undo-aware shape
+
+Asking the primitive from scratch per query is `O(N + M)`. A chunk's
+proposer evaluates thousands of candidates and a factorize closure can
+re-certify after every frontier step, so the primitive is exposed as a
+**stateful, transactional index over a working partition** rather than a
+pure function:
+
+- Callers push partition deltas (move owners, create destinations) onto the
+  index. Each push updates the quotient adjacency and the constraining-edge
+  SCC structure incrementally, only for components touched by the delta's
+  incident edges. The verdict is always against the index's current state.
+- Each push records its inverse on a journal. Callers undo deltas in LIFO
+  order to back out of a hypothetical or failed exploration. The proposer
+  uses a scoped guard for per-candidate isolation; factorize uses explicit
+  push/undo to walk closure repair branches.
+- The validator does no undo: it pushes the actual partition once and reads
+  the verdict.
+
+The pure-function form `check_realizability(owner_graph, partition)` is the
+correctness reference; the incremental, undoable form is the production
+implementation. A differential test asserts the two agree on random
+push/undo sequences.
+
+This is "the iterative graph that callers update and undo updates on":
+the quotient and its SCC structure are built once per chunk, then walked
+forward by deltas (toward a hypothesis or a commit) and backward by undos
+(when backing out). It is not torn down and rebuilt per question.
+
+### Invariant: no bespoke parallel walks
+
+No production code should answer the validity question by walking the
+owner graph or the quotient with its own algorithm. Bespoke per-question
+walks are how the proposer/gate divergence repaired in this design first
+appeared: two algorithms drift; one shared implementation cannot. If a new
+caller needs a verdict over a hypothetical partition, the answer is to
+push a delta and read the index — not to spin up a parallel walk over
+`module_pair_totals` or similar derived state. Adjacent diagnostics may
+read the verdict's owner-edge provenance, but the validity decision goes
+through the primitive only.
+
 ## The realizability theorem
 
 > **Theorem (correctness).** If `R ∪ S` is acyclic, the source-
@@ -1001,40 +1073,47 @@ The first implemented candidate family answers the immediate
 operational question: "which symbols can currently peel out of the
 residual catch-all?"
 
-Let `R` be any destination marked residual (`ResidualEntry` or a
-generated residual logical module), and let `o ∈ V` be an owner
-currently assigned to `R` with declared symbols `decl(o)`. To test
-whether `o` is peelable now:
+Let `R` be any destination marked residual (the `ResidualEntry` catch-all
+or a generated residual logical module), and let `o ∈ V` be an owner currently assigned to `R` with
+declared symbols `decl(o)`. To test whether `o` is peelable now:
 
-1. Create a fresh hypothetical destination `P_o`.
-2. Reassign every binding in `decl(o)` to `P_o`; leave all other
-   owner destinations unchanged.
-3. Quotient the same owner graph by this candidate assignment, then
-   restrict to the **constraining-edge subgraph** of that quotient
-   (drop `LazyUse` cross edges).
-4. Inspect only the SCC containing `P_o` in that restricted graph.
-5. The candidate is `peelable_now` iff `P_o`'s SCC in the
-   constraining subgraph is singleton/non-cyclic. If it contains
-   any other module (i.e. there is a directed cycle of at-init,
-   side-effect-order, rebind, or local-effect cross edges through
-   `P_o`), the candidate is `blocked_cycle`, and the report lists
-   the constraining module edges plus their owner-edge ids.
+1. Push a hypothetical delta on the realizability index: create a fresh
+   destination `P_o` and reassign the owners of `decl(o)` to it. All
+   other owner destinations are unchanged.
+2. Read the verdict from the index.
+3. Decode the verdict into a `PeelCandidateStatus`:
+   - Empty verdict → `peelable_now`.
+   - Verdict carries `unrealizable_sccs` touching `P_o` → `blocked_cycle`.
+     The owner-edge provenance on the SCC names the exact constraining
+     module edges that form the cycle.
+   - Verdict carries non-importable reads from `P_o` into private
+     residual neighbors → `blocked_residual_dependency`.
+4. Undo the delta. The index is restored to the pre-push partition state
+   for the next candidate.
 
-   Restricting to the constraining subgraph is load-bearing: a mixed
-   cycle whose constraining edges form a DAG — e.g. `residual → P_o`
-   eager-use plus `P_o → residual` lazy-use, the canonical "pure
-   top-level helper consumed by many same-residual eager users"
-   shape — is realizable. ESM resolves it by evaluating the
-   lazy/hoisted side first, so the eager side never observes a TDZ.
-   This is the same `G_atomic` definition `compute_atomic_units`
-   already uses for factorization; the two stages stay consistent.
+The same primitive that the validator uses on the actual partition
+answers the proposer's question on a hypothetical one. There is no
+parallel walk over `module_pair_totals` or a synthetic-node BFS — the
+proposer and the gate cannot disagree because they share an
+implementation.
 
-This local-SCC test intentionally ignores unrelated pre-existing
-bad SCCs. When the current build is green, it is equivalent to
-checking the whole candidate quotient. When the build is red, it
-still identifies residual symbols whose peel is locally safe and
-therefore useful for reducing the residual or breaking a larger
-cycle without adding a new one.
+Restricting to the constraining-edge subgraph is load-bearing and is
+already part of the primitive's verdict: a mixed cycle whose constraining
+edges form a DAG — e.g. `residual → P_o` eager-use plus `P_o → residual`
+lazy-use, the canonical "pure top-level helper consumed by many
+same-residual eager users" shape — is realizable. ESM resolves it by
+evaluating the lazy/hoisted side first, so the eager side never observes
+a TDZ. This is the same `G_atomic` definition `compute_atomic_units` uses
+for factorization; one definition, one implementation.
+
+The verdict's `unrealizable_sccs` inherently ignore unrelated pre-existing
+bad SCCs that do not touch `P_o`: the projection from verdict to
+candidate status filters to SCCs incident to the candidate's destination.
+When the current build is green, this is equivalent to checking the whole
+candidate quotient. When the build is red, the proposer still identifies
+residual symbols whose peel is locally safe and therefore useful for
+reducing the residual or breaking a larger cycle without adding a new
+one.
 
 V1 also computes bounded two-owner closures. It does not scan every
 pair in the residual. Instead, for each cycle-blocked singleton
@@ -1163,6 +1242,11 @@ A destination assignment is **valid** iff:
    because ESM evaluates the lazy side without observing a TDZ on the
    eager side.
 
+This three-clause predicate is what the "Realizability primitive" section
+above defines as the single shared implementation. The validator, the
+peelability proposer, and the factorize closure all consume the same
+primitive — none of them re-implement the predicate.
+
 A peel is just a proposed destination assignment for an owner set.
 The peel is valid exactly when the resulting assignment is valid by
 the definition above. Invalid peels have three primary explanations:
@@ -1227,7 +1311,7 @@ This decoupling is load-bearing for two reasons:
    implementation of the export logic on the proposer side and
    creates an SSOT drift hazard the moment the emit policy
    evolves. Keeping the proposer concerned with the
-   importability/cycle/rebind predicates *only* means a peel that
+   importability/cycle/rebind predicates _only_ means a peel that
    passes the proposer's check is always materializable.
 2. **There is no "binding is private to entry" spec contract.** Any
    top-level entry declaration is implicitly exportable when a
@@ -1298,19 +1382,30 @@ ranking or display.
    - include provider owners for private residual bindings that the
      frontier item reads, including lazy reads, unless the export
      policy makes those bindings importable.
-3. Validate the resulting hypothetical assignment with the same
-   quotient/importability predicate used by materialization.
-4. If validation reports a blocker with an exact owner-level repair,
-   grow the frontier item and repeat:
+3. Certify the resulting hypothetical assignment via the realizability
+   primitive (above). Same primitive the validator and the peelability
+   proposer use; no parallel walk.
+4. If the verdict reports a blocker with an exact owner-level repair,
+   push the repair onto the realizability index and re-read the verdict:
    - private residual read -> add the binding's provider owner;
    - atomic-unit split or rebinding split -> add the unit/assigner
      owners;
    - constraining quotient cycle -> add a small owner-level cut or
      companion set, then revalidate.
-5. Emit a proposal only when validation succeeds. Otherwise stop with a
+     On a failed repair branch, undo the push and try the next repair —
+     the index's undo journal makes this cheap.
+5. Emit a proposal only when the verdict is empty. Otherwise stop with a
    diagnostic when the frontier item exceeds the size cap, reaches an
    active-module conflict the generator is not allowed to rewrite, has
    no exact repair, or repeats a previous owner set.
+
+The "not too small, not too big" sizing of factorized quotients is the
+termination behaviour of this loop, not a separate heuristic. A frontier
+is "too small" exactly when the verdict still names an exact repair; the
+loop grows. A frontier is "too big" exactly when the size cap fires before
+the verdict is empty; the loop halts with a diagnostic. The closure rules
+and the size cap layer cleanly on top of one shared primitive instead of
+running as ad-hoc parallel passes with their own graph views.
 
 The implementation should be staged this way:
 
@@ -1451,6 +1546,37 @@ These operations are pure graph transforms over immutable analysis
 data. That property matters operationally: two tools reading the same
 owner graph and destination assignments should produce the same
 peelability status without building emitted JS.
+
+### Pipeline trajectory
+
+The current pipeline (`pipeline.rs`) enumerates a long sequence of
+named stages — `LoadJsChunks`, `PrepareJsChunks`, `BuildArtifactIndexes`,
+`RewriteChunkEntrySpecifiers`, `ApplyVendorAnnotations`,
+`RenameVendorExports`, `SwapVendorChunks`, `MaterializeLogicalModules`,
+`ApplyPartialVendorSwaps`, `StripSwappedVendorExports`, `WriteJsTree`,
+`EmitBrowserHarness` — that read like a JS-file-tree-rewriting pipeline.
+That shape is a holdover: an earlier incarnation passed trees of JS
+files between stages and each stage rewrote them in place.
+
+The current analyzer operates on the owner graph and a partition, with
+late materialization to emitted JS at the end. Most of the named stages
+are orchestration overhead around what is, semantically, a small set of
+functions over `(owner_graph, partition)` plus the shared realizability
+primitive.
+
+The direction of travel is to collapse the stage structure. Each stage
+becomes a function over the analyzer's typed state, the JS-tree
+intermediate snapshots between stages are dropped, and the pipeline
+becomes the composition of those functions. The unification of the
+gate, the peelability proposer, and the factorize closure on the
+realizability primitive is a precondition for this collapse: it removes
+the parallel walks and the proposer-internal caches that made the stage
+boundaries necessary as state-passing seams.
+
+The e2e tests in `devinfra/js/debundle/e2e/` pin observable chunk →
+emitted-JS behavior. They are the safety net that makes this collapse
+possible without behaviour drift. No timetable is committed; this
+section documents the direction.
 
 ## Selector vocabulary and matching
 
