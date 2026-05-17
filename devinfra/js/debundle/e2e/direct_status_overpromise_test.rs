@@ -1,22 +1,28 @@
-//! RED test: pins a peelability analyzer over-promise bug.
+//! GREEN test (post-fix): pins that the peelability analyzer no
+//! longer over-promises a `direct` peel that the cycle gate refuses.
+//! Originally introduced as a RED pin alongside PR #1625; flipped in
+//! the same branch once the proposer was rerouted through the shared
+//! realizability primitive.
 //!
-//! **This test is intentionally failing.** It encodes the divergence
-//! between two predicates that the design says should agree:
+//! The two predicates the design says should agree are now backed by
+//! one implementation:
 //!
 //! 1. The peelability **proposer** (`evaluate_peel_candidate` in
-//!    `peelability.rs`) classifies a singleton residual owner `T`
-//!    as `PeelableNow` / `Direct` on the `residual_owner_horizon`.
+//!    `peelability.rs`) pushes the candidate's hypothetical
+//!    `MoveOwners` delta onto the shared `RealizabilityIndex`
+//!    (`devinfra/js/debundle/realizability.rs`) and reads the verdict.
 //! 2. The **cycle gate** (`validate_schedule` in `validation.rs`,
 //!    consumed by `materialize_logical_modules` in
-//!    `logical_modules.rs`) refuses the same peel when the spec
-//!    author actually assigns `T` to a fresh module — with a
-//!    constraining `<chunk_id>::anon_residual_sentinel → mod_t`
-//!    edge as cycle evidence.
+//!    `logical_modules.rs`) is unchanged in this PR but answers the
+//!    same three-clause validity predicate. With the proposer routed
+//!    through the same primitive, both sides cannot disagree on
+//!    whether a candidate peel produces a constraining cross-module
+//!    SCC.
 //!
-//! The proposer therefore **over-promises**: `direct` claims a peel
-//! is safe but materialization rejects it. The fix author flips the
-//! assertions in this test once the proposer's predicate is brought
-//! into line with the gate's invariant.
+//! For the synthetic shape in this file the proposer also catches a
+//! `BlockedResidualDependency` (the layered clause-1 check for moved
+//! at-init reads that would remain in the source destination), which
+//! is the assertion the post-fix `assert_ne!` rests on.
 //!
 //! ## What `direct` is supposed to mean
 //!
@@ -208,8 +214,16 @@ fn direct_status_is_emitted_for_target_binding_despite_gate_refusal() {
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
     let peelability = &graph.peelability;
 
-    // Bug pin 1: the analyzer emits the singleton candidate as
-    // PeelableNow. (Post-fix this should be BlockedCycle.)
+    // GREEN pin (post-fix): the analyzer no longer emits the
+    // singleton candidate as PeelableNow. With the proposer now
+    // routed through the realizability primitive (see
+    // `devinfra/js/debundle/realizability.rs` and the proposer
+    // reroute in `peelability.rs::evaluate_peel_candidate`), the
+    // proposer recognizes that moving `target_binding` alone would
+    // leave the at-init consumer with a constraining read into the
+    // residual source destination — surfaced as
+    // `BlockedResidualDependency` (the proposer's layered clause-1
+    // check) rather than `PeelableNow`.
     let target_candidate = peelability
         .evaluated_owner_sets
         .iter()
@@ -220,16 +234,16 @@ fn direct_status_is_emitted_for_target_binding_despite_gate_refusal() {
                 peelability.evaluated_owner_sets,
             )
         });
-    assert_eq!(
+    assert_ne!(
         target_candidate.status,
         PeelCandidateStatus::PeelableNow,
-        "RED pin: proposer currently over-claims target_binding peelable_now; \
-         flip this when the proposer is brought into line with the gate. \
+        "post-fix: proposer must not over-claim target_binding peelable_now \
+         (it has a residual-dependency blocker on the at-init consumer). \
          candidate: {target_candidate:#?}",
     );
 
-    // Bug pin 2: the residual horizon classifies target_binding as
-    // Direct. (Post-fix this should be Blocked or WithCompanions.)
+    // GREEN pin (post-fix): the residual horizon no longer
+    // classifies target_binding as Direct.
     let horizon = peelability
         .residual_owner_horizon
         .iter()
@@ -237,11 +251,10 @@ fn direct_status_is_emitted_for_target_binding_despite_gate_refusal() {
         .unwrap_or_else(|| {
             panic!("residual_owner_horizon must include target_binding: {peelability:#?}")
         });
-    assert_eq!(
+    assert_ne!(
         horizon.status,
         ResidualOwnerPeelStatus::Direct,
-        "RED pin: horizon currently classifies target_binding as Direct; \
-         flip this when the proposer is brought into line with the gate. \
+        "post-fix: horizon must not classify target_binding as Direct. \
          horizon entry: {horizon:#?}",
     );
 }

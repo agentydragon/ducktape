@@ -1,9 +1,11 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use petgraph::algo::tarjan_scc;
 use petgraph::graph::DiGraph;
 
 use crate::graph::OwnerEdge;
+use crate::realizability::{PartitionDelta, RealizabilityIndex};
 use crate::reports::{
     binding_reports, is_residual_destination, module_id_from_key, module_report_ref, owner_key,
 };
@@ -14,64 +16,28 @@ use crate::{
     ResidualOwnerPeelHorizonReport, ResidualOwnerPeelStatus, Schedule, compute_atomic_units,
 };
 
-#[derive(Debug, Clone, Default)]
-struct CandidateEdgeAccumulator {
-    constraining_owner_edge_indices: Vec<usize>,
-    constrains_init_order: bool,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
-enum CandidateEdgeDirection {
-    FromCandidate,
-    ToCandidate,
-}
-
-#[derive(Debug, Clone)]
-struct CandidateIncidentEdge {
-    direction: CandidateEdgeDirection,
-    module_idx: usize,
-    constraining_owner_edge_indices: Vec<usize>,
-    constrains_init_order: bool,
-}
-
-#[derive(Debug, Clone, Default)]
-struct ModulePairTotals {
-    constraining_reason_count: usize,
-    constraining_owner_edge_indices: Vec<usize>,
-}
-
-#[derive(Debug, Clone)]
-struct ModuleAdjEdge {
-    pair: (ModuleId, ModuleId),
-    target_idx: usize,
-}
-
-#[derive(Debug, Clone)]
-struct ReverseModuleAdjEdge {
-    pair: (ModuleId, ModuleId),
-    source_idx: usize,
-}
-
 pub(crate) struct PeelabilityContext<'a> {
     owner_edges: &'a [OwnerEdge],
     owner_out_edges: Vec<Vec<usize>>,
-    owner_in_edges: Vec<Vec<usize>>,
-    module_index: HashMap<ModuleId, usize>,
-    modules: Vec<ModuleId>,
-    forward_edges: Vec<Vec<ModuleAdjEdge>>,
-    reverse_edges: Vec<Vec<ReverseModuleAdjEdge>>,
-    module_pair_totals: HashMap<(ModuleId, ModuleId), ModulePairTotals>,
     /// Atomic units of the schedule's owner graph (SCCs of the
     /// constraining-edge subgraph `G_atomic`). Used by
-    /// `candidate_atomic_unit_split_edge_indices` to detect candidates
-    /// whose moved set would split an atomic unit across modules.
+    /// `residual_atomic_unit_candidates` to enumerate multi-owner
+    /// candidates.
     atomic_units: Vec<AtomicUnit>,
-}
-
-#[derive(Debug, Clone, Default)]
-struct CandidateGraphAdjustment {
-    removed_constraining_reason_count: HashMap<(ModuleId, ModuleId), usize>,
-    removed_owner_edge_indices: HashSet<usize>,
+    /// Single shared implementation of the validity predicate
+    /// (DESIGN.md "Realizability primitive"). `evaluate_peel_candidate`
+    /// pushes the candidate's hypothetical move onto this index, reads
+    /// the verdict, then undoes — using the same primitive the
+    /// validator runs against the actual partition. `RefCell` for
+    /// interior mutability so call sites that thread `&context` don't
+    /// need to be re-plumbed for `&mut`.
+    realizability: RefCell<RealizabilityIndex<'a>>,
+    /// Sentinel `ModuleId` reserved for the candidate's hypothetical
+    /// destination. Picked above any logical-module index that
+    /// currently appears in the chunk's partition or its logical
+    /// module list, so pushing `MoveOwners { to: fresh_destination }`
+    /// guarantees a brand-new node in the post-peel quotient.
+    fresh_destination: ModuleId,
 }
 
 #[derive(Debug, Clone)]
@@ -351,98 +317,58 @@ fn residual_declared_for_owner(schedule: &Schedule, node: &OwnerNode) -> Vec<Bin
 
 impl<'a> PeelabilityContext<'a> {
     pub(crate) fn new(
-        schedule: &Schedule,
+        schedule: &'a Schedule,
         owner_edges: &'a [OwnerEdge],
         quotient_edges: &[QuotientEdgeReport],
     ) -> Self {
-        let mut modules = BTreeSet::<ModuleId>::new();
-        for idx in 0..schedule.logical_modules.len() {
-            modules.insert(ModuleId(LogicalModuleIndex(idx)));
-        }
-        for (_, module) in schedule.partition.iter() {
-            modules.insert(module);
-        }
-        for edge in quotient_edges {
-            if let Some(source) = module_id_from_key(&edge.source) {
-                modules.insert(source);
-            }
-            if let Some(target) = module_id_from_key(&edge.target) {
-                modules.insert(target);
-            }
-        }
-        let modules: Vec<ModuleId> = modules.into_iter().collect();
-        let module_index: HashMap<ModuleId, usize> = modules
-            .iter()
-            .copied()
-            .enumerate()
-            .map(|(idx, id)| (id, idx))
-            .collect();
-
         let owner_count = schedule.owner_graph.nodes.len();
         let mut owner_out_edges = vec![Vec::new(); owner_count];
-        let mut owner_in_edges = vec![Vec::new(); owner_count];
-        let mut module_pair_totals = HashMap::<(ModuleId, ModuleId), ModulePairTotals>::new();
         for (idx, edge) in owner_edges.iter().enumerate() {
             if let Some(indices) = owner_out_edges.get_mut(edge.from.0) {
                 indices.push(idx);
             }
-            if let Some(indices) = owner_in_edges.get_mut(edge.to.0) {
-                indices.push(idx);
-            }
-
-            if schedule.owner_graph.node(edge.from).is_none()
-                || schedule.owner_graph.node(edge.to).is_none()
-            {
-                continue;
-            }
-            let from = schedule.partition.of(edge.from);
-            let to = schedule.partition.of(edge.to);
-            if from == to {
-                continue;
-            }
-            if edge.reason.constrains_init_order() {
-                let totals = module_pair_totals.entry((from, to)).or_default();
-                totals.constraining_reason_count += 1;
-                totals.constraining_owner_edge_indices.push(idx);
-            }
-        }
-
-        let mut forward_edges = vec![Vec::new(); modules.len()];
-        let mut reverse_edges = vec![Vec::new(); modules.len()];
-        for &(source, target) in module_pair_totals.keys() {
-            let Some(&source_idx) = module_index.get(&source) else {
-                continue;
-            };
-            let Some(&target_idx) = module_index.get(&target) else {
-                continue;
-            };
-            forward_edges[source_idx].push(ModuleAdjEdge {
-                pair: (source, target),
-                target_idx,
-            });
-            reverse_edges[target_idx].push(ReverseModuleAdjEdge {
-                pair: (source, target),
-                source_idx,
-            });
         }
 
         let atomic_units = compute_atomic_units(&schedule.owner_graph);
 
+        // The realizability primitive is the single shared
+        // implementation of clause 3 (and clause 2). The candidate
+        // evaluator pushes a hypothetical destination move onto this
+        // index and reads the verdict — the same verdict the
+        // validator would produce for the post-peel partition.
+        let realizability =
+            RealizabilityIndex::from_partition(&schedule.owner_graph, schedule.partition.clone());
+
+        // Reserve a module-id one past every index currently in use,
+        // so the candidate's hypothetical destination is a fresh node
+        // in the post-peel quotient. We include logical modules, the
+        // partition's actual assignments, and any module-id that
+        // appears in the quotient-edges report — covering synthesized
+        // residual sentinels and external/vendor modules.
+        let mut max_index = schedule.logical_modules.len();
+        for (_, module) in schedule.partition.iter() {
+            max_index = max_index.max(module.0.0 + 1);
+        }
+        for edge in quotient_edges {
+            for module in [
+                module_id_from_key(&edge.source),
+                module_id_from_key(&edge.target),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                max_index = max_index.max(module.0.0 + 1);
+            }
+        }
+        let fresh_destination = ModuleId(LogicalModuleIndex(max_index));
+
         Self {
             owner_edges,
             owner_out_edges,
-            owner_in_edges,
-            module_index,
-            modules,
-            forward_edges,
-            reverse_edges,
-            module_pair_totals,
             atomic_units,
+            realizability: RefCell::new(realizability),
+            fresh_destination,
         }
-    }
-
-    fn module_idx(&self, module: ModuleId) -> Option<usize> {
-        self.module_index.get(&module).copied()
     }
 
     fn owner_out_edge_indices(&self, owner_id: OwnerId) -> &[usize] {
@@ -450,29 +376,6 @@ impl<'a> PeelabilityContext<'a> {
             .get(owner_id.0)
             .map(Vec::as_slice)
             .unwrap_or(&[])
-    }
-
-    fn owner_in_edge_indices(&self, owner_id: OwnerId) -> &[usize] {
-        self.owner_in_edges
-            .get(owner_id.0)
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
-    }
-
-    fn current_edge_constrains(
-        &self,
-        pair: (ModuleId, ModuleId),
-        adjustment: &CandidateGraphAdjustment,
-    ) -> bool {
-        let Some(totals) = self.module_pair_totals.get(&pair) else {
-            return false;
-        };
-        let removed = adjustment
-            .removed_constraining_reason_count
-            .get(&pair)
-            .copied()
-            .unwrap_or(0);
-        totals.constraining_reason_count > removed
     }
 }
 
@@ -734,6 +637,13 @@ fn sorted_owner_pair(left: OwnerId, right: OwnerId) -> (OwnerId, OwnerId) {
     }
 }
 
+/// Classify a candidate peel — its yes/no, plus the owner-edge
+/// evidence consumers need for diagnostics. The verdict comes from
+/// the realizability primitive (DESIGN.md "Realizability primitive"
+/// and "Residual peel candidates"): push the hypothetical
+/// `MoveOwners` delta onto the shared index, read the verdict, undo.
+/// The same primitive backs the validator, so a `PeelableNow` here is
+/// a `PeelableNow` at the gate.
 pub(crate) fn evaluate_peel_candidate(
     schedule: &Schedule,
     context: &PeelabilityContext<'_>,
@@ -743,33 +653,89 @@ pub(crate) fn evaluate_peel_candidate(
     let moved_owners: BTreeSet<OwnerId> = owner_ids.iter().copied().collect();
     let owner_id_keys: Vec<String> = owner_ids.iter().copied().map(owner_key).collect();
     let candidate_id = format!("peel_candidate:{}", owner_id_keys.join("+"));
+
+    // Clause-1-shaped diagnostic: surface owners the candidate
+    // at-init-reads that would remain in the source destination after
+    // the peel. Layered on top of the realizability verdict because
+    // the primitive does not predict the materializer's emit policy
+    // (DESIGN.md "Emit-side responsibilities"); this stays the
+    // proposer's stricter check that flags "the moved module would
+    // need to import a same-destination at-init read", driving the
+    // residual-dependency-closure candidate family.
     let residual_dependency_blocker_owner_ids =
         candidate_source_destination_blocker_owner_ids(schedule, context, &moved_owners);
-    let has_residual_dependency = !residual_dependency_blocker_owner_ids.is_empty();
-    let atomic_unit_split_edge_indices =
-        candidate_atomic_unit_split_edge_indices(context, &moved_owners);
-    let constraining_owner_edge_indices = if has_residual_dependency {
-        BTreeSet::new()
-    } else if !atomic_unit_split_edge_indices.is_empty() {
-        atomic_unit_split_edge_indices
-    } else {
-        let (candidate_edges, adjustment) =
-            candidate_incident_edges(schedule, context, &moved_owners);
-        candidate_blocking_scc_owner_edge_indices(context, &candidate_edges, &adjustment)
-    };
+    if !residual_dependency_blocker_owner_ids.is_empty() {
+        return PeelCandidateEvaluation {
+            id: candidate_id,
+            status: PeelCandidateStatus::BlockedResidualDependency,
+            owner_ids: owner_ids.to_vec(),
+            members: declared,
+            constraining_owner_edge_indices: BTreeSet::new(),
+            residual_dependency_blocker_owner_ids,
+        };
+    }
 
-    // The emit step (`materialize_logical_modules`) is responsible
-    // for ensuring every cross-destination read in a peel resolves
-    // to an exported binding: when a moved body lazily reads a
-    // residual entry binding that isn't currently exported, emit
-    // grows entry's export list to include it. The proposer therefore
-    // does NOT model an emit-resolvability blocker — proposing the
-    // peel is always safe (DESIGN.md "Valid peels and atomic modules",
-    // importability clause: residual entry bindings are importable
-    // because the emitter auto-exports them on demand).
-    let status = if has_residual_dependency {
-        PeelCandidateStatus::BlockedResidualDependency
-    } else if !constraining_owner_edge_indices.is_empty() {
+    // Atomic-unit-split check: the materializer's
+    // `assembly_conflicts` enforcement (per DESIGN.md
+    // "Factorization proposals") rejects any spec that splits an
+    // atomic unit across destination modules. `G_atomic`
+    // (`compute_atomic_units`) symmetrizes `LocalEffect` and rebind
+    // edges, so an SCC there does not always show up as a multi-
+    // module SCC in the literal constraining-edge quotient the
+    // realizability primitive walks. Layer this check on top of
+    // the verdict so a candidate that would split a unit is
+    // surfaced as `BlockedCycle` with the unit's intra-edges as
+    // evidence, matching how the pre-unification proposer behaved.
+    let atomic_unit_split = candidate_atomic_unit_split_edge_indices(context, &moved_owners);
+    if !atomic_unit_split.is_empty() {
+        return PeelCandidateEvaluation {
+            id: candidate_id,
+            status: PeelCandidateStatus::BlockedCycle,
+            owner_ids: owner_ids.to_vec(),
+            members: declared,
+            constraining_owner_edge_indices: atomic_unit_split,
+            residual_dependency_blocker_owner_ids: Vec::new(),
+        };
+    }
+
+    // Push the hypothetical move, read the verdict against the
+    // post-peel partition, undo. This is the same predicate the
+    // validator runs — so a candidate classified `PeelableNow` here
+    // does not get rejected by the gate at materialization.
+    let fresh = context.fresh_destination;
+    let verdict = context.realizability.borrow_mut().scoped(
+        PartitionDelta::MoveOwners {
+            owners: owner_ids.to_vec(),
+            to: fresh,
+        },
+        |idx| idx.verdict(),
+    );
+
+    // Only SCCs that include the candidate's hypothetical destination
+    // are caused by *this* peel. Other unrealizable SCCs in the
+    // post-peel quotient are pre-existing problems unrelated to the
+    // candidate (DESIGN.md: "intentionally ignores unrelated
+    // pre-existing bad SCCs"). Same for cross-rebinds — only flag
+    // those that cross the candidate's destination.
+    let mut constraining_owner_edge_indices = BTreeSet::<usize>::new();
+    let mut touches_candidate = false;
+    for scc in &verdict.unrealizable_sccs {
+        if !scc.modules.contains(&fresh) {
+            continue;
+        }
+        touches_candidate = true;
+        for owner_edge_id in &scc.constraining_owner_edges {
+            constraining_owner_edge_indices.insert(owner_edge_id.0);
+        }
+    }
+    for rebind in &verdict.cross_rebinds {
+        if rebind.from == fresh || rebind.to == fresh {
+            touches_candidate = true;
+            constraining_owner_edge_indices.insert(rebind.owner_edge.0);
+        }
+    }
+
+    let status = if touches_candidate {
         PeelCandidateStatus::BlockedCycle
     } else {
         PeelCandidateStatus::PeelableNow
@@ -781,21 +747,21 @@ pub(crate) fn evaluate_peel_candidate(
         owner_ids: owner_ids.to_vec(),
         members: declared,
         constraining_owner_edge_indices,
-        residual_dependency_blocker_owner_ids,
+        residual_dependency_blocker_owner_ids: Vec::new(),
     }
 }
 
-/// Per-candidate atomic-unit check: returns the constraining owner-edge
-/// indices for every atomic unit the candidate would split across
-/// modules (at least one member moved, at least one not). Within a
-/// split unit, "constraining" means every edge with both endpoints in
-/// the unit whose `DepKind` isn't `LazyUse`. This subsumes the prior
-/// rebind-only cross-destination check: rebind edges already make
-/// `G_atomic` bidirectional between their endpoints, so any
-/// cross-boundary rebind pair was a unit split — but the unified check
-/// also catches EagerUse cycles that span the candidate boundary.
-/// `candidate_blocking_scc_owner_edge_indices` covers those too, so
-/// the verdict (Peelable / Blocked) is unchanged.
+/// Per-candidate atomic-unit-split check. Returns the constraining
+/// owner-edge indices for every atomic unit the candidate would split
+/// across modules (at least one member moved, at least one not).
+///
+/// Layered on top of the realizability primitive because `G_atomic`
+/// symmetrizes `LocalEffect` and rebind edges (see
+/// `compute_atomic_units`), so a split that the materializer's
+/// `assembly_conflicts` enforcement would reject does not always
+/// surface as a multi-module SCC in the literal constraining-edge
+/// quotient the primitive walks. Mirrors the pre-unification proposer
+/// behaviour exactly.
 fn candidate_atomic_unit_split_edge_indices(
     context: &PeelabilityContext<'_>,
     moved_owners: &BTreeSet<OwnerId>,
@@ -866,193 +832,4 @@ fn candidate_source_destination_blocker_owner_ids(
         }
     }
     blockers.into_iter().collect()
-}
-
-fn candidate_incident_edges(
-    schedule: &Schedule,
-    context: &PeelabilityContext<'_>,
-    moved_owners: &BTreeSet<OwnerId>,
-) -> (Vec<CandidateIncidentEdge>, CandidateGraphAdjustment) {
-    let mut edge_indices = BTreeSet::new();
-    for owner_id in moved_owners {
-        edge_indices.extend(context.owner_out_edge_indices(*owner_id).iter().copied());
-        edge_indices.extend(context.owner_in_edge_indices(*owner_id).iter().copied());
-    }
-
-    let mut adjustment = CandidateGraphAdjustment::default();
-    let mut accum = HashMap::<(CandidateEdgeDirection, ModuleId), CandidateEdgeAccumulator>::new();
-    let mut seen_side_effect_candidate_pairs = HashSet::<(CandidateEdgeDirection, ModuleId)>::new();
-
-    for edge_idx in edge_indices {
-        let edge = &context.owner_edges[edge_idx];
-        adjustment.removed_owner_edge_indices.insert(edge_idx);
-
-        if schedule.owner_graph.node(edge.from).is_none()
-            || schedule.owner_graph.node(edge.to).is_none()
-        {
-            continue;
-        }
-        let old_from = schedule.partition.of(edge.from);
-        let old_to = schedule.partition.of(edge.to);
-        if old_from != old_to && edge.reason.constrains_init_order() {
-            *adjustment
-                .removed_constraining_reason_count
-                .entry((old_from, old_to))
-                .or_insert(0) += 1;
-        }
-
-        let from_moved = moved_owners.contains(&edge.from);
-        let to_moved = moved_owners.contains(&edge.to);
-        if from_moved == to_moved {
-            continue;
-        }
-        let (direction, module) = if from_moved {
-            (CandidateEdgeDirection::FromCandidate, old_to)
-        } else {
-            (CandidateEdgeDirection::ToCandidate, old_from)
-        };
-        if edge.reason.is_sequenced()
-            && !seen_side_effect_candidate_pairs.insert((direction, module))
-        {
-            continue;
-        }
-        let entry = accum.entry((direction, module)).or_default();
-        if edge.reason.constrains_init_order() {
-            entry.constraining_owner_edge_indices.push(edge_idx);
-        }
-        entry.constrains_init_order |= edge.reason.constrains_init_order();
-    }
-
-    let mut candidate_edges = Vec::new();
-    for ((direction, module), entry) in accum {
-        let Some(module_idx) = context.module_idx(module) else {
-            continue;
-        };
-        candidate_edges.push(CandidateIncidentEdge {
-            direction,
-            module_idx,
-            constraining_owner_edge_indices: entry.constraining_owner_edge_indices,
-            constrains_init_order: entry.constrains_init_order,
-        });
-    }
-
-    (candidate_edges, adjustment)
-}
-
-/// Find the candidate's blocking SCC over the **constraining-edge
-/// subgraph** of the post-peel module quotient — not over the full
-/// quotient including lazy edges.
-///
-/// Per `DESIGN.md` "Valid peels and atomic modules": "Lazy read edges
-/// are non-constraining: they still contribute imports, but a cycle
-/// made entirely of lazy read edges is realizable." Equivalently, a
-/// peel is realizable iff the constraining-edge subgraph of the
-/// post-peel quotient contains no multi-module SCC that touches the
-/// candidate. A mixed cycle whose constraining edges form a DAG
-/// (e.g. `residual → P` eager + `P → residual` lazy) is realizable
-/// because ESM cycle resolution evaluates the hoisted/lazy side
-/// first, so the eager side never observes a TDZ.
-///
-/// This is consistent with `compute_atomic_units`, which builds
-/// `G_atomic` from constraining edges only. The previous
-/// implementation walked reachability over all edges (lazy plus eager
-/// plus sequenced plus rebind plus local-effect), which falsely
-/// flagged any pure-function/var/class owner in residual that had a
-/// single intra-residual lazy out-edge plus any eager-use incoming
-/// edges as `BlockedCycle`. Concretely: a Tana chunk's residual is
-/// full of mutual lazy reads, so almost every pure top-level
-/// declaration in residual with both incoming eager use and any lazy
-/// out-edge to residual ended up `BlockedCycle` with empty
-/// `peel_set_ids`.
-fn candidate_blocking_scc_owner_edge_indices(
-    context: &PeelabilityContext<'_>,
-    candidate_edges: &[CandidateIncidentEdge],
-    adjustment: &CandidateGraphAdjustment,
-) -> BTreeSet<usize> {
-    let mut forward = vec![false; context.modules.len()];
-    let mut backward = vec![false; context.modules.len()];
-    let mut queue = VecDeque::new();
-    for edge in candidate_edges.iter().filter(|edge| {
-        edge.direction == CandidateEdgeDirection::FromCandidate && edge.constrains_init_order
-    }) {
-        if !forward[edge.module_idx] {
-            forward[edge.module_idx] = true;
-            queue.push_back(edge.module_idx);
-        }
-    }
-    while let Some(source_idx) = queue.pop_front() {
-        for edge in &context.forward_edges[source_idx] {
-            if !context.current_edge_constrains(edge.pair, adjustment) {
-                continue;
-            }
-            if !forward[edge.target_idx] {
-                forward[edge.target_idx] = true;
-                queue.push_back(edge.target_idx);
-            }
-        }
-    }
-
-    queue.clear();
-    for edge in candidate_edges.iter().filter(|edge| {
-        edge.direction == CandidateEdgeDirection::ToCandidate && edge.constrains_init_order
-    }) {
-        if !backward[edge.module_idx] {
-            backward[edge.module_idx] = true;
-            queue.push_back(edge.module_idx);
-        }
-    }
-    while let Some(target_idx) = queue.pop_front() {
-        for edge in &context.reverse_edges[target_idx] {
-            if !context.current_edge_constrains(edge.pair, adjustment) {
-                continue;
-            }
-            if !backward[edge.source_idx] {
-                backward[edge.source_idx] = true;
-                queue.push_back(edge.source_idx);
-            }
-        }
-    }
-
-    let mut in_scc = vec![false; context.modules.len()];
-    let mut has_cycle = false;
-    for idx in 0..context.modules.len() {
-        in_scc[idx] = forward[idx] && backward[idx];
-        has_cycle |= in_scc[idx];
-    }
-    if !has_cycle {
-        return BTreeSet::new();
-    }
-
-    let mut constraining_owner_edge_ids = BTreeSet::new();
-
-    for edge in candidate_edges {
-        if !in_scc[edge.module_idx] {
-            continue;
-        }
-        if edge.constrains_init_order {
-            constraining_owner_edge_ids
-                .extend(edge.constraining_owner_edge_indices.iter().copied());
-        }
-    }
-
-    for (source_idx, module_edges) in context.forward_edges.iter().enumerate() {
-        if !in_scc[source_idx] {
-            continue;
-        }
-        for edge in module_edges {
-            if !in_scc[edge.target_idx] || !context.current_edge_constrains(edge.pair, adjustment) {
-                continue;
-            }
-            if let Some(totals) = context.module_pair_totals.get(&edge.pair) {
-                for edge_idx in &totals.constraining_owner_edge_indices {
-                    if adjustment.removed_owner_edge_indices.contains(edge_idx) {
-                        continue;
-                    }
-                    constraining_owner_edge_ids.insert(*edge_idx);
-                }
-            }
-        }
-    }
-
-    constraining_owner_edge_ids
 }
