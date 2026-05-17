@@ -16,8 +16,8 @@ use artifact::{
 };
 use js_ast::{ParsedJsModule, emit_js_module, parse_js_module, str_value};
 use spec::{
-    PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark, VendorLevel, VendorMark,
-    VendorRole, WrapperShape,
+    PartialSwapMark, PartialSwapPackage, SwapMark, VendorLevel, VendorMark, VendorRole,
+    WrapperShape,
 };
 
 // These manifests are returned by the vendor stages but the pipeline
@@ -1382,7 +1382,6 @@ fn module_export_name(name: &ModuleExportName) -> String {
 // imported local binding with a namespace member access. The chunk's
 // un-swapped exports keep working through the residual import.
 
-#[derive(Debug, Clone)]
 pub struct ApplyPartialVendorSwapsResult {
     pub artifact: ChunkBundle,
     pub manifest: PartialSwapResolutionManifest,
