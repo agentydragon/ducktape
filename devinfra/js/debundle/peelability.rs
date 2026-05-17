@@ -155,12 +155,23 @@ pub(crate) fn build_peelability_report(
         &declared_by_owner,
     );
 
+    let atomic_unit_candidates =
+        residual_atomic_unit_candidates(schedule, &context, &declared_by_owner);
+
     let mut candidates: Vec<PeelCandidateEvaluation> = singleton_candidates
         .into_iter()
         .map(|(_, candidate)| candidate)
         .collect();
-    candidates.extend(pair_candidates);
-    candidates.extend(dependency_closure_candidates);
+    let mut seen_candidate_ids: HashSet<String> = candidates.iter().map(|c| c.id.clone()).collect();
+    for candidate in pair_candidates
+        .into_iter()
+        .chain(dependency_closure_candidates)
+        .chain(atomic_unit_candidates)
+    {
+        if seen_candidate_ids.insert(candidate.id.clone()) {
+            candidates.push(candidate);
+        }
+    }
 
     let (residual_owner_horizon, minimal_peel_set_ids) =
         build_residual_owner_horizon(schedule, &declared_by_owner, &candidates);
@@ -502,6 +513,72 @@ fn residual_pair_candidates_from_singleton_blockers(
         }
     }
     pair_owner_sets
+}
+
+/// Emit each multi-owner atomic unit (constraining-edge SCC, per
+/// `compute_atomic_units` in `atomic_units.rs`) as a peel-set
+/// candidate.
+///
+/// The atomic unit is the analyzer's own "must move together" notion:
+/// every owner inside a single SCC of `G_atomic` is forced to share a
+/// destination, because the constraining edges between members make
+/// any split unrealizable. Candidates emitted here pass through the
+/// same `evaluate_peel_candidate` predicate as `direct`/pair/closure
+/// candidates: realizability of the new SCC, residual-dependency
+/// check, emit-resolvability projection. They show up as
+/// `PeelableNow` iff the unit has no outgoing constraining edge into
+/// a residual non-member.
+///
+/// Size-1 units (the common case, where an owner has no constraining
+/// peers) are already covered by the singleton `direct` candidates;
+/// skipping them here avoids duplicate ids. Units that mix residual
+/// owners with non-residual ones are skipped because a partial-unit
+/// peel would split the unit by definition. Units whose aggregate
+/// `declared` is empty (e.g. a closure of anonymous decorator
+/// statements with no class binding) are skipped: there'd be nothing
+/// to land in `members[]`.
+fn residual_atomic_unit_candidates(
+    schedule: &Schedule,
+    context: &PeelabilityContext<'_>,
+    declared_by_owner: &BTreeMap<OwnerId, Vec<BindingName>>,
+) -> Vec<PeelCandidateEvaluation> {
+    let mut candidates = Vec::new();
+    for unit in &context.atomic_units {
+        if unit.members.len() < 2 {
+            continue;
+        }
+        if !unit
+            .members
+            .iter()
+            .all(|m| owner_is_in_residual(schedule, *m))
+        {
+            continue;
+        }
+
+        let mut declared = Vec::new();
+        for owner in &unit.members {
+            if let Some(owner_declared) = declared_by_owner.get(owner) {
+                declared.extend(owner_declared.iter().cloned());
+            }
+        }
+        declared.sort();
+        declared.dedup();
+        if declared.is_empty() {
+            continue;
+        }
+
+        let owner_ids: Vec<OwnerId> = unit.members.iter().copied().collect();
+        let candidate = evaluate_peel_candidate(schedule, context, &owner_ids, declared);
+        candidates.push(candidate);
+    }
+    candidates
+}
+
+fn owner_is_in_residual(schedule: &Schedule, owner_id: OwnerId) -> bool {
+    if schedule.owner_graph.node(owner_id).is_none() {
+        return false;
+    }
+    is_residual_destination(schedule, schedule.partition.of(owner_id))
 }
 
 fn residual_dependency_closure_candidates(

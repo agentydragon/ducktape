@@ -1048,6 +1048,31 @@ captures the common "A and B can move, but only together" case
 while keeping the report tied to actual cycle evidence instead of
 speculative all-pairs search.
 
+V1 also enumerates **atomic-unit candidates**: every multi-owner SCC
+of the constraining-edge subgraph `G_atomic` (see <atomic*units.rs>)
+whose members all live in the same residual destination is emitted as
+a candidate of the same shape. The atomic unit is the analyzer's
+already-computed "must move together" set — `compute_atomic_units`
+runs Tarjan over the same constraining-edge relation the validator
+uses, so a partial-unit peel is unrealizable by construction.
+Emitting the full unit asks "can the \_entire* atomic unit move as one
+module?", which is the only realizable peel shape for any single
+unit-member. The candidate is tested by the same
+fresh-destination quotient as singletons/pairs; it shows up as
+`peelable_now` iff the unit's outgoing constraining edges into
+residual non-members form a DAG (i.e. the unit, as one module,
+doesn't close a cross-destination constraining cycle). Without this
+candidate family, large atomic units — a class plus N decorator
+applications, or a multi-owner constraining SCC — would never appear
+on the horizon, even when the whole unit is structurally peelable.
+
+Unit-membership candidates whose members aggregate to an empty
+`declared` set (e.g. a cluster of anonymous side-effect statements
+with no class binding) are skipped: there is nothing to land in the
+report's `members[]` and the peel has no exported surface. Size-1
+units are already covered by the singleton family, so the atomic-unit
+family adds candidates only for size ≥ 2.
+
 The report writes this as:
 
 - `peelability.residual_destinations[]`
