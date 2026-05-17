@@ -14,7 +14,11 @@ second ordered roadmap.
 
 - Sale-tax timing slice — move sale-tax obligations off
   `ALLOCATED_TO_SOURCE_MONTH` onto realistic year-end / estimated-payment
-  dates. Branch `claude/sale-tax-timing-slice`.
+  dates. PR #1578.
+- Funding policies consume crypto + tender-window-aware PE — extend the
+  obligation-funding policy chain so `CheckingFloorSellPublicStockPolicy`
+  (and siblings) can liquidate crypto holdings and tender-eligible PE
+  alongside SP500. Branch `claude/funding-policies-crypto-tender`.
 
 ## Next
 

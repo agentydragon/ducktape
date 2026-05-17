@@ -374,6 +374,14 @@ Work:
 - **Sale-tax timing slice** — move sale-tax obligations off
   `ALLOCATED_TO_SOURCE_MONTH` onto realistic year-end / estimated-payment
   dates. `augur/core/{annual_tax,scenario_engine}.py` + visual goldens.
+  PR #1578.
+- **Funding policies consume crypto + tender-window-aware PE** —
+  `PortfolioStatement.to_initial_balance_sheet()` currently drops crypto
+  holdings and tender windows. First-class runtime handling: a new
+  `AssetType.CRYPTO`, tender-window-driven `private_equity_sale_opportunity_mask`,
+  and extension of `CheckingFloorSellPublicStockPolicy` (and the
+  obligation-funding chain) to liquidate crypto and tender-eligible PE.
+  `augur/core/{portfolio,scenario_set,policy_runtime,scenario_engine}.py`.
 
 ## Next Lanes (parallelism + sequencing)
 
