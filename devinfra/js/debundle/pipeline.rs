@@ -184,8 +184,8 @@ pub enum PipelineStage {
     ApplyVendorAnnotations,
     RenameVendorExports,
     SwapVendorChunks,
-    ApplyPartialVendorSwaps,
     MaterializeLogicalModules,
+    ApplyPartialVendorSwaps,
     WriteJsTree,
     EmitBrowserHarness,
 }
@@ -340,38 +340,6 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
             counts.chunks -= swap_result.removed_chunk_ids.len();
             chunk_records.retain(|chunk| !swap_result.removed_chunk_ids.contains(&chunk.chunk_id));
         }
-        if spec
-            .vendor
-            .values()
-            .any(|m| matches!(m.level, VendorLevel::PartialSwap(_)))
-        {
-            // Reuse the swap-vendor output dir for the partial-swap
-            // manifest, but write to a distinct filename so the two
-            // resolution manifests don't collide. `output_wrapper_dir`
-            // isn't relevant for partial swap (no wrapper generated).
-            let partial_manifest_path = spec
-                .swap_vendor_chunks
-                .output_manifest_path
-                .as_ref()
-                .and_then(|path| path.parent().map(|parent| parent.to_path_buf()))
-                .map(|dir| dir.join("vendor_partial_swap_manifest.json"));
-            let write = spec.swap_vendor_chunks.write;
-            let partial_result =
-                run_step_with_result(&mut steps, PipelineStage::ApplyPartialVendorSwaps, || {
-                    apply_partial_vendor_swaps(
-                        artifact,
-                        &spec.vendor,
-                        &artifact_indexes,
-                        ApplyPartialVendorSwapsOptions {
-                            package_roots: &cli.package_roots,
-                            packages_root: &cli.packages_root,
-                            output_manifest_path: partial_manifest_path,
-                            write,
-                        },
-                    )
-                })?;
-            artifact = partial_result.artifact;
-        }
     }
 
     let mut module_count: usize = 0;
@@ -409,6 +377,42 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
         module_count = materialize_result.module_count;
         selected_lowerings = materialize_result.selected_lowerings;
         decomposition_by_chunk = materialize_result.decomposition_by_chunk;
+    }
+
+    // Partial-vendor-swap runs *after* materialize so the per-symbol
+    // identifier rewrite (`zodObject(...)` → `z.object(...)`) operates
+    // on the already-materialized module files. If it ran before
+    // materialize, the rewrite would erase the binding names that
+    // `binding_patches` / `logical_modules` selectors still rely on at
+    // materialize-time (e.g. `anonymous_statements: match: "ee({...})"`).
+    if !spec.vendor.is_empty()
+        && spec
+            .vendor
+            .values()
+            .any(|m| matches!(m.level, VendorLevel::PartialSwap(_)))
+    {
+        let partial_manifest_path = spec
+            .swap_vendor_chunks
+            .output_manifest_path
+            .as_ref()
+            .and_then(|path| path.parent().map(|parent| parent.to_path_buf()))
+            .map(|dir| dir.join("vendor_partial_swap_manifest.json"));
+        let write = spec.swap_vendor_chunks.write;
+        let partial_result =
+            run_step_with_result(&mut steps, PipelineStage::ApplyPartialVendorSwaps, || {
+                apply_partial_vendor_swaps(
+                    artifact,
+                    &spec.vendor,
+                    &artifact_indexes,
+                    ApplyPartialVendorSwapsOptions {
+                        package_roots: &cli.package_roots,
+                        packages_root: &cli.packages_root,
+                        output_manifest_path: partial_manifest_path,
+                        write,
+                    },
+                )
+            })?;
+        artifact = partial_result.artifact;
     }
 
     if let Some(cfg) = &spec.write_js_tree {
