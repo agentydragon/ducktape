@@ -29,3 +29,5 @@ spec:
       namespace: flux-system
     - name: cert-manager
       namespace: flux-system
+    - name: seaweedfs-cluster
+      namespace: flux-system

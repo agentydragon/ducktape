@@ -2,7 +2,8 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - jwt-token.sops.yaml
-  - pvcs.yaml
+  - seaweedfs-credentials.sops.yaml
+  - bucket.yaml
   - deployment.yaml
   - service.yaml
   - httproute.yaml

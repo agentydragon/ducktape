@@ -1,8 +1,11 @@
 listen = "[::]:8080"
 
 [storage]
-type = "local"
-path = "/cache"
+type = "s3"
+region = "us-east-1"
+bucket = "attic"
+endpoint = "http://seaweedfs-s3.seaweedfs.svc:8333"
+# Credentials sourced from AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY env vars.
 
 [database]
 # url read from ATTIC_SERVER_DATABASE_URL env var (serde default)
@@ -17,7 +20,7 @@ avg-size = 65536
 max-size = 262144
 
 [garbage-collection]
-interval = "12 hours"
+interval = "30 days"
 
 # [jwt.signing] intentionally omitted — read from
 # ATTIC_SERVER_TOKEN_HS256_SECRET_BASE64 env var (serde default)

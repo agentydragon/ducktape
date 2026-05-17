@@ -10,35 +10,40 @@ Every PostgreSQL database in the cluster must be a CloudNativePG `Cluster`
 resource. No bare StatefulSets, Helm-bundled postgres subcharts, or custom
 postgres deployments.
 
-### R2: Two allowed configurations
+### R2: Three allowed configurations
 
-Only two CNPG cluster profiles are permitted:
+Only these CNPG cluster profiles are permitted:
 
-| Profile            | Instances | Region    | Storage      | Anti-affinity                                          |
-| ------------------ | --------- | --------- | ------------ | ------------------------------------------------------ |
-| **VPS-HA**         | 2         | `hetzner` | `local-path` | `topologyKey: kubernetes.io/hostname` + CP tolerations |
-| **Proxmox-single** | 1         | `proxmox` | `local-path` | n/a                                                    |
+| Profile            | Instances | Pin                                      | Storage          | Anti-affinity                                          |
+| ------------------ | --------- | ---------------------------------------- | ---------------- | ------------------------------------------------------ |
+| **VPS-HA**         | 2         | `topology.kubernetes.io/region: hil`     | `local-path`     | `topologyKey: kubernetes.io/hostname` + CP tolerations |
+| **OVH-HA**         | 2         | `topology.kubernetes.io/zone: hil-ovh`   | `local-path-ovh` | `topologyKey: kubernetes.io/hostname`                  |
+| **Proxmox-single** | 1         | `topology.kubernetes.io/region: proxmox` | `local-path`     | n/a                                                    |
 
 **VPS-HA**: For services that must survive without Proxmox (DNS, auth, TF
 state). Two instances spread across the two Hetzner VPS nodes. Requires
 control-plane tolerations since VPS nodes carry the taint.
 
+**OVH-HA**: For services co-located with the SeaweedFS cluster on the two OVH
+kimsufi workers. Two instances on separate kimsufi nodes (same `hil` region
+as VPS-HA but the `hil-ovh` zone). No CP tolerations needed.
+
 **Proxmox-single**: For homelab services. Single instance co-located with the
 app on Proxmox. Relies on ZFS for local reliability; off-site backups via
 pg_dump CronJobs (see backup strategy in <plan.md>).
 
-**Why only these two**: CNPG applies affinity uniformly to all instances
-(primary and replicas). If a cluster spans regions (e.g., primary on Proxmox,
-replica on VPS), a failover can promote the remote replica, causing all writes
-to cross the Nebula mesh indefinitely. Pinning all instances to one region
-avoids this.
+**Why only these**: CNPG applies affinity uniformly to all instances (primary
+and replicas). If a cluster spans regions, a failover can promote the remote
+replica, causing all writes to cross the Nebula mesh indefinitely. Pinning
+all instances to one site avoids this.
 
-### R3: All CNPG clusters use `local-path` storage
+### R3: CNPG storage class follows the pin
 
-No other storage classes. VPS-HA clusters get replication at the CNPG level
-(2 instances on separate nodes). Proxmox-single clusters get replication at
-the storage level (ZFS on the Proxmox host). Using `longhorn` or
-`proxmox-csi-retain` for CNPG would add unnecessary complexity.
+VPS-HA and Proxmox-single use `local-path`; OVH-HA uses `local-path-ovh`
+(constrained to the OVH kimsufi nodes via `allowedTopologies`). HA profiles
+get replication at the CNPG level (2 instances on separate nodes);
+Proxmox-single gets replication at the storage level (ZFS on the Proxmox
+host). No `longhorn` or `proxmox-csi-retain` for CNPG.
 
 ### R4: `initdb.secret` must exist before the Cluster resource
 
@@ -72,7 +77,7 @@ pinned DBs or vice versa. This prevents cross-site write latency.
 | props-db      | Proxmox-single | Yes       |       |
 | matrix-db     | Proxmox-single | Yes       |       |
 | tandoor-db    | Proxmox-single | Yes       |       |
-| attic-db      | Proxmox-single | Yes       |       |
+| attic-db      | OVH-HA         | Yes       |       |
 
 ## TODO
 

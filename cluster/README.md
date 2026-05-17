@@ -76,9 +76,10 @@ All storage is region-local — no cross-site synchronous replication.
 
 | StorageClass         | Provisioner            | Region    | Notes                                                                    |
 | -------------------- | ---------------------- | --------- | ------------------------------------------------------------------------ |
-| `local-path`         | local-path-provisioner | Any       | CNPG (all databases), Gatus, MinIO, Nix cache                            |
+| `local-path`         | local-path-provisioner | Any       | CNPG (most databases), Gatus, MinIO                                      |
 | `local-path-hetzner` | local-path-provisioner | `hil`     | Loki, Mimir, Alertmanager, Grafana DB                                    |
 | `local-path-proxmox` | local-path-provisioner | `proxmox` | Matrix, ActivityWatch, Scanner, OpenClaw, Google Workspace MCP, Tana MCP |
+| `local-path-ovh`     | local-path-provisioner | `hil-ovh` | SeaweedFS volume servers, attic-db (CNPG OVH-HA)                         |
 | `lvm-proxmox-ssd`    | OpenEBS LVM CSI        | `proxmox` | NVMe thin provisioning: Firecracker                                      |
 | `lvm-proxmox-hdd`    | OpenEBS LVM CSI        | `proxmox` | HDD thin provisioning: Harbor, Langfuse, Docker CI, Grocy                |
 | `proxmox-csi-retain` | Proxmox CSI            | `proxmox` | Block storage via Proxmox API: Ollama, Devbot (migrating off)            |
