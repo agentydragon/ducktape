@@ -371,10 +371,6 @@ Work:
 
 ## In Flight
 
-- **Sale-tax timing slice** — move sale-tax obligations off
-  `ALLOCATED_TO_SOURCE_MONTH` onto realistic year-end / estimated-payment
-  dates. `augur/core/{annual_tax,scenario_engine}.py` + visual goldens.
-  PR #1578.
 - **Funding policies consume crypto + tender-window-aware PE** —
   `PortfolioStatement.to_initial_balance_sheet()` currently drops crypto
   holdings and tender windows. First-class runtime handling: a new
@@ -382,23 +378,19 @@ Work:
   and extension of `CheckingFloorSellPublicStockPolicy` (and the
   obligation-funding chain) to liquidate crypto and tender-eligible PE.
   `augur/core/{portfolio,scenario_set,policy_runtime,scenario_engine}.py`.
+- **Collapse trace surfaces** — cleanup-audit item 2. Make
+  ledger/accounting/snapshot rows the canonical detail surface; either
+  delete `SimulationAction` rows or narrow them to user-visible commands.
+  `augur/core/{scenario_set,scenario_engine}.py`.
 
 ## Next Lanes (parallelism + sequencing)
 
-- **Generalize rollout failure semantics beyond mortgage** — insurance /
-  HOA / special assessments through the obligation pipeline. Sequence
-  after sale-tax + partner-ownership (shares `scenario_engine.py`).
-- **Cleanup audit item 2 — pick one source of truth for trace detail**.
-  Actions, decisions, ledger entries, balance snapshots, accounting
-  details, monthly arrays overlap heavily. Collapse one row/decision/
-  ledger surface; document which stays. Sequence after Round 3 (shares
-  `scenario_engine.py`).
-- **Teach runtime funding policies to consume crypto + tender-window-
-  aware private-equity positions** from the portfolio YAML contract.
-  Self-contained.
+- **Plan C (unified obligation/funding semantics)** — see below.
+  Sequence after the trace-surface collapse and crypto/tender-PE funding
+  slices land, since they all share `scenario_engine.py`.
 - **Persist model-governance artifacts** — durable evidence / calibration
   / validation-report storage for market providers. `augur/model/`.
-  Self-contained.
+  Self-contained, can run in parallel with anything.
 
 ## Next Work Plans
 
@@ -435,110 +427,94 @@ Validation:
 
 - `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-pe-plan test //augur/core:test_e2e //augur/core:scenario_engine_test //augur/api:browser_shell_test --nocache_test_results --test_size_filters=small,medium,large`
 
-### Plan C: Tax/Obligation Settlement Slice
+### Plan C: Unified Obligation/Funding Semantics For All Immediate Cash Demands
 
-Status:
+Today, `ObligationType` only covers `ANNUAL_TAX_PAYMENT` and `MORTGAGE_PAYMENT`.
+Everything else that demands cash — property tax, HOA dues, insurance,
+maintenance, outside rent, partner contributions, special assessments — still
+debits cash directly from the operating-cash-flow appliers, with no
+obligation/funding/failure rows on the trace. That makes "rollout failed because
+the actor couldn't pay X" reachable only for tax + mortgage.
 
-- First slice landed for annual tax obligations: unsettled required obligations
-  produce settlement/failure rows and `RolloutStatusType.FAILED`; sale policy can
-  rescue the obligation.
-- Property-sale tax now flows through the same bracket-aware obligation path
-  (2026-05-16). `property_disposition_arrays` reports pre-tax proceeds only;
-  the engine drives sale tax exclusively through `annual_sale_tax_allocation`,
-  so stock-sale, PE-sale, and property-sale tax share one settlement pipeline.
-- Sale-tax obligation timing moved off the source month onto year-end
-  (2026-05-17). `TaxPaymentTiming.YEAR_END` is the new default;
-  `TaxPaymentAllocationDetail` keeps per-source-month accrual provenance,
-  but the obligation that draws cash collapses each tax year onto month
-  index `year * 12 + 11` (clipped to the simulation horizon). Property sale
-  journal entries no longer post to `TAX_EXPENSE`; the year-end tax accrual
-  - settlement journal entries do. The `CheckingFloorSellPublicStockPolicy`
-    funding-policy escape hatch still applies at the settlement month.
+Generalize the shape so **one** pattern handles every immediate cash demand:
 
-Scope:
+1. The accrual path produces a `SimulationObligation` row carrying actor_id,
+   amount_usd, due_month_index, cause_id, obligation_type, and creditor_kind.
+2. The unified `_settle_required_cash_obligations` chain attempts to settle:
+   try cash, then walk the actor's ordered funding policies until either
+   settled or exhausted.
+3. Unsettled required obligations emit `FailureEvent` + flip
+   `RolloutStatusType` to `FAILED`.
 
-- Layer quarterly estimated-payment timing on top of the year-end
-  obligation. Safe-harbor and underpayment-penalty rules are a follow-on.
-- Add tests for mortgage/payment shortfall, sale-policy rescue, explicit
-  failure/default semantics, and continued-vs-terminated projection behavior.
+#### Slices
+
+1. **Expand `ObligationType`** beyond `ANNUAL_TAX_PAYMENT` /
+   `MORTGAGE_PAYMENT`. Add: `PROPERTY_TAX`, `HOA_DUES`, `INSURANCE_PREMIUM`,
+   `MAINTENANCE`, `OUTSIDE_RENT`, `SPECIAL_ASSESSMENT`,
+   `PARTNER_CONTRIBUTION`. Each variant declares `required: bool` — required
+   obligations produce `FAILED` on shortfall; discretionary obligations are
+   best-effort and produce a settlement row but not a failure event.
+2. **Refactor `apply_property_operating_cash_flows`** (<augur/core/policy_runtime.py>)
+   to emit obligations instead of directly debiting cash. Same accrual
+   amounts, same months, same chart-account roles — the only visible change
+   is new obligation/settlement rows on the trace. Cash trajectories should
+   match the current behavior on the happy path.
+3. **Outside-rent obligations** for `OccupancyMode.OWNER_RENTS_ELSEWHERE`.
+   Today this isn't first-class. Add a `RentalPaymentPolicy` (or extend
+   `OccupancyDecisionPolicy`) that accrues monthly rent as a required
+   obligation. Verify against existing tests.
+4. **Partner-contribution obligations**. Today
+   `apply_partner_house_cost_contribution` debits cash unconditionally. The
+   contributing actor's failure to fund their share of housing costs is a
+   real-world failure mode and should produce `FAILED`. Move the cash debit
+   to the obligation pipeline. The owner side (which credits cash) stays
+   direct since it's a receipt, not a demand.
+5. **Quarterly estimated tax payments** on top of the year-end obligation.
+   Standard schedule: Apr 15, Jun 15, Sep 15, Jan 15 of the following year
+   (clamped to horizon). Safe-harbor: 100% of prior-year tax (110% when AGI
+   exceeds the $150k single / $75k MFS threshold), divided into four equal
+   estimated payments. First year (no prior-year tax): use 90% of estimated
+   current-year tax. The year-end obligation amount reduces by the sum of
+   estimated payments actually made.
+6. **Special-assessment events**. Add a `SpecialAssessment` event variant
+   for one-shot HOA assessments, surfaced through the existing event
+   pipeline. Each event produces a `SPECIAL_ASSESSMENT` obligation due in
+   the event month.
+7. **Generalize failure tests**. One `RolloutStatusType.FAILED` test per
+   obligation type proving the funding-policy chain runs, can be rescued
+   by an asset sale, and fails the rollout when no rescue is available.
+   Extend `test_e2e.py` with a "cash-strapped rental scenario" and a
+   "cash-strapped owner-rents-elsewhere scenario" that fail on the right
+   obligation.
+
+#### Out of scope (defer to a follow-on)
+
+- Underpayment-penalty calculation on estimated taxes (interest on
+  shortfalls). The estimated-payment obligations exist; the penalty
+  computation is a separate slice.
+- Discretionary-obligation deferral semantics (e.g. roll unpaid maintenance
+  into a follow-on month). For now every variant is required-or-cosmetic.
+- Explicit borrowing models (overdraft, credit line, margin) as an
+  alternative funding source. Today negative cash stays a warning; if a
+  borrowing facility is added later, it slots in as another
+  `FundingDecisionType`.
 
 Validation:
 
-- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-obligation-plan test //augur/core:test_e2e //augur/core:scenario_engine_test //augur/core:policy_runtime_test --nocache_test_results --test_size_filters=small,medium,large`
+```bash
+bbr test //augur/core:test_e2e //augur/core:scenario_engine_test \
+  //augur/core:policy_runtime_test //augur/core:annual_tax_test
+bbr test //augur/...
+bbr build //augur/...
+```
 
 ### Plan D: Keep Market Configuration Typed At The Boundary
 
-Status:
-
-- Implemented for the current macro market config. The remaining work is to
-  keep the file-contract guardrail in place as source data and downstream
-  deployment inputs grow.
-
-Scope:
-
-- Maintain the Pydantic model for the macro market config file and parse JSON
-  once at load time.
-- Keep `MacroMarketBundleProvider`, evidence loaders, and location market source
-  mapping on typed field access.
-- Keep `SourceDataConfig`, location-market-source validation, and the checked-in
-  example file under the same typed config tree, with no parallel hand-written
-  schema or compatibility path.
-- Reject stale simulation knobs at the file boundary. `MarketRequest` owns
-  rollout count, horizon, and seed; the market config should not keep a second
-  inert version of those controls.
-- Use the contract test as the review point when adding new source-data fields
-  or deployment-supplied config.
-
-Validation:
-
-- `bbr test //augur/model:market_config_test //augur/model/...`
-- `bbr test //augur/core:test_e2e`
-
-### Plan E: Server Boundary Cleanup
-
-Scope:
-
-- Replace `AugurBackend` constructor nullability with explicit dependency/config
-  objects or separate production/dev factory paths.
-- Collapse the one-function static-path helper into the HTTP server boundary
-  unless it grows real ownership.
-- Keep this as a behavior-preserving server cleanup; defer package moves until
-  the server surface is smaller.
-
-Validation:
-
-- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-server-cleanup test //augur/api:browser_shell_test //augur/api:config_test --nocache_test_results --test_size_filters=small,medium,large`
-
-### Plan F: Move Location Tax Defaults To Model Config
-
-Scope:
-
-- Move app-owned tax-regime defaults and location-to-tax-regime mapping into
-  typed location/local-regulation configuration.
-- Keep app catalog/server code as a consumer of modeled location defaults, not
-  the place that decides tax semantics.
-- Use behavior tests around scenario conversion/catalog output rather than
-  literal YAML value change-detector tests.
-
-Validation:
-
-- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-location-tax-config test //augur/api:catalog_test //augur/api:config_test //augur/core:local_regulation_test //augur/core:scenario_set_test --nocache_test_results --test_size_filters=small,medium,large`
-
-### Plan G: Split App Package Boundaries
-
-Scope:
-
-- Move browser code and bundle targets from `augur/app` toward an
-  `augur/frontend` package.
-- Move HTTP/API/server code from `augur/app` toward an `augur/server` or
-  `augur/api` package.
-- Run this after the server cleanup, Mantine cleanup, and visual-test helper
-  lanes land, so the split is mostly mechanical and easier to review.
-
-Validation:
-
-- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-app-split test //augur/... --nocache_test_results`
-- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-app-split build //augur/...`
+Guardrail, not an active slice. Keep the macro market config Pydantic-parsed
+at load time, with `market_config_test` as the review point when adding new
+source-data fields or deployment-supplied config. Reject stale simulation
+knobs at the file boundary — `MarketRequest` owns rollout count, horizon,
+and seed; the market config should not keep a second inert copy.
 
 ## Verification Loop
 

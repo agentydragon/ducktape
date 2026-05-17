@@ -12,13 +12,14 @@ second ordered roadmap.
 
 ## In Flight
 
-- Sale-tax timing slice — move sale-tax obligations off
-  `ALLOCATED_TO_SOURCE_MONTH` onto realistic year-end / estimated-payment
-  dates. PR #1578.
 - Funding policies consume crypto + tender-window-aware PE — extend the
   obligation-funding policy chain so `CheckingFloorSellPublicStockPolicy`
   (and siblings) can liquidate crypto holdings and tender-eligible PE
   alongside SP500. Branch `claude/funding-policies-crypto-tender`.
+- Collapse trace surfaces — cleanup-audit item 2. Make
+  ledger/accounting/snapshot rows the canonical detail surface and either
+  delete `SimulationAction` rows or narrow them to user-visible commands.
+  Branch `claude/collapse-trace-surfaces`.
 
 ## Next
 
@@ -26,7 +27,10 @@ second ordered roadmap.
       normalization and request mapping. Python Pydantic remains the source of
       truth; do not grow a second hand-maintained Zod/schema definition in
       `augur/frontend`.
-- [ ] Continue `plans/e2e_redesign.md` Step 7: quarterly estimated tax payments and underpayment safe-harbor rules on top of the existing year-end annual-tax obligation.
+- [ ] Plan C in `plans/roadmap.md`: unified obligation/funding semantics
+      for all immediate cash demands (property tax, HOA, insurance,
+      maintenance, outside rent, partner contributions, special assessments,
+      quarterly estimated taxes).
 - [ ] Make the generic Augur OCI image public-safe: no private Python config, property records, or media in image layers; deployments supply private config and assets through mounted runtime inputs.
 - [ ] Add a durable property-asset storage contract: stable property asset IDs/URLs backed by object storage or a database-like asset table, so deployments do not need to bake private media into frontend images.
 
@@ -56,10 +60,6 @@ second ordered roadmap.
       that explicit, and consider separate structures/identifiers for market
       nondeterminism, policy nondeterminism, and any future non-market random
       events so trajectory IDs do not conflate different sources of randomness.
-- [ ] Generalize rollout failure semantics beyond the first annual-tax
-      obligation settlement slice. `RolloutStatusType.FAILED` now hangs off
-      unsettled required obligations; extend that pattern to mortgages, other
-      tax/payment demands, and future default/termination behavior.
 - [ ] Decide whether negative cash is allowed only through explicit borrowing.
       If the model says an actor has overdraft, credit-line, margin, or other
       borrowing capacity, negative cash can be an accounting effect paired with
@@ -75,12 +75,6 @@ second ordered roadmap.
       contradict each other.
 - [ ] Reduce single-property/global assumptions. Scenario-level `property_selection`, `financing`, `rental_plan`, and `tax_profile` should eventually become initial positions, per-property settings, or per-actor/accounting inputs as the simulator grows.
 - [ ] Replace built-in `LocationId` enum with database-like location entities, parallel to properties. A location should carry regulation/tax/modeling knobs that downstream regulation and tax code interprets, not require hardcoded enum extension.
-- [ ] Move pure-data model inputs, catalog rows, local-regulation/tax defaults,
-      and location-to-tax-regime mappings out of app/server Python and into
-      typed configuration resources, such as Pydantic-parsed YAML loaded via
-      runfiles or `importlib.resources`. Keep Python for loading, validation,
-      and composition logic; use behavior tests around conversion/catalog
-      output rather than literal YAML mirror tests.
 - [ ] Prefer Pydantic for serde and validation at API/config boundaries. Avoid
       custom `to_json_dict()`-style conversion helpers except at narrow
       compatibility seams.
@@ -88,15 +82,6 @@ second ordered roadmap.
       fields should update `augur/model/market_config_test.py`, remain
       Pydantic-parsed at load time, and avoid stale simulation knobs already
       owned by `MarketRequest`.
-- [ ] Teach runtime funding policies to consume the crypto and
-      tender-window-aware private equity positions modeled in the public
-      portfolio YAML contract (`augur/core/portfolio.py`,
-      `augur/core/testdata/portfolio.example.yaml`). Today
-      `PortfolioStatement.to_initial_balance_sheet()` maps cash + generic S&P 500
-      lots + opaque PE marks into the existing `InitialBalanceSheet` shape and
-      drops crypto holdings and tender windows; the simulator should grow first-
-      class handling for those positions instead of only preserving them in
-      typed input data.
 - [ ] Persist and harden model-governance artifacts for market providers. The
       runtime now attaches typed model card, evidence, calibration, scenario
       generator, path-set, and validation-report identities; the next step is
@@ -109,9 +94,6 @@ second ordered roadmap.
       satisfy the generic asset-position schema. Clean this up in the backend
       position/API model so simulation owns the mark.
 - [ ] Move evidence/model-fetching shapes out of core simulator API when touched. Core should consume calibrated market/provider inputs, not source-specific evidence objects.
-- [ ] Remove redundant `augur_` prefixes from internal module names such as
-      `augur.core.augur_accounting`; inside the `augur` package they add noise
-      without clarifying ownership.
 
 ## Tax Follow-Ups
 
@@ -120,33 +102,11 @@ second ordered roadmap.
       deductible expenses, passive-loss release, SALT/property-tax treatment,
       California conformity/non-conformity, and ordinary income schedules
       beyond one annual `TaxProfile` value.
-- [ ] Layer quarterly estimated-payment timing on top of the existing
-      year-end annual-tax obligation. Sale tax now accrues per source month
-      (TaxPaymentAllocationDetail, `payment_timing=YEAR_END`) and settles in
-      a single year-end obligation collapsed onto month index `year * 12 +
-11` (clipped to horizon). Quarterly estimated payments (and the
-      safe-harbor rules around underpayment penalties) are a follow-on.
-- [ ] Prefer yearly income/tax-lot ledgers with explicit tax settlement near
-      realistic payment dates over trying to account for every tax effect at
-      the moment income or a gain occurs. The settlement workflow should also
-      model cash management: pay from cash when possible, otherwise invoke an
-      explicit sale/financing policy to raise cash for the tax bill.
-- [ ] Promote mortgage payments to the same first-class obligation/funding
-      flow as annual taxes. Today `apply_mortgage_payment` debits cash
-      unconditionally; insufficient cash silently goes negative instead of
-      raising an obligation, invoking a funding policy, and failing the
-      rollout when no policy can cover it. The natural pattern is the one
-      tax now uses (obligation -> funding decision -> settlement or failure).
+- [ ] Underpayment-penalty calculation on estimated taxes (interest on
+      quarterly shortfalls) once the estimated-payment obligations land in
+      Plan C.
 - [ ] Keep stock-sale, PE-sale, and property-sale tax reconciliation in the
       Step 7 test set.
-- [ ] Remove the unused flat tax-rate fields. `TaxProfile.marginal_tax_rate`
-      and `cap_gains_rate` no longer drive any engine computation (the
-      bracket-aware annual-tax allocation owns federal + California for
-      capital gains and depreciation recapture). The fields are still in
-      the schema, browser state, and `apply_private_equity_sale_instruction`'s
-      `cap_gains_rate_pct` parameter (always passed `0.0`). Drop them across
-      schema, app catalog defaults, browser state, and the policy-runtime
-      signature in one atomic change.
 
 ## Reporting / UI Follow-Ups
 
