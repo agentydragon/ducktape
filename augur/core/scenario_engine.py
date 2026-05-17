@@ -65,7 +65,6 @@ from augur.core.scenario_set import (
     AccountBalance,
     AccountingDetailType,
     AccountType,
-    AccruePartnerEquityAction,
     ActorRole,
     AssetType,
     CheckingFloorSellPublicStockPolicy,
@@ -77,7 +76,6 @@ from augur.core.scenario_set import (
     GenericSp500StockPosition,
     LiquidNetWorthFloorPrivateEquitySaleRule,
     MarketPathObservation,
-    MonthlySpendAction,
     MonthlySpendDecision,
     MonthlySpendPolicy,
     ObligationStatus,
@@ -85,7 +83,6 @@ from augur.core.scenario_set import (
     OccupancyMode,
     PartnerContributionDecision,
     PartnerEquityAccrualPolicy,
-    PayMortgageAction,
     Policy,
     PrivateEquityPosition,
     PrivateEquitySaleDecision,
@@ -114,7 +111,6 @@ from augur.core.scenario_set import (
     SimulationPolicyDecision,
     SimulationSettlementResult,
     TaxPaymentAllocationDetail,
-    TransferPartnerContributionAction,
 )
 from augur.core.schemas import ColumnarTable
 
@@ -1392,13 +1388,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                     amount_usd=spend_decision.debit.amount_usd,
                     inflation_multiplier=spend_decision.inflation_multiplier,
                 )
-                _record_monthly_spend_actions(
-                    actions,
-                    month_index=int(month_index[month]),
-                    policy=policy,
-                    amount_usd=spend_application.debit_usd,
-                    inflation_multiplier=spend_decision.inflation_multiplier,
-                )
                 continue
             if isinstance(policy, PrivateEquitySalePolicy):
                 current_private_equity_value = (
@@ -1662,7 +1651,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             sale_application=private_equity_sale_action_record.sale_application,
             estimated_tax_usd=source_tax,
         )
-    _record_partner_agreement_actions(actions, month_index=month_index, partner_equity=partner_equity)
     _record_partner_contribution_decisions(policy_decisions, month_index=month_index, partner_equity=partner_equity)
     _record_partner_agreement_accounting_detail(accounting, month_index=month_index, partner_equity=partner_equity)
     mortgage_payment_due = property_cash_flow.mortgage_payment_usd * property_live_mask
@@ -1691,16 +1679,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             failure_events=failure_events,
             accounting=accounting,
             sp500_sale_action_records=sp500_sale_action_records,
-        )
-        _record_mortgage_payment_actions_from_settlement(
-            actions,
-            month_index=month_index,
-            actor_id=_primary_owner_actor_id(scenario),
-            policy_id=MORTGAGE_SERVICING_POLICY_ID,
-            mortgage_interest_usd=mortgage_interest,
-            mortgage_principal_usd=mortgage_principal,
-            mortgage_balance_after_usd=mortgage_balance,
-            settlement_results=settlement_results,
         )
     _record_journal_entry_batches(
         accounting,
@@ -3666,112 +3644,6 @@ def _settlement_status(*, amount_due_usd: float, unpaid_amount_usd: float) -> Se
     if unpaid_amount_usd >= amount_due_usd:
         return SettlementStatus.UNPAID
     return SettlementStatus.PARTIALLY_PAID
-
-
-def _record_monthly_spend_actions(
-    actions: list[SimulationAction],
-    *,
-    month_index: int,
-    policy: MonthlySpendPolicy,
-    amount_usd: np.ndarray,
-    inflation_multiplier: np.ndarray,
-) -> None:
-    actions.extend(
-        MonthlySpendAction(
-            rollout_index=rollout_index,
-            month_index=month_index,
-            actor_id=policy.actor_id,
-            policy_id=policy.policy_id,
-            amount_usd=float(amount_usd[rollout_index]),
-            inflation_multiplier=float(inflation_multiplier[rollout_index]),
-        )
-        for rollout_index in np.nonzero(amount_usd > 0)[0].tolist()
-    )
-
-
-def _record_mortgage_payment_actions_from_settlement(
-    actions: list[SimulationAction],
-    *,
-    month_index: np.ndarray,
-    actor_id: str,
-    policy_id: str,
-    mortgage_interest_usd: np.ndarray,
-    mortgage_principal_usd: np.ndarray,
-    mortgage_balance_after_usd: np.ndarray,
-    settlement_results: list[SimulationSettlementResult],
-) -> None:
-    """Record `PayMortgageAction` rows from mortgage settlement results.
-
-    Each settlement row corresponds to one month for one rollout where a mortgage
-    obligation was raised. The action reports the amount actually paid (partial when
-    the rollout could not fully fund the payment); `mortgage_interest_usd` and
-    `mortgage_principal_usd` reflect the scaled portion of interest/principal that
-    was actually settled. Failed/partial settlements still record the action so the
-    trajectory inspection can see the attempted payment.
-    """
-    month_position_by_month_index = {int(month_index[position]): position for position in range(month_index.size)}
-    for settlement in settlement_results:
-        if settlement.obligation_type is not ObligationType.MORTGAGE_PAYMENT:
-            continue
-        month_position = month_position_by_month_index[settlement.month_index]
-        scheduled_interest = float(mortgage_interest_usd[settlement.rollout_index, month_position])
-        scheduled_principal = float(mortgage_principal_usd[settlement.rollout_index, month_position])
-        paid_fraction = settlement.amount_paid_usd / settlement.amount_due_usd if settlement.amount_due_usd > 0 else 0.0
-        actions.append(
-            PayMortgageAction(
-                rollout_index=settlement.rollout_index,
-                month_index=settlement.month_index,
-                actor_id=actor_id,
-                policy_id=policy_id,
-                mortgage_payment_usd=settlement.amount_paid_usd,
-                mortgage_interest_usd=scheduled_interest * paid_fraction,
-                mortgage_principal_usd=scheduled_principal * paid_fraction,
-                mortgage_balance_after_usd=float(mortgage_balance_after_usd[settlement.rollout_index, month_position]),
-            )
-        )
-
-
-def _record_partner_agreement_actions(
-    actions: list[SimulationAction], *, month_index: np.ndarray, partner_equity: PartnerEquityArrays
-) -> None:
-    for agreement in partner_equity.agreements:
-        policy = agreement.policy
-        active = (agreement.contribution_usd > 0) | (agreement.unallocated_excess_usd > 0)
-        rollout_indexes, month_positions = np.nonzero(active)
-        for rollout_index, month_position in zip(rollout_indexes.tolist(), month_positions.tolist(), strict=True):
-            month = int(month_index[month_position])
-            contribution = float(agreement.contribution_usd[rollout_index, month_position])
-            contribution_used = float(agreement.contribution_used_usd[rollout_index, month_position])
-            mortgage_principal = float(agreement.mortgage_principal_usd[rollout_index, month_position])
-            actions.append(
-                TransferPartnerContributionAction(
-                    rollout_index=rollout_index,
-                    month_index=month,
-                    actor_id=policy.actor_id,
-                    policy_id=policy.policy_id,
-                    recipient_actor_id=agreement.recipient_actor_id,
-                    amount_usd=contribution,
-                    applied_to_house_costs_usd=contribution_used,
-                    unallocated_amount_usd=float(agreement.unallocated_excess_usd[rollout_index, month_position]),
-                )
-            )
-            actions.append(
-                AccruePartnerEquityAction(
-                    rollout_index=rollout_index,
-                    month_index=month,
-                    actor_id=policy.actor_id,
-                    policy_id=policy.policy_id,
-                    beneficiary_actor_id=policy.actor_id,
-                    property_id=agreement.property_id,
-                    house_costs_usd=float(agreement.house_costs_usd[rollout_index, month_position]),
-                    cash_transfer_used_for_house_costs_usd=contribution_used,
-                    mortgage_principal_usd=mortgage_principal,
-                    principal_credit_usd=float(agreement.principal_credit_usd[rollout_index, month_position]),
-                    house_cost_share=float(agreement.house_cost_share[rollout_index, month_position]),
-                    ownership_pct_after=float(agreement.ownership_pct[rollout_index, month_position]),
-                    home_equity_claim_usd_after=float(agreement.home_equity_claim_usd[rollout_index, month_position]),
-                )
-            )
 
 
 def _sorted_actions(actions: list[SimulationAction]) -> tuple[SimulationAction, ...]:

@@ -10,7 +10,6 @@ from augur.core.market_bundle import MarketBundle, MarketBundleMetadata
 from augur.core.scenario_engine import MonthlyColumnSource, monthly_column_specs, run_scenario_vectorized
 from augur.core.scenario_set import (
     AccountType,
-    AccruePartnerEquityAction,
     ActionType,
     AssetType,
     FundingDecisionType,
@@ -19,7 +18,7 @@ from augur.core.scenario_set import (
     MonthlySpendDecision,
     ObligationStatus,
     ObligationType,
-    PayMortgageAction,
+    PartnerContributionDecision,
     PrivateEquitySaleDecision,
     PrivateEquitySaleDecisionReason,
     PrivateEquitySaleOpportunityObservation,
@@ -30,7 +29,6 @@ from augur.core.scenario_set import (
     SellPublicStockDecision,
     SettlementStatus,
     SettlePropertySaleAction,
-    TransferPartnerContributionAction,
 )
 
 
@@ -933,37 +931,24 @@ def test_partner_equity_accrues_from_principal_then_freezes_and_participates_in_
     assert_allclose(result.partner_ownership_pct[:, 4], result.partner_ownership_pct[:, 2])
     assert np.all(result.partner_home_equity_claim_usd[:, 4] > result.partner_home_equity_claim_usd[:, 2])
     assert_allclose(result.owner_home_equity_claim_usd + result.partner_home_equity_claim_usd, result.home_equity_usd)
-    payment_actions = [action for action in result.actions if isinstance(action, TransferPartnerContributionAction)]
-    mortgage_actions = [action for action in result.actions if isinstance(action, PayMortgageAction)]
-    equity_actions = [action for action in result.actions if isinstance(action, AccruePartnerEquityAction)]
-    assert len(payment_actions) == 4
-    assert len(mortgage_actions) == 8
-    assert len(equity_actions) == 4
-    assert {action.month_index for action in payment_actions} == {1, 2}
-    assert {action.month_index for action in mortgage_actions} == {1, 2, 3, 4}
-    assert {action.month_index for action in equity_actions} == {1, 2}
-    for payment in payment_actions:
-        assert payment.actor_id == "occupant"
-        assert payment.policy_id == "partner_equity"
-        assert payment.recipient_actor_id == "owner"
-        assert payment.amount_usd == 1_000
-        assert payment.applied_to_house_costs_usd > 0
-    for mortgage in mortgage_actions:
-        assert mortgage.actor_id == "owner"
-        assert mortgage.policy_id == "mortgage_servicing"
-        assert mortgage.mortgage_payment_usd > 0
-        assert mortgage.mortgage_interest_usd == 0
-        assert mortgage.mortgage_principal_usd > 0
-        assert mortgage.mortgage_balance_after_usd < 80_000
-    for equity in equity_actions:
-        assert equity.actor_id == "occupant"
-        assert equity.policy_id == "partner_equity"
-        assert equity.beneficiary_actor_id == "occupant"
-        assert equity.property_id == "vallejo_calhoun"
-        assert equity.house_costs_usd > equity.mortgage_principal_usd
-        assert equity.cash_transfer_used_for_house_costs_usd > equity.principal_credit_usd
-        assert equity.principal_credit_usd == equity.mortgage_principal_usd
-        assert equity.ownership_pct_after > 0
+    # Partner contributions, mortgage payments, and partner-equity accruals are
+    # canonicalized in ledger postings and obligation/settlement rows; the
+    # PartnerContributionDecision row carries the actor decision trace.
+    contribution_decisions = [
+        decision for decision in result.policy_decisions if isinstance(decision, PartnerContributionDecision)
+    ]
+    assert {decision.month_index for decision in contribution_decisions} == {1, 2}
+    assert all(decision.actor_id == "occupant" for decision in contribution_decisions)
+    assert all(decision.recipient_actor_id == "owner" for decision in contribution_decisions)
+    assert all(decision.requested_amount_usd == 1_000 for decision in contribution_decisions)
+    mortgage_settlements = [
+        settlement
+        for settlement in result.settlement_results
+        if settlement.obligation_type is ObligationType.MORTGAGE_PAYMENT
+    ]
+    assert {settlement.month_index for settlement in mortgage_settlements} == {1, 2, 3, 4}
+    assert all(settlement.actor_id == "owner" for settlement in mortgage_settlements)
+    assert all(settlement.amount_paid_usd > 0 for settlement in mortgage_settlements)
 
 
 def test_multiple_partner_equity_policies_execute_in_actor_program_order() -> None:
@@ -1046,13 +1031,15 @@ def test_multiple_partner_equity_policies_execute_in_actor_program_order() -> No
     assert {account_by_id[posting.chart_account_id].property_id for posting in partner_principal_rows} == {
         "vallejo_calhoun"
     }
-    transfers = [action for action in result.actions if isinstance(action, TransferPartnerContributionAction)]
-    assert [(action.month_index, action.actor_id, action.amount_usd) for action in transfers] == [
-        (1, "partner_a", 50),
-        (1, "partner_b", 50),
-        (2, "partner_a", 50),
-        (2, "partner_b", 50),
+    # Partner contributions are recorded as PartnerContributionDecision rows
+    # (the actor decision trace); the underlying cash transfer lives in
+    # PARTNER_CONTRIBUTION_TRANSFER postings (cross-checked above).
+    contribution_decisions = [
+        decision for decision in result.policy_decisions if isinstance(decision, PartnerContributionDecision)
     ]
+    assert [
+        (decision.month_index, decision.actor_id, decision.requested_amount_usd) for decision in contribution_decisions
+    ] == [(1, "partner_a", 50), (1, "partner_b", 50), (2, "partner_a", 50), (2, "partner_b", 50)]
 
 
 def test_partner_equity_arrays_match_rows_from_same_application() -> None:

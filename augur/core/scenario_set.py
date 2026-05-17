@@ -55,13 +55,18 @@ class LiquidityReserveRuleType(StrEnum):
 
 
 class ActionType(StrEnum):
+    """Discriminator for user-visible trajectory actions.
+
+    Restricted to sale-class commands: the system-emitted accounting moves
+    (mortgage settlement, partner contributions, partner-equity accruals,
+    monthly spend) are derivable from ledger postings, balance snapshots, and
+    accounting details — the canonical detail surface — so they are not
+    surfaced as separate action rows.
+    """
+
     SELL_SP500 = "sell_sp500"
     SELL_PRIVATE_EQUITY = "sell_private_equity"
     SETTLE_PROPERTY_SALE = "settle_property_sale"
-    TRANSFER_PARTNER_CONTRIBUTION = "transfer_partner_contribution"
-    PAY_MORTGAGE = "pay_mortgage"
-    ACCRUE_PARTNER_EQUITY = "accrue_partner_equity"
-    MONTHLY_SPEND = "monthly_spend"
 
 
 class PolicyDecisionType(StrEnum):
@@ -446,50 +451,8 @@ class SettlePropertySaleAction(_SimulationActionBase):
     proceeds_destination: AccountType = AccountType.CHECKING
 
 
-class TransferPartnerContributionAction(_SimulationActionBase):
-    action_type: Literal[ActionType.TRANSFER_PARTNER_CONTRIBUTION] = ActionType.TRANSFER_PARTNER_CONTRIBUTION
-    recipient_actor_id: str
-    amount_usd: float
-    applied_to_house_costs_usd: float
-    unallocated_amount_usd: float
-
-
-class PayMortgageAction(_SimulationActionBase):
-    action_type: Literal[ActionType.PAY_MORTGAGE] = ActionType.PAY_MORTGAGE
-    mortgage_payment_usd: float
-    mortgage_interest_usd: float
-    mortgage_principal_usd: float
-    mortgage_balance_after_usd: float
-
-
-class AccruePartnerEquityAction(_SimulationActionBase):
-    action_type: Literal[ActionType.ACCRUE_PARTNER_EQUITY] = ActionType.ACCRUE_PARTNER_EQUITY
-    beneficiary_actor_id: str
-    property_id: PropertyId
-    house_costs_usd: float
-    cash_transfer_used_for_house_costs_usd: float
-    mortgage_principal_usd: float
-    principal_credit_usd: float
-    house_cost_share: float
-    ownership_pct_after: float
-    home_equity_claim_usd_after: float
-
-
-class MonthlySpendAction(_SimulationActionBase):
-    action_type: Literal[ActionType.MONTHLY_SPEND] = ActionType.MONTHLY_SPEND
-    amount_usd: float
-    inflation_multiplier: float = 1.0
-
-
 SimulationAction = Annotated[
-    SellSp500Action
-    | SellPrivateEquityAction
-    | SettlePropertySaleAction
-    | TransferPartnerContributionAction
-    | PayMortgageAction
-    | AccruePartnerEquityAction
-    | MonthlySpendAction,
-    Field(discriminator="action_type"),
+    SellSp500Action | SellPrivateEquityAction | SettlePropertySaleAction, Field(discriminator="action_type")
 ]
 
 

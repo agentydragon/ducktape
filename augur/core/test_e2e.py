@@ -24,7 +24,6 @@ from augur.core.market_bundle_test_support import NoopMarketBundleProvider
 from augur.core.scenario_set import (
     AccountBalance,
     AccountType,
-    AccruePartnerEquityAction,
     Actor,
     ActorRole,
     AssetType,
@@ -37,14 +36,12 @@ from augur.core.scenario_set import (
     InitialBalanceSheet,
     MarketPathObservation,
     MarketRequest,
-    MonthlySpendAction,
     MonthlySpendDecision,
     MonthlySpendPolicy,
     ObligationStatus,
     ObligationType,
     PartnerContributionDecision,
     PartnerEquityAccrualPolicy,
-    PayMortgageAction,
     PrivateEquityPosition,
     PrivateEquitySaleDecision,
     PrivateEquitySaleDecisionReason,
@@ -70,7 +67,6 @@ from augur.core.scenario_set import (
     TaxPaymentTiming,
     TaxProfile,
     TransactionCosts,
-    TransferPartnerContributionAction,
     WholePropertyRentalPlan,
 )
 
@@ -334,11 +330,8 @@ def test_monthly_spend_drains_cash() -> None:
         _posting_matrix(result, role=ChartAccountRole.MONTHLY_LIVING_EXPENSE, side=PostingSide.DEBIT),
         result.matrix(ReportMetric.MONTHLY_SPEND_USD),
     )
-    # Verify actions recorded for each month 1..12
-    spend_actions = result.actions(MonthlySpendAction)
-    assert len(spend_actions) == 12
-    assert spend_actions[0].amount_usd == 5_000
-    assert spend_actions[0].month_index == 1
+    # The actor decision trace records monthly-spend decisions; the underlying
+    # cash debit is the canonical detail surface (asserted above).
     spend_decisions = result.policy_decisions(MonthlySpendDecision)
     assert len(spend_decisions) == 12
     assert spend_decisions[0].amount_usd == 5_000
@@ -373,8 +366,12 @@ def test_monthly_spend_records_each_rollout_and_month() -> None:
         _posting_matrix(result, role=ChartAccountRole.MONTHLY_LIVING_EXPENSE, side=PostingSide.DEBIT),
         result.matrix(ReportMetric.MONTHLY_SPEND_USD),
     )
+    # Per-rollout/per-month attribution is recorded in the policy-decision trace
+    # (one decision row per rollout/month where the policy fired); the ledger
+    # postings cover the cash debit itself.
     assert [
-        (action.rollout_index, action.month_index, action.amount_usd) for action in result.actions(MonthlySpendAction)
+        (decision.rollout_index, decision.month_index, decision.amount_usd)
+        for decision in result.policy_decisions(MonthlySpendDecision)
     ] == [(0, 1, 5_000), (1, 1, 5_000), (0, 2, 5_000), (1, 2, 5_000)]
 
 
@@ -440,15 +437,9 @@ def test_fixed_rate_mortgage_amortizes_and_purchase_cash_outlay_posts_at_month_z
         ),
         result.matrix(ReportMetric.MORTGAGE_PRINCIPAL_USD),
     )
-    mortgage_payments = result.actions(PayMortgageAction)
-    assert len(mortgage_payments) == 12
-    assert mortgage_payments[0].month_index == 1
-    assert mortgage_payments[0].actor_id == "alpha"
-    assert mortgage_payments[0].policy_id == "mortgage_servicing"
-    assert_allclose(mortgage_payments[0].mortgage_payment_usd, payment)
-    assert_allclose(mortgage_payments[0].mortgage_interest_usd, expected_month_1_interest)
-    assert_allclose(mortgage_payments[0].mortgage_principal_usd, expected_month_1_principal)
-    assert_allclose(mortgage_payments[0].mortgage_balance_after_usd, loan_amount - expected_month_1_principal)
+    # Mortgage payment detail is exposed via obligation + settlement rows and the
+    # MORTGAGE_INTEREST/MORTGAGE_PRINCIPAL ledger postings asserted above; the
+    # standalone PayMortgageAction row has been collapsed away.
     assert result.arrays is not None
     mortgage_obligations = tuple(
         obligation
@@ -785,38 +776,26 @@ def test_partner_equity_accrual_records_contributions_and_claims() -> None:
         "test_property"
     }
 
-    transfers = result.actions(TransferPartnerContributionAction)
-    assert len(transfers) == horizon_months
-    assert transfers[0].month_index == 1
-    assert transfers[-1].month_index == horizon_months
-    assert all(action.actor_id == "beta" for action in transfers)
-    assert all(action.recipient_actor_id == "alpha" for action in transfers)
-    assert all(action.amount_usd == 1_000 for action in transfers)
-    assert_allclose(
-        [action.applied_to_house_costs_usd for action in transfers],
-        rollout.series(ReportMetric.PARTNER_CONTRIBUTION_USED_USD)[1:],
-    )
-    assert all(action.unallocated_amount_usd > 0 for action in transfers)
+    # Partner contributions, mortgage payments, and partner-equity accruals are
+    # canonicalized in ledger postings (PARTNER_CONTRIBUTION_TRANSFER,
+    # MORTGAGE_PAYABLE, PARTNER_PRINCIPAL_CREDIT) and PARTNER_EQUITY_LEDGER
+    # balance snapshots. The PartnerContributionDecision row carries the actor
+    # decision trace; no standalone action row duplicates the accounting moves.
     contribution_decisions = result.policy_decisions(PartnerContributionDecision)
     assert len(contribution_decisions) == horizon_months
     assert contribution_decisions[0].actor_id == "beta"
     assert contribution_decisions[0].recipient_actor_id == "alpha"
     assert contribution_decisions[0].requested_amount_usd == 1_000
 
-    mortgage_payments = result.actions(PayMortgageAction)
-    assert len(mortgage_payments) == horizon_months
-    assert mortgage_payments[0].actor_id == "alpha"
-    assert_allclose(mortgage_payments[0].mortgage_principal_usd, monthly_principal)
-    assert_allclose(mortgage_payments[-1].mortgage_balance_after_usd, expected_terminal_mortgage_balance)
-
-    accruals = result.actions(AccruePartnerEquityAction)
-    assert len(accruals) == horizon_months
-    assert accruals[0].actor_id == "beta"
-    assert accruals[0].beneficiary_actor_id == "beta"
-    assert accruals[0].property_id == "test_property"
-    assert_allclose(accruals[0].principal_credit_usd, monthly_principal)
-    assert_allclose(accruals[-1].ownership_pct_after, expected_ownership_pct)
-    assert_allclose(accruals[-1].home_equity_claim_usd_after, expected_partner_ledger)
+    # Mortgage principal accumulates against MORTGAGE_PAYABLE; the partner
+    # ownership/claim flow against the snapshot ledgers.
+    assert_allclose(rollout.series(ReportMetric.MORTGAGE_PRINCIPAL_USD)[1], monthly_principal)
+    assert_allclose(
+        rollout.series(ReportMetric.MORTGAGE_BALANCE_USD)[horizon_months], expected_terminal_mortgage_balance
+    )
+    assert_allclose(rollout.series(ReportMetric.PARTNER_PRINCIPAL_CREDIT_USD)[1], monthly_principal)
+    assert_allclose(rollout.series(ReportMetric.PARTNER_OWNERSHIP_PCT)[horizon_months], expected_ownership_pct)
+    assert_allclose(rollout.series(ReportMetric.PARTNER_EQUITY_LEDGER_USD)[horizon_months], expected_partner_ledger)
 
 
 def test_property_sale_records_capital_gains_tax_and_net_proceeds() -> None:
@@ -1037,11 +1016,9 @@ def test_partner_sale_claim_uses_settlement_net_proceeds() -> None:
     assert_allclose(rollout.series(ReportMetric.PARTNER_HOME_EQUITY_CLAIM_USD)[4], expected_partner_claim)
     assert_allclose(rollout.series(ReportMetric.OWNER_HOME_EQUITY_CLAIM_USD)[4], expected_owner_claim)
 
-    sale_month_accruals = [
-        action for action in rollout.actions(AccruePartnerEquityAction) if action.month_index == sale_month
-    ]
-    assert len(sale_month_accruals) == 1
-    assert_allclose(sale_month_accruals[0].home_equity_claim_usd_after, expected_partner_claim)
+    # The partner-equity home claim after the sale is reported by the
+    # PARTNER_HOME_EQUITY_CLAIM monthly metric (asserted above) which derives
+    # from the OWNERSHIP_PARTNER_HOME_EQUITY_CLAIM balance snapshots.
 
 
 def test_simulate_set_response_serializes_sale_actions_with_tax_detail() -> None:
@@ -1619,6 +1596,277 @@ def test_fixed_amount_private_equity_sale_rule_sells_on_market_opportunity() -> 
     assert actions[0].event_type is None
     assert actions[0].amount_usd == 50_000
     assert_allclose(actions[0].after_tax_proceeds_usd, 50_000 - expected_tax)
+
+
+def test_every_monthly_flow_metric_reconciles_to_canonical_detail_surface() -> None:
+    """Cleanup-audit item 2 invariant: every public monthly flow column is derived
+    from the canonical detail surface (ledger postings, balance snapshots,
+    accounting details, or market observations) — never from a parallel
+    SimulationAction recorder. This guard rebuilds each monthly metric matrix
+    from the canonical detail rows the engine emits and asserts it equals the
+    monthly array reported in the result.
+
+    The scenario combines a partner-equity occupant, a mortgaged property with
+    rental income, a checking-floor stock sale, a private-equity sale
+    opportunity, monthly spend, and an end-of-horizon property sale so the
+    reconciliation exercises every monthly column with a LEDGER_ENTRY,
+    BALANCE_SNAPSHOT, ACCOUNTING_DETAIL, or MARKET_OBSERVATION source.
+
+    Metrics whose source is TRAJECTORY_STATE (state arrays computed
+    vectorially: cash, property value, mortgage balance, depreciation schedule,
+    partner_present) or REPORT_PROJECTION (derived from other metrics: e.g.
+    mortgage_payment_usd = interest + principal) are not in scope for this
+    guard — they have no separate ledger/accounting source by construction.
+    """
+    purchase_price = 500_000
+    sale_month = 12
+    scenario = Scenario(
+        scenario_id="reconciliation_guard",
+        label="Reconciliation Guard",
+        actors=(_simple_actor(), Actor(actor_id="beta", label="Beta", role=ActorRole.EQUITY_BUILDING_OCCUPANT)),
+        events=(PropertySaleEvent(event_id="sale", month_index=sale_month, property_id="test_property"),),
+        property_selection=PropertySelection(
+            property_id="test_property", location_id=LocationId.SAN_FRANCISCO_CA, purchase_price_usd=purchase_price
+        ),
+        financing=Financing(financing_mode=FinancingMode.FIXED_30, down_payment_pct=25, mortgage_rate_pct=6),
+        transaction_costs=TransactionCosts(closing_cost_buy_pct=2.5, closing_cost_sell_pct=6.5),
+        property_assumptions=PropertyAssumptions(insurance_annual_usd=1_800, maintenance_pct=1),
+        rental_plan=WholePropertyRentalPlan(
+            rental_mode=RentalMode.RENT_WHOLE_PROPERTY,
+            start_month=1,
+            end_month=sale_month - 1,
+            monthly_rent_usd=3_500,
+            vacancy_pct=5,
+            management_fee_pct=8,
+        ),
+        tax_profile=TaxProfile(filing_status=TaxFilingStatus.SINGLE, annual_ordinary_income_usd=120_000),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking",
+                    account_type=AccountType.CHECKING,
+                    owner_actor_id="alpha",
+                    balance_usd=200_000,
+                ),
+            ),
+            assets=(
+                GenericSp500StockPosition(
+                    asset_id="sp500",
+                    asset_type=AssetType.GENERIC_SP500_STOCK,
+                    owner_actor_id="alpha",
+                    value_usd=100_000,
+                    cost_basis_usd=50_000,
+                ),
+                PrivateEquityPosition(
+                    asset_id="pe",
+                    asset_type=AssetType.PRIVATE_EQUITY,
+                    owner_actor_id="alpha",
+                    value_usd=200_000,
+                    cost_basis_usd=80_000,
+                    units=200,
+                ),
+            ),
+        ),
+        policies=(
+            MonthlySpendPolicy(policy_id="living_expenses", actor_id="alpha", monthly_spend_usd=2_000),
+            CheckingFloorSellPublicStockPolicy(
+                policy_id="checking_floor", actor_id="alpha", floor_usd=50_000, sale_amount_usd=10_000
+            ),
+            PrivateEquitySalePolicy(
+                policy_id="pe_sale",
+                actor_id="alpha",
+                proceeds_destination="cash",
+                sale_rule=FixedAmountPrivateEquitySaleRule(amount_usd=25_000),
+            ),
+            PartnerEquityAccrualPolicy(
+                policy_id="partner_equity",
+                actor_id="beta",
+                property_id="test_property",
+                base_monthly_payment_usd=800,
+                grow_with_inflation=False,
+                occupied_months=sale_month,
+            ),
+        ),
+    )
+    result = _run_scenario(
+        scenario,
+        rollout_count=2,
+        horizon_months=sale_month,
+        market_provider=NoopMarketBundleProvider(
+            home_path=tuple(1.0 + 0.02 * month for month in range(sale_month + 1)),
+            private_equity_sale_opportunity_months=(4,),
+        ),
+    )
+
+    # Ledger-derived: each metric equals the sum of postings on the named role
+    # (and journal entry type when the spec calls one out).
+    ledger_reconciliations = (
+        (ReportMetric.MONTHLY_SPEND_USD, ChartAccountRole.MONTHLY_LIVING_EXPENSE, PostingSide.DEBIT, None),
+        (ReportMetric.MORTGAGE_INTEREST_USD, ChartAccountRole.MORTGAGE_INTEREST_EXPENSE, PostingSide.DEBIT, None),
+        (
+            ReportMetric.MORTGAGE_PRINCIPAL_USD,
+            ChartAccountRole.MORTGAGE_PAYABLE,
+            PostingSide.DEBIT,
+            JournalEntryType.MORTGAGE_PAYMENT,
+        ),
+        (ReportMetric.PROPERTY_TAX_USD, ChartAccountRole.PROPERTY_TAX_EXPENSE, PostingSide.DEBIT, None),
+        (ReportMetric.HOA_USD, ChartAccountRole.HOA_EXPENSE, PostingSide.DEBIT, None),
+        (ReportMetric.INSURANCE_USD, ChartAccountRole.INSURANCE_EXPENSE, PostingSide.DEBIT, None),
+        (ReportMetric.MAINTENANCE_USD, ChartAccountRole.MAINTENANCE_EXPENSE, PostingSide.DEBIT, None),
+        (ReportMetric.RENTAL_INCOME_USD, ChartAccountRole.RENTAL_INCOME, PostingSide.CREDIT, None),
+        (
+            ReportMetric.RENTAL_MANAGEMENT_FEE_USD,
+            ChartAccountRole.RENTAL_MANAGEMENT_FEE_EXPENSE,
+            PostingSide.DEBIT,
+            None,
+        ),
+        (ReportMetric.RENTAL_LEASING_FEE_USD, ChartAccountRole.RENTAL_LEASING_FEE_EXPENSE, PostingSide.DEBIT, None),
+        (
+            ReportMetric.SALE_CLOSING_COST_USD,
+            ChartAccountRole.PROPERTY_SALE_CLOSING_EXPENSE,
+            PostingSide.DEBIT,
+            JournalEntryType.PROPERTY_SALE,
+        ),
+        (
+            ReportMetric.PROPERTY_SALE_GROSS_USD,
+            ChartAccountRole.PROPERTY,
+            PostingSide.CREDIT,
+            JournalEntryType.PROPERTY_SALE,
+        ),
+        (
+            ReportMetric.PROPERTY_SALE_DEBT_PAYOFF_USD,
+            ChartAccountRole.MORTGAGE_PAYABLE,
+            PostingSide.DEBIT,
+            JournalEntryType.PROPERTY_SALE,
+        ),
+        (
+            ReportMetric.GENERIC_SP500_SALE_USD,
+            ChartAccountRole.PUBLIC_SECURITY,
+            PostingSide.CREDIT,
+            JournalEntryType.ASSET_SALE,
+        ),
+        (
+            ReportMetric.PRIVATE_EQUITY_SALE_USD,
+            ChartAccountRole.PRIVATE_EQUITY,
+            PostingSide.CREDIT,
+            JournalEntryType.ASSET_SALE,
+        ),
+        (
+            ReportMetric.PARTNER_CONTRIBUTION_USD,
+            ChartAccountRole.PARTNER_CONTRIBUTION_TRANSFER,
+            PostingSide.CREDIT,
+            None,
+        ),
+        (
+            ReportMetric.PARTNER_CONTRIBUTION_USED_USD,
+            ChartAccountRole.PARTNER_CONTRIBUTION_USED,
+            PostingSide.DEBIT,
+            None,
+        ),
+        (
+            ReportMetric.PARTNER_UNALLOCATED_EXCESS_USD,
+            ChartAccountRole.PARTNER_UNALLOCATED_CLAIM,
+            PostingSide.DEBIT,
+            None,
+        ),
+        (ReportMetric.PARTNER_PRINCIPAL_CREDIT_USD, ChartAccountRole.PARTNER_PRINCIPAL_CREDIT, PostingSide.DEBIT, None),
+        (ReportMetric.OWNER_PRINCIPAL_CREDIT_USD, ChartAccountRole.OWNER_PRINCIPAL_CREDIT, PostingSide.DEBIT, None),
+    )
+    for metric, role, side, journal_entry_type in ledger_reconciliations:
+        assert_allclose(
+            _posting_matrix(result, role=role, side=side, journal_entry_type=journal_entry_type),
+            result.matrix(metric),
+            err_msg=f"{metric} should equal ledger postings on {role}/{side.value}",
+        )
+
+    # Lot-disposition-derived (sale-cost-basis + sale-tax attribution): the
+    # canonical surface is the lot disposition row, which records cost basis
+    # consumed and the per-sale tax expense allocation. These show up under
+    # LEDGER_ENTRY in `_MONTHLY_COLUMN_SPECS` because lot dispositions are a
+    # part of the accounting trace, not a parallel surface.
+    lot_disposition_reconciliations = (
+        (ReportMetric.GENERIC_SP500_SALE_BASIS_USD, LotAssetClass.PUBLIC_SECURITY, "cost_basis_usd"),
+        (ReportMetric.GENERIC_SP500_SALE_TAX_USD, LotAssetClass.PUBLIC_SECURITY, "tax_expense_usd"),
+        (ReportMetric.PRIVATE_EQUITY_SALE_BASIS_USD, LotAssetClass.PRIVATE_EQUITY, "cost_basis_usd"),
+        (ReportMetric.PRIVATE_EQUITY_SALE_TAX_USD, LotAssetClass.PRIVATE_EQUITY, "tax_expense_usd"),
+        (ReportMetric.PROPERTY_SALE_TAX_USD, LotAssetClass.PROPERTY, "tax_expense_usd"),
+    )
+    for metric, asset_class, amount_field in lot_disposition_reconciliations:
+        assert_allclose(
+            _lot_disposition_matrix(result, asset_class=asset_class, amount_field=amount_field),
+            result.matrix(metric),
+            err_msg=f"{metric} should equal lot-disposition.{amount_field} for {asset_class}",
+        )
+
+    # Cash flow on the property-sale journal entry: net proceeds equal cash
+    # debits minus cash credits on that journal entry.
+    assert_allclose(
+        _posting_matrix(
+            result,
+            role=ChartAccountRole.CHECKING_CASH,
+            side=PostingSide.DEBIT,
+            journal_entry_type=JournalEntryType.PROPERTY_SALE,
+        )
+        - _posting_matrix(
+            result,
+            role=ChartAccountRole.CHECKING_CASH,
+            side=PostingSide.CREDIT,
+            journal_entry_type=JournalEntryType.PROPERTY_SALE,
+        ),
+        result.matrix(ReportMetric.PROPERTY_SALE_NET_PROCEEDS_USD),
+    )
+
+    # Balance-snapshot-derived: ownership ledgers and home equity claims.
+    snapshot_reconciliations = (
+        (ReportMetric.OWNER_HOME_EQUITY_CLAIM_USD, ChartAccountRole.OWNER_HOME_EQUITY_CLAIM),
+        (ReportMetric.PARTNER_HOME_EQUITY_CLAIM_USD, ChartAccountRole.PARTNER_HOME_EQUITY_CLAIM),
+        (ReportMetric.OWNER_EQUITY_LEDGER_USD, ChartAccountRole.OWNER_EQUITY_LEDGER),
+        (ReportMetric.PARTNER_EQUITY_LEDGER_USD, ChartAccountRole.PARTNER_EQUITY_LEDGER),
+    )
+    for metric, role in snapshot_reconciliations:
+        assert_allclose(
+            _balance_snapshot_matrix(result, role=role),
+            result.matrix(metric),
+            err_msg=f"{metric} should equal balance-snapshot on {role}",
+        )
+
+    # Accounting-detail-derived: tax payment allocations and property-sale
+    # basis/gain attribution.
+    detail_reconciliations = (
+        (ReportMetric.FEDERAL_INCOME_TAX_USD, TaxPaymentAllocationDetail, "federal_income_tax_usd"),
+        (ReportMetric.CALIFORNIA_INCOME_TAX_USD, TaxPaymentAllocationDetail, "california_income_tax_usd"),
+        (ReportMetric.TOTAL_INCOME_TAX_USD, TaxPaymentAllocationDetail, "total_income_tax_usd"),
+        (ReportMetric.RENTAL_INCOME_TAX_USD, TaxPaymentAllocationDetail, "rental_income_tax_usd"),
+        (ReportMetric.PROPERTY_SALE_ADJUSTED_BASIS_USD, PropertySaleBasisGainDetail, "adjusted_basis_usd"),
+        (ReportMetric.REALIZED_PROPERTY_GAIN_USD, PropertySaleBasisGainDetail, "realized_gain_usd"),
+        (ReportMetric.PROPERTY_SALE_CAPITAL_GAIN_USD, PropertySaleBasisGainDetail, "capital_gain_usd"),
+        (
+            ReportMetric.PROPERTY_SALE_CAPITAL_GAIN_EXCLUSION_USD,
+            PropertySaleBasisGainDetail,
+            "capital_gain_exclusion_usd",
+        ),
+        (ReportMetric.TAXABLE_PROPERTY_CAPITAL_GAIN_USD, PropertySaleBasisGainDetail, "taxable_capital_gain_usd"),
+        (ReportMetric.TAXABLE_PROPERTY_GAIN_USD, PropertySaleBasisGainDetail, "taxable_gain_usd"),
+        (ReportMetric.DEPRECIATION_RECAPTURE_USD, PropertySaleBasisGainDetail, "depreciation_recapture_usd"),
+    )
+    for metric, detail_type, amount_field in detail_reconciliations:
+        assert_allclose(
+            _accounting_detail_matrix(result, detail_type, amount_field),
+            result.matrix(metric),
+            err_msg=f"{metric} should equal accounting-detail {detail_type.__name__}.{amount_field}",
+        )
+
+    # Market-observation-derived: the PE sale opportunity event mask comes
+    # from the MarketPathObservation rows the engine emits per rollout/month.
+    market_observation_event_matrix = np.zeros_like(result.matrix(ReportMetric.CASH_USD), dtype=np.bool_)
+    for observation in result.rollout(0).market_observations(MarketPathObservation):
+        market_observation_event_matrix[0, observation.month_index] = observation.private_equity_sale_opportunity_event
+    for observation in result.rollout(1).market_observations(MarketPathObservation):
+        market_observation_event_matrix[1, observation.month_index] = observation.private_equity_sale_opportunity_event
+    assert_allclose(
+        market_observation_event_matrix.astype("float64"),
+        result.matrix(ReportMetric.PRIVATE_EQUITY_SALE_OPPORTUNITY_EVENT).astype("float64"),
+    )
 
 
 def test_pydantic_rejects_private_equity_sale_policy_without_rule() -> None:
