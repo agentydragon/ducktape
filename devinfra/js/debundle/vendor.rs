@@ -923,6 +923,23 @@ fn assert_path_within_root(path: &Path, root: &Path, message: &str) -> Result<()
     bail!("{message}: {}", path.display());
 }
 
+fn module_has_export_star(module: &Module) -> bool {
+    module.body.iter().any(|item| match item {
+        // `export * from "./other.js";`
+        ModuleItem::ModuleDecl(ModuleDecl::ExportAll(_)) => true,
+        // `export * as ns from "./other.js";` — still re-exports the
+        // whole namespace, just under one name.
+        ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) => {
+            named.src.is_some()
+                && named
+                    .specifiers
+                    .iter()
+                    .any(|s| matches!(s, ExportSpecifier::Namespace(_)))
+        }
+        _ => false,
+    })
+}
+
 fn collect_exported_names(module: &Module, include_default: bool) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
     for item in &module.body {
@@ -1540,8 +1557,20 @@ pub fn apply_partial_vendor_swaps(
             let upstream_ast =
                 parse_js_module(&upstream_path.display().to_string(), &upstream_code)?;
             let upstream_exports = collect_exported_names(&upstream_ast.module, true);
+            // Packages that re-export everything from a sibling module
+            // (`export * from "./other.js"`) can't be fully enumerated
+            // by a single-file `collect_exported_names`. Skip the strict
+            // name check in that case — the caller's spec is responsible
+            // for naming a real upstream symbol. (zod's `index.js` is the
+            // canonical example: `export * from "./v4/classic/external.js"`
+            // is the only way the named schemas like `object`, `array`
+            // become visible.)
+            let upstream_has_export_star = module_has_export_star(&upstream_ast.module);
             for (chunk_export, symbol) in &partial.symbols {
                 if symbol.package != *package_name {
+                    continue;
+                }
+                if upstream_has_export_star {
                     continue;
                 }
                 if !upstream_exports.contains(&symbol.upstream_export) {
