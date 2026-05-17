@@ -249,6 +249,37 @@ def test_backend_applies_location_tax_defaults_to_scenario(tmp_path: Path) -> No
     assert TaxRegime.PRIMARY_RESIDENCE_EXCLUSION in scenario.tax_regimes
 
 
+def test_backend_rejects_scenario_property_location_mismatch(tmp_path: Path) -> None:
+    properties_path = tmp_path / "properties.json"
+    _write_builtin_properties(properties_path)
+    backend = AugurBackend(
+        augur_config=_config(properties_path),
+        runtime_config=AugurBackendRuntimeConfig(
+            market_bundle_provider=SimpleMarketBundleProvider(), default_rollout_samples=8, max_rollout_samples=128
+        ),
+    )
+    request = {
+        "scenario_set_id": "mismatch",
+        "title": "Property/location mismatch",
+        "market_request": {"rollout_count": 1, "horizon_months": 1, "seed": 1},
+        "scenarios": [
+            {
+                "scenario_id": "sf_with_wrong_location",
+                "label": "SF Property pinned to Vallejo",
+                "actors": [{"actor_id": "agent_a", "label": "Agent A", "role": "primary_owner"}],
+                # sf_property is in san_francisco_ca per `_write_builtin_properties`;
+                # caller asks the simulator to treat it as vallejo_ca → mismatch.
+                "property_selection": {"property_id": "sf_property", "location_id": "location_a"},
+                "occupancy_plan": {"occupancy_mode": "owner_lives_in_property"},
+                "rental_plan": {"rental_mode": "not_rented"},
+            }
+        ],
+    }
+
+    with pytest.raises(ValueError, match=r"property/location mismatch.*sf_with_wrong_location"):
+        backend.run_scenario_set_for_request_body(request)
+
+
 def test_bootstrap_applies_public_property_asset_base_url(tmp_path: Path) -> None:
     properties_path = tmp_path / "properties.json"
     _write_properties(properties_path)
