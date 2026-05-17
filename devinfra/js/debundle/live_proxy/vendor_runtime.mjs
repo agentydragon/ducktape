@@ -161,7 +161,7 @@ export function resolvePartialSwapRuntimeRequest(relativePath, partialSwapIndex)
         continue;
       }
       const suffix = rest.slice(packagePrefix.length);
-      const resolvedPath = resolve(entry.mountRoot, suffix);
+      const resolvedPath = resolvePartialSwapAssetPath(entry.mountRoot, suffix);
       assertPathWithinRoot(
         resolvedPath,
         entry.mountRoot,
@@ -184,6 +184,34 @@ export function resolvePartialSwapRuntimeRequest(relativePath, partialSwapIndex)
     }
   }
   return null;
+}
+
+// Node-style auto-extension resolution for partial-swap package files.
+// npm packages frequently emit ESM with extension-less internal imports
+// (`import "./utils"` rather than `./utils.js`); the browser doesn't
+// rewrite those, so the proxy tries `.js` / `.mjs` / `.cjs` / `/index.*`
+// in order, mirroring Node's CommonJS-influenced resolver. Returns the
+// first existing path; otherwise returns the exact path requested (the
+// caller will then surface a clean 404).
+function resolvePartialSwapAssetPath(mountRoot, suffix) {
+  const exact = resolve(mountRoot, suffix);
+  if (existsSync(exact)) {
+    return exact;
+  }
+  const extensions = [".js", ".mjs", ".cjs"];
+  for (const ext of extensions) {
+    const candidate = `${exact}${ext}`;
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  for (const indexFile of extensions.map((ext) => `index${ext}`)) {
+    const candidate = resolve(exact, indexFile);
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return exact;
 }
 
 function resolvePackageMountRoot(packageName, { packageRoots, packagesRoot, filePath }) {
