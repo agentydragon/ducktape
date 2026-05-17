@@ -1003,13 +1003,25 @@ whether `o` is peelable now:
 1. Create a fresh hypothetical destination `P_o`.
 2. Reassign every binding in `decl(o)` to `P_o`; leave all other
    owner destinations unchanged.
-3. Quotient the same owner graph by this candidate assignment.
-4. Inspect only the SCC containing `P_o`.
-5. The candidate is `peelable_now` iff that SCC is absent,
-   singleton/non-cyclic, or contains only lazy-read cross edges.
-   If that SCC contains an at-init read or side-effect-order edge,
-   the candidate is `blocked_cycle`, and the report lists the
-   constraining module edges plus their owner-edge ids.
+3. Quotient the same owner graph by this candidate assignment, then
+   restrict to the **constraining-edge subgraph** of that quotient
+   (drop `LazyUse` cross edges).
+4. Inspect only the SCC containing `P_o` in that restricted graph.
+5. The candidate is `peelable_now` iff `P_o`'s SCC in the
+   constraining subgraph is singleton/non-cyclic. If it contains
+   any other module (i.e. there is a directed cycle of at-init,
+   side-effect-order, rebind, or local-effect cross edges through
+   `P_o`), the candidate is `blocked_cycle`, and the report lists
+   the constraining module edges plus their owner-edge ids.
+
+   Restricting to the constraining subgraph is load-bearing: a mixed
+   cycle whose constraining edges form a DAG — e.g. `residual → P_o`
+   eager-use plus `P_o → residual` lazy-use, the canonical "pure
+   top-level helper consumed by many same-residual eager users"
+   shape — is realizable. ESM resolves it by evaluating the
+   lazy/hoisted side first, so the eager side never observes a TDZ.
+   This is the same `G_atomic` definition `compute_atomic_units`
+   already uses for factorization; the two stages stay consistent.
 
 This local-SCC test intentionally ignores unrelated pre-existing
 bad SCCs. When the current build is green, it is equivalent to
@@ -1110,10 +1122,13 @@ A destination assignment is **valid** iff:
 
 1. Every cross-destination read edge in `Q` is importable.
 2. No cross-destination rebinding write edge remains in `Q`.
-3. Every SCC in `Q` contains only non-constraining cross edges.
-   Equivalently, any SCC may contain lazy-read import cycles, but no
-   at-init read, rebinding write, or side-effect-order edge may remain
-   inside a multi-destination SCC.
+3. The constraining-edge subgraph of `Q` — the result of dropping all
+   `LazyUse` cross edges from `Q` — has no multi-module SCC.
+   Equivalently, any SCC of `Q` that contains a constraining edge
+   must already be single-module under the constraining subgraph;
+   pure lazy-read import cycles in `Q` are allowed and realizable
+   because ESM evaluates the lazy side without observing a TDZ on the
+   eager side.
 
 A peel is just a proposed destination assignment for an owner set.
 The peel is valid exactly when the resulting assignment is valid by

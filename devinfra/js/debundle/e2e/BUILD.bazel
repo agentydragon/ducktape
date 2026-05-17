@@ -66,6 +66,7 @@ rust_library(
         "cross_module_emission_test",
         "purity_test",
         "peelability_test",
+        "peel_horizon_pure_hub_test",
         "owner_graph_purity_reason_test",
         "import_coalescing_test",
     ]

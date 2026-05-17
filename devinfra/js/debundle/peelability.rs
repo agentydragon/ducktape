@@ -36,7 +36,6 @@ struct CandidateIncidentEdge {
 
 #[derive(Debug, Clone, Default)]
 struct ModulePairTotals {
-    reason_count: usize,
     constraining_reason_count: usize,
     constraining_owner_edge_indices: Vec<usize>,
 }
@@ -71,7 +70,6 @@ pub(crate) struct PeelabilityContext<'a> {
 
 #[derive(Debug, Clone, Default)]
 struct CandidateGraphAdjustment {
-    removed_reason_count: HashMap<(ModuleId, ModuleId), usize>,
     removed_constraining_reason_count: HashMap<(ModuleId, ModuleId), usize>,
     removed_owner_edge_indices: HashSet<usize>,
 }
@@ -398,9 +396,8 @@ impl<'a> PeelabilityContext<'a> {
             if from == to {
                 continue;
             }
-            let totals = module_pair_totals.entry((from, to)).or_default();
-            totals.reason_count += 1;
             if edge.reason.constrains_init_order() {
+                let totals = module_pair_totals.entry((from, to)).or_default();
                 totals.constraining_reason_count += 1;
                 totals.constraining_owner_edge_indices.push(idx);
             }
@@ -456,22 +453,6 @@ impl<'a> PeelabilityContext<'a> {
             .get(owner_id.0)
             .map(Vec::as_slice)
             .unwrap_or(&[])
-    }
-
-    fn current_edge_remains(
-        &self,
-        pair: (ModuleId, ModuleId),
-        adjustment: &CandidateGraphAdjustment,
-    ) -> bool {
-        let Some(totals) = self.module_pair_totals.get(&pair) else {
-            return false;
-        };
-        let removed = adjustment
-            .removed_reason_count
-            .get(&pair)
-            .copied()
-            .unwrap_or(0);
-        totals.reason_count > removed
     }
 
     fn current_edge_constrains(
@@ -870,17 +851,11 @@ fn candidate_incident_edges(
         }
         let old_from = schedule.partition.of(edge.from);
         let old_to = schedule.partition.of(edge.to);
-        if old_from != old_to {
+        if old_from != old_to && edge.reason.constrains_init_order() {
             *adjustment
-                .removed_reason_count
+                .removed_constraining_reason_count
                 .entry((old_from, old_to))
                 .or_insert(0) += 1;
-            if edge.reason.constrains_init_order() {
-                *adjustment
-                    .removed_constraining_reason_count
-                    .entry((old_from, old_to))
-                    .or_insert(0) += 1;
-            }
         }
 
         let from_moved = moved_owners.contains(&edge.from);
@@ -921,6 +896,30 @@ fn candidate_incident_edges(
     (candidate_edges, adjustment)
 }
 
+/// Find the candidate's blocking SCC over the **constraining-edge
+/// subgraph** of the post-peel module quotient — not over the full
+/// quotient including lazy edges.
+///
+/// Per `DESIGN.md` "Valid peels and atomic modules": "Lazy read edges
+/// are non-constraining: they still contribute imports, but a cycle
+/// made entirely of lazy read edges is realizable." Equivalently, a
+/// peel is realizable iff the constraining-edge subgraph of the
+/// post-peel quotient contains no multi-module SCC that touches the
+/// candidate. A mixed cycle whose constraining edges form a DAG
+/// (e.g. `residual → P` eager + `P → residual` lazy) is realizable
+/// because ESM cycle resolution evaluates the hoisted/lazy side
+/// first, so the eager side never observes a TDZ.
+///
+/// This is consistent with `compute_atomic_units`, which builds
+/// `G_atomic` from constraining edges only. The previous
+/// implementation walked reachability over all edges (lazy + eager
+/// + sequenced + rebind + local-effect), which falsely flagged
+/// any pure-function/var/class owner in residual that had a single
+/// intra-residual lazy out-edge plus any eager-use incoming edges
+/// as `BlockedCycle`. Concretely: a Tana chunk's residual is full
+/// of mutual lazy reads, so almost every pure top-level declaration
+/// in residual with both incoming eager use and any lazy out-edge
+/// to residual ended up `BlockedCycle` with empty `peel_set_ids`.
 fn candidate_blocking_scc_owner_edge_indices(
     context: &PeelabilityContext<'_>,
     candidate_edges: &[CandidateIncidentEdge],
@@ -929,10 +928,9 @@ fn candidate_blocking_scc_owner_edge_indices(
     let mut forward = vec![false; context.modules.len()];
     let mut backward = vec![false; context.modules.len()];
     let mut queue = VecDeque::new();
-    for edge in candidate_edges
-        .iter()
-        .filter(|edge| edge.direction == CandidateEdgeDirection::FromCandidate)
-    {
+    for edge in candidate_edges.iter().filter(|edge| {
+        edge.direction == CandidateEdgeDirection::FromCandidate && edge.constrains_init_order
+    }) {
         if !forward[edge.module_idx] {
             forward[edge.module_idx] = true;
             queue.push_back(edge.module_idx);
@@ -940,7 +938,7 @@ fn candidate_blocking_scc_owner_edge_indices(
     }
     while let Some(source_idx) = queue.pop_front() {
         for edge in &context.forward_edges[source_idx] {
-            if !context.current_edge_remains(edge.pair, adjustment) {
+            if !context.current_edge_constrains(edge.pair, adjustment) {
                 continue;
             }
             if !forward[edge.target_idx] {
@@ -951,10 +949,9 @@ fn candidate_blocking_scc_owner_edge_indices(
     }
 
     queue.clear();
-    for edge in candidate_edges
-        .iter()
-        .filter(|edge| edge.direction == CandidateEdgeDirection::ToCandidate)
-    {
+    for edge in candidate_edges.iter().filter(|edge| {
+        edge.direction == CandidateEdgeDirection::ToCandidate && edge.constrains_init_order
+    }) {
         if !backward[edge.module_idx] {
             backward[edge.module_idx] = true;
             queue.push_back(edge.module_idx);
@@ -962,7 +959,7 @@ fn candidate_blocking_scc_owner_edge_indices(
     }
     while let Some(target_idx) = queue.pop_front() {
         for edge in &context.reverse_edges[target_idx] {
-            if !context.current_edge_remains(edge.pair, adjustment) {
+            if !context.current_edge_constrains(edge.pair, adjustment) {
                 continue;
             }
             if !backward[edge.source_idx] {
@@ -999,17 +996,15 @@ fn candidate_blocking_scc_owner_edge_indices(
             continue;
         }
         for edge in module_edges {
-            if !in_scc[edge.target_idx] || !context.current_edge_remains(edge.pair, adjustment) {
+            if !in_scc[edge.target_idx] || !context.current_edge_constrains(edge.pair, adjustment) {
                 continue;
             }
             if let Some(totals) = context.module_pair_totals.get(&edge.pair) {
-                if context.current_edge_constrains(edge.pair, adjustment) {
-                    for edge_idx in &totals.constraining_owner_edge_indices {
-                        if adjustment.removed_owner_edge_indices.contains(edge_idx) {
-                            continue;
-                        }
-                        constraining_owner_edge_ids.insert(*edge_idx);
+                for edge_idx in &totals.constraining_owner_edge_indices {
+                    if adjustment.removed_owner_edge_indices.contains(edge_idx) {
+                        continue;
                     }
+                    constraining_owner_edge_ids.insert(*edge_idx);
                 }
             }
         }
