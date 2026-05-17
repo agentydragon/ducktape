@@ -361,12 +361,13 @@ mod tests {
     /// unrealizable.
     #[test]
     fn constraining_cycle_across_two_modules_is_unrealizable() {
-        // Use functions referring to each other in their initializers
-        // (forces both to be evaluated at-init in JS terms — but we
-        // simulate the structure with two const-init reads each way).
-        // Plain const-init can't cycle in real JS (TDZ); the realizer
-        // we test is structural, not behavioural.
-        let source = "const a = (() => b)(); const b = (() => a)();";
+        // Two top-level constants whose initializers eager-read each
+        // other. Real JS would TDZ at runtime, but the analyzer just
+        // records the structural graph: two `eager_use` edges in
+        // opposite directions. Placing them in different modules
+        // forms a constraining-edge SCC of the quotient — exactly
+        // what clause 3 rejects.
+        let source = "const a = b + 1; const b = a + 1;";
         let owner_graph = parse_and_build(source);
         let mut partition = Partition::new(&owner_graph, module_id(0));
         partition.set(OwnerId(1), module_id(1));
@@ -420,7 +421,7 @@ mod tests {
     /// pre-push verdict exactly.
     #[test]
     fn index_push_undo_roundtrips_verdict() {
-        let source = "const a = (() => b)(); const b = (() => a)();";
+        let source = "const a = b + 1; const b = a + 1;";
         let owner_graph = parse_and_build(source);
 
         let baseline = Partition::new(&owner_graph, module_id(0));
@@ -458,7 +459,7 @@ mod tests {
     /// return — even when the closure returns a value.
     #[test]
     fn index_scoped_isolates_per_call_state() {
-        let source = "const a = (() => b)(); const b = (() => a)();";
+        let source = "const a = b + 1; const b = a + 1;";
         let owner_graph = parse_and_build(source);
 
         let baseline = Partition::new(&owner_graph, module_id(0));
