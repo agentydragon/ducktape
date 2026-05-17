@@ -369,66 +369,32 @@ Work:
    normalization and request mapping, then split app/frontend/server packages
    after the core contracts and server cleanup settle.
 
-## Dispatch Status (2026-05-17)
+## In Flight
 
-Worktree isolation lets parallel subagents stomp on the same files freely;
-overlap resolves at PR merge.
-
-### Round 1 — ✅ all landed
-
-- **Plan A — Consume Generated Browser Schemas** (#1557 / #1561 / #1563).
-- **Plan B — PE opportunities & policy explicit** (#1568).
-- **Plan C — Tax/Obligation settlement slice, mortgage** (#1570).
-  Sale-tax timing piece deferred (now in Round 3).
-- **Plan E — Server boundary cleanup** (#1567 — typed `BundleSource`).
-- **Plan F — Location tax defaults to model config** (#1566); cycle fix
-  (#1569).
-
-### Round 2 — ✅ all landed
-
-- **Cleanup audit item 7** — `PolicyContext` (already gone) + typed
-  `ReportMetric` lookup replacing `_metric_array` (#1571).
-- **Plan G — Split app package boundaries + drop `augur_` prefixes** —
-  ducktape #1575, gaffer-private #109. `augur/app/` → `augur/frontend/`
-  (browser bundle, `visual_golden_test.py`, `lib/`, `__screenshots__/`) +
-  `augur/api/` (Python server: `backend.py` ← `augur_backend.py`,
-  `catalog.py`, `config.py`, `http_server.py`, `server.py`,
-  `export_schema.py`, `browser_state.py`, `browser_shell_test.py`,
-  `testdata/`). Other module renames: `augur_client.js` → `client.js`,
-  `augur-app.jsx` → `app.jsx`. `AugurBackend` class name preserved.
-- **Plan D — Market configuration typed at boundary** — already
-  guardrailed by `market_config_test.py`; no dispatch needed.
-- **Portfolio YAML contract** — discovered to be already shipped in
-  `bb4d8b681`. PR #1573 narrowed the stale TODO bullet to the deferred
-  runtime-consumption work.
-
-### Round 3 — in flight
-
-- **Sale-tax timing slice** 🟡 on `claude/sale-tax-timing-slice`.
-  Finishes C's deferred half — moves sale-tax obligations off
+- **Sale-tax timing slice** — move sale-tax obligations off
   `ALLOCATED_TO_SOURCE_MONTH` onto realistic year-end / estimated-payment
-  dates. `augur/core/{annual_tax,scenario_engine}.py`; wide test churn +
-  visual-golden refresh (goldens now live under
-  `augur/frontend/__screenshots__/` after Plan G).
-- **Cleanup audit item 3 — partner ownership parallel ledger paths**
-  🟡 on `claude/partner-ownership-parallel-paths`. Collapses the
-  duplicate ledger-row reconstruction in
+  dates. `augur/core/{annual_tax,scenario_engine}.py` + visual goldens.
+- **Cleanup audit item 3 — partner ownership parallel ledger paths** —
+  collapse the duplicate ledger-row reconstruction in
   `_record_partner_agreement_ledger_detail`.
   `augur/core/{policy_runtime,scenario_engine}.py`.
 
-### Round 4 candidates (not yet dispatched)
+## Next Lanes (parallelism + sequencing)
 
-- **Generalize rollout failure semantics beyond mortgage** —
-  insurance / HOA / special assessments through the obligation pipeline.
-  Conflicts with sale-tax + partner-ownership on `scenario_engine.py`;
-  wait for Round 3.
-- **Cleanup audit item 2** — pick one source of truth for trace detail
-  (actions / decisions / ledger / snapshots / accounting / monthly arrays
-  overlap heavily). Wait for Round 3.
-- **Teach runtime funding policies to consume crypto + tender-aware PE**
-  positions from the portfolio YAML contract. Self-contained.
+- **Generalize rollout failure semantics beyond mortgage** — insurance /
+  HOA / special assessments through the obligation pipeline. Sequence
+  after sale-tax + partner-ownership (shares `scenario_engine.py`).
+- **Cleanup audit item 2 — pick one source of truth for trace detail**.
+  Actions, decisions, ledger entries, balance snapshots, accounting
+  details, monthly arrays overlap heavily. Collapse one row/decision/
+  ledger surface; document which stays. Sequence after Round 3 (shares
+  `scenario_engine.py`).
+- **Teach runtime funding policies to consume crypto + tender-window-
+  aware private-equity positions** from the portfolio YAML contract.
+  Self-contained.
 - **Persist model-governance artifacts** — durable evidence / calibration
-  / validation-report storage. `augur/model/`. Self-contained.
+  / validation-report storage for market providers. `augur/model/`.
+  Self-contained.
 
 ## Next Work Plans
 
