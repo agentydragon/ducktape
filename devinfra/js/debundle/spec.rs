@@ -222,6 +222,7 @@ pub enum VendorLevel {
     Suppress,
     BoundaryRename,
     Swap(SwapMark),
+    PartialSwap(PartialSwapMark),
 }
 
 /// What [`TransformSpec::unassigned_mode`] means for a chunk's
@@ -287,6 +288,41 @@ pub struct SwapMark {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub wrapper_shape: Option<WrapperShape>,
+}
+
+/// Per-symbol vendor swap on a mixed chunk. The chunk stays on disk
+/// (residual exports keep working), but each listed export gets its
+/// caller-side references rewritten to a namespace member access
+/// (`zodObject(…)` → `z.object(…)`) and a single
+/// `import * as <namespace> from "<package>"` is added per file that
+/// uses the package. Multiple upstream packages can share one chunk.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PartialSwapMark {
+    /// package_name → upstream coordinates and namespace alias.
+    pub packages: BTreeMap<String, PartialSwapPackage>,
+    /// chunk_export_name → which package + which upstream export.
+    pub symbols: BTreeMap<String, PartialSwapSymbol>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PartialSwapPackage {
+    pub version: String,
+    pub subpath: String,
+    /// Local identifier used in the emitted
+    /// `import * as <namespace> from "<package>"`. Must be a valid JS
+    /// identifier; uniqueness within a file is the caller's contract
+    /// (when multiple partial-swap chunks share a package in the same
+    /// file, identical namespace strings dedupe into one import).
+    pub namespace: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PartialSwapSymbol {
+    /// Key into the enclosing [`PartialSwapMark::packages`] map.
+    pub package: String,
+    /// Upstream package's export name (becomes the member accessed
+    /// off the namespace import).
+    pub upstream_export: String,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq)]

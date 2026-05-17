@@ -7,9 +7,9 @@ use serde::Deserialize;
 
 use spec::{
     AnonymousStatement, ChunkRenames, EmitBrowserHarnessConfig, LoadJsChunksArgs, LogicalModule,
-    MaterializeLogicalModulesConfig, Member, MemberEffect, MemberPurity, SwapMark,
-    SwapVendorChunksConfig, TransformSpec, UnassignedMode, VendorLevel, VendorMark, VendorRole,
-    WrapperShape,
+    MaterializeLogicalModulesConfig, Member, MemberEffect, MemberPurity, PartialSwapMark,
+    PartialSwapPackage, PartialSwapSymbol, SwapMark, SwapVendorChunksConfig, TransformSpec,
+    UnassignedMode, VendorLevel, VendorMark, VendorRole, WrapperShape,
 };
 use spec_modules::{
     collect_module_files, load_binding_patch_members, module_path_from_file, read_module_file,
@@ -75,6 +75,12 @@ struct VendorMarkSource {
     subpath: Option<String>,
     #[serde(default)]
     wrapper_shape: Option<WrapperShape>,
+    /// `partial_swap`-only: per-package upstream coordinates.
+    #[serde(default)]
+    packages: Option<BTreeMap<String, PartialSwapPackage>>,
+    /// `partial_swap`-only: per-chunk-export upstream-export mapping.
+    #[serde(default)]
+    symbols: Option<BTreeMap<String, PartialSwapSymbol>>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -83,6 +89,7 @@ enum VendorLevelSource {
     Suppress,
     BoundaryRename,
     Swap,
+    PartialSwap,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -228,24 +235,58 @@ impl VendorMarkSource {
         match self.level {
             VendorLevelSource::Suppress => {
                 self.ensure_no_swap_payload()?;
+                self.ensure_no_partial_swap_payload()?;
                 Ok(VendorLevel::Suppress)
             }
             VendorLevelSource::BoundaryRename => {
                 self.ensure_no_swap_payload()?;
+                self.ensure_no_partial_swap_payload()?;
                 Ok(VendorLevel::BoundaryRename)
             }
-            VendorLevelSource::Swap => Ok(VendorLevel::Swap(SwapMark {
-                package: self
-                    .package
-                    .with_context(|| format!("vendor mark {} missing package", self.chunk_path))?,
-                version: self
-                    .version
-                    .with_context(|| format!("vendor mark {} missing version", self.chunk_path))?,
-                subpath: self
-                    .subpath
-                    .with_context(|| format!("vendor mark {} missing subpath", self.chunk_path))?,
-                wrapper_shape: self.wrapper_shape,
-            })),
+            VendorLevelSource::Swap => {
+                self.ensure_no_partial_swap_payload()?;
+                Ok(VendorLevel::Swap(SwapMark {
+                    package: self.package.with_context(|| {
+                        format!("vendor mark {} missing package", self.chunk_path)
+                    })?,
+                    version: self.version.with_context(|| {
+                        format!("vendor mark {} missing version", self.chunk_path)
+                    })?,
+                    subpath: self.subpath.with_context(|| {
+                        format!("vendor mark {} missing subpath", self.chunk_path)
+                    })?,
+                    wrapper_shape: self.wrapper_shape,
+                }))
+            }
+            VendorLevelSource::PartialSwap => {
+                self.ensure_no_swap_payload()?;
+                let packages = self.packages.clone().with_context(|| {
+                    format!(
+                        "vendor mark {} (partial_swap) missing `packages`",
+                        self.chunk_path
+                    )
+                })?;
+                let symbols = self.symbols.clone().with_context(|| {
+                    format!(
+                        "vendor mark {} (partial_swap) missing `symbols`",
+                        self.chunk_path
+                    )
+                })?;
+                for (chunk_export, symbol) in &symbols {
+                    if !packages.contains_key(&symbol.package) {
+                        bail!(
+                            "vendor mark {} (partial_swap) symbol {} references unknown package `{}`",
+                            self.chunk_path,
+                            chunk_export,
+                            symbol.package
+                        );
+                    }
+                }
+                Ok(VendorLevel::PartialSwap(PartialSwapMark {
+                    packages,
+                    symbols,
+                }))
+            }
         }
     }
 
@@ -257,6 +298,16 @@ impl VendorMarkSource {
         {
             bail!(
                 "vendor mark {} has swap-only fields but level is not swap",
+                self.chunk_path
+            );
+        }
+        Ok(())
+    }
+
+    fn ensure_no_partial_swap_payload(&self) -> Result<()> {
+        if self.packages.is_some() || self.symbols.is_some() {
+            bail!(
+                "vendor mark {} has partial_swap-only fields (`packages`/`symbols`) but level is not partial_swap",
                 self.chunk_path
             );
         }

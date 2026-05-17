@@ -477,3 +477,244 @@ fn build_named_from_default_spec(args: BuildSpecArgs<'_>) -> Value {
         "write_js_tree": { "force": true, "out_dir": args.out_root },
     })
 }
+
+// ─── partial_swap ───────────────────────────────────────────────────────
+//
+// `level: partial_swap` rewrites per-symbol imports out of a chunk that
+// the spec wants to keep on disk (un-swapped symbols stay imported from
+// the chunk). Each rewritten symbol gets its local references replaced
+// with `<namespace>.<upstream_export>` and one
+// `import * as <namespace> from "<package>"` is emitted per file.
+
+#[test]
+fn partial_swap_basic_rewrites_to_namespace_member() {
+    let fixture = run_partial_swap_fixture(PartialSwapFixtureArgs {
+        chunk_source: "export const e6 = () => true;\nexport const keepMe = () => 7;\n",
+        caller_source: "import { e6 as zodBoolean, keepMe as kept } from \"../megachunk/entry.js\";\nexport function go() { return zodBoolean() && kept(); }\n",
+        upstream_source: "export const boolean = () => true;\n",
+        symbols: vec![("e6", "zod", "boolean")],
+        upstream_version: "3.23.8",
+    });
+
+    assert!(
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+
+    let caller_emitted = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
+    assert!(
+        caller_emitted.contains("import * as z from \"zod\""),
+        "caller should namespace-import the package:\n{caller_emitted}",
+    );
+    assert!(
+        caller_emitted.contains("z.boolean()"),
+        "caller should call z.boolean() instead of zodBoolean():\n{caller_emitted}",
+    );
+    assert!(
+        !caller_emitted.contains("zodBoolean"),
+        "caller should not retain the original local-alias identifier:\n{caller_emitted}",
+    );
+    assert!(
+        caller_emitted.contains("keepMe as kept"),
+        "caller should retain non-swapped imports unchanged:\n{caller_emitted}",
+    );
+    assert!(
+        caller_emitted.contains("kept()"),
+        "caller should still reference the kept import by its local name:\n{caller_emitted}",
+    );
+}
+
+#[test]
+fn partial_swap_keeps_megachunk_on_disk() {
+    // Partial swap leaves the chunk in place so its non-swapped exports
+    // remain reachable. Contrast with `level: swap` which removes the
+    // chunk entirely. The megachunk file (`<out_dir>/static/megachunk/entry.js`)
+    // must still exist after the pipeline runs.
+    let fixture = run_partial_swap_fixture(PartialSwapFixtureArgs {
+        chunk_source: "export const e6 = () => true;\nexport const keepMe = () => 7;\n",
+        caller_source: "import { e6 as zodBoolean, keepMe as kept } from \"../megachunk/entry.js\";\nexport function go() { return zodBoolean() && kept(); }\n",
+        upstream_source: "export const boolean = () => true;\n",
+        symbols: vec![("e6", "zod", "boolean")],
+        upstream_version: "3.23.8",
+    });
+
+    assert!(
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    assert!(
+        fixture.megachunk_emitted_path.exists(),
+        "megachunk should still be emitted: {:?}",
+        fixture.megachunk_emitted_path,
+    );
+
+    let partial_manifest_path = fixture.partial_manifest_path();
+    let manifest: Value = serde_json::from_str(
+        &fs::read_to_string(&partial_manifest_path).expect("partial manifest"),
+    )
+    .expect("partial manifest parses");
+    let symbol_resolution = manifest
+        .get("resolutions")
+        .and_then(|r| r.get(&fixture.megachunk_chunk_path))
+        .and_then(|r| r.get("symbols"))
+        .and_then(|r| r.get("e6"))
+        .expect("manifest records e6 symbol resolution");
+    assert_eq!(
+        symbol_resolution
+            .get("references_rewritten")
+            .and_then(Value::as_u64),
+        Some(1),
+        "partial-swap manifest should count rewritten references:\n{manifest:#}",
+    );
+}
+
+#[test]
+fn partial_swap_rejects_version_mismatch() {
+    let fixture = run_partial_swap_fixture(PartialSwapFixtureArgs {
+        chunk_source: "export const e6 = () => true;\n",
+        caller_source: "import { e6 as zodBoolean } from \"../megachunk/entry.js\";\nexport function go() { return zodBoolean(); }\n",
+        upstream_source: "export const boolean = () => true;\n",
+        symbols: vec![("e6", "zod", "boolean")],
+        // Mismatch: spec wants 9.9.9 but the on-disk package.json below
+        // pins to 3.23.8.
+        upstream_version: "9.9.9",
+    });
+
+    assert!(
+        !fixture.result.status.success(),
+        "debundler should fail on partial-swap version mismatch",
+    );
+    assert!(
+        fixture.result.stderr.contains("version mismatch"),
+        "expected version-mismatch error in stderr:\n{}",
+        fixture.result.stderr,
+    );
+}
+
+struct PartialSwapFixtureArgs<'a> {
+    chunk_source: &'a str,
+    caller_source: &'a str,
+    upstream_source: &'a str,
+    /// (chunk_export, package_name, upstream_export) tuples. The package
+    /// `zod` is wired by the fixture below.
+    symbols: Vec<(&'a str, &'a str, &'a str)>,
+    upstream_version: &'a str,
+}
+
+struct PartialSwapFixture {
+    result: CommandResult,
+    megachunk_chunk_path: String,
+    caller_emitted_path: PathBuf,
+    megachunk_emitted_path: PathBuf,
+    manifest_path: PathBuf,
+    _root: TempDir,
+}
+
+impl PartialSwapFixture {
+    /// Partial-swap resolutions are written to a sibling JSON file in
+    /// the same directory as the main vendor swap manifest.
+    fn partial_manifest_path(&self) -> PathBuf {
+        self.manifest_path
+            .parent()
+            .expect("manifest path has a parent")
+            .join("vendor_partial_swap_manifest.json")
+    }
+}
+
+fn run_partial_swap_fixture(args: PartialSwapFixtureArgs<'_>) -> PartialSwapFixture {
+    const PACKAGE_NAME: &str = "zod";
+    const SUBPATH: &str = "lib/index.mjs";
+    const MEGACHUNK_PATH: &str = "static/megachunk.js";
+    const CALLER_PATH: &str = "static/app.js";
+
+    let root = TempDir::with_prefix("vendor-partial-swap-").expect("create tempdir");
+    let workspace_root = root.path().join("workspace");
+    let extracted_root = workspace_root.join("extracted");
+    let snapshot_root = workspace_root.join("snapshot");
+    let out_root = workspace_root.join("out");
+    let wrapper_root = workspace_root.join("vendors").join("generated");
+    let manifest_path = workspace_root.join("vendors").join("manifest.json");
+    let package_root = root.path().join("upstream").join(PACKAGE_NAME);
+    fs::create_dir_all(&extracted_root).unwrap();
+    fs::create_dir_all(&snapshot_root).unwrap();
+    fs::create_dir_all(&out_root).unwrap();
+    fs::create_dir_all(&wrapper_root).unwrap();
+    fs::create_dir_all(&package_root).unwrap();
+    fs::create_dir_all(snapshot_root.join("static")).unwrap();
+    fs::create_dir_all(package_root.join("lib")).unwrap();
+
+    write_text_file(&snapshot_root.join(MEGACHUNK_PATH), args.chunk_source);
+    write_text_file(&snapshot_root.join(CALLER_PATH), args.caller_source);
+    let js_list_path = extracted_root.join("js-files.txt");
+    write_text_file(&js_list_path, &format!("{MEGACHUNK_PATH}\n{CALLER_PATH}\n"));
+
+    // Pin the on-disk upstream to 3.23.8 regardless of what the spec
+    // requests — the version-mismatch test relies on this so the spec
+    // can declare a different version and trigger the strict check.
+    write_text_file(
+        &package_root.join("package.json"),
+        &format!(
+            "{}\n",
+            serde_json::to_string_pretty(&json!({
+                "name": PACKAGE_NAME,
+                "version": "3.23.8",
+            }))
+            .unwrap(),
+        ),
+    );
+    write_text_file(&package_root.join(SUBPATH), args.upstream_source);
+
+    let mut symbols_json = serde_json::Map::new();
+    for (chunk_export, package, upstream_export) in &args.symbols {
+        symbols_json.insert(
+            (*chunk_export).to_string(),
+            json!({ "package": package, "upstream_export": upstream_export }),
+        );
+    }
+
+    let spec_path = root.path().join("transform_spec.yaml");
+    let spec = json!({
+        "vendor": {
+            MEGACHUNK_PATH: {
+                "level": "partial_swap",
+                "identity": "megachunk partial swap fixture",
+                "packages": {
+                    PACKAGE_NAME: {
+                        "namespace": "z",
+                        "version": args.upstream_version,
+                        "subpath": SUBPATH,
+                    },
+                },
+                "symbols": Value::Object(symbols_json),
+            },
+        },
+        "inputs": { "input_root": &snapshot_root, "js_list_path": &js_list_path },
+        "swap_vendor_chunks": {
+            "output_manifest_path": &manifest_path,
+            "output_wrapper_dir": &wrapper_root,
+            "write": true,
+        },
+        "write_js_tree": { "force": true, "out_dir": &out_root },
+    });
+    write_yaml_file(&spec_path, &spec);
+
+    let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
+
+    let caller_emitted_path = out_root.join("static/app").join("entry.js");
+    let megachunk_emitted_path = out_root.join("static/megachunk").join("entry.js");
+
+    PartialSwapFixture {
+        result,
+        megachunk_chunk_path: MEGACHUNK_PATH.to_string(),
+        caller_emitted_path,
+        megachunk_emitted_path,
+        manifest_path,
+        _root: root,
+    }
+}

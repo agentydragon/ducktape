@@ -18,7 +18,8 @@ use rewrite_specifiers::rewrite_chunk_entry_specifiers;
 use spec::{MaterializeLogicalModulesConfig, SwapVendorChunksConfig, TransformSpec, VendorLevel};
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
 use vendor::{
-    SwapVendorOptions, apply_vendor_annotations, rename_vendor_exports, swap_vendor_chunks,
+    ApplyPartialVendorSwapsOptions, SwapVendorOptions, apply_partial_vendor_swaps,
+    apply_vendor_annotations, rename_vendor_exports, swap_vendor_chunks,
 };
 use write_tree::{WriteTreeInput, write_js_tree};
 
@@ -183,6 +184,7 @@ pub enum PipelineStage {
     ApplyVendorAnnotations,
     RenameVendorExports,
     SwapVendorChunks,
+    ApplyPartialVendorSwaps,
     MaterializeLogicalModules,
     WriteJsTree,
     EmitBrowserHarness,
@@ -337,6 +339,38 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
             artifact = swap_result.artifact;
             counts.chunks -= swap_result.removed_chunk_ids.len();
             chunk_records.retain(|chunk| !swap_result.removed_chunk_ids.contains(&chunk.chunk_id));
+        }
+        if spec
+            .vendor
+            .values()
+            .any(|m| matches!(m.level, VendorLevel::PartialSwap(_)))
+        {
+            // Reuse the swap-vendor output dir for the partial-swap
+            // manifest, but write to a distinct filename so the two
+            // resolution manifests don't collide. `output_wrapper_dir`
+            // isn't relevant for partial swap (no wrapper generated).
+            let partial_manifest_path = spec
+                .swap_vendor_chunks
+                .output_manifest_path
+                .as_ref()
+                .and_then(|path| path.parent().map(|parent| parent.to_path_buf()))
+                .map(|dir| dir.join("vendor_partial_swap_manifest.json"));
+            let write = spec.swap_vendor_chunks.write;
+            let partial_result =
+                run_step_with_result(&mut steps, PipelineStage::ApplyPartialVendorSwaps, || {
+                    apply_partial_vendor_swaps(
+                        artifact,
+                        &spec.vendor,
+                        &artifact_indexes,
+                        ApplyPartialVendorSwapsOptions {
+                            package_roots: &cli.package_roots,
+                            packages_root: &cli.packages_root,
+                            output_manifest_path: partial_manifest_path,
+                            write,
+                        },
+                    )
+                })?;
+            artifact = partial_result.artifact;
         }
     }
 
