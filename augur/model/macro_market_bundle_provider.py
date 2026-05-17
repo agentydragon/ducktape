@@ -100,6 +100,8 @@ class MacroMarketBundleProvider:
 
         private_equity_events = np.zeros(shape, dtype=np.bool_)
         private_equity_events[:, _TENDER_INTERVAL_MONTHS : horizon_months + 1 : _TENDER_INTERVAL_MONTHS] = True
+        private_equity_value_multipliers = np.ones(shape, dtype="float64")
+        crypto_value_multipliers = np.ones(shape, dtype="float64")
 
         return MarketBundle(
             month_index=np.arange(horizon_months + 1, dtype="int64"),
@@ -108,9 +110,12 @@ class MacroMarketBundleProvider:
             home_value_multipliers_by_location=home_value_paths_by_location,
             rent_multipliers_by_location=rent_paths_by_location,
             mortgage_30y_rate_pct=np.full(shape, self._current_mortgage30_rate_pct, dtype="float64"),
-            private_equity_value_multipliers=np.ones(shape, dtype="float64"),
+            private_equity_value_multipliers=private_equity_value_multipliers,
             private_equity_sale_opportunity_mask=private_equity_events,
-            crypto_value_multipliers=np.ones(shape, dtype="float64"),
+            crypto_value_multipliers=crypto_value_multipliers,
+            private_equity_value_multipliers_by_issuer={"default": private_equity_value_multipliers},
+            private_equity_sale_opportunity_mask_by_issuer={"default": private_equity_events},
+            crypto_value_multipliers_by_symbol={"default": crypto_value_multipliers},
             metadata=MarketBundleMetadata(
                 market_model_id=market_request.market_model_id,
                 model_card_id=_MODEL_CARD_ID,

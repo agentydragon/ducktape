@@ -1386,6 +1386,16 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     initial_private_equity_units = _initial_private_equity_units(scenario)
     private_equity_source_holding_id = _private_equity_source_holding_id(scenario)
     pe_liquidity_regime = _effective_pe_liquidity_regime(scenario)
+    # The engine aggregates PE state into a single `private_equity_*` path. When all
+    # positions share one issuer key, route the multiplier/mask through that key
+    # (returns the legacy global `"default"` path until a real per-issuer model
+    # populates the dict). With multiple distinct issuers, fall back to `"default"`
+    # for the aggregated state — per-issuer state-splitting is out of scope for this
+    # slice; observation emission is per-issuer (see `_record_private_equity_*`).
+    pe_issuer_keys = _private_equity_issuer_routing_keys(scenario)
+    engine_pe_issuer_key = pe_issuer_keys[0] if len(pe_issuer_keys) == 1 else None
+    pe_value_multipliers = market_bundle.private_equity_value_multiplier(engine_pe_issuer_key)
+    pe_sale_opportunity_mask = market_bundle.private_equity_sale_opportunity_mask_for(engine_pe_issuer_key)
     # PublicMarket regime makes the holding freely sellable from `lockup_end_month`
     # onward, so we widen the tender-window mask the engine uses when computing
     # PE sale opportunities. The reported `private_equity_sale_opportunity_event`
@@ -1393,12 +1403,12 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     # engine-internal extension of "when can this position be sold", not a
     # claim that the market emitted a tender opportunity. Tender-based scenarios
     # (LiquidityEventOnly) keep their original mask byte-for-byte.
-    effective_pe_sale_opportunity_mask = market_bundle.private_equity_sale_opportunity_mask
+    effective_pe_sale_opportunity_mask = pe_sale_opportunity_mask
     if isinstance(pe_liquidity_regime, PublicMarket):
         lockup_end_month = pe_liquidity_regime.lockup_end_month or 0
         sellable_months = (month_index >= lockup_end_month).astype(np.bool_)
-        effective_pe_sale_opportunity_mask = market_bundle.private_equity_sale_opportunity_mask | np.broadcast_to(
-            sellable_months[None, :], market_bundle.private_equity_sale_opportunity_mask.shape
+        effective_pe_sale_opportunity_mask = pe_sale_opportunity_mask | np.broadcast_to(
+            sellable_months[None, :], pe_sale_opportunity_mask.shape
         )
     purchase_price = _purchase_price_usd(scenario)
     policy_programs = actor_policy_programs(scenario)
@@ -1477,7 +1487,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     remaining_private_equity_units_by_month = np.zeros((rollout_count, month_count), dtype="float64")
     remaining_private_equity_basis_by_month = np.zeros((rollout_count, month_count), dtype="float64")
     private_equity_sale_usd_by_month = np.zeros((rollout_count, month_count), dtype="float64")
-    private_equity_sale_opportunity_event = market_bundle.private_equity_sale_opportunity_mask.copy()
+    private_equity_sale_opportunity_event = pe_sale_opportunity_mask.copy()
     remaining_private_equity_fraction = np.ones(rollout_count, dtype="float64")
     remaining_sp500_units = np.divide(
         initial_sp500,
@@ -1490,7 +1500,9 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     # contract, so initial quantity equals initial value. A fitted crypto model will
     # change this, but the engine code treats month 0 multipliers as 1.0 by
     # MarketBundle validation, mirroring the SP500 path.
-    crypto_unit_price_month_zero = market_bundle.crypto_value_multipliers[:, 0]
+    crypto_engine_routing_key = _crypto_engine_routing_key(scenario)
+    crypto_value_multipliers = market_bundle.crypto_value_multiplier(crypto_engine_routing_key)
+    crypto_unit_price_month_zero = crypto_value_multipliers[:, 0]
     remaining_crypto_quantity = np.divide(
         initial_crypto,
         crypto_unit_price_month_zero,
@@ -1637,9 +1649,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         # bookkeeping nets to zero rather than going negative when the entire
         # remaining position converts.
         private_equity_value_before_sale = (
-            initial_private_equity
-            * remaining_private_equity_fraction
-            * market_bundle.private_equity_value_multipliers[:, month]
+            initial_private_equity * remaining_private_equity_fraction * pe_value_multipliers[:, month]
         )
         # Acquisition regime: forced conversion of the entire remaining PE
         # position into cash on `event_month`. Realized gain feeds the existing
@@ -1706,11 +1716,17 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             month_index=int(month_index[month]),
             source_holding_id=private_equity_source_holding_id,
         )
-        _record_private_equity_sale_opportunity_observations(
+        _record_per_issuer_sale_opportunity_observations(
             market_observations,
+            scenario=scenario,
+            market_bundle=market_bundle,
+            month=month,
             month_index=int(month_index[month]),
-            source_asset_id=private_equity_source_holding_id,
-            opportunity=market_opportunity,
+            private_equity_value_before_sale_usd=private_equity_value_before_sale,
+            pe_liquidity_regime=pe_liquidity_regime,
+            engine_pe_issuer_key=engine_pe_issuer_key,
+            aggregate_source_asset_id=private_equity_source_holding_id,
+            aggregate_opportunity=market_opportunity,
         )
         market_sale_opportunity_value = market_opportunity.sale_opportunity_value_usd
         private_equity_sale_month = acquisition_sale_month.copy()
@@ -1743,9 +1759,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                 continue
             if isinstance(policy, PrivateEquitySalePolicy):
                 current_private_equity_value = (
-                    initial_private_equity
-                    * remaining_private_equity_fraction
-                    * market_bundle.private_equity_value_multipliers[:, month]
+                    initial_private_equity * remaining_private_equity_fraction * pe_value_multipliers[:, month]
                 )
                 current_opportunity = private_equity_sale_opportunity(
                     sale_opportunity_mask=effective_pe_sale_opportunity_mask[:, month],
@@ -1836,7 +1850,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                     )
                 )
         sp500_value_after_sale = remaining_sp500_units * sp500_multiplier
-        crypto_multiplier = market_bundle.crypto_value_multipliers[:, month]
+        crypto_multiplier = crypto_value_multipliers[:, month]
         crypto_value_after_sale = remaining_crypto_quantity * crypto_multiplier
 
         cash[:, month] = current_cash
@@ -1915,7 +1929,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         remaining_basis_by_month=remaining_private_equity_basis_by_month,
         private_equity_sale_usd=private_equity_sale_usd_by_month,
         private_equity_sale_taxable_gain_usd=private_equity_sale_taxable_gain,
-        pe_value_multipliers=market_bundle.private_equity_value_multipliers,
+        pe_value_multipliers=pe_value_multipliers,
         initial_private_equity=initial_private_equity,
         source_holding_id=private_equity_source_holding_id,
         sale_action_records=private_equity_sale_action_records,
@@ -2711,6 +2725,15 @@ def _copy_with_trajectory_identity(record: Any, identity_by_rollout: Mapping[int
 def _market_path_observations(scenario: Scenario, market_bundle: MarketBundle) -> tuple[MarketObservation, ...]:
     home_multiplier = market_bundle.home_value_multipliers(scenario.location_id)
     rent_multiplier = market_bundle.rent_multipliers(scenario.location_id)
+    # MarketPathObservation carries a single PE multiplier and a single sale-opportunity
+    # event flag per (rollout, month). Route through the engine's aggregated routing
+    # key so single-issuer scenarios surface the issuer's path; multi-issuer scenarios
+    # fall back to `"default"` here and surface the per-issuer values through
+    # `PrivateEquitySaleOpportunityObservation` rows instead.
+    pe_issuer_keys = _private_equity_issuer_routing_keys(scenario)
+    engine_pe_issuer_key = pe_issuer_keys[0] if len(pe_issuer_keys) == 1 else None
+    pe_value_multipliers = market_bundle.private_equity_value_multiplier(engine_pe_issuer_key)
+    pe_sale_mask = market_bundle.private_equity_sale_opportunity_mask_for(engine_pe_issuer_key)
     observations: list[MarketObservation] = []
     rollout_indexes, month_positions = np.indices(
         (market_bundle.rollout_count, market_bundle.horizon_months + 1), sparse=False
@@ -2725,15 +2748,11 @@ def _market_path_observations(scenario: Scenario, market_bundle: MarketBundle) -
                 location_id=scenario.location_id,
                 inflation_multiplier=float(market_bundle.inflation_multipliers[rollout_index, month_position]),
                 sp500_multiplier=float(market_bundle.generic_sp500_multipliers[rollout_index, month_position]),
-                private_equity_value_multiplier=float(
-                    market_bundle.private_equity_value_multipliers[rollout_index, month_position]
-                ),
+                private_equity_value_multiplier=float(pe_value_multipliers[rollout_index, month_position]),
                 home_value_multiplier=float(home_multiplier[rollout_index, month_position]),
                 rent_multiplier=float(rent_multiplier[rollout_index, month_position]),
                 mortgage_30y_rate_pct=float(market_bundle.mortgage_30y_rate_pct[rollout_index, month_position]),
-                private_equity_sale_opportunity_event=bool(
-                    market_bundle.private_equity_sale_opportunity_mask[rollout_index, month_position]
-                ),
+                private_equity_sale_opportunity_event=bool(pe_sale_mask[rollout_index, month_position]),
             )
         )
     return tuple(observations)
@@ -2763,6 +2782,84 @@ def _record_private_equity_sale_opportunity_observations(
         )
         for rollout_index in active_rollouts
     )
+
+
+def _record_per_issuer_sale_opportunity_observations(
+    records: list[MarketObservation],
+    *,
+    scenario: Scenario,
+    market_bundle: MarketBundle,
+    month: int,
+    month_index: int,
+    private_equity_value_before_sale_usd: np.ndarray,
+    pe_liquidity_regime: LiquidityEventOnly | PublicMarket | Acquisition,
+    engine_pe_issuer_key: str | None,
+    aggregate_source_asset_id: str,
+    aggregate_opportunity: PrivateEquitySaleOpportunityBatch,
+) -> None:
+    """Emit one PrivateEquitySaleOpportunityObservation per (rollout, month, issuer).
+
+    Single-issuer (or zero-issuer) scenarios fall through to the legacy aggregated
+    emission so existing tests remain byte-identical. Multi-issuer scenarios emit
+    one row per issuer, each computed from that issuer's per-issuer multiplier and
+    tender-mask paths so downstream consumers can split by issuer.
+    """
+    issuer_keys = _private_equity_issuer_routing_keys(scenario)
+    if len(issuer_keys) <= 1:
+        _record_private_equity_sale_opportunity_observations(
+            records,
+            month_index=month_index,
+            source_asset_id=aggregate_source_asset_id,
+            opportunity=aggregate_opportunity,
+        )
+        return
+
+    # Per-issuer slice of the aggregated PE pre-sale value. We allocate the engine's
+    # current `private_equity_value_before_sale_usd` (already reflecting remaining
+    # fraction and the engine's routing-key multiplier) across issuers in proportion
+    # to each issuer's initial mark × its own multiplier ratio relative to the
+    # engine's routing key. With a single global "default" path (the legacy macro
+    # provider) the ratios collapse to 1.0 and per-issuer values equal each issuer's
+    # initial-share × engine value — which is what a reviewer would expect.
+    pe_unit_price_usd = float(market_bundle.metadata.current_private_equity_price_usd)
+    initial_by_issuer: dict[str, float] = dict.fromkeys(issuer_keys, 0.0)
+    for asset in scenario.initial_balance_sheet.assets:
+        if not isinstance(asset, PrivateEquityPosition):
+            continue
+        initial_by_issuer[asset.market_routing_key] += _private_equity_position_value_usd(
+            asset, current_unit_price_usd=pe_unit_price_usd
+        )
+    initial_total = sum(initial_by_issuer.values())
+    if initial_total <= 0:
+        return
+
+    engine_multiplier_at_month = market_bundle.private_equity_value_multiplier(engine_pe_issuer_key)[:, month]
+    # Engine value before sale = initial_total * remaining_fraction * engine_multiplier.
+    # Derive remaining_fraction-equivalent from the per-rollout array; numerically
+    # stable for engine_multiplier > 0 (guaranteed by MarketBundle validation).
+    remaining_fraction_eq = np.where(
+        engine_multiplier_at_month > 0,
+        private_equity_value_before_sale_usd / np.maximum(engine_multiplier_at_month * initial_total, 1e-12),
+        0.0,
+    )
+    for issuer_key in issuer_keys:
+        issuer_multiplier = market_bundle.private_equity_value_multiplier(issuer_key)[:, month]
+        per_issuer_value_before_sale = initial_by_issuer[issuer_key] * remaining_fraction_eq * issuer_multiplier
+        issuer_mask = market_bundle.private_equity_sale_opportunity_mask_for(issuer_key)[:, month]
+        if isinstance(pe_liquidity_regime, PublicMarket):
+            lockup_end_month = pe_liquidity_regime.lockup_end_month or 0
+            if month >= lockup_end_month:
+                issuer_mask = issuer_mask | True
+        issuer_opportunity = private_equity_sale_opportunity(
+            sale_opportunity_mask=issuer_mask,
+            private_equity_value_before_sale_usd=per_issuer_value_before_sale,
+            path_set_id=market_bundle.metadata.path_set_id,
+            month_index=month_index,
+            source_holding_id=issuer_key,
+        )
+        _record_private_equity_sale_opportunity_observations(
+            records, month_index=month_index, source_asset_id=issuer_key, opportunity=issuer_opportunity
+        )
 
 
 def _record_monthly_spend_decisions(
@@ -4245,6 +4342,11 @@ def _settle_required_cash_obligation_at_month_position(
                     )
                 )
             elif asset_type is AssetType.CRYPTO:
+                # The bundle's per-symbol multiplier resolves to the issuer's path when one
+                # symbol is held and to `"default"` for multi-symbol scenarios (the engine
+                # aggregates crypto state, so heterogeneous symbols all read the same path
+                # in this slice; per-symbol state splitting is for a follow-on).
+                crypto_path = market_bundle.crypto_value_multiplier(sources.crypto_source_symbol)
                 crypto_application = _apply_crypto_checking_floor_obligation_funding_policy(
                     policy_step,
                     due_usd=due,
@@ -4252,7 +4354,7 @@ def _settle_required_cash_obligation_at_month_position(
                     cash_usd=cash_usd[:, month_position],
                     remaining_quantity=remaining_crypto_quantity_by_month[:, month_position],
                     remaining_basis_usd=remaining_crypto_basis_by_month[:, month_position],
-                    crypto_unit_price_usd=market_bundle.crypto_value_multipliers[:, month_position],
+                    crypto_unit_price_usd=crypto_path[:, month_position],
                     source_asset_id=sources.crypto_source_id,
                 )
                 if crypto_application is None:
@@ -4268,8 +4370,7 @@ def _settle_required_cash_obligation_at_month_position(
                     0.0, remaining_crypto_basis_by_month[:, month_position:] - basis_sold[:, None]
                 )
                 crypto_value_usd[:, month_position:] = (
-                    remaining_crypto_quantity_by_month[:, month_position:]
-                    * market_bundle.crypto_value_multipliers[:, month_position:]
+                    remaining_crypto_quantity_by_month[:, month_position:] * crypto_path[:, month_position:]
                 )
                 cash_usd[:, month_position:] = cash_usd[:, month_position:] + crypto_application.sale_usd[:, None]
                 crypto_sale_usd[:, month_position] = crypto_sale_usd[:, month_position] + crypto_application.sale_usd
@@ -5699,6 +5800,28 @@ def _crypto_source_holding_id(scenario: Scenario, *, actor_id: str) -> str:
     return "crypto_portfolio"
 
 
+def _crypto_symbol_routing_keys(scenario: Scenario) -> tuple[str, ...]:
+    """Distinct crypto symbols across all positions, in scenario order."""
+    seen: list[str] = []
+    for asset in scenario.initial_balance_sheet.assets:
+        if not isinstance(asset, CryptoAssetPosition):
+            continue
+        if asset.asset_symbol not in seen:
+            seen.append(asset.asset_symbol)
+    return tuple(seen)
+
+
+def _crypto_engine_routing_key(scenario: Scenario) -> str | None:
+    """Single symbol key for the aggregated crypto state, or None if heterogeneous.
+
+    The engine aggregates all crypto positions into one state path; routing
+    through a per-symbol multiplier only makes sense when all positions share
+    one symbol. Multi-symbol scenarios fall back to `"default"` for now.
+    """
+    keys = _crypto_symbol_routing_keys(scenario)
+    return keys[0] if len(keys) == 1 else None
+
+
 def _private_equity_position_value_usd(asset: PrivateEquityPosition, *, current_unit_price_usd: float) -> float:
     """Resolve a PE position's opening mark.
 
@@ -5777,6 +5900,38 @@ def _private_equity_source_holding_id(scenario: Scenario) -> str:
     if len(positions) == 1:
         return positions[0].asset_id
     return "private_equity_portfolio"
+
+
+def _private_equity_issuer_routing_keys(scenario: Scenario) -> tuple[str, ...]:
+    """Distinct per-issuer routing keys for PE positions in scenario order.
+
+    Each key is `position.market_routing_key` (the issuer_id or, when absent,
+    the asset_id). Empty tuple when the scenario has no PE positions.
+    Multiple lots sharing one issuer collapse to one key.
+    """
+    seen: list[str] = []
+    for asset in scenario.initial_balance_sheet.assets:
+        if not isinstance(asset, PrivateEquityPosition):
+            continue
+        key = asset.market_routing_key
+        if key not in seen:
+            seen.append(key)
+    return tuple(seen)
+
+
+def _private_equity_issuer_observation_keys(scenario: Scenario) -> tuple[tuple[str, str], ...]:
+    """`(observation_source_asset_id, routing_key)` pairs for emission.
+
+    For a single-issuer scenario, returns `((source_holding_id, only_key),)` so the
+    emitted observation's `source_asset_id` matches the legacy aggregated value
+    (e.g. `"pe"` for one position, `"private_equity_portfolio"` for the merged path).
+    For multi-issuer scenarios, returns one pair per issuer with the issuer key
+    as `source_asset_id` so downstream consumers can split by issuer.
+    """
+    keys = _private_equity_issuer_routing_keys(scenario)
+    if len(keys) <= 1:
+        return tuple((_private_equity_source_holding_id(scenario), key) for key in keys)
+    return tuple((key, key) for key in keys)
 
 
 def _has_partner(scenario: Scenario) -> bool:

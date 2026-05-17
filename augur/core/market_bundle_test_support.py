@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -21,6 +21,9 @@ def constant_market_bundle(
     private_equity_value_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0),
     private_equity_sale_opportunity_months: tuple[int, ...] = (),
     crypto_value_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0),
+    private_equity_value_paths_by_issuer: dict[str, tuple[float, ...]] | None = None,
+    private_equity_sale_opportunity_months_by_issuer: dict[str, tuple[int, ...]] | None = None,
+    crypto_value_paths_by_symbol: dict[str, tuple[float, ...]] | None = None,
     current_private_equity_price_usd: float = 0.0,
     market_model_id: str = "test",
     seed: int = 0,
@@ -34,12 +37,32 @@ def constant_market_bundle(
             source = np.pad(source, (0, horizon_months + 1 - source.size), constant_values=source[-1])
         return np.broadcast_to(source[: horizon_months + 1], shape).copy()
 
+    def mask(months: tuple[int, ...]) -> np.ndarray:
+        result = np.zeros(shape, dtype=np.bool_)
+        for month in months:
+            if 0 <= month <= horizon_months:
+                result[:, month] = True
+        return result
+
     home = path(home_path)
     rent = path(rent_path)
-    private_equity_sale_opportunity_mask = np.zeros(shape, dtype=np.bool_)
-    for month in private_equity_sale_opportunity_months:
-        if 0 <= month <= horizon_months:
-            private_equity_sale_opportunity_mask[:, month] = True
+    private_equity_value = path(private_equity_value_path)
+    private_equity_sale_opportunity_mask = mask(private_equity_sale_opportunity_months)
+    crypto_value = path(crypto_value_path)
+
+    pe_value_by_issuer: dict[str, np.ndarray] = {"default": private_equity_value}
+    if private_equity_value_paths_by_issuer is not None:
+        for issuer_id, values in private_equity_value_paths_by_issuer.items():
+            pe_value_by_issuer[issuer_id] = path(values)
+    pe_mask_by_issuer: dict[str, np.ndarray] = {"default": private_equity_sale_opportunity_mask}
+    if private_equity_sale_opportunity_months_by_issuer is not None:
+        for issuer_id, months in private_equity_sale_opportunity_months_by_issuer.items():
+            pe_mask_by_issuer[issuer_id] = mask(months)
+    crypto_by_symbol: dict[str, np.ndarray] = {"default": crypto_value}
+    if crypto_value_paths_by_symbol is not None:
+        for symbol, values in crypto_value_paths_by_symbol.items():
+            crypto_by_symbol[symbol] = path(values)
+
     return MarketBundle(
         month_index=month_index,
         inflation_multipliers=path(inflation_path),
@@ -57,9 +80,12 @@ def constant_market_bundle(
             LocationId.MARE_ISLAND_VALLEJO_CA: rent,
         },
         mortgage_30y_rate_pct=path(mortgage_30y_rate_pct_path),
-        private_equity_value_multipliers=path(private_equity_value_path),
+        private_equity_value_multipliers=private_equity_value,
         private_equity_sale_opportunity_mask=private_equity_sale_opportunity_mask,
-        crypto_value_multipliers=path(crypto_value_path),
+        crypto_value_multipliers=crypto_value,
+        private_equity_value_multipliers_by_issuer=pe_value_by_issuer,
+        private_equity_sale_opportunity_mask_by_issuer=pe_mask_by_issuer,
+        crypto_value_multipliers_by_symbol=crypto_by_symbol,
         metadata=MarketBundleMetadata(
             market_model_id=market_model_id,
             seed=seed,
@@ -83,6 +109,9 @@ class NoopMarketBundleProvider:
     private_equity_value_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0)
     private_equity_sale_opportunity_months: tuple[int, ...] = ()
     crypto_value_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0)
+    private_equity_value_paths_by_issuer: dict[str, tuple[float, ...]] = field(default_factory=dict)
+    private_equity_sale_opportunity_months_by_issuer: dict[str, tuple[int, ...]] = field(default_factory=dict)
+    crypto_value_paths_by_symbol: dict[str, tuple[float, ...]] = field(default_factory=dict)
     current_private_equity_price_usd: float = 0.0
 
     def sample_market_bundle(
@@ -99,6 +128,11 @@ class NoopMarketBundleProvider:
             private_equity_value_path=self.private_equity_value_path,
             private_equity_sale_opportunity_months=self.private_equity_sale_opportunity_months,
             crypto_value_path=self.crypto_value_path,
+            private_equity_value_paths_by_issuer=self.private_equity_value_paths_by_issuer or None,
+            private_equity_sale_opportunity_months_by_issuer=(
+                self.private_equity_sale_opportunity_months_by_issuer or None
+            ),
+            crypto_value_paths_by_symbol=self.crypto_value_paths_by_symbol or None,
             current_private_equity_price_usd=self.current_private_equity_price_usd,
             market_model_id=market_request.market_model_id,
             seed=seed,

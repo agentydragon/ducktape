@@ -68,6 +68,8 @@ def _bundle(
         event_stream_ids=("private_equity_sale_opportunity_event",),
         current_private_equity_price_usd=current_private_equity_price_usd,
     )
+    private_equity_multipliers = path(private_equity_path)
+    crypto_multipliers = path(crypto_path)
     return MarketBundle(
         month_index=month_index,
         inflation_multipliers=path(inflation_path),
@@ -85,9 +87,12 @@ def _bundle(
             "mare_island_vallejo_ca": path(rent_path),
         },
         mortgage_30y_rate_pct=np.full(shape, 6.0, dtype="float64"),
-        private_equity_value_multipliers=path(private_equity_path),
+        private_equity_value_multipliers=private_equity_multipliers,
         private_equity_sale_opportunity_mask=events,
-        crypto_value_multipliers=path(crypto_path),
+        crypto_value_multipliers=crypto_multipliers,
+        private_equity_value_multipliers_by_issuer={"default": private_equity_multipliers},
+        private_equity_sale_opportunity_mask_by_issuer={"default": events},
+        crypto_value_multipliers_by_symbol={"default": crypto_multipliers},
         metadata=metadata,
     )
 

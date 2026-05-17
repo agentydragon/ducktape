@@ -210,14 +210,21 @@ class MarketBundle:
     home_value_multipliers_by_location: dict[str, np.ndarray]
     rent_multipliers_by_location: dict[str, np.ndarray]
     mortgage_30y_rate_pct: np.ndarray
+    # CLEANUP(2026-05-17): remove once all callers route through the per-asset helpers
+    # (`private_equity_value_multiplier(issuer_id)` / `private_equity_sale_opportunity_mask_for(issuer_id)`
+    # / `crypto_value_multiplier(symbol)`). The dict-keyed siblings below are the
+    # forward path; these globals stay populated with the same array that lives at
+    # `"default"` in the dicts so legacy external callers keep working.
     private_equity_value_multipliers: np.ndarray
     private_equity_sale_opportunity_mask: np.ndarray
-    # Placeholder crypto path: a (rollout, month+1) multiplier shaped like the SP500
-    # array, currently defaulting to all-ones in every provider until a fitted crypto
-    # model is plumbed in. Reporting and sale-funding paths consume this array so
-    # they keep working with a single dummy crypto price; only the level of risk
-    # changes when a real model lands.
     crypto_value_multipliers: np.ndarray
+    # Per-issuer / per-symbol multiplier and mask paths. Each dict must include a
+    # `"default"` entry that mirrors the corresponding global array above. Multi-issuer
+    # / multi-symbol scenarios route through these helpers; single-asset scenarios
+    # transparently fall back to the `"default"` path.
+    private_equity_value_multipliers_by_issuer: dict[str, np.ndarray]
+    private_equity_sale_opportunity_mask_by_issuer: dict[str, np.ndarray]
+    crypto_value_multipliers_by_symbol: dict[str, np.ndarray]
     metadata: MarketBundleMetadata
 
     def __post_init__(self) -> None:
@@ -263,6 +270,43 @@ class MarketBundle:
         if "default" not in self.rent_multipliers_by_location:
             raise ValueError("rent_multipliers_by_location must include 'default'")
 
+        for name, values in self.private_equity_value_multipliers_by_issuer.items():
+            self._validate_multiplier(
+                values, name=f"private_equity_value_multipliers_by_issuer[{name!r}]", expected_shape=expected_shape
+            )
+        for name, values in self.private_equity_sale_opportunity_mask_by_issuer.items():
+            self._validate_bool_matrix(
+                values, name=f"private_equity_sale_opportunity_mask_by_issuer[{name!r}]", expected_shape=expected_shape
+            )
+        for name, values in self.crypto_value_multipliers_by_symbol.items():
+            self._validate_multiplier(
+                values, name=f"crypto_value_multipliers_by_symbol[{name!r}]", expected_shape=expected_shape
+            )
+        if "default" not in self.private_equity_value_multipliers_by_issuer:
+            raise ValueError("private_equity_value_multipliers_by_issuer must include 'default'")
+        if "default" not in self.private_equity_sale_opportunity_mask_by_issuer:
+            raise ValueError("private_equity_sale_opportunity_mask_by_issuer must include 'default'")
+        if "default" not in self.crypto_value_multipliers_by_symbol:
+            raise ValueError("crypto_value_multipliers_by_symbol must include 'default'")
+        # The legacy global fields must mirror the `"default"` entry. Providers populate
+        # both; the engine reads through the per-asset helpers (which fall back to
+        # `"default"`), so a mismatch would silently let two paths diverge.
+        if not np.array_equal(
+            self.private_equity_value_multipliers, self.private_equity_value_multipliers_by_issuer["default"]
+        ):
+            raise ValueError(
+                "private_equity_value_multipliers must equal private_equity_value_multipliers_by_issuer['default']"
+            )
+        if not np.array_equal(
+            self.private_equity_sale_opportunity_mask, self.private_equity_sale_opportunity_mask_by_issuer["default"]
+        ):
+            raise ValueError(
+                "private_equity_sale_opportunity_mask must equal "
+                "private_equity_sale_opportunity_mask_by_issuer['default']"
+            )
+        if not np.array_equal(self.crypto_value_multipliers, self.crypto_value_multipliers_by_symbol["default"]):
+            raise ValueError("crypto_value_multipliers must equal crypto_value_multipliers_by_symbol['default']")
+
     @property
     def rollout_count(self) -> int:
         return self.metadata.rollout_count
@@ -276,6 +320,19 @@ class MarketBundle:
 
     def rent_multipliers(self, location_id: LocationId | str | None) -> np.ndarray:
         return self._location_path(self.rent_multipliers_by_location, location_id, label="rent")
+
+    def private_equity_value_multiplier(self, issuer_id: str | None) -> np.ndarray:
+        return self._keyed_path(
+            self.private_equity_value_multipliers_by_issuer, issuer_id, label="private equity value"
+        )
+
+    def private_equity_sale_opportunity_mask_for(self, issuer_id: str | None) -> np.ndarray:
+        return self._keyed_path(
+            self.private_equity_sale_opportunity_mask_by_issuer, issuer_id, label="private equity sale opportunity mask"
+        )
+
+    def crypto_value_multiplier(self, symbol: str | None) -> np.ndarray:
+        return self._keyed_path(self.crypto_value_multipliers_by_symbol, symbol, label="crypto value")
 
     def _location_path(
         self, paths: dict[str, np.ndarray], location_id: LocationId | str | None, *, label: str
@@ -293,6 +350,16 @@ class MarketBundle:
                 return paths["default"]
             available = sorted(paths)
             raise ValueError(f"missing {label} market path for location {key!r}; available={available}") from error
+
+    @staticmethod
+    def _keyed_path(paths: dict[str, np.ndarray], key: str | None, *, label: str) -> np.ndarray:
+        lookup = "default" if key is None else key
+        if lookup in paths:
+            return paths[lookup]
+        if "default" in paths:
+            return paths["default"]
+        available = sorted(paths)
+        raise ValueError(f"missing {label} market path for key {lookup!r}; available={available}")
 
     @staticmethod
     def _validate_float_matrix(values: np.ndarray, *, name: str, expected_shape: tuple[int, int]) -> None:
@@ -376,6 +443,9 @@ class FlatMarketBundleProvider:
             private_equity_value_multipliers=flat,
             private_equity_sale_opportunity_mask=private_equity_events,
             crypto_value_multipliers=flat,
+            private_equity_value_multipliers_by_issuer={"default": flat},
+            private_equity_sale_opportunity_mask_by_issuer={"default": private_equity_events},
+            crypto_value_multipliers_by_symbol={"default": flat},
             metadata=MarketBundleMetadata(
                 market_model_id=market_request.market_model_id,
                 scenario_generator_id="flat_market_bundle_provider",
@@ -486,6 +556,9 @@ class SimpleMarketBundleProvider:
             private_equity_value_multipliers=private_equity_value,
             private_equity_sale_opportunity_mask=private_equity_events,
             crypto_value_multipliers=crypto_value,
+            private_equity_value_multipliers_by_issuer={"default": private_equity_value},
+            private_equity_sale_opportunity_mask_by_issuer={"default": private_equity_events},
+            crypto_value_multipliers_by_symbol={"default": crypto_value},
             metadata=metadata,
         )
 

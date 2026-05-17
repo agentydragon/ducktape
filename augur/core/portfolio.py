@@ -271,6 +271,7 @@ def _scenario_private_equity_lot(lot: PrivateEquityLot, account: PortfolioAccoun
         value_usd=float(lot.mark_value_usd),
         units=float(lot.units) if lot.units is not None else None,
         cost_basis_usd=float(lot.cost_basis.amount_usd) if lot.cost_basis is not None else None,
+        issuer_id=lot.issuer_id,
         provenance=_position_provenance(lot.valuation, lot.custody),
     )
 

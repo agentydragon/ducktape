@@ -976,8 +976,27 @@ class PrivateEquityPosition(ApiModel):
     units: NonNegativeFloat | None = None
     value_usd: NonNegativeFloat | None = None
     cost_basis_usd: float | None = None
+    issuer_id: str | None = Field(
+        default=None,
+        description=(
+            "Identifier of the underlying private-equity issuer (e.g. 'openai'). When set, "
+            "the simulator routes this position to the per-issuer multiplier and tender-mask "
+            "paths on `MarketBundle`. When unset, the position rides the position's "
+            "`asset_id` key (and ultimately the `'default'` path)."
+        ),
+    )
     liquidity_regime: LiquidityRegime = Field(default_factory=LiquidityEventOnly)
     provenance: PositionProvenance = Field(default_factory=PositionProvenance)
+
+    @property
+    def market_routing_key(self) -> str:
+        """Key used to look up per-issuer market paths on `MarketBundle`.
+
+        Falls back to `asset_id` when `issuer_id` is unset so single-asset scenarios
+        can omit the field. Multiple PE positions sharing one `issuer_id` ride the
+        same multiplier and tender-mask path.
+        """
+        return self.issuer_id or self.asset_id
 
     @model_validator(mode="after")
     def _require_units_or_value(self) -> PrivateEquityPosition:

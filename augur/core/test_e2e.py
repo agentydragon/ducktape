@@ -31,6 +31,7 @@ from augur.core.scenario_set import (
     ActorRole,
     AssetType,
     CheckingFloorSellPublicStockPolicy,
+    CryptoAssetPosition,
     Financing,
     FinancingMode,
     FixedAmountPrivateEquitySaleRule,
@@ -3261,6 +3262,180 @@ def test_outside_rent_zero_amount_produces_no_obligations() -> None:
     )
     assert outside_rent_obligations == ()
     # Cash is unchanged because no obligation accrues.
+    assert_allclose(result.rollout(0).series(ReportMetric.CASH_USD), 10_000)
+
+
+def test_two_pe_issuers_emit_independent_sale_opportunity_observations() -> None:
+    """A scenario with two PE issuers (both riding the `"default"` market path) emits
+    one `PrivateEquitySaleOpportunityObservation` per (rollout, month, issuer) at every
+    tender month. Aggregate cash and tax flows are unchanged from the single-issuer
+    case — the per-issuer split is purely an observation-emission concern in this slice.
+    """
+    scenario = Scenario(
+        scenario_id="two_pe_issuers",
+        label="Two PE Issuers",
+        actors=(_simple_actor(),),
+        tax_profile=TaxProfile(),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking", account_type=AccountType.CHECKING, owner_actor_id="alpha", balance_usd=10_000
+                ),
+            ),
+            assets=(
+                PrivateEquityPosition(
+                    asset_id="pe_a",
+                    owner_actor_id="alpha",
+                    issuer_id="issuer_a",
+                    value_usd=120_000,
+                    cost_basis_usd=120_000,
+                    units=100,
+                ),
+                PrivateEquityPosition(
+                    asset_id="pe_b",
+                    owner_actor_id="alpha",
+                    issuer_id="issuer_b",
+                    value_usd=80_000,
+                    cost_basis_usd=80_000,
+                    units=80,
+                ),
+            ),
+        ),
+    )
+    result = _run_scenario(
+        scenario,
+        horizon_months=6,
+        market_provider=NoopMarketBundleProvider(private_equity_sale_opportunity_months=(3, 6)),
+    )
+
+    observations = result.rollout(0).market_observations(PrivateEquitySaleOpportunityObservation)
+    by_month = {month: [obs for obs in observations if obs.month_index == month] for month in (3, 6)}
+    assert {obs.source_asset_id for obs in by_month[3]} == {"issuer_a", "issuer_b"}
+    assert {obs.source_asset_id for obs in by_month[6]} == {"issuer_a", "issuer_b"}
+    # Both issuers ride the "default" flat path (multiplier=1.0), so per-issuer
+    # values equal each issuer's initial mark.
+    by_issuer_month_3 = {obs.source_asset_id: obs for obs in by_month[3]}
+    assert_allclose(by_issuer_month_3["issuer_a"].private_equity_value_before_sale_usd, 120_000)
+    assert_allclose(by_issuer_month_3["issuer_b"].private_equity_value_before_sale_usd, 80_000)
+    # Aggregate cash trajectory is unchanged from no-sale baseline (no sale policy).
+    assert_allclose(result.rollout(0).series(ReportMetric.CASH_USD), 10_000)
+    # The aggregated PE value series equals the sum of the two initial marks at every month.
+    assert_allclose(result.rollout(0).series(ReportMetric.PRIVATE_EQUITY_VALUE_USD), 200_000)
+
+
+def test_per_issuer_value_multipliers_route_independently() -> None:
+    """When the bundle carries distinct per-issuer multiplier paths, each issuer's
+    observation `private_equity_value_before_sale_usd` reflects that issuer's
+    multiplier — not the global default. This exercises the dict-keyed lookup
+    end-to-end (provider → bundle → engine → observation)."""
+    scenario = Scenario(
+        scenario_id="per_issuer_routing",
+        label="Per Issuer Routing",
+        actors=(_simple_actor(),),
+        tax_profile=TaxProfile(),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking", account_type=AccountType.CHECKING, owner_actor_id="alpha", balance_usd=10_000
+                ),
+            ),
+            assets=(
+                PrivateEquityPosition(
+                    asset_id="pe_a",
+                    owner_actor_id="alpha",
+                    issuer_id="issuer_a",
+                    value_usd=100_000,
+                    cost_basis_usd=100_000,
+                    units=100,
+                ),
+                PrivateEquityPosition(
+                    asset_id="pe_b",
+                    owner_actor_id="alpha",
+                    issuer_id="issuer_b",
+                    value_usd=100_000,
+                    cost_basis_usd=100_000,
+                    units=100,
+                ),
+            ),
+        ),
+    )
+    # issuer_a grows 2× by month 6; issuer_b stays flat.
+    provider = NoopMarketBundleProvider(
+        private_equity_sale_opportunity_months=(6,),
+        private_equity_value_paths_by_issuer={
+            "issuer_a": (1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 2.0),
+            "issuer_b": (1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0),
+        },
+        private_equity_sale_opportunity_months_by_issuer={"issuer_a": (6,), "issuer_b": (6,)},
+    )
+    result = _run_scenario(scenario, horizon_months=6, market_provider=provider)
+    observations = [
+        obs
+        for obs in result.rollout(0).market_observations(PrivateEquitySaleOpportunityObservation)
+        if obs.month_index == 6
+    ]
+    by_issuer = {obs.source_asset_id: obs for obs in observations}
+    assert set(by_issuer) == {"issuer_a", "issuer_b"}
+    # issuer_a doubled; issuer_b is flat.
+    assert_allclose(by_issuer["issuer_a"].private_equity_value_before_sale_usd, 200_000)
+    assert_allclose(by_issuer["issuer_b"].private_equity_value_before_sale_usd, 100_000)
+
+
+def test_two_crypto_symbols_route_to_per_symbol_paths() -> None:
+    """Two crypto positions with distinct symbols (BTC + ETH) and a per-symbol
+    multiplier dict route each to its own path. With aggregated crypto state in
+    this slice the engine still tracks one cash trajectory; the routing surfaces
+    through per-symbol path lookup verified via the bundle directly. The cash
+    flow stays consistent with the legacy single-asset behavior — no policy
+    fires here, so cash is unchanged.
+    """
+    scenario = Scenario(
+        scenario_id="two_crypto_symbols",
+        label="Two Crypto Symbols",
+        actors=(_simple_actor(),),
+        tax_profile=TaxProfile(),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking", account_type=AccountType.CHECKING, owner_actor_id="alpha", balance_usd=10_000
+                ),
+            ),
+            assets=(
+                CryptoAssetPosition(
+                    asset_id="btc_holding",
+                    owner_actor_id="alpha",
+                    value_usd=5_000,
+                    cost_basis_usd=5_000,
+                    asset_symbol="BTC",
+                    quantity=0.1,
+                ),
+                CryptoAssetPosition(
+                    asset_id="eth_holding",
+                    owner_actor_id="alpha",
+                    value_usd=3_000,
+                    cost_basis_usd=3_000,
+                    asset_symbol="ETH",
+                    quantity=2.0,
+                ),
+            ),
+        ),
+    )
+    provider = NoopMarketBundleProvider(crypto_value_paths_by_symbol={"BTC": (1.0, 1.0, 1.5), "ETH": (1.0, 1.0, 0.5)})
+    # Verify the provider populates per-symbol routing dicts on the bundle.
+    bundle = provider.sample_market_bundle(
+        rollout_count=2,
+        horizon_months=2,
+        seed=0,
+        market_request=MarketRequest(market_model_id="t", rollout_count=2, horizon_months=2, seed=0),
+    )
+    assert set(bundle.crypto_value_multipliers_by_symbol) >= {"default", "BTC", "ETH"}
+    assert_allclose(bundle.crypto_value_multiplier("BTC")[:, 2], 1.5)
+    assert_allclose(bundle.crypto_value_multiplier("ETH")[:, 2], 0.5)
+    # An unknown symbol falls back to "default" (all ones here).
+    assert_allclose(bundle.crypto_value_multiplier("XRP")[:, 2], 1.0)
+
+    # End-to-end run still succeeds; cash is unchanged with no sale policy in play.
+    result = _run_scenario(scenario, horizon_months=2, market_provider=provider)
     assert_allclose(result.rollout(0).series(ReportMetric.CASH_USD), 10_000)
 
 

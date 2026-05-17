@@ -100,6 +100,9 @@ def test_market_bundle_rejects_bad_shapes() -> None:
             private_equity_value_multipliers=valid,
             private_equity_sale_opportunity_mask=np.zeros((2, 4), dtype=np.bool_),
             crypto_value_multipliers=valid,
+            private_equity_value_multipliers_by_issuer={"default": valid},
+            private_equity_sale_opportunity_mask_by_issuer={"default": np.zeros((2, 4), dtype=np.bool_)},
+            crypto_value_multipliers_by_symbol={"default": valid},
             metadata=metadata,
         )
 
