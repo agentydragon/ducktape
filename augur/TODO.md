@@ -139,11 +139,14 @@ second ordered roadmap.
       as the distribution of differences between samples from both
       distributions or as paired differences conditioned on the same underlying
       exogenous path.
-- [ ] Continue migrating Augur UI controls to Mantine. Mantine is the chosen
-      boring React component kit and now backs the app provider, result tabs, and
-      result disclosure behavior. Migrate form controls, tables, buttons, input
-      groups, and remaining disclosure widgets incrementally instead of adding
-      more one-off local primitives.
+- [ ] Continue migrating Augur UI controls to Mantine. Mantine now backs the
+      app provider, result tabs, result disclosure, all tables (via Mantine
+      `Table` with `unstyled` so global typography rules still apply), and
+      remaining click-targets that were bare `<button>` (now Mantine
+      `UnstyledButton`). One control still native: the inline color swatch in
+      `ScenarioList` rows — Mantine `ColorInput` is full-width text-plus-swatch
+      and doesn't fit the compact inline use; the editable `ColorInput` is
+      already present in `SelectedScenarioControls` for the selected scenario.
 - [ ] Extract shared browser visual-test utilities for deterministic Playwright
       runs. Augur visual goldens currently carry their own Chromium determinism
       flags and injected determinism CSS; those should move into a shared repo
