@@ -15,10 +15,6 @@ second ordered roadmap.
 - Sale-tax timing slice — move sale-tax obligations off
   `ALLOCATED_TO_SOURCE_MONTH` onto realistic year-end / estimated-payment
   dates. Branch `claude/sale-tax-timing-slice`.
-- Partner ownership parallel paths (cleanup audit item 3) — collapse the
-  duplicate ledger-row reconstruction in
-  `_record_partner_agreement_ledger_detail`. Branch
-  `claude/partner-ownership-parallel-paths`.
 
 ## Next
 
