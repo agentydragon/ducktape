@@ -197,38 +197,6 @@ chain.
 Context: <consumer-repo notes on purity recursion>
 "Part 3 — cross-module purity" section.
 
-## Strip swapped exports from the emitted vendor blob
-
-`apply_partial_vendor_swaps` currently rewrites the consumer chunk's bare
-specifier imports to point at the npm copy, but the original vendor blob
-still emits every swapped symbol as part of its trailing
-`export { … }` re-export block plus all the implementation code behind
-those exports. The dead exports are unreachable (no consumer imports
-them) but the bundler doesn't know that, so the vendor blob is
-unnecessarily large and `git diff` of `tana/re/web/out/...` still shows
-opaque vendor-blob bodies for code we've "swapped".
-
-Drop the swapped names from the vendor chunk's emitted `export { … }`
-block so the swap is reflected on both sides of the seam. The names are
-already known to the swap stage (each `partial_swap` entry lists them
-explicitly), so this is a string-level rewrite of the export block —
-mechanical.
-
-Stripping the implementations behind those exports is the harder
-follow-on: the swapped symbol's definition typically cross-references
-other vendor-blob symbols that are still consumed (e.g. zod's `object`
-factory references `ZodObject`, which other vendor exports also touch).
-A full implementation-DCE needs a binding-graph reachability pass over
-the vendor blob — start from "still-exported names" and sweep, deleting
-anything unreachable. Pure removal of the export-block entries first is
-the obvious cheap win; the DCE pass is a separate item once the
-reachability infra exists.
-
-Surfaced by the gaffer-private `@opentelemetry/api` / `nanoid` / `zod`
-partial-swap (agentydragon/gaffer-private#156): the consumer side is
-clean (`import { object } from "zod"`) but the vendor chunk is
-byte-identical to pre-swap.
-
 ## Corpus breadth
 
 Current passing surface is centered on small synthetic fixtures and the

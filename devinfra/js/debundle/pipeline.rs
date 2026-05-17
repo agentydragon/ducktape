@@ -17,6 +17,7 @@ use prepare_chunks::prepare_js_chunks;
 use rewrite_specifiers::rewrite_chunk_entry_specifiers;
 use spec::{MaterializeLogicalModulesConfig, SwapVendorChunksConfig, TransformSpec, VendorLevel};
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
+use strip_swapped_vendor_exports::strip_swapped_vendor_exports;
 use vendor::{
     ApplyPartialVendorSwapsOptions, SwapVendorOptions, apply_partial_vendor_swaps,
     apply_vendor_annotations, rename_vendor_exports, swap_vendor_chunks,
@@ -186,6 +187,7 @@ pub enum PipelineStage {
     SwapVendorChunks,
     MaterializeLogicalModules,
     ApplyPartialVendorSwaps,
+    StripSwappedVendorExports,
     WriteJsTree,
     EmitBrowserHarness,
 }
@@ -413,6 +415,16 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
                 )
             })?;
         artifact = partial_result.artifact;
+
+        // The consumer side has been rewritten to import each swapped
+        // symbol from upstream; drop the vendor chunk's residual
+        // `export { … }` entries and any top-level bindings that are
+        // unreachable once those exports are gone.
+        let strip_result =
+            run_step_with_result(&mut steps, PipelineStage::StripSwappedVendorExports, || {
+                strip_swapped_vendor_exports(artifact, &spec.vendor)
+            })?;
+        artifact = strip_result.artifact;
     }
 
     if let Some(cfg) = &spec.write_js_tree {

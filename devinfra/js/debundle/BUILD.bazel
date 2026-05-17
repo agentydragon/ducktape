@@ -121,6 +121,31 @@ rust_test(
 )
 
 rust_library(
+    name = "strip_swapped_vendor_exports",
+    srcs = ["strip_swapped_vendor_exports.rs"],
+    crate_root = "strip_swapped_vendor_exports.rs",
+    edition = "2024",
+    deps = [
+        ":artifact",
+        ":spec",
+        "@crates//:anyhow",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_test(
+    name = "strip_swapped_vendor_exports_test",
+    crate = ":strip_swapped_vendor_exports",
+    edition = "2024",
+    deps = [
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_codegen",
+        "@crates//:swc_ecma_parser",
+    ],
+)
+
+rust_library(
     name = "emit_harness",
     srcs = ["emit_harness.rs"],
     crate_root = "emit_harness.rs",
@@ -427,6 +452,7 @@ rust_library(
         ":rewrite_specifiers",
         ":spec",
         ":spec_tree",
+        ":strip_swapped_vendor_exports",
         ":vendor",
         ":write_tree",
         "@crates//:anyhow",

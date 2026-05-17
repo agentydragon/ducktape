@@ -574,6 +574,142 @@ fn partial_swap_keeps_megachunk_on_disk() {
     );
 }
 
+// ─── strip swapped exports ───────────────────────────────────────────────
+//
+// After `apply_partial_vendor_swaps` rewrites the consumer side, the
+// `strip_swapped_vendor_exports` stage drops the swapped names from the
+// vendor chunk's own export surface and sweeps any top-level bindings
+// that are no longer reachable. These tests cover both halves of that
+// pass against the synthetic megachunk fixture.
+
+#[test]
+fn partial_swap_strips_swapped_names_from_export_block() {
+    // `export { e6, keepMe }` form: stripping `e6` should rewrite the
+    // export block to expose only `keepMe`. Bare `export const e6 = …`
+    // is exercised by the implementation-DCE tests below.
+    let fixture = run_partial_swap_fixture(PartialSwapFixtureArgs {
+        chunk_source: "const e6Impl = () => true;\nconst keepMeImpl = () => 7;\nexport { e6Impl as e6, keepMeImpl as keepMe };\n",
+        caller_source: "import { e6 as zodBoolean, keepMe as kept } from \"../megachunk/entry.js\";\nexport function go() { return zodBoolean() && kept(); }\n",
+        upstream_source: "export const boolean = () => true;\n",
+        symbols: vec![("e6", "zod", "boolean")],
+        upstream_version: "3.23.8",
+    });
+
+    assert!(
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    let emitted = fs::read_to_string(&fixture.megachunk_emitted_path).expect("megachunk emitted");
+    assert!(
+        !emitted.contains("e6Impl as e6"),
+        "stripped name `e6` should be gone from the export block:\n{emitted}",
+    );
+    assert!(
+        emitted.contains("keepMeImpl as keepMe"),
+        "non-swapped name `keepMe` should still be exported:\n{emitted}",
+    );
+}
+
+#[test]
+fn partial_swap_strips_implementation_when_unreferenced() {
+    // `export const e6 = …` with no cross-refs: after stripping the
+    // export prefix, `const e6 = …` becomes a chunk-local pure binding
+    // that nothing reads, so the DCE pass deletes it entirely.
+    let fixture = run_partial_swap_fixture(PartialSwapFixtureArgs {
+        chunk_source: "export const e6 = () => true;\nexport const keepMe = () => 7;\n",
+        caller_source: "import { e6 as zodBoolean, keepMe as kept } from \"../megachunk/entry.js\";\nexport function go() { return zodBoolean() && kept(); }\n",
+        upstream_source: "export const boolean = () => true;\n",
+        symbols: vec![("e6", "zod", "boolean")],
+        upstream_version: "3.23.8",
+    });
+
+    assert!(
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    let emitted = fs::read_to_string(&fixture.megachunk_emitted_path).expect("megachunk emitted");
+    assert!(
+        !emitted.contains(" e6 "),
+        "swapped binding `e6` should be DCE'd:\n{emitted}",
+    );
+    assert!(
+        emitted.contains("keepMe"),
+        "non-swapped binding `keepMe` should remain:\n{emitted}",
+    );
+}
+
+#[test]
+fn partial_swap_keeps_implementation_when_cross_referenced() {
+    // `object` (swapped) references `ZodObject`; `ZodObject` is still
+    // exported. The export-strip drops `object`'s export; DCE finds
+    // `ZodObject` reachable through its own export and keeps it; the
+    // dead `object` declaration goes away.
+    let fixture = run_partial_swap_fixture(PartialSwapFixtureArgs {
+        chunk_source: "class ZodObject {}\nconst object = () => new ZodObject();\nexport { object, ZodObject };\n",
+        caller_source: "import { object as zodObject, ZodObject as Z } from \"../megachunk/entry.js\";\nexport function go() { return zodObject() instanceof Z; }\n",
+        upstream_source: "export const object = () => ({});\n",
+        symbols: vec![("object", "zod", "object")],
+        upstream_version: "3.23.8",
+    });
+
+    assert!(
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    let emitted = fs::read_to_string(&fixture.megachunk_emitted_path).expect("megachunk emitted");
+    assert!(
+        emitted.contains("class ZodObject"),
+        "still-exported `ZodObject` definition should remain:\n{emitted}",
+    );
+    assert!(
+        emitted.contains("ZodObject"),
+        "still-exported `ZodObject` should be in the export surface:\n{emitted}",
+    );
+    assert!(
+        !emitted.contains("const object"),
+        "dead `object` body should be DCE'd:\n{emitted}",
+    );
+}
+
+#[test]
+fn partial_swap_keeps_side_effect_init() {
+    // Top-level side effect (`Object.defineProperty(...)`) must stay
+    // even when its only "reference" is a swapped binding.
+    let fixture = run_partial_swap_fixture(PartialSwapFixtureArgs {
+        chunk_source: "const carrier = {};\nObject.defineProperty(carrier, \"_zod\", { value: {} });\nexport const e6 = () => true;\n",
+        caller_source: "import { e6 as zodBoolean } from \"../megachunk/entry.js\";\nexport function go() { return zodBoolean(); }\n",
+        upstream_source: "export const boolean = () => true;\n",
+        symbols: vec![("e6", "zod", "boolean")],
+        upstream_version: "3.23.8",
+    });
+
+    assert!(
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    let emitted = fs::read_to_string(&fixture.megachunk_emitted_path).expect("megachunk emitted");
+    assert!(
+        emitted.contains("Object.defineProperty"),
+        "side-effect statement should be retained:\n{emitted}",
+    );
+    assert!(
+        !emitted.contains(" e6 "),
+        "swapped `e6` definition should still be DCE'd:\n{emitted}",
+    );
+}
+
 #[test]
 fn partial_swap_rejects_version_mismatch() {
     let fixture = run_partial_swap_fixture(PartialSwapFixtureArgs {
