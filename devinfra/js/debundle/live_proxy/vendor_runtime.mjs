@@ -77,6 +77,131 @@ export function resolveVendorRuntimeRequest(relativePath, vendorRuntimeIndex) {
   return null;
 }
 
+// Path segment under <appAssetPrefix> that the live proxy mounts
+// partial-swap packages under. Each partial-swap'd package gets a
+// directory rooted at `<PARTIAL_SWAP_URL_PREFIX>/<package_name>/`
+// where the package's filesystem root is served verbatim. Bare-specifier
+// imports like `from "mobx-react-lite"` are resolved by an injected
+// `<script type="importmap">` whose entries point at the package's
+// `subpath` under this prefix.
+const PARTIAL_SWAP_URL_PREFIX = "_partial_swap";
+
+export function loadPartialSwapRuntimeIndex({ manifestPath, packageRoots, packagesRoot }) {
+  const byPackage = new Map();
+  if (!manifestPath || !existsSync(manifestPath)) {
+    return byPackage;
+  }
+  const raw = JSON.parse(readFileSync(manifestPath, "utf8"));
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error(`Partial-swap manifest must be a JSON object at ${manifestPath}`);
+  }
+  const resolutions = raw.resolutions ?? {};
+  for (const entry of Object.values(resolutions)) {
+    for (const [packageName, packageEntry] of Object.entries(entry.packages ?? {})) {
+      if (!packageEntry.subpath || !packageEntry.version) {
+        throw new Error(`Partial-swap resolution for ${packageName} is missing subpath/version in ${manifestPath}`);
+      }
+      const filePath = resolvePackageSubpath(packageName, packageEntry.subpath, {
+        packageRoots,
+        packagesRoot,
+      });
+      const mountRoot = resolvePackageMountRoot(packageName, {
+        packageRoots,
+        packagesRoot,
+        filePath,
+      });
+      byPackage.set(packageName, {
+        package: packageName,
+        version: packageEntry.version,
+        subpath: packageEntry.subpath,
+        filePath,
+        mountRoot,
+        mountedSubpath: normalizeMountedRelativePath(relative(mountRoot, filePath)),
+        urlPrefix: `${PARTIAL_SWAP_URL_PREFIX}/${packageName}`,
+      });
+    }
+  }
+  return byPackage;
+}
+
+// Build the importmap object (suitable for JSON-stringifying into a
+// `<script type="importmap">`) for a partial-swap runtime index. Each
+// package's bare specifier (`"mobx-react-lite"`) maps to the URL where
+// the live proxy serves the package's `subpath` file.
+export function buildPartialSwapImportMap(partialSwapIndex, appAssetPrefix) {
+  const imports = {};
+  for (const entry of partialSwapIndex.values()) {
+    imports[entry.package] = `${appAssetPrefix}/${entry.urlPrefix}/${entry.mountedSubpath}`;
+  }
+  return { imports };
+}
+
+// Resolve a request under the partial-swap URL prefix to an absolute
+// filesystem path. Returns `null` when the path doesn't reference a
+// partial-swap package; otherwise returns the file path, the package
+// name, and the in-package relative path so the caller can serve the
+// file with an accurate `Content-Type` and stay within the mount root.
+export function resolvePartialSwapRuntimeRequest(relativePath, partialSwapIndex) {
+  if (!partialSwapIndex || partialSwapIndex.size === 0) {
+    return null;
+  }
+  const normalizedPath = normalizeRelativePath(relativePath);
+  const candidatePaths = normalizedPath.startsWith("app/")
+    ? [normalizedPath, normalizedPath.slice("app/".length)]
+    : [normalizedPath];
+  for (const candidatePath of candidatePaths) {
+    const partialPrefix = `${PARTIAL_SWAP_URL_PREFIX}/`;
+    if (!candidatePath.startsWith(partialPrefix)) {
+      continue;
+    }
+    const rest = candidatePath.slice(partialPrefix.length);
+    for (const entry of partialSwapIndex.values()) {
+      const packagePrefix = `${entry.package}/`;
+      if (!rest.startsWith(packagePrefix)) {
+        continue;
+      }
+      const suffix = rest.slice(packagePrefix.length);
+      const resolvedPath = resolve(entry.mountRoot, suffix);
+      assertPathWithinRoot(
+        resolvedPath,
+        entry.mountRoot,
+        `Partial-swap request escapes mounted root for ${entry.package}: ${suffix}`
+      );
+      if (existsSync(resolvedPath)) {
+        assertRealPathWithinRoot(
+          resolvedPath,
+          entry.mountRoot,
+          `Partial-swap request realpath escapes mounted root for ${entry.package}: ${suffix}`
+        );
+      }
+      return {
+        package: entry.package,
+        version: entry.version,
+        filePath: resolvedPath,
+        requestPath: candidatePath,
+        requestSuffix: suffix,
+      };
+    }
+  }
+  return null;
+}
+
+function resolvePackageMountRoot(packageName, { packageRoots, packagesRoot, filePath }) {
+  // Walk up the package's `subpath` levels from `filePath` to find the
+  // package directory root. Using `package_tree.resolvePackageSubpath`
+  // already verified the file is within the package; this just gives
+  // us the root for relative-import sandboxing.
+  if (packageRoots && packageRoots[packageName]) {
+    return packageRoots[packageName];
+  }
+  if (packagesRoot) {
+    return resolve(packagesRoot, packageName);
+  }
+  // Fall back to deriving from filePath (less precise, but covers
+  // tests that synthesize package_roots themselves).
+  return dirname(filePath);
+}
+
 function chunkIdForChunkPath(chunkPath) {
   if (!chunkPath.endsWith(".js")) {
     throw new Error(`Expected .js chunk path, got ${chunkPath}`);

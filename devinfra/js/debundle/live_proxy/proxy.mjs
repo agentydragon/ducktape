@@ -5,7 +5,13 @@ import { Agent as HttpsAgent } from "node:https";
 
 import forge from "node-forge";
 import { Proxy } from "http-mitm-proxy";
-import { loadVendorRuntimeIndex, resolveVendorRuntimeRequest } from "./vendor_runtime.mjs";
+import {
+  buildPartialSwapImportMap,
+  loadPartialSwapRuntimeIndex,
+  loadVendorRuntimeIndex,
+  resolvePartialSwapRuntimeRequest,
+  resolveVendorRuntimeRequest,
+} from "./vendor_runtime.mjs";
 import { requireValue, resolveWorkspacePath } from "./io.mjs";
 
 const MODULE_SCRIPT_RE =
@@ -144,6 +150,20 @@ export function loadLiveProxyConfiguration(rawOptions) {
     ...(options.packageRoots ? { packageRoots: options.packageRoots } : {}),
     ...(options.packagesRoot ? { packagesRoot: options.packagesRoot } : {}),
   });
+  // Partial-swap manifest sits in the same `vendors/` directory as the
+  // regular manifest; the pipeline writes it iff at least one chunk has
+  // `level: partial_swap`. When present it lets us serve the bare-
+  // specifier imports the partial-swap stage emitted (`from "mobx"` etc.)
+  // by mounting each package under `<appAssetPrefix>/_partial_swap/...`
+  // and injecting an `<script type="importmap">` into the served HTML.
+  const partialSwapManifestPath = appManifest.vendor_partial_swap_manifest_path
+    ? resolveManifestReferencedPath(appManifest.vendor_partial_swap_manifest_path, manifestContext)
+    : join(dirname(vendorManifestPath), "vendor_partial_swap_manifest.json");
+  const partialSwapRuntimeIndex = loadPartialSwapRuntimeIndex({
+    manifestPath: partialSwapManifestPath,
+    ...(options.packageRoots ? { packageRoots: options.packageRoots } : {}),
+    ...(options.packagesRoot ? { packagesRoot: options.packagesRoot } : {}),
+  });
   const bootstrapPath = join(appRoot, "bootstrap.js");
   if (!existsSync(bootstrapPath)) {
     throw new Error(`Expected bootstrap.js at ${bootstrapPath}`);
@@ -168,6 +188,8 @@ export function loadLiveProxyConfiguration(rawOptions) {
       appAssetPrefix,
       bootstrapUrl: `${appAssetPrefix}/bootstrap.js`,
       uiVersion,
+      importMap:
+        partialSwapRuntimeIndex.size > 0 ? buildPartialSwapImportMap(partialSwapRuntimeIndex, appAssetPrefix) : null,
     }),
     internalPrefix,
     outRoot: appRoot,
@@ -182,6 +204,8 @@ export function loadLiveProxyConfiguration(rawOptions) {
     uiVersion,
     vendorManifestPath,
     vendorRuntimeIndex,
+    partialSwapManifestPath,
+    partialSwapRuntimeIndex,
   };
 }
 
@@ -214,7 +238,7 @@ function normalizeRelativePath(value) {
     .join("/");
 }
 
-export function rewriteHtmlForLiveProxy(sourceHtml, { appAssetPrefix, bootstrapUrl, uiVersion }) {
+export function rewriteHtmlForLiveProxy(sourceHtml, { appAssetPrefix, bootstrapUrl, uiVersion, importMap }) {
   let html = sourceHtml.replace(MODULE_SCRIPT_RE, "");
   html = html.replace(MODULE_PRELOAD_RE, "");
 
@@ -229,7 +253,13 @@ export function rewriteHtmlForLiveProxy(sourceHtml, { appAssetPrefix, bootstrapU
     html = rewriteSnapshotAssetUrls(html, appAssetPrefix);
   }
 
-  const injected = `${liveProxyPreludeScript({ bootstrapUrl, uiVersion })}
+  // Browsers need an importmap to resolve bare specifiers from
+  // partial-swap'd packages (`import { observer } from "mobx-react-lite"`).
+  // The importmap must precede every module script in document order, so
+  // it goes right before the prelude / bootstrap injection below.
+  const importMapScript = importMap ? `<script type="importmap">${JSON.stringify(importMap)}</script>\n    ` : "";
+
+  const injected = `${importMapScript}${liveProxyPreludeScript({ bootstrapUrl, uiVersion })}
     <script type="module" crossorigin src="${escapeHtmlAttr(bootstrapUrl)}"></script>`;
 
   if (/<\/body>/i.test(html)) {
@@ -306,6 +336,15 @@ export function mapLocalAssetPath(pathname, config) {
       contentType: contentTypeForPath(vendorRuntime.filePath),
       filePath: vendorRuntime.filePath,
       kind: "vendor-file",
+    };
+  }
+  const partialSwap = resolvePartialSwapRuntimeRequest(suffix, config.partialSwapRuntimeIndex);
+  if (partialSwap) {
+    return {
+      contentType: contentTypeForPath(partialSwap.filePath),
+      filePath: partialSwap.filePath,
+      kind: "partial-swap-file",
+      package: partialSwap.package,
     };
   }
   const appRelativePath = stripAppAssetPrefix(suffix);
