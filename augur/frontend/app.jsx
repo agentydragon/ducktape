@@ -11,9 +11,11 @@ import {
   NumberInput,
   Radio,
   Stack,
+  Table,
   Tabs,
   Text,
   TextInput,
+  UnstyledButton,
 } from "@mantine/core";
 
 import { rowsFromCamelColumnar } from "./lib/columnar.js";
@@ -434,7 +436,7 @@ function fmtRolloutStatusShare(count, total) {
 
 function RolloutHealthCell({ statusSummary }) {
   return (
-    <td className="min-w-[10rem] whitespace-nowrap">
+    <Table.Td className="min-w-[10rem] whitespace-nowrap">
       <div className="space-y-1 text-right">
         <div>
           <span className="augur-muted">Active</span> {fmtRolloutStatusShare(statusSummary.active, statusSummary.total)}
@@ -444,7 +446,7 @@ function RolloutHealthCell({ statusSummary }) {
           {fmtRolloutStatusShare(statusSummary.cashNegative, statusSummary.total)}
         </div>
       </div>
-    </td>
+    </Table.Td>
   );
 }
 
@@ -655,8 +657,7 @@ function DisclosurePanel({ title, subtitle = null, summary = null, children, def
   const [opened, setOpened] = useState(defaultOpen);
   return (
     <section className="augur-card overflow-hidden" {...marker}>
-      <button
-        type="button"
+      <UnstyledButton
         className="flex w-full min-w-0 items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 text-left dark:border-slate-700"
         aria-expanded={opened}
         onClick={() => setOpened((previous) => !previous)}
@@ -669,7 +670,7 @@ function DisclosurePanel({ title, subtitle = null, summary = null, children, def
           </div>
           {subtitle && <div className="mt-1 text-sm augur-muted">{subtitle}</div>}
         </div>
-      </button>
+      </UnstyledButton>
       <Collapse in={opened} transitionDuration={0}>
         {children}
       </Collapse>
@@ -740,16 +741,16 @@ function ScenarioValueSummary({ distribution }) {
 function DetailTable({ rows }) {
   return (
     <div className="max-w-full overflow-x-auto">
-      <table className="w-full table-fixed">
-        <tbody>
+      <Table className="w-full table-fixed" unstyled>
+        <Table.Tbody>
           {rows.map(([label, value]) => (
-            <tr key={label}>
-              <td className="label w-[42%] max-w-[12rem] align-top">{label}</td>
-              <td className="break-words text-right align-top [overflow-wrap:anywhere]">{value}</td>
-            </tr>
+            <Table.Tr key={label}>
+              <Table.Td className="label w-[42%] max-w-[12rem] align-top">{label}</Table.Td>
+              <Table.Td className="break-words text-right align-top [overflow-wrap:anywhere]">{value}</Table.Td>
+            </Table.Tr>
           ))}
-        </tbody>
-      </table>
+        </Table.Tbody>
+      </Table>
     </div>
   );
 }
@@ -885,26 +886,26 @@ function TerminalPercentileSnapshot({ distribution }) {
   return (
     <ResultPanel kind="distribution" title="Terminal rollout percentiles">
       <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr>
-              <th className="text-left">Metric</th>
-              <th>P05</th>
-              <th>P50</th>
-              <th>P95</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table className="w-full" unstyled>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th className="text-left">Metric</Table.Th>
+              <Table.Th>P05</Table.Th>
+              <Table.Th>P50</Table.Th>
+              <Table.Th>P95</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
             {rows.map(([label, row, formatter]) => (
-              <tr key={label}>
-                <td className="label">{label}</td>
-                <td>{formatter(row?.p05)}</td>
-                <td>{formatter(row?.p50)}</td>
-                <td>{formatter(row?.p95)}</td>
-              </tr>
+              <Table.Tr key={label}>
+                <Table.Td className="label">{label}</Table.Td>
+                <Table.Td>{formatter(row?.p05)}</Table.Td>
+                <Table.Td>{formatter(row?.p50)}</Table.Td>
+                <Table.Td>{formatter(row?.p95)}</Table.Td>
+              </Table.Tr>
             ))}
-          </tbody>
-        </table>
+          </Table.Tbody>
+        </Table>
       </div>
     </ResultPanel>
   );
@@ -917,36 +918,36 @@ function ScenarioPathPreview({ trajectory }) {
   return (
     <ResultPanel kind="trajectory" title="Annual snapshot">
       <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr>
-              <th>Year</th>
-              <th>Net worth</th>
-              <th>Cash</th>
-              <th>Property value</th>
-              <th>Home equity</th>
-              <th>Mortgage</th>
-              <th>Rent income</th>
-              <th>Carry costs</th>
-              <th>Sale cash flow</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table className="w-full" unstyled>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Year</Table.Th>
+              <Table.Th>Net worth</Table.Th>
+              <Table.Th>Cash</Table.Th>
+              <Table.Th>Property value</Table.Th>
+              <Table.Th>Home equity</Table.Th>
+              <Table.Th>Mortgage</Table.Th>
+              <Table.Th>Rent income</Table.Th>
+              <Table.Th>Carry costs</Table.Th>
+              <Table.Th>Sale cash flow</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
             {annualRows.map((row) => (
-              <tr key={row.monthIndex}>
-                <td>{(row.monthIndex / 12).toFixed(0)}</td>
-                <td>{fmtUsd(row.netWorthUsd)}</td>
-                <td>{fmtUsd(row.cashUsd)}</td>
-                <td>{fmtUsd(row.propertyValueUsd)}</td>
-                <td>{fmtUsd(row.homeEquityUsd)}</td>
-                <td>{fmtUsd(row.mortgageBalanceUsd)}</td>
-                <td>{fmtUsd(row.rentalIncomeUsd)}</td>
-                <td>{fmtUsd(row.propertyCarryingCostUsd)}</td>
-                <td>{fmtUsd(row.netPropertySaleCashFlowUsd)}</td>
-              </tr>
+              <Table.Tr key={row.monthIndex}>
+                <Table.Td>{(row.monthIndex / 12).toFixed(0)}</Table.Td>
+                <Table.Td>{fmtUsd(row.netWorthUsd)}</Table.Td>
+                <Table.Td>{fmtUsd(row.cashUsd)}</Table.Td>
+                <Table.Td>{fmtUsd(row.propertyValueUsd)}</Table.Td>
+                <Table.Td>{fmtUsd(row.homeEquityUsd)}</Table.Td>
+                <Table.Td>{fmtUsd(row.mortgageBalanceUsd)}</Table.Td>
+                <Table.Td>{fmtUsd(row.rentalIncomeUsd)}</Table.Td>
+                <Table.Td>{fmtUsd(row.propertyCarryingCostUsd)}</Table.Td>
+                <Table.Td>{fmtUsd(row.netPropertySaleCashFlowUsd)}</Table.Td>
+              </Table.Tr>
             ))}
-          </tbody>
-        </table>
+          </Table.Tbody>
+        </Table>
       </div>
     </ResultPanel>
   );
@@ -1003,30 +1004,30 @@ function PartnerOwnershipPanel({ trajectory, bootstrap }) {
         ))}
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr>
-              <th>Month</th>
-              <th>Contribution</th>
-              <th>Used</th>
-              <th>Equity claim</th>
-              <th>Ownership</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table className="w-full" unstyled>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Month</Table.Th>
+              <Table.Th>Contribution</Table.Th>
+              <Table.Th>Used</Table.Th>
+              <Table.Th>Equity claim</Table.Th>
+              <Table.Th>Ownership</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
             {annualRows.map((row) => {
               return (
-                <tr key={row.monthIndex}>
-                  <td>{row.monthIndex}</td>
-                  <td>{fmtUsd(row.partnerContributionUsd)}</td>
-                  <td>{fmtUsd(row.partnerContributionUsedUsd)}</td>
-                  <td>{fmtUsd(row.partnerHomeEquityClaimUsd)}</td>
-                  <td>{fmtPct(row.partnerOwnershipPct)}</td>
-                </tr>
+                <Table.Tr key={row.monthIndex}>
+                  <Table.Td>{row.monthIndex}</Table.Td>
+                  <Table.Td>{fmtUsd(row.partnerContributionUsd)}</Table.Td>
+                  <Table.Td>{fmtUsd(row.partnerContributionUsedUsd)}</Table.Td>
+                  <Table.Td>{fmtUsd(row.partnerHomeEquityClaimUsd)}</Table.Td>
+                  <Table.Td>{fmtPct(row.partnerOwnershipPct)}</Table.Td>
+                </Table.Tr>
               );
             })}
-          </tbody>
-        </table>
+          </Table.Tbody>
+        </Table>
       </div>
     </ResultPanel>
   );
@@ -1053,32 +1054,32 @@ function LiquidityPolicyPanel({ trajectory }) {
         ))}
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr>
-              <th>Year</th>
-              <th>Cash</th>
-              <th>SP500 value</th>
-              <th>Sales</th>
-              <th>Basis sold</th>
-              <th>Gain</th>
-              <th>Shortfall</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table className="w-full" unstyled>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Year</Table.Th>
+              <Table.Th>Cash</Table.Th>
+              <Table.Th>SP500 value</Table.Th>
+              <Table.Th>Sales</Table.Th>
+              <Table.Th>Basis sold</Table.Th>
+              <Table.Th>Gain</Table.Th>
+              <Table.Th>Shortfall</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
             {annualRows.map((row) => (
-              <tr key={row.monthIndex}>
-                <td>{(row.monthIndex / 12).toFixed(0)}</td>
-                <td>{fmtUsd(row.cashUsd)}</td>
-                <td>{fmtUsd(row.genericSp500ValueUsd)}</td>
-                <td>{fmtUsd(row.genericSp500SaleUsd)}</td>
-                <td>{fmtUsd(row.genericSp500SaleBasisUsd)}</td>
-                <td>{fmtUsd(row.genericSp500SaleGainUsd)}</td>
-                <td>{fmtUsd(row.checkingFloorShortfallUsd)}</td>
-              </tr>
+              <Table.Tr key={row.monthIndex}>
+                <Table.Td>{(row.monthIndex / 12).toFixed(0)}</Table.Td>
+                <Table.Td>{fmtUsd(row.cashUsd)}</Table.Td>
+                <Table.Td>{fmtUsd(row.genericSp500ValueUsd)}</Table.Td>
+                <Table.Td>{fmtUsd(row.genericSp500SaleUsd)}</Table.Td>
+                <Table.Td>{fmtUsd(row.genericSp500SaleBasisUsd)}</Table.Td>
+                <Table.Td>{fmtUsd(row.genericSp500SaleGainUsd)}</Table.Td>
+                <Table.Td>{fmtUsd(row.checkingFloorShortfallUsd)}</Table.Td>
+              </Table.Tr>
             ))}
-          </tbody>
-        </table>
+          </Table.Tbody>
+        </Table>
       </div>
     </ResultPanel>
   );
@@ -1109,26 +1110,26 @@ function PrivateEquitySaleOpportunityPanel({ trajectory }) {
         ))}
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr>
-              <th>Month</th>
-              <th>Private value</th>
-              <th>Sale</th>
-              <th>Tender event</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table className="w-full" unstyled>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Month</Table.Th>
+              <Table.Th>Private value</Table.Th>
+              <Table.Th>Sale</Table.Th>
+              <Table.Th>Tender event</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
             {displayRows.map((row) => (
-              <tr key={row.monthIndex}>
-                <td>{fmtInteger(row.monthIndex)}</td>
-                <td>{fmtUsd(row.privateEquityValueUsd)}</td>
-                <td>{fmtUsd(row.privateEquitySaleUsd)}</td>
-                <td>{row.privateEquitySaleOpportunityEvent ? "yes" : "no"}</td>
-              </tr>
+              <Table.Tr key={row.monthIndex}>
+                <Table.Td>{fmtInteger(row.monthIndex)}</Table.Td>
+                <Table.Td>{fmtUsd(row.privateEquityValueUsd)}</Table.Td>
+                <Table.Td>{fmtUsd(row.privateEquitySaleUsd)}</Table.Td>
+                <Table.Td>{row.privateEquitySaleOpportunityEvent ? "yes" : "no"}</Table.Td>
+              </Table.Tr>
             ))}
-          </tbody>
-        </table>
+          </Table.Tbody>
+        </Table>
       </div>
     </ResultPanel>
   );
@@ -1220,21 +1221,16 @@ function ScenarioList({ scenarioSetInput, selectedScenarioId, onSelect, onChange
               }`}
             >
               <div className="flex min-w-0 items-start gap-3">
-                <button
-                  type="button"
+                <UnstyledButton
                   className="mt-1 h-4 w-4 shrink-0 rounded-full border border-slate-400"
                   style={{ backgroundColor: identity.color }}
                   aria-label={`Select ${identity.label}`}
                   onClick={() => onSelect(identity.scenarioId)}
                 />
-                <button
-                  type="button"
-                  className="min-w-0 flex-1 text-left"
-                  onClick={() => onSelect(identity.scenarioId)}
-                >
+                <UnstyledButton className="min-w-0 flex-1 text-left" onClick={() => onSelect(identity.scenarioId)}>
                   <div className="truncate text-sm font-semibold augur-strong">{identity.label}</div>
                   <div className="mt-1 truncate text-xs augur-muted">{propertyLabel(property, locationsById)}</div>
-                </button>
+                </UnstyledButton>
                 <div className="flex shrink-0 flex-col items-end gap-2">
                   <Checkbox
                     size="xs"
@@ -1804,18 +1800,18 @@ function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
         </div>
       )}
       <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr>
-              <th className="text-left">Scenario</th>
-              <th className="min-w-[11rem] text-left">Property</th>
-              <th>Rollout health</th>
+        <Table className="w-full" unstyled>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th className="text-left">Scenario</Table.Th>
+              <Table.Th className="min-w-[11rem] text-left">Property</Table.Th>
+              <Table.Th>Rollout health</Table.Th>
               {terminalMetricColumns.map(([, label]) => (
-                <th key={label}>{label}</th>
+                <Table.Th key={label}>{label}</Table.Th>
               ))}
-            </tr>
-          </thead>
-          <tbody>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
             {scenarioSetInput.scenarios.map((scenario) => {
               const identity = scenarioIdentity(scenario);
               const propertyAndLocation = scenarioPropertyAndLocation(scenario);
@@ -1826,26 +1822,26 @@ function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
               const property = propertiesById.get(propertyAndLocation.propertyId);
               const statusSummary = rolloutStatusSummary(scenarioResult);
               return (
-                <tr key={identity.scenarioId}>
-                  <td className="label">
+                <Table.Tr key={identity.scenarioId}>
+                  <Table.Td className="label">
                     <span className="inline-flex min-w-0 items-center gap-2">
                       <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: identity.color }} />
                       <span className="truncate">{identity.label}</span>
                     </span>
-                  </td>
-                  <td className="min-w-[11rem] whitespace-nowrap text-left">
+                  </Table.Td>
+                  <Table.Td className="min-w-[11rem] whitespace-nowrap text-left">
                     {property ? property.address : propertyAndLocation.propertyId}
-                  </td>
+                  </Table.Td>
                   <RolloutHealthCell statusSummary={statusSummary} />
                   {terminalMetricColumns.map(([column]) => {
                     const value = column === "finalNetWorthUsd" ? terminal?.p50 : distribution.terminalP50(column);
-                    return <td key={column}>{fmtMetricValue(column, value)}</td>;
+                    return <Table.Td key={column}>{fmtMetricValue(column, value)}</Table.Td>;
                   })}
-                </tr>
+                </Table.Tr>
               );
             })}
-          </tbody>
-        </table>
+          </Table.Tbody>
+        </Table>
       </div>
     </ResultPanel>
   );
@@ -1907,26 +1903,26 @@ function LedgerTable({ rows, columns, className = "" }) {
   if (columns.length === 0) return null;
   return (
     <div className={`max-w-full overflow-auto ${className}`}>
-      <table className="min-w-max">
-        <thead className="sticky top-0 bg-white dark:bg-slate-900">
-          <tr>
-            <th>Month</th>
+      <Table className="min-w-max" unstyled>
+        <Table.Thead className="sticky top-0 bg-white dark:bg-slate-900">
+          <Table.Tr>
+            <Table.Th>Month</Table.Th>
             {columns.map(([, label]) => (
-              <th key={label}>{label}</th>
+              <Table.Th key={label}>{label}</Table.Th>
             ))}
-          </tr>
-        </thead>
-        <tbody>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
           {rows.map((row) => (
-            <tr key={`${row.rolloutIndex}-${row.monthIndex}`}>
-              <td>{fmtInteger(row.monthIndex)}</td>
+            <Table.Tr key={`${row.rolloutIndex}-${row.monthIndex}`}>
+              <Table.Td>{fmtInteger(row.monthIndex)}</Table.Td>
               {columns.map(([column, , formatter]) => (
-                <td key={column}>{formatter(row[column])}</td>
+                <Table.Td key={column}>{formatter(row[column])}</Table.Td>
               ))}
-            </tr>
+            </Table.Tr>
           ))}
-        </tbody>
-      </table>
+        </Table.Tbody>
+      </Table>
     </div>
   );
 }
@@ -1948,9 +1944,8 @@ function LedgerDetailToggles({ groups, expandedGroups, onToggle }) {
       {groups.map((group) => {
         const expanded = !!expandedGroups[group.id];
         return (
-          <button
+          <UnstyledButton
             key={group.id}
-            type="button"
             className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold transition ${
               expanded
                 ? "border-blue-500 bg-blue-50 text-blue-950 dark:border-blue-400 dark:bg-blue-950/40 dark:text-blue-100"
@@ -1961,7 +1956,7 @@ function LedgerDetailToggles({ groups, expandedGroups, onToggle }) {
           >
             {group.label}
             <span className="ml-1 font-normal augur-muted">{expanded ? "details" : "total"}</span>
-          </button>
+          </UnstyledButton>
         );
       })}
     </div>
