@@ -871,9 +871,11 @@ def test_property_sale_records_capital_gains_tax_and_net_proceeds() -> None:
     assert_allclose(rollout.series(ReportMetric.PROPERTY_SALE_TAX_USD)[60], sale_tax)
     assert_allclose(rollout.series(ReportMetric.FEDERAL_INCOME_TAX_USD)[60], federal_sale_tax)
     assert_allclose(rollout.series(ReportMetric.CALIFORNIA_INCOME_TAX_USD)[60], california_sale_tax)
-    assert_allclose(
-        rollout.series(ReportMetric.PROPERTY_SALE_NET_PROCEEDS_USD)[60], sale_value - sale_closing_cost - sale_tax
-    )
+    # Net proceeds report the cash actually received at the sale event (pre-tax).
+    # Sale tax accrues to the source month and settles at year-end via the
+    # annual-tax obligation pipeline, not from the sale-event journal entry.
+    pretax_net_proceeds = sale_value - sale_closing_cost
+    assert_allclose(rollout.series(ReportMetric.PROPERTY_SALE_NET_PROCEEDS_USD)[60], pretax_net_proceeds)
     assert_allclose(
         result.matrix(ReportMetric.NET_PROPERTY_SALE_CASH_FLOW_USD),
         result.matrix(ReportMetric.PROPERTY_SALE_NET_PROCEEDS_USD),
@@ -896,14 +898,15 @@ def test_property_sale_records_capital_gains_tax_and_net_proceeds() -> None:
         ),
         result.matrix(ReportMetric.SALE_CLOSING_COST_USD),
     )
-    assert_allclose(
+    # The property-sale journal entry no longer posts to TAX_EXPENSE.
+    assert (
         _posting_matrix(
             result,
             role=ChartAccountRole.TAX_EXPENSE,
             side=PostingSide.DEBIT,
             journal_entry_type=JournalEntryType.PROPERTY_SALE,
-        ),
-        result.matrix(ReportMetric.PROPERTY_SALE_TAX_USD),
+        ).sum()
+        == 0
     )
     assert_allclose(
         _posting_matrix(
@@ -942,7 +945,7 @@ def test_property_sale_records_capital_gains_tax_and_net_proceeds() -> None:
     )
     tax_details = rollout.accounting_details(TaxPaymentAllocationDetail)
     assert len(tax_details) == 1
-    assert tax_details[0].payment_timing == TaxPaymentTiming.ALLOCATED_TO_SOURCE_MONTH
+    assert tax_details[0].payment_timing == TaxPaymentTiming.YEAR_END
     assert_allclose(tax_details[0].property_sale_tax_usd, sale_tax)
     sale_accounting_details = rollout.accounting_details(PropertySaleBasisGainDetail)
     assert len(sale_accounting_details) == 1
@@ -962,7 +965,7 @@ def test_property_sale_records_capital_gains_tax_and_net_proceeds() -> None:
     assert_allclose(action.capital_gain_exclusion_usd, 250_000)
     assert_allclose(action.taxable_gain_usd, taxable_gain)
     assert_allclose(action.tax_usd, sale_tax)
-    assert_allclose(action.net_proceeds_usd, sale_value - sale_closing_cost - sale_tax)
+    assert_allclose(action.net_proceeds_usd, pretax_net_proceeds)
 
 
 def test_partner_sale_claim_uses_settlement_net_proceeds() -> None:
@@ -1157,12 +1160,11 @@ def test_simulate_set_response_serializes_sale_actions_with_tax_detail() -> None
     assert property_action["adjusted_basis_usd"] == 500_000
     assert property_action["taxable_capital_gain_usd"] == 91_500
     assert property_action["tax_usd"] > 0
+    # net_proceeds is the cash actually received at the sale event (pre-tax);
+    # sale tax accrues to the sale month for provenance and settles at year-end.
     assert_allclose(
         property_action["net_proceeds_usd"],
-        property_action["gross_sale_usd"]
-        - property_action["selling_cost_usd"]
-        - property_action["debt_payoff_usd"]
-        - property_action["tax_usd"],
+        property_action["gross_sale_usd"] - property_action["selling_cost_usd"] - property_action["debt_payoff_usd"],
     )
 
 
@@ -1214,13 +1216,22 @@ def test_whole_property_rental_posts_income_fees_and_cash_flow() -> None:
     )
     assert_allclose(rollout.series(ReportMetric.NET_PROPERTY_CASH_FLOW_USD)[1], expected_net_property_cash_flow)
     assert_allclose(rollout.series(ReportMetric.CASH_USD)[0], 130_000)
-    # Positive net rental income produces a CA ordinary-income tax obligation, which
-    # the annual-tax pipeline settles in the same source month. Cash at month 1
-    # therefore reflects the net rental cash flow minus the rental tax share.
+    # Positive net rental income produces a CA ordinary-income tax obligation.
+    # The annual-tax pipeline accrues tax to the source month for provenance
+    # (RENTAL_INCOME_TAX_USD reports per-month attribution) but settles the
+    # obligation at year-end. The simulation horizon is shorter than a year
+    # here, so the obligation collapses onto the last in-horizon month — the
+    # source-month cash trajectory is unaffected.
     rental_tax_month_1 = rollout.series(ReportMetric.RENTAL_INCOME_TAX_USD)[1]
     assert rental_tax_month_1 > 0
+    assert_allclose(rollout.series(ReportMetric.CASH_USD)[1], 130_000 + expected_net_property_cash_flow)
+    # Tax for year 0 settles at the last in-horizon month belonging to year 0
+    # (here, month 3 = horizon end).
+    total_rental_tax_year_0 = float(np.sum(rollout.series(ReportMetric.RENTAL_INCOME_TAX_USD)))
+    assert total_rental_tax_year_0 > 0
     assert_allclose(
-        rollout.series(ReportMetric.CASH_USD)[1], 130_000 + expected_net_property_cash_flow - rental_tax_month_1
+        rollout.series(ReportMetric.CASH_USD)[3],
+        130_000 + 3 * expected_net_property_cash_flow - total_rental_tax_year_0,
     )
     assert_allclose(
         _posting_matrix(result, role=ChartAccountRole.RENTAL_INCOME, side=PostingSide.CREDIT),
@@ -1301,9 +1312,12 @@ def test_checking_floor_policy_sells_sp500_to_restore_cash_floor() -> None:
 
     rollout = result.rollout(0)
     expected_stock_sale_tax = 42.94
+    # Sale tax is now accrued in the source month (month 5) but settles at year-end.
+    # The simulation horizon ends inside year 0, so the obligation collapses onto
+    # the last in-horizon month (month 6) instead of the sale month.
     assert_allclose(
         rollout.series(ReportMetric.CASH_USD),
-        [30_000, 25_000, 20_000, 15_000, 10_000, 25_000 - expected_stock_sale_tax, 20_000 - expected_stock_sale_tax],
+        [30_000, 25_000, 20_000, 15_000, 10_000, 25_000, 20_000 - expected_stock_sale_tax],
     )
     assert_allclose(
         rollout.series(ReportMetric.GENERIC_SP500_VALUE_USD), [50_000, 50_000, 50_000, 50_000, 50_000, 30_000, 30_000]

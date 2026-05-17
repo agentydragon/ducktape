@@ -497,7 +497,11 @@ _MONTHLY_COLUMN_SPECS = (
     MonthlyColumnSpec(
         ReportMetric.PROPERTY_SALE_NET_PROCEEDS_USD, MonthlyColumnSource.LEDGER_ENTRY, "cash/property_sale_net_proceeds"
     ),
-    MonthlyColumnSpec(ReportMetric.PROPERTY_SALE_TAX_USD, MonthlyColumnSource.LEDGER_ENTRY, "tax/property_sale_tax"),
+    MonthlyColumnSpec(
+        ReportMetric.PROPERTY_SALE_TAX_USD,
+        MonthlyColumnSource.LEDGER_ENTRY,
+        "lot_disposition.property.tax_expense_usd (accrual provenance; settled at year-end)",
+    ),
     MonthlyColumnSpec(
         ReportMetric.PROPERTY_SALE_DEBT_PAYOFF_USD,
         MonthlyColumnSource.LEDGER_ENTRY,
@@ -1529,37 +1533,21 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         net_rental_taxable_income_usd=net_rental_taxable_income,
     )
     generic_sp500_sale_tax = annual_tax.generic_sp500_sale_tax_usd
-    adjusted_private_equity_sale_tax = annual_tax.private_equity_sale_tax_usd
+    private_equity_sale_tax = annual_tax.private_equity_sale_tax_usd
     property_sale_tax = annual_tax.property_sale_tax_usd
-    rental_income_tax = annual_tax.rental_income_tax_usd
+    # Property sale net proceeds reflect the cash actually received at sale. Tax is
+    # accrued in the source month but settled at year-end via the annual-tax
+    # obligation path, so it does not reduce the sale-event cash inflow.
     property_sale_net_proceeds = (
         disposition.property_sale_gross_usd
         - disposition.sale_closing_cost_usd
         - disposition.property_sale_debt_payoff_usd
-        - property_sale_tax
     )
     partner_equity = _settle_partner_equity_on_property_sale(
         partner_equity, sale_month=disposition.sale_month, property_sale_net_proceeds_usd=property_sale_net_proceeds
     )
-    tax_cash_adjustment = np.cumsum(
-        np.maximum(
-            0.0,
-            (disposition.property_sale_tax_usd - property_sale_tax)
-            + (private_equity_sale_tax - adjusted_private_equity_sale_tax)
-            - generic_sp500_sale_tax
-            - rental_income_tax,
-        ),
-        axis=1,
-    )
-    cash = cash + tax_cash_adjustment
-    obligation_tax_due = np.maximum(
-        0.0,
-        -(
-            (disposition.property_sale_tax_usd - property_sale_tax)
-            + (private_equity_sale_tax - adjusted_private_equity_sale_tax)
-            - generic_sp500_sale_tax
-            - rental_income_tax
-        ),
+    obligation_tax_due = _year_end_tax_obligation_due_usd(
+        month_index=month_index, source_month_tax_due_usd=annual_tax.total_income_tax_usd
     )
     _settle_required_cash_obligations(
         scenario=scenario,
@@ -1582,7 +1570,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         accounting=accounting,
         sp500_sale_action_records=sp500_sale_action_records,
     )
-    private_equity_sale_tax = adjusted_private_equity_sale_tax
 
     partner_present = np.full((rollout_count, month_count), _has_partner(scenario), dtype=np.bool_)
     owner_home_equity_claim = partner_equity.owner_home_equity_claim_usd
@@ -1888,13 +1875,15 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         side=PostingSide.DEBIT,
         journal_entry_type=JournalEntryType.PROPERTY_SALE,
     )
-    property_sale_tax_from_accounting = _posting_amount_matrix(
-        accounting,
+    # Sale tax no longer posts to the property sale journal entry (it accrues
+    # per source month and settles at year-end via the annual-tax obligation
+    # pipeline). Per-sale tax attribution lives on the lot disposition row.
+    property_sale_tax_from_accounting = _lot_disposition_amount_matrix(
+        lot_dispositions,
         rollout_count=rollout_count,
         month_index=month_index,
-        role=ChartAccountRole.TAX_EXPENSE,
-        side=PostingSide.DEBIT,
-        journal_entry_type=JournalEntryType.PROPERTY_SALE,
+        asset_class=LotAssetClass.PROPERTY,
+        amount_field="tax_expense_usd",
     )
     property_sale_cash_in_from_accounting = _posting_amount_matrix(
         accounting,
@@ -2515,6 +2504,15 @@ def _record_property_sale_journal_entries(
     tax_usd: np.ndarray,
     net_proceeds_usd: np.ndarray,
 ) -> None:
+    """Record the property sale journal entry and lot disposition row.
+
+    The journal entry covers the sale-event cash flows only (gross, closing,
+    debt payoff, sale proceeds). Sale tax is not posted here — it is accrued
+    in the per-source-month annual tax allocation and settled at year-end via
+    the annual-tax obligation pipeline. `tax_usd` is the per-source-month tax
+    attribution recorded on the lot disposition for "tax attributable to this
+    sale" reporting; it does not move cash here.
+    """
     if disposition.sale_event is None or disposition.sale_month is None:
         return
     sale_event = disposition.sale_event
@@ -2560,13 +2558,6 @@ def _record_property_sale_journal_entries(
                     amount_usd=debt_payoff,
                     actor_id=actor_id,
                     liability_id=_mortgage_liability_id(property_id),
-                    property_id=property_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.TAX_EXPENSE,
-                    side=PostingSide.DEBIT,
-                    amount_usd=tax,
-                    actor_id=actor_id,
                     property_id=property_id,
                 ),
                 PostingBatch(
@@ -3129,6 +3120,41 @@ class _MortgageObligationKind:
 
 
 _ObligationKind = _AnnualTaxObligationKind | _MortgageObligationKind
+
+
+def _year_end_tax_obligation_due_usd(*, month_index: np.ndarray, source_month_tax_due_usd: np.ndarray) -> np.ndarray:
+    """Aggregate per-source-month tax allocations into a year-end-due matrix.
+
+    Tax accrued in months that share a tax year (`month_index // 12`) collects
+    into a single obligation due at the year-end month (`year * 12 + 11`).
+    Years whose year-end falls past the simulation horizon settle at the last
+    in-horizon month belonging to that year — this keeps the horizon a clean
+    cutoff for outstanding tax. Quarterly estimated payments are a follow-on
+    (see TODO Tax Follow-Ups).
+    """
+    obligation = np.zeros_like(source_month_tax_due_usd, dtype="float64")
+    if obligation.size == 0:
+        return obligation
+    tax_year_by_position = month_index // MONTHS_PER_YEAR
+    horizon_last_position = obligation.shape[1] - 1
+    for tax_year in np.unique(tax_year_by_position):
+        year_positions = np.nonzero(tax_year_by_position == tax_year)[0]
+        if year_positions.size == 0:
+            continue
+        year_total = np.sum(source_month_tax_due_usd[:, year_positions], axis=1)
+        year_end_month_index = int(tax_year) * MONTHS_PER_YEAR + (MONTHS_PER_YEAR - 1)
+        year_end_position_matches = np.nonzero(month_index == year_end_month_index)[0]
+        if year_end_position_matches.size > 0:
+            due_position = int(year_end_position_matches[0])
+        else:
+            # Year-end is outside the simulated month_index. Fall back to the last
+            # in-horizon month that still belongs to this tax year so the cash
+            # impact lands within the simulation.
+            due_position = int(year_positions[-1])
+            # Belt-and-suspenders: never schedule outside the simulation.
+            due_position = min(due_position, horizon_last_position)
+        obligation[:, due_position] = obligation[:, due_position] + year_total
+    return obligation
 
 
 def _settle_required_cash_obligations(

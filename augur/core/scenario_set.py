@@ -163,7 +163,7 @@ class ReportMetric(StrEnum):
 
 
 class TaxPaymentTiming(StrEnum):
-    ALLOCATED_TO_SOURCE_MONTH = "allocated_to_source_month"
+    YEAR_END = "year_end"
 
 
 class ObligationType(StrEnum):
@@ -602,7 +602,7 @@ class PropertySaleBasisGainDetail(_SimulationAccountingDetailBase):
 class TaxPaymentAllocationDetail(_SimulationAccountingDetailBase):
     detail_type: Literal[AccountingDetailType.TAX_PAYMENT_ALLOCATION] = AccountingDetailType.TAX_PAYMENT_ALLOCATION
     tax_year_index: NonNegativeInt
-    payment_timing: TaxPaymentTiming = TaxPaymentTiming.ALLOCATED_TO_SOURCE_MONTH
+    payment_timing: TaxPaymentTiming = TaxPaymentTiming.YEAR_END
     federal_income_tax_usd: float
     california_income_tax_usd: float
     total_income_tax_usd: float

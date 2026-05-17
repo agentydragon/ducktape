@@ -712,7 +712,10 @@ def test_checking_floor_policy_sells_public_stock_with_basis_placeholder() -> No
     assert_allclose(result.generic_sp500_sale_tax_usd[:, 0], 42.94)
     assert_allclose(result.checking_floor_action_usd[:, 0], 20_000)
     assert_allclose(result.checking_floor_shortfall_usd[:, 0], 0)
-    assert_allclose(result.cash_usd[:, 0], 25_000 - 42.94)
+    # Sale proceeds land in cash at sale time; tax accrues to month 0 (provenance)
+    # but settles at the last in-horizon month belonging to the tax year.
+    assert_allclose(result.cash_usd[:, 0], 25_000)
+    assert_allclose(result.cash_usd[:, 3], 25_000 - 42.94)
     assert_allclose(result.generic_sp500_value_usd[:, 0], 30_000)
     assert_allclose(result.generic_sp500_sale_usd[:, 1:], 0)
     assert np.all(result.generic_sp500_value_usd[:, 1] > result.generic_sp500_value_usd[:, 0])
@@ -1226,7 +1229,10 @@ def test_private_equity_fixed_sale_into_cash_requires_opportunity_and_policy() -
     assert_allclose(result.private_equity_sale_basis_usd[:, 1], 0)
     expected_tax = 175.09
     assert_allclose(result.private_equity_sale_tax_usd[:, 1], expected_tax)
-    assert_allclose(result.cash_usd[:, 1], 30_000 - expected_tax)
+    # Sale proceeds credit cash at month 1; tax accrues to month 1 (provenance)
+    # but settles at the last in-horizon month belonging to the tax year.
+    assert_allclose(result.cash_usd[:, 1], 30_000)
+    assert_allclose(result.cash_usd[:, 3], 30_000 - expected_tax)
     actions = [action for action in result.actions if action.action_type is ActionType.SELL_PRIVATE_EQUITY]
     assert len(actions) == 2
     for action in actions:
@@ -1560,8 +1566,14 @@ def test_required_tax_obligation_can_be_rescued_by_existing_public_stock_sale_po
     assert {
         (decision.source_type, decision.source_account_id, decision.source_account_type) for decision in cash_decisions
     } == {(FundingSourceType.CASH_ACCOUNT, "checking", AccountType.CHECKING)}
-    assert_allclose(result.cash_usd[:, 1], 20_000 - result.total_income_tax_usd[:, 1])
-    assert_allclose(result.generic_sp500_value_usd[:, 1], 80_000)
+    # Tax accrues to the source month (1) but settles at year-end (clipped to the
+    # last in-horizon month belonging to year 0). The funding policy sells SP500
+    # to fund the tax at the settlement month; cash receives the SP500 sale
+    # proceeds and pays out the tax in the same month.
+    expected_year_total_tax = np.sum(result.total_income_tax_usd, axis=1)
+    settlement_month = result.cash_usd.shape[1] - 1
+    assert_allclose(result.cash_usd[:, settlement_month], 20_000 - expected_year_total_tax)
+    assert_allclose(result.generic_sp500_value_usd[:, settlement_month], 80_000)
 
 
 def test_required_tax_obligation_funding_uses_policy_program_order() -> None:
@@ -1621,7 +1633,10 @@ def test_required_tax_obligation_funding_uses_policy_program_order() -> None:
     assert all(
         decision.funded_cash_usd > 0 for decision in sale_decisions if decision.policy_id == "large_tax_funding_sale"
     )
-    assert_allclose(result.generic_sp500_value_usd[:, 1], 79_900)
+    # The SP500 funding sales happen at the year-end settlement month (clipped
+    # to horizon end here), not at the PE sale month.
+    settlement_month = result.generic_sp500_value_usd.shape[1] - 1
+    assert_allclose(result.generic_sp500_value_usd[:, settlement_month], 79_900)
 
 
 if __name__ == "__main__":
