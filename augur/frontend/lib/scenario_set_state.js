@@ -531,7 +531,6 @@ function scenarioBalanceSheet(scenario, bootstrap) {
   const initialBalanceSheet = scenario.initialBalanceSheet;
   const { primary } = agentsByRole(bootstrap);
   const privateEquityUnits = Math.max(0, finiteNumber(initialBalanceSheet.privateEquityUnits, 0));
-  const privateEquityValueUsd = privateEquityValueUsdForUnits(bootstrap, privateEquityUnits);
   const assets = [
     {
       assetId: "sp500",
@@ -541,12 +540,13 @@ function scenarioBalanceSheet(scenario, bootstrap) {
       costBasisUsd: initialBalanceSheet.startingPortfolioUsd,
     },
   ];
-  if (privateEquityValueUsd > 0 || privateEquityUnits > 0) {
+  if (privateEquityUnits > 0) {
+    // The browser stores units only; the backend derives value_usd from
+    // units × MarketBundleMetadata.current_private_equity_price_usd at simulation init.
     assets.push({
       assetId: "private_equity_private",
       assetType: "private_equity",
       ownerActorId: primary.actorId,
-      valueUsd: privateEquityValueUsd,
       units: privateEquityUnits,
       costBasisUsd: 0,
     });

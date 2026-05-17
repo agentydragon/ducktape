@@ -47,18 +47,20 @@ class AugurServerConfig:
 def _make_provider(
     args: argparse.Namespace, augur_config: AugurConfig, default_market_config_path: Path
 ) -> MarketBundleProvider:
-    if args.provider == "noop":
-        return FlatMarketBundleProvider()
-    if args.provider == "simple":
-        return SimpleMarketBundleProvider()
-    # MacroMarketBundleProvider currently uses one concentrated holding's current
-    # valuation to populate private-equity source metadata.
+    # Every provider must publish the current per-unit private-equity price so the
+    # simulator can resolve units-only PrivateEquityPosition entries (the browser
+    # stores units and lets the simulator own the mark).
     holdings = augur_config.snapshot.concentrated_holdings
     if len(holdings) != 1:
-        raise ValueError(f"expected exactly one concentrated holding for the macro provider; got {len(holdings)}")
+        raise ValueError(f"expected exactly one concentrated holding for the provider; got {len(holdings)}")
+    current_private_equity_price_usd = float(holdings[0].fmv_usd_per_unit)
+    if args.provider == "noop":
+        return FlatMarketBundleProvider(current_private_equity_price_usd=current_private_equity_price_usd)
+    if args.provider == "simple":
+        return SimpleMarketBundleProvider()
     market_config_path = Path(args.market_config).resolve() if args.market_config else default_market_config_path
     return MacroMarketBundleProvider.for_label(
-        args.provider, config_path=market_config_path, current_private_equity_price_usd=holdings[0].fmv_usd_per_unit
+        args.provider, config_path=market_config_path, current_private_equity_price_usd=current_private_equity_price_usd
     )
 
 

@@ -21,6 +21,7 @@ def constant_market_bundle(
     private_equity_value_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0),
     private_equity_sale_opportunity_months: tuple[int, ...] = (),
     crypto_value_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0),
+    current_private_equity_price_usd: float = 0.0,
     market_model_id: str = "test",
     seed: int = 0,
 ) -> MarketBundle:
@@ -65,6 +66,7 @@ def constant_market_bundle(
             rollout_count=rollout_count,
             horizon_months=horizon_months,
             event_stream_ids=(),
+            current_private_equity_price_usd=current_private_equity_price_usd,
         ),
     )
 
@@ -81,6 +83,7 @@ class NoopMarketBundleProvider:
     private_equity_value_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0)
     private_equity_sale_opportunity_months: tuple[int, ...] = ()
     crypto_value_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0)
+    current_private_equity_price_usd: float = 0.0
 
     def sample_market_bundle(
         self, *, rollout_count: int, horizon_months: int, seed: int, market_request: MarketRequest
@@ -96,6 +99,7 @@ class NoopMarketBundleProvider:
             private_equity_value_path=self.private_equity_value_path,
             private_equity_sale_opportunity_months=self.private_equity_sale_opportunity_months,
             crypto_value_path=self.crypto_value_path,
+            current_private_equity_price_usd=self.current_private_equity_price_usd,
             market_model_id=market_request.market_model_id,
             seed=seed,
         )

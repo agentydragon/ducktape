@@ -870,10 +870,35 @@ class CryptoAssetPosition(_AssetPositionBase):
     source_account_id: str | None = None
 
 
-class PrivateEquityPosition(_AssetPositionBase):
+class PrivateEquityPosition(ApiModel):
+    """An opening private-equity position.
+
+    Either `units` or `value_usd` must be supplied (often both):
+
+    - When `value_usd` is set, it is the authoritative month-0 mark — e.g. a tender-offer
+      or manual mark carried through from a `PortfolioStatement.PrivateEquityLot`.
+    - When `value_usd` is absent, the month-0 mark is derived from
+      `units × MarketBundleMetadata.current_private_equity_price_usd`. Callers without
+      an independent mark (such as the browser UI, which stores units only) should leave
+      `value_usd` unset; the simulator owns the derivation.
+    """
+
+    asset_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
+    owner_actor_id: str
     asset_type: Literal[AssetType.PRIVATE_EQUITY] = AssetType.PRIVATE_EQUITY
     units: NonNegativeFloat | None = None
+    value_usd: NonNegativeFloat | None = None
     cost_basis_usd: float | None = None
+    provenance: PositionProvenance = Field(default_factory=PositionProvenance)
+
+    @model_validator(mode="after")
+    def _require_units_or_value(self) -> PrivateEquityPosition:
+        if self.units is None and self.value_usd is None:
+            raise ValueError(
+                f"PrivateEquityPosition {self.asset_id!r} must set units or value_usd "
+                "(or both); the simulator needs one to derive the opening mark."
+            )
+        return self
 
 
 AssetPosition = Annotated[

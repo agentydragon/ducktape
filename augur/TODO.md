@@ -119,12 +119,14 @@ second ordered roadmap.
       generator, path-set, and validation-report identities; the next step is
       durable evidence/calibration artifacts, real validation reports, and
       reviewed limitations rather than placeholder IDs.
-- [ ] Stop requiring private-equity input positions to carry both `units` and a
+- [x] Stop requiring private-equity input positions to carry both `units` and a
       marked `value_usd` when the value is determined by units plus the private
-      equity price model. The browser no longer stores an editable private
-      equity value, but the backend request still has to derive `value_usd` to
-      satisfy the generic asset-position schema. Clean this up in the backend
-      position/API model so simulation owns the mark.
+      equity price model. `PrivateEquityPosition.value_usd` is now optional;
+      when absent the simulator derives the opening mark from
+      `units × MarketBundleMetadata.current_private_equity_price_usd`. The
+      browser stops sending `value_usd`; the lot mark from
+      `PortfolioStatement.PrivateEquityLot.mark_value_usd` still flows through
+      as an explicit `value_usd` for the statement-mark path.
 - [ ] Move evidence/model-fetching shapes out of core simulator API when touched. Core should consume calibrated market/provider inputs, not source-specific evidence objects.
 
 ## Tax Follow-Ups

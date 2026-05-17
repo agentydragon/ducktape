@@ -174,6 +174,41 @@ def test_scenario_set_rejects_unsupported_initial_asset_variants(asset_type: str
         ScenarioSet.model_validate(body)
 
 
+def test_private_equity_position_requires_units_or_value_usd() -> None:
+    """The schema must reject a PE position that supplies neither `units` nor
+    `value_usd`. The simulator needs at least one to derive the opening mark
+    (units × market price, or an explicit statement mark)."""
+    body = _scenario_set_body("sf_house")
+    body["scenarios"][0]["initial_balance_sheet"]["assets"] = [
+        {"asset_id": "private_equity", "asset_type": "private_equity", "owner_actor_id": "owner", "cost_basis_usd": 0}
+    ]
+
+    with pytest.raises(ValidationError, match="must set units or value_usd"):
+        ScenarioSet.model_validate(body)
+
+
+def test_private_equity_position_accepts_units_only() -> None:
+    body = _scenario_set_body("sf_house")
+    body["scenarios"][0]["initial_balance_sheet"]["assets"] = [
+        {
+            "asset_id": "private_equity",
+            "asset_type": "private_equity",
+            "owner_actor_id": "owner",
+            "units": 1_000,
+            "cost_basis_usd": 0,
+        }
+    ]
+
+    scenario_set = ScenarioSet.model_validate(body)
+    [pe] = (
+        asset
+        for asset in scenario_set.scenarios[0].initial_balance_sheet.assets
+        if asset.asset_type is AssetType.PRIVATE_EQUITY
+    )
+    assert pe.value_usd is None
+    assert pe.units == 1_000
+
+
 @pytest.mark.parametrize("liability_type", ["mortgage", "tax_liability", "actor_equity_claim"])
 def test_scenario_set_rejects_initial_liabilities(liability_type: str) -> None:
     body = _scenario_set_body("sf_house")

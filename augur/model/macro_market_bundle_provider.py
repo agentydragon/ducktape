@@ -130,9 +130,9 @@ class MacroMarketBundleProvider:
                 horizon_months=horizon_months,
                 event_stream_ids=("private_equity_sale_opportunity_event",),
                 notes=("sampled by MacroMarketBundleProvider",),
+                current_private_equity_price_usd=self._current_private_equity_price_usd,
                 source_metadata={
                     "market_provider_label": self.label,
-                    "current_private_equity_price_usd": self._current_private_equity_price_usd,
                     "latest_observation_ids": list(self._evidence_latest_observation_ids),
                 },
             ),

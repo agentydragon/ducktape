@@ -286,13 +286,14 @@ test("scenario set request is canonical backend input after decamelizing", () =>
     firstScenario.events.find((event) => event.event_type.startsWith("private_equity_")),
     undefined
   );
+  // The browser stores units only; value_usd is omitted so the backend simulator
+  // derives the opening mark from units × MarketBundleMetadata.current_private_equity_price_usd.
   assert.deepEqual(
     firstScenario.initial_balance_sheet.assets.find((asset) => asset.asset_type === "private_equity"),
     {
       asset_id: "private_equity_private",
       asset_type: "private_equity",
       owner_actor_id: "alpha",
-      value_usd: 9_120,
       units: 456,
       cost_basis_usd: 0,
     }

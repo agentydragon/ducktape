@@ -54,6 +54,16 @@ class MarketBundleMetadata(ApiModel):
     horizon_months: int
     event_stream_ids: tuple[str, ...]
     notes: tuple[str, ...] = ()
+    current_private_equity_price_usd: float = Field(
+        default=0.0,
+        ge=0.0,
+        description=(
+            "Per-unit USD mark for private equity at month 0. Used by the simulator to "
+            "resolve `PrivateEquityPosition.value_usd` from `units` when the position omits "
+            "an explicit mark. Providers that drive PE valuation must set this; the flat/"
+            "noop fixtures use 0.0 and require positions to supply `value_usd` directly."
+        ),
+    )
     source_metadata: dict[str, Any] = Field(default_factory=dict)
 
     @computed_field  # type: ignore[prop-decorator]
@@ -339,6 +349,7 @@ class FlatMarketBundleProvider:
 
     mortgage_30y_rate_pct: float = 6.5
     private_equity_sale_opportunity_months: tuple[int, ...] = (12,)
+    current_private_equity_price_usd: float = 0.0
 
     def sample_market_bundle(
         self, *, rollout_count: int, horizon_months: int, seed: int, market_request: MarketRequest
@@ -372,6 +383,7 @@ class FlatMarketBundleProvider:
                 evidence_set_id="fixture:flat",
                 calibration_artifact_id="fixture:flat",
                 risk_factor_ids=CORE_MARKET_RISK_FACTOR_IDS,
+                current_private_equity_price_usd=self.current_private_equity_price_usd,
                 seed=seed,
                 rollout_count=rollout_count,
                 horizon_months=horizon_months,

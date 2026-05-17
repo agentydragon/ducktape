@@ -1328,8 +1328,11 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     initial_sp500_basis = _initial_sp500_cost_basis_usd(scenario)
     initial_crypto = _initial_crypto_value_usd(scenario)
     initial_crypto_basis = _initial_crypto_cost_basis_usd(scenario)
-    initial_private_equity = _initial_private_equity_value_usd(scenario)
-    initial_private_equity_basis = _initial_private_equity_cost_basis_usd(scenario)
+    pe_unit_price_usd = float(market_bundle.metadata.current_private_equity_price_usd)
+    initial_private_equity = _initial_private_equity_value_usd(scenario, current_unit_price_usd=pe_unit_price_usd)
+    initial_private_equity_basis = _initial_private_equity_cost_basis_usd(
+        scenario, current_unit_price_usd=pe_unit_price_usd
+    )
     initial_private_equity_units = _initial_private_equity_units(scenario)
     private_equity_source_holding_id = _private_equity_source_holding_id(scenario)
     purchase_price = _purchase_price_usd(scenario)
@@ -4731,15 +4734,37 @@ def _crypto_source_holding_id(scenario: Scenario, *, actor_id: str) -> str:
     return "crypto_portfolio"
 
 
-def _initial_private_equity_value_usd(scenario: Scenario) -> float:
+def _private_equity_position_value_usd(asset: PrivateEquityPosition, *, current_unit_price_usd: float) -> float:
+    """Resolve a PE position's opening mark.
+
+    Honors an explicit `value_usd` (statement mark or manual override) when set;
+    otherwise derives `units × current_unit_price_usd`. A position with neither field
+    is rejected by `PrivateEquityPosition`'s validator before reaching the engine.
+    """
+    if asset.value_usd is not None:
+        return float(asset.value_usd)
+    if current_unit_price_usd <= 0.0:
+        raise ValueError(
+            f"PrivateEquityPosition {asset.asset_id!r} has units only but the active "
+            "MarketBundleMetadata.current_private_equity_price_usd is 0; either supply "
+            "value_usd or use a market provider that publishes a PE unit price."
+        )
+    return float(asset.units or 0.0) * current_unit_price_usd
+
+
+def _initial_private_equity_value_usd(scenario: Scenario, *, current_unit_price_usd: float) -> float:
     return sum(
-        asset.value_usd for asset in scenario.initial_balance_sheet.assets if isinstance(asset, PrivateEquityPosition)
+        _private_equity_position_value_usd(asset, current_unit_price_usd=current_unit_price_usd)
+        for asset in scenario.initial_balance_sheet.assets
+        if isinstance(asset, PrivateEquityPosition)
     )
 
 
-def _initial_private_equity_cost_basis_usd(scenario: Scenario) -> float:
+def _initial_private_equity_cost_basis_usd(scenario: Scenario, *, current_unit_price_usd: float) -> float:
     return sum(
-        asset.cost_basis_usd if asset.cost_basis_usd is not None else asset.value_usd
+        asset.cost_basis_usd
+        if asset.cost_basis_usd is not None
+        else _private_equity_position_value_usd(asset, current_unit_price_usd=current_unit_price_usd)
         for asset in scenario.initial_balance_sheet.assets
         if isinstance(asset, PrivateEquityPosition)
     )

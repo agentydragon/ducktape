@@ -102,6 +102,9 @@ def test_sample_market_bundle_shape(provider: MacroMarketBundleProvider) -> None
     assert bundle.metadata.source_metadata["market_provider_label"] == provider.label
     assert "market_provider_seed" not in bundle.metadata.source_metadata
     assert "market_provider_horizon_months" not in bundle.metadata.source_metadata
+    # current_private_equity_price_usd is a typed metadata field, not an entry in source_metadata
+    assert "current_private_equity_price_usd" not in bundle.metadata.source_metadata
+    assert bundle.metadata.current_private_equity_price_usd == 100.0
     np.testing.assert_array_equal(bundle.month_index, np.arange(horizon_months + 1, dtype="int64"))
     for key in (
         "inflation_multipliers",

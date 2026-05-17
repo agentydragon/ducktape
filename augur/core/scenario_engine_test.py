@@ -43,6 +43,7 @@ def _bundle(
     rent_path: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0),
     crypto_path: tuple[float, ...] | None = None,
     private_equity_sale_opportunity_month: int | None = None,
+    current_private_equity_price_usd: float = 0.0,
 ) -> MarketBundle:
     shape = (rollout_count, horizon_months + 1)
     month_index = np.arange(horizon_months + 1, dtype="int64")
@@ -65,6 +66,7 @@ def _bundle(
         rollout_count=rollout_count,
         horizon_months=horizon_months,
         event_stream_ids=("private_equity_sale_opportunity_event",),
+        current_private_equity_price_usd=current_private_equity_price_usd,
     )
     return MarketBundle(
         month_index=month_index,
@@ -110,7 +112,7 @@ def _scenario_body(
     crypto_basis_usd: float | None = None,
     crypto_quantity: float | None = None,
     crypto_asset_symbol: str = "BTC",
-    private_equity_usd: float = 50_000,
+    private_equity_usd: float | None = 50_000,
     private_equity_basis_usd: float | None = None,
     private_equity_units: float | None = None,
     property_selection: dict | None = None,
@@ -124,6 +126,18 @@ def _scenario_body(
     events: list[dict] | None = None,
     tax_regimes: list[str] | None = None,
 ) -> dict:
+    private_equity_asset: dict = {
+        "asset_id": "private_equity",
+        "asset_type": "private_equity",
+        "owner_actor_id": "owner",
+        "units": private_equity_units,
+        "cost_basis_usd": private_equity_basis_usd,
+    }
+    # value_usd is optional now: when omitted, the simulator derives the opening mark
+    # from units × MarketBundleMetadata.current_private_equity_price_usd. Keep value_usd
+    # off the dict entirely when the caller wants the units-only path.
+    if private_equity_usd is not None:
+        private_equity_asset["value_usd"] = private_equity_usd
     assets: list[dict] = [
         {
             "asset_id": "sp500",
@@ -132,14 +146,7 @@ def _scenario_body(
             "value_usd": sp500_usd,
             "cost_basis_usd": sp500_basis_usd if sp500_basis_usd is not None else sp500_usd,
         },
-        {
-            "asset_id": "private_equity",
-            "asset_type": "private_equity",
-            "owner_actor_id": "owner",
-            "value_usd": private_equity_usd,
-            "units": private_equity_units,
-            "cost_basis_usd": private_equity_basis_usd,
-        },
+        private_equity_asset,
     ]
     if crypto_usd > 0:
         assets.append(
@@ -208,6 +215,47 @@ def test_portfolio_only_baseline_uses_numpy_paths() -> None:
     assert_allclose(result.private_equity_value_usd[:, 2], 100_000)
     assert_allclose(result.net_worth_usd[:, 2], 230_000)
     assert result.monthly_columns().row_count == 8
+
+
+def test_private_equity_position_units_only_derives_value_from_market_price() -> None:
+    """A PE position with `units` only takes its month-0 mark from
+    MarketBundleMetadata.current_private_equity_price_usd. This covers the browser
+    path where the UI stores units and the backend owns the price model."""
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(_scenario_body("units_only", private_equity_usd=None, private_equity_units=1_000))
+    )
+    scenario = scenario_set.scenarios[0]
+
+    result = run_scenario_vectorized(
+        scenario, _bundle(private_equity_path=(1.0, 1.5, 2.0, 2.5), current_private_equity_price_usd=50.0)
+    )
+
+    # 1_000 units × $50/unit = $50_000 month-0 mark; multiplier path scales it.
+    assert_allclose(result.private_equity_value_usd[:, 0], 50_000)
+    assert_allclose(result.private_equity_value_usd[:, 2], 100_000)
+
+
+def test_private_equity_position_explicit_value_overrides_market_price() -> None:
+    """An explicit `value_usd` on a PE position is treated as an authoritative mark
+    even when the market bundle publishes a unit price. This preserves the
+    PortfolioStatement statement-mark path where `PrivateEquityLot.mark_value_usd`
+    flows through unchanged."""
+    scenario_set = ScenarioSet.model_validate(
+        _scenario_set_body(_scenario_body("explicit_mark", private_equity_usd=200_000, private_equity_units=1_000))
+    )
+    scenario = scenario_set.scenarios[0]
+
+    result = run_scenario_vectorized(
+        scenario,
+        _bundle(
+            private_equity_path=(1.0, 1.0, 1.0, 1.0),
+            # If the engine used units × price = 1000 × 50 = 50_000 it would not match.
+            current_private_equity_price_usd=50.0,
+        ),
+    )
+
+    assert_allclose(result.private_equity_value_usd[:, 0], 200_000)
+    assert_allclose(result.private_equity_value_usd[:, 2], 200_000)
 
 
 def test_report_metrics_are_explicit_typed_views() -> None:
