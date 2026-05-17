@@ -1890,7 +1890,7 @@ fn rewrite_partial_swap_in_file(
                         .expect("kind=member validated to have package.namespace");
                     bindings.insert(
                         local_sym,
-                        IdentRewriteTarget {
+                        IdentRewriteTarget::Member {
                             namespace: namespace.to_string(),
                             upstream_export: upstream_export.to_string(),
                             chunk_name: chunk_mapping.chunk_id.clone(),
@@ -1930,14 +1930,31 @@ fn rewrite_partial_swap_in_file(
                         .upstream_export
                         .as_deref()
                         .expect("kind=named validated to carry upstream_export");
+                    // Always emit `import { <upstream_export> } from "<pkg>"`
+                    // (no alias). If the caller's original local binding
+                    // already matched the upstream export name, no further
+                    // rewrite is needed; otherwise queue an identifier
+                    // rename so every `<local_sym>` reference in the file
+                    // becomes `<upstream_export>`.
                     decl_local_imports.push(DeferredImport::Named {
                         package: target.package.clone(),
-                        local: local_sym,
+                        local: upstream_export.to_string(),
                         upstream_export: upstream_export.to_string(),
                     });
-                    *references_by_symbol
-                        .entry((chunk_mapping.chunk_id.clone(), imported_name_lookup.clone()))
-                        .or_insert(0) += 1;
+                    if local_sym != upstream_export {
+                        bindings.insert(
+                            local_sym,
+                            IdentRewriteTarget::Rename {
+                                upstream_export: upstream_export.to_string(),
+                                chunk_name: chunk_mapping.chunk_id.clone(),
+                                chunk_export: imported_name_lookup.clone(),
+                            },
+                        );
+                    } else {
+                        *references_by_symbol
+                            .entry((chunk_mapping.chunk_id.clone(), imported_name_lookup.clone()))
+                            .or_insert(0) += 1;
+                    }
                 }
             }
         }
@@ -2007,11 +2024,21 @@ impl DeferredImport {
 }
 
 #[derive(Debug, Clone)]
-struct IdentRewriteTarget {
-    namespace: String,
-    upstream_export: String,
-    chunk_name: String,
-    chunk_export: String,
+enum IdentRewriteTarget {
+    /// kind=member: rewrite `<local>` references to `<namespace>.<upstream_export>`.
+    Member {
+        namespace: String,
+        upstream_export: String,
+        chunk_name: String,
+        chunk_export: String,
+    },
+    /// kind=named auto-rename: rewrite `<local>` references to a bare
+    /// `<upstream_export>` identifier (matching the new no-alias import).
+    Rename {
+        upstream_export: String,
+        chunk_name: String,
+        chunk_export: String,
+    },
 }
 
 struct PartialSwapIdentRewriter<'a> {
@@ -2031,20 +2058,38 @@ impl VisitMut for PartialSwapIdentRewriter<'_> {
         let Some(target) = self.bindings.get(ident.sym.as_ref()) else {
             return;
         };
-        *expr = Expr::Member(MemberExpr {
-            span: DUMMY_SP,
-            obj: Box::new(Expr::Ident(Ident::new_no_ctxt(
-                target.namespace.clone().into(),
-                DUMMY_SP,
-            ))),
-            prop: MemberProp::Ident(IdentName::new(
-                target.upstream_export.clone().into(),
-                DUMMY_SP,
-            )),
-        });
+        let (chunk_name, chunk_export) = match target {
+            IdentRewriteTarget::Member {
+                namespace,
+                upstream_export,
+                chunk_name,
+                chunk_export,
+            } => {
+                *expr = Expr::Member(MemberExpr {
+                    span: DUMMY_SP,
+                    obj: Box::new(Expr::Ident(Ident::new_no_ctxt(
+                        namespace.clone().into(),
+                        DUMMY_SP,
+                    ))),
+                    prop: MemberProp::Ident(IdentName::new(
+                        upstream_export.clone().into(),
+                        DUMMY_SP,
+                    )),
+                });
+                (chunk_name, chunk_export)
+            }
+            IdentRewriteTarget::Rename {
+                upstream_export,
+                chunk_name,
+                chunk_export,
+            } => {
+                *expr = Expr::Ident(Ident::new_no_ctxt(upstream_export.clone().into(), DUMMY_SP));
+                (chunk_name, chunk_export)
+            }
+        };
         *self
             .references_by_symbol
-            .entry((target.chunk_name.clone(), target.chunk_export.clone()))
+            .entry((chunk_name.clone(), chunk_export.clone()))
             .or_insert(0) += 1;
     }
 }
