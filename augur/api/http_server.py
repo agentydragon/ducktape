@@ -57,7 +57,7 @@ def _make_provider(
     if args.provider == "noop":
         return FlatMarketBundleProvider(current_private_equity_price_usd=current_private_equity_price_usd)
     if args.provider == "simple":
-        return SimpleMarketBundleProvider()
+        return SimpleMarketBundleProvider(current_private_equity_price_usd=current_private_equity_price_usd)
     market_config_path = Path(args.market_config).resolve() if args.market_config else default_market_config_path
     return MacroMarketBundleProvider.for_label(
         args.provider, config_path=market_config_path, current_private_equity_price_usd=current_private_equity_price_usd

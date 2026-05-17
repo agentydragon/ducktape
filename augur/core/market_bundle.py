@@ -393,8 +393,11 @@ class FlatMarketBundleProvider:
         )
 
 
+@dataclass(frozen=True)
 class SimpleMarketBundleProvider:
     """Small stochastic provider used until richer market models plug in."""
+
+    current_private_equity_price_usd: float = 0.0
 
     def sample_market_bundle(
         self, *, rollout_count: int, horizon_months: int, seed: int, market_request: MarketRequest
@@ -466,6 +469,7 @@ class SimpleMarketBundleProvider:
             evidence_set_id="fixture:simple",
             calibration_artifact_id="fixture:simple",
             risk_factor_ids=CORE_MARKET_RISK_FACTOR_IDS,
+            current_private_equity_price_usd=self.current_private_equity_price_usd,
             seed=seed,
             rollout_count=rollout_count,
             horizon_months=horizon_months,
