@@ -340,6 +340,19 @@ export function mapLocalAssetPath(pathname, config) {
   }
   const partialSwap = resolvePartialSwapRuntimeRequest(suffix, config.partialSwapRuntimeIndex);
   if (partialSwap) {
+    // If the auto-extension fallback rewrote the suffix (e.g.
+    // `./platform` → `./platform/index.js`), 301 the browser to the
+    // resolved URL so its module base URL tracks the actually-served
+    // file. Without this, a relative `import "./node"` inside that
+    // file would resolve against the originally-requested URL and
+    // fetch the wrong sibling.
+    if (partialSwap.resolvedSuffix && partialSwap.resolvedSuffix !== partialSwap.requestSuffix) {
+      return {
+        kind: "partial-swap-redirect",
+        redirectTo:
+          `${config.internalPrefix}/app/_partial_swap/` + `${partialSwap.package}/${partialSwap.resolvedSuffix}`,
+      };
+    }
     return {
       contentType: contentTypeForPath(partialSwap.filePath),
       filePath: partialSwap.filePath,
@@ -465,6 +478,11 @@ function createHttpsAssetServer(config, tlsMaterial) {
         }
 
         response.setHeader("cache-control", "no-store");
+        if (resolved.kind === "partial-swap-redirect") {
+          response.writeHead(301, { location: resolved.redirectTo });
+          response.end();
+          return;
+        }
         response.setHeader("content-type", resolved.contentType);
         if (resolved.kind === "live-index" || resolved.kind === "service-worker") {
           response.writeHead(200);
