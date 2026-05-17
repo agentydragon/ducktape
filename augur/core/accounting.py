@@ -38,6 +38,7 @@ class ChartAccountRole(StrEnum):
     HOA_EXPENSE = "hoa_expense"
     INSURANCE_EXPENSE = "insurance_expense"
     MAINTENANCE_EXPENSE = "maintenance_expense"
+    OUTSIDE_RENT_EXPENSE = "outside_rent_expense"
     RENTAL_INCOME = "rental_income"
     RENTAL_MANAGEMENT_FEE_EXPENSE = "rental_management_fee_expense"
     RENTAL_LEASING_FEE_EXPENSE = "rental_leasing_fee_expense"

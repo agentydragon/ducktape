@@ -40,6 +40,8 @@ from augur.core.scenario_set import (
     MonthlySpendPolicy,
     ObligationStatus,
     ObligationType,
+    OccupancyMode,
+    OccupancyPlan,
     PartnerContributionDecision,
     PartnerEquityAccrualPolicy,
     PrivateEquityPosition,
@@ -2693,6 +2695,204 @@ def test_pydantic_rejects_private_equity_sale_policy_without_rule() -> None:
                 ],
             }
         )
+
+
+def _outside_rent_scenario(
+    *,
+    scenario_id: str,
+    initial_cash_usd: float,
+    monthly_rent_usd: float = 3_000,
+    end_month: int | None = None,
+    policies: tuple = (),
+    sp500_value_usd: float = 0,
+) -> Scenario:
+    """A minimal `OWNER_RENTS_ELSEWHERE` scenario for the outside-rent obligation path.
+
+    No property is selected — outside rent flows from the occupancy plan alone, not
+    from a property the actor owns. SP500 is optional so the rescue-policy test can
+    show a sale path.
+    """
+    assets: tuple = ()
+    if sp500_value_usd > 0:
+        assets = (
+            GenericSp500StockPosition(
+                asset_id="sp500", owner_actor_id="alpha", value_usd=sp500_value_usd, cost_basis_usd=sp500_value_usd
+            ),
+        )
+    return Scenario(
+        scenario_id=scenario_id,
+        label=scenario_id.replace("_", " ").title(),
+        actors=(_simple_actor(),),
+        occupancy_plan=OccupancyPlan(
+            occupancy_mode=OccupancyMode.OWNER_RENTS_ELSEWHERE,
+            outside_rent_monthly_usd=monthly_rent_usd,
+            end_month=end_month,
+        ),
+        policies=policies,
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking",
+                    account_type=AccountType.CHECKING,
+                    owner_actor_id="alpha",
+                    balance_usd=initial_cash_usd,
+                ),
+            ),
+            assets=assets,
+        ),
+    )
+
+
+def test_outside_rent_obligation_settles_when_cash_available() -> None:
+    """Happy path: `OWNER_RENTS_ELSEWHERE` + $3000/mo rent over 12 months emits one
+    PAID `OUTSIDE_RENT` obligation per month and the cash trajectory dips by $3000
+    each month."""
+    horizon_months = 12
+    scenario = _outside_rent_scenario(scenario_id="outside_rent_paid", initial_cash_usd=100_000, monthly_rent_usd=3_000)
+    result = _run_scenario(scenario, horizon_months=horizon_months)
+    assert result.arrays is not None
+    assert result.rollout(0).status().status == RolloutStatusType.ACTIVE
+    outside_rent_obligations = tuple(
+        obligation
+        for obligation in result.arrays.obligations
+        if obligation.obligation_type is ObligationType.OUTSIDE_RENT
+    )
+    # Rent accrues every month from 0 through horizon (inclusive of the snapshot
+    # month) — the engine treats month_index values 0..horizon as 13 columns and
+    # the occupancy span spans the full horizon by default.
+    assert len(outside_rent_obligations) == horizon_months + 1
+    assert {obligation.status for obligation in outside_rent_obligations} == {ObligationStatus.PAID}
+    assert {obligation.amount_due_usd for obligation in outside_rent_obligations} == {3_000}
+    # Settlement journal entries credit cash for $3000 every month.
+    assert_allclose(
+        _posting_matrix(
+            result,
+            role=ChartAccountRole.OUTSIDE_RENT_EXPENSE,
+            side=PostingSide.DEBIT,
+            journal_entry_type=JournalEntryType.OBLIGATION_SETTLEMENT,
+        ),
+        np.full((1, horizon_months + 1), 3_000.0, dtype="float64"),
+    )
+    # Cash trajectory: $100k starting, $3000 settles at every snapshot month
+    # (including month 0 — rent is due upfront for the snapshot period, unlike
+    # property carrying costs which exclude month 0).
+    cash_series = result.rollout(0).series(ReportMetric.CASH_USD)
+    expected_cash = [100_000 - 3_000 * (month + 1) for month in range(horizon_months + 1)]
+    assert_allclose(cash_series, expected_cash)
+    # The new enum variant carries a creditor and a unique obligation_id per month.
+    creditors = {decision.creditor_id for decision in outside_rent_obligations}
+    assert creditors == {"landlord"}
+
+
+def test_outside_rent_obligation_fails_rollout_when_unfundable() -> None:
+    """Cash-strapped renter with no rescue policy: the first month's OUTSIDE_RENT
+    obligation flips the rollout to FAILED and emits a FailureEvent keyed to
+    OUTSIDE_RENT."""
+    scenario = _outside_rent_scenario(
+        scenario_id="outside_rent_unfundable", initial_cash_usd=500, monthly_rent_usd=3_000
+    )
+    horizon_months = 4
+    result = _run_scenario(scenario, horizon_months=horizon_months)
+    assert result.arrays is not None
+    assert result.rollout(0).status().status == RolloutStatusType.FAILED
+    rent_failures = tuple(
+        event for event in result.arrays.failure_events if event.obligation_id.startswith("outside_rent")
+    )
+    # Every rent month after cash dries up emits a failure event. With $500 cash
+    # and $3000 monthly rent, the very first month is already a shortfall.
+    assert len(rent_failures) == horizon_months + 1
+    assert rent_failures[0].month_index == 0
+    assert all(event.unpaid_amount_usd > 0 for event in rent_failures)
+    unfunded = tuple(
+        decision
+        for decision in result.arrays.funding_decisions
+        if decision.obligation_id.startswith("outside_rent") and decision.decision_type is FundingDecisionType.UNFUNDED
+    )
+    assert len(unfunded) == horizon_months + 1
+    assert all(decision.shortfall_usd > 0 for decision in unfunded)
+
+
+def test_outside_rent_shortfall_can_be_rescued_by_checking_floor_sale_policy() -> None:
+    """A `CheckingFloorSellPublicStockPolicy` rescues an outside-rent shortfall by
+    selling SP500 stock to make rent. The rollout stays ACTIVE; the funding decision
+    is `SELL_PUBLIC_STOCK` against the OUTSIDE_RENT obligation."""
+    scenario = _outside_rent_scenario(
+        scenario_id="outside_rent_rescued",
+        initial_cash_usd=500,
+        monthly_rent_usd=3_000,
+        sp500_value_usd=100_000,
+        policies=(
+            # `sale_amount_usd` must clear the full $3000 rent in a single sale —
+            # partial covers still leave a shortfall on a required obligation,
+            # which the engine treats as FAILED.
+            CheckingFloorSellPublicStockPolicy(
+                policy_id="rent_funding_sale", actor_id="alpha", floor_usd=0, sale_amount_usd=5_000
+            ),
+        ),
+    )
+    horizon_months = 3
+    result = _run_scenario(scenario, horizon_months=horizon_months)
+    assert result.arrays is not None
+    assert result.rollout(0).status().status == RolloutStatusType.ACTIVE
+    rent_obligations = tuple(
+        obligation
+        for obligation in result.arrays.obligations
+        if obligation.obligation_type is ObligationType.OUTSIDE_RENT
+    )
+    assert len(rent_obligations) == horizon_months + 1
+    assert {obligation.status for obligation in rent_obligations} == {ObligationStatus.PAID}
+    assert tuple(event for event in result.arrays.failure_events) == ()
+    sale_funding = tuple(
+        decision
+        for decision in result.arrays.funding_decisions
+        if decision.obligation_id.startswith("outside_rent")
+        and decision.decision_type is FundingDecisionType.SELL_PUBLIC_STOCK
+    )
+    assert len(sale_funding) >= 1
+    assert {decision.policy_id for decision in sale_funding} == {"rent_funding_sale"}
+    assert all(decision.funded_cash_usd > 0 for decision in sale_funding)
+
+
+def test_outside_rent_stops_when_occupancy_span_ends() -> None:
+    """Occupancy span ending mid-rollout (end_month=5) stops rent accrual at month
+    6 onward; only months 0-5 produce OUTSIDE_RENT obligations."""
+    scenario = _outside_rent_scenario(
+        scenario_id="outside_rent_span_ends", initial_cash_usd=100_000, monthly_rent_usd=3_000, end_month=5
+    )
+    horizon_months = 12
+    result = _run_scenario(scenario, horizon_months=horizon_months)
+    assert result.arrays is not None
+    assert result.rollout(0).status().status == RolloutStatusType.ACTIVE
+    rent_obligations = tuple(
+        obligation
+        for obligation in result.arrays.obligations
+        if obligation.obligation_type is ObligationType.OUTSIDE_RENT
+    )
+    # Months 0..5 inclusive = 6 obligations.
+    assert len(rent_obligations) == 6
+    assert {obligation.month_index for obligation in rent_obligations} == {0, 1, 2, 3, 4, 5}
+    assert {obligation.status for obligation in rent_obligations} == {ObligationStatus.PAID}
+    # Cash stops dipping once rent stops: months 6..12 hold steady at the post-rent balance.
+    cash_series = result.rollout(0).series(ReportMetric.CASH_USD)
+    expected_post_rent_cash = 100_000 - 3_000 * 6
+    assert_allclose(cash_series[6:], expected_post_rent_cash)
+
+
+def test_outside_rent_zero_amount_produces_no_obligations() -> None:
+    """`outside_rent_monthly_usd=0` skips the accrual entirely — no obligations, no
+    settlements. Zero-amount obligations would be noise on the trace."""
+    scenario = _outside_rent_scenario(scenario_id="outside_rent_zero", initial_cash_usd=10_000, monthly_rent_usd=0)
+    result = _run_scenario(scenario, horizon_months=6)
+    assert result.arrays is not None
+    assert result.rollout(0).status().status == RolloutStatusType.ACTIVE
+    outside_rent_obligations = tuple(
+        obligation
+        for obligation in result.arrays.obligations
+        if obligation.obligation_type is ObligationType.OUTSIDE_RENT
+    )
+    assert outside_rent_obligations == ()
+    # Cash is unchanged because no obligation accrues.
+    assert_allclose(result.rollout(0).series(ReportMetric.CASH_USD), 10_000)
 
 
 if __name__ == "__main__":

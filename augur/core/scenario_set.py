@@ -247,12 +247,6 @@ PropertyId = str
 class OccupancyMode(StrEnum):
     OWNER_LIVES_IN_PROPERTY = "owner_lives_in_property"
     OWNER_LIVES_IN_OTHER_OWNED_PROPERTY = "owner_lives_in_other_owned_property"
-    # CLEANUP(2026-05-17): `OWNER_RENTS_ELSEWHERE` is not modeled — the
-    #   engine has no per-month rent debit for the owner-as-tenant role and
-    #   no rent-policy schema. Plan C slice 3 (`augur/plans/roadmap.md`)
-    #   reserves `ObligationType.OUTSIDE_RENT` for the moment a rent policy
-    #   lands and starts emitting the obligation. Remove this comment when
-    #   that slice ships.
     OWNER_RENTS_ELSEWHERE = "owner_rents_elsewhere"
     NO_OWNER_OCCUPANCY = "no_owner_occupancy"
 
@@ -782,11 +776,25 @@ class OccupancyPlan(ApiModel):
     owner_residence_property_id: PropertyId | None = None
     start_month: NonNegativeInt = 0
     end_month: NonNegativeInt | None = None
+    # Flat monthly outside-rent the primary owner pays while the occupancy mode is
+    # OWNER_RENTS_ELSEWHERE. Accrues as a required OUTSIDE_RENT obligation every
+    # month in [start_month, end_month or horizon]. Inflation indexing is a
+    # deliberate follow-up; today this is a flat value.
+    outside_rent_monthly_usd: NonNegativeFloat = 0
 
     @model_validator(mode="after")
     def _end_after_start(self) -> OccupancyPlan:
         if self.end_month is not None and self.end_month < self.start_month:
             raise ValueError("end_month must be greater than or equal to start_month")
+        return self
+
+    @model_validator(mode="after")
+    def _outside_rent_requires_owner_rents_elsewhere(self) -> OccupancyPlan:
+        if self.outside_rent_monthly_usd > 0 and self.occupancy_mode is not OccupancyMode.OWNER_RENTS_ELSEWHERE:
+            raise ValueError(
+                "outside_rent_monthly_usd > 0 requires occupancy_mode = OWNER_RENTS_ELSEWHERE; "
+                f"got {self.occupancy_mode}"
+            )
         return self
 
 

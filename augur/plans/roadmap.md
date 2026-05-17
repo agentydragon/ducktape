@@ -498,9 +498,14 @@ Generalize the shape so **one** pattern handles every immediate cash demand:
    Today this isn't first-class. Add a `RentalPaymentPolicy` (or extend
    `OccupancyDecisionPolicy`) that accrues monthly rent as a required
    obligation. Verify against existing tests.
-   **Pending.** Today `OWNER_RENTS_ELSEWHERE` does not model the
-   tenant-side rent cash demand at all (no direct cash debit either);
-   the `OUTSIDE_RENT` enum value is reserved for when rent modeling lands.
+   **Landed.** `OccupancyPlan.outside_rent_monthly_usd` is a flat monthly
+   knob (inflation indexing deferred); each month in the occupancy span
+   accrues an `OUTSIDE_RENT` obligation on the primary owner via
+   `_CashDebitObligationKind(expense_role=ChartAccountRole.OUTSIDE_RENT_EXPENSE)`
+   and routes through `_settle_required_cash_obligations` with
+   `creditor_id="landlord"`. Cash-strapped renters without a rescue
+   policy flip the rollout to `FAILED`; a `CheckingFloorSellPublicStockPolicy`
+   rescues by selling SP500.
 4. **Partner-contribution obligations**. Today
    `apply_partner_house_cost_contribution` debits cash unconditionally. The
    contributing actor's failure to fund their share of housing costs is a

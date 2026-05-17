@@ -131,6 +131,7 @@ PROPERTY_TAX_POLICY_ID = "property_tax_obligation"
 HOA_DUES_POLICY_ID = "hoa_dues_obligation"
 INSURANCE_POLICY_ID = "insurance_premium_obligation"
 MAINTENANCE_POLICY_ID = "maintenance_obligation"
+OUTSIDE_RENT_POLICY_ID = "outside_rent_obligation"
 PARTNER_CONTRIBUTION_POLICY_ID = "partner_contribution_obligation"
 
 # IRS quarterly estimated tax due dates expressed as month offsets within a
@@ -2030,6 +2031,41 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             ),
             creditor_id="hoa",
             source_policy_id=SPECIAL_ASSESSMENT_POLICY_ID,
+            cash_usd=cash,
+            generic_sp500_value_usd=generic_sp500_value,
+            remaining_sp500_units_by_month=remaining_sp500_units_by_month,
+            remaining_sp500_basis_by_month=remaining_sp500_basis_by_month,
+            crypto_value_usd=crypto_value,
+            remaining_crypto_quantity_by_month=remaining_crypto_quantity_by_month,
+            remaining_crypto_basis_by_month=remaining_crypto_basis_by_month,
+            crypto_sale_usd=crypto_sale_usd,
+            crypto_sale_basis_usd=crypto_sale_basis_usd,
+            checking_floor_shortfall_usd=checking_floor_shortfall,
+            obligations=obligations,
+            funding_decisions=funding_decisions,
+            settlement_results=settlement_results,
+            failure_events=failure_events,
+            accounting=accounting,
+            sp500_sale_action_records=sp500_sale_action_records,
+            crypto_sale_action_records=crypto_sale_action_records,
+        )
+    # Outside-rent obligations: when occupancy_mode is OWNER_RENTS_ELSEWHERE, the
+    # primary owner pays a flat monthly rent for each month in the occupancy span.
+    # Settled through the same pipeline so a cash-strapped renter (no rescue
+    # policy) flips the rollout to FAILED.
+    outside_rent_due = _outside_rent_obligation_due_usd(scenario, rollout_count=rollout_count, month_index=month_index)
+    if np.any(outside_rent_due > 0):
+        _settle_required_cash_obligations(
+            scenario=scenario,
+            market_bundle=market_bundle,
+            month_index=month_index,
+            policy_steps=policy_steps,
+            obligation_amount_usd=outside_rent_due,
+            obligation_kind=_CashDebitObligationKind(
+                obligation_type=ObligationType.OUTSIDE_RENT, expense_role=ChartAccountRole.OUTSIDE_RENT_EXPENSE
+            ),
+            creditor_id="landlord",
+            source_policy_id=OUTSIDE_RENT_POLICY_ID,
             cash_usd=cash,
             generic_sp500_value_usd=generic_sp500_value,
             remaining_sp500_units_by_month=remaining_sp500_units_by_month,
@@ -5455,6 +5491,30 @@ def _partner_initial_funding_cash_usd(
     ):
         return explicit_cash
     return configured_contribution_total_usd
+
+
+def _outside_rent_obligation_due_usd(scenario: Scenario, *, rollout_count: int, month_index: np.ndarray) -> np.ndarray:
+    """Build a (rollout, month) matrix of outside-rent dues from the occupancy plan.
+
+    Each month in [start_month, end_month or last in-horizon month] contributes
+    `outside_rent_monthly_usd` when `occupancy_mode is OWNER_RENTS_ELSEWHERE`.
+    Zero rent or any other occupancy mode returns an all-zero matrix (callers can
+    short-circuit on `np.any(... > 0)`). Every rollout pays the same flat rent —
+    outside rent is a deterministic occupancy choice today, not a stochastic input.
+    Inflation indexing is a deliberate follow-up.
+    """
+    matrix = np.zeros((rollout_count, month_index.size), dtype="float64")
+    plan = scenario.occupancy_plan
+    if (
+        plan.occupancy_mode is not OccupancyMode.OWNER_RENTS_ELSEWHERE
+        or plan.outside_rent_monthly_usd <= 0
+        or month_index.size == 0
+    ):
+        return matrix
+    end_inclusive = plan.end_month if plan.end_month is not None else int(month_index.max())
+    span_mask = (month_index >= int(plan.start_month)) & (month_index <= int(end_inclusive))
+    matrix[:, span_mask] = float(plan.outside_rent_monthly_usd)
+    return matrix
 
 
 def _special_assessment_obligation_due_usd(
