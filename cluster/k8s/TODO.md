@@ -10,40 +10,69 @@ Audit findings deferred for later.
       retention to use the available storage comfortably, and include a tested
       restore path before relying on it.
 
-## Mitmproxy: forward in-cluster + label-selector fix (DRAFT, uncommitted)
+## Mitmproxy / claude-sandbox: design a clean egress story
 
-The Kyverno `inject-mitmproxy` policy auto-injects `HTTP_PROXY` into every
-pod in `claude-sandbox`, `openclaw-sandbox`, `openclaw-gateway`. Two issues:
+**Current state is broken for `claude-sandbox`.** Every pod created in
+`claude-sandbox` is stuck `ContainerCreating` with
+`MountVolume.SetUp failed for volume "mitmproxy-ca-cert" : configmap
+"mitmproxy-ca-cert" not found`, because:
 
-1. The `ccnp-sandbox-proxy-egress` CCNP allowed traffic to pods labeled
-   `app: mitmproxy` — but the deployment uses
-   `app.kubernetes.io/name: mitmproxy`, so the rule matched no pods and
-   sandbox pods couldn't reach mitmproxy when they needed to. External
-   pip/curl through `HTTP_PROXY` silently timed out. **Real bug.**
-2. Mitmproxy's egress (`cnp-cloud-api-egress`) only allowed a fixed set
-   of cloud LLM FQDNs. So when a sandbox pod sent a request through
-   mitmproxy targeting an in-cluster destination (e.g. an
-   HTTPS_PROXY-respecting tool that ignored NO_PROXY), mitmproxy
-   couldn't actually forward to `ollama.ollama`.
+1. The Kyverno `inject-mitmproxy` ClusterPolicy
+   (<../k8s/kyverno/policies/inject-mitmproxy.yaml>) injects a
+   `mitmproxy-ca-cert` ConfigMap volume + `HTTP{S,}_PROXY` env vars into
+   every pod in `claude-sandbox`, `openclaw-sandbox`, `openclaw-gateway`.
+2. The source ConfigMap lives in the `openclaw-mitmproxy` namespace
+   (<../k8s/agents/openclaw/mitmproxy/kustomization.yaml>) and is meant
+   to be replicated into `claude-sandbox` via Reflector annotations.
+3. But the `openclaw-mitmproxy` Flux Kustomization is currently
+   `suspend: true` (dependency `openclaw-mitmproxy-namespace` is not
+   ready), so the source ConfigMap never gets generated → Reflector has
+   nothing to copy → no pods in `claude-sandbox` can start.
 
-Drafted fix (uncommitted, in working tree): keep mitmproxy in-path and
-required for sandbox pods, but extend its egress to allow forwarding to
-in-cluster Services. Bench Jobs that want mitmproxy to forward don't need
-code changes; existing NO_PROXY-aware tools still bypass for in-cluster
-destinations as before.
+So today the choice is implicit: either no claude-sandbox pods, or
+resurrect the openclaw-mitmproxy stack.
 
-Files touched:
+**Goal (Rai, 2026-05-17): no unrestricted internet for sandbox pods,
+but reaching common in-cluster services should "just work" without
+each consumer threading manual `NO_PROXY` config.**
 
-- <../k8s/agents/openclaw/mitmproxy/ccnp-sandbox-proxy-egress.yaml> —
-  label-selector fix (the real bug).
-- <../k8s/agents/openclaw/mitmproxy/cnp-cloud-api-egress.yaml> — added
-  `toEntities: cluster` egress rule on common ports (80, 443, 8000,
-  8080, 11434) so mitmproxy can forward to in-cluster Services.
+Open design questions:
 
-`NO_PROXY` in `inject-mitmproxy.yaml` is unchanged. Open question:
-whether to also tighten `NO_PROXY` (forcing all sandbox traffic through
-mitmproxy unconditionally) — that's a stricter posture giving full audit
-but losing the bypass escape hatch.
+- Should mitmproxy stay in-path for claude-sandbox at all, or do we
+  prefer a pure CiliumNetworkPolicy egress allowlist (no proxy, no env
+  injection, no CA cert) that permits a curated list of in-cluster
+  Services + denies everything else? The latter is simpler to reason
+  about and removes the "missing CM → pod stuck" failure mode entirely.
+- If we keep mitmproxy: fix the two upstream bugs first
+  (label-selector mismatch on `ccnp-sandbox-proxy-egress`, missing
+  `toEntities: cluster` on `cnp-cloud-api-egress`), un-suspend the
+  Flux Kustomization, and make the in-cluster forward path the
+  default. Drafted patches live in
+  <../k8s/agents/openclaw/mitmproxy/PROBLEM.md>.
+- Either way, the Kyverno injection policy should fail-closed
+  (refuse pod admission) when the ConfigMap it's about to mount
+  doesn't exist, rather than mutating pods into a permanent
+  ContainerCreating state. Could be a CEL/validating policy that
+  short-circuits when `mitmproxy-ca-cert` isn't reflected yet.
+
+Concrete next steps (any order):
+
+- [ ] Audit which claude-sandbox use cases need external internet vs
+      cluster-only. (LLM API access from agent pods? GitHub clones?
+      package fetches? cluster Service consumption only?)
+- [ ] Decide between "mitmproxy in-path" vs "CiliumNetworkPolicy
+      allowlist only" for claude-sandbox. Document the choice.
+- [ ] If mitmproxy stays: land the two fixes in
+      `agents/openclaw/mitmproxy/`, un-suspend the kustomization,
+      verify CA cert reflects to claude-sandbox.
+- [ ] If we drop mitmproxy for claude-sandbox: scope the Kyverno
+      policy to remove `claude-sandbox` from the `match.namespaces`
+      list (<../k8s/kyverno/policies/inject-mitmproxy.yaml>), and
+      replace it with a `CiliumNetworkPolicy` in
+      `agents/claude-rbac/` that allowlists the needed cluster
+      Services.
+- [ ] Add a guard so the Kyverno policy can't leave pods stuck in
+      ContainerCreating when its dependencies aren't present.
 
 ## OpenClaw secrets
 
