@@ -15,18 +15,32 @@ second ordered roadmap.
 - Funding policies consume crypto + tender-window-aware PE — extend the
   obligation-funding policy chain so `CheckingFloorSellPublicStockPolicy`
   (and siblings) can liquidate crypto holdings and tender-eligible PE
-  alongside SP500. Branch `claude/funding-policies-crypto-tender`.
-- Collapse trace surfaces — cleanup-audit item 2. Make
-  ledger/accounting/snapshot rows the canonical detail surface and either
-  delete `SimulationAction` rows or narrow them to user-visible commands.
-  Branch `claude/collapse-trace-surfaces`.
+  alongside SP500. Branch `claude/funding-policies-crypto-tender`. This
+  slice covers the runtime asset + funding side only; the stochastic
+  price-path side is the priority-3 follow-on below.
+- Mantine migration of remaining frontend controls. Branch
+  `claude/augur-frontend-mantine-migration`.
 
 ## Next
 
-- [ ] Use the generated Augur OpenAPI/browser schema target in browser state
-      normalization and request mapping. Python Pydantic remains the source of
-      truth; do not grow a second hand-maintained Zod/schema definition in
-      `augur/frontend`.
+- [ ] **Priority 3 in `plans/roadmap.md`: stochastic PE valuation,
+      stochastic tender timing, and sampled crypto price paths.** Today the
+      market provider holds private-equity marks flat at 1.0 for the entire
+      horizon, emits tender opportunities at deterministic month indices
+      (every 12 months from t=0, identical across all rollouts and all PE
+      assets), and drops crypto holdings from the runtime universe. Three
+      major sources of variance the simulator silently ignores. Sub-slices:
+  - Sample per-asset private-equity price paths (calibrated GBM /
+    jump-diffusion with idiosyncratic vol, optional correlation to public
+    equity), keyed by holding identity in `MarketBundle`.
+  - Stochastic tender-arrival process — inhomogeneous Poisson or
+    hazard-rate model, optionally conditioned on explicit
+    `PrivateEquityLot.tender_windows` from the portfolio statement when
+    those exist. Per-rollout, per-asset opportunity arrival + duration +
+    price-at-event.
+  - Sampled crypto price paths once the runtime asset class lands (GBM
+    minimum; consider stochastic-vol / fat-tail later). Consumes the
+    runtime crypto position the in-flight funding-policy slice is adding.
 - [ ] Plan C in `plans/roadmap.md`: unified obligation/funding semantics
       for all immediate cash demands (property tax, HOA, insurance,
       maintenance, outside rent, partner contributions, special assessments,

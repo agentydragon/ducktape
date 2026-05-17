@@ -179,49 +179,99 @@ Acceptance criteria:
 - The app state names the same domain layers the backend schema names.
 - Normal app code does not call a catch-all flat scenario view.
 
-## Priority 3: Redesign Private-Equity Tender Opportunities And Policy
+## Priority 3: Stochastic Private-Equity Valuation, Tender Timing, And Crypto
 
-Private-equity sale availability should be modeled as an exogenous opportunity
-plus actor policy, not as "user chooses to sell USD X in month Y." A
-tender-eligible mark is not liquid wealth; `liquid_net_worth` should include
-only actually liquid assets such as cash and public stock.
+Today, the market provider holds private-equity marks **flat over the entire
+horizon** (`private_equity_value_multipliers = np.ones(shape)`) and emits
+tender opportunities at **deterministic** months (every 12 months from t=0,
+identical across rollouts and across PE assets). Crypto holdings are dropped
+from `to_initial_balance_sheet()` entirely — the asset class doesn't exist in
+the runtime universe.
 
-Target shape:
+That's three major sources of variance the simulator silently ignores. A
+distribution over outcomes that has no PE price uncertainty and pre-known
+tender months is not a real distribution over PE outcomes.
+
+### Slices
+
+1. **Sample per-asset private-equity price paths.** Replace the shared
+   `private_equity_value_multipliers` rollout × month array with a per-asset
+   path keyed by holding identity. Existing single-asset scenarios get
+   independent sampled paths; multi-asset scenarios get independently sampled
+   paths per holding. Minimum: a calibrated GBM or jump-diffusion per asset
+   with idiosyncratic volatility and an optional correlation to public-equity
+   factors. Persist the model identity in `MarketBundleMetadata` so the path
+   set is reproducible.
+
+2. **Stochastic tender timing.** Replace the deterministic
+   `_TENDER_INTERVAL_MONTHS = 12` mask with a sampled opportunity stream per
+   asset. Options:
+   - **Inhomogeneous Poisson** with a rate that can depend on asset state
+     (lockup, age) and exogenous regime — gives Poisson arrivals with realistic
+     clustering.
+   - **Hazard-rate** model with quarterly base rate plus regime shifts
+     (`tender_open` / `tender_closed`).
+   - **Explicit windows** from `PrivateEquityLot.tender_windows` when the
+     portfolio statement provides them (the in-flight crypto/tender-PE
+     subagent wires the explicit path; this slice adds the stochastic path
+     on top so deployments without explicit windows still get realistic
+     timing).
+     The opportunity arrival time, duration, and price-at-event are all sampled
+     per-rollout, so the distribution over PE outcomes reflects timing risk.
+
+3. **Crypto as a runtime asset class.** Add `AssetType.CRYPTO` (or similar),
+   make `PortfolioStatement.to_initial_balance_sheet()` emit crypto positions
+   instead of dropping them, and sample a per-asset price path (minimum: GBM
+   with high idiosyncratic vol; consider stochastic-vol or fat-tailed
+   alternatives later). Tax treatment: realized gain as ordinary income on
+   federal + CA (placeholder; revisit when capital-gains rules for digital
+   assets get a proper pass). The in-flight crypto-funding subagent is wiring
+   the runtime asset class + funding-policy side; this slice adds the
+   stochastic price path so crypto contributes real variance to the
+   distribution.
+
+4. **Per-asset PE liquidity regimes** (already in Plan B and SPEC.md, restated
+   here for completeness): `LiquidityEventOnly`, `PublicMarket` (sale at spot
+   subject to optional `lockup_end_month`), `Acquisition` (one-shot conversion
+   at fixed `cash_per_unit_usd` at sampled `event_month`), and `RegimeChange`
+   events (e.g. IPO converts `LiquidityEventOnly → PublicMarket`). Each
+   regime gates which sale opportunities the asset can produce in slice 2.
+
+5. **Calibration & evidence boundary.** Per-asset PE / crypto paths and
+   tender-arrival rates are model inputs that should live in `augur/model/`,
+   not `augur/core/`. Fit on whatever calibration target makes sense
+   (historical tender frequencies for a class of assets, implied vol from
+   secondary marketplaces, public crypto returns from FRED/Yahoo). Result
+   metadata declares which calibration artifact the run used.
+
+6. **Result-layer separation** (kept from the previous priority shape):
+   distinguish private-equity mark value, tender-eligible value, actually-sold
+   amount, post-tax proceeds, and actual liquid net worth. `liquid_net_worth`
+   stays cash + public liquid securities — never tender-eligible PE marks.
+
+### Acceptance
+
+- A scenario with two PE holdings on independently sampled paths produces a
+  non-zero correlation deviation between them across rollouts.
+- Two rollouts of the same scenario have **different** tender months for the
+  same PE asset (proving timing is sampled, not fixed).
+- A scenario with crypto holdings has crypto price uncertainty in the
+  distribution over net-worth outcomes; selling crypto records realized gain
+  through the same tax flow as stock sales.
+- The reason for a sale or non-sale is still inspectable as a policy decision
+  with explicit cause IDs.
+
+### Policy / sale machinery (unchanged from prior framing)
 
 - Market/model layer emits private-equity sale opportunities: tender,
   acquisition, IPO/regime change, lockup expiry, public-market availability.
 - Policy layer decides participation: never sell, sell fixed fraction, sell
   fixed units, sell enough to reach concentration/liquid-reserve target, or
   custom downstream rule. The first concrete browser/core rule sells a fixed
-  amount into SP500 when cash plus public stock falls below a configured floor
-  and a tender opportunity exists.
+  amount into SP500 when cash plus public stock falls below a configured
+  floor and a tender opportunity exists.
 - Accounting layer applies sale, basis, tax estimate/liability, proceeds
   destination, and cause IDs.
-- Result layer separates private-equity mark value, tender-eligible value,
-  actually sold amount, post-tax proceeds, and actual liquid net worth.
-
-Implementation notes:
-
-- Split sale opportunity, user preference, policy decision, accounting
-  application, and public action into separate typed concepts with explicit
-  cause IDs.
-- Keep arbitrary manual sale requests out of the browser and core, and do not
-  count tender-eligible private marks in `liquid_net_worth`; both are now
-  covered by app/core tests. A first liquid-net-worth-floor participation policy
-  exists and PE sale policy decisions now carry explicit sale/non-sale reasons;
-  keep extending that policy surface instead of reviving manual sale controls.
-- Clarify sale-proceeds destination scope and vocabulary as the policy set
-  grows. The current liquid-net-worth-floor policy always reinvests proceeds in
-  SP500; future policies should make per-policy or per-action destination and
-  tax treatment explicit without returning to an ambiguous scenario-wide cell.
-
-Acceptance criteria:
-
-- A private-equity tender appears as an opportunity in a trajectory view, not
-  as generally available liquidity.
-- The reason for a sale or non-sale is inspectable as a policy decision.
-- Distribution summaries can report expected tender proceeds without implying
-  the asset is generally liquid.
 
 ## Priority 4: Tax, Basis, And Accounting State
 
@@ -377,17 +427,23 @@ Work:
   `AssetType.CRYPTO`, tender-window-driven `private_equity_sale_opportunity_mask`,
   and extension of `CheckingFloorSellPublicStockPolicy` (and the
   obligation-funding chain) to liquidate crypto and tender-eligible PE.
-  `augur/core/{portfolio,scenario_set,policy_runtime,scenario_engine}.py`.
-- **Collapse trace surfaces** — cleanup-audit item 2. Make
-  ledger/accounting/snapshot rows the canonical detail surface; either
-  delete `SimulationAction` rows or narrow them to user-visible commands.
-  `augur/core/{scenario_set,scenario_engine}.py`.
+  This slice covers the runtime asset + funding side; Priority 3 covers
+  the stochastic price-path side for both PE and crypto.
+- **Mantine migration of remaining frontend controls** — `augur/frontend/`.
+  `augur/frontend/app.jsx` form/table elements move to Mantine equivalents.
 
 ## Next Lanes (parallelism + sequencing)
 
+- **Priority 3 — stochastic PE/crypto/tender** (high impact, large variance
+  source currently ignored by the simulator). Three concurrent sub-slices,
+  all in `augur/model/`, isolated from `augur/core/scenario_engine.py`:
+  - Per-asset sampled PE price paths (replace flat `np.ones(...)` multiplier).
+  - Stochastic tender-arrival process (replace deterministic 12-month mask).
+  - Sampled crypto price paths (consume the runtime asset class the
+    in-flight funding-policy slice is adding).
 - **Plan C (unified obligation/funding semantics)** — see below.
-  Sequence after the trace-surface collapse and crypto/tender-PE funding
-  slices land, since they all share `scenario_engine.py`.
+  Sequence after the crypto/tender-PE funding slice lands, since they share
+  `scenario_engine.py`.
 - **Persist model-governance artifacts** — durable evidence / calibration
   / validation-report storage for market providers. `augur/model/`.
   Self-contained, can run in parallel with anything.
