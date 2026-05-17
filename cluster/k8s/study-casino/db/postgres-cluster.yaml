@@ -32,9 +32,19 @@ spec:
   monitoring:
     enablePodMonitor: true
 
-  # Superuser secret (study-casino-db-superuser) is consumed by the read-only
-  # role provisioner Job; the `studycasino` owner role does not have CREATEROLE.
-  enableSuperuserAccess: true
+  # Declaratively-managed roles. CNPG creates `study_casino_ro` on first
+  # reconcile and keeps the password in sync with study-casino-db-readonly.
+  # Object-level GRANTs (CONNECT/USAGE/SELECT + ALTER DEFAULT PRIVILEGES)
+  # are applied by the provisioner Job running as the `studycasino` owner —
+  # `managed.roles` only covers role attributes, not object permissions.
+  managed:
+    roles:
+      - name: study_casino_ro
+        ensure: present
+        login: true
+        passwordSecret:
+          name: study-casino-db-readonly
+        comment: "Read-only access for sandbox agents (see cluster/k8s/study-casino/db/readonly-role.sql)"
 
   bootstrap:
     initdb:

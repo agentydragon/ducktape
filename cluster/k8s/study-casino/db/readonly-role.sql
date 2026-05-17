@@ -1,13 +1,8 @@
--- Idempotent provisioning of the read-only role used by sandbox agents.
--- Re-runs of the provisioner Job ALTER the password to match the current
--- `study-casino-db-readonly` Secret.
--- v2: provisioner wraps psql in bash for diagnostics on failure.
-DO $$ BEGIN
-  CREATE ROLE study_casino_ro LOGIN PASSWORD :'ro_pw';
-EXCEPTION WHEN duplicate_object THEN
-  ALTER ROLE study_casino_ro PASSWORD :'ro_pw';
-END $$;
-
+-- Object-level GRANTs for the CNPG-managed `study_casino_ro` role.
+-- Role creation + password sync live on the CNPG Cluster spec under
+-- `managed.roles[name=study_casino_ro]`. This script only grants object
+-- permissions (CNPG does not manage these) and runs as the `studycasino`
+-- owner, which has all privileges on its own database and tables.
 GRANT CONNECT ON DATABASE studycasino TO study_casino_ro;
 GRANT USAGE ON SCHEMA public TO study_casino_ro;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO study_casino_ro;

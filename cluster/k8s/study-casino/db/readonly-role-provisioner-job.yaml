@@ -4,15 +4,15 @@ metadata:
   name: study-casino-db-readonly-provisioner
   namespace: study-casino
   annotations:
-    description: "Creates / refreshes the study_casino_ro Postgres role used by sandbox agents."
-    # Force enables Flux to recreate the Job on manifest changes (e.g. password rotations,
-    # which rotate the SQL hash via the readonly-role.sql ConfigMap). Without this, the
-    # Job is immutable after first apply.
+    description: "Applies the read-only object GRANTs for study_casino_ro. The role itself is managed declaratively by CNPG (Cluster.spec.managed.roles)."
+    # Force enables Flux to recreate the Job on manifest changes (e.g. when
+    # readonly-role.sql is edited and kustomize re-hashes the ConfigMap).
+    # Without this, the Job is immutable after first apply.
     kustomize.toolkit.fluxcd.io/force: enabled
 spec:
-  # Single attempt — failures keep the pod around so logs survive long enough
-  # to debug. Re-run by changing the SQL ConfigMap (kustomize bumps its hash,
-  # `force: enabled` deletes+recreates the Job).
+  # Single attempt — a failed pod is preserved so logs survive long enough
+  # to debug. Re-run by editing the SQL ConfigMap (kustomize bumps its
+  # hash, `force: enabled` deletes+recreates the Job).
   backoffLimit: 0
   ttlSecondsAfterFinished: 86400
   template:
@@ -26,10 +26,6 @@ spec:
       containers:
         - name: psql
           image: ghcr.io/cloudnative-pg/postgresql:18.0
-          # Wrap psql so the exit code and any stderr are visible in
-          # `kubectl describe pod` via the termination message even after
-          # the pod is removed from controller status. `set -x` traces the
-          # invocation; we redact PGPASSWORD via parameter expansion.
           command: ["/bin/bash", "-c"]
           args:
             - |
@@ -38,32 +34,27 @@ spec:
               echo "PGHOST=${PGHOST:-<unset>}"
               echo "PGDATABASE=${PGDATABASE:-<unset>}"
               echo "PGPASSWORD set: ${PGPASSWORD:+yes}"
-              echo "RO_PASSWORD set: ${RO_PASSWORD:+yes}"
               exec psql \
                 --set=ON_ERROR_STOP=1 \
-                --set=ro_pw="$RO_PASSWORD" \
                 -f /sql/readonly-role.sql
           terminationMessagePolicy: FallbackToLogsOnError
           env:
+            # Run as the database owner. Object-level GRANTs only need owner
+            # privileges, not superuser; this lets us drop enableSuperuserAccess.
             - name: PGUSER
               valueFrom:
                 secretKeyRef:
-                  name: study-casino-db-superuser
+                  name: study-casino-db-app
                   key: username
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: study-casino-db-superuser
+                  name: study-casino-db-app
                   key: password
             - name: PGHOST
               value: study-casino-db-rw.study-casino.svc
             - name: PGDATABASE
               value: studycasino
-            - name: RO_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: study-casino-db-readonly
-                  key: password
           volumeMounts:
             - name: sql
               mountPath: /sql
