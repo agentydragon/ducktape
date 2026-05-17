@@ -112,11 +112,8 @@ Keep these as pending sketches until the obligation/settlement shape exists:
 
 ## Active Step 7: Arrays Reconcile To Ledger
 
-Current status: first-pass reconciliation coverage exists, public row-level
-detail is available, and the main recurring cash-flow, sale transaction,
-partner-contribution, and sale-tax explanation arrays now derive from
-ledger/snapshot/accounting-detail rows. The remaining work is to keep shrinking
-bespoke explanatory array math without changing monthly-column semantics.
+Goal: monthly columns remain charts, not truth. Keep shrinking bespoke
+explanatory array math without changing monthly-column semantics.
 
 Next slices:
 
@@ -195,27 +192,20 @@ verification loop.
 
 ## Next App-State Spiral
 
-The browser scenario state is now written, read, normalized, serialized, and
-mapped to backend requests by domain section. The remaining app-state risk is
-letting the browser become its own schema authority through hand-maintained
-field lists and local validation logic.
+The remaining app-state risk is letting the browser become its own schema
+authority through hand-maintained field lists and local validation logic.
 
 Next slice:
 
-1. Add an Augur schema-export target for the backend Pydantic API models,
-   likely via FastAPI/OpenAPI or a focused Pydantic JSON-schema emitter.
-2. Generate browser-consumable schema/types from that backend schema at build
-   time, following existing repo patterns such as `//devinfra/js:openapi.bzl`
-   and `//props/frontend/src/lib:schema`.
-3. Replace hand-maintained browser field lists and ad hoc boundary checks with
-   the generated artifacts. If the browser uses Zod or a similar library, it
-   should consume generated schemas rather than defining a second source of
-   truth.
-4. Do not preserve stale URL compatibility when the state shape changes again.
+1. Wire the existing OpenAPI/Zod generated artifacts (`//devinfra/js:openapi.bzl`,
+   `augur/api/openapi_schema.py`) into `augur/frontend/lib/scenario_set_state.js`
+   normalization and request mapping. Replace hand-maintained browser field lists
+   and ad hoc boundary checks with the generated schemas.
+2. Do not preserve stale URL compatibility when the state shape changes again.
 
 Acceptance checks:
 
-- There is one schema source of truth for Augur API payloads: Python Pydantic.
+- Pydantic is the single schema source of truth for Augur API payloads.
 - Browser validation/types are generated from the backend schema, not
   independently maintained.
 - Adding a new API field starts in the Pydantic model and propagates to the

@@ -2,12 +2,11 @@
 
 ## Executive Summary
 
-Augur is moving in the right direction: the current docs define a
-distribution-first simulator, sectioned scenario state, ordered actor policy
-programs, private-equity opportunities rather than liquidity, and
-ledger/accounting-backed reporting. The ordered actor policy runtime has landed,
-but the implementation still carries several old or parallel trace/detail paths
-that make that direction harder to enforce.
+Augur is moving in the right direction: distribution-first simulator, sectioned
+scenario state, ordered actor policy programs, private-equity opportunities
+rather than liquidity, and ledger/accounting-backed reporting. The ordered
+actor policy runtime has landed, but the implementation still carries several
+old or parallel trace/detail paths that make that direction harder to enforce.
 
 The highest-value remaining cleanup is not broad refactoring. Force the engine
 to choose one source of truth for result detail: ordered policy programs plus
@@ -22,27 +21,7 @@ hidden behind fallbacks.
 
 ## Suspicious/Needs-Design Review
 
-1. Ordered policy programs exist, and execution now uses their order.
-   (Completed)
-
-   Files/functions: `actor_policy_programs()` and `actor_policy_steps()` in
-   `augur/core/policy_runtime.py`; `run_scenario_vectorized()` builds
-   `policy_steps` from those programs and dispatches each typed policy in
-   sequence.
-
-   Why this mattered: the design invariant says actor policy programs are
-   ordered sequences. Preserving sequence metadata while executing by policy
-   class made cross-type ordering meaningless.
-
-   Completed by: `run_scenario_vectorized()` now dispatches ordered policy steps
-   through typed handlers, and the older `enabled_rules_of_type()` helper was
-   removed.
-
-   Remaining guard: keep adding policy families through the ordered dispatcher,
-   and add richer trace rows for no-op, rejected, instructed, and applied
-   decisions where trajectory inspection needs them.
-
-2. Actions, decisions, ledger entries, balance snapshots, accounting details,
+1. Actions, decisions, ledger entries, balance snapshots, accounting details,
    and monthly arrays overlap heavily.
 
    Files/classes: `SimulationAction` rows at
@@ -66,95 +45,6 @@ hidden behind fallbacks.
    Prove safe by: add reconciliation tests that every public monthly flow is
    derived from ledger/accounting rows. Then remove one action family, such as
    `PayMortgageAction`, and confirm no app or API behavior depends on it.
-
-3. Partner ownership runtime still computes parallel ledger data. (Completed 2026-05-17)
-
-   Per-agreement partner-side rows now come from `PartnerOwnershipAccrualApplication`
-   (taking `property_id` directly), and owner-side aggregate rows come from a new
-   `apply_partner_ownership_aggregate()` in `augur/core/policy_runtime.py`. The
-   engine concatenates their `journal_entries` / `balance_snapshots` and the
-   recorder writes them through verbatim — no parallel `JournalEntryBatch` /
-   `BalanceSnapshotBatch` construction inside `_partner_equity_arrays()`, no
-   filter that drops owner snapshots only to rebuild them, and no
-   `_journal_entries_for_property` / `_balance_snapshots_for_property` post-tag
-   pass.
-
-   Proved safe by: `test_partner_equity_arrays_match_rows_from_same_application`
-   in `scenario_engine_test.py` asserts that
-   `result.partner_equity_ledger_usd` / `result.owner_equity_ledger_usd` /
-   `result.partner_principal_credit_usd` / `result.owner_principal_credit_usd`
-   etc. equal the balance-snapshot / posting amounts for the corresponding
-   roles. Because the engine takes those arrays straight off the application
-   objects (and the same objects produce the rows), drift is structurally
-   impossible.
-
-4. Schema-only assets and liabilities advertise state the engine ignores. (Completed)
-
-   Removed classes: `CashAssetPosition`, `RealEstateAssetPosition`,
-   `DeferredTaxAssetPosition`, `MortgageLiability`, `TaxLiability`, and
-   `ActorEquityClaimLiability`. The engine initializes cash from accounts,
-   real estate from `property_selection`, and mortgage state from `financing`.
-
-   Why suspicious: these look like first-class balance-sheet primitives, but
-   not all of them affect simulation. That conflicts with the design goal that
-   initial accounts/assets/liabilities drive runtime state.
-
-   Completed by: remove unsupported asset/liability variants from the public
-   union. Initial cash remains account-owned, public stock/private equity
-   remain asset-owned, and mortgage behavior remains financing-owned.
-
-   Proved safe by: a scenario with one of these positions now must either be
-   rejected or change results in a tested, documented way.
-
-5. Vacancy was classified and posted as an expense. (Completed 2026-05-16)
-
-   The property-operating journal entry debited `RENTAL_VACANCY_LOSS` (an
-   account that fell through to `ChartAccountType.EXPENSE`) and credited a
-   gross-rent income account, with cash debited for the net. That treated
-   "rooms not rented" as an outflow, when it is just the absence of a rent
-   credit.
-
-   Replaced with: vacancy is now a multiplier on rent collected. The journal
-   credits a single `RENTAL_INCOME` (income) account with the actual rent
-   received and debits cash with the same amount. `RENTAL_GROSS_INCOME` and
-   `RENTAL_VACANCY_LOSS` chart-account roles and the matching `ReportMetric`
-   entries are gone; `vacancy_pct` / `room_vacancy_pct` stay as multiplier
-   knobs on the rental plan. Leasing fees now scale with actual rent
-   collected rather than gross potential, consistent with the multiplier
-   framing.
-
-6. Property-sale tax was duplicated through a flat-rate path. (Completed 2026-05-16)
-
-   `property_sale.py` computed `sale_tax` from `tax_profile.marginal_tax_rate`
-   (capped at 38.3%) and `tax_profile.cap_gains_rate`, fed it into
-   `disposition.net_proceeds`, and then `scenario_engine.py` recomputed the
-   right value via `annual_sale_tax_allocation` (bracket-aware federal + CA),
-   reconciling the difference through `tax_cash_adjustment` and
-   `obligation_tax_due`. The flat-rate value was effectively ignored for the
-   reported `property_sale_net_proceeds_usd` but still leaked into the cash
-   reconciliation.
-
-   Replaced with: `property_disposition_arrays` now reports pre-tax proceeds
-   only (`property_sale_tax_usd` is zero in the disposition; `net_proceeds =
-gross - closing - debt`). The engine drives sale tax exclusively through
-   the bracket-aware annual-tax obligation path that already settles
-   stock-sale and PE-sale tax, so all three sale types now share one
-   pipeline. `TaxProfile.marginal_tax_rate` / `cap_gains_rate` are no longer
-   consumed by the engine; see TODO for their schema-level removal.
-
-7. `PolicyContext` and dynamic metric access look like future scaffolding, not
-   current primitives. (Completed 2026-05-16)
-
-   `PolicyContext` was deleted from `augur/core/policy_runtime.py` (no
-   production callers). `ScenarioRun._metric_array()`,
-   `ScenarioRun.{matrix,series,terminal}()`, and
-   `RolloutDetail.{series,terminal}()` were tightened to accept only
-   `ReportMetric` (no longer `ReportMetric | str`). Metric lookup goes through
-   `report_metric_array(arrays, metric)` which consults the explicit
-   `_report_metric_arrays(arrays)` table mapping `ReportMetric` enum values to
-   the corresponding `ScenarioRunArrays` attributes — no `getattr` probing.
-   Tests in `test_e2e.py` and `scenario_engine_test.py` were updated to pass
-   `ReportMetric` enum values.
 
 ## Recent Work Risk Review
 
@@ -223,13 +113,12 @@ gross - closing - debt`). The engine drives sale tax exclusively through
    monthly loops, and extend policy trace rows as trajectory inspection needs
    no-op/rejected/applied decision detail.
 
-2. Pick one trace/source-of-truth path. Start by collapsing one duplicated
-   family, such as mortgage payment action rows or partner ownership rows, into
-   ledger/accounting/snapshot detail.
+2. Pick one trace/source-of-truth path. Collapse one duplicated family, such as
+   mortgage payment action rows, into ledger/accounting/snapshot detail.
 
-3. Replace temporary tax timing with obligations. Keep
-   `cash_negative` as a warning, but introduce failure only through an
-   obligation settlement result, not through raw cash-path inspection.
+3. Replace temporary tax timing with obligations. Keep `cash_negative` as a
+   warning, but introduce failure only through an obligation settlement result,
+   not through raw cash-path inspection.
 
 ## Suggested Tests/Guards
 

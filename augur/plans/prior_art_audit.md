@@ -1,7 +1,5 @@
 # Augur Prior Art Audit
 
-Last updated: 2026-05-15.
-
 ## Executive Summary
 
 Augur is closest to a dynamic household microsimulation and personal-finance
@@ -12,38 +10,26 @@ an economic scenario generator input/output, `ScenarioSet` is the portfolio of
 household scenario variants, `rollout_index` selects one sampled path, and the
 policy runtime is the pathwise deterministic projector.
 
-The current architecture is directionally aligned with good practice. It already
-has `ScenarioSet`, `MarketRequest`, `MarketBundle`, seeded path generation,
-actor policies, row-level actions, policy decisions, market observations, ledger
-entries, balance snapshots, accounting details, and distribution-vs-trajectory
-result panels. That is the right raw vocabulary.
+The important gaps the rest of this audit explores:
 
-The important gaps are sharper than the code currently names:
-
-- `rollout_index` is not a sufficient trajectory identity. Augur now carries a
-  first typed path/projection identity layer; reproducibility still needs those
+- `rollout_index` is not a sufficient trajectory identity. Reproducibility needs
   IDs backed by persisted evidence/calibration artifacts, generator versions,
   scenario inputs, and any non-market event streams.
-- Policy programs now execute through the ordered actor program path. The
-  remaining gap is richer execution trace coverage for no-op, rejected,
-  instructed, and applied decisions as policy families grow.
-- Cash-under-zero and failed-rollout semantics now have a first slice: unsettled
-  required annual-tax obligations produce settlement/failure rows and failed
-  rollout status. The remaining gap is generalizing that shape to mortgages,
-  other cash demands, explicit credit/default state, and continued-vs-terminated
-  projection behavior.
-- Ledger and accounting detail are valuable but not yet accounting-grade. Many
-  arrays are now derived or reconciled, but postings are still stringly typed
-  `domain`/`category` rows rather than balanced journal entries with typed
-  accounts, lots, liabilities, cause ids, and reconciliation invariants.
-- Model governance has a first typed surface: model card, validation-report,
-  evidence, calibration, scenario-generator, and path-set identities are attached
-  to market outputs. They are not yet decision-grade governance artifacts:
+- Policy execution traces need richer coverage for no-op, rejected, instructed,
+  and applied decisions as policy families grow.
+- Cash-under-zero and failed-rollout semantics should generalize beyond the
+  annual-tax obligation slice to mortgages, other cash demands, explicit
+  credit/default state, and continued-vs-terminated projection behavior.
+- Ledger and accounting detail are valuable but not yet accounting-grade.
+  Postings are still stringly typed `domain`/`category` rows rather than
+  balanced journal entries with typed accounts, lots, liabilities, cause ids,
+  and reconciliation invariants.
+- Model governance has a first typed surface but is not yet decision-grade:
   validation is placeholder-level and evidence/calibration artifacts are not
   persisted reviewed records.
-- Calibration/evidence and projection boundaries are improving but should be
-  made explicit: evidence feeds model fitting; fitted scenario generators feed
-  `MarketBundle`; the core projector should not know source-specific evidence.
+- Calibration/evidence and projection boundaries should be explicit: evidence
+  feeds model fitting; fitted scenario generators feed `MarketBundle`; the core
+  projector should not know source-specific evidence.
 
 ## Local Architecture Grounding
 
@@ -474,25 +460,6 @@ Recommended vocabulary:
 - `MarketBundle`
 
 ## Alignment Audit
-
-### Already Matching Good Practice
-
-- Distribution-first unit: `ScenarioSet` across sampled paths is the public
-  unit, with one rollout treated as an inspection detail.
-- Shared path semantics: the same `rollout_index` is comparable across scenario
-  variants within a scenario-set run.
-- Scenario generation boundary: `MarketBundleProvider` and `MarketBundle` keep
-  market sampling separate from projection.
-- Seeded reproducibility: `MarketRequest.seed` and `MarketBundleMetadata.seed`
-  exist.
-- Typed trace surfaces: actions, policy decisions, market observations, ledger
-  entries, balance snapshots, and accounting details are present.
-- Model layer boundary: `augur/model/` handles evidence, fitting, market
-  models, and provider composition.
-- UI direction: `distribution`, `trajectory`, and `accounting_detail`
-  result-panel kinds are the right top-level result modes.
-- Ledger reconciliation direction: e2e tests now assert that important arrays
-  derive from ledger/snapshot/accounting detail.
 
 ### Too Simplistic Or Weird
 

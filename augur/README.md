@@ -10,7 +10,7 @@ engine, real-estate / ownership / private-equity / tax math, market models,
 FastAPI scaffolding, and React shell. User-side configuration (specific
 properties, holdings, agent identities, fitted models, deployment) is
 composed in downstream user repos via the `AugurConfig` schema in
-<app/config.py>.
+<api/config.py>.
 
 See <SPEC.md> for the entity taxonomy + per-rollout evaluation loop.
 
@@ -32,8 +32,8 @@ company-/person-specific modeling assumptions.
 | `core/`         | Engine, typed entity / asset / policy / action / event model, real-estate math, scenario serialization, location regulation registry.                         |
 | `model/`        | Market models (Wilkie, VAR, VECM, DCC-GARCH, bootstrap) + macro market-bundle provider + loaders for FRED/Yahoo/Zillow public-data CSVs.                      |
 | `model/config/` | Public market-source CSVs (FRED series, Yahoo SPY adjusted-close, Zillow ZHVI) and market model config templates. Acquisition recipes in `source/SOURCES.md`. |
-| `app/`          | `AugurConfig` schema, `AugurBackend`, HTTP server, catalog/bootstrap-payload assembly, React app + Tailwind bundle build.                                     |
-| `app/lib/`      | Frontend helpers: casing conversion, columnar table marshaling, scenario-set state, backend client.                                                           |
+| `api/`          | `AugurConfig` schema, `AugurBackend`, HTTP server, catalog/bootstrap-payload assembly, OpenAPI schema export.                                                 |
+| `frontend/`     | React app + Tailwind bundle build, frontend helpers (casing conversion, columnar table marshaling, scenario-set state, backend client).                       |
 
 ## Deployment integration
 
