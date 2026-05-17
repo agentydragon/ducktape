@@ -83,15 +83,15 @@ second ordered roadmap.
       fields should update `augur/model/market_config_test.py`, remain
       Pydantic-parsed at load time, and avoid stale simulation knobs already
       owned by `MarketRequest`.
-- [ ] Define a generic deployment-supplied portfolio YAML contract for real
-      financial inputs. The public schema should cover accounts/cash, public
-      securities, crypto holdings, private-equity lots/marks/tender windows,
-      cost basis, custody/source metadata, and valuation provenance; downstream
-      private repos own the actual values.
-      First public contract: `augur/core/portfolio.py` with
-      `augur/core/testdata/portfolio.example.yaml`. Next step: teach runtime
-      funding policies to consume crypto and tender-window-aware private equity
-      positions instead of only preserving those holdings in typed input data.
+- [ ] Teach runtime funding policies to consume the crypto and
+      tender-window-aware private equity positions modeled in the public
+      portfolio YAML contract (`augur/core/portfolio.py`,
+      `augur/core/testdata/portfolio.example.yaml`). Today
+      `PortfolioStatement.to_initial_balance_sheet()` maps cash + generic S&P 500
+      lots + opaque PE marks into the existing `InitialBalanceSheet` shape and
+      drops crypto holdings and tender windows; the simulator should grow first-
+      class handling for those positions instead of only preserving them in
+      typed input data.
 - [ ] Persist and harden model-governance artifacts for market providers. The
       runtime now attaches typed model card, evidence, calibration, scenario
       generator, path-set, and validation-report identities; the next step is
