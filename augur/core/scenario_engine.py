@@ -67,11 +67,11 @@ from augur.core.scenario_set import (
     AccountingDetail,
     AccountingDetailType,
     AccountType,
-    Action,
     ActorRole,
     AssetType,
     CheckingFloorSellPublicStockPolicy,
     CryptoAssetPosition,
+    Effect,
     FailureEvent,
     FailureEventType,
     FinancingMode,
@@ -106,13 +106,13 @@ from augur.core.scenario_set import (
     RolloutStatus,
     RolloutStatusType,
     Scenario,
-    SellCryptoAction,
-    SellPrivateEquityAction,
+    SellCryptoEffect,
+    SellPrivateEquityEffect,
     SellPublicStockDecision,
-    SellSp500Action,
+    SellSp500Effect,
     SettlementResult,
     SettlementStatus,
-    SettlePropertySaleAction,
+    SettlePropertySaleEffect,
     SpecialAssessmentEvent,
     TaxPaymentAllocationDetail,
 )
@@ -200,7 +200,7 @@ class ScenarioRunArrays:
     net_worth_usd: np.ndarray
     partner_present: np.ndarray
     monthly_spend_usd: np.ndarray
-    actions: tuple[Action, ...]
+    effects: tuple[Effect, ...]
     policy_decisions: tuple[PolicyDecision, ...]
     market_observations: tuple[MarketObservation, ...]
     chart_accounts: tuple[ChartAccount, ...]
@@ -1424,7 +1424,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         np.full(rollout_count, initial_cash - down_payment, dtype="float64")
         - disposition.purchase_closing_cost_usd[:, 0]
     )
-    actions: list[Action] = []
+    effects: list[Effect] = []
     policy_decisions: list[PolicyDecision] = []
     market_observations: list[MarketObservation] = list(_market_path_observations(scenario, market_bundle))
     accounting = AccountingTraceBuilder()
@@ -1705,8 +1705,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         owner_home_equity_claim_for_net_worth = owner_home_equity_claim * unsold_mask
     liquid_net_worth = cash + generic_sp500_value + crypto_value
     net_worth = cash + generic_sp500_value + crypto_value + private_equity_value + owner_home_equity_claim_for_net_worth
-    _record_property_sale_actions(
-        actions,
+    _record_property_sale_effects(
+        effects,
         scenario=scenario,
         disposition=disposition,
         tax_usd=property_sale_tax,
@@ -1752,8 +1752,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             basis_usd=sp500_sale_action_record.basis_usd,
             tax_usd=source_tax,
         )
-        _record_sp500_sale_actions(
-            actions,
+        _record_sp500_sale_effects(
+            effects,
             month_index=sp500_sale_action_record.month_index,
             policy=sp500_sale_action_record.policy,
             amount_usd=sp500_sale_action_record.amount_usd,
@@ -1772,8 +1772,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             amount_usd=crypto_sale_action_record.amount_usd,
             basis_usd=crypto_sale_action_record.basis_usd,
         )
-        _record_crypto_sale_actions(
-            actions,
+        _record_crypto_sale_effects(
+            effects,
             month_index=crypto_sale_action_record.month_index,
             policy=crypto_sale_action_record.policy,
             source_asset_id=crypto_sale_action_record.source_asset_id,
@@ -1800,8 +1800,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             tax_usd=source_tax,
             source_holding_id=private_equity_source_holding_id,
         )
-        _record_private_equity_sale_actions(
-            actions,
+        _record_private_equity_sale_effects(
+            effects,
             month_index=private_equity_sale_action_record.month_index,
             instruction=private_equity_sale_action_record.instruction,
             sale_application=private_equity_sale_action_record.sale_application,
@@ -2286,7 +2286,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         net_worth_usd=net_worth,
         partner_present=partner_present,
         monthly_spend_usd=monthly_spend_from_accounting,
-        actions=_sorted_actions(_with_trajectory_identity(actions, trace_identity_by_rollout)),
+        effects=_sorted_effects(_with_trajectory_identity(effects, trace_identity_by_rollout)),
         policy_decisions=_sorted_policy_decisions(
             _with_trajectory_identity(policy_decisions, trace_identity_by_rollout)
         ),
@@ -3159,8 +3159,8 @@ def _sorted_failure_events(records: list[FailureEvent]) -> tuple[FailureEvent, .
     )
 
 
-def _record_property_sale_actions(
-    actions: list[Action],
+def _record_property_sale_effects(
+    effects: list[Effect],
     *,
     scenario: Scenario,
     disposition: PropertyDispositionArrays,
@@ -3185,8 +3185,8 @@ def _record_property_sale_actions(
         | (net_proceeds[:, month] != 0)
     )
     actor_id = sale_event.actor_id or _primary_owner_actor_id(scenario)
-    actions.extend(
-        SettlePropertySaleAction(
+    effects.extend(
+        SettlePropertySaleEffect(
             rollout_index=rollout_index,
             month_index=month,
             actor_id=actor_id,
@@ -3210,8 +3210,8 @@ def _record_property_sale_actions(
     )
 
 
-def _record_sp500_sale_actions(
-    actions: list[Action],
+def _record_sp500_sale_effects(
+    effects: list[Effect],
     *,
     month_index: int,
     policy: Policy,
@@ -3224,8 +3224,8 @@ def _record_sp500_sale_actions(
         amount = float(amount_usd[rollout_index])
         basis = float(basis_usd[rollout_index])
         tax = float(tax_usd[rollout_index])
-        actions.append(
-            SellSp500Action(
+        effects.append(
+            SellSp500Effect(
                 rollout_index=rollout_index,
                 month_index=month_index,
                 actor_id=policy.actor_id,
@@ -3307,8 +3307,8 @@ def _record_crypto_sale_journal_entries(
         )
 
 
-def _record_crypto_sale_actions(
-    actions: list[Action],
+def _record_crypto_sale_effects(
+    effects: list[Effect],
     *,
     month_index: int,
     policy: Policy,
@@ -3322,8 +3322,8 @@ def _record_crypto_sale_actions(
     for rollout_index in np.nonzero((amount_usd > 0) | (shortfall_usd > 0))[0].tolist():
         amount = float(amount_usd[rollout_index])
         basis = float(basis_usd[rollout_index])
-        actions.append(
-            SellCryptoAction(
+        effects.append(
+            SellCryptoEffect(
                 rollout_index=rollout_index,
                 month_index=month_index,
                 actor_id=policy.actor_id,
@@ -3339,8 +3339,8 @@ def _record_crypto_sale_actions(
         )
 
 
-def _record_private_equity_sale_actions(
-    actions: list[Action],
+def _record_private_equity_sale_effects(
+    effects: list[Effect],
     *,
     month_index: int,
     instruction: PrivateEquitySaleInstructionBatch,
@@ -3348,8 +3348,8 @@ def _record_private_equity_sale_actions(
     estimated_tax_usd: np.ndarray,
 ) -> None:
     sale_tax = estimated_tax_usd
-    actions.extend(
-        SellPrivateEquityAction(
+    effects.extend(
+        SellPrivateEquityEffect(
             rollout_index=rollout_index,
             month_index=month_index,
             actor_id=instruction.actor_id,
@@ -4153,8 +4153,8 @@ def _settlement_status(*, amount_due_usd: float, unpaid_amount_usd: float) -> Se
     return SettlementStatus.PARTIALLY_PAID
 
 
-def _sorted_actions(actions: list[Action]) -> tuple[Action, ...]:
-    return tuple(sorted(actions, key=lambda action: (action.month_index, action.rollout_index, action.action_type)))
+def _sorted_effects(effects: list[Effect]) -> tuple[Effect, ...]:
+    return tuple(sorted(effects, key=lambda effect: (effect.month_index, effect.rollout_index, effect.effect_type)))
 
 
 def _property_cash_flow_arrays(

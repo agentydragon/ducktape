@@ -58,10 +58,10 @@ from augur.core.scenario_set import (
     RolloutStatusType,
     Scenario,
     ScenarioSet,
-    SellPrivateEquityAction,
+    SellPrivateEquityEffect,
     SellPublicStockDecision,
-    SellSp500Action,
-    SettlePropertySaleAction,
+    SellSp500Effect,
+    SettlePropertySaleEffect,
     SpecialAssessmentEvent,
     TaxFilingStatus,
     TaxPaymentAllocationDetail,
@@ -440,7 +440,7 @@ def test_fixed_rate_mortgage_amortizes_and_purchase_cash_outlay_posts_at_month_z
     )
     # Mortgage payment detail is exposed via obligation + settlement rows and the
     # MORTGAGE_INTEREST/MORTGAGE_PRINCIPAL ledger postings asserted above; the
-    # standalone PayMortgageAction row has been collapsed away.
+    # standalone PayMortgageEffect row has been collapsed away.
     assert result.arrays is not None
     mortgage_obligations = tuple(
         obligation
@@ -1009,21 +1009,21 @@ def test_property_sale_records_capital_gains_tax_and_net_proceeds() -> None:
     assert len(sale_accounting_details) == 1
     assert_allclose(sale_accounting_details[0].adjusted_basis_usd, 500_000)
     assert_allclose(sale_accounting_details[0].taxable_gain_usd, taxable_gain)
-    actions = rollout.actions(SettlePropertySaleAction)
-    assert len(actions) == 1
-    action = actions[0]
-    assert action.event_id == "sale"
-    assert action.property_id == "test_property"
-    assert action.policy_id == "property_sale_settlement"
-    assert_allclose(action.gross_sale_usd, sale_value)
-    assert_allclose(action.selling_cost_usd, sale_closing_cost)
-    assert_allclose(action.debt_payoff_usd, 0)
-    assert_allclose(action.adjusted_basis_usd, 500_000)
-    assert_allclose(action.realized_gain_usd, realized_gain)
-    assert_allclose(action.capital_gain_exclusion_usd, 250_000)
-    assert_allclose(action.taxable_gain_usd, taxable_gain)
-    assert_allclose(action.tax_usd, sale_tax)
-    assert_allclose(action.net_proceeds_usd, pretax_net_proceeds)
+    effects = rollout.effects(SettlePropertySaleEffect)
+    assert len(effects) == 1
+    effect = effects[0]
+    assert effect.event_id == "sale"
+    assert effect.property_id == "test_property"
+    assert effect.policy_id == "property_sale_settlement"
+    assert_allclose(effect.gross_sale_usd, sale_value)
+    assert_allclose(effect.selling_cost_usd, sale_closing_cost)
+    assert_allclose(effect.debt_payoff_usd, 0)
+    assert_allclose(effect.adjusted_basis_usd, 500_000)
+    assert_allclose(effect.realized_gain_usd, realized_gain)
+    assert_allclose(effect.capital_gain_exclusion_usd, 250_000)
+    assert_allclose(effect.taxable_gain_usd, taxable_gain)
+    assert_allclose(effect.tax_usd, sale_tax)
+    assert_allclose(effect.net_proceeds_usd, pretax_net_proceeds)
 
 
 def test_partner_sale_claim_uses_settlement_net_proceeds() -> None:
@@ -1065,15 +1065,15 @@ def test_partner_sale_claim_uses_settlement_net_proceeds() -> None:
     )
 
     rollout = result.rollout(0)
-    sale_action = rollout.actions(SettlePropertySaleAction)[0]
-    sale_net_proceeds = sale_action.net_proceeds_usd
+    sale_effect = rollout.effects(SettlePropertySaleEffect)[0]
+    sale_net_proceeds = sale_effect.net_proceeds_usd
     ownership_pct = rollout.series(ReportMetric.PARTNER_OWNERSHIP_PCT)[sale_month]
     expected_partner_claim = sale_net_proceeds * ownership_pct
     expected_owner_claim = sale_net_proceeds - expected_partner_claim
     gross_equity_claim = rollout.series(ReportMetric.HOME_EQUITY_USD)[sale_month] * ownership_pct
 
     assert_allclose(rollout.series(ReportMetric.PROPERTY_SALE_NET_PROCEEDS_USD)[sale_month], sale_net_proceeds)
-    assert_allclose(rollout.series(ReportMetric.PROPERTY_SALE_DEBT_PAYOFF_USD)[sale_month], sale_action.debt_payoff_usd)
+    assert_allclose(rollout.series(ReportMetric.PROPERTY_SALE_DEBT_PAYOFF_USD)[sale_month], sale_effect.debt_payoff_usd)
     assert_allclose(
         _posting_matrix(
             result,
@@ -1100,11 +1100,11 @@ def test_partner_sale_claim_uses_settlement_net_proceeds() -> None:
     # from the OWNERSHIP_PARTNER_HOME_EQUITY_CLAIM balance snapshots.
 
 
-def test_simulate_set_response_serializes_sale_actions_with_tax_detail() -> None:
-    """The public response payload preserves per-rollout action details for UI inspection."""
+def test_simulate_set_response_serializes_sale_effects_with_tax_detail() -> None:
+    """The public response payload preserves per-rollout effect details for UI inspection."""
     scenario = Scenario(
-        scenario_id="serialized_sale_actions",
-        label="Serialized Sale Actions",
+        scenario_id="serialized_sale_effects",
+        label="Serialized Sale Effects",
         actors=(_simple_actor(),),
         events=(PropertySaleEvent(event_id="property_sale", month_index=2, property_id="test_property"),),
         property_selection=PropertySelection(
@@ -1152,8 +1152,8 @@ def test_simulate_set_response_serializes_sale_actions_with_tax_detail() -> None
         ),
     )
     scenario_set = ScenarioSet(
-        scenario_set_id="serialized_sale_actions_set",
-        title="Serialized Sale Actions Set",
+        scenario_set_id="serialized_sale_effects_set",
+        title="Serialized Sale Effects Set",
         market_request=MarketRequest(market_model_id="e2e_noop", rollout_count=1, horizon_months=2, seed=0),
         scenarios=(scenario,),
     )
@@ -1170,8 +1170,8 @@ def test_simulate_set_response_serializes_sale_actions_with_tax_detail() -> None
     assert {"federal_income_tax_usd", "california_income_tax_usd", "generic_sp500_sale_tax_usd"} <= set(
         result["monthly_columns"]["columns"]
     )
-    actions = {action["action_type"]: action for action in result["actions"]}
-    assert set(actions) == {"sell_sp500", "sell_private_equity", "settle_property_sale"}
+    effects = {effect["effect_type"]: effect for effect in result["effects"]}
+    assert set(effects) == {"sell_sp500", "sell_private_equity", "settle_property_sale"}
     account_by_id = {account["chart_account_id"]: account for account in result["chart_accounts"]}
     posting_roles = {account_by_id[posting["chart_account_id"]]["role"] for posting in result["postings"]}
     assert {"public_security", "private_equity", "checking_cash", "tax_expense"} <= posting_roles
@@ -1185,42 +1185,42 @@ def test_simulate_set_response_serializes_sale_actions_with_tax_detail() -> None
         detail["detail_type"] for detail in result["accounting_details"]
     }
 
-    sp500_action = actions["sell_sp500"]
-    assert sp500_action["amount_usd"] == 20_000
-    assert sp500_action["basis_usd"] == 10_000
-    assert sp500_action["gain_usd"] == 10_000
-    assert sp500_action["tax_usd"] > 0
-    assert_allclose(sp500_action["after_tax_proceeds_usd"], sp500_action["amount_usd"] - sp500_action["tax_usd"])
+    sp500_effect = effects["sell_sp500"]
+    assert sp500_effect["amount_usd"] == 20_000
+    assert sp500_effect["basis_usd"] == 10_000
+    assert sp500_effect["gain_usd"] == 10_000
+    assert sp500_effect["tax_usd"] > 0
+    assert_allclose(sp500_effect["after_tax_proceeds_usd"], sp500_effect["amount_usd"] - sp500_effect["tax_usd"])
 
-    private_equity_action = actions["sell_private_equity"]
-    assert private_equity_action["event_id"] is None
-    assert private_equity_action["event_type"] is None
-    assert private_equity_action["opportunity_id"] == (
-        f"{private_equity_action['path_set_id']}:path:0:month:1:private_equity_holding:pe:sale_opportunity"
+    private_equity_effect = effects["sell_private_equity"]
+    assert private_equity_effect["event_id"] is None
+    assert private_equity_effect["event_type"] is None
+    assert private_equity_effect["opportunity_id"] == (
+        f"{private_equity_effect['path_set_id']}:path:0:month:1:private_equity_holding:pe:sale_opportunity"
     )
-    assert private_equity_action["opportunity_cause_id"] == private_equity_action["opportunity_id"]
-    assert private_equity_action["amount_usd"] == 50_000
-    assert private_equity_action["basis_usd"] == 20_000
-    assert private_equity_action["taxable_gain_usd"] == 30_000
-    assert private_equity_action["estimated_tax_usd"] > 0
+    assert private_equity_effect["opportunity_cause_id"] == private_equity_effect["opportunity_id"]
+    assert private_equity_effect["amount_usd"] == 50_000
+    assert private_equity_effect["basis_usd"] == 20_000
+    assert private_equity_effect["taxable_gain_usd"] == 30_000
+    assert private_equity_effect["estimated_tax_usd"] > 0
     assert_allclose(
-        private_equity_action["after_tax_proceeds_usd"],
-        private_equity_action["amount_usd"] - private_equity_action["estimated_tax_usd"],
+        private_equity_effect["after_tax_proceeds_usd"],
+        private_equity_effect["amount_usd"] - private_equity_effect["estimated_tax_usd"],
     )
 
-    property_action = actions["settle_property_sale"]
-    assert property_action["event_id"] == "property_sale"
-    assert property_action["property_id"] == "test_property"
-    assert property_action["gross_sale_usd"] == 900_000
-    assert property_action["selling_cost_usd"] == 58_500
-    assert property_action["adjusted_basis_usd"] == 500_000
-    assert property_action["taxable_capital_gain_usd"] == 91_500
-    assert property_action["tax_usd"] > 0
+    property_effect = effects["settle_property_sale"]
+    assert property_effect["event_id"] == "property_sale"
+    assert property_effect["property_id"] == "test_property"
+    assert property_effect["gross_sale_usd"] == 900_000
+    assert property_effect["selling_cost_usd"] == 58_500
+    assert property_effect["adjusted_basis_usd"] == 500_000
+    assert property_effect["taxable_capital_gain_usd"] == 91_500
+    assert property_effect["tax_usd"] > 0
     # net_proceeds is the cash actually received at the sale event (pre-tax);
     # sale tax accrues to the sale month for provenance and settles at year-end.
     assert_allclose(
-        property_action["net_proceeds_usd"],
-        property_action["gross_sale_usd"] - property_action["selling_cost_usd"] - property_action["debt_payoff_usd"],
+        property_effect["net_proceeds_usd"],
+        property_effect["gross_sale_usd"] - property_effect["selling_cost_usd"] - property_effect["debt_payoff_usd"],
     )
 
 
@@ -1411,16 +1411,16 @@ def test_checking_floor_policy_sells_sp500_to_restore_cash_floor() -> None:
         result.matrix(ReportMetric.GENERIC_SP500_SALE_USD) - result.matrix(ReportMetric.GENERIC_SP500_SALE_TAX_USD),
     )
 
-    actions = result.actions(SellSp500Action)
-    assert len(actions) == 1
-    assert actions[0].month_index == 5
-    assert actions[0].policy_id == "checking_floor"
-    assert actions[0].amount_usd == 20_000
-    assert_allclose(actions[0].after_tax_proceeds_usd, 20_000 - expected_stock_sale_tax)
-    assert actions[0].basis_usd == 10_000
-    assert actions[0].gain_usd == 10_000
-    assert_allclose(actions[0].tax_usd, expected_stock_sale_tax)
-    assert actions[0].shortfall_usd == 0
+    effects = result.effects(SellSp500Effect)
+    assert len(effects) == 1
+    assert effects[0].month_index == 5
+    assert effects[0].policy_id == "checking_floor"
+    assert effects[0].amount_usd == 20_000
+    assert_allclose(effects[0].after_tax_proceeds_usd, 20_000 - expected_stock_sale_tax)
+    assert effects[0].basis_usd == 10_000
+    assert effects[0].gain_usd == 10_000
+    assert_allclose(effects[0].tax_usd, expected_stock_sale_tax)
+    assert effects[0].shortfall_usd == 0
     decisions = result.policy_decisions(SellPublicStockDecision)
     assert len(decisions) == 1
     assert decisions[0].month_index == 5
@@ -1471,7 +1471,7 @@ def test_multiple_checking_floor_rules_execute_in_policy_order() -> None:
     assert_allclose(rollout.series(ReportMetric.GENERIC_SP500_SALE_BASIS_USD)[0], 25_000)
     assert_allclose(rollout.series(ReportMetric.CHECKING_FLOOR_SHORTFALL_USD)[0], 0)
 
-    assert [(action.policy_id, action.amount_usd) for action in result.actions(SellSp500Action)] == [
+    assert [(effect.policy_id, effect.amount_usd) for effect in result.effects(SellSp500Effect)] == [
         ("primary_floor", 15_000),
         ("top_up_floor", 10_000),
     ]
@@ -1515,7 +1515,7 @@ def test_private_equity_tender_sale_into_cash_increases_only_actual_liquid_asset
     assert_allclose(no_opportunity.rollout(0).series(ReportMetric.PRIVATE_EQUITY_SALE_USD), 0)
     assert_allclose(no_opportunity.rollout(0).series(ReportMetric.CASH_USD)[12], 10_000)
     assert_allclose(no_opportunity.rollout(0).series(ReportMetric.LIQUID_NET_WORTH_USD)[12], 10_000)
-    assert no_opportunity.actions(SellPrivateEquityAction) == ()
+    assert no_opportunity.effects(SellPrivateEquityEffect) == ()
     no_opportunity_decisions = no_opportunity.policy_decisions(PrivateEquitySaleDecision)
     assert len(no_opportunity_decisions) == 13
     assert {decision.decision_reason for decision in no_opportunity_decisions} == {
@@ -1604,23 +1604,23 @@ def test_private_equity_tender_sale_into_cash_increases_only_actual_liquid_asset
         result.matrix(ReportMetric.PRIVATE_EQUITY_SALE_USD) - result.matrix(ReportMetric.PRIVATE_EQUITY_SALE_TAX_USD),
     )
 
-    actions = result.actions(SellPrivateEquityAction)
-    assert len(actions) == 1
-    assert actions[0].month_index == 12
-    assert actions[0].event_id is None
-    assert actions[0].event_type is None
-    assert actions[0].opportunity_id == expected_opportunity_id
-    assert actions[0].opportunity_cause_id == expected_opportunity_id
-    assert actions[0].actor_id == "alpha"
-    assert actions[0].policy_id == "private_equity_sale"
-    assert actions[0].amount_usd == expected_sale
-    assert actions[0].basis_usd == expected_basis
-    assert actions[0].taxable_gain_usd == expected_taxable_gain
-    assert_allclose(actions[0].estimated_tax_usd, expected_tax)
-    assert_allclose(actions[0].after_tax_proceeds_usd, expected_after_tax_proceeds)
-    assert actions[0].units_sold == 50
-    assert actions[0].sold_fraction == 0.5
-    assert actions[0].proceeds_destination is AccountType.CHECKING
+    effects = result.effects(SellPrivateEquityEffect)
+    assert len(effects) == 1
+    assert effects[0].month_index == 12
+    assert effects[0].event_id is None
+    assert effects[0].event_type is None
+    assert effects[0].opportunity_id == expected_opportunity_id
+    assert effects[0].opportunity_cause_id == expected_opportunity_id
+    assert effects[0].actor_id == "alpha"
+    assert effects[0].policy_id == "private_equity_sale"
+    assert effects[0].amount_usd == expected_sale
+    assert effects[0].basis_usd == expected_basis
+    assert effects[0].taxable_gain_usd == expected_taxable_gain
+    assert_allclose(effects[0].estimated_tax_usd, expected_tax)
+    assert_allclose(effects[0].after_tax_proceeds_usd, expected_after_tax_proceeds)
+    assert effects[0].units_sold == 50
+    assert effects[0].sold_fraction == 0.5
+    assert effects[0].proceeds_destination is AccountType.CHECKING
 
 
 def test_fixed_amount_private_equity_sale_rule_sells_on_market_opportunity() -> None:
@@ -1669,19 +1669,19 @@ def test_fixed_amount_private_equity_sale_rule_sells_on_market_opportunity() -> 
     assert_allclose(rollout.series(ReportMetric.PRIVATE_EQUITY_SALE_TAX_USD)[6], expected_tax)
     assert_allclose(rollout.series(ReportMetric.PRIVATE_EQUITY_VALUE_USD)[6], 150_000)
     assert_allclose(rollout.series(ReportMetric.CASH_USD)[6], 60_000 - expected_tax)
-    actions = result.actions(SellPrivateEquityAction)
-    assert len(actions) == 1
-    assert actions[0].event_id is None
-    assert actions[0].event_type is None
-    assert actions[0].amount_usd == 50_000
-    assert_allclose(actions[0].after_tax_proceeds_usd, 50_000 - expected_tax)
+    effects = result.effects(SellPrivateEquityEffect)
+    assert len(effects) == 1
+    assert effects[0].event_id is None
+    assert effects[0].event_type is None
+    assert effects[0].amount_usd == 50_000
+    assert_allclose(effects[0].after_tax_proceeds_usd, 50_000 - expected_tax)
 
 
 def test_every_monthly_flow_metric_reconciles_to_canonical_detail_surface() -> None:
     """Cleanup-audit item 2 invariant: every public monthly flow column is derived
     from the canonical detail surface (ledger postings, balance snapshots,
     accounting details, or market observations) — never from a parallel
-    Action recorder. This guard rebuilds each monthly metric matrix
+    Effect recorder. This guard rebuilds each monthly metric matrix
     from the canonical detail rows the engine emits and asserts it equals the
     monthly array reported in the result.
 

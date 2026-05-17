@@ -34,8 +34,8 @@ from augur.core.provenance import (
 from augur.core.scenario_engine import ScenarioRunArrays, report_metric_array, run_scenario_vectorized
 from augur.core.scenario_set import (
     AccountingDetail,
-    Action,
     ActorRole,
+    Effect,
     EventType,
     ExogenousPathIdentity,
     MarketObservation,
@@ -54,7 +54,7 @@ from augur.core.scenario_set import (
     ScenarioSetRunResponse,
 )
 
-ActionT = TypeVar("ActionT")
+EffectT = TypeVar("EffectT")
 AccountingDetailT = TypeVar("AccountingDetailT")
 DecisionT = TypeVar("DecisionT")
 ObservationT = TypeVar("ObservationT")
@@ -76,13 +76,13 @@ class RolloutDetail:
         return float(self.scenario_run.terminal(metric, rollout=self.rollout_index))
 
     @overload
-    def actions(self, action_type: type[ActionT]) -> tuple[ActionT, ...]: ...
+    def effects(self, effect_type: type[EffectT]) -> tuple[EffectT, ...]: ...
 
     @overload
-    def actions(self, action_type: None = None) -> tuple[Action, ...]: ...
+    def effects(self, effect_type: None = None) -> tuple[Effect, ...]: ...
 
-    def actions(self, action_type: type[Any] | None = None) -> tuple[Any, ...]:
-        return self.scenario_run.actions(action_type, rollout=self.rollout_index)
+    def effects(self, effect_type: type[Any] | None = None) -> tuple[Any, ...]:
+        return self.scenario_run.effects(effect_type, rollout=self.rollout_index)
 
     @overload
     def policy_decisions(self, decision_type: type[DecisionT]) -> tuple[DecisionT, ...]: ...
@@ -164,21 +164,21 @@ class ScenarioRun:
         return RolloutDetail(scenario_run=self, rollout_index=rollout_index)
 
     @overload
-    def actions(self, action_type: type[ActionT], *, rollout: int | None = None) -> tuple[ActionT, ...]: ...
+    def effects(self, effect_type: type[EffectT], *, rollout: int | None = None) -> tuple[EffectT, ...]: ...
 
     @overload
-    def actions(self, action_type: None = None, *, rollout: int | None = None) -> tuple[Action, ...]: ...
+    def effects(self, effect_type: None = None, *, rollout: int | None = None) -> tuple[Effect, ...]: ...
 
-    def actions(self, action_type: type[Any] | None = None, *, rollout: int | None = None) -> tuple[Any, ...]:
+    def effects(self, effect_type: type[Any] | None = None, *, rollout: int | None = None) -> tuple[Any, ...]:
         if self.arrays is None:
             return ()
-        actions: tuple[Any, ...] = self.arrays.actions
-        if action_type is not None:
-            actions = tuple(action for action in actions if isinstance(action, action_type))
+        effects: tuple[Any, ...] = self.arrays.effects
+        if effect_type is not None:
+            effects = tuple(effect for effect in effects if isinstance(effect, effect_type))
         if rollout is not None:
             self._validate_rollout_index(rollout)
-            actions = tuple(action for action in actions if action.rollout_index == rollout)
-        return actions
+            effects = tuple(effect for effect in effects if effect.rollout_index == rollout)
+        return effects
 
     @overload
     def policy_decisions(
@@ -368,7 +368,7 @@ class ScenarioRun:
             metric_fan_columns=self.arrays.metric_fan_columns(),
             monthly_columns=self.arrays.monthly_columns() if report_spec.include_monthly_columns else None,
             terminal_columns=self.arrays.terminal_columns(),
-            actions=self.arrays.actions,
+            effects=self.arrays.effects,
             policy_decisions=self.arrays.policy_decisions,
             market_observations=self.arrays.market_observations,
             chart_accounts=self.arrays.chart_accounts,

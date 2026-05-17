@@ -10,8 +10,8 @@ from augur.core.market_bundle import MarketBundle, MarketBundleMetadata
 from augur.core.scenario_engine import MonthlyColumnSource, monthly_column_specs, run_scenario_vectorized
 from augur.core.scenario_set import (
     AccountType,
-    ActionType,
     AssetType,
+    EffectType,
     FundingDecisionType,
     FundingSourceType,
     MarketRequest,
@@ -28,7 +28,7 @@ from augur.core.scenario_set import (
     ScenarioSet,
     SellPublicStockDecision,
     SettlementStatus,
-    SettlePropertySaleAction,
+    SettlePropertySaleEffect,
 )
 
 
@@ -496,19 +496,19 @@ def test_terminal_property_sale_proceeds_pay_off_debt() -> None:
         result.property_sale_net_proceeds_usd[:, 3], expected_gross - expected_sale_cost - expected_debt_payoff
     )
     assert_allclose(result.net_property_sale_cash_flow_usd[:, 3], result.property_sale_net_proceeds_usd[:, 3])
-    sale_actions = [action for action in result.actions if isinstance(action, SettlePropertySaleAction)]
-    assert len(sale_actions) == 2
-    assert {action.rollout_index for action in sale_actions} == {0, 1}
-    for action in sale_actions:
-        assert action.event_id == "sale"
-        assert action.property_id == "vallejo_calhoun"
-        assert action.gross_sale_usd == expected_gross
-        assert action.selling_cost_usd == expected_sale_cost
-        assert action.adjusted_basis_usd == expected_adjusted_basis
-        assert_allclose(action.debt_payoff_usd, expected_debt_payoff[action.rollout_index])
-        assert action.capital_gain_exclusion_usd == expected_realized_gain
-        assert action.taxable_capital_gain_usd == 0
-        assert_allclose(action.net_proceeds_usd, result.property_sale_net_proceeds_usd[action.rollout_index, 3])
+    sale_effects = [effect for effect in result.effects if isinstance(effect, SettlePropertySaleEffect)]
+    assert len(sale_effects) == 2
+    assert {effect.rollout_index for effect in sale_effects} == {0, 1}
+    for effect in sale_effects:
+        assert effect.event_id == "sale"
+        assert effect.property_id == "vallejo_calhoun"
+        assert effect.gross_sale_usd == expected_gross
+        assert effect.selling_cost_usd == expected_sale_cost
+        assert effect.adjusted_basis_usd == expected_adjusted_basis
+        assert_allclose(effect.debt_payoff_usd, expected_debt_payoff[effect.rollout_index])
+        assert effect.capital_gain_exclusion_usd == expected_realized_gain
+        assert effect.taxable_capital_gain_usd == 0
+        assert_allclose(effect.net_proceeds_usd, result.property_sale_net_proceeds_usd[effect.rollout_index, 3])
 
 
 def test_location_local_regulation_drives_property_tax() -> None:
@@ -751,22 +751,22 @@ def test_checking_floor_policy_sells_public_stock_with_basis_placeholder() -> No
     assert_allclose(result.generic_sp500_value_usd[:, 0], 30_000)
     assert_allclose(result.generic_sp500_sale_usd[:, 1:], 0)
     assert np.all(result.generic_sp500_value_usd[:, 1] > result.generic_sp500_value_usd[:, 0])
-    assert len(result.actions) == 2
-    assert {action.rollout_index for action in result.actions} == {0, 1}
-    for action in result.actions:
-        assert action.action_type is ActionType.SELL_SP500
-        assert action.month_index == 0
-        assert action.actor_id == "owner"
-        assert action.policy_id == "checking_floor"
-        assert action.amount_usd == 20_000
-        assert_allclose(action.after_tax_proceeds_usd, 20_000 - 42.94)
-        assert action.basis_usd == 10_000
-        assert action.gain_usd == 10_000
-        assert_allclose(action.tax_usd, 42.94)
-        assert action.shortfall_usd == 0
+    assert len(result.effects) == 2
+    assert {effect.rollout_index for effect in result.effects} == {0, 1}
+    for effect in result.effects:
+        assert effect.effect_type is EffectType.SELL_SP500
+        assert effect.month_index == 0
+        assert effect.actor_id == "owner"
+        assert effect.policy_id == "checking_floor"
+        assert effect.amount_usd == 20_000
+        assert_allclose(effect.after_tax_proceeds_usd, 20_000 - 42.94)
+        assert effect.basis_usd == 10_000
+        assert effect.gain_usd == 10_000
+        assert_allclose(effect.tax_usd, 42.94)
+        assert effect.shortfall_usd == 0
 
 
-def test_scenario_set_response_serializes_discriminated_actions() -> None:
+def test_scenario_set_response_serializes_discriminated_effects() -> None:
     scenario_set = ScenarioSet.model_validate(
         _scenario_set_body(
             _scenario_body(
@@ -789,9 +789,9 @@ def test_scenario_set_response_serializes_discriminated_actions() -> None:
     response = simulate_set(scenario_set, market_bundle=_bundle()).to_response()
     payload = response.model_dump(mode="json")
 
-    action = payload["scenario_results"][0]["actions"][0]
-    assert action["action_type"] == "sell_sp500"
-    assert action["amount_usd"] == 20_000
+    effect = payload["scenario_results"][0]["effects"][0]
+    assert effect["effect_type"] == "sell_sp500"
+    assert effect["amount_usd"] == 20_000
 
 
 def test_checking_floor_policy_does_not_sell_when_cash_is_above_floor() -> None:
@@ -1284,7 +1284,7 @@ def test_private_equity_sale_opportunity_without_policy_does_not_sell() -> None:
     assert_allclose(result.private_equity_sale_opportunity_value_usd[:, 1], 50_000)
     assert_allclose(result.cash_usd[:, 1], 10_000)
     assert np.all(result.private_equity_sale_opportunity_event[:, 1])
-    assert result.actions == ()
+    assert result.effects == ()
 
 
 def test_private_equity_fixed_sale_into_cash_requires_opportunity_and_policy() -> None:
@@ -1309,7 +1309,7 @@ def test_private_equity_fixed_sale_into_cash_requires_opportunity_and_policy() -
 
     no_opportunity = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
     assert_allclose(no_opportunity.private_equity_sale_usd, 0)
-    assert no_opportunity.actions == ()
+    assert no_opportunity.effects == ()
     no_opportunity_decisions = [
         decision
         for decision in no_opportunity.policy_decisions
@@ -1340,26 +1340,26 @@ def test_private_equity_fixed_sale_into_cash_requires_opportunity_and_policy() -
     # but settles at the last in-horizon month belonging to the tax year.
     assert_allclose(result.cash_usd[:, 1], 30_000)
     assert_allclose(result.cash_usd[:, 3], 30_000 - expected_tax)
-    actions = [action for action in result.actions if action.action_type is ActionType.SELL_PRIVATE_EQUITY]
-    assert len(actions) == 2
-    for action in actions:
+    effects = [effect for effect in result.effects if effect.effect_type is EffectType.SELL_PRIVATE_EQUITY]
+    assert len(effects) == 2
+    for effect in effects:
         expected_opportunity_id = (
-            f"{market_bundle.metadata.path_set_id}:path:{action.rollout_index}:month:1:"
+            f"{market_bundle.metadata.path_set_id}:path:{effect.rollout_index}:month:1:"
             "private_equity_holding:private_equity:sale_opportunity"
         )
-        assert action.event_id is None
-        assert action.event_type is None
-        assert action.opportunity_id == expected_opportunity_id
-        assert action.opportunity_cause_id == expected_opportunity_id
-        assert action.actor_id == "owner"
-        assert action.policy_id == "private_equity_sale"
-        assert action.amount_usd == 20_000
-        assert_allclose(action.after_tax_proceeds_usd, 20_000 - expected_tax)
-        assert action.basis_usd == 0
-        assert_allclose(action.estimated_tax_usd, expected_tax)
-        assert action.units_sold == 40
-        assert action.sold_fraction == 0.4
-        assert action.proceeds_destination is AccountType.CHECKING
+        assert effect.event_id is None
+        assert effect.event_type is None
+        assert effect.opportunity_id == expected_opportunity_id
+        assert effect.opportunity_cause_id == expected_opportunity_id
+        assert effect.actor_id == "owner"
+        assert effect.policy_id == "private_equity_sale"
+        assert effect.amount_usd == 20_000
+        assert_allclose(effect.after_tax_proceeds_usd, 20_000 - expected_tax)
+        assert effect.basis_usd == 0
+        assert_allclose(effect.estimated_tax_usd, expected_tax)
+        assert effect.units_sold == 40
+        assert effect.sold_fraction == 0.4
+        assert effect.proceeds_destination is AccountType.CHECKING
     sale_decisions = [
         decision
         for decision in result.policy_decisions
@@ -1796,7 +1796,7 @@ def test_checking_floor_policy_falls_through_to_crypto_after_sp500_exhausted() -
     # only — verify the policy is at least recorded and crypto value tracks
     # correctly while it sits there.
     assert_allclose(result.crypto_value_usd[:, 0], 10_000)
-    assert {action.action_type for action in result.actions} >= {ActionType.SELL_SP500}
+    assert {effect.effect_type for effect in result.effects} >= {EffectType.SELL_SP500}
 
 
 def test_required_tax_obligation_funded_by_crypto_after_sp500_exhausted() -> None:
@@ -1857,7 +1857,7 @@ def test_required_tax_obligation_funded_by_crypto_after_sp500_exhausted() -> Non
         assert decision.source_type is FundingSourceType.CRYPTO_ASSET
         assert decision.source_asset_type is AssetType.CRYPTO
         assert decision.funded_cash_usd > 0
-    assert {action.action_type for action in result.actions} >= {ActionType.SELL_CRYPTO}
+    assert {effect.effect_type for effect in result.effects} >= {EffectType.SELL_CRYPTO}
 
 
 def test_checking_floor_policy_with_crypto_only_preference_sells_crypto() -> None:

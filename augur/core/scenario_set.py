@@ -55,14 +55,14 @@ class LiquidityReserveRuleType(StrEnum):
     PROJECTED_DEFICITS = "projected_deficits"
 
 
-class ActionType(StrEnum):
-    """Discriminator for user-visible trajectory actions.
+class EffectType(StrEnum):
+    """Discriminator for user-visible trajectory effects (realized state changes).
 
     Restricted to sale-class commands: the system-emitted accounting moves
     (mortgage settlement, partner contributions, partner-equity accruals,
     monthly spend) are derivable from ledger postings, balance snapshots, and
     accounting details — the canonical detail surface — so they are not
-    surfaced as separate action rows.
+    surfaced as separate effect rows.
     """
 
     SELL_SP500 = "sell_sp500"
@@ -462,13 +462,13 @@ class _TraceBase(ApiModel):
     projection_trajectory_id: str | None = None
 
 
-class _ActionBase(_TraceBase):
+class _EffectBase(_TraceBase):
     actor_id: str
     policy_id: str
 
 
-class SellSp500Action(_ActionBase):
-    action_type: Literal[ActionType.SELL_SP500] = ActionType.SELL_SP500
+class SellSp500Effect(_EffectBase):
+    effect_type: Literal[EffectType.SELL_SP500] = EffectType.SELL_SP500
     amount_usd: float
     after_tax_proceeds_usd: float
     basis_usd: float
@@ -477,8 +477,8 @@ class SellSp500Action(_ActionBase):
     shortfall_usd: float
 
 
-class SellCryptoAction(_ActionBase):
-    action_type: Literal[ActionType.SELL_CRYPTO] = ActionType.SELL_CRYPTO
+class SellCryptoEffect(_EffectBase):
+    effect_type: Literal[EffectType.SELL_CRYPTO] = EffectType.SELL_CRYPTO
     source_asset_id: str
     asset_symbol: str
     amount_usd: float
@@ -488,8 +488,8 @@ class SellCryptoAction(_ActionBase):
     shortfall_usd: float
 
 
-class SellPrivateEquityAction(_ActionBase):
-    action_type: Literal[ActionType.SELL_PRIVATE_EQUITY] = ActionType.SELL_PRIVATE_EQUITY
+class SellPrivateEquityEffect(_EffectBase):
+    effect_type: Literal[EffectType.SELL_PRIVATE_EQUITY] = EffectType.SELL_PRIVATE_EQUITY
     event_id: str | None = None
     event_type: EventType | None = None
     opportunity_id: str | None = None
@@ -504,8 +504,8 @@ class SellPrivateEquityAction(_ActionBase):
     proceeds_destination: AccountType | AssetType
 
 
-class SettlePropertySaleAction(_ActionBase):
-    action_type: Literal[ActionType.SETTLE_PROPERTY_SALE] = ActionType.SETTLE_PROPERTY_SALE
+class SettlePropertySaleEffect(_EffectBase):
+    effect_type: Literal[EffectType.SETTLE_PROPERTY_SALE] = EffectType.SETTLE_PROPERTY_SALE
     event_id: str
     event_type: Literal[EventType.PROPERTY_SALE] = EventType.PROPERTY_SALE
     property_id: PropertyId
@@ -524,9 +524,9 @@ class SettlePropertySaleAction(_ActionBase):
     proceeds_destination: AccountType = AccountType.CHECKING
 
 
-Action = Annotated[
-    SellSp500Action | SellCryptoAction | SellPrivateEquityAction | SettlePropertySaleAction,
-    Field(discriminator="action_type"),
+Effect = Annotated[
+    SellSp500Effect | SellCryptoEffect | SellPrivateEquityEffect | SettlePropertySaleEffect,
+    Field(discriminator="effect_type"),
 ]
 
 
@@ -1002,7 +1002,7 @@ class ScenarioResult(ApiModel):
     metric_fan_columns: dict[str, ColumnarTable] = Field(default_factory=dict)
     monthly_columns: ColumnarTable | None = None
     terminal_columns: ColumnarTable | None = None
-    actions: tuple[Action, ...] = ()
+    effects: tuple[Effect, ...] = ()
     policy_decisions: tuple[PolicyDecision, ...] = ()
     market_observations: tuple[MarketObservation, ...] = ()
     chart_accounts: tuple[ChartAccount, ...] = ()
