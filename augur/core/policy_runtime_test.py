@@ -183,17 +183,12 @@ def test_partner_contribution_instruction_applies_house_costs_and_principal_cred
     np.testing.assert_allclose(result.house_cost_share, [0.0, 0.5, 1.0])
     np.testing.assert_allclose(result.principal_credit_usd, [0.0, 200.0, 500.0])
     np.testing.assert_allclose(result.owner_principal_usd, [0.0, 200.0, 0.0])
-    assert [entry.journal_entry_type for entry in result.journal_entries] == [
-        JournalEntryType.PARTNER_CONTRIBUTION,
-        JournalEntryType.OWNERSHIP_CLAIM_ACCRUAL,
-    ]
-    transfer, allocation = result.journal_entries
-    np.testing.assert_allclose(
-        _posting_amount(transfer, ChartAccountRole.CHECKING_CASH, PostingSide.DEBIT), [0.0, 1_000.0, 3_000.0]
-    )
-    np.testing.assert_allclose(
-        _posting_amount(transfer, ChartAccountRole.CHECKING_CASH, PostingSide.CREDIT), [0.0, 1_000.0, 3_000.0]
-    )
+    # The cross-actor cash transfer is owned by the obligation pipeline
+    # (ObligationType.PARTNER_CONTRIBUTION). This helper only emits the
+    # allocation entry mapping the contribution to PARTNER_CONTRIBUTION_USED /
+    # PARTNER_UNALLOCATED_CLAIM / PARTNER_CONTRIBUTION_TRANSFER.
+    assert [entry.journal_entry_type for entry in result.journal_entries] == [JournalEntryType.OWNERSHIP_CLAIM_ACCRUAL]
+    allocation = result.journal_entries[0]
     np.testing.assert_allclose(
         _posting_amount(allocation, ChartAccountRole.PARTNER_CONTRIBUTION_USED, PostingSide.DEBIT),
         [0.0, 1_000.0, 2_000.0],
@@ -201,6 +196,12 @@ def test_partner_contribution_instruction_applies_house_costs_and_principal_cred
     np.testing.assert_allclose(
         _posting_amount(allocation, ChartAccountRole.PARTNER_UNALLOCATED_CLAIM, PostingSide.DEBIT), [0.0, 0.0, 1_000.0]
     )
+    np.testing.assert_allclose(
+        _posting_amount(allocation, ChartAccountRole.PARTNER_CONTRIBUTION_TRANSFER, PostingSide.CREDIT),
+        [0.0, 1_000.0, 3_000.0],
+    )
+    posted_roles = {posting.role for posting in allocation.postings}
+    assert ChartAccountRole.CHECKING_CASH not in posted_roles
 
 
 def test_partner_ownership_accrual_applies_freeze_and_records_ledgers() -> None:
@@ -294,6 +295,9 @@ def test_partner_ownership_aggregate_emits_owner_journal_and_snapshots() -> None
 
 
 def test_property_operating_cash_flow_application_records_balanced_journal() -> None:
+    """The operating JE handles rental income net of rental fees; property tax,
+    HOA, insurance, and maintenance are routed through the obligation pipeline
+    by the engine and do not appear on this JE."""
     result = apply_property_operating_cash_flows(
         actor_id="alpha",
         policy_id="property_operating_cash_flow",
@@ -308,8 +312,11 @@ def test_property_operating_cash_flow_application_records_balanced_journal() -> 
 
     assert result.actor_id == "alpha"
     assert result.policy_id == "property_operating_cash_flow"
+    # Carrying cost still aggregates all six cost lines for reporting parity.
     np.testing.assert_allclose(result.property_carrying_cost_usd, [0.0, 442.0])
-    np.testing.assert_allclose(result.net_operating_cash_flow_usd, [0.0, 1_458.0])
+    # net_operating_cash_flow only nets rental income against the direct rental
+    # fees; the obligation-routed cost lines are deducted elsewhere.
+    np.testing.assert_allclose(result.net_operating_cash_flow_usd, [0.0, 1_708.0])
     assert len(result.journal_entries) == 1
     journal = result.journal_entries[0]
     assert journal.journal_entry_type is JournalEntryType.PROPERTY_OPERATING
@@ -320,11 +327,21 @@ def test_property_operating_cash_flow_application_records_balanced_journal() -> 
         _posting_amount(journal, ChartAccountRole.CHECKING_CASH, PostingSide.DEBIT), [0.0, 1_900.0]
     )
     np.testing.assert_allclose(
-        _posting_amount(journal, ChartAccountRole.PROPERTY_TAX_EXPENSE, PostingSide.DEBIT), [0.0, 100.0]
+        _posting_amount(journal, ChartAccountRole.RENTAL_MANAGEMENT_FEE_EXPENSE, PostingSide.DEBIT), [0.0, 152.0]
     )
     np.testing.assert_allclose(
         _posting_amount(journal, ChartAccountRole.RENTAL_LEASING_FEE_EXPENSE, PostingSide.DEBIT), [0.0, 40.0]
     )
+    np.testing.assert_allclose(
+        _posting_amount(journal, ChartAccountRole.CHECKING_CASH, PostingSide.CREDIT), [0.0, 192.0]
+    )
+    # Property tax / HOA / insurance / maintenance no longer appear on this JE
+    # (they are emitted by the obligation pipeline by the engine).
+    posted_roles = {posting.role for posting in journal.postings}
+    assert ChartAccountRole.PROPERTY_TAX_EXPENSE not in posted_roles
+    assert ChartAccountRole.HOA_EXPENSE not in posted_roles
+    assert ChartAccountRole.INSURANCE_EXPENSE not in posted_roles
+    assert ChartAccountRole.MAINTENANCE_EXPENSE not in posted_roles
 
 
 def test_private_equity_fixed_rule_uses_opportunity_and_records_ledger() -> None:

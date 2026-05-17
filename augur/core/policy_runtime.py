@@ -343,6 +343,16 @@ def apply_partner_house_cost_contribution(
     house_costs_usd: np.ndarray,
     mortgage_principal_usd: np.ndarray,
 ) -> PartnerHouseCostContributionApplication:
+    """Allocate a configured partner cash contribution against house costs.
+
+    Emits the contribution-allocation journal entry (PARTNER_CONTRIBUTION_USED /
+    PARTNER_UNALLOCATED_CLAIM / PARTNER_CONTRIBUTION_TRANSFER) that records how
+    much of the contribution covered shared house costs and how much remains as
+    a partner equity claim. The cross-actor cash transfer itself is settled
+    through the obligation pipeline (`ObligationType.PARTNER_CONTRIBUTION`) by
+    the engine, not by this helper — the partner's failure to fund the
+    contribution is a real-world failure mode and produces a FAILED rollout.
+    """
     contribution_used_usd = np.minimum(instruction.amount_usd, house_costs_usd)
     unallocated_excess_usd = np.maximum(0.0, instruction.amount_usd - contribution_used_usd)
     house_cost_share = np.divide(
@@ -351,32 +361,6 @@ def apply_partner_house_cost_contribution(
     principal_credit_usd = mortgage_principal_usd * house_cost_share
     owner_principal_usd = np.maximum(0.0, mortgage_principal_usd - principal_credit_usd)
     journal_entries = (
-        JournalEntryBatch(
-            journal_entry_type=JournalEntryType.PARTNER_CONTRIBUTION,
-            cause_type=AccountingCauseType.POLICY_DECISION,
-            cause_id_prefix=f"policy:{instruction.policy_id}:partner_contribution_transfer",
-            actor_id=instruction.actor_id,
-            policy_id=instruction.policy_id,
-            description="partner contribution cash transfer",
-            postings=(
-                PostingBatch(
-                    role=ChartAccountRole.CHECKING_CASH,
-                    side=PostingSide.DEBIT,
-                    amount_usd=instruction.amount_usd,
-                    actor_id=instruction.recipient_actor_id,
-                    counterparty_actor_id=instruction.actor_id,
-                    property_id=property_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.CHECKING_CASH,
-                    side=PostingSide.CREDIT,
-                    amount_usd=instruction.amount_usd,
-                    actor_id=instruction.actor_id,
-                    counterparty_actor_id=instruction.recipient_actor_id,
-                    property_id=property_id,
-                ),
-            ),
-        ),
         JournalEntryBatch(
             journal_entry_type=JournalEntryType.OWNERSHIP_CLAIM_ACCRUAL,
             cause_type=AccountingCauseType.ACCOUNTING_PROCESS,
@@ -595,6 +579,23 @@ def apply_property_operating_cash_flows(
     rental_management_fee_usd: np.ndarray,
     rental_leasing_fee_usd: np.ndarray,
 ) -> PropertyOperatingCashFlowApplication:
+    """Emit the property operating-cash-flow JE for rental income net of rental fees.
+
+    Property tax, HOA, insurance, and maintenance are required cash demands that
+    settle through the obligation pipeline (`_settle_required_cash_obligations`),
+    not directly through this JE. Each of those four cost lines becomes its own
+    `ObligationType` variant so the trace explains who owes what to whom and the
+    actor's funding-policy chain can attempt to rescue a shortfall. The cost
+    arrays remain on the returned application object so the engine can drive the
+    obligation calls and downstream tax/equity math.
+
+    Rental income (a receipt, not a demand) and rental management/leasing fees
+    (which scale with collected rent and are netted against it in the same
+    operating sweep) stay on the direct JE. The returned
+    `property_carrying_cost_usd` includes all six cost lines for reporting
+    parity; `net_operating_cash_flow_usd` is the portion of the carrying cost
+    handled by this JE (rental income minus rental fees).
+    """
     property_carrying_cost_usd = (
         property_tax_usd
         + hoa_usd
@@ -603,7 +604,8 @@ def apply_property_operating_cash_flows(
         + rental_management_fee_usd
         + rental_leasing_fee_usd
     )
-    net_operating_cash_flow_usd = rental_income_usd - property_carrying_cost_usd
+    direct_carrying_cost_usd = rental_management_fee_usd + rental_leasing_fee_usd
+    net_operating_cash_flow_usd = rental_income_usd - direct_carrying_cost_usd
     journal_entries = (
         JournalEntryBatch(
             journal_entry_type=JournalEntryType.PROPERTY_OPERATING,
@@ -626,27 +628,6 @@ def apply_property_operating_cash_flows(
                     actor_id=actor_id,
                 ),
                 PostingBatch(
-                    role=ChartAccountRole.PROPERTY_TAX_EXPENSE,
-                    side=PostingSide.DEBIT,
-                    amount_usd=property_tax_usd,
-                    actor_id=actor_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.HOA_EXPENSE, side=PostingSide.DEBIT, amount_usd=hoa_usd, actor_id=actor_id
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.INSURANCE_EXPENSE,
-                    side=PostingSide.DEBIT,
-                    amount_usd=insurance_usd,
-                    actor_id=actor_id,
-                ),
-                PostingBatch(
-                    role=ChartAccountRole.MAINTENANCE_EXPENSE,
-                    side=PostingSide.DEBIT,
-                    amount_usd=maintenance_usd,
-                    actor_id=actor_id,
-                ),
-                PostingBatch(
                     role=ChartAccountRole.RENTAL_MANAGEMENT_FEE_EXPENSE,
                     side=PostingSide.DEBIT,
                     amount_usd=rental_management_fee_usd,
@@ -661,7 +642,7 @@ def apply_property_operating_cash_flows(
                 PostingBatch(
                     role=ChartAccountRole.CHECKING_CASH,
                     side=PostingSide.CREDIT,
-                    amount_usd=property_carrying_cost_usd,
+                    amount_usd=direct_carrying_cost_usd,
                     actor_id=actor_id,
                 ),
             ),

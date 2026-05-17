@@ -124,6 +124,11 @@ PROPERTY_OPERATING_CASH_FLOW_POLICY_ID = "property_operating_cash_flow"
 PROPERTY_SALE_SETTLEMENT_POLICY_ID = "property_sale_settlement"
 ANNUAL_TAX_ACCOUNTING_POLICY_ID = "annual_tax_accounting"
 SPECIAL_ASSESSMENT_POLICY_ID = "special_assessment"
+PROPERTY_TAX_POLICY_ID = "property_tax_obligation"
+HOA_DUES_POLICY_ID = "hoa_dues_obligation"
+INSURANCE_POLICY_ID = "insurance_premium_obligation"
+MAINTENANCE_POLICY_ID = "maintenance_obligation"
+PARTNER_CONTRIBUTION_POLICY_ID = "partner_contribution_obligation"
 
 
 @dataclass(frozen=True)
@@ -1367,6 +1372,15 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     mortgage_interest = mortgage_interest * property_live_mask
     mortgage_principal = mortgage_principal * property_live_mask
     net_property_cash_flow = property_cash_flow.net_property_cash_flow_usd * property_live_mask
+    # Per-line cost arrays settle through the obligation pipeline (in-loop, before
+    # within-month policies) so each carrying-cost line records its own
+    # obligation/settlement/funding-decision rows on the trace. Masking out
+    # post-sale months ensures the obligation amount is zero once the property is
+    # sold.
+    property_tax_obligation_due = property_cash_flow.property_tax_usd * property_live_mask
+    hoa_obligation_due = property_cash_flow.hoa_usd * property_live_mask
+    insurance_obligation_due = property_cash_flow.insurance_usd * property_live_mask
+    maintenance_obligation_due = property_cash_flow.maintenance_usd * property_live_mask
     home_equity = property_value - mortgage_balance
     partner_equity = _partner_equity_arrays(
         scenario,
@@ -1458,12 +1472,100 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         mortgage_balance_usd=mortgage_balance[:, 0],
     )
 
+    primary_owner_actor_id = _primary_owner_actor_id(scenario)
+    primary_owner_funding_sources = _ObligationFundingSources.for_actor(scenario, actor_id=primary_owner_actor_id)
+    property_cost_obligation_specs: tuple[tuple[np.ndarray, _CashDebitObligationKind, str, str], ...] = (
+        (
+            property_tax_obligation_due,
+            _CashDebitObligationKind(
+                obligation_type=ObligationType.PROPERTY_TAX, expense_role=ChartAccountRole.PROPERTY_TAX_EXPENSE
+            ),
+            "property_tax_authority",
+            PROPERTY_TAX_POLICY_ID,
+        ),
+        (
+            hoa_obligation_due,
+            _CashDebitObligationKind(
+                obligation_type=ObligationType.HOA_DUES, expense_role=ChartAccountRole.HOA_EXPENSE
+            ),
+            "hoa",
+            HOA_DUES_POLICY_ID,
+        ),
+        (
+            insurance_obligation_due,
+            _CashDebitObligationKind(
+                obligation_type=ObligationType.INSURANCE_PREMIUM, expense_role=ChartAccountRole.INSURANCE_EXPENSE
+            ),
+            "insurance_carrier",
+            INSURANCE_POLICY_ID,
+        ),
+        (
+            maintenance_obligation_due,
+            _CashDebitObligationKind(
+                obligation_type=ObligationType.MAINTENANCE, expense_role=ChartAccountRole.MAINTENANCE_EXPENSE
+            ),
+            "maintenance_vendor",
+            MAINTENANCE_POLICY_ID,
+        ),
+    )
+
     for month in range(month_count):
         current_cash = current_cash + disposition.net_property_sale_cash_flow_usd[:, month]
         if month > 0:
             current_cash = (
                 current_cash + net_property_cash_flow[:, month] + partner_equity.contribution_used_usd[:, month]
             )
+        # Settle property-cost obligations for this month BEFORE within-month
+        # policies run. This keeps within-month policy decisions (which depend on
+        # current_cash) observing the post-carrying-cost cash balance, matching
+        # the pre-refactor behavior where carrying costs were deducted via
+        # net_property_cash_flow at month start. The settlement function operates
+        # on the (rollout, month) matrices, so we round-trip current_cash and the
+        # remaining-units 1D vectors through the matrices for this month
+        # position.
+        if any(np.any(due[:, month] > 0) for due, _, _, _ in property_cost_obligation_specs):
+            cash[:, month] = current_cash
+            remaining_sp500_units_by_month[:, month] = remaining_sp500_units
+            remaining_sp500_basis_by_month[:, month] = remaining_sp500_basis
+            remaining_crypto_quantity_by_month[:, month] = remaining_crypto_quantity
+            remaining_crypto_basis_by_month[:, month] = remaining_crypto_basis
+            for due, kind, creditor_id, policy_id in property_cost_obligation_specs:
+                if not np.any(due[:, month] > 0):
+                    continue
+                _settle_required_cash_obligation_at_month_position(
+                    market_bundle=market_bundle,
+                    month_position=month,
+                    due_month_index=int(month_index[month]),
+                    policy_steps=policy_steps,
+                    obligation_amount_usd=due[:, month],
+                    obligation_kind=kind,
+                    creditor_id=creditor_id,
+                    source_policy_id=policy_id,
+                    actor_id=primary_owner_actor_id,
+                    sources=primary_owner_funding_sources,
+                    cash_usd=cash,
+                    generic_sp500_value_usd=generic_sp500_value,
+                    remaining_sp500_units_by_month=remaining_sp500_units_by_month,
+                    remaining_sp500_basis_by_month=remaining_sp500_basis_by_month,
+                    crypto_value_usd=crypto_value,
+                    remaining_crypto_quantity_by_month=remaining_crypto_quantity_by_month,
+                    remaining_crypto_basis_by_month=remaining_crypto_basis_by_month,
+                    crypto_sale_usd=crypto_sale_usd,
+                    crypto_sale_basis_usd=crypto_sale_basis_usd,
+                    checking_floor_shortfall_usd=checking_floor_shortfall,
+                    obligations=obligations,
+                    funding_decisions=funding_decisions,
+                    settlement_results=settlement_results,
+                    failure_events=failure_events,
+                    accounting=accounting,
+                    sp500_sale_action_records=sp500_sale_action_records,
+                    crypto_sale_action_records=crypto_sale_action_records,
+                )
+            current_cash = cash[:, month]
+            remaining_sp500_units = remaining_sp500_units_by_month[:, month]
+            remaining_sp500_basis = remaining_sp500_basis_by_month[:, month]
+            remaining_crypto_quantity = remaining_crypto_quantity_by_month[:, month]
+            remaining_crypto_basis = remaining_crypto_basis_by_month[:, month]
 
         private_equity_value_before_sale = (
             initial_private_equity
@@ -1875,6 +1977,31 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             sp500_sale_action_records=sp500_sale_action_records,
             crypto_sale_action_records=crypto_sale_action_records,
         )
+    # Partner contribution obligations: each PartnerEquityAccrualPolicy emits a
+    # required monthly PARTNER_CONTRIBUTION obligation on the contributing actor.
+    # Settlement is a cross-actor transfer (debit owner CHECKING_CASH, credit
+    # partner CHECKING_CASH). The partner's CHECKING_CASH balance is tracked in
+    # its own (rollout, month) array — partners aren't represented in the main
+    # `cash` array (which tracks the primary owner's checking cash). A
+    # contributing-actor shortfall produces a FailureEvent and flips the rollout
+    # to FAILED, mirroring the mortgage/tax/special-assessment paths.
+    _settle_partner_contribution_obligations(
+        scenario=scenario,
+        market_bundle=market_bundle,
+        month_index=month_index,
+        rollout_count=rollout_count,
+        month_count=month_count,
+        policy_steps=policy_steps,
+        partner_equity=partner_equity,
+        owner_actor_id=primary_owner_actor_id,
+        obligations=obligations,
+        funding_decisions=funding_decisions,
+        settlement_results=settlement_results,
+        failure_events=failure_events,
+        accounting=accounting,
+        sp500_sale_action_records=sp500_sale_action_records,
+        crypto_sale_action_records=crypto_sale_action_records,
+    )
     _record_journal_entry_batches(
         accounting,
         month_index=month_index,
@@ -3403,8 +3530,8 @@ class _CashDebitObligationKind:
     against cash on the settlement journal entry.
 
     Used for variants that don't carry their own per-line accounting nuance:
-    property tax, HOA dues, insurance, maintenance, outside rent, special
-    assessment, and partner contribution (contributing-actor side).
+    property tax, HOA dues, insurance, maintenance, outside rent, and special
+    assessment.
 
     `expense_role` is the chart-account role to debit on settlement. The credit
     side is `CHECKING_CASH`. `journal_entry_type` controls how the trace surfaces
@@ -3417,7 +3544,30 @@ class _CashDebitObligationKind:
     required: bool = True
 
 
-_ObligationKind = _AnnualTaxObligationKind | _MortgageObligationKind | _CashDebitObligationKind
+@dataclass(frozen=True)
+class _PartnerContributionObligationKind:
+    """Obligation kind for the contributing actor's monthly equity-building payment.
+
+    The settlement is a cross-actor cash transfer: the contributor's CHECKING_CASH
+    is credited (cash leaves) and the recipient owner's CHECKING_CASH is debited
+    (cash arrives). The owner's receipt is a downstream effect of the contributor
+    funding the obligation — the obligation lives on the contributing actor's
+    books, and a contributing-actor shortfall fails the rollout.
+
+    The cash side is balanced on the settlement JE itself; the engine math
+    separately credits owner cash via `partner_equity.contribution_used_usd` in
+    the month loop, which mirrors the funded amount on the happy path.
+    """
+
+    property_id: str
+    recipient_actor_id: str
+    obligation_type: ObligationType = ObligationType.PARTNER_CONTRIBUTION
+    required: bool = True
+
+
+_ObligationKind = (
+    _AnnualTaxObligationKind | _MortgageObligationKind | _CashDebitObligationKind | _PartnerContributionObligationKind
+)
 
 
 def _year_end_tax_obligation_due_usd(*, month_index: np.ndarray, source_month_tax_due_usd: np.ndarray) -> np.ndarray:
@@ -3482,205 +3632,292 @@ def _settle_required_cash_obligations(
     accounting: AccountingTraceBuilder,
     sp500_sale_action_records: list[Sp500SaleActionRecord],
     crypto_sale_action_records: list[CryptoSaleActionRecord],
+    actor_id: str | None = None,
 ) -> None:
-    obligation_type = obligation_kind.obligation_type
-    actor_id = _primary_owner_actor_id(scenario)
-    cash_source_account = _single_checking_account_source(scenario, actor_id=actor_id)
-    sp500_source_asset = _single_sp500_asset_source(scenario, actor_id=actor_id)
-    crypto_source_id = _crypto_source_holding_id(scenario, actor_id=actor_id)
-    crypto_source_assets = _crypto_asset_sources(scenario, actor_id=actor_id)
-    crypto_source_account_id = crypto_source_assets[0].source_account_id if crypto_source_assets else None
-    crypto_source_symbol = (
-        crypto_source_assets[0].asset_symbol if len(crypto_source_assets) == 1 else "crypto_portfolio"
-    )
+    resolved_actor_id = actor_id if actor_id is not None else _primary_owner_actor_id(scenario)
+    sources = _ObligationFundingSources.for_actor(scenario, actor_id=resolved_actor_id)
     for month_position, due_month_index in enumerate(month_index.tolist()):
-        due = obligation_amount_usd[:, month_position]
-        if not np.any(due > 0):
+        if not np.any(obligation_amount_usd[:, month_position] > 0):
             continue
-
-        paid_from_cash = np.minimum(np.maximum(0.0, cash_usd[:, month_position]), due)
-        remaining_due = np.maximum(0.0, due - paid_from_cash)
-        _record_obligation_cash_funding_decisions(
-            funding_decisions,
-            obligation_type=obligation_type,
-            actor_id=actor_id,
-            month_index=int(due_month_index),
-            obligation_amount_usd=due,
-            available_cash_usd=cash_usd[:, month_position],
-            funded_cash_usd=paid_from_cash,
-            source_account=cash_source_account,
-        )
-
-        for policy_step in policy_steps:
-            if not np.any(remaining_due > 0):
-                break
-            policy = policy_step.policy
-            if not isinstance(policy, CheckingFloorSellPublicStockPolicy):
-                continue
-            for asset_type in policy.sale_asset_preference:
-                if not np.any(remaining_due > 0):
-                    break
-                if asset_type is AssetType.GENERIC_SP500_STOCK:
-                    application = _apply_checking_floor_obligation_funding_policy(
-                        policy_step,
-                        due_usd=due,
-                        remaining_due_usd=remaining_due,
-                        cash_usd=cash_usd[:, month_position],
-                        remaining_units=remaining_sp500_units_by_month[:, month_position],
-                        remaining_basis_usd=remaining_sp500_basis_by_month[:, month_position],
-                        sp500_unit_price_usd=market_bundle.generic_sp500_multipliers[:, month_position],
-                        source_asset=sp500_source_asset,
-                    )
-                    if application is None:
-                        continue
-                    old_units = remaining_sp500_units_by_month[:, month_position].copy()
-                    old_basis = remaining_sp500_basis_by_month[:, month_position].copy()
-                    units_sold = np.maximum(0.0, old_units - application.remaining_units)
-                    basis_sold = np.maximum(0.0, old_basis - application.remaining_basis_usd)
-                    remaining_sp500_units_by_month[:, month_position:] = np.maximum(
-                        0.0, remaining_sp500_units_by_month[:, month_position:] - units_sold[:, None]
-                    )
-                    remaining_sp500_basis_by_month[:, month_position:] = np.maximum(
-                        0.0, remaining_sp500_basis_by_month[:, month_position:] - basis_sold[:, None]
-                    )
-                    generic_sp500_value_usd[:, month_position:] = (
-                        remaining_sp500_units_by_month[:, month_position:]
-                        * market_bundle.generic_sp500_multipliers[:, month_position:]
-                    )
-                    cash_usd[:, month_position:] = cash_usd[:, month_position:] + application.sale_usd[:, None]
-                    remaining_due = application.remaining_due_usd
-                    checking_floor_shortfall_usd[:, month_position] = np.maximum(
-                        checking_floor_shortfall_usd[:, month_position], remaining_due
-                    )
-                    _record_obligation_sale_funding_decisions(
-                        funding_decisions,
-                        obligation_type=obligation_type,
-                        actor_id=actor_id,
-                        month_index=int(due_month_index),
-                        policy_step=application.policy_step,
-                        obligation_amount_usd=due,
-                        requested_sale_usd=application.instruction.requested_amount_usd,
-                        funded_cash_usd=application.funded_cash_usd,
-                        shortfall_usd=application.shortfall_usd,
-                        source_asset=sp500_source_asset,
-                    )
-                    sp500_sale_action_records.append(
-                        Sp500SaleActionRecord(
-                            month_position=month_position,
-                            month_index=int(due_month_index),
-                            policy=application.policy_step.policy,
-                            cause_id_prefix=(
-                                f"policy:{application.policy_step.policy.policy_id}:"
-                                f"{obligation_type.value}:funding_sale"
-                            ),
-                            amount_usd=application.sale_usd,
-                            basis_usd=basis_sold,
-                            shortfall_usd=remaining_due,
-                        )
-                    )
-                elif asset_type is AssetType.CRYPTO:
-                    crypto_application = _apply_crypto_checking_floor_obligation_funding_policy(
-                        policy_step,
-                        due_usd=due,
-                        remaining_due_usd=remaining_due,
-                        cash_usd=cash_usd[:, month_position],
-                        remaining_quantity=remaining_crypto_quantity_by_month[:, month_position],
-                        remaining_basis_usd=remaining_crypto_basis_by_month[:, month_position],
-                        crypto_unit_price_usd=market_bundle.crypto_value_multipliers[:, month_position],
-                        source_asset_id=crypto_source_id,
-                    )
-                    if crypto_application is None:
-                        continue
-                    old_quantity = remaining_crypto_quantity_by_month[:, month_position].copy()
-                    old_basis = remaining_crypto_basis_by_month[:, month_position].copy()
-                    quantity_sold = np.maximum(0.0, old_quantity - crypto_application.remaining_quantity)
-                    basis_sold = np.maximum(0.0, old_basis - crypto_application.remaining_basis_usd)
-                    remaining_crypto_quantity_by_month[:, month_position:] = np.maximum(
-                        0.0, remaining_crypto_quantity_by_month[:, month_position:] - quantity_sold[:, None]
-                    )
-                    remaining_crypto_basis_by_month[:, month_position:] = np.maximum(
-                        0.0, remaining_crypto_basis_by_month[:, month_position:] - basis_sold[:, None]
-                    )
-                    crypto_value_usd[:, month_position:] = (
-                        remaining_crypto_quantity_by_month[:, month_position:]
-                        * market_bundle.crypto_value_multipliers[:, month_position:]
-                    )
-                    cash_usd[:, month_position:] = cash_usd[:, month_position:] + crypto_application.sale_usd[:, None]
-                    crypto_sale_usd[:, month_position] = (
-                        crypto_sale_usd[:, month_position] + crypto_application.sale_usd
-                    )
-                    crypto_sale_basis_usd[:, month_position] = crypto_sale_basis_usd[:, month_position] + basis_sold
-                    remaining_due = crypto_application.remaining_due_usd
-                    checking_floor_shortfall_usd[:, month_position] = np.maximum(
-                        checking_floor_shortfall_usd[:, month_position], remaining_due
-                    )
-                    _record_obligation_crypto_sale_funding_decisions(
-                        funding_decisions,
-                        obligation_type=obligation_type,
-                        actor_id=actor_id,
-                        month_index=int(due_month_index),
-                        policy_step=policy_step,
-                        obligation_amount_usd=due,
-                        requested_sale_usd=crypto_application.instruction.requested_amount_usd,
-                        funded_cash_usd=crypto_application.funded_cash_usd,
-                        shortfall_usd=crypto_application.shortfall_usd,
-                        source_asset_id=crypto_source_id,
-                        source_account_id=crypto_source_account_id,
-                    )
-                    crypto_sale_action_records.append(
-                        CryptoSaleActionRecord(
-                            month_position=month_position,
-                            month_index=int(due_month_index),
-                            policy=policy,
-                            cause_id_prefix=(f"policy:{policy.policy_id}:{obligation_type.value}:funding_crypto_sale"),
-                            source_asset_id=crypto_source_id,
-                            asset_symbol=crypto_source_symbol,
-                            amount_usd=crypto_application.sale_usd,
-                            basis_usd=basis_sold,
-                            quantity_sold=quantity_sold,
-                            shortfall_usd=remaining_due.copy(),
-                        )
-                    )
-                else:
-                    raise ValueError(
-                        f"unsupported sale_asset_preference entry {asset_type} for CheckingFloorSellPublicStockPolicy"
-                    )
-
-        amount_paid = np.minimum(due, np.maximum(0.0, cash_usd[:, month_position]))
-        unpaid = np.maximum(0.0, due - amount_paid)
-        cash_usd[:, month_position:] = cash_usd[:, month_position:] - amount_paid[:, None]
-        _record_obligation_accrual_and_settlement_entries(
-            accounting,
-            obligation_kind=obligation_kind,
+        _settle_required_cash_obligation_at_month_position(
+            market_bundle=market_bundle,
             month_position=month_position,
-            month_index=int(due_month_index),
-            actor_id=actor_id,
-            source_policy_id=source_policy_id,
-            due_usd=due,
-            amount_paid_usd=amount_paid,
-        )
-        _record_unfunded_obligation_decisions(
-            funding_decisions,
-            obligation_type=obligation_type,
-            actor_id=actor_id,
-            month_index=int(due_month_index),
-            obligation_amount_usd=due,
-            unpaid_amount_usd=unpaid,
-        )
-        _record_obligation_settlement_rows(
-            obligations,
-            settlement_results,
-            failure_events,
-            obligation_type=obligation_type,
-            actor_id=actor_id,
+            due_month_index=int(due_month_index),
+            policy_steps=policy_steps,
+            obligation_amount_usd=obligation_amount_usd[:, month_position],
+            obligation_kind=obligation_kind,
             creditor_id=creditor_id,
             source_policy_id=source_policy_id,
-            month_index=int(due_month_index),
-            amount_due_usd=due,
-            amount_paid_usd=amount_paid,
-            unpaid_amount_usd=unpaid,
-            required=obligation_kind.required,
+            actor_id=resolved_actor_id,
+            sources=sources,
+            cash_usd=cash_usd,
+            generic_sp500_value_usd=generic_sp500_value_usd,
+            remaining_sp500_units_by_month=remaining_sp500_units_by_month,
+            remaining_sp500_basis_by_month=remaining_sp500_basis_by_month,
+            crypto_value_usd=crypto_value_usd,
+            remaining_crypto_quantity_by_month=remaining_crypto_quantity_by_month,
+            remaining_crypto_basis_by_month=remaining_crypto_basis_by_month,
+            crypto_sale_usd=crypto_sale_usd,
+            crypto_sale_basis_usd=crypto_sale_basis_usd,
+            checking_floor_shortfall_usd=checking_floor_shortfall_usd,
+            obligations=obligations,
+            funding_decisions=funding_decisions,
+            settlement_results=settlement_results,
+            failure_events=failure_events,
+            accounting=accounting,
+            sp500_sale_action_records=sp500_sale_action_records,
+            crypto_sale_action_records=crypto_sale_action_records,
         )
+
+
+@dataclass(frozen=True)
+class _ObligationFundingSources:
+    """Per-actor lookups for cash/SP500/crypto sources used in obligation settlement.
+
+    Cached once at the top of `_settle_required_cash_obligations` so the per-month
+    helper does not re-scan the balance sheet for every month/obligation pair.
+    """
+
+    cash_source_account: AccountBalance | None
+    sp500_source_asset: GenericSp500StockPosition | None
+    crypto_source_id: str
+    crypto_source_account_id: str | None
+    crypto_source_symbol: str
+
+    @classmethod
+    def for_actor(cls, scenario: Scenario, *, actor_id: str) -> _ObligationFundingSources:
+        crypto_source_assets = _crypto_asset_sources(scenario, actor_id=actor_id)
+        return cls(
+            cash_source_account=_single_checking_account_source(scenario, actor_id=actor_id),
+            sp500_source_asset=_single_sp500_asset_source(scenario, actor_id=actor_id),
+            crypto_source_id=_crypto_source_holding_id(scenario, actor_id=actor_id),
+            crypto_source_account_id=crypto_source_assets[0].source_account_id if crypto_source_assets else None,
+            crypto_source_symbol=(
+                crypto_source_assets[0].asset_symbol if len(crypto_source_assets) == 1 else "crypto_portfolio"
+            ),
+        )
+
+
+def _settle_required_cash_obligation_at_month_position(
+    *,
+    market_bundle: MarketBundle,
+    month_position: int,
+    due_month_index: int,
+    policy_steps: tuple[ActorPolicyStep[Policy], ...],
+    obligation_amount_usd: np.ndarray,
+    obligation_kind: _ObligationKind,
+    creditor_id: str,
+    source_policy_id: str,
+    actor_id: str,
+    sources: _ObligationFundingSources,
+    cash_usd: np.ndarray,
+    generic_sp500_value_usd: np.ndarray,
+    remaining_sp500_units_by_month: np.ndarray,
+    remaining_sp500_basis_by_month: np.ndarray,
+    crypto_value_usd: np.ndarray,
+    remaining_crypto_quantity_by_month: np.ndarray,
+    remaining_crypto_basis_by_month: np.ndarray,
+    crypto_sale_usd: np.ndarray,
+    crypto_sale_basis_usd: np.ndarray,
+    checking_floor_shortfall_usd: np.ndarray,
+    obligations: list[Obligation],
+    funding_decisions: list[FundingDecision],
+    settlement_results: list[SettlementResult],
+    failure_events: list[FailureEvent],
+    accounting: AccountingTraceBuilder,
+    sp500_sale_action_records: list[Sp500SaleActionRecord],
+    crypto_sale_action_records: list[CryptoSaleActionRecord],
+) -> None:
+    """Settle one obligation at a single month position.
+
+    Mutates `cash_usd` (and the units/basis/sale tracking matrices) in place from
+    `month_position` forward — callers that drive this per-month inside the engine's
+    month loop must ensure the matrices already carry the start-of-month state at
+    `month_position`. The settlement records its trace rows (obligation,
+    settlement_result, funding_decision, failure_event) for this month.
+    """
+    obligation_type = obligation_kind.obligation_type
+    due = obligation_amount_usd
+    paid_from_cash = np.minimum(np.maximum(0.0, cash_usd[:, month_position]), due)
+    remaining_due = np.maximum(0.0, due - paid_from_cash)
+    _record_obligation_cash_funding_decisions(
+        funding_decisions,
+        obligation_type=obligation_type,
+        actor_id=actor_id,
+        month_index=due_month_index,
+        obligation_amount_usd=due,
+        available_cash_usd=cash_usd[:, month_position],
+        funded_cash_usd=paid_from_cash,
+        source_account=sources.cash_source_account,
+    )
+
+    for policy_step in policy_steps:
+        if not np.any(remaining_due > 0):
+            break
+        policy = policy_step.policy
+        if not isinstance(policy, CheckingFloorSellPublicStockPolicy):
+            continue
+        for asset_type in policy.sale_asset_preference:
+            if not np.any(remaining_due > 0):
+                break
+            if asset_type is AssetType.GENERIC_SP500_STOCK:
+                application = _apply_checking_floor_obligation_funding_policy(
+                    policy_step,
+                    due_usd=due,
+                    remaining_due_usd=remaining_due,
+                    cash_usd=cash_usd[:, month_position],
+                    remaining_units=remaining_sp500_units_by_month[:, month_position],
+                    remaining_basis_usd=remaining_sp500_basis_by_month[:, month_position],
+                    sp500_unit_price_usd=market_bundle.generic_sp500_multipliers[:, month_position],
+                    source_asset=sources.sp500_source_asset,
+                )
+                if application is None:
+                    continue
+                old_units = remaining_sp500_units_by_month[:, month_position].copy()
+                old_basis = remaining_sp500_basis_by_month[:, month_position].copy()
+                units_sold = np.maximum(0.0, old_units - application.remaining_units)
+                basis_sold = np.maximum(0.0, old_basis - application.remaining_basis_usd)
+                remaining_sp500_units_by_month[:, month_position:] = np.maximum(
+                    0.0, remaining_sp500_units_by_month[:, month_position:] - units_sold[:, None]
+                )
+                remaining_sp500_basis_by_month[:, month_position:] = np.maximum(
+                    0.0, remaining_sp500_basis_by_month[:, month_position:] - basis_sold[:, None]
+                )
+                generic_sp500_value_usd[:, month_position:] = (
+                    remaining_sp500_units_by_month[:, month_position:]
+                    * market_bundle.generic_sp500_multipliers[:, month_position:]
+                )
+                cash_usd[:, month_position:] = cash_usd[:, month_position:] + application.sale_usd[:, None]
+                remaining_due = application.remaining_due_usd
+                checking_floor_shortfall_usd[:, month_position] = np.maximum(
+                    checking_floor_shortfall_usd[:, month_position], remaining_due
+                )
+                _record_obligation_sale_funding_decisions(
+                    funding_decisions,
+                    obligation_type=obligation_type,
+                    actor_id=actor_id,
+                    month_index=due_month_index,
+                    policy_step=application.policy_step,
+                    obligation_amount_usd=due,
+                    requested_sale_usd=application.instruction.requested_amount_usd,
+                    funded_cash_usd=application.funded_cash_usd,
+                    shortfall_usd=application.shortfall_usd,
+                    source_asset=sources.sp500_source_asset,
+                )
+                sp500_sale_action_records.append(
+                    Sp500SaleActionRecord(
+                        month_position=month_position,
+                        month_index=due_month_index,
+                        policy=application.policy_step.policy,
+                        cause_id_prefix=(
+                            f"policy:{application.policy_step.policy.policy_id}:{obligation_type.value}:funding_sale"
+                        ),
+                        amount_usd=application.sale_usd,
+                        basis_usd=basis_sold,
+                        shortfall_usd=remaining_due,
+                    )
+                )
+            elif asset_type is AssetType.CRYPTO:
+                crypto_application = _apply_crypto_checking_floor_obligation_funding_policy(
+                    policy_step,
+                    due_usd=due,
+                    remaining_due_usd=remaining_due,
+                    cash_usd=cash_usd[:, month_position],
+                    remaining_quantity=remaining_crypto_quantity_by_month[:, month_position],
+                    remaining_basis_usd=remaining_crypto_basis_by_month[:, month_position],
+                    crypto_unit_price_usd=market_bundle.crypto_value_multipliers[:, month_position],
+                    source_asset_id=sources.crypto_source_id,
+                )
+                if crypto_application is None:
+                    continue
+                old_quantity = remaining_crypto_quantity_by_month[:, month_position].copy()
+                old_basis = remaining_crypto_basis_by_month[:, month_position].copy()
+                quantity_sold = np.maximum(0.0, old_quantity - crypto_application.remaining_quantity)
+                basis_sold = np.maximum(0.0, old_basis - crypto_application.remaining_basis_usd)
+                remaining_crypto_quantity_by_month[:, month_position:] = np.maximum(
+                    0.0, remaining_crypto_quantity_by_month[:, month_position:] - quantity_sold[:, None]
+                )
+                remaining_crypto_basis_by_month[:, month_position:] = np.maximum(
+                    0.0, remaining_crypto_basis_by_month[:, month_position:] - basis_sold[:, None]
+                )
+                crypto_value_usd[:, month_position:] = (
+                    remaining_crypto_quantity_by_month[:, month_position:]
+                    * market_bundle.crypto_value_multipliers[:, month_position:]
+                )
+                cash_usd[:, month_position:] = cash_usd[:, month_position:] + crypto_application.sale_usd[:, None]
+                crypto_sale_usd[:, month_position] = crypto_sale_usd[:, month_position] + crypto_application.sale_usd
+                crypto_sale_basis_usd[:, month_position] = crypto_sale_basis_usd[:, month_position] + basis_sold
+                remaining_due = crypto_application.remaining_due_usd
+                checking_floor_shortfall_usd[:, month_position] = np.maximum(
+                    checking_floor_shortfall_usd[:, month_position], remaining_due
+                )
+                _record_obligation_crypto_sale_funding_decisions(
+                    funding_decisions,
+                    obligation_type=obligation_type,
+                    actor_id=actor_id,
+                    month_index=due_month_index,
+                    policy_step=policy_step,
+                    obligation_amount_usd=due,
+                    requested_sale_usd=crypto_application.instruction.requested_amount_usd,
+                    funded_cash_usd=crypto_application.funded_cash_usd,
+                    shortfall_usd=crypto_application.shortfall_usd,
+                    source_asset_id=sources.crypto_source_id,
+                    source_account_id=sources.crypto_source_account_id,
+                )
+                crypto_sale_action_records.append(
+                    CryptoSaleActionRecord(
+                        month_position=month_position,
+                        month_index=due_month_index,
+                        policy=policy,
+                        cause_id_prefix=(f"policy:{policy.policy_id}:{obligation_type.value}:funding_crypto_sale"),
+                        source_asset_id=sources.crypto_source_id,
+                        asset_symbol=sources.crypto_source_symbol,
+                        amount_usd=crypto_application.sale_usd,
+                        basis_usd=basis_sold,
+                        quantity_sold=quantity_sold,
+                        shortfall_usd=remaining_due.copy(),
+                    )
+                )
+            else:
+                raise ValueError(
+                    f"unsupported sale_asset_preference entry {asset_type} for CheckingFloorSellPublicStockPolicy"
+                )
+
+    amount_paid = np.minimum(due, np.maximum(0.0, cash_usd[:, month_position]))
+    unpaid = np.maximum(0.0, due - amount_paid)
+    cash_usd[:, month_position:] = cash_usd[:, month_position:] - amount_paid[:, None]
+    _record_obligation_accrual_and_settlement_entries(
+        accounting,
+        obligation_kind=obligation_kind,
+        month_position=month_position,
+        month_index=due_month_index,
+        actor_id=actor_id,
+        source_policy_id=source_policy_id,
+        due_usd=due,
+        amount_paid_usd=amount_paid,
+    )
+    _record_unfunded_obligation_decisions(
+        funding_decisions,
+        obligation_type=obligation_type,
+        actor_id=actor_id,
+        month_index=due_month_index,
+        obligation_amount_usd=due,
+        unpaid_amount_usd=unpaid,
+    )
+    _record_obligation_settlement_rows(
+        obligations,
+        settlement_results,
+        failure_events,
+        obligation_type=obligation_type,
+        actor_id=actor_id,
+        creditor_id=creditor_id,
+        source_policy_id=source_policy_id,
+        month_index=due_month_index,
+        amount_due_usd=due,
+        amount_paid_usd=amount_paid,
+        unpaid_amount_usd=unpaid,
+        required=obligation_kind.required,
+    )
 
 
 def _record_obligation_accrual_and_settlement_entries(
@@ -3771,6 +4008,42 @@ def _record_obligation_accrual_and_settlement_entries(
                         side=PostingSide.CREDIT,
                         amount_usd=amount_paid_usd,
                         actor_id=actor_id,
+                    ),
+                ),
+            ),
+        )
+        return
+    if isinstance(obligation_kind, _PartnerContributionObligationKind):
+        # Settlement is a balanced cross-actor cash transfer: the contributing
+        # actor's cash is credited (cash leaves) and the recipient owner's cash
+        # is debited (cash arrives). Each posting carries a counterparty actor
+        # and the property id so the ledger explains the transfer.
+        accounting.record_entry(
+            month_index=month_index,
+            entry=JournalEntryBatch(
+                journal_entry_type=JournalEntryType.PARTNER_CONTRIBUTION,
+                cause_type=AccountingCauseType.OBLIGATION_SETTLEMENT,
+                cause_id_prefix=f"policy:{source_policy_id}:{obligation_type.value}:settlement",
+                obligation_id_prefix=obligation_type.value,
+                actor_id=actor_id,
+                policy_id=source_policy_id,
+                description=obligation_type.value,
+                postings=(
+                    PostingBatch(
+                        role=ChartAccountRole.CHECKING_CASH,
+                        side=PostingSide.DEBIT,
+                        amount_usd=amount_paid_usd,
+                        actor_id=obligation_kind.recipient_actor_id,
+                        counterparty_actor_id=actor_id,
+                        property_id=obligation_kind.property_id,
+                    ),
+                    PostingBatch(
+                        role=ChartAccountRole.CHECKING_CASH,
+                        side=PostingSide.CREDIT,
+                        amount_usd=amount_paid_usd,
+                        actor_id=actor_id,
+                        counterparty_actor_id=obligation_kind.recipient_actor_id,
+                        property_id=obligation_kind.property_id,
                     ),
                 ),
             ),
@@ -4778,6 +5051,125 @@ def _scenario_hoa_monthly_usd(scenario: Scenario) -> float:
         if isinstance(event, PropertyPurchaseEvent) and event.hoa_monthly_usd is not None:
             return float(event.hoa_monthly_usd)
     return 0.0
+
+
+def _settle_partner_contribution_obligations(
+    *,
+    scenario: Scenario,
+    market_bundle: MarketBundle,
+    month_index: np.ndarray,
+    rollout_count: int,
+    month_count: int,
+    policy_steps: tuple[ActorPolicyStep[Policy], ...],
+    partner_equity: PartnerEquityArrays,
+    owner_actor_id: str,
+    obligations: list[Obligation],
+    funding_decisions: list[FundingDecision],
+    settlement_results: list[SettlementResult],
+    failure_events: list[FailureEvent],
+    accounting: AccountingTraceBuilder,
+    sp500_sale_action_records: list[Sp500SaleActionRecord],
+    crypto_sale_action_records: list[CryptoSaleActionRecord],
+) -> None:
+    """Settle each PartnerEquityAccrualPolicy's monthly contribution as an obligation
+    on the contributing actor.
+
+    Each agreement runs an independent obligation pass keyed on the contributing
+    actor's CHECKING_CASH balance. The settlement journal entry debits the
+    recipient owner's CHECKING_CASH and credits the contributor's CHECKING_CASH
+    (a balanced cross-actor transfer). The contributing actor's failure to fund
+    flips the rollout to FAILED via FailureEvent.
+
+    The owner's cash trajectory is driven by `partner_equity.contribution_used_usd`
+    added in the main month loop; on the happy path the obligation pipeline pays
+    the configured amount in full and the JE cash debit matches the owner-side
+    receipt.
+    """
+    if not partner_equity.agreements:
+        return
+    for agreement in partner_equity.agreements:
+        contributing_actor_id = agreement.policy.actor_id
+        partner_initial_cash = _partner_initial_funding_cash_usd(
+            scenario,
+            actor_id=contributing_actor_id,
+            configured_contribution_total_usd=float(np.max(np.sum(agreement.contribution_usd, axis=1))),
+        )
+        partner_cash = np.full((rollout_count, month_count), partner_initial_cash, dtype="float64")
+        # The contribution_usd matrix carries the configured monthly payment per
+        # month (zero where no payment is configured). Auxiliary state matrices
+        # (sp500 / crypto units / basis / sale tracking, checking-floor
+        # shortfall) are per-partner because they describe the partner's funding
+        # path, not the owner's.
+        partner_sp500_units_by_month = np.zeros((rollout_count, month_count), dtype="float64")
+        partner_sp500_basis_by_month = np.zeros((rollout_count, month_count), dtype="float64")
+        partner_sp500_value_usd = np.zeros((rollout_count, month_count), dtype="float64")
+        partner_crypto_quantity_by_month = np.zeros((rollout_count, month_count), dtype="float64")
+        partner_crypto_basis_by_month = np.zeros((rollout_count, month_count), dtype="float64")
+        partner_crypto_value_usd = np.zeros((rollout_count, month_count), dtype="float64")
+        partner_crypto_sale_usd = np.zeros((rollout_count, month_count), dtype="float64")
+        partner_crypto_sale_basis_usd = np.zeros((rollout_count, month_count), dtype="float64")
+        partner_checking_floor_shortfall = np.zeros((rollout_count, month_count), dtype="float64")
+        obligation_kind = _PartnerContributionObligationKind(
+            property_id=agreement.property_id, recipient_actor_id=owner_actor_id
+        )
+        _settle_required_cash_obligations(
+            scenario=scenario,
+            market_bundle=market_bundle,
+            month_index=month_index,
+            policy_steps=policy_steps,
+            obligation_amount_usd=agreement.contribution_usd,
+            obligation_kind=obligation_kind,
+            creditor_id=owner_actor_id,
+            source_policy_id=agreement.policy.policy_id,
+            cash_usd=partner_cash,
+            generic_sp500_value_usd=partner_sp500_value_usd,
+            remaining_sp500_units_by_month=partner_sp500_units_by_month,
+            remaining_sp500_basis_by_month=partner_sp500_basis_by_month,
+            crypto_value_usd=partner_crypto_value_usd,
+            remaining_crypto_quantity_by_month=partner_crypto_quantity_by_month,
+            remaining_crypto_basis_by_month=partner_crypto_basis_by_month,
+            crypto_sale_usd=partner_crypto_sale_usd,
+            crypto_sale_basis_usd=partner_crypto_sale_basis_usd,
+            checking_floor_shortfall_usd=partner_checking_floor_shortfall,
+            obligations=obligations,
+            funding_decisions=funding_decisions,
+            settlement_results=settlement_results,
+            failure_events=failure_events,
+            accounting=accounting,
+            sp500_sale_action_records=sp500_sale_action_records,
+            crypto_sale_action_records=crypto_sale_action_records,
+            actor_id=contributing_actor_id,
+        )
+
+
+def _actor_initial_checking_cash_usd(scenario: Scenario, *, actor_id: str) -> float:
+    return sum(
+        account.balance_usd
+        for account in scenario.initial_balance_sheet.accounts
+        if account.account_type is AccountType.CHECKING and account.owner_actor_id == actor_id
+    )
+
+
+def _partner_initial_funding_cash_usd(
+    scenario: Scenario, *, actor_id: str, configured_contribution_total_usd: float
+) -> float:
+    """Resolve the contributing partner's starting cash for obligation settlement.
+
+    A partner with an explicitly configured CHECKING account funds the
+    obligation strictly from that balance — running out fails the rollout. A
+    partner with no configured account is assumed to fund off-trace (their
+    external income is not modeled), so default to the total configured
+    contribution amount: enough to pay every scheduled month in full. Tests
+    that want to exercise the failure path should configure a partner account
+    with an insufficient balance.
+    """
+    explicit_cash = _actor_initial_checking_cash_usd(scenario, actor_id=actor_id)
+    if any(
+        account.account_type is AccountType.CHECKING and account.owner_actor_id == actor_id
+        for account in scenario.initial_balance_sheet.accounts
+    ):
+        return explicit_cash
+    return configured_contribution_total_usd
 
 
 def _special_assessment_obligation_due_usd(

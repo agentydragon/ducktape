@@ -49,6 +49,7 @@ from augur.core.scenario_set import (
     PrivateEquitySalePolicy,
     PrivateEquitySaleRuleType,
     PropertyAssumptions,
+    PropertyPurchaseEvent,
     PropertySaleBasisGainDetail,
     PropertySaleEvent,
     PropertySelection,
@@ -506,7 +507,14 @@ def test_mortgage_shortfall_records_failed_obligation_and_failure_event() -> Non
     assert all(event.unpaid_amount_usd > 0 for event in mortgage_failures)
     status = result.rollout(0).status()
     assert status.status == RolloutStatusType.FAILED
-    assert status.failed_obligation_count == horizon_months
+    # The actor also misses the monthly property tax obligation (SF has a
+    # non-zero property tax) since cash starts at $0. The count is one mortgage
+    # failure + one property-tax failure per month.
+    property_tax_failures = tuple(
+        event for event in result.arrays.failure_events if event.obligation_id.startswith("property_tax")
+    )
+    assert len(property_tax_failures) == horizon_months
+    assert status.failed_obligation_count == horizon_months * 2
     assert status.first_failed_obligation_month_index == 1
     assert status.unpaid_obligation_usd > 0
     unfunded = tuple(
@@ -706,6 +714,309 @@ def test_special_assessment_event_fails_rollout_when_unfundable() -> None:
     )
     assert len(unfunded) == 1
     assert unfunded[0].shortfall_usd > 0
+
+
+def _property_obligation_scenario(
+    *,
+    scenario_id: str,
+    initial_cash_usd: float,
+    insurance_annual_usd: float = 0,
+    maintenance_pct: float = 0,
+    hoa_monthly_usd: float = 0,
+    location_id: LocationId = LocationId.SAN_FRANCISCO_CA,
+    purchase_price_usd: float = 500_000,
+    events: tuple = (),
+) -> Scenario:
+    """A minimal property scenario that exercises the property carrying-cost
+    obligation pipeline. Per-line costs (property tax, HOA, insurance,
+    maintenance) settle through `_settle_required_cash_obligations` and may
+    fail the rollout if cash and funding policies cannot cover them.
+
+    `hoa_monthly_usd` is conveyed via a `PropertyPurchaseEvent` (the canonical
+    HOA-monthly knob); 0 means HOA stays at the location default.
+    """
+    purchase_events: tuple = ()
+    if hoa_monthly_usd > 0:
+        purchase_events = (
+            PropertyPurchaseEvent(
+                event_id="purchase", month_index=0, property_id="test_property", hoa_monthly_usd=hoa_monthly_usd
+            ),
+        )
+    return Scenario(
+        scenario_id=scenario_id,
+        label=scenario_id.replace("_", " ").title(),
+        actors=(_simple_actor(),),
+        events=purchase_events + events,
+        property_selection=PropertySelection(
+            property_id="test_property", location_id=location_id, purchase_price_usd=purchase_price_usd
+        ),
+        # Cash financing: no down-payment buy-out, no mortgage obligation.
+        # This isolates the test to the carrying-cost obligation we want to
+        # exercise rather than mixing in mortgage failures.
+        financing=Financing(financing_mode=FinancingMode.CASH),
+        transaction_costs=TransactionCosts(closing_cost_buy_pct=0, closing_cost_sell_pct=0),
+        property_assumptions=PropertyAssumptions(
+            insurance_annual_usd=insurance_annual_usd, maintenance_pct=maintenance_pct
+        ),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking",
+                    account_type=AccountType.CHECKING,
+                    owner_actor_id="alpha",
+                    balance_usd=initial_cash_usd,
+                ),
+            )
+        ),
+    )
+
+
+def test_property_tax_obligation_settles_when_cash_available() -> None:
+    """Happy path: the four property carrying-cost lines (property tax, HOA,
+    insurance, maintenance) now settle as PAID obligations on the trace. The
+    cash trajectory matches the pre-refactor behavior because the in-loop
+    settlement deducts each cost from current_cash at month start (mirroring
+    the prior net_property_cash_flow math)."""
+    scenario = _property_obligation_scenario(
+        scenario_id="property_carrying_costs_paid",
+        initial_cash_usd=600_000,  # enough for $500k cash purchase + carrying costs
+        insurance_annual_usd=1_200,
+        maintenance_pct=1,
+        hoa_monthly_usd=300,
+    )
+    result = _run_scenario(scenario, horizon_months=3)
+    assert result.arrays is not None
+    assert result.rollout(0).status().status == RolloutStatusType.ACTIVE
+    # Each of the four cost lines emits one obligation per month-1..horizon
+    # (month 0 zeros out via the engine's first-month carry-cost zeroing).
+    obligation_types_seen = {
+        obligation.obligation_type
+        for obligation in result.arrays.obligations
+        if obligation.obligation_type
+        in {
+            ObligationType.PROPERTY_TAX,
+            ObligationType.HOA_DUES,
+            ObligationType.INSURANCE_PREMIUM,
+            ObligationType.MAINTENANCE,
+        }
+    }
+    assert obligation_types_seen == {
+        ObligationType.PROPERTY_TAX,
+        ObligationType.HOA_DUES,
+        ObligationType.INSURANCE_PREMIUM,
+        ObligationType.MAINTENANCE,
+    }
+    # All carrying-cost obligations PAY when cash is sufficient.
+    for obligation_type in obligation_types_seen:
+        obligations = tuple(
+            obligation for obligation in result.arrays.obligations if obligation.obligation_type is obligation_type
+        )
+        assert {obligation.status for obligation in obligations} == {ObligationStatus.PAID}
+    # No failure events fired.
+    assert tuple(event for event in result.arrays.failure_events) == ()
+    # The ledger postings on the expense roles continue to reflect the actual
+    # cost (now driven by the obligation settlement JE rather than the operating
+    # cash-flow JE). This is the reconciliation contract the existing
+    # `test_every_monthly_flow_metric_reconciles_to_canonical_detail_surface`
+    # guard depends on.
+    assert_allclose(
+        _posting_matrix(result, role=ChartAccountRole.PROPERTY_TAX_EXPENSE, side=PostingSide.DEBIT),
+        result.matrix(ReportMetric.PROPERTY_TAX_USD),
+    )
+    assert_allclose(
+        _posting_matrix(result, role=ChartAccountRole.HOA_EXPENSE, side=PostingSide.DEBIT),
+        result.matrix(ReportMetric.HOA_USD),
+    )
+    assert_allclose(
+        _posting_matrix(result, role=ChartAccountRole.INSURANCE_EXPENSE, side=PostingSide.DEBIT),
+        result.matrix(ReportMetric.INSURANCE_USD),
+    )
+    assert_allclose(
+        _posting_matrix(result, role=ChartAccountRole.MAINTENANCE_EXPENSE, side=PostingSide.DEBIT),
+        result.matrix(ReportMetric.MAINTENANCE_USD),
+    )
+
+
+def test_property_tax_obligation_fails_rollout_when_unfundable() -> None:
+    """Cash-strapped property: monthly property tax can't be paid → PROPERTY_TAX
+    obligation emits UNPAID, FailureEvent fires, rollout flips to FAILED."""
+    scenario = _property_obligation_scenario(
+        scenario_id="property_tax_unfundable",
+        initial_cash_usd=10,  # Far below the monthly property-tax obligation.
+        insurance_annual_usd=0,
+        maintenance_pct=0,
+    )
+    result = _run_scenario(scenario, horizon_months=3)
+    assert result.arrays is not None
+    assert result.rollout(0).status().status == RolloutStatusType.FAILED
+    property_tax_obligations = tuple(
+        obligation
+        for obligation in result.arrays.obligations
+        if obligation.obligation_type is ObligationType.PROPERTY_TAX
+    )
+    # 3 months of unfunded property tax obligations.
+    assert len(property_tax_obligations) == 3
+    assert {obligation.status for obligation in property_tax_obligations} == {ObligationStatus.UNPAID}
+    failures = tuple(event for event in result.arrays.failure_events if event.obligation_id.startswith("property_tax"))
+    assert len(failures) == 3
+    assert all(event.unpaid_amount_usd > 0 for event in failures)
+    unfunded = tuple(
+        decision
+        for decision in result.arrays.funding_decisions
+        if decision.obligation_id.startswith("property_tax") and decision.decision_type is FundingDecisionType.UNFUNDED
+    )
+    assert len(unfunded) == 3
+    assert all(decision.shortfall_usd > 0 for decision in unfunded)
+
+
+def test_hoa_dues_obligation_fails_rollout_when_unfundable() -> None:
+    """Cash-strapped property with explicit HOA dues: cash starts at a value
+    that covers property tax for the first month but not the HOA dues. The
+    HOA_DUES obligation flips the rollout to FAILED."""
+    # SF property tax on $100k purchase is small (≈ $100/mo). Hoa monthly $5000
+    # blows past available cash starting in month 1.
+    scenario = _property_obligation_scenario(
+        scenario_id="hoa_dues_unfundable",
+        initial_cash_usd=500,
+        insurance_annual_usd=0,
+        maintenance_pct=0,
+        hoa_monthly_usd=5_000,
+        purchase_price_usd=100_000,
+    )
+    result = _run_scenario(scenario, horizon_months=2)
+    assert result.arrays is not None
+    assert result.rollout(0).status().status == RolloutStatusType.FAILED
+    hoa_failures = tuple(event for event in result.arrays.failure_events if event.obligation_id.startswith("hoa_dues"))
+    assert len(hoa_failures) >= 1
+    assert all(event.unpaid_amount_usd > 0 for event in hoa_failures)
+    unfunded = tuple(
+        decision
+        for decision in result.arrays.funding_decisions
+        if decision.obligation_id.startswith("hoa_dues") and decision.decision_type is FundingDecisionType.UNFUNDED
+    )
+    assert len(unfunded) >= 1
+
+
+def test_insurance_premium_obligation_fails_rollout_when_unfundable() -> None:
+    """Cash-strapped property with very high insurance: the INSURANCE_PREMIUM
+    obligation flips the rollout to FAILED."""
+    scenario = _property_obligation_scenario(
+        scenario_id="insurance_premium_unfundable",
+        initial_cash_usd=100,
+        insurance_annual_usd=120_000,  # $10k/month — far above starting cash.
+        maintenance_pct=0,
+        purchase_price_usd=100_000,
+    )
+    result = _run_scenario(scenario, horizon_months=2)
+    assert result.arrays is not None
+    assert result.rollout(0).status().status == RolloutStatusType.FAILED
+    insurance_failures = tuple(
+        event for event in result.arrays.failure_events if event.obligation_id.startswith("insurance_premium")
+    )
+    assert len(insurance_failures) >= 1
+    assert all(event.unpaid_amount_usd > 0 for event in insurance_failures)
+
+
+def test_maintenance_obligation_fails_rollout_when_unfundable() -> None:
+    """Cash-strapped property with very high maintenance pct: the MAINTENANCE
+    obligation flips the rollout to FAILED."""
+    # Maintenance = property_value * maintenance_pct/100 / 12 per month.
+    # 500k * 50% / 12 ≈ $20,833/month — far above starting cash.
+    scenario = _property_obligation_scenario(
+        scenario_id="maintenance_unfundable",
+        initial_cash_usd=100,
+        insurance_annual_usd=0,
+        maintenance_pct=50,
+        purchase_price_usd=500_000,
+    )
+    result = _run_scenario(scenario, horizon_months=2)
+    assert result.arrays is not None
+    assert result.rollout(0).status().status == RolloutStatusType.FAILED
+    maintenance_failures = tuple(
+        event for event in result.arrays.failure_events if event.obligation_id.startswith("maintenance")
+    )
+    assert len(maintenance_failures) >= 1
+    assert all(event.unpaid_amount_usd > 0 for event in maintenance_failures)
+
+
+def test_partner_contribution_obligation_fails_rollout_when_partner_cannot_fund() -> None:
+    """The contributing partner has an explicitly modeled checking account with
+    insufficient cash to cover the configured contribution. The
+    PARTNER_CONTRIBUTION obligation flips the rollout to FAILED.
+
+    When a partner has *any* configured CHECKING account, the obligation
+    settles strictly against that balance — running out fails the rollout.
+    Partners with no configured account default to off-trace funding (legacy
+    behavior preserved for existing tests).
+    """
+    horizon_months = 6
+    scenario = Scenario(
+        scenario_id="partner_contribution_unfundable",
+        label="Partner Contribution Unfundable",
+        actors=(_simple_actor(), Actor(actor_id="beta", label="Beta", role=ActorRole.EQUITY_BUILDING_OCCUPANT)),
+        property_selection=PropertySelection(
+            property_id="test_property", location_id=LocationId.VALLEJO_CA, purchase_price_usd=100_000
+        ),
+        financing=Financing(financing_mode=FinancingMode.CASH),
+        transaction_costs=TransactionCosts(closing_cost_buy_pct=0, closing_cost_sell_pct=0),
+        property_assumptions=PropertyAssumptions(insurance_annual_usd=0, maintenance_pct=0),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking",
+                    account_type=AccountType.CHECKING,
+                    owner_actor_id="alpha",
+                    balance_usd=200_000,
+                ),
+                # Partner has only $1500 — covers month 1 ($1000) but month 2's
+                # contribution ($1000) exhausts the balance ($500 left). Month 3
+                # onward have a hard shortfall.
+                AccountBalance(
+                    account_id="partner_checking",
+                    account_type=AccountType.CHECKING,
+                    owner_actor_id="beta",
+                    balance_usd=1_500,
+                ),
+            )
+        ),
+        policies=(
+            PartnerEquityAccrualPolicy(
+                policy_id="partner_equity",
+                actor_id="beta",
+                property_id="test_property",
+                base_monthly_payment_usd=1_000,
+                occupied_months=horizon_months,
+                grow_with_inflation=False,
+            ),
+        ),
+    )
+
+    result = _run_scenario(scenario, horizon_months=horizon_months)
+
+    assert result.arrays is not None
+    assert result.rollout(0).status().status == RolloutStatusType.FAILED
+    partner_contribution_obligations = tuple(
+        obligation
+        for obligation in result.arrays.obligations
+        if obligation.obligation_type is ObligationType.PARTNER_CONTRIBUTION
+    )
+    # One obligation per occupied month — month 1..6 (six in this scenario).
+    assert len(partner_contribution_obligations) == horizon_months
+    assert {obligation.actor_id for obligation in partner_contribution_obligations} == {"beta"}
+    assert {obligation.creditor_id for obligation in partner_contribution_obligations} == {"alpha"}
+    partner_failures = tuple(
+        event for event in result.arrays.failure_events if event.obligation_id.startswith("partner_contribution")
+    )
+    assert len(partner_failures) >= 1
+    assert all(event.unpaid_amount_usd > 0 for event in partner_failures)
+    unfunded = tuple(
+        decision
+        for decision in result.arrays.funding_decisions
+        if decision.obligation_id.startswith("partner_contribution")
+        and decision.decision_type is FundingDecisionType.UNFUNDED
+    )
+    assert len(unfunded) >= 1
+    assert all(decision.shortfall_usd > 0 for decision in unfunded)
 
 
 def test_partner_equity_accrual_records_contributions_and_claims() -> None:
