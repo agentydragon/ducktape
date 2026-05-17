@@ -16,7 +16,7 @@ second ordered roadmap.
       normalization and request mapping. Python Pydantic remains the source of
       truth; do not grow a second hand-maintained Zod/schema definition in
       `augur/frontend`.
-- [ ] Continue `plans/e2e_redesign.md` Step 7 by replacing `allocated_to_source_month` tax timing with realistic annual/estimated-payment liability timing.
+- [ ] Continue `plans/e2e_redesign.md` Step 7: quarterly estimated tax payments and underpayment safe-harbor rules on top of the existing year-end annual-tax obligation.
 - [ ] Make the generic Augur OCI image public-safe: no private Python config, property records, or media in image layers; deployments supply private config and assets through mounted runtime inputs.
 - [ ] Add a durable property-asset storage contract: stable property asset IDs/URLs backed by object storage or a database-like asset table, so deployments do not need to bake private media into frontend images.
 
@@ -110,13 +110,12 @@ second ordered roadmap.
       deductible expenses, passive-loss release, SALT/property-tax treatment,
       California conformity/non-conformity, and ordinary income schedules
       beyond one annual `TaxProfile` value.
-- [ ] Shift the existing sale-tax obligation from one-time settlement in the
-      sale month to realistic annual/quarterly estimated-payment liability
-      timing. The first slice (year-end `ObligationType.ANNUAL_TAX_PAYMENT`
-      with funding policy and failure on shortfall) drives stock, PE, and
-      property sale tax through the same path; the remaining work is moving
-      due dates off the source month and onto realistic filing/estimated
-      dates, and replacing `allocated_to_source_month` array provenance.
+- [ ] Layer quarterly estimated-payment timing on top of the existing
+      year-end annual-tax obligation. Sale tax now accrues per source month
+      (TaxPaymentAllocationDetail, `payment_timing=YEAR_END`) and settles in
+      a single year-end obligation collapsed onto month index `year * 12 +
+11` (clipped to horizon). Quarterly estimated payments (and the
+      safe-harbor rules around underpayment penalties) are a follow-on.
 - [ ] Prefer yearly income/tax-lot ledgers with explicit tax settlement near
       realistic payment dates over trying to account for every tax effect at
       the moment income or a gain occurs. The settlement workflow should also
