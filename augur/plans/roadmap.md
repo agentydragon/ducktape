@@ -479,24 +479,35 @@ Generalize the shape so **one** pattern handles every immediate cash demand:
 1. **Expand `ObligationType`** beyond `ANNUAL_TAX_PAYMENT` /
    `MORTGAGE_PAYMENT`. Add: `PROPERTY_TAX`, `HOA_DUES`, `INSURANCE_PREMIUM`,
    `MAINTENANCE`, `OUTSIDE_RENT`, `SPECIAL_ASSESSMENT`,
-   `PARTNER_CONTRIBUTION`. Each variant declares `required: bool` — required
-   obligations produce `FAILED` on shortfall; discretionary obligations are
-   best-effort and produce a settlement row but not a failure event.
+   `PARTNER_CONTRIBUTION`, `ESTIMATED_TAX_PAYMENT`. Each variant declares
+   `required: bool` — required obligations produce `FAILED` on shortfall;
+   discretionary obligations are best-effort and produce a settlement row
+   but not a failure event.
+   **Landed (foundation PR).** Enum members exist; the obligation-kind
+   dataclasses (`_AnnualTaxObligationKind`, `_MortgageObligationKind`, new
+   generic `_CashDebitObligationKind`) carry `required: bool`;
+   `_record_obligation_settlement_rows` honors the flag so a discretionary
+   variant produces a settlement row without a failure event.
 2. **Refactor `apply_property_operating_cash_flows`** (<augur/core/policy_runtime.py>)
    to emit obligations instead of directly debiting cash. Same accrual
    amounts, same months, same chart-account roles — the only visible change
    is new obligation/settlement rows on the trace. Cash trajectories should
    match the current behavior on the happy path.
+   **Pending.** Hardest slice; touches the property cash-flow pipeline.
 3. **Outside-rent obligations** for `OccupancyMode.OWNER_RENTS_ELSEWHERE`.
    Today this isn't first-class. Add a `RentalPaymentPolicy` (or extend
    `OccupancyDecisionPolicy`) that accrues monthly rent as a required
    obligation. Verify against existing tests.
+   **Pending.** Today `OWNER_RENTS_ELSEWHERE` does not model the
+   tenant-side rent cash demand at all (no direct cash debit either);
+   the `OUTSIDE_RENT` enum value is reserved for when rent modeling lands.
 4. **Partner-contribution obligations**. Today
    `apply_partner_house_cost_contribution` debits cash unconditionally. The
    contributing actor's failure to fund their share of housing costs is a
    real-world failure mode and should produce `FAILED`. Move the cash debit
    to the obligation pipeline. The owner side (which credits cash) stays
    direct since it's a receipt, not a demand.
+   **Pending.** The `PARTNER_CONTRIBUTION` enum value is reserved.
 5. **Quarterly estimated tax payments** on top of the year-end obligation.
    Standard schedule: Apr 15, Jun 15, Sep 15, Jan 15 of the following year
    (clamped to horizon). Safe-harbor: 100% of prior-year tax (110% when AGI
@@ -504,16 +515,26 @@ Generalize the shape so **one** pattern handles every immediate cash demand:
    estimated payments. First year (no prior-year tax): use 90% of estimated
    current-year tax. The year-end obligation amount reduces by the sum of
    estimated payments actually made.
+   **Pending.** The `ESTIMATED_TAX_PAYMENT` enum value is reserved.
 6. **Special-assessment events**. Add a `SpecialAssessment` event variant
    for one-shot HOA assessments, surfaced through the existing event
    pipeline. Each event produces a `SPECIAL_ASSESSMENT` obligation due in
    the event month.
+   **Landed (foundation PR).** `SpecialAssessmentEvent` lives next to the
+   other event variants; the scenario engine builds a (rollout, month)
+   obligation matrix and routes it through `_settle_required_cash_obligations`
+   with a `_CashDebitObligationKind` carrying `ChartAccountRole.HOA_EXPENSE`.
+   Two `test_e2e.py` cases cover the happy path and the FAILED rollout
+   path. This is the proving ground for the unified pipeline shape.
 7. **Generalize failure tests**. One `RolloutStatusType.FAILED` test per
    obligation type proving the funding-policy chain runs, can be rescued
    by an asset sale, and fails the rollout when no rescue is available.
    Extend `test_e2e.py` with a "cash-strapped rental scenario" and a
    "cash-strapped owner-rents-elsewhere scenario" that fail on the right
    obligation.
+   **Partially landed.** `test_special_assessment_event_fails_rollout_when_unfundable`
+   covers the new variant; the rest follow naturally as slices 2–5 land
+   their pipelines.
 
 #### Out of scope (defer to a follow-on)
 

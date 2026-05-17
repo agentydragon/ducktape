@@ -62,6 +62,7 @@ from augur.core.scenario_set import (
     SellPublicStockDecision,
     SellSp500Action,
     SettlePropertySaleAction,
+    SpecialAssessmentEvent,
     TaxFilingStatus,
     TaxPaymentAllocationDetail,
     TaxPaymentTiming,
@@ -627,6 +628,84 @@ def test_mortgage_obligation_continues_projection_after_failure() -> None:
     # One failure per scheduled mortgage month (1..6).
     assert len(mortgage_failures) == horizon_months
     assert {event.month_index for event in mortgage_failures} == set(range(1, horizon_months + 1))
+
+
+def test_special_assessment_event_settles_as_obligation_when_cash_available() -> None:
+    """A `SpecialAssessmentEvent` produces a `SPECIAL_ASSESSMENT` obligation due in
+    the event month. When cash covers the amount, the obligation settles PAID and
+    the rollout stays ACTIVE; cash drops by the assessment amount in that month."""
+    scenario = Scenario(
+        scenario_id="special_assessment_happy",
+        label="Special Assessment Happy",
+        actors=(_simple_actor(),),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking", account_type=AccountType.CHECKING, owner_actor_id="alpha", balance_usd=50_000
+                ),
+            )
+        ),
+        events=(SpecialAssessmentEvent(event_id="hoa_assessment", month_index=3, amount_usd=10_000),),
+    )
+    result = _run_scenario(scenario, horizon_months=6)
+    assert result.arrays is not None
+    special_assessment_obligations = tuple(
+        obligation
+        for obligation in result.arrays.obligations
+        if obligation.obligation_type is ObligationType.SPECIAL_ASSESSMENT
+    )
+    assert len(special_assessment_obligations) == 1
+    assessment = special_assessment_obligations[0]
+    assert assessment.month_index == 3
+    assert assessment.amount_due_usd == 10_000
+    assert assessment.status is ObligationStatus.PAID
+    assert tuple(event for event in result.arrays.failure_events) == ()
+    assert result.rollout(0).status().status == RolloutStatusType.ACTIVE
+    cash_series = result.rollout(0).series(ReportMetric.CASH_USD)
+    assert cash_series[2] == 50_000
+    assert cash_series[3] == 40_000
+
+
+def test_special_assessment_event_fails_rollout_when_unfundable() -> None:
+    """A required `SPECIAL_ASSESSMENT` obligation that can't be funded fails the
+    rollout: emits a `FailureEvent`, flips status to FAILED, and records an
+    UNFUNDED funding decision."""
+    scenario = Scenario(
+        scenario_id="special_assessment_unfundable",
+        label="Special Assessment Unfundable",
+        actors=(_simple_actor(),),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking", account_type=AccountType.CHECKING, owner_actor_id="alpha", balance_usd=500
+                ),
+            )
+        ),
+        events=(SpecialAssessmentEvent(event_id="hoa_assessment", month_index=2, amount_usd=25_000),),
+    )
+    result = _run_scenario(scenario, horizon_months=6)
+    assert result.arrays is not None
+    special_assessment_obligations = tuple(
+        obligation
+        for obligation in result.arrays.obligations
+        if obligation.obligation_type is ObligationType.SPECIAL_ASSESSMENT
+    )
+    assert len(special_assessment_obligations) == 1
+    assert special_assessment_obligations[0].status is ObligationStatus.PARTIALLY_PAID
+    failures = tuple(
+        event for event in result.arrays.failure_events if event.obligation_id.startswith("special_assessment")
+    )
+    assert len(failures) == 1
+    assert failures[0].unpaid_amount_usd > 0
+    assert result.rollout(0).status().status == RolloutStatusType.FAILED
+    unfunded = tuple(
+        decision
+        for decision in result.arrays.funding_decisions
+        if decision.obligation_id.startswith("special_assessment")
+        and decision.decision_type is FundingDecisionType.UNFUNDED
+    )
+    assert len(unfunded) == 1
+    assert unfunded[0].shortfall_usd > 0
 
 
 def test_partner_equity_accrual_records_contributions_and_claims() -> None:

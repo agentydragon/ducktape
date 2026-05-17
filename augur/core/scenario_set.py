@@ -30,6 +30,7 @@ class EventType(StrEnum):
     PORTFOLIO_TRADE = "portfolio_trade"
     PRIVATE_EQUITY_IPO = "private_equity_ipo"
     PRIVATE_EQUITY_ACQUISITION = "private_equity_acquisition"
+    SPECIAL_ASSESSMENT = "special_assessment"
 
 
 class PolicyType(StrEnum):
@@ -179,7 +180,15 @@ class TaxPaymentTiming(StrEnum):
 
 class ObligationType(StrEnum):
     ANNUAL_TAX_PAYMENT = "annual_tax_payment"
+    ESTIMATED_TAX_PAYMENT = "estimated_tax_payment"
     MORTGAGE_PAYMENT = "mortgage_payment"
+    PROPERTY_TAX = "property_tax"
+    HOA_DUES = "hoa_dues"
+    INSURANCE_PREMIUM = "insurance_premium"
+    MAINTENANCE = "maintenance"
+    OUTSIDE_RENT = "outside_rent"
+    SPECIAL_ASSESSMENT = "special_assessment"
+    PARTNER_CONTRIBUTION = "partner_contribution"
 
 
 class ObligationStatus(StrEnum):
@@ -238,6 +247,12 @@ PropertyId = str
 class OccupancyMode(StrEnum):
     OWNER_LIVES_IN_PROPERTY = "owner_lives_in_property"
     OWNER_LIVES_IN_OTHER_OWNED_PROPERTY = "owner_lives_in_other_owned_property"
+    # CLEANUP(2026-05-17): `OWNER_RENTS_ELSEWHERE` is not modeled — the
+    #   engine has no per-month rent debit for the owner-as-tenant role and
+    #   no rent-policy schema. Plan C slice 3 (`augur/plans/roadmap.md`)
+    #   reserves `ObligationType.OUTSIDE_RENT` for the moment a rent policy
+    #   lands and starts emitting the obligation. Remove this comment when
+    #   that slice ships.
     OWNER_RENTS_ELSEWHERE = "owner_rents_elsewhere"
     NO_OWNER_OCCUPANCY = "no_owner_occupancy"
 
@@ -315,6 +330,18 @@ class PrivateEquityAcquisitionEvent(_EventBase):
     event_type: Literal[EventType.PRIVATE_EQUITY_ACQUISITION] = EventType.PRIVATE_EQUITY_ACQUISITION
 
 
+class SpecialAssessmentEvent(_EventBase):
+    """One-shot HOA / association special assessment due in `month_index`.
+
+    Routes through the unified obligation pipeline as a `SPECIAL_ASSESSMENT`
+    obligation. `amount_usd` is the assessment amount; if `actor_id` is unset
+    the obligation is billed to the scenario's primary owner.
+    """
+
+    event_type: Literal[EventType.SPECIAL_ASSESSMENT] = EventType.SPECIAL_ASSESSMENT
+    amount_usd: PositiveFloat
+
+
 Event = Annotated[
     PropertyPurchaseEvent
     | PropertySaleEvent
@@ -324,7 +351,8 @@ Event = Annotated[
     | StopRentalEvent
     | PortfolioTradeEvent
     | PrivateEquityIpoEvent
-    | PrivateEquityAcquisitionEvent,
+    | PrivateEquityAcquisitionEvent
+    | SpecialAssessmentEvent,
     Field(discriminator="event_type"),
 ]
 

@@ -113,6 +113,7 @@ from augur.core.scenario_set import (
     SimulationObligation,
     SimulationPolicyDecision,
     SimulationSettlementResult,
+    SpecialAssessmentEvent,
     TaxPaymentAllocationDetail,
 )
 from augur.core.schemas import ColumnarTable
@@ -122,6 +123,7 @@ MORTGAGE_SERVICING_POLICY_ID = "mortgage_servicing"
 PROPERTY_OPERATING_CASH_FLOW_POLICY_ID = "property_operating_cash_flow"
 PROPERTY_SALE_SETTLEMENT_POLICY_ID = "property_sale_settlement"
 ANNUAL_TAX_ACCOUNTING_POLICY_ID = "annual_tax_accounting"
+SPECIAL_ASSESSMENT_POLICY_ID = "special_assessment"
 
 
 @dataclass(frozen=True)
@@ -1840,6 +1842,39 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             sp500_sale_action_records=sp500_sale_action_records,
             crypto_sale_action_records=crypto_sale_action_records,
         )
+    special_assessment_due = _special_assessment_obligation_due_usd(
+        scenario, rollout_count=rollout_count, month_index=month_index
+    )
+    if np.any(special_assessment_due > 0):
+        _settle_required_cash_obligations(
+            scenario=scenario,
+            market_bundle=market_bundle,
+            month_index=month_index,
+            policy_steps=policy_steps,
+            obligation_amount_usd=special_assessment_due,
+            obligation_kind=_CashDebitObligationKind(
+                obligation_type=ObligationType.SPECIAL_ASSESSMENT, expense_role=ChartAccountRole.HOA_EXPENSE
+            ),
+            creditor_id="hoa",
+            source_policy_id=SPECIAL_ASSESSMENT_POLICY_ID,
+            cash_usd=cash,
+            generic_sp500_value_usd=generic_sp500_value,
+            remaining_sp500_units_by_month=remaining_sp500_units_by_month,
+            remaining_sp500_basis_by_month=remaining_sp500_basis_by_month,
+            crypto_value_usd=crypto_value,
+            remaining_crypto_quantity_by_month=remaining_crypto_quantity_by_month,
+            remaining_crypto_basis_by_month=remaining_crypto_basis_by_month,
+            crypto_sale_usd=crypto_sale_usd,
+            crypto_sale_basis_usd=crypto_sale_basis_usd,
+            checking_floor_shortfall_usd=checking_floor_shortfall,
+            obligations=obligations,
+            funding_decisions=funding_decisions,
+            settlement_results=settlement_results,
+            failure_events=failure_events,
+            accounting=accounting,
+            sp500_sale_action_records=sp500_sale_action_records,
+            crypto_sale_action_records=crypto_sale_action_records,
+        )
     _record_journal_entry_batches(
         accounting,
         month_index=month_index,
@@ -3352,6 +3387,7 @@ def _tax_share_for_sale_action(
 @dataclass(frozen=True)
 class _AnnualTaxObligationKind:
     obligation_type: ObligationType = ObligationType.ANNUAL_TAX_PAYMENT
+    required: bool = True
 
 
 @dataclass(frozen=True)
@@ -3360,9 +3396,30 @@ class _MortgageObligationKind:
     principal_usd: np.ndarray
     property_id: str
     obligation_type: ObligationType = ObligationType.MORTGAGE_PAYMENT
+    required: bool = True
 
 
-_ObligationKind = _AnnualTaxObligationKind | _MortgageObligationKind
+@dataclass(frozen=True)
+class _CashDebitObligationKind:
+    """Generic obligation kind for cash demands that settle as a single expense debit
+    against cash on the settlement journal entry.
+
+    Used for variants that don't carry their own per-line accounting nuance:
+    property tax, HOA dues, insurance, maintenance, outside rent, special
+    assessment, and partner contribution (contributing-actor side).
+
+    `expense_role` is the chart-account role to debit on settlement. The credit
+    side is `CHECKING_CASH`. `journal_entry_type` controls how the trace surfaces
+    the settlement entry (typically `OBLIGATION_SETTLEMENT`).
+    """
+
+    obligation_type: ObligationType
+    expense_role: ChartAccountRole
+    journal_entry_type: JournalEntryType = JournalEntryType.OBLIGATION_SETTLEMENT
+    required: bool = True
+
+
+_ObligationKind = _AnnualTaxObligationKind | _MortgageObligationKind | _CashDebitObligationKind
 
 
 def _year_end_tax_obligation_due_usd(*, month_index: np.ndarray, source_month_tax_due_usd: np.ndarray) -> np.ndarray:
@@ -3624,6 +3681,7 @@ def _settle_required_cash_obligations(
             amount_due_usd=due,
             amount_paid_usd=amount_paid,
             unpaid_amount_usd=unpaid,
+            required=obligation_kind.required,
         )
 
 
@@ -3681,6 +3739,34 @@ def _record_obligation_accrual_and_settlement_entries(
                         amount_usd=amount_paid_usd,
                         actor_id=actor_id,
                         liability_id=f"tax:{obligation_type.value}",
+                    ),
+                    PostingBatch(
+                        role=ChartAccountRole.CHECKING_CASH,
+                        side=PostingSide.CREDIT,
+                        amount_usd=amount_paid_usd,
+                        actor_id=actor_id,
+                    ),
+                ),
+            ),
+        )
+        return
+    if isinstance(obligation_kind, _CashDebitObligationKind):
+        accounting.record_entry(
+            month_index=month_index,
+            entry=JournalEntryBatch(
+                journal_entry_type=obligation_kind.journal_entry_type,
+                cause_type=AccountingCauseType.OBLIGATION_SETTLEMENT,
+                cause_id_prefix=f"policy:{source_policy_id}:{obligation_type.value}:settlement",
+                obligation_id_prefix=obligation_type.value,
+                actor_id=actor_id,
+                policy_id=source_policy_id,
+                description=obligation_type.value,
+                postings=(
+                    PostingBatch(
+                        role=obligation_kind.expense_role,
+                        side=PostingSide.DEBIT,
+                        amount_usd=amount_paid_usd,
+                        actor_id=actor_id,
                     ),
                     PostingBatch(
                         role=ChartAccountRole.CHECKING_CASH,
@@ -3997,6 +4083,7 @@ def _record_obligation_settlement_rows(
     amount_due_usd: np.ndarray,
     amount_paid_usd: np.ndarray,
     unpaid_amount_usd: np.ndarray,
+    required: bool = True,
 ) -> None:
     for rollout_index in np.nonzero(amount_due_usd > 0)[0].tolist():
         due = float(amount_due_usd[rollout_index])
@@ -4034,7 +4121,7 @@ def _record_obligation_settlement_rows(
                 unpaid_amount_usd=unpaid,
             )
         )
-        if unpaid > 0:
+        if unpaid > 0 and required:
             failure_events.append(
                 SimulationFailureEvent(
                     rollout_index=rollout_index,
@@ -4693,6 +4780,31 @@ def _scenario_hoa_monthly_usd(scenario: Scenario) -> float:
         if isinstance(event, PropertyPurchaseEvent) and event.hoa_monthly_usd is not None:
             return float(event.hoa_monthly_usd)
     return 0.0
+
+
+def _special_assessment_obligation_due_usd(
+    scenario: Scenario, *, rollout_count: int, month_index: np.ndarray
+) -> np.ndarray:
+    """Build a (rollout, month) matrix of special-assessment dues from scenario events.
+
+    Each `SpecialAssessmentEvent` in `scenario.events` contributes its `amount_usd` to
+    the matrix column corresponding to its `month_index`. Events whose `month_index`
+    falls outside the simulation horizon are clamped to the last in-horizon month so
+    the cash impact lands within the simulation (mirrors the year-end tax fallback).
+    Each row of the matrix is identical across rollouts: a special assessment is a
+    deterministic scheduled event, not a per-rollout stochastic input.
+    """
+    matrix = np.zeros((rollout_count, month_index.size), dtype="float64")
+    if month_index.size == 0:
+        return matrix
+    last_position = month_index.size - 1
+    for event in scenario.events:
+        if not isinstance(event, SpecialAssessmentEvent):
+            continue
+        event_positions = np.nonzero(month_index == int(event.month_index))[0]
+        position = int(event_positions[0]) if event_positions.size > 0 else last_position
+        matrix[:, position] = matrix[:, position] + float(event.amount_usd)
+    return matrix
 
 
 def _required_local_regulation(scenario: Scenario) -> LocalRegulation:

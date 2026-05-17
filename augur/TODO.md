@@ -30,10 +30,26 @@ second ordered roadmap.
       distribution. Model design is part of the same pass as PE above
       (joint vs independent fit is a design question; deployment evidence
       is private and stays downstream).
-- [ ] Plan C in `plans/roadmap.md`: unified obligation/funding semantics
-      for all immediate cash demands (property tax, HOA, insurance,
-      maintenance, outside rent, partner contributions, special assessments,
-      quarterly estimated taxes).
+- [ ] Plan C remaining slices (foundation landed in
+      `claude/plan-c-unified-obligations`): the `ObligationType` enum now
+      covers every variant called out in `plans/roadmap.md` (annual tax,
+      estimated tax, mortgage, property tax, HOA dues, insurance,
+      maintenance, outside rent, special assessment, partner
+      contribution); `_CashDebitObligationKind` provides the generic
+      pipeline shape with a `required: bool` knob; `SpecialAssessmentEvent`
+      is wired end-to-end as the first non-tax / non-mortgage cash demand
+      that routes through `_settle_required_cash_obligations`. Still
+      pending: (a) refactor `apply_property_operating_cash_flows` so
+      property tax / HOA / insurance / maintenance emit obligations
+      instead of debiting cash directly; (b) route the contributing-side
+      partner contribution through the obligation pipeline so a
+      cash-strapped partner produces FAILED; (c) add quarterly estimated
+      tax obligations on the standard Apr/Jun/Sep/Jan-next schedule with
+      100%/110% safe-harbor (90% first year), with the year-end true-up
+      reduced by estimated payments actually made; (d) outside-rent
+      obligations for `OccupancyMode.OWNER_RENTS_ELSEWHERE` (currently
+      not modeled — leave a tombstone at the call site until rent
+      modeling lands).
 - [ ] Drop the `Simulation` prefix from internal class names. Inside a
       simulator every class is by definition simulated; the prefix adds
       noise without disambiguating. Survey hit (after trace-surface collapse
