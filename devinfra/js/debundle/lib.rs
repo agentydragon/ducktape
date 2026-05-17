@@ -22,6 +22,7 @@ mod ids;
 mod partition;
 mod peelability;
 mod purity;
+mod realizability;
 mod report_schema;
 mod reports;
 mod schedule;
@@ -50,6 +51,10 @@ pub use partition::Partition;
 pub use purity::{
     Purity, PurityReason, PurityRule, RedundantPureMemberHint, RedundantPureMemberReason,
     RedundantPurityHint, RedundantPurityReason,
+};
+pub use realizability::{
+    CrossRebindEdge, DeltaHandle, PartitionDelta, RealizabilityIndex, RealizabilityVerdict,
+    UnrealizableScc, check_realizability,
 };
 pub use report_schema::{
     BindingReport, EvaluatedPeelCandidateReport, FactorizeCell, FactorizeDiagnostic,

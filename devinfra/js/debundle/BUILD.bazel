@@ -211,6 +211,7 @@ rust_library(
         "partition.rs",
         "peelability.rs",
         "purity.rs",
+        "realizability.rs",
         "report_schema.rs",
         "reports.rs",
         "schedule.rs",
