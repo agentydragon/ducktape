@@ -1,6 +1,6 @@
 # Augur TODO
 
-Last design scan: 2026-05-16. Last consolidation: 2026-05-16.
+Last design scan: 2026-05-17. Last consolidation: 2026-05-17.
 
 This file tracks public, generic Augur backlog. Downstream repos should keep
 private composition, deployment, and user-/company-specific modeling assumptions
@@ -10,7 +10,31 @@ Priority ordering and cross-repo consolidation live in
 `plans/roadmap.md`. Keep this file as the public generic backlog rather than a
 second ordered roadmap.
 
-## Next
+## In Flight (Round 3, 2026-05-17)
+
+- **Sale-tax timing slice** — finish Plan C's deferred half (move sale-tax
+  obligations off `ALLOCATED_TO_SOURCE_MONTH` onto year-end /
+  estimated-payment dates). Worktree subagent on branch
+  `claude/sale-tax-timing-slice`.
+- **Partner ownership parallel paths** (cleanup audit item 3) — collapse
+  the duplicate ledger-row generation in
+  `_record_partner_agreement_ledger_detail`. Worktree subagent on branch
+  `claude/partner-ownership-parallel-paths`.
+
+## Recently Landed (Rounds 1–2, 2026-05-16/17)
+
+- Plans A (#1557 / #1561 / #1563), B (#1568), C (#1570 — mortgage slice
+  only), E (#1567), F (#1566 + cycle fix #1569), G (#1575 + gaffer-private
+  #109).
+- Cleanup audit item 7 (#1571) — `PolicyContext` already gone; typed
+  `ReportMetric` lookup replaces `_metric_array` dynamic-attribute
+  probing.
+- Plan D — already guardrailed by `market_config_test.py`; no dispatch
+  needed.
+- Portfolio YAML contract — already shipped in `bb4d8b681`; PR #1573
+  narrowed the stale TODO bullet.
+
+## Next (after Round 3 lands)
 
 - [ ] Use the generated Augur OpenAPI/browser schema target in browser state
       normalization and request mapping. Python Pydantic remains the source of
