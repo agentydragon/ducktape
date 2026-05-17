@@ -6,13 +6,13 @@ metadata:
 
 entries:
   - model: authentik_providers_proxy.proxyprovider
-    id: openclaw-mitmproxy-provider
+    id: agents-mitmproxy-provider
     state: present
     identifiers:
-      name: openclaw-mitmproxy
+      name: agents-mitmproxy
     attrs:
-      external_host: "https://openclaw-mitmproxy.allegedly.works"
-      internal_host: "http://mitmproxy.openclaw-mitmproxy.svc.cluster.local:8081"
+      external_host: "https://agents-mitmproxy.allegedly.works"
+      internal_host: "http://mitmproxy.agents-mitmproxy.svc.cluster.local:8081"
       mode: proxy
       authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
       authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
@@ -20,20 +20,20 @@ entries:
       access_token_validity: "hours=1"
 
   - model: authentik_core.application
-    id: openclaw-mitmproxy-app
+    id: agents-mitmproxy-app
     state: present
     identifiers:
-      slug: openclaw-mitmproxy
+      slug: agents-mitmproxy
     attrs:
       name: OpenClaw Mitmproxy
-      provider: !KeyOf openclaw-mitmproxy-provider
+      provider: !KeyOf agents-mitmproxy-provider
       meta_description: "OpenClaw outbound traffic viewer"
-      meta_launch_url: "https://openclaw-mitmproxy.allegedly.works"
+      meta_launch_url: "https://agents-mitmproxy.allegedly.works"
       open_in_new_tab: true
 
   - model: authentik_policies.policybinding
     state: present
     identifiers:
-      target: !KeyOf openclaw-mitmproxy-app
+      target: !KeyOf agents-mitmproxy-app
       group: !Find [authentik_core.group, [name, authentik Admins]]
       order: 0

@@ -69,12 +69,12 @@ spec:
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
                   name: HTTP_PROXY
-                  value: "http://mitmproxy.openclaw-mitmproxy.svc.cluster.local:8080"
+                  value: "http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080"
               - op: add
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
                   name: HTTPS_PROXY
-                  value: "http://mitmproxy.openclaw-mitmproxy.svc.cluster.local:8080"
+                  value: "http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080"
               - op: add
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
@@ -127,12 +127,12 @@ spec:
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:
                   name: HTTP_PROXY
-                  value: "http://mitmproxy.openclaw-mitmproxy.svc.cluster.local:8080"
+                  value: "http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080"
               - op: add
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:
                   name: HTTPS_PROXY
-                  value: "http://mitmproxy.openclaw-mitmproxy.svc.cluster.local:8080"
+                  value: "http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080"
               - op: add
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:

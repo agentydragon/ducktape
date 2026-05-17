@@ -7,7 +7,7 @@ resources:
   - grocy-sf-httproute.yaml
   - grocy-vallejo-httproute.yaml
   - filebrowser-httproute.yaml
-  - openclaw-mitmproxy-httproute.yaml
+  - agents-mitmproxy-httproute.yaml
   - proxmox-httproute.yaml
   - google-workspace-mcp-httproute.yaml
   - longhorn-httproute.yaml

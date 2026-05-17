@@ -26,9 +26,9 @@
       - name: MY_VAR
         value: hello
       - name: HTTP_PROXY
-        value: http://mitmproxy.openclaw-mitmproxy.svc.cluster.local:8080
+        value: http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080
       - name: HTTPS_PROXY
-        value: http://mitmproxy.openclaw-mitmproxy.svc.cluster.local:8080
+        value: http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080
       - name: NO_PROXY
         value: 127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8
       - name: SSL_CERT_FILE
@@ -68,9 +68,9 @@
     containers:
     - env:
       - name: HTTP_PROXY
-        value: http://mitmproxy.openclaw-mitmproxy.svc.cluster.local:8080
+        value: http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080
       - name: HTTPS_PROXY
-        value: http://mitmproxy.openclaw-mitmproxy.svc.cluster.local:8080
+        value: http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080
       - name: NO_PROXY
         value: 127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8
       - name: SSL_CERT_FILE
@@ -94,9 +94,9 @@
       - echo hello
       env:
       - name: HTTP_PROXY
-        value: http://mitmproxy.openclaw-mitmproxy.svc.cluster.local:8080
+        value: http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080
       - name: HTTPS_PROXY
-        value: http://mitmproxy.openclaw-mitmproxy.svc.cluster.local:8080
+        value: http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080
       - name: NO_PROXY
         value: 127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8
       - name: SSL_CERT_FILE
@@ -131,9 +131,9 @@
     containers:
     - env:
       - name: HTTP_PROXY
-        value: http://mitmproxy.openclaw-mitmproxy.svc.cluster.local:8080
+        value: http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080
       - name: HTTPS_PROXY
-        value: http://mitmproxy.openclaw-mitmproxy.svc.cluster.local:8080
+        value: http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080
       - name: NO_PROXY
         value: 127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8
       - name: SSL_CERT_FILE

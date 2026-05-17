@@ -46,7 +46,7 @@ spec:
     # external pip/curl through HTTP_PROXY timed out.
     - toEndpoints:
         - matchLabels:
-            k8s:io.kubernetes.pod.namespace: openclaw-mitmproxy
+            k8s:io.kubernetes.pod.namespace: agents-mitmproxy
             k8s:app.kubernetes.io/name: mitmproxy
       toPorts:
         - ports:

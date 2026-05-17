@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: mitmproxy-ca-key
-  namespace: openclaw-mitmproxy
+  namespace: agents-mitmproxy
   annotations:
     description: MITM proxy CA private key for sandbox HTTPS inspection
 type: Opaque

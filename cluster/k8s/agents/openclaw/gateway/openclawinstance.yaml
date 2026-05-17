@@ -374,7 +374,7 @@ spec:
         - to:
             - namespaceSelector:
                 matchLabels:
-                  kubernetes.io/metadata.name: openclaw-mitmproxy
+                  kubernetes.io/metadata.name: agents-mitmproxy
           ports:
             - port: 8080
               protocol: TCP

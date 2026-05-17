@@ -34,9 +34,9 @@ destinations as before.
 
 Files touched:
 
-- <../k8s/agents/openclaw/mitmproxy/ccnp-sandbox-proxy-egress.yaml> —
+- <../agents/mitmproxy/ccnp-sandbox-proxy-egress.yaml> —
   label-selector fix (the real bug).
-- <../k8s/agents/openclaw/mitmproxy/cnp-cloud-api-egress.yaml> — added
+- <../agents/mitmproxy/cnp-cloud-api-egress.yaml> — added
   `toEntities: cluster` egress rule on common ports (80, 443, 8000,
   8080, 11434) so mitmproxy can forward to in-cluster Services.
 
@@ -83,7 +83,7 @@ since there's no first-class Gitea provider in OpenHands.
 
 **Proxy-mode services** missing the required NetworkPolicy restricting ingress
 to the authentik shared proxy outpost pod (per AGENTS.md):
-openclaw-mitmproxy, proxmox.
+agents-mitmproxy, proxmox.
 
 **Critical unprotected services** (no NetworkPolicy at all):
 external-secrets, gitea, harbor.
@@ -103,7 +103,7 @@ Talos enforces `baseline` Pod Security Standards by default via PSA.
 Explicit `securityContext` on Deployments is defense-in-depth. Low urgency.
 
 Missing securityContext: litellm, ollama, devbot, grocy-sf, grocy-vallejo, proxmox-proxy,
-tana-mcp, openclaw/mitmproxy, props, atuin.
+tana-mcp, mitmproxy, props, atuin.
 
 ## Grocy MCP startup probe
 

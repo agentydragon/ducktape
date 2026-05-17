@@ -83,8 +83,8 @@ resources:
   - agents/homeassistant-proxy/flux-kustomization.yaml
   - agents/openclaw/operator/flux-kustomization.yaml
   - agents/openclaw/gateway-namespace/flux-kustomization.yaml
-  - agents/openclaw/mitmproxy-namespace/flux-kustomization.yaml
-  - agents/openclaw/mitmproxy/flux-kustomization.yaml
+  - agents/mitmproxy-namespace/flux-kustomization.yaml
+  - agents/mitmproxy/flux-kustomization.yaml
   - agents/openclaw/gateway-secrets/flux-kustomization.yaml
   - agents/openclaw/gateway/flux-kustomization.yaml
   - agents/openclaw/gateway-agent-rbac/flux-kustomization.yaml
