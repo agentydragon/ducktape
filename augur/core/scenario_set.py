@@ -739,6 +739,14 @@ class TaxProfile(ApiModel):
     annual_ordinary_income_usd: NonNegativeFloat = 0
     federal_standard_deduction_usd: NonNegativeFloat | None = None
     california_standard_deduction_usd: NonNegativeFloat | None = None
+    # Prior-year (pre-simulation) federal+CA tax liability used as the IRS
+    # safe-harbor base for the first simulated year's quarterly estimated
+    # payments (100% of prior-year tax, or 110% above the high-AGI threshold,
+    # divided into four equal payments). `None` means no prior-year tax is
+    # available, so the first year falls back to 90% of estimated current-year
+    # tax. Subsequent simulated years use the prior simulated year's actual
+    # tax automatically, so this field only governs year 0.
+    prior_year_tax_usd: NonNegativeFloat | None = None
 
 
 class TransactionCosts(ApiModel):

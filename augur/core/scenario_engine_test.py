@@ -1584,6 +1584,10 @@ def test_required_tax_obligation_can_be_funded_from_cash_account() -> None:
                 private_equity_usd=200_000,
                 private_equity_basis_usd=0,
                 private_equity_units=100,
+                # Opt out of quarterly estimated tax so this test stays focused
+                # on the year-end annual-tax obligation pipeline. Estimated-tax
+                # behavior is covered by dedicated tests in `test_e2e.py`.
+                tax_profile={"prior_year_tax_usd": 0},
                 policies=[
                     {
                         "policy_id": "private_equity_sale",
@@ -1622,6 +1626,8 @@ def test_required_tax_obligation_fails_when_policy_does_not_fund_it() -> None:
                 private_equity_usd=200_000,
                 private_equity_basis_usd=0,
                 private_equity_units=100,
+                # Opt out of quarterly estimated tax — see sibling test for rationale.
+                tax_profile={"prior_year_tax_usd": 0},
                 policies=[
                     {
                         "policy_id": "private_equity_sale",
@@ -1676,6 +1682,8 @@ def test_required_tax_obligation_can_be_rescued_by_existing_public_stock_sale_po
                 private_equity_usd=200_000,
                 private_equity_basis_usd=0,
                 private_equity_units=100,
+                # Opt out of quarterly estimated tax — see sibling test for rationale.
+                tax_profile={"prior_year_tax_usd": 0},
                 policies=[
                     {
                         "policy_id": "private_equity_sale",
@@ -1748,6 +1756,8 @@ def test_required_tax_obligation_funding_uses_policy_program_order() -> None:
                 private_equity_usd=200_000,
                 private_equity_basis_usd=0,
                 private_equity_units=100,
+                # Opt out of quarterly estimated tax — see sibling test for rationale.
+                tax_profile={"prior_year_tax_usd": 0},
                 policies=[
                     {
                         "policy_id": "private_equity_sale",
@@ -1870,6 +1880,8 @@ def test_required_tax_obligation_funded_by_crypto_after_sp500_exhausted() -> Non
                 private_equity_usd=1_000_000,
                 private_equity_basis_usd=0,
                 private_equity_units=1_000,
+                # Opt out of quarterly estimated tax — see sibling test for rationale.
+                tax_profile={"prior_year_tax_usd": 0},
                 policies=[
                     {
                         "policy_id": "private_equity_sale",

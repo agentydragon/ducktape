@@ -1019,6 +1019,424 @@ def test_partner_contribution_obligation_fails_rollout_when_partner_cannot_fund(
     assert all(decision.shortfall_usd > 0 for decision in unfunded)
 
 
+def _estimated_tax_obligations(result: ScenarioRun) -> tuple:
+    """Filter result.arrays.obligations down to quarterly estimated-tax rows."""
+    assert result.arrays is not None
+    return tuple(
+        obligation
+        for obligation in result.arrays.obligations
+        if obligation.obligation_type is ObligationType.ESTIMATED_TAX_PAYMENT
+    )
+
+
+def _annual_tax_obligations(result: ScenarioRun) -> tuple:
+    """Filter result.arrays.obligations down to year-end annual-tax rows."""
+    assert result.arrays is not None
+    return tuple(
+        obligation
+        for obligation in result.arrays.obligations
+        if obligation.obligation_type is ObligationType.ANNUAL_TAX_PAYMENT
+    )
+
+
+def test_quarterly_estimated_tax_happy_path_q1_through_q4_with_zero_year_end() -> None:
+    """A scenario with a $50k SP500 sale in month 2 generates Q1/Q2/Q3/Q4
+    estimated payment obligations on the IRS calendar (Apr 15, Jun 15, Sep 15,
+    Jan 15 of year 2). With `prior_year_tax_usd` tuned so Q1+Q2+Q3 covers the
+    full year tax, the year-end true-up at month 11 (Dec 31) accrues zero —
+    cash dips at months 3, 5, 8, 12 (Apr, Jun, Sep, Jan-of-year-2) but NOT at
+    month 11.
+    """
+    horizon_months = 13  # Through Jan 15 of year 1 (month 12) plus padding.
+    # First, run the scenario with a placeholder prior_year_tax_usd to compute
+    # the actual sale tax — this lets the test pin a year-end value without
+    # hand-computing bracket-aware math here.
+    base_scenario = Scenario(
+        scenario_id="estimated_tax_happy_probe",
+        label="Estimated Tax Happy Probe",
+        actors=(_simple_actor(),),
+        tax_profile=TaxProfile(prior_year_tax_usd=0),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking",
+                    account_type=AccountType.CHECKING,
+                    owner_actor_id="alpha",
+                    balance_usd=100_000,
+                ),
+            ),
+            assets=(
+                GenericSp500StockPosition(
+                    asset_id="sp500",
+                    asset_type=AssetType.GENERIC_SP500_STOCK,
+                    owner_actor_id="alpha",
+                    value_usd=50_000,
+                    cost_basis_usd=0,
+                ),
+            ),
+        ),
+        policies=(
+            CheckingFloorSellPublicStockPolicy(
+                policy_id="checking_floor", actor_id="alpha", floor_usd=200_000, sale_amount_usd=50_000
+            ),
+        ),
+    )
+    probe = _run_scenario(base_scenario, horizon_months=horizon_months)
+    total_year_tax_usd = float(np.sum(probe.rollout(0).series(ReportMetric.TOTAL_INCOME_TAX_USD)))
+    assert total_year_tax_usd > 0, "probe scenario must produce some tax for the test to be meaningful"
+    # Setting prior_year_tax_usd to (4/3) of the actual year tax sizes each
+    # quarter at total/3; by month 11 (Dec 31), three quarters have paid the
+    # full year bill, so the year-end true-up clamps to zero.
+    prior_year_tax_usd = total_year_tax_usd * 4.0 / 3.0
+
+    scenario = Scenario(
+        scenario_id="estimated_tax_happy",
+        label="Estimated Tax Happy",
+        actors=(_simple_actor(),),
+        tax_profile=TaxProfile(prior_year_tax_usd=prior_year_tax_usd),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking",
+                    account_type=AccountType.CHECKING,
+                    owner_actor_id="alpha",
+                    balance_usd=100_000,
+                ),
+            ),
+            assets=(
+                GenericSp500StockPosition(
+                    asset_id="sp500",
+                    asset_type=AssetType.GENERIC_SP500_STOCK,
+                    owner_actor_id="alpha",
+                    value_usd=50_000,
+                    cost_basis_usd=0,
+                ),
+            ),
+        ),
+        policies=(
+            CheckingFloorSellPublicStockPolicy(
+                policy_id="checking_floor", actor_id="alpha", floor_usd=200_000, sale_amount_usd=50_000
+            ),
+        ),
+    )
+    result = _run_scenario(scenario, horizon_months=horizon_months)
+
+    estimated = _estimated_tax_obligations(result)
+    # Exactly four quarterly obligations for tax year 0 (Q4 of year 0 lands at
+    # month 12 = Jan 15 of year 1).
+    assert {obligation.month_index for obligation in estimated} == {3, 5, 8, 12}
+    assert all(obligation.status is ObligationStatus.PAID for obligation in estimated)
+    expected_per_quarter = prior_year_tax_usd / 4.0
+    for obligation in estimated:
+        assert_allclose(obligation.amount_due_usd, expected_per_quarter)
+
+    # Year-end (Dec 31 of year 0 = month 11) accrues zero because Q1+Q2+Q3
+    # already cover the year tax. The function records no zero-amount
+    # obligation so the year-end obligation set is empty.
+    annual = _annual_tax_obligations(result)
+    assert annual == ()
+
+    rollout = result.rollout(0)
+    cash = rollout.series(ReportMetric.CASH_USD)
+    # Cash starts at $100k + $50k sale at month 2 (sale is recorded into cash
+    # via the SP500 sale because the checking-floor policy fires when the
+    # projected post-sale cash would otherwise drop below $200k — here cash is
+    # well below the floor every month, but the sale is one-shot at month 2
+    # because the SP500 pool is fully liquidated after one $50k sale).
+    # After month 2, cash is $150k. Then dips at months 3, 5, 8, 12 by Q/4.
+    assert cash[2] == pytest.approx(150_000.0)
+    # Cash should be unchanged between non-payment months. Month 10 → 11 → 12
+    # exercise the "no dip at Dec 31" requirement.
+    assert cash[11] == pytest.approx(cash[10])
+    # Cash drops by exactly `expected_per_quarter` at each of months 3, 5, 8, 12.
+    for due_month in (3, 5, 8, 12):
+        assert cash[due_month] == pytest.approx(cash[due_month - 1] - expected_per_quarter)
+
+
+def test_quarterly_estimated_tax_first_year_uses_90pct_of_current_year_tax() -> None:
+    """When no prior-year tax is supplied, the IRS first-year exception kicks in:
+    each quarterly payment is 90% / 4 of the simulated current-year tax. The
+    four obligations together sum to ~90% of the full annual tax bill.
+    """
+    scenario = Scenario(
+        scenario_id="estimated_tax_first_year",
+        label="Estimated Tax First Year",
+        actors=(_simple_actor(),),
+        # No `prior_year_tax_usd` — first-year fallback (90% of current-year tax).
+        tax_profile=TaxProfile(),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking",
+                    account_type=AccountType.CHECKING,
+                    owner_actor_id="alpha",
+                    balance_usd=200_000,
+                ),
+            ),
+            assets=(
+                GenericSp500StockPosition(
+                    asset_id="sp500",
+                    asset_type=AssetType.GENERIC_SP500_STOCK,
+                    owner_actor_id="alpha",
+                    value_usd=100_000,
+                    cost_basis_usd=0,
+                ),
+            ),
+        ),
+        policies=(
+            CheckingFloorSellPublicStockPolicy(
+                policy_id="checking_floor", actor_id="alpha", floor_usd=400_000, sale_amount_usd=100_000
+            ),
+        ),
+    )
+    result = _run_scenario(scenario, horizon_months=13)
+    total_year_tax = float(np.sum(result.rollout(0).series(ReportMetric.TOTAL_INCOME_TAX_USD)))
+    estimated = _estimated_tax_obligations(result)
+    assert {obligation.month_index for obligation in estimated} == {3, 5, 8, 12}
+    total_estimated = sum(obligation.amount_due_usd for obligation in estimated)
+    # Four quarters each pay 90% / 4 of the current-year tax. The four together
+    # sum to 90% of the year tax.
+    assert_allclose(total_estimated, 0.9 * total_year_tax)
+    for obligation in estimated:
+        assert_allclose(obligation.amount_due_usd, 0.9 * total_year_tax / 4)
+    # Year-end picks up the residual 10%.
+    annual = _annual_tax_obligations(result)
+    assert len(annual) == 1
+    assert_allclose(annual[0].amount_due_usd, total_year_tax * 0.1)
+
+
+def test_quarterly_estimated_tax_multi_year_uses_prior_year_tax_with_high_agi_threshold() -> None:
+    """A scenario with `prior_year_tax_usd=40_000` produces four equal $10k
+    quarterly obligations (100% prior-year safe-harbor, divided by 4) at the
+    standard IRS calendar months. A high-AGI variant (annual income above
+    $150k single) uses the 110% safe-harbor — four $11k payments — and a
+    correspondingly smaller year-end true-up.
+    """
+    horizon_months = 13
+
+    def _scenario_with_income(scenario_id: str, *, annual_ordinary_income_usd: float) -> Scenario:
+        return Scenario(
+            scenario_id=scenario_id,
+            label=scenario_id.replace("_", " ").title(),
+            actors=(_simple_actor(),),
+            tax_profile=TaxProfile(annual_ordinary_income_usd=annual_ordinary_income_usd, prior_year_tax_usd=40_000),
+            initial_balance_sheet=InitialBalanceSheet(
+                accounts=(
+                    AccountBalance(
+                        account_id="checking",
+                        account_type=AccountType.CHECKING,
+                        owner_actor_id="alpha",
+                        balance_usd=1_000_000,
+                    ),
+                ),
+                assets=(
+                    GenericSp500StockPosition(
+                        asset_id="sp500",
+                        asset_type=AssetType.GENERIC_SP500_STOCK,
+                        owner_actor_id="alpha",
+                        value_usd=200_000,
+                        cost_basis_usd=0,
+                    ),
+                ),
+            ),
+            policies=(
+                CheckingFloorSellPublicStockPolicy(
+                    policy_id="checking_floor", actor_id="alpha", floor_usd=2_000_000, sale_amount_usd=200_000
+                ),
+            ),
+        )
+
+    # Low-AGI: $100k ordinary income is below the $150k single high-AGI
+    # threshold; 100% prior-year safe-harbor → each quarter = $10k.
+    low_agi_result = _run_scenario(
+        _scenario_with_income("estimated_tax_multi_year_low_agi", annual_ordinary_income_usd=100_000),
+        horizon_months=horizon_months,
+    )
+    low_estimated = _estimated_tax_obligations(low_agi_result)
+    assert {obligation.month_index for obligation in low_estimated} == {3, 5, 8, 12}
+    for obligation in low_estimated:
+        assert_allclose(obligation.amount_due_usd, 10_000)
+
+    # High-AGI: $200k ordinary income exceeds the $150k single threshold;
+    # 110% prior-year safe-harbor → each quarter = $11k.
+    high_agi_result = _run_scenario(
+        _scenario_with_income("estimated_tax_multi_year_high_agi", annual_ordinary_income_usd=200_000),
+        horizon_months=horizon_months,
+    )
+    high_estimated = _estimated_tax_obligations(high_agi_result)
+    assert {obligation.month_index for obligation in high_estimated} == {3, 5, 8, 12}
+    for obligation in high_estimated:
+        assert_allclose(obligation.amount_due_usd, 11_000)
+
+    # Year-end true-up = `max(0, actual_tax - sum_of_all_four_quarterly_paid)`.
+    # The Dec 31 year-end "looks ahead" to credit the scheduled Q4 payment
+    # (which lands on Jan 15 of year N+1) because the simulator processes
+    # the whole horizon's estimated payments before sizing the year-end
+    # residual — so the residual is the gap between actual tax and total
+    # estimated paid, not just Q1+Q2+Q3.
+    low_annual = _annual_tax_obligations(low_agi_result)
+    high_annual = _annual_tax_obligations(high_agi_result)
+    low_total_tax = float(np.sum(low_agi_result.rollout(0).series(ReportMetric.TOTAL_INCOME_TAX_USD)))
+    high_total_tax = float(np.sum(high_agi_result.rollout(0).series(ReportMetric.TOTAL_INCOME_TAX_USD)))
+    low_year_end = low_annual[0].amount_due_usd if low_annual else 0.0
+    high_year_end = high_annual[0].amount_due_usd if high_annual else 0.0
+    assert_allclose(low_year_end, max(0.0, low_total_tax - 4 * 10_000))
+    assert_allclose(high_year_end, max(0.0, high_total_tax - 4 * 11_000))
+
+
+def test_quarterly_estimated_tax_high_agi_safe_harbor_reduces_year_end_by_4k() -> None:
+    """Holding actual current-year tax fixed, flipping the safe-harbor from
+    100% to 110% (via the MFS $75k AGI threshold trick: same $100k ordinary
+    income, but MFS pushes it above the high-AGI threshold) trades $4k of
+    year-end residual for $4k of estimated payments. This isolates the safe-
+    harbor multiplier from bracket-induced differences in the underlying tax
+    bill.
+    """
+    horizon_months = 13
+
+    def _scenario_with_status(scenario_id: str, *, filing_status: TaxFilingStatus) -> Scenario:
+        return Scenario(
+            scenario_id=scenario_id,
+            label=scenario_id.replace("_", " ").title(),
+            actors=(_simple_actor(),),
+            tax_profile=TaxProfile(
+                filing_status=filing_status,
+                # $100k ordinary income — below $150k (single/MFJ/HoH threshold)
+                # but above $75k (MFS threshold). Flipping the filing status
+                # therefore flips low/high AGI without changing the income or
+                # the resulting tax brackets meaningfully.
+                annual_ordinary_income_usd=100_000,
+                prior_year_tax_usd=40_000,
+            ),
+            initial_balance_sheet=InitialBalanceSheet(
+                accounts=(
+                    AccountBalance(
+                        account_id="checking",
+                        account_type=AccountType.CHECKING,
+                        owner_actor_id="alpha",
+                        balance_usd=1_000_000,
+                    ),
+                )
+            ),
+        )
+
+    # Standard 100% safe-harbor — $10k per quarter.
+    low_result = _run_scenario(
+        _scenario_with_status("estimated_tax_safe_harbor_low", filing_status=TaxFilingStatus.SINGLE),
+        horizon_months=horizon_months,
+    )
+    low_estimated = _estimated_tax_obligations(low_result)
+    for obligation in low_estimated:
+        assert_allclose(obligation.amount_due_usd, 10_000)
+
+    # 110% safe-harbor via MFS (which uses the $75k threshold) — $11k per quarter.
+    high_result = _run_scenario(
+        _scenario_with_status(
+            "estimated_tax_safe_harbor_high", filing_status=TaxFilingStatus.MARRIED_FILING_SEPARATELY
+        ),
+        horizon_months=horizon_months,
+    )
+    high_estimated = _estimated_tax_obligations(high_result)
+    for obligation in high_estimated:
+        assert_allclose(obligation.amount_due_usd, 11_000)
+
+    # The actual current-year tax differs slightly between filing statuses
+    # (different standard deductions and bracket tables), so compare only
+    # estimated-payment totals — the $4k delta is the safe-harbor difference.
+    low_estimated_total = sum(obligation.amount_due_usd for obligation in low_estimated)
+    high_estimated_total = sum(obligation.amount_due_usd for obligation in high_estimated)
+    assert_allclose(high_estimated_total - low_estimated_total, 4_000)
+
+
+def test_quarterly_estimated_tax_unfundable_q2_fails_rollout() -> None:
+    """An estimated quarterly payment that can't be covered by cash or by any
+    funding policy fails the rollout in the obligation's due month with
+    `RolloutStatusType.FAILED` plus a `FailureEvent` keyed to
+    `ESTIMATED_TAX_PAYMENT`.
+    """
+    horizon_months = 13
+    scenario = Scenario(
+        scenario_id="estimated_tax_unfundable",
+        label="Estimated Tax Unfundable",
+        actors=(_simple_actor(),),
+        # Large prior-year tax → each quarter requires $50k. Cash starts at
+        # $60k — Q1 settles partially (depleting cash to ~$10k), and Q2 at
+        # month 5 can't be funded. No funding policy attached → FAILED.
+        tax_profile=TaxProfile(prior_year_tax_usd=200_000),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking", account_type=AccountType.CHECKING, owner_actor_id="alpha", balance_usd=60_000
+                ),
+            )
+        ),
+    )
+    result = _run_scenario(scenario, horizon_months=horizon_months)
+
+    estimated = _estimated_tax_obligations(result)
+    assert {obligation.month_index for obligation in estimated} == {3, 5, 8, 12}
+    # Q1 at month 3: paid $50k from $60k cash → $10k cash left, status PAID.
+    # Q2 at month 5: $10k cash, $50k due → PARTIALLY_PAID with $40k unpaid.
+    # Q3/Q4 follow with 0 cash and full $50k unpaid each → UNPAID.
+    by_month = {obligation.month_index: obligation for obligation in estimated}
+    assert by_month[3].status is ObligationStatus.PAID
+    assert by_month[5].status is ObligationStatus.PARTIALLY_PAID
+    assert by_month[5].unpaid_amount_usd == pytest.approx(40_000)
+
+    # Failure event for Q2 (first quarterly to fail) records the rollout failure.
+    assert result.arrays is not None
+    failures = tuple(
+        event for event in result.arrays.failure_events if event.obligation_id.startswith("estimated_tax_payment")
+    )
+    # One failure per partially or fully unpaid quarterly (Q2, Q3, Q4 here).
+    assert len(failures) == 3
+    assert {event.month_index for event in failures} == {5, 8, 12}
+    q2_failure = next(event for event in failures if event.month_index == 5)
+    assert q2_failure.unpaid_amount_usd == pytest.approx(40_000)
+
+    status = result.rollout(0).status()
+    assert status.status is RolloutStatusType.FAILED
+    # First failed obligation lands at month 5 (Q2).
+    assert status.first_failed_obligation_month_index == 5
+
+
+def test_quarterly_estimated_tax_horizon_clip_drops_q3_q4_and_year_end() -> None:
+    """With a 6-month horizon (Jan-Jun), only Q1 (Apr 15) and Q2 (Jun 15) fall
+    inside; Q3, Q4, and the Dec 31 year-end land past the horizon and are
+    dropped. Quarterly obligations are dropped entirely (unlike year-end,
+    which the existing engine clips to the last in-horizon month).
+    """
+    horizon_months = 6
+    scenario = Scenario(
+        scenario_id="estimated_tax_horizon_clip",
+        label="Estimated Tax Horizon Clip",
+        actors=(_simple_actor(),),
+        tax_profile=TaxProfile(prior_year_tax_usd=40_000),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking",
+                    account_type=AccountType.CHECKING,
+                    owner_actor_id="alpha",
+                    balance_usd=500_000,
+                ),
+            )
+        ),
+    )
+    result = _run_scenario(scenario, horizon_months=horizon_months)
+    estimated = _estimated_tax_obligations(result)
+    # Q1 (month 3) and Q2 (month 5) only. Q3 at month 8 and Q4 at month 12 are
+    # past horizon 6 and dropped.
+    assert {obligation.month_index for obligation in estimated} == {3, 5}
+    for obligation in estimated:
+        assert_allclose(obligation.amount_due_usd, 10_000)
+    # Year-end at month 11 is past horizon too; the existing engine clips it
+    # to the last in-horizon month (here month 6). With no taxable income
+    # in this scenario, no year-end obligation accrues either.
+    annual = _annual_tax_obligations(result)
+    assert annual == ()
+
+
 def test_partner_equity_accrual_records_contributions_and_claims() -> None:
     """A partner contribution policy acts like a housing-cost contribution program.
 
@@ -1651,6 +2069,9 @@ def test_checking_floor_policy_sells_sp500_to_restore_cash_floor() -> None:
         scenario_id="checking_floor_sale",
         label="Checking Floor Sale",
         actors=(_simple_actor(),),
+        # prior_year_tax_usd=0 opts out of quarterly estimated payments so the
+        # asserted cash trajectory below sees only the year-end true-up.
+        tax_profile=TaxProfile(prior_year_tax_usd=0),
         initial_balance_sheet=InitialBalanceSheet(
             accounts=(
                 AccountBalance(

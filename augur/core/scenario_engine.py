@@ -114,7 +114,9 @@ from augur.core.scenario_set import (
     SettlementStatus,
     SettlePropertySaleEffect,
     SpecialAssessmentEvent,
+    TaxFilingStatus,
     TaxPaymentAllocationDetail,
+    TaxProfile,
 )
 from augur.core.schemas import ColumnarTable
 
@@ -123,12 +125,30 @@ MORTGAGE_SERVICING_POLICY_ID = "mortgage_servicing"
 PROPERTY_OPERATING_CASH_FLOW_POLICY_ID = "property_operating_cash_flow"
 PROPERTY_SALE_SETTLEMENT_POLICY_ID = "property_sale_settlement"
 ANNUAL_TAX_ACCOUNTING_POLICY_ID = "annual_tax_accounting"
+ESTIMATED_TAX_ACCOUNTING_POLICY_ID = "estimated_tax_accounting"
 SPECIAL_ASSESSMENT_POLICY_ID = "special_assessment"
 PROPERTY_TAX_POLICY_ID = "property_tax_obligation"
 HOA_DUES_POLICY_ID = "hoa_dues_obligation"
 INSURANCE_POLICY_ID = "insurance_premium_obligation"
 MAINTENANCE_POLICY_ID = "maintenance_obligation"
 PARTNER_CONTRIBUTION_POLICY_ID = "partner_contribution_obligation"
+
+# IRS quarterly estimated tax due dates expressed as month offsets within a
+# tax year. The simulator anchors month index 0 to January (no explicit
+# calendar anchor exists today): Q1 = Apr 15 (offset 3), Q2 = Jun 15 (offset
+# 5), Q3 = Sep 15 (offset 8), Q4 = Jan 15 of the following year (offset 12
+# of the tax year, i.e. month 0 of year N+1).
+_ESTIMATED_TAX_QUARTER_MONTH_OFFSETS: tuple[int, ...] = (3, 5, 8, 12)
+# IRS safe-harbor for prior-year tax: 100% normally, 110% when AGI exceeds
+# the high-earner threshold. The first-year fallback (no prior-year tax)
+# uses 90% of estimated current-year tax.
+_SAFE_HARBOR_PRIOR_YEAR_FRACTION = 1.00
+_SAFE_HARBOR_PRIOR_YEAR_FRACTION_HIGH_AGI = 1.10
+_SAFE_HARBOR_FIRST_YEAR_FRACTION = 0.90
+# High-AGI threshold for the 110% safe-harbor: $150k for most filers,
+# $75k for married-filing-separately (half the standard threshold).
+_SAFE_HARBOR_HIGH_AGI_THRESHOLD_USD = 150_000.0
+_SAFE_HARBOR_HIGH_AGI_THRESHOLD_USD_MFS = 75_000.0
 
 
 @dataclass(frozen=True)
@@ -1769,8 +1789,56 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     partner_equity = _settle_partner_equity_on_property_sale(
         partner_equity, sale_month=disposition.sale_month, property_sale_net_proceeds_usd=property_sale_net_proceeds
     )
+    # Quarterly estimated tax payments settle first (Apr 15, Jun 15, Sep 15 of
+    # the tax year, and Jan 15 of the following year). The year-end true-up
+    # reduces by the sum of estimated payments actually made for that tax year.
+    estimated_tax_due = _quarterly_estimated_tax_obligation_due_usd(
+        month_index=month_index,
+        source_month_tax_due_usd=annual_tax.total_income_tax_usd,
+        tax_profile=scenario.tax_profile,
+    )
+    settlement_count_before_estimated = len(settlement_results)
+    _settle_required_cash_obligations(
+        scenario=scenario,
+        market_bundle=market_bundle,
+        month_index=month_index,
+        policy_steps=policy_steps,
+        obligation_amount_usd=estimated_tax_due,
+        obligation_kind=_EstimatedTaxObligationKind(),
+        creditor_id="tax_authority",
+        source_policy_id=ESTIMATED_TAX_ACCOUNTING_POLICY_ID,
+        cash_usd=cash,
+        generic_sp500_value_usd=generic_sp500_value,
+        remaining_sp500_units_by_month=remaining_sp500_units_by_month,
+        remaining_sp500_basis_by_month=remaining_sp500_basis_by_month,
+        crypto_value_usd=crypto_value,
+        remaining_crypto_quantity_by_month=remaining_crypto_quantity_by_month,
+        remaining_crypto_basis_by_month=remaining_crypto_basis_by_month,
+        crypto_sale_usd=crypto_sale_usd,
+        crypto_sale_basis_usd=crypto_sale_basis_usd,
+        checking_floor_shortfall_usd=checking_floor_shortfall,
+        obligations=obligations,
+        funding_decisions=funding_decisions,
+        settlement_results=settlement_results,
+        failure_events=failure_events,
+        accounting=accounting,
+        sp500_sale_action_records=sp500_sale_action_records,
+        crypto_sale_action_records=crypto_sale_action_records,
+    )
+    tax_year_by_position_for_credit = month_index // MONTHS_PER_YEAR
+    tax_year_count_for_credit = (
+        int(tax_year_by_position_for_credit.max()) + 1 if tax_year_by_position_for_credit.size else 0
+    )
+    estimated_payments_credit = _estimated_payments_credit_per_year_usd(
+        settlement_results=settlement_results,
+        initial_settlement_count=settlement_count_before_estimated,
+        tax_year_count=tax_year_count_for_credit,
+        rollout_count=rollout_count,
+    )
     obligation_tax_due = _year_end_tax_obligation_due_usd(
-        month_index=month_index, source_month_tax_due_usd=annual_tax.total_income_tax_usd
+        month_index=month_index,
+        source_month_tax_due_usd=annual_tax.total_income_tax_usd,
+        estimated_payments_credit_per_year_usd=estimated_payments_credit,
     )
     _settle_required_cash_obligations(
         scenario=scenario,
@@ -3519,6 +3587,23 @@ class _AnnualTaxObligationKind:
 
 
 @dataclass(frozen=True)
+class _EstimatedTaxObligationKind:
+    """Quarterly estimated tax prepayment.
+
+    Posts a single OBLIGATION_SETTLEMENT entry that debits TAX_PAYABLE
+    (treating the prepayment as a contra-liability on the same payable
+    account the year-end accrual fills) and credits CHECKING_CASH. The
+    TAX_ACCRUAL — debit TAX_EXPENSE, credit TAX_PAYABLE — still happens
+    once at year-end via `_AnnualTaxObligationKind`, so combined the
+    period nets to debit TAX_EXPENSE, credit CHECKING_CASH with no
+    double-counting of expense.
+    """
+
+    obligation_type: ObligationType = ObligationType.ESTIMATED_TAX_PAYMENT
+    required: bool = True
+
+
+@dataclass(frozen=True)
 class _MortgageObligationKind:
     interest_usd: np.ndarray
     principal_usd: np.ndarray
@@ -3569,19 +3654,35 @@ class _PartnerContributionObligationKind:
 
 
 _ObligationKind = (
-    _AnnualTaxObligationKind | _MortgageObligationKind | _CashDebitObligationKind | _PartnerContributionObligationKind
+    _AnnualTaxObligationKind
+    | _EstimatedTaxObligationKind
+    | _MortgageObligationKind
+    | _CashDebitObligationKind
+    | _PartnerContributionObligationKind
 )
 
 
-def _year_end_tax_obligation_due_usd(*, month_index: np.ndarray, source_month_tax_due_usd: np.ndarray) -> np.ndarray:
+def _year_end_tax_obligation_due_usd(
+    *,
+    month_index: np.ndarray,
+    source_month_tax_due_usd: np.ndarray,
+    estimated_payments_credit_per_year_usd: np.ndarray | None = None,
+) -> np.ndarray:
     """Aggregate per-source-month tax allocations into a year-end-due matrix.
 
     Tax accrued in months that share a tax year (`month_index // 12`) collects
     into a single obligation due at the year-end month (`year * 12 + 11`).
     Years whose year-end falls past the simulation horizon settle at the last
     in-horizon month belonging to that year — this keeps the horizon a clean
-    cutoff for outstanding tax. Quarterly estimated payments are a follow-on
-    (see TODO Tax Follow-Ups).
+    cutoff for outstanding tax.
+
+    `estimated_payments_credit_per_year_usd`, when supplied, is a
+    `(rollout, tax_year_count)` matrix of estimated-payment cash actually paid
+    against each tax year. The year-end residual is
+    `max(0, year_total - credit)`; when estimated payments cover the full bill
+    the year-end true-up accrues zero. Q4 of tax year N falls on Jan 15 of
+    year N+1 (after the Dec 31 year-end), so the credit only reflects Q1, Q2,
+    and Q3 of year N at the year-end month.
     """
     obligation = np.zeros_like(source_month_tax_due_usd, dtype="float64")
     if obligation.size == 0:
@@ -3593,6 +3694,10 @@ def _year_end_tax_obligation_due_usd(*, month_index: np.ndarray, source_month_ta
         if year_positions.size == 0:
             continue
         year_total = np.sum(source_month_tax_due_usd[:, year_positions], axis=1)
+        if estimated_payments_credit_per_year_usd is not None:
+            tax_year_int = int(tax_year)
+            if 0 <= tax_year_int < estimated_payments_credit_per_year_usd.shape[1]:
+                year_total = np.maximum(0.0, year_total - estimated_payments_credit_per_year_usd[:, tax_year_int])
         year_end_month_index = int(tax_year) * MONTHS_PER_YEAR + (MONTHS_PER_YEAR - 1)
         year_end_position_matches = np.nonzero(month_index == year_end_month_index)[0]
         if year_end_position_matches.size > 0:
@@ -3606,6 +3711,125 @@ def _year_end_tax_obligation_due_usd(*, month_index: np.ndarray, source_month_ta
             due_position = min(due_position, horizon_last_position)
         obligation[:, due_position] = obligation[:, due_position] + year_total
     return obligation
+
+
+def _safe_harbor_high_agi_threshold_usd(tax_profile: TaxProfile) -> float:
+    """IRS high-AGI threshold above which the 110% prior-year safe-harbor applies.
+
+    $150k for single/MFJ/HoH, $75k for married-filing-separately (half).
+    """
+    if tax_profile.filing_status is TaxFilingStatus.MARRIED_FILING_SEPARATELY:
+        return _SAFE_HARBOR_HIGH_AGI_THRESHOLD_USD_MFS
+    return _SAFE_HARBOR_HIGH_AGI_THRESHOLD_USD
+
+
+def _safe_harbor_prior_year_fraction(tax_profile: TaxProfile) -> float:
+    """Return 1.00 or 1.10 by AGI vs the high-earner threshold."""
+    if float(tax_profile.annual_ordinary_income_usd) > _safe_harbor_high_agi_threshold_usd(tax_profile):
+        return _SAFE_HARBOR_PRIOR_YEAR_FRACTION_HIGH_AGI
+    return _SAFE_HARBOR_PRIOR_YEAR_FRACTION
+
+
+def _quarterly_estimated_tax_obligation_due_usd(
+    *, month_index: np.ndarray, source_month_tax_due_usd: np.ndarray, tax_profile: TaxProfile
+) -> np.ndarray:
+    """Build a `(rollout, month)` matrix of IRS quarterly estimated-tax dues.
+
+    Standard US schedule per tax year (offsets within the tax year): Q1 = Apr 15
+    (offset 3), Q2 = Jun 15 (offset 5), Q3 = Sep 15 (offset 8), Q4 = Jan 15
+    of the following year (offset 12, which is month 0 of year N+1). Quarters
+    whose due month is outside the simulated horizon are dropped — no
+    clamping. This differs from `_year_end_tax_obligation_due_usd`, which
+    clips year-end to the last in-horizon month: an estimated quarterly
+    payment that falls past horizon end simply doesn't accrue.
+
+    Safe-harbor amounts (each quarter pays one-fourth of the annual base):
+    - For the first simulated year (year 0), use `tax_profile.prior_year_tax_usd`
+      (scaled to 100% / 110% by AGI) when supplied. When unknown, fall back to
+      90% of the simulated current-year tax (first-year IRS exception).
+    - For year N >= 1, use the actual simulated tax from year N-1, scaled to
+      100% / 110% by AGI.
+    """
+    obligation = np.zeros_like(source_month_tax_due_usd, dtype="float64")
+    if obligation.size == 0:
+        return obligation
+    rollout_count = obligation.shape[0]
+    tax_year_by_position = month_index // MONTHS_PER_YEAR
+    unique_tax_years = sorted(int(year) for year in np.unique(tax_year_by_position))
+    if not unique_tax_years:
+        return obligation
+    prior_year_fraction = _safe_harbor_prior_year_fraction(tax_profile)
+    # Per-rollout actual tax accrued for each simulated tax year. Year 0 is
+    # always present; later years populate as we iterate.
+    year_total_tax_by_year: dict[int, np.ndarray] = {}
+    for tax_year in unique_tax_years:
+        year_positions = np.nonzero(tax_year_by_position == tax_year)[0]
+        year_total_tax_by_year[tax_year] = np.sum(source_month_tax_due_usd[:, year_positions], axis=1)
+    for tax_year in unique_tax_years:
+        if tax_year == 0:
+            if tax_profile.prior_year_tax_usd is not None:
+                base = np.full(rollout_count, float(tax_profile.prior_year_tax_usd) * prior_year_fraction)
+            else:
+                base = year_total_tax_by_year[0] * _SAFE_HARBOR_FIRST_YEAR_FRACTION
+        else:
+            prior_year_actual = year_total_tax_by_year.get(tax_year - 1)
+            if prior_year_actual is None:
+                continue
+            base = prior_year_actual * prior_year_fraction
+        per_quarter = base / 4.0
+        for offset in _ESTIMATED_TAX_QUARTER_MONTH_OFFSETS:
+            due_month_index = tax_year * MONTHS_PER_YEAR + offset
+            matches = np.nonzero(month_index == due_month_index)[0]
+            if matches.size == 0:
+                # Outside horizon — drop the quarterly payment entirely.
+                continue
+            due_position = int(matches[0])
+            obligation[:, due_position] = obligation[:, due_position] + per_quarter
+    return obligation
+
+
+def _estimated_payments_credit_per_year_usd(
+    *,
+    settlement_results: list[SettlementResult],
+    initial_settlement_count: int,
+    tax_year_count: int,
+    rollout_count: int,
+) -> np.ndarray:
+    """Sum estimated-tax `amount_paid_usd` against the Dec 31 year-end true-up.
+
+    Reads the settlement rows appended since `initial_settlement_count` and
+    aggregates the paid amounts for `ESTIMATED_TAX_PAYMENT` rows by the tax
+    year their `month_index` falls into. Only estimated payments whose due
+    month is at or before the tax year's Dec 31 (offset 11) credit toward
+    that year's residual — the Q4 obligation for tax year N lands on Jan 15
+    of year N+1 (offset 12), which is after the Dec 31 year-end and therefore
+    cannot reduce the year-end true-up amount. The Q4 payment is still a
+    legitimate prepayment toward year N's tax bill in IRS terms, but the
+    year-end obligation amount the simulator computes at Dec 31 can only
+    "see" payments that have already happened by that date.
+    """
+    credit = np.zeros((rollout_count, tax_year_count), dtype="float64")
+    for settlement in settlement_results[initial_settlement_count:]:
+        if settlement.obligation_type is not ObligationType.ESTIMATED_TAX_PAYMENT:
+            continue
+        # The Q4 obligation for tax year N lands at month `N*12 + 12` (Jan 15
+        # of year N+1) but pays toward year N's tax bill, so it credits year
+        # N's year-end residual. The Dec 31 year-end true-up at month `N*12 +
+        # 11` thus "looks ahead" to credit the scheduled Q4 payment — by the
+        # time the simulator finishes processing the estimated-tax obligations
+        # for the whole horizon, Q4 has either been paid or has failed
+        # independently as its own obligation, so the year-end can treat it as
+        # known. Q1/Q2/Q3 (offsets 3/5/8) credit their own tax year by
+        # straightforward integer division; Q4 (offset 12) needs the -1
+        # correction below.
+        due_month = settlement.month_index
+        if due_month % MONTHS_PER_YEAR == 0 and due_month >= MONTHS_PER_YEAR:
+            tax_year = due_month // MONTHS_PER_YEAR - 1
+        else:
+            tax_year = due_month // MONTHS_PER_YEAR
+        if 0 <= tax_year < tax_year_count:
+            credit[settlement.rollout_index, tax_year] += settlement.amount_paid_usd
+    return credit
 
 
 def _settle_required_cash_obligations(
@@ -3977,6 +4201,42 @@ def _record_obligation_accrual_and_settlement_entries(
                         amount_usd=amount_paid_usd,
                         actor_id=actor_id,
                         liability_id=f"tax:{obligation_type.value}",
+                    ),
+                    PostingBatch(
+                        role=ChartAccountRole.CHECKING_CASH,
+                        side=PostingSide.CREDIT,
+                        amount_usd=amount_paid_usd,
+                        actor_id=actor_id,
+                    ),
+                ),
+            ),
+        )
+        return
+    if isinstance(obligation_kind, _EstimatedTaxObligationKind):
+        # Estimated payments are tax prepayments. Post only the settlement leg
+        # (debit TAX_PAYABLE, credit CHECKING_CASH). The year-end TAX_ACCRUAL
+        # entry will later credit TAX_PAYABLE for the full year tax; combined,
+        # TAX_PAYABLE nets to (full year tax - estimated paid) before the
+        # year-end settlement debits the residual back to zero. The liability
+        # is keyed against the annual-tax-payment family so estimated payments
+        # net against the same TAX_PAYABLE balance the year-end accrual builds.
+        accounting.record_entry(
+            month_index=month_index,
+            entry=JournalEntryBatch(
+                journal_entry_type=JournalEntryType.OBLIGATION_SETTLEMENT,
+                cause_type=AccountingCauseType.OBLIGATION_SETTLEMENT,
+                cause_id_prefix=f"policy:{source_policy_id}:{obligation_type.value}:settlement",
+                obligation_id_prefix=obligation_type.value,
+                actor_id=actor_id,
+                policy_id=source_policy_id,
+                description=obligation_type.value,
+                postings=(
+                    PostingBatch(
+                        role=ChartAccountRole.TAX_PAYABLE,
+                        side=PostingSide.DEBIT,
+                        amount_usd=amount_paid_usd,
+                        actor_id=actor_id,
+                        liability_id=f"tax:{ObligationType.ANNUAL_TAX_PAYMENT.value}",
                     ),
                     PostingBatch(
                         role=ChartAccountRole.CHECKING_CASH,
