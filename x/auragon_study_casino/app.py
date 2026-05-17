@@ -8,13 +8,15 @@ Wire surface:
   POST /actions/session/edit            — rename / re-time a completed session
   POST /actions/session/delete          — drop a completed session
   POST /actions/convert                 — credits → tokens
-  POST /actions/prize/create            — add to user prize catalog
-  POST /actions/prize/delete            — remove from user prize catalog
-  POST /actions/prize/redeem            — spend tokens to redeem a prize
+  POST /actions/prize/create            — add to user prize catalog (admin-only)
+  POST /actions/prize/delete            — remove from user prize catalog (admin-only)
+  POST /actions/prize/redeem            — spend tokens to redeem a prize (caller redeems own)
   POST /actions/import / reset          — bulk replace / wipe state (snapshot saved)
   POST /casino/slots/spin               — server-resolved slots
   POST /casino/roulette/spin            — server-resolved roulette
   POST /casino/blackjack/{deal,hit,stand,double} — server-resolved blackjack
+  GET  /admin/users                     — admin-only: list known usernames
+  GET  /admin/state                     — admin-only: state_dump for `?user=<u>`
   GET  /game-events / /ledger-events    — read-only audit listings
   GET  /me / /healthz                   — auth introspection / liveness
   WS   /ws                              — broadcasts {"type":"state_changed"}
@@ -29,7 +31,9 @@ table.
 
 Multi-user: every authenticated user's state is scoped by `user_id` in
 the shared store. When OIDC is not configured the app falls back to a
-single "default" user, keeping existing tests working.
+single "default" user, keeping existing tests working. Usernames listed
+in `Settings.admin_users` are admins; they manage other users' prize
+catalogs and have read-only access to other users' states.
 """
 
 import asyncio
@@ -222,11 +226,33 @@ def create_app(settings: Settings) -> FastAPI:
     # One shared-schema store backs every user; per-user scoping is by
     # `user_id` column. The store seeds a balance row + default prize
     # catalog on first contact for any new user.
-    store = SqlStore(settings.resolved_database_url())
+    store = SqlStore(settings.database_url)
 
     oidc = settings.oidc_config()
     current_user_dep = make_current_user_dep(oidc.session_secret if oidc else None)
+    admin_users = settings.admin_users
     ws_manager = _WSManager()
+
+    def is_admin(username: str) -> bool:
+        return username in admin_users
+
+    def require_admin(username: str) -> None:
+        if not is_admin(username):
+            raise HTTPException(status_code=403, detail="admin privilege required")
+
+    def resolve_prize_owner(caller: str, target_user: str | None) -> str:
+        """Resolve which user's catalog a prize mutation touches.
+
+        Rules:
+        - target_user unset, caller is admin → caller (admin manages their own).
+        - target_user unset, caller is not admin → 403 (only admins manage catalogs).
+        - target_user set → must be admin, then target_user.
+        """
+        if target_user is None:
+            require_admin(caller)
+            return caller
+        require_admin(caller)
+        return target_user
 
     app = FastAPI(title="Study Casino", docs_url=None, redoc_url=None)
     app.state.current_user_dep = current_user_dep
@@ -277,12 +303,22 @@ def create_app(settings: Settings) -> FastAPI:
         return {"ok": True}
 
     @app.get("/me")
-    def me(username: Annotated[str, Depends(current_user_dep)]) -> dict[str, str]:
-        return {"username": username}
+    def me(username: Annotated[str, Depends(current_user_dep)]) -> dict[str, Any]:
+        return {"username": username, "is_admin": is_admin(username)}
 
     @app.get("/state")
     def get_state(username: Annotated[str, Depends(current_user_dep)]) -> dict[str, Any]:
         return store.state_dump(username)
+
+    @app.get("/admin/users")
+    def admin_list_users(username: Annotated[str, Depends(current_user_dep)]) -> dict[str, list[str]]:
+        require_admin(username)
+        return {"users": store.list_known_users()}
+
+    @app.get("/admin/state")
+    def admin_user_state(user: str, username: Annotated[str, Depends(current_user_dep)]) -> dict[str, Any]:
+        require_admin(username)
+        return store.state_dump(user)
 
     @app.get("/game-events")
     def list_game_events(
@@ -404,30 +440,47 @@ def create_app(settings: Settings) -> FastAPI:
     async def create_prize(
         body: PrizeCreateRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
+        owner = resolve_prize_owner(username, body.target_user)
+        # Ensure the owner has a balance row + seeded prize catalog before
+        # an admin pokes at it from a different session.
+        store.state_dump(owner)
+
         def mutate(s: Session, _now_ms: int) -> ActionMutation:
             prize_id = body.prize_id or f"p{uuid.uuid4().hex[:12]}"
-            if _get_user_prize(s, username, prize_id) is not None:
+            if _get_user_prize(s, owner, prize_id) is not None:
                 raise ActionRejectedError("prize_id", "prize id already exists")
-            s.add(PrizeRow(id=prize_id, user_id=username, name=body.name, cost=body.cost))
+            s.add(PrizeRow(id=prize_id, user_id=owner, name=body.name, cost=body.cost))
             return ActionMutation(
-                result={"prize_id": prize_id, "name": body.name, "cost": body.cost},
-                details={"name": body.name, "cost": body.cost},
+                result={"prize_id": prize_id, "name": body.name, "cost": body.cost, "user": owner},
+                details={"name": body.name, "cost": body.cost, "target_user": owner, "by": username},
             )
 
-        return await commit_action(username=username, body=body, action_type="prize.create", mutator=mutate)
+        response = await commit_action(username=owner, body=body, action_type="prize.create", mutator=mutate)
+        if owner != username:
+            # Notify the affected user's tabs even though the admin caller initiated the change.
+            await ws_manager.push(owner, {"type": "state_changed"})
+        return response
 
     @app.post("/actions/prize/delete")
     async def delete_prize(
         body: PrizeDeleteRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
+        owner = resolve_prize_owner(username, body.target_user)
+
         def mutate(s: Session, _now_ms: int) -> ActionMutation:
-            row = _get_user_prize(s, username, body.prize_id)
+            row = _get_user_prize(s, owner, body.prize_id)
             if row is None:
                 raise ActionRejectedError("prize", "prize not found")
             s.delete(row)
-            return ActionMutation(result={"prize_id": body.prize_id}, details={"name": row.name, "cost": row.cost})
+            return ActionMutation(
+                result={"prize_id": body.prize_id, "user": owner},
+                details={"name": row.name, "cost": row.cost, "target_user": owner, "by": username},
+            )
 
-        return await commit_action(username=username, body=body, action_type="prize.delete", mutator=mutate)
+        response = await commit_action(username=owner, body=body, action_type="prize.delete", mutator=mutate)
+        if owner != username:
+            await ws_manager.push(owner, {"type": "state_changed"})
+        return response
 
     @app.post("/actions/prize/redeem")
     async def redeem_prize(
@@ -693,11 +746,12 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s", stream=sys.stderr)
     settings = Settings()
     logger.info(
-        "study casino listening on %s:%d, database=%s://…",
+        "study casino listening on %s:%d, database=%s://…, admin_users=%s",
         settings.host,
         settings.port,
         # Don't log raw URL — it may contain a password. Just the scheme.
-        settings.resolved_database_url().split("://", 1)[0],
+        settings.database_url.split("://", 1)[0],
+        sorted(settings.admin_users),
     )
     uvicorn.run(create_app(settings), host=settings.host, port=settings.port, log_level="info")
 

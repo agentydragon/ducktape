@@ -6,6 +6,7 @@ import { COLORS, SUBJECTS, fmtClock, fmtHoursMin, getElapsedSec } from "./shared
 import { StudyView } from "./StudyView.jsx";
 import { PrizesView } from "./PrizesView.jsx";
 import { StatsView } from "./StatsView.jsx";
+import { AdminView } from "./AdminView.jsx";
 import { Roulette } from "./Roulette.jsx";
 import { Blackjack } from "./Blackjack.jsx";
 import { Slots } from "./Slots.jsx";
@@ -15,6 +16,8 @@ export default function StudyCasino() {
   const casino = useCasino();
   const {
     offline,
+    username,
+    isAdmin,
     credits,
     tokens,
     sessions,
@@ -239,7 +242,7 @@ export default function StudyCasino() {
         </div>
 
         <nav style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-          {["study", "casino", "prizes", "stats"].map((v) => (
+          {["study", "casino", "prizes", "stats", ...(isAdmin ? ["admin"] : [])].map((v) => (
             <button key={v} className={`nav-link ${view === v ? "active" : ""}`} onClick={() => setView(v)}>
               {v}
             </button>
@@ -443,6 +446,7 @@ export default function StudyCasino() {
         {view === "prizes" && (
           <PrizesView
             offline={offline}
+            isAdmin={isAdmin}
             credits={credits}
             tokens={tokens}
             prizes={prizes}
@@ -452,6 +456,9 @@ export default function StudyCasino() {
             deletePrize={deletePrize}
             convertToTokens={convertToTokens}
           />
+        )}
+        {view === "admin" && isAdmin && (
+          <AdminView addPrize={addPrize} deletePrize={deletePrize} ownUsername={username} />
         )}
         {view === "stats" && (
           <StatsView

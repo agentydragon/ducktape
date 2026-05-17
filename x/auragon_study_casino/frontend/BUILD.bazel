@@ -107,9 +107,20 @@ js_library(
 )
 
 js_library(
+    name = "admin_view",
+    srcs = ["AdminView.jsx"],
+    deps = [
+        ":node_modules/react",
+        ":shared",
+        ":sync",
+    ],
+)
+
+js_library(
     name = "study_casino",
     srcs = ["study_casino.jsx"],
     deps = [
+        ":admin_view",
         ":blackjack",
         ":node_modules/react",
         ":prizes_view",

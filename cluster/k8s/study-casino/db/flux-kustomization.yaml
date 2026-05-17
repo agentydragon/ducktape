@@ -17,3 +17,8 @@ spec:
     - name: cnpg
     - name: study-casino-namespace
     - name: local-path-provisioner
+    - name: reflector
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets

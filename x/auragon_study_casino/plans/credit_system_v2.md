@@ -53,7 +53,7 @@ touched.
 
 ### Cents-as-integer for all DB columns
 
-All credit/token amounts in SQLite are stored as integers representing
+All credit/token amounts in Postgres are stored as integers representing
 cents (value × 100). The Y.Doc balance stores the float for display.
 Server code uses `Decimal` internally, multiplies by 100 on DB write,
 divides by 100 on DB read. No `Float` columns — avoids IEEE 754 drift.
@@ -131,7 +131,7 @@ Where:
 
 ### Persistence
 
-The streak state is stored server-side in the user's SQLite database in a
+The streak state is stored server-side in the user's Postgres database in a
 new `streak_state` table (or as a JSON column on `DocRow`):
 
 ```python

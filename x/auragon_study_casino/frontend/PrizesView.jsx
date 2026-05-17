@@ -4,6 +4,7 @@ import { COLORS, SectionTitle, fmtHoursMin } from "./shared.jsx";
 
 export function PrizesView({
   offline,
+  isAdmin,
   credits,
   tokens,
   prizes,
@@ -148,25 +149,27 @@ export function PrizesView({
                 position: "relative",
               }}
             >
-              <button
-                onClick={() => deletePrize(p.id)}
-                disabled={offline}
-                style={{
-                  position: "absolute",
-                  top: 6,
-                  right: 6,
-                  background: "transparent",
-                  border: "none",
-                  color: offline ? "rgba(201,188,154,0.3)" : COLORS.creamDim,
-                  cursor: "pointer",
-                  fontSize: 16,
-                  padding: 4,
-                  lineHeight: 1,
-                }}
-                title="Delete"
-              >
-                ×
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => deletePrize(p.id)}
+                  disabled={offline}
+                  style={{
+                    position: "absolute",
+                    top: 6,
+                    right: 6,
+                    background: "transparent",
+                    border: "none",
+                    color: offline ? "rgba(201,188,154,0.3)" : COLORS.creamDim,
+                    cursor: "pointer",
+                    fontSize: 16,
+                    padding: 4,
+                    lineHeight: 1,
+                  }}
+                  title="Delete"
+                >
+                  ×
+                </button>
+              )}
               <div
                 className="display-font"
                 style={{
@@ -225,29 +228,33 @@ export function PrizesView({
         })}
       </div>
 
-      <SectionTitle>Add a prize</SectionTitle>
-      <div className="panel" style={{ padding: 20, marginBottom: 40 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr auto", gap: 10 }}>
-          <input placeholder="Prize name" value={newName} onChange={(e) => setNewName(e.target.value)} />
-          <input
-            type="number"
-            placeholder="Cost (tokens)"
-            value={newCost}
-            onChange={(e) => setNewCost(e.target.value)}
-          />
-          <button
-            className="btn btn-primary"
-            onClick={handleAdd}
-            disabled={offline || !newName.trim() || !parseInt(newCost)}
-          >
-            Add
-          </button>
-        </div>
-        <div style={{ fontSize: 12, color: COLORS.creamDim, marginTop: 10 }}>
-          Prize cost is in tokens. Since 1 credit = 1 minute of study and 1 credit converts to 1 token, a 120-token
-          prize costs 2 hours of study.
-        </div>
-      </div>
+      {isAdmin && (
+        <>
+          <SectionTitle>Add a prize</SectionTitle>
+          <div className="panel" style={{ padding: 20, marginBottom: 40 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr auto", gap: 10 }}>
+              <input placeholder="Prize name" value={newName} onChange={(e) => setNewName(e.target.value)} />
+              <input
+                type="number"
+                placeholder="Cost (tokens)"
+                value={newCost}
+                onChange={(e) => setNewCost(e.target.value)}
+              />
+              <button
+                className="btn btn-primary"
+                onClick={handleAdd}
+                disabled={offline || !newName.trim() || !parseInt(newCost)}
+              >
+                Add
+              </button>
+            </div>
+            <div style={{ fontSize: 12, color: COLORS.creamDim, marginTop: 10 }}>
+              Prize cost is in tokens. Since 1 credit = 1 minute of study and 1 credit converts to 1 token, a 120-token
+              prize costs 2 hours of study.
+            </div>
+          </div>
+        </>
+      )}
 
       {prizeLog.length > 0 && (
         <>

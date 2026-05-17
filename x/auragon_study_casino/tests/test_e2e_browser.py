@@ -62,9 +62,9 @@ def page(browser: Browser) -> Iterator[Page]:
 
 
 @pytest.fixture
-def casino_server(tmp_path: Path) -> Iterator[str]:
+def casino_server(db_url: str) -> Iterator[str]:
     frontend_dist = get_required_path("_main/x/auragon_study_casino/frontend/dist/index.html").parent
-    settings = Settings(data_dir=tmp_path, frontend_dist_dir=frontend_dist)
+    settings = Settings(database_url=db_url, frontend_dist_dir=frontend_dist)
     app = create_app(settings)
     port = pick_free_port("127.0.0.1")
     cfg = uvicorn.Config(app=app, host="127.0.0.1", port=port, log_level="warning", loop="asyncio")

@@ -1,0 +1,59 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: study-casino-db-readonly-provisioner
+  namespace: study-casino
+  annotations:
+    description: "Creates / refreshes the study_casino_ro Postgres role used by sandbox agents."
+    # Force enables Flux to recreate the Job on manifest changes (e.g. password rotations,
+    # which rotate the SQL hash via the readonly-role.sql ConfigMap). Without this, the
+    # Job is immutable after first apply.
+    kustomize.toolkit.fluxcd.io/force: enabled
+spec:
+  backoffLimit: 5
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: study-casino-db-readonly-provisioner
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      containers:
+        - name: psql
+          image: ghcr.io/cloudnative-pg/postgresql:18.0
+          command:
+            - psql
+            - --set=ON_ERROR_STOP=1
+            - --set=ro_pw=$(RO_PASSWORD)
+            - -f
+            - /sql/readonly-role.sql
+          env:
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: study-casino-db-superuser
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: study-casino-db-superuser
+                  key: password
+            - name: PGHOST
+              value: study-casino-db-rw.study-casino.svc
+            - name: PGDATABASE
+              value: studycasino
+            - name: RO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: study-casino-db-readonly
+                  key: password
+          volumeMounts:
+            - name: sql
+              mountPath: /sql
+              readOnly: true
+      volumes:
+        - name: sql
+          configMap:
+            name: study-casino-db-readonly-sql

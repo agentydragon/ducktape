@@ -66,6 +66,10 @@ spec:
                   key: dbname
             - name: STUDY_CASINO_DATABASE_URL
               value: "postgresql+psycopg://$(PG_USER):$(PG_PASSWORD)@$(PG_HOST):$(PG_PORT)/$(PG_DBNAME)"
+            # Comma-separated. Admins can manage other users' prize catalogs
+            # via /admin/*; non-admins can redeem but not create or delete.
+            - name: STUDY_CASINO_ADMIN_USERS
+              value: "agentydragon"
             - name: STUDY_CASINO_OIDC_ISSUER
               value: "https://auth.allegedly.works/application/o/study-casino/"
             - name: STUDY_CASINO_OIDC_CLIENT_ID

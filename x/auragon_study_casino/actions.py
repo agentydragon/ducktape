@@ -73,10 +73,23 @@ class PrizeCreateRequest(ActionRequest):
     name: str = Field(min_length=1, max_length=120)
     cost: int = Field(gt=0)
     prize_id: str | None = Field(default=None, max_length=128)
+    target_user: str | None = Field(
+        default=None,
+        max_length=120,
+        description=(
+            "If set, create the prize in this user's catalog. The caller must be an admin. "
+            "Non-admin callers may not create prizes for themselves either — admins curate the catalog."
+        ),
+    )
 
 
 class PrizeDeleteRequest(ActionRequest):
     prize_id: str = Field(min_length=1, max_length=128)
+    target_user: str | None = Field(
+        default=None,
+        max_length=120,
+        description="If set, delete from this user's catalog. The caller must be an admin.",
+    )
 
 
 class PrizeRedeemRequest(ActionRequest):

@@ -1,12 +1,10 @@
-"""Initial post-tenancy schema for shared-DB study casino.
+"""Initial schema for the CNPG-backed study casino.
 
 Revision ID: 0001
 Revises:
 
 Creates the full schema: every per-user table carries a `user_id` column
-and queries scope by it. Replaces the pre-2026-05-16 SQLite-era chain
-(0001_initial_doc → 0004_drop_ydoc_layer); legacy SQLite DBs are migrated
-to Postgres by `migrate_sqlite_to_postgres.py`, not by alembic.
+and queries scope by it.
 """
 
 from __future__ import annotations

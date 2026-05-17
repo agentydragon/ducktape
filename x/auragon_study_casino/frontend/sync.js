@@ -1,6 +1,6 @@
 // REST + thin WebSocket client for the Study Casino.
 //
-// Architecture: the server holds canonical state in SQLite tables. The client
+// Architecture: the server holds canonical state in Postgres tables. The client
 // keeps an in-memory cache of the last `GET /state` response, refetched after
 // every successful action this tab posts, and again whenever the server sends
 // a `{"type":"state_changed"}` ping over `/ws` (which fires after any other
@@ -46,6 +46,8 @@ class CasinoSync {
     this.status = new Observable({ kind: "syncing" });
     // SyncIcon pops a toast for each new value of `rejection.id`.
     this.rejection = new Observable(null);
+    // { username, is_admin } once /me returns. null until then.
+    this.me = new Observable(null);
 
     this._ws = null;
     this._reconnectTimer = null;
@@ -60,6 +62,9 @@ class CasinoSync {
       if (resp.status === 401) {
         window.location.href = "/auth/login";
         return;
+      }
+      if (resp.ok) {
+        this.me.set(await resp.json());
       }
     } catch {
       // /me is best-effort; if it fails we still try /state and /ws.
@@ -221,4 +226,26 @@ export function useSyncRejection() {
   const [state, setState] = useState(casinoSync.rejection.value);
   useEffect(() => casinoSync.rejection.subscribe(setState), []);
   return state;
+}
+
+/** Subscribe to the {username, is_admin} payload returned by /me.
+ *  Returns null until the initial /me fetch completes. */
+export function useMe() {
+  const [state, setState] = useState(casinoSync.me.value);
+  useEffect(() => casinoSync.me.subscribe(setState), []);
+  return state;
+}
+
+/** Admin-only: fetch the list of usernames the server has seeded. */
+export async function fetchAdminUsers() {
+  const resp = await fetch("/admin/users", { credentials: "same-origin" });
+  if (!resp.ok) throw new Error(`admin/users ${resp.status}`);
+  return (await resp.json()).users;
+}
+
+/** Admin-only: fetch the state_dump for any user. */
+export async function fetchAdminUserState(username) {
+  const resp = await fetch(`/admin/state?user=${encodeURIComponent(username)}`, { credentials: "same-origin" });
+  if (!resp.ok) throw new Error(`admin/state ${resp.status}`);
+  return await resp.json();
 }

@@ -1,8 +1,8 @@
 """SQLAlchemy models for the casino's shared-schema multi-tenant database.
 
 Every per-user table carries a `user_id` column; all reads are scoped
-`WHERE user_id = :user`. One Postgres DB (CNPG `study-casino-db`) or one
-SQLite file (tests/local dev) backs every user.
+`WHERE user_id = :user`. One Postgres DB (CNPG `study-casino-db` in prod;
+an ephemeral testcontainer in tests) backs every user.
 
 Canonical state lives in `balance` (one row per user), `sessions`, `prizes`,
 and `prize_log`. The `ledger_events` and `game_events` audit logs are
@@ -43,9 +43,8 @@ class BalanceRow(Base):
 class SessionRow(Base):
     """One completed study session for a user.
 
-    PK is composite `(user_id, id)` so two users can independently mint the
-    same row id (e.g., after migrating from per-user SQLite files where
-    each file had its own id-uniqueness scope).
+    PK is composite `(user_id, id)` so two users can independently mint
+    the same row id without colliding.
     """
 
     __tablename__ = "sessions"

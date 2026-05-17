@@ -1,5 +1,5 @@
 // Single React hook exposing reactive state + every mutation. The data
-// model is now server-authoritative SQLite — no CRDT — and the active
+// model is server-authoritative Postgres — no CRDT — and the active
 // study-session timer lives in localStorage on the client (only
 // `/actions/session/complete` ever turns it into a server-side row).
 //
@@ -14,7 +14,7 @@
 
 import { useEffect, useState } from "react";
 
-import { casinoSync, useCasinoState, useSyncStatus } from "./sync.js";
+import { casinoSync, useCasinoState, useSyncStatus, useMe } from "./sync.js";
 
 const ACTIVE_SESSION_LS_KEY = "casino:active_session";
 
@@ -69,7 +69,10 @@ export function useCasino() {
   const state = useCasinoState();
   const activeSession = useActiveSession();
   const syncStatus = useSyncStatus();
+  const me = useMe();
   const offline = syncStatus.kind === "offline";
+  const isAdmin = !!me?.is_admin;
+  const username = me?.username ?? null;
 
   const balance = state?.balance ?? { credits: 0, tokens: 0 };
   const credits = Math.floor(balance.credits ?? 0);
@@ -186,19 +189,21 @@ export function useCasino() {
     });
   };
 
-  const addPrize = (name, cost) => {
+  const addPrize = (name, cost, targetUser = null) => {
     if (!name || cost <= 0) return;
     return casinoSync.postAction("/actions/prize/create", {
       client_action_id: newActionId("prize.create"),
       name,
       cost: Math.floor(cost),
+      ...(targetUser ? { target_user: targetUser } : {}),
     });
   };
 
-  const deletePrize = (id) =>
+  const deletePrize = (id, targetUser = null) =>
     casinoSync.postAction("/actions/prize/delete", {
       client_action_id: newActionId("prize.delete"),
       prize_id: id,
+      ...(targetUser ? { target_user: targetUser } : {}),
     });
 
   const convertToTokens = (amount) => {
@@ -283,6 +288,8 @@ export function useCasino() {
 
   return {
     offline,
+    username,
+    isAdmin,
     credits,
     tokens,
     sessions,

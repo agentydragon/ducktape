@@ -14,12 +14,14 @@ py_test(
     env = {
         "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
     },
+    requires_docker = True,
     deps = [
         "//util:net",
         "//util:playwright",
         "//util/bazel:runfiles",
         "//x/auragon_study_casino:app",
         "//x/auragon_study_casino:config",
+        "//x/auragon_study_casino:conftest",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

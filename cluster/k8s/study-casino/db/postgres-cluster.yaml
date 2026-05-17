@@ -4,7 +4,7 @@ metadata:
   name: study-casino-db
   namespace: study-casino
   annotations:
-    description: "CNPG Postgres for study-casino state. Replaces per-user SQLite files on hcloud-volumes."
+    description: "CNPG Postgres for study-casino state."
 spec:
   instances: 2
 
@@ -31,6 +31,10 @@ spec:
 
   monitoring:
     enablePodMonitor: true
+
+  # Superuser secret (study-casino-db-superuser) is consumed by the read-only
+  # role provisioner Job; the `studycasino` owner role does not have CREATEROLE.
+  enableSuperuserAccess: true
 
   bootstrap:
     initdb:

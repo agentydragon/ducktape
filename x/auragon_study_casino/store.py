@@ -1,14 +1,10 @@
 """Shared-schema multi-tenant store for the Study Casino.
 
-One SQLAlchemy engine backs every user; per-user scoping is by a
-`user_id` column on every table. Two backends are supported:
-
-- Postgres (production, CNPG `study-casino-db`).
-- SQLite (tests + local dev), single file.
-
-Every server action mutates ORM rows inside one transaction and writes a
-`ledger_events` row keyed by `(user_id, client_action_id)` so retried
-calls are idempotent.
+One SQLAlchemy engine (Postgres; CNPG `study-casino-db` in prod, an
+ephemeral testcontainer in tests) backs every user; per-user scoping is
+by a `user_id` column on every table. Every server action mutates ORM
+rows inside one transaction and writes a `ledger_events` row keyed by
+`(user_id, client_action_id)` so retried calls are idempotent.
 """
 
 from __future__ import annotations
@@ -23,7 +19,7 @@ from typing import Any
 
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
-from sqlalchemy import create_engine, delete, event, select
+from sqlalchemy import create_engine, delete, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -109,12 +105,7 @@ class SqlStore:
     """Shared-schema store; one engine per process, every method takes `username`."""
 
     def __init__(self, database_url: str) -> None:
-        connect_args: dict[str, Any] = {}
-        if database_url.startswith("sqlite"):
-            connect_args["check_same_thread"] = False
-        self._engine: Engine = create_engine(database_url, connect_args=connect_args)
-        if self._engine.dialect.name == "sqlite":
-            _enable_sqlite_wal(self._engine)
+        self._engine: Engine = create_engine(database_url)
         _run_alembic_migrations(self._engine)
         self._Session = sessionmaker(bind=self._engine, expire_on_commit=False)
 
@@ -127,6 +118,11 @@ class SqlStore:
         with self._Session() as s, s.begin():
             self._ensure_user(s, username)
             return self._state_dump(s, username)
+
+    def list_known_users(self) -> list[str]:
+        """All usernames the store has ever seeded (one balance row apiece)."""
+        with self._Session() as s:
+            return sorted(s.scalars(select(BalanceRow.user_id)).all())
 
     def list_game_events(self, username: str, limit: int = 100) -> list[GameEventRead]:
         with self._Session() as s:
@@ -421,17 +417,3 @@ class SqlStore:
 _DEFAULT_PRIZES_AS_DICTS: list[dict[str, Any]] = [
     {"id": prize_id, "name": name, "cost": cost} for prize_id, name, cost in _DEFAULT_PRIZES
 ]
-
-
-def _enable_sqlite_wal(engine: Engine) -> None:
-    """Enable WAL journaling on every pooled connection of a SQLite engine.
-
-    Registered only on SQLite engines (Postgres does not understand
-    `PRAGMA` and would abort the connection transaction).
-    """
-
-    @event.listens_for(engine, "connect")
-    def _set_wal(dbapi_conn: Any, _record: Any) -> None:
-        cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.close()

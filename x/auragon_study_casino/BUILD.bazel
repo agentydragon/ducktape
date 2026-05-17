@@ -99,32 +99,33 @@ py_binary(
     deps = [":app"],
 )
 
+# ── Tests ─────────────────────────────────────────────────────────────────────
+
 py_library(
-    name = "migrate_sqlite_to_postgres_lib",
-    srcs = ["migrate_sqlite_to_postgres.py"],
-    data = glob(["migrations/**"]),
-    visibility = ["//visibility:public"],
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    data = [
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+    ],
+    visibility = ["//:__subpackages__"],
     deps = [
-        ":models",
-        "@pypi//alembic",
-        "@pypi//psycopg",
+        "//third_party/containers:rlocations",
+        "//util:oci",
+        "//util/testing:postgres",
+        "@pypi//pytest",
         "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
     ],
 )
-
-py_binary(
-    name = "migrate_sqlite_to_postgres",
-    main_module = "x.auragon_study_casino.migrate_sqlite_to_postgres",
-    visibility = ["//visibility:public"],
-    deps = [":migrate_sqlite_to_postgres_lib"],
-)
-
-# ── Tests ─────────────────────────────────────────────────────────────────────
 
 py_test(
     name = "test_store",
     srcs = ["test_store.py"],
+    requires_docker = True,
     deps = [
+        ":conftest",
         ":models",
         ":store",
         "@pypi//pytest",
@@ -134,21 +135,12 @@ py_test(
 )
 
 py_test(
-    name = "test_migrate",
-    srcs = ["test_migrate.py"],
-    deps = [
-        ":migrate_sqlite_to_postgres_lib",
-        ":models",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
     name = "test_app",
     srcs = ["test_app.py"],
+    requires_docker = True,
     deps = [
         ":app",
+        ":conftest",
         ":models",
         "@pypi//fastapi",
         "@pypi//httpx",

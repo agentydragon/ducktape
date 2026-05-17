@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Annotated
 
-from pydantic import Field
+from pydantic import BeforeValidator, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,23 +19,26 @@ class OidcConfig:
     public_url: str
 
 
+def _parse_csv_users(value: object) -> frozenset[str]:
+    if value is None or value == "":
+        return frozenset()
+    if isinstance(value, frozenset):
+        return value
+    if isinstance(value, (set, list, tuple)):
+        return frozenset(str(v).strip() for v in value if str(v).strip())
+    if isinstance(value, str):
+        return frozenset(s.strip() for s in value.split(",") if s.strip())
+    raise TypeError(f"cannot parse admin_users from {value!r}")
+
+
+AdminUsers = Annotated[frozenset[str], BeforeValidator(_parse_csv_users)]
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="STUDY_CASINO_")
 
-    database_url: str | None = Field(
-        default=None,
-        description=(
-            "SQLAlchemy URL for the casino state database "
-            "(e.g. `postgresql+psycopg://user:pass@host/db`). "
-            "When unset, falls back to SQLite at `data_dir/casino.db` "
-            "(for tests and local dev)."
-        ),
-    )
-    data_dir: Path = Field(
-        default=Path("/data"),
-        description=(
-            "Directory for the SQLite fallback when `database_url` is unset. Ignored when `database_url` is set."
-        ),
+    database_url: str = Field(
+        description="SQLAlchemy URL for the casino state database (e.g. `postgresql+psycopg://user:pass@host/db`)."
     )
     host: str = "0.0.0.0"
     port: int = 8080
@@ -44,6 +48,14 @@ class Settings(BaseSettings):
             "Directory containing the built frontend bundle (index.html, main.js, "
             "sw.js, manifest.webmanifest, icon.svg). Defaults to `./frontend/dist` "
             "next to this module; override for tests or alternate layouts."
+        ),
+    )
+
+    admin_users: AdminUsers = Field(
+        default_factory=frozenset,
+        description=(
+            "Comma-separated list of usernames with admin privileges. Admins can "
+            "manage prize catalogs for other users via `/admin/*`."
         ),
     )
 
@@ -61,13 +73,6 @@ class Settings(BaseSettings):
         default="https://casino.allegedly.works",
         description="Public base URL of this app, used to build the OIDC redirect_uri.",
     )
-
-    def resolved_database_url(self) -> str:
-        """Return the effective SQLAlchemy URL — explicit `database_url` or SQLite fallback."""
-        if self.database_url is not None:
-            return self.database_url
-        self.data_dir.mkdir(parents=True, exist_ok=True)
-        return f"sqlite:///{self.data_dir / 'casino.db'}"
 
     def oidc_config(self) -> OidcConfig | None:
         """Return fully-typed OIDC config if all four fields are set, else None."""

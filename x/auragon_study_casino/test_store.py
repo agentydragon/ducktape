@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 import pytest_bazel
 from sqlalchemy import select
@@ -14,8 +12,8 @@ from x.auragon_study_casino.store import ActionMutation, ActionRejectedError, Se
 
 
 @pytest.fixture
-def store(tmp_path: Path) -> SqlStore:
-    return SqlStore(f"sqlite:///{tmp_path / 'casino.db'}")
+def store(db_url: str) -> SqlStore:
+    return SqlStore(db_url)
 
 
 # Single-tenant tests use "u" as the canonical test user.
@@ -170,8 +168,7 @@ def test_db_check_constraint_rejects_negative_credits(store: SqlStore) -> None:
         store.run_server_action(username=_U, client_action_id="act-bug", action_type="test.bug", mutator=goes_negative)
 
 
-def test_state_persists_across_reopen(tmp_path: Path) -> None:
-    db_url = f"sqlite:///{tmp_path / 'casino.db'}"
+def test_state_persists_across_reopen(db_url: str) -> None:
     store_a = SqlStore(db_url)
 
     def grant(s, _now_ms):

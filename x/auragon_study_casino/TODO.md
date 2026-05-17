@@ -1,32 +1,5 @@
 # Study Casino TODO
 
-## Server authority rollout
-
-- [x] Stage 1: add server-authoritative action endpoints, append-only
-      `ledger_events`, state snapshots, and an `observe` shim while keeping
-      the existing Y.Doc state as the replicated projection.
-- [x] Stage 2: migrate the frontend so balance-changing operations call server
-      actions instead of mutating `balance` or `prize_log` directly.
-- [x] Stage 3 (2026-05-08): cutover at 2026-05-07 22:49 produced 122
-      `server_action` ledger rows and 54 `server_resolved` game events with
-      zero new `legacy_client_sync` / `client_reported` rows since. Dropped
-      the `STUDY_CASINO_AUTHORITY_MODE` flag and the `POST /game-events`
-      client-reported intake — direct economy syncs now always return
-      `rule="server_authority"`.
-- [x] Stage 5 (2026-05-08): CRDT removal. `pycrdt` and `yjs`/`y-indexeddb`
-      are gone (the alembic 0004 migration keeps a transient pycrdt
-      dependency at upgrade time only — see follow-ups). The Y.Doc layer
-      was replaced with the relational schema documented in `README.md`.
-      Active-session timer state moved from a Y.Map to client `localStorage`;
-      sync is REST + a thin WebSocket fan-out of `{"type":"state_changed"}`.
-
-## Cleanup follow-ups
-
-- [x] Drop `pycrdt` from `requirements_bazel.txt`. (Done as part of the
-      Postgres migration: the alembic 0001-0004 chain was deleted entirely
-      since live SQLite DBs are migrated to Postgres by
-      `migrate_sqlite_to_postgres.py`, not by alembic.)
-
 ## After Postgres migration — possible refactors
 
 These are not required, just nice-to-haves surfaced during the
@@ -50,10 +23,6 @@ These are not required, just nice-to-haves surfaced during the
       single VPS loss; the app cannot. Decide whether to bump the app
       to `replicas: 2` with proper Postgres-backed session state, or
       accept the asymmetry.
-- [ ] `data_dir` setting (the SQLite-fallback path) can be removed once
-      we're confident no env in the wild still relies on it. Today the
-      production deployment still passes `STUDY_CASINO_DATA_DIR=/data`
-      because the Phase A image hasn't been rolled.
 - [ ] Consider migrating the `*_at_ms` columns from `BigInteger` (Unix
       milliseconds) to Postgres `TIMESTAMP WITH TIME ZONE`. Today the
       columns are bigints because the wire format (`/state` JSON,
@@ -69,5 +38,3 @@ These are not required, just nice-to-haves surfaced during the
   `ledger_events` (`source="legacy_client_sync"`) stay readable forever; the
   Literal unions in `events.py` keep both source values so old rows
   deserialize. Do not write a migration that rewrites them.
-- PVC backups live in `backups/` (gitignored — personal data); deploy a
-  fresh backup before any future destructive migration.

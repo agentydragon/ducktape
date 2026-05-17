@@ -15,13 +15,13 @@ Lives at <https://casino.allegedly.works>.
 | -------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | `app.py`                               | FastAPI backend: REST + thin WebSocket fan-out, static frontend                                    |
 | `actions.py`                           | Pydantic schemas for server-authoritative action endpoints                                         |
-| `config.py`                            | Pydantic settings (DATA_DIR, host, port)                                                           |
+| `config.py`                            | Pydantic settings (DATABASE_URL, ADMIN_USERS, host, port, OIDC)                                    |
 | `models.py`                            | SQLAlchemy rows: balance, sessions, prizes, prize_log, ledger, snapshots, hands                    |
 | `events.py`                            | Pydantic schemas for game and ledger event reads                                                   |
 | `games.py`                             | Server-side slots, roulette, and blackjack rules/RNG                                               |
-| `store.py`                             | `SqlStore`: idempotent server-action runner over SQLite                                            |
-| `migrations/`                          | Alembic migrations for the per-user SQLite database                                                |
-| `migrations/test_0004_backfill.py`     | Round-trip test for the irreversible Y.Doc → relational backfill                                   |
+| `store.py`                             | `SqlStore`: idempotent server-action runner over Postgres                                          |
+| `migrations/`                          | Alembic migrations applied at startup against the CNPG Postgres database                           |
+| `conftest.py`                          | Postgres testcontainer fixture (per-test isolated database)                                        |
 | `test_store.py`                        | SqlStore: idempotency, snapshots, validators                                                       |
 | `test_app.py`                          | HTTP-surface coverage of every action + `/state` + `/ws`                                           |
 | `tests/test_e2e_browser.py`            | Real-Playwright browser smoke (sync ok, state 5xx → offline)                                       |
@@ -49,14 +49,21 @@ Lives at <https://casino.allegedly.works>.
 
 OIDC Authorization Code flow (confidential client). The backend (`auth.py`)
 handles `/auth/login` → Authentik → `/auth/callback`, then issues an
-HMAC-signed session cookie. Per-user SQLite databases scope state to the
-authenticated user. Authentik resources (OAuth2 provider, application, policy
-bindings) are managed by TF at
+HMAC-signed session cookie. Per-user state is scoped by `user_id` in the
+shared Postgres database. Authentik resources (OAuth2 provider, application,
+policy bindings) are managed by TF at
 `tf/gitops/sso-providers/provider_study_casino.tf`.
+
+Usernames listed in `STUDY_CASINO_ADMIN_USERS` (comma-separated) have
+admin privileges: they can manage prize catalogs for other users via
+`/admin/*` endpoints. Non-admin users cannot create or delete prizes,
+even their own — admins curate the catalog. Anyone can still redeem
+prizes against their own token balance.
 
 ## State
 
-Canonical state is a small relational schema in per-user SQLite:
+Canonical state is a small relational schema in Postgres (CNPG `study-casino-db`),
+shared-schema with rows scoped by `user_id`:
 
 | Table             | Purpose                                                                         |
 | ----------------- | ------------------------------------------------------------------------------- |

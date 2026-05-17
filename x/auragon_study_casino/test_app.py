@@ -13,8 +13,18 @@ from x.auragon_study_casino.config import Settings
 
 
 @pytest.fixture
-def client(tmp_path: Path) -> TestClient:
-    settings = Settings(data_dir=tmp_path, frontend_dist_dir=tmp_path / "nonexistent_dist")
+def client(tmp_path: Path, db_url: str) -> TestClient:
+    """Default unauth client. The fallback user `default` is configured as
+    an admin so existing prize-create/-delete tests still pass; non-admin
+    behaviour is exercised via a separate fixture below."""
+    settings = Settings(database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist", admin_users={"default"})
+    return TestClient(create_app(settings))
+
+
+@pytest.fixture
+def non_admin_client(tmp_path: Path, db_url: str) -> TestClient:
+    """Client where `default` is not an admin — used to verify 403 paths."""
+    settings = Settings(database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist")
     return TestClient(create_app(settings))
 
 
@@ -42,7 +52,7 @@ def test_healthz(client: TestClient) -> None:
 def test_me_returns_default_user_without_oidc(client: TestClient) -> None:
     r = client.get("/me")
     assert r.status_code == 200
-    assert r.json() == {"username": "default"}
+    assert r.json() == {"username": "default", "is_admin": True}
 
 
 def test_state_returns_seed_shape(client: TestClient) -> None:
@@ -251,9 +261,11 @@ def test_reset_zeroes_balance_keeps_prizes(client: TestClient) -> None:
     assert len(state["prizes"]) == 6
 
 
-def test_users_have_isolated_state(tmp_path: Path) -> None:
+def test_users_have_isolated_state(tmp_path: Path, db_url: str) -> None:
     """Two users hitting the same shared-schema store see only their own balances."""
-    app = create_app(Settings(data_dir=tmp_path, frontend_dist_dir=tmp_path / "nonexistent_dist"))
+    app = create_app(
+        Settings(database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist", admin_users={"alice", "bob"})
+    )
     dep = app.state.current_user_dep
 
     with TestClient(app) as client:
@@ -278,8 +290,8 @@ def test_ws_emits_state_changed_on_connect(client: TestClient) -> None:
     assert msg == {"type": "state_changed"}
 
 
-def test_ws_broadcasts_state_changed_after_action(tmp_path: Path) -> None:
-    settings = Settings(data_dir=tmp_path, frontend_dist_dir=tmp_path / "nonexistent_dist")
+def test_ws_broadcasts_state_changed_after_action(tmp_path: Path, db_url: str) -> None:
+    settings = Settings(database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist")
     app = create_app(settings)
     with TestClient(app) as client, client.websocket_connect("/ws") as ws1, client.websocket_connect("/ws") as ws2:
         # Drain bootstrap pings.
@@ -299,6 +311,101 @@ def test_ws_broadcasts_state_changed_after_action(tmp_path: Path) -> None:
         for ws in (ws1, ws2):
             msg = ws.receive_json()
             assert msg == {"type": "state_changed"}
+
+
+# ── Admin-only prize management ──────────────────────────────────────────────
+
+
+def test_me_reports_admin_flag(client: TestClient, non_admin_client: TestClient) -> None:
+    assert client.get("/me").json() == {"username": "default", "is_admin": True}
+    assert non_admin_client.get("/me").json() == {"username": "default", "is_admin": False}
+
+
+def test_non_admin_cannot_create_prize_for_self(non_admin_client: TestClient) -> None:
+    r = non_admin_client.post(
+        "/actions/prize/create", json={"client_action_id": "noadm-c", "name": "Mocha", "cost": 45}
+    )
+    assert r.status_code == 403
+
+
+def test_non_admin_cannot_delete_prize(non_admin_client: TestClient) -> None:
+    r = non_admin_client.post("/actions/prize/delete", json={"client_action_id": "noadm-d", "prize_id": "p1"})
+    assert r.status_code == 403
+
+
+def test_non_admin_can_still_redeem_prize(non_admin_client: TestClient) -> None:
+    """Auragon can still redeem prizes Rai created."""
+    _grant_tokens(non_admin_client, 50)
+    r = non_admin_client.post("/actions/prize/redeem", json={"client_action_id": "noadm-r", "prize_id": "p1"})
+    assert r.status_code == 200, r.text
+
+
+def test_admin_can_create_prize_for_other_user(tmp_path: Path, db_url: str) -> None:
+    """Rai (admin) creates a prize in Auragon's catalog."""
+    app = create_app(
+        Settings(database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist", admin_users={"rai"})
+    )
+    dep = app.state.current_user_dep
+    with TestClient(app) as c:
+        app.dependency_overrides[dep] = lambda: "rai"
+        r = c.post(
+            "/actions/prize/create",
+            json={
+                "client_action_id": "rai-add-1",
+                "name": "Custom prize for auragon",
+                "cost": 7,
+                "target_user": "auragon",
+            },
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["result"]["user"] == "auragon"
+
+        # Auragon sees the new prize in her catalog.
+        app.dependency_overrides[dep] = lambda: "auragon"
+        state = c.get("/state").json()
+        assert any(p["name"] == "Custom prize for auragon" for p in state["prizes"])
+
+        # And Rai's own catalog is untouched.
+        app.dependency_overrides[dep] = lambda: "rai"
+        rai_state = c.get("/state").json()
+        assert not any(p["name"] == "Custom prize for auragon" for p in rai_state["prizes"])
+
+
+def test_admin_users_endpoint_lists_seeded_users(tmp_path: Path, db_url: str) -> None:
+    app = create_app(
+        Settings(database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist", admin_users={"rai"})
+    )
+    dep = app.state.current_user_dep
+    with TestClient(app) as c:
+        # Seed two users by calling /state on each.
+        for u in ("auragon", "rai"):
+            app.dependency_overrides[dep] = lambda u=u: u
+            c.get("/state")
+
+        app.dependency_overrides[dep] = lambda: "rai"
+        r = c.get("/admin/users")
+        assert r.status_code == 200, r.text
+        assert set(r.json()["users"]) >= {"auragon", "rai"}
+
+
+def test_non_admin_admin_endpoints_return_403(non_admin_client: TestClient) -> None:
+    assert non_admin_client.get("/admin/users").status_code == 403
+    assert non_admin_client.get("/admin/state?user=default").status_code == 403
+
+
+def test_admin_state_returns_target_user_state(tmp_path: Path, db_url: str) -> None:
+    app = create_app(
+        Settings(database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist", admin_users={"rai"})
+    )
+    dep = app.state.current_user_dep
+    with TestClient(app) as c:
+        app.dependency_overrides[dep] = lambda: "auragon"
+        _grant_credits(c, 12, action_id="auragon-seed")
+
+        app.dependency_overrides[dep] = lambda: "rai"
+        r = c.get("/admin/state", params={"user": "auragon"})
+        assert r.status_code == 200, r.text
+        assert r.json()["balance"]["credits"] == 12
 
 
 if __name__ == "__main__":
