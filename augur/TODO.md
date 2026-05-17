@@ -31,6 +31,19 @@ second ordered roadmap.
       for all immediate cash demands (property tax, HOA, insurance,
       maintenance, outside rent, partner contributions, special assessments,
       quarterly estimated taxes).
+- [ ] Drop the `Simulation` prefix from internal class names. Inside a
+      simulator every class is by definition simulated; the prefix adds
+      noise without disambiguating. Survey hit (after trace-surface collapse
+      lands): `SimulationAction`, `SimulationPolicyDecision`,
+      `SimulationMarketObservation`, `SimulationJournalEntry`,
+      `SimulationPosting`, `SimulationBalanceSnapshot`,
+      `SimulationAccountingDetail`, `SimulationObligation`,
+      `SimulationFundingDecision`, `SimulationSettlementResult`,
+      `SimulationFailureEvent`, `SimulationResult`, `SimulationRun`,
+      `SimulationTerminal`, `SimulationValidationError`, plus the
+      `_SimulationTraceBase` / `_SimulationActionBase` family. All
+      6 files are in `augur/core/`; the wire JSON keys do not carry the
+      prefix, so this is a purely internal rename.
 - [ ] Make the generic Augur OCI image public-safe: no private Python config, property records, or media in image layers; deployments supply private config and assets through mounted runtime inputs.
 - [ ] Add a durable property-asset storage contract: stable property asset IDs/URLs backed by object storage or a database-like asset table, so deployments do not need to bake private media into frontend images.
 
