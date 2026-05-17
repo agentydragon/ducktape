@@ -6,6 +6,7 @@ metadata:
 spec:
   suspend: false
   interval: 10m
+  retryInterval: 1m
   path: ./cluster/k8s/seaweedfs/operator
   prune: true
   sourceRef:
