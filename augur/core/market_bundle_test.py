@@ -27,12 +27,12 @@ def test_simple_market_bundle_shapes_and_reproducibility() -> None:
     )
 
     assert first.generic_sp500_multipliers.shape == (4, 19)
-    assert first.private_equity_sale_opportunity_mask.shape == (4, 19)
-    assert first.private_equity_sale_opportunity_mask.dtype == np.bool_
+    assert first.private_equity_sale_opportunity_mask_for(None).shape == (4, 19)
+    assert first.private_equity_sale_opportunity_mask_for(None).dtype == np.bool_
     np.testing.assert_array_equal(first.month_index, np.arange(19, dtype="int64"))
     assert_allclose(first.generic_sp500_multipliers, second.generic_sp500_multipliers)
     assert_allclose(first.inflation_multipliers[:, 0], 1.0)
-    assert_allclose(first.private_equity_value_multipliers[:, 0], 1.0)
+    assert_allclose(first.private_equity_value_multiplier(None)[:, 0], 1.0)
     assert first.metadata.path_set_id == second.metadata.path_set_id
     assert first.metadata.exogenous_path_ids == second.metadata.exogenous_path_ids
 
@@ -97,9 +97,6 @@ def test_market_bundle_rejects_bad_shapes() -> None:
             home_value_multipliers_by_location={"default": valid},
             rent_multipliers_by_location={"default": valid},
             mortgage_30y_rate_pct=np.full((2, 4), 6.5, dtype="float64"),
-            private_equity_value_multipliers=valid,
-            private_equity_sale_opportunity_mask=np.zeros((2, 4), dtype=np.bool_),
-            crypto_value_multipliers=valid,
             private_equity_value_multipliers_by_issuer={"default": valid},
             private_equity_sale_opportunity_mask_by_issuer={"default": np.zeros((2, 4), dtype=np.bool_)},
             crypto_value_multipliers_by_symbol={"default": valid},

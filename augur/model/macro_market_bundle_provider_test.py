@@ -106,19 +106,19 @@ def test_sample_market_bundle_shape(provider: MacroMarketBundleProvider) -> None
     assert "current_private_equity_price_usd" not in bundle.metadata.source_metadata
     assert bundle.metadata.current_private_equity_price_usd == 100.0
     np.testing.assert_array_equal(bundle.month_index, np.arange(horizon_months + 1, dtype="int64"))
-    for key in (
-        "inflation_multipliers",
-        "generic_sp500_multipliers",
-        "mortgage_30y_rate_pct",
-        "private_equity_value_multipliers",
-    ):
+    for key in ("inflation_multipliers", "generic_sp500_multipliers", "mortgage_30y_rate_pct"):
         values = getattr(bundle, key)
         assert values.shape == expected_shape, key
         assert np.all(np.isfinite(values)), key
-    for key in ("inflation_multipliers", "generic_sp500_multipliers", "private_equity_value_multipliers"):
+    pe_values = bundle.private_equity_value_multiplier(None)
+    assert pe_values.shape == expected_shape
+    assert np.all(np.isfinite(pe_values))
+    for key in ("inflation_multipliers", "generic_sp500_multipliers"):
         values = getattr(bundle, key)
         assert_allclose(values[:, 0], 1.0)
         assert np.all(values > 0), key
+    assert_allclose(pe_values[:, 0], 1.0)
+    assert np.all(pe_values > 0)
     expected_locations = {"default", "san_francisco_ca", "vallejo_ca", "mare_island_vallejo_ca"}
     assert set(bundle.home_value_multipliers_by_location) == expected_locations
     assert set(bundle.rent_multipliers_by_location) == expected_locations
@@ -140,10 +140,11 @@ def test_mortgage_path_constant(provider: MacroMarketBundleProvider) -> None:
 
 def test_private_equity_paths_flat_with_yearly_tenders(provider: MacroMarketBundleProvider) -> None:
     bundle = _sample(provider, rollout_count=1, horizon_months=24)
-    assert_allclose(bundle.private_equity_value_multipliers, 1.0)
-    assert not bundle.private_equity_sale_opportunity_mask[:, 0].any()
-    assert bundle.private_equity_sale_opportunity_mask[:, 12].all()
-    assert bundle.private_equity_sale_opportunity_mask[:, 24].all()
+    assert_allclose(bundle.private_equity_value_multiplier(None), 1.0)
+    mask = bundle.private_equity_sale_opportunity_mask_for(None)
+    assert not mask[:, 0].any()
+    assert mask[:, 12].all()
+    assert mask[:, 24].all()
 
 
 def test_seed_determinism(provider: MacroMarketBundleProvider) -> None:

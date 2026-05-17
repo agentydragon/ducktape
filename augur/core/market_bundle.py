@@ -210,18 +210,9 @@ class MarketBundle:
     home_value_multipliers_by_location: dict[str, np.ndarray]
     rent_multipliers_by_location: dict[str, np.ndarray]
     mortgage_30y_rate_pct: np.ndarray
-    # CLEANUP(2026-05-17): remove once all callers route through the per-asset helpers
-    # (`private_equity_value_multiplier(issuer_id)` / `private_equity_sale_opportunity_mask_for(issuer_id)`
-    # / `crypto_value_multiplier(symbol)`). The dict-keyed siblings below are the
-    # forward path; these globals stay populated with the same array that lives at
-    # `"default"` in the dicts so legacy external callers keep working.
-    private_equity_value_multipliers: np.ndarray
-    private_equity_sale_opportunity_mask: np.ndarray
-    crypto_value_multipliers: np.ndarray
     # Per-issuer / per-symbol multiplier and mask paths. Each dict must include a
-    # `"default"` entry that mirrors the corresponding global array above. Multi-issuer
-    # / multi-symbol scenarios route through these helpers; single-asset scenarios
-    # transparently fall back to the `"default"` path.
+    # `"default"` entry. Multi-issuer / multi-symbol scenarios route through these
+    # helpers; single-asset scenarios transparently fall back to `"default"`.
     private_equity_value_multipliers_by_issuer: dict[str, np.ndarray]
     private_equity_sale_opportunity_mask_by_issuer: dict[str, np.ndarray]
     crypto_value_multipliers_by_symbol: dict[str, np.ndarray]
@@ -240,21 +231,8 @@ class MarketBundle:
         self._validate_multiplier(
             self.generic_sp500_multipliers, name="generic_sp500_multipliers", expected_shape=expected_shape
         )
-        self._validate_multiplier(
-            self.private_equity_value_multipliers,
-            name="private_equity_value_multipliers",
-            expected_shape=expected_shape,
-        )
-        self._validate_multiplier(
-            self.crypto_value_multipliers, name="crypto_value_multipliers", expected_shape=expected_shape
-        )
         self._validate_float_matrix(
             self.mortgage_30y_rate_pct, name="mortgage_30y_rate_pct", expected_shape=expected_shape
-        )
-        self._validate_bool_matrix(
-            self.private_equity_sale_opportunity_mask,
-            name="private_equity_sale_opportunity_mask",
-            expected_shape=expected_shape,
         )
 
         for name, values in self.home_value_multipliers_by_location.items():
@@ -288,24 +266,6 @@ class MarketBundle:
             raise ValueError("private_equity_sale_opportunity_mask_by_issuer must include 'default'")
         if "default" not in self.crypto_value_multipliers_by_symbol:
             raise ValueError("crypto_value_multipliers_by_symbol must include 'default'")
-        # The legacy global fields must mirror the `"default"` entry. Providers populate
-        # both; the engine reads through the per-asset helpers (which fall back to
-        # `"default"`), so a mismatch would silently let two paths diverge.
-        if not np.array_equal(
-            self.private_equity_value_multipliers, self.private_equity_value_multipliers_by_issuer["default"]
-        ):
-            raise ValueError(
-                "private_equity_value_multipliers must equal private_equity_value_multipliers_by_issuer['default']"
-            )
-        if not np.array_equal(
-            self.private_equity_sale_opportunity_mask, self.private_equity_sale_opportunity_mask_by_issuer["default"]
-        ):
-            raise ValueError(
-                "private_equity_sale_opportunity_mask must equal "
-                "private_equity_sale_opportunity_mask_by_issuer['default']"
-            )
-        if not np.array_equal(self.crypto_value_multipliers, self.crypto_value_multipliers_by_symbol["default"]):
-            raise ValueError("crypto_value_multipliers must equal crypto_value_multipliers_by_symbol['default']")
 
     @property
     def rollout_count(self) -> int:
@@ -440,9 +400,6 @@ class FlatMarketBundleProvider:
             home_value_multipliers_by_location=home_by_location,
             rent_multipliers_by_location=rent_by_location,
             mortgage_30y_rate_pct=mortgage_rate,
-            private_equity_value_multipliers=flat,
-            private_equity_sale_opportunity_mask=private_equity_events,
-            crypto_value_multipliers=flat,
             private_equity_value_multipliers_by_issuer={"default": flat},
             private_equity_sale_opportunity_mask_by_issuer={"default": private_equity_events},
             crypto_value_multipliers_by_symbol={"default": flat},
@@ -553,9 +510,6 @@ class SimpleMarketBundleProvider:
             home_value_multipliers_by_location=home_by_location,
             rent_multipliers_by_location=rent_by_location,
             mortgage_30y_rate_pct=mortgage_rate,
-            private_equity_value_multipliers=private_equity_value,
-            private_equity_sale_opportunity_mask=private_equity_events,
-            crypto_value_multipliers=crypto_value,
             private_equity_value_multipliers_by_issuer={"default": private_equity_value},
             private_equity_sale_opportunity_mask_by_issuer={"default": private_equity_events},
             crypto_value_multipliers_by_symbol={"default": crypto_value},

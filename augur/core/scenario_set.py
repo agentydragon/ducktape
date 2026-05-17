@@ -881,11 +881,11 @@ class GenericSp500StockPosition(_AssetPositionBase):
 class CryptoAssetPosition(_AssetPositionBase):
     """A crypto holding modeled as a single fungible quantity (e.g. BTC, ETH).
 
-    Crypto value moves with `MarketBundle.crypto_value_multipliers` (currently a
-    placeholder array of ones — fitted crypto models are deferred). Realized gain on
-    sale is treated as ordinary income (federal + California) until a richer
-    short/long-term cap-gains model lands; the choice is documented near the funding
-    chain rather than in the schema.
+    Crypto value moves with `MarketBundle.crypto_value_multipliers_by_symbol` keyed
+    by `asset_symbol` (currently a placeholder array of ones — fitted crypto models
+    are deferred). Realized gain on sale is treated as ordinary income (federal +
+    California) until a richer short/long-term cap-gains model lands; the choice is
+    documented near the funding chain rather than in the schema.
     """
 
     asset_type: Literal[AssetType.CRYPTO] = AssetType.CRYPTO
@@ -904,8 +904,9 @@ class LiquidityRegimeType(StrEnum):
 class LiquidityEventOnly(ApiModel):
     """Default PE liquidity regime: sale only at sampled tender opportunities.
 
-    The market bundle's `private_equity_sale_opportunity_mask` plus the actor's
-    `PrivateEquitySalePolicy` chain drives every sale under this regime.
+    The market bundle's per-issuer sale-opportunity mask (looked up via
+    `MarketBundle.private_equity_sale_opportunity_mask_for(issuer_id)`) plus the
+    actor's `PrivateEquitySalePolicy` chain drives every sale under this regime.
     """
 
     regime_type: Literal[LiquidityRegimeType.LIQUIDITY_EVENT_ONLY] = LiquidityRegimeType.LIQUIDITY_EVENT_ONLY
