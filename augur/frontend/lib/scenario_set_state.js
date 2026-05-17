@@ -638,89 +638,45 @@ export function scenarioSetInputToRequest(input, bootstrap) {
   };
 }
 
-function serializableScenario(scenario) {
-  const {
-    identity,
-    propertyAndLocation,
-    actorsAndOwnership,
-    timeline,
-    financing,
-    occupancyAndRental,
-    propertyAssumptions,
-    taxAccounting,
-    initialBalanceSheet,
-    policies,
-  } = scenario;
-  return {
-    identity: {
-      scenarioId: identity.scenarioId,
-      label: identity.label,
-      enabled: identity.enabled,
-      color: identity.color,
-    },
-    propertyAndLocation: {
-      propertyId: propertyAndLocation.propertyId,
-    },
-    actorsAndOwnership: {
-      actorPolicy: actorsAndOwnership.actorPolicy,
-      partnerPaymentMonthlyUsd: actorsAndOwnership.partnerPaymentMonthlyUsd,
-    },
-    timeline: {
-      holdYears: timeline.holdYears,
-    },
-    financing: {
-      financingMode: financing.financingMode,
-      downPaymentPct: financing.downPaymentPct,
-      ...(financing.financingMode === "custom"
-        ? {
-            customMortgageRate: financing.customMortgageRate,
-            customMortgageTermYears: financing.customMortgageTermYears,
-          }
-        : {}),
-      creditScore: financing.creditScore,
-    },
-    occupancyAndRental: {
-      ownerResidenceMode: occupancyAndRental.ownerResidenceMode,
-      rentalUsePolicy: occupancyAndRental.rentalUsePolicy,
-      vacancyPct: occupancyAndRental.vacancyPct,
-      managementFeePct: occupancyAndRental.managementFeePct,
-      leasingFeePct: occupancyAndRental.leasingFeePct,
-      roomsRentedWhileLiving: occupancyAndRental.roomsRentedWhileLiving,
-      roomRentMonthlyUsd: occupancyAndRental.roomRentMonthlyUsd,
-      roomVacancyPct: occupancyAndRental.roomVacancyPct,
-    },
-    propertyAssumptions: {
-      maintenancePct: propertyAssumptions.maintenancePct,
-      insuranceAnnualUsd: propertyAssumptions.insuranceAnnualUsd,
-      depreciableBasisPct: propertyAssumptions.depreciableBasisPct,
-    },
-    taxAccounting: {
-      closingCostBuyPct: taxAccounting.closingCostBuyPct,
-      closingCostSellPct: taxAccounting.closingCostSellPct,
-    },
-    initialBalanceSheet: {
-      initialCheckingUsd: initialBalanceSheet.initialCheckingUsd,
-      startingPortfolioUsd: initialBalanceSheet.startingPortfolioUsd,
-      privateEquityUnits: initialBalanceSheet.privateEquityUnits,
-    },
-    policies: {
-      liquidReservePolicy: policies.liquidReservePolicy,
-      checkingFloorUsd: policies.checkingFloorUsd,
-      checkingSaleAmountUsd: policies.checkingSaleAmountUsd,
-      privateEquitySalePolicy: policies.privateEquitySalePolicy,
-      privateEquityLiquidNetWorthFloorUsd: policies.privateEquityLiquidNetWorthFloorUsd,
-      privateEquityTenderSaleAmountUsd: policies.privateEquityTenderSaleAmountUsd,
-    },
-  };
+// Conditional fields the wire format hides outside their applicable variant.
+// Today only ``financing.customMortgageRate`` / ``customMortgageTermYears``
+// fall into this bucket: they only apply when ``financingMode === "custom"``.
+// Anything else here would need a Zod discriminated-union mirror on the
+// Pydantic side; right now the schema treats every override as flatly
+// optional, so the projection has to encode this caveat itself.
+const FINANCING_CUSTOM_ONLY_FIELDS = ["customMortgageRate", "customMortgageTermYears"];
+function dropInapplicableScenarioFields(scenario) {
+  const financing = scenario?.financing;
+  if (!financing || financing.financingMode === "custom") return scenario;
+  const keepFinancing = Object.fromEntries(
+    Object.entries(financing).filter(([key]) => !FINANCING_CUSTOM_ONLY_FIELDS.includes(key))
+  );
+  return { ...scenario, financing: keepFinancing };
 }
 
-function serializableScenarioSetInput(input) {
-  return {
+// Project a scenario-set input down to the schema-known snake_case shape used
+// in the encoded URL state.
+//
+// Parses against ``zBrowserScenarioSetInputOverridesInput`` so the schema —
+// not a hand-maintained field list — defines what survives. Zod
+// ``.object(...)`` strips unknown keys; ``.nullish()`` fields drop out
+// naturally when absent. Any new field added to ``BrowserScenarioInputOverrides``
+// on the Pydantic side surfaces in the wire payload the moment
+// ``//augur/frontend/lib:schema_zod`` regenerates. The old hand-maintained
+// field list silently dropped new fields until somebody noticed; this
+// projection cannot.
+//
+// ``schema`` is parameterizable so the stale-field guard test can drive the
+// same flow through a hypothetically-extended schema; production callers
+// always use the generated default.
+function projectScenarioSetForUrlState(input, schema = zBrowserScenarioSetInputOverridesInput) {
+  const camelDraft = {
     title: input.title,
     marketRequest: input.marketRequest,
     reportSpec: normalizeReportSpec(input.reportSpec),
-    scenarios: (input.scenarios ?? []).map(serializableScenario),
+    scenarios: (input.scenarios ?? []).map(dropInapplicableScenarioFields),
   };
+  return schema.parse(decamelizeObjectKeys(camelDraft));
 }
 
 function bytesToBase64Url(bytes) {
@@ -746,21 +702,21 @@ function base64UrlToBytes(value) {
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
 
-export function encodeScenarioSetUrlState(input) {
+export function encodeScenarioSetUrlState(input, schema = zBrowserScenarioSetInputOverridesInput) {
   const payload = {
     version: URL_STATE_VERSION,
-    scenario_set_input: decamelizeObjectKeys(serializableScenarioSetInput(input)),
+    scenario_set_input: projectScenarioSetForUrlState(input, schema),
   };
   return bytesToBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
 }
 
-export function decodeScenarioSetUrlState(value) {
+export function decodeScenarioSetUrlState(value, schema = zBrowserScenarioSetInputOverridesInput) {
   if (!value) return null;
   const payload = JSON.parse(new TextDecoder().decode(base64UrlToBytes(value)));
   if (payload?.version !== URL_STATE_VERSION) {
     throw new Error(`Unsupported augur scenario URL state version: ${payload?.version ?? "<missing>"}`);
   }
-  return camelizeObjectKeys(zBrowserScenarioSetInputOverridesInput.parse(payload.scenario_set_input));
+  return camelizeObjectKeys(schema.parse(payload.scenario_set_input));
 }
 
 export function scenarioSetInputFromUrlSearch(search) {

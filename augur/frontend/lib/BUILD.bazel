@@ -37,6 +37,7 @@ js_test(
     data = [
         ":scenario_set_state",
         ":schema_zod",
+        "//:node_modules/zod",
     ],
     entry_point = "scenario_set_state_test.mjs",
 )

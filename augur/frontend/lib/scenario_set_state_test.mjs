@@ -10,7 +10,13 @@ import {
   scenarioSetInputToRequest,
 } from "./scenario_set_state.js";
 import { decamelizeObjectKeys } from "./casing.js";
-import { zScenarioSetInput } from "./api/schema.zod.mjs";
+import {
+  zBrowserFinancingOverrides,
+  zBrowserScenarioInputOverridesInput,
+  zBrowserScenarioSetInputOverridesInput,
+  zScenarioSetInput,
+} from "./api/schema.zod.mjs";
+import { z } from "zod";
 
 const bootstrap = {
   defaultPropertyId: "location_a_property",
@@ -382,6 +388,39 @@ test("URL state round-trips rich scenario controls in camelCase", () => {
   assert.equal(decoded.scenarios[0].policies.privateEquitySalePolicy, "liquid_net_worth_floor");
   assert.equal(decoded.scenarios[0].policies.privateEquityLiquidNetWorthFloorUsd, 250_000);
   assert.equal(decoded.scenarios[0].policies.privateEquityTenderSaleAmountUsd, 60_000);
+});
+
+// Stale-field guard: if a future schema gets a new override field, the
+// projection must carry it through the URL state unchanged. The old
+// hand-maintained ``serializableScenario`` silently dropped any field not
+// listed by hand; the schema-driven projection cannot, because it just calls
+// ``schema.parse(...)``. We simulate "a new schema field" by extending the
+// override schemas with a fictional ``futureKnob`` and asserting it survives
+// encode → decode.
+test("URL state preserves fields added to the Zod overrides schema", () => {
+  const extendedFinancing = zBrowserFinancingOverrides.extend({
+    future_knob_pct: z.number().nullish(),
+  });
+  const extendedScenario = zBrowserScenarioInputOverridesInput.extend({
+    financing: extendedFinancing.nullish(),
+  });
+  const extendedSet = zBrowserScenarioSetInputOverridesInput.extend({
+    scenarios: z.array(extendedScenario).nullish(),
+  });
+
+  const input = normalizeScenarioSetInput(createDefaultScenarioSetInput(bootstrap), bootstrap);
+  input.scenarios[0] = patchScenarioInputSection(input.scenarios[0], "financing", {
+    financingMode: "custom",
+    futureKnobPct: 42.5,
+  });
+
+  // Default schema (production behavior) drops the unknown field today.
+  const decodedDefault = decodeScenarioSetUrlState(encodeScenarioSetUrlState(input));
+  assert.equal(decodedDefault.scenarios[0].financing.futureKnobPct, undefined);
+
+  // Extended schema (simulating a future Pydantic addition) preserves it.
+  const decodedExtended = decodeScenarioSetUrlState(encodeScenarioSetUrlState(input, extendedSet), extendedSet);
+  assert.equal(decodedExtended.scenarios[0].financing.futureKnobPct, 42.5);
 });
 
 test("URL state normalizes missing trajectory seed to deterministic default", () => {
