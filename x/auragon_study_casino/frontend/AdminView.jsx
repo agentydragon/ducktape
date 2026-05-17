@@ -17,6 +17,7 @@ export function AdminView({ addPrize, deletePrize, ownUsername }) {
     try {
       const list = await fetchAdminUsers();
       setUsers(list);
+      setError(null);
       // Default to the first non-self user; fall back to self.
       if (selected === null) {
         const other = list.find((u) => u !== ownUsername);
@@ -34,6 +35,7 @@ export function AdminView({ addPrize, deletePrize, ownUsername }) {
     }
     try {
       setTargetState(await fetchAdminUserState(selected));
+      setError(null);
     } catch (e) {
       setError(`Failed to load state for ${selected}: ${e.message}`);
     }

@@ -408,5 +408,34 @@ def test_admin_state_returns_target_user_state(tmp_path: Path, db_url: str) -> N
         assert r.json()["balance"]["credits"] == 12
 
 
+def test_admin_state_unknown_user_returns_404_without_seeding(tmp_path: Path, db_url: str) -> None:
+    """A typo in ?user= must 404, NOT lazy-seed a brand-new user."""
+    app = create_app(
+        Settings(database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist", admin_users={"rai"})
+    )
+    dep = app.state.current_user_dep
+    with TestClient(app) as c:
+        app.dependency_overrides[dep] = lambda: "rai"
+        # 'rai' must exist for /admin/users to be non-empty later.
+        c.get("/state")
+
+        assert c.get("/admin/state", params={"user": "ghost"}).status_code == 404
+
+        # The 404 path must not have seeded 'ghost'.
+        assert "ghost" not in c.get("/admin/users").json()["users"]
+
+
+def test_admin_state_rejects_overlong_user_param(tmp_path: Path, db_url: str) -> None:
+    app = create_app(
+        Settings(database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist", admin_users={"rai"})
+    )
+    dep = app.state.current_user_dep
+    with TestClient(app) as c:
+        app.dependency_overrides[dep] = lambda: "rai"
+        # 65 chars — one over the user_id String(64) column.
+        assert c.get("/admin/state", params={"user": "x" * 65}).status_code == 422
+        assert c.get("/admin/state", params={"user": ""}).status_code == 422
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

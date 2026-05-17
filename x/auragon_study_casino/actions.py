@@ -73,9 +73,13 @@ class PrizeCreateRequest(ActionRequest):
     name: str = Field(min_length=1, max_length=120)
     cost: int = Field(gt=0)
     prize_id: str | None = Field(default=None, max_length=128)
+    # Matches the DB user_id column width (String(64)) and rejects blank
+    # strings — otherwise the request validates but state_dump/insert fails
+    # at the DB layer.
     target_user: str | None = Field(
         default=None,
-        max_length=120,
+        min_length=1,
+        max_length=64,
         description=(
             "If set, create the prize in this user's catalog. The caller must be an admin. "
             "Non-admin callers may not create prizes for themselves either — admins curate the catalog."
@@ -87,7 +91,8 @@ class PrizeDeleteRequest(ActionRequest):
     prize_id: str = Field(min_length=1, max_length=128)
     target_user: str | None = Field(
         default=None,
-        max_length=120,
+        min_length=1,
+        max_length=64,
         description="If set, delete from this user's catalog. The caller must be an admin.",
     )
 

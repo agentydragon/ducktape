@@ -11,10 +11,14 @@ metadata:
     kustomize.toolkit.fluxcd.io/force: enabled
 spec:
   # Single attempt — a failed pod is preserved so logs survive long enough
-  # to debug. Re-run by editing the SQL ConfigMap (kustomize bumps its
-  # hash, `force: enabled` deletes+recreates the Job).
+  # to debug. Re-run by editing readonly-role.sql (kustomize bumps the
+  # ConfigMap hash; `kustomize.toolkit.fluxcd.io/force: enabled` then
+  # deletes+recreates the Job, since Job specs are otherwise immutable).
+  #
+  # No `ttlSecondsAfterFinished`: if the TTL controller deleted a
+  # successful Job, Flux would re-create it on the next reconcile,
+  # turning a change-driven script into an on-schedule one.
   backoffLimit: 0
-  ttlSecondsAfterFinished: 86400
   template:
     metadata:
       labels:

@@ -236,16 +236,24 @@ export function useMe() {
   return state;
 }
 
+async function adminFetch(path) {
+  const resp = await fetch(path, { credentials: "same-origin" });
+  if (resp.status === 401) {
+    // Mirror the auth-expiry behaviour of fetchState/postAction so an
+    // expired session doesn't leave the admin panel showing a raw 401.
+    window.location.href = "/auth/login";
+    throw new Error("not authenticated");
+  }
+  if (!resp.ok) throw new Error(`${path} ${resp.status}`);
+  return resp.json();
+}
+
 /** Admin-only: fetch the list of usernames the server has seeded. */
 export async function fetchAdminUsers() {
-  const resp = await fetch("/admin/users", { credentials: "same-origin" });
-  if (!resp.ok) throw new Error(`admin/users ${resp.status}`);
-  return (await resp.json()).users;
+  return (await adminFetch("/admin/users")).users;
 }
 
 /** Admin-only: fetch the state_dump for any user. */
 export async function fetchAdminUserState(username) {
-  const resp = await fetch(`/admin/state?user=${encodeURIComponent(username)}`, { credentials: "same-origin" });
-  if (!resp.ok) throw new Error(`admin/state ${resp.status}`);
-  return await resp.json();
+  return adminFetch(`/admin/state?user=${encodeURIComponent(username)}`);
 }

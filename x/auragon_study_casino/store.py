@@ -124,6 +124,11 @@ class SqlStore:
         with self._Session() as s:
             return sorted(s.scalars(select(BalanceRow.user_id)).all())
 
+    def user_exists(self, username: str) -> bool:
+        """Whether `username` already has a balance row (i.e. has been seeded)."""
+        with self._Session() as s:
+            return s.get(BalanceRow, username) is not None
+
     def list_game_events(self, username: str, limit: int = 100) -> list[GameEventRead]:
         with self._Session() as s:
             rows = list(

@@ -316,8 +316,15 @@ def create_app(settings: Settings) -> FastAPI:
         return {"users": store.list_known_users()}
 
     @app.get("/admin/state")
-    def admin_user_state(user: str, username: Annotated[str, Depends(current_user_dep)]) -> dict[str, Any]:
+    def admin_user_state(
+        user: Annotated[str, Query(min_length=1, max_length=64)], username: Annotated[str, Depends(current_user_dep)]
+    ) -> dict[str, Any]:
+        # Don't seed a balance row + default prizes for typo'd usernames —
+        # state_dump is normally lazy-seeding but for an admin read we want
+        # a strict 404 instead.
         require_admin(username)
+        if not store.user_exists(user):
+            raise HTTPException(status_code=404, detail=f"user {user!r} not found")
         return store.state_dump(user)
 
     @app.get("/game-events")
@@ -440,10 +447,11 @@ def create_app(settings: Settings) -> FastAPI:
     async def create_prize(
         body: PrizeCreateRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
+        # commit_action runs the mutator under run_server_action, which
+        # calls _ensure_user(owner) at the top of the same transaction —
+        # no separate pre-seed needed (which would also be a blocking
+        # call on the event loop).
         owner = resolve_prize_owner(username, body.target_user)
-        # Ensure the owner has a balance row + seeded prize catalog before
-        # an admin pokes at it from a different session.
-        store.state_dump(owner)
 
         def mutate(s: Session, _now_ms: int) -> ActionMutation:
             prize_id = body.prize_id or f"p{uuid.uuid4().hex[:12]}"
@@ -455,11 +463,8 @@ def create_app(settings: Settings) -> FastAPI:
                 details={"name": body.name, "cost": body.cost, "target_user": owner, "by": username},
             )
 
-        response = await commit_action(username=owner, body=body, action_type="prize.create", mutator=mutate)
-        if owner != username:
-            # Notify the affected user's tabs even though the admin caller initiated the change.
-            await ws_manager.push(owner, {"type": "state_changed"})
-        return response
+        # commit_action pushes state_changed to `owner` — no extra push needed for cross-user admin actions.
+        return await commit_action(username=owner, body=body, action_type="prize.create", mutator=mutate)
 
     @app.post("/actions/prize/delete")
     async def delete_prize(
@@ -477,10 +482,7 @@ def create_app(settings: Settings) -> FastAPI:
                 details={"name": row.name, "cost": row.cost, "target_user": owner, "by": username},
             )
 
-        response = await commit_action(username=owner, body=body, action_type="prize.delete", mutator=mutate)
-        if owner != username:
-            await ws_manager.push(owner, {"type": "state_changed"})
-        return response
+        return await commit_action(username=owner, body=body, action_type="prize.delete", mutator=mutate)
 
     @app.post("/actions/prize/redeem")
     async def redeem_prize(
