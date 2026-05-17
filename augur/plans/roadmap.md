@@ -402,34 +402,23 @@ Work:
    normalization and request mapping, then split app/frontend/server packages
    after the core contracts and server cleanup settle.
 
-## In Flight
-
-- **Funding policies consume crypto + tender-window-aware PE** —
-  `PortfolioStatement.to_initial_balance_sheet()` currently drops crypto
-  holdings and tender windows. First-class runtime handling: a new
-  `AssetType.CRYPTO`, tender-window-driven `private_equity_sale_opportunity_mask`,
-  and extension of `CheckingFloorSellPublicStockPolicy` (and the
-  obligation-funding chain) to liquidate crypto and tender-eligible PE.
-  This slice covers the runtime asset + funding side; Priority 3 covers
-  the stochastic price-path side for both PE and crypto.
-- **Mantine migration of remaining frontend controls** — `augur/frontend/`.
-  `augur/frontend/app.jsx` form/table elements move to Mantine equivalents.
-
 ## Next Lanes (parallelism + sequencing)
 
-- **Priority 3 — stochastic PE/crypto/tender** (high impact, large variance
-  source currently ignored by the simulator). Three concurrent sub-slices,
-  all in `augur/model/`, isolated from `augur/core/scenario_engine.py`:
-  - Per-asset sampled PE price paths (replace flat `np.ones(...)` multiplier).
-  - Stochastic tender-arrival process (replace deterministic 12-month mask).
-  - Sampled crypto price paths (consume the runtime asset class the
-    in-flight funding-policy slice is adding).
+- **Priority 3 — sampled PE / sampled tender timing / sampled crypto**
+  (open design work; see the priority section above). Joint fit with
+  SP500 / inflation / per-location housing factors on sparse evidence.
+  Lives entirely in `augur/model/`, isolated from
+  `augur/core/scenario_engine.py`.
 - **Plan C (unified obligation/funding semantics)** — see below.
-  Sequence after the crypto/tender-PE funding slice lands, since they share
-  `scenario_engine.py`.
+  Generalize property tax, HOA, insurance, maintenance, outside rent,
+  partner contributions, and special assessments through the existing
+  obligation/funding/settlement pipeline; layer quarterly estimated
+  taxes on top. Touches `augur/core/scenario_engine.py`.
 - **Persist model-governance artifacts** — durable evidence / calibration
   / validation-report storage for market providers. `augur/model/`.
   Self-contained, can run in parallel with anything.
+- **Simulation-prefix scrub** — internal rename across 6 files in
+  `augur/core/`. Mechanical; no wire-format change.
 
 ## Next Work Plans
 

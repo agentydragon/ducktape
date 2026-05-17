@@ -10,17 +10,6 @@ Priority ordering and cross-repo consolidation live in
 `plans/roadmap.md`. Keep this file as the public generic backlog rather than a
 second ordered roadmap.
 
-## In Flight
-
-- Funding policies consume crypto + tender-window-aware PE — extend the
-  obligation-funding policy chain so `CheckingFloorSellPublicStockPolicy`
-  (and siblings) can liquidate crypto holdings and tender-eligible PE
-  alongside SP500. Branch `claude/funding-policies-crypto-tender`. This
-  slice covers the runtime asset + funding side only; the stochastic
-  price-path side is the priority-3 follow-on below.
-- Mantine migration of remaining frontend controls. Branch
-  `claude/augur-frontend-mantine-migration`.
-
 ## Next
 
 - [ ] **PE should actually be simulated** (Priority 3 in `plans/roadmap.md`).
