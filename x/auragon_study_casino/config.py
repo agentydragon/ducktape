@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Annotated
 
 from pydantic import BeforeValidator, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 @dataclass(frozen=True)
@@ -31,7 +31,14 @@ def _parse_csv_users(value: object) -> frozenset[str]:
     raise TypeError(f"cannot parse admin_users from {value!r}")
 
 
-AdminUsers = Annotated[frozenset[str], BeforeValidator(_parse_csv_users)]
+# `NoDecode` disables pydantic-settings' default behaviour of running `json.loads`
+# on env-var values for "complex" types (set/frozenset/list/dict/etc.) before any
+# validators run. Without it, `STUDY_CASINO_ADMIN_USERS=agentydragon` would try
+# to JSON-decode `agentydragon` (not a valid JSON literal) and crash at startup
+# with `SettingsError: error parsing value for field "admin_users"` long before
+# `_parse_csv_users` gets a chance to see the string. With NoDecode the raw env
+# string flows straight to the BeforeValidator.
+AdminUsers = Annotated[frozenset[str], NoDecode, BeforeValidator(_parse_csv_users)]
 
 
 class Settings(BaseSettings):
