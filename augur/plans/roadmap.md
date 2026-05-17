@@ -319,19 +319,17 @@ Acceptance criteria:
 
 ## Priority 5: Policy Runtime And Result Typing
 
-The simulator should execute ordered actor policy programs and expose typed
-inspection surfaces.
+The simulator executes ordered actor policy programs. The `Instruction` (policy
+intent) → `Effect` (realized state mutation) split landed via #1591; `Effect`
+rows are now the user-visible trace surface for sales, and ledger/snapshot/
+accounting-detail rows are the canonical source of truth for everything else.
 
-Work:
+Remaining work:
 
-- Keep execution on the ordered actor policy program dispatcher as policy
-  families grow; do not add new per-class monthly loops.
 - Add richer policy execution trace rows for no-op, rejected, instructed, and
-  applied decisions where trajectory inspection needs them.
-- Rename or reframe the runtime vocabulary around `Instruction` plus `Effect`.
-  In the current accounting-oriented simulator, the actor's RL-like choice is
-  closer to a policy decision/instruction, while the existing `Action` concept
-  has drifted toward the realized state change after validation and accounting.
+  applied decisions where trajectory inspection needs them (today the trace
+  records the realized `Effect`, but a policy that decided "no sale because
+  no opportunity" produces no row).
 - Make result inspection typed and local: distribution helpers, trajectory
   helpers, ledger/detail helpers, and compatibility aliases only where needed.
 - Keep market paths and exogenous opportunities as observations, not policy
@@ -341,7 +339,8 @@ Acceptance criteria:
 
 - Policy order is explicit and testable.
 - No policy family bypasses the ordered actor program dispatcher.
-- Policy decisions are visible in trajectory inspection.
+- Policy decisions (including no-op / rejected) are visible in trajectory
+  inspection.
 - Result arrays are not the only way to understand why something happened.
 
 ## Priority 6: Property, Location, And Asset Storage
@@ -404,21 +403,35 @@ Work:
 
 ## Next Lanes (parallelism + sequencing)
 
-- **Priority 3 — sampled PE / sampled tender timing / sampled crypto**
-  (open design work; see the priority section above). Joint fit with
-  SP500 / inflation / per-location housing factors on sparse evidence.
-  Lives entirely in `augur/model/`, isolated from
-  `augur/core/scenario_engine.py`.
-- **Plan C (unified obligation/funding semantics)** — see below.
-  Generalize property tax, HOA, insurance, maintenance, outside rent,
-  partner contributions, and special assessments through the existing
-  obligation/funding/settlement pipeline; layer quarterly estimated
-  taxes on top. Touches `augur/core/scenario_engine.py`.
+- **Priority 3 — sampled PE / sampled tender timing / sampled crypto +
+  sampled mortgage rate** (open design work; see the priority section
+  above). Joint fit with SP500 / inflation / per-location housing factors
+  on sparse evidence. Lives entirely in `augur/model/`, isolated from
+  `augur/core/scenario_engine.py`. **The biggest remaining variance
+  source the simulator silently ignores.**
+- **Tax surface beyond sale tax** — qualified dividends, short-term gains,
+  capital losses + carryforward, rental income tax, SALT/property-tax
+  deductions, passive-loss release. Most valuable once Priority 3
+  produces dividend-like income streams.
+- **`RegimeChange` mid-rollout events** — IPO converts
+  `LiquidityEventOnly` → `PublicMarket`. The discriminated-union shape
+  already supports it; runtime needs to sample the event month and flip
+  the variant.
+- **Underpayment penalty on quarterly estimates** — IRS interest rate +
+  3% on shortfalls. Layers on the year-end true-up that #1592 landed.
+- **Borrowing facilities** — overdraft, margin, credit line as explicit
+  funding sources in the obligation pipeline. Today negative cash is a
+  silent warning; with explicit borrowing it becomes an
+  accounting-tracked liability paired with a funding source.
 - **Persist model-governance artifacts** — durable evidence / calibration
   / validation-report storage for market providers. `augur/model/`.
   Self-contained, can run in parallel with anything.
-- **Simulation-prefix scrub** — internal rename across 6 files in
-  `augur/core/`. Mechanical; no wire-format change.
+- **Replace `scenario.actorPolicy` enums with modeled actor agreements**
+  (Priority 2). "Agent X pays agent Y this amount over this period for
+  this share/claim" should be a contract, not a scenario-wide enum.
+- **Replace built-in `LocationId` enum with DB-like location entities**,
+  parallel to property entities. Per-location regulation/tax/modeling
+  knobs flow through the entity rather than hardcoded enum extension.
 
 ## Next Work Plans
 
@@ -455,120 +468,30 @@ Validation:
 
 - `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-pe-plan test //augur/core:test_e2e //augur/core:scenario_engine_test //augur/api:browser_shell_test --nocache_test_results --test_size_filters=small,medium,large`
 
-### Plan C: Unified Obligation/Funding Semantics For All Immediate Cash Demands
+### Plan C: Unified Obligation/Funding Semantics (complete)
 
-Today, `ObligationType` only covers `ANNUAL_TAX_PAYMENT` and `MORTGAGE_PAYMENT`.
-Everything else that demands cash — property tax, HOA dues, insurance,
-maintenance, outside rent, partner contributions, special assessments — still
-debits cash directly from the operating-cash-flow appliers, with no
-obligation/funding/failure rows on the trace. That makes "rollout failed because
-the actor couldn't pay X" reachable only for tax + mortgage.
+Plan C is **done**. Every immediate cash demand now flows through the
+unified `_settle_required_cash_obligations` pipeline: annual tax,
+estimated tax (quarterly with safe-harbor), mortgage, property tax, HOA,
+insurance, maintenance, outside rent, partner contribution, special
+assessment. Each obligation type has a `required: bool` flag, emits
+settlement rows, and produces `FailureEvent` + `RolloutStatusType.FAILED`
+on shortfall. Two follow-ons remain, both deliberately scoped out of Plan
+C and tracked in `TODO.md`:
 
-Generalize the shape so **one** pattern handles every immediate cash demand:
+- **Underpayment-penalty calculation** on estimated-tax shortfalls (IRS
+  short-term rate + 3% on the under-paid amount).
+- **Discretionary-obligation deferral** semantics — every variant is
+  currently `required=True`; flipping any to discretionary (deferral
+  rather than failure) is a future PR.
 
-1. The accrual path produces a `SimulationObligation` row carrying actor_id,
-   amount_usd, due_month_index, cause_id, obligation_type, and creditor_kind.
-2. The unified `_settle_required_cash_obligations` chain attempts to settle:
-   try cash, then walk the actor's ordered funding policies until either
-   settled or exhausted.
-3. Unsettled required obligations emit `FailureEvent` + flip
-   `RolloutStatusType` to `FAILED`.
+### Plan D: Keep Market Configuration Typed At The Boundary (guardrail)
 
-#### Slices
-
-1. **Expand `ObligationType`** beyond `ANNUAL_TAX_PAYMENT` /
-   `MORTGAGE_PAYMENT`. Add: `PROPERTY_TAX`, `HOA_DUES`, `INSURANCE_PREMIUM`,
-   `MAINTENANCE`, `OUTSIDE_RENT`, `SPECIAL_ASSESSMENT`,
-   `PARTNER_CONTRIBUTION`, `ESTIMATED_TAX_PAYMENT`. Each variant declares
-   `required: bool` — required obligations produce `FAILED` on shortfall;
-   discretionary obligations are best-effort and produce a settlement row
-   but not a failure event.
-   **Landed (foundation PR).** Enum members exist; the obligation-kind
-   dataclasses (`_AnnualTaxObligationKind`, `_MortgageObligationKind`, new
-   generic `_CashDebitObligationKind`) carry `required: bool`;
-   `_record_obligation_settlement_rows` honors the flag so a discretionary
-   variant produces a settlement row without a failure event.
-2. **Refactor `apply_property_operating_cash_flows`** (<augur/core/policy_runtime.py>)
-   to emit obligations instead of directly debiting cash. Same accrual
-   amounts, same months, same chart-account roles — the only visible change
-   is new obligation/settlement rows on the trace. Cash trajectories should
-   match the current behavior on the happy path.
-   **Pending.** Hardest slice; touches the property cash-flow pipeline.
-3. **Outside-rent obligations** for `OccupancyMode.OWNER_RENTS_ELSEWHERE`.
-   Today this isn't first-class. Add a `RentalPaymentPolicy` (or extend
-   `OccupancyDecisionPolicy`) that accrues monthly rent as a required
-   obligation. Verify against existing tests.
-   **Landed.** `OccupancyPlan.outside_rent_monthly_usd` is a flat monthly
-   knob (inflation indexing deferred); each month in the occupancy span
-   accrues an `OUTSIDE_RENT` obligation on the primary owner via
-   `_CashDebitObligationKind(expense_role=ChartAccountRole.OUTSIDE_RENT_EXPENSE)`
-   and routes through `_settle_required_cash_obligations` with
-   `creditor_id="landlord"`. Cash-strapped renters without a rescue
-   policy flip the rollout to `FAILED`; a `CheckingFloorSellPublicStockPolicy`
-   rescues by selling SP500.
-4. **Partner-contribution obligations**. Today
-   `apply_partner_house_cost_contribution` debits cash unconditionally. The
-   contributing actor's failure to fund their share of housing costs is a
-   real-world failure mode and should produce `FAILED`. Move the cash debit
-   to the obligation pipeline. The owner side (which credits cash) stays
-   direct since it's a receipt, not a demand.
-   **Pending.** The `PARTNER_CONTRIBUTION` enum value is reserved.
-5. **Quarterly estimated tax payments** on top of the year-end obligation.
-   Standard schedule: Apr 15, Jun 15, Sep 15, Jan 15 of the following year
-   (clamped to horizon). Safe-harbor: 100% of prior-year tax (110% when AGI
-   exceeds the $150k single / $75k MFS threshold), divided into four equal
-   estimated payments. First year (no prior-year tax): use 90% of estimated
-   current-year tax. The year-end obligation amount reduces by the sum of
-   estimated payments actually made.
-   **Pending.** The `ESTIMATED_TAX_PAYMENT` enum value is reserved.
-6. **Special-assessment events**. Add a `SpecialAssessment` event variant
-   for one-shot HOA assessments, surfaced through the existing event
-   pipeline. Each event produces a `SPECIAL_ASSESSMENT` obligation due in
-   the event month.
-   **Landed (foundation PR).** `SpecialAssessmentEvent` lives next to the
-   other event variants; the scenario engine builds a (rollout, month)
-   obligation matrix and routes it through `_settle_required_cash_obligations`
-   with a `_CashDebitObligationKind` carrying `ChartAccountRole.HOA_EXPENSE`.
-   Two `test_e2e.py` cases cover the happy path and the FAILED rollout
-   path. This is the proving ground for the unified pipeline shape.
-7. **Generalize failure tests**. One `RolloutStatusType.FAILED` test per
-   obligation type proving the funding-policy chain runs, can be rescued
-   by an asset sale, and fails the rollout when no rescue is available.
-   Extend `test_e2e.py` with a "cash-strapped rental scenario" and a
-   "cash-strapped owner-rents-elsewhere scenario" that fail on the right
-   obligation.
-   **Partially landed.** `test_special_assessment_event_fails_rollout_when_unfundable`
-   covers the new variant; the rest follow naturally as slices 2–5 land
-   their pipelines.
-
-#### Out of scope (defer to a follow-on)
-
-- Underpayment-penalty calculation on estimated taxes (interest on
-  shortfalls). The estimated-payment obligations exist; the penalty
-  computation is a separate slice.
-- Discretionary-obligation deferral semantics (e.g. roll unpaid maintenance
-  into a follow-on month). For now every variant is required-or-cosmetic.
-- Explicit borrowing models (overdraft, credit line, margin) as an
-  alternative funding source. Today negative cash stays a warning; if a
-  borrowing facility is added later, it slots in as another
-  `FundingDecisionType`.
-
-Validation:
-
-```bash
-bbr test //augur/core:test_e2e //augur/core:scenario_engine_test \
-  //augur/core:policy_runtime_test //augur/core:annual_tax_test
-bbr test //augur/...
-bbr build //augur/...
-```
-
-### Plan D: Keep Market Configuration Typed At The Boundary
-
-Guardrail, not an active slice. Keep the macro market config Pydantic-parsed
-at load time, with `market_config_test` as the review point when adding new
-source-data fields or deployment-supplied config. Reject stale simulation
-knobs at the file boundary — `MarketRequest` owns rollout count, horizon,
-and seed; the market config should not keep a second inert copy.
+Keep the macro market config Pydantic-parsed at load time, with
+`market_config_test` as the review point when adding new source-data
+fields or deployment-supplied config. Reject stale simulation knobs at
+the file boundary — `MarketRequest` owns rollout count, horizon, and
+seed; the market config should not keep a second inert copy.
 
 ## Verification Loop
 

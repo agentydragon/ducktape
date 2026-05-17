@@ -8,9 +8,12 @@ rather than liquidity, and ledger/accounting-backed reporting. The ordered
 actor policy runtime has landed, but the implementation still carries several
 old or parallel trace/detail paths that make that direction harder to enforce.
 
-The highest-value remaining cleanup is not broad refactoring. Force the engine
-to choose one source of truth for result detail: ordered policy programs plus
-state/ledger/accounting rows, with monthly arrays as derived chart output.
+The highest-value remaining work is no longer cleanup — the trace-surface
+collapse (#1580), the Plan C unified obligation pipeline (#1586/#1592/#1593/
+#1600/#1601 + foundation), and the `Action → Effect` rename (#1591) have all
+landed. What remains is **stochastic modeling** of variance sources the
+simulator still treats as flat: PE valuation, tender timing, crypto price, and
+mortgage rate. See `plans/roadmap.md` Priority 3.
 
 Root `STYLE.md` and `augur/AGENTS.md` make several of these findings stronger:
 Augur is pre-production, so compatibility shims need explicit justification;
@@ -21,30 +24,10 @@ hidden behind fallbacks.
 
 ## Suspicious/Needs-Design Review
 
-1. Actions, decisions, ledger entries, balance snapshots, accounting details,
-   and monthly arrays overlap heavily.
-
-   Files/classes: `SimulationAction` rows at
-   `augur/core/scenario_set.py:355-452`, policy decisions at lines 455-499,
-   market observations at lines 502-530, ledger/snapshot/detail rows at lines
-   534-599, and response exposure at lines 886-901. `run_scenario_vectorized()`
-   builds all of them plus wide arrays in `ScenarioRunArrays` at
-   `augur/core/scenario_engine.py:92-168` and returns them all at lines
-   1100-1175.
-
-   Why suspicious: these rows are valuable as a future trace model, but today
-   the app primarily consumes fan/terminal/monthly columns. The row surfaces
-   are mostly exercised by tests and emitted wholesale in every response. That
-   creates a parallel public API before the source-of-truth boundary is clear.
-
-   Replace with: make ledger/accounting/snapshot rows the canonical detail
-   surface, then either delete `SimulationAction` rows or narrow them to
-   user-visible commands only. Gate heavyweight detail rows behind an explicit
-   report/detail option once the UI has a real consumer.
-
-   Prove safe by: add reconciliation tests that every public monthly flow is
-   derived from ledger/accounting rows. Then remove one action family, such as
-   `PayMortgageAction`, and confirm no app or API behavior depends on it.
+(Item 1 resolved — `SimulationAction` was narrowed to user-visible sale
+commands via #1580, then renamed to `Effect` via #1591. A reconciliation
+guard test in `test_e2e.py` proves every monthly flow metric reduces to
+ledger/snapshot/accounting-detail rows.)
 
 ## Recent Work Risk Review
 
@@ -107,18 +90,16 @@ hidden behind fallbacks.
    Collapse if: tests merely mirror the parameter table. Use source citations in
    the data file comments or docs, and behavior tests around the calculator.
 
-## Suggested Deletion/Replacement Sequence
+## Ongoing Guardrails
 
 1. Keep policy execution on the ordered dispatcher. Do not add new per-class
    monthly loops, and extend policy trace rows as trajectory inspection needs
    no-op/rejected/applied decision detail.
 
-2. Pick one trace/source-of-truth path. Collapse one duplicated family, such as
-   mortgage payment action rows, into ledger/accounting/snapshot detail.
-
-3. Replace temporary tax timing with obligations. Keep `cash_negative` as a
-   warning, but introduce failure only through an obligation settlement result,
-   not through raw cash-path inspection.
+2. Keep `cash_negative` as a warning, not a failure trigger; failure flows
+   through obligation settlement results. (Unified obligation pipeline
+   complete; the design question of whether negative cash is allowed at
+   all — vs forcing explicit borrowing — is still open.)
 
 ## Suggested Tests/Guards
 

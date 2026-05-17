@@ -13,15 +13,17 @@ records what an outside observer can rely on.
 
 ### Entities
 
-| Entity      | What it is                                                                                                           | Examples                                                                                                                             |
-| ----------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `Agent`     | An economic actor with state (cash, holdings, liabilities, ownership shares) and a set of policies.                  | a primary owner, an equity-building occupant                                                                                         |
-| `Asset`     | Something an agent owns that has value. Discriminated subtype determines valuation and liquidity model.              | a `LiquidSecurity` tracking SP500, a `PrivateEquity` holding, a `RealEstate` property                                                |
-| `Liability` | A debt an agent owes, with an amortization schedule.                                                                 | a mortgage on a property                                                                                                             |
-| `Market`    | A stochastic input source producing per-rollout paths.                                                               | SP500 total return, local home-price paths, local rent paths, CPI, mortgage rate, per-`PrivateEquity` price + liquidity-event stream |
-| `Policy`    | A typed rule attached to an agent: `(state, market, time) → list[Action]`. Composable; an agent can hold any number. | liquidity-reserve maintenance, max-concentration rebalancing, partner-equity agreement, mortgage payment, rental management          |
-| `Action`    | An atomic mutation applied to state.                                                                                 | `SellAsset`, `BuyAsset`, `Transfer(from, to, amount)`, `PayLiability`, `AccrueOwnership`, `OccupyProperty`, `RentProperty`           |
-| `Scenario`  | A bundle: agents + assets + liabilities + initial state + policies + which markets to sample from + horizon.         | "primary buys property X with partner contributing"                                                                                  |
+| Entity        | What it is                                                                                                                                                                                                                          | Examples                                                                                                                             |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `Agent`       | An economic actor with state (cash, holdings, liabilities, ownership shares) and a set of policies.                                                                                                                                 | a primary owner, an equity-building occupant                                                                                         |
+| `Asset`       | Something an agent owns that has value. Discriminated subtype determines valuation and liquidity model.                                                                                                                             | a `LiquidSecurity` tracking SP500, a `PrivateEquity` holding, a `RealEstate` property                                                |
+| `Liability`   | A debt an agent owes, with an amortization schedule.                                                                                                                                                                                | a mortgage on a property                                                                                                             |
+| `Market`      | A stochastic input source producing per-rollout paths.                                                                                                                                                                              | SP500 total return, local home-price paths, local rent paths, CPI, mortgage rate, per-`PrivateEquity` price + liquidity-event stream |
+| `Policy`      | A typed rule attached to an agent: `(state, market, time) → list[Instruction]`. Composable; an agent can hold any number.                                                                                                           | liquidity-reserve maintenance, max-concentration rebalancing, partner-equity agreement, mortgage payment, rental management          |
+| `Instruction` | A policy-emitted intent (e.g. "sell N units of asset X"). Validated and applied by the engine into an `Effect`.                                                                                                                     | `SellInstruction`, `BorrowInstruction`                                                                                               |
+| `Effect`      | A realized state mutation after validation. The trace records effects, not the raw instructions.                                                                                                                                    | `SellSp500Effect`, `SellCryptoEffect`, `SellPrivateEquityEffect`, `SettlePropertySaleEffect`                                         |
+| `Obligation`  | A first-class cash demand on an actor (tax, mortgage, property tax, HOA, insurance, maintenance, outside rent, partner contribution, special assessment, estimated tax). Settled via the funding-policy chain or fails the rollout. | annual tax due at year-end, monthly property tax                                                                                     |
+| `Scenario`    | A bundle: agents + assets + liabilities + initial state + policies + which markets to sample from + horizon.                                                                                                                        | "primary buys property X with partner contributing"                                                                                  |
 
 ### Asset subtypes
 
@@ -63,20 +65,16 @@ Policies are first-class typed objects. The current policy vocabulary:
 Policies do not encode actor identities in their type names — actor IDs are
 data in scenario configuration, not type-system distinctions.
 
-### Action types
+### Effect types
 
-Actions are the atomic state mutations the engine applies. The vocabulary:
+`Effect` rows are the user-visible trace surface for realized sales. System-emitted accounting moves (mortgage settlement, partner contributions, partner-equity accruals, monthly spend, property-cost obligations) are derivable from ledger postings, balance snapshots, and accounting details — the canonical detail surface — and are not separate effect rows.
 
-| Action               | Effect                                                                                        |
-| -------------------- | --------------------------------------------------------------------------------------------- |
-| `BuyAsset`           | Decrease cash, increase holding.                                                              |
-| `SellAsset`          | Decrease holding, increase cash (post-tax).                                                   |
-| `Transfer`           | Move cash between agents.                                                                     |
-| `PayLiability`       | Decrease cash, decrease liability principal + record interest.                                |
-| `AccrueOwnership`    | Update ownership-share ledger between agents on a shared asset.                               |
-| `OccupyProperty`     | Property phase transition (vacant → owner-occupied or rented → owner-occupied).               |
-| `RentProperty`       | Property phase transition (owner-occupied → rented); accrues rent income, vacancy, mgmt fees. |
-| `AccrueDepreciation` | Records depreciation against rental-use property basis.                                       |
+| Effect                     | What it records                                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------------- |
+| `SellSp500Effect`          | Sale of generic SP500 stock: units, basis, realized gain, tax allocation.                   |
+| `SellCryptoEffect`         | Sale of crypto holding: units, basis, realized gain, tax allocation.                        |
+| `SellPrivateEquityEffect`  | Sale of private-equity holding (tender, public-market post-lockup, or forced acquisition).  |
+| `SettlePropertySaleEffect` | Property disposition: gross proceeds, debt payoff, closing costs, capital-gains allocation. |
 
 Discrete one-time events the engine also records (not produced by policies but
 by markets / scenario configuration):
@@ -114,8 +112,9 @@ A scenario-set run produces a typed `ScenarioSetRunResponse`:
 - `MarketBundleMetadata`: the sampled market model, seed, rollout count,
   horizon, event streams, and source metadata.
 - `ScenarioResult`: one result per scenario, each with accepted input summary,
-  report tables, metric summaries, actions, policy decisions, market
-  observations, accounting details, ledger entries, and balance snapshots.
+  report tables, metric summaries, effects (sales), policy decisions, market
+  observations, obligations + settlement results + funding decisions, accounting
+  details, ledger entries, and balance snapshots.
 - `ReportTable`: columnar per-month arrays for fan charts, sample paths, and
   terminal distributions.
 - `warnings`: validation or modeling notes that did not prevent the run.

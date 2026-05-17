@@ -63,52 +63,20 @@ API.
 
 ## Rollout Status And Failure Semantics
 
-The current `cash_negative` rollout status is an annotation/warning, not a
-terminal simulation failure. It means the generated cash path dipped below zero
-and the result should surface that fact for diagnosis. It does not by itself
-prove that the simulation could not continue, that an obligation defaulted, or
-that a policy failed.
+The unified obligation pipeline now runs for every required cash demand
+(annual tax, quarterly estimated tax, mortgage, property tax, HOA, insurance,
+maintenance, outside rent, partner contribution, special assessment). A
+required obligation that cannot be settled — even after the actor's funding
+policies have tried — fires `FailureEvent` and flips the rollout to
+`RolloutStatusType.FAILED`. The matching `test_e2e.py` `FAILED`-on-shortfall
+tests cover each obligation type.
 
-The next core slice should reserve a first-class `failed` rollout status for
-settlement failure. A rollout should become failed when a required
-obligation/cash demand cannot be settled after the responsible actor's policy
-program has had a chance to fund it. The planned flow is:
-
-1. Accounting or scheduled model logic emits an obligation/cash demand with a
-   cause and due time.
-2. The actor policy program receives that demand and emits funding instructions:
-   use cash, sell public assets, sell private assets if an opportunity exists,
-   borrow through an explicitly modeled facility, or decline/fail.
-3. Accounting validates and applies the instructions, records cash/liability
-   effects, and marks the obligation paid, partially paid, unpaid, or failed.
-4. A failed required obligation marks the rollout `failed` through the status
-   enum and records any richer detail through structured rows later.
-
-Negative cash should not silently imply borrowing. If the scenario explicitly
-models overdraft, margin, a credit line, or another borrowing facility, then
-negative cash may be an intentional accounting representation paired with that
-borrowing state and can remain a warning/diagnostic status. Without that
-explicit model, the engine should try sale/financing policies before recording
-a settlement failure.
-
-### Failure Semantics Test Sketch
-
-Keep these as pending sketches until the obligation/settlement shape exists:
-
-- A path whose cash goes negative under today's accounting, but has no failed
-  required obligation, returns `RolloutStatusType.CASH_NEGATIVE` and complete
-  monthly arrays. This preserves the current warning semantics.
-- A required tax or mortgage obligation with insufficient cash and no applicable
-  sale/financing policy records a failed obligation and returns a future
-  `RolloutStatusType.FAILED`.
-- The same obligation succeeds when a policy sells enough liquid assets before
-  settlement; the rollout remains active or only cash-negative if its cash path
-  still legitimately dips below zero.
-- Explicit borrowing capacity either prevents negative cash by funding the
-  obligation or records negative cash together with borrowing/liability state;
-  it must not look like unexplained implicit credit.
-- API serialization exposes the machine state through the `status` enum and
-  structured fields only. It does not emit a separate enum-like `status_reason`.
+`cash_negative` remains a warning, not a terminal failure. It surfaces a
+cash trajectory dip that wasn't caught by any obligation accrual. The open
+design question is whether negative cash should be allowed at all in the
+absence of explicit borrowing — see the Borrowing facilities entry in
+`augur/TODO.md`. If/when added, a borrowing facility slots in as another
+`FundingDecisionType` and a paired liability.
 
 ## Active Step 7: Arrays Reconcile To Ledger
 
@@ -190,28 +158,15 @@ Current open follow-ups live in `augur/TODO.md`. Keep this plan focused on the
 Step 7 array-source inventory, the app-state spiral below, and the e2e
 verification loop.
 
-## Next App-State Spiral
+## App-State Schema-Driven Boundary (achieved guardrail)
 
-The remaining app-state risk is letting the browser become its own schema
-authority through hand-maintained field lists and local validation logic.
-
-Next slice:
-
-1. Wire the existing OpenAPI/Zod generated artifacts (`//devinfra/js:openapi.bzl`,
-   `augur/api/openapi_schema.py`) into `augur/frontend/lib/scenario_set_state.js`
-   normalization and request mapping. Replace hand-maintained browser field lists
-   and ad hoc boundary checks with the generated schemas.
-2. Do not preserve stale URL compatibility when the state shape changes again.
-
-Acceptance checks:
-
-- Pydantic is the single schema source of truth for Augur API payloads.
-- Browser validation/types are generated from the backend schema, not
-  independently maintained.
-- Adding a new API field starts in the Pydantic model and propagates to the
-  browser build.
-- Existing browser shell and visual golden tests still prove the distribution
-  and trajectory routes render after URL/state normalization.
+The OpenAPI/Zod pipeline is wired and live: `client.js` validates every API
+response, `decodeScenarioSetUrlState` validates URL state against the overrides
+schema, and `serializableScenarioSetInput` projects through
+`zBrowserScenarioSetInputOverridesInput` (#1581) so adding a new
+Pydantic field propagates to the browser without a hand-maintained field
+list. **Guardrail**: do not reintroduce hand-maintained schema lists or
+ad hoc boundary checks. Pydantic stays the single source of truth.
 
 ## Verification
 

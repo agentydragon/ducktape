@@ -1,57 +1,52 @@
 # Augur TODO
 
-Last design scan: 2026-05-17. Last consolidation: 2026-05-17.
+This file tracks public, generic Augur backlog. Downstream repos keep private
+composition, deployment, and user-/company-specific modeling assumptions in
+their own trackers.
 
-This file tracks public, generic Augur backlog. Downstream repos should keep
-private composition, deployment, and user-/company-specific modeling assumptions
-in their own trackers.
-
-Priority ordering and cross-repo consolidation live in
-`plans/roadmap.md`. Keep this file as the public generic backlog rather than a
-second ordered roadmap.
+Priority ordering lives in `plans/roadmap.md`. Keep this file as the public
+generic backlog rather than a second ordered roadmap.
 
 ## Next
 
-- [ ] **PE should actually be simulated** (Priority 3 in `plans/roadmap.md`).
-      Today the market provider holds private-equity marks flat at 1.0 for
-      the entire horizon and emits tender opportunities at deterministic
-      month indices (every 12 months from t=0, identical across all
-      rollouts and all PE assets). The fit is **open design work** —
-      available evidence is sparse (e.g. ~5-10 historical OpenAI tenders),
-      so the natural shape is a model fit **jointly** with SP500,
-      inflation, and the per-location housing factors that the macro
-      provider already estimates (VECM/VAR/Wilkie/etc.), rather than an
-      independent process per PE asset. Tender-frequency arrival rate is
-      fitted on the same evidence.
-- [ ] **Crypto price should be sampled.** Runtime asset class + funding-
-      policy wiring landed via #1582; the remaining gap is replacing the
-      `np.ones(...)` placeholder `crypto_value_multipliers` array with a
-      sampled per-asset path so crypto contributes real variance to the
-      distribution. Model design is part of the same pass as PE above
-      (joint vs independent fit is a design question; deployment evidence
-      is private and stays downstream).
-- [ ] Plan C remaining slices: the unified obligation pipeline is fully
-      wired — `_CashDebitObligationKind` + `_PartnerContributionObligationKind`
-      route every required cash demand through
-      `_settle_required_cash_obligations`. Slices 1, 2, 4, 5, 6, 3 (foundation
-      through outside rent) have all landed. The only items still on the
-      roadmap are slice 7 ("Generalize failure tests") and inflation-indexed
-      outside rent (today the monthly amount is flat).
-- [ ] Drop the `Simulation` prefix from internal class names. Inside a
-      simulator every class is by definition simulated; the prefix adds
-      noise without disambiguating. Survey hit (after trace-surface collapse
-      lands): `SimulationAction`, `SimulationPolicyDecision`,
-      `SimulationMarketObservation`, `SimulationJournalEntry`,
-      `SimulationPosting`, `SimulationBalanceSnapshot`,
-      `SimulationAccountingDetail`, `SimulationObligation`,
-      `SimulationFundingDecision`, `SimulationSettlementResult`,
-      `SimulationFailureEvent`, `SimulationResult`, `SimulationRun`,
-      `SimulationTerminal`, `SimulationValidationError`, plus the
-      `_SimulationTraceBase` / `_SimulationActionBase` family. All
-      6 files are in `augur/core/`; the wire JSON keys do not carry the
-      prefix, so this is a purely internal rename.
-- [ ] Make the generic Augur OCI image public-safe: no private Python config, property records, or media in image layers; deployments supply private config and assets through mounted runtime inputs.
-- [ ] Add a durable property-asset storage contract: stable property asset IDs/URLs backed by object storage or a database-like asset table, so deployments do not need to bake private media into frontend images.
+- [ ] **PE valuation should actually be sampled** (Priority 3 in
+      `plans/roadmap.md`). The market provider holds private-equity marks
+      flat at 1.0 for the entire horizon. The fit is **open design work**
+      — available evidence is sparse (e.g. ~5-10 historical OpenAI
+      tenders), so the natural shape is a model fit **jointly** with
+      SP500, inflation, and the per-location housing factors that the
+      macro provider already estimates (VECM/VAR/Wilkie/etc.), rather
+      than an independent process per PE asset.
+- [ ] **Tender timing should be sampled**, fitted jointly with the PE
+      price model on the same sparse evidence. Today the market provider
+      emits tender opportunities at deterministic month indices (every 12
+      months from t=0, identical across rollouts and PE assets). The
+      explicit `PrivateEquityLot.tender_windows` path lands deterministic
+      windows from portfolio statements; this followup adds a stochastic
+      fallback for the open-ended horizon.
+- [ ] **Crypto price should be sampled.** Runtime asset class +
+      funding-policy wiring landed via #1582; the remaining gap is
+      replacing the `np.ones(...)` placeholder `crypto_value_multipliers`
+      array with a sampled per-asset path so crypto contributes real
+      variance.
+- [ ] **Mortgage rate should be sampled.** The macro provider holds the
+      30y rate flat at today's value over the entire horizon. Refinance
+      and variable-rate scenarios unreachable until the joint market
+      model produces a sampled mortgage-rate path.
+- [ ] **`RegimeChange` mid-rollout events.** The `LiquidityRegime` shape
+      already supports `LiquidityEventOnly → PublicMarket` transitions
+      (e.g. IPO), but no runtime hook flips the regime today. Markets
+      should be able to sample a regime change at a future month.
+- [ ] Make the generic Augur OCI image public-safe: no private Python
+      config, property records, or media in image layers; deployments
+      supply private config and assets through mounted runtime inputs.
+- [ ] Add a durable property-asset storage contract: stable property
+      asset IDs/URLs backed by object storage or a database-like asset
+      table, so deployments do not need to bake private media into
+      frontend images.
+- [ ] Inflation-index the `OccupancyPlan.outside_rent_monthly_usd` knob.
+      Today the monthly amount is flat; a real horizon needs CPI scaling
+      (or per-actor wage-index scaling).
 
 ## Step 7 Scope
 
@@ -105,14 +100,6 @@ second ordered roadmap.
       generator, path-set, and validation-report identities; the next step is
       durable evidence/calibration artifacts, real validation reports, and
       reviewed limitations rather than placeholder IDs.
-- [x] Stop requiring private-equity input positions to carry both `units` and a
-      marked `value_usd` when the value is determined by units plus the private
-      equity price model. `PrivateEquityPosition.value_usd` is now optional;
-      when absent the simulator derives the opening mark from
-      `units × MarketBundleMetadata.current_private_equity_price_usd`. The
-      browser stops sending `value_usd`; the lot mark from
-      `PortfolioStatement.PrivateEquityLot.mark_value_usd` still flows through
-      as an explicit `value_usd` for the statement-mark path.
 - [ ] Move evidence/model-fetching shapes out of core simulator API when touched. Core should consume calibrated market/provider inputs, not source-specific evidence objects.
 
 ## Tax Follow-Ups
@@ -123,8 +110,9 @@ second ordered roadmap.
       California conformity/non-conformity, and ordinary income schedules
       beyond one annual `TaxProfile` value.
 - [ ] Underpayment-penalty calculation on estimated taxes (interest on
-      quarterly shortfalls) once the estimated-payment obligations land in
-      Plan C.
+      quarterly shortfalls). The estimated-payment obligations landed via
+      #1592; the penalty calc (IRS short-term rate + 3% on the shortfall)
+      is the missing piece.
 - [ ] Keep stock-sale, PE-sale, and property-sale tax reconciliation in the
       Step 7 test set.
 
@@ -146,14 +134,11 @@ second ordered roadmap.
       as the distribution of differences between samples from both
       distributions or as paired differences conditioned on the same underlying
       exogenous path.
-- [ ] Continue migrating Augur UI controls to Mantine. Mantine now backs the
-      app provider, result tabs, result disclosure, all tables (via Mantine
-      `Table` with `unstyled` so global typography rules still apply), and
-      remaining click-targets that were bare `<button>` (now Mantine
-      `UnstyledButton`). One control still native: the inline color swatch in
-      `ScenarioList` rows — Mantine `ColorInput` is full-width text-plus-swatch
-      and doesn't fit the compact inline use; the editable `ColorInput` is
-      already present in `SelectedScenarioControls` for the selected scenario.
+- [ ] One Mantine holdout: the inline color swatch in `ScenarioList` rows.
+      Mantine `ColorInput` is full-width text-plus-swatch and doesn't fit
+      the compact inline use; the editable `ColorInput` is already present
+      in `SelectedScenarioControls` for the selected scenario. Decide
+      whether to invent a compact Mantine swatch wrapper or leave native.
 - [ ] Extract shared browser visual-test utilities for deterministic Playwright
       runs. Augur visual goldens currently carry their own Chromium determinism
       flags and injected determinism CSS; those should move into a shared repo
@@ -170,13 +155,12 @@ second ordered roadmap.
 - [ ] Reorganize tax controls so capital-gains rates, exclusions, and other tax
       constants live together and apply consistently to stock, private-equity, and
       property-sale gains. Verify the current math before moving controls.
-- [ ] Finish the private-equity tender/opportunity redesign. The browser no
-      longer exposes arbitrary USD sale controls, core no longer has a manual
-      sale-request path, `liquid_net_worth` no longer counts tender-eligible
-      private marks, and a first liquid-net-worth-floor sale policy records
-      explicit sale/non-sale reasons. The model still needs richer exogenous
-      tender/acquisition/IPO opportunity settings, participation policies beyond
-      the first floor rule, and clearer private-stock sale/tax vocabulary.
+- [ ] Browser/UI for the new PE `LiquidityRegime` variants. The schema
+      now supports `LiquidityEventOnly` / `PublicMarket(lockup_end_month)` /
+      `Acquisition(event_month, cash_per_unit_usd)` (#1601), and the engine
+      respects all three. The browser still only exposes a single
+      "tender-eligible" PE input shape — no UI for setting the regime,
+      no UI for entering a lockup or acquisition event. Wire it through.
 - [ ] Add a top-level reporting toggle for nominal vs inflation-adjusted USD.
       Amounts, charts, tables, and summary metrics should make clear whether
       they are shown in nominal future dollars or real/inflation-adjusted
