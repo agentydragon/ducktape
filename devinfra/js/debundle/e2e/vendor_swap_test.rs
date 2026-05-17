@@ -802,13 +802,14 @@ fn partial_swap_default_kind_replaces_whole_import() {
 }
 
 #[test]
-fn partial_swap_named_kind_replaces_whole_import() {
+fn partial_swap_named_kind_auto_renames_local_binding() {
     // Caller has `import { o as mobxObserver } from "../megachunk/entry.js"`
     // where the chunk export `o` is a single named export of the package
-    // (e.g. `mobx-react-lite#observer`). References call the local
-    // binding directly (`mobxObserver(...)`), which must stay intact.
-    // Only the import statement should change to
-    // `import { observer as mobxObserver } from "mobx-react-lite"`.
+    // (e.g. `mobx-react-lite#observer`). The local alias `mobxObserver`
+    // is whatever the chunker emitted — the partial-swap rewrites both
+    // the import (no alias) AND every reference in the file to use the
+    // upstream export name. So `mobxObserver(...)` becomes
+    // `observer(...)`.
     let fixture = run_partial_swap_kind_fixture(PartialSwapKindFixtureArgs {
         kind: "named",
         package_name: "mobx-react-lite",
@@ -830,12 +831,16 @@ fn partial_swap_named_kind_replaces_whole_import() {
     );
     let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
     assert!(
-        caller.contains("import { observer as mobxObserver } from \"mobx-react-lite\""),
-        "caller should emit a named import using the upstream export:\n{caller}",
+        caller.contains("import { observer } from \"mobx-react-lite\""),
+        "caller should emit a bare named import using the upstream export:\n{caller}",
     );
     assert!(
-        caller.contains("mobxObserver(\"X\")"),
-        "caller's call-site references must stay intact:\n{caller}",
+        caller.contains("observer(\"X\")"),
+        "caller's call-site references should be renamed to the upstream export:\n{caller}",
+    );
+    assert!(
+        !caller.contains("mobxObserver"),
+        "caller should not retain the original local alias:\n{caller}",
     );
     assert!(
         caller.contains("keepMe as kept"),
@@ -844,9 +849,10 @@ fn partial_swap_named_kind_replaces_whole_import() {
 }
 
 #[test]
-fn partial_swap_named_kind_drops_alias_when_local_matches_upstream() {
+fn partial_swap_named_kind_no_rewrite_when_local_already_matches() {
     // When the caller-side local binding already matches the upstream
-    // export name, the emitted import should drop the `as` alias.
+    // export name, the emitted import drops the `as` alias and no
+    // identifier rewrite is needed.
     let fixture = run_partial_swap_kind_fixture(PartialSwapKindFixtureArgs {
         kind: "named",
         package_name: "mobx-react-lite",
@@ -870,6 +876,10 @@ fn partial_swap_named_kind_drops_alias_when_local_matches_upstream() {
     assert!(
         caller.contains("import { observer } from \"mobx-react-lite\""),
         "no `as` alias when local matches upstream export:\n{caller}",
+    );
+    assert!(
+        caller.contains("observer(\"X\")"),
+        "call sites unchanged:\n{caller}",
     );
 }
 
