@@ -718,3 +718,177 @@ fn run_partial_swap_fixture(args: PartialSwapFixtureArgs<'_>) -> PartialSwapFixt
         _root: root,
     }
 }
+
+#[test]
+fn partial_swap_namespace_kind_replaces_whole_import() {
+    // Caller has `import { a as React } from "../megachunk/entry.js"`
+    // where the chunk export `a` is the package's whole namespace
+    // object. References use member access (`React.useState(...)`),
+    // which must stay intact post-swap. Only the import statement
+    // should change to `import * as React from "react"`.
+    let fixture = run_partial_swap_kind_fixture(PartialSwapKindFixtureArgs {
+        kind: "namespace",
+        package_name: "react",
+        package_version: "18.3.1",
+        subpath: "index.js",
+        chunk_source: "export const a = { useState: () => 1, useEffect: () => 2 };\nexport const keepMe = () => 7;\n",
+        caller_source: "import { a as React, keepMe as kept } from \"../megachunk/entry.js\";\nexport function go() { return React.useState() + kept(); }\n",
+        upstream_source: "export const useState = () => 1;\nexport const useEffect = () => 2;\n",
+        chunk_export: "a",
+    });
+
+    assert!(
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
+    assert!(
+        caller.contains("import * as React from \"react\""),
+        "caller should emit a namespace import for the package:\n{caller}",
+    );
+    assert!(
+        caller.contains("React.useState()"),
+        "caller's member-access references must stay intact:\n{caller}",
+    );
+    assert!(
+        caller.contains("keepMe as kept"),
+        "non-swapped specifiers stay in the residual import:\n{caller}",
+    );
+}
+
+#[test]
+fn partial_swap_default_kind_replaces_whole_import() {
+    // Caller has `import { aQ as z } from "../megachunk/entry.js"`
+    // where the chunk export `aQ` is the package's default export
+    // (e.g. clsx). References call the local binding directly
+    // (`z(...)`), which must stay intact. Only the import statement
+    // should change to `import z from "clsx"`.
+    let fixture = run_partial_swap_kind_fixture(PartialSwapKindFixtureArgs {
+        kind: "default",
+        package_name: "clsx",
+        package_version: "2.1.1",
+        subpath: "dist/clsx.mjs",
+        chunk_source: "export const aQ = (...args) => args.join(' ');\nexport const keepMe = () => 7;\n",
+        caller_source: "import { aQ as z, keepMe as kept } from \"../megachunk/entry.js\";\nexport function go() { return z(\"a\", \"b\") + kept(); }\n",
+        upstream_source: "export default (...args) => args.join(' ');\n",
+        chunk_export: "aQ",
+    });
+
+    assert!(
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
+    assert!(
+        caller.contains("import z from \"clsx\""),
+        "caller should emit a default import for the package:\n{caller}",
+    );
+    assert!(
+        caller.contains("z(\"a\", \"b\")"),
+        "caller's call-site references must stay intact:\n{caller}",
+    );
+    assert!(
+        caller.contains("keepMe as kept"),
+        "non-swapped specifiers stay in the residual import:\n{caller}",
+    );
+}
+
+struct PartialSwapKindFixtureArgs<'a> {
+    /// "namespace" or "default"
+    kind: &'a str,
+    package_name: &'a str,
+    package_version: &'a str,
+    subpath: &'a str,
+    chunk_source: &'a str,
+    caller_source: &'a str,
+    upstream_source: &'a str,
+    chunk_export: &'a str,
+}
+
+fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> PartialSwapFixture {
+    const MEGACHUNK_PATH: &str = "static/megachunk.js";
+    const CALLER_PATH: &str = "static/app.js";
+
+    let root = TempDir::with_prefix("vendor-partial-swap-kind-").expect("create tempdir");
+    let workspace_root = root.path().join("workspace");
+    let extracted_root = workspace_root.join("extracted");
+    let snapshot_root = workspace_root.join("snapshot");
+    let out_root = workspace_root.join("out");
+    let wrapper_root = workspace_root.join("vendors").join("generated");
+    let manifest_path = workspace_root.join("vendors").join("manifest.json");
+    let package_root = root.path().join("upstream").join(args.package_name);
+    fs::create_dir_all(&extracted_root).unwrap();
+    fs::create_dir_all(&snapshot_root).unwrap();
+    fs::create_dir_all(&out_root).unwrap();
+    fs::create_dir_all(&wrapper_root).unwrap();
+    fs::create_dir_all(&package_root).unwrap();
+    fs::create_dir_all(snapshot_root.join("static")).unwrap();
+    if let Some(parent) = Path::new(args.subpath).parent() {
+        fs::create_dir_all(package_root.join(parent)).unwrap();
+    }
+
+    write_text_file(&snapshot_root.join(MEGACHUNK_PATH), args.chunk_source);
+    write_text_file(&snapshot_root.join(CALLER_PATH), args.caller_source);
+    let js_list_path = extracted_root.join("js-files.txt");
+    write_text_file(&js_list_path, &format!("{MEGACHUNK_PATH}\n{CALLER_PATH}\n"));
+
+    write_text_file(
+        &package_root.join("package.json"),
+        &format!(
+            "{}\n",
+            serde_json::to_string_pretty(&json!({
+                "name": args.package_name,
+                "version": args.package_version,
+            }))
+            .unwrap(),
+        ),
+    );
+    write_text_file(&package_root.join(args.subpath), args.upstream_source);
+
+    let spec_path = root.path().join("transform_spec.yaml");
+    let spec = json!({
+        "vendor": {
+            MEGACHUNK_PATH: {
+                "level": "partial_swap",
+                "identity": format!("megachunk {} swap fixture", args.kind),
+                "packages": {
+                    args.package_name: {
+                        "version": args.package_version,
+                        "subpath": args.subpath,
+                    },
+                },
+                "symbols": {
+                    args.chunk_export: { "package": args.package_name, "kind": args.kind },
+                },
+            },
+        },
+        "inputs": { "input_root": &snapshot_root, "js_list_path": &js_list_path },
+        "swap_vendor_chunks": {
+            "output_manifest_path": &manifest_path,
+            "output_wrapper_dir": &wrapper_root,
+            "write": true,
+        },
+        "write_js_tree": { "force": true, "out_dir": &out_root },
+    });
+    write_yaml_file(&spec_path, &spec);
+
+    let result = run_debundler(&spec_path, &[(args.package_name, &package_root)]);
+
+    let caller_emitted_path = out_root.join("static/app").join("entry.js");
+    let megachunk_emitted_path = out_root.join("static/megachunk").join("entry.js");
+
+    PartialSwapFixture {
+        result,
+        megachunk_chunk_path: MEGACHUNK_PATH.to_string(),
+        caller_emitted_path,
+        megachunk_emitted_path,
+        manifest_path,
+        _root: root,
+    }
+}
