@@ -86,7 +86,6 @@ second ordered roadmap.
       this period and receives this equity/share/claim in return" should be a
       modeled agreement between agents, not a scenario-level enum that activates a
       hardcoded partner-ownership hack. The exact representation still needs design.
-- [ ] Make result inspection typed and local. String metric names via `series("cash_usd")` are acceptable as a compatibility layer, but primary callers should get discoverable typed metric/rollout/detail helpers.
 - [ ] Separate rollout stochastic inputs in the API/data model. Today a rollout
       is effectively a sampled market environment plus deterministic policy. Make
       that explicit, and consider separate structures/identifiers for market
