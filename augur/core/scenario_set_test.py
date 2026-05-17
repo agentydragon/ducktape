@@ -11,16 +11,20 @@ from pydantic import ValidationError
 from augur.core.local_regulation import LocationId
 from augur.core.scenario_set import (
     AccountType,
+    Acquisition,
     ActorRole,
     AssetType,
     FinancingMode,
     FixedAmountPrivateEquitySaleRule,
+    LiquidityEventOnly,
     LiquidNetWorthFloorPrivateEquitySaleRule,
     MarketRequest,
     OccupancyMode,
     PolicyType,
+    PrivateEquityPosition,
     PrivateEquitySalePolicy,
     PrivateEquitySaleProceedsDestination,
+    PublicMarket,
     RentalMode,
     RolloutStatus,
     RolloutStatusSummary,
@@ -207,6 +211,84 @@ def test_private_equity_position_accepts_units_only() -> None:
     )
     assert pe.value_usd is None
     assert pe.units == 1_000
+
+
+def test_private_equity_liquidity_regime_defaults_to_liquidity_event_only() -> None:
+    """Existing scenarios that omit `liquidity_regime` must continue to behave as
+    `LiquidityEventOnly` — that's the discriminated-union default, the schema
+    contract pre-existing scenarios rely on, and what `PortfolioStatement`-derived
+    positions get."""
+    body = _scenario_set_body("sf_house")
+    body["scenarios"][0]["initial_balance_sheet"]["assets"] = [
+        {
+            "asset_id": "private_equity",
+            "asset_type": "private_equity",
+            "owner_actor_id": "owner",
+            "units": 1_000,
+            "cost_basis_usd": 0,
+        }
+    ]
+
+    scenario_set = ScenarioSet.model_validate(body)
+    [pe] = (
+        asset
+        for asset in scenario_set.scenarios[0].initial_balance_sheet.assets
+        if isinstance(asset, PrivateEquityPosition)
+    )
+    assert isinstance(pe.liquidity_regime, LiquidityEventOnly)
+
+
+def test_private_equity_liquidity_regime_parses_public_market_and_acquisition_variants() -> None:
+    body = _scenario_set_body("sf_house")
+    body["scenarios"][0]["initial_balance_sheet"]["assets"] = [
+        {
+            "asset_id": "pe_public",
+            "asset_type": "private_equity",
+            "owner_actor_id": "owner",
+            "units": 1_000,
+            "cost_basis_usd": 0,
+            "liquidity_regime": {"regime_type": "public_market", "lockup_end_month": 12},
+        }
+    ]
+    pe_public = ScenarioSet.model_validate(body).scenarios[0].initial_balance_sheet.assets[0]
+    assert isinstance(pe_public, PrivateEquityPosition)
+    assert isinstance(pe_public.liquidity_regime, PublicMarket)
+    assert pe_public.liquidity_regime.lockup_end_month == 12
+
+    body["scenarios"][0]["initial_balance_sheet"]["assets"] = [
+        {
+            "asset_id": "pe_acquired",
+            "asset_type": "private_equity",
+            "owner_actor_id": "owner",
+            "units": 100,
+            "cost_basis_usd": 0,
+            "liquidity_regime": {"regime_type": "acquisition", "event_month": 9, "cash_per_unit_usd": 750},
+        }
+    ]
+    pe_acquired = ScenarioSet.model_validate(body).scenarios[0].initial_balance_sheet.assets[0]
+    assert isinstance(pe_acquired, PrivateEquityPosition)
+    assert isinstance(pe_acquired.liquidity_regime, Acquisition)
+    assert pe_acquired.liquidity_regime.event_month == 9
+    assert pe_acquired.liquidity_regime.cash_per_unit_usd == 750
+
+
+def test_private_equity_position_with_acquisition_regime_requires_units() -> None:
+    """An `Acquisition` regime needs `units` to compute proceeds. Schema must
+    reject a PE position with `value_usd` only when the regime is `acquisition`."""
+    body = _scenario_set_body("sf_house")
+    body["scenarios"][0]["initial_balance_sheet"]["assets"] = [
+        {
+            "asset_id": "pe_acquired",
+            "asset_type": "private_equity",
+            "owner_actor_id": "owner",
+            "value_usd": 100_000,
+            "cost_basis_usd": 0,
+            "liquidity_regime": {"regime_type": "acquisition", "event_month": 6, "cash_per_unit_usd": 500},
+        }
+    ]
+
+    with pytest.raises(ValidationError, match="Acquisition regime"):
+        ScenarioSet.model_validate(body)
 
 
 @pytest.mark.parametrize("liability_type", ["mortgage", "tax_liability", "actor_equity_claim"])

@@ -36,16 +36,17 @@ records what an outside observer can rely on.
 
 A discriminated union. Current variants:
 
-| Variant              | Meaning                                                                                                                                   | Status       |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
-| `LiquidityEventOnly` | Sale only at discrete sampled liquidity opportunities. The event stream is a stochastic process with binary arrivals and per-event price. | Implemented. |
-| `PublicMarket`       | Free sale at the spot price each month, subject to optional `lockup_end_month`.                                                           | Future.      |
-| `Acquisition`        | One-shot conversion at a fixed `cash_per_unit_usd` at a sampled `event_month`.                                                            | Future.      |
+| Variant              | Meaning                                                                                                                                                                                                                                                                        | Status       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------ |
+| `LiquidityEventOnly` | Sale only at discrete sampled liquidity opportunities. The event stream is a stochastic process with binary arrivals and per-event price.                                                                                                                                      | Implemented. |
+| `PublicMarket`       | Free sale at the spot price each month, subject to optional `lockup_end_month`. Participates in the obligation funding-policy chain when a `CheckingFloorSellPublicStockPolicy` lists `PRIVATE_EQUITY` in `sale_asset_preference`; the default preference does not include PE. | Implemented. |
+| `Acquisition`        | One-shot forced conversion of the entire remaining position at a fixed `cash_per_unit_usd` on `event_month`. Realized gain feeds the existing annual sale-tax allocation.                                                                                                      | Implemented. |
 
 A `PrivateEquity` asset can transition between regimes via a sampled
 **regime-change event** (e.g. an IPO converts `LiquidityEventOnly` → `PublicMarket`).
-Regime changes are not currently implemented; the model carries them in the
-event-type vocabulary as a TODO.
+The discriminated-union shape supports this, but there is no runtime hook
+yet: regime changes mid-rollout are Future. Today, a position's regime is
+fixed for the whole horizon by `PrivateEquityPosition.liquidity_regime`.
 
 ### Policy types
 

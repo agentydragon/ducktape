@@ -24,6 +24,7 @@ from augur.core.market_bundle_test_support import NoopMarketBundleProvider
 from augur.core.scenario_set import (
     AccountBalance,
     AccountType,
+    Acquisition,
     Actor,
     ActorRole,
     AssetType,
@@ -53,6 +54,7 @@ from augur.core.scenario_set import (
     PropertySaleBasisGainDetail,
     PropertySaleEvent,
     PropertySelection,
+    PublicMarket,
     RentalMode,
     ReportMetric,
     ReportSpec,
@@ -2407,6 +2409,242 @@ def test_fixed_amount_private_equity_sale_rule_sells_on_market_opportunity() -> 
     assert effects[0].event_type is None
     assert effects[0].amount_usd == 50_000
     assert_allclose(effects[0].after_tax_proceeds_usd, 50_000 - expected_tax)
+
+
+def test_public_market_pe_position_sells_freely_each_month_via_pe_sale_policy() -> None:
+    """A `PublicMarket`-regime PE position is sellable every month at the
+    spot mark — no tender opportunity needed. The `PrivateEquitySalePolicy`
+    therefore fires every month the rule triggers, draining the position
+    over time without needing the market provider to emit
+    `private_equity_sale_opportunity_months`.
+    """
+    scenario = Scenario(
+        scenario_id="public_market_pe_no_lockup",
+        label="PublicMarket PE No Lockup",
+        actors=(_simple_actor(),),
+        tax_profile=TaxProfile(),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking", account_type=AccountType.CHECKING, owner_actor_id="alpha", balance_usd=0
+                ),
+            ),
+            assets=(
+                PrivateEquityPosition(
+                    asset_id="pe",
+                    owner_actor_id="alpha",
+                    value_usd=600_000,
+                    cost_basis_usd=600_000,
+                    units=600,
+                    liquidity_regime=PublicMarket(),
+                ),
+            ),
+        ),
+        policies=(
+            PrivateEquitySalePolicy(
+                policy_id="pe_sale",
+                actor_id="alpha",
+                proceeds_destination="cash",
+                sale_rule=FixedAmountPrivateEquitySaleRule(amount_usd=50_000),
+            ),
+        ),
+    )
+
+    # Default provider: no tender months. With LiquidityEventOnly this would
+    # produce no sales; PublicMarket overrides the mask to every month
+    # (lockup_end_month=None ⇒ sellable from month 0).
+    result = _run_scenario(scenario, horizon_months=6)
+    rollout = result.rollout(0)
+    pe_sales = rollout.series(ReportMetric.PRIVATE_EQUITY_SALE_USD)
+    for month in range(7):
+        assert_allclose(pe_sales[month], 50_000)
+    # Basis equals proceeds here (cost_basis == value_usd), so no taxable gain.
+    assert_allclose(np.sum(rollout.series(ReportMetric.PRIVATE_EQUITY_SALE_BASIS_USD)), 7 * 50_000)
+    assert_allclose(np.sum(rollout.series(ReportMetric.PRIVATE_EQUITY_SALE_TAX_USD)), 0)
+
+
+def test_public_market_pe_lockup_blocks_sale_before_lockup_end_month() -> None:
+    """With `lockup_end_month=4`, a `PublicMarket` PE position cannot be sold
+    in months [0, 4); from month 4 onward sales fire normally. The
+    `PrivateEquitySalePolicy` opportunity check honors the effective mask.
+    """
+    scenario = Scenario(
+        scenario_id="public_market_pe_with_lockup",
+        label="PublicMarket PE With Lockup",
+        actors=(_simple_actor(),),
+        tax_profile=TaxProfile(),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking", account_type=AccountType.CHECKING, owner_actor_id="alpha", balance_usd=0
+                ),
+            ),
+            assets=(
+                PrivateEquityPosition(
+                    asset_id="pe",
+                    owner_actor_id="alpha",
+                    value_usd=200_000,
+                    cost_basis_usd=200_000,
+                    units=200,
+                    liquidity_regime=PublicMarket(lockup_end_month=4),
+                ),
+            ),
+        ),
+        policies=(
+            PrivateEquitySalePolicy(
+                policy_id="pe_sale",
+                actor_id="alpha",
+                proceeds_destination="cash",
+                sale_rule=FixedAmountPrivateEquitySaleRule(amount_usd=25_000),
+            ),
+        ),
+    )
+
+    result = _run_scenario(scenario, horizon_months=6)
+    rollout = result.rollout(0)
+    pe_sales = rollout.series(ReportMetric.PRIVATE_EQUITY_SALE_USD)
+    # Pre-lockup-end months (0..3) must show no sale.
+    for month in range(4):
+        assert pe_sales[month] == 0, f"month {month} should be in lockup"
+    # Post-lockup months (4..6) sell.
+    for month in range(4, 7):
+        assert_allclose(pe_sales[month], 25_000)
+
+
+def test_acquisition_regime_forces_full_conversion_at_event_month() -> None:
+    """An `Acquisition`-regime PE position converts the entire remaining
+    position to cash at `event_month` regardless of any policy. Cash
+    increases by `units × cash_per_unit_usd`; PE units drop to zero;
+    realized gain feeds the existing annual sale-tax allocation.
+    """
+    scenario = Scenario(
+        scenario_id="pe_acquisition_event",
+        label="PE Acquisition Event",
+        actors=(_simple_actor(),),
+        tax_profile=TaxProfile(),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking", account_type=AccountType.CHECKING, owner_actor_id="alpha", balance_usd=10_000
+                ),
+            ),
+            assets=(
+                PrivateEquityPosition(
+                    asset_id="pe",
+                    owner_actor_id="alpha",
+                    value_usd=100_000,
+                    cost_basis_usd=40_000,
+                    units=100,
+                    liquidity_regime=Acquisition(event_month=6, cash_per_unit_usd=500),
+                ),
+            ),
+        ),
+        # No PE sale policy: the acquisition is a forced conversion.
+    )
+
+    result = _run_scenario(scenario, horizon_months=12)
+    rollout = result.rollout(0)
+    pe_sales = rollout.series(ReportMetric.PRIVATE_EQUITY_SALE_USD)
+    pe_value = rollout.series(ReportMetric.PRIVATE_EQUITY_VALUE_USD)
+    cash = rollout.series(ReportMetric.CASH_USD)
+    expected_proceeds = 100 * 500  # 50_000
+    expected_basis = 40_000
+    expected_taxable_gain = 10_000
+    assert_allclose(pe_sales[6], expected_proceeds)
+    for month in (0, 1, 5):
+        assert pe_sales[month] == 0
+    for month in (7, 8, 12):
+        assert pe_sales[month] == 0
+    for month in (6, 7, 12):
+        assert_allclose(pe_value[month], 0)
+    # Sale tax is recorded at the source month by `annual_sale_tax_allocation`
+    # for visibility. Tax cash settlement happens via the quarterly estimated
+    # tax obligations (months 3/5/8/12) plus a year-end true-up at month 11,
+    # so cash[6] is full proceeds minus the Q1+Q2 estimated payments and
+    # cash[12] is full proceeds minus the full annual tax.
+    pe_sale_tax_month_6 = rollout.series(ReportMetric.PRIVATE_EQUITY_SALE_TAX_USD)[6]
+    assert pe_sale_tax_month_6 > 0
+    # The acquisition proceeds are received in cash at month 6 — verify the
+    # cash jumped by at least most of the proceeds (allowing for already-paid
+    # quarterly estimated taxes).
+    assert cash[6] > 10_000 + expected_proceeds - 1_000, f"cash[6]={cash[6]}"
+    # Year-end (month 12) cash reflects full proceeds minus the full sale tax.
+    assert_allclose(cash[12], 10_000 + expected_proceeds - pe_sale_tax_month_6, atol=1.0)
+    # Verify the SellPrivateEquityEffect carries the expected basis/gain.
+    effects = result.effects(SellPrivateEquityEffect)
+    assert len(effects) == 1
+    assert effects[0].month_index == 6
+    assert effects[0].amount_usd == expected_proceeds
+    assert effects[0].basis_usd == expected_basis
+    assert effects[0].taxable_gain_usd == expected_taxable_gain
+    assert effects[0].units_sold == 100
+    assert effects[0].sold_fraction == 1.0
+
+
+def test_acquisition_regime_short_holding_period_still_recognizes_realized_gain() -> None:
+    """The current `annual_sale_tax_allocation` treats all PE realized gain
+    as long-term capital gain (LT/ST partitioning is not modeled). This test
+    pins that behavior: an acquisition at month 3 (holding < 12 months)
+    produces a realized gain that flows through the same LT path as one at
+    month 24 — so for the same gain, the recorded sale tax matches the
+    long-term-treatment tax. When LT/ST partitioning lands, this test will
+    have to grow accordingly.
+    """
+    scenario_short = Scenario(
+        scenario_id="acquisition_short_holding",
+        label="Acquisition Short Holding",
+        actors=(_simple_actor(),),
+        tax_profile=TaxProfile(annual_ordinary_income_usd=80_000),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking", account_type=AccountType.CHECKING, owner_actor_id="alpha", balance_usd=0
+                ),
+            ),
+            assets=(
+                PrivateEquityPosition(
+                    asset_id="pe",
+                    owner_actor_id="alpha",
+                    value_usd=100_000,
+                    cost_basis_usd=20_000,
+                    units=100,
+                    liquidity_regime=Acquisition(event_month=3, cash_per_unit_usd=1_000),
+                ),
+            ),
+        ),
+    )
+    scenario_long = scenario_short.model_copy(
+        update={
+            "scenario_id": "acquisition_long_holding",
+            "initial_balance_sheet": InitialBalanceSheet(
+                accounts=scenario_short.initial_balance_sheet.accounts,
+                assets=(
+                    PrivateEquityPosition(
+                        asset_id="pe",
+                        owner_actor_id="alpha",
+                        value_usd=100_000,
+                        cost_basis_usd=20_000,
+                        units=100,
+                        liquidity_regime=Acquisition(event_month=24, cash_per_unit_usd=1_000),
+                    ),
+                ),
+            ),
+        }
+    )
+
+    result_short = _run_scenario(scenario_short, horizon_months=36)
+    result_long = _run_scenario(scenario_long, horizon_months=36)
+    short_effects = result_short.effects(SellPrivateEquityEffect)
+    long_effects = result_long.effects(SellPrivateEquityEffect)
+    assert len(short_effects) == 1
+    assert len(long_effects) == 1
+    # Both record the same proceeds, basis, and taxable gain; LT treatment is the
+    # existing engine convention, so the realized-gain tax is identical regardless
+    # of holding period under today's `annual_sale_tax_allocation`.
+    assert short_effects[0].amount_usd == long_effects[0].amount_usd == 100_000
+    assert short_effects[0].basis_usd == long_effects[0].basis_usd == 20_000
+    assert short_effects[0].taxable_gain_usd == long_effects[0].taxable_gain_usd == 80_000
+    assert_allclose(short_effects[0].estimated_tax_usd, long_effects[0].estimated_tax_usd)
 
 
 def test_every_monthly_flow_metric_reconciles_to_canonical_detail_surface() -> None:

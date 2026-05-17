@@ -201,6 +201,7 @@ class FundingDecisionType(StrEnum):
     USE_CASH = "use_cash"
     SELL_PUBLIC_STOCK = "sell_public_stock"
     SELL_CRYPTO = "sell_crypto"
+    SELL_PRIVATE_EQUITY = "sell_private_equity"
     UNFUNDED = "unfunded"
 
 
@@ -208,6 +209,7 @@ class FundingSourceType(StrEnum):
     CASH_ACCOUNT = "cash_account"
     PUBLIC_MARKET_ASSET = "public_market_asset"
     CRYPTO_ASSET = "crypto_asset"
+    PRIVATE_EQUITY_ASSET = "private_equity_asset"
     UNFUNDED = "unfunded"
 
 
@@ -372,6 +374,12 @@ class CheckingFloorSellPublicStockPolicy(_PolicyBase):
     Putting `CRYPTO` in the preference lets the same policy fall through to crypto
     after SP500 is exhausted; the same obligation-funding step iterates the
     preference internally so the policy program order is unaffected.
+
+    `PRIVATE_EQUITY` is permitted only when the PE position has a
+    `PublicMarket` liquidity regime (and the current month is at or past the
+    optional lockup). The default preference does NOT include
+    `PRIVATE_EQUITY`, so existing scenarios with `LiquidityEventOnly` PE keep
+    their original behavior.
     """
 
     policy_type: Literal[PolicyType.CHECKING_FLOOR_SELL_PUBLIC_STOCK] = PolicyType.CHECKING_FLOOR_SELL_PUBLIC_STOCK
@@ -387,9 +395,10 @@ class CheckingFloorSellPublicStockPolicy(_PolicyBase):
         for asset_type in self.sale_asset_preference:
             if asset_type in seen:
                 raise ValueError(f"sale_asset_preference contains duplicate {asset_type}")
-            if asset_type not in (AssetType.GENERIC_SP500_STOCK, AssetType.CRYPTO):
+            if asset_type not in (AssetType.GENERIC_SP500_STOCK, AssetType.CRYPTO, AssetType.PRIVATE_EQUITY):
                 raise ValueError(
-                    f"sale_asset_preference only supports GENERIC_SP500_STOCK and CRYPTO; got {asset_type}"
+                    f"sale_asset_preference only supports GENERIC_SP500_STOCK, CRYPTO, and PRIVATE_EQUITY; "
+                    f"got {asset_type}"
                 )
             seen.add(asset_type)
         return self
@@ -878,6 +887,62 @@ class CryptoAssetPosition(_AssetPositionBase):
     source_account_id: str | None = None
 
 
+class LiquidityRegimeType(StrEnum):
+    LIQUIDITY_EVENT_ONLY = "liquidity_event_only"
+    PUBLIC_MARKET = "public_market"
+    ACQUISITION = "acquisition"
+
+
+class LiquidityEventOnly(ApiModel):
+    """Default PE liquidity regime: sale only at sampled tender opportunities.
+
+    The market bundle's `private_equity_sale_opportunity_mask` plus the actor's
+    `PrivateEquitySalePolicy` chain drives every sale under this regime.
+    """
+
+    regime_type: Literal[LiquidityRegimeType.LIQUIDITY_EVENT_ONLY] = LiquidityRegimeType.LIQUIDITY_EVENT_ONLY
+
+
+class PublicMarket(ApiModel):
+    """PE position that trades on a public market: freely sellable every month.
+
+    When `lockup_end_month` is set, sale is forbidden for months
+    `< lockup_end_month` (post-IPO lockup); months at or after it are freely
+    sellable at the current spot mark (`units × current PE unit price`).
+    `None` means no lockup, i.e. sellable from month 0.
+
+    `CheckingFloorSellPublicStockPolicy` is the funding-chain entry point for
+    obligation rescue: include `AssetType.PRIVATE_EQUITY` in
+    `sale_asset_preference` to let the policy fall through to a PublicMarket
+    PE holding after the earlier preferences are exhausted. The default
+    preference (`(GENERIC_SP500_STOCK,)`) does not include PE, preserving the
+    behavior of every pre-existing scenario.
+    """
+
+    regime_type: Literal[LiquidityRegimeType.PUBLIC_MARKET] = LiquidityRegimeType.PUBLIC_MARKET
+    lockup_end_month: NonNegativeInt | None = None
+
+
+class Acquisition(ApiModel):
+    """PE position that converts at a fixed price on a scheduled month.
+
+    A forced conversion: at `event_month`, the entire remaining position is
+    converted to cash at `cash_per_unit_usd`, regardless of any policy
+    decision. Realized gain (proceeds minus remaining cost basis) flows into
+    the existing annual sale-tax allocation as a long-term capital gain (the
+    `annual_sale_tax_allocation` machinery doesn't currently model
+    short-term/long-term split for PE; all PE realized gains receive
+    long-term treatment).
+    """
+
+    regime_type: Literal[LiquidityRegimeType.ACQUISITION] = LiquidityRegimeType.ACQUISITION
+    event_month: NonNegativeInt
+    cash_per_unit_usd: NonNegativeFloat
+
+
+LiquidityRegime = Annotated[LiquidityEventOnly | PublicMarket | Acquisition, Field(discriminator="regime_type")]
+
+
 class PrivateEquityPosition(ApiModel):
     """An opening private-equity position.
 
@@ -889,6 +954,12 @@ class PrivateEquityPosition(ApiModel):
       `units × MarketBundleMetadata.current_private_equity_price_usd`. Callers without
       an independent mark (such as the browser UI, which stores units only) should leave
       `value_usd` unset; the simulator owns the derivation.
+
+    `liquidity_regime` selects how the position can be sold. The default
+    `LiquidityEventOnly()` preserves the original behavior (sale only at
+    sampled tender windows). `PublicMarket` makes the holding freely sellable
+    each month (subject to a configurable lockup). `Acquisition` is a forced
+    one-shot conversion to cash at a scheduled `event_month`.
     """
 
     asset_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
@@ -897,6 +968,7 @@ class PrivateEquityPosition(ApiModel):
     units: NonNegativeFloat | None = None
     value_usd: NonNegativeFloat | None = None
     cost_basis_usd: float | None = None
+    liquidity_regime: LiquidityRegime = Field(default_factory=LiquidityEventOnly)
     provenance: PositionProvenance = Field(default_factory=PositionProvenance)
 
     @model_validator(mode="after")
@@ -905,6 +977,11 @@ class PrivateEquityPosition(ApiModel):
             raise ValueError(
                 f"PrivateEquityPosition {self.asset_id!r} must set units or value_usd "
                 "(or both); the simulator needs one to derive the opening mark."
+            )
+        if isinstance(self.liquidity_regime, Acquisition) and self.units is None:
+            raise ValueError(
+                f"PrivateEquityPosition {self.asset_id!r} uses Acquisition regime but "
+                "has no units; the forced conversion needs units to compute proceeds."
             )
         return self
 
