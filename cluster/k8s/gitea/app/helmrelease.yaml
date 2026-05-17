@@ -87,8 +87,8 @@ spec:
         metrics:
           ENABLED: true
           TOKEN: ""
-          # TODO: Set a metrics token and add bearerTokenSecret to the ServiceMonitor once
-          # a Vault secret + ESO pattern is in place (follow LiteLLM token pattern).
+          # TODO: Set a metrics token and add bearerTokenSecret to the ServiceMonitor
+          # via a SOPS-managed secret (follow LiteLLM token pattern).
 
         security:
           INSTALL_LOCK: true

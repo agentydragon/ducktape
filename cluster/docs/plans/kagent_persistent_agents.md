@@ -1,5 +1,10 @@
 # Persistent AI Agents Platform Plan
 
+> **Note (2026-05-17)**: This plan was written when Vault was the secret SSOT.
+> Vault has since been decommissioned (see <../../vault-migration/TODO.md>);
+> replace any `vault-backend` ClusterSecretStore references below with SOPS-managed
+> secrets when implementing.
+
 ## Vision
 
 Deploy long-running AI agents with their own persistent computing resources (storage, credentials, isolated

@@ -138,14 +138,14 @@ CloudNativePG `local-path`.
       checkout, real copy lives in `terraform/main/` on wyrm2 after bootstrap - `PG_CONN_STR`: password from SOPS, but ClusterIP lookup needs `kubectl`
       (falls back to `localhost:15432` port-forward)
 
-- [ ] Authentik blueprint secret rotation: Authentik blueprints use file content hash to
-      decide whether to re-apply. `!Env` tags are resolved _after_ the hash check, so rotating
-      secrets in Vault (via Terraform `sso-secrets/`) updates the K8s secret and pod env vars,
-      but Authentik's DB is never updated because the blueprint YAML didn't change. Need a
-      mechanism to force blueprint re-application when `authentik-sso-client-secrets` changes
-      (e.g., Stakater Reloader on Authentik worker to restart pods + a post-start hook that
-      clears `last_applied_hash`, or a sidecar/CronJob that calls the Authentik API to force
-      re-apply). Until fixed, any secret rotation breaks all SSO logins cluster-wide.
+- [ ] Authentik blueprint secret rotation: blueprints use file content hash to decide
+      whether to re-apply, and `!Env` tags resolve _after_ the hash check, so rotating a
+      secret consumed via `!Env` updates the K8s secret + pod env vars but Authentik's DB
+      never picks it up. Mostly obsolete now that SSO client secrets live in
+      `tf/gitops/sso-providers/` (TF writes the provider directly), but any remaining
+      `!Env`-tagged blueprint values would hit this. Force re-application via Stakater
+      Reloader + a post-start hook clearing `last_applied_hash`, or a CronJob calling the
+      Authentik API.
 - [ ] Authentik cache/channels offload: design a Redis-based replacement for the current
       Postgres-backed cache/channels path (`django_postgres_cache`,
       `django_channels_postgres`) without regressing single-node-failure resilience on the
@@ -153,11 +153,6 @@ CloudNativePG `local-path`.
       or a different architecture before wiring Authentik to use it. Re-measure steady-state
       Postgres connections afterward before deciding whether any DB limit or
       worker-concurrency changes are still needed.
-- [ ] Resync SSO client secrets: Authentik DB has stale secrets for all OAuth2 providers
-      (Gitea, Grafana, Gatus, Harbor, Headlamp, InvenTree, Matrix, etc.) after TF state
-      loss caused `sso-secrets` to regenerate all `random_password` resources. Fix by
-      force re-applying all SSO blueprints (clear `last_applied_hash` via `ak shell`) so
-      the DB picks up the current env var values.
 - [ ] Investigate why `proxmox-csi-retain` publishes zero `CSIStorageCapacity` objects —
       the scheduler sees 0 available space and refuses to schedule `WaitForFirstConsumer`
       PVCs, creating a deadlock. Likely a Proxmox API connectivity issue in
@@ -294,14 +289,13 @@ See <plans/file_sync_evaluation.md>.
 **Rule**: These services MUST work with VPS only (Proxmox completely down). No
 `proxmox-csi-retain` storage or Proxmox-pinned workloads.
 
-| Service   | Status | Storage              | Notes                                                         |
-| --------- | ------ | -------------------- | ------------------------------------------------------------- |
-| DNS       | OK     | `local-path`         | CNPG 2-instance on VPS                                        |
-| Website   | OK     | None (stateless)     |                                                               |
-| Ingress   | OK     | None (hostNetwork)   | Cilium Gateway on VPS                                         |
-| Authentik | OK     | `local-path`         | All components pinned                                         |
-| Vault     | OK     | `local-path-hetzner` | Raft storage, VPS-pinned                                      |
-| Grafana   | OK     | CNPG VPS-HA          | grafana-operator managed, JWT auth, no admin creds dependency |
+| Service   | Status | Storage            | Notes                                                         |
+| --------- | ------ | ------------------ | ------------------------------------------------------------- |
+| DNS       | OK     | `local-path`       | CNPG 2-instance on VPS                                        |
+| Website   | OK     | None (stateless)   |                                                               |
+| Ingress   | OK     | None (hostNetwork) | Cilium Gateway on VPS                                         |
+| Authentik | OK     | `local-path`       | All components pinned                                         |
+| Grafana   | OK     | CNPG VPS-HA        | grafana-operator managed, JWT auth, no admin creds dependency |
 
 **Compliance checklist** for critical-path changes:
 
@@ -328,11 +322,12 @@ domain, no CSI disk hotplug). Remaining `proxmox-csi-retain` consumers on wyrm2:
 
 ## Operational Hardening
 
-### Secrets: Vault SSOT
+### Secrets: SOPS SSOT
 
-Runtime secrets use Terraform → Vault → ESO. Bootstrap secrets use SOPS (age-encrypted in git, decrypted by Flux). Zero ESO Password generators remain.
-Stakater Reloader restarts pods on changes. See
-<lessons_learned/2025_11_28_eso_password_generator_desync.md>.
+All secrets are SOPS (age-encrypted in git, decrypted by Flux). ESO is still installed
+but only with the Kubernetes provider, mirroring a small number of secrets cross-namespace
+(authentik, openclaw-gateway/sandbox, openhands). Stakater Reloader restarts pods on
+changes. Vault was decommissioned 2026-04-19 — see <../vault-migration/TODO.md>.
 
 ### Google OAuth Client redirect URIs (blocked upstream)
 
@@ -457,9 +452,9 @@ encryption to S3.
 
 ### InvenTree API Token Provisioning
 
-Via `inventree-token-provisioner` Job. TF module -> Vault -> Job execs into pod,
-creates user via Django ORM -> `inventree-api-token` Secret in `openclaw-sandbox`
-and `claude-sandbox`.
+Via `inventree-token-provisioner` Job. SOPS-managed sandbox-agent password ->
+Job execs into pod, creates user via Django ORM -> `inventree-api-token` Secret
+in `openclaw-sandbox` and `claude-sandbox`.
 
 ### CNPG Backup Strategy
 
@@ -483,10 +478,6 @@ Most services lack network policies. Goal: default-deny per namespace.
 
 **Done**: PowerDNS API, Authentik API, Prometheus, plus all proxy-backed services.
 
-**Priority 1 -- Secrets & DNS**:
-
-- [ ] Vault -- restrict to ESO, tofu-controller, Vault namespace
-
 **Priority 2 -- Application services**:
 
 - [ ] Harbor, Ollama, Grafana, Alertmanager, Gitea, Tempo, Langfuse, Headlamp
@@ -503,7 +494,7 @@ Start `warn`, promote to `enforce`.
 ### Scheduling Priorities
 
 Motivated by 2026-03-17 OOM cascade. Deploy PriorityClasses: `system-critical`
-(DNS/ingress/Authentik/Vault), `important` (Gitea/Harbor/monitoring), `batch`
+(DNS/ingress/Authentik), `important` (Gitea/Harbor/monitoring), `batch`
 (OpenClaw/props/BuildBuddy). Plus Descheduler, PDBs, ResourceQuota + LimitRange.
 
 ### VPA + Goldilocks
@@ -536,7 +527,7 @@ Deploy [alertmanager-ntfy](https://github.com/alexbakker/alertmanager-ntfy).
 
 ### SLO Definitions
 
-Deploy Pyrra or Sloth. Targets: ingress 99.5%, DNS 99.9%, Vault 99.9%.
+Deploy Pyrra or Sloth. Targets: ingress 99.5%, DNS 99.9%, Authentik 99.5%.
 
 ### GUI for Terraform/OpenTofu
 
@@ -600,7 +591,7 @@ CNPG is 2-instance primary+standby. Low priority -- survives single-node failure
 ### Low Priority
 
 - `BackendTLSPolicy` for internal HTTPS (blocked on [cilium#31352](https://github.com/cilium/cilium/issues/31352))
-- Nix cache signing key -> GitOps Terraform (Vault SSOT)
+- Nix cache signing key -> GitOps Terraform writing a SOPS secret
 - RWX shared storage: Longhorn NFS export (try first), NFS on Proxmox, JuiceFS, SeaweedFS
 
 ## Architecture Decisions
@@ -615,14 +606,15 @@ See <lessons_learned/2026_02_11_cilium_mtu_cross_node_packet_loss.md>.
 
 Minimize Hetzner volumes; generous on Proxmox.
 
-| Location | Services                                          | Rationale                         |
-| -------- | ------------------------------------------------- | --------------------------------- |
-| VPS      | Vault, Authentik, Grafana, Gateway, DNS, cert-mgr | Always-on, critical path          |
-| Home     | Harbor, Gitea, Ollama, Nix cache                  | Storage-heavy, tolerates downtime |
-| MinIO    | Loki, Mimir, Tempo                                | Erasure-coded object storage      |
+| Location | Services                                       | Rationale                         |
+| -------- | ---------------------------------------------- | --------------------------------- |
+| VPS      | Authentik, Grafana, Gateway, DNS, cert-mgr     | Always-on, critical path          |
+| Home     | Harbor, Gitea, Ollama                          | Storage-heavy, tolerates downtime |
+| OVH      | SeaweedFS, attic-db, Nix cache chunks (via S3) | Replicated across 2 kimsufi nodes |
+| MinIO    | Loki, Mimir, Tempo                             | Erasure-coded object storage      |
 
-CNPG: individual clusters per app, all on `local-path`. Two profiles: VPS-HA
-(2 instances, Hetzner) and Proxmox-single (1 instance). See <cnpg_conventions.md>.
+CNPG: individual clusters per app. Three profiles: VPS-HA (2 instances, Hetzner),
+OVH-HA (2 instances, OVH kimsufi), Proxmox-single (1 instance). See <cnpg_conventions.md>.
 
 ## Related Documentation
 

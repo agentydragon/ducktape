@@ -12,19 +12,12 @@ in `authentik` namespace → Reflector mirrors to consumer namespace(s).
 
 **Currently managed**: grafana, headlamp, openclaw-agent.
 
-### Blueprint-managed providers (legacy, migrating)
+### Blueprint-managed providers (deprecated)
 
-Native blueprints in `k8s/authentik/app/blueprints/` (ConfigMap, re-applied every 60 min).
-
-**Secret flow**: `terraform/gitops/sso-secrets/` → Vault → ESO `authentik-sso-client-secrets`
-in authentik namespace → worker `envFrom` → blueprint `!Env` tags.
-
-**App-side secrets**: ESO in `k8s/authentik/blueprints/{app}-secret/` reads from same Vault path.
-
-**Currently managed**: gitea, harbor, matrix, inventree. All via sso-providers TF module.
-
-**Why migrate**: `!Env` in blueprints causes silent drift — Authentik doesn't re-apply
-when env vars change. TF-managed providers eliminate this class of bug.
+Vault was decommissioned 2026-04-19 (see <../vault-migration/TODO.md>) and all SSO
+providers moved to `tf/gitops/sso-providers/`. The `k8s/authentik/app/blueprints/`
+flow no longer pulls client secrets from Vault. If you see a `!Env`-tagged client
+secret in a blueprint, treat it as a bug to migrate, not a pattern to copy.
 
 ## Proxy-mode NetworkPolicy (required)
 

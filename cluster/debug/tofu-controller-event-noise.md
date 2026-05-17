@@ -22,6 +22,6 @@ event TTL, this dominates the event store.
 ## Options
 
 - **Increase `spec.interval`** on low-churn Terraform resources (e.g., `dns-records`,
-  `sso-secrets` that rarely change) from 10m to 1h+
+  `sso-providers` that rarely change) from 10m to 1h+
 - **Suspend idle Terraform resources** that only need to run during bootstrap
 - **Upstream**: tofu-controller has no option to suppress runner pod events

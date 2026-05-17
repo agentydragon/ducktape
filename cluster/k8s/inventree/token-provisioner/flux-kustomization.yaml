@@ -21,6 +21,6 @@ spec:
       namespace: inventree
   dependsOn:
     - name: inventree # InvenTree HelmRelease is fully deployed
-    - name: inventree-secrets # sandbox-agent password is provisioned in Vault + K8s
+    - name: inventree-secrets # SOPS-managed sandbox-agent password
     - name: openclaw-sandbox # openclaw-sandbox namespace exists
     - name: claude-rbac # claude-sandbox namespace exists

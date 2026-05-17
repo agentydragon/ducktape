@@ -11,5 +11,5 @@ spec:
     - port: http
       path: /metrics
       interval: 30s
-      # TODO: Set metrics.TOKEN in Gitea config and add bearerTokenSecret here once
-      # a Vault secret + ESO pattern is in place (follow LiteLLM token pattern).
+      # TODO: Set metrics.TOKEN in Gitea config and add bearerTokenSecret here via
+      # a SOPS-managed secret (follow LiteLLM token pattern).

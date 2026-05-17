@@ -26,9 +26,11 @@ the git remote, not your local filesystem.
 
 ## CRITICAL: Authentik Teardown -- Remaining TF State
 
-Most Authentik SSO uses native blueprints. One TF module still targets Authentik-adjacent systems:
-`tfstate-default-sso-secrets` (OAuth2 secrets in Vault).
-See <docs/lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md>.
+`tf/gitops/sso-providers/` owns the Authentik OAuth2 providers (grafana, gitea, harbor,
+headlamp, inventree, kagent, matrix, openclaw, study-casino). State lives in the
+`tfstate-default-sso-providers` k8s secret in `flux-system`. Wiping the Authentik DB
+without also wiping that state secret triggers the cascading desync described in
+<docs/lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md>.
 
 ## CRITICAL: VPS-Only Resilience
 
@@ -93,7 +95,7 @@ See <docs/sso.md> for secret flow, proxy NetworkPolicy template, blueprint tombs
 
 ## Secrets
 
-See <docs/secrets.md> for SOPS/Vault procedures, adding/rotating secrets, age key management.
+See <docs/secrets.md> for SOPS procedures, adding/rotating secrets, age key management.
 
 **Keep <docs/bootstrap_dependencies.md> up to date** when adding/removing/changing secrets,
 SOPS files, tofu resources, or external credential requirements.
@@ -142,7 +144,7 @@ Violations detected by pre-commit (`validate_kustomizations.py`).
 Read these on demand when the task requires them:
 
 - <docs/plan.md> — cluster roadmap, TODO list, suspended services, future directions
-- <docs/secrets.md> — SOPS/Vault procedures, adding/rotating secrets, age key management
+- <docs/secrets.md> — SOPS procedures, adding/rotating secrets, age key management
 - <docs/bootstrap_dependencies.md> — full dependency graph for bootstrap recovery
 - <docs/cnpg_conventions.md> — CloudNativePG rules (2 profiles, storage, region pinning)
 - <docs/troubleshooting.md> — diagnosis recipes for Talos, Cilium, secrets, DNS

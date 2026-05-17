@@ -3,6 +3,11 @@
 **Date**: 2026-02-14
 **Scope**: Full comparison of current cluster architecture against modern Kubernetes best practices
 
+> **Note (2026-04-19)**: This review was written when secrets ran on Vault+ESO. Vault has
+> since been decommissioned (see <../vault-migration/TODO.md>); all references to Vault
+> in this document describe the pre-migration architecture and SLO targets that no longer
+> apply.
+
 ---
 
 ## Executive Summary

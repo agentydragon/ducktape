@@ -147,8 +147,10 @@ spec:
     redis:
       deploy: true
       auth:
-        # Reference the langfuse-secrets K8s secret (managed by ESO from Vault)
-        # for both the Bitnami sub-chart and Langfuse app connection string.
+        # Reference the langfuse-secrets K8s secret for both the Bitnami sub-chart
+        # and Langfuse app connection string. CLEANUP(2026-05-17): langfuse is
+        # suspended; secret needs to be re-created via SOPS when unsuspended
+        # (see cluster/vault-migration/TODO.md "Suspended services").
         existingSecret: langfuse-secrets
         existingSecretPasswordKey: redis-password
       nodeSelector:

@@ -3,4 +3,4 @@ kind: Kustomization
 resources:
   - helmrelease.yaml
   - httproute.yaml
-# OAuth OIDC credentials synced from Vault via authentik-blueprint/gitea-secret ExternalSecret
+# OAuth OIDC credentials provisioned by tf/gitops/sso-providers/ as a k8s Secret.

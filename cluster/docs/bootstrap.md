@@ -58,7 +58,7 @@ The bootstrap script executes a multi-phase deployment against a single TF root
 - Flux Bootstrap → GitOps engine with GitHub
 - Core Services → cert-manager, Cilium Gateway API
 - Storage → Hetzner CSI (VPS), Proxmox CSI (home)
-- Platform → Vault, ESO, Authentik
+- Platform → ESO, Authentik
 
 ### Verification
 

@@ -72,8 +72,7 @@ spec:
           size: 1Gi
         # trivy PVC removed — trivy disabled below
 
-    # Admin password from Password generator (bootstrap phase)
-    # TODO: Migrate to Vault-backed harbor-secrets once SSO is configured
+    # Admin password from SOPS-managed bootstrap secret.
     harborAdminPassword: "" # Will be set via existingSecret
     existingSecretAdminPassword: "harbor-admin-initial"
     existingSecretAdminPasswordKey: "HARBOR_ADMIN_PASSWORD"

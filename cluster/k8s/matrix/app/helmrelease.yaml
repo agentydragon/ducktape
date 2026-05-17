@@ -27,16 +27,16 @@ spec:
         name: ananace-charts
         namespace: matrix
   valuesFrom:
-    # OIDC provider configuration from ESO-templated Vault secret
+    # OIDC provider configuration from SOPS-managed secret
     - kind: Secret
       name: matrix-oidc-config
       valuesKey: values.yaml
-    # Macaroon secret key from Vault
+    # Macaroon secret key (SOPS, k8s/matrix/secrets/synapse-macaroon-secret.sops.yaml)
     - kind: Secret
       name: synapse-macaroon-secret
       valuesKey: macaroon_secret_key
       targetPath: config.macaroonSecretKey
-    # Registration shared secret from Vault
+    # Registration shared secret (SOPS)
     - kind: Secret
       name: synapse-registration-secret
       valuesKey: registration_shared_secret
@@ -92,9 +92,9 @@ spec:
       # macaroonSecretKey and registrationSharedSecret injected via valuesFrom
 
     # extraConfig with oidc_providers is injected via valuesFrom from
-    # matrix-oidc-config secret (ESO-templated with Vault credentials)
+    # matrix-oidc-config secret (SOPS-managed)
 
-    # Signing key from Vault (disable chart auto-generation)
+    # Signing key from SOPS (disable chart auto-generation)
     signingkey:
       job:
         enabled: false

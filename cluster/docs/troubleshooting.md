@@ -14,7 +14,7 @@ See <lessons_learned/2026_03_07_talosctl_upgrade_hostname_loss.md>.
 ### Stale podCIDR After Node Hostname Change
 
 **Symptoms**: Pods can't reach ClusterIP services; Longhorn `ManagerPodDown`; cascade to
-Vault/ESO. Pods have IPs outside node's `spec.podCIDR`.
+ESO secret sync. Pods have IPs outside node's `spec.podCIDR`.
 
 **Fix**: Delete pods with old-CIDR IPs -- DaemonSets recreate with correct IPs.
 
@@ -220,51 +220,20 @@ See <lessons_learned/2026_03_18_tofu_controller_stale_state_locks.md>.
 
 ## Secrets & Auth Issues
 
-### ESO Password Generator Desync (SSO Auth Failures)
+### Authentik Teardown: TF State Desync
 
-**Symptoms**: SSO fails with "invalid client credentials". Vault has password A,
-K8s secret has password B (independently generated).
+`tf/gitops/sso-providers/` owns Authentik OAuth2 providers. Its state secret
+(`tfstate-default-sso-providers` in `flux-system`) references Authentik resource PKs.
+Wiping Authentik's DB without also wiping that state secret causes the cascading desync
+described in <lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md>.
 
-**Cause**: ESO Password generators are stateless -- they generate fresh passwords on
-each sync instead of reading from Vault. Must use Vault data sources instead.
+Recovery: suspend the `sso-providers` Terraform Kustomization, delete the stale
+`tfstate-default-sso-providers` secret, clean up any half-created Authentik API objects,
+unsuspend. See the lessons-learned doc for the full procedure.
 
-**Fix**: Replace ESO Password generator with Vault data source in ExternalSecret.
-Pattern: Terraform generates -> Vault -> ESO reads.
-
-See <lessons_learned/2025_11_28_eso_password_generator_desync.md> for full analysis,
-diagnosis commands, and correct pattern.
-
-### Authentik API Token 403 (Vault Version Desync)
-
-**Symptoms**: All Authentik-targeting Terraform resources return 403.
-
-**Cause**: Runner crash -> state lost -> new `random_password` overwrites Vault.
-Authentik DB has original token, Vault has new one.
-
-**Fix**: Roll Vault back to version 1:
-
-```bash
-ROOT_TOKEN=$(kubectl get secret -n vault instance-unseal-keys \
-  -o jsonpath='{.data.vault-root}' | base64 -d)
-kubectl exec -n vault instance-0 -c vault -- sh -c \
-  "VAULT_ADDR=https://127.0.0.1:8200 VAULT_CACERT=/vault/tls/ca.crt \
-   VAULT_TOKEN=$ROOT_TOKEN vault kv rollback -version=1 kv/sso/client-secrets"
-kubectl annotate externalsecret authentik-api-token -n flux-system \
-  force-sync=$(date +%s) --overwrite
-```
-
-**Prevention**: `cas = 0` on write-once `vault_kv_secret_v2` resources.
-
-See <lessons_learned/2026_02_13_authentik_token_vault_overwrite.md>.
-
-### Authentik Teardown: TF State Desync (Mostly Historical)
-
-Most SSO config migrated to native blueprints. Only `sso-secrets` remains as Terraform. The cascading desync described in
-<lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md> should no longer occur.
-
-If it does: suspend Authentik-targeting Terraform resources, delete stale `tfstate-default-*`
-secrets, clean up Authentik API objects, unsuspend. See the lessons_learned doc for the
-full procedure.
+The pre-2026-04-19 Vault-based variants of this failure (ESO password-generator desync,
+Vault version overwrites) are documented in <lessons_learned/> but no longer reachable —
+Vault is decommissioned. Kept for context only.
 
 ### SOPS Decryption Failure
 

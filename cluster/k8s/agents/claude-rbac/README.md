@@ -68,7 +68,7 @@ bound via `shared-rbac/clusterrolebinding-cluster-diagnostics-reader.yaml`:
 - Certs & secrets: cert-manager certificates/issuers, trust-manager bundles, ExternalSecrets
 - Monitoring: Prometheus, Alertmanager, ServiceMonitors, metrics API (pods + nodes)
 - Other: RBAC roles/bindings, CRDs, webhooks, leases, priority classes, Kyverno policies,
-  PowerDNS zones, Vault
+  PowerDNS zones
 
 ### 3. Cross-namespace read
 
