@@ -5,7 +5,13 @@ import pytest
 import pytest_bazel
 from numpy.testing import assert_allclose
 
-from augur.core.market_bundle import MarketBundle, MarketBundleMetadata, SimpleMarketBundleProvider
+from augur.core.market_bundle import (
+    MarketBundle,
+    MarketBundleMetadata,
+    MissingMarketFactorError,
+    RequiredMarketKeys,
+    SimpleMarketBundleProvider,
+)
 from augur.core.scenario_set import MarketRequest
 
 
@@ -18,23 +24,47 @@ def test_simple_market_bundle_shapes_and_reproducibility() -> None:
         horizon_months=request.horizon_months,
         seed=request.seed,
         market_request=request,
+        required_keys=RequiredMarketKeys(),
     )
     second = provider.sample_market_bundle(
         rollout_count=request.rollout_count,
         horizon_months=request.horizon_months,
         seed=request.seed,
         market_request=request,
+        required_keys=RequiredMarketKeys(),
     )
 
     assert first.generic_sp500_multipliers.shape == (4, 19)
-    assert first.private_equity_sale_opportunity_mask_for(None).shape == (4, 19)
-    assert first.private_equity_sale_opportunity_mask_for(None).dtype == np.bool_
+    # The simple provider populates every known LocationId so callers that
+    # hand-pick a location keep working. PE issuers / crypto symbols fall back
+    # to a single `"placeholder"` key when no positions are requested.
+    pe_path = next(iter(first.private_equity_value_multipliers_by_issuer.values()))
+    pe_mask = next(iter(first.private_equity_sale_opportunity_mask_by_issuer.values()))
+    assert pe_path.shape == (4, 19)
+    assert pe_mask.shape == (4, 19)
+    assert pe_mask.dtype == np.bool_
     np.testing.assert_array_equal(first.month_index, np.arange(19, dtype="int64"))
     assert_allclose(first.generic_sp500_multipliers, second.generic_sp500_multipliers)
     assert_allclose(first.inflation_multipliers[:, 0], 1.0)
-    assert_allclose(first.private_equity_value_multiplier(None)[:, 0], 1.0)
+    assert_allclose(pe_path[:, 0], 1.0)
     assert first.metadata.path_set_id == second.metadata.path_set_id
     assert first.metadata.exogenous_path_ids == second.metadata.exogenous_path_ids
+
+
+def test_market_bundle_missing_key_raises_missing_market_factor_error() -> None:
+    request = MarketRequest(market_model_id="simple_test", rollout_count=2, horizon_months=3, seed=0)
+    bundle = SimpleMarketBundleProvider().sample_market_bundle(
+        rollout_count=request.rollout_count,
+        horizon_months=request.horizon_months,
+        seed=request.seed,
+        market_request=request,
+        required_keys=RequiredMarketKeys(pe_issuer_ids=frozenset({"issuer_a"})),
+    )
+    with pytest.raises(MissingMarketFactorError) as excinfo:
+        bundle.private_equity_value_multiplier("unknown_issuer")
+    assert excinfo.value.key == "unknown_issuer"
+    assert excinfo.value.factor_name == "private_equity_value"
+    assert "issuer_a" in excinfo.value.available_keys
 
 
 def test_market_bundle_provenance_fields_drive_path_identity() -> None:
@@ -94,12 +124,32 @@ def test_market_bundle_rejects_bad_shapes() -> None:
             month_index=np.arange(4, dtype="int64"),
             inflation_multipliers=valid,
             generic_sp500_multipliers=np.ones((2, 3), dtype="float64"),
-            home_value_multipliers_by_location={"default": valid},
-            rent_multipliers_by_location={"default": valid},
+            home_value_multipliers_by_location={"placeholder": valid},
+            rent_multipliers_by_location={"placeholder": valid},
             mortgage_30y_rate_pct=np.full((2, 4), 6.5, dtype="float64"),
-            private_equity_value_multipliers_by_issuer={"default": valid},
-            private_equity_sale_opportunity_mask_by_issuer={"default": np.zeros((2, 4), dtype=np.bool_)},
-            crypto_value_multipliers_by_symbol={"default": valid},
+            private_equity_value_multipliers_by_issuer={"placeholder": valid},
+            private_equity_sale_opportunity_mask_by_issuer={"placeholder": np.zeros((2, 4), dtype=np.bool_)},
+            crypto_value_multipliers_by_symbol={"placeholder": valid},
+            metadata=metadata,
+        )
+
+
+def test_market_bundle_rejects_empty_path_dicts() -> None:
+    metadata = MarketBundleMetadata(
+        market_model_id="bad", seed=1, rollout_count=2, horizon_months=3, event_stream_ids=()
+    )
+    valid = np.ones((2, 4), dtype="float64")
+    with pytest.raises(ValueError, match="home_value_multipliers_by_location must contain at least one entry"):
+        MarketBundle(
+            month_index=np.arange(4, dtype="int64"),
+            inflation_multipliers=valid,
+            generic_sp500_multipliers=valid,
+            home_value_multipliers_by_location={},
+            rent_multipliers_by_location={"placeholder": valid},
+            mortgage_30y_rate_pct=np.full((2, 4), 6.5, dtype="float64"),
+            private_equity_value_multipliers_by_issuer={"placeholder": valid},
+            private_equity_sale_opportunity_mask_by_issuer={"placeholder": np.zeros((2, 4), dtype=np.bool_)},
+            crypto_value_multipliers_by_symbol={"placeholder": valid},
             metadata=metadata,
         )
 

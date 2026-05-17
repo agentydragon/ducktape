@@ -881,10 +881,10 @@ class GenericSp500StockPosition(_AssetPositionBase):
 class CryptoAssetPosition(_AssetPositionBase):
     """A crypto holding modeled as a single fungible quantity (e.g. BTC, ETH).
 
-    Crypto value moves with `MarketBundle.crypto_value_multipliers_by_symbol` keyed
-    by `asset_symbol` (currently a placeholder array of ones — fitted crypto models
-    are deferred). Realized gain on sale is treated as ordinary income (federal +
-    California) until a richer short/long-term cap-gains model lands; the choice is
+    Crypto value moves with `MarketBundle.crypto_value_multiplier(asset_symbol)`
+    (currently a placeholder array of ones — fitted crypto models are deferred).
+    Realized gain on sale is treated as ordinary income (federal + California)
+    until a richer short/long-term cap-gains model lands; the choice is
     documented near the funding chain rather than in the schema.
     """
 
@@ -904,9 +904,8 @@ class LiquidityRegimeType(StrEnum):
 class LiquidityEventOnly(ApiModel):
     """Default PE liquidity regime: sale only at sampled tender opportunities.
 
-    The market bundle's per-issuer sale-opportunity mask (looked up via
-    `MarketBundle.private_equity_sale_opportunity_mask_for(issuer_id)`) plus the
-    actor's `PrivateEquitySalePolicy` chain drives every sale under this regime.
+    The market bundle's `private_equity_sale_opportunity_mask` plus the actor's
+    `PrivateEquitySalePolicy` chain drives every sale under this regime.
     """
 
     regime_type: Literal[LiquidityRegimeType.LIQUIDITY_EVENT_ONLY] = LiquidityRegimeType.LIQUIDITY_EVENT_ONLY
@@ -983,7 +982,9 @@ class PrivateEquityPosition(ApiModel):
             "Identifier of the underlying private-equity issuer (e.g. 'openai'). When set, "
             "the simulator routes this position to the per-issuer multiplier and tender-mask "
             "paths on `MarketBundle`. When unset, the position rides the position's "
-            "`asset_id` key (and ultimately the `'default'` path)."
+            "`asset_id` as its routing key. `simulate_set` collects every routing key in use "
+            "into `RequiredMarketKeys.pe_issuer_ids` and the provider must populate exactly "
+            "those entries on the bundle."
         ),
     )
     liquidity_regime: LiquidityRegime = Field(default_factory=LiquidityEventOnly)
@@ -993,9 +994,11 @@ class PrivateEquityPosition(ApiModel):
     def market_routing_key(self) -> str:
         """Key used to look up per-issuer market paths on `MarketBundle`.
 
-        Falls back to `asset_id` when `issuer_id` is unset so single-asset scenarios
-        can omit the field. Multiple PE positions sharing one `issuer_id` ride the
-        same multiplier and tender-mask path.
+        Falls back to `asset_id` when `issuer_id` is unset so single-asset
+        scenarios can omit the field. Multiple PE positions sharing one
+        `issuer_id` ride the same multiplier and tender-mask path. The bundle
+        must carry an entry for every routing key the scenario uses; missing
+        keys raise `MissingMarketFactorError`.
         """
         return self.issuer_id or self.asset_id
 

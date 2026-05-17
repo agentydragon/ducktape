@@ -13,7 +13,7 @@ from typing import Any
 
 import numpy as np
 
-from augur.core.market_bundle import MarketBundle, MarketBundleMetadata
+from augur.core.market_bundle import MarketBundle, MarketBundleMetadata, RequiredMarketKeys
 from augur.core.provenance import stable_identity_digest
 from augur.core.scenario_set import MarketRequest
 from augur.model.location_market_sources import LocationMarketSources, build_location_market_maps
@@ -31,6 +31,11 @@ _KNOWN_LIMITATION_IDS = (
     "validation-report-not-decision-grade",
     "constant-mortgage-rate-path",
     "private-equity-marks-flat-fixture",
+    # The macro provider produces a single flat PE / crypto multiplier and one
+    # tender-mask path, replicated across every required issuer / symbol key.
+    # A real per-issuer / per-symbol joint model is a future slice.
+    "private-equity-paths-all-share-placeholder",
+    "crypto-paths-all-share-placeholder",
 )
 
 
@@ -84,7 +89,13 @@ class MacroMarketBundleProvider:
         )
 
     def sample_market_bundle(
-        self, *, rollout_count: int, horizon_months: int, seed: int, market_request: MarketRequest
+        self,
+        *,
+        rollout_count: int,
+        horizon_months: int,
+        seed: int,
+        market_request: MarketRequest,
+        required_keys: RequiredMarketKeys,
     ) -> MarketBundle:
         scenarios = self._market_model.simulate(n_paths=rollout_count, n_months=horizon_months, seed=seed)
         shape = (rollout_count, horizon_months + 1)
@@ -95,13 +106,35 @@ class MacroMarketBundleProvider:
         home_value_paths_by_location, rent_paths_by_location = build_location_market_maps(
             path_by_factor=path_by_factor, sources=self._location_market_sources
         )
-        home_value_paths_by_location = {"default": path_by_factor["home"], **home_value_paths_by_location}
-        rent_paths_by_location = {"default": path_by_factor["rent"], **rent_paths_by_location}
+        self._require_location_paths("home_value", home_value_paths_by_location, required_keys.location_ids)
+        self._require_location_paths("rent", rent_paths_by_location, required_keys.location_ids)
+        # Narrow to exactly the required locations to keep the bundle's keys aligned
+        # with what the scenario set asked for — no extras. When the scenario set
+        # has no property-bearing scenarios there are no required location keys; the
+        # bundle dicts still need at least one entry (the engine never looks at it),
+        # so we fall back to a single `"placeholder"` key.
+        if required_keys.location_ids:
+            home_value_paths_by_location = {
+                key: home_value_paths_by_location[key] for key in required_keys.location_ids
+            }
+            rent_paths_by_location = {key: rent_paths_by_location[key] for key in required_keys.location_ids}
+        else:
+            home_value_paths_by_location = {"placeholder": path_by_factor["home"]}
+            rent_paths_by_location = {"placeholder": path_by_factor["rent"]}
 
         private_equity_events = np.zeros(shape, dtype=np.bool_)
         private_equity_events[:, _TENDER_INTERVAL_MONTHS : horizon_months + 1 : _TENDER_INTERVAL_MONTHS] = True
         private_equity_value_multipliers = np.ones(shape, dtype="float64")
         crypto_value_multipliers = np.ones(shape, dtype="float64")
+        # The macro provider currently produces one flat PE / crypto path; until a
+        # real per-issuer / per-symbol model lands, every required key shares that
+        # same placeholder array. Documented via the
+        # `{private-equity,crypto}-paths-all-share-placeholder` limitations above.
+        # When the scenario set has no PE / crypto positions there are still no
+        # required keys; the bundle needs at least one entry per dict, so we fall
+        # back to a single `"placeholder"` key for the empty case.
+        pe_issuer_keys = required_keys.pe_issuer_ids or frozenset({"placeholder"})
+        crypto_symbol_keys = required_keys.crypto_symbols or frozenset({"placeholder"})
 
         return MarketBundle(
             month_index=np.arange(horizon_months + 1, dtype="int64"),
@@ -110,9 +143,9 @@ class MacroMarketBundleProvider:
             home_value_multipliers_by_location=home_value_paths_by_location,
             rent_multipliers_by_location=rent_paths_by_location,
             mortgage_30y_rate_pct=np.full(shape, self._current_mortgage30_rate_pct, dtype="float64"),
-            private_equity_value_multipliers_by_issuer={"default": private_equity_value_multipliers},
-            private_equity_sale_opportunity_mask_by_issuer={"default": private_equity_events},
-            crypto_value_multipliers_by_symbol={"default": crypto_value_multipliers},
+            private_equity_value_multipliers_by_issuer=dict.fromkeys(pe_issuer_keys, private_equity_value_multipliers),
+            private_equity_sale_opportunity_mask_by_issuer=dict.fromkeys(pe_issuer_keys, private_equity_events),
+            crypto_value_multipliers_by_symbol=dict.fromkeys(crypto_symbol_keys, crypto_value_multipliers),
             metadata=MarketBundleMetadata(
                 market_model_id=market_request.market_model_id,
                 model_card_id=_MODEL_CARD_ID,
@@ -139,3 +172,15 @@ class MacroMarketBundleProvider:
                 },
             ),
         )
+
+    @staticmethod
+    def _require_location_paths(kind: str, paths: dict[str, Any], required: frozenset[str]) -> None:
+        missing = sorted(required - paths.keys())
+        if missing:
+            available = sorted(paths)
+            raise ValueError(
+                f"macro market config does not model {kind} paths for required location(s) "
+                f"{missing}; available={available}. Add them to "
+                f"`location_market_sources.{kind}` in market_config.json or remove the scenarios "
+                "that reference these locations."
+            )

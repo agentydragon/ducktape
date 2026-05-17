@@ -21,6 +21,7 @@ from pydantic import ValidationError
 from augur.core.accounting import ChartAccountRole, JournalEntryType, LotAssetClass, PostingSide
 from augur.core.api import ScenarioRun, simulate_set
 from augur.core.local_regulation import LocationId
+from augur.core.market_bundle import MissingMarketFactorError, RequiredMarketKeys
 from augur.core.market_bundle_test_support import NoopMarketBundleProvider
 from augur.core.portfolio import load_portfolio_yaml
 from augur.core.scenario_set import (
@@ -3421,18 +3422,22 @@ def test_two_crypto_symbols_route_to_per_symbol_paths() -> None:
         ),
     )
     provider = NoopMarketBundleProvider(crypto_value_paths_by_symbol={"BTC": (1.0, 1.0, 1.5), "ETH": (1.0, 1.0, 0.5)})
-    # Verify the provider populates per-symbol routing dicts on the bundle.
+    # Verify the provider populates per-symbol routing dicts on the bundle. The
+    # `required_keys` declaration mirrors what `simulate_set` would extract from
+    # the scenario above.
     bundle = provider.sample_market_bundle(
         rollout_count=2,
         horizon_months=2,
         seed=0,
         market_request=MarketRequest(market_model_id="t", rollout_count=2, horizon_months=2, seed=0),
+        required_keys=RequiredMarketKeys(crypto_symbols=frozenset({"BTC", "ETH"})),
     )
-    assert set(bundle.crypto_value_multipliers_by_symbol) >= {"default", "BTC", "ETH"}
+    assert set(bundle.crypto_value_multipliers_by_symbol) == {"BTC", "ETH"}
     assert_allclose(bundle.crypto_value_multiplier("BTC")[:, 2], 1.5)
     assert_allclose(bundle.crypto_value_multiplier("ETH")[:, 2], 0.5)
-    # An unknown symbol falls back to "default" (all ones here).
-    assert_allclose(bundle.crypto_value_multiplier("XRP")[:, 2], 1.0)
+    # An unknown symbol now raises — there is no `"default"` fallback path.
+    with pytest.raises(MissingMarketFactorError):
+        bundle.crypto_value_multiplier("XRP")
 
     # End-to-end run still succeeds; cash is unchanged with no sale policy in play.
     result = _run_scenario(scenario, horizon_months=2, market_provider=provider)

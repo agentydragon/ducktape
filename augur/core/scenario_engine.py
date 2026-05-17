@@ -1386,16 +1386,22 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     initial_private_equity_units = _initial_private_equity_units(scenario)
     private_equity_source_holding_id = _private_equity_source_holding_id(scenario)
     pe_liquidity_regime = _effective_pe_liquidity_regime(scenario)
-    # The engine aggregates PE state into a single `private_equity_*` path. When all
-    # positions share one issuer key, route the multiplier/mask through that key
-    # (returns the legacy global `"default"` path until a real per-issuer model
-    # populates the dict). With multiple distinct issuers, fall back to `"default"`
-    # for the aggregated state — per-issuer state-splitting is out of scope for this
-    # slice; observation emission is per-issuer (see `_record_private_equity_*`).
+    # The engine aggregates PE state into a single `private_equity_*` path. With
+    # explicit per-issuer keying the engine routes through the first issuer's path
+    # (one-issuer scenarios pick that issuer's path; multi-issuer scenarios pick
+    # one and per-issuer observations are emitted separately via
+    # `_record_per_issuer_sale_opportunity_observations`). Scenarios with no PE
+    # positions get the all-ones / no-tender stub — the multiplier is never read
+    # because initial PE value is zero.
     pe_issuer_keys = _private_equity_issuer_routing_keys(scenario)
-    engine_pe_issuer_key = pe_issuer_keys[0] if len(pe_issuer_keys) == 1 else None
-    pe_value_multipliers = market_bundle.private_equity_value_multiplier(engine_pe_issuer_key)
-    pe_sale_opportunity_mask = market_bundle.private_equity_sale_opportunity_mask_for(engine_pe_issuer_key)
+    engine_pe_issuer_key = pe_issuer_keys[0] if pe_issuer_keys else None
+    if engine_pe_issuer_key is None:
+        shape = (rollout_count, month_count)
+        pe_value_multipliers = np.ones(shape, dtype="float64")
+        pe_sale_opportunity_mask = np.zeros(shape, dtype=np.bool_)
+    else:
+        pe_value_multipliers = market_bundle.private_equity_value_multiplier(engine_pe_issuer_key)
+        pe_sale_opportunity_mask = market_bundle.private_equity_sale_opportunity_mask_for(engine_pe_issuer_key)
     # PublicMarket regime makes the holding freely sellable from `lockup_end_month`
     # onward, so we widen the tender-window mask the engine uses when computing
     # PE sale opportunities. The reported `private_equity_sale_opportunity_event`
@@ -1499,9 +1505,14 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     # Crypto state: quantity = value_usd / unit_price; month 0 unit price is 1.0 by
     # contract, so initial quantity equals initial value. A fitted crypto model will
     # change this, but the engine code treats month 0 multipliers as 1.0 by
-    # MarketBundle validation, mirroring the SP500 path.
+    # MarketBundle validation, mirroring the SP500 path. Scenarios without crypto
+    # positions get an all-ones stub — the multiplier is never read because the
+    # initial crypto value is zero.
     crypto_engine_routing_key = _crypto_engine_routing_key(scenario)
-    crypto_value_multipliers = market_bundle.crypto_value_multiplier(crypto_engine_routing_key)
+    if crypto_engine_routing_key is None:
+        crypto_value_multipliers = np.ones((rollout_count, month_count), dtype="float64")
+    else:
+        crypto_value_multipliers = market_bundle.crypto_value_multiplier(crypto_engine_routing_key)
     crypto_unit_price_month_zero = crypto_value_multipliers[:, 0]
     remaining_crypto_quantity = np.divide(
         initial_crypto,
@@ -2723,17 +2734,29 @@ def _copy_with_trajectory_identity(record: Any, identity_by_rollout: Mapping[int
 
 
 def _market_path_observations(scenario: Scenario, market_bundle: MarketBundle) -> tuple[MarketObservation, ...]:
-    home_multiplier = market_bundle.home_value_multipliers(scenario.location_id)
-    rent_multiplier = market_bundle.rent_multipliers(scenario.location_id)
-    # MarketPathObservation carries a single PE multiplier and a single sale-opportunity
-    # event flag per (rollout, month). Route through the engine's aggregated routing
-    # key so single-issuer scenarios surface the issuer's path; multi-issuer scenarios
-    # fall back to `"default"` here and surface the per-issuer values through
-    # `PrivateEquitySaleOpportunityObservation` rows instead.
+    # With explicit location keys, each scenario surfaces only the path for its
+    # declared location. Scenarios with no `location_id` (no property selection)
+    # emit `1.0` for the home/rent multipliers — the bundle has no path for an
+    # absent location to read.
+    shape = (market_bundle.rollout_count, market_bundle.horizon_months + 1)
+    if scenario.location_id is None:
+        home_multiplier = np.ones(shape, dtype="float64")
+        rent_multiplier = np.ones(shape, dtype="float64")
+    else:
+        home_multiplier = market_bundle.home_value_multipliers(scenario.location_id)
+        rent_multiplier = market_bundle.rent_multipliers(scenario.location_id)
+    # MarketPathObservation carries a single PE multiplier and a single
+    # sale-opportunity event flag per (rollout, month). With explicit per-issuer
+    # keying we surface the first issuer's path; per-issuer values are emitted
+    # separately via `PrivateEquitySaleOpportunityObservation`. Scenarios with no
+    # PE positions get the all-ones / no-tender stub.
     pe_issuer_keys = _private_equity_issuer_routing_keys(scenario)
-    engine_pe_issuer_key = pe_issuer_keys[0] if len(pe_issuer_keys) == 1 else None
-    pe_value_multipliers = market_bundle.private_equity_value_multiplier(engine_pe_issuer_key)
-    pe_sale_mask = market_bundle.private_equity_sale_opportunity_mask_for(engine_pe_issuer_key)
+    if not pe_issuer_keys:
+        pe_value_multipliers = np.ones(shape, dtype="float64")
+        pe_sale_mask = np.zeros(shape, dtype=np.bool_)
+    else:
+        pe_value_multipliers = market_bundle.private_equity_value_multiplier(pe_issuer_keys[0])
+        pe_sale_mask = market_bundle.private_equity_sale_opportunity_mask_for(pe_issuer_keys[0])
     observations: list[MarketObservation] = []
     rollout_indexes, month_positions = np.indices(
         (market_bundle.rollout_count, market_bundle.horizon_months + 1), sparse=False
@@ -2833,6 +2856,9 @@ def _record_per_issuer_sale_opportunity_observations(
     if initial_total <= 0:
         return
 
+    # `engine_pe_issuer_key` is non-None whenever the scenario has PE positions,
+    # which is the only path that reaches here (`len(issuer_keys) > 1` above).
+    assert engine_pe_issuer_key is not None
     engine_multiplier_at_month = market_bundle.private_equity_value_multiplier(engine_pe_issuer_key)[:, month]
     # Engine value before sale = initial_total * remaining_fraction * engine_multiplier.
     # Derive remaining_fraction-equivalent from the per-rollout array; numerically
@@ -4213,9 +4239,11 @@ class _ObligationFundingSources:
             sp500_source_asset=_single_sp500_asset_source(scenario, actor_id=actor_id),
             crypto_source_id=_crypto_source_holding_id(scenario, actor_id=actor_id),
             crypto_source_account_id=crypto_source_assets[0].source_account_id if crypto_source_assets else None,
-            crypto_source_symbol=(
-                crypto_source_assets[0].asset_symbol if len(crypto_source_assets) == 1 else "crypto_portfolio"
-            ),
+            # With explicit per-symbol bundle keying there is no aggregated
+            # `"crypto_portfolio"` path; the engine reads the first symbol's path
+            # for multi-symbol scenarios (placeholder paths are identical across
+            # symbols today). Empty when the actor holds no crypto.
+            crypto_source_symbol=(crypto_source_assets[0].asset_symbol if crypto_source_assets else ""),
             pe_source_holding_id=_private_equity_source_holding_id(scenario),
             pe_public_market_regime=pe_regime if isinstance(pe_regime, PublicMarket) else None,
         )
@@ -4342,10 +4370,13 @@ def _settle_required_cash_obligation_at_month_position(
                     )
                 )
             elif asset_type is AssetType.CRYPTO:
-                # The bundle's per-symbol multiplier resolves to the issuer's path when one
-                # symbol is held and to `"default"` for multi-symbol scenarios (the engine
-                # aggregates crypto state, so heterogeneous symbols all read the same path
-                # in this slice; per-symbol state splitting is for a follow-on).
+                # With explicit per-symbol bundle keying we read the actor's first
+                # crypto symbol's path; the engine aggregates crypto state, so
+                # heterogeneous symbols all read the same placeholder path in this
+                # slice (per-symbol state splitting is a follow-on). Skip when the
+                # actor holds no crypto — there is no symbol to look up.
+                if not sources.crypto_source_symbol:
+                    continue
                 crypto_path = market_bundle.crypto_value_multiplier(sources.crypto_source_symbol)
                 crypto_application = _apply_crypto_checking_floor_obligation_funding_policy(
                     policy_step,
@@ -5295,6 +5326,9 @@ def _rental_cash_flow_arrays(
         return income, management_fee, leasing_fee
 
     active = rental_active_mask(scenario, market_bundle)
+    # Active rental requires a property which requires `location_id`; the validator
+    # in `augur.core.api` enforces both up front, so `location_id` is non-None here.
+    assert location_id is not None
     rent_multiplier = market_bundle.rent_multipliers(location_id)
     if rental.rental_mode is RentalMode.RENT_ROOMS_WHILE_OWNER_LIVES_THERE:
         base_rent = float(rental.rooms_rented) * float(rental.room_rent_monthly_usd or 0.0)
@@ -5615,6 +5649,8 @@ def _property_and_mortgage_arrays(
     if scenario.property_selection.property_id is None:
         return property_value, mortgage_balance, mortgage_interest, mortgage_principal
 
+    # Selecting a property requires `location_id` (enforced by the api validator).
+    assert location_id is not None
     purchase_price = _purchase_price_usd(scenario)
     property_value = purchase_price * market_bundle.home_value_multipliers(location_id)
     loan_amount, annual_rate_pct, term_months = _loan_terms(scenario, market_bundle, purchase_price)
@@ -5812,14 +5848,16 @@ def _crypto_symbol_routing_keys(scenario: Scenario) -> tuple[str, ...]:
 
 
 def _crypto_engine_routing_key(scenario: Scenario) -> str | None:
-    """Single symbol key for the aggregated crypto state, or None if heterogeneous.
+    """Single symbol key for the aggregated crypto state, or None when no positions.
 
-    The engine aggregates all crypto positions into one state path; routing
-    through a per-symbol multiplier only makes sense when all positions share
-    one symbol. Multi-symbol scenarios fall back to `"default"` for now.
+    The engine aggregates all crypto positions into one state path. With one
+    symbol the aggregate rides that symbol's path; with multiple symbols, the
+    first symbol is chosen (the per-symbol joint model is a future slice, so
+    placeholder paths are currently identical anyway). Scenarios with no
+    crypto positions return `None` so the engine skips the lookup entirely.
     """
     keys = _crypto_symbol_routing_keys(scenario)
-    return keys[0] if len(keys) == 1 else None
+    return keys[0] if keys else None
 
 
 def _private_equity_position_value_usd(asset: PrivateEquityPosition, *, current_unit_price_usd: float) -> float:

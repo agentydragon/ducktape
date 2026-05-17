@@ -195,6 +195,39 @@ class MarketBundleMetadata(ApiModel):
         return self.model_dump(mode="json")
 
 
+class MissingMarketFactorError(KeyError):
+    """Raised when a scenario looks up a per-asset market factor the bundle does not carry.
+
+    Scenarios declare which keys they need via `RequiredMarketKeys`; providers must
+    populate every required key. Any miss is a contract violation between the
+    scenario set and the market provider, not a "use a placeholder" condition.
+    """
+
+    def __init__(self, *, factor_name: str, key: str, available_keys: tuple[str, ...]) -> None:
+        self.factor_name = factor_name
+        self.key = key
+        self.available_keys = available_keys
+        super().__init__(
+            f"missing {factor_name} market path for key {key!r}; available={list(available_keys)}. "
+            "Scenarios must declare required keys up front (via RequiredMarketKeys) so the "
+            "market provider can populate them; there is no fallback path."
+        )
+
+
+@dataclass(frozen=True)
+class RequiredMarketKeys:
+    """Per-scenario-set declaration of which keyed market paths the run needs.
+
+    `simulate_set` extracts these from the scenario set and passes them to the
+    `MarketBundleProvider.sample_market_bundle` call so the provider can populate
+    exactly those keys (and raise if it cannot model one of them).
+    """
+
+    location_ids: frozenset[str] = frozenset()
+    pe_issuer_ids: frozenset[str] = frozenset()
+    crypto_symbols: frozenset[str] = frozenset()
+
+
 @dataclass(frozen=True)
 class MarketBundle:
     """Shared sampled market paths for a scenario set.
@@ -202,6 +235,11 @@ class MarketBundle:
     Arrays are shaped `(rollout, month)`, where month includes the initial
     month 0. The simulator consumes these arrays directly; conversion to
     JSON-safe columnar payloads happens only at the report boundary.
+
+    All per-asset / per-location paths are keyed explicitly: scenarios declare
+    which keys they need (via `RequiredMarketKeys`); the provider populates
+    exactly those keys. There is no `"default"` fallback — looking up a missing
+    key raises `MissingMarketFactorError`.
     """
 
     month_index: np.ndarray
@@ -210,9 +248,6 @@ class MarketBundle:
     home_value_multipliers_by_location: dict[str, np.ndarray]
     rent_multipliers_by_location: dict[str, np.ndarray]
     mortgage_30y_rate_pct: np.ndarray
-    # Per-issuer / per-symbol multiplier and mask paths. Each dict must include a
-    # `"default"` entry. Multi-issuer / multi-symbol scenarios route through these
-    # helpers; single-asset scenarios transparently fall back to `"default"`.
     private_equity_value_multipliers_by_issuer: dict[str, np.ndarray]
     private_equity_sale_opportunity_mask_by_issuer: dict[str, np.ndarray]
     crypto_value_multipliers_by_symbol: dict[str, np.ndarray]
@@ -235,6 +270,16 @@ class MarketBundle:
             self.mortgage_30y_rate_pct, name="mortgage_30y_rate_pct", expected_shape=expected_shape
         )
 
+        self._require_nonempty(self.home_value_multipliers_by_location, "home_value_multipliers_by_location")
+        self._require_nonempty(self.rent_multipliers_by_location, "rent_multipliers_by_location")
+        self._require_nonempty(
+            self.private_equity_value_multipliers_by_issuer, "private_equity_value_multipliers_by_issuer"
+        )
+        self._require_nonempty(
+            self.private_equity_sale_opportunity_mask_by_issuer, "private_equity_sale_opportunity_mask_by_issuer"
+        )
+        self._require_nonempty(self.crypto_value_multipliers_by_symbol, "crypto_value_multipliers_by_symbol")
+
         for name, values in self.home_value_multipliers_by_location.items():
             self._validate_multiplier(
                 values, name=f"home_value_multipliers_by_location[{name!r}]", expected_shape=expected_shape
@@ -243,11 +288,6 @@ class MarketBundle:
             self._validate_multiplier(
                 values, name=f"rent_multipliers_by_location[{name!r}]", expected_shape=expected_shape
             )
-        if "default" not in self.home_value_multipliers_by_location:
-            raise ValueError("home_value_multipliers_by_location must include 'default'")
-        if "default" not in self.rent_multipliers_by_location:
-            raise ValueError("rent_multipliers_by_location must include 'default'")
-
         for name, values in self.private_equity_value_multipliers_by_issuer.items():
             self._validate_multiplier(
                 values, name=f"private_equity_value_multipliers_by_issuer[{name!r}]", expected_shape=expected_shape
@@ -260,12 +300,6 @@ class MarketBundle:
             self._validate_multiplier(
                 values, name=f"crypto_value_multipliers_by_symbol[{name!r}]", expected_shape=expected_shape
             )
-        if "default" not in self.private_equity_value_multipliers_by_issuer:
-            raise ValueError("private_equity_value_multipliers_by_issuer must include 'default'")
-        if "default" not in self.private_equity_sale_opportunity_mask_by_issuer:
-            raise ValueError("private_equity_sale_opportunity_mask_by_issuer must include 'default'")
-        if "default" not in self.crypto_value_multipliers_by_symbol:
-            raise ValueError("crypto_value_multipliers_by_symbol must include 'default'")
 
     @property
     def rollout_count(self) -> int:
@@ -275,51 +309,42 @@ class MarketBundle:
     def horizon_months(self) -> int:
         return self.metadata.horizon_months
 
-    def home_value_multipliers(self, location_id: LocationId | str | None) -> np.ndarray:
-        return self._location_path(self.home_value_multipliers_by_location, location_id, label="home value")
-
-    def rent_multipliers(self, location_id: LocationId | str | None) -> np.ndarray:
-        return self._location_path(self.rent_multipliers_by_location, location_id, label="rent")
-
-    def private_equity_value_multiplier(self, issuer_id: str | None) -> np.ndarray:
+    def home_value_multipliers(self, location_id: LocationId | str) -> np.ndarray:
         return self._keyed_path(
-            self.private_equity_value_multipliers_by_issuer, issuer_id, label="private equity value"
+            self.home_value_multipliers_by_location, _normalize_key(location_id), factor_name="home_value"
         )
 
-    def private_equity_sale_opportunity_mask_for(self, issuer_id: str | None) -> np.ndarray:
+    def rent_multipliers(self, location_id: LocationId | str) -> np.ndarray:
+        return self._keyed_path(self.rent_multipliers_by_location, _normalize_key(location_id), factor_name="rent")
+
+    def private_equity_value_multiplier(self, issuer_id: str) -> np.ndarray:
         return self._keyed_path(
-            self.private_equity_sale_opportunity_mask_by_issuer, issuer_id, label="private equity sale opportunity mask"
+            self.private_equity_value_multipliers_by_issuer, issuer_id, factor_name="private_equity_value"
         )
 
-    def crypto_value_multiplier(self, symbol: str | None) -> np.ndarray:
-        return self._keyed_path(self.crypto_value_multipliers_by_symbol, symbol, label="crypto value")
+    def private_equity_sale_opportunity_mask_for(self, issuer_id: str) -> np.ndarray:
+        return self._keyed_path(
+            self.private_equity_sale_opportunity_mask_by_issuer,
+            issuer_id,
+            factor_name="private_equity_sale_opportunity_mask",
+        )
 
-    def _location_path(
-        self, paths: dict[str, np.ndarray], location_id: LocationId | str | None, *, label: str
-    ) -> np.ndarray:
-        if location_id is None:
-            key = "default"
-        elif isinstance(location_id, LocationId):
-            key = location_id
-        else:
-            key = str(location_id)
+    def crypto_value_multiplier(self, symbol: str) -> np.ndarray:
+        return self._keyed_path(self.crypto_value_multipliers_by_symbol, symbol, factor_name="crypto_value")
+
+    @staticmethod
+    def _require_nonempty(paths: dict[str, np.ndarray], name: str) -> None:
+        if not paths:
+            raise ValueError(f"{name} must contain at least one entry; scenarios declare required keys explicitly")
+
+    @staticmethod
+    def _keyed_path(paths: dict[str, np.ndarray], key: str, *, factor_name: str) -> np.ndarray:
         try:
             return paths[key]
         except KeyError as error:
-            if "default" in paths:
-                return paths["default"]
-            available = sorted(paths)
-            raise ValueError(f"missing {label} market path for location {key!r}; available={available}") from error
-
-    @staticmethod
-    def _keyed_path(paths: dict[str, np.ndarray], key: str | None, *, label: str) -> np.ndarray:
-        lookup = "default" if key is None else key
-        if lookup in paths:
-            return paths[lookup]
-        if "default" in paths:
-            return paths["default"]
-        available = sorted(paths)
-        raise ValueError(f"missing {label} market path for key {lookup!r}; available={available}")
+            raise MissingMarketFactorError(
+                factor_name=factor_name, key=key, available_keys=tuple(sorted(paths))
+            ) from error
 
     @staticmethod
     def _validate_float_matrix(values: np.ndarray, *, name: str, expected_shape: tuple[int, int]) -> None:
@@ -350,9 +375,19 @@ class MarketBundle:
             raise TypeError(f"{name} must have bool dtype")
 
 
+def _normalize_key(key: LocationId | str) -> str:
+    return key.value if isinstance(key, LocationId) else str(key)
+
+
 class MarketBundleProvider(Protocol):
     def sample_market_bundle(
-        self, *, rollout_count: int, horizon_months: int, seed: int, market_request: MarketRequest
+        self,
+        *,
+        rollout_count: int,
+        horizon_months: int,
+        seed: int,
+        market_request: MarketRequest,
+        required_keys: RequiredMarketKeys,
     ) -> MarketBundle: ...
 
 
@@ -361,12 +396,15 @@ class HorizonBoundMarketBundleProvider(MarketBundleProvider, Protocol):
     horizon_months: int
 
 
-def sample_market_bundle_for_request(provider: MarketBundleProvider, market_request: MarketRequest) -> MarketBundle:
+def sample_market_bundle_for_request(
+    provider: MarketBundleProvider, market_request: MarketRequest, *, required_keys: RequiredMarketKeys
+) -> MarketBundle:
     return provider.sample_market_bundle(
         rollout_count=int(market_request.rollout_count),
         horizon_months=int(market_request.horizon_months),
         seed=market_request.seed,
         market_request=market_request,
+        required_keys=required_keys,
     )
 
 
@@ -379,7 +417,13 @@ class FlatMarketBundleProvider:
     current_private_equity_price_usd: float = 0.0
 
     def sample_market_bundle(
-        self, *, rollout_count: int, horizon_months: int, seed: int, market_request: MarketRequest
+        self,
+        *,
+        rollout_count: int,
+        horizon_months: int,
+        seed: int,
+        market_request: MarketRequest,
+        required_keys: RequiredMarketKeys,
     ) -> MarketBundle:
         shape = (rollout_count, horizon_months + 1)
         flat = np.ones(shape, dtype="float64")
@@ -388,11 +432,17 @@ class FlatMarketBundleProvider:
         for month in self.private_equity_sale_opportunity_months:
             if 0 <= month <= horizon_months:
                 private_equity_events[:, month] = True
-        home_by_location: dict[str, np.ndarray] = {"default": flat}
-        rent_by_location: dict[str, np.ndarray] = {"default": flat}
-        for location_id in LocationId:
-            home_by_location[location_id] = flat
-            rent_by_location[location_id] = flat
+        # The flat provider treats every location/issuer/symbol identically, so any
+        # required key gets the same flat array. Every known LocationId is also
+        # populated so legacy callers that hand-pick a location continue to work.
+        location_keys = required_keys.location_ids | {location_id.value for location_id in LocationId}
+        home_by_location = dict.fromkeys(location_keys, flat)
+        rent_by_location = dict.fromkeys(location_keys, flat)
+        pe_issuer_keys = required_keys.pe_issuer_ids or frozenset({"placeholder"})
+        crypto_symbol_keys = required_keys.crypto_symbols or frozenset({"placeholder"})
+        pe_value_by_issuer = dict.fromkeys(pe_issuer_keys, flat)
+        pe_mask_by_issuer = dict.fromkeys(pe_issuer_keys, private_equity_events)
+        crypto_by_symbol = dict.fromkeys(crypto_symbol_keys, flat)
         return MarketBundle(
             month_index=np.arange(horizon_months + 1, dtype="int64"),
             inflation_multipliers=flat,
@@ -400,9 +450,9 @@ class FlatMarketBundleProvider:
             home_value_multipliers_by_location=home_by_location,
             rent_multipliers_by_location=rent_by_location,
             mortgage_30y_rate_pct=mortgage_rate,
-            private_equity_value_multipliers_by_issuer={"default": flat},
-            private_equity_sale_opportunity_mask_by_issuer={"default": private_equity_events},
-            crypto_value_multipliers_by_symbol={"default": flat},
+            private_equity_value_multipliers_by_issuer=pe_value_by_issuer,
+            private_equity_sale_opportunity_mask_by_issuer=pe_mask_by_issuer,
+            crypto_value_multipliers_by_symbol=crypto_by_symbol,
             metadata=MarketBundleMetadata(
                 market_model_id=market_request.market_model_id,
                 scenario_generator_id="flat_market_bundle_provider",
@@ -427,7 +477,13 @@ class SimpleMarketBundleProvider:
     current_private_equity_price_usd: float = 0.0
 
     def sample_market_bundle(
-        self, *, rollout_count: int, horizon_months: int, seed: int, market_request: MarketRequest
+        self,
+        *,
+        rollout_count: int,
+        horizon_months: int,
+        seed: int,
+        market_request: MarketRequest,
+        required_keys: RequiredMarketKeys,
     ) -> MarketBundle:
         rng = np.random.default_rng(seed)
         month_index = np.arange(horizon_months + 1, dtype="int64")
@@ -507,6 +563,18 @@ class SimpleMarketBundleProvider:
         # plugs in, the simulator carries a flat array so reporting and the
         # crypto sale-funding policy remain valid.
         crypto_value = np.ones((rollout_count, horizon_months + 1), dtype="float64")
+        # `home_by_location` / `rent_by_location` come from `_location_factor_map`
+        # which now pins every required location_id to a sampled path. Required PE
+        # issuers and crypto symbols share one placeholder path each (per the
+        # `private-equity-paths-all-share-placeholder` /
+        # `crypto-paths-all-share-placeholder` limitations).
+        _require_keys_present(home_by_location, required_keys.location_ids, "home_value_multipliers_by_location")
+        _require_keys_present(rent_by_location, required_keys.location_ids, "rent_multipliers_by_location")
+        pe_issuer_keys = required_keys.pe_issuer_ids or frozenset({"placeholder"})
+        crypto_symbol_keys = required_keys.crypto_symbols or frozenset({"placeholder"})
+        pe_value_by_issuer = dict.fromkeys(pe_issuer_keys, private_equity_value)
+        pe_mask_by_issuer = dict.fromkeys(pe_issuer_keys, private_equity_events)
+        crypto_by_symbol = dict.fromkeys(crypto_symbol_keys, crypto_value)
         return MarketBundle(
             month_index=month_index,
             inflation_multipliers=inflation,
@@ -514,9 +582,9 @@ class SimpleMarketBundleProvider:
             home_value_multipliers_by_location=home_by_location,
             rent_multipliers_by_location=rent_by_location,
             mortgage_30y_rate_pct=mortgage_rate,
-            private_equity_value_multipliers_by_issuer={"default": private_equity_value},
-            private_equity_sale_opportunity_mask_by_issuer={"default": private_equity_events},
-            crypto_value_multipliers_by_symbol={"default": crypto_value},
+            private_equity_value_multipliers_by_issuer=pe_value_by_issuer,
+            private_equity_sale_opportunity_mask_by_issuer=pe_mask_by_issuer,
+            crypto_value_multipliers_by_symbol=crypto_by_symbol,
             metadata=metadata,
         )
 
@@ -551,8 +619,17 @@ def _mortgage_rate_paths(
 def _location_factor_map(base: np.ndarray, *, annual_adjustment_pct: dict[str, float]) -> dict[str, np.ndarray]:
     horizon_months = base.shape[1] - 1
     months = np.arange(horizon_months + 1, dtype="float64")
-    paths = {"default": base}
+    paths: dict[str, np.ndarray] = {}
     for location, adjustment_pct in annual_adjustment_pct.items():
         adjustment = (1 + adjustment_pct / 100) ** (months / 12)
-        paths[location] = base * adjustment[None, :]
+        paths[_normalize_key(location)] = base * adjustment[None, :]
     return paths
+
+
+def _require_keys_present(paths: dict[str, np.ndarray], required: frozenset[str], name: str) -> None:
+    missing = sorted(required - paths.keys())
+    if missing:
+        raise ValueError(
+            f"{name} missing required keys {missing}; available={sorted(paths)}. "
+            "Scenarios declare required keys up front; the provider must populate them."
+        )

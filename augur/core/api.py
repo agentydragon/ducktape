@@ -21,6 +21,7 @@ from augur.core.accounting import (
 from augur.core.market_bundle import (
     MarketBundle,
     MarketBundleProvider,
+    RequiredMarketKeys,
     SimpleMarketBundleProvider,
     sample_market_bundle_for_request,
 )
@@ -35,12 +36,14 @@ from augur.core.scenario_engine import ScenarioRunArrays, report_metric_array, r
 from augur.core.scenario_set import (
     AccountingDetail,
     ActorRole,
+    CryptoAssetPosition,
     Effect,
     EventType,
     ExogenousPathIdentity,
     MarketObservation,
     PartnerEquityAccrualPolicy,
     PolicyDecision,
+    PrivateEquityPosition,
     ProjectionTrajectoryIdentity,
     RentalMode,
     ReportMetric,
@@ -456,7 +459,9 @@ def simulate_set(
     validate_scenario_set(scenario_set)
     if market_bundle is None:
         provider = market_provider or SimpleMarketBundleProvider()
-        market_bundle = sample_market_bundle_for_request(provider, scenario_set.market_request)
+        market_bundle = sample_market_bundle_for_request(
+            provider, scenario_set.market_request, required_keys=_extract_required_market_keys(scenario_set)
+        )
     _validate_market_bundle_matches_request(scenario_set, market_bundle)
 
     scenario_runs: list[ScenarioRun] = []
@@ -466,6 +471,31 @@ def simulate_set(
             continue
         scenario_runs.append(ScenarioRun(scenario=scenario, arrays=run_scenario_vectorized(scenario, market_bundle)))
     return ScenarioSetRun(scenario_set=scenario_set, market_bundle=market_bundle, scenario_runs=tuple(scenario_runs))
+
+
+def _extract_required_market_keys(scenario_set: ScenarioSet) -> RequiredMarketKeys:
+    """Collect the per-asset / per-location keys every scenario in the set will look up.
+
+    Providers must populate exactly these on the resulting `MarketBundle`; the
+    bundle's lookup helpers raise `MissingMarketFactorError` for any key not in
+    the dict, so this set is the contract the provider has to honor.
+    """
+    location_ids: set[str] = set()
+    pe_issuer_ids: set[str] = set()
+    crypto_symbols: set[str] = set()
+    for scenario in scenario_set.scenarios:
+        if scenario.location_id is not None:
+            location_ids.add(scenario.location_id)
+        for position in scenario.initial_balance_sheet.assets:
+            if isinstance(position, PrivateEquityPosition):
+                pe_issuer_ids.add(position.market_routing_key)
+            elif isinstance(position, CryptoAssetPosition):
+                crypto_symbols.add(position.asset_symbol)
+    return RequiredMarketKeys(
+        location_ids=frozenset(location_ids),
+        pe_issuer_ids=frozenset(pe_issuer_ids),
+        crypto_symbols=frozenset(crypto_symbols),
+    )
 
 
 def _exogenous_path_identities(metadata: Any) -> tuple[ExogenousPathIdentity, ...]:

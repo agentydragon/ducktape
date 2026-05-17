@@ -6,7 +6,7 @@ from numpy.testing import assert_allclose
 
 from augur.core.accounting import ChartAccountRole, PostingSide
 from augur.core.api import simulate_set
-from augur.core.market_bundle import MarketBundle, MarketBundleMetadata
+from augur.core.market_bundle import MarketBundle, MarketBundleMetadata, RequiredMarketKeys
 from augur.core.scenario_engine import MonthlyColumnSource, monthly_column_specs, run_scenario_vectorized
 from augur.core.scenario_set import (
     AccountType,
@@ -75,21 +75,24 @@ def _bundle(
         inflation_multipliers=path(inflation_path),
         generic_sp500_multipliers=path(sp500_path),
         home_value_multipliers_by_location={
-            "default": path(home_path),
             "san_francisco_ca": path(home_path),
             "vallejo_ca": path(home_path),
             "mare_island_vallejo_ca": path(home_path),
         },
         rent_multipliers_by_location={
-            "default": path(rent_path),
             "san_francisco_ca": path(rent_path),
             "vallejo_ca": path(rent_path),
             "mare_island_vallejo_ca": path(rent_path),
         },
         mortgage_30y_rate_pct=np.full(shape, 6.0, dtype="float64"),
-        private_equity_value_multipliers_by_issuer={"default": private_equity_multipliers},
-        private_equity_sale_opportunity_mask_by_issuer={"default": events},
-        crypto_value_multipliers_by_symbol={"default": crypto_multipliers},
+        # Default test scenarios use a PE position with `asset_id="private_equity"`
+        # (so the engine's routing key is `"private_equity"`) and crypto symbol
+        # `"BTC"`. Engine tests that bypass `simulate_set` invoke
+        # `run_scenario_vectorized(scenario, _bundle(...))` directly, so the bundle
+        # must already carry every key those default scenarios will look up.
+        private_equity_value_multipliers_by_issuer={"private_equity": private_equity_multipliers},
+        private_equity_sale_opportunity_mask_by_issuer={"private_equity": events},
+        crypto_value_multipliers_by_symbol={"BTC": crypto_multipliers},
         metadata=metadata,
     )
 
@@ -311,7 +314,13 @@ def test_run_scenario_set_samples_shared_market_bundle_once() -> None:
             self.calls = 0
 
         def sample_market_bundle(
-            self, *, rollout_count: int, horizon_months: int, seed: int, market_request: MarketRequest
+            self,
+            *,
+            rollout_count: int,
+            horizon_months: int,
+            seed: int,
+            market_request: MarketRequest,
+            required_keys: RequiredMarketKeys,
         ) -> MarketBundle:
             self.calls += 1
             return _bundle(rollout_count=rollout_count, horizon_months=horizon_months)

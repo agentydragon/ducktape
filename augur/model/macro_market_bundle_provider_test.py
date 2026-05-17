@@ -17,11 +17,14 @@ import pytest_bazel
 from numpy.testing import assert_allclose
 from pydantic import ValidationError
 
+from augur.core.market_bundle import RequiredMarketKeys
 from augur.core.scenario_set import MarketRequest
 from augur.model.macro_market_bundle_provider import MacroMarketBundleProvider
 from augur.model.markets.registry import LABELS
 
 CONFIG_PATH = Path(__file__).resolve().parent / "config" / "market_config.example.json"
+
+_ALL_LOCATIONS = frozenset({"san_francisco_ca", "vallejo_ca", "mare_island_vallejo_ca"})
 
 
 @pytest.fixture(params=LABELS)
@@ -52,10 +55,20 @@ def _request(provider: MacroMarketBundleProvider, *, rollout_count: int = 3, hor
     )
 
 
-def _sample(provider: MacroMarketBundleProvider, *, rollout_count: int = 3, horizon_months: int = 24):
+def _sample(
+    provider: MacroMarketBundleProvider,
+    *,
+    rollout_count: int = 3,
+    horizon_months: int = 24,
+    required_keys: RequiredMarketKeys | None = None,
+):
     request = _request(provider, rollout_count=rollout_count, horizon_months=horizon_months)
     return provider.sample_market_bundle(
-        rollout_count=rollout_count, horizon_months=horizon_months, seed=request.seed, market_request=request
+        rollout_count=rollout_count,
+        horizon_months=horizon_months,
+        seed=request.seed,
+        market_request=request,
+        required_keys=required_keys or RequiredMarketKeys(location_ids=_ALL_LOCATIONS),
     )
 
 
@@ -91,6 +104,8 @@ def test_sample_market_bundle_shape(provider: MacroMarketBundleProvider) -> None
         "validation-report-not-decision-grade",
         "constant-mortgage-rate-path",
         "private-equity-marks-flat-fixture",
+        "private-equity-paths-all-share-placeholder",
+        "crypto-paths-all-share-placeholder",
     )
     assert (
         tuple(limitation.known_limitation_id for limitation in bundle.metadata.known_limitations)
@@ -110,25 +125,20 @@ def test_sample_market_bundle_shape(provider: MacroMarketBundleProvider) -> None
         values = getattr(bundle, key)
         assert values.shape == expected_shape, key
         assert np.all(np.isfinite(values)), key
-    pe_values = bundle.private_equity_value_multiplier(None)
-    assert pe_values.shape == expected_shape
-    assert np.all(np.isfinite(pe_values))
     for key in ("inflation_multipliers", "generic_sp500_multipliers"):
         values = getattr(bundle, key)
         assert_allclose(values[:, 0], 1.0)
         assert np.all(values > 0), key
-    assert_allclose(pe_values[:, 0], 1.0)
-    assert np.all(pe_values > 0)
-    expected_locations = {"default", "san_francisco_ca", "vallejo_ca", "mare_island_vallejo_ca"}
-    assert set(bundle.home_value_multipliers_by_location) == expected_locations
-    assert set(bundle.rent_multipliers_by_location) == expected_locations
-    assert_allclose(
-        bundle.home_value_multipliers_by_location["san_francisco_ca"],
-        bundle.home_value_multipliers_by_location["default"],
-    )
-    assert_allclose(
-        bundle.rent_multipliers_by_location["san_francisco_ca"], bundle.rent_multipliers_by_location["default"]
-    )
+    # The macro provider produces one flat PE / crypto path replicated across
+    # every required key; with no required PE / crypto keys here, exactly one
+    # `"placeholder"` entry is present.
+    pe_path = bundle.private_equity_value_multipliers_by_issuer["placeholder"]
+    assert pe_path.shape == expected_shape
+    assert np.all(np.isfinite(pe_path))
+    assert_allclose(pe_path[:, 0], 1.0)
+    # Required locations come straight from the `RequiredMarketKeys` parameter.
+    assert set(bundle.home_value_multipliers_by_location) == _ALL_LOCATIONS
+    assert set(bundle.rent_multipliers_by_location) == _ALL_LOCATIONS
 
 
 def test_mortgage_path_constant(provider: MacroMarketBundleProvider) -> None:
@@ -140,17 +150,39 @@ def test_mortgage_path_constant(provider: MacroMarketBundleProvider) -> None:
 
 def test_private_equity_paths_flat_with_yearly_tenders(provider: MacroMarketBundleProvider) -> None:
     bundle = _sample(provider, rollout_count=1, horizon_months=24)
-    assert_allclose(bundle.private_equity_value_multiplier(None), 1.0)
-    mask = bundle.private_equity_sale_opportunity_mask_for(None)
-    assert not mask[:, 0].any()
-    assert mask[:, 12].all()
-    assert mask[:, 24].all()
+    pe_path = bundle.private_equity_value_multipliers_by_issuer["placeholder"]
+    pe_mask = bundle.private_equity_sale_opportunity_mask_by_issuer["placeholder"]
+    assert_allclose(pe_path, 1.0)
+    assert not pe_mask[:, 0].any()
+    assert pe_mask[:, 12].all()
+    assert pe_mask[:, 24].all()
+
+
+def test_provider_populates_every_required_pe_issuer(provider: MacroMarketBundleProvider) -> None:
+    bundle = _sample(
+        provider,
+        required_keys=RequiredMarketKeys(
+            location_ids=_ALL_LOCATIONS, pe_issuer_ids=frozenset({"issuer_a", "issuer_b"})
+        ),
+    )
+    assert set(bundle.private_equity_value_multipliers_by_issuer) == {"issuer_a", "issuer_b"}
+    assert set(bundle.private_equity_sale_opportunity_mask_by_issuer) == {"issuer_a", "issuer_b"}
+
+
+def test_provider_raises_on_missing_required_location(provider: MacroMarketBundleProvider) -> None:
+    with pytest.raises(ValueError, match="missing_location"):
+        _sample(provider, required_keys=RequiredMarketKeys(location_ids=frozenset({"missing_location"})))
 
 
 def test_seed_determinism(provider: MacroMarketBundleProvider) -> None:
     request = _request(provider, rollout_count=2, horizon_months=24)
-    a = provider.sample_market_bundle(rollout_count=2, horizon_months=24, seed=11, market_request=request)
-    b = provider.sample_market_bundle(rollout_count=2, horizon_months=24, seed=11, market_request=request)
+    required_keys = RequiredMarketKeys(location_ids=_ALL_LOCATIONS)
+    a = provider.sample_market_bundle(
+        rollout_count=2, horizon_months=24, seed=11, market_request=request, required_keys=required_keys
+    )
+    b = provider.sample_market_bundle(
+        rollout_count=2, horizon_months=24, seed=11, market_request=request, required_keys=required_keys
+    )
     assert_allclose(a.generic_sp500_multipliers, b.generic_sp500_multipliers)
 
 
