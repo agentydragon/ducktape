@@ -87,7 +87,7 @@ generic backlog rather than a second ordered roadmap.
       sale opportunities should not be split across fields/events that can
       contradict each other.
 - [ ] Reduce single-property/global assumptions. Scenario-level `property_selection`, `financing`, `rental_plan`, and `tax_profile` should eventually become initial positions, per-property settings, or per-actor/accounting inputs as the simulator grows.
-- [ ] Replace built-in `LocationId` enum with database-like location entities, parallel to properties. A location should carry regulation/tax/modeling knobs that downstream regulation and tax code interprets, not require hardcoded enum extension.
+- [ ] Convert `ScenarioEngine` (in `augur/core/api.py`) from the current light shape — a small dataclass holding deployment-scoped deps plus a `simulate_set` method — into a fuller class so the 143 free helpers in `augur/core/scenario_engine.py` become methods sharing the engine's deps directly. The light shape was a deliberate step toward the larger refactor; track this as the follow-up.
 - [ ] Prefer Pydantic for serde and validation at API/config boundaries. Avoid
       custom `to_json_dict()`-style conversion helpers except at narrow
       compatibility seams.

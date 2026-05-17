@@ -60,14 +60,9 @@ py_library(
 py_library(
     name = "local_regulation_py",
     srcs = ["local_regulation.py"],
-    data = [
-        "builtin_locations.yaml",
-        "local_regulation.yaml",
-    ],
     deps = [
         ":schemas_py",
         "@pypi//pydantic",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -191,10 +186,12 @@ py_library(
     name = "api_py",
     srcs = ["api.py"],
     deps = [
+        ":local_regulation_py",
         ":market_bundle_py",
         ":provenance_py",
         ":scenario_engine_py",
         ":scenario_set_py",
+        ":scenario_tax_defaults_py",
         "@pypi//numpy",
     ],
 )

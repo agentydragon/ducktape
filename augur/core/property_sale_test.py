@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest_bazel
 
-from augur.core.local_regulation import LocalRegulation, LocationId, TaxRegime
+from augur.core.local_regulation import LocalRegulation, TaxRegime
 from augur.core.market_bundle_test_support import constant_market_bundle
 from augur.core.property_sale import empty_property_disposition_arrays, property_disposition_arrays
 from augur.core.scenario_set import (
@@ -47,7 +47,7 @@ def sale_scenario(
         actors=(Actor(actor_id="owner", label="Owner", role=ActorRole.PRIMARY_OWNER),),
         events=(PropertySaleEvent(event_id="sell", month_index=3, property_id="sf_ashton"),),
         property_selection=PropertySelection(
-            property_id="sf_ashton", location_id=LocationId.SAN_FRANCISCO_CA, purchase_price_usd=100_000
+            property_id="sf_ashton", location_id="san_francisco_ca", purchase_price_usd=100_000
         ),
         rental_plan=rental_plan or NotRentedRentalPlan(),
         property_assumptions=property_assumptions or PropertyAssumptions(),
@@ -57,11 +57,11 @@ def sale_scenario(
 
 
 def test_property_sale_combines_closing_costs_local_transfer_tax_and_debt_payoff() -> None:
-    bundle = constant_market_bundle(home_path=(1.0, 1.0, 1.1, 1.2))
+    bundle = constant_market_bundle(home_path=(1.0, 1.0, 1.1, 1.2), location_keys=frozenset({"san_francisco_ca"}))
     sale = property_disposition_arrays(
         sale_scenario(),
         bundle,
-        property_value_usd=100_000 * bundle.home_value_multipliers(LocationId.SAN_FRANCISCO_CA),
+        property_value_usd=100_000 * bundle.home_value_multipliers("san_francisco_ca"),
         mortgage_balance_usd=np.full((2, 4), 40_000.0),
         purchase_price_usd=100_000,
         local_regulation=_local_regulation(local_transfer_tax_pct=1),
@@ -82,7 +82,7 @@ def test_property_sale_combines_closing_costs_local_transfer_tax_and_debt_payoff
 
 
 def test_property_sale_recaptures_rental_depreciation_before_capital_gains() -> None:
-    bundle = constant_market_bundle()
+    bundle = constant_market_bundle(location_keys=frozenset({"san_francisco_ca"}))
     sale = property_disposition_arrays(
         sale_scenario(
             rental_plan=WholePropertyRentalPlan(
@@ -93,7 +93,7 @@ def test_property_sale_recaptures_rental_depreciation_before_capital_gains() -> 
             transaction_costs=TransactionCosts(closing_cost_buy_pct=0, closing_cost_sell_pct=0),
         ),
         bundle,
-        property_value_usd=100_000 * bundle.home_value_multipliers(LocationId.SAN_FRANCISCO_CA),
+        property_value_usd=100_000 * bundle.home_value_multipliers("san_francisco_ca"),
         mortgage_balance_usd=np.zeros((2, 4), dtype="float64"),
         purchase_price_usd=100_000,
         local_regulation=_local_regulation(),
@@ -110,12 +110,12 @@ def test_property_sale_recaptures_rental_depreciation_before_capital_gains() -> 
 
 
 def test_property_without_sale_event_returns_zero_sale_cash_flow() -> None:
-    bundle = constant_market_bundle()
+    bundle = constant_market_bundle(location_keys=frozenset({"san_francisco_ca"}))
     scenario = sale_scenario().model_copy(update={"events": ()})
     sale = property_disposition_arrays(
         scenario,
         bundle,
-        property_value_usd=100_000 * bundle.home_value_multipliers(LocationId.SAN_FRANCISCO_CA),
+        property_value_usd=100_000 * bundle.home_value_multipliers("san_francisco_ca"),
         mortgage_balance_usd=np.full((2, 4), 40_000.0),
         purchase_price_usd=100_000,
         local_regulation=_local_regulation(),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Any, TypeVar, overload
 
 import numpy as np
@@ -18,6 +19,7 @@ from augur.core.accounting import (
     PostingSide,
     TaxLot,
 )
+from augur.core.local_regulation import LocalRegulation
 from augur.core.market_bundle import (
     MarketBundle,
     MarketBundleProvider,
@@ -56,6 +58,7 @@ from augur.core.scenario_set import (
     ScenarioSet,
     ScenarioSetRunResponse,
 )
+from augur.core.scenario_tax_defaults import scenario_with_location_tax_defaults
 
 EffectT = TypeVar("EffectT")
 AccountingDetailT = TypeVar("AccountingDetailT")
@@ -446,31 +449,80 @@ class ScenarioSetRun:
         )
 
 
+@dataclass(frozen=True)
+class ScenarioEngine:
+    """Entry point for simulating scenario sets, holding the deployment-scoped
+    dependencies the simulator needs.
+
+    Light shape for now — the 143 helper functions in `augur.core.scenario_engine`
+    stay free functions; the engine just owns the inputs that used to be module
+    globals and threads them in. TODO(augur/TODO.md): convert the engine to a
+    fuller class so the simulator's runtime helpers can become methods.
+    """
+
+    market_provider: MarketBundleProvider = field(default_factory=SimpleMarketBundleProvider)
+    local_regulation_by_id: Mapping[str, LocalRegulation] = field(default_factory=dict)
+
+    def simulate_set(self, scenario_set: ScenarioSet, *, market_bundle: MarketBundle | None = None) -> ScenarioSetRun:
+        """Simulate a typed scenario set and return a distribution-first result object."""
+        validate_scenario_set(scenario_set)
+        resolved_set = self._with_resolved_local_regulation(scenario_set)
+        if market_bundle is None:
+            market_bundle = sample_market_bundle_for_request(
+                self.market_provider,
+                resolved_set.market_request,
+                required_keys=_extract_required_market_keys(resolved_set),
+            )
+        _validate_market_bundle_matches_request(resolved_set, market_bundle)
+
+        scenario_runs: list[ScenarioRun] = []
+        for scenario in resolved_set.scenarios:
+            if not scenario.enabled:
+                scenario_runs.append(ScenarioRun(scenario=scenario, arrays=None))
+                continue
+            scenario_runs.append(
+                ScenarioRun(scenario=scenario, arrays=run_scenario_vectorized(scenario, market_bundle))
+            )
+        return ScenarioSetRun(
+            scenario_set=resolved_set, market_bundle=market_bundle, scenario_runs=tuple(scenario_runs)
+        )
+
+    def _with_resolved_local_regulation(self, scenario_set: ScenarioSet) -> ScenarioSet:
+        """Backfill `property_selection.local_regulation` from the engine's
+        regulation table where the caller didn't pre-populate it. Scenarios
+        without a location_id (no real estate) pass through unchanged.
+        """
+        resolved: list[Scenario] = []
+        for scenario in scenario_set.scenarios:
+            if scenario.property_selection.local_regulation is not None or scenario.location_id is None:
+                resolved.append(scenario)
+                continue
+            regulation = self.local_regulation_by_id.get(scenario.location_id)
+            if regulation is None:
+                # Pass through unresolved — the engine will raise a precise error
+                # at run time if the scenario actually needs the regulation.
+                resolved.append(scenario)
+                continue
+            resolved.append(scenario_with_location_tax_defaults(scenario, regulation))
+        return scenario_set.model_copy(update={"scenarios": tuple(resolved)})
+
+
 def simulate_set(
     scenario_set: ScenarioSet,
     *,
     market_provider: MarketBundleProvider | None = None,
     market_bundle: MarketBundle | None = None,
+    local_regulation_by_id: Mapping[str, LocalRegulation] | None = None,
 ) -> ScenarioSetRun:
-    """Simulate a typed scenario set and return a distribution-first result object."""
-
+    """Thin shim around `ScenarioEngine.simulate_set` for callers that haven't
+    adopted the engine yet."""
     if market_provider is not None and market_bundle is not None:
         raise ValueError("pass either market_provider or market_bundle, not both")
-    validate_scenario_set(scenario_set)
-    if market_bundle is None:
-        provider = market_provider or SimpleMarketBundleProvider()
-        market_bundle = sample_market_bundle_for_request(
-            provider, scenario_set.market_request, required_keys=_extract_required_market_keys(scenario_set)
-        )
-    _validate_market_bundle_matches_request(scenario_set, market_bundle)
-
-    scenario_runs: list[ScenarioRun] = []
-    for scenario in scenario_set.scenarios:
-        if not scenario.enabled:
-            scenario_runs.append(ScenarioRun(scenario=scenario, arrays=None))
-            continue
-        scenario_runs.append(ScenarioRun(scenario=scenario, arrays=run_scenario_vectorized(scenario, market_bundle)))
-    return ScenarioSetRun(scenario_set=scenario_set, market_bundle=market_bundle, scenario_runs=tuple(scenario_runs))
+    engine = ScenarioEngine(
+        market_provider=market_provider or SimpleMarketBundleProvider(),
+        local_regulation_by_id=local_regulation_by_id or {},
+    )
+    return engine.simulate_set(scenario_set, market_bundle=market_bundle)
 
 
 def _extract_required_market_keys(scenario_set: ScenarioSet) -> RequiredMarketKeys:

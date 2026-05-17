@@ -20,7 +20,7 @@ from pydantic import ValidationError
 
 from augur.core.accounting import ChartAccountRole, JournalEntryType, LotAssetClass, PostingSide
 from augur.core.api import ScenarioRun, simulate_set
-from augur.core.local_regulation import LocationId
+from augur.core.local_regulation import LocalRegulation, TaxRegime
 from augur.core.market_bundle import MissingMarketFactorError, RequiredMarketKeys
 from augur.core.market_bundle_test_support import NoopMarketBundleProvider
 from augur.core.portfolio import load_portfolio_yaml
@@ -80,6 +80,55 @@ from augur.core.scenario_set import (
     WholePropertyRentalPlan,
 )
 
+_TEST_LOCAL_REGULATION_BY_ID: dict[str, LocalRegulation] = {
+    "san_francisco_ca": LocalRegulation(
+        property_tax_regime=TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX,
+        default_tax_regimes=(
+            TaxRegime.CALIFORNIA_PROP13,
+            TaxRegime.CALIFORNIA_TRANSFER_TAX,
+            TaxRegime.FEDERAL_MORTGAGE_INTEREST,
+            TaxRegime.FEDERAL_CAPITAL_GAINS,
+            TaxRegime.CALIFORNIA_INCOME_TAX,
+            TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX,
+            TaxRegime.SAN_FRANCISCO_TRANSFER_TAX,
+        ),
+        property_tax_annual_pct=1.18,
+        local_transfer_tax_pct=0,
+        special_assessment_annual_usd=0,
+        notes="San Francisco secured property-tax default used by the consolidated house model.",
+    ),
+    "vallejo_ca": LocalRegulation(
+        property_tax_regime=TaxRegime.VALLEJO_PROPERTY_TAX,
+        default_tax_regimes=(
+            TaxRegime.CALIFORNIA_PROP13,
+            TaxRegime.CALIFORNIA_TRANSFER_TAX,
+            TaxRegime.FEDERAL_MORTGAGE_INTEREST,
+            TaxRegime.FEDERAL_CAPITAL_GAINS,
+            TaxRegime.CALIFORNIA_INCOME_TAX,
+            TaxRegime.VALLEJO_PROPERTY_TAX,
+        ),
+        property_tax_annual_pct=1.1,
+        local_transfer_tax_pct=0,
+        special_assessment_annual_usd=0,
+        notes="Vallejo mainland property-tax default around 1.1%.",
+    ),
+    "mare_island_vallejo_ca": LocalRegulation(
+        property_tax_regime=TaxRegime.MARE_ISLAND_SPECIAL_ASSESSMENTS,
+        default_tax_regimes=(
+            TaxRegime.CALIFORNIA_PROP13,
+            TaxRegime.CALIFORNIA_TRANSFER_TAX,
+            TaxRegime.FEDERAL_MORTGAGE_INTEREST,
+            TaxRegime.FEDERAL_CAPITAL_GAINS,
+            TaxRegime.CALIFORNIA_INCOME_TAX,
+            TaxRegime.MARE_ISLAND_SPECIAL_ASSESSMENTS,
+        ),
+        property_tax_annual_pct=2.4,
+        local_transfer_tax_pct=0,
+        special_assessment_annual_usd=0,
+        notes="Mare Island default includes high local special assessments at roughly 2.4%.",
+    ),
+}
+
 
 def _run_scenario(
     scenario: Scenario,
@@ -97,7 +146,11 @@ def _run_scenario(
         market_request=market_request,
         scenarios=(scenario,),
     )
-    run = simulate_set(scenario_set, market_provider=market_provider or NoopMarketBundleProvider())
+    run = simulate_set(
+        scenario_set,
+        market_provider=market_provider or NoopMarketBundleProvider(),
+        local_regulation_by_id=_TEST_LOCAL_REGULATION_BY_ID,
+    )
     return run.scenario(scenario.scenario_id)
 
 
@@ -221,7 +274,7 @@ def test_simulate_set_rejects_partner_equity_policy_for_other_property() -> None
         label="Invalid Partner Property",
         actors=(_simple_actor(), Actor(actor_id="beta", label="Beta", role=ActorRole.EQUITY_BUILDING_OCCUPANT)),
         property_selection=PropertySelection(
-            property_id="test_property", location_id=LocationId.VALLEJO_CA, purchase_price_usd=100_000
+            property_id="test_property", location_id="vallejo_ca", purchase_price_usd=100_000
         ),
         policies=(
             PartnerEquityAccrualPolicy(
@@ -396,7 +449,7 @@ def test_fixed_rate_mortgage_amortizes_and_purchase_cash_outlay_posts_at_month_z
         label="Mortgage Amortization",
         actors=(_simple_actor(),),
         property_selection=PropertySelection(
-            property_id="test_property", location_id=LocationId.SAN_FRANCISCO_CA, purchase_price_usd=500_000
+            property_id="test_property", location_id="san_francisco_ca", purchase_price_usd=500_000
         ),
         financing=Financing(financing_mode=FinancingMode.FIXED_30, down_payment_pct=20, mortgage_rate_pct=6),
         transaction_costs=TransactionCosts(closing_cost_buy_pct=2.5, closing_cost_sell_pct=0),
@@ -480,7 +533,7 @@ def test_mortgage_shortfall_records_failed_obligation_and_failure_event() -> Non
         label="Mortgage Shortfall",
         actors=(_simple_actor(),),
         property_selection=PropertySelection(
-            property_id="test_property", location_id=LocationId.SAN_FRANCISCO_CA, purchase_price_usd=500_000
+            property_id="test_property", location_id="san_francisco_ca", purchase_price_usd=500_000
         ),
         financing=Financing(financing_mode=FinancingMode.FIXED_30, down_payment_pct=20, mortgage_rate_pct=6),
         transaction_costs=TransactionCosts(closing_cost_buy_pct=0, closing_cost_sell_pct=0),
@@ -549,7 +602,7 @@ def test_mortgage_shortfall_can_be_rescued_by_checking_floor_sale_policy() -> No
         label="Mortgage Rescue",
         actors=(_simple_actor(),),
         property_selection=PropertySelection(
-            property_id="test_property", location_id=LocationId.SAN_FRANCISCO_CA, purchase_price_usd=500_000
+            property_id="test_property", location_id="san_francisco_ca", purchase_price_usd=500_000
         ),
         financing=Financing(financing_mode=FinancingMode.FIXED_30, down_payment_pct=20, mortgage_rate_pct=6),
         transaction_costs=TransactionCosts(closing_cost_buy_pct=0, closing_cost_sell_pct=0),
@@ -609,7 +662,7 @@ def test_mortgage_obligation_continues_projection_after_failure() -> None:
         label="Mortgage Failure Projection",
         actors=(_simple_actor(),),
         property_selection=PropertySelection(
-            property_id="test_property", location_id=LocationId.SAN_FRANCISCO_CA, purchase_price_usd=500_000
+            property_id="test_property", location_id="san_francisco_ca", purchase_price_usd=500_000
         ),
         financing=Financing(financing_mode=FinancingMode.FIXED_30, down_payment_pct=20, mortgage_rate_pct=6),
         transaction_costs=TransactionCosts(closing_cost_buy_pct=0, closing_cost_sell_pct=0),
@@ -731,7 +784,7 @@ def _property_obligation_scenario(
     insurance_annual_usd: float = 0,
     maintenance_pct: float = 0,
     hoa_monthly_usd: float = 0,
-    location_id: LocationId = LocationId.SAN_FRANCISCO_CA,
+    location_id: str = "san_francisco_ca",
     purchase_price_usd: float = 500_000,
     events: tuple = (),
 ) -> Scenario:
@@ -963,7 +1016,7 @@ def test_partner_contribution_obligation_fails_rollout_when_partner_cannot_fund(
         label="Partner Contribution Unfundable",
         actors=(_simple_actor(), Actor(actor_id="beta", label="Beta", role=ActorRole.EQUITY_BUILDING_OCCUPANT)),
         property_selection=PropertySelection(
-            property_id="test_property", location_id=LocationId.VALLEJO_CA, purchase_price_usd=100_000
+            property_id="test_property", location_id="vallejo_ca", purchase_price_usd=100_000
         ),
         financing=Financing(financing_mode=FinancingMode.CASH),
         transaction_costs=TransactionCosts(closing_cost_buy_pct=0, closing_cost_sell_pct=0),
@@ -1464,7 +1517,7 @@ def test_partner_equity_accrual_records_contributions_and_claims() -> None:
         label="Partner Equity Accrual",
         actors=(_simple_actor(), Actor(actor_id="beta", label="Beta", role=ActorRole.EQUITY_BUILDING_OCCUPANT)),
         property_selection=PropertySelection(
-            property_id="test_property", location_id=LocationId.VALLEJO_CA, purchase_price_usd=purchase_price
+            property_id="test_property", location_id="vallejo_ca", purchase_price_usd=purchase_price
         ),
         financing=Financing(
             financing_mode=FinancingMode.FIXED_30, down_payment_pct=down_payment_pct, mortgage_rate_pct=0
@@ -1624,7 +1677,7 @@ def test_property_sale_records_capital_gains_tax_and_net_proceeds() -> None:
         actors=(_simple_actor(),),
         events=(PropertySaleEvent(event_id="sale", month_index=60, property_id="test_property"),),
         property_selection=PropertySelection(
-            property_id="test_property", location_id=LocationId.SAN_FRANCISCO_CA, purchase_price_usd=500_000
+            property_id="test_property", location_id="san_francisco_ca", purchase_price_usd=500_000
         ),
         financing=Financing(financing_mode=FinancingMode.CASH),
         transaction_costs=TransactionCosts(closing_cost_buy_pct=0, closing_cost_sell_pct=6.5),
@@ -1773,7 +1826,7 @@ def test_partner_sale_claim_uses_settlement_net_proceeds() -> None:
         actors=(_simple_actor(), Actor(actor_id="beta", label="Beta", role=ActorRole.EQUITY_BUILDING_OCCUPANT)),
         events=(PropertySaleEvent(event_id="sale", month_index=sale_month, property_id="test_property"),),
         property_selection=PropertySelection(
-            property_id="test_property", location_id=LocationId.VALLEJO_CA, purchase_price_usd=purchase_price
+            property_id="test_property", location_id="vallejo_ca", purchase_price_usd=purchase_price
         ),
         financing=Financing(financing_mode=FinancingMode.FIXED_30, down_payment_pct=20, mortgage_rate_pct=0),
         transaction_costs=TransactionCosts(closing_cost_buy_pct=0, closing_cost_sell_pct=10),
@@ -1845,7 +1898,7 @@ def test_simulate_set_response_serializes_sale_effects_with_tax_detail() -> None
         actors=(_simple_actor(),),
         events=(PropertySaleEvent(event_id="property_sale", month_index=2, property_id="test_property"),),
         property_selection=PropertySelection(
-            property_id="test_property", location_id=LocationId.SAN_FRANCISCO_CA, purchase_price_usd=500_000
+            property_id="test_property", location_id="san_francisco_ca", purchase_price_usd=500_000
         ),
         financing=Financing(financing_mode=FinancingMode.CASH),
         transaction_costs=TransactionCosts(closing_cost_buy_pct=0, closing_cost_sell_pct=6.5),
@@ -1900,6 +1953,7 @@ def test_simulate_set_response_serializes_sale_effects_with_tax_detail() -> None
         market_provider=NoopMarketBundleProvider(
             home_path=(1.0, 1.0, 1.8), private_equity_sale_opportunity_months=(1,)
         ),
+        local_regulation_by_id=_TEST_LOCAL_REGULATION_BY_ID,
     )
     payload = run.to_response().model_dump(mode="json")
 
@@ -1969,7 +2023,7 @@ def test_whole_property_rental_posts_income_fees_and_cash_flow() -> None:
         label="Whole Property Rental",
         actors=(_simple_actor(),),
         property_selection=PropertySelection(
-            property_id="test_property", location_id=LocationId.VALLEJO_CA, purchase_price_usd=120_000
+            property_id="test_property", location_id="vallejo_ca", purchase_price_usd=120_000
         ),
         financing=Financing(financing_mode=FinancingMode.CASH),
         transaction_costs=TransactionCosts(closing_cost_buy_pct=0, closing_cost_sell_pct=0),
@@ -2681,7 +2735,7 @@ def test_every_monthly_flow_metric_reconciles_to_canonical_detail_surface() -> N
         actors=(_simple_actor(), Actor(actor_id="beta", label="Beta", role=ActorRole.EQUITY_BUILDING_OCCUPANT)),
         events=(PropertySaleEvent(event_id="sale", month_index=sale_month, property_id="test_property"),),
         property_selection=PropertySelection(
-            property_id="test_property", location_id=LocationId.SAN_FRANCISCO_CA, purchase_price_usd=purchase_price
+            property_id="test_property", location_id="san_francisco_ca", purchase_price_usd=purchase_price
         ),
         financing=Financing(financing_mode=FinancingMode.FIXED_30, down_payment_pct=25, mortgage_rate_pct=6),
         transaction_costs=TransactionCosts(closing_cost_buy_pct=2.5, closing_cost_sell_pct=6.5),

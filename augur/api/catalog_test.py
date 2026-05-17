@@ -20,7 +20,7 @@ from augur.api.config import (
     PropertyAssetConfig,
     PropertySourceConfig,
 )
-from augur.core.local_regulation import LocalRegulation, LocationId
+from augur.core.local_regulation import LocalRegulation
 from augur.core.market_bundle import SimpleMarketBundleProvider
 from augur.core.scenario_set import ActorRole, ScenarioSet, TaxRegime
 
@@ -105,6 +105,23 @@ def _fixture_regulation() -> LocalRegulation:
     )
 
 
+def _san_francisco_regulation() -> LocalRegulation:
+    return LocalRegulation(
+        property_tax_regime=TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX,
+        default_tax_regimes=(
+            TaxRegime.CALIFORNIA_PROP13,
+            TaxRegime.CALIFORNIA_TRANSFER_TAX,
+            TaxRegime.FEDERAL_MORTGAGE_INTEREST,
+            TaxRegime.FEDERAL_CAPITAL_GAINS,
+            TaxRegime.CALIFORNIA_INCOME_TAX,
+            TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX,
+            TaxRegime.SAN_FRANCISCO_TRANSFER_TAX,
+        ),
+        property_tax_annual_pct=1.18,
+        notes="San Francisco fixture",
+    )
+
+
 def _fixture_locations() -> tuple[LocationConfig, ...]:
     regulation = _fixture_regulation()
     return (
@@ -123,6 +140,14 @@ def _fixture_locations() -> tuple[LocationConfig, ...]:
             state="Fixture",
             local_regulation=regulation,
             notes=("Synthetic public fixture location.",),
+        ),
+        LocationConfig(
+            location_id="san_francisco_ca",
+            label="San Francisco, CA",
+            city="San Francisco",
+            state="CA",
+            local_regulation=_san_francisco_regulation(),
+            notes=("San Francisco fixture.",),
         ),
     )
 
@@ -177,14 +202,13 @@ def test_bootstrap_locations_default_to_loaded_property_source(tmp_path: Path) -
     assert [property_.id for property_ in bootstrap.properties] == ["location_a_property", "location_b_property"]
 
 
-def test_bootstrap_builtin_location_carries_modeled_tax_defaults(tmp_path: Path) -> None:
+def test_bootstrap_san_francisco_location_carries_modeled_tax_defaults(tmp_path: Path) -> None:
     properties_path = tmp_path / "properties.json"
     _write_builtin_properties(properties_path)
 
     bootstrap = build_bootstrap_payload(_config(properties_path))
-    location = bootstrap.locations[0]
+    location = next(loc for loc in bootstrap.locations if loc.id == "san_francisco_ca")
 
-    assert location.id == LocationId.SAN_FRANCISCO_CA
     assert location.label == "San Francisco, CA"
     assert location.city == "San Francisco"
     assert location.local_regulation.property_tax_regime is TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX

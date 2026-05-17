@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from augur.core.local_regulation import LocationId, TaxRegime, local_regulation_for_location
+from augur.core.local_regulation import LocalRegulation, TaxRegime
 from augur.core.scenario_set import (
     Actor,
     ActorRole,
@@ -15,6 +15,25 @@ from augur.core.scenario_set import (
     WholePropertyRentalPlan,
 )
 from augur.core.scenario_tax_defaults import scenario_with_location_tax_defaults
+
+
+def _san_francisco_regulation() -> LocalRegulation:
+    return LocalRegulation(
+        property_tax_regime=TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX,
+        default_tax_regimes=(
+            TaxRegime.CALIFORNIA_PROP13,
+            TaxRegime.CALIFORNIA_TRANSFER_TAX,
+            TaxRegime.FEDERAL_MORTGAGE_INTEREST,
+            TaxRegime.FEDERAL_CAPITAL_GAINS,
+            TaxRegime.CALIFORNIA_INCOME_TAX,
+            TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX,
+            TaxRegime.SAN_FRANCISCO_TRANSFER_TAX,
+        ),
+        property_tax_annual_pct=1.18,
+        local_transfer_tax_pct=0,
+        special_assessment_annual_usd=0,
+        notes="San Francisco secured property-tax default used by the consolidated house model.",
+    )
 
 
 def _bare_scenario(
@@ -36,7 +55,7 @@ def _bare_scenario(
 
 
 def test_backfills_property_tax_regime_and_regimes_from_location_defaults() -> None:
-    regulation = local_regulation_for_location(LocationId.SAN_FRANCISCO_CA)
+    regulation = _san_francisco_regulation()
     scenario = _bare_scenario(occupancy_mode=OccupancyMode.OWNER_LIVES_IN_PROPERTY, rental_plan=NotRentedRentalPlan())
 
     enriched = scenario_with_location_tax_defaults(scenario, regulation)
@@ -48,7 +67,7 @@ def test_backfills_property_tax_regime_and_regimes_from_location_defaults() -> N
 
 
 def test_preserves_caller_supplied_tax_regime() -> None:
-    regulation = local_regulation_for_location(LocationId.SAN_FRANCISCO_CA)
+    regulation = _san_francisco_regulation()
     scenario = _bare_scenario(
         occupancy_mode=OccupancyMode.OWNER_LIVES_IN_PROPERTY,
         rental_plan=NotRentedRentalPlan(),
@@ -61,7 +80,7 @@ def test_preserves_caller_supplied_tax_regime() -> None:
 
 
 def test_whole_property_rental_with_owner_residence_treated_as_investment() -> None:
-    regulation = local_regulation_for_location(LocationId.SAN_FRANCISCO_CA)
+    regulation = _san_francisco_regulation()
     scenario = _bare_scenario(
         occupancy_mode=OccupancyMode.OWNER_LIVES_IN_PROPERTY, rental_plan=WholePropertyRentalPlan(monthly_rent_usd=3000)
     )

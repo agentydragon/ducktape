@@ -26,7 +26,6 @@ from augur.core.bootstrap import (
     RentalUsePolicyId,
     RentalUsePolicyOption,
 )
-from augur.core.local_regulation import BUILTIN_LOCATION_CONFIGS, BuiltinLocationConfig, local_regulation_for_location
 from augur.core.scenario_set import ActorRole
 from augur.core.schemas import ScenarioKnobs
 
@@ -85,21 +84,8 @@ def _location_from_config(config: LocationConfig) -> Location:
     )
 
 
-def _location_from_builtin_config(config: BuiltinLocationConfig) -> Location:
-    return Location(
-        id=config.location_id,
-        label=config.label,
-        city=config.city,
-        state=config.state,
-        local_regulation=local_regulation_for_location(config.location_id),
-        notes=config.notes,
-    )
-
-
 def _locations_for_config(config: AugurConfig) -> tuple[Location, ...]:
-    locations = tuple(_location_from_config(location) for location in config.locations) + tuple(
-        _location_from_builtin_config(location) for location in BUILTIN_LOCATION_CONFIGS
-    )
+    locations = tuple(_location_from_config(location) for location in config.locations)
     location_id_counts = Counter(location.id for location in locations)
     duplicate_ids = sorted(location_id for location_id, count in location_id_counts.items() if count > 1)
     if duplicate_ids:

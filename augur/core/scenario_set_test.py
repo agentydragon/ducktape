@@ -8,7 +8,6 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from augur.core.local_regulation import LocationId
 from augur.core.scenario_set import (
     AccountType,
     Acquisition,
@@ -408,7 +407,7 @@ def test_scenario_result_serialization_has_no_projection_compatibility_field() -
     result = ScenarioResult(
         scenario_id="sf_house",
         scenario_label="Sf House",
-        summary=ScenarioAcceptedSummary(enabled=True, property_id="sf_ashton", location_id=LocationId.SAN_FRANCISCO_CA),
+        summary=ScenarioAcceptedSummary(enabled=True, property_id="sf_ashton", location_id="san_francisco_ca"),
     )
 
     dumped = result.model_dump(mode="json", exclude_none=True)

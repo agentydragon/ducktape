@@ -354,8 +354,6 @@ Work:
   private media.
 - Add a durable property-asset storage contract with stable asset IDs/URLs,
   backed by object storage or a database-like asset table.
-- Replace built-in `LocationId` with database-like location entities when the
-  location/regulation layer is next touched.
 - Keep large private media out of ConfigMaps. The current private nginx image
   is an expedient until the generic asset contract exists.
 
@@ -429,9 +427,6 @@ Work:
 - **Replace `scenario.actorPolicy` enums with modeled actor agreements**
   (Priority 2). "Agent X pays agent Y this amount over this period for
   this share/claim" should be a contract, not a scenario-wide enum.
-- **Replace built-in `LocationId` enum with DB-like location entities**,
-  parallel to property entities. Per-location regulation/tax/modeling
-  knobs flow through the entity rather than hardcoded enum extension.
 
 ## Next Work Plans
 

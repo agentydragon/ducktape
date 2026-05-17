@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from augur.core.local_regulation import LocationId
 from augur.core.market_bundle import MarketBundle, MarketBundleMetadata, RequiredMarketKeys
 from augur.core.scenario_set import MarketRequest
 
@@ -24,21 +23,19 @@ def constant_market_bundle(
     private_equity_value_paths_by_issuer: dict[str, tuple[float, ...]] | None = None,
     private_equity_sale_opportunity_months_by_issuer: dict[str, tuple[int, ...]] | None = None,
     crypto_value_paths_by_symbol: dict[str, tuple[float, ...]] | None = None,
-    pe_issuer_keys: frozenset[str] | None = None,
-    crypto_symbol_keys: frozenset[str] | None = None,
+    location_keys: frozenset[str] = frozenset(),
+    pe_issuer_keys: frozenset[str] = frozenset(),
+    crypto_symbol_keys: frozenset[str] = frozenset(),
     current_private_equity_price_usd: float = 0.0,
     market_model_id: str = "test",
     seed: int = 0,
 ) -> MarketBundle:
     """Build a constant-path `MarketBundle` for tests.
 
-    Per-asset path dicts default to populating every `LocationId` and a single
-    `"placeholder"` PE issuer / crypto symbol key — enough to satisfy
-    `MarketBundle`'s non-empty validation for tests that don't care about routing.
-    Tests that exercise specific PE issuers or crypto symbols should pass
-    `pe_issuer_keys=...` / `crypto_symbol_keys=...` (or the explicit
-    `private_equity_value_paths_by_issuer` / `crypto_value_paths_by_symbol`
-    dicts) so the bundle carries exactly those keys.
+    Per-asset path dicts carry exactly the keys the caller declares (via
+    `location_keys` / `pe_issuer_keys` / `crypto_symbol_keys`, or the explicit
+    `*_paths_by_issuer` / `*_paths_by_symbol` dicts). No fallback population —
+    tests should declare what their scenarios actually look up.
     """
     shape = (rollout_count, horizon_months + 1)
     month_index = np.arange(horizon_months + 1, dtype="int64")
@@ -62,19 +59,15 @@ def constant_market_bundle(
     private_equity_sale_opportunity_mask = mask(private_equity_sale_opportunity_months)
     crypto_value = path(crypto_value_path)
 
-    # Per-issuer / per-symbol dicts: the test caller can override directly with
-    # `*_paths_by_issuer` / `*_paths_by_symbol` (each key maps to its own path), or
-    # declare which keys to pre-populate with the shared default path via
-    # `pe_issuer_keys` / `crypto_symbol_keys`. The fallback `"placeholder"` key
-    # keeps the bundle non-empty for tests with no PE / crypto holdings.
+    home_by_location = dict.fromkeys(location_keys, home)
+    rent_by_location = dict.fromkeys(location_keys, rent)
+
     pe_value_by_issuer: dict[str, np.ndarray] = {}
     if private_equity_value_paths_by_issuer is not None:
         for issuer_id, values in private_equity_value_paths_by_issuer.items():
             pe_value_by_issuer[issuer_id] = path(values)
-    for key in pe_issuer_keys or frozenset():
+    for key in pe_issuer_keys:
         pe_value_by_issuer.setdefault(key, private_equity_value)
-    if not pe_value_by_issuer:
-        pe_value_by_issuer["placeholder"] = private_equity_value
 
     pe_mask_by_issuer: dict[str, np.ndarray] = {}
     if private_equity_sale_opportunity_months_by_issuer is not None:
@@ -87,25 +80,15 @@ def constant_market_bundle(
     if crypto_value_paths_by_symbol is not None:
         for symbol, values in crypto_value_paths_by_symbol.items():
             crypto_by_symbol[symbol] = path(values)
-    for key in crypto_symbol_keys or frozenset():
+    for key in crypto_symbol_keys:
         crypto_by_symbol.setdefault(key, crypto_value)
-    if not crypto_by_symbol:
-        crypto_by_symbol["placeholder"] = crypto_value
 
     return MarketBundle(
         month_index=month_index,
         inflation_multipliers=path(inflation_path),
         generic_sp500_multipliers=path(sp500_path),
-        home_value_multipliers_by_location={
-            LocationId.SAN_FRANCISCO_CA.value: home,
-            LocationId.VALLEJO_CA.value: home,
-            LocationId.MARE_ISLAND_VALLEJO_CA.value: home,
-        },
-        rent_multipliers_by_location={
-            LocationId.SAN_FRANCISCO_CA.value: rent,
-            LocationId.VALLEJO_CA.value: rent,
-            LocationId.MARE_ISLAND_VALLEJO_CA.value: rent,
-        },
+        home_value_multipliers_by_location=home_by_location,
+        rent_multipliers_by_location=rent_by_location,
         mortgage_30y_rate_pct=path(mortgage_30y_rate_pct_path),
         private_equity_value_multipliers_by_issuer=pe_value_by_issuer,
         private_equity_sale_opportunity_mask_by_issuer=pe_mask_by_issuer,
@@ -163,6 +146,7 @@ class NoopMarketBundleProvider:
                 self.private_equity_sale_opportunity_months_by_issuer or None
             ),
             crypto_value_paths_by_symbol=self.crypto_value_paths_by_symbol or None,
+            location_keys=required_keys.location_ids,
             pe_issuer_keys=required_keys.pe_issuer_ids,
             crypto_symbol_keys=required_keys.crypto_symbols,
             current_private_equity_price_usd=self.current_private_equity_price_usd,

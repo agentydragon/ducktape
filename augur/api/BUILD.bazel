@@ -80,6 +80,8 @@ py_library(
         "//augur/core:market_bundle_py",
         "//augur/model:macro_market_bundle_provider_py",
         "//augur/model/markets:registry_py",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
         "@pypi//uvicorn",
     ],
 )

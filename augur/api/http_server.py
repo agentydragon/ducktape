@@ -9,11 +9,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import uvicorn
+import yaml
 
 from augur.api.backend import AugurBackend, AugurBackendRuntimeConfig
 from augur.api.config import AugurConfig
 from augur.core.backend import StaticPathResolver, create_augur_backend_app
-from augur.core.market_bundle import FlatMarketBundleProvider, MarketBundleProvider, SimpleMarketBundleProvider
+from augur.core.market_bundle import (
+    FlatMarketBundleProvider,
+    MarketBundleProvider,
+    SimpleMarketBundleProvider,
+    SimpleMarketModelConfig,
+)
 from augur.model.macro_market_bundle_provider import MacroMarketBundleProvider
 from augur.model.markets.registry import LABELS
 
@@ -57,7 +63,16 @@ def _make_provider(
     if args.provider == "noop":
         return FlatMarketBundleProvider(current_private_equity_price_usd=current_private_equity_price_usd)
     if args.provider == "simple":
-        return SimpleMarketBundleProvider(current_private_equity_price_usd=current_private_equity_price_usd)
+        model_config = (
+            SimpleMarketModelConfig.model_validate(
+                yaml.safe_load(Path(args.market_config).resolve().read_text(encoding="utf-8"))
+            )
+            if args.market_config
+            else SimpleMarketModelConfig()
+        )
+        return SimpleMarketBundleProvider(
+            current_private_equity_price_usd=current_private_equity_price_usd, model_config=model_config
+        )
     market_config_path = Path(args.market_config).resolve() if args.market_config else default_market_config_path
     return MacroMarketBundleProvider.for_label(
         args.provider, config_path=market_config_path, current_private_equity_price_usd=current_private_equity_price_usd

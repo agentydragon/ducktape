@@ -6,6 +6,7 @@ from numpy.testing import assert_allclose
 
 from augur.core.accounting import ChartAccountRole, PostingSide
 from augur.core.api import simulate_set
+from augur.core.local_regulation import LocalRegulation, TaxRegime
 from augur.core.market_bundle import MarketBundle, MarketBundleMetadata, RequiredMarketKeys
 from augur.core.scenario_engine import MonthlyColumnSource, monthly_column_specs, run_scenario_vectorized
 from augur.core.scenario_set import (
@@ -30,6 +31,63 @@ from augur.core.scenario_set import (
     SettlementStatus,
     SettlePropertySaleEffect,
 )
+from augur.core.scenario_tax_defaults import scenario_with_location_tax_defaults
+
+_TEST_LOCAL_REGULATION_BY_ID: dict[str, LocalRegulation] = {
+    "san_francisco_ca": LocalRegulation(
+        property_tax_regime=TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX,
+        default_tax_regimes=(
+            TaxRegime.CALIFORNIA_PROP13,
+            TaxRegime.CALIFORNIA_TRANSFER_TAX,
+            TaxRegime.FEDERAL_MORTGAGE_INTEREST,
+            TaxRegime.FEDERAL_CAPITAL_GAINS,
+            TaxRegime.CALIFORNIA_INCOME_TAX,
+            TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX,
+            TaxRegime.SAN_FRANCISCO_TRANSFER_TAX,
+        ),
+        property_tax_annual_pct=1.18,
+        local_transfer_tax_pct=0,
+        special_assessment_annual_usd=0,
+        notes="San Francisco secured property-tax default used by the consolidated house model.",
+    ),
+    "vallejo_ca": LocalRegulation(
+        property_tax_regime=TaxRegime.VALLEJO_PROPERTY_TAX,
+        default_tax_regimes=(
+            TaxRegime.CALIFORNIA_PROP13,
+            TaxRegime.CALIFORNIA_TRANSFER_TAX,
+            TaxRegime.FEDERAL_MORTGAGE_INTEREST,
+            TaxRegime.FEDERAL_CAPITAL_GAINS,
+            TaxRegime.CALIFORNIA_INCOME_TAX,
+            TaxRegime.VALLEJO_PROPERTY_TAX,
+        ),
+        property_tax_annual_pct=1.1,
+        local_transfer_tax_pct=0,
+        special_assessment_annual_usd=0,
+        notes="Vallejo mainland property-tax default around 1.1%.",
+    ),
+    "mare_island_vallejo_ca": LocalRegulation(
+        property_tax_regime=TaxRegime.MARE_ISLAND_SPECIAL_ASSESSMENTS,
+        default_tax_regimes=(
+            TaxRegime.CALIFORNIA_PROP13,
+            TaxRegime.CALIFORNIA_TRANSFER_TAX,
+            TaxRegime.FEDERAL_MORTGAGE_INTEREST,
+            TaxRegime.FEDERAL_CAPITAL_GAINS,
+            TaxRegime.CALIFORNIA_INCOME_TAX,
+            TaxRegime.MARE_ISLAND_SPECIAL_ASSESSMENTS,
+        ),
+        property_tax_annual_pct=2.4,
+        local_transfer_tax_pct=0,
+        special_assessment_annual_usd=0,
+        notes="Mare Island default includes high local special assessments at roughly 2.4%.",
+    ),
+}
+
+
+def _run_with_resolved_regulation(scenario, bundle):
+    if scenario.location_id is not None and scenario.property_selection.local_regulation is None:
+        regulation = _TEST_LOCAL_REGULATION_BY_ID[scenario.location_id]
+        scenario = scenario_with_location_tax_defaults(scenario, regulation)
+    return run_scenario_vectorized(scenario, bundle)
 
 
 def _bundle(
@@ -221,7 +279,7 @@ def test_portfolio_only_baseline_uses_numpy_paths() -> None:
     scenario_set = ScenarioSet.model_validate(_scenario_set_body(_scenario_body("portfolio_only")))
     scenario = scenario_set.scenarios[0]
 
-    result = run_scenario_vectorized(scenario, _bundle(private_equity_path=(1.0, 1.5, 2.0, 2.5)))
+    result = _run_with_resolved_regulation(scenario, _bundle(private_equity_path=(1.0, 1.5, 2.0, 2.5)))
 
     _assert_liquid_net_worth_matches_cash_and_public_stock(result)
     assert result.cash_usd.shape == (2, 4)
@@ -242,7 +300,7 @@ def test_private_equity_position_units_only_derives_value_from_market_price() ->
     )
     scenario = scenario_set.scenarios[0]
 
-    result = run_scenario_vectorized(
+    result = _run_with_resolved_regulation(
         scenario, _bundle(private_equity_path=(1.0, 1.5, 2.0, 2.5), current_private_equity_price_usd=50.0)
     )
 
@@ -261,7 +319,7 @@ def test_private_equity_position_explicit_value_overrides_market_price() -> None
     )
     scenario = scenario_set.scenarios[0]
 
-    result = run_scenario_vectorized(
+    result = _run_with_resolved_regulation(
         scenario,
         _bundle(
             private_equity_path=(1.0, 1.0, 1.0, 1.0),
@@ -289,7 +347,7 @@ def test_report_metrics_are_explicit_typed_views() -> None:
 def test_monthly_column_specs_name_report_view_sources() -> None:
     specs_by_metric = {spec.metric: spec for spec in monthly_column_specs()}
     scenario_set = ScenarioSet.model_validate(_scenario_set_body(_scenario_body("monthly_sources")))
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
     expected_columns = {
         "scenario_id",
         "scenario_label",
@@ -450,11 +508,11 @@ def test_property_purchase_with_mortgage_tracks_debt_and_equity() -> None:
         )
     )
 
-    no_opportunity = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+    no_opportunity = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
     assert_allclose(no_opportunity.private_equity_sale_usd, 0)
     assert_allclose(no_opportunity.private_equity_sale_opportunity_value_usd, 0)
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=2))
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=2))
 
     assert_allclose(result.purchase_closing_cost_usd[:, 0], 25_000)
     assert_allclose(result.cash_usd[:, 0], 75_000)
@@ -486,7 +544,7 @@ def test_property_purchase_with_cash_financing_has_no_mortgage() -> None:
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
 
     assert_allclose(result.purchase_closing_cost_usd[:, 0], 18_750)
     assert_allclose(result.cash_usd[:, 0], 481_250)
@@ -514,7 +572,7 @@ def test_purchase_closing_cost_reduces_month_zero_cash() -> None:
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
 
     assert_allclose(result.purchase_closing_cost_usd[:, 0], 2_000)
     assert_allclose(result.purchase_closing_cost_usd[:, 1:], 0)
@@ -548,7 +606,7 @@ def test_terminal_property_sale_proceeds_pay_off_debt() -> None:
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(home_path=(1.0, 1.0, 1.1, 1.2)))
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle(home_path=(1.0, 1.0, 1.1, 1.2)))
 
     expected_gross = 120_000
     expected_sale_cost = 6_000
@@ -627,8 +685,8 @@ def test_location_local_regulation_drives_property_tax() -> None:
         )
     )
 
-    mainland = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
-    mare_island = run_scenario_vectorized(scenario_set.scenarios[1], _bundle())
+    mainland = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
+    mare_island = _run_with_resolved_regulation(scenario_set.scenarios[1], _bundle())
 
     assert_allclose(mainland.property_tax_usd[:, 1], 100_000 * 0.011 / 12)
     assert_allclose(mare_island.property_tax_usd[:, 1], 100_000 * 0.024 / 12)
@@ -662,7 +720,7 @@ def test_property_sale_stops_operating_cash_flows_after_sale_month() -> None:
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
 
     assert np.all(result.rental_income_usd[:, 1] > 0)
     assert np.all(result.property_carrying_cost_usd[:, 1] > 0)
@@ -697,7 +755,7 @@ def test_capital_gains_exclusion_offsets_property_sale_gain() -> None:
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(home_path=(1.0, 1.0, 1.5, 2.0)))
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle(home_path=(1.0, 1.0, 1.5, 2.0)))
 
     assert_allclose(result.realized_property_gain_usd[:, 3], 100_000)
     assert_allclose(result.depreciation_recapture_usd[:, 3], 0)
@@ -740,7 +798,7 @@ def test_rental_depreciation_recaptures_on_sale() -> None:
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
 
     expected_monthly_depreciation = 100_000 / (27.5 * 12)
     expected_cumulative_depreciation = expected_monthly_depreciation * 3
@@ -771,7 +829,7 @@ def test_no_property_scenario_ignores_real_estate_tax_accounting_parameters() ->
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(home_path=(1.0, 2.0, 3.0, 4.0)))
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle(home_path=(1.0, 2.0, 3.0, 4.0)))
 
     assert_allclose(result.purchase_closing_cost_usd, 0)
     assert_allclose(result.sale_closing_cost_usd, 0)
@@ -806,7 +864,7 @@ def test_checking_floor_policy_sells_public_stock_with_basis_placeholder() -> No
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
 
     assert_allclose(result.generic_sp500_sale_usd[:, 0], 20_000)
     assert_allclose(result.generic_sp500_sale_basis_usd[:, 0], 10_000)
@@ -885,7 +943,7 @@ def test_checking_floor_policy_does_not_sell_when_cash_is_above_floor() -> None:
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
 
     assert_allclose(result.generic_sp500_sale_usd, 0)
     assert_allclose(result.checking_floor_shortfall_usd, 0)
@@ -915,7 +973,7 @@ def test_checking_floor_policy_reports_shortfall_when_public_stock_is_exhausted(
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
 
     assert_allclose(result.generic_sp500_sale_usd[:, 0], 5_000)
     assert_allclose(result.generic_sp500_sale_basis_usd[:, 0], 1_000)
@@ -953,7 +1011,9 @@ def test_cross_type_policy_order_changes_cash_management_result() -> None:
                 )
             )
         )
-        return run_scenario_vectorized(scenario_set.scenarios[0], _bundle(horizon_months=1, sp500_path=(1.0, 1.0)))
+        return _run_with_resolved_regulation(
+            scenario_set.scenarios[0], _bundle(horizon_months=1, sp500_path=(1.0, 1.0))
+        )
 
     spend_then_sale = run_ordered([spend_policy, checking_floor_policy])
     sale_then_spend = run_ordered([checking_floor_policy, spend_policy])
@@ -1016,7 +1076,7 @@ def test_partner_equity_accrues_from_principal_then_freezes_and_participates_in_
         )
     )
 
-    result = run_scenario_vectorized(
+    result = _run_with_resolved_regulation(
         scenario_set.scenarios[0],
         _bundle(
             horizon_months=4,
@@ -1097,7 +1157,7 @@ def test_multiple_partner_equity_policies_execute_in_actor_program_order() -> No
         )
     )
 
-    result = run_scenario_vectorized(
+    result = _run_with_resolved_regulation(
         scenario_set.scenarios[0],
         _bundle(
             rollout_count=1,
@@ -1184,7 +1244,7 @@ def test_partner_equity_arrays_match_rows_from_same_application() -> None:
         )
     )
 
-    result = run_scenario_vectorized(
+    result = _run_with_resolved_regulation(
         scenario_set.scenarios[0],
         _bundle(
             rollout_count=1,
@@ -1200,14 +1260,14 @@ def test_partner_equity_arrays_match_rows_from_same_application() -> None:
     account_by_id = {account.chart_account_id: account for account in result.chart_accounts}
 
     def snapshot_matrix(role: ChartAccountRole) -> np.ndarray:
-        matrix = np.zeros_like(result.partner_equity_ledger_usd)
+        matrix: np.ndarray = np.zeros_like(result.partner_equity_ledger_usd)
         for snapshot in result.balance_snapshots:
             if account_by_id[snapshot.chart_account_id].role is role:
                 matrix[snapshot.rollout_index, snapshot.month_index] += snapshot.balance_usd
         return matrix
 
     def posting_matrix(role: ChartAccountRole, side: PostingSide) -> np.ndarray:
-        matrix = np.zeros_like(result.partner_principal_credit_usd)
+        matrix: np.ndarray = np.zeros_like(result.partner_principal_credit_usd)
         for posting in result.postings:
             account = account_by_id[posting.chart_account_id]
             if account.role is role and posting.side is side:
@@ -1269,7 +1329,7 @@ def test_rental_income_and_carrying_costs_feed_cash_flow() -> None:
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(rent_path=(1.0, 1.0, 1.1, 1.2)))
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle(rent_path=(1.0, 1.0, 1.1, 1.2)))
 
     expected_month_1_income = 2_000 * 0.9
     expected_month_1_management = expected_month_1_income * 0.05
@@ -1322,7 +1382,7 @@ def test_purchase_event_parameters_drive_property_costs() -> None:
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
 
     assert_allclose(result.property_tax_usd[:, 1], 118)
     assert_allclose(result.hoa_usd[:, 1], 250)
@@ -1335,7 +1395,7 @@ def test_private_equity_stock_is_not_sold_without_policy() -> None:
     scenario_set = ScenarioSet.model_validate(_scenario_set_body(_scenario_body("no_sale_policy")))
 
     market_bundle = _bundle(private_equity_sale_opportunity_month=1)
-    result = run_scenario_vectorized(scenario_set.scenarios[0], market_bundle)
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], market_bundle)
 
     _assert_liquid_net_worth_matches_cash_and_public_stock(result)
     assert_allclose(result.private_equity_sale_usd, 0)
@@ -1347,7 +1407,7 @@ def test_private_equity_sale_opportunity_without_policy_does_not_sell() -> None:
     scenario_set = ScenarioSet.model_validate(_scenario_set_body(_scenario_body("sale_opportunity_without_policy")))
 
     market_bundle = _bundle(private_equity_sale_opportunity_month=1)
-    result = run_scenario_vectorized(scenario_set.scenarios[0], market_bundle)
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], market_bundle)
 
     _assert_liquid_net_worth_matches_cash_and_public_stock(result)
     assert_allclose(result.private_equity_sale_usd, 0)
@@ -1377,7 +1437,7 @@ def test_private_equity_fixed_sale_into_cash_requires_opportunity_and_policy() -
         )
     )
 
-    no_opportunity = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+    no_opportunity = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
     assert_allclose(no_opportunity.private_equity_sale_usd, 0)
     assert no_opportunity.effects == ()
     no_opportunity_decisions = [
@@ -1396,7 +1456,7 @@ def test_private_equity_fixed_sale_into_cash_requires_opportunity_and_policy() -
     } == {f"{no_opportunity_path_set_id}:path:0:month:1:private_equity_holding:private_equity:no_sale_opportunity"}
 
     market_bundle = _bundle(private_equity_sale_opportunity_month=1)
-    result = run_scenario_vectorized(scenario_set.scenarios[0], market_bundle)
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], market_bundle)
 
     _assert_liquid_net_worth_matches_cash_and_public_stock(result)
     assert_allclose(result.private_equity_sale_usd[:, 0], 0)
@@ -1472,7 +1532,7 @@ def test_private_equity_sale_policy_reinvests_sale_proceeds_in_sp500() -> None:
     )
 
     market_bundle = _bundle(private_equity_sale_opportunity_month=1)
-    result = run_scenario_vectorized(scenario_set.scenarios[0], market_bundle)
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], market_bundle)
 
     _assert_liquid_net_worth_matches_cash_and_public_stock(result)
     assert_allclose(result.private_equity_sale_usd[:, 1], 20_000)
@@ -1504,12 +1564,12 @@ def test_private_equity_liquid_net_worth_floor_policy_sells_to_sp500_on_opportun
         )
     )
 
-    no_opportunity = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+    no_opportunity = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
     _assert_liquid_net_worth_matches_cash_and_public_stock(no_opportunity)
     assert_allclose(no_opportunity.private_equity_sale_usd, 0)
 
     market_bundle = _bundle(private_equity_sale_opportunity_month=1)
-    result = run_scenario_vectorized(scenario_set.scenarios[0], market_bundle)
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], market_bundle)
     _assert_liquid_net_worth_matches_cash_and_public_stock(result)
 
     assert_allclose(result.private_equity_sale_usd[:, 1], 20_000)
@@ -1569,7 +1629,7 @@ def test_private_equity_liquid_net_worth_floor_records_policy_not_triggered() ->
     )
 
     market_bundle = _bundle(private_equity_sale_opportunity_month=1)
-    result = run_scenario_vectorized(scenario_set.scenarios[0], market_bundle)
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], market_bundle)
 
     assert_allclose(result.private_equity_sale_usd, 0)
     decisions = [
@@ -1623,7 +1683,7 @@ def test_required_tax_obligation_can_be_funded_from_cash_account() -> None:
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
 
     assert len(result.obligations) == 2
     assert {obligation.status for obligation in result.obligations} == {ObligationStatus.PAID}
@@ -1663,7 +1723,7 @@ def test_required_tax_obligation_fails_when_policy_does_not_fund_it() -> None:
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
 
     assert len(result.obligations) == 2
     assert {obligation.obligation_type for obligation in result.obligations} == {ObligationType.ANNUAL_TAX_PAYMENT}
@@ -1726,7 +1786,7 @@ def test_required_tax_obligation_can_be_rescued_by_existing_public_stock_sale_po
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
 
     assert len(result.obligations) == 2
     assert {obligation.status for obligation in result.obligations} == {ObligationStatus.PAID}
@@ -1807,7 +1867,7 @@ def test_required_tax_obligation_funding_uses_policy_program_order() -> None:
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
 
     assert {obligation.status for obligation in result.obligations} == {ObligationStatus.PAID}
     sale_decisions = [
@@ -1865,7 +1925,7 @@ def test_checking_floor_policy_falls_through_to_crypto_after_sp500_exhausted() -
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle())
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle())
 
     # SP500 floor sale runs first in month 0; SP500 only has $5k, so the rest is
     # funded by crypto.
@@ -1925,7 +1985,7 @@ def test_required_tax_obligation_funded_by_crypto_after_sp500_exhausted() -> Non
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
 
     assert {obligation.status for obligation in result.obligations} == {ObligationStatus.PAID}
     assert result.failure_events == ()
@@ -1976,7 +2036,7 @@ def test_checking_floor_policy_with_crypto_only_preference_sells_crypto() -> Non
         )
     )
 
-    result = run_scenario_vectorized(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
+    result = _run_with_resolved_regulation(scenario_set.scenarios[0], _bundle(private_equity_sale_opportunity_month=1))
 
     assert {obligation.status for obligation in result.obligations} == {ObligationStatus.PAID}
     crypto_sale_decisions = [

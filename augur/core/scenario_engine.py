@@ -27,7 +27,7 @@ from augur.core.accounting import (
     validate_accounting_trace,
 )
 from augur.core.annual_tax import AnnualSaleTaxAllocation, annual_sale_tax_allocation
-from augur.core.local_regulation import LocalRegulation, local_regulation_for_location
+from augur.core.local_regulation import LocalRegulation
 from augur.core.market_bundle import MarketBundle
 from augur.core.policy_runtime import (
     ActorPolicyStep,
@@ -6159,12 +6159,13 @@ def _special_assessment_obligation_due_usd(
 
 
 def _required_local_regulation(scenario: Scenario) -> LocalRegulation:
-    if scenario.property_selection.local_regulation is not None:
-        return scenario.property_selection.local_regulation
-    location_id = scenario.location_id
-    if location_id is None:
-        raise ValueError(f"scenario {scenario.scenario_id!r} has real estate but no location_id")
-    return local_regulation_for_location(location_id)
+    if scenario.property_selection.local_regulation is None:
+        raise ValueError(
+            f"scenario {scenario.scenario_id!r} has real estate but no resolved local_regulation; "
+            "the caller must populate `property_selection.local_regulation` (e.g. via the "
+            "ScenarioEngine or `scenario_with_location_tax_defaults`) before the engine runs"
+        )
+    return scenario.property_selection.local_regulation
 
 
 def _pct_fraction(value: float, name: str) -> float:

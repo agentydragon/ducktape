@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 from pydantic import Field, computed_field
 
-from augur.core.local_regulation import LocationId
 from augur.core.provenance import (
     CalibrationArtifact,
     CalibrationRun,
@@ -270,15 +269,10 @@ class MarketBundle:
             self.mortgage_30y_rate_pct, name="mortgage_30y_rate_pct", expected_shape=expected_shape
         )
 
-        self._require_nonempty(self.home_value_multipliers_by_location, "home_value_multipliers_by_location")
-        self._require_nonempty(self.rent_multipliers_by_location, "rent_multipliers_by_location")
-        self._require_nonempty(
-            self.private_equity_value_multipliers_by_issuer, "private_equity_value_multipliers_by_issuer"
-        )
-        self._require_nonempty(
-            self.private_equity_sale_opportunity_mask_by_issuer, "private_equity_sale_opportunity_mask_by_issuer"
-        )
-        self._require_nonempty(self.crypto_value_multipliers_by_symbol, "crypto_value_multipliers_by_symbol")
+        # Per-asset dicts are required to match `RequiredMarketKeys` declared by the
+        # scenario set — including the legitimate "no scenarios use this asset class"
+        # case, where the dict is empty. Mismatch is caught at lookup time via
+        # `MissingMarketFactorError`, so no _require_nonempty baseline here.
 
         for name, values in self.home_value_multipliers_by_location.items():
             self._validate_multiplier(
@@ -309,13 +303,11 @@ class MarketBundle:
     def horizon_months(self) -> int:
         return self.metadata.horizon_months
 
-    def home_value_multipliers(self, location_id: LocationId | str) -> np.ndarray:
-        return self._keyed_path(
-            self.home_value_multipliers_by_location, _normalize_key(location_id), factor_name="home_value"
-        )
+    def home_value_multipliers(self, location_id: str) -> np.ndarray:
+        return self._keyed_path(self.home_value_multipliers_by_location, location_id, factor_name="home_value")
 
-    def rent_multipliers(self, location_id: LocationId | str) -> np.ndarray:
-        return self._keyed_path(self.rent_multipliers_by_location, _normalize_key(location_id), factor_name="rent")
+    def rent_multipliers(self, location_id: str) -> np.ndarray:
+        return self._keyed_path(self.rent_multipliers_by_location, location_id, factor_name="rent")
 
     def private_equity_value_multiplier(self, issuer_id: str) -> np.ndarray:
         return self._keyed_path(
@@ -331,11 +323,6 @@ class MarketBundle:
 
     def crypto_value_multiplier(self, symbol: str) -> np.ndarray:
         return self._keyed_path(self.crypto_value_multipliers_by_symbol, symbol, factor_name="crypto_value")
-
-    @staticmethod
-    def _require_nonempty(paths: dict[str, np.ndarray], name: str) -> None:
-        if not paths:
-            raise ValueError(f"{name} must contain at least one entry; scenarios declare required keys explicitly")
 
     @staticmethod
     def _keyed_path(paths: dict[str, np.ndarray], key: str, *, factor_name: str) -> np.ndarray:
@@ -373,10 +360,6 @@ class MarketBundle:
             raise ValueError(f"{name} must be shaped {expected_shape}, got {values.shape}")
         if values.dtype != np.bool_:
             raise TypeError(f"{name} must have bool dtype")
-
-
-def _normalize_key(key: LocationId | str) -> str:
-    return key.value if isinstance(key, LocationId) else str(key)
 
 
 class MarketBundleProvider(Protocol):
@@ -432,17 +415,15 @@ class FlatMarketBundleProvider:
         for month in self.private_equity_sale_opportunity_months:
             if 0 <= month <= horizon_months:
                 private_equity_events[:, month] = True
-        # The flat provider treats every location/issuer/symbol identically, so any
-        # required key gets the same flat array. Every known LocationId is also
-        # populated so legacy callers that hand-pick a location continue to work.
-        location_keys = required_keys.location_ids | {location_id.value for location_id in LocationId}
-        home_by_location = dict.fromkeys(location_keys, flat)
-        rent_by_location = dict.fromkeys(location_keys, flat)
-        pe_issuer_keys = required_keys.pe_issuer_ids or frozenset({"placeholder"})
-        crypto_symbol_keys = required_keys.crypto_symbols or frozenset({"placeholder"})
-        pe_value_by_issuer = dict.fromkeys(pe_issuer_keys, flat)
-        pe_mask_by_issuer = dict.fromkeys(pe_issuer_keys, private_equity_events)
-        crypto_by_symbol = dict.fromkeys(crypto_symbol_keys, flat)
+        # The flat provider treats every location/issuer/symbol identically, so each
+        # required key gets the same flat array. No fallback for empty required-keys —
+        # if the scenario set declares no PE/crypto/location keys, the corresponding
+        # dict is legitimately empty.
+        home_by_location = dict.fromkeys(required_keys.location_ids, flat)
+        rent_by_location = dict.fromkeys(required_keys.location_ids, flat)
+        pe_value_by_issuer = dict.fromkeys(required_keys.pe_issuer_ids, flat)
+        pe_mask_by_issuer = dict.fromkeys(required_keys.pe_issuer_ids, private_equity_events)
+        crypto_by_symbol = dict.fromkeys(required_keys.crypto_symbols, flat)
         return MarketBundle(
             month_index=np.arange(horizon_months + 1, dtype="int64"),
             inflation_multipliers=flat,
@@ -470,11 +451,38 @@ class FlatMarketBundleProvider:
         )
 
 
+class SimpleLocationModelParams(ApiModel):
+    """Per-location knobs for the simple lognormal market model.
+
+    A single annual percentage-point spread (positive or negative) is applied
+    on top of the model's base home / rent multiplier paths via
+    `(1 + adj/100)^(months/12)`. Zero (the default for either field) means the
+    location rides the unadjusted base path."""
+
+    home_value_annual_adjustment_pct: float = 0.0
+    rent_annual_adjustment_pct: float = 0.0
+
+
+class SimpleMarketModelConfig(ApiModel):
+    """Deployment-supplied parameters for `SimpleMarketBundleProvider`.
+
+    Keys in `location_params` must be a subset of the location ids declared on
+    the scenario set's `required_keys.location_ids`; an adjustment for a
+    location that isn't required is an error (the provider would be inventing
+    paths the scenario didn't ask for). Required locations missing from the
+    dict run with the default `SimpleLocationModelParams()` — i.e., the
+    model's "no per-location opinion" stance.
+    """
+
+    location_params: dict[str, SimpleLocationModelParams] = Field(default_factory=dict)
+
+
 @dataclass(frozen=True)
 class SimpleMarketBundleProvider:
     """Small stochastic provider used until richer market models plug in."""
 
     current_private_equity_price_usd: float = 0.0
+    model_config: SimpleMarketModelConfig = field(default_factory=SimpleMarketModelConfig)
 
     def sample_market_bundle(
         self,
@@ -529,20 +537,21 @@ class SimpleMarketBundleProvider:
         if horizon_months >= 12:
             event_draws = rng.random((rollout_count, horizon_months))
             private_equity_events[:, 1:] = event_draws < (1 / 72)
+        _reject_model_config_overshoot(self.model_config, required_locations=required_keys.location_ids)
         home_by_location = _location_factor_map(
             home_base,
-            annual_adjustment_pct={
-                LocationId.SAN_FRANCISCO_CA: 0.3,
-                LocationId.VALLEJO_CA: -0.2,
-                LocationId.MARE_ISLAND_VALLEJO_CA: -0.1,
+            required_locations=required_keys.location_ids,
+            annual_adjustment_pct_by_location={
+                location_id: params.home_value_annual_adjustment_pct
+                for location_id, params in self.model_config.location_params.items()
             },
         )
         rent_by_location = _location_factor_map(
             rent_base,
-            annual_adjustment_pct={
-                LocationId.SAN_FRANCISCO_CA: 0.4,
-                LocationId.VALLEJO_CA: -0.1,
-                LocationId.MARE_ISLAND_VALLEJO_CA: 0.0,
+            required_locations=required_keys.location_ids,
+            annual_adjustment_pct_by_location={
+                location_id: params.rent_annual_adjustment_pct
+                for location_id, params in self.model_config.location_params.items()
             },
         )
         metadata = MarketBundleMetadata(
@@ -561,20 +570,15 @@ class SimpleMarketBundleProvider:
         )
         # Placeholder crypto value path: constant 1.0. Until a fitted crypto model
         # plugs in, the simulator carries a flat array so reporting and the
-        # crypto sale-funding policy remain valid.
+        # crypto sale-funding policy remain valid for any required symbol.
         crypto_value = np.ones((rollout_count, horizon_months + 1), dtype="float64")
-        # `home_by_location` / `rent_by_location` come from `_location_factor_map`
-        # which now pins every required location_id to a sampled path. Required PE
-        # issuers and crypto symbols share one placeholder path each (per the
-        # `private-equity-paths-all-share-placeholder` /
-        # `crypto-paths-all-share-placeholder` limitations).
-        _require_keys_present(home_by_location, required_keys.location_ids, "home_value_multipliers_by_location")
-        _require_keys_present(rent_by_location, required_keys.location_ids, "rent_multipliers_by_location")
-        pe_issuer_keys = required_keys.pe_issuer_ids or frozenset({"placeholder"})
-        crypto_symbol_keys = required_keys.crypto_symbols or frozenset({"placeholder"})
-        pe_value_by_issuer = dict.fromkeys(pe_issuer_keys, private_equity_value)
-        pe_mask_by_issuer = dict.fromkeys(pe_issuer_keys, private_equity_events)
-        crypto_by_symbol = dict.fromkeys(crypto_symbol_keys, crypto_value)
+        # Required PE issuers and crypto symbols share one placeholder path each
+        # under the simple model (per the `private-equity-paths-all-share-placeholder`
+        # and `crypto-paths-all-share-placeholder` limitations). If no scenario in
+        # the set has those positions, the corresponding dict is legitimately empty.
+        pe_value_by_issuer = dict.fromkeys(required_keys.pe_issuer_ids, private_equity_value)
+        pe_mask_by_issuer = dict.fromkeys(required_keys.pe_issuer_ids, private_equity_events)
+        crypto_by_symbol = dict.fromkeys(required_keys.crypto_symbols, crypto_value)
         return MarketBundle(
             month_index=month_index,
             inflation_multipliers=inflation,
@@ -616,20 +620,40 @@ def _mortgage_rate_paths(
     return paths
 
 
-def _location_factor_map(base: np.ndarray, *, annual_adjustment_pct: dict[str, float]) -> dict[str, np.ndarray]:
+def _location_factor_map(
+    base: np.ndarray, *, required_locations: frozenset[str], annual_adjustment_pct_by_location: dict[str, float]
+) -> dict[str, np.ndarray]:
+    """Produce a path dict keyed by `required_locations`. Each location's path is
+    `base * (1 + adj/100)^(months/12)`, where `adj` comes from
+    `annual_adjustment_pct_by_location[location]` (default 0.0 = unadjusted base).
+
+    `annual_adjustment_pct_by_location` keys must be a subset of `required_locations`
+    — see `_reject_model_config_overshoot` for the enforcement at the provider boundary.
+    """
     horizon_months = base.shape[1] - 1
     months = np.arange(horizon_months + 1, dtype="float64")
     paths: dict[str, np.ndarray] = {}
-    for location, adjustment_pct in annual_adjustment_pct.items():
-        adjustment = (1 + adjustment_pct / 100) ** (months / 12)
-        paths[_normalize_key(location)] = base * adjustment[None, :]
+    for location in required_locations:
+        adjustment_pct = annual_adjustment_pct_by_location.get(location, 0.0)
+        if adjustment_pct == 0.0:
+            paths[location] = base
+        else:
+            adjustment = (1 + adjustment_pct / 100) ** (months / 12)
+            paths[location] = base * adjustment[None, :]
     return paths
 
 
-def _require_keys_present(paths: dict[str, np.ndarray], required: frozenset[str], name: str) -> None:
-    missing = sorted(required - paths.keys())
-    if missing:
+def _reject_model_config_overshoot(
+    model_config: SimpleMarketModelConfig, *, required_locations: frozenset[str]
+) -> None:
+    """A model config that names location ids the scenario set didn't ask for is a
+    bug in the deployment's model config (typo, stale id). Fail loud — silently
+    populating extra bundle keys would mask the mistake.
+    """
+    overshoot = sorted(set(model_config.location_params) - required_locations)
+    if overshoot:
         raise ValueError(
-            f"{name} missing required keys {missing}; available={sorted(paths)}. "
-            "Scenarios declare required keys up front; the provider must populate them."
+            f"SimpleMarketModelConfig.location_params has entries for locations "
+            f"not declared by the scenario set: {overshoot}. Either remove them from the "
+            "model config or add scenarios that reference those locations."
         )

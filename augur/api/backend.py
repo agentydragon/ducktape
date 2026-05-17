@@ -9,7 +9,7 @@ from typing import Any
 
 from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import AugurConfig
-from augur.core.api import simulate_set
+from augur.core.api import ScenarioEngine
 from augur.core.bootstrap import Property
 from augur.core.market_bundle import HorizonBoundMarketBundleProvider, MarketBundleProvider
 from augur.core.scenario_engine import MONTHS_PER_YEAR
@@ -34,6 +34,10 @@ class AugurBackend:
             property_.id: property_ for property_ in self._bootstrap.properties
         }
         self._location_by_id = {location.id: location for location in self._bootstrap.locations}
+        self._engine = ScenarioEngine(
+            market_provider=self.market_bundle_provider,
+            local_regulation_by_id={location.id: location.local_regulation for location in self._bootstrap.locations},
+        )
         self.default_knobs = self._default_knobs_for_provider(self._bootstrap.default_knobs)
         self.default_property_id = self._bootstrap.default_property_id
         self.default_actor_policy = self._bootstrap.default_actor_policy
@@ -52,7 +56,7 @@ class AugurBackend:
         scenario_set = ScenarioSet.model_validate(body)
         self._validate_scenario_set_property_references(scenario_set)
         scenario_set = self._scenario_set_with_catalog_defaults(scenario_set)
-        return simulate_set(scenario_set, market_provider=self.market_bundle_provider).to_response()
+        return self._engine.simulate_set(scenario_set).to_response()
 
     def _default_knobs_for_provider(self, knobs: ScenarioKnobs) -> ScenarioKnobs:
         if not isinstance(self.market_bundle_provider, HorizonBoundMarketBundleProvider):

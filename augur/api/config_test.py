@@ -21,7 +21,7 @@ from augur.api.config import (
     dump_augur_config_yaml,
     load_augur_config,
 )
-from augur.core.local_regulation import LocalRegulation, LocationId
+from augur.core.local_regulation import LocalRegulation
 from augur.core.scenario_set import ActorRole, LiquidityReserveRuleType, TaxRegime
 
 
@@ -129,7 +129,7 @@ def test_finance_snapshot_holdings_round_trip_through_json() -> None:
 
 
 def test_location_selection_accepts_location_strings() -> None:
-    config = _minimal_config(location_selection=(LocationId.SAN_FRANCISCO_CA, LocationId.VALLEJO_CA))
+    config = _minimal_config(location_selection=("san_francisco_ca", "vallejo_ca"))
 
     assert config.location_selection == ("san_francisco_ca", "vallejo_ca")
 
@@ -203,7 +203,7 @@ def test_unknown_field_is_rejected() -> None:
 
 
 def test_yaml_round_trip_through_dump_and_load(tmp_path) -> None:
-    config = _minimal_config(location_selection=(LocationId.SAN_FRANCISCO_CA,), starting_portfolio_usd=100.0)
+    config = _minimal_config(location_selection=("san_francisco_ca",), starting_portfolio_usd=100.0)
 
     path = tmp_path / "config.yaml"
     path.write_text(dump_augur_config_yaml(config), encoding="utf-8")
