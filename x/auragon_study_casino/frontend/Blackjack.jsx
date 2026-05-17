@@ -207,7 +207,7 @@ export function Blackjack({ offline, credits, blackjackDeal, blackjackHit, black
     : COLORS.cream;
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(260px, 340px)", gap: 24 }}>
+    <div className="game-grid" style={{ "--sidebar-min": "260px", "--sidebar-max": "340px" }}>
       <div className="panel deco-corners" style={{ padding: 28, minHeight: 420, position: "relative" }}>
         {winBurst && <WinBurst key={winBurst.key} amount={winBurst.amount} />}
         {/* Dealer */}

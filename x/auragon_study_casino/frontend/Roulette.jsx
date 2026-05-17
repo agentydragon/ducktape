@@ -89,7 +89,7 @@ export function Roulette({ offline, credits, spinRoulette }) {
   );
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(280px, 360px)", gap: 24 }}>
+    <div className="game-grid" style={{ "--sidebar-min": "280px", "--sidebar-max": "360px" }}>
       {/* Wheel */}
       <div className="panel deco-corners" style={{ padding: 32, textAlign: "center", position: "relative" }}>
         {winBurst && <WinBurst key={winBurst.key} amount={winBurst.amount} />}

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 
 import { SyncIcon } from "./SyncIcon.jsx";
 import { useCasino } from "./use_casino.js";
+import { useUrlState } from "./use_url_state.js";
 import { COLORS, SUBJECTS, fmtClock, fmtHoursMin, getElapsedSec } from "./shared.jsx";
 import { StudyView } from "./StudyView.jsx";
 import { PrizesView } from "./PrizesView.jsx";
@@ -11,8 +12,10 @@ import { Roulette } from "./Roulette.jsx";
 import { Blackjack } from "./Blackjack.jsx";
 import { Slots } from "./Slots.jsx";
 
+const VIEWS = ["study", "casino", "prizes", "stats", "admin"];
+
 export default function StudyCasino() {
-  const [view, setView] = useState("study");
+  const [view, setView] = useUrlState("view", VIEWS, "study");
   const casino = useCasino();
   const {
     offline,
@@ -214,6 +217,40 @@ export default function StudyCasino() {
         .deco-corners::before { top: -1px; left: -1px; border-right: none; border-bottom: none; }
         .deco-corners::after { bottom: -1px; right: -1px; border-left: none; border-top: none; }
 
+        /* Two-column game board: game area on the left, bet controls on the right.
+           Each game tunes the sidebar min/max via CSS custom properties so the
+           responsive breakpoint logic lives in one place. */
+        .game-grid {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) minmax(var(--sidebar-min, 260px), var(--sidebar-max, 340px));
+          gap: 24px;
+        }
+        /* Narrow viewports (phones in portrait): stack into one column so the
+           bet controls aren't squeezed under the wheel / cards / reels. */
+        @media (max-width: 720px) {
+          .game-grid {
+            grid-template-columns: 1fr;
+            gap: 16px;
+          }
+        }
+        @media (max-width: 420px) {
+          .game-grid { gap: 12px; }
+        }
+        /* Narrow viewports: shrink the casino main padding so games get
+           more usable width. The wheel (280px), slot reels (~300px), and
+           blackjack hands (multiple 62px cards) all need every pixel. */
+        .casino-main {
+          max-width: 1100px;
+          margin: 0 auto;
+          padding: 32px 24px 60px;
+        }
+        @media (max-width: 720px) {
+          .casino-main { padding: 20px 12px 40px; }
+        }
+        @media (max-width: 420px) {
+          .casino-main { padding: 16px 8px 32px; }
+        }
+
       `}</style>
 
       {/* Header */}
@@ -413,7 +450,7 @@ export default function StudyCasino() {
         </div>
       )}
 
-      <main style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 24px 60px" }}>
+      <main className="casino-main">
         {view === "study" && (
           <StudyView
             offline={offline}
@@ -482,6 +519,8 @@ export default function StudyCasino() {
   );
 }
 
+const GAMES = ["roulette", "blackjack", "slots"];
+
 function CasinoView({
   offline,
   credits,
@@ -493,7 +532,7 @@ function CasinoView({
   blackjackStand,
   blackjackDouble,
 }) {
-  const [game, setGame] = useState("roulette");
+  const [game, setGame] = useUrlState("game", GAMES, "roulette");
   const gameProps = {
     offline,
     credits,

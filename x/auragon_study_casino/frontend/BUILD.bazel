@@ -20,6 +20,16 @@ filegroup(
     visibility = ["//x/auragon_study_casino:__subpackages__"],
 )
 
+filegroup(
+    name = "visual_golden_snapshots",
+    testonly = True,
+    srcs = glob(
+        ["__screenshots__/*.png"],
+        allow_empty = True,
+    ),
+    visibility = ["//x/auragon_study_casino:__subpackages__"],
+)
+
 # ── Per-file source libraries ──────────────────────────────────────────────────
 
 js_library(
@@ -35,6 +45,12 @@ js_library(
         ":node_modules/react",
         ":sync",
     ],
+)
+
+js_library(
+    name = "use_url_state",
+    srcs = ["use_url_state.js"],
+    deps = [":node_modules/react"],
 )
 
 js_library(
@@ -131,6 +147,7 @@ js_library(
         ":study_view",
         ":sync_icon",
         ":use_casino",
+        ":use_url_state",
     ],
 )
 

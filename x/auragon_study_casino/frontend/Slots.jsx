@@ -108,7 +108,7 @@ export function Slots({ offline, credits, spinSlots }) {
   };
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(240px, 320px)", gap: 24 }}>
+    <div className="game-grid" style={{ "--sidebar-min": "240px", "--sidebar-max": "320px" }}>
       <div className="panel deco-corners" style={{ padding: 32, textAlign: "center", position: "relative" }}>
         {winBurst && <WinBurst key={winBurst.key} amount={winBurst.amount} />}
         <div
