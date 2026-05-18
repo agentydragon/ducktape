@@ -393,6 +393,7 @@ rust_library(
         "lowering/chunk_renames.rs",
         "lowering/mod.rs",
         "lowering/rewrite_runtime.rs",
+        "lowering/runtime_imports.rs",
         "lowering/visitors.rs",
     ],
     crate_root = "lowering/mod.rs",
