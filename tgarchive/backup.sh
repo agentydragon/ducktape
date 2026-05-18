@@ -13,7 +13,7 @@ print(d['api_id'], d['api_hash'])
 "
 )
 
-exec uv run "$SCRIPT_DIR/tg_backup.py" \
+exec "$SCRIPT_DIR/tg_backup.py" \
   --api-id "$api_id" \
   --api-hash "$api_hash" \
   "$@"

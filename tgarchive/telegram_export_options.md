@@ -2,6 +2,10 @@
 
 When you want to export only specific groups/channels, not your entire Telegram history.
 
+## API Credentials (prerequisite for all options below except built-in takeout)
+
+Credentials and provisioning instructions live in <../secrets/shared/telegram-api.yaml> (SOPS-encrypted). Run `sops -d secrets/shared/telegram-api.yaml` to read them, or `sops edit ...` to rotate.
+
 ## Recommended: tg-archive
 
 Exports specific Telegram groups to static websites (like mailing list archives).
@@ -11,22 +15,16 @@ Exports specific Telegram groups to static websites (like mailing list archives)
 
 ### Setup (One-time)
 
-1. **Get Telegram API credentials:**
-   - Visit <https://my.telegram.org/apps>
-   - Sign in with your phone number
-   - Create a new app (any name, any description)
-   - Save `api_id` and `api_hash` - these are NOT Telegram Desktop's credentials
-
-2. **Create a new site:**
+1. **Create a new site:**
 
    ```bash
    tg-archive --new --path=mysite
    cd mysite
    # Edit config.yaml to specify your group username or ID
-   # Add api_id and api_hash from step 1
+   # Add api_id and api_hash from the prerequisite section above
    ```
 
-3. **Authenticate your account:**
+2. **Authenticate your account:**
 
    ```bash
    tg-archive --sync
@@ -39,7 +37,7 @@ Exports specific Telegram groups to static websites (like mailing list archives)
 
    Creates `session.session` - keep this private, it's your logged-in session
 
-4. **Build and export:**
+3. **Build and export:**
    ```bash
    tg-archive --sync    # Syncs new messages (resume anytime)
    tg-archive --build   # Generates static site in ./site
@@ -59,8 +57,6 @@ Exports specific Telegram groups to static websites (like mailing list archives)
 
 Export any chat to JSON without building a website.
 
-**Note:** Requires Telegram API credentials (<https://my.telegram.org/apps>), NOT Telegram Desktop's credentials.
-
 ```bash
 # Install
 uv pip install telethon-cli
@@ -79,14 +75,11 @@ telethon-cli messages get-messages --session myname --entity chat_username --out
 
 Build your own export logic for full control.
 
-**Note:** Requires same API credentials as tg-archive (<https://my.telegram.org/apps>), NOT Telegram Desktop's credentials.
-
 ```python
 from telethon.sync import TelegramClient
 import asyncio
 
 async def export_chat():
-    # api_id, api_hash from my.telegram.org/apps
     client = TelegramClient('session', api_id, api_hash)
     await client.start(phone)  # Prompts for phone + verification code
 

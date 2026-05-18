@@ -30,7 +30,7 @@ def _json_default(obj: object) -> object:
 
 async def _download_one(client: TelegramClient, msg, media_dir: Path, sem: asyncio.Semaphore) -> str | None:
     async with sem:
-        path = await client.download_media(msg, file=str(media_dir) + "/")
+        path = await client.download_media(msg, file=media_dir)
         return Path(path).name if path else None
 
 
@@ -44,12 +44,12 @@ async def _export(client: TelegramClient, takeout: TelegramClient, entity: str, 
         json.dumps(entity_info.to_dict(), default=_json_default, indent=2, ensure_ascii=False)
     )
 
-    sample = await takeout.get_messages(entity, limit=1)
+    total = (await takeout.get_messages(entity, limit=0)).total
     sem = asyncio.Semaphore(_MEDIA_PARALLELISM)
     media_tasks: list[tuple[dict, asyncio.Task[str | None]]] = []
     messages: list[dict] = []
 
-    async for msg in atqdm(takeout.iter_messages(entity, wait_time=0), total=sample.total, desc=entity, unit="msg"):
+    async for msg in atqdm(takeout.iter_messages(entity, wait_time=0), total=total, desc=entity, unit="msg"):
         msg_data = msg.to_dict()
         if msg.media:
             task = asyncio.create_task(_download_one(client, msg, media_dir, sem))
