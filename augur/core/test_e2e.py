@@ -1963,8 +1963,11 @@ def test_simulate_set_response_serializes_sale_effects_with_tax_detail() -> None
     )
     effects = {effect["effect_type"]: effect for effect in result["effects"]}
     assert set(effects) == {"sell_sp500", "sell_private_equity", "settle_property_sale"}
-    account_by_id = {account["chart_account_id"]: account for account in result["chart_accounts"]}
-    posting_roles = {account_by_id[posting["chart_account_id"]]["role"] for posting in result["postings"]}
+    # `chart_accounts` / `postings` / `journal_entries` / `balance_snapshots`
+    # are no longer shipped on the wire (frontend doesn't read them); read
+    # them off the in-memory ScenarioRun instead.
+    scenario_run = run.scenario_runs[0]
+    posting_roles = {posting.chart_account_id.split(":", 1)[0] for posting in scenario_run.postings()}
     assert {"public_security", "private_equity", "checking_cash", "tax_expense"} <= posting_roles
     assert {"sell_public_stock", "private_equity_sale"} <= {
         decision["decision_type"] for decision in result["policy_decisions"]
