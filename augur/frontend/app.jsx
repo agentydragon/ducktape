@@ -422,10 +422,19 @@ function rolloutStatuses(scenarioResult) {
 
 function rolloutStatusSummary(scenarioResult) {
   const statuses = rolloutStatuses(scenarioResult);
+  // "Cash negative" counts any rollout whose cash crossed zero at any month.
+  // The backend's per-rollout status is ACTIVE / CASH_NEGATIVE / FAILED; a
+  // FAILED rollout (obligation default) can also have gone cash-negative, and
+  // populates `first_negative_cash_month_index` independently. Filtering on
+  // status alone hid those, producing the "P50 cash is negative but 0/N cash
+  // negative" inconsistency.
+  const cashNegative = statuses.filter(
+    (status) => Number.isFinite(Number(status?.firstNegativeCashMonthIndex)) || Number(status?.minCashUsd) < 0
+  ).length;
   return {
     total: statuses.length,
     active: statuses.filter((status) => status?.status === ROLLOUT_STATUS_ACTIVE).length,
-    cashNegative: statuses.filter((status) => status?.status === ROLLOUT_STATUS_CASH_NEGATIVE).length,
+    cashNegative,
   };
 }
 
@@ -2125,8 +2134,6 @@ function DistributionResults({
   normalizedScenarioSetInput,
   propertiesById,
   selection,
-  selectedFanMetric,
-  onSelectedFanMetricChange,
 }) {
   const { scenarioResult } = selection;
   const distribution = distributionResultView(scenarioResult);
@@ -2137,12 +2144,6 @@ function DistributionResults({
         scenarioSetInput={normalizedScenarioSetInput}
         result={result}
         propertiesById={propertiesById}
-      />
-      <MultiScenarioFanChart
-        scenarioSetInput={normalizedScenarioSetInput}
-        result={result}
-        selectedMetric={selectedFanMetric}
-        onSelectedMetricChange={onSelectedFanMetricChange}
       />
       <ScenarioValueSummary distribution={distribution} />
       <PropertySaleTaxDistributionPanel distribution={distribution} />
@@ -2384,6 +2385,14 @@ function AugurAppShell() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <ResultViewTabs viewMode={viewMode} onViewModeChange={setViewMode} />
             </div>
+            {viewMode === "distribution" && (
+              <MultiScenarioFanChart
+                scenarioSetInput={normalizedScenarioSetInput}
+                result={result}
+                selectedMetric={selectedFanMetric}
+                onSelectedMetricChange={setSelectedFanMetric}
+              />
+            )}
             <PropertyLocationPanel selection={selectedContext} />
             <ScenarioFinancingTaxPanel selection={selectedContext} />
             <MarketMetadataPanel result={result} />
@@ -2412,8 +2421,6 @@ function AugurAppShell() {
                 normalizedScenarioSetInput={normalizedScenarioSetInput}
                 propertiesById={propertiesById}
                 selection={selectedContext}
-                selectedFanMetric={selectedFanMetric}
-                onSelectedFanMetricChange={setSelectedFanMetric}
               />
             )}
           </div>
