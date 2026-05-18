@@ -4,7 +4,7 @@ from aiquota.pace import binding_tint, compute_pace, tint_for
 # Nerd Font cod-sparkle (U+EC10), the de-facto "AI" glyph in dev tooling.
 # Prepended once to the whole segment; each provider then uses its vendor
 # initial: Anthropic / OpenAI / Z.AI.
-_AI_GLYPH = ""
+_AI_GLYPH = "\uec10"
 PROVIDER_PREFIX = {"claude": "A", "codex": "O", "zai": "Z"}
 
 TINT_FG = {

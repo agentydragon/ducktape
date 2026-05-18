@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 import pytest_bazel
 
 from aiquota.models import FetchError, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow, SuccessfulProviderFetch
-from aiquota.render.tmux import render, render_provider
+from aiquota.render.tmux import _AI_GLYPH, render, render_provider
 
 if __name__ == "__main__":
     pytest_bazel.main()
@@ -79,8 +79,8 @@ def test_render_multiple() -> None:
     ]
     result = render(providers)
     # Single sparkle prepended once to the whole segment, not per provider.
-    assert result.startswith(" ")
-    assert result.count("") == 1
+    assert result.startswith(f"{_AI_GLYPH} ")
+    assert result.count(_AI_GLYPH) == 1
     assert "A:" in result
     assert "O:" in result
     assert "50%" in result
