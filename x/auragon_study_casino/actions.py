@@ -9,9 +9,9 @@ other tabs of the same user know to refetch). Every action carries a
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from x.auragon_study_casino.events import Card, GameEventRead, LedgerEventRead, RouletteOutcome, SlotsOutcome
 
@@ -242,8 +242,65 @@ class PrizeRedeemRequest(ActionRequest):
     prize_id: str = Field(min_length=1, max_length=128)
 
 
+class ImportSession(BaseModel):
+    """A row inside `ImportData.sessions`.
+
+    `extra="allow"` and `validation_alias` accommodate legacy exports — older
+    frontend versions wrote `endedAt` (camelCase) and sometimes carried
+    extra fields like `subject_color` we don't want to reject. The
+    importer reads typed attributes and falls back to defaults for anything
+    absent.
+    """
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str | None = None
+    subject: str = "Imported"
+    seconds: int = 0
+    ended_at_ms: int = Field(default=0, validation_alias=AliasChoices("ended_at_ms", "endedAt"))
+
+
+class ImportPrize(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str | None = None
+    name: str = "Imported prize"
+    cost: int = 1
+
+
+class ImportPrizeLog(BaseModel):
+    """A row inside `ImportData.prize_log` — legacy `at` (camelCase) accepted."""
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str | None = None
+    name: str = "Imported prize"
+    cost: int = 0
+    at_ms: int = Field(default=0, validation_alias=AliasChoices("at_ms", "at"))
+
+
+class ImportData(BaseModel):
+    """Payload for `POST /actions/import`.
+
+    Mirrors what `useCasino.exportData()` writes to disk. Older exports
+    (`version` < 4) carried fewer fields; `extra="allow"` keeps unknowns
+    (`version`, `exportedAt`, `activeSession`) from triggering a validation
+    error on a legacy restore. `prizes=None` opts into the default catalog;
+    `prize_log` accepts both snake and camel keys for the same legacy
+    reasons as the per-row models.
+    """
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    credits: int = 0
+    tokens: int = 0
+    sessions: list[ImportSession] = Field(default_factory=list)
+    prizes: list[ImportPrize] | None = None
+    prize_log: list[ImportPrizeLog] | None = Field(default=None, validation_alias=AliasChoices("prize_log", "prizeLog"))
+
+
 class ImportRequest(ActionRequest):
-    data: dict[str, Any]
+    data: ImportData
 
 
 class ResetRequest(ActionRequest):

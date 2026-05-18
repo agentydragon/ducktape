@@ -25,9 +25,10 @@ from sqlalchemy import create_engine, delete, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from x.auragon_study_casino.actions import ActionResult
+from x.auragon_study_casino.actions import ActionResult, ImportData
 from x.auragon_study_casino.events import (
     BlackjackOutcome,
+    GameEventMutation,
     GameEventRead,
     GameOutcome,
     LedgerEventRead,
@@ -88,15 +89,16 @@ class ActionMutation:
     """Result returned by a server-action mutator before persistence.
 
     `result` is the typed payload that surfaces as `ActionResponse.result`
-    on the wire. `details` and `game_event` stay loosely typed (`dict`) —
-    they're persisted as JSON to `ledger_events.details_json` and
-    `game_events.outcome_json` respectively, and aren't part of the
-    frontend's read surface.
+    on the wire. `game_event` is the typed payload that gets persisted to
+    `game_events.outcome_json` and re-read as `GameEventRead` by the
+    casino-stats and audit-log endpoints. `details` stays loosely typed —
+    it's audit metadata persisted to `ledger_events.details_json` and not
+    part of the frontend's read surface.
     """
 
     result: ActionResult
     details: dict[str, Any] | None = None
-    game_event: dict[str, Any] | None = None
+    game_event: GameEventMutation | None = None
     rng_version: str | None = None
     rules_version: str = RULES_VERSION
 
@@ -317,7 +319,7 @@ class SqlStore:
 
     # ── Helpers used by import/reset mutators ───────────────────────────────
 
-    def replace_state_for_import(self, s: Session, username: str, data: dict[str, Any]) -> None:
+    def replace_state_for_import(self, s: Session, username: str, data: ImportData) -> None:
         """Wipe sessions/prizes/prize_log + reset balance for `username`, then
         populate from the import payload. Must be called from within a
         `run_server_action` mutator (the surrounding transaction guarantees
@@ -327,42 +329,35 @@ class SqlStore:
         s.execute(delete(PrizeRow).where(PrizeRow.user_id == username))
         s.execute(delete(PrizeLogRow).where(PrizeLogRow.user_id == username))
         balance = self._balance(s, username)
-        balance.credits = int(data.get("credits", 0))
-        balance.tokens = int(data.get("tokens", 0))
+        balance.credits = data.credits
+        balance.tokens = data.tokens
 
-        for session in data.get("sessions", []) or []:
-            session_id = str(session.get("id") or f"imported-{uuid.uuid4()}")
+        for session in data.sessions:
             s.add(
                 SessionRow(
-                    id=session_id,
+                    id=session.id or f"imported-{uuid.uuid4()}",
                     user_id=username,
-                    subject=str(session.get("subject") or "Imported"),
-                    seconds=int(session.get("seconds", 0)),
-                    ended_at_ms=int(session.get("endedAt") or session.get("ended_at_ms") or 0),
+                    subject=session.subject,
+                    seconds=session.seconds,
+                    ended_at_ms=session.ended_at_ms,
                 )
             )
 
-        prizes_data = data.get("prizes") or _DEFAULT_PRIZES_AS_DICTS
-        for prize in prizes_data:
-            prize_id = str(prize.get("id") or f"p-{uuid.uuid4()}")
-            s.add(
-                PrizeRow(
-                    id=prize_id,
-                    user_id=username,
-                    name=str(prize.get("name") or "Imported prize"),
-                    cost=int(prize.get("cost", 1)),
-                )
-            )
+        if data.prizes is None:
+            for prize_id, name, cost in _DEFAULT_PRIZES:
+                s.add(PrizeRow(id=prize_id, user_id=username, name=name, cost=cost))
+        else:
+            for prize in data.prizes:
+                s.add(PrizeRow(id=prize.id or f"p-{uuid.uuid4()}", user_id=username, name=prize.name, cost=prize.cost))
 
-        for entry in data.get("prizeLog") or data.get("prize_log") or []:
-            entry_id = str(entry.get("id") or f"imported-redemption-{uuid.uuid4()}")
+        for entry in data.prize_log or []:
             s.add(
                 PrizeLogRow(
-                    id=entry_id,
+                    id=entry.id or f"imported-redemption-{uuid.uuid4()}",
                     user_id=username,
-                    name=str(entry.get("name") or "Imported prize"),
-                    cost=int(entry.get("cost", 0)),
-                    at_ms=int(entry.get("at") or entry.get("at_ms") or 0),
+                    name=entry.name,
+                    cost=entry.cost,
+                    at_ms=entry.at_ms,
                 )
             )
 
@@ -433,7 +428,7 @@ class SqlStore:
         username: str,
         client_event_id: str,
         server_at_ms: int,
-        event: dict[str, Any],
+        event: GameEventMutation,
         credits_before: int,
         credits_after: int,
         tokens_before: int,
@@ -448,18 +443,18 @@ class SqlStore:
             client_event_id=client_event_id,
             server_at_ms=server_at_ms,
             occurred_at_ms=server_at_ms,
-            game=str(event["game"]),
+            game=event.game,
             event_type="settle",
             source="server_resolved",
-            wager_credits=int(event["wager_credits"]),
-            payout_tokens=int(event["payout_tokens"]),
+            wager_credits=event.wager_credits,
+            payout_tokens=event.payout_tokens,
             credits_before=credits_before,
             credits_after=credits_after,
             tokens_before=tokens_before,
             tokens_after=tokens_after,
             server_credits=server_credits,
             server_tokens=server_tokens,
-            outcome_json=self._json(event["outcome"]),
+            outcome_json=event.outcome.model_dump_json(),
             rules_version=rules_version,
             rng_version=rng_version,
         )
@@ -734,8 +729,3 @@ def _blackjack_stats(events: list[GameEventRead]) -> BlackjackStats:
         by_dealer_upcard=_blackjack_upcard_slices(events),
         by_doubled=_blackjack_doubled_slices(events),
     )
-
-
-_DEFAULT_PRIZES_AS_DICTS: list[dict[str, Any]] = [
-    {"id": prize_id, "name": name, "cost": cost} for prize_id, name, cost in _DEFAULT_PRIZES
-]

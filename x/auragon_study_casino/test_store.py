@@ -9,7 +9,7 @@ import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from x.auragon_study_casino.actions import ConvertResult, ImportResult, ResetResult
+from x.auragon_study_casino.actions import ConvertResult, ImportData, ImportPrize, ImportResult, ResetResult
 from x.auragon_study_casino.models import BalanceRow, GameEventRow, StateSnapshotRow
 from x.auragon_study_casino.state import BalanceRead
 from x.auragon_study_casino.store import ActionMutation, ActionRejectedError, ServerActionResult, SqlStore
@@ -134,13 +134,9 @@ def test_snapshot_reason_writes_state_snapshots_row(store: SqlStore) -> None:
         store.replace_state_for_import(
             s,
             _U,
-            {
-                "credits": 11,
-                "tokens": 22,
-                "sessions": [],
-                "prizes": [{"id": "p-only", "name": "Only", "cost": 5}],
-                "prize_log": [],
-            },
+            ImportData(
+                credits=11, tokens=22, sessions=[], prizes=[ImportPrize(id="p-only", name="Only", cost=5)], prize_log=[]
+            ),
         )
         return ActionMutation(result=ImportResult(imported=True))
 

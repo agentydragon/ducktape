@@ -18,7 +18,11 @@ fetch boundary in `sync.js`.
    new variant to `ActionResult` in `actions.py` if the result shape is
    genuinely new (extra="forbid" + a unique required-field set is what
    lets the Pydantic union discriminate at parse time).
-3. Update `sync.js` (or `use_casino.js`) to parse the response through the
+3. If the endpoint emits a `game_events` row, return an
+   `ActionMutation(game_event=GameEventMutation(...))` — the outcome
+   inside it must be one of `RouletteOutcome` / `SlotsOutcome` /
+   `BlackjackOutcome` (in `events.py`).
+4. Update `sync.js` (or `use_casino.js`) to parse the response through the
    corresponding `z<ResponseModel>` schema.
 
 `bbr build //x/auragon_study_casino/...` regenerates `schema.zod.mjs`

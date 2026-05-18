@@ -70,6 +70,20 @@ _OUTCOME_BY_GAME: dict[str, type[RouletteOutcome] | type[SlotsOutcome] | type[Bl
 }
 
 
+class GameEventMutation(BaseModel):
+    """Per-action fields a mutator emits when it wants to write a
+    `game_events` row. `run_server_action` adds the persistence-side fields
+    (id, occurred_at_ms, credits/tokens before/after, etc.) at commit time.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    game: Literal["roulette", "slots", "blackjack"]
+    wager_credits: int
+    payout_tokens: int
+    outcome: GameOutcome
+
+
 class GameEventRead(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

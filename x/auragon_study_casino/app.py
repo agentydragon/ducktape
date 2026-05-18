@@ -46,7 +46,7 @@ import time
 import uuid
 from collections import defaultdict
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -86,7 +86,14 @@ from x.auragon_study_casino.actions import (
 )
 from x.auragon_study_casino.auth import create_oidc_router, decode_session_token, make_current_user_dep
 from x.auragon_study_casino.config import Settings
-from x.auragon_study_casino.events import GameEventRead, LedgerEventRead
+from x.auragon_study_casino.events import (
+    BlackjackOutcome,
+    GameEventMutation,
+    GameEventRead,
+    LedgerEventRead,
+    RouletteOutcome,
+    SlotsOutcome,
+)
 from x.auragon_study_casino.games import (
     RNG_VERSION,
     SecretsRandom,
@@ -226,15 +233,16 @@ def _mutate_blackjack_step(s: Session, username: str, hand_id: str, move: str, r
             settlement=settlement,
         )
     )
-    game_event: dict[str, Any] | None = None
+    game_event: GameEventMutation | None = None
     if settlement is not None:
-        game_event = {
-            "game": "blackjack",
-            "wager_credits": current_wager,
-            "payout_tokens": settlement.payout_tokens,
-            "outcome": settlement.outcome
-            | {"initial_wager": row.wager_credits, "doubled": current_wager > row.wager_credits},
-        }
+        game_event = GameEventMutation(
+            game="blackjack",
+            wager_credits=current_wager,
+            payout_tokens=settlement.payout_tokens,
+            outcome=BlackjackOutcome(
+                **settlement.outcome, initial_wager=row.wager_credits, doubled=current_wager > row.wager_credits
+            ),
+        )
     return ActionMutation(
         result=result,
         details={"hand_id": hand_id, "move": move},
@@ -587,12 +595,12 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             return ActionMutation(
                 result=SlotsActionResult(**settlement.outcome, payout_tokens=settlement.payout_tokens),
                 details={"wager_credits": body.wager_credits},
-                game_event={
-                    "game": "slots",
-                    "wager_credits": body.wager_credits,
-                    "payout_tokens": settlement.payout_tokens,
-                    "outcome": settlement.outcome,
-                },
+                game_event=GameEventMutation(
+                    game="slots",
+                    wager_credits=body.wager_credits,
+                    payout_tokens=settlement.payout_tokens,
+                    outcome=SlotsOutcome(**settlement.outcome),
+                ),
                 rng_version=RNG_VERSION,
             )
 
@@ -616,12 +624,12 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             return ActionMutation(
                 result=RouletteActionResult(**settlement.outcome, payout_tokens=settlement.payout_tokens),
                 details={"wager_credits": body.wager_credits, "bet_type": body.bet_type, "bet_number": body.bet_number},
-                game_event={
-                    "game": "roulette",
-                    "wager_credits": body.wager_credits,
-                    "payout_tokens": settlement.payout_tokens,
-                    "outcome": settlement.outcome,
-                },
+                game_event=GameEventMutation(
+                    game="roulette",
+                    wager_credits=body.wager_credits,
+                    payout_tokens=settlement.payout_tokens,
+                    outcome=RouletteOutcome(**settlement.outcome),
+                ),
                 rng_version=RNG_VERSION,
             )
 
@@ -681,12 +689,12 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
                 )
             )
             game_event = (
-                {
-                    "game": "blackjack",
-                    "wager_credits": body.wager_credits,
-                    "payout_tokens": settlement.payout_tokens,
-                    "outcome": settlement.outcome | {"initial_wager": body.wager_credits, "doubled": False},
-                }
+                GameEventMutation(
+                    game="blackjack",
+                    wager_credits=body.wager_credits,
+                    payout_tokens=settlement.payout_tokens,
+                    outcome=BlackjackOutcome(**settlement.outcome, initial_wager=body.wager_credits, doubled=False),
+                )
                 if settlement
                 else None
             )
