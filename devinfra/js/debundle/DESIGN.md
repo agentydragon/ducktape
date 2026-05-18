@@ -479,29 +479,51 @@ but unrealizable at runtime due to one of these uncaught
 interprocedural patterns is currently caught by the validator's
 strict rule (see below).
 
-## Predicate asymmetry: strict validator, relaxed primitive
+## Lemma 2: entry-side import ordering
 
-The peelability proposer routes through the realizability primitive's
-relaxed clause-3 rule (`check_realizability` in
-`devinfra/js/debundle/realizability.rs`). The validator
-(`validate_schedule` in `devinfra/js/debundle/validation.rs`) uses a
-stricter rule: any SCC of the full quotient `I ∪ S` that contains a
-constraining cross-module edge is unrealizable.
+The realizability primitive's relaxed clause-3 rule
+(`check_realizability` accepts a spec iff the constraining-edge
+subgraph of `Q` has no multi-module SCC) admits mixed cycles in the
+imports graph `I` — cycles where every back-edge is `LazyUse`. For
+the ESM linker to actually evaluate these without TDZ, the entry
+module's `import` directives must be emitted in a specific source
+order so that depth-first link traversal lands on a Phase-2
+evaluation order matching the constraining-edge linearization.
 
-The two would coincide on a fully-Lemma-2-implementing materializer
-(see "The realizability theorem" below). Until the materializer
-steers entry-side ESM import order to land on a topological
-linearization of `I ∪ S`, mixed cycles that the relaxed rule
-admits — and that at-init call promotion does not catch via the
-interprocedural promotion above — can still TDZ at runtime. The
-strict validator stays the safety floor; the relaxed primitive is
-advisory for the proposer.
+The materializer computes `Schedule::source_import_position` to drive
+this. The algorithm:
 
-The at-init call promotion narrows the gap by catching the canonical
-shape (`console.log(readB())`) the original PR #1625 RED test pinned.
-Bringing the validator onto the relaxed rule is gated on the
-materializer learning Lemma 2 (open follow-up — see
-`plans/realizability-primitive-unification.md`).
+1. Compute SCCs of the full quotient `I ∪ S` via Tarjan.
+2. Each SCC is assigned a dependency rank = the minimum
+   `linker_position` of its members. `linker_position` itself comes
+   from a toposort of the **constraining-edge subgraph** (which is
+   acyclic per clause 3, even when `I ∪ S` is cyclic).
+3. Sort all modules by `(SCC dep rank ascending, intra-SCC
+linker_position DESCENDING)`.
+
+For acyclic shapes every SCC is a singleton, so the within-SCC
+reverse is a no-op and the order matches `linker_order`
+(dependency-first source). For cyclic-I shapes the within-SCC
+reverse is load-bearing: ESM Phase-2 evaluates by recursing into
+imports before running the module's own init, so DFS into the
+FIRST imported SCC member traverses the cycle and finalizes its
+constraining dependency LAST in post-order. Reversing within the
+SCC means the dependent is imported first; DFS unwinds through the
+dependency; post-order evaluates dependency first.
+
+For the canonical
+[mod_a (lazy → mod_b) + mod_b (eager → mod_a)] case the algorithm
+produces entry imports `[mod_b, mod_a]` so the linker DFS visits
+mod_b → mod_a → mod_b (cycle no-op) and evaluates mod_a first, then
+mod_b. mod_b's at-init read of A succeeds.
+
+Because Lemma 2 is implemented, the validator
+(`validate_schedule` in `devinfra/js/debundle/validation.rs`) and
+the proposer (`evaluate_peel_candidate` in
+`devinfra/js/debundle/peelability.rs`) share the realizability
+primitive's verdict — a `peelable_now` from the proposer is a peel
+the gate will accept and the bundle will execute correctly at
+runtime.
 
 ## The realizability theorem
 

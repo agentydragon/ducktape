@@ -354,8 +354,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
-        let graph = build_module_quotient(&owner_graph, &partition);
-        let report = validate_schedule(&graph, &render);
+        let report = validate_schedule(&owner_graph, &partition, &render);
         assert_eq!(report.cycles.len(), 1);
         assert_eq!(report.cycles[0].modules.len(), 2);
     }
@@ -371,8 +370,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
-        let graph = build_module_quotient(&owner_graph, &partition);
-        let report = validate_schedule(&graph, &render);
+        let report = validate_schedule(&owner_graph, &partition, &render);
         assert!(
             report.cycles.is_empty(),
             "expected no cycles, got {:?}",
@@ -380,17 +378,20 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         );
     }
 
-    /// Pin the cut behavior for the canonical mixed cycle: 2-module
-    /// SCC with one lazy forward-edge and one at-init back-edge.
-    /// The cut should contain exactly the at-init back-edge — lazy
-    /// edges aren't realizability-constraining and removing one
-    /// can't fix the cycle.
+    /// A mixed cycle (lazy forward-edge, at-init back-edge) where
+    /// the lazy direction is NOT invoked at-init is realizable per
+    /// DESIGN.md "Realizability primitive" clause 3 — the
+    /// constraining-edge subgraph (drops LazyUse) has no
+    /// multi-module SCC. The materializer's Lemma 2 steering
+    /// (Schedule::source_import_position with SCC-aware reverse)
+    /// gives entry an import order such that the ESM linker
+    /// resolves the cycle without TDZ.
     #[test]
-    fn cut_excludes_lazy_edges_in_mixed_cycle() {
-        // mod_0 owns A and readB; readB body returns B (lazy read).
-        // mod_1 owns B; B = A + 1 (at-init read of A).
-        // R-edge: mod_1 → mod_0 (kind = at-init, binding = A).
-        // L-edge: mod_0 → mod_1 (kind = lazy, binding = B).
+    fn mixed_cycle_without_at_init_call_is_realizable() {
+        // mod_0 owns A and readB; readB body returns B (lazy read,
+        // never invoked at-init). mod_1 owns B; B = A + 1
+        // (at-init read of A). Constraining subgraph: only
+        // mod_1 → mod_0 — acyclic. Relaxed clause-3 accepts.
         let module = parse("const A = 1; function readB() { return B; } const B = A + 1;");
         let facts = analyze_facts(&module);
         let mut binding_assignment = HashMap::new();
@@ -400,36 +401,12 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
-        let graph = build_module_quotient(&owner_graph, &partition);
-        let report = validate_schedule(&graph, &render);
-        assert_eq!(
-            report.cycles.len(),
-            1,
-            "expected one cycle, got {:?}",
+        let report = validate_schedule(&owner_graph, &partition, &render);
+        assert!(
+            report.cycles.is_empty(),
+            "mixed cycle with no at-init call should be realizable; got {:?}",
             report.cycles,
         );
-        let cycle = &report.cycles[0];
-        assert!(
-            cycle.evidence.iter().any(|e| e.kind == DepKind::LazyUse),
-            "evidence should include the lazy edge, got {:?}",
-            cycle.evidence,
-        );
-        assert!(
-            !cycle.cut.iter().any(|e| e.kind == DepKind::LazyUse),
-            "cut must not include lazy reasons, got {:?}",
-            cycle.cut,
-        );
-        assert_eq!(
-            cycle.cut.len(),
-            1,
-            "min cut for a single mixed cycle is one edge, got {:?}",
-            cycle.cut,
-        );
-        let entry = &cycle.cut[0];
-        assert_eq!(entry.from, "mod_1");
-        assert_eq!(entry.to, "mod_0");
-        assert_eq!(entry.binding.as_deref(), Some("A"));
-        assert_eq!(entry.kind, DepKind::EagerUse);
     }
 
     /// Verify that at-init call promotion materializes a promoted
@@ -494,8 +471,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
-        let graph = build_module_quotient(&owner_graph, &partition);
-        let report = validate_schedule(&graph, &render);
+        let report = validate_schedule(&owner_graph, &partition, &render);
         assert_eq!(
             report.cycles.len(),
             1,
@@ -529,8 +505,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
-        let graph = build_module_quotient(&owner_graph, &partition);
-        let report = validate_schedule(&graph, &render);
+        let report = validate_schedule(&owner_graph, &partition, &render);
         assert_eq!(report.cycles.len(), 1);
         let cycle = &report.cycles[0];
         assert!(
@@ -564,8 +539,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
-        let graph = build_module_quotient(&owner_graph, &partition);
-        let report = validate_schedule(&graph, &render);
+        let report = validate_schedule(&owner_graph, &partition, &render);
         assert!(
             report.cycles.is_empty(),
             "lazy-only cycle is realizable; the gate must accept and emit no cycle (got {:?})",

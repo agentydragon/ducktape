@@ -1455,13 +1455,16 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
             import_decl_for_plan(entry_file, &plan.target_file, &resolved),
         ));
     }
-    // Sort the (plan-order-disambiguated) imports by linker_order
-    // so the first import in the entry source corresponds to the
-    // earliest-in-L provider. Stable sort preserves plan-order for
-    // ties (e.g. when two providers have no dep-graph relation).
+    // Sort entry imports by Schedule::source_import_position, which
+    // implements Lemma 2 (DESIGN.md "The realizability theorem"):
+    // for acyclic imports graphs the order matches linker_order
+    // (dependency-first source), but for cyclic-I shapes accepted
+    // by the relaxed clause-3 rule the SCC members are reverse-
+    // sorted so DFS unwinds the dependency first in post-order.
+    // Stable sort preserves plan-order for ties.
     entry_imports.sort_by_key(|(idx, _)| {
         schedule
-            .linker_position(ModuleId(LogicalModuleIndex(*idx)))
+            .source_import_position(ModuleId(LogicalModuleIndex(*idx)))
             .unwrap_or(usize::MAX)
     });
     let entry_imports: Vec<ModuleItem> = entry_imports.into_iter().map(|(_, it)| it).collect();

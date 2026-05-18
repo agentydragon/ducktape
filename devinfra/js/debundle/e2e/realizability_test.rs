@@ -114,36 +114,31 @@ export { A, B, C, D };
 // --- I cycles via lazy back-edges ----------------------------------------
 
 #[test]
-fn rejects_cycle_through_lazy_back_edge() {
-    // mod_b reads A from mod_a at-init (B's initializer);
-    // mod_a's `readB` body reads B from mod_b lazily. `R` is
-    // acyclic by itself, but the SCC `{mod_a, mod_b}` in `I ∪ S`
-    // contains the at-init `mod_b → mod_a` edge — that single
-    // `R` cross-module edge inside the SCC is enough for the
-    // realizability gate to bail. (Without the bail the linker
-    // would TDZ on B's initializer.)
-    //
-    // Per DESIGN.md "At-init call promotion", the proposer (via
-    // the realizability primitive's relaxed clause-3 rule) would
-    // accept this if the materializer steered the ESM linker's
-    // import order to make mod_a evaluate first. The materializer
-    // does not currently implement that steering (Lemma 2), so
-    // the validator stays on the strict rule and rejects.
-    expect_rejection_containing_all(
-        FixtureOpts::new(
-            r#"const A = "a-value";
+fn mixed_cycle_with_lazy_back_edge_is_realizable() {
+    // mod_a imports B from mod_b (readB body's lazy read); mod_b
+    // imports A from mod_a (B's eager initializer). The imports
+    // graph `I` has a 2-cycle {mod_a, mod_b}, but the
+    // constraining-edge subgraph (drops LazyUse) is acyclic — only
+    // mod_b → mod_a constrains init order. The relaxed clause-3
+    // rule (DESIGN.md "Realizability primitive") accepts: per
+    // Lemma 2, the materializer's `source_import_position` puts
+    // mod_b (the cycle dependent) FIRST in entry's source, so the
+    // ESM linker's DFS unwinds the cycle through mod_a (the
+    // dependency) and post-DFS evaluation lands mod_a first. B's
+    // at-init read of A sees A defined.
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const A = "a-value";
 function readB() { return B; }
 const B = A + "-postfix";
 console.log(readB());
 export { A, B, readB };
 "#,
-            vec![
-                logical_module("mod_a", &[Member::new("A"), Member::new("readB")]),
-                logical_module("mod_b", &[Member::new("B")]),
-            ],
-        ),
-        &["cycle", "mod_a", "mod_b"],
-    );
+        vec![
+            logical_module("mod_a", &[Member::new("A"), Member::new("readB")]),
+            logical_module("mod_b", &[Member::new("B")]),
+        ],
+    ));
+    assert_entry_output(&fixture, "a-value-postfix\n");
 }
 
 #[test]
@@ -488,16 +483,20 @@ export { a, b, existing };
 
 #[test]
 fn owner_graph_report_is_written_before_rejection() {
+    // S-only cycle: three side-effecting writes interleaved across
+    // mod_a (ordinal 0, 2) and mod_b (ordinal 1). The constraining-
+    // edge subgraph has a bi-directional sequenced cycle that no
+    // entry-import order can resolve.
     let rejected = run_rejection_fixture(FixtureOpts::new(
-        r#"const A = "a-value";
-function readB() { return B; }
-const B = A + "-postfix";
-console.log(readB());
-export { A, B, readB };
+        r#"const a1 = (globalThis.tag = "a1", 1);
+const b1 = (globalThis.tag = "b1", 2);
+const a2 = (globalThis.tag = "a2", 3);
+console.log(a1, a2, b1, globalThis.tag);
+export { a1, a2, b1 };
 "#,
         vec![
-            logical_module("mod_a", &[Member::new("A"), Member::new("readB")]),
-            logical_module("mod_b", &[Member::new("B")]),
+            logical_module("mod_a", &[Member::new("a1"), Member::new("a2")]),
+            logical_module("mod_b", &[Member::new("b1")]),
         ],
     ));
     assert!(

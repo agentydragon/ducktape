@@ -7,7 +7,12 @@ use petgraph::visit::EdgeRef;
 use serde::Serialize;
 
 use crate::factor_assembly::AtomicUnitConflict;
-use crate::{BindingName, DepKind, EdgeMetadata, ModuleId, ModuleQuotient, StatementOrdinal};
+use crate::graph::build_module_quotient;
+use crate::partition::Partition;
+use crate::realizability::check_realizability;
+use crate::{
+    BindingName, DepKind, EdgeMetadata, ModuleId, ModuleQuotient, OwnerGraph, StatementOrdinal,
+};
 
 /// Result of validating a module dep graph.
 #[derive(Debug, Clone, Serialize)]
@@ -154,9 +159,19 @@ fn cut_pairs_count(cut: &[CycleEdge]) -> usize {
 /// asymmetry persists until either Lemma 2 lands in the materializer
 /// or the proposer is also tightened.
 pub fn validate_schedule(
-    graph: &ModuleQuotient,
+    owner_graph: &OwnerGraph,
+    partition: &Partition,
     module_name: &dyn Fn(ModuleId) -> String,
 ) -> ScheduleReport {
+    let verdict = check_realizability(owner_graph, partition);
+    if verdict.unrealizable_sccs.is_empty() {
+        return ScheduleReport {
+            cycles: Vec::new(),
+            atomic_unit_conflicts: Vec::new(),
+            linker_order: Vec::new(),
+        };
+    }
+    let graph = &build_module_quotient(owner_graph, partition);
     let sccs = tarjan_scc(&graph.graph);
     let mut cycles = Vec::new();
     for scc in sccs {
