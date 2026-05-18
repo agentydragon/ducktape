@@ -61,6 +61,24 @@ async fn decide(sock: &Path, req: &ShimExecRequest, original_argv: Vec<String>) 
     }
 }
 
+/// `decide` under a wall-clock watchdog. If the daemon accepted the connect
+/// but doesn't reply within `timeout`, force a Passthrough so the user's
+/// command isn't stalled by a hung-after-handshake daemon.
+async fn decide_with_watchdog(
+    sock: &Path,
+    req: &ShimExecRequest,
+    original_argv: Vec<String>,
+    timeout: Duration,
+) -> ShimDecision {
+    match tokio::time::timeout(timeout, decide(sock, req, original_argv.clone())).await {
+        Ok(d) => d,
+        Err(_) => ShimDecision::Passthrough {
+            argv: original_argv,
+            reason: format!("watchdog timeout ({}s)", timeout.as_secs()),
+        },
+    }
+}
+
 pub async fn run_shim(name: String, forwarded: Vec<String>) -> ! {
     let session_id = std::env::var(SHIM_SESSION_ID_ENV).unwrap_or_else(|_| {
         eprintln!("claude-hook shim: {SHIM_SESSION_ID_ENV} not set in env — shim wrapper broken?");
@@ -84,23 +102,7 @@ pub async fn run_shim(name: String, forwarded: Vec<String>) -> ! {
     };
 
     let sock_path = crate::daemon_sock_path(&session_id);
-    let original_argv = argv.clone();
-
-    let decision_fut = decide(&sock_path, &report, argv);
-
-    let decision = match tokio::time::timeout(SHIM_BODY_TIMEOUT, decision_fut).await {
-        Ok(d) => d,
-        Err(_) => {
-            eprintln!(
-                "[{name}-shim] watchdog: shim body exceeded {}s — passing through",
-                SHIM_BODY_TIMEOUT.as_secs()
-            );
-            ShimDecision::Passthrough {
-                argv: original_argv,
-                reason: format!("watchdog timeout ({}s)", SHIM_BODY_TIMEOUT.as_secs()),
-            }
-        }
-    };
+    let decision = decide_with_watchdog(&sock_path, &report, argv, SHIM_BODY_TIMEOUT).await;
 
     let approved_argv = match decision {
         ShimDecision::Block(message) => {
@@ -172,6 +174,23 @@ mod tests {
         })
     }
 
+    /// Spawn a fake daemon that accepts the `/shim-exec` request but never
+    /// replies (the handler awaits a future that never completes). Lets us
+    /// exercise the watchdog path, which requires the connect+handshake to
+    /// succeed before the timer fires.
+    async fn spawn_hanging_daemon(sock: PathBuf) -> tokio::task::JoinHandle<()> {
+        let app = axum::Router::new().route(
+            "/shim-exec",
+            post(|| async { std::future::pending::<Json<ShimResponse>>().await }),
+        );
+        let listener = UnixListener::bind(&sock).unwrap();
+        tokio::spawn(async move {
+            if let Err(e) = axum::serve(listener, app).await {
+                eprintln!("hanging daemon serve error: {e}");
+            }
+        })
+    }
+
     fn git_status_request() -> ShimExecRequest {
         make_request("git", &["git", "status"], "/usr/bin")
     }
@@ -232,5 +251,39 @@ mod tests {
             }
             other => panic!("expected Passthrough, got {other:?}"),
         }
+    }
+
+    /// Daemon accepts the connection but never replies. The watchdog must
+    /// fire and force a Passthrough so the user's command doesn't stall
+    /// indefinitely behind a hung-after-handshake daemon.
+    #[tokio::test]
+    async fn decide_with_watchdog_passthrough_on_hung_daemon() {
+        let tmp = tempfile::tempdir().unwrap();
+        let sock = tmp.path().join("d.sock");
+        let _server = spawn_hanging_daemon(sock.clone()).await;
+        let req = git_status_request();
+        let original = req.argv.clone();
+        let start = std::time::Instant::now();
+        let decision =
+            decide_with_watchdog(&sock, &req, original.clone(), Duration::from_millis(100)).await;
+        let elapsed = start.elapsed();
+
+        match decision {
+            ShimDecision::Passthrough { argv, reason } => {
+                assert_eq!(argv, original);
+                assert!(
+                    reason.contains("watchdog timeout"),
+                    "expected watchdog reason, got: {reason}"
+                );
+            }
+            other => panic!("expected Passthrough, got {other:?}"),
+        }
+        // Watchdog should fire shortly after the deadline. Generous upper
+        // bound to avoid CI flakiness; the point is it's well under any
+        // realistic shim-blocking ceiling.
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "watchdog took too long: {elapsed:?}"
+        );
     }
 }
