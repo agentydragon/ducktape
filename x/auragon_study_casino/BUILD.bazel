@@ -47,6 +47,13 @@ py_library(
 )
 
 py_library(
+    name = "stats",
+    srcs = ["stats.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
     name = "store",
     srcs = ["store.py"],
     data = glob(["migrations/**"]),
@@ -55,6 +62,7 @@ py_library(
         ":events",
         ":games",
         ":models",
+        ":stats",
         "@pypi//alembic",
         "@pypi//psycopg",
         "@pypi//sqlalchemy",
@@ -84,6 +92,7 @@ py_library(
         ":events",
         ":games",
         ":models",
+        ":stats",
         ":store",
         "@pypi//fastapi",
         "@pypi//pydantic",
@@ -137,6 +146,7 @@ py_test(
     deps = [
         ":conftest",
         ":models",
+        ":stats",
         ":store",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

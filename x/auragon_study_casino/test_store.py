@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from x.auragon_study_casino.models import BalanceRow, StateSnapshotRow
+from x.auragon_study_casino.models import BalanceRow, GameEventRow, StateSnapshotRow
 from x.auragon_study_casino.store import ActionMutation, ActionRejectedError, ServerActionResult, SqlStore
 
 
@@ -207,6 +209,122 @@ def test_two_users_share_db_without_collision(store: SqlStore) -> None:
     # Each user's ledger lists only their own row.
     assert len(store.list_ledger_events("alice")) == 1
     assert len(store.list_ledger_events("bob")) == 1
+
+
+def test_casino_stats_aggregates_server_resolved_only(store: SqlStore) -> None:
+    """`casino_stats` buckets server_resolved game_events by wager type and
+    by UTC day, ignoring legacy `client_reported` rows entirely."""
+    # Three roulette spins on red (2 wins, 1 loss), one slots triple, one
+    # blackjack win, plus one stray `client_reported` row that must NOT count.
+    fixtures = [
+        (
+            "ce-1",
+            "roulette",
+            "server_resolved",
+            10,
+            20,
+            {"bet_type": "red", "won": True},
+            1_746_700_000_000,
+        ),  # 2026-05-08
+        (
+            "ce-2",
+            "roulette",
+            "server_resolved",
+            10,
+            20,
+            {"bet_type": "red", "won": True},
+            1_746_700_001_000,
+        ),  # 2026-05-08
+        (
+            "ce-3",
+            "roulette",
+            "server_resolved",
+            10,
+            0,
+            {"bet_type": "red", "won": False},
+            1_746_800_000_000,
+        ),  # 2026-05-09
+        ("ce-4", "slots", "server_resolved", 5, 100, {"payout_kind": "triple"}, 1_746_700_002_000),  # 2026-05-08
+        ("ce-5", "blackjack", "server_resolved", 4, 8, {"outcome": "win"}, 1_746_700_003_000),  # 2026-05-08
+        ("legacy", "roulette", "client_reported", 99, 0, {"bet_type": "black"}, 1_746_000_000_000),
+    ]
+    # Need a balance row first (for FK / seed convention).
+    store.state_dump(_U)
+    with store._Session() as s, s.begin():
+        for client_event_id, game, source, wager, payout, outcome, occurred_at_ms in fixtures:
+            s.add(
+                GameEventRow(
+                    user_id=_U,
+                    client_event_id=client_event_id,
+                    server_at_ms=occurred_at_ms,
+                    occurred_at_ms=occurred_at_ms,
+                    game=game,
+                    event_type="settle",
+                    source=source,
+                    wager_credits=wager,
+                    payout_tokens=payout,
+                    credits_before=0,
+                    credits_after=0,
+                    tokens_before=0,
+                    tokens_after=0,
+                    server_credits=0,
+                    server_tokens=0,
+                    outcome_json=json.dumps(outcome),
+                    rules_version="server-rules-v1",
+                    rng_version="server-secrets-v1",
+                )
+            )
+
+    result = store.casino_stats(_U)
+
+    assert result.username == _U
+    assert result.since_date == "2026-05-07"
+    assert result.event_count == 5  # legacy row excluded
+
+    games_by_name = {g.game: g for g in result.games}
+    roulette = games_by_name["roulette"]
+    red = next(b for b in roulette.buckets if b.key == "red")
+    assert red.count == 3
+    assert red.wins == 2
+    assert red.wagered == 30
+    assert red.returned == 40
+    assert red.net == 10
+    assert red.payout_rate == pytest.approx(2 / 3)
+    assert red.rtp == pytest.approx(40 / 30)
+    # Theoretical for red on a 37-pocket wheel: P(win) = 18/37, RTP = 36/37.
+    assert red.theoretical_payout_rate == pytest.approx(18 / 37)
+    assert red.theoretical_rtp == pytest.approx(36 / 37)
+
+    # Roulette total covers all 3 roulette spins (no black/etc.).
+    assert roulette.total.count == 3
+    # Timeline buckets across two UTC days.
+    assert [b.date for b in roulette.timeline] == ["2026-05-08", "2026-05-09"]
+    assert roulette.timeline[0].count == 2
+    assert roulette.timeline[1].count == 1
+
+    slots = games_by_name["slots"]
+    triple = next(b for b in slots.buckets if b.key == "triple")
+    assert triple.count == 1
+    assert triple.wins == 1
+    assert triple.rtp == pytest.approx(20.0)
+    assert triple.theoretical_rtp is not None
+
+    blackjack = games_by_name["blackjack"]
+    win = next(b for b in blackjack.buckets if b.key == "win")
+    assert win.count == 1
+    # No theoretical RTP for blackjack.
+    assert win.theoretical_rtp is None
+
+
+def test_casino_stats_empty_for_fresh_user(store: SqlStore) -> None:
+    result = store.casino_stats(_U)
+    assert result.event_count == 0
+    for game in result.games:
+        assert game.total.count == 0
+        assert game.timeline == []
+        for bucket in game.buckets:
+            assert bucket.count == 0
+            assert bucket.rtp is None
 
 
 def _balance_select(username: str):

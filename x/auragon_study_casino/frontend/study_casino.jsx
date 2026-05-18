@@ -8,11 +8,15 @@ import { StudyView } from "./StudyView.jsx";
 import { PrizesView } from "./PrizesView.jsx";
 import { StatsView } from "./StatsView.jsx";
 import { AdminView } from "./AdminView.jsx";
+import { CasinoStatsView } from "./CasinoStatsView.jsx";
 import { Roulette } from "./Roulette.jsx";
 import { Blackjack } from "./Blackjack.jsx";
 import { Slots } from "./Slots.jsx";
 
-const VIEWS = ["study", "casino", "prizes", "stats", "admin"];
+// `casino-stats` is deliberately omitted from the top-nav row below — it's
+// reachable by the small "View payout history" link inside CasinoView, or by
+// hitting `?view=casino-stats` directly.
+const VIEWS = ["study", "casino", "prizes", "stats", "admin", "casino-stats"];
 
 export default function StudyCasino() {
   const [view, setView] = useUrlState("view", VIEWS, "study");
@@ -478,8 +482,10 @@ export default function StudyCasino() {
             blackjackHit={blackjackHit}
             blackjackStand={blackjackStand}
             blackjackDouble={blackjackDouble}
+            openStats={() => setView("casino-stats")}
           />
         )}
+        {view === "casino-stats" && <CasinoStatsView isAdmin={isAdmin} />}
         {view === "prizes" && (
           <PrizesView
             offline={offline}
@@ -531,6 +537,7 @@ function CasinoView({
   blackjackHit,
   blackjackStand,
   blackjackDouble,
+  openStats,
 }) {
   const [game, setGame] = useUrlState("game", GAMES, "roulette");
   const gameProps = {
@@ -571,9 +578,28 @@ function CasinoView({
       </div>
 
       <div
-        style={{ fontSize: 12, color: COLORS.creamDim, textAlign: "center", marginBottom: 18, letterSpacing: "0.1em" }}
+        style={{ fontSize: 12, color: COLORS.creamDim, textAlign: "center", marginBottom: 6, letterSpacing: "0.1em" }}
       >
         Bets pay out in <strong style={{ color: COLORS.rose }}>tokens</strong> · winnings can only be spent on prizes
+      </div>
+      <div style={{ textAlign: "center", marginBottom: 18 }}>
+        <button
+          onClick={openStats}
+          style={{
+            background: "transparent",
+            border: "none",
+            padding: 0,
+            color: COLORS.creamDim,
+            fontSize: 11,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            cursor: "pointer",
+            textDecoration: "underline",
+            textUnderlineOffset: 3,
+          }}
+        >
+          View payout history →
+        </button>
       </div>
 
       {game === "roulette" && <Roulette {...gameProps} />}

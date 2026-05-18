@@ -33,6 +33,7 @@ Lives at <https://casino.allegedly.works>.
 | `frontend/Slots.jsx`                   | Slot machine game                                                                                  |
 | `frontend/PrizesView.jsx`              | Token conversion, prize catalog, redemption log                                                    |
 | `frontend/StatsView.jsx`               | Stats, session editor, data import/export                                                          |
+| `frontend/CasinoStatsView.jsx`         | Casino payout history — per-game, per-wager-type and per-day empirical vs theoretical              |
 | `frontend/sync.js`                     | REST client + state-changed WebSocket subscriber                                                   |
 | `frontend/use_casino.js`               | Single hook exposing reactive state + every mutation                                               |
 | `frontend/SyncIcon.jsx`                | Header status icon + rejection toast                                                               |
@@ -95,6 +96,8 @@ POST /actions/import / /actions/reset — bulk replace / wipe state (snapshot sa
 POST /casino/slots/spin              — server-resolved slots
 POST /casino/roulette/spin           — server-resolved roulette
 POST /casino/blackjack/{deal,hit,stand,double} — server-resolved blackjack
+GET  /casino/stats                   — aggregated wager/payout stats for caller
+GET  /admin/casino/stats?user=<u>    — admin-only: aggregated stats for any user
 GET  /game-events / /ledger-events   — read-only audit listings
 GET  /me / /healthz                  — auth introspection / liveness
 WS   /ws                             — broadcasts {"type":"state_changed"} to every

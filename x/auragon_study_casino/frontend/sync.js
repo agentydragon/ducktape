@@ -257,3 +257,16 @@ export async function fetchAdminUsers() {
 export async function fetchAdminUserState(username) {
   return adminFetch(`/admin/state?user=${encodeURIComponent(username)}`);
 }
+
+/** Fetch aggregated casino stats. With `targetUser`, hits the admin endpoint
+ *  for any user (caller must be admin); otherwise the caller's own stats. */
+export async function fetchCasinoStats(targetUser) {
+  const path = targetUser ? `/admin/casino/stats?user=${encodeURIComponent(targetUser)}` : "/casino/stats";
+  const resp = await fetch(path, { credentials: "same-origin" });
+  if (resp.status === 401) {
+    window.location.href = "/auth/login";
+    throw new Error("not authenticated");
+  }
+  if (!resp.ok) throw new Error(`${path} ${resp.status}`);
+  return resp.json();
+}

@@ -133,11 +133,22 @@ js_library(
 )
 
 js_library(
+    name = "casino_stats_view",
+    srcs = ["CasinoStatsView.jsx"],
+    deps = [
+        ":node_modules/react",
+        ":shared",
+        ":sync",
+    ],
+)
+
+js_library(
     name = "study_casino",
     srcs = ["study_casino.jsx"],
     deps = [
         ":admin_view",
         ":blackjack",
+        ":casino_stats_view",
         ":node_modules/react",
         ":prizes_view",
         ":roulette",

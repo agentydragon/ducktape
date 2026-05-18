@@ -17,6 +17,8 @@ Wire surface:
   POST /casino/blackjack/{deal,hit,stand,double} — server-resolved blackjack
   GET  /admin/users                     — admin-only: list known usernames
   GET  /admin/state                     — admin-only: state_dump for `?user=<u>`
+  GET  /casino/stats                    — aggregated wager/payout stats (caller)
+  GET  /admin/casino/stats              — admin-only: same, for `?user=<u>`
   GET  /game-events / /ledger-events    — read-only audit listings
   GET  /me / /healthz                   — auth introspection / liveness
   WS   /ws                              — broadcasts {"type":"state_changed"}
@@ -87,6 +89,7 @@ from x.auragon_study_casino.games import (
     spin_slots,
 )
 from x.auragon_study_casino.models import BalanceRow, BlackjackHandRow, PrizeLogRow, PrizeRow, SessionRow
+from x.auragon_study_casino.stats import CasinoStats
 from x.auragon_study_casino.store import ActionMutation, ActionRejectedError, SqlStore
 
 logger = logging.getLogger(__name__)
@@ -332,6 +335,19 @@ def create_app(settings: Settings) -> FastAPI:
         username: Annotated[str, Depends(current_user_dep)], limit: Annotated[int, Query(ge=1, le=500)] = 100
     ) -> list[GameEventRead]:
         return store.list_game_events(username, limit=limit)
+
+    @app.get("/casino/stats")
+    def get_casino_stats(username: Annotated[str, Depends(current_user_dep)]) -> CasinoStats:
+        return store.casino_stats(username)
+
+    @app.get("/admin/casino/stats")
+    def admin_casino_stats(
+        user: Annotated[str, Query(min_length=1, max_length=64)], username: Annotated[str, Depends(current_user_dep)]
+    ) -> CasinoStats:
+        require_admin(username)
+        if not store.user_exists(user):
+            raise HTTPException(status_code=404, detail=f"user {user!r} not found")
+        return store.casino_stats(user)
 
     @app.get("/ledger-events")
     def list_ledger_events(

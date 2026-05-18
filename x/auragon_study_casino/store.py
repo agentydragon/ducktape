@@ -9,6 +9,7 @@ rows inside one transaction and writes a `ledger_events` row keyed by
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import time
 import uuid
@@ -24,7 +25,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from x.auragon_study_casino.events import GameEventRead, LedgerEventRead, game_event_from_row, ledger_event_from_row
-from x.auragon_study_casino.games import RULES_VERSION
+from x.auragon_study_casino.games import RULES_VERSION, theoretical_bucket_rtp
 from x.auragon_study_casino.models import (
     BalanceRow,
     GameEventRow,
@@ -33,6 +34,13 @@ from x.auragon_study_casino.models import (
     PrizeRow,
     SessionRow,
     StateSnapshotRow,
+)
+from x.auragon_study_casino.stats import (
+    SERVER_RESOLVED_SINCE_DATE,
+    CasinoStats,
+    GameStats,
+    TimeBucketStats,
+    WagerBucketStats,
 )
 
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
@@ -152,6 +160,29 @@ class SqlStore:
                 ).all()
             )
             return [ledger_event_from_row(row) for row in rows]
+
+    def casino_stats(self, username: str) -> CasinoStats:
+        """Aggregate server-resolved `game_events` into per-game / per-wager-type
+        and per-UTC-day buckets. `client_reported` rows are excluded — their
+        `outcome` payload shape is not guaranteed (legacy SQLite era)."""
+        with self._Session() as s:
+            rows = list(
+                s.scalars(
+                    select(GameEventRow)
+                    .where(GameEventRow.user_id == username, GameEventRow.source == "server_resolved")
+                    .order_by(GameEventRow.id)
+                ).all()
+            )
+        events = [game_event_from_row(row) for row in rows]
+        theoretical = theoretical_bucket_rtp()
+        games = [
+            _aggregate_game(events, "roulette", _ROULETTE_BUCKETS, _roulette_bucket_key, theoretical),
+            _aggregate_game(events, "blackjack", _BLACKJACK_BUCKETS, _blackjack_bucket_key, theoretical),
+            _aggregate_game(events, "slots", _SLOTS_BUCKETS, _slots_bucket_key, theoretical),
+        ]
+        return CasinoStats(
+            username=username, since_date=SERVER_RESOLVED_SINCE_DATE, event_count=len(events), games=games
+        )
 
     # ── Write-side ──────────────────────────────────────────────────────────
 
@@ -417,6 +448,124 @@ class SqlStore:
     @staticmethod
     def _json(value: Any) -> str:
         return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+# Buckets are listed in display order, with stable keys matching the strings
+# emitted into GameEventRow.outcome_json by games.py.
+_ROULETTE_BUCKETS: list[tuple[str, str]] = [
+    ("red", "Red"),
+    ("black", "Black"),
+    ("odd", "Odd"),
+    ("even", "Even"),
+    ("low", "Low (1-18)"),
+    ("high", "High (19-36)"),
+    ("dozen1", "1st dozen"),
+    ("dozen2", "2nd dozen"),
+    ("dozen3", "3rd dozen"),
+    ("number", "Single number"),
+]
+_SLOTS_BUCKETS: list[tuple[str, str]] = [("triple", "Triple"), ("pair", "Pair"), ("none", "No match")]
+_BLACKJACK_BUCKETS: list[tuple[str, str]] = [
+    ("blackjack", "Blackjack"),
+    ("win", "Win"),
+    ("dealerBust", "Dealer bust"),
+    ("push", "Push"),
+    ("lose", "Lose"),
+    ("bust", "Bust"),
+]
+
+
+def _roulette_bucket_key(outcome: dict[str, Any]) -> str | None:
+    bet_type = outcome.get("bet_type")
+    return bet_type if isinstance(bet_type, str) else None
+
+
+def _slots_bucket_key(outcome: dict[str, Any]) -> str | None:
+    kind = outcome.get("payout_kind")
+    return kind if isinstance(kind, str) else None
+
+
+def _blackjack_bucket_key(outcome: dict[str, Any]) -> str | None:
+    kind = outcome.get("outcome")
+    return kind if isinstance(kind, str) else None
+
+
+def _aggregate_game(
+    events: list[GameEventRead],
+    game: str,
+    bucket_defs: list[tuple[str, str]],
+    bucket_key: Callable[[dict[str, Any]], str | None],
+    theoretical: dict[tuple[str, str], tuple[float, float]],
+) -> GameStats:
+    game_events = [e for e in events if e.game == game]
+    by_key: dict[str, list[GameEventRead]] = {key: [] for key, _ in bucket_defs}
+    for e in game_events:
+        key = bucket_key(e.outcome)
+        if key is None or key not in by_key:
+            continue
+        by_key[key].append(e)
+
+    buckets = [_bucket_stats(key, label, by_key[key], theoretical.get((game, key))) for key, label in bucket_defs]
+    total = _bucket_stats("__total__", "All wagers", game_events, None)
+
+    # Timeline never crosses below the data-collection cutoff — defensive
+    # against a backfilled `server_resolved` row whose `occurred_at_ms`
+    # somehow predates 2026-05-07.
+    by_day: dict[str, list[GameEventRead]] = {}
+    for e in game_events:
+        day = _dt.datetime.fromtimestamp(e.occurred_at_ms / 1000.0, tz=_dt.UTC).date().isoformat()
+        if day < SERVER_RESOLVED_SINCE_DATE:
+            continue
+        by_day.setdefault(day, []).append(e)
+    timeline = [_time_bucket_stats(day, by_day[day]) for day in sorted(by_day)]
+
+    return GameStats(game=game, total=total, buckets=buckets, timeline=timeline)
+
+
+def _bucket_stats(
+    key: str, label: str, events: list[GameEventRead], theoretical: tuple[float, float] | None
+) -> WagerBucketStats:
+    count = len(events)
+    wins = sum(1 for e in events if e.payout_tokens > 0)
+    wagered = sum(e.wager_credits for e in events)
+    returned = sum(e.payout_tokens for e in events)
+    net = returned - wagered
+    payout_rate = (wins / count) if count > 0 else None
+    rtp = (returned / wagered) if wagered > 0 else None
+    ev = (net / wagered) if wagered > 0 else None
+    theor_p, theor_rtp = theoretical if theoretical is not None else (None, None)
+    theor_ev = (theor_rtp - 1.0) if theor_rtp is not None else None
+    return WagerBucketStats(
+        key=key,
+        label=label,
+        count=count,
+        wins=wins,
+        wagered=wagered,
+        returned=returned,
+        net=net,
+        payout_rate=payout_rate,
+        rtp=rtp,
+        ev_per_credit=ev,
+        theoretical_payout_rate=theor_p,
+        theoretical_rtp=theor_rtp,
+        theoretical_ev_per_credit=theor_ev,
+    )
+
+
+def _time_bucket_stats(date: str, events: list[GameEventRead]) -> TimeBucketStats:
+    count = len(events)
+    wins = sum(1 for e in events if e.payout_tokens > 0)
+    wagered = sum(e.wager_credits for e in events)
+    returned = sum(e.payout_tokens for e in events)
+    return TimeBucketStats(
+        date=date,
+        count=count,
+        wins=wins,
+        wagered=wagered,
+        returned=returned,
+        net=returned - wagered,
+        rtp=(returned / wagered) if wagered > 0 else None,
+    )
 
 
 _DEFAULT_PRIZES_AS_DICTS: list[dict[str, Any]] = [

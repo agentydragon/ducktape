@@ -258,6 +258,62 @@ def _weighted_pick(items: list[dict], rng: RandomSource) -> dict:
     return items[-1]
 
 
+def theoretical_bucket_rtp() -> dict[tuple[str, str], tuple[float, float]]:
+    """Closed-form (win_probability, rtp) per (game, bucket_key).
+
+    Derived from the same constants the live RNG uses (`WHEEL`, `RED`,
+    `SLOT_SYMBOLS` weights and the slot triple/pair payout structure), so
+    the casino stats page can show theoretical-vs-empirical side by side.
+    Blackjack is omitted — no clean closed form, only the simulator knows.
+    """
+    out: dict[tuple[str, str], tuple[float, float]] = {}
+
+    # Roulette: bet against the 37-pocket wheel.
+    n_pockets = len(WHEEL)
+    for bet_type in ("red", "black", "odd", "even", "low", "high", "dozen1", "dozen2", "dozen3", "number"):
+        wins = sum(1 for num in WHEEL if _roulette_win(num, bet_type, num if bet_type == "number" else None)[0])
+        # All winning multipliers are constant per bet_type — pull mult from any winning pocket.
+        mult = next(
+            (
+                _roulette_win(num, bet_type, num if bet_type == "number" else None)[1]
+                for num in WHEEL
+                if _roulette_win(num, bet_type, num if bet_type == "number" else None)[0]
+            ),
+            0,
+        )
+        p_win = wins / n_pockets
+        rtp = p_win * mult
+        out[("roulette", bet_type)] = (p_win, rtp)
+
+    # Slots: enumerate the joint distribution of three independent weighted picks.
+    total_weight = sum(int(sym["weight"]) for sym in SLOT_SYMBOLS)
+    p_triple = 0.0
+    rtp_triple = 0.0
+    p_pair = 0.0
+    rtp_pair = 0.0
+    for i, sym in enumerate(SLOT_SYMBOLS):
+        p_i = int(sym["weight"]) / total_weight
+        # P(triple of this symbol) = p_i^3, payout = wager * symbol.payout, so RTP contribution = p_i^3 * payout
+        p_triple += p_i**3
+        rtp_triple += (p_i**3) * int(sym["payout"])
+        # P(exactly two of this symbol over the three picks): choose 2 of 3 positions = 3 * p_i^2 * (1 - p_i),
+        # then the third pick must be any *different* symbol — already captured by (1 - p_i).
+        # Payout = floor(wager * 1.5) ≈ 1.5x.
+        for j, _sym_j in enumerate(SLOT_SYMBOLS):
+            if i == j:
+                continue
+            p_j = int(_sym_j["weight"]) / total_weight
+            # Three ordered patterns where exactly two slots are i and the third is j:
+            # (i,i,j), (i,j,i), (j,i,i).
+            p_pair += 3 * (p_i**2) * p_j
+    rtp_pair = p_pair * 1.5
+    out[("slots", "triple")] = (p_triple, rtp_triple)
+    out[("slots", "pair")] = (p_pair, rtp_pair)
+    out[("slots", "none")] = (max(0.0, 1.0 - p_triple - p_pair), 0.0)
+
+    return out
+
+
 def _roulette_win(num: int, bet_type: str, bet_number: int | None) -> tuple[bool, int]:
     if num == 0 and bet_type != "number":
         return False, 0

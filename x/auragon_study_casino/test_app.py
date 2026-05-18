@@ -437,5 +437,65 @@ def test_admin_state_rejects_overlong_user_param(tmp_path: Path, db_url: str) ->
         assert c.get("/admin/state", params={"user": ""}).status_code == 422
 
 
+# ── Casino stats endpoint ────────────────────────────────────────────────────
+
+
+def test_casino_stats_returns_empty_for_fresh_user(client: TestClient) -> None:
+    r = client.get("/casino/stats")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["event_count"] == 0
+    assert body["since_date"] == "2026-05-07"
+    assert {g["game"] for g in body["games"]} == {"roulette", "blackjack", "slots"}
+
+
+def test_casino_stats_counts_a_real_spin(client: TestClient) -> None:
+    _grant_credits(client, 5)
+    r = client.post("/casino/slots/spin", json={"client_action_id": "stats-spin", "wager_credits": 1})
+    assert r.status_code == 200, r.text
+
+    body = client.get("/casino/stats").json()
+    slots = next(g for g in body["games"] if g["game"] == "slots")
+    assert slots["total"]["count"] == 1
+    assert slots["total"]["wagered"] == 1
+    assert len(slots["timeline"]) == 1
+    assert slots["timeline"][0]["count"] == 1
+
+
+def test_admin_casino_stats_returns_target_user_stats(tmp_path: Path, db_url: str) -> None:
+    app = create_app(
+        Settings(database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist", admin_users={"rai"})
+    )
+    dep = app.state.current_user_dep
+    with TestClient(app) as c:
+        app.dependency_overrides[dep] = lambda: "auragon"
+        _grant_credits(c, 5, action_id="auragon-stats-seed")
+        r = c.post("/casino/slots/spin", json={"client_action_id": "auragon-spin", "wager_credits": 1})
+        assert r.status_code == 200, r.text
+
+        app.dependency_overrides[dep] = lambda: "rai"
+        r = c.get("/admin/casino/stats", params={"user": "auragon"})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["username"] == "auragon"
+        assert body["event_count"] == 1
+
+
+def test_admin_casino_stats_404_for_unknown_user(tmp_path: Path, db_url: str) -> None:
+    app = create_app(
+        Settings(database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist", admin_users={"rai"})
+    )
+    dep = app.state.current_user_dep
+    with TestClient(app) as c:
+        app.dependency_overrides[dep] = lambda: "rai"
+        c.get("/state")  # seed 'rai' so /admin/users isn't empty
+        r = c.get("/admin/casino/stats", params={"user": "ghost"})
+        assert r.status_code == 404
+
+
+def test_admin_casino_stats_403_for_non_admin(non_admin_client: TestClient) -> None:
+    assert non_admin_client.get("/admin/casino/stats?user=default").status_code == 403
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
