@@ -501,7 +501,7 @@ pub(super) fn materialize_logical_chunk(
                                 )
                             })
                             .collect(),
-                        // Schedule's owner graph uses post-comma-list-split
+                        // ChunkFactorization's owner graph uses post-comma-list-split
                         // `StatementOrdinal`s; convert body indices here so
                         // the destination override targets the right owner
                         // node (an anon body item is always a single
@@ -557,7 +557,7 @@ pub(super) fn materialize_logical_chunk(
             })
             .collect();
         let schedule = time_phase!(timings, "build_schedule", {
-            Schedule::build_with(
+            ChunkFactorization::build_with(
                 chunk_id.to_string(),
                 analysis.facts,
                 precomputed,
@@ -569,7 +569,7 @@ pub(super) fn materialize_logical_chunk(
         });
         (schedule, redundant_purity_hints)
     };
-    let schedule_report = time_phase!(timings, "validate_schedule", { schedule.validate() });
+    let schedule_report = time_phase!(timings, "validate_factorization", { schedule.validate() });
     if let Some(report_out_dir) = report_out_dir {
         time_phase!(timings, "write_schedule_report", {
             write_chunk_report_json(report_out_dir, chunk_id, "schedule.json", &schedule_report)
@@ -590,7 +590,7 @@ pub(super) fn materialize_logical_chunk(
     if !schedule_report.atomic_unit_conflicts.is_empty() {
         let summary =
             render_atomic_unit_conflict_summary(&schedule_report.atomic_unit_conflicts, &|id| {
-                schedule.module_name(id)
+                schedule.analysis.module_name(id)
             });
         let causes = render_atomic_unit_cause_guidance(&schedule_report.atomic_unit_conflicts);
         bail!(
@@ -655,6 +655,7 @@ pub(super) fn materialize_logical_chunk(
                 let binding_names: Vec<String> = sorted.iter().map(|(k, _)| (*k).clone()).collect();
                 let member_names: Vec<String> = sorted.iter().map(|(_, v)| (*v).clone()).collect();
                 let owner_ids = schedule
+                    .analysis
                     .owner_report_ids_for_bindings(binding_names.iter().map(String::as_str));
                 FinalModuleContent {
                     binding_names,

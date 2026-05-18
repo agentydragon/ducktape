@@ -1,5 +1,5 @@
 //! Certifying factorize proposal emitter. Reads the in-memory
-//! [`Schedule`] and emits only owner sets that have already passed
+//! [`ChunkFactorization`] and emits only owner sets that have already passed
 //! the same peel predicate the materializer uses.
 //!
 //! The algorithm is a monotone closure over residual frontier starts:
@@ -23,8 +23,8 @@ use crate::atomic_units::compute_atomic_units;
 use crate::peelability::{PeelCandidateEvaluation, PeelabilityContext, evaluate_peel_candidate};
 use crate::reports::{build_quotient_edge_reports, is_residual_destination, module_key, owner_key};
 use crate::{
-    BindingName, FactorizeCell, FactorizeDiagnostic, FactorizeDiagnosticReason, FactorizeOptions,
-    FactorizeReport, ModuleId, OwnerId, PeelCandidateStatus, Schedule,
+    BindingName, ChunkFactorization, FactorizeCell, FactorizeDiagnostic, FactorizeDiagnosticReason,
+    FactorizeOptions, FactorizeReport, ModuleId, OwnerId, PeelCandidateStatus,
 };
 
 /// One node of the projected factorize graph H.
@@ -37,13 +37,17 @@ enum FactorizeNode {
     Loose(OwnerId),
 }
 
-pub fn build_factorize_report(schedule: &Schedule, options: &FactorizeOptions) -> FactorizeReport {
-    let owner_edges = &schedule.owner_graph.edges;
+pub fn build_factorize_report(
+    schedule: &ChunkFactorization,
+    options: &FactorizeOptions,
+) -> FactorizeReport {
+    let owner_edges = &schedule.analysis.owner_graph.edges;
     let quotient_edges = build_quotient_edge_reports(schedule, owner_edges);
     let context = PeelabilityContext::new(schedule, owner_edges, &quotient_edges);
     let index = FactorizeIndex::new(schedule);
 
     let node_by_owner: Vec<FactorizeNode> = schedule
+        .analysis
         .owner_graph
         .iter_nodes()
         .map(|node| {
@@ -196,9 +200,9 @@ struct FactorizeIndex {
 }
 
 impl FactorizeIndex {
-    fn new(schedule: &Schedule) -> Self {
-        let atomic_units = compute_atomic_units(&schedule.owner_graph);
-        let mut unit_by_owner = vec![0usize; schedule.owner_graph.nodes.len()];
+    fn new(schedule: &ChunkFactorization) -> Self {
+        let atomic_units = compute_atomic_units(&schedule.analysis.owner_graph);
+        let mut unit_by_owner = vec![0usize; schedule.analysis.owner_graph.nodes.len()];
         let owners_by_unit: Vec<Vec<OwnerId>> = atomic_units
             .into_iter()
             .enumerate()
@@ -211,13 +215,14 @@ impl FactorizeIndex {
             })
             .collect();
         let bindings_by_owner: HashMap<OwnerId, Vec<BindingName>> = schedule
+            .analysis
             .owner_graph
             .iter_nodes()
             .map(|node| {
                 let names: Vec<BindingName> = node
                     .declared
                     .iter()
-                    .map(|bid| schedule.binding_name(*bid).clone())
+                    .map(|bid| schedule.analysis.binding_name(*bid).clone())
                     .collect();
                 (node.id, names)
             })
@@ -256,7 +261,10 @@ enum FrontierOutcome {
     Empty,
 }
 
-fn build_frontier_starts(schedule: &Schedule, index: &FactorizeIndex) -> Vec<FrontierStart> {
+fn build_frontier_starts(
+    schedule: &ChunkFactorization,
+    index: &FactorizeIndex,
+) -> Vec<FrontierStart> {
     let mut starts = BTreeSet::<FrontierStart>::new();
     for owners in &index.owners_by_unit {
         let mut residual = BTreeSet::<OwnerId>::new();
@@ -285,7 +293,7 @@ fn build_frontier_starts(schedule: &Schedule, index: &FactorizeIndex) -> Vec<Fro
 }
 
 fn close_frontier(
-    schedule: &Schedule,
+    schedule: &ChunkFactorization,
     context: &PeelabilityContext<'_>,
     index: &FactorizeIndex,
     start: FrontierStart,
@@ -369,7 +377,7 @@ fn close_frontier(
             }
             PeelCandidateStatus::BlockedCycle => {
                 for &edge_idx in &verdict.constraining_owner_edge_indices {
-                    let Some(edge) = schedule.owner_graph.edges.get(edge_idx) else {
+                    let Some(edge) = schedule.analysis.owner_graph.edges.get(edge_idx) else {
                         continue;
                     };
                     for endpoint in [edge.from, edge.to] {
@@ -406,7 +414,7 @@ fn close_frontier(
 }
 
 fn close_atomic_units(
-    schedule: &Schedule,
+    schedule: &ChunkFactorization,
     index: &FactorizeIndex,
     owners: &mut BTreeSet<OwnerId>,
     extension_target: &mut Option<ModuleId>,
@@ -437,7 +445,7 @@ fn close_atomic_units(
 }
 
 fn add_repair_owner(
-    schedule: &Schedule,
+    schedule: &ChunkFactorization,
     owner: OwnerId,
     owners: &mut BTreeSet<OwnerId>,
     extension_target: &mut Option<ModuleId>,
@@ -455,7 +463,7 @@ fn add_repair_owner(
 }
 
 fn evaluate_current(
-    schedule: &Schedule,
+    schedule: &ChunkFactorization,
     context: &PeelabilityContext<'_>,
     index: &FactorizeIndex,
     owners: &BTreeSet<OwnerId>,
@@ -489,7 +497,7 @@ fn certified_verdict(mut verdict: PeelCandidateEvaluation) -> PeelCandidateEvalu
 }
 
 fn extension_cycle_is_internal_to_target(
-    schedule: &Schedule,
+    schedule: &ChunkFactorization,
     owners: &BTreeSet<OwnerId>,
     extension_target: Option<ModuleId>,
     verdict: &PeelCandidateEvaluation,
@@ -504,12 +512,13 @@ fn extension_cycle_is_internal_to_target(
         return false;
     }
     verdict.constraining_owner_edge_indices.iter().all(|&idx| {
-        let Some(edge) = schedule.owner_graph.edges.get(idx) else {
+        let Some(edge) = schedule.analysis.owner_graph.edges.get(idx) else {
             return true;
         };
         [edge.from, edge.to].into_iter().all(|owner| {
             owners.contains(&owner)
                 || schedule
+                    .analysis
                     .owner_graph
                     .node(owner)
                     .is_some_and(|_| schedule.partition.of(owner) == target)
@@ -518,7 +527,7 @@ fn extension_cycle_is_internal_to_target(
 }
 
 fn coalesce_certified_proposals(
-    schedule: &Schedule,
+    schedule: &ChunkFactorization,
     context: &PeelabilityContext<'_>,
     index: &FactorizeIndex,
     proposals: &mut Vec<CertifiedProposal>,
@@ -576,14 +585,14 @@ fn coalesce_certified_proposals(
         let a_start = a
             .owners
             .iter()
-            .filter_map(|owner| schedule.owner_graph.node(*owner))
+            .filter_map(|owner| schedule.analysis.owner_graph.node(*owner))
             .filter_map(|node| node.source_location.as_ref().map(|loc| loc.start_line))
             .min()
             .unwrap_or(usize::MAX);
         let b_start = b
             .owners
             .iter()
-            .filter_map(|owner| schedule.owner_graph.node(*owner))
+            .filter_map(|owner| schedule.analysis.owner_graph.node(*owner))
             .filter_map(|node| node.source_location.as_ref().map(|loc| loc.start_line))
             .min()
             .unwrap_or(usize::MAX);
@@ -593,8 +602,9 @@ fn coalesce_certified_proposals(
     });
 }
 
-fn owner_line_count(schedule: &Schedule, owner: OwnerId) -> usize {
+fn owner_line_count(schedule: &ChunkFactorization, owner: OwnerId) -> usize {
     schedule
+        .analysis
         .owner_graph
         .node(owner)
         .and_then(|node| node.source_location.as_ref())
@@ -611,7 +621,7 @@ fn make_cell(
     node_by_owner: &[FactorizeNode],
     verdict: &PeelCandidateEvaluation,
     bindings_by_owner: &HashMap<OwnerId, Vec<BindingName>>,
-    schedule: &Schedule,
+    schedule: &ChunkFactorization,
 ) -> FactorizeCell {
     let mut owner_ids: Vec<String> = owners.iter().copied().map(owner_key).collect();
     owner_ids.sort();
@@ -630,7 +640,7 @@ fn make_cell(
     let mut size_lines: usize = 0;
     let empty_vec: Vec<BindingName> = Vec::new();
     for owner_id in &owners {
-        let Some(node) = schedule.owner_graph.node(*owner_id) else {
+        let Some(node) = schedule.analysis.owner_graph.node(*owner_id) else {
             continue;
         };
         let declared_bindings: &Vec<BindingName> =
@@ -658,7 +668,7 @@ fn make_cell(
         .constraining_owner_edge_indices
         .iter()
         .flat_map(|&idx| {
-            let edge = &schedule.owner_graph.edges[idx];
+            let edge = &schedule.analysis.owner_graph.edges[idx];
             [edge.from, edge.to]
         })
         .filter(|o| !owners.contains(o))
@@ -676,7 +686,7 @@ fn make_cell(
     // cell relationships in `peel_factorize.rs`).
     let mut active_modules_referenced: HashSet<String> = HashSet::new();
     for &owner_id in &owners {
-        for edge in schedule.owner_graph.edges.iter() {
+        for edge in schedule.analysis.owner_graph.edges.iter() {
             if edge.from != owner_id {
                 continue;
             }
@@ -736,7 +746,7 @@ fn make_diagnostic(
     verdict: &PeelCandidateEvaluation,
     reason: FactorizeDiagnosticReason,
     bindings_by_owner: &HashMap<OwnerId, Vec<BindingName>>,
-    schedule: &Schedule,
+    schedule: &ChunkFactorization,
 ) -> FactorizeDiagnostic {
     let mut owner_ids: Vec<String> = owners.iter().copied().map(owner_key).collect();
     owner_ids.sort();
@@ -752,7 +762,7 @@ fn make_diagnostic(
         if let Some(bindings) = bindings_by_owner.get(owner) {
             binding_ids_set.extend(bindings.iter().cloned());
         }
-        let Some(node) = schedule.owner_graph.node(*owner) else {
+        let Some(node) = schedule.analysis.owner_graph.node(*owner) else {
             continue;
         };
         if let Some(loc) = &node.source_location {
@@ -771,7 +781,7 @@ fn make_diagnostic(
         .constraining_owner_edge_indices
         .iter()
         .flat_map(|&edge_idx| {
-            let edge = &schedule.owner_graph.edges[edge_idx];
+            let edge = &schedule.analysis.owner_graph.edges[edge_idx];
             [edge.from, edge.to]
         })
         .filter(|owner| !owners.contains(owner))
@@ -792,7 +802,7 @@ fn make_diagnostic(
 
     let mut active_modules_referenced: HashSet<String> = HashSet::new();
     for &owner in &owners {
-        for edge in schedule.owner_graph.edges.iter() {
+        for edge in schedule.analysis.owner_graph.edges.iter() {
             if edge.from != owner || owners.contains(&edge.to) {
                 continue;
             }

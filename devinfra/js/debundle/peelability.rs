@@ -10,10 +10,11 @@ use crate::reports::{
     binding_reports, is_residual_destination, module_id_from_key, module_report_ref, owner_key,
 };
 use crate::{
-    AtomicUnit, BindingKind, BindingName, DepKind, EvaluatedPeelCandidateReport,
-    LogicalModuleIndex, ModuleId, OwnerGraphPeelSetReport, OwnerGraphPeelabilityReport, OwnerId,
-    OwnerNode, PeelCandidateStatus, QuotientEdgeReport, ResidualOwnerCompanionOptionReport,
-    ResidualOwnerPeelHorizonReport, ResidualOwnerPeelStatus, Schedule, compute_atomic_units,
+    AtomicUnit, BindingKind, BindingName, ChunkFactorization, DepKind,
+    EvaluatedPeelCandidateReport, LogicalModuleIndex, ModuleId, OwnerGraphPeelSetReport,
+    OwnerGraphPeelabilityReport, OwnerId, OwnerNode, PeelCandidateStatus, QuotientEdgeReport,
+    ResidualOwnerCompanionOptionReport, ResidualOwnerPeelHorizonReport, ResidualOwnerPeelStatus,
+    compute_atomic_units,
 };
 
 pub(crate) struct PeelabilityContext<'a> {
@@ -55,11 +56,12 @@ pub(crate) struct PeelCandidateEvaluation {
 }
 
 pub(crate) fn build_peelability_report(
-    schedule: &Schedule,
+    schedule: &ChunkFactorization,
     owner_edges: &[OwnerEdge],
     quotient_edges: &[QuotientEdgeReport],
 ) -> OwnerGraphPeelabilityReport {
     let residual_destinations: BTreeSet<ModuleId> = schedule
+        .analysis
         .owner_graph
         .iter_nodes()
         .filter_map(|node| {
@@ -70,7 +72,7 @@ pub(crate) fn build_peelability_report(
 
     let context = PeelabilityContext::new(schedule, owner_edges, quotient_edges);
     let mut declared_by_owner = BTreeMap::<OwnerId, Vec<BindingName>>::new();
-    for node in schedule.owner_graph.iter_nodes() {
+    for node in schedule.analysis.owner_graph.iter_nodes() {
         if !is_residual_destination(schedule, schedule.partition.of(node.id)) {
             continue;
         }
@@ -179,7 +181,7 @@ pub(crate) fn build_peelability_report(
 }
 
 fn build_residual_owner_horizon(
-    schedule: &Schedule,
+    schedule: &ChunkFactorization,
     declared_by_owner: &BTreeMap<OwnerId, Vec<BindingName>>,
     candidates: &[PeelCandidateEvaluation],
 ) -> (Vec<ResidualOwnerPeelHorizonReport>, BTreeSet<String>) {
@@ -275,6 +277,7 @@ fn build_residual_owner_horizon(
         }
 
         let node = schedule
+            .analysis
             .owner_graph
             .node(*owner_id)
             .expect("residual owner horizon should reference an existing owner");
@@ -301,14 +304,17 @@ fn build_candidate_owner_sets(candidates: &[PeelCandidateEvaluation]) -> Vec<BTr
         .collect()
 }
 
-fn residual_declared_for_owner(schedule: &Schedule, node: &OwnerNode) -> Vec<BindingName> {
+fn residual_declared_for_owner(
+    schedule: &ChunkFactorization,
+    node: &OwnerNode,
+) -> Vec<BindingName> {
     node.declared
         .iter()
-        .map(|binding| schedule.binding_name(*binding))
+        .map(|binding| schedule.analysis.binding_name(*binding))
         .filter(|name| {
-            // schedule.bindings is Id-keyed but BindingTable.name returns
+            // schedule.analysis.bindings is Id-keyed but BindingTable.name returns
             // sym only; match by sym.
-            !schedule.bindings.iter().any(|(id, kind)| {
+            !schedule.analysis.bindings.iter().any(|(id, kind)| {
                 id.0.as_ref() == name.as_str() && matches!(kind, BindingKind::Imported { .. })
             })
         })
@@ -318,11 +324,11 @@ fn residual_declared_for_owner(schedule: &Schedule, node: &OwnerNode) -> Vec<Bin
 
 impl<'a> PeelabilityContext<'a> {
     pub(crate) fn new(
-        schedule: &'a Schedule,
+        schedule: &'a ChunkFactorization,
         owner_edges: &'a [OwnerEdge],
         quotient_edges: &[QuotientEdgeReport],
     ) -> Self {
-        let owner_count = schedule.owner_graph.nodes.len();
+        let owner_count = schedule.analysis.owner_graph.nodes.len();
         let mut owner_out_edges = vec![Vec::new(); owner_count];
         for (idx, edge) in owner_edges.iter().enumerate() {
             if let Some(indices) = owner_out_edges.get_mut(edge.from.0) {
@@ -330,15 +336,17 @@ impl<'a> PeelabilityContext<'a> {
             }
         }
 
-        let atomic_units = compute_atomic_units(&schedule.owner_graph);
+        let atomic_units = compute_atomic_units(&schedule.analysis.owner_graph);
 
         // The realizability primitive is the single shared
         // implementation of clause 3 (and clause 2). The candidate
         // evaluator pushes a hypothetical destination move onto this
         // index and reads the verdict — the same verdict the
         // validator would produce for the post-peel partition.
-        let realizability =
-            RealizabilityIndex::from_partition(&schedule.owner_graph, schedule.partition.clone());
+        let realizability = RealizabilityIndex::from_partition(
+            &schedule.analysis.owner_graph,
+            schedule.partition.clone(),
+        );
 
         // Reserve a module-id one past every index currently in use,
         // so the candidate's hypothetical destination is a fresh node
@@ -346,7 +354,7 @@ impl<'a> PeelabilityContext<'a> {
         // partition's actual assignments, and any module-id that
         // appears in the quotient-edges report — covering synthesized
         // residual sentinels and external/vendor modules.
-        let mut max_index = schedule.logical_modules.len();
+        let mut max_index = schedule.analysis.logical_modules.len();
         for (_, module) in schedule.partition.iter() {
             max_index = max_index.max(module.0.0 + 1);
         }
@@ -381,7 +389,7 @@ impl<'a> PeelabilityContext<'a> {
 }
 
 fn residual_pair_candidates_from_singleton_blockers(
-    schedule: &Schedule,
+    schedule: &ChunkFactorization,
     singleton_candidates: &[(OwnerId, PeelCandidateEvaluation)],
     owner_edges: &[OwnerEdge],
     declared_by_owner: &BTreeMap<OwnerId, Vec<BindingName>>,
@@ -434,7 +442,7 @@ fn residual_pair_candidates_from_singleton_blockers(
 /// statements with no class binding) are skipped: there'd be nothing
 /// to land in `members[]`.
 fn residual_atomic_unit_candidates(
-    schedule: &Schedule,
+    schedule: &ChunkFactorization,
     context: &PeelabilityContext<'_>,
     declared_by_owner: &BTreeMap<OwnerId, Vec<BindingName>>,
 ) -> Vec<PeelCandidateEvaluation> {
@@ -470,15 +478,15 @@ fn residual_atomic_unit_candidates(
     candidates
 }
 
-fn owner_is_in_residual(schedule: &Schedule, owner_id: OwnerId) -> bool {
-    if schedule.owner_graph.node(owner_id).is_none() {
+fn owner_is_in_residual(schedule: &ChunkFactorization, owner_id: OwnerId) -> bool {
+    if schedule.analysis.owner_graph.node(owner_id).is_none() {
         return false;
     }
     is_residual_destination(schedule, schedule.partition.of(owner_id))
 }
 
 fn residual_dependency_closure_candidates(
-    schedule: &Schedule,
+    schedule: &ChunkFactorization,
     context: &PeelabilityContext<'_>,
     singleton_candidates: &[(OwnerId, PeelCandidateEvaluation)],
     declared_by_owner: &BTreeMap<OwnerId, Vec<BindingName>>,
@@ -538,10 +546,10 @@ struct ResidualDependencyClosureIndex {
 }
 
 impl ResidualDependencyClosureIndex {
-    fn new(schedule: &Schedule, context: &PeelabilityContext<'_>) -> Self {
+    fn new(schedule: &ChunkFactorization, context: &PeelabilityContext<'_>) -> Self {
         let mut graph = DiGraph::<OwnerId, ()>::new();
-        let mut node_by_owner = vec![None; schedule.owner_graph.nodes.len()];
-        for node in schedule.owner_graph.iter_nodes() {
+        let mut node_by_owner = vec![None; schedule.analysis.owner_graph.nodes.len()];
+        for node in schedule.analysis.owner_graph.iter_nodes() {
             if !is_residual_destination(schedule, schedule.partition.of(node.id)) {
                 continue;
             }
@@ -621,8 +629,14 @@ impl ResidualDependencyClosureIndex {
     }
 }
 
-fn owners_share_residual_destination(schedule: &Schedule, left: OwnerId, right: OwnerId) -> bool {
-    if schedule.owner_graph.node(left).is_none() || schedule.owner_graph.node(right).is_none() {
+fn owners_share_residual_destination(
+    schedule: &ChunkFactorization,
+    left: OwnerId,
+    right: OwnerId,
+) -> bool {
+    if schedule.analysis.owner_graph.node(left).is_none()
+        || schedule.analysis.owner_graph.node(right).is_none()
+    {
         return false;
     }
     let left_module = schedule.partition.of(left);
@@ -646,7 +660,7 @@ fn sorted_owner_pair(left: OwnerId, right: OwnerId) -> (OwnerId, OwnerId) {
 /// The same primitive backs the validator, so a `PeelableNow` here is
 /// a `PeelableNow` at the gate.
 pub(crate) fn evaluate_peel_candidate(
-    schedule: &Schedule,
+    schedule: &ChunkFactorization,
     context: &PeelabilityContext<'_>,
     owner_ids: &[OwnerId],
     declared: Vec<BindingName>,
@@ -805,7 +819,7 @@ fn candidate_atomic_unit_split_edge_indices(
 /// derived from `moved_owners` (all moved owners share one
 /// destination by precondition).
 fn candidate_source_destination_blocker_owner_ids(
-    schedule: &Schedule,
+    schedule: &ChunkFactorization,
     context: &PeelabilityContext<'_>,
     moved_owners: &BTreeSet<OwnerId>,
 ) -> Vec<OwnerId> {
@@ -823,7 +837,7 @@ fn candidate_source_destination_blocker_owner_ids(
             if moved_owners.contains(&edge.to) {
                 continue;
             }
-            if schedule.owner_graph.node(edge.to).is_none() {
+            if schedule.analysis.owner_graph.node(edge.to).is_none() {
                 continue;
             }
             if schedule.partition.of(edge.to) != source_destination {

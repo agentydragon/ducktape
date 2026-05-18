@@ -25,7 +25,7 @@ pub struct OwnerGraphReport {
     pub quotient: OwnerGraphQuotientReport,
     pub peelability: OwnerGraphPeelabilityReport,
     /// Algorithmic peel proposer output. Always populated by
-    /// `Schedule::owner_graph_report`; empty `cells` when there
+    /// `ChunkFactorization::owner_graph_report`; empty `cells` when there
     /// are no residual owners. Each cell carries a verdict from
     /// the SSOT predicate in
     /// `peelability::evaluate_peel_candidate`, so

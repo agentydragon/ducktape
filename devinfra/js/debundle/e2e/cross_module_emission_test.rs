@@ -549,10 +549,10 @@ export { bridge };
 #[test]
 fn moved_body_re_imports_specifier_re_exported_by_another_plan() {
     // mod_a re-exports a vendor binding (`a` → public `Re`),
-    // making it `BindingKind::Imported` in `Schedule.bindings`.
+    // making it `BindingKind::Imported` in `ChunkFactorization.bindings`.
     // mod_b moves a body that references the same local `a`.
     // The source-chunk re-import filter must NOT skip `a` just
-    // because it's in `Schedule.bindings` — `cross_module_imports_for_body`
+    // because it's in `ChunkFactorization.bindings` — `cross_module_imports_for_body`
     // can't satisfy it (Imported bindings have `owner_of() == None`),
     // so without the source-chunk re-import mod_b has a free
     // variable and `ReferenceError: a is not defined` at runtime.

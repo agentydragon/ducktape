@@ -36,7 +36,7 @@ pub(super) struct LowerChunkInputs<'a> {
     /// the spec claimed as anonymous-statement members. See
     /// `ModulePlan::anonymous_statement_ordinals`.
     pub(super) anonymous_ordinal_assignment: &'a BTreeMap<usize, usize>,
-    pub(super) schedule: &'a Schedule,
+    pub(super) schedule: &'a ChunkFactorization,
     pub(super) runtime_import_facts: &'a RuntimeImportFacts,
     /// In-place renames from `TransformSpec::chunk_renames`. Applied
     /// to bindings staying in entry's body — i.e. those *not* in
@@ -267,7 +267,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             import_decl_for_plan(entry_file, &plan.target_file, &resolved),
         ));
     }
-    // Sort entry imports by Schedule::source_import_position, which
+    // Sort entry imports by ChunkFactorization::source_import_position, which
     // implements Lemma 2 (DESIGN.md "The realizability theorem"):
     // for acyclic imports graphs the order matches linker_order
     // (dependency-first source), but for cyclic-I shapes accepted
@@ -339,7 +339,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         if !auto_grow.is_empty() {
             entry_body.push(export_named_for_bindings(&auto_grow));
         }
-        trim_dead_named_specifiers(&mut entry_body, &schedule.bindings);
+        trim_dead_named_specifiers(&mut entry_body, &schedule.analysis.bindings);
     });
     let entry_exports_by_original_local = time_phase!(timings, "collect_entry_exports", {
         collect_entry_exports_by_original_local(
@@ -491,7 +491,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             rewrite_runtime_sources_for_target(&mut body, chunk_id, entry_file, &plan.target_file);
         });
         // ImportSpecifier-bound members (`BindingKind::Imported` in
-        // `schedule.bindings`): for each `Imported` binding whose
+        // `schedule.analysis.bindings`): for each `Imported` binding whose
         // `re_exported_by` map names this module, emit a re-import
         // (using the local name as the alias) plus mirror the
         // public-name export. Per-destination relative paths are
@@ -573,8 +573,9 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
                 .iter()
                 .map(|(_, v)| (*v).clone())
                 .collect();
-            let owner_ids =
-                schedule.owner_report_ids_for_bindings(binding_names.iter().map(String::as_str));
+            let owner_ids = schedule
+                .analysis
+                .owner_report_ids_for_bindings(binding_names.iter().map(String::as_str));
             let header = vec![
                 LOWERING_FILE_PRAGMA.to_string(),
                 LOWERING_GENERATOR_HEADER.to_string(),

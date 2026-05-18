@@ -59,7 +59,7 @@ pub(super) struct ModulePlan {
     /// Local-name → public-export-name for every owned binding this
     /// plan claims (i.e. members whose `selector.binding.kind` is
     /// _not_ `ImportSpecifier`). ImportSpecifier-bound members live
-    /// in `Schedule.bindings` as `BindingKind::Imported` and their
+    /// in `ChunkFactorization.bindings` as `BindingKind::Imported` and their
     /// emit is driven from there. Iteration order is undefined;
     /// emit / report sites sort by local name before consuming so
     /// the emitted source and JSON shapes stay deterministic.

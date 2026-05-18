@@ -10,7 +10,7 @@ use super::*;
 pub(super) fn cross_module_imports_for_plan(
     from_file: &str,
     mut imports_by_provider: BTreeMap<usize, BTreeMap<String, String>>,
-    schedule: &Schedule,
+    schedule: &ChunkFactorization,
     occupied: &mut BTreeSet<String>,
     renames: &mut BTreeMap<String, String>,
 ) -> Vec<ModuleItem> {
@@ -33,6 +33,7 @@ pub(super) fn cross_module_imports_for_plan(
         .filter_map(|provider_index| {
             let bindings = imports_by_provider.remove(&provider_index)?;
             schedule
+                .analysis
                 .logical_module(LogicalModuleIndex(provider_index))
                 .map(|provider| {
                     let resolved = disambiguate_import_locals(&bindings, occupied, renames);

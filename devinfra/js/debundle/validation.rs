@@ -16,11 +16,11 @@ use crate::{
 
 /// Result of validating a module dep graph.
 #[derive(Debug, Clone, Serialize)]
-pub struct ScheduleReport {
+pub struct FactorizationReport {
     pub cycles: Vec<CycleReport>,
     /// Atomic factor units the spec splits across destination
     /// modules — unrealizable by construction. Populated from
-    /// `Schedule::assembly_conflicts`; the materializer rejects any
+    /// `ChunkFactorization::assembly_conflicts`; the materializer rejects any
     /// spec with a non-empty list before emitting code.
     pub atomic_unit_conflicts: Vec<AtomicUnitConflict>,
     /// Topological linearization of `I ∪ S` rooted at the entry,
@@ -158,14 +158,14 @@ fn cut_pairs_count(cut: &[CycleEdge]) -> usize {
 /// catching the canonical `console.log(readB())` shape, but the
 /// asymmetry persists until either Lemma 2 lands in the materializer
 /// or the proposer is also tightened.
-pub fn validate_schedule(
+pub fn validate_factorization(
     owner_graph: &OwnerGraph,
     partition: &Partition,
     module_name: &dyn Fn(ModuleId) -> String,
-) -> ScheduleReport {
+) -> FactorizationReport {
     let verdict = check_realizability(owner_graph, partition);
     if verdict.unrealizable_sccs.is_empty() {
-        return ScheduleReport {
+        return FactorizationReport {
             cycles: Vec::new(),
             atomic_unit_conflicts: Vec::new(),
             linker_order: Vec::new(),
@@ -220,7 +220,7 @@ pub fn validate_schedule(
             cut,
         });
     }
-    ScheduleReport {
+    FactorizationReport {
         cycles,
         atomic_unit_conflicts: Vec::new(),
         linker_order: Vec::new(),

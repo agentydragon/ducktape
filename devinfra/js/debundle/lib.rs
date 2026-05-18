@@ -14,6 +14,8 @@
 //!    same graph model.
 
 mod atomic_units;
+mod chunk_analysis;
+mod chunk_factorization;
 mod factor_assembly;
 mod factorize;
 mod facts;
@@ -25,12 +27,13 @@ mod purity;
 mod realizability;
 mod report_schema;
 mod reports;
-mod schedule;
 mod validation;
 
 pub use atomic_units::{
     AtomicUnit, OwnerGraphAndUnits, compute_atomic_units, compute_owner_graph_and_units,
 };
+pub use chunk_analysis::ChunkAnalysis;
+pub use chunk_factorization::ChunkFactorization;
 pub use factor_assembly::{
     AssemblyOutcome, AtomicUnitConflict, ConflictingClaim, assemble_partition,
 };
@@ -65,10 +68,9 @@ pub use report_schema::{
     ResidualOwnerCompanionOptionReport, ResidualOwnerPeelHorizonReport, ResidualOwnerPeelStatus,
     SourceLocation,
 };
-pub use schedule::Schedule;
 pub use validation::{
-    CycleEdge, CycleReport, ScheduleReport, render_atomic_unit_conflict_summary,
-    render_cycle_summary, validate_schedule,
+    CycleEdge, CycleReport, FactorizationReport, render_atomic_unit_conflict_summary,
+    render_cycle_summary, validate_factorization,
 };
 
 #[cfg(test)]

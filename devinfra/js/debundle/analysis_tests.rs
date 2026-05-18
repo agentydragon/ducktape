@@ -408,7 +408,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
-        let report = validate_schedule(&owner_graph, &partition, &render);
+        let report = validate_factorization(&owner_graph, &partition, &render);
         assert_eq!(report.cycles.len(), 1);
         assert_eq!(report.cycles[0].modules.len(), 2);
     }
@@ -424,7 +424,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
-        let report = validate_schedule(&owner_graph, &partition, &render);
+        let report = validate_factorization(&owner_graph, &partition, &render);
         assert!(
             report.cycles.is_empty(),
             "expected no cycles, got {:?}",
@@ -437,7 +437,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
     /// DESIGN.md "Realizability primitive" clause 3 — the
     /// constraining-edge subgraph (drops LazyUse) has no
     /// multi-module SCC. The materializer's Lemma 2 steering
-    /// (Schedule::source_import_position with SCC-aware reverse)
+    /// (ChunkFactorization::source_import_position with SCC-aware reverse)
     /// gives entry an import order such that the ESM linker
     /// resolves the cycle without TDZ.
     #[test]
@@ -455,7 +455,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
-        let report = validate_schedule(&owner_graph, &partition, &render);
+        let report = validate_factorization(&owner_graph, &partition, &render);
         assert!(
             report.cycles.is_empty(),
             "mixed cycle with no at-init call should be realizable; got {:?}",
@@ -525,7 +525,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
-        let report = validate_schedule(&owner_graph, &partition, &render);
+        let report = validate_factorization(&owner_graph, &partition, &render);
         assert_eq!(
             report.cycles.len(),
             1,
@@ -559,7 +559,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
-        let report = validate_schedule(&owner_graph, &partition, &render);
+        let report = validate_factorization(&owner_graph, &partition, &render);
         assert_eq!(report.cycles.len(), 1);
         let cycle = &report.cycles[0];
         assert!(
@@ -593,7 +593,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
-        let report = validate_schedule(&owner_graph, &partition, &render);
+        let report = validate_factorization(&owner_graph, &partition, &render);
         assert!(
             report.cycles.is_empty(),
             "lazy-only cycle is realizable; the gate must accept and emit no cycle (got {:?})",
@@ -669,7 +669,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         }
     }
 
-    fn schedule_for(source: &str, ownership: &[(&str, ModuleId)]) -> Schedule {
+    fn schedule_for(source: &str, ownership: &[(&str, ModuleId)]) -> ChunkFactorization {
         let module = parse(source);
         let facts = analyze_facts(&module);
         let mut max_idx: Option<usize> = None;
@@ -703,7 +703,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
             rename_map: HashMap::new(),
             anonymous_statement_ordinals: Vec::new(),
         });
-        Schedule::build(
+        ChunkFactorization::build(
             "test_chunk".to_string(),
             facts,
             bindings,
@@ -717,7 +717,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         source: &str,
         residual_bindings: &[&str],
         logical_bindings: &[&str],
-    ) -> Schedule {
+    ) -> ChunkFactorization {
         let module = parse(source);
         let facts = analyze_facts(&module);
         let residual = logical(0);
@@ -745,7 +745,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
                 anonymous_statement_ordinals: Vec::new(),
             },
         ];
-        Schedule::build(
+        ChunkFactorization::build(
             "test_chunk".to_string(),
             facts,
             bindings,
@@ -760,12 +760,12 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let schedule = schedule_for("const A = X + 1; const X = 42;", &[("A", logical(0))]);
 
         assert!(
-            schedule.owner_graph.edges.iter().any(|edge| {
+            schedule.analysis.owner_graph.edges.iter().any(|edge| {
                 edge.from == OwnerId(0)
                     && edge.to == OwnerId(1)
                     && edge.reason.kind == DepKind::EagerUse
                     && edge.reason.statement_ordinal == StatementOrdinal(0)
-                    && schedule.binding_name(edge.reason.binding.unwrap()) == "X"
+                    && schedule.analysis.binding_name(edge.reason.binding.unwrap()) == "X"
             }),
             "owner graph should retain the unassigned declared provider edge",
         );
@@ -3555,7 +3555,7 @@ mutable = mutable + 1;"#,
         );
     }
 
-    // --- linker_order in ScheduleReport --------------------------------------
+    // --- linker_order in FactorizationReport --------------------------------------
 
     #[test]
     fn validate_surfaces_linker_order_for_acyclic_spec() {
@@ -3714,15 +3714,23 @@ mutable = mutable + 1;"#,
         assert_eq!(unit_sizes(&units), vec![2]);
     }
 
-    fn partition_summary(schedule: &Schedule) -> Vec<(String, String)> {
+    fn partition_summary(schedule: &ChunkFactorization) -> Vec<(String, String)> {
         let mut out: Vec<(String, String)> = schedule
+            .analysis
             .owner_graph
             .iter_nodes()
             .map(|node| {
                 let declared: Vec<String> = node
                     .declared
                     .iter()
-                    .filter_map(|b| schedule.owner_graph.binding_table.name(*b).cloned())
+                    .filter_map(|b| {
+                        schedule
+                            .analysis
+                            .owner_graph
+                            .binding_table
+                            .name(*b)
+                            .cloned()
+                    })
                     .collect();
                 let key = if declared.is_empty() {
                     format!("stmt_{}", node.statement_ordinal.0)
@@ -3734,7 +3742,7 @@ mutable = mutable + 1;"#,
                 // summary stays stable across residual-index changes;
                 // explicit modules use their `mod_<idx>` label.
                 let LogicalModuleIndex(idx) = dest.0;
-                let label = match schedule.logical_module(LogicalModuleIndex(idx)) {
+                let label = match schedule.analysis.logical_module(LogicalModuleIndex(idx)) {
                     Some(m) if m.residual => "<residual>".to_string(),
                     _ => render(dest),
                 };
@@ -4062,10 +4070,10 @@ const consumer_three = dep_a + dep_b;"#,
             &[("A", logical(0)), ("B", logical(1))],
         );
         let report = schedule.validate();
-        let json = serde_json::to_string(&report).expect("serialize ScheduleReport");
+        let json = serde_json::to_string(&report).expect("serialize FactorizationReport");
         assert!(
             json.contains(r#""linker_order""#),
-            "ScheduleReport must serialize linker_order as `linker_order`; got: {json}",
+            "FactorizationReport must serialize linker_order as `linker_order`; got: {json}",
         );
     }
 }

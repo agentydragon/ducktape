@@ -204,6 +204,8 @@ rust_library(
     srcs = [
         "analysis_tests.rs",
         "atomic_units.rs",
+        "chunk_analysis.rs",
+        "chunk_factorization.rs",
         "factor_assembly.rs",
         "factorize.rs",
         "facts.rs",
@@ -216,7 +218,6 @@ rust_library(
         "realizability.rs",
         "report_schema.rs",
         "reports.rs",
-        "schedule.rs",
         "validation.rs",
     ],
     crate_root = "lib.rs",

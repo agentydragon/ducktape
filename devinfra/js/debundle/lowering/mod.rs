@@ -12,11 +12,11 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use analysis::{
-    AnalysisHints, AtomicUnitConflict, BindingKind, BindingName, DepKind, KnownEffect,
-    LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits,
-    OwnerId, RedundantPureMemberReason, RedundantPurityHint, RedundantPurityReason, Schedule,
-    analyze_chunk, compute_owner_graph_and_units, render_atomic_unit_conflict_summary,
-    render_cycle_summary, top_level_id,
+    AnalysisHints, AtomicUnitConflict, BindingKind, BindingName, ChunkFactorization, DepKind,
+    KnownEffect, LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId,
+    OwnerGraphAndUnits, OwnerId, RedundantPureMemberReason, RedundantPurityHint,
+    RedundantPurityReason, analyze_chunk, compute_owner_graph_and_units,
+    render_atomic_unit_conflict_summary, render_cycle_summary, top_level_id,
 };
 use artifact::{
     ArtifactIndexes, ArtifactSourceImportResolver, ChunkAnalysis, ChunkArtifact, ChunkBundle,
