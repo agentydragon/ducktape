@@ -288,38 +288,7 @@ Prerequisite work before designing the pipeline:
    redundant. Removing the defensive patches is part of the
    pipeline-landing cleanup, not the architecture work itself.
 
-Likely multiple PRs. Should land _after_ the `Schedule` →
-`ChunkFactorization` rename below, because the partition-and-factorize
-surface is where the chunk-level rename intents already live and
-restructuring on top of the renamed type is cheaper than restructuring
-twice.
-
-## Rename `Schedule` → `ChunkFactorization`
-
-`schedule.rs::Schedule` is, after the factorize rewrite, just a
-per-chunk factorization: the authoritative `Partition` plus its
-derived realizability views (`dep_graph`, `linker_order`,
-`assembly_conflicts`) plus a pile of caches that hot-path callers
-read repeatedly (peelability evaluates ~1500 candidates/chunk; the
-`linker_position_by_module`, `export_name_by_binding`, and
-`entry_exported_binding_names_cache` exist to keep that loop
-cheap). The "Schedule" name dates to when the central object was
-the ECMA-262 link-time evaluation order — now the partition is the
-SSOT and everything else is derivable.
-
-Rename to `ChunkFactorization` (or similar) and update docstrings.
-Mechanical sweep: ~80 references across the crate. Should land in
-its own commit so the rename is reviewable in isolation; no
-behavioral change. Wait until any in-flight Schedule-touching work
-(the precompute-atomic-units constructor) is settled before
-starting.
-
-If a deeper restructure feels worthwhile when picking this up,
-consider splitting the type into `FactorizationInputs` (facts,
-bindings, logical_modules, chunk_renames) + `Factorization`
-(partition + dep_graph + linker_order + conflicts) +
-`FactorizationCaches`. Probably not worth the boilerplate, but
-evaluate before doing the rename.
+Likely multiple PRs.
 
 ## RenameLedger (PR2) open questions
 
