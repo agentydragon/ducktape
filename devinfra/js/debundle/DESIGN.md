@@ -1390,7 +1390,7 @@ must predict.
 Concretely: when a moved module body references a top-level
 declaration that lives in the residual entry but isn't yet on
 entry's `export {...}` list, the emit step grows the export list to
-include it (see `auto_grown_residual_exports` in `logical_modules.rs`).
+include it (see `auto_grown_residual_exports` in `lowering/exports.rs`).
 The moved module then imports the binding from entry via a normal ESM
 `import { name } from "../entry.js"`. Source-level exports are not
 clobbered: the auto-grow only adds names that the upstream source
@@ -2263,25 +2263,25 @@ peel-set hyperedges so authoring tools can mostly project and filter
 debundler facts instead of re-analyzing JavaScript or private repo
 YAML conventions.
 
-| Step                             | Module                                | Runs when                                                                                                                                             |
-| -------------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `load_transform_spec`            | <pipeline.rs>                         | Always; loads either the flat YAML spec or the tree-shaped authoring spec.                                                                            |
-| `validate_transform_spec`        | <spec.rs>                             | Always after spec load.                                                                                                                               |
-| `load_js_chunks`                 | <artifact.rs>                         | Always; configured by `inputs`.                                                                                                                       |
-| `prepare_js_chunks`              | <prepare_chunks.rs>                   | Always. In one parallel per-chunk pass, parses every chunk with SWC, computes shallow program facts, and canonicalizes entries.                       |
-| `build_artifact_indexes`         | <artifact.rs>                         | Always after preparation. Builds chunk id, source path, output path, and import-reference indexes for later stages.                                   |
-| `rewrite_chunk_entry_specifiers` | <rewrite_specifiers.rs>               | Always, after chunk preparation and before data-gated transforms.                                                                                     |
-| `apply_vendor_annotations`       | <vendor.rs>                           | When the `vendor` map is non-empty.                                                                                                                   |
-| `rename_vendor_exports`          | <vendor.rs>                           | When a `vendor` entry has `level: boundary_rename` or `level: swap`.                                                                                  |
-| `swap_vendor_chunks`             | <vendor.rs>                           | When a `vendor` entry has `level: swap`.                                                                                                              |
-| `materialize_logical_modules`    | <logical_modules.rs> + analysis files | When `logical_modules`, `unassigned_mode`, or `chunk_renames` is non-empty. Computes facts, quotients the owner graph into `I ∪ S`, validates, emits. |
-| `write_js_tree`                  | <write_tree.rs>                       | When `write_js_tree` output config is present; writes JS tree manifests with exact `output_metrics`.                                                  |
-| `emit_browser_harness`           | <emit_harness.rs>                     | When `emit_browser_harness` output config is present; writes browser harness manifests with exact `output_metrics`.                                   |
+| Step                             | Module                       | Runs when                                                                                                                                             |
+| -------------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `load_transform_spec`            | <pipeline.rs>                | Always; loads either the flat YAML spec or the tree-shaped authoring spec.                                                                            |
+| `validate_transform_spec`        | <spec.rs>                    | Always after spec load.                                                                                                                               |
+| `load_js_chunks`                 | <artifact.rs>                | Always; configured by `inputs`.                                                                                                                       |
+| `prepare_js_chunks`              | <prepare_chunks.rs>          | Always. In one parallel per-chunk pass, parses every chunk with SWC, computes shallow program facts, and canonicalizes entries.                       |
+| `build_artifact_indexes`         | <artifact.rs>                | Always after preparation. Builds chunk id, source path, output path, and import-reference indexes for later stages.                                   |
+| `rewrite_chunk_entry_specifiers` | <rewrite_specifiers.rs>      | Always, after chunk preparation and before data-gated transforms.                                                                                     |
+| `apply_vendor_annotations`       | <vendor.rs>                  | When the `vendor` map is non-empty.                                                                                                                   |
+| `rename_vendor_exports`          | <vendor.rs>                  | When a `vendor` entry has `level: boundary_rename` or `level: swap`.                                                                                  |
+| `swap_vendor_chunks`             | <vendor.rs>                  | When a `vendor` entry has `level: swap`.                                                                                                              |
+| `materialize_logical_modules`    | <lowering/> + analysis files | When `logical_modules`, `unassigned_mode`, or `chunk_renames` is non-empty. Computes facts, quotients the owner graph into `I ∪ S`, validates, emits. |
+| `write_js_tree`                  | <write_tree.rs>              | When `write_js_tree` output config is present; writes JS tree manifests with exact `output_metrics`.                                                  |
+| `emit_browser_harness`           | <emit_harness.rs>            | When `emit_browser_harness` output config is present; writes browser harness manifests with exact `output_metrics`.                                   |
 
 Within `materialize_logical_modules`, the substages are:
 
 1. **Spec parsing** → `LogicalRequest` / `ModulePlan` per chunk.
-2. **Chunk AST analysis** (<logical_modules.rs>:
+2. **Chunk AST analysis** (<lowering/chunk_ast.rs>:
    `analyze_chunk_ast`) → top-level declarations, declaration index,
    and runtime import facts in one top-level scan.
 3. **Statement-facts analysis** (<facts.rs>:
@@ -2843,7 +2843,7 @@ exploration before crossing the relevant phase.
    the per-module emission too (`lower_chunk` /
    `apply_module_lowering` paths), not just the entry-body
    rewrite. Out of scope for the purity-propagation change
-   (`logical_modules.rs:528+` declared_pure collection now
+   (`lowering/` declared_pure collection now
    pulls from chunk_renames members) — those are separate
    passes of the same map. Track when a real spec wants
    the renamed name everywhere.
@@ -2880,7 +2880,12 @@ Primary:
 - <factor_assembly.rs> — spec claims projected onto atomic units.
 - <factorize.rs> and <peel_factorize.rs> — advisory factorization
   proposal construction and reporting.
-- <logical_modules.rs> — main splitting transform.
+- <lowering/> — main splitting transform (`mod.rs` plus per-concern
+  sibling files: `chunk_ast.rs`, `lower.rs`, `materialize.rs`,
+  `plans.rs`, `naturalize.rs`, `imports_cross.rs`,
+  `imports_runtime.rs`, `exports.rs`, `plan_references.rs`,
+  `runtime_imports.rs`, `body_facts.rs`, `chunk_renames.rs`,
+  `rewrite_runtime.rs`, `visitors.rs`, `anonymous.rs`, `util.rs`).
 - <pipeline.rs> — fixed transform composition.
 - <program_analysis.rs> — chunk metadata + side-effect
   classification (used as input to the analyzer).

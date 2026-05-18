@@ -216,7 +216,7 @@ to exist when _it_ runs. PR #1627 (`object_literal_import_collapse_test`,
 fixed by e0b9c7f) and PR #1631
 (`object_literal_return_shorthand_drops_import_test`, fixed by the
 heuristic-rename reverse-lookup at
-`logical_modules.rs::plan_module_reference_needs`) are both symptoms of
+`lowering/plan_references.rs::plan_module_reference_needs`) are both symptoms of
 the same shape: a rename happened in one layer and a downstream layer
 keyed off the wrong-era name. Each fix has been a localized defensive
 patch on the consumer side, which leaves the same trap waiting for the
@@ -260,14 +260,14 @@ a defensive sanitizer at the usage site.
 
 Prerequisite work before designing the pipeline:
 
-1. Inventory every current rename contributor in `logical_modules.rs`
-   and adjacent files. Examples already known:
-   `collect_return_object_alias_renames` (line ~3044),
-   `collect_naturalization_renames_from_function` (~2982), the
-   `RenameAndShorthandNaturalizer` `VisitMut` (~3172),
-   `naturalize_object_literal_shorthand` (~3226),
-   `disambiguate_import_locals` (~3668), the chunk-level
-   `chunk_renames` map that flows out of factorize, and any
+1. Inventory every current rename contributor in `lowering/` and
+   adjacent files. Examples already known:
+   `collect_return_object_alias_renames` and
+   `collect_naturalization_renames_from_function` in
+   `lowering/naturalize.rs`; `RenameAndShorthandNaturalizer` and
+   `naturalize_object_literal_shorthand` in `lowering/visitors.rs`;
+   `disambiguate_import_locals` in `lowering/util.rs`; the chunk-level
+   `chunk_renames` map that flows out of factorize; and any
    collision-resolution code path that mutates `module_import_renames`
    at the orchestration site. Capture each contributor's _kind_
    (explicit / heuristic / collision / chunk-level), _scope_ (function
@@ -319,3 +319,28 @@ propKeyA` and `collect_naturalization_renames_from_function` says
    - "all structural moves pre-COLLECT" (cleaner architecturally but
      requires reordering the materializer to compute a final body
      order before any rename intents are submitted).
+
+## Rename `schedule.json` artifact to `factorization.json`
+
+PR #1655 / #1657 renamed the `Schedule` type to `ChunkFactorization`
+(+ split off `ChunkAnalysis`) and cleaned up doc / code references,
+but the on-disk per-chunk validation report
+`<reports>/<chunk_id>/schedule.json` still uses the old name. The
+file is read by gaffer-private's `tana-peel` skills + the
+`AGENT_MODULE_PEEL_GUIDE.md` runbook (find-globs for
+`schedule.json`), so renaming requires a coordinated change:
+
+- **ducktape** side: rename the write filename in
+  `lowering/materialize.rs` (the `write_chunk_report_json(...)`
+  call and the materializer's atomic-unit-conflict error message),
+  the `e2e/realizability_test.rs` fixture path, and the
+  `facts.rs` doc-comment that points at the file.
+- **gaffer-private** side: update the `find` invocations in
+  `tana/re/web/spec/AGENT_MODULE_PEEL_GUIDE.md`, the
+  `.claude/skills/tana-peel/SKILL.md` runbook, and
+  `.claude/skills/tana-peel/tooling.md` reference.
+
+Land both sides in lock-step (or in a release-pin-aware order)
+so an in-flight Tana peel doesn't suddenly miss the file. Adds
+to the broader Tana peel coordination tracked in
+`gaffer-private/tana/re/web/`.

@@ -153,7 +153,7 @@ pub enum StatementKind {
 /// would attribute `B`'s read of `X` to `mod_a` (the first
 /// declared name's owner), inventing or hiding cycles. The
 /// emitter splits the same comma-lists separately at lower-time
-/// (`split_var_decl` in `logical_modules.rs`); this pre-split
+/// (`split_var_decl` in `lowering/util.rs`); this pre-split
 /// just teaches the analyzer the same view.
 /// Locate the first top-level `await` expression in `module`'s
 /// body, if any. Returns the source-order ordinal of the offending

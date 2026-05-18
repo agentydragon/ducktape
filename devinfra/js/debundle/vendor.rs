@@ -1726,7 +1726,6 @@ pub fn apply_partial_vendor_swaps(
             jobs.push(PartialSwapFileJob {
                 caller_chunk_index,
                 caller_chunk_id,
-                caller_chunk_name: caller_chunk_name.clone(),
                 file_path,
                 parts,
                 ast,
@@ -1807,7 +1806,6 @@ pub fn apply_partial_vendor_swaps(
 struct PartialSwapFileJob {
     caller_chunk_index: usize,
     caller_chunk_id: ChunkId,
-    caller_chunk_name: String,
     file_path: String,
     parts: JsFileAstParts,
     ast: ParsedJsModule,
@@ -1815,10 +1813,6 @@ struct PartialSwapFileJob {
 
 struct PartialSwapFileResult {
     caller_chunk_index: usize,
-    #[allow(dead_code)]
-    caller_chunk_name: String,
-    #[allow(dead_code)]
-    file_path: String,
     parts: JsFileAstParts,
     ast: ParsedJsModule,
     /// (chunk_name, chunk_export) -> count of rewritten references in
@@ -2012,8 +2006,6 @@ fn rewrite_partial_swap_in_file(
 
     PartialSwapFileResult {
         caller_chunk_index: job.caller_chunk_index,
-        caller_chunk_name: job.caller_chunk_name,
-        file_path: job.file_path,
         parts: job.parts,
         ast: job.ast,
         references_by_symbol,

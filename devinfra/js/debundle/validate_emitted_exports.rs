@@ -30,7 +30,7 @@
 //! This stage doesn't *fix* the underlying generation bug — the
 //! emit-side paths that produced the duplicate still need patching
 //! (the immediate one is `auto_grown_residual_exports` in
-//! `logical_modules.rs`, which compares local binding names to
+//! `lowering/exports.rs`, which compares local binding names to
 //! `pre_existing_entry_exports` but never checks whether the public
 //! name it's about to grow would collide with an existing alias's
 //! public name). It just makes the failure mode unmissable.

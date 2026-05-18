@@ -11,9 +11,9 @@
 //!    `peelability.rs`) pushes the candidate's hypothetical
 //!    `MoveOwners` delta onto the shared `RealizabilityIndex`
 //!    (`devinfra/js/debundle/realizability.rs`) and reads the verdict.
-//! 2. The **cycle gate** (`validate_schedule` in `validation.rs`,
+//! 2. The **cycle gate** (`validate_factorization` in `validation.rs`,
 //!    consumed by `materialize_logical_modules` in
-//!    `logical_modules.rs`) is unchanged in this PR but answers the
+//!    `lowering/`) is unchanged in this PR but answers the
 //!    same three-clause validity predicate. With the proposer routed
 //!    through the same primitive, both sides cannot disagree on
 //!    whether a candidate peel produces a constraining cross-module
