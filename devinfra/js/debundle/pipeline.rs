@@ -18,6 +18,7 @@ use rewrite_specifiers::rewrite_chunk_entry_specifiers;
 use spec::{MaterializeLogicalModulesConfig, SwapVendorChunksConfig, TransformSpec, VendorLevel};
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
 use strip_swapped_vendor_exports::strip_swapped_vendor_exports;
+use validate_emitted_exports::validate_emitted_exports;
 use vendor::{
     ApplyPartialVendorSwapsOptions, SwapVendorOptions, apply_partial_vendor_swaps,
     apply_vendor_annotations, rename_vendor_exports, swap_vendor_chunks,
@@ -188,6 +189,7 @@ pub enum PipelineStage {
     MaterializeLogicalModules,
     ApplyPartialVendorSwaps,
     StripSwappedVendorExports,
+    ValidateEmittedExports,
     WriteJsTree,
     EmitBrowserHarness,
 }
@@ -426,6 +428,17 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
             })?;
         artifact = strip_result.artifact;
     }
+
+    // Final emit-shape check: every JS file that came out of the
+    // materialize / strip pipeline must have unique public export
+    // names per file. Catching a duplicate here turns a downstream
+    // browser-link failure (which Chromium reports as a silent empty
+    // pageerror) into an immediate build-time error pointing at the
+    // exact file, name, and source lines. Runs unconditionally so
+    // pipelines without vendor swaps still benefit.
+    run_step(&mut steps, PipelineStage::ValidateEmittedExports, || {
+        validate_emitted_exports(&artifact)
+    })?;
 
     if let Some(cfg) = &spec.write_js_tree {
         let out_dir = cfg.out_dir.clone();
@@ -721,13 +734,14 @@ mod tests {
             force: false,
         })?;
 
-        assert_eq!(summary.steps.len(), 2);
+        assert_eq!(summary.steps.len(), 3);
         assert_eq!(summary.preparation_steps.len(), 5);
         let rendered_summary = render_transform_summary(&summary);
         assert!(rendered_summary.contains("- load_transform_spec"));
         assert!(rendered_summary.contains("- prepare_js_chunks"));
         assert!(rendered_summary.contains("- build_artifact_indexes"));
         assert!(rendered_summary.contains("- rewrite_chunk_entry_specifiers"));
+        assert!(rendered_summary.contains("- validate_emitted_exports"));
         assert!(rendered_summary.contains("- emit_browser_harness"));
         assert!(out.join("bootstrap.js").exists());
         assert!(out.join("manifest.json").exists());

@@ -75,6 +75,7 @@ rust_library(
         "import_coalescing_test",
         "peel_emit_resolvability_test",
         "object_literal_import_collapse_test",
+        "duplicate_export_test",
     ]
 ]
 

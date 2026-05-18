@@ -146,6 +146,26 @@ rust_test(
 )
 
 rust_library(
+    name = "validate_emitted_exports",
+    srcs = ["validate_emitted_exports.rs"],
+    crate_root = "validate_emitted_exports.rs",
+    edition = "2024",
+    deps = [
+        ":artifact",
+        ":js_ast",
+        "@crates//:anyhow",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
+rust_test(
+    name = "validate_emitted_exports_test",
+    crate = ":validate_emitted_exports",
+    edition = "2024",
+)
+
+rust_library(
     name = "emit_harness",
     srcs = ["emit_harness.rs"],
     crate_root = "emit_harness.rs",
@@ -453,6 +473,7 @@ rust_library(
         ":spec",
         ":spec_tree",
         ":strip_swapped_vendor_exports",
+        ":validate_emitted_exports",
         ":vendor",
         ":write_tree",
         "@crates//:anyhow",
