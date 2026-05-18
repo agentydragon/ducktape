@@ -68,18 +68,19 @@ function formatAge(seconds) {
   return formatDuration(s);
 }
 
-// Pick the windows to render: prefer the latest fetch, but fall back to the
-// last successful snapshot when the latest call returned nothing usable.
-function effectiveWindows(state) {
+// Pick the state to render: prefer the latest fetch, but fall back to the
+// last successful snapshot (windows + extraUsage) when the latest call
+// returned nothing usable. `staleAge` is null when no fallback was needed.
+function effectiveState(state) {
   if (state.short != null || state.long != null) {
-    return { short: state.short, long: state.long, staleAge: null };
+    return { short: state.short, long: state.long, extraUsage: state.extraUsage, staleAge: null };
   }
   const snap = state.lastSuccess;
   if (!snap || (snap.short == null && snap.long == null)) {
-    return { short: null, long: null, staleAge: null };
+    return { short: null, long: null, extraUsage: null, staleAge: null };
   }
   const ageSeconds = snap.fetchedAt != null ? Math.max(0, (Date.now() - snap.fetchedAt) / 1000) : null;
-  return { short: snap.short, long: snap.long, staleAge: ageSeconds };
+  return { short: snap.short, long: snap.long, extraUsage: snap.extraUsage, staleAge: ageSeconds };
 }
 
 function formatFreshness(lastFetch) {
@@ -429,8 +430,6 @@ const QuotaIndicator = GObject.registerClass(
       if (!extra) return null;
       return {
         is_enabled: extra.is_enabled,
-        used_credits: Math.round(extra.used_usd * 100),
-        monthly_limit: Math.round(extra.monthly_limit_usd * 100),
         utilization: extra.utilization,
         used_usd: extra.used_usd,
         monthly_limit_usd: extra.monthly_limit_usd,
@@ -488,7 +487,7 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _renderProvider(state, icon, paceLabel) {
-      const { short, long, staleAge } = effectiveWindows(state);
+      const { short, long, staleAge } = effectiveState(state);
       if (state.error && short == null && long == null) {
         this._setTint(icon, paceLabel, "error");
         paceLabel.set_text("!");
@@ -534,7 +533,7 @@ const QuotaIndicator = GObject.registerClass(
           this._setBarFill(p.longRow._usageFill, null);
           this._setBarTint(p.longRow._usageFill, "unknown");
         } else {
-          const { short, long, staleAge } = effectiveWindows(p.state);
+          const { short, long, staleAge } = effectiveState(p.state);
           p.shortRow.visible = true;
           p.longRow.visible = true;
           this._renderPopupRow(p.shortRow, "5h", short, staleAge);
@@ -547,16 +546,19 @@ const QuotaIndicator = GObject.registerClass(
       item.label.remove_style_class_name("quota-popup-header-error");
       item.label.remove_style_class_name("quota-popup-header-stale");
 
+      const { short, long, extraUsage } = effectiveState(state);
+      const haveWindows = short != null || long != null;
       const parts = [title];
-      const haveCurrentData = state.short != null || state.long != null;
       if (state.error) {
-        const prefix = haveCurrentData ? "last refresh failed" : "error";
+        // "last refresh failed" makes more sense when stale rows render below;
+        // "error" is the standalone form when no fallback is available either.
+        const prefix = haveWindows ? "last refresh failed" : "error";
         parts.push(`${prefix}: ${state.error}`);
         item.label.add_style_class_name("quota-popup-header-error");
       } else if (isStaleFetch(state.lastFetch)) {
         item.label.add_style_class_name("quota-popup-header-stale");
       }
-      const extraStr = formatExtraUsage(state.extraUsage);
+      const extraStr = formatExtraUsage(extraUsage);
       if (extraStr) parts.push(extraStr);
       parts.push(formatFreshness(state.lastFetch));
       item.label.set_text(parts.join(" · "));

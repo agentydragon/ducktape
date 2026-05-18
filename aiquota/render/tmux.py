@@ -2,9 +2,10 @@ from aiquota.models import FetchSuccess, ProviderQuota, QuotaWindow
 from aiquota.pace import binding_tint, compute_pace, tint_for
 
 # Nerd Font cod-sparkle (U+EC10), the de-facto "AI" glyph in dev tooling.
-# Followed by the provider's vendor initial: Anthropic / OpenAI / Z.AI.
+# Prepended once to the whole segment; each provider then uses its vendor
+# initial: Anthropic / OpenAI / Z.AI.
 _AI_GLYPH = ""
-PROVIDER_PREFIX = {"claude": f"{_AI_GLYPH}A", "codex": f"{_AI_GLYPH}O", "zai": f"{_AI_GLYPH}Z"}
+PROVIDER_PREFIX = {"claude": "A", "codex": "O", "zai": "Z"}
 
 TINT_FG = {
     "cool": "blue",
@@ -25,7 +26,7 @@ def _window_tint(window: QuotaWindow | None, *, is_short: bool) -> str:
 
 
 def render_provider(pq: ProviderQuota) -> str:
-    prefix = PROVIDER_PREFIX.get(pq.provider, f"{_AI_GLYPH}{pq.provider[0].upper()}")
+    prefix = PROVIDER_PREFIX.get(pq.provider, pq.provider[0].upper())
     result = pq.last_output.result
 
     # Pick the windows to render: prefer the latest fetch when it succeeded,
@@ -63,4 +64,7 @@ def render_provider(pq: ProviderQuota) -> str:
 
 
 def render(providers: list[ProviderQuota]) -> str:
-    return " ".join(render_provider(pq) for pq in providers)
+    segments = [render_provider(pq) for pq in providers]
+    if not segments:
+        return ""
+    return f"{_AI_GLYPH} " + " ".join(segments)

@@ -78,7 +78,14 @@ def test_render_multiple() -> None:
         ),
     ]
     result = render(providers)
+    # Single sparkle prepended once to the whole segment, not per provider.
+    assert result.startswith(" ")
+    assert result.count("") == 1
     assert "A:" in result
     assert "O:" in result
     assert "50%" in result
     assert "90%" in result
+
+
+def test_render_empty_returns_empty_string() -> None:
+    assert render([]) == ""
