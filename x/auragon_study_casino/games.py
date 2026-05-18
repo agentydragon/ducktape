@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import secrets
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 RNG_VERSION = "server-secrets-v1"
 RULES_VERSION = "server-rules-v1"
@@ -50,7 +50,7 @@ WHEEL = [
 ]
 RED = {1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36}
 
-SLOT_SYMBOLS = [
+SLOT_SYMBOLS: list[dict[str, Any]] = [
     {"id": "seven", "glyph": "7", "color": "#e8b84a", "weight": 1, "payout": 50},
     {"id": "star", "glyph": "★", "color": "#e8b84a", "weight": 3, "payout": 20},
     {"id": "diamond", "glyph": "◆", "color": "#6fc4e8", "weight": 5, "payout": 10},
