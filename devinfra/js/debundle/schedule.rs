@@ -9,6 +9,9 @@ use crate::graph::build_module_quotient;
 use crate::partition::Partition;
 use crate::reports::{build_owner_graph_report, owner_key};
 use crate::validation::validate_schedule;
+use swc_atoms::Atom;
+use swc_ecma_ast::Id;
+
 use crate::{
     BindingId, BindingKind, BindingName, LogicalModule, LogicalModuleIndex, ModuleId,
     ModuleQuotient, OwnerGraph, OwnerGraphReport, ScheduleReport, StatementFacts,
@@ -25,14 +28,14 @@ pub struct Schedule {
     /// Iteration order is undefined; consumers that need a
     /// deterministic order (emit sites, error messages) must sort
     /// the keys themselves.
-    pub bindings: HashMap<BindingName, BindingKind>,
+    pub bindings: HashMap<Id, BindingKind>,
     pub logical_modules: Vec<LogicalModule>,
     /// In-place readability renames for bindings that stay in
     /// entry. Iteration order is undefined; the
     /// `materialize_logical_modules` validation pass sorts the
     /// keys before iterating so any spec errors it emits stay
     /// deterministic.
-    pub chunk_renames: HashMap<BindingName, BindingName>,
+    pub chunk_renames: HashMap<Id, Atom>,
     pub owner_graph: OwnerGraph,
     /// Module assignment per owner — the spec's partition of the
     /// owner graph. Stored separately from the IR so the IR stays
@@ -64,7 +67,7 @@ pub struct Schedule {
     /// re-walking `bindings` / `chunk_renames` /
     /// `logical_modules[idx].rename_map` per binding per candidate.
     /// Bindings absent from this map export under their own name.
-    export_name_by_binding: HashMap<BindingName, BindingName>,
+    export_name_by_binding: HashMap<Id, Atom>,
 }
 
 impl Schedule {
@@ -80,9 +83,9 @@ impl Schedule {
     pub fn build(
         chunk_id: String,
         facts: Vec<StatementFacts>,
-        bindings: HashMap<BindingName, BindingKind>,
+        bindings: HashMap<Id, BindingKind>,
         logical_modules: Vec<LogicalModule>,
-        chunk_renames: HashMap<BindingName, BindingName>,
+        chunk_renames: HashMap<Id, Atom>,
         default_destination: ModuleId,
     ) -> Self {
         let precomputed = compute_owner_graph_and_units(&facts);
@@ -105,9 +108,9 @@ impl Schedule {
         chunk_id: String,
         facts: Vec<StatementFacts>,
         precomputed: OwnerGraphAndUnits,
-        bindings: HashMap<BindingName, BindingKind>,
+        bindings: HashMap<Id, BindingKind>,
         logical_modules: Vec<LogicalModule>,
-        chunk_renames: HashMap<BindingName, BindingName>,
+        chunk_renames: HashMap<Id, Atom>,
         default_destination: ModuleId,
     ) -> Self {
         let OwnerGraphAndUnits {
@@ -164,10 +167,16 @@ impl Schedule {
     /// to the binding's own name. Hot-path replacement for the
     /// previous `bindings` / `chunk_renames` / `rename_map` walk in
     /// peelability report generation.
+    ///
+    /// Looks up by `sym`-only since the report generators pass bare
+    /// `BindingName` (no ctxt available at the call site). Within a
+    /// chunk's top-level scope, syms are unique by construction, so
+    /// the first sym match is unambiguous.
     pub(crate) fn export_name_for(&self, binding: &str) -> BindingName {
         self.export_name_by_binding
-            .get(binding)
-            .cloned()
+            .iter()
+            .find(|(id, _)| id.0.as_ref() == binding)
+            .map(|(_, atom)| atom.to_string())
             .unwrap_or_else(|| binding.to_string())
     }
 
@@ -207,11 +216,18 @@ impl Schedule {
     /// Which logical module owns a binding (by local name), if any.
     /// Returns `None` for names that aren't `Owned` in this schedule
     /// (e.g. globals, imported bindings, names not in the spec).
+    ///
+    /// Looks up by `sym`-only since most callers don't carry hygiene
+    /// context. Top-level binding syms are unique within a chunk, so
+    /// first sym match is unambiguous.
     pub fn owner_of(&self, name: &str) -> Option<ModuleId> {
-        self.bindings.get(name).and_then(|kind| match kind {
-            BindingKind::Owned { owner } => Some(*owner),
-            BindingKind::Imported { .. } => None,
-        })
+        self.bindings
+            .iter()
+            .find(|(id, _)| id.0.as_ref() == name)
+            .and_then(|(_, kind)| match kind {
+                BindingKind::Owned { owner } => Some(*owner),
+                BindingKind::Imported { .. } => None,
+            })
     }
 
     /// Lookup a logical module by index.
@@ -304,36 +320,36 @@ impl Schedule {
 /// - Everything else → `chunk_renames[name]` if present, else the
 ///   binding's own name.
 fn build_export_name_by_binding(
-    bindings: &HashMap<BindingName, BindingKind>,
-    chunk_renames: &HashMap<BindingName, BindingName>,
+    bindings: &HashMap<Id, BindingKind>,
+    chunk_renames: &HashMap<Id, Atom>,
     logical_modules: &[LogicalModule],
-) -> HashMap<BindingName, BindingName> {
+) -> HashMap<Id, Atom> {
     let mut out = HashMap::with_capacity(bindings.len() + chunk_renames.len());
-    for (name, kind) in bindings {
+    for (id, kind) in bindings {
         let export = match kind {
             BindingKind::Owned {
                 owner: ModuleId(LogicalModuleIndex(idx)),
             } => logical_modules
                 .get(*idx)
-                .and_then(|module| module.rename_map.get(name))
+                .and_then(|module| module.rename_map.get(id))
                 .cloned()
-                .unwrap_or_else(|| name.clone()),
+                .unwrap_or_else(|| id.0.clone()),
             _ => chunk_renames
-                .get(name)
+                .get(id)
                 .cloned()
-                .unwrap_or_else(|| name.clone()),
+                .unwrap_or_else(|| id.0.clone()),
         };
-        if export != *name {
-            out.insert(name.clone(), export);
+        if export != id.0 {
+            out.insert(id.clone(), export);
         }
     }
     // Cover bindings that only show up in `chunk_renames` (no
     // `BindingKind` entry — e.g. names referenced by reports that
     // aren't first-class `Owned` / `Imported` bindings on the
     // schedule).
-    for (name, export) in chunk_renames {
-        if !bindings.contains_key(name) && export != name {
-            out.insert(name.clone(), export.clone());
+    for (id, export) in chunk_renames {
+        if !bindings.contains_key(id) && export != &id.0 {
+            out.insert(id.clone(), export.clone());
         }
     }
     out

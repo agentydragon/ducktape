@@ -306,10 +306,11 @@ fn residual_declared_for_owner(schedule: &Schedule, node: &OwnerNode) -> Vec<Bin
         .iter()
         .map(|binding| schedule.binding_name(*binding))
         .filter(|name| {
-            !matches!(
-                schedule.bindings.get(*name),
-                Some(BindingKind::Imported { .. })
-            )
+            // schedule.bindings is Id-keyed but BindingTable.name returns
+            // sym only; match by sym.
+            !schedule.bindings.iter().any(|(id, kind)| {
+                id.0.as_ref() == name.as_str() && matches!(kind, BindingKind::Imported { .. })
+            })
         })
         .cloned()
         .collect()

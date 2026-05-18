@@ -1,6 +1,22 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
+use swc_atoms::Atom;
+use swc_common::{Mark, SyntaxContext};
+use swc_ecma_ast::Id;
+
+/// Construct the hygiene-aware `Id` for a chunk-top-level binding.
+/// SWC's `resolver` pass assigns `ctxt = SyntaxContext::empty().apply_mark(top_level_mark)`
+/// to every top-level binding in a parsed `Module`. Spec-derived
+/// String names (which carry no ctxt) are resolved to their `Id` by
+/// pairing the sym with this canonical ctxt.
+#[allow(dead_code)] // CLEANUP(2026-05-18): remove once logical_modules.rs spec→Id boundary lands.
+pub fn top_level_id(sym: impl Into<Atom>, top_level_mark: Mark) -> Id {
+    (
+        sym.into(),
+        SyntaxContext::empty().apply_mark(top_level_mark),
+    )
+}
 
 /// Index into the materializer's `module_plans` list, identifying a
 /// logical module produced by the spec.
@@ -173,7 +189,11 @@ pub struct LogicalModule {
     /// owns. Empty when the module re-exports only imported
     /// bindings. Iteration order is undefined; report and emit
     /// sites sort by local name before consuming.
-    pub rename_map: HashMap<BindingName, BindingName>,
+    /// Maps each owned binding's hygiene-aware `Id` to its public
+    /// exported name (an `Atom`/sym, no ctxt — exports are name-only).
+    /// Spec strings are resolved to `Id` at chunk-build time via
+    /// `top_level_id(name, top_level_mark)`.
+    pub rename_map: HashMap<Id, Atom>,
     /// Source-chunk top-level statement ordinals this module claims
     /// as anonymous-statement members (owners with empty
     /// `declared_bindings` that the spec resolves by AST shape via

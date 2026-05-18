@@ -16,7 +16,7 @@ use analysis::{
     LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits,
     OwnerId, RedundantPureMemberReason, RedundantPurityHint, RedundantPurityReason, Schedule,
     analyze_chunk, compute_owner_graph_and_units, render_atomic_unit_conflict_summary,
-    render_cycle_summary,
+    render_cycle_summary, top_level_id,
 };
 use artifact::{
     ArtifactIndexes, ArtifactSourceImportResolver, ChunkAnalysis, ChunkArtifact, ChunkBundle,
@@ -423,6 +423,9 @@ fn materialize_logical_chunk(
     let runtime_ast = runtime_file.ast().with_context(|| {
         format!("materialize_logical_modules missing entry AST for chunk: {chunk_id}")
     })?;
+    // Chunk-wide `top_level_mark` for resolving spec-derived String
+    // binding names to hygiene-aware `Id`s via `top_level_id`.
+    let chunk_top_level_mark = runtime_ast.top_level_mark;
     let header_lines = runtime_file.header_lines.clone();
     let source_path = runtime_file.metadata.source_path.clone();
     let chunk_ast_analysis = time_phase!(timings, "analyze_chunk_ast", {
@@ -455,7 +458,7 @@ fn materialize_logical_chunk(
     let mut binding_assignment = BTreeMap::<String, usize>::new();
     let mut anonymous_ordinal_assignment = BTreeMap::<usize, usize>::new();
     let mut module_plans = Vec::new();
-    let mut bindings_catalogue = HashMap::<BindingName, BindingKind>::new();
+    let mut bindings_catalogue = HashMap::<Id, BindingKind>::new();
     let mut imported_binding_resolver =
         ArtifactSourceImportResolutionCache::new(artifact, artifact_indexes);
     let mut imported_from_by_src = BTreeMap::<String, String>::new();
@@ -484,7 +487,11 @@ fn materialize_logical_chunk(
         let dest_target_file = target_file_for_request(target_dir, &request.target_path)?;
         let module_id = ModuleId(LogicalModuleIndex(index));
         for member in &request.members {
-            if let Some(existing_kind) = bindings_catalogue.get(&member.binding) {
+            if let Some(existing_kind) = bindings_catalogue
+                .iter()
+                .find(|(id, _)| id.0.as_ref() == member.binding.as_str())
+                .map(|(_, v)| v)
+            {
                 let existing_id = match existing_kind {
                     BindingKind::Owned {
                         owner: ModuleId(LogicalModuleIndex(owner_index)),
@@ -523,7 +530,7 @@ fn materialize_logical_chunk(
                     &mut imported_from_by_src,
                 )?;
                 bindings_catalogue.insert(
-                    member.binding.clone(),
+                    top_level_id(member.binding.as_str(), chunk_top_level_mark),
                     BindingKind::Imported {
                         imported_name,
                         imported_from,
@@ -538,7 +545,10 @@ fn materialize_logical_chunk(
         for binding in bindings.keys() {
             if declaration_by_name.contains_key(binding) {
                 binding_assignment.insert(binding.clone(), index);
-                bindings_catalogue.insert(binding.clone(), BindingKind::Owned { owner: module_id });
+                bindings_catalogue.insert(
+                    top_level_id(binding.as_str(), chunk_top_level_mark),
+                    BindingKind::Owned { owner: module_id },
+                );
             }
         }
         module_plans.push(ModulePlan {
@@ -579,8 +589,10 @@ fn materialize_logical_chunk(
             match binding_assignment.get(sibling).copied() {
                 None => {
                     binding_assignment.insert(sibling.clone(), owner_index);
-                    bindings_catalogue
-                        .insert(sibling.clone(), BindingKind::Owned { owner: owner_id });
+                    bindings_catalogue.insert(
+                        top_level_id(sibling.as_str(), chunk_top_level_mark),
+                        BindingKind::Owned { owner: owner_id },
+                    );
                     let plan = &mut module_plans[owner_index];
                     plan.bindings.insert(sibling.clone(), sibling.clone());
                 }
@@ -618,7 +630,7 @@ fn materialize_logical_chunk(
                     binding_assignment.insert(name.clone(), residual_index);
                     residual_bindings.insert(name.clone(), name.clone());
                     bindings_catalogue.insert(
-                        name.clone(),
+                        top_level_id(name.as_str(), chunk_top_level_mark),
                         BindingKind::Owned {
                             owner: residual_module_id,
                         },
@@ -661,8 +673,10 @@ fn materialize_logical_chunk(
                             .bindings
                             .entry(name.clone())
                             .or_insert_with(|| name.clone());
-                        bindings_catalogue
-                            .insert(name.clone(), BindingKind::Owned { owner: owner_id });
+                        bindings_catalogue.insert(
+                            top_level_id(name.as_str(), chunk_top_level_mark),
+                            BindingKind::Owned { owner: owner_id },
+                        );
                     }
                 }
             }
@@ -801,10 +815,12 @@ fn materialize_logical_chunk(
                     &mut binding_assignment,
                     &mut bindings_catalogue,
                     &mut anonymous_ordinal_assignment,
+                    chunk_top_level_mark,
                     target_dir,
                 )
             })?;
         }
+        let chunk_top_level_mark = runtime_ast.top_level_mark;
         let mut logical_modules: Vec<ScheduleLogicalModule> =
             time_phase!(timings, "project_schedule_modules", {
                 module_plans
@@ -813,7 +829,16 @@ fn materialize_logical_chunk(
                         id: plan.id.clone(),
                         target_file: plan.target_file.clone(),
                         residual: !plan.explicit,
-                        rename_map: plan.bindings.clone(),
+                        rename_map: plan
+                            .bindings
+                            .iter()
+                            .map(|(local, exported)| {
+                                (
+                                    top_level_id(local.as_str(), chunk_top_level_mark),
+                                    exported.as_str().into(),
+                                )
+                            })
+                            .collect(),
                         // Schedule's owner graph uses post-comma-list-split
                         // `StatementOrdinal`s; convert body indices here so
                         // the destination override targets the right owner
@@ -860,6 +885,15 @@ fn materialize_logical_chunk(
         });
         let default_destination = ModuleId(LogicalModuleIndex(sentinel_idx));
         let redundant_purity_hints = analysis.redundant_purity_hints;
+        let schedule_chunk_renames: HashMap<Id, swc_atoms::Atom> = chunk_renames_map
+            .iter()
+            .map(|(local, exported)| {
+                (
+                    top_level_id(local.as_str(), chunk_top_level_mark),
+                    exported.as_str().into(),
+                )
+            })
+            .collect();
         let schedule = time_phase!(timings, "build_schedule", {
             Schedule::build_with(
                 chunk_id.to_string(),
@@ -867,7 +901,7 @@ fn materialize_logical_chunk(
                 precomputed,
                 bindings_catalogue,
                 logical_modules,
-                chunk_renames_map.clone(),
+                schedule_chunk_renames,
                 default_destination,
             )
         });
@@ -2039,8 +2073,9 @@ fn synthesize_mini_factor_plans(
     residual_plan_index: Option<usize>,
     module_plans: &mut Vec<ModulePlan>,
     binding_assignment: &mut BTreeMap<String, usize>,
-    bindings_catalogue: &mut HashMap<BindingName, BindingKind>,
+    bindings_catalogue: &mut HashMap<Id, BindingKind>,
     anonymous_ordinal_assignment: &mut BTreeMap<usize, usize>,
+    chunk_top_level_mark: swc_common::Mark,
     target_dir: &str,
 ) -> Result<()> {
     let owner_graph = &precomputed.owner_graph;
@@ -2139,7 +2174,7 @@ fn synthesize_mini_factor_plans(
                 }
                 binding_assignment.insert(name.clone(), synthetic_idx);
                 bindings_catalogue.insert(
-                    name.clone(),
+                    top_level_id(name.as_str(), chunk_top_level_mark),
                     BindingKind::Owned {
                         owner: synthetic_module_id,
                     },
@@ -2564,10 +2599,7 @@ impl RefCollector {
 /// Side-effect-only imports (`import "./mod.js"` with no
 /// specifiers) pass through unchanged — they had no specifiers
 /// to begin with.
-fn trim_dead_named_specifiers(
-    body: &mut [ModuleItem],
-    bindings: &HashMap<BindingName, BindingKind>,
-) {
+fn trim_dead_named_specifiers(body: &mut [ModuleItem], bindings: &HashMap<Id, BindingKind>) {
     let mut collector = RefCollector::default();
     for item in body.iter() {
         item.visit_with(&mut collector);
@@ -2590,8 +2622,10 @@ fn trim_dead_named_specifiers(
         import.specifiers.retain(|spec| match spec {
             ImportSpecifier::Default(_) | ImportSpecifier::Namespace(_) => true,
             ImportSpecifier::Named(named) => {
+                // bindings is Id-keyed; match by sym (top-level
+                // names are unique within a chunk).
                 let local = named.local.sym.as_ref();
-                let claimed = bindings.contains_key(local);
+                let claimed = bindings.iter().any(|(id, _)| id.0.as_ref() == local);
                 let unused = !refs.contains(&named.local.sym);
                 !(claimed && unused)
             }
@@ -2722,9 +2756,13 @@ fn collect_imported_reexports_by_module(
     // recorded sequence determines the emit order of
     // `import { ... }` statements per module body and we want that
     // source-level shape pinned.
-    let mut sorted_bindings: Vec<(&BindingName, &BindingKind)> = schedule.bindings.iter().collect();
-    sorted_bindings.sort_by(|a, b| a.0.cmp(b.0));
-    for (local, kind) in sorted_bindings {
+    let mut sorted_bindings: Vec<(&Id, &BindingKind)> = schedule.bindings.iter().collect();
+    sorted_bindings.sort_by(|a, b| a.0.0.cmp(&b.0.0));
+    for (id, kind) in sorted_bindings {
+        // The body of this loop refers to the sym-typed `local` name
+        // for ImportedReexport.local (a BindingName/String); pull it
+        // out so the existing String-typed downstream works.
+        let local = &id.0;
         let BindingKind::Imported {
             imported_name,
             imported_from,
@@ -2739,7 +2777,7 @@ fn collect_imported_reexports_by_module(
             continue;
         };
         reexports.push(ImportedReexport {
-            local: local.clone(),
+            local: local.to_string(),
             imported_name: imported_name.clone(),
             imported_from: imported_from.clone(),
             public_name: public_name.clone(),
@@ -2779,15 +2817,21 @@ fn plan_module_reference_needs<'a>(
         // each call. `runtime_imports.imports` IS Id-keyed.
         let name_str = body_id.0.as_ref();
         if let Some(ModuleId(LogicalModuleIndex(provider_index))) = schedule.owner_of(name_str) {
+            // provider.rename_map is now Id-keyed; reconstruct the
+            // provider's Id from the body ident's sym + ctxt. Within
+            // a chunk all top-level bindings share the chunk's
+            // top_level_mark, so body_id.1 matches the provider's
+            // binding ctxt.
+            let provider_key: Id = (body_id.0.clone(), body_id.1);
             if provider_index != module_index
                 && let Some(provider) = schedule.logical_module(LogicalModuleIndex(provider_index))
-                && let Some(exported_name) = provider.rename_map.get(name_str)
+                && let Some(exported_name) = provider.rename_map.get(&provider_key)
             {
                 needs
                     .cross_module_imports_by_provider
                     .entry(provider_index)
                     .or_default()
-                    .insert(name_str.to_string(), exported_name.clone());
+                    .insert(name_str.to_string(), exported_name.to_string());
             }
             continue;
         }

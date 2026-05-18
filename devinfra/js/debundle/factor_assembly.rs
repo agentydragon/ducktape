@@ -12,6 +12,7 @@
 use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
+use swc_ecma_ast::Id;
 
 use crate::atomic_units::AtomicUnit;
 use crate::graph::{DepKind, OwnerGraph, OwnerId};
@@ -58,7 +59,7 @@ pub struct AssemblyOutcome {
 pub fn assemble_partition(
     owner_graph: &OwnerGraph,
     atomic_units: &[AtomicUnit],
-    bindings: &HashMap<BindingName, BindingKind>,
+    bindings: &HashMap<Id, BindingKind>,
     logical_modules: &[LogicalModule],
     default_destination: ModuleId,
 ) -> AssemblyOutcome {
@@ -86,7 +87,7 @@ pub fn assemble_partition(
 /// One [`ModuleId`] slot per owner; `None` means no explicit claim.
 fn compute_owner_claims(
     owner_graph: &OwnerGraph,
-    bindings: &HashMap<BindingName, BindingKind>,
+    bindings: &HashMap<Id, BindingKind>,
     logical_modules: &[LogicalModule],
 ) -> Vec<Option<ModuleId>> {
     let mut claims = vec![None; owner_graph.nodes.len()];
@@ -95,8 +96,17 @@ fn compute_owner_claims(
             let Some(name) = owner_graph.binding_table.name(*binding_id) else {
                 continue;
             };
-            if let Some(BindingKind::Owned { owner: dest }) = bindings.get(name) {
-                claims[node.id.0] = Some(*dest);
+            // bindings is Id-keyed but `name` is just a sym; match
+            // by sym since chunk-top-level bindings are unique by sym.
+            let claim = bindings
+                .iter()
+                .find(|(id, _)| id.0.as_ref() == name.as_str())
+                .and_then(|(_, kind)| match kind {
+                    BindingKind::Owned { owner: dest } => Some(*dest),
+                    _ => None,
+                });
+            if let Some(dest) = claim {
+                claims[node.id.0] = Some(dest);
                 break;
             }
         }

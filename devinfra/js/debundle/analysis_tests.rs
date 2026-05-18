@@ -7,9 +7,17 @@ mod tests {
         classify_expr_purity,
     };
     use crate::*;
-    use swc_common::{FileName, sync::Lrc};
+    use swc_common::{FileName, SyntaxContext, sync::Lrc};
     use swc_ecma_ast::*;
     use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
+
+    /// Construct an `Id` for a test fixture binding using
+    /// `SyntaxContext::empty()`. Real chunks would use the chunk's
+    /// `top_level_mark` via `ids::top_level_id`, but tests don't run
+    /// through resolver so they use the empty context uniformly.
+    fn test_id(name: &str) -> Id {
+        (name.into(), SyntaxContext::empty())
+    }
 
     fn parse(source: &str) -> Module {
         let cm: Lrc<swc_common::SourceMap> = Default::default();
@@ -349,8 +357,8 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let module = parse("const A = B + 1; const B = A + 1;");
         let facts = analyze_facts(&module);
         let mut binding_assignment = HashMap::new();
-        binding_assignment.insert("A".to_string(), logical(0));
-        binding_assignment.insert("B".to_string(), logical(1));
+        binding_assignment.insert(test_id("A"), logical(0));
+        binding_assignment.insert(test_id("B"), logical(1));
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
@@ -364,9 +372,9 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let module = parse("const A = 1; const B = A + 1; const C = B + A;");
         let facts = analyze_facts(&module);
         let mut binding_assignment = HashMap::new();
-        binding_assignment.insert("A".to_string(), logical(0));
-        binding_assignment.insert("B".to_string(), logical(1));
-        binding_assignment.insert("C".to_string(), logical(2));
+        binding_assignment.insert(test_id("A"), logical(0));
+        binding_assignment.insert(test_id("B"), logical(1));
+        binding_assignment.insert(test_id("C"), logical(2));
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
@@ -395,9 +403,9 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let module = parse("const A = 1; function readB() { return B; } const B = A + 1;");
         let facts = analyze_facts(&module);
         let mut binding_assignment = HashMap::new();
-        binding_assignment.insert("A".to_string(), logical(0));
-        binding_assignment.insert("readB".to_string(), logical(0));
-        binding_assignment.insert("B".to_string(), logical(1));
+        binding_assignment.insert(test_id("A"), logical(0));
+        binding_assignment.insert(test_id("readB"), logical(0));
+        binding_assignment.insert(test_id("B"), logical(1));
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
@@ -464,10 +472,10 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         );
         let facts = analyze_facts(&module);
         let mut binding_assignment = HashMap::new();
-        binding_assignment.insert("readB".to_string(), logical(0));
-        binding_assignment.insert("triggerInit".to_string(), logical(0));
-        binding_assignment.insert("A".to_string(), logical(0));
-        binding_assignment.insert("B".to_string(), logical(1));
+        binding_assignment.insert(test_id("readB"), logical(0));
+        binding_assignment.insert(test_id("triggerInit"), logical(0));
+        binding_assignment.insert(test_id("A"), logical(0));
+        binding_assignment.insert(test_id("B"), logical(1));
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
@@ -499,9 +507,9 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         );
         let facts = analyze_facts(&module);
         let mut binding_assignment = HashMap::new();
-        binding_assignment.insert("a1".to_string(), logical(0));
-        binding_assignment.insert("a2".to_string(), logical(0));
-        binding_assignment.insert("b1".to_string(), logical(1));
+        binding_assignment.insert(test_id("a1"), logical(0));
+        binding_assignment.insert(test_id("a2"), logical(0));
+        binding_assignment.insert(test_id("b1"), logical(1));
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
@@ -532,10 +540,10 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         );
         let facts = analyze_facts(&module);
         let mut binding_assignment = HashMap::new();
-        binding_assignment.insert("helperA".to_string(), logical(0));
-        binding_assignment.insert("A".to_string(), logical(0));
-        binding_assignment.insert("helperB".to_string(), logical(1));
-        binding_assignment.insert("B".to_string(), logical(1));
+        binding_assignment.insert(test_id("helperA"), logical(0));
+        binding_assignment.insert(test_id("A"), logical(0));
+        binding_assignment.insert(test_id("helperB"), logical(1));
+        binding_assignment.insert(test_id("B"), logical(1));
         let owner_graph = build_owner_graph(&facts);
         let partition =
             Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
@@ -631,7 +639,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let mut bindings = HashMap::new();
         for (name, id) in ownership {
             let resolved = resolve_test_module_id(*id, residual_idx);
-            bindings.insert(name.to_string(), BindingKind::Owned { owner: resolved });
+            bindings.insert(test_id(name), BindingKind::Owned { owner: resolved });
         }
         let mut logical_modules: Vec<LogicalModule> = (0..explicit_count)
             .map(|i| LogicalModule {
@@ -670,10 +678,10 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let logical = logical(1);
         let mut bindings = HashMap::new();
         for name in residual_bindings {
-            bindings.insert(name.to_string(), BindingKind::Owned { owner: residual });
+            bindings.insert(test_id(name), BindingKind::Owned { owner: residual });
         }
         for name in logical_bindings {
-            bindings.insert(name.to_string(), BindingKind::Owned { owner: logical });
+            bindings.insert(test_id(name), BindingKind::Owned { owner: logical });
         }
         let logical_modules = vec![
             LogicalModule {

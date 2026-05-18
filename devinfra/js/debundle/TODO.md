@@ -222,6 +222,78 @@ keyed off the wrong-era name. Each fix has been a localized defensive
 patch on the consumer side, which leaves the same trap waiting for the
 next consumer that doesn't yet know about the rename.
 
+### Current state (post PR1a foundation, WIP)
+
+The foundation for hygiene-aware identity is in place on branch
+`claude/fix-bazelisk-builds-oK0iE`:
+
+- SWC's `resolver` pass runs on every parsed module
+  (`js_ast::parse_and_resolve`); every `Ident` carries a
+  `SyntaxContext`; `ident.to_id()` is the canonical binding identity.
+- `swc_common::GLOBALS` is set at `main.rs` / `run_agent` and
+  propagated into every rayon `par_iter` worker (5 sites).
+- The central rename/import bridge is `Id`-keyed:
+  - `RuntimeImportFacts.imports: HashMap<Id, RuntimeImportInfo>`
+  - `ModuleBodyFacts.{imported_locals, provided_locals,
+referenced_idents}: HashSet<Id>`
+  - `RefCollector.ids: HashSet<Id>`
+  - `plan_module_reference_needs` bridge reconstructs pre-rename Id by
+    pairing the heuristic-renames pre-sym with body Id's own ctxt.
+- `eq_ignore_span`-based matchers strip `SyntaxContext` via
+  `SyntaxContextStripper` for cross-parse AST comparison
+  (`resolve_anonymous_statement_ordinals`).
+
+Still String-keyed (spec-derived; migration belongs to the next
+atomic unit):
+
+- `ScheduleLogicalModule.rename_map: HashMap<BindingName, BindingName>`
+  (`ids.rs:176`) — written from `ModulePlan.bindings` (spec input),
+  consumed at `plan_module_reference_needs` via `name_str` lookup.
+- `Schedule.{bindings, chunk_renames, export_name_by_binding}`
+  (`schedule.rs:21-67`).
+- `analyze_chunk_ast`'s `declaration_by_name: BTreeMap<String, usize>`,
+  `binding_assignment`, `entry_exports_by_original_local`,
+  `pre_existing_entry_exports` — AST-derived but downstream of the
+  spec→Schedule join, so they migrate together.
+- `naturalize_module_body`'s returned
+  `local_renames: BTreeMap<String, String>` (the heuristic-renames
+  bridge); the lookup in `plan_module_reference_needs` is already
+  hygiene-aware (`(pre_sym, body_id.ctxt)`-pair reconstruction).
+
+### Next atomic unit: spec → Id boundary
+
+Per repo convention (`AGENTS.md` → "Atomic API changes: update all
+callers in the same commit. No transitional shims"), the next coherent
+PR1 commit migrates **all** spec-derived identifier maps together with
+a single chunk-level `name → Id` resolution boundary:
+
+1. Add `chunk_binding_ids: HashMap<Atom, Vec<Id>>` to `ChunkAstAnalysis`,
+   populated by walking top-level declarations + imports
+   post-`resolver`.
+2. Add `resolve_chunk_binding(analysis, spec_name) -> Result<Id>` helper
+   that errors on ambiguity (`kind_hint` from `BindingSelector.kind`
+   disambiguates when a chunk has the same sym in two scopes).
+3. Migrate the spec-derived maps to `Id`-keyed in one commit:
+   - `ScheduleLogicalModule.rename_map: HashMap<Id, Atom>`
+   - `Schedule.{bindings, chunk_renames, export_name_by_binding}:
+HashMap<Id, _>`
+   - `declaration_by_name`, `binding_assignment`,
+     `entry_exports_by_original_local`, `pre_existing_entry_exports`
+     → `Id`-keyed.
+4. Spec YAML stays String-keyed (disk boundary unchanged). Conversion
+   happens once when `ChunkAstAnalysis` is consumed by `Schedule::build`
+   and `module_plans` construction.
+5. Report/manifest schemas (`report_schema.rs`, vendor manifests) stay
+   String-keyed at the disk boundary; add `Id → String` rendering
+   helpers that format `name#scope` only when sym is ambiguous in the
+   chunk.
+
+The PR #1633 reverse-lookup bridge in `plan_module_reference_needs`
+survives this next commit unchanged in spirit (re-keyed maps); PR2
+(below) is what retires it.
+
+### Proposed architecture (PR2)
+
 The proposed architectural fix is a single **collect → validate → execute
 (once)** rename pipeline:
 

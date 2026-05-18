@@ -45,7 +45,7 @@ pub use graph::{
 };
 pub use ids::{
     BindingId, BindingKind, BindingName, BindingTable, ChunkId, ChunkTable, LogicalModule,
-    LogicalModuleIndex, ModuleId, StatementOrdinal,
+    LogicalModuleIndex, ModuleId, StatementOrdinal, top_level_id,
 };
 pub use partition::Partition;
 pub use purity::{

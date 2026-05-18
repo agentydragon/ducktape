@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use crate::{BindingName, ModuleId, OwnerGraph, OwnerId};
+use swc_ecma_ast::Id;
+
+use crate::{ModuleId, OwnerGraph, OwnerId};
 
 /// Per-owner module assignment for one chunk's owner graph.
 ///
@@ -45,7 +47,7 @@ impl Partition {
     /// previous in-graph assignment behaviour).
     pub fn from_binding_assignment(
         owner_graph: &OwnerGraph,
-        binding_assignment: &HashMap<BindingName, ModuleId>,
+        binding_assignment: &HashMap<Id, ModuleId>,
         default_destination: ModuleId,
     ) -> Self {
         let mut p = Self::new(owner_graph, default_destination);
@@ -54,7 +56,13 @@ impl Partition {
                 let Some(name) = owner_graph.binding_table.name(*binding_id) else {
                     continue;
                 };
-                if let Some(module) = binding_assignment.get(name) {
+                // BindingTable interns by `sym` (no ctxt); look up the
+                // assignment by matching the entry's sym half.
+                if let Some(module) = binding_assignment
+                    .iter()
+                    .find(|(id, _)| id.0.as_ref() == name.as_str())
+                    .map(|(_, m)| m)
+                {
                     p.of[node.id.0] = *module;
                     break;
                 }
