@@ -1293,6 +1293,21 @@ pub fn relative_module_path(from_dir: &str, to_path: &str) -> String {
     }
 }
 
+/// Normalize a module specifier that may have been built by string
+/// concatenation (e.g. `"../" + "./foo.js"` → `".././foo.js"`). Collapses
+/// `./` segments and resolves interior `..` traversals, returning a
+/// canonical spelling like `"../foo.js"`. Unlike [`normalize_module_path`]
+/// this preserves leading `..` components — they are legal in a relative
+/// import specifier.
+pub fn normalize_relative_module_specifier(value: &str) -> String {
+    let normalized = RelativePath::new(value).normalize().to_string();
+    if normalized.is_empty() {
+        ".".to_string()
+    } else {
+        normalized
+    }
+}
+
 pub fn chunk_id_for_js_path(js_path: &str) -> Result<String> {
     let normalized = normalize_asset_path(js_path)?;
     Ok(normalized

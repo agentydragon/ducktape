@@ -23,7 +23,8 @@ use artifact::{
     ChunkDecompositionOutput, ChunkFileRecord, ChunkId, ChunkLogicalModulesSummary, ChunkMetadata,
     ChunkTable, FileMetadata, FileRole, JsChunk, JsFile, JsFileBody, SelectedModuleLowering,
     get_chunk_entry_path, join_module_path, manifest_relative_path, module_path_dirname,
-    module_path_from_path, normalize_module_path, relative_module_path,
+    module_path_from_path, normalize_module_path, normalize_relative_module_specifier,
+    relative_module_path,
 };
 use js_ast::{ParsedJsModule, set_str_value, str_value};
 use spec::{
@@ -3838,12 +3839,26 @@ fn source_chunk_imports_for_moved_body(
                 rel = format!("./{rel}");
             }
             rel
-        } else {
+        } else if info.src.starts_with('.') {
+            // Relative specifier that didn't resolve through the chunk
+            // artifact (e.g. it points at an extra_files asset). Walk up
+            // to the chunk root then re-attach `info.src`. Naive string
+            // concatenation can yield non-canonical spellings like
+            // `".././foo.js"` when `info.src` itself starts with `./`,
+            // so normalize before emitting.
             let depth = std::path::Path::new(dest_target_file)
                 .parent()
                 .map(|parent| parent.iter().count())
                 .unwrap_or(0);
-            format!("{}{}", "../".repeat(depth), info.src)
+            let raw = format!("{}{}", "../".repeat(depth), info.src);
+            let mut rel = normalize_relative_module_specifier(&raw);
+            if !rel.starts_with('.') {
+                rel = format!("./{rel}");
+            }
+            rel
+        } else {
+            // Bare specifier (npm package etc.) — pass through unchanged.
+            info.src.clone()
         };
         let specifier = runtime_reimport_specifier(&local, info);
         let group_index = *index_by_source
