@@ -79,6 +79,7 @@ rust_library(
         "duplicate_export_test",
         "at_init_promotion_nested_closure_test",
         "at_init_promotion_post_await_test",
+        "at_init_promotion_fndecl_direct_read_test",
     ]
 ]
 
