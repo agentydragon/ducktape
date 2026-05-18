@@ -387,9 +387,9 @@ rust_test(
 )
 
 rust_library(
-    name = "logical_modules",
-    srcs = ["logical_modules.rs"],
-    crate_root = "logical_modules.rs",
+    name = "lowering",
+    srcs = ["lowering/mod.rs"],
+    crate_root = "lowering/mod.rs",
     edition = "2024",
     deps = [
         ":analysis",
@@ -475,7 +475,7 @@ rust_library(
         ":emit_harness",
         ":identifier_rename_queue",
         ":js_ast",
-        ":logical_modules",
+        ":lowering",
         ":prepare_chunks",
         ":rewrite_specifiers",
         ":spec",

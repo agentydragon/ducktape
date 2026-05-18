@@ -12,7 +12,7 @@ use artifact::ArtifactIndexes;
 use artifact::load_js_chunks;
 use artifact::{ChunkDecompositionOutput, ChunkId};
 use emit_harness::{EmitBrowserHarnessOptions, emit_browser_harness};
-use logical_modules::{MaterializeLogicalModulesOptions, materialize_logical_modules};
+use lowering::{MaterializeLogicalModulesOptions, materialize_logical_modules};
 use prepare_chunks::prepare_js_chunks;
 use rewrite_specifiers::rewrite_chunk_entry_specifiers;
 use spec::{MaterializeLogicalModulesConfig, SwapVendorChunksConfig, TransformSpec, VendorLevel};
