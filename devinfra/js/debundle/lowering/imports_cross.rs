@@ -10,11 +10,11 @@ use super::*;
 pub(super) fn cross_module_imports_for_plan(
     from_file: &str,
     mut imports_by_provider: BTreeMap<usize, BTreeMap<String, String>>,
-    schedule: &ChunkFactorization,
+    factorization: &ChunkFactorization,
     occupied: &mut BTreeSet<String>,
     renames: &mut BTreeMap<String, String>,
 ) -> Vec<ModuleItem> {
-    // Sort providers by their position in the schedule's
+    // Sort providers by their position in the factorization's
     // `linker_order` (a topological linearization of `I ∪ S`).
     // ECMA-262's depth-first link traversal visits each module's
     // `import` directives in source order, and the deepest leaf
@@ -24,7 +24,7 @@ pub(super) fn cross_module_imports_for_plan(
     // "Lemma 2".
     let mut providers: Vec<usize> = imports_by_provider.keys().copied().collect();
     providers.sort_by_key(|&idx| {
-        schedule
+        factorization
             .linker_position(ModuleId(LogicalModuleIndex(idx)))
             .unwrap_or(usize::MAX)
     });
@@ -32,7 +32,7 @@ pub(super) fn cross_module_imports_for_plan(
         .into_iter()
         .filter_map(|provider_index| {
             let bindings = imports_by_provider.remove(&provider_index)?;
-            schedule
+            factorization
                 .analysis
                 .logical_module(LogicalModuleIndex(provider_index))
                 .map(|provider| {

@@ -16,13 +16,13 @@ struct QuotientEdgeAccumulator {
     constrains_init_order: bool,
 }
 
-pub(crate) fn build_owner_graph_report(schedule: &ChunkFactorization) -> OwnerGraphReport {
-    let owner_edges = &schedule.analysis.owner_graph.edges;
-    let quotient_edges = build_quotient_edge_reports(schedule, owner_edges);
-    let quotient_nodes = build_quotient_node_reports(schedule);
-    let quotient_sccs = build_quotient_scc_reports(schedule, &quotient_edges);
-    let peelability = build_peelability_report(schedule, owner_edges, &quotient_edges);
-    let nodes = schedule
+pub(crate) fn build_owner_graph_report(factorization: &ChunkFactorization) -> OwnerGraphReport {
+    let owner_edges = &factorization.analysis.owner_graph.edges;
+    let quotient_edges = build_quotient_edge_reports(factorization, owner_edges);
+    let quotient_nodes = build_quotient_node_reports(factorization);
+    let quotient_sccs = build_quotient_scc_reports(factorization, &quotient_edges);
+    let peelability = build_peelability_report(factorization, owner_edges, &quotient_edges);
+    let nodes = factorization
         .analysis
         .owner_graph
         .iter_nodes()
@@ -30,10 +30,13 @@ pub(crate) fn build_owner_graph_report(schedule: &ChunkFactorization) -> OwnerGr
             id: owner_key(node.id),
             statement_ordinal: node.statement_ordinal,
             source_location: node.source_location.clone(),
-            declared_bindings: binding_reports_for_ids(schedule, node.declared.iter().copied()),
+            declared_bindings: binding_reports_for_ids(
+                factorization,
+                node.declared.iter().copied(),
+            ),
             statement_kind: node.kind,
             purity: node.purity.clone(),
-            destination: module_report_ref(schedule, schedule.partition.of(node.id)),
+            destination: module_report_ref(factorization, factorization.partition.of(node.id)),
         })
         .collect();
     let edges = owner_edges
@@ -46,13 +49,13 @@ pub(crate) fn build_owner_graph_report(schedule: &ChunkFactorization) -> OwnerGr
             binding: edge
                 .reason
                 .binding
-                .map(|binding| schedule.analysis.binding_name(binding).to_string()),
+                .map(|binding| factorization.analysis.binding_name(binding).to_string()),
             statement_ordinal: edge.reason.statement_ordinal,
             constrains_init_order: edge.reason.constrains_init_order(),
         })
         .collect();
     OwnerGraphReport {
-        chunk_id: schedule.analysis.chunk_id.clone(),
+        chunk_id: factorization.analysis.chunk_id.clone(),
         nodes,
         edges,
         quotient: OwnerGraphQuotientReport {
@@ -64,7 +67,7 @@ pub(crate) fn build_owner_graph_report(schedule: &ChunkFactorization) -> OwnerGr
         // Filled in by
         // `ChunkFactorization::owner_graph_report_with_factorize_options`
         // after this function returns. The default value is the
-        // empty report (no cells); the schedule unconditionally
+        // empty report (no cells); the factorization unconditionally
         // overwrites it with the real factorize verdict so JSON
         // consumers always see a populated `factorize` block.
         factorize: crate::FactorizeReport::default(),
@@ -72,22 +75,22 @@ pub(crate) fn build_owner_graph_report(schedule: &ChunkFactorization) -> OwnerGr
 }
 
 pub(crate) fn binding_reports_for_ids<I>(
-    schedule: &ChunkFactorization,
+    factorization: &ChunkFactorization,
     bindings: I,
 ) -> Vec<BindingReport>
 where
     I: IntoIterator<Item = BindingId>,
 {
     binding_reports(
-        schedule,
+        factorization,
         bindings
             .into_iter()
-            .map(|binding| schedule.analysis.binding_name(binding)),
+            .map(|binding| factorization.analysis.binding_name(binding)),
     )
 }
 
 pub(crate) fn binding_reports<'a, I>(
-    schedule: &ChunkFactorization,
+    factorization: &ChunkFactorization,
     bindings: I,
 ) -> Vec<BindingReport>
 where
@@ -97,34 +100,34 @@ where
         .into_iter()
         .map(|binding| BindingReport {
             binding: binding.clone(),
-            export_name: schedule.analysis.export_name_for(binding),
+            export_name: factorization.analysis.export_name_for(binding),
         })
         .collect()
 }
 
-fn build_quotient_node_reports(schedule: &ChunkFactorization) -> Vec<ModuleReportRef> {
+fn build_quotient_node_reports(factorization: &ChunkFactorization) -> Vec<ModuleReportRef> {
     let mut modules = BTreeSet::<ModuleId>::new();
-    for idx in 0..schedule.analysis.logical_modules.len() {
+    for idx in 0..factorization.analysis.logical_modules.len() {
         modules.insert(ModuleId(LogicalModuleIndex(idx)));
     }
-    for (_, module) in schedule.partition.iter() {
+    for (_, module) in factorization.partition.iter() {
         modules.insert(module);
     }
-    for (from, to, _) in schedule.dep_graph.iter_edges() {
+    for (from, to, _) in factorization.dep_graph.iter_edges() {
         modules.insert(from);
         modules.insert(to);
     }
     modules
         .into_iter()
-        .map(|id| module_report_ref(schedule, id))
+        .map(|id| module_report_ref(factorization, id))
         .collect()
 }
 
 pub(crate) fn build_quotient_edge_reports(
-    schedule: &ChunkFactorization,
+    factorization: &ChunkFactorization,
     owner_edges: &[OwnerEdge],
 ) -> Vec<QuotientEdgeReport> {
-    let partition = &schedule.partition;
+    let partition = &factorization.partition;
     let mut accum = BTreeMap::<(ModuleId, ModuleId), QuotientEdgeAccumulator>::new();
     let mut seen_side_effect_module_pairs = BTreeSet::<(ModuleId, ModuleId)>::new();
     for edge in owner_edges {
@@ -154,14 +157,14 @@ pub(crate) fn build_quotient_edge_reports(
 }
 
 fn build_quotient_scc_reports(
-    schedule: &ChunkFactorization,
+    factorization: &ChunkFactorization,
     quotient_edges: &[QuotientEdgeReport],
 ) -> Vec<QuotientSccReport> {
     let quotient_edges_by_source = quotient_edge_indices_by_source(quotient_edges);
     let mut sccs = Vec::new();
-    for scc in tarjan_scc(&schedule.dep_graph.graph) {
+    for scc in tarjan_scc(&factorization.dep_graph.graph) {
         let is_cycle = scc.len() > 1
-            || (scc.len() == 1 && schedule.dep_graph.graph.contains_edge(scc[0], scc[0]));
+            || (scc.len() == 1 && factorization.dep_graph.graph.contains_edge(scc[0], scc[0]));
         if !is_cycle {
             continue;
         }
@@ -189,7 +192,7 @@ fn build_quotient_scc_reports(
             .iter()
             .map(|key| {
                 module_id_from_key(key)
-                    .map(|id| schedule.analysis.module_name(id))
+                    .map(|id| factorization.analysis.module_name(id))
                     .unwrap_or_else(|| key.clone())
             })
             .collect();
@@ -230,9 +233,9 @@ fn quotient_edge_indices_by_source(
 /// `ChunkFactorization::build`. Used by peelability and the destination
 /// projection in reports to gate residual-only predicates without
 /// string-matching module ids or labels.
-pub(crate) fn is_residual_destination(schedule: &ChunkFactorization, id: ModuleId) -> bool {
+pub(crate) fn is_residual_destination(factorization: &ChunkFactorization, id: ModuleId) -> bool {
     let LogicalModuleIndex(idx) = id.0;
-    schedule
+    factorization
         .analysis
         .logical_modules
         .get(idx)
@@ -254,13 +257,16 @@ pub(crate) fn module_id_from_key(key: &str) -> Option<ModuleId> {
         .map(|idx| ModuleId(LogicalModuleIndex(idx)))
 }
 
-pub(crate) fn module_report_ref(schedule: &ChunkFactorization, id: ModuleId) -> ModuleReportRef {
+pub(crate) fn module_report_ref(
+    factorization: &ChunkFactorization,
+    id: ModuleId,
+) -> ModuleReportRef {
     let LogicalModuleIndex(idx) = id.0;
-    let logical = schedule.analysis.logical_modules.get(idx);
+    let logical = factorization.analysis.logical_modules.get(idx);
     ModuleReportRef {
         id: module_key(id),
-        label: schedule.analysis.module_name(id),
-        residual: is_residual_destination(schedule, id),
+        label: factorization.analysis.module_name(id),
+        residual: is_residual_destination(factorization, id),
         index: logical.map(|_| idx),
         target_file: logical.map(|module| module.target_file.clone()),
     }

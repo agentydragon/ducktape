@@ -40,7 +40,7 @@ fn rejects_extracted_binding_assigned_by_residual_owner() {
     // assignment because imported ESM bindings are read-only in the
     // importing module.
     //
-    // The realizability/schedule validation phase must reject this
+    // The realizability/factorization validation phase must reject this
     // spec before emission. A binding with a cross-destination
     // assignment cannot be safely peeled unless every top-level
     // owner that may assign it is peeled into the same destination,

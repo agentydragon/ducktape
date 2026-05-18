@@ -36,7 +36,7 @@ pub(super) struct LowerChunkInputs<'a> {
     /// the spec claimed as anonymous-statement members. See
     /// `ModulePlan::anonymous_statement_ordinals`.
     pub(super) anonymous_ordinal_assignment: &'a BTreeMap<usize, usize>,
-    pub(super) schedule: &'a ChunkFactorization,
+    pub(super) factorization: &'a ChunkFactorization,
     pub(super) runtime_import_facts: &'a RuntimeImportFacts,
     /// In-place renames from `TransformSpec::chunk_renames`. Applied
     /// to bindings staying in entry's body — i.e. those *not* in
@@ -69,7 +69,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         binding_assignment,
         chunk_top_level_mark,
         anonymous_ordinal_assignment,
-        schedule,
+        factorization,
         runtime_import_facts,
         chunk_renames,
         pre_existing_entry_exports,
@@ -275,7 +275,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     // sorted so DFS unwinds the dependency first in post-order.
     // Stable sort preserves plan-order for ties.
     entry_imports.sort_by_key(|(idx, _)| {
-        schedule
+        factorization
             .source_import_position(ModuleId(LogicalModuleIndex(*idx)))
             .unwrap_or(usize::MAX)
     });
@@ -339,7 +339,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         if !auto_grow.is_empty() {
             entry_body.push(export_named_for_bindings(&auto_grow));
         }
-        trim_dead_named_specifiers(&mut entry_body, &schedule.analysis.bindings);
+        trim_dead_named_specifiers(&mut entry_body, &factorization.analysis.bindings);
     });
     let entry_exports_by_original_local = time_phase!(timings, "collect_entry_exports", {
         collect_entry_exports_by_original_local(
@@ -349,7 +349,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         )
     });
     let imported_reexports_by_module = time_phase!(timings, "collect_imported_reexports", {
-        collect_imported_reexports_by_module(schedule, module_plans.len())
+        collect_imported_reexports_by_module(factorization, module_plans.len())
     });
     let mut source_import_cache =
         ArtifactSourceImportResolutionCache::new(artifact, artifact_indexes);
@@ -411,7 +411,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             plan_module_reference_needs(
                 index,
                 &body_facts,
-                schedule,
+                factorization,
                 declaration_by_name,
                 binding_assignment,
                 &entry_exports_by_original_local,
@@ -427,7 +427,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             cross_module_imports_for_plan(
                 &plan.target_file,
                 cross_module_imports_by_provider,
-                schedule,
+                factorization,
                 &mut module_import_locals,
                 &mut module_import_renames,
             )
@@ -491,7 +491,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             rewrite_runtime_sources_for_target(&mut body, chunk_id, entry_file, &plan.target_file);
         });
         // ImportSpecifier-bound members (`BindingKind::Imported` in
-        // `schedule.analysis.bindings`): for each `Imported` binding whose
+        // `factorization.analysis.bindings`): for each `Imported` binding whose
         // `re_exported_by` map names this module, emit a re-import
         // (using the local name as the alias) plus mirror the
         // public-name export. Per-destination relative paths are
@@ -573,7 +573,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
                 .iter()
                 .map(|(_, v)| (*v).clone())
                 .collect();
-            let owner_ids = schedule
+            let owner_ids = factorization
                 .analysis
                 .owner_report_ids_for_bindings(binding_names.iter().map(String::as_str));
             let header = vec![
