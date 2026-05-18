@@ -395,6 +395,7 @@ rust_library(
         "lowering/chunk_renames.rs",
         "lowering/mod.rs",
         "lowering/naturalize.rs",
+        "lowering/plan_references.rs",
         "lowering/rewrite_runtime.rs",
         "lowering/runtime_imports.rs",
         "lowering/visitors.rs",
