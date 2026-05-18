@@ -1,11 +1,20 @@
 load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
+    name = "base",
+    srcs = ["base.py"],
+    imports = ["../.."],
+    visibility = ["//aiquota:__subpackages__"],
+    deps = ["//aiquota:models"],
+)
+
+py_library(
     name = "claude_lib",
     srcs = ["claude.py"],
     imports = ["../.."],
-    visibility = ["//aiquota:__pkg__"],
+    visibility = ["//aiquota:__subpackages__"],
     deps = [
+        ":base",
         "//aiquota:models",
         "@pypi//httpx",
         "@pypi//pydantic",
@@ -16,8 +25,9 @@ py_library(
     name = "codex_lib",
     srcs = ["codex.py"],
     imports = ["../.."],
-    visibility = ["//aiquota:__pkg__"],
+    visibility = ["//aiquota:__subpackages__"],
     deps = [
+        ":base",
         "//aiquota:models",
         "@pypi//httpx",
         "@pypi//pydantic",
@@ -28,8 +38,9 @@ py_library(
     name = "zai_lib",
     srcs = ["zai.py"],
     imports = ["../.."],
-    visibility = ["//aiquota:__pkg__"],
+    visibility = ["//aiquota:__subpackages__"],
     deps = [
+        ":base",
         "//aiquota:models",
         "@pypi//httpx",
         "@pypi//pydantic",

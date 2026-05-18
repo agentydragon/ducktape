@@ -1,9 +1,9 @@
-from aiquota.models import ProviderQuota, QuotaWindow
+from aiquota.models import FetchSuccess, ProviderQuota, QuotaWindow
 from aiquota.pace import binding_tint, compute_pace, tint_for
 
 # Nerd Font cod-sparkle (U+EC10), the de-facto "AI" glyph in dev tooling.
 # Followed by the provider's vendor initial: Anthropic / OpenAI / Z.AI.
-_AI_GLYPH = ""
+_AI_GLYPH = ""
 PROVIDER_PREFIX = {"claude": f"{_AI_GLYPH}A", "codex": f"{_AI_GLYPH}O", "zai": f"{_AI_GLYPH}Z"}
 
 TINT_FG = {
@@ -26,20 +26,20 @@ def _window_tint(window: QuotaWindow | None, *, is_short: bool) -> str:
 
 def render_provider(pq: ProviderQuota) -> str:
     prefix = PROVIDER_PREFIX.get(pq.provider, f"{_AI_GLYPH}{pq.provider[0].upper()}")
-    out = pq.last_output
+    result = pq.last_output.result
 
-    # If the latest call gave us nothing, fall back to the last successful snapshot.
-    short = out.short_window
-    long = out.long_window
-    stale = False
-    if short is None and long is None and pq.last_success is not None:
-        snap = pq.last_success
-        if snap.short_window is not None or snap.long_window is not None:
-            short = snap.short_window
-            long = snap.long_window
-            stale = True
+    # Pick the windows to render: prefer the latest fetch when it succeeded,
+    # else fall back to the last successful snapshot.
+    if isinstance(result, FetchSuccess) and (result.short_window or result.long_window):
+        short, long, stale = result.short_window, result.long_window, False
+    elif pq.last_success is not None:
+        short, long, stale = pq.last_success.result.short_window, pq.last_success.result.long_window, True
+    else:
+        short = long = None
+        stale = False
 
-    if out.error and short is None and long is None:
+    errored = not isinstance(result, FetchSuccess)
+    if errored and short is None and long is None:
         return f"#[fg={TINT_FG['error']}]{prefix}:!#[default]"
 
     if stale:

@@ -1,6 +1,7 @@
 from datetime import datetime
+from typing import Annotated, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class QuotaWindow(BaseModel):
@@ -24,29 +25,48 @@ class ExtraUsage(BaseModel):
     utilization: float
 
 
-class ProviderFetch(BaseModel):
-    """One quota-fetch result for a single provider.
+class FetchSuccess(BaseModel):
+    """Payload from a quota fetch that returned without error.
 
-    Used for both `last_output` (what the most recent call returned) and
-    `last_success` (the most recent call that produced usable windows). The
-    `error` field is naturally `None` when a `ProviderFetch` represents a
-    successful fetch.
+    All three fields default to None — providers sometimes respond 200 but
+    omit specific window data (e.g. codex on a fresh account returns no
+    rate_limit). That's still "success with no data", not an error.
     """
 
+    kind: Literal["success"] = "success"
     short_window: QuotaWindow | None = None
     long_window: QuotaWindow | None = None
     extra_usage: ExtraUsage | None = None
-    error: str | None = None
+
+
+class FetchError(BaseModel):
+    kind: Literal["error"] = "error"
+    error: str
+
+
+_FetchResult = Annotated[FetchSuccess | FetchError, Field(discriminator="kind")]
+
+
+class ProviderFetch(BaseModel):
     fetched_at: datetime
+    result: _FetchResult
+
+
+class SuccessfulProviderFetch(BaseModel):
+    """A `ProviderFetch` whose result is statically known to be `FetchSuccess`.
+
+    Lets `ProviderQuota.last_success` express the "must have succeeded"
+    invariant in the type system instead of via runtime convention.
+    """
+
+    fetched_at: datetime
+    result: FetchSuccess
 
 
 class ProviderQuota(BaseModel):
     provider: str
     last_output: ProviderFetch
-    # The newest `last_output` whose error was None and which produced at least
-    # one window. May be the same instance as `last_output` (current fetch
-    # succeeded) or older (current fetch errored — fall back for display).
-    last_success: ProviderFetch | None = None
+    last_success: SuccessfulProviderFetch | None = None
 
 
 class AllQuotas(BaseModel):

@@ -16,7 +16,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from aiquota.models import AllQuotas, ProviderFetch, ProviderQuota
+from aiquota.models import AllQuotas, FetchSuccess, ProviderFetch, ProviderQuota, SuccessfulProviderFetch
 
 # Same threshold as render/human.py — see _OVER_PLAN_PERCENT there for rationale.
 _OVER_PLAN_PERCENT = 100.0
@@ -27,7 +27,7 @@ ExtraStatus = Literal["none", "informational", "active"]
 class ProviderView(BaseModel):
     provider: str
     last_output: ProviderFetch
-    last_success: ProviderFetch | None
+    last_success: SuccessfulProviderFetch | None
     currently_over_plan: bool
     extra_status: ExtraStatus
 
@@ -59,14 +59,21 @@ def currently_over_plan(out: ProviderFetch) -> bool:
     anything about "right now". The real signal is the 7d window being
     exhausted (every further call now hits the monthly bill).
     """
-    if out.extra_usage is None or not out.extra_usage.is_enabled:
+    if not isinstance(out.result, FetchSuccess):
         return False
-    return out.long_window is not None and out.long_window.used_percent >= _OVER_PLAN_PERCENT
+    extra = out.result.extra_usage
+    long = out.result.long_window
+    if extra is None or not extra.is_enabled:
+        return False
+    return long is not None and long.used_percent >= _OVER_PLAN_PERCENT
 
 
 def _extra_status(out: ProviderFetch) -> ExtraStatus:
     if currently_over_plan(out):
         return "active"
-    if out.extra_usage is not None and out.extra_usage.is_enabled and out.extra_usage.used_usd > 0:
+    if not isinstance(out.result, FetchSuccess):
+        return "none"
+    extra = out.result.extra_usage
+    if extra is not None and extra.is_enabled and extra.used_usd > 0:
         return "informational"
     return "none"

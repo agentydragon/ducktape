@@ -12,7 +12,8 @@ import httpx
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
-from aiquota.models import ExtraUsage, ProviderFetch, QuotaWindow
+from aiquota.models import ExtraUsage, FetchError, FetchSuccess, ProviderFetch, QuotaWindow
+from aiquota.providers.base import Provider
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,10 @@ LONG_WINDOW_SECS = 7 * 86400
 TOKEN_EXPIRY_SKEW_SECS = 30
 API_TIMEOUT_SECS = 5.0
 
-CREDENTIALS_PATH = Path.home() / ".claude" / ".credentials.json"
+
+class ClaudeSettings(BaseModel):
+    enabled: bool = True
+    credentials_path: Path = Path.home() / ".claude" / ".credentials.json"
 
 
 # Preserve unknown fields (e.g. mcpOAuth) on the round-trip so that
@@ -80,9 +84,9 @@ class _TokenRefreshResponse(BaseModel):
     expires_in: float | None = None
 
 
-def _read_credentials() -> tuple[_Credentials, str | None]:
+def _read_credentials(path: Path) -> tuple[_Credentials, str | None]:
     try:
-        raw = CREDENTIALS_PATH.read_text()
+        raw = path.read_text()
     except OSError:
         return _Credentials(), None
     creds = _Credentials.model_validate_json(raw)
@@ -91,14 +95,14 @@ def _read_credentials() -> tuple[_Credentials, str | None]:
     return creds, token
 
 
-def _save_credentials(creds: _Credentials) -> None:
+def _save_credentials(path: Path, creds: _Credentials) -> None:
     try:
-        CREDENTIALS_PATH.write_text(creds.model_dump_json(indent=2, by_alias=True))
+        path.write_text(creds.model_dump_json(indent=2, by_alias=True))
     except OSError:
         logger.debug("Could not write Claude credentials", exc_info=True)
 
 
-def _refresh_token(creds: _Credentials) -> str | None:
+def _refresh_token(path: Path, creds: _Credentials) -> str | None:
     oauth = creds.claude_ai_oauth
     if not oauth or not oauth.refresh_token:
         return None
@@ -122,7 +126,7 @@ def _refresh_token(creds: _Credentials) -> str | None:
         expires_at=int(datetime.now(UTC).timestamp() * 1000 + data.expires_in * 1000),
     )
     creds.claude_ai_oauth = new_oauth
-    _save_credentials(creds)
+    _save_credentials(path, creds)
     return data.access_token
 
 
@@ -149,37 +153,46 @@ def _to_window(bucket: _UsageBucket | None, window_secs: float) -> QuotaWindow |
     )
 
 
-def fetch() -> ProviderFetch:
-    now = datetime.now(UTC)
-    creds, token = _read_credentials()
-    if not token:
-        return ProviderFetch(error="no credentials found", fetched_at=now)
+class ClaudeProvider(Provider):
+    name = "claude"
 
-    if _token_expired(creds):
-        token = _refresh_token(creds)
+    def __init__(self, settings: ClaudeSettings) -> None:
+        self.settings = settings
+
+    def fetch(self) -> ProviderFetch:
+        now = datetime.now(UTC)
+        path = self.settings.credentials_path
+        creds, token = _read_credentials(path)
         if not token:
-            return ProviderFetch(error="token refresh failed", fetched_at=now)
+            return ProviderFetch(fetched_at=now, result=FetchError(error="no credentials found"))
 
-    try:
-        resp = httpx.get(
-            USAGE_URL,
-            headers={"Authorization": f"Bearer {token}", "anthropic-beta": "oauth-2025-04-20"},
-            timeout=API_TIMEOUT_SECS,
-        )
-        resp.raise_for_status()
-        usage = _UsageResponse.model_validate(resp.json())
-    except Exception as e:
-        return ProviderFetch(error=str(e), fetched_at=now)
+        if _token_expired(creds):
+            token = _refresh_token(path, creds)
+            if not token:
+                return ProviderFetch(fetched_at=now, result=FetchError(error="token refresh failed"))
 
-    short = _to_window(usage.five_hour, SHORT_WINDOW_SECS)
-    long = _to_window(usage.seven_day, LONG_WINDOW_SECS)
-    extra: ExtraUsage | None = None
-    if usage.extra_usage and usage.extra_usage.is_enabled:
-        eu = usage.extra_usage
-        extra = ExtraUsage(
-            is_enabled=True,
-            monthly_limit_usd=eu.monthly_limit / 100,
-            used_usd=eu.used_credits / 100,
-            utilization=eu.utilization,
+        try:
+            resp = httpx.get(
+                USAGE_URL,
+                headers={"Authorization": f"Bearer {token}", "anthropic-beta": "oauth-2025-04-20"},
+                timeout=API_TIMEOUT_SECS,
+            )
+            resp.raise_for_status()
+            usage = _UsageResponse.model_validate(resp.json())
+        except Exception as e:
+            return ProviderFetch(fetched_at=now, result=FetchError(error=str(e)))
+
+        short = _to_window(usage.five_hour, SHORT_WINDOW_SECS)
+        long = _to_window(usage.seven_day, LONG_WINDOW_SECS)
+        extra: ExtraUsage | None = None
+        if usage.extra_usage and usage.extra_usage.is_enabled:
+            eu = usage.extra_usage
+            extra = ExtraUsage(
+                is_enabled=True,
+                monthly_limit_usd=eu.monthly_limit / 100,
+                used_usd=eu.used_credits / 100,
+                utilization=eu.utilization,
+            )
+        return ProviderFetch(
+            fetched_at=now, result=FetchSuccess(short_window=short, long_window=long, extra_usage=extra)
         )
-    return ProviderFetch(short_window=short, long_window=long, extra_usage=extra, fetched_at=now)

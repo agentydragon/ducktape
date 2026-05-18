@@ -3,9 +3,12 @@ from pathlib import Path
 
 from platformdirs import user_cache_dir
 
-from aiquota.config import ConfigFile
-from aiquota.models import AllQuotas, ProviderFetch, ProviderQuota
-from aiquota.providers import claude, codex, zai
+from aiquota.config import Config
+from aiquota.models import AllQuotas, FetchSuccess, ProviderFetch, ProviderQuota, SuccessfulProviderFetch
+from aiquota.providers.base import Provider
+from aiquota.providers.claude import ClaudeProvider
+from aiquota.providers.codex import CodexProvider
+from aiquota.providers.zai import ZaiProvider
 
 CACHE_TTL = timedelta(seconds=120)
 
@@ -28,45 +31,42 @@ class QuotaCache:
         except OSError:
             pass
 
-    def fetch_all(self, config: ConfigFile) -> AllQuotas:
+    def fetch_all(self, providers: list[Provider]) -> AllQuotas:
         cached = self.read()
         if cached is not None and datetime.now(UTC) - cached.fetched_at < self.ttl:
             return cached
         prior = {pq.provider: pq for pq in cached.providers} if cached else {}
-        providers = [_assemble(name, fetch, prior.get(name)) for name, fetch in _fetch_providers(config)]
-        fresh = AllQuotas(providers=providers, fetched_at=datetime.now(UTC))
+        results = [_assemble(p.name, p.fetch(), prior.get(p.name)) for p in providers]
+        fresh = AllQuotas(providers=results, fetched_at=datetime.now(UTC))
         self.write(fresh)
         return fresh
 
 
 class QuotaService:
-    def __init__(self, config: ConfigFile, cache: QuotaCache | None = None) -> None:
-        self.config = config
+    def __init__(self, config: Config, cache: QuotaCache | None = None) -> None:
+        self.providers = _instantiate(config)
         self.cache = cache or QuotaCache()
 
     def fetch_all(self) -> AllQuotas:
-        return self.cache.fetch_all(self.config)
+        return self.cache.fetch_all(self.providers)
+
+
+def _instantiate(config: Config) -> list[Provider]:
+    """Build the enabled provider instances in display order."""
+    candidates: list[tuple[Provider, bool]] = [
+        (ClaudeProvider(config.claude), config.claude.enabled),
+        (CodexProvider(config.codex), config.codex.enabled),
+        (ZaiProvider(config.zai), config.zai.enabled),
+    ]
+    return [p for p, enabled in candidates if enabled]
 
 
 def _assemble(name: str, output: ProviderFetch, prior: ProviderQuota | None) -> ProviderQuota:
     """Wrap a provider fetch in a `ProviderQuota`, carrying the last-known-good
     snapshot forward when the latest call did not produce usable windows."""
-    success = output if output.error is None and (output.short_window or output.long_window) else None
+    success: SuccessfulProviderFetch | None = None
+    if isinstance(output.result, FetchSuccess) and (output.result.short_window or output.result.long_window):
+        success = SuccessfulProviderFetch(fetched_at=output.fetched_at, result=output.result)
     return ProviderQuota(
         provider=name, last_output=output, last_success=success or (prior.last_success if prior else None)
     )
-
-
-def _fetch_providers(config: ConfigFile) -> list[tuple[str, ProviderFetch]]:
-    results: list[tuple[str, ProviderFetch]] = []
-    for name, fetch_fn in [("claude", claude.fetch), ("codex", codex.fetch)]:
-        settings = config.providers.get(name)
-        if settings is not None and not settings.enabled:
-            continue
-        results.append((name, fetch_fn()))
-
-    zai_settings = config.providers.get("zai")
-    if zai_settings is None or zai_settings.enabled:
-        results.append(("zai", zai.fetch(api_key_path=zai_settings.api_key_path if zai_settings else None)))
-
-    return results

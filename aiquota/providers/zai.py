@@ -12,7 +12,8 @@ import httpx
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
-from aiquota.models import ProviderFetch, QuotaWindow
+from aiquota.models import FetchError, FetchSuccess, ProviderFetch, QuotaWindow
+from aiquota.providers.base import Provider
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,12 @@ QUOTA_URL = "https://api.z.ai/api/monitor/usage/quota/limit"
 API_TIMEOUT_SECS = 5.0
 SHORT_WINDOW_SECS = 5 * 3600
 LONG_WINDOW_SECS = 7 * 86400
+
+
+class ZaiSettings(BaseModel):
+    enabled: bool = True
+    # No sensible default — user must point this at a file containing the key.
+    api_key_path: Path | None = None
 
 
 # z.ai monitor API uses camelCase (nextResetTime, ...).
@@ -60,28 +67,35 @@ def _to_window(limit: _Limit | None, window_secs: float) -> QuotaWindow | None:
     )
 
 
-def fetch(api_key_path: str | None = None) -> ProviderFetch:
-    now = datetime.now(UTC)
-    if not api_key_path:
-        return ProviderFetch(error="no api key path configured", fetched_at=now)
+class ZaiProvider(Provider):
+    name = "zai"
 
-    try:
-        key = Path(api_key_path).expanduser().read_text().strip()
-    except OSError as e:
-        return ProviderFetch(error=str(e), fetched_at=now)
-    if not key:
-        return ProviderFetch(error="api key file is empty", fetched_at=now)
+    def __init__(self, settings: ZaiSettings) -> None:
+        self.settings = settings
 
-    try:
-        resp = httpx.get(QUOTA_URL, headers={"Authorization": f"Bearer {key}"}, timeout=API_TIMEOUT_SECS)
-        resp.raise_for_status()
-        quota = _QuotaResponse.model_validate(resp.json())
-    except Exception as e:
-        return ProviderFetch(error=str(e), fetched_at=now)
+    def fetch(self) -> ProviderFetch:
+        now = datetime.now(UTC)
+        path = self.settings.api_key_path
+        if path is None:
+            return ProviderFetch(fetched_at=now, result=FetchError(error="no api key path configured"))
 
-    limits = quota.data.limits if quota.data else []
-    short_limit = next((lim for lim in limits if lim.type == "TOKENS_LIMIT" and lim.unit == 3), None)
-    long_limit = next((lim for lim in limits if lim.type == "TOKENS_LIMIT" and lim.unit == 6), None)
-    short = _to_window(short_limit, SHORT_WINDOW_SECS)
-    long = _to_window(long_limit, LONG_WINDOW_SECS)
-    return ProviderFetch(short_window=short, long_window=long, fetched_at=now)
+        try:
+            key = path.expanduser().read_text().strip()
+        except OSError as e:
+            return ProviderFetch(fetched_at=now, result=FetchError(error=str(e)))
+        if not key:
+            return ProviderFetch(fetched_at=now, result=FetchError(error="api key file is empty"))
+
+        try:
+            resp = httpx.get(QUOTA_URL, headers={"Authorization": f"Bearer {key}"}, timeout=API_TIMEOUT_SECS)
+            resp.raise_for_status()
+            quota = _QuotaResponse.model_validate(resp.json())
+        except Exception as e:
+            return ProviderFetch(fetched_at=now, result=FetchError(error=str(e)))
+
+        limits = quota.data.limits if quota.data else []
+        short_limit = next((lim for lim in limits if lim.type == "TOKENS_LIMIT" and lim.unit == 3), None)
+        long_limit = next((lim for lim in limits if lim.type == "TOKENS_LIMIT" and lim.unit == 6), None)
+        short = _to_window(short_limit, SHORT_WINDOW_SECS)
+        long = _to_window(long_limit, LONG_WINDOW_SECS)
+        return ProviderFetch(fetched_at=now, result=FetchSuccess(short_window=short, long_window=long))

@@ -24,6 +24,7 @@ py_library(
     deps = [
         ":config",
         ":models",
+        "//aiquota/providers:base",
         "//aiquota/providers:claude_lib",
         "//aiquota/providers:codex_lib",
         "//aiquota/providers:zai_lib",
@@ -36,6 +37,9 @@ py_library(
     srcs = ["config.py"],
     imports = [".."],
     deps = [
+        "//aiquota/providers:claude_lib",
+        "//aiquota/providers:codex_lib",
+        "//aiquota/providers:zai_lib",
         "@pypi//platformdirs",
         "@pypi//pydantic",
     ],

@@ -438,11 +438,12 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _mapLastSuccess(snap) {
-      if (!snap) return null;
+      // snap = SuccessfulProviderFetch = {fetched_at, result: FetchSuccess}.
+      if (!snap?.result) return null;
       return {
-        short: this._mapWindow(snap.short_window),
-        long: this._mapWindow(snap.long_window),
-        extraUsage: this._mapExtraUsage(snap.extra_usage),
+        short: this._mapWindow(snap.result.short_window),
+        long: this._mapWindow(snap.result.long_window),
+        extraUsage: this._mapExtraUsage(snap.result.extra_usage),
         fetchedAt: snap.fetched_at ? new Date(snap.fetched_at).getTime() : null,
       };
     }
@@ -455,13 +456,16 @@ const QuotaIndicator = GObject.registerClass(
           p.state = emptyProviderState();
           continue;
         }
-        const out = pq.last_output ?? {};
+        // last_output.result is a tagged union: kind="success" carries window
+        // data, kind="error" carries the error string.
+        const result = pq.last_output?.result ?? {};
+        const isSuccess = result.kind === "success";
         p.state = {
-          short: this._mapWindow(out.short_window),
-          long: this._mapWindow(out.long_window),
+          short: isSuccess ? this._mapWindow(result.short_window) : null,
+          long: isSuccess ? this._mapWindow(result.long_window) : null,
           lastFetch: fetchedAt,
-          error: out.error ?? null,
-          extraUsage: this._mapExtraUsage(out.extra_usage),
+          error: isSuccess ? null : (result.error ?? null),
+          extraUsage: isSuccess ? this._mapExtraUsage(result.extra_usage) : null,
           // Derived policy bits from the Python view model — single source of truth.
           currentlyOverPlan: pq.currently_over_plan === true,
           extraStatus: pq.extra_status ?? "none",

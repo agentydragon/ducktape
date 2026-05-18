@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from aiquota.models import AllQuotas, ExtraUsage, ProviderFetch, QuotaWindow
+from aiquota.models import AllQuotas, ExtraUsage, FetchSuccess, QuotaWindow, SuccessfulProviderFetch
 from aiquota.pace import compute_pace
 from aiquota.render.format import format_age, format_duration, format_pace, format_pace_forecast
 from aiquota.render.view_model import ProviderView, to_view
@@ -14,48 +14,53 @@ def render(quotas: AllQuotas) -> str:
 
 
 def _render_provider(pv: ProviderView, now: datetime) -> str:
-    out = pv.last_output
+    out_result = pv.last_output.result
+    error = out_result.error if not isinstance(out_result, FetchSuccess) else None
+
     # If the latest call gave us nothing usable, fall back to the prior
     # successful snapshot — stale-but-real numbers beat "no data".
-    fallback = pv.last_success if _has_data(pv.last_success) and not _has_data(out) else None
-    short, long, stale = _windows_for_render(out, fallback, now)
+    if isinstance(out_result, FetchSuccess) and (out_result.short_window or out_result.long_window):
+        short, long, extra, stale = out_result.short_window, out_result.long_window, out_result.extra_usage, None
+    elif pv.last_success is not None:
+        short, long, extra, stale = _stale_windows(pv.last_success, now)
+    else:
+        short = long = extra = None
+        stale = None
 
-    if out.error and short is None and long is None:
-        return f"{pv.provider}: error — {out.error}"
+    if error and short is None and long is None:
+        return f"{pv.provider}: error — {error}"
 
     if pv.currently_over_plan:
         # Mirror the GNOME popup's collapsed view: while burning, 5h/7d bars are
         # noise — what matters is when the 7d window resets (which ends the burn).
-        lines = [f"{pv.provider}  {_format_extra_active(out.extra_usage)}"]
-        if out.long_window is not None:
-            lines.append(f"  7d reset: ↻ {format_duration(out.long_window.reset_seconds)}")
+        lines = [f"{pv.provider}  {_format_extra_active(extra)}"]
+        if long is not None:
+            lines.append(f"  7d reset: ↻ {format_duration(long.reset_seconds)}")
         return "\n".join(lines)
 
-    lines = [_header(pv)]
+    lines = [_header(pv.provider, error)]
     if short is not None:
         lines.append(_window_line("5h", short, stale))
     if long is not None:
         lines.append(_window_line("7d", long, stale))
-    if pv.extra_status == "informational" and out.extra_usage is not None:
+    if pv.extra_status == "informational" and extra is not None:
         # Prepaid still has room, but the user incurred extra-usage spend earlier
         # in the billing month. Surface it so the monthly bill doesn't sneak up.
-        lines.append(f"  {_format_extra_informational(out.extra_usage)}")
+        lines.append(f"  {_format_extra_informational(extra)}")
     if len(lines) == 1:
         lines.append("  no data")
     return "\n".join(lines)
 
 
-def _has_data(out: ProviderFetch | None) -> bool:
-    return out is not None and (out.short_window is not None or out.long_window is not None)
-
-
-def _windows_for_render(
-    out: ProviderFetch, fallback: ProviderFetch | None, now: datetime
-) -> tuple[QuotaWindow | None, QuotaWindow | None, str | None]:
-    if fallback is None:
-        return out.short_window, out.long_window, None
-    age = format_age((now - fallback.fetched_at).total_seconds())
-    return _refreshed_window(fallback.short_window, now), _refreshed_window(fallback.long_window, now), age
+def _stale_windows(
+    snap: SuccessfulProviderFetch, now: datetime
+) -> tuple[QuotaWindow | None, QuotaWindow | None, ExtraUsage | None, str]:
+    return (
+        _refreshed_window(snap.result.short_window, now),
+        _refreshed_window(snap.result.long_window, now),
+        snap.result.extra_usage,
+        format_age((now - snap.fetched_at).total_seconds()),
+    )
 
 
 def _refreshed_window(w: QuotaWindow | None, now: datetime) -> QuotaWindow | None:
@@ -66,11 +71,10 @@ def _refreshed_window(w: QuotaWindow | None, now: datetime) -> QuotaWindow | Non
     return w.model_copy(update={"reset_seconds": max(0.0, (w.reset_at - now).total_seconds())})
 
 
-def _header(pv: ProviderView) -> str:
-    parts = [pv.provider]
-    if pv.last_output.error is not None:
-        parts.append(f"last refresh failed: {pv.last_output.error}")
-    return "  ".join(parts)
+def _header(provider: str, error: str | None) -> str:
+    if error is None:
+        return provider
+    return f"{provider}  last refresh failed: {error}"
 
 
 def _format_extra_active(extra: ExtraUsage | None) -> str:
