@@ -32,10 +32,12 @@ use spec::{
 };
 
 mod anonymous;
+mod chunk_renames;
 mod rewrite_runtime;
 mod visitors;
 
 use anonymous::resolve_anonymous_statement_ordinals;
+use chunk_renames::collect_chunk_renames;
 use rewrite_runtime::rewrite_runtime_sources_for_target;
 use visitors::{IdentifierRenamer, RenameAndShorthandNaturalizer, ShorthandNaturalizer};
 
@@ -1991,26 +1993,6 @@ fn is_valid_js_identifier(s: &str) -> bool {
         return false;
     }
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
-}
-
-fn collect_chunk_renames(chunk_renames: &ChunkRenames) -> Result<HashMap<String, String>> {
-    let mut renames = HashMap::<String, String>::new();
-    let id = chunk_renames.id.as_deref().unwrap_or("chunk_renames");
-    for member in &chunk_renames.members {
-        let binding = member.selector.binding.name.clone();
-        let export_name = member.name.clone().unwrap_or_else(|| binding.clone());
-        if let Some(existing) = renames.get(&binding) {
-            if existing != &export_name {
-                bail!(
-                    "chunk_renames {id}: binding {binding} already renamed to \
-                     {existing}; refusing to overwrite with {export_name}"
-                );
-            }
-        } else {
-            renames.insert(binding, export_name);
-        }
-    }
-    Ok(renames)
 }
 
 /// Number of post-comma-list-split positions a top-level body
