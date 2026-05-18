@@ -399,6 +399,7 @@ rust_library(
         "lowering/mod.rs",
         "lowering/naturalize.rs",
         "lowering/plan_references.rs",
+        "lowering/plans.rs",
         "lowering/rewrite_runtime.rs",
         "lowering/runtime_imports.rs",
         "lowering/visitors.rs",
