@@ -2,6 +2,9 @@
 //! Both call `disambiguate_*_import_locals` (util.rs) to mint fresh
 //! locals when names collide with already-occupied bindings.
 
+use super::util::{
+    disambiguate_import_locals, disambiguate_residual_entry_import_locals, import_decl_for_plan,
+};
 use super::*;
 
 pub(super) fn cross_module_imports_for_plan(

@@ -10,10 +10,9 @@ use swc_ecma_ast::Id;
 /// to every top-level binding in a parsed `Module`. Spec-derived
 /// String names (which carry no ctxt) are resolved to their `Id` by
 /// pairing the sym with this canonical ctxt.
-#[allow(dead_code)] // CLEANUP(2026-05-18): remove once logical_modules.rs spec→Id boundary lands.
-pub fn top_level_id(sym: impl Into<Atom>, top_level_mark: Mark) -> Id {
+pub fn top_level_id(sym: &str, top_level_mark: Mark) -> Id {
     (
-        sym.into(),
+        Atom::from(sym),
         SyntaxContext::empty().apply_mark(top_level_mark),
     )
 }

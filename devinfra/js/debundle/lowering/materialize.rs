@@ -3,6 +3,10 @@
 //! files/applied/report are spliced into the artifact by
 //! `apply_materialized_logical_chunks`.
 
+use super::util::{
+    render_atomic_unit_cause_guidance, statement_ordinal_for_body_index, target_file_for_request,
+    write_chunk_report_json,
+};
 use super::*;
 use crate::time_phase;
 
@@ -193,7 +197,7 @@ pub(super) fn materialize_logical_chunk(
                     &mut imported_from_by_src,
                 )?;
                 bindings_catalogue.insert(
-                    top_level_id(member.binding.as_str(), chunk_top_level_mark),
+                    top_level_id(&member.binding, chunk_top_level_mark),
                     BindingKind::Imported {
                         imported_name,
                         imported_from,
@@ -209,7 +213,7 @@ pub(super) fn materialize_logical_chunk(
             if declaration_by_name.contains_key(binding) {
                 binding_assignment.insert(binding.clone(), index);
                 bindings_catalogue.insert(
-                    top_level_id(binding.as_str(), chunk_top_level_mark),
+                    top_level_id(binding, chunk_top_level_mark),
                     BindingKind::Owned { owner: module_id },
                 );
             }
@@ -253,7 +257,7 @@ pub(super) fn materialize_logical_chunk(
                 None => {
                     binding_assignment.insert(sibling.clone(), owner_index);
                     bindings_catalogue.insert(
-                        top_level_id(sibling.as_str(), chunk_top_level_mark),
+                        top_level_id(sibling, chunk_top_level_mark),
                         BindingKind::Owned { owner: owner_id },
                     );
                     let plan = &mut module_plans[owner_index];
@@ -293,7 +297,7 @@ pub(super) fn materialize_logical_chunk(
                     binding_assignment.insert(name.clone(), residual_index);
                     residual_bindings.insert(name.clone(), name.clone());
                     bindings_catalogue.insert(
-                        top_level_id(name.as_str(), chunk_top_level_mark),
+                        top_level_id(name, chunk_top_level_mark),
                         BindingKind::Owned {
                             owner: residual_module_id,
                         },
@@ -337,7 +341,7 @@ pub(super) fn materialize_logical_chunk(
                             .entry(name.clone())
                             .or_insert_with(|| name.clone());
                         bindings_catalogue.insert(
-                            top_level_id(name.as_str(), chunk_top_level_mark),
+                            top_level_id(name, chunk_top_level_mark),
                             BindingKind::Owned { owner: owner_id },
                         );
                     }
@@ -497,7 +501,7 @@ pub(super) fn materialize_logical_chunk(
                             .iter()
                             .map(|(local, exported)| {
                                 (
-                                    top_level_id(local.as_str(), chunk_top_level_mark),
+                                    top_level_id(local, chunk_top_level_mark),
                                     exported.as_str().into(),
                                 )
                             })
@@ -552,7 +556,7 @@ pub(super) fn materialize_logical_chunk(
             .iter()
             .map(|(local, exported)| {
                 (
-                    top_level_id(local.as_str(), chunk_top_level_mark),
+                    top_level_id(local, chunk_top_level_mark),
                     exported.as_str().into(),
                 )
             })

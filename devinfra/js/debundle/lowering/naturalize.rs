@@ -6,6 +6,7 @@
 //! `naturalize_module_body` is the public entry; everything else is a
 //! contributor of rename intents that get merged via `drop_target_collisions`.
 
+use super::util::is_identifier_like;
 use super::*;
 
 pub(super) fn naturalize_module_body(

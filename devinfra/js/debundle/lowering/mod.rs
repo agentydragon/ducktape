@@ -85,14 +85,9 @@ use runtime_imports::{
     RuntimeImportFacts, RuntimeImportInfo, RuntimeImportKind, imported_binding_named_specifier,
     record_runtime_imports, runtime_reimport_specifier,
 };
-#[allow(unused_imports)]
 use util::{
-    body_index_for_statement_ordinal, collect_local_binding_names, collect_occupied_local_names,
-    disambiguate_import_locals, disambiguate_residual_entry_import_locals, import_decl_for_plan,
-    is_identifier_like, is_valid_js_identifier, normalize_optional_relative_dir,
-    prepare_output_dir, preserve_export_specifier_names, prune_artifact_to_chunk_ids,
-    relative_source, remaining_item_after_selection, render_atomic_unit_cause_guidance,
-    statement_ordinal_for_body_index, target_file_for_request, write_chunk_report_json,
+    normalize_optional_relative_dir, prepare_output_dir, prune_artifact_to_chunk_ids,
+    write_chunk_report_json,
 };
 use visitors::{IdentifierRenamer, RenameAndShorthandNaturalizer, ShorthandNaturalizer};
 
@@ -100,7 +95,6 @@ const LOWERING_FILE_PRAGMA: &str =
     "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";
 const LOWERING_GENERATOR_HEADER: &str = "// @ducktape-generator selected_module_lowering";
 
-#[macro_export]
 macro_rules! time_phase {
     ($timings:expr, $name:expr, $body:block) => {{
         let phase_started = std::time::Instant::now();
@@ -109,6 +103,7 @@ macro_rules! time_phase {
         value
     }};
 }
+pub(crate) use time_phase;
 
 #[derive(Debug, Default, Clone)]
 struct PhaseTimings {

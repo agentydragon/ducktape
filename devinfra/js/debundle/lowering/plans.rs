@@ -2,6 +2,7 @@
 //! convert spec entries into `LogicalRequest`s and synthesize
 //! mini-factor plans for unclaimed atomic units.
 
+use super::util::{body_index_for_statement_ordinal, target_file_for_request};
 use super::*;
 
 #[derive(Debug, Clone)]
@@ -259,7 +260,7 @@ pub(super) fn synthesize_mini_factor_plans(
                 }
                 binding_assignment.insert(name.clone(), synthetic_idx);
                 bindings_catalogue.insert(
-                    top_level_id(name.as_str(), chunk_top_level_mark),
+                    top_level_id(name, chunk_top_level_mark),
                     BindingKind::Owned {
                         owner: synthetic_module_id,
                     },
