@@ -392,3 +392,85 @@ bindings, logical_modules, chunk_renames) + `Factorization`
 (partition + dep_graph + linker_order + conflicts) +
 `FactorizationCaches`. Probably not worth the boilerplate, but
 evaluate before doing the rename.
+
+## Id-migration code-reduction follow-ups
+
+PR #1639 migrated chunk-scoped identifier maps to SWC `Id`-keyed but
+left several duplicate patterns in place. Each is a small, independent
+cleanup PR.
+
+- **`ident.sym.as_ref()` / `id.0.as_str()` iteration sites (~7).**
+  Several call sites still build `String` keys by interning
+  `ident.sym` after the AST visit. Audit `lowering/`, `analyze_chunk`,
+  and `schedule.rs` for `as_str().to_string()` / `.to_string()` on a
+  sym just to feed a `HashMap<String, _>`; in each case either the
+  map should be `Id`- or `Atom`-keyed, or the caller already has an
+  `Id` in scope.
+- **`top_level_id(...)` invocation repetition (~9).** Multiple sites
+  call `top_level_id(name, top_level_mark)` to mint the same Id that
+  was already available via `ident.to_id()` after `resolver`. Replace
+  with the AST-derived Id where possible; keep `top_level_id` only
+  where the caller has a `&str` and no AST node.
+- **Per-test `js_ast::with_swc_globals(|| {...})` wraps (~14).**
+  In-process tests across `pipeline.rs`, `validate_emitted_exports.rs`,
+  `vendor.rs` each wrap their body in `with_swc_globals`. Consider
+  a `#[swc_globals_test]` proc-macro attribute or a single test
+  harness fixture so the wrap is implicit. Caveat: explicit per-test
+  wrap was chosen deliberately over a defensive auto-wrap; revisit
+  only if a helper can keep the same mark-identity-across-calls
+  guarantee.
+
+## RenameLedger (PR2) open questions
+
+Before implementing the "Rename pipeline: collect → validate →
+execute _once_" architecture above, pin these three design questions:
+
+1. **Conflict policy for same-priority heuristic disagreements.** When
+   two heuristic contributors propose conflicting renames at the same
+   priority (e.g. `collect_return_object_alias_renames` says `sA →
+propKeyA` and `collect_naturalization_renames_from_function` says
+   `sA → propKeyB`), does the ledger panic at seal citing both
+   submitters, or silently suppress the lower one? Default proposal:
+   panic loudly, with both contributors named in the error — silent
+   suppression is the trap PR2 is meant to close.
+2. **Disambiguation name minter.** `disambiguate_import_locals` today
+   appends `_1`, `_2`, ... suffixes until a free name is found. When
+   that becomes a `RenameLedger` method (so the ledger owns "what
+   names are taken in this chunk"), does the scheme stay as-is, or
+   switch to something more readable (`name_from_module`, etc.)?
+   Default proposal: keep `_N` scheme; readability is a separate
+   concern best handled by a later naturalizer pass.
+3. **Structural mutations during COLLECT.** Today
+   `materialize_logical_modules` moves declarations between modules
+   in-place during the collect phase. Tighten the contract to either:
+   - "no structural moves between seal and execute" (pragmatic — most
+     moves already happen pre-seal, and the type-level barrier
+     `&Module` in non-execute passes lands cleanly), or
+   - "all structural moves pre-COLLECT" (cleaner architecturally but
+     requires reordering the materializer to compute a final body
+     order before any rename intents are submitted).
+
+## lowering/ module ergonomics
+
+The post-split `lowering/` directory landed in PR #1643 with a few
+ergonomic compromises that should be cleaned up:
+
+- **`#[allow(unused_imports)]` on `mod.rs`'s `use util::{...}`.**
+  Items only used by sibling modules (not by `mod.rs` itself) are
+  imported in `mod.rs` under `#[allow(unused_imports)]` so they're
+  reachable from siblings via Rust's parent-name resolution. Replace
+  with per-child `use super::util::{...}` blocks so each sibling
+  declares exactly what it consumes; drop the allow.
+- **`#[macro_export]` on `time_phase!`.** The macro is exported at
+  crate root to make it visible to `lower.rs` / `materialize.rs`. It
+  has no callers outside the `lowering` crate, so the export is a
+  visibility leak. Replace with a `pub(crate) use` pattern when one
+  of the `macro_rules_2021` features stabilizes, or move the macro
+  into its own `_macros.rs` module declared before its consumers and
+  drop the export.
+- **PR #1633 reverse-lookup bridge** (`plan_module_reference_needs`
+  reconstructs pre-rename `Id` by pairing the heuristic-rename
+  pre-sym with the body Id's own ctxt). Retired by PR2's
+  `RenameLedger` when the ledger makes pre-rename and post-rename
+  names available without bridging. Track the removal as part of PR2
+  landing, not as an independent cleanup.
