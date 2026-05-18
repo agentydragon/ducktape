@@ -204,6 +204,53 @@ mod tests {
         assert!(facts[1].first_order_body_calls.is_empty());
     }
 
+    /// A rebind that lexically precedes the first `await` in an async
+    /// function body runs synchronously when the function is invoked
+    /// (the engine doesn't suspend until it reaches the await), so it
+    /// belongs in `first_order_lazy_rebinds`.
+    #[test]
+    fn first_order_lazy_rebind_keeps_pre_await_in_async_body() {
+        let module = parse(
+            "let s = 0; \
+             async function f() { s = 1; await Promise.resolve(); }",
+        );
+        let facts = analyze_facts(&module);
+        assert_eq!(facts[1].lazy_rebinds, BTreeSet::from(["s".to_string()]));
+        assert_eq!(
+            facts[1].first_order_lazy_rebinds,
+            BTreeSet::from(["s".to_string()])
+        );
+    }
+
+    /// A rebind that lexically follows the first `await` in an async
+    /// function body runs in a microtask after the at-init caller has
+    /// finished — it doesn't fire synchronously when the function is
+    /// invoked, so it must not appear in `first_order_lazy_rebinds`.
+    /// The coarse `lazy_rebinds` still records it (it IS lazy from the
+    /// chunk's top-level POV). See `at_init_promotion_post_await_test`.
+    #[test]
+    fn first_order_lazy_rebind_skips_after_await_in_async_body() {
+        let module = parse(
+            "let s = 0; \
+             async function f() { await Promise.resolve(); s = 1; }",
+        );
+        let facts = analyze_facts(&module);
+        assert_eq!(facts[1].lazy_rebinds, BTreeSet::from(["s".to_string()]));
+        assert!(facts[1].first_order_lazy_rebinds.is_empty());
+    }
+
+    /// Same await-boundary distinction for body calls.
+    #[test]
+    fn first_order_body_call_skips_after_await_in_async_body() {
+        let module = parse(
+            "function g() {} \
+             async function f() { await Promise.resolve(); g(); }",
+        );
+        let facts = analyze_facts(&module);
+        assert_eq!(facts[1].body_calls, BTreeSet::from(["g".to_string()]));
+        assert!(facts[1].first_order_body_calls.is_empty());
+    }
+
     #[test]
     fn function_body_reads_are_lazy() {
         let module = parse("function f() { return X; } const Y = 1;");

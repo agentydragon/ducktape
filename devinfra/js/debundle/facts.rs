@@ -705,27 +705,44 @@ impl Visit for AtInitReadCollector {
     }
 }
 
-/// Shared trait for visitors that track lazy nesting depth.
+/// Shared trait for visitors that track lazy nesting depth and the
+/// per-body "past first await" boundary.
 ///
 /// Depth semantics:
 /// - `0` — eager (outside any function body).
 /// - `1` — first-order lazy (inside the immediate body of a function).
 /// - `≥2` — nested lazy (inside a function nested in another function body).
 ///
-/// At-init call promotion only inherits reads/rebinds/calls from a
-/// callee's first-order body, because a synchronous invocation of the
-/// callee runs only its immediate body; statements lexically inside
-/// nested function/arrow definitions are not executed until something
-/// later invokes the nested closure. The general `lazy_*` sets stay
-/// coarse (any depth ≥1) because, from the chunk's top-level POV, any
-/// rebind inside any function body remains "lazy".
+/// `past_await` is a per-body flag: while visiting an async function /
+/// arrow / method body, it flips `true` once an `AwaitExpr` has been
+/// seen, and resets back to `false` when control exits that body.
+/// Code past the first await runs in a microtask after the at-init
+/// caller has finished, so it doesn't behave as "synchronously fires
+/// when the function is invoked" — at-init call promotion treats it
+/// like a nested closure.
+///
+/// At-init call promotion only inherits reads/rebinds/calls from the
+/// **first-order, pre-await** part of a callee's body
+/// (`lazy_depth == 1 && !past_await`), because a synchronous invocation
+/// of the callee runs only that portion of the body. Statements
+/// lexically inside nested function/arrow definitions or past an
+/// `await` in an async body are not executed until something else
+/// (the nested closure being called, or the microtask scheduler)
+/// fires them. The general `lazy_*` sets stay coarse (any depth ≥1,
+/// regardless of `past_await`) because, from the chunk's top-level
+/// POV, any rebind inside any function body remains "lazy".
 trait LazyBoundary: Visit {
     fn lazy_depth_mut(&mut self) -> &mut u32;
+    fn past_await_mut(&mut self) -> &mut bool;
 
     fn descend_lazy<F: FnOnce(&mut Self)>(&mut self, f: F) {
+        // Each body has its own `past_await` scope: a nested function
+        // starts pre-await regardless of the enclosing body's state.
+        let saved_past_await = std::mem::replace(self.past_await_mut(), false);
         *self.lazy_depth_mut() += 1;
         f(self);
         *self.lazy_depth_mut() -= 1;
+        *self.past_await_mut() = saved_past_await;
     }
 }
 
@@ -743,11 +760,15 @@ struct LazyReadCollector {
     names: BTreeSet<String>,
     first_order: BTreeSet<String>,
     lazy_depth: u32,
+    past_await: bool,
 }
 
 impl LazyBoundary for LazyReadCollector {
     fn lazy_depth_mut(&mut self) -> &mut u32 {
         &mut self.lazy_depth
+    }
+    fn past_await_mut(&mut self) -> &mut bool {
+        &mut self.past_await
     }
 }
 
@@ -757,13 +778,22 @@ impl Visit for LazyReadCollector {
             return;
         }
         self.names.insert(node.sym.to_string());
-        if self.lazy_depth == 1 {
+        if self.lazy_depth == 1 && !self.past_await {
             self.first_order.insert(node.sym.to_string());
         }
     }
 
     fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
     fn visit_import_decl(&mut self, _node: &ImportDecl) {}
+
+    fn visit_await_expr(&mut self, node: &AwaitExpr) {
+        // Sub-expressions of the awaited operand evaluate before the
+        // engine suspends (`await foo(g())` runs `g()` then `foo` then
+        // suspends), so visit children first; only flip the flag once
+        // we've finished collecting the pre-await reads.
+        node.visit_children_with(self);
+        self.past_await = true;
+    }
 
     fn visit_function(&mut self, node: &Function) {
         lazy_visit_function(self, node);
@@ -804,11 +834,15 @@ struct BindingWriteCollector {
     lazy: BTreeSet<String>,
     first_order_lazy: BTreeSet<String>,
     lazy_depth: u32,
+    past_await: bool,
 }
 
 impl LazyBoundary for BindingWriteCollector {
     fn lazy_depth_mut(&mut self) -> &mut u32 {
         &mut self.lazy_depth
+    }
+    fn past_await_mut(&mut self) -> &mut bool {
+        &mut self.past_await
     }
 }
 
@@ -819,7 +853,7 @@ impl BindingWriteCollector {
             return;
         }
         self.lazy.insert(name.to_string());
-        if self.lazy_depth == 1 {
+        if self.lazy_depth == 1 && !self.past_await {
             self.first_order_lazy.insert(name.to_string());
         }
     }
@@ -837,6 +871,14 @@ impl Visit for BindingWriteCollector {
     fn visit_import_decl(&mut self, _node: &ImportDecl) {}
     fn visit_named_export(&mut self, _node: &NamedExport) {}
     fn visit_export_all(&mut self, _node: &ExportAll) {}
+
+    fn visit_await_expr(&mut self, node: &AwaitExpr) {
+        // The awaited operand runs to completion (synchronously)
+        // before the engine suspends; flip past_await only after
+        // recording its writes.
+        node.visit_children_with(self);
+        self.past_await = true;
+    }
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
         record_assign_target(&node.left, self);
@@ -909,11 +951,15 @@ struct CallCollector {
     lazy: BTreeSet<String>,
     first_order_lazy: BTreeSet<String>,
     lazy_depth: u32,
+    past_await: bool,
 }
 
 impl LazyBoundary for CallCollector {
     fn lazy_depth_mut(&mut self) -> &mut u32 {
         &mut self.lazy_depth
+    }
+    fn past_await_mut(&mut self) -> &mut bool {
+        &mut self.past_await
     }
 }
 
@@ -922,6 +968,13 @@ impl Visit for CallCollector {
     fn visit_named_export(&mut self, _node: &NamedExport) {}
     fn visit_export_all(&mut self, _node: &ExportAll) {}
 
+    fn visit_await_expr(&mut self, node: &AwaitExpr) {
+        // The awaited operand runs synchronously before the engine
+        // suspends; record its calls first, then flip past_await.
+        node.visit_children_with(self);
+        self.past_await = true;
+    }
+
     fn visit_call_expr(&mut self, node: &CallExpr) {
         if let Some(callee) = call_callee_ident(node) {
             let name = callee.to_string();
@@ -929,7 +982,7 @@ impl Visit for CallCollector {
                 self.at_init.insert(name);
             } else {
                 self.lazy.insert(name.clone());
-                if self.lazy_depth == 1 {
+                if self.lazy_depth == 1 && !self.past_await {
                     self.first_order_lazy.insert(name);
                 }
             }
