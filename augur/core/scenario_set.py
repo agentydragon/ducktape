@@ -6,15 +6,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, PositiveInt, model_validator
 
-from augur.core.accounting import (
-    BalanceSnapshot,
-    ChartAccount,
-    JournalEntry,
-    LiabilityState,
-    LotDisposition,
-    Posting,
-    TaxLot,
-)
+from augur.core.accounting import LiabilityState, LotDisposition, TaxLot
 from augur.core.local_regulation import LocalRegulation, TaxRegime
 from augur.core.provenance import ProjectionRun
 from augur.core.schemas import ApiModel, ColumnarTable, Percentage
@@ -1146,10 +1138,6 @@ class ScenarioResult(ApiModel):
     effects: tuple[Effect, ...] = ()
     policy_decisions: tuple[PolicyDecision, ...] = ()
     market_observations: tuple[MarketObservation, ...] = ()
-    chart_accounts: tuple[ChartAccount, ...] = ()
-    journal_entries: tuple[JournalEntry, ...] = ()
-    postings: tuple[Posting, ...] = ()
-    balance_snapshots: tuple[BalanceSnapshot, ...] = ()
     tax_lots: tuple[TaxLot, ...] = ()
     lot_dispositions: tuple[LotDisposition, ...] = ()
     liabilities: tuple[LiabilityState, ...] = ()
