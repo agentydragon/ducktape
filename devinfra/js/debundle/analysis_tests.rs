@@ -46,6 +46,110 @@ mod tests {
         analyze_facts_with_hints(module, &AnalysisHints::default())
     }
 
+    /// A direct call `f()` at the chunk top level records `f` in the
+    /// statement's `at_init_calls` set. Drives at-init call promotion
+    /// per DESIGN.md "At-init call promotion".
+    #[test]
+    fn at_init_call_recorded() {
+        let module = parse("function f() {} f();");
+        let facts = analyze_facts(&module);
+        assert_eq!(facts.len(), 2);
+        // function decl: callee never recorded for the decl itself.
+        assert!(facts[0].at_init_calls.is_empty());
+        assert!(facts[0].body_calls.is_empty());
+        // call statement: f() is at-init, no body reads.
+        assert_eq!(facts[1].at_init_calls, BTreeSet::from(["f".to_string()]),);
+        assert!(facts[1].body_calls.is_empty());
+    }
+
+    /// A call inside a function body lives in `body_calls`, not
+    /// `at_init_calls`. The call only fires when the function is
+    /// invoked, so promotion treats it as a lazy edge of the
+    /// containing function.
+    #[test]
+    fn body_call_recorded() {
+        let module = parse("function f() { g(); } function g() {}");
+        let facts = analyze_facts(&module);
+        // f's decl: its body calls g lazily.
+        assert!(facts[0].at_init_calls.is_empty());
+        assert_eq!(facts[0].body_calls, BTreeSet::from(["g".to_string()]),);
+    }
+
+    /// Indirect calls (`const g = f; g()`) are skipped — the callee
+    /// isn't a direct Ident on the CallExpr. Conservative: the
+    /// proposer may miss promotion through this case.
+    #[test]
+    fn indirect_call_not_recorded() {
+        let module = parse("function f() {} const g = f; g();");
+        let facts = analyze_facts(&module);
+        // Last statement: `g()` records `g`, not `f`. (The aliasing
+        // is unmodeled; callee resolution only sees `g`.)
+        assert_eq!(facts[2].at_init_calls, BTreeSet::from(["g".to_string()]),);
+    }
+
+    /// Method calls (`obj.method()`) are skipped — callee is a
+    /// MemberExpr, not an Ident.
+    #[test]
+    fn method_call_not_recorded() {
+        let module = parse("const obj = {}; obj.method();");
+        let facts = analyze_facts(&module);
+        // Last statement: no at_init_calls. `obj` is still recorded
+        // as an eager read.
+        assert!(facts[1].at_init_calls.is_empty());
+        assert!(facts[1].eager_reads.contains("obj"));
+    }
+
+    /// Class static field initializers fire at-init (class evaluation
+    /// time). Calls in static initializers go into `at_init_calls`.
+    #[test]
+    fn class_static_init_call_is_at_init() {
+        let module = parse("function f() {} class C { static x = f(); }");
+        let facts = analyze_facts(&module);
+        assert_eq!(facts[1].at_init_calls, BTreeSet::from(["f".to_string()]),);
+        assert!(facts[1].body_calls.is_empty());
+    }
+
+    /// Class instance field initializers fire per-construction, not
+    /// at class-decl time. Calls inside them are `body_calls`,
+    /// matching how the existing read collectors treat instance
+    /// fields as lazy.
+    #[test]
+    fn class_instance_field_call_is_lazy() {
+        let module = parse("function f() {} class C { x = f(); }");
+        let facts = analyze_facts(&module);
+        assert!(facts[1].at_init_calls.is_empty());
+        assert_eq!(facts[1].body_calls, BTreeSet::from(["f".to_string()]),);
+    }
+
+    /// Nested calls in argument positions are still seen by the
+    /// collector. `console.log(readB())` records both `console` (in
+    /// eager_reads) and `readB` (in at_init_calls).
+    #[test]
+    fn nested_call_arguments_record_inner_callee() {
+        let module = parse("function readB() {} console.log(readB());");
+        let facts = analyze_facts(&module);
+        // The console.log statement: console is an eager read.
+        // readB is recorded as an at-init call. console.log is a
+        // method call, so it's NOT in at_init_calls.
+        assert!(facts[1].eager_reads.contains("console"));
+        assert_eq!(
+            facts[1].at_init_calls,
+            BTreeSet::from(["readB".to_string()]),
+        );
+    }
+
+    /// VarDecl-bound arrow functions participate in body_calls the
+    /// same way function declarations do. `const f = () => g()` is
+    /// a function carrier; the `g()` inside is lazy.
+    #[test]
+    fn vardecl_arrow_body_call_recorded() {
+        let module = parse("function g() {} const f = () => g();");
+        let facts = analyze_facts(&module);
+        // f's vardecl: g() is a lazy body call.
+        assert!(facts[1].at_init_calls.is_empty());
+        assert_eq!(facts[1].body_calls, BTreeSet::from(["g".to_string()]),);
+    }
+
     #[test]
     fn function_body_reads_are_lazy() {
         let module = parse("function f() { return X; } const Y = 1;");

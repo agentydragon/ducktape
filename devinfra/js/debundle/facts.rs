@@ -38,6 +38,22 @@ pub struct StatementFacts {
     /// calls. Each binding is the class/prototype owner that must
     /// co-locate with the mutating statement.
     pub local_effects: BTreeSet<BindingName>,
+    /// Bare-identifier callees of `CallExpr` nodes seen at-init —
+    /// i.e. outside any function/arrow/method body. Used by the
+    /// owner-graph build to drive at-init call promotion: a call from
+    /// statement S to chunk-declared function `f` is treated as
+    /// transitively reading everything `f`'s body lazily reads. See
+    /// DESIGN.md "At-init call promotion". Indirect calls
+    /// (`const g = f; g()`), method calls (`obj.method()`), and
+    /// computed callees are skipped — the callee must be a direct
+    /// `Ident`.
+    pub at_init_calls: BTreeSet<BindingName>,
+    /// Same as `at_init_calls` but for calls inside lazy positions.
+    /// Used by the owner-graph build to reconstruct the chunk call
+    /// graph so that promotion can transitively follow call chains
+    /// (e.g. `function f() { g(); } f();` at top level promotes
+    /// through `g`'s body too).
+    pub body_calls: BTreeSet<BindingName>,
     pub purity: Purity,
     pub kind: StatementKind,
 }
@@ -355,6 +371,8 @@ fn analyze_item(
     item.visit_with(&mut lazy);
     let mut writes = BindingWriteCollector::default();
     item.visit_with(&mut writes);
+    let mut calls = CallCollector::default();
+    item.visit_with(&mut calls);
     let local_effects = collect_local_effects(item, &hints.known_effects);
     let purity = item_purity(
         item,
@@ -373,6 +391,8 @@ fn analyze_item(
         lazy_reads: lazy.names,
         lazy_rebinds: writes.lazy,
         local_effects,
+        at_init_calls: calls.at_init,
+        body_calls: calls.lazy,
         purity,
         kind,
     }
@@ -795,6 +815,73 @@ impl Visit for BindingWriteCollector {
         node.left.visit_with(self);
         node.right.visit_with(self);
         node.body.visit_with(self);
+    }
+
+    fn visit_function(&mut self, node: &Function) {
+        lazy_visit_function(self, node);
+    }
+    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
+        lazy_visit_arrow_expr(self, node);
+    }
+    fn visit_method_prop(&mut self, node: &MethodProp) {
+        lazy_visit_method_prop(self, node);
+    }
+    fn visit_getter_prop(&mut self, node: &GetterProp) {
+        lazy_visit_getter_prop(self, node);
+    }
+    fn visit_setter_prop(&mut self, node: &SetterProp) {
+        lazy_visit_setter_prop(self, node);
+    }
+
+    fn visit_class(&mut self, node: &Class) {
+        lazy_visit_class(self, node);
+    }
+
+    fn visit_class_member(&mut self, member: &ClassMember) {
+        lazy_visit_class_member(self, member);
+    }
+}
+
+/// Visitor that collects bare-identifier callees of `CallExpr` nodes,
+/// split by whether the call appears at-init (top-level chunk
+/// position, class static initializers) or only in a lazy position
+/// (function/arrow/method/getter/setter bodies, instance class fields,
+/// constructor bodies). Drives at-init call promotion in
+/// `build_owner_graph`: see DESIGN.md "At-init call promotion".
+///
+/// Only direct `f(...)` calls where the callee is an `Ident` are
+/// recorded. `obj.method()`, `(g)()`, `f()()`, computed callees, and
+/// `(const g = f, g)()` are skipped — interprocedural promotion only
+/// fires when the callee is statically a known chunk binding.
+#[derive(Default)]
+struct CallCollector {
+    at_init: BTreeSet<String>,
+    lazy: BTreeSet<String>,
+    in_lazy: bool,
+}
+
+impl LazyBoundary for CallCollector {
+    fn in_lazy_mut(&mut self) -> &mut bool {
+        &mut self.in_lazy
+    }
+}
+
+impl Visit for CallCollector {
+    fn visit_import_decl(&mut self, _node: &ImportDecl) {}
+    fn visit_named_export(&mut self, _node: &NamedExport) {}
+    fn visit_export_all(&mut self, _node: &ExportAll) {}
+
+    fn visit_call_expr(&mut self, node: &CallExpr) {
+        if let Some(callee) = call_callee_ident(node) {
+            let bucket = if self.in_lazy {
+                &mut self.lazy
+            } else {
+                &mut self.at_init
+            };
+            bucket.insert(callee.to_string());
+        }
+        // Always recurse into args + callee so nested calls are seen.
+        node.visit_children_with(self);
     }
 
     fn visit_function(&mut self, node: &Function) {
