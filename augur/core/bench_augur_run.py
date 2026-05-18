@@ -148,8 +148,8 @@ def run_once(scenario_set: ScenarioSet) -> tuple[float, float]:
 
 
 def main() -> None:
-    n_scenarios = 15
-    rollout_count = 128
+    n_scenarios = 3
+    rollout_count = 32
     horizon_months = 360
     seed = 11
     repeats = 3
