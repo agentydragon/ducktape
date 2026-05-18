@@ -395,30 +395,30 @@ evaluate before doing the rename.
 
 ## Id-migration code-reduction follow-ups
 
-PR #1639 migrated chunk-scoped identifier maps to SWC `Id`-keyed but
-left several duplicate patterns in place. Each is a small, independent
-cleanup PR.
+PR #1639 migrated chunk-scoped identifier maps to SWC `Id`-keyed. PR
+#1647 closed the easy ergonomic wins. What remains is bounded by
+design choices documented in DESIGN.md.
 
-- **`ident.sym.as_ref()` / `id.0.as_str()` iteration sites (~7).**
-  Several call sites still build `String` keys by interning
-  `ident.sym` after the AST visit. Audit `lowering/`, `analyze_chunk`,
-  and `schedule.rs` for `as_str().to_string()` / `.to_string()` on a
-  sym just to feed a `HashMap<String, _>`; in each case either the
-  map should be `Id`- or `Atom`-keyed, or the caller already has an
-  `Id` in scope.
-- **`top_level_id(...)` invocation repetition (~9).** Multiple sites
-  call `top_level_id(name, top_level_mark)` to mint the same Id that
-  was already available via `ident.to_id()` after `resolver`. Replace
-  with the AST-derived Id where possible; keep `top_level_id` only
-  where the caller has a `&str` and no AST node.
+- **`ident.sym.to_string()` sites feeding `BindingName`-keyed maps
+  (~35 sites in `facts.rs`, `lowering/util.rs`, `vendor.rs`,
+  `strip_swapped_vendor_exports.rs`, `purity.rs`).** Each call converts
+  an `Atom` to a `String` to feed a `BTreeSet<BindingName>` /
+  `HashMap<BindingName, _>`. The conversion can't be removed without
+  flipping `BindingName = String` to `BindingName = Atom`, which
+  DESIGN.md "Identifiers and types" (line 2594) deliberately rejects:
+  `BindingName` is the JavaScript identifier text, not a hygiene-aware
+  identity, so it stays `String`. Surfaces only become migratable to
+  `Id` keys where the value flows into a chunk-scoped map (which #1639
+  already handled) — the remaining sites all terminate in spec/report
+  surfaces that are `BindingName`-keyed by design. **No action.**
 - **Per-test `js_ast::with_swc_globals(|| {...})` wraps (~14).**
   In-process tests across `pipeline.rs`, `validate_emitted_exports.rs`,
-  `vendor.rs` each wrap their body in `with_swc_globals`. Consider
-  a `#[swc_globals_test]` proc-macro attribute or a single test
-  harness fixture so the wrap is implicit. Caveat: explicit per-test
-  wrap was chosen deliberately over a defensive auto-wrap; revisit
-  only if a helper can keep the same mark-identity-across-calls
-  guarantee.
+  `vendor.rs` each wrap their body in `with_swc_globals`. The per-test
+  wrap is a deliberate design choice (explicit setup over defensive
+  auto-wrap) and preserves mark-identity across calls. A consolidation
+  via proc-macro attribute would obscure the wrap without changing
+  the underlying contract. **No action unless a future API change
+  makes the wrap implicit safely.**
 
 ## RenameLedger (PR2) open questions
 
@@ -452,22 +452,9 @@ propKeyA` and `collect_naturalization_renames_from_function` says
 
 ## lowering/ module ergonomics
 
-The post-split `lowering/` directory landed in PR #1643 with a few
-ergonomic compromises that should be cleaned up:
+PR #1647 cleared the `#[allow(unused_imports)]` and the
+`#[macro_export]` on `time_phase!`. One item remains:
 
-- **`#[allow(unused_imports)]` on `mod.rs`'s `use util::{...}`.**
-  Items only used by sibling modules (not by `mod.rs` itself) are
-  imported in `mod.rs` under `#[allow(unused_imports)]` so they're
-  reachable from siblings via Rust's parent-name resolution. Replace
-  with per-child `use super::util::{...}` blocks so each sibling
-  declares exactly what it consumes; drop the allow.
-- **`#[macro_export]` on `time_phase!`.** The macro is exported at
-  crate root to make it visible to `lower.rs` / `materialize.rs`. It
-  has no callers outside the `lowering` crate, so the export is a
-  visibility leak. Replace with a `pub(crate) use` pattern when one
-  of the `macro_rules_2021` features stabilizes, or move the macro
-  into its own `_macros.rs` module declared before its consumers and
-  drop the export.
 - **PR #1633 reverse-lookup bridge** (`plan_module_reference_needs`
   reconstructs pre-rename `Id` by pairing the heuristic-rename
   pre-sym with the body Id's own ctxt). Retired by PR2's
