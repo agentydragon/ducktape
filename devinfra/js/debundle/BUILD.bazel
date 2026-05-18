@@ -393,6 +393,7 @@ rust_library(
         "lowering/body_facts.rs",
         "lowering/chunk_ast.rs",
         "lowering/chunk_renames.rs",
+        "lowering/imports_cross.rs",
         "lowering/mod.rs",
         "lowering/naturalize.rs",
         "lowering/plan_references.rs",
