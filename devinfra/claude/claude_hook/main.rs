@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
 use std::os::unix::fs::PermissionsExt;
-use std::os::unix::io::AsRawFd;
+use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -63,6 +63,13 @@ enum Command {
         sock: PathBuf,
         #[arg(long)]
         daemon_dir: PathBuf,
+        /// File descriptor inherited from the launcher. The daemon writes
+        /// "READY\n" to it (and closes it) once the UDS listener is bound.
+        /// If the daemon dies before signaling ready, the kernel closes
+        /// the FD on process exit and the launcher reads EOF — race-free
+        /// pre-bind crash detection, independent of zombie-reap timing.
+        #[arg(long)]
+        ready_fd: Option<i32>,
     },
 }
 
@@ -553,7 +560,7 @@ async fn handle_mailbox(
 // Daemon entry point
 // ---------------------------------------------------------------------------
 
-async fn run_daemon(sock: PathBuf, daemon_dir: PathBuf) {
+async fn run_daemon(sock: PathBuf, daemon_dir: PathBuf, ready_fd: Option<i32>) {
     let project_dir = std::env::var("CLAUDE_PROJECT_DIR")
         .map(PathBuf::from)
         .expect("CLAUDE_PROJECT_DIR must be set");
@@ -626,6 +633,20 @@ async fn run_daemon(sock: PathBuf, daemon_dir: PathBuf) {
     );
     let listener = UnixListener::bind(&sock).expect("failed to bind UDS");
 
+    // Signal readiness to the launcher (see `Command::Daemon::ready_fd`).
+    // Order matters: bind must precede this so any client that connects
+    // immediately after the launcher returns sees a kernel-queued socket.
+    if let Some(fd) = ready_fd {
+        let n = unsafe { libc::write(fd, b"READY\n".as_ptr() as *const _, 6) };
+        if n != 6 {
+            eprintln!(
+                "daemon: ready signal write returned {n} (errno={:?})",
+                io::Error::last_os_error().raw_os_error()
+            );
+        }
+        unsafe { libc::close(fd) };
+    }
+
     // Idle watchdog: SIGTERM after 30min of no requests.
     if state.profile.idle_watchdog {
         let wstate = state.clone();
@@ -651,42 +672,80 @@ async fn run_daemon(sock: PathBuf, daemon_dir: PathBuf) {
 // Client: double-fork + UDS request
 // ---------------------------------------------------------------------------
 
-pub(crate) fn fork_daemon(daemon_dir: &Path, sock_path: &Path) -> i32 {
+/// Returned by `fork_daemon`: the daemon's pid plus the read end of the
+/// readiness pipe. The caller awaits a `"READY"` write or EOF on the read
+/// end via `wait_for_sock`.
+pub(crate) struct DaemonFork {
+    /// PID of the double-forked daemon process. Retained for diagnostics
+    /// (e.g. surfacing in error messages) even though the readiness pipe
+    /// supersedes `kill(pid, 0)` polling for liveness checks.
+    #[allow(dead_code)]
+    pub pid: i32,
+    pub ready_read: OwnedFd,
+}
+
+pub(crate) fn fork_daemon(daemon_dir: &Path, sock_path: &Path) -> DaemonFork {
     let log_out = daemon_dir.join("daemon.log");
     let log_err = daemon_dir.join("daemon.err.log");
 
     let self_exe = std::env::current_exe().expect("cannot determine own exe path");
 
-    let mut pipe_fds = [0i32; 2];
-    unsafe { libc::pipe(pipe_fds.as_mut_ptr()) };
-    let (read_fd, write_fd) = (pipe_fds[0], pipe_fds[1]);
+    // Pipe 1: first child reports the double-forked grandchild's pid back.
+    let mut pid_pipe = [0i32; 2];
+    unsafe { libc::pipe(pid_pipe.as_mut_ptr()) };
+    let (pid_read, pid_write) = (pid_pipe[0], pid_pipe[1]);
+
+    // Pipe 2: daemon (post-exec) signals readiness. Write end is inherited
+    // across exec (no CLOEXEC); read end stays here. If the daemon dies
+    // before writing READY, the kernel closes its FDs and the launcher
+    // reads EOF — race-free pre-bind crash detection.
+    let mut ready_pipe = [0i32; 2];
+    unsafe { libc::pipe(ready_pipe.as_mut_ptr()) };
+    let (ready_read, ready_write) = (ready_pipe[0], ready_pipe[1]);
 
     let pid = unsafe { libc::fork() };
     if pid > 0 {
-        unsafe { libc::close(write_fd) };
+        unsafe {
+            libc::close(pid_write);
+            libc::close(ready_write);
+        }
         unsafe { libc::waitpid(pid, std::ptr::null_mut(), 0) };
         let mut buf = [0u8; 32];
-        let n = unsafe { libc::read(read_fd, buf.as_mut_ptr() as *mut _, buf.len()) };
-        unsafe { libc::close(read_fd) };
-        if n <= 0 {
+        let n = unsafe { libc::read(pid_read, buf.as_mut_ptr() as *mut _, buf.len()) };
+        unsafe { libc::close(pid_read) };
+        let daemon_pid = if n <= 0 {
             eprintln!("claude-hook: daemon startup pipe returned no data");
-            return -1;
-        }
-        let s = std::str::from_utf8(&buf[..n as usize]).unwrap_or("").trim();
-        return s.parse().unwrap_or(-1);
+            -1
+        } else {
+            let s = std::str::from_utf8(&buf[..n as usize]).unwrap_or("").trim();
+            s.parse().unwrap_or(-1)
+        };
+        return DaemonFork {
+            pid: daemon_pid,
+            ready_read: unsafe { OwnedFd::from_raw_fd(ready_read) },
+        };
     }
 
-    unsafe { libc::close(read_fd) };
+    unsafe {
+        libc::close(pid_read);
+        libc::close(ready_read);
+    }
     unsafe { libc::setsid() };
     let pid2 = unsafe { libc::fork() };
     if pid2 > 0 {
         let msg = pid2.to_string();
-        unsafe { libc::write(write_fd, msg.as_ptr() as *const _, msg.len()) };
-        unsafe { libc::close(write_fd) };
+        unsafe { libc::write(pid_write, msg.as_ptr() as *const _, msg.len()) };
+        unsafe {
+            libc::close(pid_write);
+            // First child does not write to the readiness pipe; close so the
+            // grandchild is the only remaining writer.
+            libc::close(ready_write);
+        };
         std::process::exit(0);
     }
 
-    unsafe { libc::close(write_fd) };
+    unsafe { libc::close(pid_write) };
+    // ready_write stays open across exec so the daemon can write "READY".
 
     let fd_out = std::fs::OpenOptions::new()
         .create(true)
@@ -712,6 +771,8 @@ pub(crate) fn fork_daemon(daemon_dir: &Path, sock_path: &Path) -> i32 {
             sock_path.to_str().unwrap(),
             "--daemon-dir",
             daemon_dir.to_str().unwrap(),
+            "--ready-fd",
+            &ready_write.to_string(),
         ])
         .exec();
     panic!("exec failed: {err}");
@@ -720,32 +781,53 @@ pub(crate) fn fork_daemon(daemon_dir: &Path, sock_path: &Path) -> i32 {
 pub(crate) async fn wait_for_sock(
     sock_path: &Path,
     pidfile: &Path,
-    daemon_pid: i32,
+    ready_read: OwnedFd,
     timeout: Duration,
 ) -> Result<(), String> {
-    let deadline = std::time::Instant::now() + timeout;
-    while std::time::Instant::now() < deadline {
-        if sock_path.exists() && UnixStream::connect(sock_path).await.is_ok() {
-            return Ok(());
+    // Poll the readiness pipe non-blocking alongside the 100ms tick loop.
+    let fd = ready_read.as_raw_fd();
+    unsafe {
+        let flags = libc::fcntl(fd, libc::F_GETFL);
+        if flags >= 0 {
+            libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
         }
-        // Post-pidfile crash detection: daemon wrote pidfile then died.
+    }
+    let deadline = std::time::Instant::now() + timeout;
+    let mut buf = [0u8; 16];
+    while std::time::Instant::now() < deadline {
+        let n = unsafe { libc::read(fd, buf.as_mut_ptr() as *mut _, buf.len()) };
+        if n > 0 {
+            // Daemon signaled ready. Verify the socket also accepts a
+            // connection — cheap belt-and-suspenders against a daemon that
+            // wrote READY but somehow lost the listener.
+            if sock_path.exists() && UnixStream::connect(sock_path).await.is_ok() {
+                return Ok(());
+            }
+            return Err("Daemon signaled ready but socket connect failed".into());
+        }
+        if n == 0 {
+            return Err(
+                "Daemon process died during startup (readiness pipe closed without signal)".into(),
+            );
+        }
+        let errno = std::io::Error::last_os_error().raw_os_error();
+        if errno != Some(libc::EAGAIN)
+            && errno != Some(libc::EWOULDBLOCK)
+            && errno != Some(libc::EINTR)
+        {
+            return Err(format!("readiness pipe read error: errno={errno:?}"));
+        }
+        // Late-crash detection: daemon wrote pidfile (which happens before
+        // the ready signal in `run_daemon`) but died before binding. The
+        // readiness EOF normally covers this, but the pidfile flock check
+        // catches the daemon dying after it sent READY too.
         if pidfile.exists() && !daemon_lifecycle::is_pidfile_locked(pidfile) {
             return Err("Daemon died during startup (pidfile unlocked)".into());
         }
-        // Pre-pidfile crash detection: daemon died before writing pidfile.
-        let rc = unsafe { libc::kill(daemon_pid, 0) };
-        if rc != 0 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
-            return Err("Daemon process died during startup (pre-pidfile)".into());
-        }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    let note = if sock_path.exists() {
-        "socket appeared but connect never succeeded"
-    } else {
-        "socket never appeared"
-    };
     Err(format!(
-        "Daemon did not become reachable within {}s ({note})",
+        "Daemon did not become reachable within {}s (no READY signal)",
         timeout.as_secs()
     ))
 }
@@ -878,8 +960,12 @@ async fn main() {
     let cli = Cli::parse();
     match cli.command {
         Some(Command::Shim { name, args }) => shim_runtime::run_shim(name, args).await,
-        Some(Command::Daemon { sock, daemon_dir }) => {
-            run_daemon(sock, daemon_dir).await;
+        Some(Command::Daemon {
+            sock,
+            daemon_dir,
+            ready_fd,
+        }) => {
+            run_daemon(sock, daemon_dir, ready_fd).await;
         }
         None => dispatch_hook().await,
     }

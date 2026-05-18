@@ -272,9 +272,16 @@ pub async fn ensure_daemon(sock_path: &Path, daemon_dir: &Path) -> Result<(), St
         }
     }
 
-    let daemon_pid = crate::fork_daemon(daemon_dir, sock_path);
+    let forked = crate::fork_daemon(daemon_dir, sock_path);
 
-    match crate::wait_for_sock(sock_path, &pidfile, daemon_pid, Duration::from_secs(10)).await {
+    match crate::wait_for_sock(
+        sock_path,
+        &pidfile,
+        forked.ready_read,
+        Duration::from_secs(10),
+    )
+    .await
+    {
         Ok(()) => {
             clear_startup_failure(daemon_dir);
             Ok(())
