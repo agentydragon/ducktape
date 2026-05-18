@@ -135,6 +135,24 @@ fn cut_pairs_count(cut: &[CycleEdge]) -> usize {
 /// Find SCCs in the dep graph and produce a report listing every
 /// non-trivial cycle (size > 1 OR a self-loop). Trivial single-node
 /// non-self-loop SCCs are dropped.
+///
+/// The validator uses the **strict** rule: any quotient SCC carrying
+/// a constraining cross-module edge is unrealizable. This is more
+/// conservative than the realizability primitive's relaxed rule
+/// (constraining-edge subgraph has no multi-module SCC) because the
+/// materializer does not currently implement DESIGN.md "Lemma 2"
+/// (steering the ESM linker's import-source order to land on a
+/// topological linearization of `I ∪ S`). Mixed cycles the relaxed
+/// rule would accept can still TDZ at runtime under the current
+/// materializer.
+///
+/// The proposer (`evaluate_peel_candidate` in `peelability.rs`) uses
+/// the relaxed rule via [`crate::realizability::check_realizability`]
+/// for advisory peel classification. The at-init call promotion in
+/// `build_owner_graph` narrows the gap between the two predicates by
+/// catching the canonical `console.log(readB())` shape, but the
+/// asymmetry persists until either Lemma 2 lands in the materializer
+/// or the proposer is also tightened.
 pub fn validate_schedule(
     graph: &ModuleQuotient,
     module_name: &dyn Fn(ModuleId) -> String,

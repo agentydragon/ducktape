@@ -1,5 +1,6 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
+use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 use serde::{Deserialize, Serialize};
 
@@ -385,6 +386,27 @@ pub fn build_owner_graph(facts: &[StatementFacts]) -> OwnerGraph {
         }
     }
 
+    // At-init call promotion (DESIGN.md "At-init call promotion").
+    //
+    // A function body's lazy reads/rebinds fire at-init from the
+    // perspective of any caller that invokes the function at-init.
+    // Without promotion, the realizability primitive's relaxed
+    // clause-3 predicate (constraining-edge subgraph has no
+    // multi-module SCC) is unsound for the canonical
+    // `console.log(readB())` shape: the lazy read inside `readB`'s
+    // body fires when the top-level call evaluates, but only the
+    // graph's lazy edge is recorded, so cross-module cycles that
+    // close through such a lazy edge look acyclic to the constraining
+    // subgraph. After promotion, the primitive's verdict is sound.
+    //
+    // Promoted edges are added at owner-graph level (partition-
+    // independent): intra-module promoted edges are dropped by the
+    // quotient automatically. Only direct `f(...)` callees that
+    // resolve to chunk-declared bindings are followed; indirect
+    // calls (`const g = f; g()`), method calls (`obj.method()`), and
+    // dynamic dispatch are conservatively unmodelled.
+    promote_at_init_calls(facts, &binding_table, &binding_owner, &mut raw_edges);
+
     // Side-effect ordering edges (`S` per DESIGN.md "Module dep
     // graphs"). At owner level, record the source-order chain over
     // side-effecting owners: every later side-effecting owner
@@ -449,6 +471,193 @@ pub fn build_owner_graph(facts: &[StatementFacts]) -> OwnerGraph {
         edges,
         out_edges,
         in_edges,
+    }
+}
+
+/// Promote function-body lazy reads/rebinds to eager owner edges from
+/// every statement that at-init-calls the function. Transitive over
+/// the call graph among chunk-declared functions: a top-level
+/// `f()` whose `f` calls `g` in its body promotes through `g`'s lazy
+/// reads/rebinds too. See DESIGN.md "At-init call promotion".
+///
+/// Per-statement dedup: at most one promoted eager edge per
+/// (caller, target-owner) pair, and at most one promoted rebind edge
+/// per (caller, target-owner) pair. Without dedup, a single
+/// at-init call to a function with N transitive lazy reads would emit
+/// N edges from the caller, and multiple at-init calls in the same
+/// statement would multiply that further.
+fn promote_at_init_calls(
+    facts: &[StatementFacts],
+    binding_table: &BindingTable,
+    binding_owner: &[Option<OwnerId>],
+    raw_edges: &mut Vec<(OwnerId, OwnerId, EdgeReason)>,
+) {
+    // 1. Build the call graph: owner → owner edges for each
+    //    chunk-declared function callee reachable via body_calls.
+    //    Add every owner whose body has any lazy reads / rebinds /
+    //    calls as a node — those are the callable owners whose body
+    //    closures we may need to promote, even if the body itself
+    //    makes no calls (e.g. `function readB() { return B; }`).
+    let mut call_graph: DiGraphMap<OwnerId, ()> = DiGraphMap::new();
+    for stmt in facts {
+        let owner = OwnerId(stmt.ordinal.0);
+        if !stmt.body_calls.is_empty()
+            || !stmt.lazy_reads.is_empty()
+            || !stmt.lazy_rebinds.is_empty()
+        {
+            call_graph.add_node(owner);
+        }
+    }
+    for stmt in facts {
+        if stmt.body_calls.is_empty() {
+            continue;
+        }
+        let caller = OwnerId(stmt.ordinal.0);
+        for callee_name in &stmt.body_calls {
+            let Some(binding_id) = binding_table.get(callee_name) else {
+                continue;
+            };
+            let Some(Some(callee_owner)) = binding_owner.get(binding_id.0) else {
+                continue;
+            };
+            call_graph.add_node(*callee_owner);
+            call_graph.add_edge(caller, *callee_owner, ());
+        }
+    }
+    if call_graph.node_count() == 0 {
+        return;
+    }
+
+    // 2. Tarjan SCC. `tarjan_scc` returns SCCs in reverse topological
+    //    order: leaves (no outgoing edges to other SCCs) first.
+    let sccs = tarjan_scc(&call_graph);
+    let mut scc_of: BTreeMap<OwnerId, usize> = BTreeMap::new();
+    for (idx, scc) in sccs.iter().enumerate() {
+        for owner in scc {
+            scc_of.insert(*owner, idx);
+        }
+    }
+
+    // 3. Per-owner seeds: own lazy_reads / lazy_rebinds resolved to
+    //    BindingId. Filters out targets whose owner is a function
+    //    declaration — function bindings are hoisted at module
+    //    instantiation (Phase 1 of ESM linking), so a cross-module
+    //    read of a function never observes a TDZ. Promoting such
+    //    reads would spuriously close cycles for shapes like mutual
+    //    recursion across modules (`function even(){odd()}` /
+    //    `function odd(){even()}`), which are actually realizable.
+    //    Other declared kinds (VarDecl, ClassDecl) are kept: const /
+    //    let / class are TDZ-locked until their statement runs, so a
+    //    cross-module read inside an at-init-called function does
+    //    fire the realizability hazard. `var` is technically hoisted
+    //    too but is rare enough not to warrant a separate distinction
+    //    in StatementKind.
+    let mut stmt_by_owner: BTreeMap<OwnerId, &StatementFacts> = BTreeMap::new();
+    for stmt in facts {
+        stmt_by_owner.insert(OwnerId(stmt.ordinal.0), stmt);
+    }
+    let target_is_hoisted = |binding_id: BindingId| -> bool {
+        let Some(Some(target_owner)) = binding_owner.get(binding_id.0) else {
+            return false;
+        };
+        stmt_by_owner
+            .get(target_owner)
+            .map(|stmt| stmt.kind == StatementKind::FnDecl)
+            .unwrap_or(false)
+    };
+    let mut scc_reads: Vec<BTreeSet<BindingId>> = vec![BTreeSet::new(); sccs.len()];
+    let mut scc_rebinds: Vec<BTreeSet<BindingId>> = vec![BTreeSet::new(); sccs.len()];
+
+    // 4. Closure over the call graph. Iterate SCCs in
+    //    reverse-topological order (leaves first). For each SCC,
+    //    union members' own seeds plus successor SCC closures.
+    for (scc_idx, scc) in sccs.iter().enumerate() {
+        let mut reads: BTreeSet<BindingId> = BTreeSet::new();
+        let mut rebinds: BTreeSet<BindingId> = BTreeSet::new();
+        for owner in scc {
+            let Some(stmt) = stmt_by_owner.get(owner) else {
+                continue;
+            };
+            for name in &stmt.lazy_reads {
+                if let Some(id) = binding_table.get(name)
+                    && !target_is_hoisted(id)
+                {
+                    reads.insert(id);
+                }
+            }
+            for name in &stmt.lazy_rebinds {
+                if let Some(id) = binding_table.get(name) {
+                    rebinds.insert(id);
+                }
+            }
+        }
+        for owner in scc {
+            for (_, target, _) in call_graph.edges(*owner) {
+                let Some(&target_scc) = scc_of.get(&target) else {
+                    continue;
+                };
+                if target_scc == scc_idx {
+                    continue;
+                }
+                reads.extend(&scc_reads[target_scc]);
+                rebinds.extend(&scc_rebinds[target_scc]);
+            }
+        }
+        scc_reads[scc_idx] = reads;
+        scc_rebinds[scc_idx] = rebinds;
+    }
+
+    // 5. Emit promoted edges with per-statement, per-kind dedup.
+    for stmt in facts {
+        if stmt.at_init_calls.is_empty() {
+            continue;
+        }
+        let caller = OwnerId(stmt.ordinal.0);
+        let mut promoted_read_targets: BTreeSet<OwnerId> = BTreeSet::new();
+        let mut promoted_rebind_targets: BTreeSet<OwnerId> = BTreeSet::new();
+        for callee_name in &stmt.at_init_calls {
+            let Some(callee_binding) = binding_table.get(callee_name) else {
+                continue;
+            };
+            let Some(Some(callee_owner)) = binding_owner.get(callee_binding.0) else {
+                continue;
+            };
+            let Some(&scc_idx) = scc_of.get(callee_owner) else {
+                continue;
+            };
+            for &target_binding in &scc_reads[scc_idx] {
+                let Some(Some(target_owner)) = binding_owner.get(target_binding.0) else {
+                    continue;
+                };
+                if caller == *target_owner {
+                    continue;
+                }
+                if !promoted_read_targets.insert(*target_owner) {
+                    continue;
+                }
+                raw_edges.push((
+                    caller,
+                    *target_owner,
+                    EdgeReason::eager_use(stmt.ordinal, target_binding),
+                ));
+            }
+            for &target_binding in &scc_rebinds[scc_idx] {
+                let Some(Some(target_owner)) = binding_owner.get(target_binding.0) else {
+                    continue;
+                };
+                if caller == *target_owner {
+                    continue;
+                }
+                if !promoted_rebind_targets.insert(*target_owner) {
+                    continue;
+                }
+                raw_edges.push((
+                    caller,
+                    *target_owner,
+                    EdgeReason::eager_rebind(stmt.ordinal, target_binding),
+                ));
+            }
+        }
     }
 }
 

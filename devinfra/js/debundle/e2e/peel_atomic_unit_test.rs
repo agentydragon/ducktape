@@ -180,9 +180,15 @@ export { anchor, C };
 /// `{A, B}` form a size-2 SCC.
 #[test]
 fn two_vertex_constraining_edge_scc_emits_two_owner_peel_candidate() {
+    // Note: no top-level `B()` call. After at-init call promotion
+    // (DESIGN.md "At-init call promotion") a top-level call to B
+    // would correctly merge the call statement into the atomic unit
+    // (B's body mutates A at-init), which the test would still pass
+    // as a 3-owner unit — but the historical assertion shape pinned
+    // a 2-owner unit. Keep the body-only shape so the test continues
+    // to cover the 2-vertex case it was authored for.
     let chunk_source = r#"var A = 1;
 function B() { A = 99; return A; }
-B();
 const Existing = "existing";
 console.log(Existing);
 export { A, B, Existing };

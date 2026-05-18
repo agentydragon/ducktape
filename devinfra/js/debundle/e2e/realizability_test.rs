@@ -122,6 +122,13 @@ fn rejects_cycle_through_lazy_back_edge() {
     // `R` cross-module edge inside the SCC is enough for the
     // realizability gate to bail. (Without the bail the linker
     // would TDZ on B's initializer.)
+    //
+    // Per DESIGN.md "At-init call promotion", the proposer (via
+    // the realizability primitive's relaxed clause-3 rule) would
+    // accept this if the materializer steered the ESM linker's
+    // import order to make mod_a evaluate first. The materializer
+    // does not currently implement that steering (Lemma 2), so
+    // the validator stays on the strict rule and rejects.
     expect_rejection_containing_all(
         FixtureOpts::new(
             r#"const A = "a-value";

@@ -432,6 +432,84 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         assert_eq!(entry.kind, DepKind::EagerUse);
     }
 
+    /// Verify that at-init call promotion materializes a promoted
+    /// owner-graph edge for a top-level call to a chunk function
+    /// whose body lazily reads a cross-module binding. The promoted
+    /// edge appears as an EagerUse edge from the caller statement's
+    /// owner to the target binding's owner.
+    #[test]
+    fn at_init_call_promotion_materializes_owner_edge() {
+        // owner 0: function readB { return B; } (lazy_reads = {B})
+        // owner 1: const A = 1
+        // owner 2: const triggerInit = readB(); (at_init_calls = {readB})
+        // owner 3: const B = A + 1; (declared = {B}, eager_reads = {A})
+        // Promotion should add an EagerUse edge owner 2 → owner 3
+        // because triggerInit at-init-calls readB whose body reads B.
+        let module = parse(
+            "function readB() { return B; } const A = 1; const triggerInit = readB(); const B = A + 1;",
+        );
+        let facts = analyze_facts(&module);
+        assert_eq!(
+            facts[2].at_init_calls,
+            BTreeSet::from(["readB".to_string()]),
+            "triggerInit's at_init_calls must include readB: {:?}",
+            facts[2].at_init_calls,
+        );
+        let owner_graph = build_owner_graph(&facts);
+        let promoted: Vec<_> = owner_graph
+            .iter_edges()
+            .filter(|e| e.from == OwnerId(2) && e.to == OwnerId(3))
+            .collect();
+        assert!(
+            promoted.iter().any(|e| e.reason.kind == DepKind::EagerUse),
+            "expected a promoted EagerUse edge owner 2 → owner 3 in {:?}",
+            owner_graph
+                .iter_edges()
+                .map(|e| (e.from, e.to, e.reason.kind))
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    #[test]
+    fn at_init_call_promotion_closes_otherwise_relaxed_cycle() {
+        // mod_0 owns readB, triggerInit (which at-init-calls readB),
+        // and A. mod_1 owns B. Promotion: triggerInit's owner (mod_0)
+        // gets a promoted eager edge to B's owner (mod_1) because
+        // readB's body lazily reads B. Combined with B's eager edge
+        // back to A (mod_1 → mod_0), the constraining-edge subgraph
+        // contains a 2-cycle. The lazy `readB → B` edge is still in
+        // the full quotient as evidence but is excluded from the cut.
+        // Source order matters: B reads A (mod_1 → mod_0 eager) is
+        // the back-edge that the promoted forward-edge closes into a
+        // cycle.
+        let module = parse(
+            "function readB() { return B; } const A = 1; const triggerInit = readB(); const B = A + 1;",
+        );
+        let facts = analyze_facts(&module);
+        let mut binding_assignment = HashMap::new();
+        binding_assignment.insert("readB".to_string(), logical(0));
+        binding_assignment.insert("triggerInit".to_string(), logical(0));
+        binding_assignment.insert("A".to_string(), logical(0));
+        binding_assignment.insert("B".to_string(), logical(1));
+        let owner_graph = build_owner_graph(&facts);
+        let partition =
+            Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
+        let graph = build_module_quotient(&owner_graph, &partition);
+        let report = validate_schedule(&graph, &render);
+        assert_eq!(
+            report.cycles.len(),
+            1,
+            "at-init call promotion must close the cycle; got {:?}",
+            report.cycles,
+        );
+        let cycle = &report.cycles[0];
+        assert!(
+            !cycle.cut.iter().any(|e| e.kind == DepKind::LazyUse),
+            "cut must not include lazy reasons, got {:?}",
+            cycle.cut,
+        );
+    }
+
     /// Pure-S cycle: cut consists of side-effect reasons; no
     /// lazy or at-init reasons should appear.
     #[test]
@@ -3475,15 +3553,14 @@ mutable = mutable + 1;"#,
 
     #[test]
     fn validate_returns_empty_linker_order_for_cyclic_spec() {
-        // Cross-unit module cycle: mod_0 owns `A` and `readB`,
-        // mod_1 owns `B`. `readB` lazily reads B (mod_0 → mod_1),
-        // and B eagerly reads A (mod_1 → mod_0). Atomic units stay
-        // singletons because LazyUse is dropped from `G_atomic`, so
-        // `factor_assembly` accepts the partition; the cycle shows up
-        // at the module quotient where the validator catches it.
+        // Genuine cross-module constraining cycle: `A = B + 1` and
+        // `B = A + 1` both read at-init. After the relaxed-predicate
+        // routing of the validator (DESIGN.md "Realizability
+        // primitive"), the case has to actually produce a cycle in
+        // the constraining-edge subgraph — mutual at-init reads do.
         let schedule = schedule_for(
-            "const A = 1; function readB() { return B; } const B = A + 1;",
-            &[("A", logical(0)), ("readB", logical(0)), ("B", logical(1))],
+            "const A = B + 1; const B = A + 1;",
+            &[("A", logical(0)), ("B", logical(1))],
         );
         let report = schedule.validate();
         assert!(!report.cycles.is_empty(), "expected a cycle in {report:?}",);

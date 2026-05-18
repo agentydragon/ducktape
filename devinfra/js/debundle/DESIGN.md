@@ -432,6 +432,77 @@ push a delta and read the index — not to spin up a parallel walk over
 read the verdict's owner-edge provenance, but the validity decision goes
 through the primitive only.
 
+## At-init call promotion
+
+A function body's lazy reads/rebinds fire at module-init from the
+perspective of any caller that invokes the function at-init. The owner
+graph carries promoted **EagerUse** and **EagerRebind** edges from
+at-init callers to the transitive closure of their callees' lazy
+reads/rebinds, so the primitive's clause-3 verdict is sound for the
+canonical `console.log(readB())` shape (top-level call whose body
+crosses a module boundary).
+
+The promotion runs once in `build_owner_graph` and is
+partition-independent: intra-module promoted edges are dropped by the
+quotient automatically, so the same promoted owner graph drives the
+proposer's hypothetical partitions and the validator's actual one.
+
+**Algorithm.** For each top-level chunk statement S with `at_init_calls`
+non-empty, walk the chunk call graph (among chunk-declared functions)
+in reverse topological order to compute, per function-owner F,
+`reachable_lazy_reads[F]` and `reachable_lazy_rebinds[F]` — the
+fixpoint closure of F's body lazy reads/rebinds plus the closures of
+every chunk function F calls. Then for each callee C in S's
+`at_init_calls`, emit promoted edges from S's owner to every owner
+declaring a binding in C's reachable closures.
+
+**Hoisted-target filter.** Promoted reads filter out targets whose
+owner is a `FnDecl` — function declarations are hoisted at Phase-1
+module instantiation, so reading them from another module never
+observes a TDZ. Without this filter, mutual recursion across modules
+(`function even(){odd()}` / `function odd(){even()}` split into
+mod_a / mod_b) would spuriously close a constraining-edge cycle that
+isn't actually unrealizable at runtime.
+
+**Per-statement dedup.** A single at-init call to a function with N
+transitive lazy reads would otherwise emit N edges from the caller
+statement, and multiple at-init calls in the same statement would
+multiply that. The promotion pass dedupes per `(caller, target-owner)`
+pair per kind, keeping the per-statement cost bounded by the
+transitive closure size rather than (closure × call-sites).
+
+**Limitations.** Indirect calls (`const g = f; g()`), method calls
+(`obj.method()`), and dynamic dispatch produce no promoted edges —
+the callee isn't statically a known chunk binding. These are
+conservatively unmodelled. A spec accepted by the relaxed predicate
+but unrealizable at runtime due to one of these uncaught
+interprocedural patterns is currently caught by the validator's
+strict rule (see below).
+
+## Predicate asymmetry: strict validator, relaxed primitive
+
+The peelability proposer routes through the realizability primitive's
+relaxed clause-3 rule (`check_realizability` in
+`devinfra/js/debundle/realizability.rs`). The validator
+(`validate_schedule` in `devinfra/js/debundle/validation.rs`) uses a
+stricter rule: any SCC of the full quotient `I ∪ S` that contains a
+constraining cross-module edge is unrealizable.
+
+The two would coincide on a fully-Lemma-2-implementing materializer
+(see "The realizability theorem" below). Until the materializer
+steers entry-side ESM import order to land on a topological
+linearization of `I ∪ S`, mixed cycles that the relaxed rule
+admits — and that at-init call promotion does not catch via the
+interprocedural promotion above — can still TDZ at runtime. The
+strict validator stays the safety floor; the relaxed primitive is
+advisory for the proposer.
+
+The at-init call promotion narrows the gap by catching the canonical
+shape (`console.log(readB())`) the original PR #1625 RED test pinned.
+Bringing the validator onto the relaxed rule is gated on the
+materializer learning Lemma 2 (open follow-up — see
+`plans/realizability-primitive-unification.md`).
+
 ## The realizability theorem
 
 > **Theorem (correctness).** If `R ∪ S` is acyclic, the source-
