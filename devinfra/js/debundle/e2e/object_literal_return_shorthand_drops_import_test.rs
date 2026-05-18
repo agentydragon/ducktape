@@ -1,21 +1,17 @@
-//! RED test pinning the lowerer's object-literal shorthand-collapse +
-//! import-planning bug noted in the PR #1627 / #1630 thread.
+//! Regression test for the lowerer's object-literal shorthand-collapse +
+//! import-planning bug originally pinned RED in PR #1631 alongside the
+//! PR #1627 / #1630 path-normalization thread.
 //!
 //! ## Context
 //!
 //! PR #1630 fixed the path-normalization layer in
 //! `source_chunk_imports_for_moved_body` so peeled modules emit
-//! canonical `"../foo.js"` instead of `".././foo.js"`. The PR body
-//! explicitly noted a companion bug it didn't address:
+//! canonical `"../foo.js"` instead of `".././foo.js"`. The companion
+//! bug — `object_literal_import_collapse_test`'s synthetic fixture
+//! deliberately doesn't repro it — is the import-dropping shape
+//! covered here.
 //!
-//! > A companion bug affecting object-literal shorthand collapse and
-//! > import-planning is noted but not addressed in this change.
-//!
-//! The synthetic fixture in `object_literal_import_collapse_test`
-//! deliberately doesn't repro that shape — it pins only the path
-//! normalization. This file pins the import-dropping bug.
-//!
-//! ## Failure mode
+//! ## Failure mode (pre-fix)
 //!
 //! When the heuristic naturalizer (`collect_return_object_alias_renames`)
 //! scans a peeled function body and finds `return { key: value }`, it
@@ -27,15 +23,25 @@
 //!    value }` becomes `{ key: key }`).
 //! 2. Collapses `{ key: key }` to the shorthand `{ key }`.
 //!
-//! After this pass, `collect_module_body_facts` walks the body and
-//! sees `key` referenced — but the source chunk's `runtime_imports`
+//! After this pass, `collect_module_body_facts` walked the body and
+//! saw `key` referenced — but the source chunk's `runtime_imports`
 //! map is keyed by the original local name `value`. The planner
-//! looks up `key` in `runtime_imports`, misses, and emits no import
-//! for it.
+//! looked up `key` in `runtime_imports`, missed, and emitted no
+//! import for it. The emitted module had
+//! `function makeConfig() { return { key }; }` with `key` as a free
+//! variable. Node threw `ReferenceError: key is not defined` at
+//! module-load time.
 //!
-//! The emitted module has `function makeConfig() { return { key }; }`
-//! with `key` as a free variable. Node throws `ReferenceError: key is
-//! not defined` at module-load time.
+//! ## Fix
+//!
+//! `plan_module_reference_needs` now takes the heuristic-rename map
+//! produced by `naturalize_module_body` and, on a miss for a
+//! post-rename name, reverse-resolves to the pre-rename original and
+//! looks *that* up in `runtime_imports`. The carried `RuntimeImportInfo`
+//! still has `imported = "value"`, so emit produces
+//! `import { value as key } from "../provider.js"`. See the
+//! "Rename pipeline" entry in <devinfra/js/debundle/TODO.md> for the
+//! architectural follow-up that would let this defensive bridge retire.
 //!
 //! ## Repro shape
 //!
@@ -43,27 +49,6 @@
 //! minified import locals, `propKeyA`/`propKeyB` are the readable
 //! property keys that drive the heuristic rename. The exact shape the
 //! Tana `getActionEventLimits` peel hit.
-//!
-//! ## Fix sketch (for whoever picks this up)
-//!
-//! The plan_module_reference_needs / import-planning step must learn
-//! about the heuristic renames the naturalizer applied. Two options:
-//!
-//! - **Symmetric rename**: after collecting heuristic renames, also
-//!   re-key `runtime_imports` so `runtime_imports[key] =
-//!   runtime_imports[value]` (with `imported_name = value`). Then the
-//!   planner finds the import under the post-rename name and emits
-//!   `import { value as key } from "../provider.js"`.
-//! - **Collect facts pre-naturalize**: capture
-//!   `runtime_imports`-relevant references before renames apply, then
-//!   plan imports off the pre-rename names. Trickier — the post-
-//!   naturalize body still needs to reference `key`, so the import
-//!   has to land as `import { value as key }`.
-//!
-//! Drop a regression assertion (canonical import path + a re-import
-//! for every still-referenced original local) into
-//! `object_literal_import_collapse_test` once fixed, and flip this
-//! test from RED to GREEN.
 
 use debundle_e2e_support::*;
 use std::fs;

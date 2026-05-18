@@ -206,6 +206,94 @@ mock browser bundle. Extend to:
 - Unusual dynamic import forms.
 - HTML/runtime asset layouts outside the current corpus.
 
+## Rename pipeline: collect → validate → execute _once_
+
+The naturalizer / lowerer currently mutates identifiers in place across
+several independently-discovered passes and lets every downstream consumer
+(import planning, cross-module binding lookup, fact collection,
+source-map fragment emission, export tables) read whatever name happens
+to exist when _it_ runs. PR #1627 (`object_literal_import_collapse_test`,
+fixed by e0b9c7f) and PR #1631
+(`object_literal_return_shorthand_drops_import_test`, fixed by the
+heuristic-rename reverse-lookup at
+`logical_modules.rs::plan_module_reference_needs`) are both symptoms of
+the same shape: a rename happened in one layer and a downstream layer
+keyed off the wrong-era name. Each fix has been a localized defensive
+patch on the consumer side, which leaves the same trap waiting for the
+next consumer that doesn't yet know about the rename.
+
+The proposed architectural fix is a single **collect → validate → execute
+(once)** rename pipeline:
+
+- **Collect**: every rename contributor submits _intents_ into a single
+  buffer instead of mutating the AST. Contributors include explicit
+  spec-specified renames, naturalizer heuristics (return-object alias
+  inference, shorthand-collapse readback, future readable-name
+  autonaming), import-induced renames (`{ sA as propKeyA }`),
+  collision-resolution renames, and chunk-level renames produced by
+  factorize. Each intent is `(scope, original_name, new_name, reason,
+priority, invariants_it_assumes)`.
+
+- **Validate**: resolve conflicts deterministically before any AST
+  mutation. Priority order is explicit > import-induced > heuristic.
+  Surface contradictions (`sA → propKeyA` _and_ `sA → propKeyB` in the
+  same scope) as hard errors at validation time, not as silent
+  last-write-wins behavior at AST mutation time. Output is a stable,
+  read-only mapping `(scope, original_name) → final_name` and the
+  inverse `(scope, final_name) → original_name`.
+
+- **Execute once**: one pass applies the resolved mapping to the AST
+  _and_ updates every fact table (`runtime_imports`, `referenced_idents`,
+  export tables, source-map fragments, cross-module binding indexes) in
+  lockstep, keyed by the original name. After execute, no later pass
+  invents a rename — every consumer that needs to bridge between
+  pre-rename and post-rename names consults the same finalized mapping.
+
+Direct consequence: the family of "X-layer renamed it, Y-layer didn't
+notice" bugs collapses to one architectural seam. The
+`plan_module_reference_needs` reverse-lookup that fixes #1631 becomes
+dead code (the final mapping makes both the body AST and the
+`runtime_imports` map agree on a single set of names before planning
+runs), and similarly `normalize_relative_module_specifier` from the
+#1627 fix could rejoin a normal path-building step rather than living as
+a defensive sanitizer at the usage site.
+
+Prerequisite work before designing the pipeline:
+
+1. Inventory every current rename contributor in `logical_modules.rs`
+   and adjacent files. Examples already known:
+   `collect_return_object_alias_renames` (line ~3044),
+   `collect_naturalization_renames_from_function` (~2982), the
+   `RenameAndShorthandNaturalizer` `VisitMut` (~3172),
+   `naturalize_object_literal_shorthand` (~3226),
+   `disambiguate_import_locals` (~3668), the chunk-level
+   `chunk_renames` map that flows out of factorize, and any
+   collision-resolution code path that mutates `module_import_renames`
+   at the orchestration site. Capture each contributor's _kind_
+   (explicit / heuristic / collision / chunk-level), _scope_ (function
+   / module / chunk / cross-chunk), and _current side-effect surface_.
+
+2. Inventory every downstream consumer that today reads identifier
+   names off the AST or off pre-rename fact maps. Same call sites that
+   currently need defensive bridging.
+
+3. Decide on the scope model. Per-function naturalizer renames don't
+   need to be visible at chunk scope; chunk_renames don't need to
+   reach per-function naturalizer collection. The intent buffer should
+   reject cross-scope writes by construction.
+
+4. Design must not block on landing #1631-style defensive fixes — those
+   should land case by case as they're discovered, with this TODO
+   updated to note when a defensive patch becomes architecturally
+   redundant. Removing the defensive patches is part of the
+   pipeline-landing cleanup, not the architecture work itself.
+
+Likely multiple PRs. Should land _after_ the `Schedule` →
+`ChunkFactorization` rename below, because the partition-and-factorize
+surface is where the chunk-level rename intents already live and
+restructuring on top of the renamed type is cheaper than restructuring
+twice.
+
 ## Rename `Schedule` → `ChunkFactorization`
 
 `schedule.rs::Schedule` is, after the factorize rewrite, just a

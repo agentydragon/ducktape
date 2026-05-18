@@ -1593,6 +1593,7 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
                 binding_assignment,
                 &entry_exports_by_original_local,
                 runtime_import_facts,
+                &local_renames,
             )
         });
         let mut module_import_renames = BTreeMap::<String, String>::new();
@@ -2656,6 +2657,14 @@ fn plan_module_reference_needs<'a>(
     binding_assignment: &BTreeMap<String, usize>,
     entry_exports_by_original_local: &BTreeMap<String, EntryExport>,
     runtime_import_facts: &'a RuntimeImportFacts,
+    // original_local → post-rename local, produced by naturalize_module_body.
+    // `runtime_import_facts.imports` is keyed by original locals (built before
+    // naturalization), but `body_facts.referenced_idents` is post-rename, so
+    // direct lookup misses for any binding the naturalizer touched. Threading
+    // this in is a defensive bridge between two rename eras; the long-term fix
+    // is the collect→validate→execute-once rename pipeline tracked in
+    // <devinfra/js/debundle/TODO.md> ("Rename pipeline").
+    heuristic_renames: &BTreeMap<String, String>,
 ) -> ModuleReferenceNeeds<'a> {
     let mut needs = ModuleReferenceNeeds::default();
     for name in &body_facts.referenced_idents {
@@ -2690,7 +2699,21 @@ fn plan_module_reference_needs<'a>(
         if body_facts.imported_locals.contains(name) {
             continue;
         }
-        if let Some(info) = runtime_import_facts.imports.get(name) {
+        // Direct hit when the body still uses the original local. Fall back to
+        // a reverse lookup through `heuristic_renames` when a naturalizer pass
+        // renamed the binding (e.g. `sA` → `propKeyA` from a return-object
+        // alias collapse): the body now references `propKeyA`, but the source
+        // chunk's import map is still keyed by `sA`. The recovered
+        // `RuntimeImportInfo` keeps `imported = "sA"`, so emit produces
+        // `import { sA as propKeyA } from "<src>"` via
+        // `runtime_reimport_specifier`'s local-vs-imported branch.
+        let info = runtime_import_facts.imports.get(name).or_else(|| {
+            heuristic_renames
+                .iter()
+                .find(|(_, post)| post.as_str() == name)
+                .and_then(|(pre, _)| runtime_import_facts.imports.get(pre))
+        });
+        if let Some(info) = info {
             needs.runtime_reimports.insert(name.clone(), info);
         }
     }
