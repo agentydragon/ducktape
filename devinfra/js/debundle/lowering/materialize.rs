@@ -484,7 +484,7 @@ pub(super) fn materialize_logical_chunk(
         }
         let chunk_top_level_mark = runtime_ast.top_level_mark;
         let mut logical_modules: Vec<FactorizationLogicalModule> =
-            time_phase!(timings, "project_schedule_modules", {
+            time_phase!(timings, "project_factorization_modules", {
                 module_plans
                     .iter()
                     .map(|plan| FactorizationLogicalModule {
@@ -547,7 +547,7 @@ pub(super) fn materialize_logical_chunk(
         });
         let default_destination = ModuleId(LogicalModuleIndex(sentinel_idx));
         let redundant_purity_hints = analysis.redundant_purity_hints;
-        let schedule_chunk_renames: HashMap<Id, swc_atoms::Atom> = chunk_renames_map
+        let factorization_chunk_renames: HashMap<Id, swc_atoms::Atom> = chunk_renames_map
             .iter()
             .map(|(local, exported)| {
                 (
@@ -556,25 +556,30 @@ pub(super) fn materialize_logical_chunk(
                 )
             })
             .collect();
-        let factorization = time_phase!(timings, "build_schedule", {
+        let factorization = time_phase!(timings, "build_factorization", {
             ChunkFactorization::build_with(
                 chunk_id.to_string(),
                 analysis.facts,
                 precomputed,
                 bindings_catalogue,
                 logical_modules,
-                schedule_chunk_renames,
+                factorization_chunk_renames,
                 default_destination,
             )
         });
         (factorization, redundant_purity_hints)
     };
-    let schedule_report = time_phase!(timings, "validate_factorization", {
+    let factorization_report = time_phase!(timings, "validate_factorization", {
         factorization.validate()
     });
     if let Some(report_out_dir) = report_out_dir {
-        time_phase!(timings, "write_schedule_report", {
-            write_chunk_report_json(report_out_dir, chunk_id, "schedule.json", &schedule_report)
+        time_phase!(timings, "write_factorization_report", {
+            write_chunk_report_json(
+                report_out_dir,
+                chunk_id,
+                "schedule.json",
+                &factorization_report,
+            )
         })?;
         let owner_graph_report = time_phase!(timings, "build_owner_graph_report", {
             factorization.owner_graph_report()
@@ -589,33 +594,33 @@ pub(super) fn materialize_logical_chunk(
         })?;
     }
 
-    if !schedule_report.atomic_unit_conflicts.is_empty() {
-        let summary =
-            render_atomic_unit_conflict_summary(&schedule_report.atomic_unit_conflicts, &|id| {
-                factorization.analysis.module_name(id)
-            });
-        let causes = render_atomic_unit_cause_guidance(&schedule_report.atomic_unit_conflicts);
+    if !factorization_report.atomic_unit_conflicts.is_empty() {
+        let summary = render_atomic_unit_conflict_summary(
+            &factorization_report.atomic_unit_conflicts,
+            &|id| factorization.analysis.module_name(id),
+        );
+        let causes = render_atomic_unit_cause_guidance(&factorization_report.atomic_unit_conflicts);
         bail!(
             "materialize_logical_modules: chunk {chunk_id} has {n} atomic-factor-unit conflict(s) — the spec assigns members of one atomic factor unit to different destination modules, forming a cycle in the module dep graph that the constraining-edge SCC analysis says is unrealizable. Atomic factor units come from FACTORIZE.md's `G_atomic` SCC over the owner graph; every member must co-locate. {causes}Resolve by reconciling each unit's claims into a single destination. Full evidence written to <reports>/{chunk_id}/schedule.json; owner graph written to <reports>/{chunk_id}/owner_graph.json. Summary:\n{summary}",
-            n = schedule_report.atomic_unit_conflicts.len(),
+            n = factorization_report.atomic_unit_conflicts.len(),
         );
     }
 
-    if !schedule_report.cycles.is_empty() {
+    if !factorization_report.cycles.is_empty() {
         if let Some(report_out_dir) = report_out_dir {
             time_phase!(timings, "write_cycles_report", {
                 write_chunk_report_json(
                     report_out_dir,
                     chunk_id,
                     "cycles.json",
-                    &schedule_report.cycles,
+                    &factorization_report.cycles,
                 )
             })?;
         }
-        let summary = render_cycle_summary(&schedule_report.cycles);
+        let summary = render_cycle_summary(&factorization_report.cycles);
         bail!(
             "materialize_logical_modules: chunk {chunk_id} has {} cycle(s) in the imports + side-effect module dep graph; spec is unrealizable. Resolve by colocating cyclically-coupled bindings or moving the constraining owner endpoints. Full cycle evidence written to <reports>/{chunk_id}/cycles.json; owner graph written to <reports>/{chunk_id}/owner_graph.json. Summary:\n{summary}",
-            schedule_report.cycles.len(),
+            factorization_report.cycles.len(),
         );
     }
 

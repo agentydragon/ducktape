@@ -4123,7 +4123,7 @@ const consumer_three = dep_a + dep_b;"#,
     }
 
     #[test]
-    fn schedule_report_serializes_linker_order_as_snake_case() {
+    fn factorization_report_serializes_linker_order_as_snake_case() {
         let factorization = factorization_for(
             "const A = 1; const B = A + 1;",
             &[("A", logical(0)), ("B", logical(1))],

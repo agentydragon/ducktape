@@ -17,7 +17,7 @@
 > order, with explicit `import` / `export` declarations. There is no
 > init-wrapper machinery, no closure pass, no implicit binding
 > pulls — every owned binding is named explicitly in the spec,
-> and `Imported` bindings flow through `Schedule.bindings` /
+> and `Imported` bindings flow through `ChunkAnalysis.bindings` /
 > `BindingKind::Imported`, carrying the single re-exporter
 > `ModuleId` and public name that claimed it.
 > Anonymous (empty-`declared`) top-level statements have no name
@@ -490,7 +490,7 @@ module's `import` directives must be emitted in a specific source
 order so that depth-first link traversal lands on a Phase-2
 evaluation order matching the constraining-edge linearization.
 
-The materializer computes `Schedule::source_import_position` to drive
+The materializer computes `ChunkFactorization::source_import_position` to drive
 this. The algorithm:
 
 1. Compute SCCs of the full quotient `I ∪ S` via Tarjan.
@@ -978,8 +978,8 @@ not in the spec.
 
 The validator currently runs per-chunk; cross-chunk edges appear
 as `ExternalChunk(_)` leaves in the per-chunk graph. **Future
-work**: a multi-chunk lift would have `validate_schedule` take a
-`BTreeMap<ChunkId, Schedule>` and walk the union graph.
+work**: a multi-chunk lift would have `validate_factorization` take a
+`BTreeMap<ChunkId, ChunkFactorization>` and walk the union graph.
 
 ### Corollary: the role of the validator
 
@@ -1068,7 +1068,7 @@ SCC or an unimportable residual dependency. The tool may rank,
 summarize, or annotate those projections, but it does not silently
 assign bindings on behalf of the spec author.
 
-`ScheduleReport` remains the compact validation report. The detailed
+`FactorizationReport` remains the compact validation report. The detailed
 next-action data lives in `<reports>/<chunk_id>/owner_graph.json`,
 which is emitted on both success and rejection. Re-running the
 pipeline on an updated spec produces fresh graph and peelability
@@ -2135,19 +2135,19 @@ prettifier reformats whitespace but preserves AST structure, and
 upstream changes that touch the statement's content surface as a
 zero-match diagnostic the spec author can fix.
 
-### Schedule integration
+### ChunkFactorization integration
 
-`Schedule` validates realizability (the cycle gate over `I ∪ S`)
+`ChunkFactorization` validates realizability (the cycle gate over `I ∪ S`)
 by quotienting the owner graph by each owner's destination.
 Anonymous owners default to `ModuleId::ResidualEntry`; the
-schedule overrides that destination for any anon owner the spec
+factorization overrides that destination for any anon owner the spec
 claimed. Without this override, an anon owner with a constraining
 in-edge from a peeled named owner would create a fake cross-module
 edge — the validator would reject the spec even though the
 materializer would emit the closure correctly. After the override,
 the validator sees the same module dep graph the materializer
 will emit, and the cycle gate fires only on real unrealizable
-splits. See `Schedule::build` in `schedule.rs`.
+splits. See `ChunkFactorization::build` in `chunk_factorization.rs`.
 
 ## Comma-list var-decls with split owners
 
@@ -2461,24 +2461,27 @@ Computed keys aren't special: they read identifiers at-init like
 any other expression, and the dep graph captures that read
 without any special-case logic.
 
-## Schedule: owner graph plus quotient
+## ChunkAnalysis + ChunkFactorization: owner graph plus quotient
 
-The target runtime data structure the validator and emitter both
-consume is a single per-chunk `Schedule`: it carries the chunk's
-statement facts, the binding catalogue, the explicit logical
-modules, the owner graph, and the module dep graph derived by
-quotienting that owner graph under the spec assignment.
+The target runtime data structures the validator and emitter both
+consume are a pair: a per-chunk `ChunkAnalysis` (inputs + IR) and a
+`ChunkFactorization` wrapping it (partition + derived realizability
+views). Together they carry the chunk's statement facts, the binding
+catalogue, the explicit logical modules, the owner graph, and the
+module dep graph derived by quotienting that owner graph under the
+spec assignment.
 
-The implementation builds this structure directly: statement facts
-feed the owner graph, and the module dep graph is a quotient of that
-owner graph under the current spec assignment.
+The implementation builds these directly: statement facts feed the
+owner graph (stored on `ChunkAnalysis`), and the module dep graph is
+a quotient of that owner graph under the current spec assignment
+(stored on `ChunkFactorization`).
 
-The schedule is keyed per-chunk; the chunk is contextual within
-the schedule, so binding keys collapse to just `name`. Keys for
-the dep graph extend `ModuleId` with an `ExternalChunk(ChunkId)`
-variant so cross-chunk reads are first-class.
+Both are keyed per-chunk; the chunk is contextual within the
+analysis, so binding keys collapse to just `name`. Keys for the dep
+graph extend `ModuleId` with an `ExternalChunk(ChunkId)` variant so
+cross-chunk reads are first-class.
 
-Conceptually, the schedule carries:
+Conceptually, the analysis + factorization carry:
 
 - chunk identity;
 - per-statement facts in source order;
@@ -2575,7 +2578,7 @@ pub struct LogicalModulePath(String);
 /// distinct from `LogicalModulePath` (different abstraction
 /// — paths can change in a spec edit; ids stay stable through
 /// a single materialize run). Implemented as a `usize` index
-/// into `Schedule.logical_modules`; wrapped to keep it from
+/// into `ChunkAnalysis.logical_modules`; wrapped to keep it from
 /// being mistaken for `StatementOrdinal` etc.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LogicalModuleIndex(usize);
@@ -2585,7 +2588,7 @@ pub struct LogicalModuleIndex(usize);
 pub struct StatementOrdinal(usize);
 
 /// Local name of a binding in a chunk's top-level scope. Used
-/// as a key in `Schedule.bindings`. The string itself is the
+/// as a key in `ChunkAnalysis.bindings`. The string itself is the
 /// JavaScript identifier (scrambled in source, possibly
 /// renamed in emit).
 pub type BindingName = String;
@@ -2870,7 +2873,8 @@ Primary:
 - <facts.rs> — `StatementFacts` analyzer.
 - <graph.rs> — owner graph and `ModuleDepGraph` builders.
 - <validation.rs> — realizability checks.
-- <schedule.rs> — schedule construction and linker-order reasoning.
+- <chunk_analysis.rs> — `ChunkAnalysis` (inputs + IR + input-derived caches).
+- <chunk_factorization.rs> — `ChunkFactorization` construction and linker-order reasoning.
 - <peelability.rs> — residual peelability horizon.
 - <atomic_units.rs> — owner-level hard colocation units.
 - <factor_assembly.rs> — spec claims projected onto atomic units.
