@@ -9,13 +9,14 @@ use super::*;
 pub(super) struct TopLevelDecl {
     pub(super) ordinal: usize,
     pub(super) names: Vec<String>,
+    pub(super) ids: Vec<Id>,
     pub(super) exported: bool,
 }
 
 pub(super) struct ChunkAstAnalysis {
     pub(super) runtime_import_facts: RuntimeImportFacts,
     pub(super) declarations: Vec<TopLevelDecl>,
-    pub(super) declaration_by_name: BTreeMap<String, usize>,
+    pub(super) declaration_by_name: HashMap<Id, usize>,
     /// Sibling sets for top-level destructuring declarators only.
     /// For a destructuring declarator like `const { x, y } = obj`
     /// both `x` and `y` map to the set `{x, y}`. Plain
@@ -28,30 +29,32 @@ pub(super) struct ChunkAstAnalysis {
     /// `split_var_decl` moves a destructuring declarator as one
     /// atomic unit.
     pub(super) destructure_siblings: BTreeMap<String, BTreeSet<String>>,
-    /// Names that the source chunk's entry already exports (via
+    /// Bindings that the source chunk's entry already exports (via
     /// `export { foo, bar }` re-exports of local bindings, or
     /// `export const foo = …` style declarations). The materializer
     /// consults this set in `auto_grown_residual_exports` so the
     /// auto-grown `export { name }` block doesn't duplicate an
     /// existing source-level export — emitting a duplicate would be
     /// a `SyntaxError: Duplicate export of 'name'` at load time.
-    pub(super) pre_existing_entry_exports: BTreeSet<String>,
+    pub(super) pre_existing_entry_exports: HashSet<Id>,
 }
 
 pub(super) fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
     let mut imports = HashMap::<Id, RuntimeImportInfo>::new();
     let mut declarations = Vec::new();
-    let mut pre_existing_entry_exports = BTreeSet::<String>::new();
+    let mut pre_existing_entry_exports = HashSet::<Id>::new();
     let mut destructure_siblings = BTreeMap::<String, BTreeSet<String>>::new();
     for (ordinal, item) in module.body.iter().enumerate() {
         let (names, exported) = top_level_declaration_names(item);
+        let ids = top_level_declaration_ids(item);
         if !names.is_empty() {
             if exported {
-                pre_existing_entry_exports.extend(names.iter().cloned());
+                pre_existing_entry_exports.extend(ids.iter().cloned());
             }
             declarations.push(TopLevelDecl {
                 ordinal,
                 names,
+                ids,
                 exported,
             });
         }
@@ -61,8 +64,8 @@ pub(super) fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
     }
     let declaration_by_name = declarations
         .iter()
-        .flat_map(|decl| decl.names.iter().map(|name| (name.clone(), decl.ordinal)))
-        .collect::<BTreeMap<_, _>>();
+        .flat_map(|decl| decl.ids.iter().map(|id| (id.clone(), decl.ordinal)))
+        .collect::<HashMap<_, _>>();
     ChunkAstAnalysis {
         runtime_import_facts: RuntimeImportFacts { imports },
         declarations,
@@ -107,8 +110,8 @@ pub(super) fn record_destructure_sibling_groups(
 /// of locally-declared bindings. `export … from …` is excluded
 /// because those don't bind a local name in entry. `ExportDecl`
 /// (e.g. `export const foo = …`) is already covered by
-/// `top_level_declaration_names` returning `(names, exported = true)`.
-pub(super) fn record_pre_existing_named_exports(item: &ModuleItem, out: &mut BTreeSet<String>) {
+/// `top_level_declaration_ids` returning `(ids, exported = true)`.
+pub(super) fn record_pre_existing_named_exports(item: &ModuleItem, out: &mut HashSet<Id>) {
     let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) = item else {
         return;
     };
@@ -122,8 +125,8 @@ pub(super) fn record_pre_existing_named_exports(item: &ModuleItem, out: &mut BTr
         // The exported value is the local binding (`orig`); the
         // public name (`exported`) is irrelevant to the
         // emit-resolvability check, which keys off the local name.
-        if let Some(local) = module_export_ident_name(&specifier.orig) {
-            out.insert(local);
+        if let ModuleExportName::Ident(ident) = &specifier.orig {
+            out.insert(ident.to_id());
         }
     }
 }

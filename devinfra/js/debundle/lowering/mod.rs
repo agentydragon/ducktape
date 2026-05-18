@@ -61,7 +61,7 @@ use exports::{
 };
 use imports_cross::{
     collect_entry_exports_by_original_local, cross_module_imports_for_plan, final_module_exports,
-    module_export_ident_name, residual_entry_imports_for_moved_body,
+    residual_entry_imports_for_moved_body,
 };
 use imports_runtime::{
     import_decl_module_item, resolve_imported_binding, source_chunk_imports_for_moved_body,

@@ -28,7 +28,7 @@ pub(super) struct LowerChunkInputs<'a> {
     pub(super) chunk_id: &'a str,
     pub(super) source_path: &'a str,
     pub(super) declarations: &'a [TopLevelDecl],
-    pub(super) declaration_by_name: &'a BTreeMap<String, usize>,
+    pub(super) declaration_by_name: &'a HashMap<Id, usize>,
     pub(super) module_plans: &'a [ModulePlan],
     pub(super) binding_assignment: &'a BTreeMap<String, usize>,
     /// Top-level statement ordinal → module_plan index for owners
@@ -45,12 +45,12 @@ pub(super) struct LowerChunkInputs<'a> {
     /// undefined; the validation pass sorts by binding name before
     /// iterating so any spec errors are deterministic.
     pub(super) chunk_renames: &'a HashMap<String, String>,
-    /// Names the source chunk's entry exports verbatim
+    /// Bindings the source chunk's entry exports verbatim
     /// (`record_pre_existing_named_exports`). Consulted by
     /// `auto_grown_residual_exports` so the auto-grow pass doesn't
     /// emit a `Duplicate export of 'name'` clash with an existing
     /// source export.
-    pub(super) pre_existing_entry_exports: &'a BTreeSet<String>,
+    pub(super) pre_existing_entry_exports: &'a HashSet<Id>,
 }
 
 pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {

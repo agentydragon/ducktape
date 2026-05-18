@@ -170,31 +170,31 @@ pub(super) fn entry_exports_for_moved_bindings(
 ///   entry.
 pub(super) fn auto_grown_residual_exports(
     selected_by_module: &[Vec<ModuleItem>],
-    declaration_by_name: &BTreeMap<String, usize>,
+    declaration_by_name: &HashMap<Id, usize>,
     binding_assignment: &BTreeMap<String, usize>,
-    pre_existing_entry_exports: &BTreeSet<String>,
+    pre_existing_entry_exports: &HashSet<Id>,
     entry_renames: &BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
     let mut needed = BTreeSet::<String>::new();
     for body in selected_by_module {
         let facts = collect_module_body_facts(body);
         for id in &facts.referenced_idents {
-            // Spec-derived `*_by_name` maps are still keyed by sym;
-            // `provided_locals` / `imported_locals` are Id-keyed.
-            let name_str = id.0.as_ref();
+            // `binding_assignment` is still String-keyed (spec-derived);
+            // `declaration_by_name` and `pre_existing_entry_exports` are
+            // now `Id`-keyed alongside `provided_locals` / referenced_idents.
             if facts.provided_locals.contains(id) {
                 continue;
             }
-            if binding_assignment.contains_key(name_str) {
+            if binding_assignment.contains_key(id.0.as_ref()) {
                 continue;
             }
-            if !declaration_by_name.contains_key(name_str) {
+            if !declaration_by_name.contains_key(id) {
                 continue;
             }
-            if pre_existing_entry_exports.contains(name_str) {
+            if pre_existing_entry_exports.contains(id) {
                 continue;
             }
-            needed.insert(name_str.to_string());
+            needed.insert(id.0.as_ref().to_string());
         }
     }
     needed

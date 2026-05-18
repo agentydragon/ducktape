@@ -210,12 +210,10 @@ pub(super) fn materialize_logical_chunk(
             }
         }
         for binding in bindings.keys() {
-            if declaration_by_name.contains_key(binding) {
+            let binding_id = top_level_id(binding, chunk_top_level_mark);
+            if declaration_by_name.contains_key(&binding_id) {
                 binding_assignment.insert(binding.clone(), index);
-                bindings_catalogue.insert(
-                    top_level_id(binding, chunk_top_level_mark),
-                    BindingKind::Owned { owner: module_id },
-                );
+                bindings_catalogue.insert(binding_id, BindingKind::Owned { owner: module_id });
             }
         }
         module_plans.push(ModulePlan {
