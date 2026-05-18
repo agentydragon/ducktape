@@ -222,50 +222,52 @@ keyed off the wrong-era name. Each fix has been a localized defensive
 patch on the consumer side, which leaves the same trap waiting for the
 next consumer that doesn't yet know about the rename.
 
-### Current state (post PR1a foundation, WIP)
+### Current state (post PR #1639)
 
-The foundation for hygiene-aware identity is in place on branch
-`claude/fix-bazelisk-builds-oK0iE`:
+PR #1639 landed the foundation and migrated the chunk-scoped
+identifier maps to `Id`-keyed; PR #1647 cleaned up the ergonomic
+leftovers (signature tightening, per-sibling util imports,
+`time_phase!` macro visibility).
 
-- SWC's `resolver` pass runs on every parsed module
-  (`js_ast::parse_and_resolve`); every `Ident` carries a
-  `SyntaxContext`; `ident.to_id()` is the canonical binding identity.
-- `swc_common::GLOBALS` is set at `main.rs` / `run_agent` and
-  propagated into every rayon `par_iter` worker (5 sites).
-- The central rename/import bridge is `Id`-keyed:
-  - `RuntimeImportFacts.imports: HashMap<Id, RuntimeImportInfo>`
-  - `ModuleBodyFacts.{imported_locals, provided_locals,
-referenced_idents}: HashSet<Id>`
-  - `RefCollector.ids: HashSet<Id>`
-  - `plan_module_reference_needs` bridge reconstructs pre-rename Id by
-    pairing the heuristic-renames pre-sym with body Id's own ctxt.
+What's `Id`-keyed today:
+
+- `RuntimeImportFacts.imports: HashMap<Id, RuntimeImportInfo>`.
+- `ModuleBodyFacts.{imported_locals, provided_locals, referenced_idents}: HashSet<Id>`.
+- `RefCollector.ids: HashSet<Id>`.
+- `Schedule.{bindings, chunk_renames, export_name_by_binding}` (`schedule.rs:31,38,70`).
+- `ScheduleLogicalModule.rename_map: HashMap<Id, Atom>` (`ids.rs:195`).
+- `plan_module_reference_needs` bridge reconstructs pre-rename `Id` by
+  pairing the heuristic-renames pre-sym with body `Id`'s own ctxt
+  (PR #1633 reverse-lookup, retired by PR2).
 - `eq_ignore_span`-based matchers strip `SyntaxContext` via
   `SyntaxContextStripper` for cross-parse AST comparison
   (`resolve_anonymous_statement_ordinals`).
+- SWC's `resolver` pass runs on every parsed module
+  (`js_ast::parse_and_resolve`); `swc_common::GLOBALS` is set at
+  `main.rs` / `run_agent` and propagated into every rayon `par_iter`
+  worker (5 sites).
 
-Still String-keyed (spec-derived; migration belongs to the next
-atomic unit):
+What's still String-keyed (downstream of the spec→Id join, not yet
+migrated):
 
-- `ScheduleLogicalModule.rename_map: HashMap<BindingName, BindingName>`
-  (`ids.rs:176`) — written from `ModulePlan.bindings` (spec input),
-  consumed at `plan_module_reference_needs` via `name_str` lookup.
-- `Schedule.{bindings, chunk_renames, export_name_by_binding}`
-  (`schedule.rs:21-67`).
-- `analyze_chunk_ast`'s `declaration_by_name: BTreeMap<String, usize>`,
-  `binding_assignment`, `entry_exports_by_original_local`,
-  `pre_existing_entry_exports` — AST-derived but downstream of the
-  spec→Schedule join, so they migrate together.
+- `ChunkAstAnalysis.declaration_by_name: BTreeMap<String, usize>`
+  (`lowering/chunk_ast.rs:18`).
+- `ChunkAstAnalysis.pre_existing_entry_exports: BTreeSet<String>`
+  (`lowering/chunk_ast.rs:38`).
+- `LowerChunkInputs.binding_assignment: &BTreeMap<String, usize>`
+  (`lowering/lower.rs:33`) — threaded through the per-module loop.
+- `collect_entry_exports_by_original_local`'s return map
+  (`lowering/imports_cross.rs:75`).
 - `naturalize_module_body`'s returned
   `local_renames: BTreeMap<String, String>` (the heuristic-renames
-  bridge); the lookup in `plan_module_reference_needs` is already
-  hygiene-aware (`(pre_sym, body_id.ctxt)`-pair reconstruction).
+  bridge; consumed via PR #1633's reverse-lookup).
 
-### Next atomic unit: spec → Id boundary
+### Pending: spec → Id boundary
 
-Per repo convention (`AGENTS.md` → "Atomic API changes: update all
-callers in the same commit. No transitional shims"), the next coherent
-PR1 commit migrates **all** spec-derived identifier maps together with
-a single chunk-level `name → Id` resolution boundary:
+Per `AGENTS.md` "Atomic API changes: update all callers in the same
+commit. No transitional shims", the next coherent commit migrates
+**all** of the still-String-keyed spec-derived maps together with a
+single chunk-level `name → Id` resolution boundary:
 
 1. Add `chunk_binding_ids: HashMap<Atom, Vec<Id>>` to `ChunkAstAnalysis`,
    populated by walking top-level declarations + imports
@@ -274,11 +276,8 @@ a single chunk-level `name → Id` resolution boundary:
    that errors on ambiguity (`kind_hint` from `BindingSelector.kind`
    disambiguates when a chunk has the same sym in two scopes).
 3. Migrate the spec-derived maps to `Id`-keyed in one commit:
-   - `ScheduleLogicalModule.rename_map: HashMap<Id, Atom>`
-   - `Schedule.{bindings, chunk_renames, export_name_by_binding}:
-HashMap<Id, _>`
    - `declaration_by_name`, `binding_assignment`,
-     `entry_exports_by_original_local`, `pre_existing_entry_exports`
+     `pre_existing_entry_exports`, `entry_exports_by_original_local`
      → `Id`-keyed.
 4. Spec YAML stays String-keyed (disk boundary unchanged). Conversion
    happens once when `ChunkAstAnalysis` is consumed by `Schedule::build`
@@ -289,7 +288,7 @@ HashMap<Id, _>`
    chunk.
 
 The PR #1633 reverse-lookup bridge in `plan_module_reference_needs`
-survives this next commit unchanged in spirit (re-keyed maps); PR2
+survives this commit unchanged in spirit (re-keyed maps); PR2
 (below) is what retires it.
 
 ### Proposed architecture (PR2)
@@ -399,18 +398,27 @@ PR #1639 migrated chunk-scoped identifier maps to SWC `Id`-keyed. PR
 #1647 closed the easy ergonomic wins. What remains is bounded by
 design choices documented in DESIGN.md.
 
-- **`ident.sym.to_string()` sites feeding `BindingName`-keyed maps
-  (~35 sites in `facts.rs`, `lowering/util.rs`, `vendor.rs`,
-  `strip_swapped_vendor_exports.rs`, `purity.rs`).** Each call converts
-  an `Atom` to a `String` to feed a `BTreeSet<BindingName>` /
-  `HashMap<BindingName, _>`. The conversion can't be removed without
-  flipping `BindingName = String` to `BindingName = Atom`, which
-  DESIGN.md "Identifiers and types" (line 2594) deliberately rejects:
-  `BindingName` is the JavaScript identifier text, not a hygiene-aware
-  identity, so it stays `String`. Surfaces only become migratable to
-  `Id` keys where the value flows into a chunk-scoped map (which #1639
-  already handled) — the remaining sites all terminate in spec/report
-  surfaces that are `BindingName`-keyed by design. **No action.**
+- **`ident.sym.to_string()` sites (~35).** Three sub-categories with
+  different verdicts:
+  - **Spec/report surfaces** (`facts.rs` visitor collectors,
+    `purity.rs`, `strip_swapped_vendor_exports.rs`,
+    `vendor.rs:707-711`). Values terminate in `StatementFacts.*` /
+    vendor manifests / report JSON. `BindingName = String` is pinned
+    by DESIGN.md "Identifiers and types" (line 2594) because it IS
+    the JS identifier text. **No action.**
+  - **Name-disambiguation surfaces** (`lowering/util.rs`'s
+    `collect_occupied_local_names` / `collect_local_binding_names`,
+    consumed by `disambiguate_import_locals`). The result feeds
+    collision-avoidance logic that emits JS identifiers. These
+    `BTreeSet<String>` could become `BTreeSet<Atom>` (`Atom` impls
+    `Hash`/`Ord`/`Display`) — the conversion at the emit boundary
+    is `format!("{atom}")`. Stylistic cleanup only; semantically
+    identical. **Optional.**
+  - **Pending spec → Id boundary** (the `declaration_by_name` /
+    `binding_assignment` / `pre_existing_entry_exports` /
+    `entry_exports_by_original_local` maps; tracked above under
+    "Pending: spec → Id boundary"). These genuinely should migrate
+    to `Id`-keyed; **track via that section, not here.**
 - **Per-test `js_ast::with_swc_globals(|| {...})` wraps (~14).**
   In-process tests across `pipeline.rs`, `validate_emitted_exports.rs`,
   `vendor.rs` each wrap their body in `with_swc_globals`. The per-test
