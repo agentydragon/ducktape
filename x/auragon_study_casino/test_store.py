@@ -22,6 +22,46 @@ def store(db_url: str) -> SqlStore:
 _U = "u"
 
 
+def _roulette_outcome(bet_type: str, won: bool) -> dict[str, object]:
+    """Minimal RouletteOutcome dict — only `bet_type` and `won` matter for these tests."""
+    return {
+        "bet_type": bet_type,
+        "bet_number": None,
+        "multiplier": 2,
+        "result_color": "red",
+        "result_number": 1,
+        "result_index": 0,
+        "won": won,
+    }
+
+
+def _slots_outcome(payout_kind: str) -> dict[str, object]:
+    """Minimal SlotsOutcome dict — only `payout_kind` matters for these tests."""
+    return {"symbols": ["a", "b", "c"], "glyphs": ["A", "B", "C"], "label": "test", "payout_kind": payout_kind}
+
+
+def _blackjack_outcome(
+    outcome: str, *, doubled: bool = False, dealer_cards: list[dict[str, str]] | None = None
+) -> dict[str, object]:
+    """Minimal BlackjackOutcome dict — only `outcome`, `doubled`, `dealer_cards` matter for these tests.
+
+    `dealer_cards` defaults to a single 7♥ upcard so tests that don't care about
+    upcard bucketing land in a non-aggregating slice.
+    """
+    return {
+        "outcome": outcome,
+        "text": "",
+        "player_cards": [],
+        "dealer_cards": dealer_cards if dealer_cards is not None else [{"rank": "7", "suit": "♥"}],
+        "player_value": 0,
+        "dealer_value": 0,
+        "player_blackjack": False,
+        "dealer_blackjack": False,
+        "initial_wager": 1,
+        "doubled": doubled,
+    }
+
+
 def test_fresh_store_has_zero_balance_and_default_prizes(store: SqlStore) -> None:
     state = store.state_dump(_U)
     assert state["balance"] == {"credits": 0, "tokens": 0}
@@ -223,7 +263,7 @@ def test_casino_stats_aggregates_server_resolved_only(store: SqlStore) -> None:
             "server_resolved",
             10,
             20,
-            {"bet_type": "red", "won": True},
+            _roulette_outcome("red", True),
             1_778_200_000_000,
         ),  # 2026-05-08
         (
@@ -232,7 +272,7 @@ def test_casino_stats_aggregates_server_resolved_only(store: SqlStore) -> None:
             "server_resolved",
             10,
             20,
-            {"bet_type": "red", "won": True},
+            _roulette_outcome("red", True),
             1_778_200_001_000,
         ),  # 2026-05-08
         (
@@ -241,12 +281,13 @@ def test_casino_stats_aggregates_server_resolved_only(store: SqlStore) -> None:
             "server_resolved",
             10,
             0,
-            {"bet_type": "red", "won": False},
+            _roulette_outcome("red", False),
             1_778_300_000_000,
         ),  # 2026-05-09
-        ("ce-4", "slots", "server_resolved", 5, 100, {"payout_kind": "triple"}, 1_778_200_002_000),  # 2026-05-08
-        ("ce-5", "blackjack", "server_resolved", 4, 8, {"outcome": "win"}, 1_778_200_003_000),  # 2026-05-08
-        ("legacy", "roulette", "client_reported", 99, 0, {"bet_type": "black"}, 1_746_000_000_000),
+        ("ce-4", "slots", "server_resolved", 5, 100, _slots_outcome("triple"), 1_778_200_002_000),  # 2026-05-08
+        ("ce-5", "blackjack", "server_resolved", 4, 8, _blackjack_outcome("win"), 1_778_200_003_000),  # 2026-05-08
+        # Legacy `client_reported` row — pre-2026-05-07. Excluded from casino_stats.
+        ("legacy", "roulette", "client_reported", 99, 0, _roulette_outcome("black", False), 1_746_000_000_000),
     ]
     # Need a balance row first (for FK / seed convention).
     store.state_dump(_U)
@@ -358,12 +399,12 @@ def _seed_blackjack_events(store: SqlStore, fixtures: list[tuple[str, int, int, 
 def test_casino_stats_blackjack_summary_and_outcome_freq(store: SqlStore) -> None:
     """Summary counts split W/L/P/blackjack/bust and exclude pushes from win-rate."""
     fixtures: list[tuple[str, int, int, dict[str, object]]] = [
-        ("h1", 2, 5, {"outcome": "blackjack", "doubled": False, "dealer_cards": [{"rank": "6", "suit": "♥"}]}),
-        ("h2", 1, 2, {"outcome": "win", "doubled": False, "dealer_cards": [{"rank": "7", "suit": "♥"}]}),
-        ("h3", 1, 2, {"outcome": "dealerBust", "doubled": False, "dealer_cards": [{"rank": "5", "suit": "♦"}]}),
-        ("h4", 1, 1, {"outcome": "push", "doubled": False, "dealer_cards": [{"rank": "K", "suit": "♣"}]}),
-        ("h5", 1, 0, {"outcome": "lose", "doubled": False, "dealer_cards": [{"rank": "A", "suit": "♠"}]}),
-        ("h6", 1, 0, {"outcome": "bust", "doubled": False, "dealer_cards": [{"rank": "10", "suit": "♥"}]}),
+        ("h1", 2, 5, _blackjack_outcome("blackjack", dealer_cards=[{"rank": "6", "suit": "♥"}])),
+        ("h2", 1, 2, _blackjack_outcome("win", dealer_cards=[{"rank": "7", "suit": "♥"}])),
+        ("h3", 1, 2, _blackjack_outcome("dealerBust", dealer_cards=[{"rank": "5", "suit": "♦"}])),
+        ("h4", 1, 1, _blackjack_outcome("push", dealer_cards=[{"rank": "K", "suit": "♣"}])),
+        ("h5", 1, 0, _blackjack_outcome("lose", dealer_cards=[{"rank": "A", "suit": "♠"}])),
+        ("h6", 1, 0, _blackjack_outcome("bust", dealer_cards=[{"rank": "10", "suit": "♥"}])),
     ]
     _seed_blackjack_events(store, fixtures)
 
@@ -391,12 +432,12 @@ def test_casino_stats_blackjack_by_dealer_upcard_collapses_face_cards(store: Sql
     """J/Q/K and 10 share one bucket; A is separate. Slices retain real W/L/P stats."""
     fixtures: list[tuple[str, int, int, dict[str, object]]] = [
         # Two hands with dealer-K → bucketed under "10"
-        ("k1", 2, 4, {"outcome": "win", "doubled": False, "dealer_cards": [{"rank": "K", "suit": "♠"}]}),
-        ("k2", 2, 0, {"outcome": "lose", "doubled": False, "dealer_cards": [{"rank": "K", "suit": "♣"}]}),
+        ("k1", 2, 4, _blackjack_outcome("win", dealer_cards=[{"rank": "K", "suit": "♠"}])),
+        ("k2", 2, 0, _blackjack_outcome("lose", dealer_cards=[{"rank": "K", "suit": "♣"}])),
         # One hand with dealer-Q → also under "10"
-        ("q1", 2, 0, {"outcome": "bust", "doubled": False, "dealer_cards": [{"rank": "Q", "suit": "♦"}]}),
+        ("q1", 2, 0, _blackjack_outcome("bust", dealer_cards=[{"rank": "Q", "suit": "♦"}])),
         # One ace upcard (player-favouring loss)
-        ("a1", 1, 0, {"outcome": "lose", "doubled": False, "dealer_cards": [{"rank": "A", "suit": "♥"}]}),
+        ("a1", 1, 0, _blackjack_outcome("lose", dealer_cards=[{"rank": "A", "suit": "♥"}])),
     ]
     _seed_blackjack_events(store, fixtures)
 
@@ -429,13 +470,13 @@ def test_casino_stats_blackjack_by_doubled_separates_doubled_from_baseline(store
     """Doubled and not-doubled hands aggregate independently."""
     fixtures: list[tuple[str, int, int, dict[str, object]]] = [
         # Doubled win (initial wager 2 → 4 after double → pays 8)
-        ("d1", 4, 8, {"outcome": "win", "doubled": True, "dealer_cards": [{"rank": "6"}]}),
+        ("d1", 4, 8, _blackjack_outcome("win", doubled=True, dealer_cards=[{"rank": "6", "suit": "♥"}])),
         # Doubled loss
-        ("d2", 4, 0, {"outcome": "lose", "doubled": True, "dealer_cards": [{"rank": "10"}]}),
+        ("d2", 4, 0, _blackjack_outcome("lose", doubled=True, dealer_cards=[{"rank": "10", "suit": "♥"}])),
         # Baseline (no-double) win
-        ("n1", 1, 2, {"outcome": "win", "doubled": False, "dealer_cards": [{"rank": "5"}]}),
+        ("n1", 1, 2, _blackjack_outcome("win", dealer_cards=[{"rank": "5", "suit": "♥"}])),
         # Baseline loss
-        ("n2", 1, 0, {"outcome": "bust", "doubled": False, "dealer_cards": [{"rank": "7"}]}),
+        ("n2", 1, 0, _blackjack_outcome("bust", dealer_cards=[{"rank": "7", "suit": "♥"}])),
     ]
     _seed_blackjack_events(store, fixtures)
 

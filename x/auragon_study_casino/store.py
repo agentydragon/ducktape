@@ -24,7 +24,16 @@ from sqlalchemy import create_engine, delete, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from x.auragon_study_casino.events import GameEventRead, LedgerEventRead, game_event_from_row, ledger_event_from_row
+from x.auragon_study_casino.events import (
+    BlackjackOutcome,
+    GameEventRead,
+    GameOutcome,
+    LedgerEventRead,
+    RouletteOutcome,
+    SlotsOutcome,
+    game_event_from_row,
+    ledger_event_from_row,
+)
 from x.auragon_study_casino.games import RULES_VERSION, theoretical_bucket_rtp
 from x.auragon_study_casino.models import (
     BalanceRow,
@@ -482,26 +491,23 @@ _BLACKJACK_BUCKETS: list[tuple[str, str]] = [
 ]
 
 
-def _roulette_bucket_key(outcome: dict[str, Any]) -> str | None:
-    bet_type = outcome.get("bet_type")
-    return bet_type if isinstance(bet_type, str) else None
+def _roulette_bucket_key(outcome: GameOutcome) -> str | None:
+    return outcome.bet_type if isinstance(outcome, RouletteOutcome) else None
 
 
-def _slots_bucket_key(outcome: dict[str, Any]) -> str | None:
-    kind = outcome.get("payout_kind")
-    return kind if isinstance(kind, str) else None
+def _slots_bucket_key(outcome: GameOutcome) -> str | None:
+    return outcome.payout_kind if isinstance(outcome, SlotsOutcome) else None
 
 
-def _blackjack_bucket_key(outcome: dict[str, Any]) -> str | None:
-    kind = outcome.get("outcome")
-    return kind if isinstance(kind, str) else None
+def _blackjack_bucket_key(outcome: GameOutcome) -> str | None:
+    return outcome.outcome if isinstance(outcome, BlackjackOutcome) else None
 
 
 def _aggregate_game(
     events: list[GameEventRead],
     game: str,
     bucket_defs: list[tuple[str, str]],
-    bucket_key: Callable[[dict[str, Any]], str | None],
+    bucket_key: Callable[[GameOutcome], str | None],
     theoretical: dict[tuple[str, str], tuple[float, float]],
 ) -> GameStats:
     game_events = [e for e in events if e.game == game]
@@ -604,14 +610,10 @@ _BJ_UPCARD_BUCKETS: list[tuple[str, str]] = [
 ]
 
 
-def _bj_upcard_key(outcome: dict[str, Any]) -> str | None:
-    dealer = outcome.get("dealer_cards")
-    if not isinstance(dealer, list) or not dealer:
+def _bj_upcard_key(outcome: BlackjackOutcome) -> str | None:
+    if not outcome.dealer_cards:
         return None
-    first = dealer[0]
-    if not isinstance(first, dict):
-        return None
-    rank = first.get("rank")
+    rank = outcome.dealer_cards[0].rank
     if rank in ("J", "Q", "K", "10"):
         return "10"
     if rank in ("A", "2", "3", "4", "5", "6", "7", "8", "9"):
@@ -626,7 +628,8 @@ def _blackjack_slice(key: str, label: str, events: list[GameEventRead]) -> Black
     for e in events:
         wagered += e.wager_credits
         returned += e.payout_tokens
-        outcome = e.outcome.get("outcome")
+        assert isinstance(e.outcome, BlackjackOutcome)
+        outcome = e.outcome.outcome
         if outcome in _BJ_WIN_OUTCOMES:
             wins += 1
         elif outcome in _BJ_LOSS_OUTCOMES:
@@ -652,7 +655,8 @@ def _blackjack_slice(key: str, label: str, events: list[GameEventRead]) -> Black
 def _blackjack_summary(events: list[GameEventRead]) -> BlackjackSummary:
     wins = losses = pushes = blackjacks = busts = 0
     for e in events:
-        outcome = e.outcome.get("outcome")
+        assert isinstance(e.outcome, BlackjackOutcome)
+        outcome = e.outcome.outcome
         if outcome == "blackjack":
             blackjacks += 1
         elif outcome == "bust":
@@ -681,8 +685,9 @@ def _blackjack_outcome_freq(events: list[GameEventRead]) -> list[BlackjackOutcom
     total = len(events)
     by_key: dict[str, list[GameEventRead]] = {key: [] for key, _ in _BLACKJACK_BUCKETS}
     for e in events:
-        key = e.outcome.get("outcome")
-        if isinstance(key, str) and key in by_key:
+        assert isinstance(e.outcome, BlackjackOutcome)
+        key = e.outcome.outcome
+        if key in by_key:
             by_key[key].append(e)
     return [
         BlackjackOutcomeFreq(
@@ -699,6 +704,7 @@ def _blackjack_outcome_freq(events: list[GameEventRead]) -> list[BlackjackOutcom
 def _blackjack_upcard_slices(events: list[GameEventRead]) -> list[BlackjackSlice]:
     by_key: dict[str, list[GameEventRead]] = {key: [] for key, _ in _BJ_UPCARD_BUCKETS}
     for e in events:
+        assert isinstance(e.outcome, BlackjackOutcome)
         key = _bj_upcard_key(e.outcome)
         if key is not None:
             by_key[key].append(e)
@@ -706,8 +712,12 @@ def _blackjack_upcard_slices(events: list[GameEventRead]) -> list[BlackjackSlice
 
 
 def _blackjack_doubled_slices(events: list[GameEventRead]) -> list[BlackjackSlice]:
-    doubled = [e for e in events if bool(e.outcome.get("doubled"))]
-    not_doubled = [e for e in events if not bool(e.outcome.get("doubled"))]
+    def _doubled(e: GameEventRead) -> bool:
+        assert isinstance(e.outcome, BlackjackOutcome)
+        return e.outcome.doubled
+
+    doubled = [e for e in events if _doubled(e)]
+    not_doubled = [e for e in events if not _doubled(e)]
     return [
         _blackjack_slice("doubled", "Doubled", doubled),
         _blackjack_slice("not_doubled", "Not doubled", not_doubled),

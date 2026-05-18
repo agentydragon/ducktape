@@ -16,6 +16,60 @@ from pydantic import BaseModel, ConfigDict
 from x.auragon_study_casino.models import GameEventRow, LedgerEventRow
 
 
+class Card(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rank: str
+    suit: str
+
+
+class RouletteOutcome(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    bet_type: str
+    bet_number: int | None
+    multiplier: int
+    result_color: str
+    result_number: int
+    # Server-resolved rows include the wheel index; pre-2026-05-07
+    # `client_reported` rows predate that field.
+    result_index: int | None = None
+    won: bool
+
+
+class SlotsOutcome(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbols: list[str]
+    glyphs: list[str]
+    label: str
+    payout_kind: str
+
+
+class BlackjackOutcome(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    outcome: str
+    text: str
+    player_cards: list[Card]
+    dealer_cards: list[Card]
+    player_value: int
+    dealer_value: int
+    player_blackjack: bool
+    dealer_blackjack: bool
+    initial_wager: int
+    doubled: bool
+
+
+GameOutcome = RouletteOutcome | SlotsOutcome | BlackjackOutcome
+
+_OUTCOME_BY_GAME: dict[str, type[RouletteOutcome] | type[SlotsOutcome] | type[BlackjackOutcome]] = {
+    "roulette": RouletteOutcome,
+    "slots": SlotsOutcome,
+    "blackjack": BlackjackOutcome,
+}
+
+
 class GameEventRead(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -36,16 +90,18 @@ class GameEventRead(BaseModel):
     server_tokens: int
     rules_version: str | None = None
     rng_version: str | None = None
-    outcome: dict[str, Any]
+    outcome: GameOutcome
 
 
 def game_event_from_row(row: GameEventRow) -> GameEventRead:
+    game = cast(Literal["roulette", "slots", "blackjack"], row.game)
+    outcome = _OUTCOME_BY_GAME[game].model_validate_json(row.outcome_json)
     return GameEventRead(
         id=row.id,
         client_event_id=row.client_event_id,
         server_at_ms=row.server_at_ms,
         occurred_at_ms=row.occurred_at_ms,
-        game=cast(Literal["roulette", "slots", "blackjack"], row.game),
+        game=game,
         event_type=cast(Literal["settle"], row.event_type),
         source=cast(Literal["client_reported", "server_resolved"], row.source),
         wager_credits=row.wager_credits,
@@ -58,7 +114,7 @@ def game_event_from_row(row: GameEventRow) -> GameEventRead:
         server_tokens=row.server_tokens,
         rules_version=row.rules_version,
         rng_version=row.rng_version,
-        outcome=json.loads(row.outcome_json),
+        outcome=outcome,
     )
 
 
