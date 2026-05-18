@@ -436,6 +436,7 @@ rust_library(
         "@crates//:anyhow",
         "@crates//:rayon",
         "@crates//:serde",
+        "@crates//:swc_common",
     ],
 )
 

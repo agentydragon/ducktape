@@ -6,7 +6,7 @@ use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 use serde::Serialize;
 use serde_json::Value;
-use swc_common::{DUMMY_SP, SyntaxContext};
+use swc_common::{DUMMY_SP, GLOBALS, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
@@ -265,10 +265,17 @@ pub fn rename_vendor_exports(
             }
         }
         let chunk_table_ref = &chunk_table;
-        let results = jobs
-            .into_par_iter()
-            .map(|job| rename_vendor_imports_in_file(job, references, &mappings, chunk_table_ref))
-            .collect::<Vec<_>>();
+        // Rayon workers don't inherit `GLOBALS`; re-set per worker so any
+        // `Mark::new()` / `Id` use stays in the caller's arena.
+        let results = GLOBALS.with(|globals| {
+            jobs.into_par_iter()
+                .map(|job| {
+                    GLOBALS.set(globals, || {
+                        rename_vendor_imports_in_file(job, references, &mappings, chunk_table_ref)
+                    })
+                })
+                .collect::<Vec<_>>()
+        });
         for result in results {
             artifact
                 .chunks
@@ -611,10 +618,17 @@ pub fn swap_vendor_chunks(
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    let resolved = jobs
-        .into_par_iter()
-        .map(|job| resolve_vendor_swap(job, &import_alignment_index, &options))
-        .collect::<Result<Vec<_>>>()?;
+    // Rayon workers don't inherit `GLOBALS`; re-set per worker so any
+    // `Mark::new()` / `Id` use stays in the caller's arena.
+    let resolved = GLOBALS.with(|globals| {
+        jobs.into_par_iter()
+            .map(|job| {
+                GLOBALS.set(globals, || {
+                    resolve_vendor_swap(job, &import_alignment_index, &options)
+                })
+            })
+            .collect::<Result<Vec<_>>>()
+    })?;
     let resolutions: BTreeMap<String, VendorResolution> = resolved
         .into_iter()
         .map(|resolution| {
@@ -1722,10 +1736,17 @@ pub fn apply_partial_vendor_swaps(
 
     let chunk_table_ref = &chunk_table;
     let mappings_ref = &mappings;
-    let results: Vec<PartialSwapFileResult> = jobs
-        .into_par_iter()
-        .map(|job| rewrite_partial_swap_in_file(job, references, mappings_ref, chunk_table_ref))
-        .collect();
+    // Rayon workers don't inherit `GLOBALS`; re-set per worker so any
+    // `Mark::new()` / `Id` use stays in the caller's arena.
+    let results: Vec<PartialSwapFileResult> = GLOBALS.with(|globals| {
+        jobs.into_par_iter()
+            .map(|job| {
+                GLOBALS.set(globals, || {
+                    rewrite_partial_swap_in_file(job, references, mappings_ref, chunk_table_ref)
+                })
+            })
+            .collect()
+    });
 
     let mut total_references = 0usize;
     for result in results {

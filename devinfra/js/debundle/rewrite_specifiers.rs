@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use rayon::prelude::*;
 use std::path::Path;
-use swc_common::{DUMMY_SP, SyntaxContext};
+use swc_common::{DUMMY_SP, GLOBALS, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
@@ -68,10 +68,13 @@ pub fn rewrite_chunk_entry_specifiers(
         }
     }
     let traversed_files = jobs.len();
-    let results = jobs
-        .into_par_iter()
-        .map(|job| rewrite_file(job, references, &chunk_table))
-        .collect::<Vec<_>>();
+    // Rayon workers don't inherit `GLOBALS`; re-set per worker so any
+    // `Mark::new()` / `Id` use stays in the caller's arena.
+    let results = GLOBALS.with(|globals| {
+        jobs.into_par_iter()
+            .map(|job| GLOBALS.set(globals, || rewrite_file(job, references, &chunk_table)))
+            .collect::<Vec<_>>()
+    });
 
     let mut rewritten_files = 0usize;
     let mut rewritten_specifiers = 0usize;

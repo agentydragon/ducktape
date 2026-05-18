@@ -4,6 +4,7 @@ use std::time::Instant;
 use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 use serde::Serialize;
+use swc_common::GLOBALS;
 
 use analysis::ChunkId;
 use artifact::{
@@ -83,15 +84,21 @@ pub fn prepare_js_chunks(
 
     // First pass: parse all chunks and collect imports for vendor caller detection.
     // Source text moves into the SourceMap; no extra copy.
-    let parsed_chunks = jobs
-        .into_par_iter()
-        .map(|job| {
-            let chunk_id = job.chunk_id;
-            let chunk_name = job.chunk_name.clone();
-            let parsed = prepare_chunk(job)?;
-            Ok((chunk_id, chunk_name, parsed))
-        })
-        .collect::<Result<Vec<_>>>()?;
+    // Rayon workers don't inherit the caller's `swc_common::GLOBALS` scope
+    // (it's `scoped_tls`, per-thread), so we re-set it inside each worker
+    // closure to give `Mark::new()` an arena to mint into.
+    let parsed_chunks = GLOBALS.with(|globals| {
+        jobs.into_par_iter()
+            .map(|job| {
+                GLOBALS.set(globals, || {
+                    let chunk_id = job.chunk_id;
+                    let chunk_name = job.chunk_name.clone();
+                    let parsed = prepare_chunk(job)?;
+                    Ok((chunk_id, chunk_name, parsed))
+                })
+            })
+            .collect::<Result<Vec<_>>>()
+    })?;
 
     // Build import index to detect vendor callers
     let import_index = build_import_index(&parsed_chunks);

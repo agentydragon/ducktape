@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 use serde::Serialize;
-use swc_common::{DUMMY_SP, EqIgnoreSpan, SyntaxContext};
+use swc_common::{DUMMY_SP, EqIgnoreSpan, GLOBALS, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
@@ -254,22 +254,31 @@ pub fn materialize_logical_modules(
     let index_duration = index_started.elapsed();
 
     let artifact_ref: &ChunkBundle = &artifact;
-    let chunk_results = selected_chunk_ids
-        .par_iter()
-        .map(|chunk_id| {
-            materialize_logical_chunk(MaterializeLogicalChunkInputs {
-                artifact: artifact_ref,
-                artifact_indexes: &artifact_indexes,
-                logical_modules,
-                chunk_renames,
-                unassigned_mode,
-                file: options.file.as_deref(),
-                target_dir: &target_dir,
-                report_out_dir: report_out_dir.as_deref(),
-                chunk_id,
+    // SWC's `swc_common::GLOBALS` is a `scoped_tls` thread-local, so the
+    // outer `GLOBALS.set` wrap in `main.rs` / `run_agent` does NOT carry
+    // into rayon worker threads. Capture a reference to the current
+    // `Globals` and re-set inside each worker closure so `Mark::new()`
+    // and `Id`-comparisons stay consistent across the whole pipeline.
+    let chunk_results = GLOBALS.with(|globals| {
+        selected_chunk_ids
+            .par_iter()
+            .map(|chunk_id| {
+                GLOBALS.set(globals, || {
+                    materialize_logical_chunk(MaterializeLogicalChunkInputs {
+                        artifact: artifact_ref,
+                        artifact_indexes: &artifact_indexes,
+                        logical_modules,
+                        chunk_renames,
+                        unassigned_mode,
+                        file: options.file.as_deref(),
+                        target_dir: &target_dir,
+                        report_out_dir: report_out_dir.as_deref(),
+                        chunk_id,
+                    })
+                })
             })
-        })
-        .collect::<Result<Vec<_>>>()?;
+            .collect::<Result<Vec<_>>>()
+    })?;
 
     let mut reports = Vec::with_capacity(chunk_results.len());
     let mut applied = Vec::<SelectedModuleLowering>::new();
@@ -2158,12 +2167,19 @@ fn resolve_anonymous_statement_ordinals(
                 parsed_items.len(),
             ),
         };
+        // `eq_ignore_span` on `Ident` compares `(sym, ctxt)`, so we
+        // must strip `SyntaxContext` from both sides before comparing:
+        // `needle` was freshly parsed (gets one set of resolver marks)
+        // while `runtime_module` was parsed in a different pass (got
+        // different marks for the same source-level identifier).
+        let needle_normalized = clear_syntax_contexts(needle);
         let matches: Vec<usize> = runtime_module
             .body
             .iter()
             .enumerate()
             .filter_map(|(ordinal, item)| {
-                if needle.eq_ignore_span(item) {
+                let item_normalized = clear_syntax_contexts(item);
+                if needle_normalized.eq_ignore_span(&item_normalized) {
                     Some(ordinal)
                 } else {
                     None
@@ -3277,6 +3293,83 @@ impl VisitMut for ShorthandNaturalizer {
         object.visit_mut_children_with(self);
         naturalize_object_literal_shorthand(object);
     }
+}
+
+/// Walks an AST node and resets every `SyntaxContext` to
+/// `SyntaxContext::empty()`. Used to compare AST nodes that were
+/// parsed in different `resolver` passes — each pass mints fresh
+/// marks, so two structurally-identical bindings have different
+/// `(sym, ctxt)` pairs and `eq_ignore_span` (which compares ctxt)
+/// would otherwise reject the match. Covers every node that carries
+/// a `ctxt` field in swc_ecma_ast.
+struct SyntaxContextStripper;
+
+impl VisitMut for SyntaxContextStripper {
+    fn visit_mut_ident(&mut self, ident: &mut Ident) {
+        ident.visit_mut_children_with(self);
+        ident.ctxt = SyntaxContext::empty();
+    }
+
+    fn visit_mut_function(&mut self, node: &mut Function) {
+        node.visit_mut_children_with(self);
+        node.ctxt = SyntaxContext::empty();
+    }
+
+    fn visit_mut_class(&mut self, node: &mut Class) {
+        node.visit_mut_children_with(self);
+        node.ctxt = SyntaxContext::empty();
+    }
+
+    fn visit_mut_private_prop(&mut self, node: &mut PrivateProp) {
+        node.visit_mut_children_with(self);
+        node.ctxt = SyntaxContext::empty();
+    }
+
+    fn visit_mut_constructor(&mut self, node: &mut Constructor) {
+        node.visit_mut_children_with(self);
+        node.ctxt = SyntaxContext::empty();
+    }
+
+    fn visit_mut_block_stmt(&mut self, node: &mut BlockStmt) {
+        node.visit_mut_children_with(self);
+        node.ctxt = SyntaxContext::empty();
+    }
+
+    fn visit_mut_var_decl(&mut self, node: &mut VarDecl) {
+        node.visit_mut_children_with(self);
+        node.ctxt = SyntaxContext::empty();
+    }
+
+    fn visit_mut_call_expr(&mut self, node: &mut CallExpr) {
+        node.visit_mut_children_with(self);
+        node.ctxt = SyntaxContext::empty();
+    }
+
+    fn visit_mut_new_expr(&mut self, node: &mut NewExpr) {
+        node.visit_mut_children_with(self);
+        node.ctxt = SyntaxContext::empty();
+    }
+
+    fn visit_mut_arrow_expr(&mut self, node: &mut ArrowExpr) {
+        node.visit_mut_children_with(self);
+        node.ctxt = SyntaxContext::empty();
+    }
+
+    fn visit_mut_tagged_tpl(&mut self, node: &mut TaggedTpl) {
+        node.visit_mut_children_with(self);
+        node.ctxt = SyntaxContext::empty();
+    }
+
+    fn visit_mut_opt_call(&mut self, node: &mut OptCall) {
+        node.visit_mut_children_with(self);
+        node.ctxt = SyntaxContext::empty();
+    }
+}
+
+fn clear_syntax_contexts(item: &ModuleItem) -> ModuleItem {
+    let mut cloned = item.clone();
+    cloned.visit_mut_with(&mut SyntaxContextStripper);
+    cloned
 }
 
 fn naturalize_object_pattern_shorthand(object: &mut ObjectPat) {
