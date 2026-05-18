@@ -390,6 +390,7 @@ rust_library(
     name = "lowering",
     srcs = [
         "lowering/anonymous.rs",
+        "lowering/body_facts.rs",
         "lowering/chunk_ast.rs",
         "lowering/chunk_renames.rs",
         "lowering/mod.rs",
