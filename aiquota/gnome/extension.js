@@ -264,6 +264,18 @@ const QuotaIndicator = GObject.registerClass(
     _loadFixtureData(data) {
       // Test fixtures specify currentlyOverPlan / extraStatus explicitly so
       // we never re-derive policy on the JS side (see aiquota/AGENTS.md).
+      const loadLastSuccess = (snap) => {
+        if (!snap) return null;
+        // Fixtures express snapshot age as `ageSeconds` (relative to "now")
+        // so the rendered "(stale Xm)" tag is stable across test runs.
+        const fetchedAt = snap.ageSeconds != null ? Date.now() - snap.ageSeconds * 1000 : (snap.fetchedAt ?? null);
+        return {
+          short: snap.short ?? null,
+          long: snap.long ?? null,
+          extraUsage: snap.extraUsage ?? null,
+          fetchedAt,
+        };
+      };
       const provider = (node) => ({
         short: node?.short ?? null,
         long: node?.long ?? null,
@@ -272,7 +284,7 @@ const QuotaIndicator = GObject.registerClass(
         extraUsage: node?.extraUsage ?? null,
         currentlyOverPlan: node?.currentlyOverPlan === true,
         extraStatus: node?.extraStatus ?? "none",
-        lastSuccess: node?.lastSuccess ?? null,
+        lastSuccess: loadLastSuccess(node?.lastSuccess),
       });
       for (const p of this._providers) p.state = provider(data[p.id]);
       this._renderPanel();

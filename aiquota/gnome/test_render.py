@@ -81,7 +81,7 @@ _EXTENSION_STATE_ENABLED = 1
 _TEST_DBUS_DEST = "works.allegedly.AiQuotaTest"
 _TEST_DBUS_PATH = "/works/allegedly/AiQuotaTest"
 
-_FIXTURES = ["empty", "tints", "hot", "extra_enabled_not_burning"]
+_FIXTURES = ["empty", "tints", "hot", "extra_enabled_not_burning", "stale_fallback"]
 
 
 @pytest.fixture(scope="module")
