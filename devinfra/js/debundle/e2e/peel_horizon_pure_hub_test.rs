@@ -119,22 +119,29 @@ fn assert_not_peelable(graph: &OwnerGraphReport, binding: &str) {
     );
 }
 
-/// Canonical reproduction of the gaffer bug: pure `function`
-/// declaration with many eager-use consumers AND an intra-residual
-/// lazy out-edge. Before the fix the post-peel cycle reachability
-/// walked the lazy out-edge into residual, observed the eager
-/// in-edges back from residual, and flagged the candidate
-/// `BlockedCycle` with hundreds of cycle blockers. After the fix:
-/// the constraining-edge subgraph forms a DAG (residual → Se eager,
-/// no constraining edges out of Se), so the candidate certifies as
-/// `PeelableNow`.
+/// `function` declaration hubs are trivially direct-peelable
+/// post-PR #1659: the FnDecl filter in
+/// `graph.rs::build_owner_graph` (mirroring the long-standing
+/// `target_is_hoisted` filter in `promote_at_init_calls`) drops
+/// every direct top-level `EagerUse` edge that targets a FnDecl
+/// owner. ESM Phase 1 of module linking
+/// (`ModuleDeclarationInstantiation`) hoists every
+/// `FunctionDeclaration` binding before any module body runs, so
+/// the reads can't observe a TDZ regardless of which module owns
+/// the FnDecl. The original gaffer bug shape (many incoming
+/// eager-use + lazy intra-residual out-edge → spurious
+/// `BlockedCycle`) is impossible for FnDecl hubs because the
+/// incoming eager-use edges aren't emitted. The sibling tests
+/// (`pure_var_decl_hub_…`, `pure_class_decl_hub_…`) still cover the
+/// real bug shape for declaration kinds that are TDZ-locked.
 #[test]
 fn pure_fn_decl_hub_with_eager_consumers_and_lazy_intra_residual_out_is_direct_peelable() {
-    // Five top-level consumers each eagerly read `Se` at init time
-    // (`var ci = Se(...)` evaluates Se synchronously). `Se`'s body
-    // lazily reads `Helper`, which stays in residual — that
-    // lazy out-edge is the bug trigger. `Existing` is a logical
-    // module so the pipeline does real peel work.
+    // Same fixture as the var/class variants: a pure top-level
+    // declaration with five eager-use consumers and a lazy
+    // intra-residual out-edge to `Helper`. The peelability proposer
+    // should certify `Se` as `PeelableNow` because — post-PR #1659 —
+    // the FnDecl filter strips the incoming eager_use edges and the
+    // hub ends up with no constraining edges in either direction.
     let mut opts = FixtureOpts::new(
         r#"function Se(n) { return Helper(n); }
 function Helper(n) { return n * 2; }
@@ -156,10 +163,11 @@ export { Se, Helper, c1, c2, c3, c4, c5, Existing };
     let graph = owner_graph(&fixture);
     assert_direct_peel(&graph, "Se");
 
-    // Sanity-check the bug shape is actually exercised: Se has at
-    // least 5 incoming eager_use edges from same-residual consumers
-    // AND a lazy out-edge to a same-residual `Helper`. Without that
-    // mixed-edge topology the test would be silently weakened.
+    // Post-PR #1659 invariant: the FnDecl filter strips every
+    // incoming direct `EagerUse` edge to a `function` declaration
+    // owner. Pin this here so a future regression that re-emits
+    // those edges (and reintroduces the pure-hub `BlockedCycle`
+    // bug) surfaces as a precise diagnostic.
     let se_node = graph
         .nodes
         .iter()
@@ -172,21 +180,11 @@ export { Se, Helper, c1, c2, c3, c4, c5, Existing };
         .filter(|edge| edge.target == se_id && edge.edge_kind == analysis::DepKind::EagerUse)
         .collect();
     assert!(
-        eager_in.len() >= 5,
-        "Se must have >= 5 incoming eager_use edges to reproduce the bug shape; got {}",
-        eager_in.len(),
-    );
-    let lazy_out_to_residual_present = graph.edges.iter().any(|edge| {
-        edge.source == se_id
-            && !edge.constrains_init_order
-            && graph
-                .nodes
-                .iter()
-                .any(|n| n.id == edge.target && n.destination.residual)
-    });
-    assert!(
-        lazy_out_to_residual_present,
-        "Se must have at least one lazy out-edge to a same-residual owner to reproduce the bug shape",
+        eager_in.is_empty(),
+        "EagerUse edges to a FnDecl owner should be filtered out by \
+         `target_is_hoisted` in `build_owner_graph` (ESM Phase 1 hoists \
+         `function` declarations before any module body runs). Offending \
+         edges: {eager_in:#?}",
     );
 }
 

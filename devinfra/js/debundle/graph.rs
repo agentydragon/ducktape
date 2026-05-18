@@ -321,6 +321,34 @@ pub fn build_owner_graph(facts: &[StatementFacts]) -> OwnerGraph {
     // Collect (from, to, reason) triples; the final `edges` Vec is
     // sorted at the end so `OwnerEdgeId` indices are stable.
     let mut raw_edges = Vec::<(OwnerId, OwnerId, EdgeReason)>::new();
+    // Look-aside table for "what statement owns this OwnerId" — shared
+    // by the direct eager-read filter below and by
+    // `promote_at_init_calls` (which builds its own local copy; the
+    // duplicate cost is negligible).
+    let stmt_by_owner: std::collections::HashMap<OwnerId, &StatementFacts> = facts
+        .iter()
+        .map(|stmt| (OwnerId(stmt.ordinal.0), stmt))
+        .collect();
+    // A top-level eager read of a binding declared by a `function`
+    // declaration cannot observe a TDZ: ECMAScript Phase 1 of module
+    // linking (`ModuleDeclarationInstantiation`) binds every
+    // `FunctionDeclaration` to its hoisted closure before any module
+    // body runs. So `const x = f()` where `f` is a chunk-declared
+    // FnDecl is safe regardless of which module owns `f` — there is
+    // no init-order constraint to record, and emitting an `EagerUse`
+    // edge would manufacture a cross-module constraint no realizable
+    // trace demands. Same rule as the FnDecl exclusion in
+    // `promote_at_init_calls`. Other declared kinds (VarDecl,
+    // ClassDecl) are TDZ-locked until their statement runs, so their
+    // cross-module reads stay constrained.
+    let target_is_hoisted = |binding_id: BindingId| -> bool {
+        binding_owner
+            .get(binding_id.0)
+            .and_then(|owner| owner.as_ref())
+            .and_then(|owner| stmt_by_owner.get(owner))
+            .map(|stmt| stmt.kind == StatementKind::FnDecl)
+            .unwrap_or(false)
+    };
     let push_binding_edge = |raw_edges: &mut Vec<(OwnerId, OwnerId, EdgeReason)>,
                              from: OwnerId,
                              binding: &BindingName,
@@ -340,6 +368,11 @@ pub fn build_owner_graph(facts: &[StatementFacts]) -> OwnerGraph {
     for stmt in facts {
         let from = OwnerId(stmt.ordinal.0);
         for binding in &stmt.eager_reads {
+            if let Some(binding_id) = binding_table.get(binding)
+                && target_is_hoisted(binding_id)
+            {
+                continue;
+            }
             push_binding_edge(
                 &mut raw_edges,
                 from,
