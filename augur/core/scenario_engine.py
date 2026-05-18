@@ -8,24 +8,17 @@ from typing import Any, cast
 import numpy as np
 
 from augur.core.accounting import (
-    AccountingCause,
     AccountingCauseType,
-    BalanceSnapshot,
-    ChartAccount,
     ChartAccountRole,
-    JournalEntry,
     JournalEntryType,
     LiabilityState,
     LiabilityType,
     LotAssetClass,
     LotDisposition,
-    Posting,
     PostingSide,
     TaxLot,
-    chart_account_id,
-    chart_account_type_for_role,
-    validate_accounting_trace,
 )
+from augur.core.accounting_tables import AccountingTrace, AccountingTraceBuilder, validate_trace
 from augur.core.annual_tax import AnnualSaleTaxAllocation, annual_sale_tax_allocation
 from augur.core.local_regulation import LocalRegulation
 from augur.core.market_bundle import MarketBundle
@@ -232,10 +225,7 @@ class ScenarioRunArrays:
     effects: tuple[Effect, ...]
     policy_decisions: tuple[PolicyDecision, ...]
     market_observations: tuple[MarketObservation, ...]
-    chart_accounts: tuple[ChartAccount, ...]
-    journal_entries: tuple[JournalEntry, ...]
-    postings: tuple[Posting, ...]
-    balance_snapshots: tuple[BalanceSnapshot, ...]
+    accounting_trace: AccountingTrace
     tax_lots: tuple[TaxLot, ...]
     lot_dispositions: tuple[LotDisposition, ...]
     liabilities: tuple[LiabilityState, ...]
@@ -889,157 +879,6 @@ class PrivateEquityObligationFundingPolicyApplication:
     remaining_basis_usd: np.ndarray
     sold_units: np.ndarray
     sold_fraction: np.ndarray
-
-
-class AccountingTraceBuilder:
-    def __init__(self) -> None:
-        self.chart_accounts_by_id: dict[str, ChartAccount] = {}
-        self.journal_entries: list[JournalEntry] = []
-        self.postings: list[Posting] = []
-        self.balance_snapshots: list[BalanceSnapshot] = []
-
-    def record_entry(
-        self, *, month_index: int | np.ndarray, entry: JournalEntryBatch, amount_multiplier: np.ndarray | None = None
-    ) -> None:
-        month_values, posting_amounts = _normalized_posting_amounts(
-            month_index=month_index, postings=entry.postings, amount_multiplier=amount_multiplier
-        )
-        if not posting_amounts:
-            return
-        active = np.zeros(posting_amounts[0][1].shape, dtype=np.bool_)
-        for _, amount_usd in posting_amounts:
-            active |= amount_usd > 0
-        rollout_indexes, month_positions = np.nonzero(active)
-        for rollout_index, month_position in zip(rollout_indexes.tolist(), month_positions.tolist(), strict=True):
-            month = int(month_values[month_position])
-            journal_entry_id = _trace_row_id(entry.cause_id_prefix, rollout_index=rollout_index, month_index=month)
-            obligation_id = (
-                _trace_row_id(entry.obligation_id_prefix, rollout_index=rollout_index, month_index=month)
-                if entry.obligation_id_prefix is not None
-                else None
-            )
-            self.journal_entries.append(
-                JournalEntry(
-                    journal_entry_id=journal_entry_id,
-                    rollout_index=rollout_index,
-                    month_index=month,
-                    journal_entry_type=entry.journal_entry_type,
-                    actor_id=entry.actor_id,
-                    policy_id=entry.policy_id,
-                    event_id=entry.event_id,
-                    obligation_id=obligation_id,
-                    description=entry.description,
-                    cause=AccountingCause(
-                        cause_type=entry.cause_type,
-                        cause_id=journal_entry_id,
-                        policy_id=entry.policy_id,
-                        event_id=entry.event_id,
-                        obligation_id=obligation_id,
-                    ),
-                )
-            )
-            for posting_index, (posting, amount_matrix) in enumerate(posting_amounts):
-                posting_amount_usd = float(amount_matrix[rollout_index, month_position])
-                if posting_amount_usd <= 0:
-                    continue
-                chart_account = self._chart_account(posting)
-                self.postings.append(
-                    Posting(
-                        posting_id=f"{journal_entry_id}:posting:{posting_index}:{posting.side.value}",
-                        journal_entry_id=journal_entry_id,
-                        rollout_index=rollout_index,
-                        month_index=month,
-                        chart_account_id=chart_account.chart_account_id,
-                        side=posting.side,
-                        amount_usd=posting_amount_usd,
-                        liability_id=posting.liability_id,
-                    )
-                )
-
-    def record_snapshot(self, *, month_index: np.ndarray, snapshot: BalanceSnapshotBatch) -> None:
-        amount_usd = np.asarray(snapshot.amount_usd, dtype="float64")
-        if amount_usd.ndim != 2:
-            raise ValueError("balance snapshot amount_usd must be rollout/month shaped")
-        chart_account = self._chart_account(
-            PostingBatch(
-                role=snapshot.role,
-                side=PostingSide.DEBIT,
-                amount_usd=amount_usd,
-                actor_id=snapshot.actor_id,
-                source_account_id=snapshot.source_account_id,
-                source_asset_id=snapshot.source_asset_id,
-                liability_id=snapshot.liability_id,
-                property_id=snapshot.property_id,
-                counterparty_actor_id=snapshot.counterparty_actor_id,
-            )
-        )
-        rollout_indexes, month_positions = np.nonzero(amount_usd != 0)
-        for rollout_index, month_position in zip(rollout_indexes.tolist(), month_positions.tolist(), strict=True):
-            self.balance_snapshots.append(
-                BalanceSnapshot(
-                    rollout_index=rollout_index,
-                    month_index=int(month_index[month_position]),
-                    chart_account_id=chart_account.chart_account_id,
-                    balance_usd=float(amount_usd[rollout_index, month_position]),
-                )
-            )
-
-    def _chart_account(self, posting: PostingBatch) -> ChartAccount:
-        account_id = chart_account_id(
-            posting.role,
-            actor_id=posting.actor_id,
-            source_account_id=posting.source_account_id,
-            source_asset_id=posting.source_asset_id,
-            liability_id=posting.liability_id,
-            property_id=posting.property_id,
-            counterparty_actor_id=posting.counterparty_actor_id,
-        )
-        account = self.chart_accounts_by_id.get(account_id)
-        if account is None:
-            account = ChartAccount(
-                chart_account_id=account_id,
-                account_type=chart_account_type_for_role(posting.role),
-                role=posting.role,
-                actor_id=posting.actor_id,
-                source_account_id=posting.source_account_id,
-                source_asset_id=posting.source_asset_id,
-                liability_id=posting.liability_id,
-                property_id=posting.property_id,
-                counterparty_actor_id=posting.counterparty_actor_id,
-            )
-            self.chart_accounts_by_id[account_id] = account
-        return account
-
-    def validate(self) -> None:
-        validate_accounting_trace(
-            chart_accounts=tuple(self.chart_accounts_by_id.values()),
-            journal_entries=tuple(self.journal_entries),
-            postings=tuple(self.postings),
-        )
-
-
-def _normalized_posting_amounts(
-    *, month_index: int | np.ndarray, postings: tuple[PostingBatch, ...], amount_multiplier: np.ndarray | None = None
-) -> tuple[np.ndarray, list[tuple[PostingBatch, np.ndarray]]]:
-    month_values = np.asarray([month_index], dtype="int64") if isinstance(month_index, int) else month_index
-    normalized: list[tuple[PostingBatch, np.ndarray]] = []
-    for posting in postings:
-        amount_usd = np.asarray(posting.amount_usd, dtype="float64")
-        if amount_usd.ndim == 1:
-            amount_usd = amount_usd[:, None]
-        if amount_usd.ndim != 2:
-            raise ValueError("posting amount_usd must be rollout or rollout/month shaped")
-        if amount_multiplier is not None:
-            multiplier = np.asarray(amount_multiplier, dtype="float64")
-            if multiplier.ndim == 1:
-                multiplier = multiplier[:, None]
-            amount_usd = amount_usd * multiplier
-        if amount_usd.shape[1] != len(month_values):
-            raise ValueError(
-                f"posting month dimension {amount_usd.shape[1]} does not match month_index length {len(month_values)}"
-            )
-        normalized.append((posting, amount_usd))
-    return month_values, normalized
 
 
 def _trace_row_id(prefix: str, *, rollout_index: int, month_index: int) -> str:
@@ -2282,23 +2121,24 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         mortgage_balance_usd=mortgage_balance,
         property_balance_mask=property_balance_mask,
     )
-    accounting.validate()
+    accounting_trace = accounting.finalize()
+    validate_trace(accounting_trace)
     monthly_spend_from_accounting = _posting_amount_matrix(
-        accounting,
+        accounting_trace,
         rollout_count=rollout_count,
         month_index=month_index,
         role=ChartAccountRole.MONTHLY_LIVING_EXPENSE,
         side=PostingSide.DEBIT,
     )
     mortgage_interest_from_accounting = _posting_amount_matrix(
-        accounting,
+        accounting_trace,
         rollout_count=rollout_count,
         month_index=month_index,
         role=ChartAccountRole.MORTGAGE_INTEREST_EXPENSE,
         side=PostingSide.DEBIT,
     )
     mortgage_principal_from_accounting = _posting_amount_matrix(
-        accounting,
+        accounting_trace,
         rollout_count=rollout_count,
         month_index=month_index,
         role=ChartAccountRole.MORTGAGE_PAYABLE,
@@ -2307,49 +2147,49 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     )
     mortgage_payment_from_accounting = mortgage_interest_from_accounting + mortgage_principal_from_accounting
     property_tax_from_accounting = _posting_amount_matrix(
-        accounting,
+        accounting_trace,
         rollout_count=rollout_count,
         month_index=month_index,
         role=ChartAccountRole.PROPERTY_TAX_EXPENSE,
         side=PostingSide.DEBIT,
     )
     hoa_from_accounting = _posting_amount_matrix(
-        accounting,
+        accounting_trace,
         rollout_count=rollout_count,
         month_index=month_index,
         role=ChartAccountRole.HOA_EXPENSE,
         side=PostingSide.DEBIT,
     )
     insurance_from_accounting = _posting_amount_matrix(
-        accounting,
+        accounting_trace,
         rollout_count=rollout_count,
         month_index=month_index,
         role=ChartAccountRole.INSURANCE_EXPENSE,
         side=PostingSide.DEBIT,
     )
     maintenance_from_accounting = _posting_amount_matrix(
-        accounting,
+        accounting_trace,
         rollout_count=rollout_count,
         month_index=month_index,
         role=ChartAccountRole.MAINTENANCE_EXPENSE,
         side=PostingSide.DEBIT,
     )
     rental_income_from_accounting = _posting_amount_matrix(
-        accounting,
+        accounting_trace,
         rollout_count=rollout_count,
         month_index=month_index,
         role=ChartAccountRole.RENTAL_INCOME,
         side=PostingSide.CREDIT,
     )
     rental_management_fee_from_accounting = _posting_amount_matrix(
-        accounting,
+        accounting_trace,
         rollout_count=rollout_count,
         month_index=month_index,
         role=ChartAccountRole.RENTAL_MANAGEMENT_FEE_EXPENSE,
         side=PostingSide.DEBIT,
     )
     rental_leasing_fee_from_accounting = _posting_amount_matrix(
-        accounting,
+        accounting_trace,
         rollout_count=rollout_count,
         month_index=month_index,
         role=ChartAccountRole.RENTAL_LEASING_FEE_EXPENSE,
@@ -2367,7 +2207,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         rental_income_from_accounting - property_carrying_cost_from_accounting - mortgage_payment_from_accounting
     )
     generic_sp500_sale_from_accounting = _posting_amount_matrix(
-        accounting,
+        accounting_trace,
         rollout_count=rollout_count,
         month_index=month_index,
         role=ChartAccountRole.PUBLIC_SECURITY,
@@ -2389,7 +2229,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         amount_field="tax_expense_usd",
     )
     private_equity_sale_from_accounting = _posting_amount_matrix(
-        accounting,
+        accounting_trace,
         rollout_count=rollout_count,
         month_index=month_index,
         role=ChartAccountRole.PRIVATE_EQUITY,
@@ -2411,7 +2251,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         amount_field="tax_expense_usd",
     )
     property_sale_gross_from_accounting = _posting_amount_matrix(
-        accounting,
+        accounting_trace,
         rollout_count=rollout_count,
         month_index=month_index,
         role=ChartAccountRole.PROPERTY,
@@ -2419,7 +2259,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         journal_entry_type=JournalEntryType.PROPERTY_SALE,
     )
     sale_closing_cost_from_accounting = _posting_amount_matrix(
-        accounting,
+        accounting_trace,
         rollout_count=rollout_count,
         month_index=month_index,
         role=ChartAccountRole.PROPERTY_SALE_CLOSING_EXPENSE,
@@ -2427,7 +2267,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         journal_entry_type=JournalEntryType.PROPERTY_SALE,
     )
     property_sale_debt_payoff_from_accounting = _posting_amount_matrix(
-        accounting,
+        accounting_trace,
         rollout_count=rollout_count,
         month_index=month_index,
         role=ChartAccountRole.MORTGAGE_PAYABLE,
@@ -2445,7 +2285,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         amount_field="tax_expense_usd",
     )
     property_sale_cash_in_from_accounting = _posting_amount_matrix(
-        accounting,
+        accounting_trace,
         rollout_count=rollout_count,
         month_index=month_index,
         role=ChartAccountRole.CHECKING_CASH,
@@ -2453,7 +2293,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         journal_entry_type=JournalEntryType.PROPERTY_SALE,
     )
     property_sale_cash_out_from_accounting = _posting_amount_matrix(
-        accounting,
+        accounting_trace,
         rollout_count=rollout_count,
         month_index=month_index,
         role=ChartAccountRole.CHECKING_CASH,
@@ -2464,54 +2304,63 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         property_sale_cash_in_from_accounting - property_sale_cash_out_from_accounting
     )
     partner_contribution_from_accounting = _posting_amount_matrix(
-        accounting,
+        accounting_trace,
         rollout_count=rollout_count,
         month_index=month_index,
         role=ChartAccountRole.PARTNER_CONTRIBUTION_TRANSFER,
         side=PostingSide.CREDIT,
     )
     partner_contribution_used_from_accounting = _posting_amount_matrix(
-        accounting,
+        accounting_trace,
         rollout_count=rollout_count,
         month_index=month_index,
         role=ChartAccountRole.PARTNER_CONTRIBUTION_USED,
         side=PostingSide.DEBIT,
     )
     partner_unallocated_excess_from_accounting = _posting_amount_matrix(
-        accounting,
+        accounting_trace,
         rollout_count=rollout_count,
         month_index=month_index,
         role=ChartAccountRole.PARTNER_UNALLOCATED_CLAIM,
         side=PostingSide.DEBIT,
     )
     partner_principal_credit_from_accounting = _posting_amount_matrix(
-        accounting,
+        accounting_trace,
         rollout_count=rollout_count,
         month_index=month_index,
         role=ChartAccountRole.PARTNER_PRINCIPAL_CREDIT,
         side=PostingSide.DEBIT,
     )
     owner_principal_credit_from_accounting = _posting_amount_matrix(
-        accounting,
+        accounting_trace,
         rollout_count=rollout_count,
         month_index=month_index,
         role=ChartAccountRole.OWNER_PRINCIPAL_CREDIT,
         side=PostingSide.DEBIT,
     )
     partner_equity_ledger_from_snapshot = _balance_snapshot_amount_matrix(
-        accounting, rollout_count=rollout_count, month_index=month_index, role=ChartAccountRole.PARTNER_EQUITY_LEDGER
+        accounting_trace,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        role=ChartAccountRole.PARTNER_EQUITY_LEDGER,
     )
     owner_equity_ledger_from_snapshot = _balance_snapshot_amount_matrix(
-        accounting, rollout_count=rollout_count, month_index=month_index, role=ChartAccountRole.OWNER_EQUITY_LEDGER
+        accounting_trace,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        role=ChartAccountRole.OWNER_EQUITY_LEDGER,
     )
     partner_home_equity_claim_from_snapshot = _balance_snapshot_amount_matrix(
-        accounting,
+        accounting_trace,
         rollout_count=rollout_count,
         month_index=month_index,
         role=ChartAccountRole.PARTNER_HOME_EQUITY_CLAIM,
     )
     owner_home_equity_claim_from_snapshot = _balance_snapshot_amount_matrix(
-        accounting, rollout_count=rollout_count, month_index=month_index, role=ChartAccountRole.OWNER_HOME_EQUITY_CLAIM
+        accounting_trace,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        role=ChartAccountRole.OWNER_HOME_EQUITY_CLAIM,
     )
     if not partner_equity.agreements:
         owner_principal_credit_from_accounting = partner_equity.owner_principal_usd
@@ -2677,14 +2526,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         market_observations=_sorted_market_observations(
             _with_trajectory_identity(market_observations, trace_identity_by_rollout)
         ),
-        chart_accounts=_sorted_chart_accounts(list(accounting.chart_accounts_by_id.values())),
-        journal_entries=_sorted_journal_entries(
-            _with_trajectory_identity(accounting.journal_entries, trace_identity_by_rollout)
-        ),
-        postings=_sorted_postings(_with_trajectory_identity(accounting.postings, trace_identity_by_rollout)),
-        balance_snapshots=_sorted_balance_snapshots(
-            _with_trajectory_identity(accounting.balance_snapshots, trace_identity_by_rollout)
-        ),
+        accounting_trace=accounting_trace.with_trajectory_identity(trace_identity_by_rollout).sorted_canonical(),
         tax_lots=_sorted_tax_lots(tax_lots),
         lot_dispositions=_sorted_lot_dispositions(
             _with_trajectory_identity(lot_dispositions, trace_identity_by_rollout)
@@ -3054,7 +2896,7 @@ def _record_balance_snapshot_batches(
 
 
 def _posting_amount_matrix(
-    accounting: AccountingTraceBuilder,
+    accounting_trace: AccountingTrace,
     *,
     rollout_count: int,
     month_index: np.ndarray,
@@ -3062,40 +2904,21 @@ def _posting_amount_matrix(
     side: PostingSide | None = None,
     journal_entry_type: JournalEntryType | None = None,
 ) -> np.ndarray:
-    matrix = np.zeros((rollout_count, len(month_index)), dtype="float64")
-    month_position_by_index = {int(month): position for position, month in enumerate(month_index.tolist())}
-    journal_type_by_id = {entry.journal_entry_id: entry.journal_entry_type for entry in accounting.journal_entries}
-    for posting in accounting.postings:
-        account = accounting.chart_accounts_by_id[posting.chart_account_id]
-        if account.role is not role:
-            continue
-        if side is not None and posting.side is not side:
-            continue
-        if journal_entry_type is not None and journal_type_by_id[posting.journal_entry_id] is not journal_entry_type:
-            continue
-        try:
-            month_position = month_position_by_index[posting.month_index]
-        except KeyError as exc:
-            raise ValueError(f"posting has month outside result horizon: {posting.month_index}") from exc
-        matrix[posting.rollout_index, month_position] += posting.amount_usd
-    return matrix
+    return accounting_trace.posting_amount_matrix(
+        rollout_count=rollout_count,
+        month_index=month_index,
+        role=role,
+        side=side,
+        journal_entry_type=journal_entry_type,
+    )
 
 
 def _balance_snapshot_amount_matrix(
-    accounting: AccountingTraceBuilder, *, rollout_count: int, month_index: np.ndarray, role: ChartAccountRole
+    accounting_trace: AccountingTrace, *, rollout_count: int, month_index: np.ndarray, role: ChartAccountRole
 ) -> np.ndarray:
-    matrix = np.zeros((rollout_count, len(month_index)), dtype="float64")
-    month_position_by_index = {int(month): position for position, month in enumerate(month_index.tolist())}
-    for snapshot in accounting.balance_snapshots:
-        account = accounting.chart_accounts_by_id[snapshot.chart_account_id]
-        if account.role is not role:
-            continue
-        try:
-            month_position = month_position_by_index[snapshot.month_index]
-        except KeyError as exc:
-            raise ValueError(f"balance snapshot has month outside result horizon: {snapshot.month_index}") from exc
-        matrix[snapshot.rollout_index, month_position] += snapshot.balance_usd
-    return matrix
+    return accounting_trace.balance_snapshot_amount_matrix(
+        rollout_count=rollout_count, month_index=month_index, role=role
+    )
 
 
 def _lot_disposition_amount_matrix(
@@ -3504,44 +3327,6 @@ def _sorted_market_observations(records: list[MarketObservation]) -> tuple[Marke
             key=lambda observation: (observation.month_index, observation.rollout_index, observation.observation_type),
         )
     )
-
-
-def _sorted_chart_accounts(records: list[ChartAccount]) -> tuple[ChartAccount, ...]:
-    return tuple(sorted(records, key=lambda account: account.chart_account_id))
-
-
-def _sorted_journal_entries(records: list[JournalEntry]) -> tuple[JournalEntry, ...]:
-    return tuple(
-        sorted(
-            records,
-            key=lambda entry: (
-                entry.month_index,
-                entry.rollout_index,
-                entry.journal_entry_type,
-                entry.journal_entry_id,
-                entry.actor_id,
-                entry.policy_id or "",
-            ),
-        )
-    )
-
-
-def _sorted_postings(records: list[Posting]) -> tuple[Posting, ...]:
-    return tuple(
-        sorted(
-            records,
-            key=lambda posting: (
-                posting.month_index,
-                posting.rollout_index,
-                posting.journal_entry_id,
-                posting.posting_id,
-            ),
-        )
-    )
-
-
-def _sorted_balance_snapshots(records: list[BalanceSnapshot]) -> tuple[BalanceSnapshot, ...]:
-    return tuple(sorted(records, key=lambda entry: (entry.month_index, entry.rollout_index, entry.chart_account_id)))
 
 
 def _sorted_tax_lots(records: list[TaxLot]) -> tuple[TaxLot, ...]:

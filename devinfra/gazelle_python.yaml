@@ -519,7 +519,7 @@ manifest:
     sympy: sympy
     syrupy: syrupy
     tabulate: tabulate
-    takethetime: TakeTheTime
+    takethetime: takethetime
     tenacity: tenacity
     terminado: terminado
     testcontainers.arangodb: testcontainers
@@ -623,4 +623,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 6fdb862002850e2ca1d858ac4fe2c8030901f608edc23d67ccd5945058b6cb72
+integrity: 538d53f199fee7256f326f722454a263a0f9168bfb0ac3346a3877a45bfc165e

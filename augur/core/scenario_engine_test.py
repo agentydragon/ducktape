@@ -1173,24 +1173,18 @@ def test_multiple_partner_equity_policies_execute_in_actor_program_order() -> No
     assert_allclose(result.partner_contribution_usd[:, 1:], 100)
     assert np.all(result.partner_principal_credit_usd[:, 1:] > 0)
     assert np.all(result.partner_equity_ledger_usd[:, 2] > result.partner_equity_ledger_usd[:, 1])
-    account_by_id = {account.chart_account_id: account for account in result.chart_accounts}
-    owner_principal_rows = [
-        posting
-        for posting in result.postings
-        if account_by_id[posting.chart_account_id].role is ChartAccountRole.OWNER_PRINCIPAL_CREDIT
-        and posting.side is PostingSide.DEBIT
-    ]
+    account_by_id = {account.chart_account_id: account for account in result.accounting_trace.chart_accounts_tuple()}
+    owner_principal_rows = result.accounting_trace.filter_postings(
+        role=ChartAccountRole.OWNER_PRINCIPAL_CREDIT, side=PostingSide.DEBIT
+    )
     assert len(owner_principal_rows) == 2
     assert {account_by_id[posting.chart_account_id].property_id for posting in owner_principal_rows} == {
         "vallejo_calhoun"
     }
     assert_allclose([posting.amount_usd for posting in owner_principal_rows], result.owner_principal_credit_usd[0, 1:])
-    partner_principal_rows = [
-        posting
-        for posting in result.postings
-        if account_by_id[posting.chart_account_id].role is ChartAccountRole.PARTNER_PRINCIPAL_CREDIT
-        and posting.side is PostingSide.DEBIT
-    ]
+    partner_principal_rows = result.accounting_trace.filter_postings(
+        role=ChartAccountRole.PARTNER_PRINCIPAL_CREDIT, side=PostingSide.DEBIT
+    )
     assert len(partner_principal_rows) == 4
     assert {account_by_id[posting.chart_account_id].property_id for posting in partner_principal_rows} == {
         "vallejo_calhoun"
@@ -1257,22 +1251,18 @@ def test_partner_equity_arrays_match_rows_from_same_application() -> None:
         ),
     )
 
-    account_by_id = {account.chart_account_id: account for account in result.chart_accounts}
+    rollout_count, month_count = result.partner_equity_ledger_usd.shape
+    month_index = np.arange(month_count)
 
-    def snapshot_matrix(role: ChartAccountRole) -> np.ndarray:
-        matrix: np.ndarray = np.zeros_like(result.partner_equity_ledger_usd)
-        for snapshot in result.balance_snapshots:
-            if account_by_id[snapshot.chart_account_id].role is role:
-                matrix[snapshot.rollout_index, snapshot.month_index] += snapshot.balance_usd
-        return matrix
+    def snapshot_matrix(role: ChartAccountRole):
+        return result.accounting_trace.balance_snapshot_amount_matrix(
+            rollout_count=rollout_count, month_index=month_index, role=role
+        )
 
-    def posting_matrix(role: ChartAccountRole, side: PostingSide) -> np.ndarray:
-        matrix: np.ndarray = np.zeros_like(result.partner_principal_credit_usd)
-        for posting in result.postings:
-            account = account_by_id[posting.chart_account_id]
-            if account.role is role and posting.side is side:
-                matrix[posting.rollout_index, posting.month_index] += posting.amount_usd
-        return matrix
+    def posting_matrix(role: ChartAccountRole, side: PostingSide):
+        return result.accounting_trace.posting_amount_matrix(
+            rollout_count=rollout_count, month_index=month_index, role=role, side=side
+        )
 
     # Partner-side: the engine takes these arrays straight off the per-agreement
     # PartnerOwnershipAccrualApplication, and the same application's balance_snapshots

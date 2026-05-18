@@ -237,55 +237,36 @@ class ScenarioRun:
     def chart_accounts(self, *, role: ChartAccountRole | None = None) -> tuple[ChartAccount, ...]:
         if self.arrays is None:
             return ()
-        accounts = self.arrays.chart_accounts
-        if role is not None:
-            accounts = tuple(account for account in accounts if account.role is role)
-        return accounts
+        return self.arrays.accounting_trace.filter_chart_accounts(role=role)
 
     def journal_entries(
         self, *, journal_entry_type: JournalEntryType | None = None, rollout: int | None = None
     ) -> tuple[JournalEntry, ...]:
         if self.arrays is None:
             return ()
-        entries = self.arrays.journal_entries
-        if journal_entry_type is not None:
-            entries = tuple(entry for entry in entries if entry.journal_entry_type is journal_entry_type)
         if rollout is not None:
             self._validate_rollout_index(rollout)
-            entries = tuple(entry for entry in entries if entry.rollout_index == rollout)
-        return entries
+        return self.arrays.accounting_trace.filter_journal_entries(
+            journal_entry_type=journal_entry_type, rollout=rollout
+        )
 
     def postings(
         self, *, role: ChartAccountRole | None = None, side: PostingSide | None = None, rollout: int | None = None
     ) -> tuple[Posting, ...]:
         if self.arrays is None:
             return ()
-        postings = self.arrays.postings
-        if role is not None:
-            account_by_id = {account.chart_account_id: account for account in self.arrays.chart_accounts}
-            postings = tuple(posting for posting in postings if account_by_id[posting.chart_account_id].role is role)
-        if side is not None:
-            postings = tuple(posting for posting in postings if posting.side is side)
         if rollout is not None:
             self._validate_rollout_index(rollout)
-            postings = tuple(posting for posting in postings if posting.rollout_index == rollout)
-        return postings
+        return self.arrays.accounting_trace.filter_postings(rollout=rollout, side=side, role=role)
 
     def balance_snapshots(
         self, *, role: ChartAccountRole | None = None, rollout: int | None = None
     ) -> tuple[BalanceSnapshot, ...]:
         if self.arrays is None:
             return ()
-        snapshots = self.arrays.balance_snapshots
-        if role is not None:
-            account_by_id = {account.chart_account_id: account for account in self.arrays.chart_accounts}
-            snapshots = tuple(
-                snapshot for snapshot in snapshots if account_by_id[snapshot.chart_account_id].role is role
-            )
         if rollout is not None:
             self._validate_rollout_index(rollout)
-            snapshots = tuple(snapshot for snapshot in snapshots if snapshot.rollout_index == rollout)
-        return snapshots
+        return self.arrays.accounting_trace.filter_balance_snapshots(rollout=rollout, role=role)
 
     def tax_lots(self, *, asset_class: LotAssetClass | None = None) -> tuple[TaxLot, ...]:
         if self.arrays is None:
@@ -377,10 +358,10 @@ class ScenarioRun:
             effects=self.arrays.effects,
             policy_decisions=self.arrays.policy_decisions,
             market_observations=self.arrays.market_observations,
-            chart_accounts=self.arrays.chart_accounts,
-            journal_entries=self.arrays.journal_entries,
-            postings=self.arrays.postings,
-            balance_snapshots=self.arrays.balance_snapshots,
+            chart_accounts=self.arrays.accounting_trace.chart_accounts_tuple(),
+            journal_entries=self.arrays.accounting_trace.journal_entries_tuple(),
+            postings=self.arrays.accounting_trace.postings_tuple(),
+            balance_snapshots=self.arrays.accounting_trace.balance_snapshots_tuple(),
             tax_lots=self.arrays.tax_lots,
             lot_dispositions=self.arrays.lot_dispositions,
             liabilities=self.arrays.liabilities,

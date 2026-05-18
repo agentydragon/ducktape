@@ -38,6 +38,17 @@ py_library(
 )
 
 py_library(
+    name = "accounting_tables_py",
+    srcs = ["accounting_tables.py"],
+    deps = [
+        ":accounting_py",
+        ":policy_runtime_py",
+        "@pypi//numpy",
+        "@pypi//pyarrow",
+    ],
+)
+
+py_library(
     name = "scenario_set_py",
     srcs = ["scenario_set.py"],
     deps = [
@@ -168,6 +179,7 @@ py_library(
     name = "scenario_engine_py",
     srcs = ["scenario_engine.py"],
     deps = [
+        ":accounting_tables_py",
         ":annual_tax_py",
         ":local_regulation_py",
         ":market_bundle_py",
@@ -222,6 +234,19 @@ py_test(
     srcs = ["accounting_test.py"],
     deps = [
         ":accounting_py",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "accounting_tables_test",
+    srcs = ["accounting_tables_test.py"],
+    deps = [
+        ":accounting_py",
+        ":accounting_tables_py",
+        ":policy_runtime_py",
+        "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
