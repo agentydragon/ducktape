@@ -391,6 +391,7 @@ rust_library(
     srcs = [
         "lowering/anonymous.rs",
         "lowering/mod.rs",
+        "lowering/rewrite_runtime.rs",
         "lowering/visitors.rs",
     ],
     crate_root = "lowering/mod.rs",
