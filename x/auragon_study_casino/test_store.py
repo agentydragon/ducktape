@@ -9,6 +9,7 @@ import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from x.auragon_study_casino.actions import ConvertResult, ImportResult, ResetResult
 from x.auragon_study_casino.models import BalanceRow, GameEventRow, StateSnapshotRow
 from x.auragon_study_casino.state import BalanceRead
 from x.auragon_study_casino.store import ActionMutation, ActionRejectedError, ServerActionResult, SqlStore
@@ -75,7 +76,7 @@ def test_run_server_action_persists_balance_and_writes_ledger(store: SqlStore) -
     def grant_credits(s, _now_ms):
         balance = next(iter(s.execute(_balance_select(_U)).scalars()))
         balance.credits += 7
-        return ActionMutation(result={"granted": 7}, details={"reason": "test"})
+        return ActionMutation(result=ConvertResult(amount=7), details={"reason": "test"})
 
     result = store.run_server_action(
         username=_U, client_action_id="act-1", action_type="test.grant", mutator=grant_credits
@@ -84,7 +85,7 @@ def test_run_server_action_persists_balance_and_writes_ledger(store: SqlStore) -
     assert result.event.action_type == "test.grant"
     assert result.event.credits_before == 0
     assert result.event.credits_after == 7
-    assert result.result == {"granted": 7}
+    assert result.result == ConvertResult(amount=7)
 
     state = store.state_dump(_U)
     assert state.balance.credits == 7
@@ -98,7 +99,7 @@ def test_run_server_action_is_idempotent_on_retry(store: SqlStore) -> None:
     def grant_credits(s, _now_ms):
         balance = next(iter(s.execute(_balance_select(_U)).scalars()))
         balance.credits += 5
-        return ActionMutation(result={"granted": 5})
+        return ActionMutation(result=ConvertResult(amount=5))
 
     first = store.run_server_action(
         username=_U, client_action_id="act-dup", action_type="test.grant", mutator=grant_credits
@@ -141,7 +142,7 @@ def test_snapshot_reason_writes_state_snapshots_row(store: SqlStore) -> None:
                 "prize_log": [],
             },
         )
-        return ActionMutation(result={"imported": True})
+        return ActionMutation(result=ImportResult(imported=True))
 
     store.run_server_action(
         username=_U,
@@ -172,7 +173,7 @@ def test_replace_state_for_reset_keeps_prizes(store: SqlStore) -> None:
         balance = next(iter(s.execute(_balance_select(_U)).scalars()))
         balance.credits = 50
         balance.tokens = 30
-        return ActionMutation(result={"granted": True})
+        return ActionMutation(result=ConvertResult(amount=50))
 
     store.run_server_action(
         username=_U, client_action_id="act-grant", action_type="test.grant", mutator=grant_then_reset
@@ -182,7 +183,7 @@ def test_replace_state_for_reset_keeps_prizes(store: SqlStore) -> None:
 
     def reset(s, _now_ms):
         store.replace_state_for_reset(s, _U)
-        return ActionMutation(result={"reset": True})
+        return ActionMutation(result=ResetResult(reset=True))
 
     store.run_server_action(
         username=_U,
@@ -205,7 +206,7 @@ def test_db_check_constraint_rejects_negative_credits(store: SqlStore) -> None:
     def goes_negative(s, _now_ms):
         balance = next(iter(s.execute(_balance_select(_U)).scalars()))
         balance.credits = -1
-        return ActionMutation(result={"oops": True})
+        return ActionMutation(result=ConvertResult(amount=0))
 
     with pytest.raises(IntegrityError):
         store.run_server_action(username=_U, client_action_id="act-bug", action_type="test.bug", mutator=goes_negative)
@@ -217,7 +218,7 @@ def test_state_persists_across_reopen(db_url: str) -> None:
     def grant(s, _now_ms):
         balance = next(iter(s.execute(_balance_select(_U)).scalars()))
         balance.credits = 13
-        return ActionMutation(result={"granted": True})
+        return ActionMutation(result=ConvertResult(amount=13))
 
     store_a.run_server_action(username=_U, client_action_id="reopen-1", action_type="test.grant", mutator=grant)
 
@@ -232,13 +233,13 @@ def test_two_users_share_db_without_collision(store: SqlStore) -> None:
         balance = s.scalar(select(BalanceRow).where(BalanceRow.user_id == "alice").with_for_update())
         assert balance is not None
         balance.credits += 10
-        return ActionMutation(result={"alice": 10})
+        return ActionMutation(result=ConvertResult(amount=10))
 
     def grant_bob(s, _now_ms):
         balance = s.scalar(select(BalanceRow).where(BalanceRow.user_id == "bob").with_for_update())
         assert balance is not None
         balance.credits += 99
-        return ActionMutation(result={"bob": 99})
+        return ActionMutation(result=ConvertResult(amount=99))
 
     # Same client_action_id used for both — must NOT collide since the
     # unique constraint is (user_id, client_action_id).

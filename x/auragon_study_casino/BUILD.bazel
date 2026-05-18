@@ -66,6 +66,7 @@ py_library(
     data = glob(["migrations/**"]),
     visibility = ["//visibility:public"],
     deps = [
+        ":actions",
         ":events",
         ":games",
         ":models",
@@ -186,8 +187,10 @@ py_test(
     srcs = ["test_store.py"],
     requires_docker = True,
     deps = [
+        ":actions",
         ":conftest",
         ":models",
+        ":state",
         ":stats",
         ":store",
         "@pypi//pytest",

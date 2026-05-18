@@ -60,16 +60,28 @@ from x.auragon_study_casino.actions import (
     AddPastSessionRequest,
     BlackjackDealRequest,
     BlackjackHandRequest,
+    BlackjackHandStateResult,
     ConvertRequest,
+    ConvertResult,
     DeleteSessionRequest,
     EditSessionRequest,
     ImportRequest,
+    ImportResult,
     PrizeCreateRequest,
+    PrizeCreateResult,
     PrizeDeleteRequest,
+    PrizeDeleteResult,
     PrizeRedeemRequest,
+    PrizeRedeemResult,
     ResetRequest,
+    ResetResult,
+    RouletteActionResult,
     RouletteSpinRequest,
+    SessionAddPastResult,
     SessionCompleteRequest,
+    SessionCompleteResult,
+    SessionCreditsDeltaResult,
+    SlotsActionResult,
     SlotsSpinRequest,
 )
 from x.auragon_study_casino.auth import create_oidc_router, decode_session_token, make_current_user_dep
@@ -204,8 +216,15 @@ def _mutate_blackjack_step(s: Session, username: str, hand_id: str, move: str, r
     row.dealer_json = json.dumps(dealer, separators=(",", ":"))
     row.result_json = json.dumps(settlement.outcome, separators=(",", ":")) if settlement else None
 
-    result = public_blackjack_state(
-        hand_id=hand_id, status=status, player=player, dealer=dealer, current_wager=current_wager, settlement=settlement
+    result = BlackjackHandStateResult.model_validate(
+        public_blackjack_state(
+            hand_id=hand_id,
+            status=status,
+            player=player,
+            dealer=dealer,
+            current_wager=current_wager,
+            settlement=settlement,
+        )
     )
     game_event: dict[str, Any] | None = None
     if settlement is not None:
@@ -373,7 +392,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
                 raise ActionRejectedError("session_id", "session id already exists")
             seconds = max(0, (body.ended_at_ms - body.start_time_ms - body.paused_duration_ms) // 1000)
             if seconds <= 0:
-                return ActionMutation(result={"session_id": session_id, "seconds": 0, "credits_earned": 0})
+                return ActionMutation(result=SessionCompleteResult(session_id=session_id, seconds=0, credits_earned=0))
             minutes = seconds // 60
             s.add(
                 SessionRow(
@@ -383,7 +402,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             if minutes:
                 _balance(s, username).credits += minutes
             return ActionMutation(
-                result={"session_id": session_id, "seconds": seconds, "credits_earned": minutes},
+                result=SessionCompleteResult(session_id=session_id, seconds=seconds, credits_earned=minutes),
                 details={"subject": body.subject},
             )
 
@@ -410,7 +429,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             if credits_earned:
                 _balance(s, username).credits += credits_earned
             return ActionMutation(
-                result={"session_id": session_id, "credits_earned": credits_earned},
+                result=SessionAddPastResult(session_id=session_id, credits_earned=credits_earned),
                 details={"subject": body.subject, "seconds": body.seconds},
             )
 
@@ -434,7 +453,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
                 balance = _balance(s, username)
                 balance.credits = max(0, balance.credits + delta)
             return ActionMutation(
-                result={"session_id": body.session_id, "credits_delta": delta},
+                result=SessionCreditsDeltaResult(session_id=body.session_id, credits_delta=delta),
                 details={"subject": row.subject, "seconds": row.seconds},
             )
 
@@ -452,7 +471,9 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             s.delete(row)
             balance = _balance(s, username)
             balance.credits = max(0, balance.credits + credits_delta)
-            return ActionMutation(result={"session_id": body.session_id, "credits_delta": credits_delta})
+            return ActionMutation(
+                result=SessionCreditsDeltaResult(session_id=body.session_id, credits_delta=credits_delta)
+            )
 
         return await commit_action(username=username, body=body, action_type="session.delete", mutator=mutate)
 
@@ -463,7 +484,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             balance = _balance(s, username)
             balance.credits -= body.amount
             balance.tokens += body.amount
-            return ActionMutation(result={"amount": body.amount})
+            return ActionMutation(result=ConvertResult(amount=body.amount))
 
         return await commit_action(username=username, body=body, action_type="convert", mutator=mutate)
 
@@ -483,7 +504,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
                 raise ActionRejectedError("prize_id", "prize id already exists")
             s.add(PrizeRow(id=prize_id, user_id=owner, name=body.name, cost=body.cost))
             return ActionMutation(
-                result={"prize_id": prize_id, "name": body.name, "cost": body.cost, "user": owner},
+                result=PrizeCreateResult(prize_id=prize_id, name=body.name, cost=body.cost, user=owner),
                 details={"name": body.name, "cost": body.cost, "target_user": owner, "by": username},
             )
 
@@ -502,7 +523,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
                 raise ActionRejectedError("prize", "prize not found")
             s.delete(row)
             return ActionMutation(
-                result={"prize_id": body.prize_id, "user": owner},
+                result=PrizeDeleteResult(prize_id=body.prize_id, user=owner),
                 details={"name": row.name, "cost": row.cost, "target_user": owner, "by": username},
             )
 
@@ -527,7 +548,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             redemption_id = f"r-{uuid.uuid4()}"
             s.add(PrizeLogRow(id=redemption_id, user_id=username, name=prize.name, cost=cost, at_ms=now_ms))
             return ActionMutation(
-                result={"redemption_id": redemption_id, "prize_id": body.prize_id, "cost": cost},
+                result=PrizeRedeemResult(redemption_id=redemption_id, prize_id=body.prize_id, cost=cost),
                 details={"name": prize.name},
             )
 
@@ -537,7 +558,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     async def import_data(body: ImportRequest, username: Annotated[str, Depends(current_user_dep)]) -> ActionResponse:
         def mutate(s: Session, _now_ms: int) -> ActionMutation:
             store.replace_state_for_import(s, username, body.data)
-            return ActionMutation(result={"imported": True})
+            return ActionMutation(result=ImportResult(imported=True))
 
         return await commit_action(
             username=username, body=body, action_type="data.import", mutator=mutate, snapshot_reason="before_import"
@@ -547,7 +568,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     async def reset_data(body: ResetRequest, username: Annotated[str, Depends(current_user_dep)]) -> ActionResponse:
         def mutate(s: Session, _now_ms: int) -> ActionMutation:
             store.replace_state_for_reset(s, username)
-            return ActionMutation(result={"reset": True})
+            return ActionMutation(result=ResetResult(reset=True))
 
         return await commit_action(
             username=username, body=body, action_type="data.reset", mutator=mutate, snapshot_reason="before_reset"
@@ -563,9 +584,8 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             balance = _balance(s, username)
             balance.credits -= body.wager_credits
             balance.tokens += settlement.payout_tokens
-            result = settlement.outcome | {"payout_tokens": settlement.payout_tokens}
             return ActionMutation(
-                result=result,
+                result=SlotsActionResult(**settlement.outcome, payout_tokens=settlement.payout_tokens),
                 details={"wager_credits": body.wager_credits},
                 game_event={
                     "game": "slots",
@@ -593,9 +613,8 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             balance = _balance(s, username)
             balance.credits -= body.wager_credits
             balance.tokens += settlement.payout_tokens
-            result = settlement.outcome | {"payout_tokens": settlement.payout_tokens}
             return ActionMutation(
-                result=result,
+                result=RouletteActionResult(**settlement.outcome, payout_tokens=settlement.payout_tokens),
                 details={"wager_credits": body.wager_credits, "bet_type": body.bet_type, "bet_number": body.bet_number},
                 game_event={
                     "game": "roulette",
@@ -651,13 +670,15 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
                 result_json=json.dumps(settlement.outcome, separators=(",", ":")) if settlement else None,
             )
             s.add(row)
-            result = public_blackjack_state(
-                hand_id=hand_id,
-                status=status,
-                player=player,
-                dealer=dealer,
-                current_wager=body.wager_credits,
-                settlement=settlement,
+            result = BlackjackHandStateResult.model_validate(
+                public_blackjack_state(
+                    hand_id=hand_id,
+                    status=status,
+                    player=player,
+                    dealer=dealer,
+                    current_wager=body.wager_credits,
+                    settlement=settlement,
+                )
             )
             game_event = (
                 {

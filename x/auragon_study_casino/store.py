@@ -20,10 +20,12 @@ from typing import Any
 
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
+from pydantic import TypeAdapter
 from sqlalchemy import create_engine, delete, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from x.auragon_study_casino.actions import ActionResult
 from x.auragon_study_casino.events import (
     BlackjackOutcome,
     GameEventRead,
@@ -59,6 +61,11 @@ from x.auragon_study_casino.stats import (
 
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
+# Pydantic union of every per-endpoint result shape. Used to parse
+# `ledger_events.result_json` back into the typed variant on the
+# idempotent-replay path (where we don't have the original Python object).
+_ACTION_RESULT_ADAPTER: TypeAdapter[ActionResult] = TypeAdapter(ActionResult)
+
 
 def _run_alembic_migrations(engine: Engine) -> None:
     cfg = AlembicConfig()
@@ -80,15 +87,14 @@ class ActionRejectedError(Exception):
 class ActionMutation:
     """Result returned by a server-action mutator before persistence.
 
-    Fields:
-        result: the JSON-shaped action result returned to the caller.
-        details: free-form metadata persisted in `ledger_events.details_json`.
-        game_event: optional dict to fan out into a `game_events` row.
-        rng_version: which RNG version (if any) produced this outcome.
-        rules_version: which rules version produced this outcome.
+    `result` is the typed payload that surfaces as `ActionResponse.result`
+    on the wire. `details` and `game_event` stay loosely typed (`dict`) —
+    they're persisted as JSON to `ledger_events.details_json` and
+    `game_events.outcome_json` respectively, and aren't part of the
+    frontend's read surface.
     """
 
-    result: dict[str, Any]
+    result: ActionResult
     details: dict[str, Any] | None = None
     game_event: dict[str, Any] | None = None
     rng_version: str | None = None
@@ -100,7 +106,7 @@ class ServerActionResult:
     """Committed server action."""
 
     event: LedgerEventRead
-    result: dict[str, Any]
+    result: ActionResult
     game_event: GameEventRead | None = None
 
 
@@ -240,7 +246,7 @@ class SqlStore:
                         game_event = game_event_from_row(game_row)
                 return ServerActionResult(
                     event=ledger_event_from_row(existing),
-                    result=json.loads(existing.result_json),
+                    result=_ACTION_RESULT_ADAPTER.validate_json(existing.result_json),
                     game_event=game_event,
                 )
 
@@ -260,7 +266,7 @@ class SqlStore:
             after_credits = balance.credits
             after_tokens = balance.tokens
 
-            result_json = self._json(mutation.result)
+            result_json = mutation.result.model_dump_json()
             details_json = self._json(mutation.details or {})
             event_row = LedgerEventRow(
                 user_id=username,
@@ -306,7 +312,7 @@ class SqlStore:
                 game_event_out = None
 
         return ServerActionResult(
-            event=ledger_event_from_row(event_row), result=json.loads(result_json), game_event=game_event_out
+            event=ledger_event_from_row(event_row), result=mutation.result, game_event=game_event_out
         )
 
     # ── Helpers used by import/reset mutators ───────────────────────────────
