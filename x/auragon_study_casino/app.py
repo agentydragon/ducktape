@@ -74,7 +74,7 @@ from x.auragon_study_casino.actions import (
 )
 from x.auragon_study_casino.auth import create_oidc_router, decode_session_token, make_current_user_dep
 from x.auragon_study_casino.config import Settings
-from x.auragon_study_casino.events import GameEventRead
+from x.auragon_study_casino.events import GameEventRead, LedgerEventRead
 from x.auragon_study_casino.games import (
     RNG_VERSION,
     SecretsRandom,
@@ -89,6 +89,7 @@ from x.auragon_study_casino.games import (
     spin_slots,
 )
 from x.auragon_study_casino.models import BalanceRow, BlackjackHandRow, PrizeLogRow, PrizeRow, SessionRow
+from x.auragon_study_casino.state import AdminUsersResponse, HealthResponse, MeResponse, StateDump
 from x.auragon_study_casino.stats import CasinoStats
 from x.auragon_study_casino.store import ActionMutation, ActionRejectedError, SqlStore
 
@@ -302,26 +303,26 @@ def create_app(settings: Settings) -> FastAPI:
         )
 
     @app.get("/healthz")
-    def healthz() -> dict[str, bool]:
-        return {"ok": True}
+    def healthz() -> HealthResponse:
+        return HealthResponse(ok=True)
 
     @app.get("/me")
-    def me(username: Annotated[str, Depends(current_user_dep)]) -> dict[str, Any]:
-        return {"username": username, "is_admin": is_admin(username)}
+    def me(username: Annotated[str, Depends(current_user_dep)]) -> MeResponse:
+        return MeResponse(username=username, is_admin=is_admin(username))
 
     @app.get("/state")
-    def get_state(username: Annotated[str, Depends(current_user_dep)]) -> dict[str, Any]:
+    def get_state(username: Annotated[str, Depends(current_user_dep)]) -> StateDump:
         return store.state_dump(username)
 
     @app.get("/admin/users")
-    def admin_list_users(username: Annotated[str, Depends(current_user_dep)]) -> dict[str, list[str]]:
+    def admin_list_users(username: Annotated[str, Depends(current_user_dep)]) -> AdminUsersResponse:
         require_admin(username)
-        return {"users": store.list_known_users()}
+        return AdminUsersResponse(users=store.list_known_users())
 
     @app.get("/admin/state")
     def admin_user_state(
         user: Annotated[str, Query(min_length=1, max_length=64)], username: Annotated[str, Depends(current_user_dep)]
-    ) -> dict[str, Any]:
+    ) -> StateDump:
         # Don't seed a balance row + default prizes for typo'd usernames —
         # state_dump is normally lazy-seeding but for an admin read we want
         # a strict 404 instead.
@@ -352,7 +353,7 @@ def create_app(settings: Settings) -> FastAPI:
     @app.get("/ledger-events")
     def list_ledger_events(
         username: Annotated[str, Depends(current_user_dep)], limit: Annotated[int, Query(ge=1, le=500)] = 100
-    ):
+    ) -> list[LedgerEventRead]:
         return store.list_ledger_events(username, limit=limit)
 
     @app.post("/actions/session/complete")

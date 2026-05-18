@@ -44,6 +44,7 @@ from x.auragon_study_casino.models import (
     SessionRow,
     StateSnapshotRow,
 )
+from x.auragon_study_casino.state import BalanceRead, PrizeLogRead, PrizeRead, SessionRead, StateDump
 from x.auragon_study_casino.stats import (
     SERVER_RESOLVED_SINCE_DATE,
     BlackjackOutcomeFreq,
@@ -132,7 +133,7 @@ class SqlStore:
 
     # ── Read-side ───────────────────────────────────────────────────────────
 
-    def state_dump(self, username: str) -> dict[str, Any]:
+    def state_dump(self, username: str) -> StateDump:
         """Return the full canonical state for `username` — same shape as
         `state_snapshots.decoded_json`. The frontend's `GET /state`
         returns this verbatim. Lazily seeds the user on first call."""
@@ -392,35 +393,31 @@ class SqlStore:
             raise RuntimeError(f"balance row missing for {username=}; _ensure_user not called?")
         return balance
 
-    def _state_dump(self, s: Session, username: str) -> dict[str, Any]:
+    def _state_dump(self, s: Session, username: str) -> StateDump:
         balance = self._balance(s, username)
-        sessions = list(
-            s.scalars(
-                select(SessionRow).where(SessionRow.user_id == username).order_by(SessionRow.ended_at_ms.desc())
-            ).all()
-        )
-        prizes = list(s.scalars(select(PrizeRow).where(PrizeRow.user_id == username).order_by(PrizeRow.id)).all())
-        prize_log = list(
-            s.scalars(
-                select(PrizeLogRow).where(PrizeLogRow.user_id == username).order_by(PrizeLogRow.at_ms.desc())
-            ).all()
-        )
-        return {
-            "balance": {"credits": balance.credits, "tokens": balance.tokens},
-            "sessions": [
-                {"id": row.id, "subject": row.subject, "seconds": row.seconds, "ended_at_ms": row.ended_at_ms}
+        sessions = s.scalars(
+            select(SessionRow).where(SessionRow.user_id == username).order_by(SessionRow.ended_at_ms.desc())
+        ).all()
+        prizes = s.scalars(select(PrizeRow).where(PrizeRow.user_id == username).order_by(PrizeRow.id)).all()
+        prize_log = s.scalars(
+            select(PrizeLogRow).where(PrizeLogRow.user_id == username).order_by(PrizeLogRow.at_ms.desc())
+        ).all()
+        return StateDump(
+            balance=BalanceRead(credits=balance.credits, tokens=balance.tokens),
+            sessions=[
+                SessionRead(id=row.id, subject=row.subject, seconds=row.seconds, ended_at_ms=row.ended_at_ms)
                 for row in sessions
             ],
-            "prizes": [{"id": row.id, "name": row.name, "cost": row.cost} for row in prizes],
-            "prize_log": [{"id": row.id, "name": row.name, "cost": row.cost, "at_ms": row.at_ms} for row in prize_log],
-        }
+            prizes=[PrizeRead(id=row.id, name=row.name, cost=row.cost) for row in prizes],
+            prize_log=[PrizeLogRead(id=row.id, name=row.name, cost=row.cost, at_ms=row.at_ms) for row in prize_log],
+        )
 
     def _snapshot_row(self, s: Session, username: str, reason: str, now_ms: int, note: str | None) -> StateSnapshotRow:
         return StateSnapshotRow(
             user_id=username,
             server_at_ms=now_ms,
             reason=reason,
-            decoded_json=self._json(self._state_dump(s, username)),
+            decoded_json=self._state_dump(s, username).model_dump_json(),
             note=note,
         )
 

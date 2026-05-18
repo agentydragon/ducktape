@@ -6,20 +6,26 @@
 // a `{"type":"state_changed"}` ping over `/ws` (which fires after any other
 // tab — or any other device — successfully posts an action).
 //
-// State shape (mirrors the server's `state_dump` / `state_snapshots.decoded_json`):
-//
-//   {
-//     balance:   { credits: int, tokens: int },
-//     sessions:  [{ id, subject, seconds, ended_at_ms }],
-//     prizes:    [{ id, name, cost }],
-//     prize_log: [{ id, name, cost, at_ms }],
-//   }
+// Wire surface is typed: every fetch boundary `.parse()`s the JSON body
+// through a Zod schema generated from the backend's FastAPI OpenAPI doc —
+// see `//x/auragon_study_casino/frontend/lib:schema_zod`. Schema drift
+// surfaces as a `ZodError` at the parse site, not as a downstream undefined
+// in a JSX component.
 //
 // In-progress (active) study-session timer state lives in `localStorage`,
 // not on the server — see `use_casino.js`. Only `/actions/session/complete`
 // and `/actions/session/add-past` ever insert into the `sessions` table.
 
 import { useEffect, useState } from "react";
+
+import {
+  zActionResponse,
+  zAdminUsersResponse,
+  zCasinoStats,
+  zMeResponse,
+  zStateDump,
+  zWsStateChangedMessage,
+} from "./lib/api/schema.zod.mjs";
 
 const WS_RECONNECT_BASE_MS = 1_000;
 const WS_RECONNECT_MAX_MS = 30_000;
@@ -64,7 +70,7 @@ class CasinoSync {
         return;
       }
       if (resp.ok) {
-        this.me.set(await resp.json());
+        this.me.set(zMeResponse.parse(await resp.json()));
       }
     } catch {
       // /me is best-effort; if it fails we still try /state and /ws.
@@ -101,8 +107,7 @@ class CasinoSync {
         this.status.set({ kind: "offline", reason: `state fetch failed: ${resp.status}` });
         return;
       }
-      const body = await resp.json();
-      this.state.set(body);
+      this.state.set(zStateDump.parse(await resp.json()));
       this.status.set({ kind: "ok", lastSyncedAt: Date.now() });
     } catch (e) {
       this.status.set({ kind: "offline", reason: `state fetch failed: ${e.message ?? e}` });
@@ -150,7 +155,7 @@ class CasinoSync {
       throw new Error(text);
     }
 
-    const result = await resp.json();
+    const result = zActionResponse.parse(await resp.json());
     // Refetch — server's WS will also send state_changed but the round-trip
     // is faster if we trigger it here too. fetchState updates `status`.
     this.fetchState();
@@ -170,7 +175,7 @@ class CasinoSync {
 
     ws.onmessage = (event) => {
       try {
-        const msg = JSON.parse(event.data);
+        const msg = zWsStateChangedMessage.parse(JSON.parse(event.data));
         if (msg.type === "state_changed") {
           this.fetchState();
         }
@@ -250,12 +255,12 @@ async function adminFetch(path) {
 
 /** Admin-only: fetch the list of usernames the server has seeded. */
 export async function fetchAdminUsers() {
-  return (await adminFetch("/admin/users")).users;
+  return zAdminUsersResponse.parse(await adminFetch("/admin/users")).users;
 }
 
 /** Admin-only: fetch the state_dump for any user. */
 export async function fetchAdminUserState(username) {
-  return adminFetch(`/admin/state?user=${encodeURIComponent(username)}`);
+  return zStateDump.parse(await adminFetch(`/admin/state?user=${encodeURIComponent(username)}`));
 }
 
 /** Fetch aggregated casino stats. With `targetUser`, hits the admin endpoint
@@ -268,5 +273,5 @@ export async function fetchCasinoStats(targetUser) {
     throw new Error("not authenticated");
   }
   if (!resp.ok) throw new Error(`${path} ${resp.status}`);
-  return resp.json();
+  return zCasinoStats.parse(await resp.json());
 }

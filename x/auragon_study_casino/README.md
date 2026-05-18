@@ -18,6 +18,8 @@ Lives at <https://casino.allegedly.works>.
 | `config.py`                            | Pydantic settings (DATABASE_URL, ADMIN_USERS, host, port, OIDC)                                    |
 | `models.py`                            | SQLAlchemy rows: balance, sessions, prizes, prize_log, ledger, snapshots, hands                    |
 | `events.py`                            | Pydantic schemas for game and ledger event reads                                                   |
+| `state.py`                             | Pydantic schemas for `GET /state` / `/me` / `/admin/users` / `/healthz` and the `/ws` payload      |
+| `export_schema.py`                     | Schema-only FastAPI app — prints OpenAPI JSON for the Zod codegen below                            |
 | `games.py`                             | Server-side slots, roulette, and blackjack rules/RNG                                               |
 | `store.py`                             | `SqlStore`: idempotent server-action runner over Postgres                                          |
 | `migrations/`                          | Alembic migrations applied at startup against the CNPG Postgres database                           |
@@ -34,7 +36,8 @@ Lives at <https://casino.allegedly.works>.
 | `frontend/PrizesView.jsx`              | Token conversion, prize catalog, redemption log                                                    |
 | `frontend/StatsView.jsx`               | Stats, session editor, data import/export                                                          |
 | `frontend/CasinoStatsView.jsx`         | Casino payout history — per-game, per-wager-type and per-day empirical vs theoretical              |
-| `frontend/sync.js`                     | REST client + state-changed WebSocket subscriber                                                   |
+| `frontend/lib/BUILD.bazel`             | `js_openapi_zod` target — emits `lib/api/schema.zod.mjs` from `export_schema.py`'s OpenAPI doc     |
+| `frontend/sync.js`                     | REST client + state-changed WebSocket subscriber (parses responses through generated Zod schemas)  |
 | `frontend/use_casino.js`               | Single hook exposing reactive state + every mutation                                               |
 | `frontend/SyncIcon.jsx`                | Header status icon + rejection toast                                                               |
 | `frontend/main.jsx`                    | Entry — renders into `#root`, unregisters legacy service workers                                   |

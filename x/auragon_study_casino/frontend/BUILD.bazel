@@ -35,7 +35,10 @@ filegroup(
 js_library(
     name = "sync",
     srcs = ["sync.js"],
-    deps = [":node_modules/react"],
+    deps = [
+        ":node_modules/react",
+        "//x/auragon_study_casino/frontend/lib:schema_zod",
+    ],
 )
 
 js_library(
