@@ -245,6 +245,60 @@ export { A, B, Existing };
     }
 }
 
+/// At-init call promotion (DESIGN.md "At-init call promotion") makes
+/// a top-level `B()` call inherit `B`'s body's eager-rebind of `A`.
+/// `G_atomic` already symmetrizes `B`↔`A` (eager_rebind is
+/// bidirectional in the atomic-unit subgraph), and after promotion
+/// the at-init caller statement enters the same atomic SCC because
+/// the promoted edge (call-statement → A, eager_rebind) creates the
+/// bidirectional bond. The peel proposer therefore emits the
+/// 3-owner unit `{A, B, B()-call-statement}`, not the bare 2-vertex
+/// shape pinned by `two_vertex_constraining_edge_scc_emits_two_owner_peel_candidate`.
+#[test]
+fn atomic_unit_grows_when_at_init_call_promotes_rebind() {
+    let chunk_source = r#"var A = 1;
+function B() { A = 99; return A; }
+B();
+const Existing = "existing";
+console.log(Existing);
+export { A, B, Existing };
+"#;
+
+    let mut opts = FixtureOpts::new(
+        chunk_source,
+        vec![logical_module("existing", &[Member::new("Existing")])],
+    );
+    opts.unassigned_mode = unassigned_mode_inline();
+    let fixture = run_fixture(opts);
+
+    let graph: OwnerGraphReport =
+        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let peelability = &graph.peelability;
+
+    let ab_peel_sets: Vec<_> = peelability
+        .minimal_peel_sets
+        .iter()
+        .filter(|candidate| {
+            let names: BTreeSet<_> = candidate
+                .members
+                .iter()
+                .map(|m| m.binding.as_str())
+                .collect();
+            names == BTreeSet::from(["A", "B"])
+        })
+        .collect();
+    assert!(
+        !ab_peel_sets.is_empty(),
+        "minimal_peel_sets must include the unit covering {{A, B}}: {peelability:#?}",
+    );
+    let ab_peel = ab_peel_sets[0];
+    assert_eq!(
+        ab_peel.owner_ids.len(),
+        3,
+        "promotion must grow the unit to 3 owners (A, B, B() call): {ab_peel:#?}",
+    );
+}
+
 /// Positive: an atomic unit with only intra-residual *lazy* reads
 /// going out (no constraining out-edges to residual) is still
 /// `PeelableNow`. Per PR #1614's cycle-rule (constraining-edge
