@@ -388,7 +388,10 @@ rust_test(
 
 rust_library(
     name = "lowering",
-    srcs = ["lowering/mod.rs"],
+    srcs = [
+        "lowering/anonymous.rs",
+        "lowering/mod.rs",
+    ],
     crate_root = "lowering/mod.rs",
     edition = "2024",
     deps = [
