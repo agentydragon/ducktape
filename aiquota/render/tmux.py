@@ -1,7 +1,10 @@
 from aiquota.models import ProviderQuota, QuotaWindow
 from aiquota.pace import binding_tint, compute_pace, tint_for
 
-PROVIDER_PREFIX = {"claude": "C", "codex": "W", "zai": "Z"}
+# Nerd Font cod-sparkle (U+EC10), the de-facto "AI" glyph in dev tooling.
+# Followed by the provider's vendor initial: Anthropic / OpenAI / Z.AI.
+_AI_GLYPH = ""
+PROVIDER_PREFIX = {"claude": f"{_AI_GLYPH}A", "codex": f"{_AI_GLYPH}O", "zai": f"{_AI_GLYPH}Z"}
 
 TINT_FG = {
     "cool": "blue",
@@ -22,7 +25,7 @@ def _window_tint(window: QuotaWindow | None, *, is_short: bool) -> str:
 
 
 def render_provider(pq: ProviderQuota) -> str:
-    prefix = PROVIDER_PREFIX.get(pq.provider, pq.provider[0].upper())
+    prefix = PROVIDER_PREFIX.get(pq.provider, f"{_AI_GLYPH}{pq.provider[0].upper()}")
     out = pq.last_output
 
     # If the latest call gave us nothing, fall back to the last successful snapshot.
