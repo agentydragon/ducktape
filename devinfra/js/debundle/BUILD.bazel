@@ -392,6 +392,7 @@ rust_library(
         "lowering/anonymous.rs",
         "lowering/chunk_renames.rs",
         "lowering/mod.rs",
+        "lowering/naturalize.rs",
         "lowering/rewrite_runtime.rs",
         "lowering/runtime_imports.rs",
         "lowering/visitors.rs",
