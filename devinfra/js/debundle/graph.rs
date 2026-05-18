@@ -366,7 +366,18 @@ pub fn build_owner_graph(facts: &[StatementFacts]) -> OwnerGraph {
                 stmt.ordinal,
             );
         }
-        for binding in &stmt.lazy_rebinds {
+        // Only first-order body rebinds emit a constraining
+        // `LazyRebind` edge. A rebind inside a nested closure
+        // (e.g. an arrow stashed on `globalThis` by the body)
+        // doesn't fire when the function is invoked synchronously;
+        // emitting an edge for it manufactures a bidirectional
+        // G_atomic constraint (atomic_units.rs:82-85) that forces
+        // co-location with the rebind target even though no
+        // synchronous-trace rebind exists. See the e2e test
+        // `at_init_promotion_nested_closure_test` for the
+        // rationale; the same first-order narrowing is what
+        // promote_at_init_calls uses.
+        for binding in &stmt.first_order_lazy_rebinds {
             push_binding_edge(
                 &mut raw_edges,
                 from,
@@ -493,27 +504,33 @@ fn promote_at_init_calls(
     raw_edges: &mut Vec<(OwnerId, OwnerId, EdgeReason)>,
 ) {
     // 1. Build the call graph: owner → owner edges for each
-    //    chunk-declared function callee reachable via body_calls.
-    //    Add every owner whose body has any lazy reads / rebinds /
-    //    calls as a node — those are the callable owners whose body
-    //    closures we may need to promote, even if the body itself
-    //    makes no calls (e.g. `function readB() { return B; }`).
+    //    chunk-declared function callee reachable via *first-order*
+    //    body_calls. Nested-closure calls (e.g. inside an arrow
+    //    returned by the body) don't fire when the body is invoked
+    //    synchronously, so they don't belong on the promotion call
+    //    graph — see DESIGN.md "At-init call promotion" and the e2e
+    //    test `at_init_promotion_nested_closure_test`.
+    //
+    //    Add every owner whose body has any first-order lazy reads /
+    //    rebinds / calls as a node — those are the callable owners
+    //    whose body closures we may need to promote, even if the body
+    //    itself makes no calls (e.g. `function readB() { return B; }`).
     let mut call_graph: DiGraphMap<OwnerId, ()> = DiGraphMap::new();
     for stmt in facts {
         let owner = OwnerId(stmt.ordinal.0);
-        if !stmt.body_calls.is_empty()
-            || !stmt.lazy_reads.is_empty()
-            || !stmt.lazy_rebinds.is_empty()
+        if !stmt.first_order_body_calls.is_empty()
+            || !stmt.first_order_lazy_reads.is_empty()
+            || !stmt.first_order_lazy_rebinds.is_empty()
         {
             call_graph.add_node(owner);
         }
     }
     for stmt in facts {
-        if stmt.body_calls.is_empty() {
+        if stmt.first_order_body_calls.is_empty() {
             continue;
         }
         let caller = OwnerId(stmt.ordinal.0);
-        for callee_name in &stmt.body_calls {
+        for callee_name in &stmt.first_order_body_calls {
             let Some(binding_id) = binding_table.get(callee_name) else {
                 continue;
             };
@@ -578,14 +595,14 @@ fn promote_at_init_calls(
             let Some(stmt) = stmt_by_owner.get(owner) else {
                 continue;
             };
-            for name in &stmt.lazy_reads {
+            for name in &stmt.first_order_lazy_reads {
                 if let Some(id) = binding_table.get(name)
                     && !target_is_hoisted(id)
                 {
                     reads.insert(id);
                 }
             }
-            for name in &stmt.lazy_rebinds {
+            for name in &stmt.first_order_lazy_rebinds {
                 if let Some(id) = binding_table.get(name) {
                     rebinds.insert(id);
                 }

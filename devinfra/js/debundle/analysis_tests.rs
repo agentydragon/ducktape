@@ -158,6 +158,52 @@ mod tests {
         assert_eq!(facts[1].body_calls, BTreeSet::from(["g".to_string()]),);
     }
 
+    /// A binding rebind inside a function's immediate body
+    /// shows up in both `lazy_rebinds` and `first_order_lazy_rebinds`.
+    /// At-init promotion and the direct `lazy_rebind` owner edge
+    /// both read from the first-order subset.
+    #[test]
+    fn first_order_lazy_rebind_in_immediate_body() {
+        let module = parse("let s = 0; function f() { s = 1; }");
+        let facts = analyze_facts(&module);
+        // f's decl: body rebinds s at depth 1.
+        assert_eq!(facts[1].lazy_rebinds, BTreeSet::from(["s".to_string()]));
+        assert_eq!(
+            facts[1].first_order_lazy_rebinds,
+            BTreeSet::from(["s".to_string()])
+        );
+    }
+
+    /// A binding rebind inside a nested closure (depth ≥ 2) shows
+    /// up in `lazy_rebinds` but NOT in `first_order_lazy_rebinds`
+    /// — invoking the outer function synchronously only stashes
+    /// the closure; the rebind doesn't fire. See
+    /// `at_init_promotion_nested_closure_test`.
+    #[test]
+    fn first_order_lazy_rebind_skips_nested_closure() {
+        let module = parse(
+            "let s = 0; \
+             function f() { globalThis.fire = () => { s = 1; }; }",
+        );
+        let facts = analyze_facts(&module);
+        assert_eq!(facts[1].lazy_rebinds, BTreeSet::from(["s".to_string()]));
+        assert!(facts[1].first_order_lazy_rebinds.is_empty());
+    }
+
+    /// Same depth distinction for calls: a call in the immediate
+    /// body fires when the function is invoked, but a call inside
+    /// a nested closure only fires when the nested closure fires.
+    #[test]
+    fn first_order_body_call_skips_nested_closure() {
+        let module = parse(
+            "function g() {} \
+             function f() { globalThis.fire = () => { g(); }; }",
+        );
+        let facts = analyze_facts(&module);
+        assert_eq!(facts[1].body_calls, BTreeSet::from(["g".to_string()]));
+        assert!(facts[1].first_order_body_calls.is_empty());
+    }
+
     #[test]
     fn function_body_reads_are_lazy() {
         let module = parse("function f() { return X; } const Y = 1;");

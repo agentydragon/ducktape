@@ -34,6 +34,15 @@ pub struct StatementFacts {
     /// excluded: mutating an imported object is legal, but rebinding
     /// the imported binding cell is not.
     pub lazy_rebinds: BTreeSet<BindingName>,
+    /// Subset of `lazy_reads` whose read sites sit in a function's
+    /// **first-order** body (depth 1 from this statement). Used by
+    /// at-init call promotion: a synchronous call to the function
+    /// only runs its immediate body, so reads inside nested
+    /// function/arrow definitions don't promote to the caller.
+    pub first_order_lazy_reads: BTreeSet<BindingName>,
+    /// Subset of `lazy_rebinds` whose write sites sit in a function's
+    /// first-order body. See `first_order_lazy_reads`.
+    pub first_order_lazy_rebinds: BTreeSet<BindingName>,
     /// Target-local mutations produced by recognized trusted helper
     /// calls. Each binding is the class/prototype owner that must
     /// co-locate with the mutating statement.
@@ -54,6 +63,12 @@ pub struct StatementFacts {
     /// (e.g. `function f() { g(); } f();` at top level promotes
     /// through `g`'s body too).
     pub body_calls: BTreeSet<BindingName>,
+    /// Subset of `body_calls` whose call sites sit in a function's
+    /// **first-order** body. The promotion call graph uses this so
+    /// that calls lexically nested inside a closure of the body
+    /// don't appear as direct callees of the outer function — they
+    /// don't fire when the outer function is invoked synchronously.
+    pub first_order_body_calls: BTreeSet<BindingName>,
     pub purity: Purity,
     pub kind: StatementKind,
 }
@@ -390,9 +405,12 @@ fn analyze_item(
         eager_rebinds: writes.at_init,
         lazy_reads: lazy.names,
         lazy_rebinds: writes.lazy,
+        first_order_lazy_reads: lazy.first_order,
+        first_order_lazy_rebinds: writes.first_order_lazy,
         local_effects,
         at_init_calls: calls.at_init,
         body_calls: calls.lazy,
+        first_order_body_calls: calls.first_order_lazy,
         purity,
         kind,
     }
@@ -687,14 +705,27 @@ impl Visit for AtInitReadCollector {
     }
 }
 
-/// Shared trait for visitors that track a lazy/eager syntactic boundary.
+/// Shared trait for visitors that track lazy nesting depth.
+///
+/// Depth semantics:
+/// - `0` — eager (outside any function body).
+/// - `1` — first-order lazy (inside the immediate body of a function).
+/// - `≥2` — nested lazy (inside a function nested in another function body).
+///
+/// At-init call promotion only inherits reads/rebinds/calls from a
+/// callee's first-order body, because a synchronous invocation of the
+/// callee runs only its immediate body; statements lexically inside
+/// nested function/arrow definitions are not executed until something
+/// later invokes the nested closure. The general `lazy_*` sets stay
+/// coarse (any depth ≥1) because, from the chunk's top-level POV, any
+/// rebind inside any function body remains "lazy".
 trait LazyBoundary: Visit {
-    fn in_lazy_mut(&mut self) -> &mut bool;
+    fn lazy_depth_mut(&mut self) -> &mut u32;
 
     fn descend_lazy<F: FnOnce(&mut Self)>(&mut self, f: F) {
-        let prev = std::mem::replace(self.in_lazy_mut(), true);
+        *self.lazy_depth_mut() += 1;
         f(self);
-        *self.in_lazy_mut() = prev;
+        *self.lazy_depth_mut() -= 1;
     }
 }
 
@@ -702,22 +733,32 @@ trait LazyBoundary: Visit {
 /// positions only — function bodies, method bodies, constructor
 /// bodies, instance class-field initializers, getter/setter bodies.
 /// Inverse boundary semantics from `AtInitReadCollector`.
+///
+/// `first_order` is the subset of `names` whose read sites sit
+/// directly inside the function body the read collector is visiting
+/// (depth 1); deeper closures don't contribute. Used by at-init call
+/// promotion.
 #[derive(Default)]
 struct LazyReadCollector {
     names: BTreeSet<String>,
-    in_lazy: bool,
+    first_order: BTreeSet<String>,
+    lazy_depth: u32,
 }
 
 impl LazyBoundary for LazyReadCollector {
-    fn in_lazy_mut(&mut self) -> &mut bool {
-        &mut self.in_lazy
+    fn lazy_depth_mut(&mut self) -> &mut u32 {
+        &mut self.lazy_depth
     }
 }
 
 impl Visit for LazyReadCollector {
     fn visit_ident(&mut self, node: &Ident) {
-        if self.in_lazy {
-            self.names.insert(node.sym.to_string());
+        if self.lazy_depth == 0 {
+            return;
+        }
+        self.names.insert(node.sym.to_string());
+        if self.lazy_depth == 1 {
+            self.first_order.insert(node.sym.to_string());
         }
     }
 
@@ -752,25 +793,34 @@ impl Visit for LazyReadCollector {
 /// Visitor that collects rebinding writes to identifier bindings,
 /// split by whether the write runs at module initialization or only
 /// from a lazy syntactic position.
+///
+/// `first_order_lazy` is the subset of `lazy` whose write sites sit
+/// directly inside the function body the collector is visiting
+/// (depth 1); deeper closures don't contribute. Used by at-init call
+/// promotion.
 #[derive(Default)]
 struct BindingWriteCollector {
     at_init: BTreeSet<String>,
     lazy: BTreeSet<String>,
-    in_lazy: bool,
+    first_order_lazy: BTreeSet<String>,
+    lazy_depth: u32,
 }
 
 impl LazyBoundary for BindingWriteCollector {
-    fn in_lazy_mut(&mut self) -> &mut bool {
-        &mut self.in_lazy
+    fn lazy_depth_mut(&mut self) -> &mut u32 {
+        &mut self.lazy_depth
     }
 }
 
 impl BindingWriteCollector {
     fn record_write(&mut self, name: &str) {
-        if self.in_lazy {
-            self.lazy.insert(name.to_string());
-        } else {
+        if self.lazy_depth == 0 {
             self.at_init.insert(name.to_string());
+            return;
+        }
+        self.lazy.insert(name.to_string());
+        if self.lazy_depth == 1 {
+            self.first_order_lazy.insert(name.to_string());
         }
     }
 }
@@ -857,12 +907,13 @@ impl Visit for BindingWriteCollector {
 struct CallCollector {
     at_init: BTreeSet<String>,
     lazy: BTreeSet<String>,
-    in_lazy: bool,
+    first_order_lazy: BTreeSet<String>,
+    lazy_depth: u32,
 }
 
 impl LazyBoundary for CallCollector {
-    fn in_lazy_mut(&mut self) -> &mut bool {
-        &mut self.in_lazy
+    fn lazy_depth_mut(&mut self) -> &mut u32 {
+        &mut self.lazy_depth
     }
 }
 
@@ -873,12 +924,15 @@ impl Visit for CallCollector {
 
     fn visit_call_expr(&mut self, node: &CallExpr) {
         if let Some(callee) = call_callee_ident(node) {
-            let bucket = if self.in_lazy {
-                &mut self.lazy
+            let name = callee.to_string();
+            if self.lazy_depth == 0 {
+                self.at_init.insert(name);
             } else {
-                &mut self.at_init
-            };
-            bucket.insert(callee.to_string());
+                self.lazy.insert(name.clone());
+                if self.lazy_depth == 1 {
+                    self.first_order_lazy.insert(name);
+                }
+            }
         }
         // Always recurse into args + callee so nested calls are seen.
         node.visit_children_with(self);

@@ -1,28 +1,18 @@
-//! RED test: at-init call promotion is over-conservative for
-//! rebinds that lexically appear inside a nested closure but never
-//! fire at module-initialization time.
+//! Regression test: at-init call promotion (and the direct
+//! `lazy_rebind` owner edge) must not propagate rebinds that
+//! lexically appear inside a nested closure but never fire at
+//! module-initialization time.
 //!
 //! Background: DESIGN.md "At-init call promotion" makes the
 //! caller-statement of an at-init call inherit its callee's
-//! transitive `lazy_reads` and `lazy_rebinds`. The classifier behind
-//! `lazy_rebinds` (`BindingWriteCollector` + `LazyBoundary` in
-//! `facts.rs:691-790`) sets `in_lazy = true` at the **first**
-//! function boundary it crosses and never resets it. Rebinds inside
-//! a function body that is itself nested inside an outer function
-//! body (e.g. an arrow function returned/stashed by the outer
-//! function) are recorded as `lazy_rebinds` of the OUTER function.
-//!
-//! That's correct for clause 3 ("any rebind inside any function
-//! body is lazy from the chunk's top-level perspective"), but it's
-//! too coarse for at-init promotion. Promotion's intended semantics
-//! is "the at-init caller statement runs the part of the callee's
-//! body that executes synchronously when the call returns". A
-//! rebind inside a nested arrow function returned by the callee
-//! does NOT execute synchronously — it only fires when something
-//! later invokes the returned closure. Treating it as an at-init
-//! rebind manufactures a cross-module `eager_rebind` edge that
-//! doesn't exist at runtime, which then surfaces as an
-//! `atomic-factor-unit conflict` during materialize.
+//! transitive `lazy_reads` and `lazy_rebinds`. The classifier in
+//! `facts.rs` now tracks a `lazy_depth` counter on each
+//! `LazyBoundary` visitor, with `first_order_lazy_*` collected
+//! when the visitor sits directly inside a function body (depth 1)
+//! and the coarse `lazy_*` covering any depth ≥1. Promotion and
+//! the direct `lazy_rebind` edge use the first-order subset so a
+//! rebind inside a nested arrow doesn't manufacture a cross-module
+//! constraint that nothing actually fires.
 //!
 //! ## Fixture
 //!
@@ -54,55 +44,28 @@
 //! The materializer can emit this spec and Node will run it
 //! correctly. The ESM linker has no ordering problem to solve.
 //!
-//! ## What ducktape does today
+//! ## Implementation
 //!
-//! `facts.rs::analyze_chunk` builds `setupHandler.lazy_rebinds =
-//! {"state"}` because the arrow body's `state = "updated"` write is
-//! lexically inside setupHandler's body (and `BindingWriteCollector`
-//! flips `in_lazy` at the outer function boundary; it never
-//! distinguishes between setupHandler's first-order body and a
-//! nested arrow inside it).
+//! `BindingWriteCollector`, `LazyReadCollector`, and `CallCollector`
+//! each track a `lazy_depth: u32` counter. `descend_lazy` increments
+//! on entry to a function/arrow/method body and decrements on exit.
+//! Each collector exposes a `first_order_*` subset whose entries
+//! were recorded while `lazy_depth == 1`. Two graph sites consume
+//! the subset:
 //!
-//! At-init call promotion in `graph.rs::promote_at_init_calls` then
-//! resolves residual's `setupHandler()` at-init call, walks
-//! `setupHandler.reachable_lazy_rebinds = {"state"}`, and emits an
-//! `eager_rebind` owner edge from the residual call-statement to
-//! `state`'s owner. Because `state` lives in `mod_state` and the
-//! call-statement lives in residual, the edge is cross-module.
-//!
-//! The factorize-assembly machinery (called from
-//! `materialize_logical_modules`) sees this rebind as a clause-2
-//! violation (cross-destination rebinding writes are never
-//! importable) and groups residual + mod_state + mod_handler into
-//! one inseparable atomic unit, rejecting the spec with an
-//! `atomic-factor-unit conflict` error.
-//!
-//! This test asserts the correct behavior (entry prints
-//! "initial"). It currently fails at `run_fixture` because the
-//! materializer rejects the spec before any JS is emitted.
-//!
-//! ## Suggested fix family
-//!
-//! `BindingWriteCollector` and `LazyReadCollector` need a finer
-//! state than the current binary `in_lazy`. A clean
-//! implementation: distinguish "in callee's executable body" from
-//! "in a nested function inside callee's executable body". Two
-//! options:
-//!
-//! 1. Add a third state (`InFirstOrderBody` vs `InNestedClosure`)
-//!    to `LazyBoundary`. Collect rebinds in the first-order set
-//!    only; promotion uses the first-order set.
-//! 2. Split into two separate collectors with different boundary
-//!    rules — one for clause 3 (any function body counts as lazy),
-//!    one for promotion (only the immediate body counts; nested
-//!    closures don't).
+//! - `graph.rs::push_binding_edge` for `EdgeReason::lazy_rebind` —
+//!   so a rebind inside a nested closure no longer creates the
+//!   bidirectional G_atomic constraint at `atomic_units.rs:82-85`.
+//! - `graph.rs::promote_at_init_calls` for the call graph and its
+//!   per-owner rebind/read seeds — so an at-init call only inherits
+//!   the synchronous part of the callee's body.
 //!
 //! Production observation: gaffer-private's Tana chunk
-//! `static/index-DI2GynTv` produces 22 cross-module
+//! `static/index-DI2GynTv` produced 22 cross-module
 //! `eager_rebind` edges all sharing `statement_ordinal: 9705`
 //! (the top-level `try { ... Age(...) ... }` bootstrap), creating a
 //! 690-owner SCC spanning 11 modules. Every promoted rebind in
-//! that SCC traces back to deferred-callback writes inside event
+//! that SCC traced back to deferred-callback writes inside event
 //! handlers nested in the bootstrap's call graph — none of them
 //! fire at module init.
 
